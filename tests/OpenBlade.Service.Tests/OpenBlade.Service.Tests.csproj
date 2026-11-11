@@ -6,6 +6,10 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(OpenBladeNativePackageTests)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_NATIVE_PACKAGE_TESTS</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
@@ -15,6 +19,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <None Include="../Fixtures/Parity/managed-mailbox-handoff-v1.json" Link="managed-mailbox-handoff-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="WindowsReplay\v1\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

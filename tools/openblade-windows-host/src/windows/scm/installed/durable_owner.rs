@@ -153,6 +153,17 @@ impl Store {
         Ok(())
     }
 }
+
+// Observation retains the real global owner serialization boundary. Empty
+// history is admitted only with the separate authenticated managed handoff;
+// it is never converted into a firmware Retired record or write reservation.
+pub(in crate::installed) fn acquire_empty_read_history() -> io::Result<impl Send + Sync> {
+    let store = Store::open()?;
+    if store.last.is_some() {
+        return Err(deny());
+    }
+    Ok(store)
+}
 fn open(root: &File, name: &str, create: bool) -> io::Result<File> {
     let file = paths::open_relative(
         root,

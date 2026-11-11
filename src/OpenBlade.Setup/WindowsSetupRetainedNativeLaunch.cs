@@ -9,11 +9,12 @@ namespace OpenBlade.Setup;
 // Fixed SCM-selected native generation only. Retain one original object; never
 // reopen by PID during health/commit. Exact code provenance comes from the held
 // authenticated package, non-reused namespace and eager native entry together.
-internal sealed class WindowsSetupRetainedNativeLaunch : ISetupRetainedCandidateLaunch, IDisposable
+internal sealed class WindowsSetupRetainedNativeLaunch : ISetupRetainedCandidateLaunch, ISetupOriginalManagedProcess, IDisposable
 {
     private readonly SafeProcessHandle process;
     private bool lost;
     internal SetupCandidateLaunch Launch { get; }
+    SetupCandidateLaunch ISetupOriginalManagedProcess.Launch => Launch;
     private WindowsSetupRetainedNativeLaunch(SafeProcessHandle process, SetupCandidateLaunch launch)
     { this.process = process; Launch = launch; }
     internal static WindowsSetupRetainedNativeLaunch Capture(SetupCandidateServiceObservation scm, string selectedPath, string digest)
@@ -65,6 +66,7 @@ internal sealed class WindowsSetupRetainedNativeLaunch : ISetupRetainedCandidate
     { if (WaitForSingleObject(process, 0) != 258) { throw new IOException("Native original process is exited or unknown."); } }
     internal void RequireExited()
     { if (WaitForSingleObject(process, 0) != 0) { throw new IOException("Original native process retirement is unconfirmed."); } }
+    void ISetupOriginalManagedProcess.RequireExited() => RequireExited();
     public void Dispose() { lost = true; process.Dispose(); }
     [DllImport("kernel32.dll", SetLastError = true)] private static extern SafeProcessHandle OpenProcess(uint access, [MarshalAs(UnmanagedType.Bool)] bool inherit, uint pid);
     [DllImport("kernel32.dll")] private static extern uint WaitForSingleObject(SafeProcessHandle process, uint milliseconds);

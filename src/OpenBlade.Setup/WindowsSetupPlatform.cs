@@ -74,6 +74,9 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private Guid nativeRequest;
     private SetupNativePackageTransaction? selectedNativeTransaction;
     private WindowsNativeInstalledSelection? priorNativeSelection;
+    private WindowsManagedMailboxTransfer? managedTransfer;
+    private sealed record IncomingMailbox(string Installation, string Package);
+    private IncomingMailbox? incomingMailbox;
     public SetupServiceTransition ServiceTransition { get; private set; }
     internal Func<CancellationToken, Task<SetupCandidateServiceObservation>> ReadPredecessorService { get; set; } = WindowsSetupCandidateService.ReadAsync;
     internal void BindExistingNativeSelection(WindowsNativeInstalledSelection? selection)
@@ -112,6 +115,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         if (request == Guid.Empty) { throw new ArgumentException("A selected native transaction requires its authenticated request."); }
         selectedNativePackage = package;
         nativeRequest = request;
+        if (package.Service.ReadOnlyMailbox)
+        { incomingMailbox = new(package.Release.Manifest.InstallationId.ToString("N"), NativeCanonical.Digest(package.Record)); }
     }
 
 
@@ -253,6 +258,9 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         { ServiceTransition = SetupServiceTransition.NativeRetirementPossible; }
         using var nativeStop = await CaptureNativeStopAsync(cancellationToken);
         SetupServiceState? state = await serviceControl.GetStateAsync(ServiceName, cancellationToken);
+        using var managedStop = incomingMailbox is not null
+            ? await CaptureManagedMailboxStopAsync(state, cancellationToken)
+            : null;
 
         if (state == SetupServiceState.Running)
         {
@@ -267,8 +275,54 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                 cancellationToken);
         }
         guardianQuiescenceGuard.EnsureClear();
+        if (managedStop is not null)
+        {
+            var transfer = managedTransfer ?? throw new IOException("Managed handoff request was not retained.");
+            SetupManagedMailboxAdmission.Confirm(managedStop, transfer);
+            (selectedNativeTransaction ?? throw new IOException("Native payload must be staged before managed handoff."))
+                .BindManagedHandoff(transfer);
+            managedTransfer = null;
+        }
         ConfirmNativeStop(nativeStop);
         ServiceTransition = priorNativeSelection is null ? SetupServiceTransition.ManagedPrepared : SetupServiceTransition.NativeRetired;
+    }
+
+    private async Task<ISetupOriginalManagedProcess> CaptureManagedMailboxStopAsync(SetupServiceState? state, CancellationToken token)
+    {
+        if (priorNativeSelection is not null || state != SetupServiceState.Running)
+        { throw new IOException("Native mailbox observation requires a running handoff-capable managed upgrade first."); }
+        var files = WindowsNativeEpochFiles.OpenProtected(WindowsNativeEpochFiles.ManagedHandoffRoot);
+        WindowsSetupRetainedNativeLaunch? original = null;
+        WindowsManagedMailboxPackage? authenticated = null;
+        try
+        {
+            byte[] runBytes = files.ReadCurrent() ?? throw new IOException("Managed handoff upgrade prerequisite is missing.");
+            var run = ManagedMailboxRun.Parse(runBytes);
+            using var bound = files.OpenFile(Path.Combine(files.Root, "run-binding-" + run.Run + ".bin"));
+            var binding = ManagedMailboxBuildBinding.Parse(WindowsNativeEpochFiles.ReadBounded(bound));
+            var incoming = incomingMailbox ?? throw new IOException("Incoming mailbox package identity is unavailable.");
+            if (binding.RunDigest != NativeCanonical.Digest(runBytes) || binding.Installation != incoming.Installation)
+            { throw new IOException("Managed predecessor installation/run differs from the authenticated incoming package."); }
+            authenticated = WindowsManagedMailboxPackage.OpenCached(files, binding.Package);
+            if (authenticated.Installation != binding.Installation || authenticated.EnrollmentDigest != binding.Enrollment)
+            { throw new IOException("Managed predecessor trust enrollment changed."); }
+            var identity = authenticated.AuthenticateInstalled(paths.InstallDirectory, requireLoadedEntry: false);
+            if (identity.Executable != run.Executable || identity.Closure != run.Assembly || identity.Module != run.Module)
+            { throw new IOException("Managed original build differs from its signed preserved package."); }
+            using var installed = WindowsNativeEpochFiles.OpenProtected(paths.InstallDirectory);
+            using var executable = installed.OpenFile(Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe"));
+            string digest = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(executable));
+            if (digest != run.Executable) { throw new IOException("Managed handoff build differs from the original run."); }
+            original = WindowsSetupRetainedNativeLaunch.Capture(await ReadPredecessorService(token),
+                Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe"), digest);
+            if (run.Process != original.Launch.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":"
+                + original.Launch.CreationFileTimeUtc.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            { throw new IOException("Managed handoff run belongs to a different process instance."); }
+            managedTransfer = new(files, runBytes, new(NativeCanonical.Digest(runBytes),
+                incoming.Installation, nativeRequest.ToString("N"), incoming.Package), authenticated);
+            return original;
+        }
+        catch { authenticated?.Dispose(); original?.Dispose(); files.Dispose(); throw; }
     }
 
     public async Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken)
@@ -286,7 +340,9 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         try
         {
             BindSelectedNativeTransaction(new SetupNativePackageTransaction(payload,
-                WindowsNativeEpochFiles.CreateOrOpenProductForInstall(), selectedNativePackage, nativeRequest));
+                WindowsNativeEpochFiles.CreateOrOpenProductForInstall(), selectedNativePackage, nativeRequest,
+                managedTransfer: managedTransfer));
+            managedTransfer = null;
             selectedNativePackage = null;
             return selectedNativeTransaction ?? throw new InvalidOperationException("Native selection was not bound.");
         }

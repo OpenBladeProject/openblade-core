@@ -14,7 +14,8 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
     internal bool HasStartupCustody => Features.Split(',').Contains("startup-custody-v1", StringComparer.Ordinal);
     internal bool PrivateCustody => Schema == 2 && Capabilities.Split(',').Contains("private-service-custody-v1", StringComparer.Ordinal);
     internal bool MetadataOnly => Schema == 2 && Capabilities.Split(',').Contains("service-metadata-only-v1", StringComparer.Ordinal);
-    internal string StartupPolicy => MetadataOnly ? "service-metadata-only-v1" : Schema == 1 ? "metadata-only-no-firmware" : "service-hardware-compile-check";
+    internal bool ReadOnlyMailbox => Schema == 2 && Capabilities.Split(',').Contains("service-mailbox-observation-v1", StringComparer.Ordinal);
+    internal string StartupPolicy => MetadataOnly ? "service-metadata-only-v1" : ReadOnlyMailbox ? "service-mailbox-observation-v1" : Schema == 1 ? "metadata-only-no-firmware" : "service-hardware-compile-check";
 
     internal byte[] Encode()
     {
@@ -36,6 +37,8 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         bool metadata = features.Contains("service-metadata-only-v1", StringComparer.Ordinal);
         bool hardware = features.Contains("service-hardware-compile-check", StringComparer.Ordinal);
         bool firmware = features.Contains("firmware-performance-compile-check", StringComparer.Ordinal);
+        bool observation = features.Contains("service-mailbox-observation-v1", StringComparer.Ordinal);
+        if (observation && (!hardware || metadata)) { throw new InvalidDataException("Mailbox observation requires its exclusive acquisition composition."); }
         if (schema == 1)
         {
             if (metadata || hardware) { throw new InvalidDataException("Legacy artifacts cannot assert v2 composition."); }
@@ -50,7 +53,7 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         {
             if (metadata == hardware || !features.Contains("startup-custody-v1", StringComparer.Ordinal) || hardware != firmware)
             { throw new InvalidDataException("Native Service requires an explicit coherent composition."); }
-            expected = metadata ? "private-service-custody-v1,service-metadata-only-v1" : "private-service-custody-v1";
+            expected = metadata ? "private-service-custody-v1,service-metadata-only-v1" : observation ? "private-service-custody-v1,service-mailbox-observation-v1" : "private-service-custody-v1";
         }
         if (capabilities != expected) { throw new InvalidDataException("Native capabilities differ from the authenticated role composition."); }
     }

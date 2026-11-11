@@ -9,7 +9,7 @@ using Microsoft.Win32.SafeHandles;
 
 namespace OpenBlade.Deployment;
 
-internal enum NativeFileBoundary { Created, Written, Flushed, Verified, Renamed }
+internal enum NativeFileBoundary { Created, Written, Flushed, Verified, Renamed, OwnerDirectoryCreated }
 
 // Retained non-reparse NTFS files and namespaces for native package/epoch evidence.
 // Private fixtures explicitly use the current-token owner; product paths require privileged owners.
@@ -52,6 +52,7 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
             using var lease = files.RetainDirectory(files.Root);
             var descriptor = new RawSecurityDescriptor(new HandleSecurity(lease.Handles[^1], true).GetSecurityDescriptorBinaryForm(), 0);
             if (!AcceptsPublicRoot(descriptor)) { throw new UnauthorizedAccessException("Native public root DACL differs."); }
+            files.RepairInterruptedOwnerBootstrap();
             return files;
         }
         catch { files.Dispose(); throw; }
@@ -89,6 +90,16 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         RequireNtfs(lease);
         return value;
     }
+
+#if OPENBLADE_NATIVE_PACKAGE_TESTS
+    internal WindowsNativeEpochFiles RetainFixtureView()
+    {
+        if (owner is null) { throw new InvalidOperationException("Only private fixtures admit injected views."); }
+        var view = new WindowsNativeEpochFiles(Root, owner);
+        view.retained.Add(view.PinDirectory(Root));
+        return view;
+    }
+#endif
 
     internal static bool IsPresentDirectory(string path) => ObserveDirectoryPresence(() => File.GetAttributes(path));
 
@@ -163,6 +174,45 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         catch { files.Dispose(); throw; }
     }
 
+    // Separate protected namespace: handoff records never pollute NativeEpochs.
+    internal static string ManagedHandoffRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "OpenBlade.ManagedHandoff");
+    internal static WindowsNativeEpochFiles CreateOrOpenManagedHandoff()
+    {
+        string parent = Path.GetDirectoryName(ManagedHandoffRoot)!;
+        using var ancestors = new DirectoryLease();
+        PinAncestors(parent, ancestors, null);
+        for (int i = 0; i < ancestors.Handles.Count; i++)
+        { VerifySharedAncestor(ancestors.Handles[i], i + 1 == ancestors.Handles.Count); }
+        if (!IsPresentDirectory(ManagedHandoffRoot))
+        {
+            RequireAbsent(ManagedHandoffRoot);
+            var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+            var security = new DirectorySecurity();
+            security.SetOwner(administrators);
+            security.SetAccessRuleProtection(true, false);
+            foreach (var sid in new[] { administrators, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) })
+            {
+                security.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+            }
+            new DirectoryInfo(ManagedHandoffRoot).Create(security);
+        }
+        var files = OpenProtected(ManagedHandoffRoot);
+        try
+        {
+            using var writer = files.AcquireWriter();
+            string exclusion = Path.Combine(files.Root, "exclusion.lock");
+            if (!Present(exclusion))
+            {
+                if (Directory.EnumerateFileSystemEntries(files.Root).Any(p => Path.GetFileName(p) != "writer.lock"))
+                { throw new IOException("Handoff exclusion is missing from historical storage."); }
+                files.PublishCustody(exclusion, NativeCanonical.Lines("OpenBlade.MailboxExclusion.v1"));
+            }
+            return files;
+        }
+        catch { files.Dispose(); throw; }
+    }
+
     internal static bool AcceptsPublicRoot(RawSecurityDescriptor descriptor)
     {
         if (descriptor.Owner?.Value != "S-1-5-32-544" || !descriptor.ControlFlags.HasFlag(ControlFlags.DiscretionaryAclProtected)
@@ -199,28 +249,68 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         }
     }
 
-    private void EnsureOwnerStore()
+    internal void EnsureOwnerStore()
     {
         string path = Path.Combine(Root, "owner");
         if (!Directory.Exists(path))
         {
+            using var writer = AcquireWriter();
+            using (var marker = OpenFile(Path.Combine(Root, "root.bin")))
+            { RequireExact(marker, NativeCanonical.Lines("OpenBlade.NativeRoot.v1", "legacy-store-absent")); }
+            if (!Directory.EnumerateFileSystemEntries(Root).Select(Path.GetFileName).Order(StringComparer.Ordinal)
+                    .SequenceEqual(new[] { "root.bin", "writer.lock" }))
+            { throw new IOException("Owner initialization requires a never-selected native bootstrap."); }
             RequireAbsent(path);
             var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
             var security = new DirectorySecurity();
-            security.SetOwner(administrators);
+            security.SetOwner(owner ?? administrators);
             security.SetAccessRuleProtection(true, false);
-            foreach (var sid in new[] { administrators, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) })
+            foreach (var sid in owner is null ? new[] { administrators, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) } : new[] { owner })
             {
                 security.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl,
                 InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
             }
             new DirectoryInfo(path).Create(security);
+            AtBoundary(NativeFileBoundary.OwnerDirectoryCreated);
         }
         using var directory = RetainDirectory(path);
         string lockPath = Path.Combine(path, "writer.lock");
-        if (!File.Exists(lockPath))
-        { using var created = new FileStream(lockPath, FileMode.CreateNew, FileAccess.Write, FileShare.None); created.Flush(true); }
+        if (!Present(lockPath)) { RepairInterruptedOwnerBootstrap(); }
         // Absence of a native history is NOT a managed-drain certificate.
+    }
+
+    // Only an authenticated never-selected bootstrap may acquire its missing lock.
+    // Epoch namespace exclusion precedes creation; historical ownership is never reset.
+    internal void RepairInterruptedOwnerBootstrap()
+    {
+        string ownerPath = Path.Combine(Root, "owner");
+        if (!Present(ownerPath) || Present(Path.Combine(ownerPath, "writer.lock"))) { return; }
+        using var writer = AcquireWriter();
+        using var directory = RetainDirectory(ownerPath);
+        using (var marker = OpenFile(Path.Combine(Root, "root.bin")))
+        { RequireExact(marker, NativeCanonical.Lines("OpenBlade.NativeRoot.v1", "legacy-store-absent")); }
+        if (!Directory.EnumerateFileSystemEntries(Root).Select(Path.GetFileName).Order(StringComparer.Ordinal)
+                .SequenceEqual(new[] { "owner", "root.bin", "writer.lock" })
+            || Directory.EnumerateFileSystemEntries(ownerPath).Any())
+        { throw new IOException("Interrupted native bootstrap has unknown history; no owner lock was created."); }
+        string path = Path.Combine(ownerPath, "writer.lock");
+        using (var created = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { created.Flush(true); }
+        // Validate the original lock and complete bootstrap under both boundaries.
+        // AcquireRetiredOwner accepts known-empty history without fabricating a record.
+        using var original = WindowsNativeTrustLifecycle.AcquireRetiredOwner(this);
+        using var check = OpenFile(Path.Combine(Root, "root.bin"));
+        RequireExact(check, NativeCanonical.Lines("OpenBlade.NativeRoot.v1", "legacy-store-absent"));
+        if (!Directory.EnumerateFileSystemEntries(Root).Select(Path.GetFileName).Order(StringComparer.Ordinal)
+                .SequenceEqual(new[] { "owner", "root.bin", "writer.lock" })
+            || Directory.EnumerateFileSystemEntries(ownerPath).Any(p => Path.GetFileName(p) != "writer.lock"))
+        { throw new IOException("Native bootstrap changed during initialization; history was preserved."); }
+    }
+
+    private static bool Present(string path)
+    {
+        try { _ = File.GetAttributes(path); return true; }
+        catch (FileNotFoundException) { return false; }
+        catch (DirectoryNotFoundException) { return false; }
     }
 
     private static void RequireNtfs(DirectoryLease lease)
@@ -332,6 +422,13 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
     {
         RequireInRoot(path);
         return new FileStream(OpenChecked(path, directory: false, this), FileAccess.Read);
+    }
+
+    internal FileStream RetainFile(string path)
+    {
+        var file = OpenFile(path);
+        retained.Add(file);
+        return file;
     }
 
     internal void PublishCustody(string path, byte[] bytes) => Publish(path, bytes, privateCustody: true);

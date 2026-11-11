@@ -2,8 +2,8 @@
 #![allow(unsafe_code)]
 
 use super::{
-    Admission, Authorize, Frame, Limit, Port, Reader, Selection, Transactions, Transfer, blocked,
-    reviewed_descriptor, reviewed_selection, verify_admission,
+    Admission, Authorize, Frame, Limit, ObservationProof, Port, ReadAdmission, Reader, Selection,
+    Transactions, Transfer, blocked, reviewed_descriptor, reviewed_selection, verify_admission,
 };
 use crate::discovery::{
     hid_lease::{LeaseIdentity, windows::MetadataHandle},
@@ -83,7 +83,16 @@ pub(crate) fn native_worker(
     Worker::new(move |job| run(&authorize, job), Some(&OCCUPIED))
 }
 
-fn run(authorize: &impl Fn() -> Option<Admission>, job: Job) -> io::Result<Option<Reading>> {
+pub(crate) fn native_read_worker(
+    authorize: impl Fn() -> Option<ReadAdmission> + Send + Sync + 'static,
+) -> Worker<ReadAdmission> {
+    Worker::new(move |job| run(&authorize, job), Some(&OCCUPIED))
+}
+
+fn run<A: ObservationProof>(
+    authorize: &impl Fn() -> Option<A>,
+    job: Job,
+) -> io::Result<Option<Reading<A>>> {
     let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
         .enable_time()
         .build()
@@ -91,13 +100,8 @@ fn run(authorize: &impl Fn() -> Option<Admission>, job: Job) -> io::Result<Optio
         return Ok(None);
     };
     let limit = job.limit();
-    let mut authorize = || {
-        authorize().filter(|admission| {
-            job.session
-                .is_none_or(|session| admission.session == session)
-        })
-    };
-    let Some(admission) = authorize().filter(|admission| admission.is_clear()) else {
+    let mut authorize = || authorize().filter(|admission| admission.matches_session(job.session));
+    let Some(admission) = authorize().filter(|admission| admission.readable()) else {
         return Ok(None);
     };
     let Ok((port, selection)) = NativePort::open(&mut authorize, admission, limit) else {
@@ -131,9 +135,9 @@ fn run(authorize: &impl Fn() -> Option<Admission>, job: Job) -> io::Result<Optio
 }
 
 impl NativePort {
-    fn open(
-        authorize: Authorize<'_>,
-        admission: Admission,
+    fn open<A: ObservationProof>(
+        authorize: Authorize<'_, A>,
+        admission: A,
         limit: Limit<'_>,
     ) -> io::Result<(Self, Selection)> {
         limit.check()?;
@@ -155,11 +159,11 @@ impl NativePort {
         Ok((port, selection))
     }
 
-    fn bind(
+    fn bind<A: ObservationProof>(
         &mut self,
         selection: Selection,
-        authorize: Authorize<'_>,
-        admission: Admission,
+        authorize: Authorize<'_, A>,
+        admission: A,
         limit: Limit<'_>,
     ) -> io::Result<()> {
         limit.check()?;

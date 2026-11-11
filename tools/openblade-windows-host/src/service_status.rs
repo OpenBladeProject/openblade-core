@@ -371,6 +371,8 @@ type FeatureRecord = Map<String, Value>;
 #[cfg_attr(feature = "installed-service-candidate", derive(Clone))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Snapshot {
+    #[serde(skip)]
+    read_confirmation: Option<ReadConfirmation>,
     revision: i64,
     device_verified: bool,
     writes_blocked: bool,
@@ -392,6 +394,27 @@ pub(crate) struct Snapshot {
     service_version: String,
     #[serde(flatten)]
     feature_fields: FeatureRecord,
+}
+
+// In-process evidence only. Never deserialized from a caller or retained status.
+#[derive(Clone)]
+pub(crate) struct ReadConfirmation {
+    deadline: tokio::time::Instant,
+    guard: std::sync::Arc<dyn Fn() -> bool + Send + Sync>,
+}
+impl ReadConfirmation {
+    pub(crate) fn new(
+        deadline: tokio::time::Instant,
+        guard: impl Fn() -> bool + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            deadline,
+            guard: std::sync::Arc::new(guard),
+        }
+    }
+    fn valid(&self) -> bool {
+        tokio::time::Instant::now() < self.deadline && (self.guard)()
+    }
 }
 
 // Wire values in the managed PerformancePreset and PowerSource enums.
@@ -502,6 +525,7 @@ impl Snapshot {
         };
 
         Self {
+            read_confirmation: None,
             revision,
             device_verified: false,
             writes_blocked: true,
@@ -552,6 +576,57 @@ impl Snapshot {
         ]));
         self.confirmed_performance()?;
         Some(self)
+    }
+
+    #[cfg(all(windows, feature = "installed-service-candidate"))]
+    pub(crate) fn with_mailbox_read(
+        mut self,
+        observed: crate::discovery::performance::ObservedPerformance,
+        confirmation: ReadConfirmation,
+    ) -> Self {
+        let (performance, fans, hyper_boost) = observed.projection();
+        self.confirmed_state = Some(Map::from_iter([
+            ("performance".into(), serde_json::json!(performance)),
+            ("fans".into(), serde_json::json!(fans)),
+            ("battery".into(), Value::Null),
+            ("lighting".into(), Value::Null),
+            ("hyperBoostActive".into(), serde_json::json!(hyper_boost)),
+        ]));
+        self.device_verified = true; // Real opened exact host/HID validation preceded this result.
+        self.writes_blocked = true;
+        self.capabilities = None;
+        self.message = "Thermal settings read. Native controls remain unavailable.".into();
+        self.read_confirmation = Some(confirmation);
+        self
+    }
+    pub(crate) fn has_fresh_mailbox_read(&self) -> bool {
+        self.read_confirmation
+            .as_ref()
+            .is_some_and(ReadConfirmation::valid)
+    }
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn retained_mailbox(&self, thermal: &Self, revision: i64) -> Self {
+        let mut retained = self.clone();
+        retained.read_confirmation = None;
+        retained.confirmed_state = thermal.confirmed_state.clone();
+        retained.device_verified = thermal.device_verified;
+        retained.writes_blocked = true;
+        retained.capabilities = None;
+        retained.revision = revision;
+        if retained.control_access == 0 {
+            retained.message =
+                "Last confirmed thermal settings retained. Request an observation to read again."
+                    .into();
+        }
+        retained
+    }
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn has_same_thermal(&self, other: &Self) -> bool {
+        self.confirmed_state == other.confirmed_state
+    }
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn set_observation_revision(&mut self, revision: i64) {
+        self.revision = revision;
     }
 
     // Use only for a direct, admitted ObserveState reply. v79 can retain

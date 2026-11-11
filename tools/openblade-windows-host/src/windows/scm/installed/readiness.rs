@@ -32,6 +32,9 @@ use windows::{Caller, ControlSession, Logon, MAX_CONNECTIONS, Pending, Stream};
 mod firmware_source;
 #[cfg(any(test, feature = "service-hardware-compile-check"))]
 pub(super) use firmware_source::FirmwareSource;
+#[cfg(feature = "service-mailbox-observation-v1")]
+#[path = "mailbox_read.rs"]
+mod mailbox_read;
 #[cfg(any(test, feature = "service-hardware-compile-check"))]
 #[path = "ownership.rs"]
 pub(super) mod ownership;
@@ -170,7 +173,7 @@ pub(super) async fn prepare_installed_endpoint(
     failed: oneshot::Sender<()>,
 ) -> io::Result<(Readiness, impl Future<Output = io::Result<()>> + use<>)> {
     let origin = admission.verify_launch(launch)?;
-    let source = status_source::native_status_source(origin);
+    let source = status_source::native_status_source(origin)?;
     let endpoint = windows::NativeEndpoint::open_managed(
         &production_path(),
         launch.pid,
@@ -406,7 +409,8 @@ async fn serve_connection(
         )
         .await
     } else if request.is_observation() {
-        serve_observation(&mut *stream, &request, caller, &source).await
+        serve_observation(&mut *stream, &request, caller, &source).await?;
+        guard().map_err(ExchangeError::Runtime)
     } else {
         caller.access().map_err(ExchangeError::Client)?;
         let payload = {
@@ -465,8 +469,11 @@ async fn serve_observation(
             .unwrap_or(Ok(None))?;
         let access = refresh_caller(stream, caller)?.access().map_err(Client)?;
         if let Some(status) = status.filter(|status| {
-            Instant::now() < deadline && access == 0 && status.confirmed_performance().is_some()
+            Instant::now() < deadline
+                && access == 0
+                && (status.has_fresh_mailbox_read() || status.confirmed_performance().is_some())
         }) {
+            source.lock().await.verify_origin().map_err(Runtime)?;
             status.verify(access).map_err(Runtime)?;
             StatusResponse::success(request, status)
         } else {

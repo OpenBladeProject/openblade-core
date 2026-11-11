@@ -97,6 +97,7 @@ internal static class DevelopmentDeploymentProvisioner
 
     private static async Task UpgradeCpuVoltageAsync(CancellationToken cancellationToken)
     {
+        using var managedCustody = OpenBlade.Deployment.WindowsNativeTrustLifecycle.AcquireManagedEnrollmentChangeCustody();
         string[] expectedPayload =
         [
             "OpenBlade.DevelopmentDeployment.Setup.exe",
@@ -360,6 +361,7 @@ internal static class DevelopmentDeploymentProvisioner
 
     private static async Task InstallAsync(CancellationToken cancellationToken)
     {
+        using var managedCustody = OpenBlade.Deployment.WindowsNativeTrustLifecycle.AcquireManagedEnrollmentChangeCustody();
         await RequireUnenrolledMachineAsync(cancellationToken).ConfigureAwait(false);
 
         string brokerSource = RequirePayloadFile(DevelopmentDeploymentLayout.BrokerExe);
@@ -455,6 +457,7 @@ internal static class DevelopmentDeploymentProvisioner
 
     private static async Task UninstallAsync(CancellationToken cancellationToken)
     {
+        using var managedCustody = OpenBlade.Deployment.WindowsNativeTrustLifecycle.AcquireManagedEnrollmentChangeCustody();
         OpenBlade.Deployment.WindowsNativeTrustLifecycle.RequireReadyForEnrollmentChange();
         await RunServiceControlAsync(
             ["stop", DevelopmentDeploymentLayout.ServiceName],

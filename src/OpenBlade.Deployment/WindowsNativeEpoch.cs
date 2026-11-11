@@ -62,7 +62,7 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
 
     internal static WindowsNativeEpochTransaction Begin(WindowsNativeEpochFiles files, WindowsNativePackage package,
         Guid request, string? explicitlyRecoverCurrent = null,
-        Action<NativeEpochBoundary>? testCrashBoundary = null)
+        Action<NativeEpochBoundary>? testCrashBoundary = null, WindowsManagedMailboxTransfer? managedTransfer = null)
     {
         if (request == Guid.Empty) { throw new InvalidDataException("Native epoch requires a fresh Setup request."); }
         var writer = files.AcquireWriter();
@@ -131,6 +131,11 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
                 NativeCanonical.Digest(package.Record), request.ToString("N"), package.Service.Id, package.Agent.Id,
                 new string('0', 64), NativeCanonical.Digest(startupOwner));
             byte[] selection = value.Encode();
+            if (package.Service.ReadOnlyMailbox)
+            {
+                (managedTransfer ?? throw new IOException("A real managed transport handoff is required for native observation."))
+                    .BindEpoch(files, value);
+            }
             files.CreateDirectoryOnce(Path.Combine(directory, "attempts"));
             files.PublishCustody(Path.Combine(directory, "attempts", "custody.lock"), NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", epoch));
             files.Publish(Path.Combine(directory, "startup-policy.bin"), NativeCanonical.Lines("OpenBlade.NativeStartupPolicy.v1",

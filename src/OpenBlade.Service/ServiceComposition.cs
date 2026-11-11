@@ -116,22 +116,27 @@ internal static class ServiceComposition
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.AddSingleton<ServiceMailboxHandoff>();
         services.AddSingleton<FirmwareCompatibilityPolicy>();
         services.AddSingleton<IProductionBatteryPortFactory>(provider =>
             ExperimentalBladeFactory.CreateForCurrentHost(
-                () => provider.GetRequiredService<IPowerStateProvider>().CapturePowerSource()) ?? CreateProductionBatteryFactory(
+                () => provider.GetRequiredService<IPowerStateProvider>().CapturePowerSource(),
+                provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime) ?? CreateProductionBatteryFactory(
                 PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent().Enabled,
-                BatteryValidationFactory
-                    .CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation,
+                () => BatteryValidationFactory.CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation(
+                    provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime),
                 () => BatteryValidationFactory.CreateWindowsProductionBatteryForService(
-                    provider.GetRequiredService<FirmwareCompatibilityPolicy>()),
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>(),
+                    provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime),
                 () => ProductionBatteryFactory.CreateWindowsReadOnly(
-                    provider.GetRequiredService<FirmwareCompatibilityPolicy>())));
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>(),
+                    provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime)));
         services.AddSingleton<IProductionLightingPortFactory>(provider =>
             provider.GetRequiredService<IProductionBatteryPortFactory>() is ExperimentalBladeFactory experimental
                 ? experimental.CreateLightingFactory()
                 : CreateProductionLightingFactory(
-                    provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>(),
+                    provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime));
         services.AddSingleton(provider =>
             CreateProfileSetValidator(
                 provider.GetRequiredService<IProductionBatteryPortFactory>(),
@@ -140,7 +145,8 @@ internal static class ServiceComposition
             provider.GetRequiredService<IProductionBatteryPortFactory>() is ExperimentalBladeFactory
                 ? UnavailableExperimentalFanRpmFactory.Instance
                 : BatteryValidationFactory.CreateWindowsFanRpmForService(
-                    provider.GetRequiredService<FirmwareCompatibilityPolicy>()));
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>(),
+                    provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime));
         services.AddSingleton<IGpuClockOffsetController>(_ =>
             new NvidiaGpuClockOffsetController());
         services.AddSingleton<IVerifiedBladeDeviceProvider>(provider =>
@@ -152,7 +158,8 @@ internal static class ServiceComposition
             return new WindowsVerifiedBladeDeviceProvider(
                 batteryFactory is ExperimentalBladeFactory experimental
                     ? experimental.Probe
-                    : () => BatteryValidationFactory.ProbeWindowsForService(compatibilityPolicy),
+                    : () => BatteryValidationFactory.ProbeWindowsForService(compatibilityPolicy,
+                        provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime),
                 batteryFactory,
                 provider.GetRequiredService<IFanRpmQueryRunFactory>(),
                 provider.GetRequiredService<IProductionLightingPortFactory>(),
@@ -160,7 +167,8 @@ internal static class ServiceComposition
                 provider.GetService<ILogger<WindowsVerifiedBladeDeviceProvider>>(),
                 compatibilityPolicy: compatibilityPolicy,
                 gpuActivitySource: new WindowsGpuActivitySource(),
-                lowPowerGate: provider.GetRequiredService<LowPowerGate>());
+                lowPowerGate: provider.GetRequiredService<LowPowerGate>(),
+                mailboxLifetime: provider.GetRequiredService<ServiceMailboxHandoff>().Lifetime);
         });
         return services;
     }
@@ -234,14 +242,14 @@ internal static class ServiceComposition
             ProductionLightingFactory.CreateWindowsReadOnly);
 
     internal static IProductionLightingPortFactory CreateProductionLightingFactory(
-        FirmwareCompatibilityPolicy compatibilityPolicy)
+        FirmwareCompatibilityPolicy compatibilityPolicy, MailboxLifetime? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         return CreateProductionLightingFactory(
             () => BatteryValidationFactory.CreateWindowsProductionLightingForService(
-                compatibilityPolicy),
+                compatibilityPolicy, lifetime),
             () => ProductionLightingFactory.CreateWindowsReadOnly(
-                compatibilityPolicy));
+                compatibilityPolicy, lifetime));
     }
 
     internal static IProductionLightingPortFactory CreateProductionLightingFactory(

@@ -17,7 +17,24 @@ internal static class BrokerNativePackageCommitmentProducer
         return (await OpenAsync(active.RequestId, cancellationToken), active.RequestId);
     }
 
-    internal static async Task<WindowsNativePackage> OpenAsync(Guid request, CancellationToken cancellationToken)
+    internal static Task<WindowsNativePackage> OpenAsync(Guid request, CancellationToken cancellationToken) =>
+        OpenPackageAsync(request, WindowsNativePackage.OpenLocalDevAsync, cancellationToken);
+
+    internal static async Task<WindowsManagedMailboxPackage?> OpenManagedCurrentAsync(CancellationToken token)
+    {
+        var paths = BrokerPaths.CreateDefault();
+        try { _ = File.GetAttributes(paths.InFlightPath); }
+        catch (FileNotFoundException) { return null; }
+        catch (DirectoryNotFoundException) { return null; }
+        using var storage = WindowsNativeEpochFiles.OpenProtected(paths.RootDirectory);
+        using var held = storage.OpenFile(paths.InFlightPath);
+        var active = BrokerInFlightDeploymentCodec.ParseCanonical(WindowsNativeEpochFiles.ReadBounded(held, BrokerInFlightDeploymentCodec.MaximumBytes));
+        return await OpenPackageAsync(active.RequestId, WindowsManagedMailboxPackage.OpenLocalDevAsync, token).ConfigureAwait(false);
+    }
+
+    private static async Task<T> OpenPackageAsync<T>(Guid request,
+        Func<FileStream, IDisposable, byte[], byte[], NativeLocalDevEnrollment, CancellationToken, Task<T>> receive,
+        CancellationToken cancellationToken)
     {
         var paths = BrokerPaths.CreateDefault();
         var leases = new NativePackageLeases();
@@ -55,7 +72,7 @@ internal static class BrokerNativePackageCommitmentProducer
                 || active.TargetSourceRevision != signed.SourceRevision || active.CpuVoltageServiceVersion is not null)
             { throw new InvalidDataException("Native package differs from the accepted enrolled release transaction."); }
             package = storage.OpenFile(Path.Combine(stage, FixedLocalDevInboxSource.InstallerFileName));
-            return await WindowsNativePackage.OpenLocalDevAsync(package, leases, manifest, signature,
+            return await receive(package, leases, manifest, signature,
                 NativeLocalDevEnrollment.FromHeld(enrollmentFile), cancellationToken).ConfigureAwait(false);
         }
         catch { package?.Dispose(); leases.Dispose(); throw; }

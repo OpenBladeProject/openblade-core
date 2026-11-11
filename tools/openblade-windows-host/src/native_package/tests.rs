@@ -1,5 +1,56 @@
 use super::*;
 
+#[test]
+fn read_composition_requires_its_own_capability_and_cannot_claim_metadata_only() {
+    let features = "firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,service-hardware-compile-check,service-mailbox-observation-v1,startup-custody-v1";
+    let read = "private-service-custody-v1,service-mailbox-observation-v1";
+    assert!(capabilities(2, "service", features, read).is_ok());
+    assert!(capabilities(2, "agent", features, "none").is_ok());
+    for capability in [
+        "none",
+        "private-service-custody-v1",
+        "private-service-custody-v1,service-metadata-only-v1",
+    ] {
+        assert!(capabilities(2, "service", features, capability).is_err());
+    }
+    assert!(
+        capabilities(
+            2,
+            "service",
+            &format!("{features},service-metadata-only-v1"),
+            read
+        )
+        .is_err()
+    );
+    assert!(
+        capabilities(
+            2,
+            "service",
+            &features.replace("service-hardware-compile-check,", ""),
+            read
+        )
+        .is_err()
+    );
+    assert!(capabilities(1, "service", features, read).is_err());
+    let record = encode(
+        "OpenBlade.NativeArtifact.v2",
+        &[
+            "artifact",
+            "service",
+            "x86_64-pc-windows-msvc",
+            "source",
+            features,
+            "compiler",
+            "release",
+            read,
+        ],
+    );
+    assert_eq!(
+        startup_policy(&record).unwrap(),
+        "service-mailbox-observation-v1"
+    );
+}
+
 fn vector() -> serde_json::Value {
     serde_json::from_str(include_str!("../../tests/data/native-package-v1.json")).unwrap()
 }

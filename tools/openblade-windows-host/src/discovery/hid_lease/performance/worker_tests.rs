@@ -85,11 +85,11 @@ pub(crate) fn blocking_worker(at: BlockAt, fence: Option<&'static AtomicBool>) -
     blocking_worker_with_authority(at, fence, || Some(ADMITTED))
 }
 
-pub(crate) fn blocking_worker_with_authority(
+pub(crate) fn blocking_worker_with_authority<A: ObservationProof>(
     at: BlockAt,
     fence: Option<&'static AtomicBool>,
-    authorize: impl Fn() -> Option<Admission> + Send + Sync + 'static,
-) -> (Worker, Held) {
+    authorize: impl Fn() -> Option<A> + Send + Sync + 'static,
+) -> (Worker<A>, Held) {
     let (entered, seen) = oneshot::channel();
     let (release, released) = mpsc::channel();
     let block = Mutex::new(Some(Block {
@@ -107,13 +107,10 @@ pub(crate) fn blocking_worker_with_authority(
     };
     let worker = Worker::new(
         move |job| {
-            let Some(admission) = authorize().filter(|admission| admission.is_clear()) else {
+            let Some(admission) = authorize().filter(|admission| admission.readable()) else {
                 return Ok(None);
             };
-            if job
-                .session
-                .is_some_and(|session| session != admission.session)
-            {
+            if !admission.matches_session(job.session) {
                 return Ok(None);
             }
             let port = BlockingPort {
@@ -256,7 +253,7 @@ async fn firmware_worker_refuses_wrong_session_and_expired_requests() {
 #[tokio::test]
 async fn firmware_worker_quarantines_unconfirmed_retirement() {
     static FENCE: AtomicBool = AtomicBool::new(false);
-    let worker = Worker::new(
+    let worker: Worker = Worker::new(
         |_| Err(io::Error::other("unconfirmed callback drain")),
         Some(&FENCE),
     );
@@ -268,7 +265,7 @@ async fn firmware_worker_quarantines_unconfirmed_retirement() {
     );
     assert!(worker.stop().await.is_err());
     drop(worker);
-    let replacement = Worker::new(|_| panic!("no replacement permitted"), Some(&FENCE));
+    let replacement: Worker = Worker::new(|_| panic!("no replacement permitted"), Some(&FENCE));
     assert!(
         replacement
             .observe(Instant::now() + TEST_LIMIT, None)

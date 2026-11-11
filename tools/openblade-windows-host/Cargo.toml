@@ -23,6 +23,7 @@ gpu-close-fixture = ["openblade-platform-windows/scripted-gpu-close"]
 vm-scm-fixture = []
 startup-custody-v1 = []
 service-metadata-only-v1 = ["installed-service-candidate"]
+service-mailbox-observation-v1 = ["service-hardware-compile-check"]
 service-hardware-compile-check = ["installed-service-candidate", "firmware-performance-compile-check"]
 installed-service-candidate = [
     "startup-custody-v1",

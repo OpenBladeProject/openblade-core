@@ -5,6 +5,11 @@ namespace OpenBlade.Service;
 
 public sealed partial class ServiceControlRuntime
 {
+    internal void RequireMailboxGuardianQuiescent()
+    {
+        if (fanStopController.BlocksOrdinaryHardware)
+        { throw new IOException("Fan guardian startup, recovery or external custody is unresolved."); }
+    }
     private readonly FanStopController fanStopController;
     private int fanStopShutdownStarted;
     private long synchronizedFanStopGeneration;

@@ -53,9 +53,25 @@ internal static class WindowsNativeInventoryBurnExtractor
         return new(result.Inventory.Resource, result.Service!, result.SessionAgent!);
     }
 
+    // Whole-installer authentication belongs to the caller. Reuse the same
+    // physical/declaration/ownership reconciliation without requiring Rust roles.
+    internal static ImmutableArray<ManagedDeclaration> ReadManagedDeclarations(Stream snapshot,
+        string expectedVersion, CancellationToken cancellationToken)
+    {
+        var declarations = new List<ManagedDeclaration>();
+        _ = ExtractCore(snapshot, false, WindowsNativeBurnProfile.AuthoredOpenBlade, expectedVersion,
+            cancellationToken, declarations);
+        if (!declarations.Any(p => p.Path == "OpenBlade.Service.exe")
+            || !declarations.Any(p => p.Path == "OpenBlade.Service.dll")
+            || !declarations.Any(p => p.Path == "OpenBlade.Service.deps.json")
+            || !declarations.Any(p => p.Path == "OpenBlade.Service.runtimeconfig.json"))
+        { throw Invalid("The signed managed upgrade has no complete Service load closure."); }
+        return [.. declarations.OrderBy(p => p.Path, StringComparer.Ordinal)];
+    }
+
     private static (WindowsNativeInventoryEntry Inventory, RoleMember? Service, RoleMember? SessionAgent) ExtractCore(
         Stream snapshot, bool requireRoles, WindowsNativeBurnProfile profile, string? expectedVersion,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, List<ManagedDeclaration>? managed = null)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -103,9 +119,9 @@ internal static class WindowsNativeInventoryBurnExtractor
 
             byte[] manifest = ux.Extract("0", cancellationToken);
             var (inventory, service, agent) = Select(manifest, layout, ux, attached, attachedHash, requireRoles,
-                authored, expectedVersion, cancellationToken);
-            byte[] resource = attached.Extract(inventory.Member, cancellationToken);
-            if (!CryptographicOperations.FixedTimeEquals(SHA512.HashData(resource), inventory.Hash))
+                authored, expectedVersion, cancellationToken, managed);
+            byte[] resource = inventory is null ? [] : attached.Extract(inventory.Member, cancellationToken);
+            if (inventory is not null && !CryptographicOperations.FixedTimeEquals(SHA512.HashData(resource), inventory.Hash))
             {
                 throw Invalid("The inventory does not match its Burn payload digest.");
             }
@@ -289,10 +305,10 @@ internal static class WindowsNativeInventoryBurnExtractor
     private static long AlignCertificate(long offset) =>
         (offset + CertificateAlignment - 1) & -CertificateAlignment;
 
-    private static (Payload Inventory, Payload? Service, Payload? SessionAgent) Select(
+    private static (Payload? Inventory, Payload? Service, Payload? SessionAgent) Select(
         byte[] manifest, Layout layout, BurnFixtureCabinet ux, BurnFixtureCabinet attached,
         byte[] attachedHash, bool requireRoles, bool authored, string? expectedVersion,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, List<ManagedDeclaration>? managed = null)
     {
         using var stream = new MemoryStream(manifest, writable: false);
         using var reader = XmlReader.Create(stream, new XmlReaderSettings
@@ -346,6 +362,7 @@ internal static class WindowsNativeInventoryBurnExtractor
         var attachedMembers = new HashSet<string>(StringComparer.Ordinal);
         var owners = new Dictionary<string, string>(StringComparer.Ordinal);
         var declarations = new HashSet<string>(StringComparer.Ordinal);
+        var managedOwners = new List<string>();
         Payload? inventory = null;
         Payload? service = null;
         Payload? agent = null;
@@ -440,6 +457,19 @@ internal static class WindowsNativeInventoryBurnExtractor
                         inventory = new(id, member, size, hash, path);
                     }
 
+                    if (managed is not null && (path.StartsWith("payload\\", StringComparison.Ordinal) || path == "OpenBlade.Setup.exe"))
+                    {
+                        string relative = path == "OpenBlade.Setup.exe" ? path : path[8..];
+                        if (relative.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                            || relative.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+                            || relative.EndsWith(".deps.json", StringComparison.OrdinalIgnoreCase)
+                            || relative.EndsWith(".runtimeconfig.json", StringComparison.OrdinalIgnoreCase))
+                        {
+                            managed.Add(new(relative, size, Convert.ToHexStringLower(hash)));
+                            managedOwners.Add(id);
+                        }
+                    }
+
                     if (namesService)
                     {
                         service = SelectRole(service, servicePath, path, id, member, size, hash);
@@ -454,8 +484,9 @@ internal static class WindowsNativeInventoryBurnExtractor
         }
 
         bool OwnedBy(string id, string owner) => owners.TryGetValue(id, out string? actual) && actual == owner;
-        if (inventory is null || !declarations.SetEquals(owners.Keys)
-            || !OwnedBy(Setup, Setup) || !OwnedBy(inventory.Id, Setup)
+        if (inventory is null && managed is null || !declarations.SetEquals(owners.Keys)
+            || !OwnedBy(Setup, Setup) || inventory is not null && !OwnedBy(inventory.Id, Setup)
+            || managedOwners.Any(id => !OwnedBy(id, Setup))
             || (authored && (!OwnedBy(VcRuntime, VcRuntime) || !OwnedBy(DotNetRuntime, DotNetRuntime)
                 || owners.Any(pair => pair.Value != Setup && pair.Key != pair.Value)))
             || uxMembers.Count != ux.Count || attachedMembers.Count != attached.Count)
@@ -604,4 +635,5 @@ internal static class WindowsNativeInventoryBurnExtractor
 
     internal sealed record RoleMember(string PayloadId, string PayloadPath, string CabinetMember, int Length, string Sha256, ImmutableArray<byte> Image);
     internal sealed record RoleExtraction(ImmutableArray<byte> Resource, RoleMember Service, RoleMember SessionAgent);
+    internal sealed record ManagedDeclaration(string Path, long Length, string Sha512);
 }

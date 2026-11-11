@@ -3275,6 +3275,29 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal(2, session.Commands.Count);
     }
 
+    [Fact]
+    public async Task NativePairedObservationParityUsesActualManagedReadPortWithNoWriteCapabilities()
+    {
+        using var fixture = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,
+            "Parity", "rz09-0581-thermal-pair-observation.json")));
+        foreach (var row in fixture.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            byte mode = row.GetProperty("mode").GetByte();
+            byte fan = row.GetProperty("fan").GetByte();
+            var session = new ScriptedSession(Success([1, 1, mode, fan]), Success([1, 2, mode, fan]));
+            await using var port = CreatePort(session, DeviceCommandCatalog.Empty, supportsDirectManualFanTransitions: true);
+            var result = await port.QueryPerformanceFanStateAsync(default);
+            var preset = row.GetProperty("performance");
+            Assert.Equal(preset.ValueKind == System.Text.Json.JsonValueKind.Null ? null : (PerformancePreset?)preset.GetInt32(), result.Performance);
+            Assert.Equal((FanMode)row.GetProperty("fans").GetInt32(), result.Fans);
+            var hyperBoost = row.GetProperty("hyperBoostActive");
+            Assert.Equal(hyperBoost.ValueKind == System.Text.Json.JsonValueKind.Null ? null : (bool?)hyperBoost.GetBoolean(), result.HyperBoostActive);
+            Assert.Empty(port.Capabilities.PerformancePresets);
+            Assert.Empty(port.Capabilities.FanModes);
+            Assert.Equal(new byte[] { 0x82, 0x82 }, session.Commands.Select(command => command.CommandId));
+        }
+    }
+
     private static ProductionBatteryPort CreatePort(
         IRazerCommandSession session,
         DeviceCommandCatalog catalog,

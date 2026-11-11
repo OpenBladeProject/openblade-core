@@ -24,13 +24,16 @@ public static class BatteryValidationFactory
             : ProductionBatteryFactory.CreateWindows();
 
     internal static IProductionBatteryPortFactory
-        CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation()
+        CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation() =>
+        CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation(null);
+
+    internal static IProductionBatteryPortFactory CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation(MailboxLifetime? lifetime)
     {
         PadlessHyperBoostLifecycleTarget? target = PadlessHyperBoostLifecycleTarget.ForCurrentWindowsHost();
         RequireLifecycleReadiness(target);
         return target!.Model == "RZ09-0528"
-            ? CreateWindowsRz090528ProductionBattery(compatibilityPolicy: null, allowPadlessLifecycleValidation: true)
-            : ProductionBatteryFactory.CreateWindowsForPadlessHyperBoostLifecycleValidation();
+            ? CreateWindowsRz090528ProductionBattery(compatibilityPolicy: null, allowPadlessLifecycleValidation: true, lifetime: lifetime)
+            : ProductionBatteryFactory.CreateWindowsForPadlessHyperBoostLifecycleValidation(lifetime);
     }
 
     internal static void RequireLifecycleReadiness(PadlessHyperBoostLifecycleTarget? target)
@@ -44,13 +47,13 @@ public static class BatteryValidationFactory
 
     internal static IProductionBatteryPortFactory
         CreateWindowsProductionBatteryForService(
-            FirmwareCompatibilityPolicy compatibilityPolicy)
+            FirmwareCompatibilityPolicy compatibilityPolicy, MailboxLifetime? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         return WindowsHostIdentitySource.IsRz090528WindowsHost(
                 allowUntestedFirmware: true)
-            ? CreateWindowsRz090528ProductionBattery(compatibilityPolicy)
-            : ProductionBatteryFactory.CreateWindows(compatibilityPolicy);
+            ? CreateWindowsRz090528ProductionBattery(compatibilityPolicy, lifetime: lifetime)
+            : ProductionBatteryFactory.CreateWindows(compatibilityPolicy, lifetime);
     }
 
     internal static IProductionBatteryPortFactory
@@ -62,7 +65,7 @@ public static class BatteryValidationFactory
             FirmwareCompatibilityPolicy? compatibilityPolicy,
             bool allowPadlessLifecycleValidation = false,
             Func<TimeSpan, IValidationActorFactory>? createActorFactory = null,
-            IHyperBoostEligibilitySource? hyperBoostEligibility = null)
+            IHyperBoostEligibilitySource? hyperBoostEligibility = null, MailboxLifetime? lifetime = null)
     {
         if (allowPadlessLifecycleValidation)
         {
@@ -532,7 +535,7 @@ public static class BatteryValidationFactory
             ?? throw new UnvalidatedCommandException("The exact RZ09-0528 HyperBoost fixture is absent.");
         DeviceCommandCatalog hyperBoostCatalog = CapturedFixtureFile.LoadCatalog(
             hyperBoostFixture, TrustedFixtureHashRegistry.Rz090528HyperBoostProduction, target);
-        var native = new WindowsHidNative();
+        var native = new WindowsHidNative(lifetime);
         var registry = new WindowsRegistryValueSource();
         var guard = new WindowsHardwareAccessGuard(
             new RunningProcessSource(),
@@ -687,13 +690,13 @@ public static class BatteryValidationFactory
 
     internal static IProductionLightingPortFactory
         CreateWindowsProductionLightingForService(
-            FirmwareCompatibilityPolicy compatibilityPolicy)
+            FirmwareCompatibilityPolicy compatibilityPolicy, MailboxLifetime? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         return WindowsHostIdentitySource.IsRz090528WindowsHost(
                 allowUntestedFirmware: true)
-            ? CreateWindowsRz090528ProductionLighting(compatibilityPolicy)
-            : ProductionLightingFactory.CreateWindows(compatibilityPolicy);
+            ? CreateWindowsRz090528ProductionLighting(compatibilityPolicy, lifetime)
+            : ProductionLightingFactory.CreateWindows(compatibilityPolicy, lifetime);
     }
 
     internal static IProductionLightingPortFactory
@@ -702,12 +705,12 @@ public static class BatteryValidationFactory
 
     private static IProductionLightingPortFactory
         CreateWindowsRz090528ProductionLighting(
-            FirmwareCompatibilityPolicy? compatibilityPolicy)
+            FirmwareCompatibilityPolicy? compatibilityPolicy, MailboxLifetime? lifetime = null)
         => CreateWindowsRz090528BrightnessLighting(
             staticEffectAdmitted: true,
             spectrumEffectAdmitted: true,
             allSynapseEffectsAdmitted: true,
-            compatibilityPolicy: compatibilityPolicy);
+            compatibilityPolicy: compatibilityPolicy, lifetime: lifetime);
 
     internal static IProductionLightingPortFactory
         CreateWindowsRz090528BrightnessLighting()
@@ -730,9 +733,9 @@ public static class BatteryValidationFactory
             bool staticEffectAdmitted,
             bool spectrumEffectAdmitted,
             bool allSynapseEffectsAdmitted,
-            FirmwareCompatibilityPolicy? compatibilityPolicy)
+            FirmwareCompatibilityPolicy? compatibilityPolicy, MailboxLifetime? lifetime = null)
     {
-        var native = new WindowsHidNative();
+        var native = new WindowsHidNative(lifetime);
         var registry = new WindowsRegistryValueSource();
         var guard = new WindowsHardwareAccessGuard(
             new RunningProcessSource(),
@@ -886,12 +889,12 @@ public static class BatteryValidationFactory
         => CreateWindowsRz090528FanRpmQuery(compatibilityPolicy: null);
 
     private static IFanRpmQueryRunFactory CreateWindowsRz090528FanRpmQuery(
-        FirmwareCompatibilityPolicy? compatibilityPolicy)
+        FirmwareCompatibilityPolicy? compatibilityPolicy, MailboxLifetime? lifetime = null)
     {
         ValidationActorFactory actorFactory =
             CreateWindowsRz090528TemporaryFullChargeActorFactory(
                 ControllerExclusivityPolicy.Advisory,
-                compatibilityPolicy);
+                compatibilityPolicy, lifetime);
         return new FanRpmQueryRunFactory(
             static () => new ValidationRunContext(),
             actorFactory,
@@ -908,22 +911,22 @@ public static class BatteryValidationFactory
             : CreateWindowsRz090581FanRpmForService(compatibilityPolicy: null);
 
     internal static IFanRpmQueryRunFactory CreateWindowsFanRpmForService(
-        FirmwareCompatibilityPolicy compatibilityPolicy)
+        FirmwareCompatibilityPolicy compatibilityPolicy, MailboxLifetime? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         if (WindowsHostIdentitySource.IsRz090528WindowsHost(
                 allowUntestedFirmware: true))
         {
-            return CreateWindowsRz090528FanRpmQuery(compatibilityPolicy);
+            return CreateWindowsRz090528FanRpmQuery(compatibilityPolicy, lifetime);
         }
 
-        return CreateWindowsRz090581FanRpmForService(compatibilityPolicy);
+        return CreateWindowsRz090581FanRpmForService(compatibilityPolicy, lifetime);
     }
 
     internal static IFanRpmQueryRunFactory CreateWindowsRz090581FanRpmForService(
-        FirmwareCompatibilityPolicy? compatibilityPolicy)
+        FirmwareCompatibilityPolicy? compatibilityPolicy, MailboxLifetime? lifetime = null)
     {
-        var native = new WindowsHidNative();
+        var native = new WindowsHidNative(lifetime);
         var registry = new WindowsRegistryValueSource();
         return CreateWindowsFanRpmQuery(
             registry,
@@ -1441,7 +1444,7 @@ public static class BatteryValidationFactory
     }
 
     internal static BatteryValidationProbeResult ProbeWindowsForService(
-        FirmwareCompatibilityPolicy compatibilityPolicy)
+        FirmwareCompatibilityPolicy compatibilityPolicy, MailboxLifetime? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         var registry = new WindowsRegistryValueSource();
@@ -1450,7 +1453,7 @@ public static class BatteryValidationFactory
             new RuntimeWindowsPlatformEvidenceSource(registry),
             new RunningProcessSource(),
             new WindowsServiceSource(),
-            new WindowsHidNative(),
+            new WindowsHidNative(lifetime),
             compatibilityPolicy);
     }
 
@@ -1967,9 +1970,9 @@ public static class BatteryValidationFactory
     private static ValidationActorFactory
         CreateWindowsRz090528TemporaryFullChargeActorFactory(
             ControllerExclusivityPolicy exclusivityPolicy,
-            FirmwareCompatibilityPolicy? compatibilityPolicy = null)
+            FirmwareCompatibilityPolicy? compatibilityPolicy = null, MailboxLifetime? lifetime = null)
     {
-        var native = new WindowsHidNative();
+        var native = new WindowsHidNative(lifetime);
         var registry = new WindowsRegistryValueSource();
         var guard = new WindowsHardwareAccessGuard(
             new RunningProcessSource(),

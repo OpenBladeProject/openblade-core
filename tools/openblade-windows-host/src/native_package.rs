@@ -30,7 +30,7 @@ fn deny() -> io::Error {
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
-fn digest(bytes: &[u8]) -> String {
+pub(crate) fn digest(bytes: &[u8]) -> String {
     hex(&Sha256::digest(bytes))
 }
 fn is_hex(value: &str, length: usize) -> bool {
@@ -39,7 +39,7 @@ fn is_hex(value: &str, length: usize) -> bool {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
-fn lines<'a>(bytes: &'a [u8], header: &str, count: usize) -> io::Result<Vec<&'a str>> {
+pub(crate) fn lines<'a>(bytes: &'a [u8], header: &str, count: usize) -> io::Result<Vec<&'a str>> {
     if bytes.is_empty()
         || bytes.len() > 16384
         || bytes
@@ -55,7 +55,7 @@ fn lines<'a>(bytes: &'a [u8], header: &str, count: usize) -> io::Result<Vec<&'a 
     }
     Ok(parts[1..parts.len() - 1].to_vec())
 }
-fn encode64(bytes: &[u8]) -> String {
+pub(crate) fn encode64(bytes: &[u8]) -> String {
     const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::new();
     for group in bytes.chunks(3) {
@@ -77,7 +77,7 @@ fn encode64(bytes: &[u8]) -> String {
     }
     out
 }
-fn create_attempt_record(parent: &File, name: &str, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn create_attempt_record(parent: &File, name: &str, bytes: &[u8]) -> io::Result<()> {
     use std::io::Write;
     // CREATE-only: an incomplete attempt survives; never replay or overwrite it.
     let mut file = paths::open_relative(
@@ -213,7 +213,7 @@ fn publish_metadata_drain(
     publish(&format!("drain-{pid}-{created}.bin"), &bytes)
 }
 
-fn encode(header: &str, fields: &[&str]) -> Vec<u8> {
+pub(crate) fn encode(header: &str, fields: &[&str]) -> Vec<u8> {
     format!("{header}\n{}\n", fields.join("\n")).into_bytes()
 }
 
@@ -657,6 +657,10 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     let metadata = has("service-metadata-only-v1");
     let hardware = has("service-hardware-compile-check");
     let firmware = has("firmware-performance-compile-check");
+    let observation = has("service-mailbox-observation-v1");
+    if observation && (!hardware || metadata) {
+        return Err(deny());
+    }
     if schema == 1 {
         return if metadata || hardware {
             Err(deny())
@@ -686,6 +690,8 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         }
         if metadata {
             "private-service-custody-v1,service-metadata-only-v1"
+        } else if observation {
+            "private-service-custody-v1,service-mailbox-observation-v1"
         } else {
             "private-service-custody-v1"
         }
@@ -726,6 +732,8 @@ fn startup_policy(identity: &[u8]) -> io::Result<&'static str> {
         Ok(
             if f[7] == "private-service-custody-v1,service-metadata-only-v1" {
                 "service-metadata-only-v1"
+            } else if f[7] == "private-service-custody-v1,service-mailbox-observation-v1" {
+                "service-mailbox-observation-v1"
             } else {
                 "service-hardware-compile-check"
             },
@@ -1144,6 +1152,9 @@ impl InstalledPackage {
         Ok(())
     }
     pub(crate) fn record_metadata_drain(&self, pid: u32, created: u64) -> io::Result<()> {
+        if startup_policy(&self.service_identity)? == "service-mailbox-observation-v1" {
+            return Err(deny());
+        }
         let (attempts, launch) = self.service_attempt.as_ref().ok_or_else(deny)?;
         if self.service_custody.is_none() {
             return Err(deny());
@@ -1151,6 +1162,54 @@ impl InstalledPackage {
         publish_metadata_drain(&self.epoch.id, launch, pid, created, |name, bytes| {
             create_attempt_record(attempts, name, bytes)
         })
+    }
+    pub(crate) fn record_transport_drain(&self, pid: u32, created: u64) -> io::Result<()> {
+        let (attempts, launch) = self.service_attempt.as_ref().ok_or_else(deny)?;
+        if self.service_custody.is_none()
+            || startup_policy(&self.service_identity)? != "service-mailbox-observation-v1"
+        {
+            return Err(deny());
+        }
+        create_attempt_record(
+            attempts,
+            &format!("drain-{pid}-{created}.bin"),
+            &encode(
+                "OpenBlade.NativeTransportDrain.v1",
+                &[
+                    &self.epoch.id,
+                    launch,
+                    &pid.to_string(),
+                    &created.to_string(),
+                ],
+            ),
+        )
+    }
+    pub(crate) fn mailbox_mapping(&self) -> io::Result<Vec<u8>> {
+        if startup_policy(&self.service_identity)? != "service-mailbox-observation-v1" {
+            return Err(deny());
+        }
+        let expected_prefix = [
+            &self.epoch.id,
+            &self.epoch.installation,
+            &self.epoch.request,
+            &self.epoch.package,
+        ];
+        let mut mapping = crate::windows_protected_path::open_relative(
+            &self.directories[0],
+            std::ffi::OsStr::new("managed-handoff.bin"),
+            FILE_GENERIC_READ,
+            FILE_SHARE_READ,
+            FILE_OPEN,
+            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
+        )?;
+        crate::windows_protected_path::check_regular_file(&mapping)?;
+        crate::windows_protected_path::verify_security(&mapping, Policy::Record)?;
+        let bytes = read_bytes(&mut mapping, 4096)?;
+        let f = lines(&bytes, "OpenBlade.ManagedMailboxEpoch.v1", 6)?;
+        if f[2..] != expected_prefix {
+            return Err(deny());
+        }
+        Ok(bytes)
     }
     pub(crate) fn identity(&self, role: &str) -> &[u8] {
         if role == "service" {

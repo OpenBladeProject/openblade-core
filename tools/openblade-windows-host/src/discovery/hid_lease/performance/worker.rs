@@ -11,10 +11,12 @@ use std::{
 
 use tokio::time::{Instant, sleep, timeout_at};
 
-use super::{Admission, Limit, MAX_OBSERVATION, ObservedPerformance, POLL, blocked};
+use super::{
+    Admission, Limit, MAX_OBSERVATION, ObservationProof, ObservedPerformance, POLL, blocked,
+};
 
-pub(crate) struct Reading {
-    pub(crate) admission: Admission,
+pub(crate) struct Reading<A = Admission> {
+    pub(crate) admission: A,
     pub(crate) performance: ObservedPerformance,
 }
 
@@ -33,25 +35,34 @@ impl Job {
     }
 }
 
-type Run = dyn Fn(Job) -> io::Result<Option<Reading>> + Send + Sync;
+type Run<A> = dyn Fn(Job) -> io::Result<Option<Reading<A>>> + Send + Sync;
 
 #[derive(Clone)]
-pub(crate) struct Worker {
-    state: Rc<RefCell<State>>,
-    run: Arc<Run>,
+pub(crate) struct Worker<A = Admission> {
+    state: Rc<RefCell<State<A>>>,
+    run: Arc<Run<A>>,
     occupied: Option<&'static AtomicBool>,
 }
 
-#[derive(Default)]
-struct State {
-    active: Option<Active>,
+struct State<A> {
+    active: Option<Active<A>>,
     stopped: bool,
     unconfirmed: bool,
 }
 
-struct Active {
+impl<A> Default for State<A> {
+    fn default() -> Self {
+        Self {
+            active: None,
+            stopped: false,
+            unconfirmed: false,
+        }
+    }
+}
+
+struct Active<A> {
     cancel: Arc<AtomicBool>,
-    thread: JoinHandle<io::Result<Option<Reading>>>,
+    thread: JoinHandle<io::Result<Option<Reading<A>>>>,
 }
 
 struct Cancel(Arc<AtomicBool>);
@@ -62,7 +73,7 @@ impl Drop for Cancel {
     }
 }
 
-impl Drop for State {
+impl<A> Drop for State<A> {
     fn drop(&mut self) {
         if let Some(active) = &self.active {
             active.cancel.store(true, Ordering::Release);
@@ -70,10 +81,10 @@ impl Drop for State {
     }
 }
 
-impl State {
+impl<A> State<A> {
     // Called only after thread completion. A failed cleanup or panic leaves
     // the owner fenced, including when the original requester has gone away.
-    fn reap(&mut self) -> io::Result<Option<Reading>> {
+    fn reap(&mut self) -> io::Result<Option<Reading<A>>> {
         let result = self
             .active
             .take()
@@ -87,9 +98,9 @@ impl State {
     }
 }
 
-impl Worker {
+impl<A: ObservationProof> Worker<A> {
     pub(super) fn new(
-        run: impl Fn(Job) -> io::Result<Option<Reading>> + Send + Sync + 'static,
+        run: impl Fn(Job) -> io::Result<Option<Reading<A>>> + Send + Sync + 'static,
         occupied: Option<&'static AtomicBool>,
     ) -> Self {
         Self {
@@ -103,7 +114,7 @@ impl Worker {
         &self,
         deadline: Instant,
         session: Option<u32>,
-    ) -> io::Result<Option<Reading>> {
+    ) -> io::Result<Option<Reading<A>>> {
         let deadline = deadline.min(Instant::now() + MAX_OBSERVATION);
         let Some(_cancel) = self.start(deadline, session)? else {
             return Ok(None);

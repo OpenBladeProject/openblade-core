@@ -93,6 +93,7 @@ internal sealed class ProductionBatteryPort :
     private readonly IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates;
     private readonly IHyperBoostEligibilitySource? hyperBoostEligibility;
     private readonly bool allowPadlessHyperBoostLifecycleValidation;
+    private readonly bool decodePresetManualStates;
     private readonly PerformancePreset padlessHyperBoostLifecycleBaseMode;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly object lifecycleSync = new();
@@ -248,6 +249,9 @@ internal sealed class ProductionBatteryPort :
             ? hyperBoostCatalog ?? DeviceCommandCatalog.Empty
             : DeviceCommandCatalog.Empty;
         this.readEvidence = readEvidence ?? throw new ArgumentNullException(nameof(readEvidence));
+        // Exact-model source evidence is supplied by the existing production
+        // factories. Empty write catalogs must not erase the getter vocabulary.
+        decodePresetManualStates = supportsDirectManualFanTransitions;
         this.context = context ?? throw new ArgumentNullException(nameof(context));
         RazerCommandSessionTimeout.Validate(exchangeTimeout);
         this.exchangeTimeout = exchangeTimeout;
@@ -2553,7 +2557,7 @@ internal sealed class ProductionBatteryPort :
                 first.Span,
                 second.Span,
                 out ThermalModeState state,
-                Capabilities.SupportsDirectManualFanTransitions))
+                decodePresetManualStates))
         {
             session.RetainQueryFailure(0x0D, 0x82, FirmwareQueryOutcome.ContentRejected);
             poisoned = true;
@@ -2726,7 +2730,7 @@ internal sealed class ProductionBatteryPort :
                 payload.Span,
                 channel,
                 out _,
-                Capabilities.SupportsDirectManualFanTransitions));
+                decodePresetManualStates));
         HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
             command,
             AllocateTransaction,
@@ -2739,7 +2743,7 @@ internal sealed class ProductionBatteryPort :
         }
 
         if (!ThermalModeProtocol.TryDecodeQuery(result.Value.Span, channel, out _,
-                Capabilities.SupportsDirectManualFanTransitions))
+                decodePresetManualStates))
         {
             poisoned = true;
             throw new RazerProtocolException(

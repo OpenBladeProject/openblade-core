@@ -180,10 +180,23 @@ impl ObservedStatus {
                     HidMetadata::Ambiguous => "ambiguous control HID metadata",
                     HidMetadata::Unavailable => "control HID metadata unavailable",
                 };
-                format!("Matched {model} host ({detail}). Firmware observation denied: adapter, activity and managed drain admission are unavailable.")
+                if cfg!(feature = "service-mailbox-observation-v1") {
+                    format!(
+                        "Matched {model} host ({detail}). Request a thermal observation to read its settings. Native controls remain unavailable."
+                    )
+                } else {
+                    format!(
+                        "Matched {model} host ({detail}). Firmware observation denied: adapter, activity and managed drain admission are unavailable."
+                    )
+                }
             }
             Some(DeviceMetadata::Unavailable) | None => {
-                "Device identity is unavailable. Firmware observation denied: adapter, activity and managed drain admission are unavailable.".to_owned()
+                if cfg!(feature = "service-mailbox-observation-v1") {
+                    "Device identity is unavailable. No fresh thermal observation is confirmed."
+                        .to_owned()
+                } else {
+                    "Device identity is unavailable. Firmware observation denied: adapter, activity and managed drain admission are unavailable.".to_owned()
+                }
             }
         };
         let unsupported_laptop = matches!(
@@ -336,27 +349,56 @@ mod lifecycle;
 #[cfg(not(test))]
 pub(super) fn native_status_source(
     origin: Arc<crate::loaded_origin::Origin>,
-) -> Box<dyn StatusSource> {
-    Box::new(GuardedStatus {
+) -> io::Result<Box<dyn StatusSource>> {
+    #[cfg(feature = "service-mailbox-observation-v1")]
+    let mailbox = super::mailbox_read::ReadSource::acquire(origin.clone())?;
+    Ok(Box::new(GuardedStatus {
         inner: ObservedStatus::new(read_windows),
         origin,
-    })
+        #[cfg(feature = "service-mailbox-observation-v1")]
+        mailbox,
+    }))
 }
 #[cfg(not(test))]
 struct GuardedStatus {
     inner: ObservedStatus,
     origin: Arc<crate::loaded_origin::Origin>,
+    #[cfg(feature = "service-mailbox-observation-v1")]
+    mailbox: super::mailbox_read::ReadSource,
 }
 #[cfg(not(test))]
 impl StatusSource for GuardedStatus {
-    fn observe_performance(&mut self, _: Caller, _: Instant) -> Observation {
-        let reason = "Firmware acquisition is unavailable in this installed metadata runtime.";
-        Box::pin(async move { Err(io::Error::new(io::ErrorKind::PermissionDenied, reason)) })
+    fn observe_performance(&mut self, caller: Caller, deadline: Instant) -> Observation {
+        #[cfg(feature = "service-mailbox-observation-v1")]
+        {
+            if caller.access().ok() != Some(0) {
+                return Box::pin(async { Ok(None) });
+            }
+            return self.inner.publisher.as_ref().map_or_else(
+                || Box::pin(async { Ok(None) }) as Observation,
+                |published| {
+                    self.mailbox.observe(
+                        published.borrow().active.clone(),
+                        deadline,
+                        published.clone(),
+                    )
+                },
+            );
+        }
+        #[cfg(not(feature = "service-mailbox-observation-v1"))]
+        {
+            let _ = (caller, deadline);
+            let reason = "Firmware acquisition is unavailable in this installed metadata runtime.";
+            Box::pin(async move { Err(io::Error::new(io::ErrorKind::PermissionDenied, reason)) })
+        }
     }
     fn verify_origin(&self) -> io::Result<()> {
         self.origin.verify()
     }
     fn confirm_drained(&self) -> io::Result<()> {
+        #[cfg(feature = "service-mailbox-observation-v1")]
+        return self.mailbox.confirm_drained();
+        #[cfg(not(feature = "service-mailbox-observation-v1"))]
         self.origin.confirm_metadata_drain()
     }
     fn publication_guard(&self) -> std::rc::Rc<dyn Fn() -> io::Result<()>> {
@@ -367,6 +409,19 @@ impl StatusSource for GuardedStatus {
         Box::pin(async move {
             self.origin.verify()?;
             let value = self.inner.snapshot(caller, requested).await?;
+            #[cfg(feature = "service-mailbox-observation-v1")]
+            if let Some(publisher) = &self.inner.publisher {
+                self.mailbox.decorate(publisher)?;
+                let access = caller.access()?;
+                let current = publisher.borrow();
+                let value = if access == 0 {
+                    current.active.clone()
+                } else {
+                    current.inactive.clone()
+                };
+                self.origin.verify()?;
+                return Ok(value);
+            }
             self.origin.verify()?;
             Ok(value)
         })
@@ -378,6 +433,10 @@ impl StatusSource for GuardedStatus {
         Box::pin(async move {
             self.origin.verify()?;
             let due = self.inner.refresh_publications().await?;
+            #[cfg(feature = "service-mailbox-observation-v1")]
+            if let Some(publisher) = &self.inner.publisher {
+                self.mailbox.decorate(publisher)?;
+            }
             self.origin.verify()?;
             Ok(due)
         })
@@ -387,7 +446,10 @@ impl StatusSource for GuardedStatus {
         // guards outlive listener/worker drain. It grants no firmware authority.
         Box::pin(async move {
             self.origin.revoke();
-            self.inner.drain().await
+            self.inner.drain().await?;
+            #[cfg(feature = "service-mailbox-observation-v1")]
+            self.mailbox.stop().await?;
+            Ok(())
         })
     }
 }

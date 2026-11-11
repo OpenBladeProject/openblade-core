@@ -36,6 +36,7 @@ fn main() {
     let has = |name: &str| features.iter().any(|f| f == name);
     let metadata = has("service-metadata-only-v1");
     let hardware = has("service-hardware-compile-check");
+    let observation = has("service-mailbox-observation-v1");
     assert!(
         !(metadata
             && (hardware
@@ -74,6 +75,8 @@ fn main() {
         let capabilities = if role == "service" && has("installed-service-candidate") {
             if metadata {
                 "private-service-custody-v1,service-metadata-only-v1"
+            } else if observation {
+                "private-service-custody-v1,service-mailbox-observation-v1"
             } else {
                 "private-service-custody-v1"
             }

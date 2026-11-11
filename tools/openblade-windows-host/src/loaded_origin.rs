@@ -153,6 +153,16 @@ impl Origin {
             .map_err(|_| deny())?
             .record_metadata_drain(self.pid, self.created)
     }
+    pub(crate) fn mailbox_mapping(&self) -> io::Result<Vec<u8>> {
+        self.verify()?;
+        self.package.lock().map_err(|_| deny())?.mailbox_mapping()
+    }
+    pub(crate) fn confirm_transport_drain(&self) -> io::Result<()> {
+        self.package
+            .lock()
+            .map_err(|_| deny())?
+            .record_transport_drain(self.pid, self.created)
+    }
     pub(crate) fn committed(&self) -> io::Result<bool> {
         self.verify()?;
         Ok(self.package.lock().map_err(|_| deny())?.is_committed())

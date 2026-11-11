@@ -66,6 +66,8 @@ internal sealed class NativeOperationToken : IDisposable
         pin = GCHandle.Alloc(pinnedBuffer, GCHandleType.Pinned);
     }
 
+    internal MailboxLifetime.Participation? Lifetime { get; set; }
+
     internal byte[] PinnedBuffer { get; }
 
     internal IntPtr PinnedAddress => pin.AddrOfPinnedObject();
@@ -132,6 +134,7 @@ internal sealed class NativeOperationToken : IDisposable
         {
             ReleaseOverlapped();
         }
+        catch (Exception error) { Lifetime?.Fail(error); throw; }
         finally
         {
             ReleasePin();
@@ -333,20 +336,24 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
                 nameof(buffer));
         }
 
-        var operation = new NativeOperationToken(buffer, checkpoint);
+        var participation = handle.Lifetime?.Scope.Reserve();
+        NativeOperationToken operation;
+        try { operation = new NativeOperationToken(buffer, checkpoint) { Lifetime = participation }; }
+        catch (Exception error) { participation?.Fail(error); participation?.Dispose(); throw; }
         long submitTimestamp = 0;
         long nativeCompletionTimestamp = long.MinValue;
         IDisposable? callerRegistration = null;
         IDisposable? deadlineRegistration = null;
         var state = new NativeOperationState(() =>
         {
-            DisposeRegistration(
-                callerRegistration,
-                OverlappedFeatureOperationCheckpoint.CallerRegistrationDisposed);
-            DisposeRegistration(
-                deadlineRegistration,
-                OverlappedFeatureOperationCheckpoint.DeadlineRegistrationDisposed);
-            operation.Dispose();
+            try
+            {
+                DisposeRegistration(callerRegistration, OverlappedFeatureOperationCheckpoint.CallerRegistrationDisposed, participation);
+                DisposeRegistration(deadlineRegistration, OverlappedFeatureOperationCheckpoint.DeadlineRegistrationDisposed, participation);
+                operation.Dispose();
+            }
+            catch (Exception error) { participation?.Fail(error); throw; }
+            finally { participation?.Dispose(); }
         });
 
         try
@@ -370,11 +377,12 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
         {
             DisposeRegistration(
                 callerRegistration,
-                OverlappedFeatureOperationCheckpoint.CallerRegistrationDisposed);
+                OverlappedFeatureOperationCheckpoint.CallerRegistrationDisposed, participation);
             DisposeRegistration(
                 deadlineRegistration,
-                OverlappedFeatureOperationCheckpoint.DeadlineRegistrationDisposed);
+                OverlappedFeatureOperationCheckpoint.DeadlineRegistrationDisposed, participation);
             DisposeOperation(operation);
+            participation?.Dispose();
             throw;
         }
 
@@ -382,11 +390,12 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
         {
             DisposeRegistration(
                 callerRegistration,
-                OverlappedFeatureOperationCheckpoint.CallerRegistrationDisposed);
+                OverlappedFeatureOperationCheckpoint.CallerRegistrationDisposed, participation);
             DisposeRegistration(
                 deadlineRegistration,
-                OverlappedFeatureOperationCheckpoint.DeadlineRegistrationDisposed);
+                OverlappedFeatureOperationCheckpoint.DeadlineRegistrationDisposed, participation);
             DisposeOperation(operation);
+            participation?.Dispose();
             throw new InvalidOperationException("The operation could not begin submission.");
         }
 
@@ -500,7 +509,8 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
 
     private void DisposeRegistration(
         IDisposable? registration,
-        OverlappedFeatureOperationCheckpoint disposedCheckpoint)
+        OverlappedFeatureOperationCheckpoint disposedCheckpoint,
+        MailboxLifetime.Participation? participation = null)
     {
         if (registration is null)
         {
@@ -511,8 +521,9 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
         {
             registration.Dispose();
         }
-        catch
+        catch (Exception error)
         {
+            participation?.Fail(error);
         }
         finally
         {
@@ -526,8 +537,9 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
         {
             operation.Dispose();
         }
-        catch
+        catch (Exception error)
         {
+            operation.Lifetime?.Fail(error);
         }
     }
 

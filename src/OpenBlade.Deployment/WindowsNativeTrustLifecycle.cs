@@ -3,6 +3,31 @@ namespace OpenBlade.Deployment;
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public static class WindowsNativeTrustLifecycle
 {
+    // Keep the same exclusion as managed/native mailbox custody throughout
+    // maintenance. A check-and-release permits a Service restart between file
+    // replacements; enrollment is itself held by an authenticated managed run.
+    public static IDisposable AcquireManagedEnrollmentChangeCustody() =>
+        AcquireManagedEnrollmentChangeCustody(WindowsNativeEpochFiles.CreateOrOpenManagedHandoff());
+
+    internal static IDisposable AcquireManagedEnrollmentChangeCustody(WindowsNativeEpochFiles files)
+    {
+        FileStream? exclusion = null;
+        try
+        {
+            exclusion = files.AcquireServiceCustody(Path.Combine(files.Root, "exclusion.lock"));
+            foreach (string name in new[] { "request.bin", "receipt.bin", "mapping.bin" })
+            { WindowsNativeEpochFiles.RequireAbsent(Path.Combine(files.Root, name)); }
+            return new EnrollmentLease(files, exclusion);
+        }
+        catch (Exception error)
+        {
+            exclusion?.Dispose(); files.Dispose();
+            throw new IOException("Stop the managed Service and resolve mailbox transfer custody before enrollment maintenance; no maintenance changes were admitted.", error);
+        }
+    }
+    private sealed class EnrollmentLease(IDisposable files, IDisposable exclusion) : IDisposable
+    { public void Dispose() { try { exclusion.Dispose(); } finally { files.Dispose(); } } }
+
     // Called before any enrollment replacement/removal. This deliberately does
     // not invent a drain certificate from metadata retirement or SCM STOPPED.
     // An active native selection must first complete its coordinated stop path.

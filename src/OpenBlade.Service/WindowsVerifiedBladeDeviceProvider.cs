@@ -40,6 +40,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     private int firmwareCompatibility;
     private int requiresUntestedFirmwareOverride;
     private int disposed;
+    internal MailboxLifetime? MailboxLifetime { get; }
 
     public WindowsVerifiedBladeDeviceProvider()
         : this(
@@ -64,7 +65,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         FirmwareCompatibilityPolicy? compatibilityPolicy = null,
         IGpuActivitySource? gpuActivitySource = null,
         Func<TimeSpan, CancellationToken, Task>? preWriteRetryDelay = null,
-        LowPowerGate? lowPowerGate = null)
+        LowPowerGate? lowPowerGate = null,
+        MailboxLifetime? mailboxLifetime = null)
     {
         TimeSpan effectiveShutdownBudget = shutdownBudget ?? DefaultShutdownBudget;
         if (effectiveShutdownBudget <= TimeSpan.Zero ||
@@ -74,6 +76,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         }
 
         this.probe = probe ?? throw new ArgumentNullException(nameof(probe));
+        MailboxLifetime = mailboxLifetime;
         experimentalFactory = batteryFactory as ExperimentalBladeFactory;
         LaptopControlRecoveryIdentity = batteryFactory switch
         {
@@ -426,6 +429,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
     Task<bool> IGpuClockOffsetConfirmationInvalidator.InvalidateGpuClockOffsetConfirmationAsync(
         CancellationToken cancellationToken) =>
         device.InvalidateGpuClockOffsetConfirmationAsync(cancellationToken);
+
+    internal void RequireTransportDelegationClear() => device.RequireTransportDelegationClear();
 
     public void Dispose()
     {
@@ -2867,6 +2872,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             if (gpuActivitySource is IDisposable disposable)
             {
                 disposable.Dispose();
+            }
+        }
+
+        internal void RequireTransportDelegationClear()
+        {
+            lock (lifecycleSync)
+            {
+                if (fanStopDelegated) { throw new IOException("Fan guardian transport custody is unresolved."); }
             }
         }
 

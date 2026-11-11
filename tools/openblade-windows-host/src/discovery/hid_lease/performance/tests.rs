@@ -132,6 +132,97 @@ fn limit(cancelled: &AtomicBool) -> Limit<'_> {
 }
 
 #[tokio::test(start_paused = true)]
+async fn paired_observation_fixture_uses_typed_read_custody_without_power_or_ui_session() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../../../tests/Fixtures/Parity/rz09-0581-thermal-pair-observation.json"
+    ))
+    .unwrap();
+    let admitted = ReadAdmission {
+        generation: [9; 32],
+    };
+    assert!(admitted.readable());
+    assert!(admitted.matches_session(Some(0)));
+    let cancelled = AtomicBool::new(false);
+    for row in fixture["cases"].as_array().unwrap() {
+        let mode = row["mode"].as_u64().unwrap() as u8;
+        let fan = row["fan"].as_u64().unwrap() as u8;
+        let mut script = Script::pair([mode, mode]);
+        script.replies = VecDeque::from([
+            (90, reply(1, &[1, 1, mode, fan])),
+            (91, reply(2, &[1, 2, mode, fan])),
+        ]);
+        let mut reader = Reader::new(script, admitted);
+        let state = reader
+            .observe(&mut || Some(admitted), limit(&cancelled))
+            .await
+            .unwrap();
+        let (preset, fans, hyper) = state.projection();
+        assert_eq!(serde_json::json!(preset), row["performance"]);
+        assert_eq!(serde_json::json!(fans), row["fans"]);
+        assert_eq!(serde_json::json!(hyper), row["hyperBoostActive"]);
+        assert_eq!(reader.port.sent.len(), 2);
+        assert!(reader.port.sent.iter().all(|frame| frame[8] == GET_THERMAL));
+        reader.retire(None).await.unwrap();
+    }
+    for row in fixture["incomplete"].as_array().unwrap() {
+        let mode = row["mode"].as_u64().unwrap() as u8;
+        let fan = row["fan"].as_u64().unwrap() as u8;
+        let mut script = Script::pair([mode, mode]);
+        script.replies = VecDeque::from([
+            (90, reply(1, &[1, 1, mode, fan])),
+            (91, reply(2, &[1, 2, mode, fan])),
+        ]);
+        let mut reader = Reader::new(script, admitted);
+        assert!(
+            reader
+                .observe(&mut || Some(admitted), limit(&cancelled))
+                .await
+                .is_none()
+        );
+        assert!(reader.poisoned);
+        assert!(
+            reader
+                .observe(&mut || Some(admitted), limit(&cancelled))
+                .await
+                .is_none()
+        );
+        assert_eq!(reader.port.sent.len(), 2);
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn typed_read_generation_loss_never_adopts_the_same_visible_value_from_a_new_epoch() {
+    let original = ReadAdmission {
+        generation: [1; 32],
+    };
+    let replacement = ReadAdmission {
+        generation: [2; 32],
+    };
+    let cancelled = AtomicBool::new(false);
+    let mut reader = Reader::new(Script::pair([0, 0]), original);
+    assert_eq!(
+        reader
+            .observe(&mut || Some(original), limit(&cancelled))
+            .await,
+        Some(ObservedPerformance::BalancedAutomatic)
+    );
+    assert!(
+        reader
+            .observe(&mut || Some(replacement), limit(&cancelled))
+            .await
+            .is_none()
+    );
+    assert!(reader.poisoned);
+    assert!(
+        reader
+            .observe(&mut || Some(original), limit(&cancelled))
+            .await
+            .is_none()
+    );
+    assert_eq!(reader.port.sent.len(), 2);
+}
+
+#[tokio::test(start_paused = true)]
 async fn reviewed_pair_returns_typed_performance_and_only_submits_the_pinned_getters() {
     let capture = fixture();
     assert_eq!(capture["device"]["model"], MODEL);
@@ -326,7 +417,7 @@ async fn power_controller_session_and_owner_loss_block_remaining_traffic_or_publ
 #[tokio::test(start_paused = true)]
 async fn unsupported_state_is_unavailable_and_transactions_are_not_reused() {
     let cancelled = AtomicBool::new(false);
-    let mut unsupported = Reader::new(Script::pair([5, 5]), ADMITTED);
+    let mut unsupported = Reader::new(Script::pair([8, 8]), ADMITTED);
     assert_eq!(
         unsupported
             .observe(&mut || Some(ADMITTED), limit(&cancelled))

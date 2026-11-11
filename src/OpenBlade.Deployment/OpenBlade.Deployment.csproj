@@ -20,6 +20,8 @@
     <Compile Include="../../build/development-deployment/WindowsNativePackageRoleProof.cs" Link="WindowsNativePackageRoleProof.cs" />
     <InternalsVisibleTo Include="OpenBlade.DeploymentBroker" />
     <InternalsVisibleTo Include="OpenBlade.Setup" />
+    <InternalsVisibleTo Include="OpenBlade.Service" />
+    <InternalsVisibleTo Include="OpenBlade.Service.Tests" />
     <InternalsVisibleTo Include="OpenBlade.Setup.Tests" />
     <InternalsVisibleTo Include="OpenBlade.Deployment.Tests" />
   </ItemGroup>

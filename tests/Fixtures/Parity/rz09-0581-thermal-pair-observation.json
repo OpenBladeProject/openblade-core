@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "model": "RZ09-0581",
+  "hid": "1532:02e0",
+  "command": "0d/82",
+  "cases": [
+    {
+      "mode": 0,
+      "fan": 0,
+      "performance": 1,
+      "fans": 0,
+      "hyperBoostActive": false
+    },
+    {
+      "mode": 2,
+      "fan": 0,
+      "performance": 2,
+      "fans": 0,
+      "hyperBoostActive": false
+    },
+    {
+      "mode": 5,
+      "fan": 0,
+      "performance": 0,
+      "fans": 0,
+      "hyperBoostActive": false
+    },
+    {
+      "mode": 5,
+      "fan": 1,
+      "performance": 0,
+      "fans": 3,
+      "hyperBoostActive": false
+    },
+    {
+      "mode": 2,
+      "fan": 1,
+      "performance": 2,
+      "fans": 3,
+      "hyperBoostActive": false
+    },
+    {
+      "mode": 3,
+      "fan": 0,
+      "performance": 3,
+      "fans": 0,
+      "hyperBoostActive": false
+    },
+    {
+      "mode": 6,
+      "fan": 0,
+      "performance": 4,
+      "fans": 0,
+      "hyperBoostActive": false
+    },
+    {
+      "mode": 3,
+      "fan": 1,
+      "performance": 3,
+      "fans": 3,
+      "hyperBoostActive": false
+    },
+    {
+      "mode": 6,
+      "fan": 1,
+      "performance": 4,
+      "fans": 3,
+      "hyperBoostActive": false
+    },
+    {
+      "mode": 0,
+      "fan": 1,
+      "performance": null,
+      "fans": 3,
+      "hyperBoostActive": false
+    },
+    {
+      "mode": 7,
+      "fan": 0,
+      "performance": null,
+      "fans": 0,
+      "hyperBoostActive": true
+    }
+  ],
+  "incomplete": [
+    {
+      "mode": 4,
+      "fan": 0
+    },
+    {
+      "mode": 4,
+      "fan": 1
+    }
+  ],
+  "writesAdmitted": false,
+  "fullAdapterRequiredForObservation": false,
+  "nonzeroUiSessionRequiredForObservation": false
+}

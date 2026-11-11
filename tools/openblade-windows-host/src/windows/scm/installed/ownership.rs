@@ -9,7 +9,7 @@ use std::{
 };
 
 use super::denied;
-#[cfg(not(test))]
+#[cfg(any(not(test), feature = "service-mailbox-observation-v1"))]
 #[path = "durable_owner.rs"]
 pub(in crate::installed) mod durable;
 use crate::discovery::performance::Admission;

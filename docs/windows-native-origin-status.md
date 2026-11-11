@@ -32,14 +32,32 @@ relevant SCM callbacks latch loss. This does not detect transients that were nev
 reported or sampled. StartPending may omit its PID only while the independently
 captured own-process origin is retained; readonly peers require Running/nonzero PID.
 
-The installed Service exposes real metadata GetStatus and SubscribeStatus.
-ObserveState returns a bounded refusal because full-adapter, active/unlocked
-session and coordinated managed-drain admission are not implemented. Metadata
-status remains useful on unsupported hosts, battery, controller conflict and HID
-read denial. No verified/write-capable fields or fresh performance are invented.
-The existing exact RZ09-0581 1532:02E0 usage1/2 0D/82 getter is unchanged and is not
-acquired by this composition. Next supplier work must reuse the existing Rust
-07/8C query/decoder/exchange after parity with the canonical C# fixtures.
+The installed Service exposes real metadata GetStatus and SubscribeStatus. The
+separate `service-mailbox-observation-v1` composition connects ObserveState to the
+existing serialized exact RZ09-0581 1532:02E0 usage1/2 paired 0D/82 getter. It
+requires the original generation, exclusive read custody, known-empty native
+owner history and authenticated managed transport handoff. Its compiled
+capability is `service-mailbox-observation-v1`; it cannot claim metadata-only
+capability or mutation authority. The default managed product and the separate
+metadata-only composition remain valid.
+
+Read evidence is distinct from IPC caller admission and write admission. The
+getter requires neither Full adapter power nor a nonzero UI session. Ordinary
+tray callers still pass the existing active-local-interactive IPC check. A
+private, nonserialized fresh-read witness is checked before returning a fresh
+ObserveState result. GetStatus/subscriptions carry retained presentation only;
+they cannot mint that witness. Write capabilities remain absent and the existing
+strong ConfirmedPerformance meaning for Agent/firmware consumers is unchanged.
+Use no-live-sensors requests when validating fresh paired observation. Direct
+completion across a low-power transition remains physically unvalidated.
+
+The shared C#/Rust fixture covers Balanced, Performance, Silent, BatterySaver,
+BatteryBalanced, their admitted manual forms, FixedMaximum and HyperBoost.
+FixedMaximum and HyperBoost retain an unknown preset; only HyperBoost reports
+its confirmed active flag. No fan target/RPM is inferred. Custom remains
+incomplete until actual CPU/GPU 0D/87 getters exist. Unknown/channel-mismatched
+responses retain poisoning/no-replay semantics. This bounded getter does not
+replace the whole managed ObserveAsync power/controller/reconciliation path.
 
 The status-only Agent monitor retains a separately verified SCM own-process,
 autostart, LocalSystem, exactly quoted selected Service path and one original
@@ -52,19 +70,64 @@ Firmware owner history lives in a private owner directory outside replaceable
 epochs. Canonical append-only Reserved/Active/Retiring/Retired records bind the
 predecessor, installation, artifact, original process and nonce. Exclusive custody
 and flush/readback precede publication; partial records remain unresolved. Missing
-managed handoff never becomes a first retirement certificate. Missing suppliers
-keep acquisition denied. A failed or uncertain worker drain cannot release an
-owner fence on Drop. These are software contracts, not live native ownership proof.
+managed handoff never becomes a first retirement certificate. A typed read lease
+can hold a genuinely known-empty history without appending a synthetic Retired
+record or obtaining write reservation. A failed or uncertain worker drain
+quarantines custody on Drop. These are software contracts, not live native
+ownership proof. Interrupted bootstrap repair is limited to the authenticated
+never-selected root and empty owner directory before its original lock exists;
+selected, partial and unknown history remain fenced.
 
-Guarded shutdown retains cleanup proof after origin revocation. Only successful
-listener and metadata-worker drain writes a status-drain acknowledgement. Setup
+Guarded shutdown retains cleanup proof after origin revocation. Metadata-only
+composition writes its original status drain; the read composition requires
+actual native worker/callback retirement and a distinct transport drain. Setup
 binds it to the retained original Service process, independently refuses unresolved
 firmware-owner history, then retires package selection. Enrollment replacement or
 removal refuses active or inconsistent selection/history before changing private
 trust. Metadata Retired and status drain are not firmware-drain certificates.
+Enrollment install/upgrade/removal also retains the shared managed exclusion
+before maintenance changes, refusing while a managed Service holds enrollment
+or a transfer is unresolved. It never stops that Service automatically.
+
+## Managed upgrade prerequisite
+
+An old, uninstrumented Service cannot be certified retrospectively. Before native
+read cutover, a later authorized rollout must install and run this handoff-capable
+managed build from an enrolled, signed standard LocalDev package. During that
+managed upgrade the Service authenticates the broker's original signed package,
+verifies its actual resolved Service dependency closure and loaded module IDs,
+and preserves the original package/signature/enrollment binding in protected
+`OpenBlade.ManagedHandoff` storage before broker staging disappears. Cached
+enrollment is reauthenticated on restart. Self-reported hashes, copied markers,
+SCM Stopped and process exit cannot replace this prerequisite. Without enrollment,
+ordinary managed operation continues but cannot issue a transferable receipt.
+
+One shared scope reserves before actual CreateFile/native submission and follows
+control/battery, fan-RPM, retained lighting/keyboard and matrix workers, handles,
+deferred disposal and late callbacks. After producers and guarded cleanup finish,
+shutdown seals admission and awaits successful terminal resources within bounds.
+Full external Fan Stop Guardian exclusion is checked independently. Fault,
+timeout or unknown guardian custody prevents the protected create-once receipt.
+Stored/uncertain firmware settings alone do not prevent a transport-only receipt;
+that receipt makes no claim of Automatic fans, Normal keyboard or write authority.
+
+Setup retains the actual original process before requesting stop, authenticates
+its signed managed build, and requires both original exit and its protected
+receipt. Installed-tree pins are released only then, permitting activation.
+StagePayload -> PrepareService/stop -> StopAgent -> Activate ordering is preserved.
+Before startup submission, Begin binds receipt/request/package to one immutable
+epoch mapping. The native read factory retains the same exclusive transfer through
+worker and native callback retirement. A managed restart, conflicting mapping,
+receipt reuse, partial publication or crash without receipt refuses adoption.
 
 Offline tests use pure algorithms, inert native-operation adapters and private
 current-token filesystem fixtures. Native launch, standard-user access, SCM,
 process/token/pipe semantics and native kernel behavior remain compiled-only
 controlled gates. Full 51 Service requests, 17 Agent forms, background lifecycle,
 model/backend parity, default packaging and cutover remain subsequent work.
+Specifically unfinished are Custom 0D/87, adapter/power suppliers, thermal writes,
+automation/recovery, configuration/profiles/durable journals, other models and
+optional driver/audio/display/lighting/input/CPU backends. Linux, macOS and SwiftUI
+remain deferred. No installed role, process/token/pipe/SCM/task probe, hardware,
+VM or sleep/resume validation was executed in this stage. Held compiled bytes and
+injected tests are offline evidence; default native cutover remains blocked.

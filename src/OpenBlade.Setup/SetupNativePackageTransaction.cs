@@ -20,9 +20,11 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
     private bool preparationAttempted, possiblePayloadActivation, possibleNativeActivation, disposed;
     private readonly Action<NativeEpochBoundary>? preparationBoundary;
     private readonly SetupNativeReadinessAdapters readiness;
+    private WindowsManagedMailboxTransfer? managedTransfer;
 
     internal SetupNativePackageTransaction(ISetupPayloadTransaction payload, WindowsNativeEpochFiles files,
-        WindowsNativePackage package, Guid request, Action<NativeEpochBoundary>? preparationBoundary = null, SetupNativeReadinessAdapters? readiness = null)
+        WindowsNativePackage package, Guid request, Action<NativeEpochBoundary>? preparationBoundary = null, SetupNativeReadinessAdapters? readiness = null,
+        WindowsManagedMailboxTransfer? managedTransfer = null)
     {
         this.payload = payload;
         this.files = files;
@@ -30,6 +32,7 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
         this.request = request;
         this.preparationBoundary = preparationBoundary;
         this.readiness = readiness ?? SetupNativeReadinessAdapters.Windows;
+        this.managedTransfer = managedTransfer;
     }
 
     public string StagedPayloadDirectory => payload.StagedPayloadDirectory;
@@ -47,6 +50,13 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
     internal string SelectedServicePath() { (epoch ?? throw new InvalidOperationException()).RequireProvisional(); return ServicePath; }
     internal string SelectedAgentPath() { (epoch ?? throw new InvalidOperationException()).RequireProvisional(); return AgentPath; }
 
+    internal void BindManagedHandoff(WindowsManagedMailboxTransfer transfer)
+    {
+        if (managedTransfer is not null || preparationAttempted || disposed || !package.Service.ReadOnlyMailbox)
+        { throw new IOException("Managed handoff may bind only once before native epoch activation."); }
+        managedTransfer = transfer;
+    }
+
     public async Task ActivateAsync(CancellationToken cancellationToken)
     {
         if (preparationAttempted || disposed) { throw new InvalidOperationException("Native preparation/activation is never replayed."); }
@@ -54,7 +64,8 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
         cancellationToken.ThrowIfCancellationRequested();
         // The actual held package producer, immutable images and provisional
         // selection precede StartService/health in SetupCommandRunner.
-        epoch = WindowsNativeEpochTransaction.Begin(files, package, request, testCrashBoundary: preparationBoundary);
+        epoch = WindowsNativeEpochTransaction.Begin(files, package, request, testCrashBoundary: preparationBoundary,
+            managedTransfer: managedTransfer);
         cancellationToken.ThrowIfCancellationRequested();
         // From entry into payload activation onward its outcome may be ambiguous.
         possiblePayloadActivation = true;
@@ -141,7 +152,7 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
             { await payload.DisposeAsync(); }
         }
         catch (Exception failure) { failures.Add(failure); }
-        foreach (var resource in new IDisposable?[] { retained as IDisposable, epoch, package, files })
+        foreach (var resource in new IDisposable?[] { retained as IDisposable, epoch, package, managedTransfer, files })
         {
             try { resource?.Dispose(); }
             catch (Exception failure) { failures.Add(failure); }

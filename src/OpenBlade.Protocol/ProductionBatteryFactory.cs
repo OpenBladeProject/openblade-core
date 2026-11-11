@@ -237,24 +237,28 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
 
     internal static IProductionBatteryPortFactory
         CreateWindowsForPadlessHyperBoostLifecycleValidation() =>
+        CreateWindowsForPadlessHyperBoostLifecycleValidation(null);
+
+    internal static IProductionBatteryPortFactory CreateWindowsForPadlessHyperBoostLifecycleValidation(MailboxLifetime? lifetime) =>
         CreateWindowsCore(
             compatibilityPolicy: null,
-            allowPadlessHyperBoostLifecycleValidation: true);
+            allowPadlessHyperBoostLifecycleValidation: true, lifetime: lifetime);
 
     internal static IProductionBatteryPortFactory CreateWindows(
-        FirmwareCompatibilityPolicy compatibilityPolicy)
+        FirmwareCompatibilityPolicy compatibilityPolicy, MailboxLifetime? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         return CreateWindowsCore(
             compatibilityPolicy,
-            allowPadlessHyperBoostLifecycleValidation: false);
+            allowPadlessHyperBoostLifecycleValidation: false, lifetime: lifetime);
     }
 
     private static IProductionBatteryPortFactory CreateWindowsCore(
         FirmwareCompatibilityPolicy? compatibilityPolicy,
         bool allowPadlessHyperBoostLifecycleValidation,
         ControllerExclusivityPolicy exclusivityPolicy =
-            ControllerExclusivityPolicy.Advisory)
+            ControllerExclusivityPolicy.Advisory,
+        MailboxLifetime? lifetime = null)
     {
         ReadOnlyMemory<byte>? fixtureBytes = ProductionFixtureSource.Read();
         if (fixtureBytes is null)
@@ -285,7 +289,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             admitGpuOverclock: true,
             allowPadlessHyperBoostLifecycleValidation,
             directManualFanTransitionEvidenceAdmitted: true,
-            exclusivityPolicy: exclusivityPolicy);
+            exclusivityPolicy: exclusivityPolicy, lifetime: lifetime);
     }
 
     public static IProductionBatteryPortFactory CreateWindowsReadOnly() =>
@@ -298,7 +302,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             allowPadlessHyperBoostLifecycleValidation: false);
 
     internal static IProductionBatteryPortFactory CreateWindowsReadOnly(
-        FirmwareCompatibilityPolicy compatibilityPolicy)
+        FirmwareCompatibilityPolicy compatibilityPolicy, MailboxLifetime? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         return CreateWindows(
@@ -307,7 +311,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             ProductionBatteryReadEvidence.Production,
             compatibilityPolicy,
             admitGpuOverclock: false,
-            allowPadlessHyperBoostLifecycleValidation: false);
+            allowPadlessHyperBoostLifecycleValidation: false, lifetime: lifetime);
     }
 
     public async Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
@@ -406,9 +410,10 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         bool allowPadlessHyperBoostLifecycleValidation,
         bool directManualFanTransitionEvidenceAdmitted = false,
         ControllerExclusivityPolicy exclusivityPolicy =
-            ControllerExclusivityPolicy.Advisory)
+            ControllerExclusivityPolicy.Advisory,
+        MailboxLifetime? lifetime = null)
     {
-        var native = new WindowsHidNative();
+        var native = new WindowsHidNative(lifetime);
         var registry = new WindowsRegistryValueSource();
         var processSource = new RunningProcessSource();
         var serviceSource = new WindowsServiceSource();

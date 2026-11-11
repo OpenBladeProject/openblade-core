@@ -625,6 +625,125 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
          255, 255, 1, 0, 2, 0, 3, 0,
          .. SHA256.HashData("service"u8), .. SHA256.HashData("agent"u8)];
 
+    [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public async Task SignedManagedUpgradeAuthenticatesItsCompleteHeldClosureWithoutNativeInventory()
+    {
+        byte[] assembly = ManagedModule();
+        var managed = new Dictionary<string, byte[]>
+        {
+            ["OpenBlade.Service.dll"] = assembly,
+            ["OpenBlade.Service.deps.json"] = "{}"u8.ToArray(),
+            ["OpenBlade.Service.runtimeconfig.json"] = "{}"u8.ToArray(),
+            ["openblade_ffi.dll"] = WindowsNativeEpochTests.Image("service"),
+        };
+        byte[] bundle = Bundle(Resource(), includeRoles: true, authored: true, managedFiles: managed, omitInventory: true);
+        using (var stream = new MemoryStream(bundle, false))
+        {
+            var declarations = WindowsNativeInventoryBurnExtractor.ReadManagedDeclarations(stream, LocalDevVersion, default);
+            Assert.Contains(declarations, d => d.Path == "OpenBlade.Service.dll" && d.Sha512 == Convert.ToHexStringLower(SHA512.HashData(assembly)));
+            stream.Position = 0;
+            Assert.Throws<InvalidDataException>(() => WindowsNativeInventoryBurnExtractor.ExtractRoles(stream,
+                WindowsNativeBurnProfile.AuthoredOpenBlade, LocalDevVersion, default));
+        }
+        using var signed = OpenBladeSignedReleaseVerifierTests.TestRelease.CreateWithInstallerBytes(bundle, LocalDevSource, LocalDevVersion);
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        string packagePath = Path.Combine(files.Root, "managed-package.exe");
+        File.WriteAllBytes(packagePath, bundle);
+        var enrollment = NativeLocalDevEnrollment.ForAlgorithmTests(new Guid("11111111-1111-1111-1111-111111111111"), signed.Policy);
+        using var package = await WindowsManagedMailboxPackage.OpenLocalDevAsync(files.OpenFile(packagePath), files.RetainFixtureView(),
+            signed.ManifestBytes, signed.SignatureBytes, enrollment, default);
+        using var installation = WindowsNativeEpochFiles.CreatePrivateFixture();
+        File.WriteAllBytes(Path.Combine(installation.Root, "OpenBlade.Service.exe"), "service"u8.ToArray());
+        File.WriteAllBytes(Path.Combine(installation.Root, "OpenBlade.SessionAgent.exe"), "agent"u8.ToArray());
+        foreach (var (name, bytes) in managed) { File.WriteAllBytes(Path.Combine(installation.Root, name), bytes); }
+        var identity = package.AuthenticateFixture(installation.RetainFixtureView());
+        Assert.Equal(Convert.ToHexStringLower(SHA256.HashData("service"u8)), identity.Executable);
+        Assert.Equal("12345678123412341234123456789abc", identity.Module);
+        package.Preserve(files);
+        Assert.True(File.Exists(Path.Combine(files.Root, "build-" + signed.InstallerSha256, "verified.bin")));
+        // An unrelated UI update neither changes nor pins the Service closure.
+        File.WriteAllBytes(Path.Combine(installation.Root, "OpenBlade.Tray.dll"), [1]);
+        Assert.Equal(identity, package.AuthenticateFixture(installation.RetainFixtureView()));
+        File.WriteAllBytes(Path.Combine(installation.Root, "OpenBlade.Tray.dll"), [2]);
+        package.ReleaseInstalledPins();
+        string directory = installation.Root;
+        installation.Dispose();
+        Directory.Move(directory, directory + "-activation-proof");
+        Directory.Move(directory + "-activation-proof", directory);
+        File.WriteAllBytes(Path.Combine(directory, "OpenBlade.Service.runtimeconfig.json"), "changed"u8.ToArray());
+        Assert.Throws<IOException>(() => package.AuthenticateFixture(installation.RetainFixtureView()));
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public async Task ManagedUpgradeRejectsForgedPackageBytesBeforeTrustingLoadDeclarations()
+    {
+        var managed = new Dictionary<string, byte[]>
+        {
+            ["OpenBlade.Service.dll"] = ManagedModule(),
+            ["OpenBlade.Service.deps.json"] = "{}"u8.ToArray(),
+            ["OpenBlade.Service.runtimeconfig.json"] = "{}"u8.ToArray(),
+            ["openblade_ffi.dll"] = WindowsNativeEpochTests.Image("service")
+        };
+        byte[] bundle = Bundle(Resource(), includeRoles: true, authored: true, managedFiles: managed, omitInventory: true);
+        using var signed = OpenBladeSignedReleaseVerifierTests.TestRelease.CreateWithInstallerBytes(bundle, LocalDevSource, LocalDevVersion);
+        bundle[^1] ^= 1;
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        string path = Path.Combine(files.Root, "forged-package.exe"); File.WriteAllBytes(path, bundle);
+        await Assert.ThrowsAsync<OpenBladeReleaseVerificationException>(() => WindowsManagedMailboxPackage.OpenLocalDevAsync(files.OpenFile(path),
+            files.RetainFixtureView(), signed.ManifestBytes, signed.SignatureBytes,
+            NativeLocalDevEnrollment.ForAlgorithmTests(new Guid("11111111-1111-1111-1111-111111111111"), signed.Policy), default));
+    }
+
+    private static byte[] ManagedModule()
+    {
+        var metadata = new System.Reflection.Metadata.Ecma335.MetadataBuilder();
+        metadata.AddModule(0, metadata.GetOrAddString("OpenBlade.Service.dll"),
+            metadata.GetOrAddGuid(new Guid("12345678-1234-1234-1234-123456789abc")), default, default);
+        metadata.AddTypeDefinition(System.Reflection.TypeAttributes.NotPublic, default, metadata.GetOrAddString("<Module>"), default,
+            System.Reflection.Metadata.Ecma335.MetadataTokens.FieldDefinitionHandle(1),
+            System.Reflection.Metadata.Ecma335.MetadataTokens.MethodDefinitionHandle(1));
+        var image = new System.Reflection.Metadata.BlobBuilder();
+        new System.Reflection.PortableExecutable.ManagedPEBuilder(new System.Reflection.PortableExecutable.PEHeaderBuilder(),
+            new System.Reflection.Metadata.Ecma335.MetadataRootBuilder(metadata), new System.Reflection.Metadata.BlobBuilder()).Serialize(image);
+        return image.ToArray();
+    }
+
+    [ManagedBuildFixture]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public async Task ActualCompiledManagedServiceClosureAuthenticatesWithoutLoadingItsImages()
+    {
+        string directory = Path.GetFullPath(Environment.GetEnvironmentVariable("OPENBLADE_MAILBOX_MANAGED_BUILD")!);
+        Assert.False(directory.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), StringComparison.OrdinalIgnoreCase));
+        var managed = Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
+            .Where(p => p.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".deps.json", StringComparison.OrdinalIgnoreCase)
+                || p.EndsWith(".runtimeconfig.json", StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(p => Path.GetRelativePath(directory, p), File.ReadAllBytes, StringComparer.Ordinal);
+        byte[] apphost = File.ReadAllBytes(Path.Combine(directory, "OpenBlade.Service.exe"));
+        byte[] bytes = Bundle(Resource(), includeRoles: true, authored: true, serviceImage: apphost, managedFiles: managed, omitInventory: true);
+        using var signed = OpenBladeSignedReleaseVerifierTests.TestRelease.CreateWithInstallerBytes(bytes, LocalDevSource, LocalDevVersion);
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        string source = Path.Combine(files.Root, "actual-managed-compile.exe"); File.WriteAllBytes(source, bytes);
+        using var package = await WindowsManagedMailboxPackage.OpenLocalDevAsync(files.OpenFile(source), files.RetainFixtureView(),
+            signed.ManifestBytes, signed.SignatureBytes,
+            NativeLocalDevEnrollment.ForAlgorithmTests(new Guid("11111111-1111-1111-1111-111111111111"), signed.Policy), default);
+        using var install = WindowsNativeEpochFiles.CreatePrivateFixture();
+        File.WriteAllBytes(Path.Combine(install.Root, "OpenBlade.Service.exe"), apphost);
+        foreach (var (name, value) in managed)
+        { string destination = Path.Combine(install.Root, name); Directory.CreateDirectory(Path.GetDirectoryName(destination)!); File.WriteAllBytes(destination, value); }
+        var identity = package.AuthenticateFixture(install.RetainFixtureView());
+        Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(apphost)), identity.Executable);
+        Assert.Equal(64, identity.Closure.Length);
+        package.ReleaseInstalledPins();
+    }
+
+    private sealed class ManagedBuildFixtureAttribute : FactAttribute
+    {
+        public ManagedBuildFixtureAttribute()
+        { if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("OPENBLADE_MAILBOX_MANAGED_BUILD"))) { Skip = "Requires an explicitly selected private managed build; images are read as bytes only."; } }
+    }
+
     internal static byte[] NativeEpochBundle(byte[] service, byte[] agent)
     {
         var build = new WindowsNativeBuildIdentity(new string('a', 40), Version.Parse(LocalDevVersion));
@@ -635,7 +754,8 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
 
     private static byte[] Bundle(byte[] resource, Action<XElement>? editManifest = null,
         Action<byte[]>? editCabinet = null, bool extraMember = false, bool includeRoles = false, bool authored = false,
-        byte[]? serviceImage = null, byte[]? agentImage = null)
+        byte[]? serviceImage = null, byte[]? agentImage = null,
+        IReadOnlyDictionary<string, byte[]>? managedFiles = null, bool omitInventory = false)
     {
         byte[] setup = "abc"u8.ToArray();
         byte[] service = serviceImage ?? "service"u8.ToArray();
@@ -644,6 +764,16 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
             : includeRoles ? Cabinet(("a0", resource), ("a1", setup), ("a2", service), ("a3", agent))
             : extraMember ? Cabinet(("a0", resource), ("a1", setup), ("a2", [1]))
             : Cabinet(("a0", resource), ("a1", setup));
+        if (managedFiles is not null)
+        {
+            var members = new List<(string Name, byte[] Bytes)>();
+            if (!omitInventory) { members.Add(("a0", resource)); }
+            int index = members.Count;
+            members.Add(("a" + index++, setup)); members.Add(("a" + index++, service));
+            members.Add(("a" + index++, agent)); members.Add(("a" + index++, new byte[] { 2 }));
+            foreach (var bytes in managedFiles.Values) { members.Add(("a" + index++, bytes)); }
+            attached = Cabinet([.. members]);
+        }
         editCabinet?.Invoke(attached);
 
         var root = new XElement(Burn + "BurnManifest",
@@ -695,6 +825,27 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
                     new XElement(Burn + "PayloadRef", new XAttribute("Id", vc))),
                 new XElement(Burn + "ExePackage", new XAttribute("Id", net),
                     new XElement(Burn + "PayloadRef", new XAttribute("Id", net))));
+        }
+        if (managedFiles is not null)
+        {
+            var owner = root.Element(Burn + "Chain")!.Elements(Burn + "ExePackage").Last();
+            if (omitInventory)
+            {
+                root.Elements(Burn + "Payload").Single(e => (string?)e.Attribute("Id") == "Inventory").Remove();
+                owner.Elements(Burn + "PayloadRef").Single(e => (string?)e.Attribute("Id") == "Inventory").Remove();
+                foreach (var payload in root.Elements(Burn + "Payload").Where(p => (string?)p.Attribute("Packaging") == "embedded"))
+                {
+                    string member = (string)payload.Attribute("SourcePath")!;
+                    payload.SetAttributeValue("SourcePath", "a" + (int.Parse(member[1..], System.Globalization.CultureInfo.InvariantCulture) - 1));
+                }
+            }
+            int index = 0;
+            foreach (var (name, bytes) in managedFiles)
+            {
+                string id = "Managed" + index;
+                root.Add(Payload(id, "payload\\" + name, "a" + (index++ + (omitInventory ? 4 : 5)), bytes));
+                owner.Add(new XElement(Burn + "PayloadRef", new XAttribute("Id", id)));
+            }
         }
         editManifest?.Invoke(root);
         byte[] ux = Cabinet(("0", Encoding.UTF8.GetBytes(root.ToString(SaveOptions.DisableFormatting))), ("u0", [1]));
@@ -764,7 +915,8 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
     {
         int dataOffset = 44 + members.Sum(member => 17 + member.Name.Length);
         int length = members.Sum(member => member.Bytes.Length);
-        byte[] cabinet = new byte[dataOffset + 8 + length];
+        int blocks = Math.Max(1, (length + 32767) / 32768);
+        byte[] cabinet = new byte[dataOffset + 8 * blocks + length];
         "MSCF"u8.CopyTo(cabinet);
         U32(cabinet, 8, (uint)cabinet.Length);
         U32(cabinet, 16, 44);
@@ -773,12 +925,11 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
         U16(cabinet, 26, 1);
         U16(cabinet, 28, (ushort)members.Length);
         U32(cabinet, 36, (uint)dataOffset);
-        U16(cabinet, 40, 1);
-        U16(cabinet, dataOffset + 4, (ushort)length);
-        U16(cabinet, dataOffset + 6, (ushort)length);
+        U16(cabinet, 40, checked((ushort)blocks));
 
         int cursor = 44;
         int offset = 0;
+        byte[] expanded = new byte[length];
         foreach ((string name, byte[] bytes) in members)
         {
             U32(cabinet, cursor, (uint)bytes.Length);
@@ -786,8 +937,17 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
             U16(cabinet, cursor + 14, 0x20);
             Encoding.ASCII.GetBytes(name).CopyTo(cabinet, cursor + 16);
             cursor += 17 + name.Length;
-            bytes.CopyTo(cabinet, dataOffset + 8 + offset);
+            bytes.CopyTo(expanded, offset);
             offset += bytes.Length;
+        }
+
+        cursor = dataOffset;
+        for (int block = 0; block < blocks; block++)
+        {
+            int count = Math.Min(32768, length - block * 32768);
+            U16(cabinet, cursor + 4, (ushort)count); U16(cabinet, cursor + 6, (ushort)count);
+            expanded.AsSpan(block * 32768, count).CopyTo(cabinet.AsSpan(cursor + 8));
+            cursor += 8 + count;
         }
 
         return cabinet;

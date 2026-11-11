@@ -23,7 +23,7 @@ pub(crate) mod worker_tests;
 mod worker;
 #[cfg(all(windows, feature = "service-hardware-compile-check"))]
 #[allow(unused_imports)] // Shared with the standalone discovery binary.
-pub(crate) use windows::native_worker;
+pub(crate) use windows::{native_read_worker, native_worker};
 #[cfg(all(windows, feature = "service-hardware-compile-check"))]
 #[allow(unused_imports)]
 pub(crate) use worker::Worker;
@@ -45,6 +45,33 @@ type Frame = [u8; FRAME_LENGTH];
 pub(crate) enum ObservedPerformance {
     BalancedAutomatic,
     PerformanceAutomatic,
+    SilentAutomatic,
+    SilentManual,
+    PerformanceManual,
+    BatterySaverAutomatic,
+    BatteryBalancedAutomatic,
+    BatterySaverManual,
+    BatteryBalancedManual,
+    FixedMaximum,
+    HyperBoostObserved,
+}
+
+impl ObservedPerformance {
+    pub(crate) fn projection(self) -> (Option<i32>, i32, Option<bool>) {
+        match self {
+            Self::BalancedAutomatic => (Some(1), 0, Some(false)),
+            Self::PerformanceAutomatic => (Some(2), 0, Some(false)),
+            Self::SilentAutomatic => (Some(0), 0, Some(false)),
+            Self::SilentManual => (Some(0), 3, Some(false)),
+            Self::PerformanceManual => (Some(2), 3, Some(false)),
+            Self::BatterySaverAutomatic => (Some(3), 0, Some(false)),
+            Self::BatteryBalancedAutomatic => (Some(4), 0, Some(false)),
+            Self::BatterySaverManual => (Some(3), 3, Some(false)),
+            Self::BatteryBalancedManual => (Some(4), 3, Some(false)),
+            Self::FixedMaximum => (None, 3, Some(false)),
+            Self::HyperBoostObserved => (None, 0, Some(true)),
+        }
+    }
 }
 
 // Only a live service owner can supply this evidence. An epoch must change
@@ -64,7 +91,35 @@ impl Admission {
     }
 }
 
-type Authorize<'a> = &'a mut dyn FnMut() -> Option<Admission>;
+// Read custody is independent of Full adapter power, UI session and mutation
+// clearance. It is minted by the concrete retained-origin/read-lease chain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ReadAdmission {
+    pub(crate) generation: [u8; 32],
+}
+
+pub(crate) trait ObservationProof: Copy + Eq + Send + Sync + 'static {
+    fn readable(self) -> bool;
+    fn matches_session(self, session: Option<u32>) -> bool;
+}
+impl ObservationProof for Admission {
+    fn readable(self) -> bool {
+        self.is_clear()
+    }
+    fn matches_session(self, session: Option<u32>) -> bool {
+        session.is_none_or(|s| s == self.session)
+    }
+}
+impl ObservationProof for ReadAdmission {
+    fn readable(self) -> bool {
+        self.generation != [0; 32]
+    }
+    fn matches_session(self, _: Option<u32>) -> bool {
+        true
+    }
+}
+
+type Authorize<'a, A = Admission> = &'a mut dyn FnMut() -> Option<A>;
 
 #[derive(Clone, Copy)]
 struct Limit<'a> {
@@ -113,8 +168,11 @@ fn reviewed_descriptor(descriptor: Descriptor) -> bool {
         && usize::from(descriptor.feature_bytes) == FRAME_LENGTH
 }
 
-fn verify_admission(authorize: Authorize<'_>, expected: Admission) -> io::Result<()> {
-    if expected.is_clear() && authorize() == Some(expected) {
+fn verify_admission<A: ObservationProof>(
+    authorize: Authorize<'_, A>,
+    expected: A,
+) -> io::Result<()> {
+    if expected.readable() && authorize() == Some(expected) {
         Ok(())
     } else {
         Err(blocked("firmware observation lost live service admission"))
@@ -139,14 +197,14 @@ impl Transactions {
     }
 }
 
-struct Reader<P: Port> {
+struct Reader<P: Port, A = Admission> {
     port: P,
-    admission: Admission,
+    admission: A,
     poisoned: bool,
 }
 
-impl<P: Port> Reader<P> {
-    fn new(port: P, admission: Admission) -> Self {
+impl<P: Port, A: ObservationProof> Reader<P, A> {
+    fn new(port: P, admission: A) -> Self {
         Self {
             port,
             admission,
@@ -156,7 +214,7 @@ impl<P: Port> Reader<P> {
 
     async fn observe(
         &mut self,
-        authorize: Authorize<'_>,
+        authorize: Authorize<'_, A>,
         limit: Limit<'_>,
     ) -> Option<ObservedPerformance> {
         if self.poisoned {
@@ -201,21 +259,21 @@ impl<P: Port> Reader<P> {
     }
 }
 
-struct Attempt<'a, P: Port> {
-    reader: &'a mut Reader<P>,
+struct Attempt<'a, P: Port, A: ObservationProof> {
+    reader: &'a mut Reader<P, A>,
     completed: bool,
 }
 
-impl<P: Port> Attempt<'_, P> {
+impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
     async fn read_pair(
         &mut self,
-        authorize: Authorize<'_>,
-        admission: Admission,
+        authorize: Authorize<'_, A>,
+        admission: A,
         limit: Limit<'_>,
     ) -> Option<ObservedPerformance> {
         self.checkpoint(authorize, admission, limit).ok()?;
         let transactions = self.reader.port.reserve_pair()?;
-        let mut selectors = [0; 2];
+        let mut selectors = [(0, 0); 2];
         for (index, transaction) in transactions.into_iter().enumerate() {
             let channel = index as u8 + 1;
             let request =
@@ -236,27 +294,40 @@ impl<P: Port> Attempt<'_, P> {
                 return None;
             }
             let reply = request.validate_response(&frame[1..], Some(4)).ok()?;
-            let [1, returned_channel, mode, 0] = reply.as_slice() else {
+            let [1, returned_channel, mode, fan] = reply.as_slice() else {
                 return None;
             };
             if *returned_channel != channel {
                 return None;
             }
-            selectors[index] = *mode;
+            selectors[index] = (*mode, *fan);
             self.checkpoint(authorize, admission, limit).ok()?;
         }
 
-        match selectors {
-            [0, 0] => Some(ObservedPerformance::BalancedAutomatic),
-            [2, 2] => Some(ObservedPerformance::PerformanceAutomatic),
+        if selectors[0] != selectors[1] {
+            return None;
+        }
+        match selectors[0] {
+            (0, 0) => Some(ObservedPerformance::BalancedAutomatic),
+            (2, 0) => Some(ObservedPerformance::PerformanceAutomatic),
+            (5, 0) => Some(ObservedPerformance::SilentAutomatic),
+            (5, 1) => Some(ObservedPerformance::SilentManual),
+            (2, 1) => Some(ObservedPerformance::PerformanceManual),
+            (3, 0) => Some(ObservedPerformance::BatterySaverAutomatic),
+            (6, 0) => Some(ObservedPerformance::BatteryBalancedAutomatic),
+            (3, 1) => Some(ObservedPerformance::BatterySaverManual),
+            (6, 1) => Some(ObservedPerformance::BatteryBalancedManual),
+            (0, 1) => Some(ObservedPerformance::FixedMaximum),
+            (7, 0) => Some(ObservedPerformance::HyperBoostObserved),
+            // Custom requires actual CPU/GPU 0D/87 getters; no guessed levels.
             _ => None,
         }
     }
 
     fn checkpoint(
         &mut self,
-        authorize: Authorize<'_>,
-        admission: Admission,
+        authorize: Authorize<'_, A>,
+        admission: A,
         limit: Limit<'_>,
     ) -> io::Result<()> {
         limit.check()?;
@@ -284,7 +355,7 @@ impl<P: Port> Attempt<'_, P> {
     }
 }
 
-impl<P: Port> Drop for Attempt<'_, P> {
+impl<P: Port, A: ObservationProof> Drop for Attempt<'_, P, A> {
     fn drop(&mut self) {
         if !self.completed {
             self.reader.seal();

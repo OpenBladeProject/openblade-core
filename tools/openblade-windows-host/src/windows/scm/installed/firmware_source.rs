@@ -99,6 +99,7 @@ impl FirmwareSource {
             let preset = match reading.performance {
                 ObservedPerformance::BalancedAutomatic => 1,
                 ObservedPerformance::PerformanceAutomatic => 2,
+                _ => return Ok(None), // Legacy write-authority prototype retains its old projection.
             };
             if source
                 .ownership
