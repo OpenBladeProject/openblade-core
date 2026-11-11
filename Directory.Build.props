@@ -1,10 +1,22 @@
 <Project>
-  <!-- The Deployment reference with algorithm seams is a distinct SDK build,
-       including NuGet assets. Set paths before Common.props imports assets. -->
-  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'OpenBlade.Deployment' And '$(OpenBladeNativePackageTests)' == 'true'">
-    <ArtifactsProjectName>OpenBlade.Deployment.NativePackageTests</ArtifactsProjectName>
-    <BaseIntermediateOutputPath Condition="'$(ArtifactsPath)' == '' And '$(UseArtifactsOutput)' != 'true'">obj\native-package-tests\</BaseIntermediateOutputPath>
-    <BaseOutputPath Condition="'$(ArtifactsPath)' == '' And '$(UseArtifactsOutput)' != 'true'">bin\native-package-tests\</BaseOutputPath>
+  <!-- Global fixture switches change referenced assemblies and restore graphs.
+       Isolate every consumer before SDK Common.props chooses output/assets paths.
+       Keep each effective combination distinct, including the NativeAOT graph. -->
+  <PropertyGroup>
+    <_OpenBladeFixtureVariant></_OpenBladeFixtureVariant>
+    <!-- Short flag keys keep NativeAOT linker paths within Windows tool limits:
+         n = native package tests, c = candidate receipt, p = package proof,
+         s = scratch native receiver (effective only with candidate receipt). -->
+    <_OpenBladeFixtureVariant Condition="'$(OpenBladeNativePackageTests)' == 'true' Or '$(OpenBladeCandidateReceiptFixture)' == 'true' Or '$(OpenBladePackageProofFixture)' == 'true'">.Fixtures</_OpenBladeFixtureVariant>
+    <_OpenBladeFixtureVariant Condition="'$(OpenBladeNativePackageTests)' == 'true'">$(_OpenBladeFixtureVariant).n</_OpenBladeFixtureVariant>
+    <_OpenBladeFixtureVariant Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">$(_OpenBladeFixtureVariant).c</_OpenBladeFixtureVariant>
+    <_OpenBladeFixtureVariant Condition="'$(OpenBladePackageProofFixture)' == 'true'">$(_OpenBladeFixtureVariant).p</_OpenBladeFixtureVariant>
+    <_OpenBladeFixtureVariant Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true' And '$(OpenBladeScratchNativeReceiver)' == 'true'">$(_OpenBladeFixtureVariant).s</_OpenBladeFixtureVariant>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(_OpenBladeFixtureVariant)' != ''">
+    <ArtifactsProjectName>$(MSBuildProjectName)$(_OpenBladeFixtureVariant)</ArtifactsProjectName>
+    <BaseIntermediateOutputPath Condition="'$(ArtifactsPath)' == '' And '$(UseArtifactsOutput)' != 'true'">obj\fixtures$(_OpenBladeFixtureVariant)\</BaseIntermediateOutputPath>
+    <BaseOutputPath Condition="'$(ArtifactsPath)' == '' And '$(UseArtifactsOutput)' != 'true'">bin\fixtures$(_OpenBladeFixtureVariant)\</BaseOutputPath>
     <DefaultItemExcludes>$(DefaultItemExcludes);obj\**;bin\**</DefaultItemExcludes>
   </PropertyGroup>
   <PropertyGroup>

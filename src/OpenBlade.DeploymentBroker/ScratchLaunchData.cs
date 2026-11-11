@@ -1,4 +1,6 @@
 #if OPENBLADE_CANDIDATE_RECEIPT_FIXTURE
+using System.Diagnostics;
+
 namespace OpenBlade.DeploymentBroker;
 
 // One fresh private directory per launch, outside the retained code closure.
@@ -24,7 +26,30 @@ internal sealed class ScratchLaunchData
         using var parent = pinDirectory(root);
         if (Directory.Exists(path) || File.Exists(path)) { throw new IOException("Fresh launch data is already present."); }
         Directory.CreateDirectory(path);
-        return new(root, path, pinDirectory, pinDirectory(path));
+        try { return new(root, path, pinDirectory, pinDirectory(path)); }
+        catch (Exception failure)
+        {
+            // No child exists yet. Re-admit the exact directory once; never traverse
+            // unknown contents after failed acquisition. Nonempty removal refuses.
+            ScratchFixtureFailure.Cleanup(failure, () =>
+            {
+                try
+                {
+                    RequireDeletionTarget(root, path);
+                    using (pinDirectory(path))
+                    {
+                        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                        { throw new IOException("Reparse launch data; partial cleanup refused."); }
+                    }
+                    Directory.Delete(path, recursive: false);
+                    if (Directory.Exists(path) || File.Exists(path))
+                    { throw new IOException("Partial launch data removal was not confirmed."); }
+                }
+                catch (Exception cleanup)
+                { throw new IOException("Launch data acquisition failed; data retained at " + path, cleanup); }
+            });
+            throw;
+        }
     }
 
     internal static void RequireDeletionTarget(string root, string path)
@@ -37,7 +62,7 @@ internal sealed class ScratchLaunchData
         { throw new IOException("Launch data deletion target is outside its exact private root."); }
     }
 
-    internal void Finish(bool retirementConfirmed)
+    internal void Finish(bool retirementConfirmed, CleanupBudget? budget = null)
     {
         if (completed) { throw new InvalidOperationException("Launch data retirement was already attempted."); }
         completed = true;
@@ -49,31 +74,98 @@ internal sealed class ScratchLaunchData
             // Keep the original data namespace pinned throughout content cleanup.
             // Release it only for the final, nonrecursive empty-directory removal.
             using var parent = pinDirectory(root);
-            DeleteContents(Path);
+            budget ??= new CleanupBudget();
+            DeleteContents(Path, budget, 0);
+            budget.Check();
         }
+        catch (Exception failure)
+        { throw new IOException("Launch data cleanup incomplete; data retained at " + Path, failure); }
         finally { lease.Dispose(); }
-        using var finalParent = pinDirectory(root);
-        Directory.Delete(Path, recursive: false);
+        try
+        {
+            using var finalParent = pinDirectory(root);
+            budget.Check();
+            Directory.Delete(Path, recursive: false);
+        }
+        catch (Exception failure)
+        { throw new IOException("Launch data cleanup incomplete; data retained at " + Path, failure); }
     }
 
-    private void DeleteContents(string directory)
+    private void DeleteContents(string directory, CleanupBudget budget, int depth)
     {
         // Never use recursive deletion: each directory is checked and retained
         // while its entries are visited, and each final deletion is nonrecursive.
         if (directory != Path && !directory.StartsWith(Path + System.IO.Path.DirectorySeparatorChar, StringComparison.Ordinal))
         { throw new IOException("Launch data child escaped its private directory."); }
+        budget.Enter(depth);
         using var pin = pinDirectory(directory);
-        foreach (string child in Directory.EnumerateFileSystemEntries(directory))
+        using var entries = Directory.EnumerateFileSystemEntries(directory).GetEnumerator();
+        while (true)
         {
+            budget.Check(); // Best effort between calls, not preemption of blocked I/O.
+            if (!entries.MoveNext()) { break; }
+            budget.TakeEntry();
+            string child = entries.Current;
             FileAttributes attributes = File.GetAttributes(child);
             if ((attributes & FileAttributes.ReparsePoint) != 0)
             { throw new IOException("Reparse entry in launch data; cleanup refused at " + child); }
             if ((attributes & FileAttributes.Directory) != 0)
             {
-                DeleteContents(child);
+                DeleteContents(child, budget, depth + 1);
+                budget.Check();
                 Directory.Delete(child, recursive: false);
             }
-            else { File.Delete(child); }
+            else
+            {
+                budget.Check();
+                File.Delete(child);
+            }
+        }
+    }
+
+    // One budget for the entire tree, including all siblings. The storage pin's
+    // path admission already bounds recursion; this tighter cap also bounds held
+    // leases. Time/cancellation checks cannot interrupt a blocked filesystem call.
+    internal sealed class CleanupBudget
+    {
+        private readonly int maxEntries;
+        private readonly int maxDepth;
+        private readonly TimeSpan timeout;
+        private readonly CancellationToken cancellationToken;
+        private readonly Func<TimeSpan> elapsed;
+        internal int Entries { get; private set; }
+
+        internal CleanupBudget(int maxEntries = 1024, int maxDepth = 16, TimeSpan? timeout = null,
+            CancellationToken cancellationToken = default, Func<TimeSpan>? elapsed = null)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxEntries);
+            ArgumentOutOfRangeException.ThrowIfNegative(maxDepth);
+            this.maxEntries = maxEntries;
+            this.maxDepth = maxDepth;
+            this.timeout = timeout ?? TimeSpan.FromSeconds(2);
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(this.timeout, TimeSpan.Zero);
+            this.cancellationToken = cancellationToken;
+            var watch = Stopwatch.StartNew();
+            this.elapsed = elapsed ?? (() => watch.Elapsed);
+        }
+
+        internal void Check()
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (elapsed() >= timeout) { throw new IOException("Launch data cleanup deadline exhausted."); }
+        }
+
+        internal void Enter(int depth)
+        {
+            Check();
+            if (depth > maxDepth) { throw new IOException("Launch data cleanup depth budget exhausted."); }
+        }
+
+        internal void TakeEntry()
+        {
+            Check();
+            if (Entries >= maxEntries) { throw new IOException("Launch data cleanup entry budget exhausted."); }
+            Entries++;
         }
     }
 }
