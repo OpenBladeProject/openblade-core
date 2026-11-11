@@ -19,7 +19,7 @@ mod windows_token;
 
 use sha2::{Digest, Sha256};
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io,
     os::windows::{ffi::OsStrExt, fs::OpenOptionsExt},
     path::{Path, PathBuf},
@@ -95,7 +95,6 @@ struct Tree {
     launch: Vec<u8>,
     expected: [u8; 32],
     active_digest: [u8; 32],
-    namespace_handles: Vec<File>,
 }
 
 impl Tree {
@@ -131,7 +130,7 @@ impl Tree {
         fs::write(install.join("OpenBlade.Service.exe"), SERVICE).unwrap();
         fs::write(install.join("OpenBlade.SessionAgent.exe"), AGENT).unwrap();
         fs::write(root.join("unresolved-deployment.json"), ACTIVE).unwrap();
-        let (closure_digest, namespace_handles) = install_receiver_closure(&root, &owner);
+        let closure_digest = install_receiver_closure(&root);
         let mut launch = vec![0u8; 120];
         launch[..12].fill(6);
         launch[12..24].copy_from_slice(&SETUP);
@@ -146,7 +145,6 @@ impl Tree {
             launch,
             expected,
             active_digest,
-            namespace_handles,
         };
         tree.write_launch();
         tree
@@ -214,10 +212,6 @@ impl Tree {
 }
 impl Drop for Tree {
     fn drop(&mut self) {
-        for handle in &self.namespace_handles {
-            set_namespace_acl(handle, &self.owner, false).expect("restore namespace ACL");
-        }
-        self.namespace_handles.clear();
         fs::remove_dir_all(&self.root).expect("remove private offline receipt tree");
     }
 }
@@ -237,7 +231,7 @@ fn valid_authenticated_provisional_receipt_retains_its_disk_evidence() {
         .expect("valid prior guards and launch evidence");
     retained
         .require_unchanged()
-        .expect("closure remains sealed and unchanged");
+        .expect("native artifact remains unchanged");
     // Retention must prevent a subsequent writer from changing a checked image.
     assert!(
         OpenOptions::new()
@@ -280,7 +274,7 @@ fn launch_generation_binding_and_secret_mutations_reach_launch_authentication() 
 }
 
 #[test]
-fn launch_evidence_requires_exact_v2_length() {
+fn launch_evidence_requires_exact_v3_length() {
     for length in [119, 121] {
         let mut tree = Tree::new();
         tree.launch.resize(length, 0);
@@ -347,149 +341,60 @@ fn changed_service_and_agent_reach_independent_image_digest_verification() {
     }
 }
 
-#[allow(unsafe_code)]
-fn set_namespace_acl(handle: &File, owner: &[u8], seal: bool) -> io::Result<()> {
-    use std::{os::windows::io::AsRawHandle, ptr::null_mut};
-    use windows_sys::Win32::Security::{
-        Authorization::{SE_FILE_OBJECT, SetSecurityInfo},
-        DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
-    };
-    use windows_sys::Win32::Storage::FileSystem::FILE_ALL_ACCESS;
-    let mut acl = vec![0u8; 8];
-    if seal {
-        let owner_rights = [1u8, 1, 0, 0, 0, 0, 0, 3, 4, 0, 0, 0];
-        acl.extend_from_slice(&[1, 0, 20, 0]);
-        acl.extend_from_slice(&0x000d0046u32.to_le_bytes());
-        acl.extend_from_slice(&owner_rights);
-    }
-    acl.extend_from_slice(&[0, 3]);
-    acl.extend_from_slice(&((8 + owner.len()) as u16).to_le_bytes());
-    acl.extend_from_slice(&FILE_ALL_ACCESS.to_le_bytes());
-    acl.extend_from_slice(owner);
-    let size = acl.len() as u16;
-    acl[0] = 2;
-    acl[2..4].copy_from_slice(&size.to_le_bytes());
-    acl[4..6].copy_from_slice(&(if seal { 2u16 } else { 1u16 }).to_le_bytes());
-    // SAFETY: the retained handle was opened for WRITE_DAC before sealing;
-    // the complete ACL remains allocated throughout this synchronous call.
-    let result = unsafe {
-        SetSecurityInfo(
-            handle.as_raw_handle(),
-            SE_FILE_OBJECT,
-            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-            null_mut(),
-            null_mut(),
-            acl.as_mut_ptr().cast(),
-            null_mut(),
-        )
-    };
-    if result != 0 {
-        return Err(io::Error::from_raw_os_error(result as i32));
-    }
-    Ok(())
-}
-
-fn install_receiver_closure(root: &Path, owner: &[u8]) -> ([u8; 32], Vec<File>) {
-    let vector: serde_json::Value =
-        serde_json::from_str(include_str!("data/scratch-receiver-closure-v1.json")).unwrap();
-    let receiver = root.join("receiver");
-    let mut directories = std::collections::BTreeSet::from([receiver.clone()]);
-    for (name, contents) in vector["members"].as_object().unwrap() {
-        let path = receiver.join(name.replace('\\', "/"));
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, contents.as_str().unwrap().as_bytes()).unwrap();
-        let mut parent = path.parent().unwrap();
-        while parent != receiver {
-            directories.insert(parent.to_path_buf());
-            parent = parent.parent().unwrap();
-        }
-    }
-    // Acquire WRITE_DAC for every directory before any deny ACE is installed,
-    // mirroring the broker's reversible namespace seal and allowing exact cleanup.
-    let handles: Vec<File> = directories
-        .iter()
-        .map(|path| {
-            OpenOptions::new()
-                .access_mode(0x0006_0000)
-                .share_mode(7)
-                .custom_flags(0x0200_0000)
-                .open(path)
-                .unwrap()
-        })
+fn install_receiver_closure(root: &Path) -> [u8; 32] {
+    let v: serde_json::Value =
+        serde_json::from_str(include_str!("data/scratch-native-receiver-v2.json")).unwrap();
+    let image: Vec<u8> = v["imageHex"]
+        .as_str()
+        .unwrap()
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|x| u8::from_str_radix(std::str::from_utf8(x).unwrap(), 16).unwrap())
         .collect();
-    for handle in &handles {
-        set_namespace_acl(handle, owner, true).unwrap();
-    }
-    (
-        candidate_receipt::digest(vector["canonicalSha256"].as_str().unwrap()).unwrap(),
-        handles,
+    fs::write(
+        root.join("receiver/OpenBlade.CandidateReceipt.Scratch.exe"),
+        image,
     )
+    .unwrap();
+    candidate_receipt::digest(v["canonicalSha256"].as_str().unwrap()).unwrap()
 }
-
 #[test]
-fn apphost_only_digest_is_not_a_complete_authenticated_receiver_closure() {
-    let mut tree = Tree::new();
-    let apphost = fs::read(
+fn retained_native_image_blocks_writes_and_releases_without_acl_changes() {
+    let tree = Tree::new();
+    let mut retained = tree.read(REQUEST, tree.active_digest).unwrap();
+    let image = tree
+        .root
+        .join("receiver/OpenBlade.CandidateReceipt.Scratch.exe");
+    assert!(OpenOptions::new().write(true).open(&image).is_err());
+    assert!(fs::remove_file(&image).is_err());
+    retained.require_unchanged().unwrap();
+    drop(retained);
+    OpenOptions::new().write(true).open(&image).unwrap();
+}
+#[test]
+fn additions_are_refused_but_never_acl_sealed() {
+    let tree = Tree::new();
+    let mut retained = tree.read(REQUEST, tree.active_digest).unwrap();
+    fs::write(tree.root.join("receiver/unexpected.dll"), b"data only").unwrap();
+    assert!(retained.require_unchanged().is_err());
+}
+#[test]
+fn obsolete_fdd_input_and_missing_native_image_refuse() {
+    let tree = Tree::new();
+    fs::write(
+        tree.root
+            .join("receiver/OpenBlade.CandidateReceipt.Scratch.deps.json"),
+        b"{}",
+    )
+    .unwrap();
+    assert!(tree.error().to_string().contains("obsolete or unexpected"));
+    fs::remove_file(
         tree.root
             .join("receiver/OpenBlade.CandidateReceipt.Scratch.exe"),
     )
     .unwrap();
-    tree.launch[56..88].copy_from_slice(&hash(&apphost));
-    tree.write_launch();
-    assert_eq!(
-        tree.error().to_string(),
-        "Setup issuer image verification failed: receiver closure differs from authenticated launch evidence"
-    );
+    assert_eq!(tree.error().kind(), io::ErrorKind::NotFound);
 }
-
-#[test]
-fn changed_declared_receiver_members_reach_closure_digest_verification() {
-    for name in [
-        "OpenBlade.CandidateReceipt.Scratch.exe",
-        "OpenBlade.CandidateReceipt.Scratch.dll",
-        "OpenBlade.Setup.dll",
-        "ru/OpenBlade.Setup.resources.dll",
-        "runtimes/win/lib/net10.0/Windows.Managed.dll",
-    ] {
-        let tree = Tree::new();
-        let path = tree.root.join("receiver").join(name);
-        let mut bytes = fs::read(&path).unwrap();
-        bytes[0] ^= 1;
-        fs::write(path, bytes).unwrap();
-        assert_eq!(
-            tree.error().to_string(),
-            "Setup issuer image verification failed: receiver closure differs from authenticated launch evidence",
-            "member {name}"
-        );
-    }
-}
-
-#[test]
-fn retained_closure_blocks_member_replacement_and_namespace_extension() {
-    let tree = Tree::new();
-    let mut retained = tree
-        .read(REQUEST, tree.active_digest)
-        .expect("valid authenticated startup");
-    let receiver = tree.root.join("receiver");
-    assert!(
-        OpenOptions::new()
-            .write(true)
-            .open(receiver.join("OpenBlade.Setup.dll"))
-            .is_err()
-    );
-    assert!(
-        fs::rename(
-            receiver.join("OpenBlade.Setup.dll"),
-            receiver.join("renamed.dll")
-        )
-        .is_err()
-    );
-    assert!(fs::write(receiver.join("unexpected.dll"), b"unexpected").is_err());
-    retained
-        .require_unchanged()
-        .expect("failed mutations leave the retained closure intact");
-}
-
 #[test]
 fn production_read_refuses_even_a_valid_committed_record_without_authority() {
     let tree = Tree::new();
@@ -532,86 +437,4 @@ fn production_read_refuses_even_a_valid_committed_record_without_authority() {
         error.to_string(),
         "authenticated committed release identity is unavailable"
     );
-}
-
-#[test]
-fn missing_declared_receiver_member_reaches_required_member_open() {
-    let tree = Tree::new();
-    fs::remove_file(tree.root.join("receiver/OpenBlade.Setup.dll")).unwrap();
-    let error = tree.error();
-    assert_eq!(error.kind(), io::ErrorKind::NotFound);
-    assert!(
-        error
-            .to_string()
-            .starts_with("Setup issuer image verification failed:")
-    );
-}
-
-#[test]
-fn unexpected_receiver_member_is_refused_after_restoring_the_exact_seal() {
-    let tree = Tree::new();
-    // Retained authority allows this test-only deliberate namespace alteration;
-    // restore every exact seal before invoking the actual production reader.
-    for handle in &tree.namespace_handles {
-        set_namespace_acl(handle, &tree.owner, false).unwrap();
-    }
-    fs::write(
-        tree.root.join("receiver/unexpected.dll"),
-        b"data-only unexpected member",
-    )
-    .unwrap();
-    for handle in &tree.namespace_handles {
-        set_namespace_acl(handle, &tree.owner, true).unwrap();
-    }
-    assert_eq!(
-        tree.error().to_string(),
-        "Setup issuer image verification failed: receiver closure contains missing or unexpected members"
-    );
-}
-
-#[test]
-fn missing_namespace_seal_refuses_new_and_retained_provisional_evidence() {
-    let tree = Tree::new();
-    for handle in &tree.namespace_handles {
-        set_namespace_acl(handle, &tree.owner, false).unwrap();
-    }
-    assert_eq!(
-        tree.error().to_string(),
-        "Setup issuer image verification failed: untrusted configuration security descriptor"
-    );
-    for handle in &tree.namespace_handles {
-        set_namespace_acl(handle, &tree.owner, true).unwrap();
-    }
-    let mut retained = tree
-        .read(REQUEST, tree.active_digest)
-        .expect("restored exact namespace seal");
-    retained.require_unchanged().unwrap();
-    for handle in &tree.namespace_handles {
-        set_namespace_acl(handle, &tree.owner, false).unwrap();
-    }
-    assert_eq!(
-        retained.require_unchanged().unwrap_err().to_string(),
-        "untrusted configuration security descriptor"
-    );
-    for handle in &tree.namespace_handles {
-        set_namespace_acl(handle, &tree.owner, true).unwrap();
-    }
-    retained
-        .require_unchanged()
-        .expect("restored exact seal is independently rechecked");
-}
-
-#[test]
-fn launch_filename_matches_real_csharp_encoder_and_refuses_legacy_name() {
-    let vector: serde_json::Value =
-        serde_json::from_str(include_str!("data/scratch-receiver-closure-v1.json")).unwrap();
-    assert_eq!(
-        candidate_receipt::SCRATCH_LAUNCH_NAME,
-        vector["launchEvidenceName"].as_str().unwrap()
-    );
-    let tree = Tree::new();
-    assert!(tree.read(REQUEST, tree.active_digest).is_ok());
-    let path = tree.launch_path();
-    fs::rename(&path, path.with_file_name("candidate-setup-launch.v1")).unwrap();
-    assert_eq!(tree.error().kind(), io::ErrorKind::NotFound);
 }

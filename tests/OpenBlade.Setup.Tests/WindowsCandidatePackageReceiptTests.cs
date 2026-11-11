@@ -728,8 +728,7 @@ public sealed class WindowsCandidatePackageReceiptTests
             if (!Directory.Exists(directory))
             {
                 Directory.CreateDirectory(directory);
-                string[] names = ScratchReceiverClosure.RequiredFiles(File.ReadAllBytes(
-                    Path.Combine(source, ScratchReceiverClosure.Stem + ".deps.json")));
+                string[] names = [ScratchCandidateLaunch.ReceiverName];
                 foreach (string name in names.Append(WindowsScratchCandidateReadiness.ImageName))
                 {
                     string path = Path.Combine(source, name);
@@ -756,7 +755,7 @@ public sealed class WindowsCandidatePackageReceiptTests
             using var root = storage.PinDirectory(directory);
             using var heldClosure = ScratchReceiverClosure.Retain(storage);
             byte[] secret = RandomNumberGenerator.GetBytes(ScratchCandidateLaunch.SecretLength);
-            await RunScratchChildAsync(wrongImage ? Path.Combine(source, ScratchCandidateLaunch.ReceiverName) : image,
+            Task Run() => RunScratchChildAsync(wrongImage ? Path.Combine(source, ScratchCandidateLaunch.ReceiverName) : image,
                 closeWithoutRelease ? [] : [.. ScratchId.ToByteArray(), .. (wrongSecret ? new byte[secret.Length] : secret)],
                 expectedExit, expectedDiagnostic, process =>
                 {
@@ -767,7 +766,16 @@ public sealed class WindowsCandidatePackageReceiptTests
                     afterStart?.Invoke(process);
                 }, afterExit: closeWithoutRelease ? child => Assert.Throws<InvalidDataException>(
                     () => ScratchCandidateLaunch.Bind(storage, request, child, heldClosure, secret)) : null,
-                observeStartup: observeStartup ?? (expectedExit == 0 ? _ => Task.CompletedTask : null));
+                observeStartup: observeStartup ?? (expectedExit == 0 ? _ => Task.CompletedTask : null), nativeClosure: heldClosure);
+            if (wrongImage)
+            {
+                var error = await Assert.ThrowsAsync<InvalidDataException>(Run);
+                Assert.Contains("differs from its fixed launch image", error.Message, StringComparison.Ordinal);
+            }
+            else
+            {
+                await Run();
+            }
         }
 
 #if OPENBLADE_CANDIDATE_RECEIPT_RUST_PROBE
@@ -798,7 +806,7 @@ public sealed class WindowsCandidatePackageReceiptTests
         private static async Task RunScratchChildAsync(string name, byte[] input, int expectedExit,
             string? expectedDiagnostic, Action<Process>? bind = null, int timeoutSeconds = 75,
             Action<Process>? afterExit = null, Func<byte[], Task>? observeStartup = null,
-            Func<CancellationToken, Task>? exchange = null)
+            Func<CancellationToken, Task>? exchange = null, ScratchReceiverClosure? nativeClosure = null)
         {
             using WindowsIdentity identity = WindowsIdentity.GetCurrent();
             if (identity.IsSystem || new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
@@ -807,31 +815,35 @@ public sealed class WindowsCandidatePackageReceiptTests
             }
             string testDirectory = Path.GetDirectoryName(typeof(WindowsCandidatePackageReceiptTests).Assembly.Location)!;
             string image = Path.Combine(testDirectory, name);
-            using var child = Process.Start(new ProcessStartInfo(image)
+            using var native = nativeClosure is null ? null : ScratchNativeReceiverLaunch.Start(image, nativeClosure);
+            using var ordinary = native is null ? Process.Start(new ProcessStartInfo(image)
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardInput = true,
                 RedirectStandardError = true,
                 RedirectStandardOutput = observeStartup is not null || exchange is not null,
-            }) ?? throw new InvalidOperationException($"Unable to start scratch child {name}.");
+            }) : null;
+            var child = native?.Process ?? ordinary ?? throw new InvalidOperationException($"Unable to start scratch child {name}.");
+            var childInput = native?.StandardInput ?? child.StandardInput;
+            var childError = native?.StandardError ?? child.StandardError;
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
             try
             {
                 bind?.Invoke(child);
-                await child.StandardInput.BaseStream.WriteAsync(input, deadline.Token);
-                var error = child.StandardError.ReadToEndAsync(deadline.Token);
+                await childInput.BaseStream.WriteAsync(input, deadline.Token);
+                var error = childError.ReadToEndAsync(deadline.Token);
                 if (observeStartup is not null)
                 {
                     byte[] commitment = new byte[76];
-                    await child.StandardOutput.BaseStream.ReadExactlyAsync(commitment, deadline.Token);
+                    await (native?.StandardOutput ?? child.StandardOutput).BaseStream.ReadExactlyAsync(commitment, deadline.Token);
                     await observeStartup(commitment);
                 }
-                child.StandardInput.Close();
+                childInput.Close();
                 if (exchange is not null)
                 {
                     byte[] marker = new byte[1];
-                    await child.StandardOutput.BaseStream.ReadExactlyAsync(marker, deadline.Token)
+                    await (native?.StandardOutput ?? child.StandardOutput).BaseStream.ReadExactlyAsync(marker, deadline.Token)
                         .AsTask().WaitAsync(deadline.Token);
                     Assert.Equal(WindowsScratchCandidateReadiness.PipeClaimedMarker, marker[0]);
                     await exchange(deadline.Token);

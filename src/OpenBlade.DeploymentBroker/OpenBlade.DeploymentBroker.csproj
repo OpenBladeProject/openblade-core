@@ -1,5 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
+  <PropertyGroup Condition="'$(OpenBladeScratchNativeReceiver)' == 'true' And '$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeScratchNativeReceiver)' == 'true' And '$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <Compile Remove="Program.cs" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
   </PropertyGroup>

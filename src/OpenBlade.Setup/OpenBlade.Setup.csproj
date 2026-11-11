@@ -16,6 +16,12 @@
   </PropertyGroup>
 
   <!-- Offline-only proof reader and scratch image-pin seam. -->
+  <PropertyGroup Condition="'$(OpenBladeScratchNativeReceiver)' == 'true' And '$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeScratchNativeReceiver)' == 'true' And '$(OpenBladeCandidateReceiptFixture)' == 'true'">
+    <Compile Remove="Program.cs" />
+  </ItemGroup>
   <PropertyGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true'">
     <DefineConstants>$(DefineConstants);OPENBLADE_CANDIDATE_RECEIPT_FIXTURE</DefineConstants>
   </PropertyGroup>

@@ -13,7 +13,7 @@ namespace OpenBlade.DeploymentBroker;
 // can issue this evidence on behalf of a descendant.
 internal static class ScratchCandidateLaunch
 {
-    internal const string EvidenceName = "candidate-setup-launch.v2";
+    internal const string EvidenceName = "candidate-setup-launch.v3";
     internal const string ReceiverName = "OpenBlade.CandidateReceipt.Scratch.exe";
     internal const int SecretLength = 32;
     private const int ProcessIdentityLength = sizeof(int) + sizeof(long);
@@ -42,6 +42,7 @@ internal static class ScratchCandidateLaunch
             throw new InvalidDataException("The scratch launcher did not retain its fixed receiver closure.");
         }
         RequireLiveImage(child, image);
+        ScratchNativeReceiverLaunch.RequirePolicies(child.SafeHandle);
         var store = new BrokerInFlightStore(paths);
         store.BindInstallerProcess(request, child.Id, DateTimeOffset.UtcNow);
         using var binding = storage.OpenFile(paths.InFlightPath);

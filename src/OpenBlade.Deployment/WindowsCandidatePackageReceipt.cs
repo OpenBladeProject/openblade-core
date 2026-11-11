@@ -2,6 +2,7 @@
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OpenBlade.Deployment;
 
@@ -44,26 +45,11 @@ internal sealed class WindowsCandidatePackageReceipt
         startup = Encode("SetupPayloadStarting");
         committed = Encode("SetupPayloadCommitted");
 
-        byte[] Encode(string phase) => JsonSerializer.SerializeToUtf8Bytes(new
-        {
-            schema = 2,
-            phase,
-            scratchId = storage.ScratchId,
-            installationId,
-            requestId,
-            issuedAt,
-            packageSha256 = proof.Identity.PackageSha256,
-            packageLength = manifest.InstallerSize,
-            version = manifest.Version,
-            sourceRevision = manifest.SourceRevision,
-            manifestSha256,
-            enrollmentSha256,
-            brokerBindingSha256,
-            signingKeyId = release.SigningKeyId,
-            sequence = manifest.Sequence,
-            service = proof.Service,
-            sessionAgent = proof.SessionAgent,
-        });
+        byte[] Encode(string phase) => JsonSerializer.SerializeToUtf8Bytes(new ScratchReceiptRecord(
+            2, phase, storage.ScratchId, installationId, requestId, issuedAt,
+            proof.Identity.PackageSha256, manifest.InstallerSize, manifest.Version, manifest.SourceRevision,
+            manifestSha256, enrollmentSha256, brokerBindingSha256, release.SigningKeyId, manifest.Sequence,
+            proof.Service, proof.SessionAgent), ScratchReceiptJsonContext.Default.ScratchReceiptRecord);
     }
 
     internal static WindowsCandidatePackageReceipt Publish(WindowsCandidateReceiptStorage storage,
@@ -282,4 +268,12 @@ internal sealed class WindowsCandidatePackageReceipt
         }
     }
 }
+internal sealed record ScratchReceiptRecord(int schema, string phase, Guid scratchId, Guid installationId,
+    Guid requestId, DateTimeOffset issuedAt, string packageSha256, long packageLength, string version,
+    string sourceRevision, string manifestSha256, string enrollmentSha256, string brokerBindingSha256,
+    string signingKeyId, long sequence, WindowsNativePackageRoleProof.RoleImage service,
+    WindowsNativePackageRoleProof.RoleImage sessionAgent);
+
+[JsonSerializable(typeof(ScratchReceiptRecord))]
+internal partial class ScratchReceiptJsonContext : JsonSerializerContext;
 #endif

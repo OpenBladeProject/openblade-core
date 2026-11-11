@@ -30,7 +30,7 @@ try
     return 0;
 }
 catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException
-    or OpenBladeReleaseVerificationException or OperationCanceledException)
+    or OpenBladeReleaseVerificationException or OperationCanceledException or System.ComponentModel.Win32Exception)
 {
     Console.Error.WriteLine(error);
     return 3;

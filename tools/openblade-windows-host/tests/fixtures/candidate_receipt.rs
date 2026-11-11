@@ -51,7 +51,7 @@ mod scratch {
         Foundation::{FILETIME, WAIT_TIMEOUT},
         Globalization::{CSTR_EQUAL, CompareStringOrdinal},
         System::Threading::{
-            GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
+            GetProcessTimes, OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_SYNCHRONIZE,
             QueryFullProcessImageNameW, WaitForSingleObject,
         },
         UI::Shell::FOLDERID_LocalAppData,
@@ -250,10 +250,12 @@ mod scratch {
     }
 
     fn pin_setup(pid: u32, receiver: &Path) -> io::Result<(OwnedHandle, [u8; 12])> {
+        // Request full process-query rights for mitigation-policy readback;
+        // do not rely on the narrower rights sufficient for an image path.
         // SAFETY: Query and wait only, with no handle inheritance.
         let handle = unsafe {
             OpenProcess(
-                PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+                PROCESS_QUERY_INFORMATION | PROCESS_SYNCHRONIZE,
                 0,
                 pid,
             )
@@ -298,6 +300,7 @@ mod scratch {
     }
 
     fn require_running(process: &OwnedHandle) -> io::Result<()> {
+        crate::scratch_receiver_closure::require_process_policies(process.as_raw_handle())?;
         // SAFETY: The borrowed process handle has wait access and is live.
         if unsafe { WaitForSingleObject(process.as_raw_handle(), 0) } != WAIT_TIMEOUT {
             return Err(denied("provisional Setup process is no longer active"));

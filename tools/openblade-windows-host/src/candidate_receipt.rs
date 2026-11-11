@@ -31,7 +31,7 @@ const MAX_RECEIPT_BYTES: u64 = 4096;
 const EMPTY_GUID: &str = "00000000-0000-0000-0000-000000000000";
 const AGENT_NAME: &str = "OpenBlade.SessionAgent.exe";
 #[cfg(feature = "scratch-candidate-receipt")]
-pub(super) const SCRATCH_LAUNCH_NAME: &str = "candidate-setup-launch.v2";
+pub(super) const SCRATCH_LAUNCH_NAME: &str = "candidate-setup-launch.v3";
 
 #[derive(Clone, Copy)]
 enum Phase {
