@@ -23,31 +23,48 @@ internal sealed class ScratchLaunchData
         string path = System.IO.Path.Combine(root, Prefix + Guid.NewGuid().ToString("N"));
         _ = ScratchNativeReceiverLaunch.CreateEnvironment(code, path);
         RequireDeletionTarget(root, path);
-        using var parent = pinDirectory(root);
-        if (Directory.Exists(path) || File.Exists(path)) { throw new IOException("Fresh launch data is already present."); }
-        Directory.CreateDirectory(path);
-        try { return new(root, path, pinDirectory, pinDirectory(path)); }
+        IDisposable? parent = null, dataLease = null;
+        bool retained = false;
+        try
+        {
+            ScratchFixtureFailure.Run(() =>
+            {
+                parent = pinDirectory(root);
+                if (Directory.Exists(path) || File.Exists(path)) { throw new IOException("Fresh launch data is already present."); }
+                Directory.CreateDirectory(path);
+                retained = true;
+                try { dataLease = pinDirectory(path); }
+                catch (Exception failure)
+                {
+                    // No child exists yet. Re-admit the exact directory once;
+                    // never traverse unknown contents after failed acquisition.
+                    ScratchFixtureFailure.Cleanup(failure, () =>
+                    {
+                        IDisposable? cleanupPin = null;
+                        ScratchFixtureFailure.Run(() =>
+                        {
+                            RequireDeletionTarget(root, path);
+                            cleanupPin = pinDirectory(path);
+                            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                            { throw new IOException("Reparse launch data; partial cleanup refused."); }
+                        }, () => cleanupPin?.Dispose());
+                        Directory.Delete(path, recursive: false);
+                        if (Directory.Exists(path) || File.Exists(path))
+                        { throw new IOException("Partial launch data removal was not confirmed."); }
+                        retained = false;
+                    });
+                    throw;
+                }
+            }, () => parent?.Dispose());
+            return new(root, path, pinDirectory, dataLease!);
+        }
         catch (Exception failure)
         {
-            // No child exists yet. Re-admit the exact directory once; never traverse
-            // unknown contents after failed acquisition. Nonempty removal refuses.
-            ScratchFixtureFailure.Cleanup(failure, () =>
-            {
-                try
-                {
-                    RequireDeletionTarget(root, path);
-                    using (pinDirectory(path))
-                    {
-                        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
-                        { throw new IOException("Reparse launch data; partial cleanup refused."); }
-                    }
-                    Directory.Delete(path, recursive: false);
-                    if (Directory.Exists(path) || File.Exists(path))
-                    { throw new IOException("Partial launch data removal was not confirmed."); }
-                }
-                catch (Exception cleanup)
-                { throw new IOException("Launch data acquisition failed; data retained at " + path, cleanup); }
-            });
+            // A failed parent release also prevents ownership transfer to the
+            // caller. Release any acquired data pin once and retain its path.
+            try { ScratchFixtureFailure.Cleanup(failure, () => dataLease?.Dispose()); }
+            catch (Exception error) when (retained)
+            { throw new ScratchFixtureFailure.RetainedDataException("Launch data acquisition failed; data retained at " + path, error); }
             throw;
         }
     }
@@ -68,27 +85,37 @@ internal sealed class ScratchLaunchData
         completed = true;
         try
         {
-            if (!retirementConfirmed)
-            { throw new IOException("Scratch retirement is unresolved; launch data retained at " + Path); }
-            RequireDeletionTarget(root, Path);
-            // Keep the original data namespace pinned throughout content cleanup.
-            // Release it only for the final, nonrecursive empty-directory removal.
-            using var parent = pinDirectory(root);
-            budget ??= new CleanupBudget();
-            DeleteContents(Path, budget, 0);
-            budget.Check();
+            IDisposable? parent = null;
+            Exception? failure = null;
+            try
+            {
+                if (!retirementConfirmed)
+                { throw new IOException("Scratch retirement is unresolved; launch data retained at " + Path); }
+                RequireDeletionTarget(root, Path);
+                // Keep the original namespace pinned throughout content cleanup.
+                // Release it only for final nonrecursive empty-directory removal.
+                parent = pinDirectory(root);
+                budget ??= new CleanupBudget();
+                DeleteContents(Path, budget, 0);
+                budget.Check();
+            }
+            catch (Exception error) { failure = error; }
+            // Preserve the operation and every release failure before classifying.
+            ScratchFixtureFailure.Cleanup(failure, () => parent?.Dispose(), lease.Dispose);
+
+            IDisposable? finalParent = null;
+            failure = null;
+            try
+            {
+                finalParent = pinDirectory(root);
+                budget!.Check();
+                Directory.Delete(Path, recursive: false);
+            }
+            catch (Exception error) { failure = error; }
+            ScratchFixtureFailure.Cleanup(failure, () => finalParent?.Dispose());
         }
         catch (Exception failure)
-        { throw new IOException("Launch data cleanup incomplete; data retained at " + Path, failure); }
-        finally { lease.Dispose(); }
-        try
-        {
-            using var finalParent = pinDirectory(root);
-            budget.Check();
-            Directory.Delete(Path, recursive: false);
-        }
-        catch (Exception failure)
-        { throw new IOException("Launch data cleanup incomplete; data retained at " + Path, failure); }
+        { throw new ScratchFixtureFailure.RetainedDataException("Launch data cleanup incomplete; data retained at " + Path, failure); }
     }
 
     private void DeleteContents(string directory, CleanupBudget budget, int depth)
@@ -98,29 +125,34 @@ internal sealed class ScratchLaunchData
         if (directory != Path && !directory.StartsWith(Path + System.IO.Path.DirectorySeparatorChar, StringComparison.Ordinal))
         { throw new IOException("Launch data child escaped its private directory."); }
         budget.Enter(depth);
-        using var pin = pinDirectory(directory);
-        using var entries = Directory.EnumerateFileSystemEntries(directory).GetEnumerator();
-        while (true)
+        IDisposable? pin = null;
+        IEnumerator<string>? entries = null;
+        ScratchFixtureFailure.Run(() =>
         {
-            budget.Check(); // Best effort between calls, not preemption of blocked I/O.
-            if (!entries.MoveNext()) { break; }
-            budget.TakeEntry();
-            string child = entries.Current;
-            FileAttributes attributes = File.GetAttributes(child);
-            if ((attributes & FileAttributes.ReparsePoint) != 0)
-            { throw new IOException("Reparse entry in launch data; cleanup refused at " + child); }
-            if ((attributes & FileAttributes.Directory) != 0)
+            pin = pinDirectory(directory);
+            entries = Directory.EnumerateFileSystemEntries(directory).GetEnumerator();
+            while (true)
             {
-                DeleteContents(child, budget, depth + 1);
-                budget.Check();
-                Directory.Delete(child, recursive: false);
+                budget.Check(); // Best effort between calls, not preemption of blocked I/O.
+                if (!entries.MoveNext()) { break; }
+                budget.TakeEntry();
+                string child = entries.Current;
+                FileAttributes attributes = File.GetAttributes(child);
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                { throw new IOException("Reparse entry in launch data; cleanup refused at " + child); }
+                if ((attributes & FileAttributes.Directory) != 0)
+                {
+                    DeleteContents(child, budget, depth + 1);
+                    budget.Check();
+                    Directory.Delete(child, recursive: false);
+                }
+                else
+                {
+                    budget.Check();
+                    File.Delete(child);
+                }
             }
-            else
-            {
-                budget.Check();
-                File.Delete(child);
-            }
-        }
+        }, () => entries?.Dispose(), () => pin?.Dispose());
     }
 
     // One budget for the entire tree, including all siblings. The storage pin's

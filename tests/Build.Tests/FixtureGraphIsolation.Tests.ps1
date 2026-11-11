@@ -2,11 +2,10 @@
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$EvidenceRoot)
 $ErrorActionPreference = 'Stop'
-$repository = [IO.Path]::GetFullPath((Split-Path (Split-Path $PSScriptRoot)))
-$EvidenceRoot = [IO.Path]::GetFullPath($EvidenceRoot)
-if ($EvidenceRoot.StartsWith($repository + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'Use an external private evaluation directory.'
-}
+. (Join-Path $PSScriptRoot 'FixtureGraphIsolation.ps1')
+$repository = [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath((Split-Path (Split-Path $PSScriptRoot))))
+$EvidenceRoot = [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($EvidenceRoot))
+Assert-ExternalFixtureEvidenceRoot $repository $EvidenceRoot
 [IO.Directory]::CreateDirectory($EvidenceRoot) | Out-Null
 # Inject a read/evaluation-only target. No compiler, product entrypoint or probe.
 $target = Join-Path $EvidenceRoot 'Snapshot.targets'
@@ -49,31 +48,22 @@ foreach ($layout in @('ordinary', 'artifacts')) {
             'tests/OpenBlade.CandidateReceipt.Scratch/OpenBlade.CandidateReceipt.Scratch.csproj')) {
             $arguments[1] = Join-Path $repository $root
             $name = [IO.Path]::GetFileNameWithoutExtension($root)
+            $rootDestination = Join-Path $destination $name
+            [IO.Directory]::CreateDirectory($rootDestination) | Out-Null
+            $arguments[6] = "-p:FixtureEvaluationRoot=$rootDestination"
             & dotnet @arguments *> (Join-Path $EvidenceRoot ($layout + '-' + $variant.Key + '-' + $name + '.log'))
             if ($LASTEXITCODE -ne 0) { throw "Evaluation failed: $layout $($variant.Key) $name" }
         }
-        foreach ($file in Get-ChildItem -LiteralPath $destination -Filter '*.txt') {
+        foreach ($file in Get-ChildItem -LiteralPath $destination -Filter '*.txt' -Recurse) {
             $cells = (Get-Content -LiteralPath $file.FullName -Raw).Trim() -split '\|'
-            $rows += [pscustomobject]@{ layout=$layout;variant=$variant.Key;project=$cells[0];target=$cells[1];intermediate=$cells[2];extensions=$cells[3];assets=$cells[4];identity=$cells[5];output=$cells[6];defines=$cells[7];references=$cells[8] }
+            $rows += [pscustomobject]@{ layout=$layout;variant=$variant.Key;root=$file.Directory.Name;project=$cells[0];target=$cells[1];intermediate=$cells[2];extensions=$cells[3];assets=$cells[4];identity=$cells[5];output=$cells[6];defines=$cells[7];references=$cells[8] }
         }
     }
 }
-foreach ($group in $rows | Group-Object layout, project) {
-    $normal = $group.Group | Where-Object variant -eq normal
-    if (-not $normal) { continue }
-    foreach ($fixture in $group.Group | Where-Object variant -ne normal) {
-        foreach ($field in @('target','intermediate','extensions','assets','output','identity')) {
-            if ($fixture.$field -eq $normal.$field) { throw "Shared $field in $($group.Name): $($fixture.variant)" }
-        }
-    }
-    foreach ($field in @('target','intermediate','extensions','assets','output','identity')) {
-        if (@($group.Group.$field | Sort-Object -Unique).Count -ne $group.Count) { throw "Variant collision: $field in $($group.Name)" }
-    }
-}
-foreach ($layout in @('ordinary','artifacts')) {
-    foreach ($name in @('OpenBlade.Setup','OpenBlade.DeploymentBroker','OpenBlade.Deployment','OpenBlade.Contracts','OpenBlade.Deployment.Tests','OpenBlade.Setup.Tests','OpenBlade.Service','OpenBlade.Session','OpenBlade.DeploymentClient','OpenBlade.CandidateReceipt.Scratch')) {
-        if (-not ($rows | Where-Object { $_.layout -eq $layout -and $_.project -eq $name -and $_.variant -eq 'full' })) { throw "Missing reachable $name ($layout)" }
-    }
-}
+# Keep every root observation. Collapse only after verifying exact agreement;
+# no differing current root context has been established.
+$rows | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'evaluations-by-root.json')
+$rows = @(Get-AgreedFixtureGraphRows $rows)
+Assert-FixtureGraphIsolation $rows
 $rows | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'evaluations.json')
 Write-Output "PASS: $($rows.Count) actual reachable project evaluations; ordinary/artifacts; default and six distinct fixture graphs."
