@@ -2,7 +2,7 @@ using OpenBlade.Setup;
 
 namespace OpenBlade.Setup.Tests;
 
-public sealed class SetupCommandRunnerTests
+public sealed partial class SetupCommandRunnerTests
 {
     [Theory]
     [InlineData(false)]
@@ -957,6 +957,7 @@ public sealed class SetupCommandRunnerTests
         public string? FailurePoint { get; set; }
         public CancellationTokenSource? Cancellation { get; init; }
         public Exception? UninstallerFailure { get; init; }
+        public ISetupPayloadTransaction? PayloadOverride { get; init; }
         public RecordingPayloadTransaction Transaction { get; init; } = new(hadExistingInstall: false);
         private bool lifecycleInitialized;
         private bool serviceRegistered;
@@ -983,7 +984,7 @@ public sealed class SetupCommandRunnerTests
             Transaction.Operations = Operations;
             return FailPayloadStage
                 ? Task.FromException<ISetupPayloadTransaction>(new InvalidOperationException("payload staging failed"))
-                : Task.FromResult<ISetupPayloadTransaction>(Transaction);
+                : Task.FromResult(PayloadOverride ?? Transaction);
         }
 
         public Task<SetupInstallLifecycleState> CaptureInstallLifecycleStateAsync(

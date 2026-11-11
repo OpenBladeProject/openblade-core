@@ -1,4 +1,12 @@
 <Project>
+  <!-- The Deployment reference with algorithm seams is a distinct SDK build,
+       including NuGet assets. Set paths before Common.props imports assets. -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'OpenBlade.Deployment' And '$(OpenBladeNativePackageTests)' == 'true'">
+    <ArtifactsProjectName>OpenBlade.Deployment.NativePackageTests</ArtifactsProjectName>
+    <BaseIntermediateOutputPath Condition="'$(ArtifactsPath)' == '' And '$(UseArtifactsOutput)' != 'true'">obj\native-package-tests\</BaseIntermediateOutputPath>
+    <BaseOutputPath Condition="'$(ArtifactsPath)' == '' And '$(UseArtifactsOutput)' != 'true'">bin\native-package-tests\</BaseOutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj\**;bin\**</DefaultItemExcludes>
+  </PropertyGroup>
   <PropertyGroup>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

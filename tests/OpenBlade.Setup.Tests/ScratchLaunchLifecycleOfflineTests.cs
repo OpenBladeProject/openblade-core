@@ -1,6 +1,7 @@
 #if OPENBLADE_CANDIDATE_RECEIPT_FIXTURE
 using System.Security.Cryptography;
 using OpenBlade.DeploymentBroker;
+using OpenBlade.Deployment;
 
 namespace OpenBlade.Setup.Tests;
 
@@ -55,25 +56,37 @@ public sealed class ScratchLaunchLifecycleOfflineTests
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    public void PartialChannelCleanupAttemptsEveryAcquiredResource(int acquired)
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(2, false)]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    [InlineData(2, true)]
+    public void PartialChannelAcquisitionCleansEveryOwnedResource(int boundary, bool duringInitialization)
     {
         List<int> released = [];
-        Action[] clients = Enumerable.Range(0, acquired).Select(index => (Action)(() =>
+        var primary = new InvalidDataException("channel acquisition failed");
+        Exception error = Assert.ThrowsAny<Exception>(() => ScratchChildChannels.Acquire(
+            index =>
+            {
+                if (index == boundary && !duringInitialization) { throw primary; }
+                return new TrackedResource(index, released);
+            },
+            (_, index) => { if (index == boundary && duringInitialization) { throw primary; } }));
+        int acquired = boundary + (duringInitialization ? 1 : 0);
+        Assert.Equal(Enumerable.Range(0, acquired), released.Order());
+        Assert.Contains(primary.Message, error.ToString(), StringComparison.Ordinal);
+        Assert.True(ScratchFixtureFailure.IsRefusal(error));
+        if (acquired > 0) { Assert.Contains("close failed", error.ToString(), StringComparison.Ordinal); }
+    }
+
+    private sealed class TrackedResource(int index, List<int> released) : IDisposable
+    {
+        public void Dispose()
         {
             released.Add(index);
-            if (index == 0) { throw new IOException("client close failed"); }
-        })).ToArray();
-        var primary = new InvalidDataException("admission failed");
-        Exception error = Assert.ThrowsAny<Exception>(() => ScratchFixtureFailure.Cleanup(primary, clients));
-        Assert.Equal(Enumerable.Range(0, acquired), released);
-        Assert.Contains("admission failed", error.ToString(), StringComparison.Ordinal);
-        Assert.True(ScratchFixtureFailure.IsRefusal(error));
-        if (acquired > 0) { Assert.Contains("client close failed", error.ToString(), StringComparison.Ordinal); }
-        else { Assert.Same(primary, error); }
+            if (index == 0) { throw new IOException("close failed"); }
+        }
     }
 
     [Fact]
@@ -140,21 +153,72 @@ public sealed class ScratchLaunchLifecycleOfflineTests
         ScratchFixtureBuildPin.Require(Path.Combine(AppContext.BaseDirectory, "OpenBlade.CandidateReceipt.Scratch.exe"));
 
     [Fact]
-    public void DataFilesRemainOutsideTheCodeDirectoryAndBothCleanUp()
+    public void OwnedLaunchDataIsFreshOutsideCodeAndDeletedOnlyAfterConfirmedRetirement()
     {
-        string root = Directory.CreateTempSubdirectory("OpenBlade.DataSeparation-").FullName;
-        try
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        string code = Path.Combine(files.Root, "receiver");
+        Directory.CreateDirectory(code);
+        File.WriteAllText(Path.Combine(code, "receiver.exe"), "inert code data");
+        var first = ScratchLaunchData.Create(files.Root, code, path => files.PinDirectory(path));
+        var second = ScratchLaunchData.Create(files.Root, code, path => files.PinDirectory(path));
+        Assert.NotEqual(first.Path, second.Path);
+        Directory.CreateDirectory(Path.Combine(first.Path, "nested"));
+        File.WriteAllText(Path.Combine(first.Path, "nested", "child.tmp"), "temp");
+        File.WriteAllText(Path.Combine(second.Path, "child.tmp"), "temp");
+        Assert.Contains("TEMP=" + first.Path + '\0', ScratchNativeReceiverLaunch.CreateEnvironment(code, first.Path), StringComparison.Ordinal);
+        List<string> order = [];
+        ScratchNativeReceiverLaunch.CleanupLaunch(null, () => order.Add("confirmed"), () => order.Add("drain"),
+            () => order.Add("release"), first);
+        Assert.Equal(["confirmed", "drain", "release"], order);
+        Assert.False(Directory.Exists(first.Path));
+        Assert.True(Directory.Exists(second.Path));
+        ScratchNativeReceiverLaunch.CleanupLaunch(null, () => { }, null, () => { }, second);
+        Assert.False(Directory.Exists(second.Path));
+        Assert.Equal(["receiver.exe"], Directory.GetFiles(code).Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public void UnconfirmedRetirementPreservesAndReportsActualLaunchDataAndStillReleasesResources()
+    {
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        string code = Path.Combine(files.Root, "receiver");
+        Directory.CreateDirectory(code);
+        var data = ScratchLaunchData.Create(files.Root, code, path => files.PinDirectory(path));
+        File.WriteAllText(Path.Combine(data.Path, "child.tmp"), "unresolved");
+        bool released = false;
+        var error = Assert.Throws<AggregateException>(() => ScratchNativeReceiverLaunch.CleanupLaunch(
+            new InvalidDataException("primary"), () => throw new IOException("stop unconfirmed"), null,
+            () => released = true, data));
+        Assert.True(released);
+        Assert.Contains(data.Path, error.ToString(), StringComparison.Ordinal);
+        Assert.Contains("stop unconfirmed", error.ToString(), StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(data.Path, "child.tmp")));
+        Assert.Throws<InvalidOperationException>(() => data.Finish(true));
+    }
+
+    [Fact]
+    public void CleanupRefusesTargetsOutsideExactPrivateLaunchDataRoot()
+    {
+        string root = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "OpenBlade.private-data"));
+        foreach (string target in new[] { root, Path.Combine(root, "receiver"), Path.Combine(root, "..", "other"),
+            Path.Combine(root + "-other", "launch-data-" + Guid.NewGuid().ToString("N")) })
+        { Assert.Throws<IOException>(() => ScratchLaunchData.RequireDeletionTarget(root, target)); }
+    }
+
+    [Fact]
+    public void NestedAndMixedAggregatesKeepProgrammingFaultsDistinctAndAllDiagnostics()
+    {
+        var allowed = new AggregateException(new IOException("io"), new AggregateException(new System.ComponentModel.Win32Exception(5)));
+        Assert.True(ScratchFixtureFailure.IsRefusal(allowed));
+        foreach (var unexpected in new Exception[] { new ArgumentException("argument"), new NullReferenceException("null"),
+            new InvalidOperationException("operation"), new ObjectDisposedException("drain") })
         {
-            string code = Directory.CreateDirectory(Path.Combine(root, "receiver")).FullName;
-            string data = Directory.CreateDirectory(Path.Combine(root, "receiver.data")).FullName;
-            File.WriteAllText(Path.Combine(code, "receiver.exe"), "data-only image");
-            File.WriteAllText(Path.Combine(data, "child.tmp"), "data-only temp file");
-            string environment = ScratchNativeReceiverLaunch.CreateEnvironment(code, data);
-            Assert.Contains("TEMP=" + data + '\0', environment, StringComparison.Ordinal);
-            Assert.Equal(["receiver.exe"], Directory.GetFiles(code).Select(Path.GetFileName));
+            var failure = Assert.Throws<AggregateException>(() => ScratchFixtureFailure.Cleanup(allowed, () => throw unexpected));
+            Assert.False(ScratchFixtureFailure.IsRefusal(failure));
+            Assert.Contains(unexpected.Message, failure.ToString(), StringComparison.Ordinal);
+            Assert.Contains("io", failure.ToString(), StringComparison.Ordinal);
         }
-        finally { Directory.Delete(root, recursive: true); }
-        Assert.False(Directory.Exists(root));
+        Assert.False(ScratchFixtureFailure.IsRefusal(new AggregateException()));
     }
 
     private sealed class FailedReader : TextReader

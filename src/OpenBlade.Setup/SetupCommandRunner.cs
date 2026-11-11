@@ -145,6 +145,7 @@ public sealed class SetupCommandRunner(
                     await platform.InstallUninstallerAsync(cancellationToken);
                 }
                 progress.Report(SetupProgressCode.InstallService);
+                if (transaction is SetupNativePackageTransaction incomingNative) { incomingNative.MarkNativeStartupPossible(); }
                 await platform.InstallServiceAsync(cancellationToken);
                 progress.Report(SetupProgressCode.VerifyServiceHealth);
                 if (transaction is SetupNativePackageTransaction native)
@@ -175,7 +176,7 @@ public sealed class SetupCommandRunner(
             }
             catch (Exception failure)
             {
-                if (transaction is SetupNativePackageTransaction native && native.IsActivated)
+                if (transaction is SetupNativePackageTransaction native && native.RequiresExplicitNativeRecovery)
                 {
                     try { native.RecordUnresolvedFailure(); }
                     catch (Exception publicationFailure) { throw new AggregateException(failure, publicationFailure); }

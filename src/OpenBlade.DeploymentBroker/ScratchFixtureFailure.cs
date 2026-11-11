@@ -7,9 +7,10 @@ namespace OpenBlade.DeploymentBroker;
 
 internal static class ScratchFixtureFailure
 {
-    internal static bool IsRefusal(Exception error) => error is IOException or InvalidDataException
-        or UnauthorizedAccessException or OpenBladeReleaseVerificationException or OperationCanceledException
-        or Win32Exception or AggregateException;
+    internal static bool IsRefusal(Exception error) => error is AggregateException aggregate
+        ? aggregate.InnerExceptions.Count != 0 && aggregate.InnerExceptions.All(IsRefusal)
+        : error is IOException or InvalidDataException or UnauthorizedAccessException
+            or OpenBladeReleaseVerificationException or OperationCanceledException or Win32Exception;
 
     // Attempt every cleanup once; an unconfirmed stop is a failure, never success.
     internal static void Cleanup(Exception? primary, params Action[] cleanup)

@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 namespace OpenBlade.Deployment;
 
 internal enum NativeEpochPhase { Provisional, Committed, Unresolved, Retired }
-internal enum NativeEpochBoundary { Reserved, PackageWritten, OriginWritten, PhaseWritten, FrontierWritten, SelectionPublished }
+internal enum NativeEpochBoundary { Reserved, PackageWritten, OriginWritten, PhaseWritten, FrontierWritten, SelectionPublished, EvidenceRetaining, EvidenceRetained }
 
 internal sealed record NativeEpochRecord(NativeEpochPhase Phase, string Epoch, string Predecessor,
     long Ordinal, string Installation, string Package, string Request, string ServiceId, string AgentId,
@@ -79,22 +79,6 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
             { throw new InvalidDataException("Recovery selection changed."); }
             if (predecessor is not null && predecessor.Installation != package.Release.Manifest.InstallationId.ToString("N"))
             { throw new InvalidDataException("Native epoch installation substitution."); }
-            string epoch = Guid.NewGuid().ToString("N");
-            string directory = Path.Combine(files.Root, epoch);
-            files.CreateDirectoryOnce(directory);
-            generation = files.RetainDirectory(directory);
-            testCrashBoundary?.Invoke(NativeEpochBoundary.Reserved);
-            string app = Path.Combine(directory, "app");
-            files.CreateDirectoryOnce(app);
-            void Write(string name, byte[] bytes) { using var stream = new MemoryStream(bytes, false); files.WriteEvidence(Path.Combine(directory, name), stream); }
-            Write("release.json", package.Manifest);
-            Write("release.sig", package.Signature);
-            files.Publish(Path.Combine(directory, "package.bin"), package.Record);
-            Write("roles.bin", package.Inventory);
-            using (var service = new MemoryStream(package.ServiceImage.ToArray(), false)) { files.WriteEvidence(Path.Combine(app, "OpenBlade.Service.exe"), service); }
-            using (var agent = new MemoryStream(package.AgentImage.ToArray(), false)) { files.WriteEvidence(Path.Combine(app, "OpenBlade.SessionAgent.exe"), agent); }
-            using (var output = new FileStream(Path.Combine(directory, "package.exe"), FileMode.CreateNew, FileAccess.Write,
-                FileShare.None, 81920, FileOptions.WriteThrough)) { package.CopyPackageTo(output); output.Flush(true); }
             // Refuse conflicting mappings across every retained epoch, including
             // abandoned preparations. An artifact ID never acquires a new digest.
             foreach (string other in Directory.EnumerateDirectories(files.Root))
@@ -115,6 +99,22 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
                     }
                 }
             }
+            string epoch = Guid.NewGuid().ToString("N");
+            string directory = Path.Combine(files.Root, epoch);
+            files.CreateDirectoryOnce(directory);
+            generation = files.RetainDirectory(directory);
+            testCrashBoundary?.Invoke(NativeEpochBoundary.Reserved);
+            string app = Path.Combine(directory, "app");
+            files.CreateDirectoryOnce(app);
+            void Write(string name, byte[] bytes) { using var stream = new MemoryStream(bytes, false); files.WriteEvidence(Path.Combine(directory, name), stream); }
+            Write("release.json", package.Manifest);
+            Write("release.sig", package.Signature);
+            files.Publish(Path.Combine(directory, "package.bin"), package.Record);
+            Write("roles.bin", package.Inventory);
+            using (var service = new MemoryStream(package.ServiceImage.ToArray(), false)) { files.WriteEvidence(Path.Combine(app, "OpenBlade.Service.exe"), service); }
+            using (var agent = new MemoryStream(package.AgentImage.ToArray(), false)) { files.WriteEvidence(Path.Combine(app, "OpenBlade.SessionAgent.exe"), agent); }
+            using (var output = new FileStream(Path.Combine(directory, "package.exe"), FileMode.CreateNew, FileAccess.Write,
+                FileShare.None, 81920, FileOptions.WriteThrough)) { package.CopyPackageTo(output); output.Flush(true); }
             testCrashBoundary?.Invoke(NativeEpochBoundary.PackageWritten);
             var value = new NativeEpochRecord(NativeEpochPhase.Provisional, epoch,
                 previous is null ? new string('0', 64) : NativeCanonical.Digest(previous),
@@ -136,18 +136,18 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
             { throw new IOException("Native provisional publication readback is unresolved."); }
             var transaction = new WindowsNativeEpochTransaction(files, writer, generation, directory, value);
             generation = null;
-            try { transaction.RetainEvidence(); return transaction; }
+            try { transaction.RetainEvidence(testCrashBoundary); testCrashBoundary?.Invoke(NativeEpochBoundary.EvidenceRetained); return transaction; }
             catch { transaction.Dispose(); throw; }
         }
         catch { generation?.Dispose(); writer.Dispose(); throw; }
     }
 
-    private void RetainEvidence()
+    private void RetainEvidence(Action<NativeEpochBoundary>? testCrashBoundary)
     {
         evidence.Add(files.RetainDirectory(Path.Combine(GenerationDirectory, "app")));
         foreach (string name in new[] { "release.json", "release.sig", "package.bin", "roles.bin", "package.exe", "origin.bin",
             @"app\OpenBlade.Service.exe", @"app\OpenBlade.SessionAgent.exe" })
-        { evidence.Add(files.OpenFile(Path.Combine(GenerationDirectory, name))); }
+        { evidence.Add(files.OpenFile(Path.Combine(GenerationDirectory, name))); testCrashBoundary?.Invoke(NativeEpochBoundary.EvidenceRetaining); }
     }
 
     internal void RequireProvisional()
@@ -172,11 +172,11 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
     }
 
     // Retires package selection only, never an ownership/drain certificate.
-    internal void RetirePackageSelection()
+    internal void RetirePackageSelection(Action<NativeEpochBoundary>? testCrashBoundary = null)
     {
         RequireCurrent();
         if (current.Phase != NativeEpochPhase.Committed) { throw new InvalidOperationException("Package selection is not committed."); }
-        Transition(current with { Phase = NativeEpochPhase.Retired, Readiness = new string('0', 64) });
+        Transition(current with { Phase = NativeEpochPhase.Retired, Readiness = new string('0', 64) }, testCrashBoundary);
     }
 
     private void Transition(NativeEpochRecord next, Action<NativeEpochBoundary>? testCrashBoundary = null)
@@ -227,21 +227,41 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
         byte[] prior = ReadFrontier(files) ?? throw new InvalidDataException("No native publication to recover.");
         if (NativeCanonical.Digest(prior) != expectedFrontier) { throw new InvalidDataException("Native recovery frontier changed."); }
         var record = NativeEpochRecord.Parse(prior);
-        if (record.Phase == NativeEpochPhase.Retired)
-        { throw new InvalidDataException("Retired native package selection cannot be revived."); }
-        var unresolved = record with { Phase = NativeEpochPhase.Unresolved, Readiness = new string('0', 64) };
+        string retiredPath = Path.Combine(files.Root, record.Epoch, "Retired.bin");
+        // A durable retirement intent may precede its frontier. Finish only that
+        // exact attempt; an ordinary committed epoch is never retired by recovery.
+        bool retirement = record.Phase == NativeEpochPhase.Retired
+            || (record.Phase == NativeEpochPhase.Committed && File.Exists(retiredPath));
+        var unresolved = record with
+        {
+            Phase = retirement ? NativeEpochPhase.Retired : NativeEpochPhase.Unresolved,
+            Readiness = new string('0', 64)
+        };
         byte[] bytes = unresolved.Encode();
         string directory = Path.Combine(files.Root, record.Epoch);
         using var pin = files.RetainDirectory(directory);
         using (var originFile = files.OpenFile(Path.Combine(directory, "origin.bin")))
         {
             var origin = NativeEpochRecord.Parse(WindowsNativeEpochFiles.ReadBounded(originFile, 16384));
-            if (origin with { Phase = NativeEpochPhase.Unresolved, Readiness = new string('0', 64) } != unresolved)
+            if (origin with { Phase = unresolved.Phase, Readiness = new string('0', 64) } != unresolved)
             { throw new InvalidDataException("Native recovery origin differs from its publication frontier."); }
+        }
+        if (retirement)
+        {
+            using var retiredFile = files.OpenFile(retiredPath);
+            WindowsNativeEpochFiles.RequireExact(retiredFile, bytes);
+            using var committedFile = files.OpenFile(Path.Combine(directory, "Committed.bin"));
+            var committed = NativeEpochRecord.Parse(WindowsNativeEpochFiles.ReadBounded(committedFile, 16384));
+            if (committed.Phase != NativeEpochPhase.Committed
+                || committed with { Phase = NativeEpochPhase.Retired, Readiness = new string('0', 64) } != unresolved)
+            { throw new InvalidDataException("Native retirement has no matching committed attempt."); }
+            byte[]? selected = files.ReadCurrent();
+            if (selected is null || (!selected.AsSpan().SequenceEqual(committed.Encode()) && !selected.AsSpan().SequenceEqual(bytes)))
+            { throw new InvalidDataException("Native retirement selection differs from its exact attempt."); }
         }
         // Explicit recovery reconciles an already-created exact phase/frontier;
         // it never repeats native startup, readiness, retirement or a hardware write.
-        EnsureExactOrPublish(files, Path.Combine(directory, "Unresolved.bin"), bytes);
+        EnsureExactOrPublish(files, Path.Combine(directory, unresolved.Phase + ".bin"), bytes);
         testCrashBoundary?.Invoke(NativeEpochBoundary.PhaseWritten);
         EnsureExactOrPublish(files, Path.Combine(files.Root, FrontierName(unresolved)), bytes);
         testCrashBoundary?.Invoke(NativeEpochBoundary.FrontierWritten);

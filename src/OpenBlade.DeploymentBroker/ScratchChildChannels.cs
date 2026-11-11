@@ -23,20 +23,27 @@ internal sealed class ScratchChildChannels : IDisposable
     {
         string id = Guid.NewGuid().ToString("N");
         Arguments = Argument + " " + id + " " + Environment.ProcessId.ToString(CultureInfo.InvariantCulture);
-        List<NamedPipeServerStream> created = [];
+        // Acquire records ownership before any fallible initialization.
+        pipes = Acquire(i => new NamedPipeServerStream(Name(id, i), PipeDirection.InOut, 1,
+            PipeTransmissionMode.Byte, ServerOptions, 4096, 4096), (_, _) => { });
+    }
+
+    internal static T[] Acquire<T>(Func<int, T> create, Action<T, int> initialize) where T : IDisposable
+    {
+        List<T> acquired = [];
         try
         {
             for (int i = 0; i < 3; i++)
             {
-                // This supported constructor creates a noninheritable server handle.
-                created.Add(new NamedPipeServerStream(Name(id, i), PipeDirection.InOut, 1,
-                    PipeTransmissionMode.Byte, ServerOptions, 4096, 4096));
+                T resource = create(i);
+                acquired.Add(resource);
+                initialize(resource, i);
             }
-            pipes = created.ToArray();
+            return acquired.ToArray();
         }
         catch (Exception failure)
         {
-            ScratchFixtureFailure.Cleanup(failure, () => ScratchReceiverClosure.DisposeRetainedResources(created));
+            ScratchFixtureFailure.Cleanup(failure, () => ScratchReceiverClosure.DisposeRetainedResources(acquired.Cast<IDisposable>()));
             throw;
         }
     }
@@ -62,27 +69,14 @@ internal sealed class ScratchChildChannels : IDisposable
     internal static NamedPipeClientStream[] OpenChild(string[] args)
     {
         var (id, parent) = ParseArguments(args);
-        List<NamedPipeClientStream> opened = [];
-        try
-        {
-            for (int i = 0; i < 3; i++)
+        return Acquire(i => new NamedPipeClientStream(".", Name(id, i), PipeDirection.InOut, PipeOptions.None,
+                System.Security.Principal.TokenImpersonationLevel.Identification, Inheritability),
+            (pipe, _) =>
             {
-                var pipe = new NamedPipeClientStream(".", Name(id, i), PipeDirection.InOut, PipeOptions.None,
-                    System.Security.Principal.TokenImpersonationLevel.Identification, Inheritability);
-                opened.Add(pipe);
                 pipe.Connect(10000);
                 if (!GetNamedPipeServerProcessId(pipe.SafePipeHandle, out uint peer) || peer != parent)
-                {
-                    throw new InvalidDataException("The scratch channel server differs from its launcher.");
-                }
-            }
-            return opened.ToArray();
-        }
-        catch (Exception failure)
-        {
-            ScratchFixtureFailure.Cleanup(failure, () => ScratchReceiverClosure.DisposeRetainedResources(opened));
-            throw;
-        }
+                { throw new InvalidDataException("The scratch channel server differs from its launcher."); }
+            });
     }
 
     internal static (string Id, uint Parent) ParseArguments(string[] args)

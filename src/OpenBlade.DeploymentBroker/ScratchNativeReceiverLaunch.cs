@@ -17,8 +17,9 @@ internal sealed class ScratchNativeReceiverLaunch : IDisposable
     internal const ulong Mitigations = (1UL << 32) | (1UL << 44) | (1UL << 60);
     private readonly SafeProcessHandle original;
     private readonly SafeFileHandle job;
-    private readonly IDisposable dataLocation;
+    private readonly ScratchLaunchData dataLocation;
     private readonly ScratchChildChannels channels;
+    private bool disposed;
     internal Process Process { get; }
     internal StreamWriter StandardInput { get; }
     internal StreamReader StandardOutput { get; }
@@ -26,7 +27,7 @@ internal sealed class ScratchNativeReceiverLaunch : IDisposable
 
     private ScratchNativeReceiverLaunch(SafeProcessHandle original, Process process,
         ScratchChildChannels channels,
-        SafeFileHandle job, IDisposable dataLocation)
+        SafeFileHandle job, ScratchLaunchData dataLocation)
     {
         this.job = job;
         this.dataLocation = dataLocation;
@@ -70,16 +71,14 @@ internal sealed class ScratchNativeReceiverLaunch : IDisposable
         SafeProcessHandle? original = null;
         Process? process = null;
         SafeFileHandle? job = null;
-        IDisposable? dataLocation = null;
+        ScratchLaunchData? dataLocation = null;
         nint thread = 0, attributes = 0, policy = 0, environment = 0, jobs = 0;
         uint childId = 0;
         bool initialized = false;
         try
         {
             string directory = Path.GetDirectoryName(Path.GetFullPath(image))!;
-            string data = Path.Combine(storage.Root, Path.GetFileNameWithoutExtension(image) + ".data");
-            using (storage.PinDirectory(storage.Root)) { Directory.CreateDirectory(data); }
-            dataLocation = storage.PinDirectory(data);
+            dataLocation = ScratchLaunchData.Create(storage.Root, directory, path => storage.PinDirectory(path));
             channels = new ScratchChildChannels();
             nuint bytes = 0;
             _ = InitializeProcThreadAttributeList(0, 2, 0, ref bytes);
@@ -90,7 +89,7 @@ internal sealed class ScratchNativeReceiverLaunch : IDisposable
             policy = Marshal.AllocHGlobal(sizeof(ulong));
             Marshal.WriteInt64(policy, unchecked((long)Mitigations));
             Check(UpdateProcThreadAttribute(attributes, 0, 0x20007, policy, sizeof(ulong), 0, 0));
-            environment = Marshal.StringToHGlobalUni(CreateEnvironment(directory, data));
+            environment = Marshal.StringToHGlobalUni(CreateEnvironment(directory, dataLocation.Path));
             var startup = new StartupInfoEx
             {
                 Startup = new StartupInfo
@@ -150,10 +149,10 @@ internal sealed class ScratchNativeReceiverLaunch : IDisposable
         }
         catch (Exception failure)
         {
-            ScratchFixtureFailure.Cleanup(failure,
-                () => { if (original is not null && !original.IsInvalid) { Stop(original); } },
+            CleanupLaunch(failure,
+                () => { if (original is not null && !original.IsInvalid) { Stop(original); } }, null,
                 () => ScratchReceiverClosure.DisposeRetainedResources(new IDisposable?[]
-                    { channels, process, original, job, dataLocation }.OfType<IDisposable>()));
+                    { channels, process, original, job }.OfType<IDisposable>()), dataLocation);
             throw;
         }
         finally
@@ -212,13 +211,22 @@ internal sealed class ScratchNativeReceiverLaunch : IDisposable
 
     internal void Dispose(Action? afterStop)
     {
-        Exception? failure = null;
-        try { if (!Process.WaitForExit(1000)) { Stop(original); } }
-        catch (Exception stopError) { failure = stopError; }
-        ScratchFixtureFailure.Cleanup(failure,
-            () => afterStop?.Invoke(),
+        if (disposed) { return; }
+        disposed = true;
+        CleanupLaunch(null, () => Stop(original), afterStop,
             () => ScratchReceiverClosure.DisposeRetainedResources([StandardInput, StandardOutput, StandardError,
-                channels, Process, original, job, dataLocation]));
+                channels, Process, original, job]), dataLocation);
+    }
+
+    // Shared by partial launch failure and normal disposal. Job close is never
+    // taken as proof of retirement; only original-handle confirmation admits data cleanup.
+    internal static void CleanupLaunch(Exception? primary, Action confirmRetirement, Action? afterStop,
+        Action releaseResources, ScratchLaunchData? data)
+    {
+        bool confirmed = false;
+        ScratchFixtureFailure.Cleanup(primary,
+            () => { confirmRetirement(); confirmed = true; },
+            () => afterStop?.Invoke(), releaseResources, () => data?.Finish(confirmed));
     }
 
     private static void Stop(SafeProcessHandle process) => Stop(

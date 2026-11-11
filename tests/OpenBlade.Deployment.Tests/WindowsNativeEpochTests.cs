@@ -31,7 +31,7 @@ public sealed class WindowsNativeEpochTests
         return bytes;
     }
 
-    private static async Task<WindowsNativePackage> Package(WindowsNativeEpochFiles files, char nonce = 'b', byte marker = 1)
+    internal static async Task<WindowsNativePackage> Package(WindowsNativeEpochFiles files, char nonce = 'b', byte marker = 1)
     {
         byte[] bytes = WindowsNativeInventoryBurnExtractorTests.NativeEpochBundle(Image("service", nonce, marker), Image("agent", nonce, 2));
         using var signed = OpenBladeSignedReleaseVerifierTests.TestRelease.CreateWithInstallerBytes(bytes, new string('a', 40));
@@ -133,6 +133,9 @@ public sealed class WindowsNativeEpochTests
             reached => { if (reached == NativeEpochBoundary.PackageWritten) { throw new IOException("abandoned preparation"); } }));
         using var conflicting = await Package(files, marker: 9);
         Assert.Throws<InvalidDataException>(() => WindowsNativeEpochTransaction.Begin(files, conflicting, Guid.NewGuid()));
+        Assert.Single(Directory.EnumerateFiles(files.Root, "package.bin", SearchOption.AllDirectories));
+        using var retriedOriginal = WindowsNativeEpochTransaction.Begin(files, first, Guid.NewGuid());
+        Assert.Equal(1, retriedOriginal.Record.Ordinal);
     }
 
     [Theory]
@@ -290,6 +293,120 @@ public sealed class WindowsNativeEpochTests
         using var fresh = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid());
         Assert.Equal(1, fresh.Record.Ordinal);
     }
+
+    [Theory]
+    [InlineData((int)NativeEpochBoundary.PhaseWritten)]
+    [InlineData((int)NativeEpochBoundary.FrontierWritten)]
+    [InlineData((int)NativeEpochBoundary.SelectionPublished)]
+    public async Task InterruptedRetirementAndEveryRecoveryBoundaryAreIdempotent(int retirementBoundary)
+    {
+        foreach (var recoveryBoundary in new[] { NativeEpochBoundary.PhaseWritten, NativeEpochBoundary.FrontierWritten, NativeEpochBoundary.SelectionPublished })
+        {
+            using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+            using var package = await Package(files);
+            string epoch;
+            using (var tx = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid()))
+            {
+                epoch = tx.Record.Epoch;
+                tx.CommitAfterBoundReadiness(new string('e', 64));
+                Assert.Throws<IOException>(() => tx.RetirePackageSelection(reached =>
+                { if ((int)reached == retirementBoundary) { throw new IOException("retirement interrupted"); } }));
+                Assert.Throws<IOException>(() => tx.RequireProvisional());
+            }
+            string Frontier() => NativeCanonical.Digest(File.ReadAllBytes(Directory.EnumerateFiles(files.Root, "selection-*.bin").Order(StringComparer.Ordinal).Last()));
+            Assert.Throws<IOException>(() => WindowsNativeEpochTransaction.RecoverUnresolvedPublication(files, Frontier(), reached =>
+            { if (reached == recoveryBoundary) { throw new IOException("recovery interrupted"); } }));
+            WindowsNativeEpochTransaction.RecoverUnresolvedPublication(files, Frontier());
+            byte[] retired = files.ReadCurrent()!;
+            WindowsNativeEpochTransaction.RecoverUnresolvedPublication(files, Frontier());
+            Assert.Equal(retired, files.ReadCurrent());
+            Assert.Equal(NativeEpochPhase.Retired, NativeEpochRecord.Parse(retired).Phase);
+            using var fresh = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid());
+            Assert.NotEqual(epoch, fresh.Record.Epoch);
+            Assert.Equal(2, fresh.Record.Ordinal);
+            Assert.Equal(NativeCanonical.Digest(retired), fresh.Record.Predecessor);
+        }
+    }
+
+    [Fact]
+    public async Task HeldDeleteSharingCurrentKeepsOldBytesButFreshSelectionAndFrontierRejectOldGeneration()
+    {
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var package = await Package(files);
+        using var tx = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid());
+        tx.CommitAfterBoundReadiness(new string('e', 64));
+        byte[] committed = files.ReadCurrent()!;
+        // Same NT access/share/options as native_package::open_file(current,true).
+        using var old = OpenNativeCurrent(Path.Combine(files.Root, "current.bin"));
+        tx.RetirePackageSelection();
+        byte[] retired = files.ReadCurrent()!;
+        Assert.Equal(committed, WindowsNativeEpochFiles.ReadBounded(old, 16384));
+        Assert.NotEqual(committed, retired);
+        string frontier = Directory.EnumerateFiles(files.Root, "selection-*.bin").Order(StringComparer.Ordinal).Last();
+        Assert.Equal(retired, File.ReadAllBytes(frontier));
+        // Actual transaction admission reopens the current path and frontier;
+        // retaining/replaying the old committed object cannot select it again.
+        tx.Dispose();
+        files.PublishCurrent(committed);
+        Assert.Throws<IOException>(() => WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid()));
+        WindowsNativeEpochTransaction.RecoverUnresolvedPublication(files, NativeCanonical.Digest(retired));
+        Assert.Equal(retired, files.ReadCurrent());
+    }
+
+    [Theory]
+    [InlineData((int)NativeFileBoundary.Created)]
+    [InlineData((int)NativeFileBoundary.Written)]
+    [InlineData((int)NativeFileBoundary.Flushed)]
+    [InlineData((int)NativeFileBoundary.Verified)]
+    [InlineData((int)NativeFileBoundary.Renamed)]
+    public async Task RetirementFileFailureRecoversOnlyDurableIntent(int boundary)
+    {
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var package = await Package(files);
+        using (var tx = WindowsNativeEpochTransaction.Begin(files, package, Guid.NewGuid()))
+        {
+            tx.CommitAfterBoundReadiness(new string('e', 64));
+            files.CrashBoundaryForTests = (NativeFileBoundary)boundary;
+            Assert.Throws<IOException>(() => tx.RetirePackageSelection());
+            Assert.Throws<IOException>(() => tx.RequireProvisional());
+        }
+        files.CrashBoundaryForTests = null;
+        string Frontier() => NativeCanonical.Digest(File.ReadAllBytes(Directory.EnumerateFiles(files.Root, "selection-*.bin").Order(StringComparer.Ordinal).Last()));
+        WindowsNativeEpochTransaction.RecoverUnresolvedPublication(files, Frontier());
+        var phase = NativeEpochRecord.Parse(files.ReadCurrent()!).Phase;
+        Assert.Equal(boundary == (int)NativeFileBoundary.Renamed ? NativeEpochPhase.Retired : NativeEpochPhase.Unresolved, phase);
+        byte[] recovered = files.ReadCurrent()!;
+        WindowsNativeEpochTransaction.RecoverUnresolvedPublication(files, Frontier());
+        Assert.Equal(recovered, files.ReadCurrent());
+    }
+
+    [Fact]
+    public async Task RejectedConflictCannotPoisonCommittedOriginalAndItsFreshEpoch()
+    {
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var first = await Package(files);
+        using (var tx = WindowsNativeEpochTransaction.Begin(files, first, Guid.NewGuid()))
+        { tx.CommitAfterBoundReadiness(new string('e', 64)); }
+        using var conflict = await Package(files, marker: 9);
+        byte[] committed = files.ReadCurrent()!;
+        Assert.Throws<InvalidDataException>(() => WindowsNativeEpochTransaction.Begin(files, conflict, Guid.NewGuid()));
+        Assert.Equal(committed, files.ReadCurrent());
+        Assert.Single(Directory.EnumerateFiles(files.Root, "package.bin", SearchOption.AllDirectories));
+        using var retried = WindowsNativeEpochTransaction.Begin(files, first, Guid.NewGuid());
+        Assert.NotEqual(NativeEpochRecord.Parse(committed).Epoch, retried.Record.Epoch);
+        Assert.Equal(2, retried.Record.Ordinal);
+    }
+
+    private static FileStream OpenNativeCurrent(string path)
+    {
+        var handle = CreateFileW(path, 0x00120089, 5, 0, 3, 0x00200000, 0);
+        if (handle.IsInvalid) { throw new IOException("Exact native reader open failed.", new System.ComponentModel.Win32Exception()); }
+        return new FileStream(handle, FileAccess.Read);
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+    private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFileW(string path, uint access, uint share,
+        nint security, uint creation, uint flags, nint template);
 
     private sealed class EmptyLease : IDisposable { public void Dispose() { } }
 }

@@ -8,7 +8,7 @@ namespace OpenBlade.Setup;
 // no command-line implementation toggle, fabricated launch, or firmware authority.
 internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
 {
-    private readonly SetupPayloadTransaction payload;
+    private readonly ISetupPayloadTransaction payload;
     private readonly WindowsNativeEpochFiles files;
     private readonly WindowsNativePackage package;
     private readonly Guid request;
@@ -16,39 +16,54 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
     private SetupCandidateLaunch? launch;
     private ISetupRetainedCandidateLaunch? retained;
     private SetupCandidateServiceVerification? verified;
-    private bool attemptedActivation;
+    private bool preparationAttempted, possiblePayloadActivation, possibleNativeActivation, disposed;
+    private readonly Action<NativeEpochBoundary>? preparationBoundary;
 
-    internal SetupNativePackageTransaction(SetupPayloadTransaction payload, WindowsNativeEpochFiles files,
-        WindowsNativePackage package, Guid request)
+    internal SetupNativePackageTransaction(ISetupPayloadTransaction payload, WindowsNativeEpochFiles files,
+        WindowsNativePackage package, Guid request, Action<NativeEpochBoundary>? preparationBoundary = null)
     {
         this.payload = payload;
         this.files = files;
         this.package = package;
         this.request = request;
+        this.preparationBoundary = preparationBoundary;
     }
 
     public string StagedPayloadDirectory => payload.StagedPayloadDirectory;
     public bool HadExistingInstall => payload.HadExistingInstall;
-    public bool IsActivated => attemptedActivation || payload.IsActivated;
+    public bool IsActivated => possiblePayloadActivation || payload.IsActivated;
+    internal bool RequiresExplicitNativeRecovery => possibleNativeActivation;
     public string? CommitWarning => payload.CommitWarning;
     internal string ServicePath => (epoch ?? throw new InvalidOperationException()).ServicePath;
     internal string AgentPath => (epoch ?? throw new InvalidOperationException()).AgentPath;
 
     public async Task ActivateAsync(CancellationToken cancellationToken)
     {
+        if (preparationAttempted || disposed) { throw new InvalidOperationException("Native preparation/activation is never replayed."); }
+        preparationAttempted = true;
         cancellationToken.ThrowIfCancellationRequested();
-        if (attemptedActivation) { throw new InvalidOperationException("Native activation is never replayed."); }
-        attemptedActivation = true;
         // The actual held package producer, immutable images and provisional
         // selection precede StartService/health in SetupCommandRunner.
-        epoch = WindowsNativeEpochTransaction.Begin(files, package, request);
+        epoch = WindowsNativeEpochTransaction.Begin(files, package, request, testCrashBoundary: preparationBoundary);
+        cancellationToken.ThrowIfCancellationRequested();
+        // From entry into payload activation onward its outcome may be ambiguous.
+        possiblePayloadActivation = true;
         await payload.ActivateAsync(cancellationToken);
+    }
+
+    // The runner crosses this boundary immediately before calling the service
+    // platform. A thrown/canceled StartService may still have submitted startup.
+    internal void MarkNativeStartupPossible()
+    {
+        (epoch ?? throw new InvalidOperationException()).RequireProvisional();
+        possibleNativeActivation = true;
     }
 
     // The next integrated origin owner must supply the original retained launch,
     // not reopen a PID. This method performs no launch and adopts no newer epoch.
     internal void BindIncomingLaunch(SetupCandidateLaunch incoming, ISetupRetainedCandidateLaunch original)
     {
+        possibleNativeActivation = true;
         var current = epoch ?? throw new InvalidOperationException("Native selection is not provisional.");
         current.RequireProvisional();
         if (launch is not null || incoming.ExecutablePath != current.ServicePath || incoming.ExecutableSha256 != package.Service.Sha256)
@@ -89,7 +104,7 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
 
     public async Task RollbackAsync(CancellationToken cancellationToken)
     {
-        if (!attemptedActivation) { await payload.RollbackAsync(cancellationToken); return; }
+        if (!possibleNativeActivation) { await payload.RollbackAsync(cancellationToken); return; }
         // Startup may have submitted work. Package state cannot certify native
         // drain; preserve unresolved state and require explicit typed recovery.
         epoch?.MarkUnresolved();
@@ -98,11 +113,21 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
 
     public async ValueTask DisposeAsync()
     {
-        epoch?.Dispose();
-        package.Dispose();
-        files.Dispose();
-        // Avoid the managed payload's automatic active rollback after a native
-        // activation. That recovery must be owned by the integrated origin stage.
-        if (!attemptedActivation || epoch?.Record.Phase == NativeEpochPhase.Committed) { await payload.DisposeAsync(); }
+        if (disposed) { return; }
+        disposed = true;
+        List<Exception> failures = [];
+        try
+        {
+            // Managed cleanup is safe until activation could have submitted work.
+            if (!possibleNativeActivation || epoch?.Record.Phase == NativeEpochPhase.Committed)
+            { await payload.DisposeAsync(); }
+        }
+        catch (Exception failure) { failures.Add(failure); }
+        foreach (var resource in new IDisposable?[] { epoch, package, files })
+        {
+            try { resource?.Dispose(); }
+            catch (Exception failure) { failures.Add(failure); }
+        }
+        if (failures.Count != 0) { throw new AggregateException("Native package disposal failed.", failures); }
     }
 }

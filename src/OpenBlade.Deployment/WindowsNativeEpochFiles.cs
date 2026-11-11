@@ -249,7 +249,11 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
 
     private static void PublishByHandle(SafeFileHandle handle, string destination, bool replace)
     {
-        const int fileRenameInfo = 3;
+        // SDK FILE_INFO_BY_HANDLE_CLASS.FileRenameInfoEx, FILE_RENAME_INFO.Flags.
+        // POSIX replacement permits the old delete-sharing reader to keep its
+        // object while fresh opens select the new generation. No retry/fallback.
+        const int fileRenameInfoEx = 22;
+        const int replaceIfExistsAndPosixSemantics = 0x1 | 0x2;
         int nameOffset = (int)Marshal.OffsetOf<RenameInformation>(nameof(RenameInformation.FileName));
         int lengthOffset = (int)Marshal.OffsetOf<RenameInformation>(nameof(RenameInformation.FileNameLength));
         byte[] name = Encoding.Unicode.GetBytes(destination + '\0');
@@ -257,13 +261,13 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         nint information = Marshal.AllocHGlobal(size);
         try
         {
-            // Initialize ReplaceIfExists and zero RootDirectory. The exact absolute
+            // Initialize Flags and zero RootDirectory. The exact absolute
             // destination is below the directory lease held by Publish.
             Marshal.Copy(new byte[nameOffset], 0, information, nameOffset);
-            Marshal.WriteByte(information, replace ? (byte)1 : (byte)0);
+            Marshal.WriteInt32(information, replace ? replaceIfExistsAndPosixSemantics : 0);
             Marshal.WriteInt32(information, lengthOffset, name.Length - sizeof(char));
             Marshal.Copy(name, 0, information + nameOffset, name.Length);
-            if (!SetFileInformationByHandle(handle, fileRenameInfo, information, (uint)size))
+            if (!SetFileInformationByHandle(handle, fileRenameInfoEx, information, (uint)size))
             {
                 throw new IOException("The verified candidate record could not be published.",
                     new Win32Exception(Marshal.GetLastPInvokeError()));
@@ -429,7 +433,7 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct RenameInformation
     {
-        internal byte ReplaceIfExists;
+        internal uint Flags;
         internal nint RootDirectory;
         internal uint FileNameLength;
         internal char FileName;

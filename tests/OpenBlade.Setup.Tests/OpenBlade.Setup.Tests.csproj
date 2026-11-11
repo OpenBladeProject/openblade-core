@@ -20,6 +20,12 @@
     <ProjectReference Include="..\..\src\OpenBlade.Service\OpenBlade.Service.csproj" />
     <ProjectReference Include="..\..\src\OpenBlade.Session\OpenBlade.Session.csproj" />
   </ItemGroup>
+  <PropertyGroup Condition="'$(OpenBladeNativePackageTests)' == 'true'">
+    <DefineConstants>$(DefineConstants);OPENBLADE_NATIVE_PACKAGE_TESTS</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenBladeNativePackageTests)' == 'true'">
+    <ProjectReference Include="../OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj" />
+  </ItemGroup>
   <PropertyGroup Condition="'$(OpenBladePackageProofFixture)' == 'true'">
     <DefineConstants>$(DefineConstants);OPENBLADE_PACKAGE_PROOF_FIXTURE</DefineConstants>
   </PropertyGroup>
@@ -38,7 +44,7 @@
           Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true' And '$(DesignTimeBuild)' != 'true'">
     <Error Condition="'$(OpenBladeScratchNativeReceiverPath)' != '' Or '$(OpenBladeScratchFixtureBuildRoot)' == '' Or '$(OpenBladeCandidateReceiptRustProbe)' == ''"
            Text="Candidate receipt tests require an external OpenBladeScratchFixtureBuildRoot and a readiness build; arbitrary receiver inputs are obsolete." />
-    <Exec Command="pwsh -NoProfile -File &quot;$(MSBuildThisFileDirectory)../../build/Build-ScratchNativeReceiver.ps1&quot; -BuildRoot &quot;$(OpenBladeScratchFixtureBuildRoot)&quot; -ReadinessImage &quot;$(OpenBladeCandidateReceiptRustProbe)&quot;" />
+    <Exec Command="pwsh -NoProfile -NonInteractive -File &quot;$(MSBuildThisFileDirectory)../../build/Build-ScratchNativeReceiver.ps1&quot; -BuildRoot &quot;$([System.IO.Path]::GetFullPath('$(OpenBladeScratchFixtureBuildRoot)'))/.&quot; -ReadinessImage &quot;$(OpenBladeCandidateReceiptRustProbe)&quot;" />
     <GetFileHash Files="$(OpenBladeScratchFixtureBuildRoot)/receiver/OpenBlade.CandidateReceipt.Scratch.exe" Algorithm="SHA256">
       <Output TaskParameter="Hash" PropertyName="_ScratchReceiverSha256" />
     </GetFileHash>
@@ -52,7 +58,7 @@
   </Target>
   <Target Name="VerifyCurrentNativeScratchReceiver" AfterTargets="CopyFilesToOutputDirectory" BeforeTargets="VSTest"
           Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true' And '$(DesignTimeBuild)' != 'true'">
-    <Exec Command="pwsh -NoProfile -File &quot;$(MSBuildThisFileDirectory)../../build/Build-ScratchNativeReceiver.ps1&quot; -BuildRoot &quot;$(OpenBladeScratchFixtureBuildRoot)&quot; -ReadinessImage &quot;$(OpenBladeCandidateReceiptRustProbe)&quot; -Destination &quot;$(TargetDir).&quot; -VerifyOnly" />
+    <Exec Command="pwsh -NoProfile -NonInteractive -File &quot;$(MSBuildThisFileDirectory)../../build/Build-ScratchNativeReceiver.ps1&quot; -BuildRoot &quot;$([System.IO.Path]::GetFullPath('$(OpenBladeScratchFixtureBuildRoot)'))/.&quot; -ReadinessImage &quot;$(OpenBladeCandidateReceiptRustProbe)&quot; -Destination &quot;$(TargetDir).&quot; -VerifyOnly" />
   </Target>
   <PropertyGroup Condition="'$(OpenBladeCandidateReceiptFixture)' == 'true' And '$(OpenBladeCandidateReceiptRustProbe)' != ''">
     <DefineConstants>$(DefineConstants);OPENBLADE_CANDIDATE_RECEIPT_RUST_PROBE</DefineConstants>
