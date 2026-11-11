@@ -189,13 +189,17 @@ async fn watch_monitored<S: AsyncRead + AsyncWrite + Unpin>(
                         tokio::select! {
                             result = &mut reading => break result,
                             _ = check.tick() => {
-                                let live = generation.verify_live_process().map_err(ServiceAuthorityError::into_io)?;
-                                if live != pid { return Err(super::denied("Service generation changed during idle")); }
-                                if let Some(peer) = &idle_peer {
-                                    let actual = peer();
-                                    generation.verify_live_process().map_err(ServiceAuthorityError::into_io)?;
-                                    if actual.map_err(unverified)? != (pid.get(), 0) { return Err(super::denied("idle pipe peer changed")); }
-                                }
+                                let checked = (|| {
+                                    let live = generation.verify_live_process().map_err(ServiceAuthorityError::into_io)?;
+                                    if live != pid { return Err(super::denied("Service generation changed during idle")); }
+                                    if let Some(peer) = &idle_peer {
+                                        let actual = peer();
+                                        generation.verify_live_process().map_err(ServiceAuthorityError::into_io)?;
+                                        if actual.map_err(unverified)? != (pid.get(), 0) { return Err(super::denied("idle pipe peer changed")); }
+                                    }
+                                    Ok(())
+                                })();
+                                if let Err(error) = checked { break Err(error); }
                             }
                         }
                     };

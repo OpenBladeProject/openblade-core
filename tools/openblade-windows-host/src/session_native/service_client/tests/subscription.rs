@@ -372,3 +372,43 @@ async fn interrupted_subscription_backs_off_and_resets_after_stable_idle() {
         [0, 250, 750, 1750, 3750, 7750, 12750, 17750, 22750, 28000]
     );
 }
+
+#[tokio::test(start_paused = true)]
+async fn retained_idle_pipe_monitor_rejects_changed_peer_and_closes_partial_frame_without_reopen() {
+    let (client, mut server) = duplex(16_384);
+    let mut client = Some(client);
+    let authority = Authority::live();
+    let peer = std::rc::Rc::new(Cell::new((PID, 0)));
+    let (opened, mut received) = tokio::sync::mpsc::unbounded_channel();
+    let watch = watch_monitored(
+        Some(&authority),
+        pending::<()>(),
+        || Ok(REQUEST_ID.into()),
+        async || Ok(client.take().expect("denied peer must not reconnect")),
+        |_| Ok((PID, 0)),
+        |_| {
+            let peer = peer.clone();
+            Ok(Some(Box::new(move || Ok(peer.get()))))
+        },
+        |update| {
+            opened.send(update).unwrap();
+            Ok(())
+        },
+    );
+    let drive = async {
+        accept(&mut server, REQUEST_ID).await;
+        server.write_all(frames()[1]).await.unwrap();
+        assert!(matches!(
+            received.recv().await,
+            Some(StatusUpdate::Opened(_))
+        ));
+        server.write_all(&frames()[2][..8]).await.unwrap();
+        tokio::task::yield_now().await;
+        peer.set((PID + 1, 0));
+        advance(Duration::from_millis(500)).await;
+        assert_eq!(server.read(&mut [0]).await.unwrap(), 0);
+        assert!(received.try_recv().is_err());
+    };
+    let (result, ()) = tokio::join!(watch, drive);
+    assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+}

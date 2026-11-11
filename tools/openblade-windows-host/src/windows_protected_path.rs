@@ -278,7 +278,7 @@ pub(crate) fn reserved_device(name: &str) -> bool {
         .is_some_and(|suffix| {
             matches!(
                 suffix,
-                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "Â¹" | "Â²" | "Â³"
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
             )
         })
 }
@@ -587,4 +587,25 @@ pub(crate) fn dword(bytes: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_le_bytes(
         bytes.get(offset..offset + 4)?.try_into().ok()?,
     ))
+}
+
+#[cfg(test)]
+mod native_root_path_tests {
+    use super::*;
+    #[test]
+    fn shared_reserved_device_guard_rejects_superscript_and_numeric_aliases() {
+        for name in [
+            "COM1",
+            "LPT9.txt",
+            "COM\u{b9}",
+            "LPT\u{b2}",
+            "COM\u{b3}.bin",
+            "LPT\u{b9} .dat",
+        ] {
+            assert!(reserved_device(name), "alias accepted: {name}");
+        }
+        for name in ["COM10", "COMx", "LPT0", "ordinary.bin"] {
+            assert!(!reserved_device(name));
+        }
+    }
 }

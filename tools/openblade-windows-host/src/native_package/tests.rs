@@ -261,3 +261,104 @@ fn actual_pe_obid_reader_does_not_accept_a_marker_elsewhere_or_wrong_geometry() 
     .unwrap();
     assert!(inspect_artifact(&bytes(&v, "serviceRecord"), &image, "service", &r).is_err());
 }
+
+#[test]
+fn real_commit_frontier_before_current_is_bounded_same_attempt_promotion() {
+    let v = vector();
+    let committed = bytes(&v, "epoch");
+    let text = String::from_utf8(committed.clone()).unwrap();
+    let original = Epoch::parse(&committed).unwrap();
+    let provisional = text
+        .replace("Committed", "Provisional")
+        .replace(
+            &format!("\n{}\n", original.readiness),
+            &format!("\n{ZERO}\n"),
+        )
+        .into_bytes();
+    let epoch = Epoch::parse(&provisional).unwrap();
+    let now = std::time::Instant::now();
+    let mut progress = Promotion::default();
+    assert!(
+        progress
+            .check(&epoch, &provisional, &provisional, &provisional, None, now)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        progress
+            .check(
+                &epoch,
+                &provisional,
+                &provisional,
+                &committed,
+                Some(&committed),
+                now
+            )
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        progress
+            .check(&epoch, &provisional, &provisional, &provisional, None, now)
+            .is_err()
+    ); // cannot roll frontier back
+    let promoted = progress
+        .check(
+            &epoch,
+            &provisional,
+            &committed,
+            &committed,
+            Some(&committed),
+            now,
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(promoted, original);
+    assert!(
+        progress
+            .check(&promoted, &committed, &committed, &committed, None, now)
+            .unwrap()
+            .is_none()
+    );
+    let mut expired = Promotion::default();
+    expired
+        .check(
+            &epoch,
+            &provisional,
+            &provisional,
+            &committed,
+            Some(&committed),
+            now,
+        )
+        .unwrap();
+    assert!(
+        expired
+            .check(
+                &epoch,
+                &provisional,
+                &provisional,
+                &committed,
+                Some(&committed),
+                now + PROMOTION_BUDGET
+            )
+            .is_err()
+    );
+    let other = text.replace(&original.id, &"8".repeat(32)).into_bytes();
+    assert!(
+        Promotion::default()
+            .check(
+                &epoch,
+                &provisional,
+                &provisional,
+                &other,
+                Some(&other),
+                now
+            )
+            .is_err()
+    );
+    assert!(
+        Promotion::default()
+            .check(&epoch, &provisional, &provisional, &committed, None, now)
+            .is_err()
+    );
+}

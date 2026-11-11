@@ -24,6 +24,8 @@ $target = Join-Path $EvidenceRoot 'Snapshot.targets'
 '@ | Set-Content -LiteralPath $target
 $variants = [ordered]@{
     normal = @()
+    installedStatus = @('OpenBladeNativeStatusIntegration', 'OpenBladeLocalDevDeployment')
+    installedStatusNative = @('OpenBladeNativeStatusIntegration', 'OpenBladeLocalDevDeployment', 'OpenBladeNativePackageTests')
     native = @('OpenBladeNativePackageTests')
     candidate = @('OpenBladeCandidateReceiptFixture')
     proof = @('OpenBladePackageProofFixture')
@@ -66,4 +68,4 @@ $rows | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $EvidenceR
 $rows = @(Get-AgreedFixtureGraphRows $rows)
 Assert-FixtureGraphIsolation $rows
 $rows | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'evaluations.json')
-Write-Output "PASS: $($rows.Count) actual reachable project evaluations; ordinary/artifacts; default and six distinct fixture graphs."
+Write-Output "PASS: $($rows.Count) actual reachable project evaluations; ordinary/artifacts; default and eight distinct selected/fixture graphs."

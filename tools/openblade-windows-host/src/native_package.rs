@@ -616,6 +616,49 @@ fn system_import(name: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
 }
 
+const PROMOTION_BUDGET: std::time::Duration = std::time::Duration::from_secs(4);
+#[derive(Default)]
+struct Promotion {
+    pending: Option<(std::time::Instant, Vec<u8>)>,
+}
+impl Promotion {
+    fn check(
+        &mut self,
+        epoch: &Epoch,
+        selected: &[u8],
+        current: &[u8],
+        frontier: &[u8],
+        phase: Option<&[u8]>,
+        now: std::time::Instant,
+    ) -> io::Result<Option<Epoch>> {
+        if selected == current && selected == frontier && self.pending.is_none() {
+            return Ok(None);
+        }
+        let next = Epoch::parse(frontier)?;
+        if epoch.phase != "Provisional"
+            || next.phase != "Committed"
+            || !epoch.same_origin(&next)
+            || phase != Some(frontier)
+            || !(current == selected || current == frontier)
+        {
+            return Err(deny());
+        }
+        if let Some((deadline, expected)) = &self.pending {
+            if now >= *deadline || expected != frontier {
+                return Err(deny());
+            }
+        }
+        if current == frontier {
+            self.pending = None;
+            return Ok(Some(next));
+        }
+        if self.pending.is_none() {
+            self.pending = Some((now + PROMOTION_BUDGET, frontier.to_vec()));
+        }
+        Ok(None)
+    }
+}
+
 pub(crate) struct InstalledPackage {
     root: File,
     _ancestors: Vec<File>,
@@ -627,10 +670,12 @@ pub(crate) struct InstalledPackage {
     pub(crate) agent_path: PathBuf,
     pub(crate) commitment: [u8; 32],
     denied: bool,
+    promotion: Promotion,
     epoch: Epoch,
     startup_owner: Option<crate::retained_process::RetainedProcessInstance>,
     service_identity: Vec<u8>,
     agent_identity: Vec<u8>,
+    committed_phase_retained: bool,
 }
 impl InstalledPackage {
     pub(crate) fn record_metadata_drain(&self, pid: u32, created: u64) -> io::Result<()> {
@@ -698,34 +743,37 @@ impl InstalledPackage {
                 paths::check_regular_file(file)?;
                 paths::verify_security(file, Policy::Record)?;
             }
-            // The only permitted in-place phase change is this exact live
-            // startup attempt becoming committed after bound readiness.
-            if self.epoch.phase == "Provisional" {
-                let mut current = open_file(&self.root, "current.bin", true)?;
-                let bytes = read_bytes(&mut current, 16384)?;
-                if bytes != self.selection {
-                    let next = Epoch::parse(&bytes)?;
-                    if next.phase != "Committed" || !self.epoch.same_origin(&next) {
-                        return Err(deny());
-                    }
-                    frontier_matches(&self.root, &self.root_path, &bytes)?;
-                    let phase =
-                        retain_bytes(&self.directories[0], "Committed.bin", 16384, &mut self.held)?;
-                    if phase != bytes {
-                        return Err(deny());
-                    }
-                    self.epoch = next;
-                    self.selection = bytes;
-                    self.startup_owner = None;
+            // Setup commits phase -> frontier -> current. Treat only this exact
+            // authenticated live-attempt interval as typed pending promotion.
+            // Unrelated/unknown publication remains terminal; no startup is replayed.
+            let mut current_file = open_file(&self.root, "current.bin", true)?;
+            let current = read_bytes(&mut current_file, 16384)?;
+            let frontier = read_frontier(&self.root, &self.root_path)?;
+            let phase = if current != self.selection || frontier != self.selection {
+                let mut phase = open_file(&self.directories[0], "Committed.bin", false)?;
+                let bytes = read_bytes(&mut phase, 16384)?;
+                if !self.committed_phase_retained {
+                    self.held.push(phase);
+                    self.committed_phase_retained = true;
                 }
+                Some(bytes)
+            } else {
+                None
+            };
+            if let Some(next) = self.promotion.check(
+                &self.epoch,
+                &self.selection,
+                &current,
+                &frontier,
+                phase.as_deref(),
+                std::time::Instant::now(),
+            )? {
+                self.epoch = next;
+                self.selection = frontier;
+                self.commitment = Sha256::digest(&self.selection).into();
+                self.startup_owner = None;
             }
-            frontier_matches(&self.root, &self.root_path, &self.selection)?;
             app_names(&self.service_path.parent().ok_or_else(deny)?.to_path_buf())?;
-            let mut current = open_file(&self.root, "current.bin", true)?;
-            let bytes = read_bytes(&mut current, 16384)?;
-            if bytes != self.selection {
-                return Err(deny());
-            }
             if let Some(owner) = &mut self.startup_owner {
                 owner
                     .check_live()
@@ -783,7 +831,7 @@ fn app_names(app_path: &std::path::Path) -> io::Result<()> {
     }
     Ok(())
 }
-fn frontier_matches(root: &File, path: &std::path::Path, selection: &[u8]) -> io::Result<()> {
+fn read_frontier(root: &File, path: &std::path::Path) -> io::Result<Vec<u8>> {
     let mut names = Vec::new();
     for entry in std::fs::read_dir(path)? {
         let name = entry?.file_name();
@@ -807,11 +855,18 @@ fn frontier_matches(root: &File, path: &std::path::Path, selection: &[u8]) -> io
         "Retired" => 3,
         _ => return Err(deny()),
     };
-    if name != &format!("selection-{:020}-{rank}.bin", record.ordinal) || bytes != selection {
+    if name != &format!("selection-{:020}-{rank}.bin", record.ordinal) {
+        return Err(deny());
+    }
+    Ok(bytes)
+}
+fn frontier_matches(root: &File, path: &std::path::Path, selection: &[u8]) -> io::Result<()> {
+    if read_frontier(root, path)? != selection {
         return Err(deny());
     }
     Ok(())
 }
+
 fn pin(path: &std::path::Path) -> io::Result<(File, Vec<File>)> {
     let (root, ancestors, _) = paths::pin_root(path)?;
     paths::require_ntfs(&root)?;
@@ -982,8 +1037,10 @@ fn read_package(allow_provisional: bool) -> io::Result<InstalledPackage> {
         agent_path: app_path.join("OpenBlade.SessionAgent.exe"),
         commitment: Sha256::digest(&selection).into(),
         denied: false,
+        promotion: Promotion::default(),
         service_identity: compiled_record(&service)?.to_vec(),
         agent_identity: compiled_record(&agent)?.to_vec(),
+        committed_phase_retained: epoch.phase == "Committed",
         epoch,
         startup_owner,
     };
