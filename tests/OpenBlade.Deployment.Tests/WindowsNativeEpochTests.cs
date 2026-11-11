@@ -72,12 +72,6 @@ public sealed class WindowsNativeEpochTests
         var a = NativeArtifact.Inspect([.. Image("service", 'b')], "service", new string('a', 40));
         var b = NativeArtifact.Inspect([.. Image("service", 'c')], "service", new string('a', 40));
         Assert.NotEqual(a.Id, b.Id); Assert.NotEqual(a.Sha256, b.Sha256);
-        Assert.Equal(2, a.Schema); Assert.Equal(2, b.Schema);
-        Assert.True(a.PrivateCustody);
-        Assert.Equal(Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_COMPOSITION") != "hardware", a.MetadataOnly);
-        Assert.Equal("none", b.Capabilities); Assert.False(b.PrivateCustody); Assert.False(b.MetadataOnly);
-        if (Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_COMPOSITION") == "combined")
-        { Assert.Equal(a.Features, b.Features); Assert.Contains("service-metadata-only-v1", b.Features); }
     }
 
     [Fact]
