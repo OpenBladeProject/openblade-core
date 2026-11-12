@@ -22,6 +22,7 @@ internal sealed class WindowsManagedMailboxPackage : IDisposable
     internal string PackageDigest => Release.Manifest.InstallerSha256;
     internal string Installation => enrollment.InstallationId.ToString("N");
     internal string EnrollmentDigest => NativeCanonical.Digest(enrollment.Projection);
+    internal byte[] VerificationProjection => (byte[])enrollment.Projection.Clone();
     internal sealed record BuildIdentity(string Executable, string Closure, string Module);
 
     private WindowsManagedMailboxPackage(FileStream package, IDisposable leases, NativeLocalDevEnrollment enrollment,
@@ -177,7 +178,7 @@ internal sealed class WindowsManagedMailboxPackage : IDisposable
     internal static WindowsManagedMailboxPackage OpenCachedHistorical(WindowsNativeEpochFiles files, string digest, byte[] projection) =>
         OpenCached(files, digest, () => NativeLocalDevEnrollment.FromProtectedProjection(projection));
 
-    private static WindowsManagedMailboxPackage OpenCached(WindowsNativeEpochFiles files, string digest, Func<NativeLocalDevEnrollment> acquire)
+    internal static WindowsManagedMailboxPackage OpenCached(WindowsNativeEpochFiles files, string digest, Func<NativeLocalDevEnrollment> acquire)
     {
         if (!NativeCanonical.IsHex(digest, 64)) { throw new InvalidDataException("Managed cached package identity differs."); }
         var enrollment = acquire();

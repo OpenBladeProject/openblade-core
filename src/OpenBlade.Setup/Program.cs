@@ -69,9 +69,11 @@ try
         BundleOwnerId: invocation.BundleOwnerId, CurrentUserSid: enrolledUserSid);
     WindowsSetupPlatform platform;
 #if OPENBLADE_NATIVE_STATUS_INTEGRATION
+    OpenBlade.Deployment.WindowsNativePackage? incomingNative = null;
     if (invocation.Command is SetupCommand.Install)
     {
         var selected = await OpenBlade.DeploymentBroker.BrokerNativePackageCommitmentProducer.OpenCurrentAsync(CancellationToken.None);
+        incomingNative = selected.Package;
         platform = new WindowsSetupPlatform(platformOptions, selected.Package, selected.Request);
     }
     else { platform = new WindowsSetupPlatform(platformOptions); }
@@ -79,7 +81,7 @@ try
     platform = new WindowsSetupPlatform(platformOptions);
 #endif
 #if OPENBLADE_NATIVE_STATUS_INTEGRATION
-    using var existingNative = await OpenBlade.Deployment.WindowsNativeInstalledSelection.OpenProductAsync(CancellationToken.None);
+    using var existingNative = await OpenBlade.Deployment.WindowsNativeInstalledSelection.OpenProductAsync(CancellationToken.None, incomingNative);
     platform.BindExistingNativeSelection(existingNative);
 #endif
     int exitCode = await new SetupCommandRunner(platform,

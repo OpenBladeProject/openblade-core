@@ -21,10 +21,11 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
     private readonly Action<NativeEpochBoundary>? preparationBoundary;
     private readonly SetupNativeReadinessAdapters readiness;
     private WindowsManagedMailboxTransfer? managedTransfer;
+    private readonly ManagedMailboxStorage? mailboxStorage;
 
     internal SetupNativePackageTransaction(ISetupPayloadTransaction payload, WindowsNativeEpochFiles files,
         WindowsNativePackage package, Guid request, Action<NativeEpochBoundary>? preparationBoundary = null, SetupNativeReadinessAdapters? readiness = null,
-        WindowsManagedMailboxTransfer? managedTransfer = null)
+        WindowsManagedMailboxTransfer? managedTransfer = null, ManagedMailboxStorage? mailboxStorage = null)
     {
         this.payload = payload;
         this.files = files;
@@ -33,6 +34,7 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
         this.preparationBoundary = preparationBoundary;
         this.readiness = readiness ?? SetupNativeReadinessAdapters.Windows;
         this.managedTransfer = managedTransfer;
+        this.mailboxStorage = mailboxStorage;
     }
 
     public string StagedPayloadDirectory => payload.StagedPayloadDirectory;
@@ -65,7 +67,7 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
         // The actual held package producer, immutable images and provisional
         // selection precede StartService/health in SetupCommandRunner.
         epoch = WindowsNativeEpochTransaction.Begin(files, package, request, testCrashBoundary: preparationBoundary,
-            managedTransfer: managedTransfer);
+            managedTransfer: managedTransfer, storage: mailboxStorage);
         cancellationToken.ThrowIfCancellationRequested();
         // From entry into payload activation onward its outcome may be ambiguous.
         possiblePayloadActivation = true;

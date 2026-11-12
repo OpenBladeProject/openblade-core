@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace OpenBlade.Deployment;
 
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
@@ -106,15 +108,19 @@ public static class WindowsNativeTrustLifecycle
         {
             directory = files.RetainDirectory(Path.Combine(files.Root, "owner"));
             writer = files.AcquireOwnerWriter();
-            string commitment = RequireOwnerRetiredCore(files);
-            return new OwnerLease(directory, writer, commitment);
+            var references = new List<OwnerReference>();
+            string commitment = RequireOwnerRetiredCore(files, references);
+            return new OwnerLease(directory, writer, commitment, references.ToImmutableArray());
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
         { writer?.Dispose(); directory?.Dispose(); throw new NativeRecoveryException(NativeRecoveryReason.FirmwareOwnerUnresolved, "Native firmware ownership history is active, partial or unknown; no drain was inferred.", error); }
     }
-    internal sealed class OwnerLease(IDisposable directory, IDisposable writer, string commitment) : IDisposable
+    internal sealed record OwnerReference(string Installation, string Epoch, string Service);
+    internal sealed class OwnerLease(IDisposable directory, IDisposable writer, string commitment, ImmutableArray<OwnerReference> references) : IDisposable
     {
         internal string Commitment { get; } = commitment;
+        internal ImmutableArray<OwnerReference> References { get; } = references;
+        internal bool IsKnownEmpty => References.IsEmpty;
         public void Dispose() { try { writer.Dispose(); } finally { directory.Dispose(); } }
     }
     private static bool ValidArtifact(string value) => value.Length == 72 && value.EndsWith("-service", StringComparison.Ordinal) && NativeCanonical.IsHex(value[..64], 64);
@@ -125,7 +131,7 @@ public static class WindowsNativeTrustLifecycle
             && ulong.TryParse(parts[1], out ulong created) && created > 0
             && value == pid.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + created.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
-    private static string RequireOwnerRetiredCore(WindowsNativeEpochFiles files)
+    private static string RequireOwnerRetiredCore(WindowsNativeEpochFiles files, List<OwnerReference> references)
     {
         string owner = Path.Combine(files.Root, "owner");
         using var directory = files.RetainDirectory(owner);
@@ -154,6 +160,7 @@ public static class WindowsNativeTrustLifecycle
                 bool replacement = priorFields[0] == "Retired" && f[0] == "Reserved" && priorFields[3] == f[3] && priorFields[4] != f[4];
                 if (!(same && transition || replacement)) { throw new IOException("Native owner transition differs."); }
             }
+            if (f[0] == "Reserved") { references.Add(new(f[3], f[4], f[5])); }
             previous = bytes; priorFields = f;
         }
         if (priorFields is not null && priorFields[0] != "Retired")

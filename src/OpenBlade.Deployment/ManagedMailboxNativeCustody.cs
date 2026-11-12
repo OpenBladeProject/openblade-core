@@ -94,6 +94,8 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
                 WindowsNativeEpochFiles.RequireExact(custody, NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", epoch));
                 authenticated.Add((package, record, directory, preparation, preparationBinding));
             }
+            var selections = new List<NativeEpochRecord>();
+            if (selected is not null) { selections.Add(selected); }
             var knownEpochs = directories.Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
             string[] entries = Directory.EnumerateFileSystemEntries(files.Root).Take(32769).ToArray();
             if (entries.Length > 32768) { throw new IOException("Native namespace exceeds its bound."); }
@@ -103,12 +105,45 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
                 if (name is "owner" or "root.bin" or "writer.lock" or "current.bin" || knownEpochs.Contains(name)) { continue; }
                 if (name.EndsWith(".reserved", StringComparison.Ordinal) && knownEpochs.Contains(name[..^9])) { continue; }
                 if (name.StartsWith("selection-", StringComparison.Ordinal) && name.EndsWith(".bin", StringComparison.Ordinal))
-                { _ = NativeEpochRecord.Parse(ManagedMailboxRecovery.Read(files, entry)); continue; }
+                {
+                    byte[] bytes = ManagedMailboxRecovery.Read(files, entry);
+                    var frontier = NativeEpochRecord.Parse(bytes);
+                    if (name != WindowsNativeEpochTransaction.FrontierName(frontier)
+                        || !ManagedMailboxRecovery.Read(files, Path.Combine(files.Root, frontier.Epoch, frontier.Phase + ".bin")).AsSpan().SequenceEqual(bytes))
+                    { throw new IOException("Historical selection phase or filename differs."); }
+                    selections.Add(frontier); continue;
+                }
                 throw new IOException("Unknown or unmatched native namespace evidence was preserved.");
             }
             // All original custody precedes the one global owner writer.
             var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files); held.Add(owner);
             ownerCommitment = owner.Commitment;
+            // A complete owner chain is not proof that its native generations
+            // survived. Never reset ordinal/predecessor against retained owners.
+            if (firstPreparation && (!owner.IsKnownEmpty || authenticated.Count == 0
+                || authenticated.Any(item => !item.Preparation || item.Record.Ordinal != 1 || item.Record.Predecessor != new string('0', 64))))
+            { throw new IOException("Unselected history is not a complete first-preparation prefix."); }
+            foreach (var item in authenticated)
+            {
+                if (!item.Preparation && !ManagedMailboxRecovery.Read(files, Path.Combine(files.Root, WindowsNativeEpochTransaction.FrontierName(item.Record))).AsSpan().SequenceEqual(item.Record.Encode()))
+                { throw new IOException("Retired generation selection history is missing."); }
+                if (item.Record.Ordinal == 1 ? item.Record.Predecessor != new string('0', 64)
+                    : !authenticated.Any(prior => !prior.Preparation && prior.Record.Ordinal == item.Record.Ordinal - 1
+                        && prior.Record.Installation == item.Record.Installation && NativeCanonical.Digest(prior.Record.Encode()) == item.Record.Predecessor))
+                { throw new IOException("Native generation predecessor history is incomplete."); }
+            }
+            foreach (var reference in owner.References)
+            {
+                if (!authenticated.Any(item => !item.Preparation && item.Record.Epoch == reference.Epoch
+                    && item.Record.Installation == reference.Installation && item.Record.ServiceId == reference.Service))
+                { throw new IOException("Owner history has no matching retained native generation."); }
+            }
+            foreach (var selection in selections)
+            {
+                if (!authenticated.Any(item => !item.Preparation
+                    && item.Record with { Phase = selection.Phase, Readiness = selection.Readiness } == selection))
+                { throw new IOException("Selected history has no matching retained native generation."); }
+            }
             var commitments = new List<string>();
             foreach (var item in authenticated)
             {

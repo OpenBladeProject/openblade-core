@@ -18,36 +18,33 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
     internal string ServiceSha256 => package?.Service.Sha256 ?? throw new ObjectDisposedException(nameof(WindowsNativeInstalledSelection));
     private WindowsNativeInstalledSelection(WindowsNativeEpochFiles files, byte[] selected)
     { this.files = files; this.selected = selected; Record = NativeEpochRecord.Parse(selected); }
-    internal static async Task<WindowsNativeInstalledSelection?> OpenProductAsync(CancellationToken token)
+    internal static async Task<WindowsNativeInstalledSelection?> OpenProductAsync(CancellationToken token, WindowsNativePackage? incoming = null)
     {
         if (!WindowsNativeEpochFiles.IsPresentDirectory(WindowsNativeEpochFiles.ProductRoot)) { return null; }
         var files = WindowsNativeEpochFiles.OpenProduct();
-        try { return await OpenForSetupAsync(files, token); }
+        try { return await OpenForSetupAsync(files, token, incoming: incoming); }
         catch { files.Dispose(); throw; }
     }
-    internal static async Task<WindowsNativeInstalledSelection?> OpenForSetupAsync(WindowsNativeEpochFiles files, CancellationToken token, Func<WindowsNativeEpochFiles>? openManaged = null,
-        Action<ManagedMailboxNativeCustody>? authenticateLegacy = null)
+    internal static async Task<WindowsNativeInstalledSelection?> OpenForSetupAsync(WindowsNativeEpochFiles files, CancellationToken token, WindowsNativePackage? incoming = null, ManagedMailboxStorage? storage = null)
     {
         var writer = files.AcquireWriter();
         try
         {
             var inspection = WindowsNativeRecoveryState.Inspect(files);
             if (inspection.State == NativeInstallationState.VerifiedBootstrap)
-            { writer.Dispose(); files.Dispose(); return null; }
+            {
+                if (incoming?.Service.ReadOnlyMailbox == true) { AuthenticateMailboxHistory(); }
+                writer.Dispose(); files.Dispose(); return null;
+            }
             if (inspection.State == NativeInstallationState.UnresolvedHistory)
             {
                 if (inspection.Selection is not null || WindowsNativeEpochTransaction.ReadFrontier(files) is not null)
                 { throw new NativeRecoveryException(NativeRecoveryReason.UnknownBootstrapHistory, "Native selection is inconsistent with preserved history; no reset was performed."); }
-                using (var native = ManagedMailboxNativeCustody.AcquireUnderWriter(files.RetainView()))
-                {
-#if OPENBLADE_NATIVE_PACKAGE_TESTS
-                    authenticateLegacy?.Invoke(native);
-#else
-                    (authenticateLegacy ?? WindowsManagedMailboxRun.AuthenticateLegacyTerminal)(native);
-#endif
-                    using var managed = (openManaged ?? WindowsNativeEpochFiles.CreateOrOpenManagedHandoff)();
-                    ManagedMailboxRecovery.AuthenticateRetainedTerminals(managed, native);
-                }
+                // Begin preserves a fresh refusal too. Reject incompatible
+                // verified incoming composition before the runner stops anything.
+                if (incoming is not null && !incoming.Service.ReadOnlyMailbox)
+                { throw new NativeRecoveryException(NativeRecoveryReason.UnknownBootstrapHistory, "Incoming package cannot renew retained mailbox preparation history."); }
+                AuthenticateMailboxHistory();
                 writer.Dispose(); files.Dispose(); return null;
             }
             var value = await OpenWithWriterAsync(files, inspection.Selection!, writer, token,
@@ -55,6 +52,13 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
             return value;
         }
         catch { writer.Dispose(); throw; }
+        void AuthenticateMailboxHistory()
+        {
+            using var native = ManagedMailboxNativeCustody.AcquireUnderWriter(files.RetainView());
+            WindowsManagedMailboxRun.AuthenticateLegacyTerminal(native, storage);
+            using var managed = (storage ?? ManagedMailboxStorage.Product).OpenManaged();
+            ManagedMailboxRecovery.AuthenticateRetainedTerminals(managed, native);
+        }
     }
     internal static async Task<WindowsNativeInstalledSelection> OpenAsync(WindowsNativeEpochFiles files, CancellationToken token)
     {

@@ -745,12 +745,12 @@ public sealed class WindowsNativeInventoryBurnExtractorTests
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    internal static byte[] ManagedMailboxBundle() => Bundle(Resource(), includeRoles: true, authored: true,
+    internal static byte[] ManagedMailboxBundle(string? marker = null) => Bundle(Resource(), includeRoles: true, authored: true,
         managedFiles: new Dictionary<string, byte[]>
         {
             ["OpenBlade.Service.dll"] = ManagedModule(),
             ["OpenBlade.Service.deps.json"] = "{}"u8.ToArray(),
-            ["OpenBlade.Service.runtimeconfig.json"] = "{}"u8.ToArray(),
+            ["OpenBlade.Service.runtimeconfig.json"] = marker is null ? "{}"u8.ToArray() : System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(new { fixture = marker })),
             ["openblade_ffi.dll"] = WindowsNativeEpochTests.Image("service"),
         }, omitInventory: true);
 

@@ -7,6 +7,46 @@ namespace OpenBlade.Setup.Tests;
 public sealed partial class SetupCommandRunnerTests
 {
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task IncomingNonMailboxPreflightRefusesBeforeRunnerMutationsAndFreshBeginKeepsManagedRollback(bool preflight)
+    {
+        using var epochs = ManagedMailboxCorrectionTests.Bootstrap();
+        using var handoff = ManagedMailboxCorrectionTests.Handoff();
+        using var packages = await ManagedMailboxCorrectionTests.Packages();
+        var run = new ManagedMailboxRun(new string('1', 32), "17:100", new string('2', 64), new string('3', 64), new string('4', 32));
+        using var transfer = ManagedMailboxCorrectionTests.SignedTransfer(handoff, packages, run, '6');
+        epochs.PublishedForTests = path => { if (Path.GetFileName(path) == "preparation.bin") { throw new IOException("positive preparation cut"); } };
+        var storage = new ManagedMailboxStorage(() => false, () => throw new Exception("no legacy root"), () => handoff.RetainFixtureView());
+        Assert.Throws<IOException>(() => WindowsNativeEpochTransaction.Begin(epochs, packages.Native, Guid.ParseExact(new string('6', 32), "N"), managedTransfer: transfer, storage: storage));
+        epochs.PublishedForTests = null;
+        using (var native = ManagedMailboxNativeCustody.AcquireForTests(epochs.RetainFixtureView()))
+        using (var exclusion = handoff.AcquireServiceCustody(Path.Combine(handoff.Root, "exclusion.lock")))
+        { ManagedMailboxRecovery.Resolve(handoff, native); }
+        using var source = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var incoming = await WindowsNativeEpochTests.Package(source, nonce: 'c', schema: 2);
+        var payload = new NativePayload();
+        var transaction = new SetupNativePackageTransaction(payload, epochs.RetainFixtureView(), incoming, Guid.NewGuid());
+        var platform = new RecordingSetupPlatform { PayloadOverride = transaction, ServiceExists = true };
+        var before = Directory.EnumerateFiles(epochs.Root, "*", SearchOption.AllDirectories).ToDictionary(path => path, File.ReadAllBytes);
+        async Task ProgramComposition()
+        {
+            // Same package-aware selection call and ordering as Setup Program.
+            using var selected = preflight ? await WindowsNativeInstalledSelection.OpenForSetupAsync(epochs.RetainFixtureView(), default, incoming: incoming, storage: storage) : null;
+            await new SetupCommandRunner(platform).RunAsync(["install"], default);
+        }
+        var failure = await Assert.ThrowsAsync<NativeRecoveryException>(ProgramComposition);
+        Assert.Equal(NativeRecoveryReason.UnknownBootstrapHistory, failure.Reason);
+        Assert.False(transaction.RequiresExplicitNativeRecovery); Assert.Equal(0, payload.Activations);
+        if (preflight)
+        { Assert.Empty(platform.Operations); Assert.Equal(0, payload.Rollbacks); }
+        else
+        { Assert.Contains("service-restore", platform.Operations); Assert.Equal(1, payload.Rollbacks); Assert.DoesNotContain("service-install", platform.Operations); }
+        foreach (var (path, bytes) in before) { Assert.Equal(bytes, File.ReadAllBytes(path)); }
+        await transaction.DisposeAsync();
+    }
+
+    [Theory]
     [InlineData("capture")]
     [InlineData("prerequisite")]
     [InlineData("cancel")]
@@ -86,7 +126,7 @@ public sealed partial class SetupCommandRunnerTests
         byte[] originalExit = File.ReadAllBytes(ManagedMailboxRecovery.PathFor(handoff, selected, "original-exit"));
         byte[] receipt = File.ReadAllBytes(ManagedMailboxRecovery.PathFor(handoff, selected, "receipt"));
         var payload = new NativePayload();
-        var native = new SetupNativePackageTransaction(payload, epochs.RetainFixtureView(), package, Guid.ParseExact(selected.Value.Request, "N"), managedTransfer: transfer);
+        var native = new SetupNativePackageTransaction(payload, epochs.RetainFixtureView(), package, Guid.ParseExact(selected.Value.Request, "N"), managedTransfer: transfer, mailboxStorage: new(() => false, () => throw new Exception("no legacy root"), () => handoff.RetainFixtureView()));
         ManagedMailboxStartup.Admission? startup = null;
         bool scheduled = false;
         var platform = new RecordingSetupPlatform

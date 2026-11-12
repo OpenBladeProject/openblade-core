@@ -97,13 +97,15 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
         }
         catch { exclusion?.Dispose(); files.Dispose(); throw; }
     }
-    internal static IDisposable? AcquireLegacyExclusion(ManagedMailboxNativeCustody native)
+    internal static IDisposable? AcquireLegacyExclusion(ManagedMailboxNativeCustody native) => AcquireLegacyExclusion(native, null);
+    internal static IDisposable? AcquireLegacyExclusion(ManagedMailboxNativeCustody native, ManagedMailboxStorage? storage)
     {
+        storage ??= ManagedMailboxStorage.Product;
         WindowsNativeEpochFiles files;
         try
         {
-            if (!WindowsNativeEpochFiles.IsPresentDirectory(WindowsNativeEpochFiles.LegacyManagedHandoffRoot)) { return null; }
-            files = WindowsNativeEpochFiles.OpenProtected(WindowsNativeEpochFiles.LegacyManagedHandoffRoot);
+            if (!storage.LegacyPresent()) { return null; }
+            files = storage.OpenLegacy();
         }
         catch (Exception error) when (error is UnauthorizedAccessException or IOException or InvalidDataException
             || error is System.ComponentModel.Win32Exception { NativeErrorCode: 2 or 3 or 5 or 32 or 33 })
@@ -131,10 +133,12 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
         }
         catch { exclusion?.Dispose(); files.Dispose(); throw; }
     }
-    internal static void AuthenticateLegacyTerminal(ManagedMailboxNativeCustody native)
+    internal static void AuthenticateLegacyTerminal(ManagedMailboxNativeCustody native) => AuthenticateLegacyTerminal(native, null);
+    internal static void AuthenticateLegacyTerminal(ManagedMailboxNativeCustody native, ManagedMailboxStorage? storage)
     {
-        if (!WindowsNativeEpochFiles.IsPresentDirectory(WindowsNativeEpochFiles.LegacyManagedHandoffRoot)) { return; }
-        using var files = WindowsNativeEpochFiles.OpenProtected(WindowsNativeEpochFiles.LegacyManagedHandoffRoot);
+        storage ??= ManagedMailboxStorage.Product;
+        if (!storage.LegacyPresent()) { return; }
+        using var files = storage.OpenLegacy();
         AuthenticateLegacyTerminal(files, native);
     }
     internal static void AuthenticateLegacyTerminal(WindowsNativeEpochFiles files, ManagedMailboxNativeCustody native,
@@ -178,7 +182,7 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
             var record = new ManagedMailboxRun(Guid.NewGuid().ToString("N"), process.Id.ToString(CultureInfo.InvariantCulture) + ":" + process.StartTime.ToUniversalTime().ToFileTimeUtc().ToString(CultureInfo.InvariantCulture), identity.Executable, identity.Closure, identity.Module);
             var binding = new ManagedMailboxBuildBinding(NativeCanonical.Digest(record.Encode()), authenticated.Installation,
                 authenticated.PackageDigest, authenticated.EnrollmentDigest);
-            return BeginRun(files, exclusion, record, binding, authenticated);
+            return BeginRun(files, exclusion, record, binding, authenticated, authenticated.VerificationProjection);
         }
         catch { authenticated?.Dispose(); exclusion?.Dispose(); files.Dispose(); throw; }
     }
@@ -200,8 +204,11 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
     }
 
     private static WindowsManagedMailboxRun BeginRun(WindowsNativeEpochFiles files, FileStream exclusion,
-        ManagedMailboxRun record, ManagedMailboxBuildBinding binding, IDisposable? authenticated)
+        ManagedMailboxRun record, ManagedMailboxBuildBinding binding, IDisposable? authenticated, byte[]? projection = null)
     {
+        // Publish exact original trust bytes before the current-run projection.
+        if (projection is not null)
+        { ManagedMailboxRecovery.PreserveRunHistory(files, record.Encode(), binding.Encode(), projection); }
         files.PublishCustody(Path.Combine(files.Root, "run-binding-" + record.Run + ".bin"), binding.Encode());
         files.PublishCustody(Path.Combine(files.Root, "run-" + record.Run + ".bin"), record.Encode());
         files.PublishCurrent(record.Encode());
@@ -209,10 +216,10 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
     }
 
 #if OPENBLADE_NATIVE_PACKAGE_TESTS
-    internal static WindowsManagedMailboxRun StartForTests(WindowsNativeEpochFiles files, ManagedMailboxRun record, string? installation = null, ManagedMailboxBuildBinding? binding = null)
+    internal static WindowsManagedMailboxRun StartForTests(WindowsNativeEpochFiles files, ManagedMailboxRun record, string? installation = null, ManagedMailboxBuildBinding? binding = null, byte[]? projection = null, ManagedMailboxNativeCustody? native = null)
     {
-        var exclusion = AcquireRunExclusion(files);
-        return BeginRun(files, exclusion, record, binding ?? new(NativeCanonical.Digest(record.Encode()), installation ?? new string('5', 32), new string('7', 64), new string('8', 64)), null);
+        var exclusion = AcquireRunExclusion(files, native);
+        return BeginRun(files, exclusion, record, binding ?? new(NativeCanonical.Digest(record.Encode()), installation ?? new string('5', 32), new string('7', 64), new string('8', 64)), null, projection);
     }
 #endif
 

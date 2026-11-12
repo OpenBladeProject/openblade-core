@@ -63,7 +63,7 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
     internal static WindowsNativeEpochTransaction Begin(WindowsNativeEpochFiles files, WindowsNativePackage package,
         Guid request, string? explicitlyRecoverCurrent = null,
         Action<NativeEpochBoundary>? testCrashBoundary = null, WindowsManagedMailboxTransfer? managedTransfer = null,
-        Func<ManagedMailboxNativeCustody, IDisposable?>? acquireLegacy = null)
+        ManagedMailboxStorage? storage = null)
     {
         if (request == Guid.Empty) { throw new InvalidDataException("Native epoch requires a fresh Setup request."); }
         testCrashBoundary?.Invoke(NativeEpochBoundary.AdmissionRequested);
@@ -79,11 +79,7 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
             if (!package.Service.ReadOnlyMailbox && previous is null && WindowsNativeRecoveryState.Inspect(files).State != NativeInstallationState.VerifiedBootstrap)
             { throw new NativeRecoveryException(NativeRecoveryReason.UnknownBootstrapHistory, "Native bootstrap admission changed; preserved mappings/reservations/ownership were not reset."); }
             using var prefix = package.Service.ReadOnlyMailbox ? ManagedMailboxNativeCustody.AcquireUnderWriter(files.RetainView()) : null;
-#if OPENBLADE_NATIVE_PACKAGE_TESTS
-            using var legacyAdmission = prefix is null ? null : acquireLegacy?.Invoke(prefix);
-#else
-            using var legacyAdmission = prefix is null ? null : (acquireLegacy ?? WindowsManagedMailboxRun.AcquireLegacyExclusion)(prefix);
-#endif
+            using var legacyAdmission = prefix is null ? null : WindowsManagedMailboxRun.AcquireLegacyExclusion(prefix, storage);
             using var handoff = package.Service.ReadOnlyMailbox
                 ? (managedTransfer ?? throw new IOException("A real managed transport handoff is required for native observation.")).AcquireForBegin(package, request) : null;
             if (prefix is not null)
@@ -259,7 +255,7 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
         catch { denied = true; throw; }
     }
 
-    private static string FrontierName(NativeEpochRecord record) => $"selection-{record.Ordinal:D20}-{(int)record.Phase}.bin";
+    internal static string FrontierName(NativeEpochRecord record) => $"selection-{record.Ordinal:D20}-{(int)record.Phase}.bin";
 
     private static void PublishFrontier(WindowsNativeEpochFiles files, NativeEpochRecord record, byte[] bytes)
         => files.Publish(Path.Combine(files.Root, FrontierName(record)), bytes);
