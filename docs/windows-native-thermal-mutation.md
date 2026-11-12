@@ -16,7 +16,7 @@ selection and Setup handoff consumers retain the same authenticated mailbox
 handoff requirement. A correctly authenticated role inventory can carry this
 composition. There is no new default native publishing or installation path.
 
-The installed v79 dispatcher accepts typed `setPerformanceOverride` and
+The installed v80 dispatcher accepts typed `setPerformanceOverride` and
 `reportApplicationContext` requests only in this composition. The SID comes
 from the actual named-pipe peer token, with active interactive session continuity
 checked before and after the operation. The real supplier independently matches
@@ -24,8 +24,12 @@ that SID/session/authentication LUID against the current Windows session token.
 It checks the loaded committed origin, competing-controller absence and known
 coarse power. Actual opened-port validation checks the reviewed exact RZ09-0581
 host/HID identity. Per-command 07/8C readback classifies adapter sufficiency.
-SCM power/session ingress irrevocably revokes this origin; this stage does not
-automatically reacquire mutation authority after a lifecycle boundary.
+SCM power/session ingress advances a separate lifecycle epoch and fences old
+operations while preserving loaded-origin custody. Only STOP/SHUTDOWN or actual
+trust loss is terminal. Suspend blocks mutation until an explicit resume; session
+events cannot establish resume. Fresh exact WTSInfoEx active/unlocked session
+admission is required for mutation. The initial clear suspend latch follows the
+managed lifecycle contract; display-off alone is not confirmed low power.
 
 The existing ReadLease owns the managed handoff exclusion and the single durable
 owner Store. It drains its actual native reader before publishing the genuine
@@ -54,7 +58,8 @@ independent byte readback.
 Current schema-8 manual overrides support Balanced/Performance, Persistent and
 UntilPowerSourceChange lifetimes, and explicit nullable clear. Each setter clears
 the other performance slot as managed setters do. Temporary state expires when
-its power source changes. Existing validated manual fan detail/custom/GPU fields
+a fresh known power source differs. Unresolved external power neither expires
+intent nor establishes full-power effectiveness. Existing manual fan detail/custom/GPU fields
 are preserved when unrelated; schema 1-7 requires managed migration. Unsupported
 saved lighting overrides are preserved and refused rather than erased or labeled
 as corrupt. Future, malformed, duplicate-member and interrupted documents remain
@@ -73,6 +78,10 @@ complete native Session Agent producer parity is separate work. Private profile
 and accepted override projection carries a local authenticated SID binding. Final
 GetStatus, ObserveState and subscription projection rechecks the live peer;
 System, inactive and different-SID callers receive only public hardware fields.
+Each projection re-resolves private intent against current public metadata.
+Stored-only publication merges onto the latest hardware without renewing a read
+witness or timestamp. Late accepted persistence becomes visible on a later fresh
+read without replaying a write.
 
 Configured GPU clock effects are Stored with an explicit incomplete outcome and
 no thermal pair. GPU clocks, manual fan application, display, lighting, and other
@@ -82,15 +91,18 @@ preset was independently confirmed, with GPU/broad capability incompleteness
 stated in the result. An ineligible saved request is Stored even if a different
 eligible profile's thermal preset was confirmed. Requested override, effective
 selected value/provenance, and observed state remain distinct. Mutation success
-frames contain only the operation result, as required by the unchanged v79
+frames contain only the operation result, as required by the unchanged v80
 single-body response contract. Status travels separately through GetStatus,
 ObserveState and subscriptions.
 
 ## Submission, ambiguity and finite transport lifetime
 
 The portable typed pair resolves both 0D/02 reports before the first mutation.
-Balanced and Performance use their destination directly, including from manual
-or Custom observations. No Balanced/Automatic reset is an entry prerequisite.
+Balanced and Performance use their destination directly when current admission
+permits it. Exact0581 PluggedIn current-manual plus effective-desired-manual fan
+policy stores the request without setters; it does not restore per-preset fans.
+Automatic-active plus saved fixed fan intent remains direct. No blanket
+Balanced/Automatic reset is an entry prerequisite.
 The same native port worker and finite process transaction allocator are used;
 all write, per-command power and final readback identifiers are reserved before
 submission. Reopening a handle or replacing a worker does not reset that budget.
@@ -108,16 +120,21 @@ SID switch cannot bypass an earlier user's ambiguity. Each durable stage include
 original request ID, SID, peer PID/session, owner-generation digest, full typed
 requested intent, intent hash, resolved destination, and ordered progress:
 Prepared, FirstIntent, FirstAcknowledged, SecondIntent, SecondAcknowledged,
-Confirmed. Every journal owner nonce is checked against the complete validated
+Confirmed (ordinals 0-5), plus KnownNotSubmitted (6). Every journal owner nonce is checked against the complete validated
 Active owner history retained by the same Store, including legitimate historical
 owners. Unknown owner references are refused on read and before replacement.
 Intent is flushed and read back before each possible submission.
-Prepared proves no mutation intent was reached. This bounded stage conservatively
-fences Prepared too; it does not implement a no-submission settlement path.
-Later incomplete stages preserve
-possible submission. Persistence failures latch quarantine in memory and leave
+Prepared proves no mutation intent was reached. It stays fenced until actual
+worker/transport retirement permits a checked Prepared-to-KnownNotSubmitted
+append for the exact owner/request/user and unchanged journal prefix. FirstIntent
+and later incomplete stages preserve possible submission. Persistence failures latch quarantine in memory and leave
 partial staging on disk. Cancellation retains the actual worker until native
 callback retirement; dropping a requester cannot release custody early.
+Configuration replacement failure, accepted but ineligible intent, transaction
+capacity, pre-submission refusal and possible submission have distinct outcomes.
+A known-unpublished activation refusal may reconstruct a reader only after real
+drain; uncertain publication retains the fence. Initial read admission precedes
+ID reservation, and IDs already reserved are never reclaimed.
 
 After ambiguity, explicit observation remains read-only. It can report current
 thermal state but does not clear the durable mutation fence or replay an uncertain
@@ -142,7 +159,7 @@ own-user private-file tests use the actual ProtectedFiles and durable Store,
 including first reservation, atomic journal replacement, exclusive sharing,
 restart and cross-SID refusal. Constructors take those inputs before any default
 root resolution. Real controller/token/session/SCM/HID suppliers are compiled,
-not executed. Managed tests parse emitted native replies with the actual v79 codec
+not executed. Managed tests parse emitted native replies with the actual v80 codec
 and inspect explicit artifact capabilities and conservative recovery refusal.
 The native test marker emits the original received UTF-8 payload, preserving
 property order and the leading polymorphic discriminator. Extraction retains
@@ -150,6 +167,6 @@ those payload strings unchanged; parsed/sorted JSON is not wire evidence.
 
 Final evidence must bind the exact clean commit/tree, full compiler inputs and
 outputs, actual feature/define sets, complete inspected test bodies, held harness
-hashes, exact prelists and original logs/TRXs. A prior stage's compiler/test packet
-is not evidence for this source. Installation, hardware validation, lifecycle
+hashes, exact prelists and original logs/TRXs. Prior evidence is reusable only for explicitly unchanged inputs with recorded
+equality; changed production paths require fresh focused evidence. Installation, hardware validation, lifecycle
 experiments, package publication and default activation remain outside this stage.

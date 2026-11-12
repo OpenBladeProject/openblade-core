@@ -6,7 +6,10 @@ use super::{
     thermal_storage::{Override, Storage},
 };
 use crate::{
-    discovery::performance::{ReadAdmission, mutation::Permit},
+    discovery::performance::{
+        ObservedPerformance, ReadAdmission,
+        mutation::{Permit, Refusal},
+    },
     loaded_origin::Origin,
     service_status::{ReadConfirmation, Snapshot},
 };
@@ -38,6 +41,8 @@ pub(super) struct Runtime {
     factory: Rc<Factory>,
     application: Rc<RefCell<Option<Application>>>,
     gate: Rc<tokio::sync::Mutex<()>>,
+    #[cfg(test)]
+    pub(super) entered: Rc<std::cell::Cell<u64>>,
 }
 struct Application {
     sid: String,
@@ -71,6 +76,8 @@ impl Runtime {
             factory: Rc::new(factory),
             application: Rc::default(),
             gate: Rc::default(),
+            #[cfg(test)]
+            entered: Rc::default(),
         }
     }
     pub(super) fn native(origin: Arc<Origin>) -> Self {
@@ -117,6 +124,8 @@ impl Runtime {
             }),
             application: Rc::default(),
             gate: Rc::default(),
+            #[cfg(test)]
+            entered: Rc::default(),
         }
     }
     pub(super) fn application(
@@ -174,10 +183,12 @@ impl Runtime {
         deadline: Instant,
         status: Snapshot,
     ) -> io::Result<(Outcome, Option<Snapshot>)> {
+        #[cfg(test)]
+        self.entered.set(self.entered.get() + 1);
         let _serial = self.gate.lock().await;
         // Metadata may retain a previous user's projection. New accepted intent
         // starts from the public view even when this user has no profile file.
-        let status = status.redact_private();
+        let status = status.redact_private().without_thermal_observation();
         if caller.logon != Logon::Interactive || caller.control_session != Some(caller.session) {
             return Ok((
                 Outcome::blocked("The active interactive Windows user is required."),
@@ -203,19 +214,63 @@ impl Runtime {
         };
         if storage.pending() {
             return Ok((
-                Outcome::blocked(
-                    "An earlier thermal submission requires read-only reconciliation.",
-                ),
+                Outcome::blocked(if storage.configuration_failed() {
+                    "Saved configuration replacement failed; storage reconciliation is required. No thermal submission is established."
+                } else {
+                    "An earlier thermal submission requires read-only reconciliation."
+                }),
                 None,
             ));
         }
-        let proof = fresh.authorize().ok_or(io::ErrorKind::PermissionDenied)?;
+        let Some(proof) = fresh.authorize() else {
+            return Ok((
+                Outcome::blocked(
+                    "Current thermal admission is unavailable; no intent or command was submitted.",
+                ),
+                None,
+            ));
+        };
         let application = self
             .application
             .borrow()
             .as_ref()
             .filter(|a| a.sid == sid && a.session == caller.session && Instant::now() < a.expires)
             .and_then(|a| a.path.clone());
+        let runtime = self.clone();
+        let policy_sid = sid.clone();
+        let custody = reader.custody();
+        reader.retain_policy(Rc::new(move |base| {
+            let base = base.redact_private();
+            let Ok((store, fresh)) =
+                (runtime.factory)(&policy_sid, caller.session, custody.clone())
+            else {
+                return Ok(base);
+            };
+            if fresh.authorize().is_none() {
+                return Ok(base);
+            }
+            let power = base.thermal_power_source();
+            let application = runtime
+                .application
+                .borrow()
+                .as_ref()
+                .filter(|a| {
+                    a.sid == policy_sid && a.session == caller.session && Instant::now() < a.expires
+                })
+                .and_then(|a| a.path.clone());
+            let value = store.current_override(power)?;
+            let desired = store.desired(power, application.as_deref())?;
+            Ok(base
+                .thermal_profiles(store.profiles()?)?
+                .thermal_intent(
+                    value.as_ref(),
+                    desired.map(|(p, _)| p),
+                    "Saved performance policy; current hardware is reported independently.",
+                    None,
+                )
+                .thermal_provenance(desired.map(|(_, s)| s))
+                .bind_private_user(&policy_sid))
+        }));
         let intent = format!("{:x}", Sha256::digest(serde_json::to_vec(&value)?));
         let permit = Arc::new(RequestPermit {
             storage,
@@ -231,6 +286,7 @@ impl Runtime {
             destination: Mutex::new(None),
             power: Mutex::new(None),
             selected_source: Mutex::new(None),
+            cause: Mutex::new(Cause::CurrentAdmission),
         });
         let result = reader.mutate(permit.clone(), deadline).await;
         if Instant::now() >= deadline || permit.fresh.authorize() != Some(proof) {
@@ -245,6 +301,9 @@ impl Runtime {
             .destination
             .lock()
             .map_err(|_| io::ErrorKind::Other)?;
+        if let Err(error) = &result {
+            permit.set_cause(Cause::Transport(error.to_string()));
+        }
         let observed = result
             .ok()
             .flatten()
@@ -256,6 +315,10 @@ impl Runtime {
             .is_none_or(|v| destination.is_some_and(|d| v.value == d as i32));
         let outcome = if observed.is_some() && requested_applied {
             Outcome{status:1,message:"Bounded thermal preset confirmed by independent paired readback. GPU clock handling and broad device capabilities remain unavailable; other native controls are incomplete.".into()}
+        } else if permit.storage.configuration_failed() {
+            Outcome::blocked(
+                "Saved configuration replacement failed. Intent was not accepted; no thermal command was submitted. Storage reconciliation is required.",
+            )
         } else if permit.storage.pending() {
             Outcome::blocked(if permit.storage.progress() == Some(0) {
                 "Intent stored and journal prepared; no mutation submission intent was reached. Explicit read-only reconciliation is required."
@@ -263,7 +326,17 @@ impl Runtime {
                 "Intent stored; a thermal command may have been submitted. Read-only reconciliation is required and no mutation will be replayed."
             })
         } else if accepted {
-            Outcome{status:0,message:"Performance intent stored. Applicable power policy, selected profile, or GPU clock effects prevent complete application of this request.".into()}
+            Outcome {
+                status: 0,
+                message: format!(
+                    "Performance intent stored. {}",
+                    permit
+                        .cause
+                        .lock()
+                        .map_err(|_| io::ErrorKind::Other)?
+                        .message()
+                ),
+            }
         } else {
             Outcome::blocked(
                 "Performance intent was not accepted; admission or protected persistence failed.",
@@ -313,22 +386,58 @@ struct RequestPermit {
     destination: Mutex<Option<Preset>>,
     power: Mutex<Option<i32>>,
     selected_source: Mutex<Option<i32>>,
+    cause: Mutex<Cause>,
+}
+#[derive(Debug)]
+enum Cause {
+    CurrentAdmission,
+    Gpu,
+    ManualDeferred,
+    NoEligiblePolicy,
+    TransactionCapacity,
+    PowerChanged,
+    Storage(String),
+    Transport(String),
+}
+impl Cause {
+    fn message(&self) -> String {
+        match self {
+            Self::CurrentAdmission => "Current admission or independent readback did not complete; no successful application is reported.".into(),
+            Self::Gpu => "GPU clock handling is incomplete; no thermal setter was submitted.".into(),
+            Self::ManualDeferred => "Performance applies when fans return to Automatic; manual fan intent is preserved.".into(),
+            Self::NoEligiblePolicy => "No supported performance destination is selected by the current power and profile policy.".into(),
+            Self::TransactionCapacity => "Thermal transaction ID capacity is exhausted; no setter was submitted.".into(),
+            Self::PowerChanged => "The independently observed power source changed or no longer admits this destination.".into(),
+            Self::Storage(e) => format!("Protected storage could not record the next step: {e}"),
+            Self::Transport(e) => format!("Thermal transport or ownership did not complete: {e}"),
+        }
+    }
+}
+impl RequestPermit {
+    fn set_cause(&self, cause: Cause) {
+        if let Ok(mut current) = self.cause.lock() {
+            *current = cause;
+        }
+    }
 }
 impl Permit for RequestPermit {
     fn authorize(&self) -> Option<ReadAdmission> {
         self.fresh.authorize()
     }
-    fn resolve(&self, power: i32) -> io::Result<Option<Preset>> {
+    fn resolve(&self, power: i32, baseline: ObservedPerformance) -> io::Result<Option<Preset>> {
         if self.accepted.load(Ordering::Acquire) {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
-        self.storage.save(self.value.clone(), power)?;
+        self.storage
+            .save(self.value.clone(), power)
+            .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))?;
         self.accepted.store(true, Ordering::Release);
         *self.power.lock().map_err(|_| io::ErrorKind::Other)? = Some(power);
         if self
             .storage
             .gpu_incomplete(power, self.application.as_deref())?
         {
+            self.set_cause(Cause::Gpu);
             return Ok(None);
         }
         let desired = self.storage.desired(power, self.application.as_deref())?;
@@ -338,10 +447,43 @@ impl Permit for RequestPermit {
             .map_err(|_| io::ErrorKind::Other)? = desired.map(|(_, s)| s);
         let desired = desired.map(|(p, _)| p);
         *self.destination.lock().map_err(|_| io::ErrorKind::Other)? = desired;
+        if openblade_domain::thermal_mutation::defer_manual_performance(
+            baseline,
+            power,
+            self.storage
+                .desired_manual_fans(power, self.application.as_deref())?,
+        ) {
+            self.set_cause(Cause::ManualDeferred);
+            return Ok(None);
+        }
+        if desired.is_none() {
+            self.set_cause(Cause::NoEligiblePolicy);
+        }
         Ok(desired)
+    }
+    fn refused(&self, cause: Refusal) {
+        self.set_cause(match cause {
+            Refusal::TransactionCapacity => Cause::TransactionCapacity,
+            Refusal::CurrentAdmission => Cause::CurrentAdmission,
+            Refusal::PowerChanged => Cause::PowerChanged,
+        });
+    }
+    fn retired(&self) -> io::Result<()> {
+        // Called only after the retained Worker stop has joined actual native
+        // retirement. No caller freshness is manufactured and no setter is run.
+        if self.accepted.load(Ordering::Acquire) && self.storage.progress() == Some(0) {
+            self.record_progress(Progress::KnownNotSubmitted)?;
+        }
+        Ok(())
     }
     fn record(&self, progress: Progress) -> io::Result<()> {
         self.authorize().ok_or(io::ErrorKind::PermissionDenied)?;
+        self.record_progress(progress)
+            .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))
+    }
+}
+impl RequestPermit {
+    fn record_progress(&self, progress: Progress) -> io::Result<()> {
         let destination = self
             .destination
             .lock()

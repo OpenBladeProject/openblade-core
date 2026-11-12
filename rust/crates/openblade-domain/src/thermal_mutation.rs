@@ -38,13 +38,15 @@ pub enum Progress {
     SecondIntent,
     SecondAcknowledged,
     Confirmed,
+    /// Authenticated Prepared-only tail, after actual transport retirement.
+    KnownNotSubmitted,
 }
 impl Progress {
     pub fn next(self, next: Self) -> bool {
-        next as u8 == self as u8 + 1
+        progress_follows(self as u8, next as u8)
     }
     pub fn blocks_restart(self) -> bool {
-        self != Self::Confirmed
+        !settled(self as u8)
     }
 }
 
@@ -77,4 +79,19 @@ mod tests {
         assert!(Progress::SecondAcknowledged.next(Progress::Confirmed));
         assert!(!Progress::Confirmed.blocks_restart());
     }
+}
+
+pub fn settled(progress: u8) -> bool {
+    matches!(progress, 5 | 6)
+}
+pub fn progress_follows(prior: u8, next: u8) -> bool {
+    (prior < 5 && next == prior + 1) || (prior == 0 && next == 6)
+}
+/// Existing exact0581 performance-only policy; not a firmware prerequisite.
+pub fn defer_manual_performance(
+    current: ObservedPerformance,
+    power: i32,
+    desired_manual: bool,
+) -> bool {
+    power == 0 && desired_manual && current.projection().1 != 0
 }

@@ -7,7 +7,7 @@ use super::*;
 use crate::installed::readiness::Logon;
 
 #[tokio::test]
-async fn private_pipe_serves_and_retires_observed_v79_status() {
+async fn private_pipe_serves_and_retires_observed_v80_status() {
     use crate::installed::readiness::{
         DRAIN_TIMEOUT, StatusRequest, StatusResponse, read_payload, serve, verify_peer,
         windows::private_endpoint, write_frame,
@@ -568,6 +568,7 @@ async fn guarded_sticky_read_loss_retains_current_metadata_and_expires_both_proj
                 self.revoke();
             }
             (self.state.load(Ordering::Acquire) == 0).then_some(ReadAdmission {
+                lifecycle: 1,
                 generation: [7; 32],
             })
         }

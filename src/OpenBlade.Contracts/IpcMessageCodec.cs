@@ -8,7 +8,8 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 79;
+    // Earlier peers reject the RZ09-0530 layout in capabilities and typed sequences.
+    public const int ProtocolVersion = 80;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -151,7 +152,7 @@ public static class IpcMessageCodec
             Protocol51SerializerOptions);
     }
 
-    internal static async Task WriteFramedAsync<T>(
+    private static async Task WriteFramedAsync<T>(
         Stream stream,
         T message,
         CancellationToken cancellationToken,
@@ -206,7 +207,7 @@ public static class IpcMessageCodec
         }
     }
 
-    internal static async Task<T> ReadFramedAsync<T>(
+    private static async Task<T> ReadFramedAsync<T>(
         Stream stream,
         CancellationToken cancellationToken,
         bool allowProtocol51 = false,
@@ -839,9 +840,7 @@ public static class IpcMessageCodec
     private static InvalidDataException InvalidStatus(string reason) =>
         new($"IPC server status is invalid: {reason}.");
 
-    // Firmware can report the Custom selector without exposing complete levels.
-    // Missing observed settings are unknown, while any present settings remain
-    // validated. Desired state and mutation requests still require full intent.
+    // Confirmed Custom may have unknown levels. Desired/request intent stays strict.
     private static bool ValidConfirmedPerformanceState(
         PerformancePreset? performance,
         CustomPerformanceSettings? customPerformance) =>

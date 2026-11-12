@@ -43,14 +43,27 @@ struct ReadLease {
     state: AtomicU8,
 }
 
+#[derive(Debug)]
+pub(super) enum ActivationFailure {
+    KnownUnpublished(io::Error),
+    Uncertain(io::Error),
+}
+impl ActivationFailure {
+    fn error(self) -> io::Error {
+        match self {
+            Self::KnownUnpublished(e) | Self::Uncertain(e) => e,
+        }
+    }
+}
+
 pub(super) trait ReadCustody: Send + Sync {
     fn authorize(&self) -> Option<ReadAdmission>;
     fn revoke(&self);
     fn retire(&self) -> io::Result<()>;
     fn confirm_drained(&self) -> io::Result<()>;
     #[cfg(feature = "service-thermal-mutation-v1")]
-    fn activate_mutation(&self) -> io::Result<()> {
-        Err(deny())
+    fn activate_mutation(&self) -> Result<(), ActivationFailure> {
+        Err(ActivationFailure::KnownUnpublished(deny()))
     }
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn journal_read(&self, _: bool) -> io::Result<Option<Vec<u8>>> {
@@ -407,6 +420,7 @@ impl ReadLease {
         #[cfg(not(feature = "service-thermal-mutation-v1"))]
         create_attempt_record(&root, &acquisition_name, &acquisition)?;
         let proof = ReadAdmission {
+            lifecycle: 1,
             generation: Sha256::digest(&acquisition).into(),
         };
         origin.verify()?;
@@ -435,7 +449,10 @@ impl ReadLease {
             &self.state,
             self.origin.committed(),
             || self.origin.mailbox_mapping().map(drop),
-            self.proof,
+            ReadAdmission {
+                lifecycle: self.origin.lifecycle.active()?,
+                ..self.proof
+            },
         )
     }
     fn revoke(&self) {
@@ -492,15 +509,25 @@ impl ReadCustody for ReadLease {
             .journal_replace(expected, bytes)
     }
     #[cfg(feature = "service-thermal-mutation-v1")]
-    fn activate_mutation(&self) -> io::Result<()> {
+    fn activate_mutation(&self) -> Result<(), ActivationFailure> {
+        use ActivationFailure::{KnownUnpublished, Uncertain};
         if self.recovery_only {
-            return Err(deny());
+            return Err(KnownUnpublished(deny()));
         }
-        self.authorize().ok_or_else(deny)?;
-        let mut held = self.resources.lock().map_err(|_| deny())?;
-        let resources = held.as_mut().ok_or_else(deny)?;
+        self.authorize().ok_or_else(|| KnownUnpublished(deny()))?;
+        let mut held = self.resources.lock().map_err(|_| Uncertain(deny()))?;
+        let resources = held.as_mut().ok_or_else(|| Uncertain(deny()))?;
         let nonce = digest(&self.proof.generation);
-        resources._owner.activate_first(&self.origin, nonce)
+        resources
+            ._owner
+            .activate_first(&self.origin, nonce)
+            .map_err(|e| {
+                if resources._owner.activation_started() {
+                    Uncertain(e)
+                } else {
+                    KnownUnpublished(e)
+                }
+            })
     }
     fn authorize(&self) -> Option<ReadAdmission> {
         ReadLease::authorize(self)
@@ -642,13 +669,20 @@ pub(super) struct ReadSource {
     lease: Arc<dyn ReadCustody>,
     worker: Rc<RefCell<Worker<ReadAdmission>>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
-    mutation: Rc<RefCell<Option<Worker<ReadAdmission>>>>,
+    mutation: Rc<
+        RefCell<
+            Option<(
+                Worker<ReadAdmission>,
+                Arc<dyn crate::discovery::performance::mutation::Permit>,
+            )>,
+        >,
+    >,
     #[cfg(feature = "service-thermal-mutation-v1")]
     activated: Rc<std::cell::Cell<bool>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
     operation: Rc<tokio::sync::Mutex<()>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
-    intent: Rc<RefCell<Option<Snapshot>>>,
+    intent: Rc<RefCell<Option<Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>>>>,
     last: Rc<RefCell<Option<(Snapshot, Instant)>>>,
     metadata: Rc<RefCell<Option<Arc<Publication>>>>,
 }
@@ -746,7 +780,8 @@ impl ReadSource {
             self.intent
                 .borrow()
                 .as_ref()
-                .map_or(value.clone(), |intent| value.retain_thermal_intent(intent))
+                .map_or(Ok(value.clone()), |intent| intent(value.clone()))
+                .unwrap_or_else(|_| value.redact_private().read_revoked())
         };
         let mut next = Publication {
             active: project(&metadata.active),
@@ -762,6 +797,10 @@ impl ReadSource {
         next.inactive.set_observation_revision(revision);
         publisher.send_replace(Arc::new(next));
         Ok(())
+    }
+    #[cfg(test)]
+    pub(super) fn last_completed_for_tests(&self) -> Option<Instant> {
+        self.last.borrow().as_ref().map(|(_, at)| *at)
     }
     #[cfg(test)]
     pub(super) fn expire_for_tests(&self) {
@@ -829,6 +868,11 @@ impl ReadSource {
             );
             *source.last.borrow_mut() = Some((observed.clone(), Instant::now()));
             source.decorate(&publisher, None)?;
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            if let Some(policy) = source.intent.borrow().as_ref() {
+                observed = policy(observed.clone())
+                    .unwrap_or_else(|_| observed.redact_private().read_revoked());
+            }
             observed.set_observation_revision(publisher.borrow().active.revision());
             if !observed.has_fresh_mailbox_read() {
                 return Ok(None);
@@ -906,6 +950,7 @@ mod tests {
         .unwrap();
         let lease = Arc::new(InjectedCustody {
             proof: ReadAdmission {
+                lifecycle: 1,
                 generation: Sha256::digest(bytes("mapping")).into(),
             },
             live: AtomicBool::new(true),
@@ -1077,6 +1122,7 @@ mod tests {
     fn provisional_startup_denies_temporarily_but_actual_origin_loss_is_sticky() {
         let state = AtomicU8::new(0);
         let proof = ReadAdmission {
+            lifecycle: 1,
             generation: [1; 32],
         };
         assert!(
@@ -1206,6 +1252,7 @@ mod tests {
     async fn worker_error_revokes_read_projection_without_retiring_or_releasing_custody() {
         let custody = Arc::new(InjectedCustody {
             proof: ReadAdmission {
+                lifecycle: 1,
                 generation: [7; 32],
             },
             live: true.into(),
@@ -1242,6 +1289,7 @@ mod tests {
         let io = CustomIo::new();
         let custody = Arc::new(InjectedCustody {
             proof: ReadAdmission {
+                lifecycle: 1,
                 generation: [7; 32],
             },
             live: AtomicBool::new(true),
@@ -1322,6 +1370,7 @@ mod tests {
         let io = CustomIo::new();
         let custody = Arc::new(InjectedCustody {
             proof: ReadAdmission {
+                lifecycle: 1,
                 generation: [7; 32],
             },
             live: AtomicBool::new(true),
@@ -1374,6 +1423,7 @@ mod tests {
         use crate::discovery::performance::worker_tests::blocking_custom_worker_with_authority;
         let custody = Arc::new(InjectedCustody {
             proof: ReadAdmission {
+                lifecycle: 1,
                 generation: [7; 32],
             },
             live: AtomicBool::new(true),
@@ -1441,8 +1491,10 @@ mod tests {
 
 #[cfg(feature = "service-thermal-mutation-v1")]
 impl ReadSource {
+    pub(super) fn retain_policy(&self, policy: Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>) {
+        *self.intent.borrow_mut() = Some(policy);
+    }
     pub(super) fn retain_mutation(&self, snapshot: &Snapshot) {
-        *self.intent.borrow_mut() = Some(snapshot.clone());
         if snapshot.has_fresh_mailbox_read() {
             *self.last.borrow_mut() = Some((snapshot.clone(), Instant::now()));
         }
@@ -1452,8 +1504,9 @@ impl ReadSource {
     }
     async fn drain_mutation(&self) -> io::Result<()> {
         let active = self.mutation.borrow().clone();
-        if let Some(worker) = active {
+        if let Some((worker, permit)) = active {
             worker.stop().await?;
+            permit.retired()?;
             self.mutation.borrow_mut().take();
             let custody = self.lease.clone();
             let factory = self.factories.as_ref().ok_or_else(deny)?;
@@ -1472,14 +1525,25 @@ impl ReadSource {
         let reader = self.worker.borrow().clone();
         reader.stop().await?; // Includes actual native I/O and callback retirement.
         if permit.authorize() != self.lease.authorize() || permit.authorize().is_none() {
+            // The reader is genuinely drained and no owner publication was attempted.
+            if self.lease.authorize().is_some() {
+                *self.worker.borrow_mut() = (factory.read)(self.lease.clone());
+            }
             return Err(deny());
         }
         if !self.activated.get() {
-            self.lease.activate_mutation()?; // SAME held Store; Reserved then Active flush/readback.
+            if let Err(failure) = self.lease.activate_mutation() {
+                if matches!(&failure, ActivationFailure::KnownUnpublished(_))
+                    && self.lease.authorize().is_some()
+                {
+                    *self.worker.borrow_mut() = (factory.read)(self.lease.clone());
+                }
+                return Err(failure.error());
+            } // SAME held Store; Reserved then Active flush/readback.
             self.activated.set(true);
         }
-        let worker = (factory.write)(permit);
-        *self.mutation.borrow_mut() = Some(worker.clone());
+        let worker = (factory.write)(permit.clone());
+        *self.mutation.borrow_mut() = Some((worker.clone(), permit));
         let result = worker.observe(deadline, None).await;
         // Dropping this future retains the worker in self.mutation. A later
         // request/shutdown drains exactly that worker before any replacement.

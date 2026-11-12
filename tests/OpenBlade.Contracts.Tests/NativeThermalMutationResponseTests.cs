@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class NativeThermalMutationResponseTests
 {
     [Fact]
-    public async Task ActualNativeMutationResponsesUseManagedV79CodecAndOutcomes()
+    public async Task ActualNativeMutationResponsesUseManagedV80CodecAndOutcomes()
     {
         // The evidence runner extracts actual emitted Rust test replies into a
         // held, hashed private input. There is deliberately no product fallback.
@@ -17,7 +17,7 @@ public sealed class NativeThermalMutationResponseTests
         Assert.True(Path.IsPathFullyQualified(path));
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllBytesAsync(path));
         var seen = new HashSet<ControlOperationStatus>();
-        bool sawAppliedStatus = false;
+        bool sawConfirmedPreset = false;
         bool sawPartialCustom = false;
         var decodeErrors = new List<string>();
         int index = 0;
@@ -70,12 +70,13 @@ public sealed class NativeThermalMutationResponseTests
                     using var malformedFrame = FrameJson(malformed.ToJsonString());
                     await Assert.ThrowsAsync<InvalidDataException>(() => IpcMessageCodec.ReadServerFrameAsync(malformedFrame, CancellationToken.None));
                 }
-                if (!status.WritesBlocked)
+                if (status.ConfirmedState?.Performance is PerformancePreset.Balanced or PerformancePreset.Performance)
                 {
-                    Assert.NotNull(status.ConfirmedState);
                     Assert.Null(status.Capabilities);
-                    Assert.Contains("GPU", status.Message, StringComparison.Ordinal);
-                    sawAppliedStatus = true;
+                    // A later metadata projection keeps confirmed presentation,
+                    // but cannot renew the mutation's independent read authority.
+                    Assert.True(status.WritesBlocked);
+                    sawConfirmedPreset = true;
                 }
                 continue;
             }
@@ -91,9 +92,9 @@ public sealed class NativeThermalMutationResponseTests
         }
         Assert.True(decodeErrors.Count == 0, string.Join(Environment.NewLine, decodeErrors));
         Assert.True(sawPartialCustom, "Actual CustomManual observation must retain known selectors and unknown settings.");
-        using var requestedFrame = FrameJson("""{"operation":"setPerformanceOverride","version":79,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":5,"lifetime":1,"customPerformance":null,"gpuClockTuning":null}}""");
+        using var requestedFrame = FrameJson("""{"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":5,"lifetime":1,"customPerformance":null,"gpuClockTuning":null}}""");
         await Assert.ThrowsAsync<InvalidDataException>(() => IpcMessageCodec.ReadRequestAsync(requestedFrame, CancellationToken.None));
-        Assert.True(sawAppliedStatus, "Actual GetStatus must publish independently confirmed application separately from the result-only reply.");
+        Assert.True(sawConfirmedPreset, "Actual status retains confirmed hardware separately from the result-only reply without renewing write authority.");
         Assert.Contains(ControlOperationStatus.Stored, seen);
         Assert.Contains(ControlOperationStatus.Applied, seen);
         Assert.Contains(ControlOperationStatus.Blocked, seen);

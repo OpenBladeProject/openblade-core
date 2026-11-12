@@ -1,4 +1,4 @@
-//! The managed ServiceMessages v79 shape shared by the installed Service and Agent candidates.
+//! The managed ServiceMessages v80 shape shared by the installed Service and Agent candidates.
 //! Preserve rich feature records verbatim; readiness consumes the core snapshot
 //! and never interprets feature data as independent device or write evidence.
 
@@ -15,7 +15,7 @@ use tokio::{
 use crate::service_frame::{FRAME_TIMEOUT, invalid, is_guid, read_payload, write_frame};
 
 pub(crate) const PIPE_NAME: &str = "OpenBlade.Service.v2";
-pub(crate) const PROTOCOL_VERSION: i32 = 79;
+pub(crate) const PROTOCOL_VERSION: i32 = 80;
 
 pub(crate) fn production_path() -> String {
     format!(r"\\.\pipe\{PIPE_NAME}")
@@ -264,7 +264,7 @@ impl StatusResponse {
             request_id: request.header().1.to_ascii_lowercase(),
             success: true,
             error: None,
-            // v79 success frames carry exactly one body. Status is published
+            // v80 success frames carry exactly one body. Status is published
             // separately through GetStatus, ObserveState and subscriptions.
             status: None,
             result: Some(outcome),
@@ -594,7 +594,7 @@ impl Snapshot {
             confirmed_state: None,
             profiles,
             desired_state,
-            // v79 has no fully unknown power source. Use its conservative
+            // v80 has no fully unknown power source. Use its conservative
             // unresolved encoding for both unknown and unclassified external.
             active_power_source: if on_battery {
                 BATTERY
@@ -711,7 +711,7 @@ impl Snapshot {
         self.revision = revision;
     }
 
-    // Use only for a direct, admitted ObserveState reply. v79 can retain
+    // Use only for a direct, admitted ObserveState reply. v80 can retain
     // fields during failed observations. Require the managed completion
     // guards and explicit absence of observation or write uncertainty.
     pub(crate) fn confirmed_performance(&self) -> Option<ConfirmedPerformance> {
@@ -763,7 +763,7 @@ impl Snapshot {
                 .iter()
                 .any(|value| !(0..=3).contains(value))
         {
-            return Err(invalid("invalid v79 status snapshot"));
+            return Err(invalid("invalid v80 status snapshot"));
         }
         Ok(())
     }
@@ -958,7 +958,7 @@ impl Snapshot {
         if let Some(power) = power {
             self.active_power_source = power;
         }
-        if let Some(selected) = destination.map(|d| d as i32).or(value.map(|v| v.value)) {
+        if let Some(selected) = destination.map(|d| d as i32) {
             self.desired_state.performance = Resolved {
                 value: selected,
                 source: value.map_or(1, |v| if v.lifetime == 1 { 4 } else { 3 }),
@@ -987,21 +987,33 @@ impl Snapshot {
         self.writes_blocked = !applied || !self.has_fresh_mailbox_read();
         self
     }
-    pub(crate) fn retain_thermal_intent(mut self, intent: &Self) -> Self {
-        self.writes_blocked =
-            self.control_access != 0 || intent.writes_blocked || !intent.has_fresh_mailbox_read();
-        self.device_verified |= intent.device_verified;
-        self.private_user_sid = intent.private_user_sid.clone();
-        self.profiles = intent.profiles.clone();
-        self.performance_override = intent.performance_override.clone();
-        self.desired_state.performance = intent.desired_state.performance.clone();
-        self.active_power_source = intent.active_power_source;
-        self.message = format!("{} {}", intent.message, self.message);
-        if self.control_access != 0 {
-            self.redact_private()
-        } else {
-            self
+    pub(crate) fn thermal_power_source(&self) -> i32 {
+        self.active_power_source
+    }
+    /// Only this operation's independent result may attach a new witness.
+    pub(crate) fn without_thermal_observation(mut self) -> Self {
+        self.read_confirmation = None;
+        self.writes_blocked = true;
+        self
+    }
+    /// Commit a mutation delta against the latest public facts, synchronously.
+    /// A Stored request never copies or renews another operation's read witness.
+    pub(crate) fn rebase_thermal_mutation(&self, latest: &Self) -> Self {
+        let mut result = latest.redact_private();
+        result.private_user_sid = self.private_user_sid.clone();
+        result.profiles = self.profiles.clone();
+        result.performance_override = self.performance_override.clone();
+        result.desired_state.performance = self.desired_state.performance.clone();
+        result.message = self.message.clone();
+        result.read_confirmation = None;
+        result.writes_blocked = true;
+        if self.has_fresh_mailbox_read() {
+            result.confirmed_state = self.confirmed_state.clone();
+            result.read_confirmation = self.read_confirmation.clone();
+            result.device_verified = self.device_verified;
+            result.writes_blocked = self.writes_blocked;
         }
+        result
     }
     pub(crate) fn inactive_mutation(&self) -> Self {
         let mut value = self.redact_private();

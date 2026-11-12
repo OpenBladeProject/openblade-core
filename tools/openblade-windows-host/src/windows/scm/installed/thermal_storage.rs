@@ -1,7 +1,7 @@
 //! Compatible saved intent and durable per-submission fence. Constructors take
 //! explicit storage first; the injected path never resolves a product root.
 use crate::configuration::{self, File as ConfigFile, Inspection, RecoveryRecord};
-use openblade_domain::thermal_mutation::{Preset, Progress};
+use openblade_domain::thermal_mutation::{Preset, Progress, progress_follows, settled};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::Digest;
@@ -214,6 +214,7 @@ struct Entry {
 }
 struct State {
     quarantined: bool,
+    configuration_failed: bool,
     bytes: Option<Vec<u8>>,
     document: Value,
     journal: Option<Vec<u8>>,
@@ -284,7 +285,7 @@ impl Storage {
                     || Preset::from_wire(entry.destination).is_none()
                     || !crate::native_owner_record::hex(&entry.owner, 64)
                     || !crate::native_owner_record::hex(&entry.intent, 64)
-                    || entry.progress > 5
+                    || entry.progress > 6
                 {
                     return Err(denied());
                 }
@@ -296,11 +297,11 @@ impl Storage {
                             || entry.owner != prior.owner
                             || entry.intent != prior.intent
                             || entry.destination != prior.destination
-                            || entry.progress != prior.progress + 1
+                            || !progress_follows(prior.progress, entry.progress)
                         {
                             return Err(denied());
                         }
-                    } else if prior.progress < 5 || entry.progress != 0 {
+                    } else if !settled(prior.progress) || entry.progress != 0 {
                         return Err(denied());
                     }
                 } else if entry.progress != 0 {
@@ -315,6 +316,7 @@ impl Storage {
             files,
             state: Mutex::new(State {
                 quarantined: false,
+                configuration_failed: false,
                 bytes,
                 document,
                 journal,
@@ -325,7 +327,7 @@ impl Storage {
     }
     pub(super) fn pending(&self) -> bool {
         self.state.lock().map_or(true, |s| {
-            s.quarantined || s.last.as_ref().is_some_and(|e| e.progress < 5)
+            s.quarantined || s.last.as_ref().is_some_and(|e| !settled(e.progress))
         })
     }
     pub(super) fn save(&self, value: Option<Override>, power: i32) -> io::Result<()> {
@@ -334,7 +336,7 @@ impl Storage {
         }
         aggregate(self.files.as_ref(), self.same_path)?;
         let mut s = self.state.lock().map_err(|_| denied())?;
-        if s.quarantined || s.last.as_ref().is_some_and(|e| e.progress != 5) {
+        if s.quarantined || s.last.as_ref().is_some_and(|e| !settled(e.progress)) {
             return Err(denied());
         }
         let mut next = s.document.clone();
@@ -350,6 +352,7 @@ impl Storage {
         // and independent byte readback. Unrelated overrides remain intact.
         if let Err(error) = self.files.replace(OVERRIDES, s.bytes.as_deref(), &bytes) {
             s.quarantined = true;
+            s.configuration_failed = true;
             return Err(error);
         }
         s.bytes = Some(bytes);
@@ -363,7 +366,7 @@ impl Storage {
         application: Option<&str>,
     ) -> io::Result<Option<(Preset, i32)>> {
         let mut s = self.state.lock().map_err(|_| denied())?;
-        if s.temporary.as_ref().is_some_and(|(_, p)| *p != power) {
+        if matches!(power, 0..=2) && s.temporary.as_ref().is_some_and(|(_, p)| *p != power) {
             s.temporary = None;
         }
         let persistent = s.document["overrides"]["performance"]
@@ -450,6 +453,68 @@ impl Storage {
         Ok(!profiles[key]["gpuClockTuning"].is_null()
             || app.is_some_and(|a| !a["overrides"][key]["gpuClockTuning"].is_null()))
     }
+    pub(super) fn configuration_failed(&self) -> bool {
+        self.state.lock().map_or(true, |s| s.configuration_failed)
+    }
+    pub(super) fn current_override(&self, power: i32) -> io::Result<Option<Override>> {
+        let mut s = self.state.lock().map_err(|_| denied())?;
+        if self.files.read(OVERRIDES)? != s.bytes {
+            s.quarantined = true;
+            return Err(denied());
+        }
+        if matches!(power, 0..=2) && s.temporary.as_ref().is_some_and(|(_, p)| *p != power) {
+            s.temporary = None;
+        }
+        if let Some((v, _)) = &s.temporary {
+            return Ok(Some(v.clone()));
+        }
+        let saved = &s.document["overrides"];
+        Ok(saved["performance"].as_i64().map(|n| Override {
+            value: n as i32,
+            lifetime: 1,
+            custom_performance: None,
+            gpu_clock_tuning: saved
+                .get("gpuClockTuning")
+                .filter(|v| !v.is_null())
+                .cloned(),
+        }))
+    }
+    pub(super) fn desired_manual_fans(
+        &self,
+        power: i32,
+        application: Option<&str>,
+    ) -> io::Result<bool> {
+        let s = self.state.lock().map_err(|_| denied())?;
+        if let Some(mode) = s.document["overrides"]["fans"].as_i64() {
+            return Ok(mode != 0);
+        }
+        drop(s);
+        let Some(doc) = aggregate(self.files.as_ref(), self.same_path)? else {
+            return Ok(false);
+        };
+        let key = match power {
+            0 => "pluggedIn",
+            1 => "battery",
+            2 => "usbC",
+            _ => return Ok(false),
+        };
+        let profiles = &doc["profiles"];
+        let app = application.and_then(|path| {
+            profiles["applicationProfiles"]
+                .as_array()?
+                .iter()
+                .find(|p| {
+                    p["enabled"].as_bool() == Some(true)
+                        && p["executablePath"]
+                            .as_str()
+                            .is_some_and(|s| (self.same_path)(s, path))
+                })
+        });
+        let mode = app
+            .and_then(|a| a["overrides"][key]["fans"].as_i64())
+            .or_else(|| profiles[key]["fans"].as_i64());
+        Ok(mode.is_some_and(|m| m != 0))
+    }
     pub(super) fn profiles(&self) -> io::Result<Option<Value>> {
         Ok(aggregate(self.files.as_ref(), self.same_path)?.map(|v| v["profiles"].clone()))
     }
@@ -468,6 +533,19 @@ impl Storage {
         progress: Progress,
     ) -> io::Result<()> {
         let mut s = self.state.lock().map_err(|_| denied())?;
+        if s.quarantined {
+            return Err(denied());
+        }
+        if progress == Progress::KnownNotSubmitted
+            && (s.last.as_ref().is_none_or(|e| e.progress != 0)
+                || self
+                    .files
+                    .read("thermal-mutation.journal.pending")?
+                    .is_some()
+                || self.files.read(JOURNAL)? != s.journal)
+        {
+            return Err(denied());
+        }
         if let Some(prior) = &s.last {
             if prior.request == request {
                 if prior.owner != owner
@@ -476,11 +554,11 @@ impl Storage {
                     || prior.session != session
                     || prior.intent != intent
                     || prior.destination != destination as i32
-                    || progress as u8 != prior.progress + 1
+                    || !progress_follows(prior.progress, progress as u8)
                 {
                     return Err(denied());
                 }
-            } else if prior.progress != 5 || progress != Progress::Prepared {
+            } else if !settled(prior.progress) || progress != Progress::Prepared {
                 return Err(denied());
             }
         } else if progress != Progress::Prepared {
@@ -501,7 +579,10 @@ impl Storage {
         bytes.extend(serde_json::to_vec(&entry)?);
         bytes.push(b'\n');
         if bytes.len() > 1024 * 1024 {
-            return Err(denied());
+            return Err(io::Error::new(
+                io::ErrorKind::StorageFull,
+                "Thermal journal capacity exhausted; no further progress was recorded.",
+            ));
         }
         if let Err(error) = self.files.replace(JOURNAL, s.journal.as_deref(), &bytes) {
             s.quarantined = true;

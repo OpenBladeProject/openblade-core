@@ -473,7 +473,8 @@ impl StatusSource for GuardedStatus {
                             status,
                         )
                         .await?;
-                    if let Some(mut status) = status {
+                    if let Some(status) = status {
+                        let mut status = status.rebase_thermal_mutation(&publisher.borrow().active);
                         if let super::mailbox_read::MailboxSource::Reader(reader) = &mailbox {
                             reader.retain_mutation(&status);
                         }
@@ -691,17 +692,26 @@ pub(super) fn injected_mutation_source(
     origin: Arc<dyn StatusOrigin>,
     mailbox: super::mailbox_read::MailboxSource,
     runtime: super::thermal_mutation::Runtime,
+    metadata: Arc<std::sync::atomic::AtomicU8>,
 ) -> Box<dyn StatusSource> {
     Box::new(GuardedStatus {
         origin,
         mailbox,
         mutation: Some(runtime),
-        inner: ObservedStatus::new(|_| Evidence {
-            device: DeviceMetadata::MatchedHost {
-                model: "Razer Blade 16 (2025) RZ09-0581".into(),
-                hid: HidMetadata::Candidate,
+        inner: ObservedStatus::new(move |_| Evidence {
+            device: if metadata.load(std::sync::atomic::Ordering::Acquire) == 3 {
+                DeviceMetadata::Unavailable
+            } else {
+                DeviceMetadata::MatchedHost {
+                    model: "Razer Blade 16 (2025) RZ09-0581".into(),
+                    hid: HidMetadata::Candidate,
+                }
             },
-            power: Power::ExternalUnknown,
+            power: if metadata.load(std::sync::atomic::Ordering::Acquire) == 1 {
+                Power::Battery
+            } else {
+                Power::ExternalUnknown
+            },
             controllers: vec![],
             controller_warning: None,
         }),

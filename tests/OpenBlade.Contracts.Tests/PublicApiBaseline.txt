@@ -282,6 +282,13 @@ type sealed class OpenBlade.Contracts.BatterySaverFanStopStatus
   property System.Boolean Applied { get; init; }
   property System.Boolean Requested { get; init; }
   property System.Boolean ThermallySuspended { get; init; }
+type static class OpenBlade.Contracts.Blade14KeyboardLightingLayout
+  field const System.Int32 Columns = 16
+  field const System.Int32 Rows = 6
+  field const System.Int32 SlotCount = 96
+  method static System.Boolean IsKeySlot(System.Int32 slot)
+  method static System.Boolean TryGetKeyPosition(System.Int32 slot, out System.Double x, out System.Double y)
+  method static System.Boolean TryMapScanCode(System.UInt16 scanCode, System.Boolean extended, out System.Byte slot)
 type static class OpenBlade.Contracts.Blade18KeyboardLightingLayout
   field const System.Int32 Columns = 16
   field const System.Int32 Rows = 6
@@ -1957,6 +1964,7 @@ type enum OpenBlade.Contracts.KeyboardLightingControlMode
 type static class OpenBlade.Contracts.KeyboardLightingLayoutIds
   field const System.String Rz09_0484 = "openblade.razer.rz09-0484.keyboard.6x16.v1"
   field const System.String Rz09_0528 = "openblade.razer.rz09-0528.keyboard.6x17.v1"
+  field const System.String Rz09_0530 = "openblade.razer.rz09-0530.keyboard.6x16.v1"
   field const System.String Rz09_0581 = "openblade.razer.rz09-0581.keyboard.6x17.v1"
   method static System.Boolean IsKnown(System.String layoutId)
 type sealed class OpenBlade.Contracts.KeyboardLightingSequence
@@ -2296,7 +2304,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 79
+  field const System.Int32 ProtocolVersion = 80
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion

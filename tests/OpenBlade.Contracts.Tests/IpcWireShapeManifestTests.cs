@@ -79,6 +79,8 @@ public sealed class IpcWireShapeManifestTests
             78 => "14F86C7DF2AB4C48E745B97A30D859835582B25A1DD149E570555FCDC73A4DF7",
             // Protocol 79 distinguishes source-reviewed Fan Stop from physical trials.
             79 => "9CCDE658405F2DA4E58E6D4FF00D5B2A9F5562974BE2AF74DDE53E848B45431D",
+            // Protocol 80 admits the RZ09-0530 layout string; JSON fields and types are unchanged.
+            80 => "9CCDE658405F2DA4E58E6D4FF00D5B2A9F5562974BE2AF74DDE53E848B45431D",
             _ => null,
         };
 

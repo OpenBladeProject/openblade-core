@@ -12,7 +12,7 @@ use std::{
     collections::BTreeMap,
     sync::{
         Arc, Mutex as StdMutex,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
     },
 };
 const SID: &str = "S-1-5-21-111-222-333-1001";
@@ -80,6 +80,9 @@ impl Files for MemoryFiles {
 }
 struct Custody {
     live: AtomicBool,
+    fresh_refuse: AtomicBool,
+    activation_refusal: AtomicU8,
+    lifecycle: crate::scm_host::Lifecycle,
     activations: AtomicUsize,
     retired: AtomicBool,
     port: Arc<StdMutex<crate::discovery::performance::mutation_fixture::State>>,
@@ -89,6 +92,9 @@ impl Custody {
         Arc::new(Self {
             port: port.state.clone(),
             live: AtomicBool::new(true),
+            fresh_refuse: AtomicBool::new(false),
+            activation_refusal: AtomicU8::new(0),
+            lifecycle: Default::default(),
             activations: AtomicUsize::new(0),
             retired: AtomicBool::new(false),
         })
@@ -97,17 +103,41 @@ impl Custody {
 impl ReadCustody for Custody {
     fn authorize(&self) -> Option<ReadAdmission> {
         self.live.load(Ordering::Acquire).then_some(ReadAdmission {
+            lifecycle: self.lifecycle.active()?,
             generation: [7; 32],
         })
     }
-    fn activate_mutation(&self) -> io::Result<()> {
-        ReadCustody::authorize(self).ok_or(io::ErrorKind::PermissionDenied)?;
+    fn activate_mutation(
+        &self,
+    ) -> Result<(), crate::installed::readiness::mailbox_read::ActivationFailure> {
+        ReadCustody::authorize(self).ok_or_else(|| {
+            crate::installed::readiness::mailbox_read::ActivationFailure::KnownUnpublished(
+                io::ErrorKind::PermissionDenied.into(),
+            )
+        })?;
         let port = self.port.lock().unwrap();
         assert_eq!(
             port.opened, port.retired,
             "activation before actual fake native port retirement"
         );
         drop(port);
+        match self.activation_refusal.load(Ordering::Acquire) {
+            1 => {
+                return Err(
+                    crate::installed::readiness::mailbox_read::ActivationFailure::KnownUnpublished(
+                        io::ErrorKind::PermissionDenied.into(),
+                    ),
+                );
+            }
+            2 => {
+                return Err(
+                    crate::installed::readiness::mailbox_read::ActivationFailure::Uncertain(
+                        io::ErrorKind::PermissionDenied.into(),
+                    ),
+                );
+            }
+            _ => {}
+        }
         assert_eq!(self.activations.fetch_add(1, Ordering::AcqRel), 0);
         Ok(())
     }
@@ -128,15 +158,20 @@ impl ReadCustody for Custody {
 }
 impl Fresh for Custody {
     fn authorize(&self) -> Option<ReadAdmission> {
+        if self.fresh_refuse.load(Ordering::Acquire) {
+            return None;
+        }
         ReadCustody::authorize(self)
     }
 }
-struct Origin;
+struct Origin(Arc<crate::loaded_origin::lifetime::Lifetime>);
 impl StatusOrigin for Origin {
     fn verify(&self) -> io::Result<()> {
-        Ok(())
+        self.0.verify()
     }
-    fn revoke(&self) {}
+    fn revoke(&self) {
+        self.0.stop();
+    }
     fn confirm_metadata_drain(&self) -> io::Result<()> {
         Ok(())
     }
@@ -149,6 +184,10 @@ struct Rig {
     port: Fixture,
     files: MemoryFiles,
     custody: Arc<Custody>,
+    metadata: Arc<AtomicU8>,
+    entered: Rc<std::cell::Cell<u64>>,
+    reader: ReadSource,
+    origin: Arc<crate::loaded_origin::lifetime::Lifetime>,
 }
 impl Rig {
     fn new(files: MemoryFiles) -> Self {
@@ -183,13 +222,24 @@ impl Rig {
             assert_eq!(session, 7);
             Ok((storage.clone(), fresh.clone()))
         });
-        let source =
-            injected_mutation_source(Arc::new(Origin), MailboxSource::Reader(reader), runtime);
+        let entered = runtime.entered.clone();
+        let metadata = Arc::new(AtomicU8::new(0));
+        let origin = Arc::new(crate::loaded_origin::lifetime::Lifetime::default());
+        let source = injected_mutation_source(
+            Arc::new(Origin(origin.clone())),
+            MailboxSource::Reader(reader.clone()),
+            runtime,
+            metadata.clone(),
+        );
         Self {
             source: Rc::new(Mutex::new(source)),
             port,
             files,
             custody,
+            metadata,
+            entered,
+            reader,
+            origin,
         }
     }
     async fn request(&self, request: Value) -> Value {
@@ -233,13 +283,13 @@ impl Rig {
         response
     }
     async fn get(&self) -> Value {
-        self.request(json!({"operation":"getStatus","version":79,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000099"})).await
+        self.request(json!({"operation":"getStatus","version":80,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000099"})).await
     }
     async fn set(&self, n: u8, value: Value) -> Value {
-        let response = self.request(json!({"operation":"setPerformanceOverride","version":79,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value})).await;
+        let response = self.request(json!({"operation":"setPerformanceOverride","version":80,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value})).await;
         assert!(
             response["status"].is_null(),
-            "v79 result replies have exactly one body"
+            "v80 result replies have exactly one body"
         );
         assert!(!response["result"].is_null());
         response
@@ -264,7 +314,7 @@ async fn installed_dispatcher_direct_pair_persists_before_applied_and_retains_pu
     assert_eq!(metadata["success"], true);
     assert_eq!(metadata["status"]["writesBlocked"], true);
     assert!(metadata["status"]["confirmedState"].is_null());
-    let initial=rig.request(json!({"operation":"observeState","version":79,"requestId":"dddddddd-bbbb-cccc-dddd-000000000001","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})).await;
+    let initial=rig.request(json!({"operation":"observeState","version":80,"requestId":"dddddddd-bbbb-cccc-dddd-000000000001","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})).await;
     assert_eq!(initial["success"], true);
     assert_eq!(initial["status"]["confirmedState"]["performance"], 5);
     assert_eq!(initial["status"]["confirmedState"]["fans"], 3);
@@ -282,13 +332,10 @@ async fn installed_dispatcher_direct_pair_persists_before_applied_and_retains_pu
     assert_eq!(initial["status"]["writesBlocked"], true);
     let result = rig.set(1, value(1, 1)).await;
     let status = rig.get().await;
-    assert_eq!(
-        status["status"]["writesBlocked"],
-        result["result"]["status"] != 1
-    );
+    assert_eq!(status["status"]["writesBlocked"], true);
     assert_eq!(result["result"]["status"], 1);
     assert_eq!(status["status"]["confirmedState"]["performance"], 1);
-    assert_eq!(status["status"]["writesBlocked"], false);
+    assert_eq!(status["status"]["writesBlocked"], true);
     assert!(status["status"]["capabilities"].is_null());
     assert_eq!(
         rig.files.document("manual-overrides.json")["overrides"]["performance"],
@@ -314,7 +361,12 @@ async fn installed_dispatcher_direct_pair_persists_before_applied_and_retains_pu
     let projected = serde_json::to_value(projected).unwrap();
     assert_eq!(projected["performanceOverride"]["value"], 1);
     assert_eq!(projected["desiredState"]["performance"]["value"], 1);
-    assert!(projected["message"].as_str().unwrap().contains("GPU"));
+    assert!(
+        projected["message"]
+            .as_str()
+            .unwrap()
+            .contains("Saved performance policy")
+    );
     drop(source);
     assert_eq!(rig.custody.activations.load(Ordering::Acquire), 1);
     rig.stop().await;
@@ -327,14 +379,11 @@ async fn installed_temporary_clear_and_application_precedence_use_saved_canonica
     assert_eq!(rig.set(1, value(2, 1)).await["result"]["status"], 1);
     assert_eq!(rig.set(2, value(1, 0)).await["result"]["status"], 1);
     assert!(rig.files.document("manual-overrides.json")["overrides"]["performance"].is_null());
-    let report=rig.request(json!({"operation":"reportApplicationContext","version":79,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":"C:\\Games\\Game.exe"})).await;
+    let report=rig.request(json!({"operation":"reportApplicationContext","version":80,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":"C:\\Games\\Game.exe"})).await;
     assert_eq!(report["result"]["status"], 0);
     let result = rig.set(3, Value::Null).await;
     let status = rig.get().await;
-    assert_eq!(
-        status["status"]["writesBlocked"],
-        result["result"]["status"] != 1
-    );
+    assert_eq!(status["status"]["writesBlocked"], true);
     assert_eq!(result["result"]["status"], 1);
     assert_eq!(status["status"]["confirmedState"]["performance"], 2);
     assert_eq!(status["status"]["desiredState"]["performance"]["source"], 2);
@@ -348,10 +397,7 @@ async fn installed_ambiguous_submission_fences_restart_and_never_replays() {
     rig.port.state.lock().unwrap().fail_write = Some(1);
     let result = rig.set(1, value(1, 1)).await;
     let status = rig.get().await;
-    assert_eq!(
-        status["status"]["writesBlocked"],
-        result["result"]["status"] != 1
-    );
+    assert_eq!(status["status"]["writesBlocked"], true);
     assert_eq!(result["result"]["status"], 2);
     assert_eq!(rig.port.state.lock().unwrap().writes, 1);
     let restarted = Storage::open(Box::new(files), SID).unwrap();
@@ -373,10 +419,7 @@ async fn installed_persistence_failure_and_budget_exhaustion_submit_no_mutation(
         }
         let result = rig.set(1, value(1, 1)).await;
         let status = rig.get().await;
-        assert_eq!(
-            status["status"]["writesBlocked"],
-            result["result"]["status"] != 1
-        );
+        assert_eq!(status["status"]["writesBlocked"], true);
         assert_eq!(result["result"]["status"], 2);
         assert_eq!(rig.port.state.lock().unwrap().writes, 0);
         assert!(
@@ -396,10 +439,7 @@ async fn installed_gpu_intent_is_stored_with_explicit_incompleteness_and_no_pair
         json!({"enabled":true,"offsets":{"coreMegahertz":10,"memoryMegahertz":20}});
     let result = rig.set(1, desired).await;
     let status = rig.get().await;
-    assert_eq!(
-        status["status"]["writesBlocked"],
-        result["result"]["status"] != 1
-    );
+    assert_eq!(status["status"]["writesBlocked"], true);
     assert_eq!(result["result"]["status"], 0);
     assert_eq!(rig.port.state.lock().unwrap().writes, 0);
     assert!(
@@ -424,10 +464,7 @@ async fn installed_source_ineligible_intent_is_stored_and_power_change_stops_par
         rig.port.state.lock().unwrap().actual = actual;
         let result = rig.set(1, value(2, 1)).await;
         let status = rig.get().await;
-        assert_eq!(
-            status["status"]["writesBlocked"],
-            result["result"]["status"] != 1
-        );
+        assert_eq!(status["status"]["writesBlocked"], true);
         assert_eq!(result["result"]["status"], 0);
         assert_eq!(status["status"]["performanceOverride"]["value"], 2);
         if actual == 0 {
@@ -442,10 +479,7 @@ async fn installed_source_ineligible_intent_is_stored_and_power_change_stops_par
     rig.port.state.lock().unwrap().change_power = Some((3, 1));
     let result = rig.set(2, value(2, 1)).await;
     let status = rig.get().await;
-    assert_eq!(
-        status["status"]["writesBlocked"],
-        result["result"]["status"] != 1
-    );
+    assert_eq!(status["status"]["writesBlocked"], true);
     assert_eq!(result["result"]["status"], 2);
     assert_eq!(rig.port.state.lock().unwrap().writes, 1);
     assert_eq!(
@@ -501,12 +535,11 @@ async fn installed_final_mismatch_uses_reserved_pair_only_and_preserves_unrelate
     files.put("manual-overrides.json",json!({"schemaVersion":8,"overrides":{"performance":null,"fans":2,"fanControl":fan,"lighting":null,"customPerformance":null,"gpuClockTuning":null}}));
     let rig = Rig::new(files);
     rig.port.state.lock().unwrap().mismatch = true;
+    rig.port.state.lock().unwrap().selectors = [2, 2];
+    rig.port.state.lock().unwrap().fans = [0, 0]; // automatic baseline: no0581 coupled fan restore
     let result = rig.set(1, value(1, 1)).await;
     let status = rig.get().await;
-    assert_eq!(
-        status["status"]["writesBlocked"],
-        result["result"]["status"] != 1
-    );
+    assert_eq!(status["status"]["writesBlocked"], true);
     assert_eq!(result["result"]["status"], 2);
     assert_eq!(
         rig.files.document("manual-overrides.json")["overrides"]["fanControl"],
@@ -629,12 +662,12 @@ async fn installed_private_projection_is_bound_to_sid_for_get_observe_and_subscr
     let rig = Rig::new(files);
     assert_eq!(rig.set(1, value(2, 1)).await["result"]["status"], 1);
     for operation in ["getStatus", "observeState", "subscribeStatus"] {
-        let request = json!({"operation":operation,"version":79,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0});
+        let request = json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0});
         // Get/subscription DTOs reject observation-only members.
         let request = if operation == "observeState" {
             request
         } else {
-            json!({"operation":operation,"version":79,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077"})
+            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077"})
         };
         let own = rig.request_as(request.clone(), USER, SID).await;
         assert_eq!(
@@ -713,10 +746,7 @@ async fn installed_later_submission_readback_and_custody_failures_never_publish_
         assert_eq!(result["result"]["status"], 2, "cut {cut}");
         assert!(result["status"].is_null());
         let status = rig.get().await;
-        assert_eq!(
-            status["status"]["writesBlocked"],
-            result["result"]["status"] != 1
-        );
+        assert_eq!(status["status"]["writesBlocked"], true);
         assert_eq!(status["status"]["writesBlocked"], true);
         let journal = rig.files.read("thermal-mutation.journal").unwrap().unwrap();
         let entries: Vec<Value> = journal
@@ -758,4 +788,568 @@ async fn installed_later_submission_readback_and_custody_failures_never_publish_
         assert!(rig.custody.retired.load(Ordering::Acquire));
         assert_eq!(rig.port.state.lock().unwrap().writes, writes);
     }
+}
+
+fn manual_files() -> MemoryFiles {
+    let files = MemoryFiles::default();
+    let fan = json!({"mode":2,"fixedSpeedRpm":3700,"manualCurve":{"cpu":[{"temperatureCelsius":30,"speedRpm":2000},{"temperatureCelsius":90,"speedRpm":5400}],"gpu":[{"temperatureCelsius":30,"speedRpm":2000},{"temperatureCelsius":90,"speedRpm":5400}],"useHigherTemperatureForBoth":true}});
+    files.put("manual-overrides.json",json!({"schemaVersion":8,"overrides":{"performance":null,"fans":2,"fanControl":fan,"lighting":null,"customPerformance":null,"gpuClockTuning":null}}));
+    files
+}
+async fn fresh_observe(rig: &Rig) -> Value {
+    rig.request(json!({"operation":"observeState","version":80,"requestId":"eeeeeeee-bbbb-cccc-dddd-000000000001","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})).await
+}
+#[tokio::test]
+async fn correction_manual_active0581_stores_without_setters_and_automatic_stays_direct() {
+    for selector in [4, 2, 0] {
+        let rig = Rig::new(manual_files());
+        rig.port.state.lock().unwrap().selectors = [selector, selector];
+        let before = fresh_observe(&rig).await;
+        assert_eq!(before["status"]["confirmedState"]["fans"], 3);
+        let response = rig.set(91, value(1, 1)).await;
+        assert_eq!(response["result"]["status"], 0);
+        assert!(
+            response["result"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("Automatic")
+        );
+        assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+        assert!(
+            rig.files
+                .read("thermal-mutation.journal")
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            rig.files.document("manual-overrides.json")["overrides"]["performance"],
+            1
+        );
+        let after = fresh_observe(&rig).await;
+        assert_eq!(
+            after["status"]["confirmedState"],
+            before["status"]["confirmedState"]
+        );
+        assert!(after["status"]["confirmedState"]["customPerformance"].is_null());
+        rig.stop().await;
+    }
+    let rig = Rig::new(manual_files());
+    {
+        let mut state = rig.port.state.lock().unwrap();
+        state.selectors = [2, 2];
+        state.fans = [0, 0];
+    }
+    assert_eq!(rig.set(92, value(1, 1)).await["result"]["status"], 1);
+    assert_eq!(rig.port.state.lock().unwrap().writes, 2);
+    assert_eq!(
+        rig.files.document("manual-overrides.json")["overrides"]["fanControl"]["fixedSpeedRpm"],
+        3700
+    );
+    rig.stop().await;
+}
+#[tokio::test]
+async fn correction_transient_fresh_refusal_keeps_endpoint_and_reader_available() {
+    let rig = Rig::new(MemoryFiles::default());
+    assert_eq!(fresh_observe(&rig).await["success"], true);
+    rig.custody.fresh_refuse.store(true, Ordering::Release);
+    let refused = rig.set(91, value(1, 1)).await;
+    assert_eq!(refused["result"]["status"], 2);
+    assert!(
+        refused["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Current thermal admission")
+    );
+    assert_eq!(rig.get().await["success"], true);
+    assert_eq!(fresh_observe(&rig).await["success"], true);
+    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+    assert!(rig.files.read("manual-overrides.json").unwrap().is_none());
+    assert!(
+        rig.files
+            .read("thermal-mutation.journal")
+            .unwrap()
+            .is_none()
+    );
+    rig.custody.fresh_refuse.store(false, Ordering::Release);
+    assert_eq!(rig.set(92, value(1, 1)).await["result"]["status"], 1);
+    rig.stop().await;
+}
+#[tokio::test]
+async fn correction_clean_activation_refusal_reconstructs_only_after_real_read_drain() {
+    for refusal in [1, 2] {
+        let rig = Rig::new(MemoryFiles::default());
+        assert_eq!(fresh_observe(&rig).await["success"], true);
+        let before = rig.port.state.lock().unwrap().opened;
+        rig.custody
+            .activation_refusal
+            .store(refusal, Ordering::Release);
+        assert_eq!(rig.set(91, value(1, 1)).await["result"]["status"], 2);
+        let observed = fresh_observe(&rig).await;
+        let state = rig.port.state.lock().unwrap();
+        assert_eq!(state.writes, 0);
+        assert_eq!(state.opened, state.retired);
+        assert_eq!(state.opened > before, refusal == 1);
+        if refusal == 1 {
+            assert_eq!(observed["success"], true);
+        }
+        drop(state);
+        assert_eq!(rig.custody.activations.load(Ordering::Acquire), 0);
+        rig.stop().await;
+    }
+}
+#[tokio::test]
+async fn correction_prepared_only_settles_after_drain_and_allows_fresh_request() {
+    let rig = Rig::new(MemoryFiles::default());
+    rig.port.state.lock().unwrap().change_power = Some((2, 0));
+    let response = rig.set(91, value(1, 1)).await;
+    assert_eq!(response["result"]["status"], 0);
+    assert!(
+        response["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("power source changed")
+    );
+    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+    let bytes = rig.files.read("thermal-mutation.journal").unwrap().unwrap();
+    let entries: Vec<Value> = bytes
+        .split(|b| *b == b'\n')
+        .filter(|v| !v.is_empty())
+        .map(|v| serde_json::from_slice(v).unwrap())
+        .collect();
+    assert_eq!(
+        entries
+            .iter()
+            .map(|v| v["progress"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [0, 6]
+    );
+    let reopened = Storage::open(Box::new(rig.files.clone()), SID).unwrap();
+    assert!(!reopened.pending());
+    assert_eq!(reopened.progress(), Some(6));
+    {
+        let mut state = rig.port.state.lock().unwrap();
+        assert_eq!(state.opened, state.retired);
+        state.actual = 15;
+        state.change_power = None;
+    }
+    assert_eq!(rig.set(92, value(1, 1)).await["result"]["status"], 1);
+    assert_eq!(rig.port.state.lock().unwrap().writes, 2);
+    let later = rig.files.read("thermal-mutation.journal").unwrap().unwrap();
+    assert!(later.starts_with(&bytes));
+    rig.stop().await;
+}
+#[tokio::test]
+async fn correction_storage_failure_and_postacceptance_capacity_have_truthful_causes() {
+    let rig = Rig::new(MemoryFiles::default());
+    rig.files.fail.store(true, Ordering::Release);
+    for n in [91, 92] {
+        let response = rig.set(n, value(1, 1)).await;
+        assert_eq!(response["result"]["status"], 2);
+        let message = response["result"]["message"].as_str().unwrap();
+        assert!(message.contains("configuration replacement failed"));
+        assert!(!message.contains("may have been submitted"));
+        assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+        assert!(
+            rig.files
+                .read("thermal-mutation.journal")
+                .unwrap()
+                .is_none()
+        );
+    }
+    rig.stop().await;
+    let rig = Rig::new(MemoryFiles::default());
+    rig.port.reserve_for_tests(122);
+    let response = rig.set(91, value(1, 1)).await;
+    assert_eq!(response["result"]["status"], 0);
+    assert!(
+        response["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("transaction ID capacity")
+    );
+    assert_eq!(
+        rig.files.document("manual-overrides.json")["overrides"]["performance"],
+        1
+    );
+    assert!(
+        rig.files
+            .read("thermal-mutation.journal")
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+    rig.stop().await;
+}
+#[tokio::test]
+async fn correction_fresh_metadata_expires_temporary_policy_without_promoting_private_facts() {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let rig = Rig::new(files);
+    assert_eq!(rig.set(91, value(2, 0)).await["result"]["status"], 1);
+    assert_eq!(rig.get().await["status"]["performanceOverride"]["value"], 2);
+    rig.metadata.store(1, Ordering::Release);
+    let status = rig.get().await;
+    assert_eq!(status["status"]["activePowerSource"], 1);
+    assert!(status["status"]["performanceOverride"].is_null());
+    assert_eq!(status["status"]["writesBlocked"], true);
+    rig.metadata.store(3, Ordering::Release);
+    let status = rig.get().await;
+    assert_eq!(status["status"]["deviceVerified"], false);
+    assert_eq!(rig.port.state.lock().unwrap().writes, 2);
+    rig.stop().await;
+}
+#[tokio::test]
+async fn correction_late_accepted_intent_reconciles_only_with_new_read_without_replay() {
+    let rig = Rig::new(MemoryFiles::default());
+    rig.get().await;
+    let held = Arc::new(AtomicBool::new(false));
+    let release = Arc::new(AtomicBool::new(false));
+    let entered = held.clone();
+    let gate = release.clone();
+    rig.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+        entered.store(true, Ordering::Release);
+        while !gate.load(Ordering::Acquire) {
+            std::thread::yield_now();
+        }
+    }));
+    let request=crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000091","value":value(1,1)})).unwrap()).unwrap();
+    let deadline = Instant::now() + std::time::Duration::from_secs(1);
+    let operation = rig
+        .source
+        .lock()
+        .await
+        .mutate(USER, SID.into(), request, deadline);
+    tokio::pin!(operation);
+    let boundary = async {
+        while !held.load(Ordering::Acquire) {
+            tokio::task::yield_now().await;
+        }
+    };
+    tokio::select! {_=&mut operation=>panic!("retirement unexpectedly completed"),result = tokio::time::timeout(std::time::Duration::from_secs(2),boundary)=>result.unwrap()}
+    tokio::time::sleep_until(deadline).await;
+    release.store(true, Ordering::Release);
+    let (result, status) = operation.await.unwrap();
+    assert_eq!(result.status, 2);
+    assert!(status.is_none());
+    let count = rig.port.state.lock().unwrap().sent.len();
+    let observed = fresh_observe(&rig).await;
+    assert_eq!(observed["status"]["performanceOverride"]["value"], 1);
+    assert_eq!(observed["status"]["confirmedState"]["performance"], 1);
+    let state = rig.port.state.lock().unwrap();
+    assert!(state.sent.len() > count);
+    assert_eq!(state.writes, 2);
+    drop(state);
+    rig.stop().await;
+}
+#[tokio::test]
+async fn correction_lifecycle_fences_inflight_epoch_without_destroying_metadata_origin() {
+    use windows_sys::Win32::System::Services::{
+        SERVICE_CONTROL_POWEREVENT, SERVICE_CONTROL_SESSIONCHANGE, SERVICE_CONTROL_STOP,
+    };
+    let rig = Rig::new(MemoryFiles::default());
+    let controls = crate::scm_host::Controls::new();
+    let mut stop = controls.arm();
+    assert_eq!(fresh_observe(&rig).await["success"], true);
+    let initial = ReadCustody::authorize(rig.custody.as_ref()).unwrap();
+    rig.custody.lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 4);
+    assert_eq!(controls.handle(SERVICE_CONTROL_POWEREVENT), 0);
+    assert!(ReadCustody::authorize(rig.custody.as_ref()).is_none());
+    let before = rig.port.state.lock().unwrap().sent.len();
+    assert_eq!(rig.get().await["success"], true);
+    fresh_observe(&rig).await;
+    assert_eq!(rig.port.state.lock().unwrap().sent.len(), before);
+    assert!(stop.try_recv().is_err());
+    rig.custody
+        .lifecycle
+        .ingress(SERVICE_CONTROL_SESSIONCHANGE, 8);
+    assert!(ReadCustody::authorize(rig.custody.as_ref()).is_none());
+    rig.custody
+        .lifecycle
+        .ingress(SERVICE_CONTROL_POWEREVENT, 18);
+    assert_ne!(
+        ReadCustody::authorize(rig.custody.as_ref()).unwrap(),
+        initial
+    );
+    assert_eq!(fresh_observe(&rig).await["success"], true);
+    assert_eq!(controls.handle(SERVICE_CONTROL_STOP), 0);
+    assert_eq!(stop.try_recv(), Ok(()));
+    rig.stop().await;
+}
+
+#[tokio::test]
+async fn correction_queued_stored_subscription_rebases_latest_hardware_without_renewing_timestamp()
+{
+    use std::future::Future;
+    let rig = Rig::new(MemoryFiles::default());
+    fresh_observe(&rig).await;
+    let release = Arc::new(AtomicBool::new(false));
+    rig.port.state.lock().unwrap().held_write = Some((1, release.clone()));
+    let (mut client, server) = duplex(65536);
+    let source = rig.source.clone();
+    let publications = source.lock().await.publications();
+    let server = serve_connection(
+        Box::new(SidStream {
+            inner: test_stream(server, USER, Fault::None),
+            sid: SID.into(),
+        }),
+        source,
+        publications,
+        Rc::new(Subscriptions::new(2)),
+    );
+    let exercise = async {
+        crate::service_frame::write_payload(&mut client,&serde_json::to_vec(&json!({"operation":"subscribeStatus","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000090"})).unwrap()).await.unwrap();
+        let _: Value = serde_json::from_slice(
+            &crate::service_frame::read_payload(&mut client)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let a = rig.set(91, value(1, 1));
+        tokio::pin!(a);
+        let entered = async {
+            while rig.port.state.lock().unwrap().writes != 1 {
+                tokio::task::yield_now().await;
+            }
+        };
+        tokio::select! {_=&mut a=>panic!("held A completed"),v=tokio::time::timeout(std::time::Duration::from_secs(2),entered)=>v.unwrap()}
+        let mut desired = value(2, 1);
+        desired["gpuClockTuning"] =
+            json!({"enabled":true,"offsets":{"coreMegahertz":10,"memoryMegahertz":20}});
+        let request=crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000092","value":desired})).unwrap()).unwrap();
+        let b = rig.source.lock().await.mutate(
+            USER,
+            SID.into(),
+            request,
+            Instant::now() + std::time::Duration::from_secs(3),
+        );
+        tokio::pin!(b);
+        std::future::poll_fn(|cx| {
+            assert!(b.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        assert_eq!(
+            rig.entered.get(),
+            2,
+            "B captured its pre-A base and queued at the runtime gate"
+        );
+        release.store(true, Ordering::Release);
+        assert_eq!(a.await["result"]["status"], 1);
+        let event_a: Value = serde_json::from_slice(
+            &crate::service_frame::read_payload(&mut client)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(event_a["status"]["confirmedState"]["performance"], 1);
+        let timestamp = rig.reader.last_completed_for_tests();
+        assert!(timestamp.is_some());
+        let (result, _) = b.await.unwrap();
+        assert_eq!(result.status, 0);
+        let event_b: Value = serde_json::from_slice(
+            &crate::service_frame::read_payload(&mut client)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            event_b["status"]["confirmedState"],
+            event_a["status"]["confirmedState"]
+        );
+        assert!(
+            event_b["status"]["revision"].as_u64().unwrap()
+                > event_a["status"]["revision"].as_u64().unwrap()
+        );
+        assert_eq!(event_b["status"]["performanceOverride"]["value"], 2);
+        assert_eq!(rig.reader.last_completed_for_tests(), timestamp);
+        assert_eq!(rig.port.state.lock().unwrap().writes, 2);
+        drop(client);
+    };
+    let (result, ()) = tokio::join!(server, exercise);
+    assert!(result.is_ok());
+    rig.stop().await;
+}
+#[tokio::test]
+async fn correction_unknown_external_metadata_preserves_temporary_intent_without_claiming_full_power()
+ {
+    let rig = Rig::new(MemoryFiles::default());
+    assert_eq!(rig.set(91, value(2, 0)).await["result"]["status"], 1);
+    for operation in ["getStatus", "observeState", "subscribeStatus"] {
+        let mut request = json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000093"});
+        if operation == "observeState" {
+            request["includeLiveReadings"] = json!(false);
+            request["requestedLiveReadings"] = json!(0);
+            request["effectiveLiveReadings"] = json!(0);
+        }
+        let response = rig.request(request).await;
+        assert_eq!(response["status"]["performanceOverride"]["value"], 2);
+        assert_eq!(response["status"]["activePowerSource"], 3);
+        assert_eq!(response["status"]["writesBlocked"], true);
+    }
+    rig.metadata.store(1, Ordering::Release);
+    assert!(rig.get().await["status"]["performanceOverride"].is_null());
+    assert_eq!(rig.port.state.lock().unwrap().writes, 2);
+    rig.stop().await;
+}
+
+async fn outer_request(tx: &mpsc::UnboundedSender<Box<dyn Stream>>, request: Value) -> Value {
+    let (mut client, server) = duplex(65536);
+    tx.send(Box::new(SidStream {
+        inner: test_stream(server, USER, Fault::None),
+        sid: SID.into(),
+    }))
+    .unwrap();
+    crate::service_frame::write_payload(&mut client, &serde_json::to_vec(&request).unwrap())
+        .await
+        .unwrap();
+    serde_json::from_slice(
+        &crate::service_frame::read_payload(&mut client)
+            .await
+            .unwrap(),
+    )
+    .unwrap()
+}
+#[tokio::test]
+async fn correction_outer_lifecycle_and_transient_admission_keep_service_running_until_stop() {
+    use windows_sys::Win32::System::Services::{
+        SERVICE_CONTROL_POWEREVENT, SERVICE_CONTROL_SESSIONCHANGE, SERVICE_CONTROL_STOP,
+    };
+    let rig = Rig::new(MemoryFiles::default());
+    let events: Events = Rc::default();
+    let controls = Controls::new();
+    let (mut ports, tx) = ports(Fault::None, &events);
+    ports.source = rig.source.clone();
+    let (running, ready) = oneshot::channel();
+    let service = lifecycle(&controls, Ok(ports), &events, move || {
+        running.send(()).unwrap();
+    });
+    let exercise = async {
+        ready.await.unwrap();
+        let ingress = |code, event| {
+            crate::scm_host::installed_ingress(&rig.custody.lifecycle, code, event, || {
+                rig.origin.stop()
+            });
+            assert_eq!(controls.handle(code), 0);
+        };
+        let get = || json!({"operation":"getStatus","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000094"});
+        let observe = || json!({"operation":"observeState","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000095","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0});
+        assert_eq!(outer_request(&tx, observe()).await["success"], true);
+        rig.custody.fresh_refuse.store(true, Ordering::Release);
+        let refused=outer_request(&tx,json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096","value":value(1,1)})).await;
+        assert_eq!(refused["result"]["status"], 2);
+        assert_eq!(outer_request(&tx, get()).await["success"], true);
+        ingress(SERVICE_CONTROL_POWEREVENT, 4);
+        assert!(rig.origin.verify().is_ok());
+        let count = rig.port.state.lock().unwrap().sent.len();
+        assert_eq!(outer_request(&tx, get()).await["success"], true);
+        outer_request(&tx, observe()).await;
+        assert_eq!(rig.port.state.lock().unwrap().sent.len(), count);
+        ingress(SERVICE_CONTROL_SESSIONCHANGE, 8);
+        assert!(rig.origin.verify().is_ok());
+        assert!(ReadCustody::authorize(rig.custody.as_ref()).is_none());
+        ingress(SERVICE_CONTROL_POWEREVENT, 18);
+        assert!(rig.origin.verify().is_ok());
+        rig.custody.fresh_refuse.store(false, Ordering::Release);
+        assert_eq!(outer_request(&tx, observe()).await["success"], true);
+        assert!(!events.borrow().contains(&"stopping"));
+        assert!(!events.borrow().contains(&"failed"));
+        assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+        assert!(
+            rig.files
+                .read("thermal-mutation.journal")
+                .unwrap()
+                .is_none()
+        );
+        ingress(SERVICE_CONTROL_STOP, 0);
+        assert!(crate::loaded_origin::lifetime::expected_stop(
+            &rig.origin.verify().unwrap_err()
+        ));
+    };
+    let (result, ()) = tokio::join!(service, exercise);
+    result.unwrap();
+    assert!(events.borrow().contains(&"stopped"));
+    assert!(!events.borrow().contains(&"failed"));
+    assert!(rig.custody.retired.load(Ordering::Acquire));
+}
+
+#[tokio::test]
+async fn correction_prepared_settlement_waits_for_actual_retirement_and_rejects_foreign_prefix() {
+    let rig = Rig::new(MemoryFiles::default());
+    rig.get().await;
+    let entered = Arc::new(AtomicBool::new(false));
+    let released = Arc::new(AtomicBool::new(false));
+    let flag = entered.clone();
+    let gate = released.clone();
+    {
+        let mut s = rig.port.state.lock().unwrap();
+        s.change_power = Some((2, 0));
+        s.on_mutation_retired = Some(Arc::new(move || {
+            flag.store(true, Ordering::Release);
+            while !gate.load(Ordering::Acquire) {
+                std::thread::yield_now();
+            }
+        }));
+    }
+    let request = rig.set(91, value(1, 1));
+    tokio::pin!(request);
+    let reached = async {
+        while !entered.load(Ordering::Acquire) {
+            tokio::task::yield_now().await;
+        }
+    };
+    tokio::select! {_=&mut request=>panic!("unretired operation completed"),r=tokio::time::timeout(std::time::Duration::from_secs(2),reached)=>r.unwrap()}
+    let prepared = rig.files.read("thermal-mutation.journal").unwrap().unwrap();
+    let prior = Storage::open(Box::new(rig.files.clone()), SID).unwrap();
+    assert_eq!(prior.progress(), Some(0));
+    assert!(prior.pending());
+    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+    released.store(true, Ordering::Release);
+    assert_eq!(request.await["result"]["status"], 0);
+    let settled = rig.files.read("thermal-mutation.journal").unwrap().unwrap();
+    assert!(settled.starts_with(&prepared));
+    let mut lines: Vec<Value> = settled
+        .split(|b| *b == b'\n')
+        .filter(|v| !v.is_empty())
+        .map(|v| serde_json::from_slice(v).unwrap())
+        .collect();
+    for field in ["request", "owner", "user_sid"] {
+        let mut changed = lines.clone();
+        changed[1][field] = json!(if field == "request" {
+            "aaaaaaaa-bbbb-cccc-dddd-000000000099"
+        } else if field == "owner" {
+            "1111111111111111111111111111111111111111111111111111111111111111"
+        } else {
+            "S-1-5-21-111-222-333-1002"
+        });
+        let mut bytes = Vec::new();
+        for line in changed {
+            bytes.extend(serde_json::to_vec(&line).unwrap());
+            bytes.push(b'\n');
+        }
+        let files = MemoryFiles::default();
+        files
+            .bytes
+            .lock()
+            .unwrap()
+            .insert("thermal-mutation.journal".into(), bytes.clone());
+        assert!(Storage::open(Box::new(files.clone()), SID).is_err());
+        assert_eq!(
+            files.read("thermal-mutation.journal").unwrap().unwrap(),
+            bytes
+        );
+    }
+    lines[0]["progress"] = json!(1);
+    let files = MemoryFiles::default();
+    let mut bytes = Vec::new();
+    for line in lines {
+        bytes.extend(serde_json::to_vec(&line).unwrap());
+        bytes.push(b'\n');
+    }
+    files
+        .bytes
+        .lock()
+        .unwrap()
+        .insert("thermal-mutation.journal".into(), bytes);
+    assert!(Storage::open(Box::new(files), SID).is_err());
+    rig.stop().await;
 }

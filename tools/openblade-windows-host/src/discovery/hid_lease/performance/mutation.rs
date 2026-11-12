@@ -9,8 +9,19 @@ use std::sync::Arc;
 /// user configuration and durable journal through callback retirement.
 pub(crate) trait Permit: Send + Sync {
     fn authorize(&self) -> Option<ReadAdmission>;
-    fn resolve(&self, power: i32) -> io::Result<Option<Preset>>;
+    fn resolve(&self, power: i32, baseline: ObservedPerformance) -> io::Result<Option<Preset>>;
+    fn refused(&self, _cause: Refusal) {}
+    fn retired(&self) -> io::Result<()> {
+        Ok(())
+    }
     fn record(&self, progress: Progress) -> io::Result<()>;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Refusal {
+    TransactionCapacity,
+    CurrentAdmission,
+    PowerChanged,
 }
 
 impl<P: Port> Reader<P, ReadAdmission> {
@@ -35,15 +46,21 @@ impl<P: Port> Reader<P, ReadAdmission> {
             power
         };
         let power_source = power.source()?;
-        let destination = permit.resolve(power_source).ok()??;
+        let destination = permit.resolve(power_source, baseline).ok()??;
         if Plan::from_observation(baseline, destination) == Plan::Unchanged {
             return Some(baseline);
         }
         // Reserve all remaining commands, including the independent final pair,
         // before journaling/submitting. Exhaustion cannot strand a partial pair.
-        let pair = PresetPair::new(self.port.reserve_pair()?, destination)?;
-        let power_ids = self.port.reserve_pair()?;
-        let final_ids = self.port.reserve_pair()?;
+        let mut reserve = || {
+            self.port.reserve_pair().or_else(|| {
+                permit.refused(Refusal::TransactionCapacity);
+                None
+            })
+        };
+        let pair = PresetPair::new(reserve()?, destination)?;
+        let power_ids = reserve()?;
+        let final_ids = reserve()?;
         let admission = self.admission;
         let mut attempt = Attempt {
             reader: self,
@@ -59,6 +76,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
             // Balanced admits limited external power; Performance requires the
             // exact decoder's sufficient-adapter comparison, never ACLineStatus.
             if power.source() != Some(power_source) || !power.admits(destination) {
+                permit.refused(Refusal::PowerChanged);
                 return None;
             }
             attempt.checkpoint(&mut authorize, admission, limit).ok()?;

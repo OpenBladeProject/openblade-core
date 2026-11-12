@@ -39,6 +39,7 @@ pub(super) struct WindowsGuard {
     sid: String,
     session: u32,
     authentication: (u32, i32),
+    lifecycle: u64,
     controllers:
         Mutex<openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission>,
 }
@@ -54,14 +55,21 @@ impl WindowsGuard {
         if identity.sid != sid || identity.session != session || !identity.primary {
             return Err(deny());
         }
-        let guard=Arc::new(Self{origin,custody,sid,session,authentication:(identity.authentication.LowPart,identity.authentication.HighPart),controllers:Mutex::new(openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission::native())});
+        let lifecycle = origin.lifecycle.active().ok_or_else(deny)?;
+        let guard=Arc::new(Self{lifecycle,origin,custody,sid,session,authentication:(identity.authentication.LowPart,identity.authentication.HighPart),controllers:Mutex::new(openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission::native())});
         guard.authorize().ok_or_else(deny)?;
         Ok(guard)
     }
     pub(super) fn authorize(&self) -> Option<ReadAdmission> {
         self.origin.verify().ok()?;
+        if self.origin.lifecycle.active() != Some(self.lifecycle) {
+            return None;
+        }
         if !self.origin.committed().ok()? || crate::console_session::observe() != Some(self.session)
         {
+            return None;
+        }
+        if !session_unlocked(self.session) {
             return None;
         }
         let identity = session_identity(self.session).ok()?;
@@ -84,12 +92,55 @@ impl WindowsGuard {
         if !self.controllers.lock().ok()?.confirms_fresh_absence() {
             return None;
         }
-        // SCM power/session ingress is accepted by this compiled role and
-        // irrevocably revokes origin BEFORE forwarding. Returning to an old
-        // SID/power sample cannot revive the original generation.
+        // Mutable callback fencing cannot revive an earlier operation. A new
+        // request captures a fresh epoch and rechecks every Windows supplier.
         self.origin.verify().ok()?;
+        if self.origin.lifecycle.active() != Some(self.lifecycle) {
+            return None;
+        }
         self.custody.authorize()
     }
+}
+// Exact current-session read; source/compile-only during offline validation.
+fn session_unlocked(session: u32) -> bool {
+    use windows_sys::Win32::System::RemoteDesktop::{
+        WTS_SESSIONSTATE_UNLOCK, WTSActive, WTSFreeMemory, WTSINFOEXW, WTSQuerySessionInformationW,
+        WTSSessionInfoEx,
+    };
+    let mut buffer = std::ptr::null_mut();
+    let mut bytes = 0;
+    // SAFETY: writable returned buffer/length. Windows owns the allocation.
+    if unsafe {
+        WTSQuerySessionInformationW(
+            std::ptr::null_mut(),
+            session,
+            WTSSessionInfoEx,
+            &mut buffer,
+            &mut bytes,
+        )
+    } == 0
+    {
+        return false;
+    }
+    let valid = if !buffer.is_null() && bytes as usize >= std::mem::size_of::<WTSINFOEXW>() {
+        // SAFETY: checked complete structure, then its documented level-one union.
+        let info = unsafe { buffer.cast::<WTSINFOEXW>().read_unaligned() };
+        if info.Level == 1 {
+            let level = unsafe { info.Data.WTSInfoExLevel1 };
+            level.SessionId == session
+                && level.SessionState == WTSActive
+                && level.SessionFlags == WTS_SESSIONSTATE_UNLOCK as i32
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+    // SAFETY: release only the returned Windows allocation, on every success path.
+    if !buffer.is_null() {
+        unsafe { WTSFreeMemory(buffer.cast()) };
+    }
+    valid
 }
 fn session_identity(session: u32) -> io::Result<crate::windows_token::Identity> {
     if session == 0 {

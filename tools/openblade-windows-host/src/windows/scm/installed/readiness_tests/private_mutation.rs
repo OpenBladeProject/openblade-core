@@ -105,6 +105,7 @@ struct JournalCustody(std::sync::Mutex<Store>);
 impl crate::installed::readiness::mailbox_read::ReadCustody for JournalCustody {
     fn authorize(&self) -> Option<crate::discovery::performance::ReadAdmission> {
         Some(crate::discovery::performance::ReadAdmission {
+            lifecycle: 1,
             generation: [7; 32],
         })
     }

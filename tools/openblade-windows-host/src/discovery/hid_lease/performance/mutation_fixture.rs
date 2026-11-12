@@ -42,6 +42,11 @@ impl Fixture {
             transactions: Arc::new(Transactions::new()),
         }
     }
+    pub(crate) fn reserve_for_tests(&self, pairs: usize) {
+        for _ in 0..pairs {
+            assert!(self.transactions.reserve_pair().is_some());
+        }
+    }
     pub(crate) fn exhaust(&self) {
         while self.transactions.reserve_pair().is_some() {}
     }

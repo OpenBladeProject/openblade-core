@@ -504,7 +504,7 @@ async fn readiness_serves_managed_setup_then_closes_partial_exchange_on_stop() {
         let contract: Value = serde_json::from_str(CONTRACT).unwrap();
         let input = &contract["requests"][0]["input"];
         assert_eq!(input["operation"], "getStatus");
-        assert_eq!(input["version"], 79);
+        assert_eq!(input["version"], 80);
 
         let console = Rc::new(Cell::new(u32::MAX));
         let reads = Rc::new(Cell::new(0));
@@ -565,7 +565,7 @@ async fn readiness_serves_managed_setup_then_closes_partial_exchange_on_stop() {
             assert_eq!(
                 serde_json::from_slice::<Value>(&response.unwrap()).unwrap(),
                 json!({
-                    "frame": "response", "version": 79, "requestId": input["requestId"],
+                    "frame": "response", "version": 80, "requestId": input["requestId"],
                     "success": true, "error": null, "status": expected_status,
                     "result": null, "archive": null, "errorCode": null,
                 })
@@ -597,26 +597,26 @@ async fn readiness_serves_managed_setup_then_closes_partial_exchange_on_stop() {
 }
 
 #[test]
-fn closed_v79_get_status_contract_rejects_mutation_duplicates_and_uncorrelated_responses() {
+fn closed_v80_get_status_contract_rejects_mutation_duplicates_and_uncorrelated_responses() {
     let id = "11111111-2222-4333-8444-555555555555";
     let contract: Value = serde_json::from_str(CONTRACT).unwrap();
     let input = &contract["requests"][0]["input"];
     let request = StatusRequest::decode_get(&serde_json::to_vec(input).unwrap()).unwrap();
     assert!(request.matches(&StatusRequest::get(id.to_owned()).unwrap()));
     for rejected in [
-        json!({"operation": "shutdownOpenBlade", "version": 79, "requestId": id}).to_string(),
-        json!({"operation": "subscribeStatus", "version": 79, "requestId": id}).to_string(),
+        json!({"operation": "shutdownOpenBlade", "version": 80, "requestId": id}).to_string(),
+        json!({"operation": "subscribeStatus", "version": 80, "requestId": id}).to_string(),
         json!({"operation": "getStatus", "version": 51, "requestId": id}).to_string(),
-        json!({"operation": "getStatus", "version": 79, "requestId": "not-a-guid"}).to_string(),
-        json!({"operation": "getStatus", "version": 79, "requestId": id, "value": null})
+        json!({"operation": "getStatus", "version": 80, "requestId": "not-a-guid"}).to_string(),
+        json!({"operation": "getStatus", "version": 80, "requestId": id, "value": null})
             .to_string(),
-        format!(r#"{{"operation":"getStatus","version":79,"version":79,"requestId":"{id}"}}"#),
+        format!(r#"{{"operation":"getStatus","version":80,"version":80,"requestId":"{id}"}}"#),
     ] {
         assert!(StatusRequest::decode_get(rejected.as_bytes()).is_err());
     }
 
     let response = json!({
-        "frame": "response", "version": 79, "requestId": id, "success": true,
+        "frame": "response", "version": 80, "requestId": id, "success": true,
         "status": managed_status(), "error": null, "result": null, "archive": null,
     });
     let check =

@@ -23,20 +23,12 @@ pub(crate) fn entry(origin: Arc<Origin>) -> io::Result<()> {
     }
     *slot = Some(origin);
     drop(slot);
-    crate::scm_host::set_ingress(|code| {
-        if code != windows_sys::Win32::System::Services::SERVICE_CONTROL_INTERROGATE {
-            if let Ok(slot) = ENTRY_ORIGIN.lock() {
-                if let Some(origin) = &*slot {
-                    if matches!(
-                        code,
-                        windows_sys::Win32::System::Services::SERVICE_CONTROL_STOP
-                            | windows_sys::Win32::System::Services::SERVICE_CONTROL_SHUTDOWN
-                    ) {
-                        origin.revoke_for_stop();
-                    } else {
-                        origin.revoke();
-                    }
-                }
+    crate::scm_host::set_ingress(|code, event| {
+        if let Ok(slot) = ENTRY_ORIGIN.lock() {
+            if let Some(origin) = &*slot {
+                crate::scm_host::installed_ingress(&origin.lifecycle, code, event, || {
+                    origin.revoke_for_stop()
+                });
             }
         }
     })?;

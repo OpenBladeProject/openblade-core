@@ -32,6 +32,7 @@ pub(in crate::installed) struct Store {
     path: PathBuf,
     last: Option<Record>,
     activated_here: bool,
+    activation_started: bool,
     #[cfg(feature = "service-thermal-mutation-v1")]
     active_nonces: std::collections::BTreeSet<String>,
     #[cfg(test)]
@@ -69,6 +70,7 @@ impl Store {
             path,
             last: None,
             activated_here: false,
+            activation_started: false,
             #[cfg(feature = "service-thermal-mutation-v1")]
             active_nonces: Default::default(),
             #[cfg(test)]
@@ -152,6 +154,7 @@ impl Store {
             path,
             last: None,
             activated_here: false,
+            activation_started: false,
             #[cfg(feature = "service-thermal-mutation-v1")]
             active_nonces: Default::default(),
             verifier: Some(verify),
@@ -162,6 +165,10 @@ impl Store {
     #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
     pub(in crate::installed) fn activate_injected(&mut self, record: Record) -> io::Result<()> {
         self.activate_bound(record)
+    }
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    pub(in crate::installed) fn activation_started(&self) -> bool {
+        self.activation_started
     }
     // Only authenticated ReadLease custody calls this after actual reader drain.
     #[cfg(feature = "service-thermal-mutation-v1")]
@@ -202,6 +209,7 @@ impl Store {
             reservation.predecessor = digest(&prior.bytes());
         }
         Record::parse(&reservation.bytes())?;
+        self.activation_started = true;
         self.publish(reservation)?;
         self.advance(Phase::Active)?;
         self.activated_here = true;

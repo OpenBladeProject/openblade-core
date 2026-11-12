@@ -69,6 +69,7 @@ impl Admission {
 // clearance. It is minted by the concrete retained-origin/read-lease chain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ReadAdmission {
+    pub(crate) lifecycle: u64,
     pub(crate) generation: [u8; 32],
 }
 
@@ -247,6 +248,7 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
         admission: A,
         limit: Limit<'_>,
     ) -> Option<ObservedPerformance> {
+        self.checkpoint(authorize, admission, limit).ok()?;
         let transactions = self.reader.port.reserve_pair()?;
         self.read_reserved_pair(authorize, admission, limit, transactions, true)
             .await

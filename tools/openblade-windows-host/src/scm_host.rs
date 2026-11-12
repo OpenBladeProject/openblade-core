@@ -27,8 +27,8 @@ pub(crate) enum Phase {
 }
 
 pub(crate) static CONTROLS: Controls = Controls::new();
-static INGRESS: Mutex<Option<fn(u32)>> = Mutex::new(None);
-pub(crate) fn set_ingress(hook: fn(u32)) -> io::Result<()> {
+static INGRESS: Mutex<Option<fn(u32, u32)>> = Mutex::new(None);
+pub(crate) fn set_ingress(hook: fn(u32, u32)) -> io::Result<()> {
     let mut slot = INGRESS
         .lock()
         .map_err(|_| io::Error::other("SCM callback ingress lost"))?;
@@ -151,14 +151,14 @@ pub(crate) fn registered_service(
 
 pub(crate) unsafe extern "system" fn control(
     code: u32,
-    _: u32,
+    event: u32,
     _: *mut c_void,
     _: *mut c_void,
 ) -> u32 {
     // Latch before forwarding/coalescing. Unknown callback/registration loss
     // cannot revive an epoch after a later clear sample.
     if let Some(hook) = *INGRESS.lock().unwrap_or_else(|e| e.into_inner()) {
-        hook(code);
+        hook(code, event);
     }
     CONTROLS.handle(code)
 }
@@ -260,4 +260,92 @@ impl std::error::Error for StartupStopped {}
 
 pub(crate) fn startup_stopped() -> io::Error {
     io::Error::new(io::ErrorKind::Interrupted, StartupStopped)
+}
+
+/// The installed entry callback and injected outer service use this same action.
+/// Only terminal controls revoke loaded-build custody; routine events fence work.
+pub(crate) fn installed_ingress(lifecycle: &Lifecycle, code: u32, event: u32, stop: impl FnOnce()) {
+    use windows_sys::Win32::System::Services::{SERVICE_CONTROL_SHUTDOWN, SERVICE_CONTROL_STOP};
+    if matches!(code, SERVICE_CONTROL_STOP | SERVICE_CONTROL_SHUTDOWN) {
+        stop();
+    } else {
+        lifecycle.ingress(code, event);
+    }
+}
+
+/// Callback-established active boundary. Unknown events fence old operations but
+/// never establish resume; fresh device/session/controller proof is still required.
+#[derive(Default)]
+pub(crate) struct Lifecycle(Mutex<LifecycleState>);
+struct LifecycleState {
+    epoch: u64,
+    awake: bool,
+}
+impl Default for LifecycleState {
+    // Match managed LowPowerGate's initial clear low-power latch. This is not
+    // an independent awake measurement: only a confirmed suspend enters low power.
+    // Display-off is not sleep (ServiceLifecycleRefreshLoop.cs:134-138).
+    fn default() -> Self {
+        Self {
+            epoch: 1,
+            awake: true,
+        }
+    }
+}
+impl Lifecycle {
+    pub(crate) fn ingress(&self, code: u32, event: u32) {
+        use windows_sys::Win32::System::Services::{
+            SERVICE_CONTROL_POWEREVENT, SERVICE_CONTROL_SESSIONCHANGE,
+        };
+        if !matches!(
+            code,
+            SERVICE_CONTROL_POWEREVENT | SERVICE_CONTROL_SESSIONCHANGE
+        ) {
+            return;
+        }
+        let Ok(mut state) = self.0.lock() else {
+            return;
+        };
+        if state.epoch == 0 {
+            return;
+        } // Exhaustion is sticky; never revive epoch one.
+        state.epoch = state.epoch.checked_add(1).unwrap_or(0);
+        match (code, event) {
+            (SERVICE_CONTROL_POWEREVENT, 4) => state.awake = false, // PBT_APMSUSPEND
+            (SERVICE_CONTROL_POWEREVENT, 7 | 18) => state.awake = true, // resume suspend/automatic
+            // Session notices fence old work; their payload never authorizes a user.
+            // Fresh exact WTSInfoEx state is checked by the mutation supplier.
+            _ => {}
+        }
+    }
+    pub(crate) fn active(&self) -> Option<u64> {
+        let state = self.0.lock().ok()?;
+        (state.epoch != 0 && state.awake).then_some(state.epoch)
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+    #[test]
+    fn correction_lifecycle_overflow_is_sticky_and_display_status_cannot_resume() {
+        use windows_sys::Win32::System::Services::{
+            SERVICE_CONTROL_POWEREVENT, SERVICE_CONTROL_SESSIONCHANGE,
+        };
+        let lifecycle = Lifecycle::default();
+        assert_eq!(lifecycle.active(), Some(1));
+        lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 4);
+        assert_eq!(lifecycle.active(), None);
+        lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 32787);
+        assert_eq!(lifecycle.active(), None);
+        lifecycle.ingress(SERVICE_CONTROL_SESSIONCHANGE, 8);
+        assert_eq!(lifecycle.active(), None);
+        lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 18);
+        assert!(lifecycle.active().is_some());
+        lifecycle.0.lock().unwrap().epoch = u64::MAX;
+        lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 10);
+        assert_eq!(lifecycle.active(), None);
+        lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 18);
+        assert_eq!(lifecycle.active(), None);
+    }
 }

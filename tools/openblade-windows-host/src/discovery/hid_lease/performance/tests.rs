@@ -140,6 +140,7 @@ async fn paired_observation_fixture_uses_typed_read_custody_without_power_or_ui_
     ))
     .unwrap();
     let admitted = ReadAdmission {
+        lifecycle: 1,
         generation: [9; 32],
     };
     assert!(admitted.readable());
@@ -195,9 +196,11 @@ async fn paired_observation_fixture_uses_typed_read_custody_without_power_or_ui_
 #[tokio::test(start_paused = true)]
 async fn typed_read_generation_loss_never_adopts_the_same_visible_value_from_a_new_epoch() {
     let original = ReadAdmission {
+        lifecycle: 1,
         generation: [1; 32],
     };
     let replacement = ReadAdmission {
+        lifecycle: 1,
         generation: [2; 32],
     };
     let cancelled = AtomicBool::new(false);
@@ -585,6 +588,7 @@ async fn custom_shared_parity_is_complete_ordered_and_preserves_manual_unknown_h
     assert_eq!(fixture.schema_version, 1);
     assert_eq!(fixture.model, MODEL);
     let proof = ReadAdmission {
+        lifecycle: 1,
         generation: [8; 32],
     };
     let cancelled = AtomicBool::new(false);
@@ -689,6 +693,7 @@ async fn custom_component_faults_and_lost_custody_never_publish_partial_levels()
 async fn custom_cpu_success_then_claimed_gpu_admission_cancel_submits_no_gpu() {
     let cancelled = AtomicBool::new(false);
     let proof = ReadAdmission {
+        lifecycle: 1,
         generation: [9; 32],
     };
     let mut calls = 0;
@@ -736,4 +741,39 @@ fn custom_fixture_rejects_missing_nullable_unknown_duplicate_and_non_numeric_fie
         .unwrap()
         .remove("customPerformance");
     assert!(serde_json::from_value::<CustomFixture>(value).is_err());
+}
+
+#[tokio::test(start_paused = true)]
+async fn correction_refused_initial_checkpoint_consumes_no_pair_but_reserved_refusal_burns_ids() {
+    let cancelled = AtomicBool::new(false);
+    let proof = ReadAdmission {
+        generation: [7; 32],
+        lifecycle: 1,
+    };
+    let mut reader = Reader::new(Script::pair([0, 0]), proof);
+    assert!(
+        reader
+            .observe(&mut || None, limit(&cancelled))
+            .await
+            .is_none()
+    );
+    assert!(reader.port.sent.is_empty());
+    assert_eq!(reader.port.transactions.reserve_pair(), Some([1, 2]));
+    // A distinct reader may never recover IDs burned by an admitted reservation.
+    let mut reader = Reader::new(Script::pair([0, 0]), proof);
+    let mut calls = 0;
+    assert!(
+        reader
+            .observe(
+                &mut || {
+                    calls += 1;
+                    if calls == 1 { Some(proof) } else { None }
+                },
+                limit(&cancelled)
+            )
+            .await
+            .is_none()
+    );
+    assert!(reader.port.sent.is_empty());
+    assert_eq!(reader.port.transactions.reserve_pair(), Some([3, 4]));
 }
