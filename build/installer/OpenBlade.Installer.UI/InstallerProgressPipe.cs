@@ -230,17 +230,14 @@ internal sealed class InstallerSetupProgress
 
     private InstallerSetupProgress(
         InstallerSetupProgressCode code,
-        string? argument,
-        string wireValue)
+        string? argument)
     {
         Code = code;
         Argument = argument;
-        WireValue = wireValue;
     }
 
     public InstallerSetupProgressCode Code { get; }
     public string? Argument { get; }
-    public string WireValue { get; }
     public InstallerSetupFailure? Failure { get; private set; }
 
     internal static bool TryParse(string value, out InstallerSetupProgress? progress)
@@ -257,7 +254,7 @@ internal sealed class InstallerSetupProgress
             {
                 return false;
             }
-            progress = new InstallerSetupProgress(InstallerSetupProgressCode.Failure, null, value)
+            progress = new InstallerSetupProgress(InstallerSetupProgressCode.Failure, null)
             {
                 Failure = failure,
             };
@@ -299,7 +296,7 @@ internal sealed class InstallerSetupProgress
             }
         }
 
-        progress = new InstallerSetupProgress(code, argument, value);
+        progress = new InstallerSetupProgress(code, argument);
         return true;
     }
 }

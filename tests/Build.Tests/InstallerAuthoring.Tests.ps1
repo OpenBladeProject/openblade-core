@@ -410,6 +410,17 @@ $programSource = Get-Content -LiteralPath (
     Join-Path $repository 'build\installer\OpenBlade.Installer.UI\Program.cs') -Raw
 Assert-True (-not $programSource.Contains('[STAThread]')) `
     'The managed BA entry point must let the WiX native host initialize COM.'
+$completionCallback = [regex]::Match(
+    $bootstrapperSource,
+    '(?s)private void OnExecutePackageComplete\(.*?(?=private void OnUnregisterBegin)').Value
+$unifiedSetupLog = $completionCallback.Contains('InstallerPackageLog.AppendToBundleLog') -and
+    $completionCallback.Contains('BundleLogVariable + "_" + OpenBladeSetupPackage') -and
+    -not $completionCallback.Contains('Display.') -and
+    -not $completionCallback.Contains('command.Display') -and
+    -not $completionCallback.Contains('window') -and
+    -not $completionCallback.Contains('Ui(')
+Assert-True $unifiedSetupLog 'Setup diagnostics must reach the main Burn log for interactive, passive and quiet runs before rollback/cache cleanup.'
+
 $progressPipeSource = Get-Content -LiteralPath (
     Join-Path $repository (
         'build\installer\OpenBlade.Installer.UI\InstallerProgressPipe.cs')) -Raw

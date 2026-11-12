@@ -53,7 +53,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private const string LocalDevCompatibilityStableBundleCode =
         "{54764E2D-D6B4-47A7-A6D6-A1EA6721640A}";
     private const string LocalDevCompatibilityStableBundleVersion = "0.19.18";
-    private const string OpenBladeSetupPackage = "OpenBladeSetup";
+    internal const string OpenBladeSetupPackage = "OpenBladeSetup";
     private const string OpenBladeVcRuntimePackage = "OpenBladeVcRuntime";
     private const string OpenBladeDotNetRuntimePackage = "OpenBladeDotNetRuntime";
     private const int ProductVersionConflict = unchecked((int)0x80070666);
@@ -704,6 +704,15 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     private void OnExecutePackageComplete(object? sender, ExecutePackageCompleteEventArgs e)
     {
+        // Import on the engine callback before Burn starts rollback or removes its
+        // cache. This also runs for quiet/passive installs without a progress pipe.
+        if (Failed(e.Status) || failedPackage is not null)
+        {
+            InstallerPackageLog.AppendToBundleLog(e.PackageId, e.Status,
+                e.PackageId == OpenBladeSetupPackage
+                    ? TryGetVariable(BundleLogVariable + "_" + OpenBladeSetupPackage) : null,
+                message => Engine.Log(LogLevel.Standard, message));
+        }
         if (Failed(e.Status) && failedPackage is null)
         {
             failedPackage = GetPackageName(e.PackageId);
@@ -1009,9 +1018,27 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         }
         Ui(() =>
         {
-            Engine.Log(LogLevel.Standard, progress.WireValue);
+            Engine.Log(LogLevel.Standard, FormatPipeDiagnostic(progress));
             PresentPipeProgress(window, progress);
         });
+    }
+
+    internal static string FormatPipeDiagnostic(InstallerSetupProgress progress)
+    {
+        string message;
+        if (progress.Failure is { } failure)
+        {
+            message = $"OpenBlade.Setup failure at {failure.Step.Code}: {failure.Error}"
+                + (failure.Step.Argument is null ? string.Empty : $"; file: {failure.Step.Argument}")
+                + (failure.RecoveryError.Length == 0 ? string.Empty
+                    : $"; cleanup or recovery: {failure.RecoveryError}");
+        }
+        else
+        {
+            message = $"OpenBlade.Setup step: {progress.Code}"
+                + (progress.Argument is null ? string.Empty : $"; file: {progress.Argument}");
+        }
+        return InstallerPackageLog.SanitizeRecord(message);
     }
 
     internal static void PresentPipeProgress(
