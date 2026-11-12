@@ -19,6 +19,7 @@
   <ItemGroup>
     <Compile Include="..\OpenBlade.Testing\PublicApiSurface.cs" Link="PublicApiSurface.cs" />
     <None Include="PublicApiBaseline.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="WindowsReplay\v1\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -5,7 +5,7 @@ using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
 
-public sealed class ControlRequestHandlerTests
+public sealed partial class ControlRequestHandlerTests
 {
     [Fact]
     public async Task HandleAsync_DispatchesEveryClosedRequestToExactlyOneRuntimeMethod()

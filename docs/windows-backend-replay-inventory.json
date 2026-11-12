@@ -1,0 +1,285 @@
+{
+  "schema": 1,
+  "sourceRevision": "df4cbe096e8cace43ab527f6335afd9d705528ed",
+  "publishProjects": [
+    {
+      "project": "OpenBlade.Service",
+      "staging": "payload",
+      "role": "Windows service and HID owner",
+      "phase": 2
+    },
+    {
+      "project": "OpenBlade.FanStop.Guardian",
+      "staging": "stagingGuardian",
+      "role": "Owner and emergency fan-stop recovery",
+      "phase": 5
+    },
+    {
+      "project": "OpenBlade.SessionAgent",
+      "staging": "payload",
+      "role": "Current-user API host and workers",
+      "phase": 6
+    },
+    {
+      "project": "OpenBlade.Tray",
+      "staging": "payload",
+      "role": "C# WinUI frontend with separately inventoried privileged helper modes",
+      "phase": 6
+    },
+    {
+      "project": "OpenBlade.CpuTemperature",
+      "staging": "stagingCpuTemperature",
+      "role": "Job-owned CPU temperature worker",
+      "phase": 5
+    },
+    {
+      "project": "OpenBlade.Capture",
+      "staging": "stagingDeveloperTools",
+      "role": "Developer-only typed capture and validation",
+      "phase": null
+    },
+    {
+      "project": "OpenBlade.Setup",
+      "staging": "stagingBundle",
+      "role": "Retained installer and health/rollback tooling",
+      "phase": 7
+    }
+  ],
+  "runtimeModes": [
+    {
+      "host": "OpenBlade.FanStop.Guardian",
+      "mode": "--proxy",
+      "phase": 5,
+      "source": "src/OpenBlade.FanStop.Guardian/Program.cs"
+    },
+    {
+      "host": "OpenBlade.FanStop.Guardian",
+      "mode": "--owner",
+      "phase": 5,
+      "source": "src/OpenBlade.FanStop.Guardian/Program.cs"
+    },
+    {
+      "host": "OpenBlade.CpuTemperature",
+      "mode": "--worker",
+      "phase": 5,
+      "source": "src/OpenBlade.CpuTemperature/Program.cs"
+    },
+    {
+      "host": "OpenBlade.SessionAgent",
+      "mode": "--snap-tap-input",
+      "phase": 6,
+      "source": "src/OpenBlade.SessionAgent/SnapTapInputHost.cs"
+    },
+    {
+      "host": "OpenBlade.SessionAgent",
+      "mode": "--snap-tap-driver-worker",
+      "phase": 6,
+      "source": "src/OpenBlade.SessionAgent/SnapTapDriverSupervisor.cs"
+    },
+    {
+      "host": "OpenBlade.SessionAgent",
+      "mode": "--thx-audio-helper",
+      "phase": 6,
+      "source": "src/OpenBlade.SessionAgent/ThxAudioHelperProtocol.cs"
+    },
+    {
+      "host": "OpenBlade.SessionAgent",
+      "mode": "--request-thx-audio-provisioning",
+      "phase": 6,
+      "source": "src/OpenBlade.SessionAgent/ThxAudioProvisioningElevationBridge.cs"
+    },
+    {
+      "host": "OpenBlade.SessionAgent",
+      "mode": "--provision-thx-audio",
+      "phase": 6,
+      "source": "src/OpenBlade.SessionAgent/ThxAudioProvisioningCommand.cs"
+    },
+    {
+      "host": "OpenBlade.SessionAgent",
+      "mode": "--probe-microphone-mute-state",
+      "phase": 6,
+      "source": "src/OpenBlade.SessionAgent/MicrophoneMuteStateProbeCommand.cs"
+    },
+    {
+      "host": "OpenBlade.SessionAgent",
+      "mode": "--probe-dynamic-lighting-identity",
+      "phase": 6,
+      "source": "src/OpenBlade.SessionAgent/DynamicLightingIdentityProbe.cs"
+    },
+    {
+      "host": "OpenBlade.Tray",
+      "mode": "--start-service",
+      "phase": 6,
+      "source": "src/OpenBlade.Tray/ElevatedServiceControlLauncher.cs"
+    },
+    {
+      "host": "OpenBlade.Tray",
+      "mode": "--shutdown-service",
+      "phase": 6,
+      "source": "src/OpenBlade.Tray/ElevatedServiceControlLauncher.cs"
+    },
+    {
+      "host": "OpenBlade.Tray",
+      "mode": "--stop-razer-services",
+      "phase": 6,
+      "source": "src/OpenBlade.Tray/ElevatedServiceControlLauncher.cs"
+    },
+    {
+      "host": "OpenBlade.Tray",
+      "mode": "--install-razer-keyboard-driver",
+      "phase": 6,
+      "source": "src/OpenBlade.Tray/RazerDriverInstallLauncher.cs"
+    }
+  ],
+  "retainedDeployment": [
+    "OpenBlade.Setup",
+    "OpenBlade.DeploymentBroker",
+    "OpenBlade.DeploymentClient"
+  ],
+  "excludedFromInstalledPayload": [
+    "OpenBlade.Capture",
+    "OpenBlade.FirmwareSmoke",
+    "openblade-status-cli",
+    "openblade-discovery",
+    "OpenBlade.InputAgent"
+  ],
+  "persistence": [
+    {
+      "files": [
+        "profiles.json",
+        "battery-preferences.json",
+        "battery-configuration.commit.json"
+      ],
+      "readers": [
+        "ProfileStore",
+        "BatteryConfigurationStore",
+        "UserConfigurationRepository"
+      ],
+      "phase": 4,
+      "coverage": "managed-only",
+      "readerSources": [
+        "src/OpenBlade.Service/ProfileStore.cs",
+        "src/OpenBlade.Service/BatteryConfigurationStore.cs",
+        "src/OpenBlade.Service/UserConfigurationRepository.cs"
+      ]
+    },
+    {
+      "files": [
+        "manual-overrides.json"
+      ],
+      "readers": [
+        "PersistentOverrideStore"
+      ],
+      "phase": 4,
+      "coverage": "portable",
+      "readerSources": [
+        "src/OpenBlade.Service/PersistentOverrideStore.cs"
+      ]
+    },
+    {
+      "files": [
+        "service-running.json",
+        "thermal-convergence.json"
+      ],
+      "readers": [
+        "ServiceRunMarkerStore",
+        "ThermalConvergenceStateStore"
+      ],
+      "phase": 4,
+      "coverage": "managed-only",
+      "readerSources": [
+        "src/OpenBlade.Service/ServiceRunMarkerStore.cs",
+        "src/OpenBlade.Service/ThermalConvergenceStateStore.cs"
+      ]
+    },
+    {
+      "files": [
+        "hyperboost-ownership.json",
+        "cpu-tuning-ownership.json",
+        "cpu-live-curve-ownership.json",
+        "cpu-live-power-ownership.json"
+      ],
+      "readers": [
+        "HyperBoostOwnershipJournalStore",
+        "CpuTuningOwnershipJournalStore",
+        "CpuLiveCurveOwnershipJournalStore",
+        "CpuLivePowerOwnershipJournalStore"
+      ],
+      "phase": 4,
+      "coverage": "managed-only",
+      "readerSources": [
+        "src/OpenBlade.Service/HyperBoostOwnershipJournalStore.cs",
+        "src/OpenBlade.Service/CpuTuningOwnershipJournalStore.cs",
+        "src/OpenBlade.Service/CpuLiveCurveOwnershipJournalStore.cs",
+        "src/OpenBlade.Service/CpuLivePowerOwnershipJournalStore.cs"
+      ]
+    },
+    {
+      "files": [
+        "laptop-control-pending.json"
+      ],
+      "readers": [
+        "LaptopControlPendingStore"
+      ],
+      "phase": 4,
+      "coverage": "portable",
+      "readerSources": [
+        "src/OpenBlade.Service/LaptopControlPendingStore.cs"
+      ]
+    },
+    {
+      "files": [
+        "cooling-pad/ownership.json"
+      ],
+      "readers": [
+        "CoolingPadStateStore"
+      ],
+      "phase": 5,
+      "coverage": "managed-only",
+      "readerSources": [
+        "src/OpenBlade.Service/CoolingPadStateStore.cs"
+      ]
+    },
+    {
+      "files": [
+        "fan-stop guardian state and attempt records"
+      ],
+      "readers": [
+        "FanStopGuardianStore"
+      ],
+      "phase": 5,
+      "coverage": "managed-only",
+      "readerSources": [
+        "src/OpenBlade.Service/FanStopGuardianTransport.cs"
+      ]
+    },
+    {
+      "files": [
+        "preferences.json",
+        "whats-new.version",
+        "snap-tap-status-{session}.json",
+        "display/power reconciliation checkpoint",
+        "installation.jsonl",
+        "THX provisioning journal"
+      ],
+      "readers": [
+        "UiPreferenceStore",
+        "WhatsNewSeenStore",
+        "SnapTapRuntimeStatus",
+        "DisplayAutomationCheckpointStore",
+        "RazerDriverInstallJournal",
+        "ThxAudioProvisioningJournal"
+      ],
+      "phase": 6,
+      "coverage": "managed-only",
+      "readerSources": [
+        "src/OpenBlade.Tray.Core/UiPreferenceStore.cs",
+        "src/OpenBlade.Tray.Core/WhatsNewSeenStore.cs",
+        "src/OpenBlade.Tray.Core/SnapTapRuntimeStatus.cs",
+        "src/OpenBlade.Session/DisplayAutomationCheckpointStore.cs",
+        "src/OpenBlade.Tray.Core/RazerDriverInstallJournal.cs",
+        "src/OpenBlade.SessionAgent/ThxAudioProvisioningJournal.cs"
+      ]
+    }
+  ]
+}
