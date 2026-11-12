@@ -663,7 +663,6 @@ async fn serve_mutation(
     let response = StatusResponse::mutation(
         request,
         serde_json::to_value(outcome).map_err(|e| Runtime(e.into()))?,
-        status,
     );
     write_payload(stream, &encode(&response).map_err(Runtime)?)
         .await

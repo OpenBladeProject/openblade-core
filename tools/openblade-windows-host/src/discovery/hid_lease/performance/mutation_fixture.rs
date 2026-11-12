@@ -9,6 +9,10 @@ pub(crate) struct State {
     pub(crate) writes: usize,
     pub(crate) fail_write: Option<usize>,
     pub(crate) mismatch: bool,
+    pub(crate) final_read_timeout: bool,
+    pub(crate) final_read_malformed: bool,
+    pub(crate) on_power: Option<Arc<dyn Fn(usize) + Send + Sync>>,
+    pub(crate) on_mutation_retired: Option<Arc<dyn Fn() + Send + Sync>>,
     pub(crate) actual: u8,
     pub(crate) recommended: u8,
     pub(crate) selectors: [u8; 2],
@@ -70,6 +74,8 @@ impl Fixture {
                         reply: None,
                         retired: false,
                         held: None,
+                        reply_timeout: false,
+                        completion_error: None,
                     },
                     admission,
                 );
@@ -83,6 +89,12 @@ impl Fixture {
                             reader.observe(&mut || authorize(), job.limit()).await
                         };
                         reader.retire(None).await?;
+                        if permit.is_some() {
+                            let hook = fixture.state.lock().unwrap().on_mutation_retired.clone();
+                            if let Some(hook) = hook {
+                                hook();
+                            }
+                        }
                         Ok(observed.map(|performance| Reading {
                             admission,
                             performance,
@@ -99,6 +111,8 @@ struct MemoryPort {
     reply: Option<Frame>,
     retired: bool,
     held: Option<Arc<AtomicBool>>,
+    reply_timeout: bool,
+    completion_error: Option<io::ErrorKind>,
 }
 impl Port for MemoryPort {
     fn reserve_pair(&mut self) -> Option<[u8; 2]> {
@@ -112,6 +126,10 @@ impl Port for MemoryPort {
         assert!(!self.retired && self.pending.is_none());
         match transfer {
             Transfer::ReceiveReply => {
+                if self.reply_timeout {
+                    self.completion_error = Some(io::ErrorKind::TimedOut);
+                    self.reply_timeout = false;
+                }
                 self.pending = Some((91, self.reply.take().ok_or(io::ErrorKind::UnexpectedEof)?));
             }
             Transfer::SendGetter(frame) | Transfer::SendMutation(frame) => {
@@ -159,6 +177,9 @@ impl Port for MemoryPort {
                     (13, 0x87) => vec![1, payload[1], 2],
                     (7, 0x8c) => {
                         s.power_reads += 1;
+                        if let Some(hook) = &s.on_power {
+                            hook(s.power_reads);
+                        }
                         if let Some((at, actual)) = s.change_power {
                             if at == s.power_reads {
                                 s.actual = actual;
@@ -175,6 +196,12 @@ impl Port for MemoryPort {
                         .encode(),
                 );
                 reply[1] = 2;
+                if class == 13 && command == 0x82 && s.writes == 2 {
+                    self.reply_timeout = s.final_read_timeout;
+                    if s.final_read_malformed {
+                        reply[0] = 1;
+                    }
+                }
                 self.reply = Some(reply);
                 self.pending = Some((0, frame));
             }
@@ -190,6 +217,10 @@ impl Port for MemoryPort {
             return None;
         }
         self.held = None;
+        if let Some(error) = self.completion_error.take() {
+            self.pending.take();
+            return Some(Err(error.into()));
+        }
         self.pending.take().map(Ok)
     }
     fn cancel(&mut self) {}

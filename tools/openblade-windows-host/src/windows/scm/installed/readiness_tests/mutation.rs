@@ -226,8 +226,17 @@ impl Rig {
         println!("NATIVE_THERMAL_MUTATION_RESPONSE {}", response);
         response
     }
+    async fn get(&self) -> Value {
+        self.request(json!({"operation":"getStatus","version":79,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000099"})).await
+    }
     async fn set(&self, n: u8, value: Value) -> Value {
-        self.request(json!({"operation":"setPerformanceOverride","version":79,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value})).await
+        let response = self.request(json!({"operation":"setPerformanceOverride","version":79,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value})).await;
+        assert!(
+            response["status"].is_null(),
+            "v79 result replies have exactly one body"
+        );
+        assert!(!response["result"].is_null());
+        response
     }
     async fn stop(&self) {
         let mut source = self.source.lock().await;
@@ -247,10 +256,15 @@ async fn installed_dispatcher_direct_pair_persists_before_applied_and_retains_pu
     assert!(initial["status"]["confirmedState"]["customPerformance"].is_null());
     assert_eq!(initial["status"]["writesBlocked"], true);
     let result = rig.set(1, value(1, 1)).await;
+    let status = rig.get().await;
+    assert_eq!(
+        status["status"]["writesBlocked"],
+        result["result"]["status"] != 1
+    );
     assert_eq!(result["result"]["status"], 1);
-    assert_eq!(result["status"]["confirmedState"]["performance"], 1);
-    assert_eq!(result["status"]["writesBlocked"], false);
-    assert!(result["status"]["capabilities"].is_null());
+    assert_eq!(status["status"]["confirmedState"]["performance"], 1);
+    assert_eq!(status["status"]["writesBlocked"], false);
+    assert!(status["status"]["capabilities"].is_null());
     assert_eq!(
         rig.files.document("manual-overrides.json")["overrides"]["performance"],
         1
@@ -291,10 +305,15 @@ async fn installed_temporary_clear_and_application_precedence_use_saved_canonica
     let report=rig.request(json!({"operation":"reportApplicationContext","version":79,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":"C:\\Games\\Game.exe"})).await;
     assert_eq!(report["result"]["status"], 0);
     let result = rig.set(3, Value::Null).await;
+    let status = rig.get().await;
+    assert_eq!(
+        status["status"]["writesBlocked"],
+        result["result"]["status"] != 1
+    );
     assert_eq!(result["result"]["status"], 1);
-    assert_eq!(result["status"]["confirmedState"]["performance"], 2);
-    assert_eq!(result["status"]["desiredState"]["performance"]["source"], 2);
-    assert!(result["status"]["performanceOverride"].is_null());
+    assert_eq!(status["status"]["confirmedState"]["performance"], 2);
+    assert_eq!(status["status"]["desiredState"]["performance"]["source"], 2);
+    assert!(status["status"]["performanceOverride"].is_null());
     rig.stop().await;
 }
 #[tokio::test]
@@ -303,6 +322,11 @@ async fn installed_ambiguous_submission_fences_restart_and_never_replays() {
     let rig = Rig::new(files.clone());
     rig.port.state.lock().unwrap().fail_write = Some(1);
     let result = rig.set(1, value(1, 1)).await;
+    let status = rig.get().await;
+    assert_eq!(
+        status["status"]["writesBlocked"],
+        result["result"]["status"] != 1
+    );
     assert_eq!(result["result"]["status"], 2);
     assert_eq!(rig.port.state.lock().unwrap().writes, 1);
     let restarted = Storage::open(Box::new(files), SID).unwrap();
@@ -323,6 +347,11 @@ async fn installed_persistence_failure_and_budget_exhaustion_submit_no_mutation(
             rig.files.fail.store(true, Ordering::Release)
         }
         let result = rig.set(1, value(1, 1)).await;
+        let status = rig.get().await;
+        assert_eq!(
+            status["status"]["writesBlocked"],
+            result["result"]["status"] != 1
+        );
         assert_eq!(result["result"]["status"], 2);
         assert_eq!(rig.port.state.lock().unwrap().writes, 0);
         assert!(
@@ -341,6 +370,11 @@ async fn installed_gpu_intent_is_stored_with_explicit_incompleteness_and_no_pair
     desired["gpuClockTuning"] =
         json!({"enabled":true,"offsets":{"coreMegahertz":10,"memoryMegahertz":20}});
     let result = rig.set(1, desired).await;
+    let status = rig.get().await;
+    assert_eq!(
+        status["status"]["writesBlocked"],
+        result["result"]["status"] != 1
+    );
     assert_eq!(result["result"]["status"], 0);
     assert_eq!(rig.port.state.lock().unwrap().writes, 0);
     assert!(
@@ -364,19 +398,29 @@ async fn installed_source_ineligible_intent_is_stored_and_power_change_stops_par
         let rig = Rig::new(files);
         rig.port.state.lock().unwrap().actual = actual;
         let result = rig.set(1, value(2, 1)).await;
+        let status = rig.get().await;
+        assert_eq!(
+            status["status"]["writesBlocked"],
+            result["result"]["status"] != 1
+        );
         assert_eq!(result["result"]["status"], 0);
-        assert_eq!(result["status"]["performanceOverride"]["value"], 2);
+        assert_eq!(status["status"]["performanceOverride"]["value"], 2);
         if actual == 0 {
             assert_eq!(rig.port.state.lock().unwrap().writes, 0)
         } else {
-            assert_eq!(result["status"]["desiredState"]["performance"]["value"], 1);
-            assert_eq!(result["status"]["confirmedState"]["performance"], 1);
+            assert_eq!(status["status"]["desiredState"]["performance"]["value"], 1);
+            assert_eq!(status["status"]["confirmedState"]["performance"], 1);
         }
         rig.stop().await;
     }
     let rig = Rig::new(MemoryFiles::default());
     rig.port.state.lock().unwrap().change_power = Some((3, 1));
     let result = rig.set(2, value(2, 1)).await;
+    let status = rig.get().await;
+    assert_eq!(
+        status["status"]["writesBlocked"],
+        result["result"]["status"] != 1
+    );
     assert_eq!(result["result"]["status"], 2);
     assert_eq!(rig.port.state.lock().unwrap().writes, 1);
     assert_eq!(
@@ -433,6 +477,11 @@ async fn installed_final_mismatch_uses_reserved_pair_only_and_preserves_unrelate
     let rig = Rig::new(files);
     rig.port.state.lock().unwrap().mismatch = true;
     let result = rig.set(1, value(1, 1)).await;
+    let status = rig.get().await;
+    assert_eq!(
+        status["status"]["writesBlocked"],
+        result["result"]["status"] != 1
+    );
     assert_eq!(result["result"]["status"], 2);
     assert_eq!(
         rig.files.document("manual-overrides.json")["overrides"]["fanControl"],
@@ -595,4 +644,93 @@ async fn installed_private_projection_is_bound_to_sid_for_get_observe_and_subscr
         }
     }
     rig.stop().await;
+}
+
+#[tokio::test]
+async fn installed_later_submission_readback_and_custody_failures_never_publish_applied_or_replay()
+{
+    // Every cut uses actual dispatcher -> Runtime -> Store adapter -> Reader/worker.
+    // The only substitutions are explicit in-memory authority/files/native I/O.
+    for (cut, progress, writes) in [(0, 3, 2), (1, 4, 2), (2, 4, 2), (3, 2, 1), (4, 5, 2)] {
+        let rig = Rig::new(MemoryFiles::default());
+        {
+            let mut port = rig.port.state.lock().unwrap();
+            match cut {
+                0 => port.fail_write = Some(2),
+                1 => port.final_read_timeout = true,
+                2 => port.final_read_malformed = true,
+                3 => {
+                    let custody = Arc::downgrade(&rig.custody);
+                    port.on_power = Some(Arc::new(move |number| {
+                        if number == 3 {
+                            custody
+                                .upgrade()
+                                .unwrap()
+                                .live
+                                .store(false, Ordering::Release);
+                        }
+                    }));
+                }
+                4 => {
+                    let custody = Arc::downgrade(&rig.custody);
+                    port.on_mutation_retired = Some(Arc::new(move || {
+                        custody
+                            .upgrade()
+                            .unwrap()
+                            .live
+                            .store(false, Ordering::Release);
+                    }));
+                }
+                _ => unreachable!(),
+            }
+        }
+        let result = rig.set(1, value(1, 1)).await;
+        assert_eq!(result["result"]["status"], 2, "cut {cut}");
+        assert!(result["status"].is_null());
+        let status = rig.get().await;
+        assert_eq!(
+            status["status"]["writesBlocked"],
+            result["result"]["status"] != 1
+        );
+        assert_eq!(status["status"]["writesBlocked"], true);
+        let journal = rig.files.read("thermal-mutation.journal").unwrap().unwrap();
+        let entries: Vec<Value> = journal
+            .split(|b| *b == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice(line).unwrap())
+            .collect();
+        assert_eq!(entries.len(), progress + 1);
+        let restarted = Storage::open(Box::new(rig.files.clone()), SID).unwrap();
+        assert_eq!(restarted.progress(), Some(progress as u8));
+        assert_eq!(restarted.pending(), progress < 5);
+        for (index, entry) in entries.iter().enumerate() {
+            assert_eq!(entry["progress"], index);
+            assert_eq!(entry["request"], "aaaaaaaa-bbbb-cccc-dddd-000000000001");
+            assert_eq!(entry["user_sid"], SID);
+            assert_eq!(entry["requested"]["value"], 1);
+        }
+        if cut < 3 {
+            assert_eq!(rig.set(2, value(2, 1)).await["result"]["status"], 2);
+            assert_eq!(
+                rig.files.read("thermal-mutation.journal").unwrap().unwrap(),
+                journal
+            );
+        } else {
+            // Authority loss cannot publish even the independently confirmed
+            // late result as current private state. Reading does not replay it.
+            assert!(status["status"]["performanceOverride"].is_null());
+            assert_eq!(rig.get().await["status"]["writesBlocked"], true);
+        }
+        let port = rig.port.state.lock().unwrap();
+        assert_eq!(port.writes, writes);
+        assert_eq!(
+            port.opened, port.retired,
+            "actual native callback retirement"
+        );
+        drop(port);
+        assert!(!rig.custody.retired.load(Ordering::Acquire));
+        rig.stop().await;
+        assert!(rig.custody.retired.load(Ordering::Acquire));
+        assert_eq!(rig.port.state.lock().unwrap().writes, writes);
+    }
 }

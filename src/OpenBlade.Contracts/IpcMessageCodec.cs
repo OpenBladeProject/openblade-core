@@ -649,7 +649,7 @@ public static class IpcMessageCodec
         }
 
         if (status.ConfirmedState is { } confirmed
-            && !ValidPerformanceState(
+            && !ValidConfirmedPerformanceState(
                 confirmed.Performance,
                 confirmed.CustomPerformance))
         {
@@ -838,6 +838,15 @@ public static class IpcMessageCodec
 
     private static InvalidDataException InvalidStatus(string reason) =>
         new($"IPC server status is invalid: {reason}.");
+
+    // Firmware can report the Custom selector without exposing complete levels.
+    // Missing observed settings are unknown, while any present settings remain
+    // validated. Desired state and mutation requests still require full intent.
+    private static bool ValidConfirmedPerformanceState(
+        PerformancePreset? performance,
+        CustomPerformanceSettings? customPerformance) =>
+        performance == PerformancePreset.Custom && customPerformance is null
+        || ValidPerformanceState(performance, customPerformance);
 
     private static bool ValidPerformanceState(
         PerformancePreset? performance,

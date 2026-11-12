@@ -33,7 +33,7 @@ impl PrivateRoot {
         assert!(base.is_absolute());
         assert!(matches!(
             leaf,
-            "protected-storage" | "owner-history" | "owner-journal"
+            "protected-storage" | "owner-history" | "owner-journal" | "owner-journal-foreign"
         ));
         let sid = std::env::var("OPENBLADE_THERMAL_FIXTURE_SID").expect("prelisted own-user SID");
         assert!(sid.starts_with("S-1-5-21-"));
@@ -131,7 +131,7 @@ fn reservation(epoch: char) -> Record {
         epoch: epoch.to_string().repeat(32),
         artifact: format!("{}-service", "3".repeat(64)),
         process: "17:1".into(),
-        nonce: "4".repeat(64),
+        nonce: epoch.to_string().repeat(64),
     }
 }
 #[test]
@@ -173,9 +173,9 @@ fn private_protected_override_and_submission_journal_survive_restart_and_share_c
         .replace("manual-overrides.json", None, &bytes)
         .unwrap();
     let machine = PrivateRoot::open("owner-journal");
-    let custody = Arc::new(JournalCustody(std::sync::Mutex::new(
-        machine.owner().unwrap(),
-    )));
+    let mut first_owner = machine.owner().unwrap();
+    first_owner.activate_injected(reservation('7')).unwrap();
+    let custody = Arc::new(JournalCustody(std::sync::Mutex::new(first_owner)));
     let storage = Storage::open(
         Box::new(CustodialFiles {
             user: files,
@@ -196,30 +196,59 @@ fn private_protected_override_and_submission_journal_survive_restart_and_share_c
         Sha256::digest(serde_json::to_vec(&requested).unwrap())
     );
     let request = "aaaaaaaa-bbbb-cccc-dddd-000000000001";
-    storage
-        .record(
-            request,
-            &"7".repeat(64),
-            Preset::Balanced,
-            &intent,
-            &requested,
-            42,
-            7,
-            Progress::Prepared,
-        )
-        .unwrap();
-    storage
-        .record(
-            request,
-            &"7".repeat(64),
-            Preset::Balanced,
-            &intent,
-            &requested,
-            42,
-            7,
-            Progress::FirstIntent,
-        )
-        .unwrap();
+    for progress in [
+        Progress::Prepared,
+        Progress::FirstIntent,
+        Progress::FirstAcknowledged,
+        Progress::SecondIntent,
+        Progress::SecondAcknowledged,
+        Progress::Confirmed,
+    ] {
+        storage
+            .record(
+                request,
+                &"7".repeat(64),
+                Preset::Balanced,
+                &intent,
+                &requested,
+                42,
+                7,
+                progress,
+            )
+            .unwrap();
+    }
+    drop(storage);
+    custody.0.lock().unwrap().retire_active().unwrap();
+    drop(custody);
+    let mut next_owner = machine.owner().unwrap();
+    next_owner.activate_injected(reservation('8')).unwrap();
+    let custody = Arc::new(JournalCustody(std::sync::Mutex::new(next_owner)));
+    let storage = Storage::open(
+        Box::new(CustodialFiles {
+            user: fixture.files().unwrap(),
+            custody: custody.clone(),
+        }),
+        &fixture.sid,
+    )
+    .unwrap();
+    assert!(
+        !storage.pending(),
+        "confirmed prior authenticated owner remains valid after new activation"
+    );
+    for progress in [Progress::Prepared, Progress::FirstIntent] {
+        storage
+            .record(
+                "aaaaaaaa-bbbb-cccc-dddd-000000000002",
+                &"8".repeat(64),
+                Preset::Balanced,
+                &intent,
+                &requested,
+                42,
+                7,
+                progress,
+            )
+            .unwrap();
+    }
     drop(storage);
     drop(custody);
     let custody = Arc::new(JournalCustody(std::sync::Mutex::new(
@@ -263,5 +292,55 @@ fn private_protected_override_and_submission_journal_survive_restart_and_share_c
     assert_eq!(
         std::fs::read(machine.path.join("thermal-mutation.journal.pending")).unwrap(),
         b"interrupted"
+    );
+}
+
+#[test]
+fn private_foreign_confirmed_journal_owner_is_refused_without_rewriting_history() {
+    use sha2::{Digest, Sha256};
+    let fixture = PrivateRoot::open("owner-journal-foreign");
+    let mut owner = fixture.owner().unwrap();
+    owner.activate_injected(reservation('7')).unwrap();
+    let requested = Some(Override {
+        value: 1,
+        lifetime: 1,
+        custom_performance: None,
+        gpu_clock_tuning: None,
+    });
+    let intent = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&requested).unwrap())
+    );
+    let mut bytes = vec![];
+    for progress in 0..=5 {
+        let entry = json!({"request":"aaaaaaaa-bbbb-cccc-dddd-000000000001","owner":"f".repeat(64),"user_sid":fixture.sid,"caller_pid":42,"session":7,"requested":requested,"destination":1,"intent":intent,"progress":progress});
+        bytes.extend(serde_json::to_vec(&entry).unwrap());
+        bytes.push(b'\n');
+    }
+    assert!(owner.journal_replace(None, &bytes).is_err());
+    assert!(!fixture.path.join("thermal-mutation.journal").exists());
+    owner.retire_active().unwrap();
+    drop(owner);
+    // Explicit private fixture input models an accidentally substituted,
+    // otherwise complete journal. Never product discovery or owner repair.
+    let path = fixture.path.join("thermal-mutation.journal");
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .unwrap();
+    file.write_all(&bytes).unwrap();
+    file.sync_all().unwrap();
+    drop(file);
+    let owner = fixture.owner().unwrap();
+    assert!(owner.journal_read(false).is_err());
+    assert!(owner.journal_replace(Some(&bytes), &bytes).is_err());
+    drop(owner);
+    assert_eq!(std::fs::read(path).unwrap(), bytes);
+    assert_eq!(
+        Record::parse(&std::fs::read(fixture.path.join("owner-00000000000000000004.bin")).unwrap())
+            .unwrap()
+            .phase,
+        Phase::Retired
     );
 }

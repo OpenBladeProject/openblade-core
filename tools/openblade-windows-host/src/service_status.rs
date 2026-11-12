@@ -257,18 +257,16 @@ pub(crate) struct StatusResponse {
 
 impl StatusResponse {
     #[cfg(feature = "service-thermal-mutation-v1")]
-    pub(crate) fn mutation(
-        request: &StatusRequest,
-        outcome: Value,
-        status: Option<Snapshot>,
-    ) -> Self {
+    pub(crate) fn mutation(request: &StatusRequest, outcome: Value) -> Self {
         Self {
             frame: Frame::Response,
             version: PROTOCOL_VERSION,
             request_id: request.header().1.to_ascii_lowercase(),
             success: true,
             error: None,
-            status,
+            // v79 success frames carry exactly one body. Status is published
+            // separately through GetStatus, ObserveState and subscriptions.
+            status: None,
             result: Some(outcome),
             archive: None,
             error_code: None,

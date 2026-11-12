@@ -81,7 +81,10 @@ The broad capabilities snapshot remains null. Applied means this bounded thermal
 preset was independently confirmed, with GPU/broad capability incompleteness
 stated in the result. An ineligible saved request is Stored even if a different
 eligible profile's thermal preset was confirmed. Requested override, effective
-selected value/provenance, and observed state remain distinct.
+selected value/provenance, and observed state remain distinct. Mutation success
+frames contain only the operation result, as required by the unchanged v79
+single-body response contract. Status travels separately through GetStatus,
+ObserveState and subscriptions.
 
 ## Submission, ambiguity and finite transport lifetime
 
@@ -93,8 +96,11 @@ all write, per-command power and final readback identifiers are reserved before
 submission. Reopening a handle or replacing a worker does not reset that budget.
 An unexpected Custom final selector rejects confirmation without allocating
 unreserved Custom component queries. Ordinary full observation still reads both
-Custom components, and CustomManual High/High does not become known levels or a
-CustomMaximum confirmation.
+Custom components. CustomManual High/High confirms the Custom performance and
+Maximum fan selectors while CPU/GPU levels and the full
+CustomPerformanceSettings remain unknown. The shared managed codec admits absent
+settings only for confirmed Custom observation; desired and requested Custom
+intent remains strict, and malformed present settings are rejected.
 
 A machine-global thermal-mutation.journal lives under the SAME owner Store.
 Per-user configuration adapters route its I/O through retained ReadCustody, so a
@@ -102,7 +108,10 @@ SID switch cannot bypass an earlier user's ambiguity. Each durable stage include
 original request ID, SID, peer PID/session, owner-generation digest, full typed
 requested intent, intent hash, resolved destination, and ordered progress:
 Prepared, FirstIntent, FirstAcknowledged, SecondIntent, SecondAcknowledged,
-Confirmed. Intent is flushed and read back before each possible submission.
+Confirmed. Every journal owner nonce is checked against the complete validated
+Active owner history retained by the same Store, including legitimate historical
+owners. Unknown owner references are refused on read and before replacement.
+Intent is flushed and read back before each possible submission.
 Prepared proves no mutation intent was reached. This bounded stage conservatively
 fences Prepared too; it does not implement a no-submission settlement path.
 Later incomplete stages preserve
@@ -117,6 +126,12 @@ Managed native-to-managed recovery/cleanup explicitly refuses thermal journal
 history, including confirmed history, until a complete shared journal-history
 consumer is implemented. Transport retirement alone is not firmware reconciliation.
 This is a material packaging/recovery limitation, not full backend readiness.
+
+A separate read-parity gap remains: native observed HyperBoost combined with a
+null broad capability snapshot does not satisfy the managed decoder's capability
+requirements. This stage does not widen that validator or infer capabilities.
+Full native-read/managed-codec parity, including that combination, remains future
+work; the confirmed-only Custom correction grants no new write authority.
 
 ## Offline evidence boundaries
 

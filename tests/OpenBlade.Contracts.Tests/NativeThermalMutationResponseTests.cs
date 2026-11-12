@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace OpenBlade.Contracts.Tests;
 
@@ -16,6 +17,8 @@ public sealed class NativeThermalMutationResponseTests
         Assert.True(Path.IsPathFullyQualified(path));
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllBytesAsync(path));
         var seen = new HashSet<ControlOperationStatus>();
+        bool sawAppliedStatus = false;
+        bool sawPartialCustom = false;
         foreach (JsonElement element in document.RootElement.EnumerateArray())
         {
             byte[] bytes = Encoding.UTF8.GetBytes(element.GetRawText());
@@ -26,21 +29,68 @@ public sealed class NativeThermalMutationResponseTests
             var response = Assert.IsType<ServiceResponse>(await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
             Assert.Equal(OpenBladeIpc.ProtocolVersion, response.Version);
             Assert.NotEqual(Guid.Empty, response.RequestId);
-            Assert.True(response.Success);
+            if (!response.Success)
+            {
+                Assert.False(string.IsNullOrWhiteSpace(response.Error));
+                Assert.Null(response.Status);
+                Assert.Null(response.Result);
+                Assert.Null(response.Archive);
+                continue;
+            }
             Assert.Null(response.Error);
-            if (response.Result is not { } result) { continue; }
+            if (response.Status is { } status)
+            {
+                Assert.Null(response.Result);
+                Assert.Null(response.Archive);
+                if (status.ConfirmedState is { Performance: PerformancePreset.Custom, CustomPerformance: null } partial)
+                {
+                    Assert.Equal(FanMode.Maximum, partial.Fans);
+                    sawPartialCustom = true;
+                    // Derive both negative inputs from the actual native frame.
+                    // No inferred CPU/GPU settings are added to its positive case.
+                    JsonNode desired = JsonNode.Parse(element.GetRawText())!;
+                    desired["status"]!["desiredState"]!["performance"]!["value"] = (int)PerformancePreset.Custom;
+                    desired["status"]!["desiredState"]!["customPerformance"] = null;
+                    using var desiredFrame = FrameJson(desired.ToJsonString());
+                    await Assert.ThrowsAsync<InvalidDataException>(() => IpcMessageCodec.ReadServerFrameAsync(desiredFrame, CancellationToken.None));
+                    JsonNode malformed = JsonNode.Parse(element.GetRawText())!;
+                    malformed["status"]!["confirmedState"]!["customPerformance"] = new JsonObject { ["cpu"] = 99, ["gpu"] = 2 };
+                    using var malformedFrame = FrameJson(malformed.ToJsonString());
+                    await Assert.ThrowsAsync<InvalidDataException>(() => IpcMessageCodec.ReadServerFrameAsync(malformedFrame, CancellationToken.None));
+                }
+                if (!status.WritesBlocked)
+                {
+                    Assert.NotNull(status.ConfirmedState);
+                    Assert.Null(status.Capabilities);
+                    Assert.Contains("GPU", status.Message, StringComparison.Ordinal);
+                    sawAppliedStatus = true;
+                }
+                continue;
+            }
+            var result = Assert.IsType<ControlOperationResult>(response.Result);
+            Assert.Null(response.Status);
+            Assert.Null(response.Archive);
             seen.Add(result.Status);
             Assert.False(string.IsNullOrWhiteSpace(result.Message));
             if (result.Status == ControlOperationStatus.Applied)
             {
-                Assert.NotNull(response.Status);
-                Assert.False(response.Status.WritesBlocked);
-                Assert.Null(response.Status.Capabilities);
                 Assert.Contains("GPU", result.Message, StringComparison.Ordinal);
             }
         }
+        Assert.True(sawPartialCustom, "Actual CustomManual observation must retain known selectors and unknown settings.");
+        using var requestedFrame = FrameJson("""{"operation":"setPerformanceOverride","version":79,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":5,"lifetime":1,"customPerformance":null,"gpuClockTuning":null}}""");
+        await Assert.ThrowsAsync<InvalidDataException>(() => IpcMessageCodec.ReadRequestAsync(requestedFrame, CancellationToken.None));
+        Assert.True(sawAppliedStatus, "Actual GetStatus must publish independently confirmed application separately from the result-only reply.");
         Assert.Contains(ControlOperationStatus.Stored, seen);
         Assert.Contains(ControlOperationStatus.Applied, seen);
         Assert.Contains(ControlOperationStatus.Blocked, seen);
+    }
+    private static MemoryStream FrameJson(string json)
+    {
+        byte[] bytes = Encoding.UTF8.GetBytes(json);
+        byte[] framed = new byte[bytes.Length + 4];
+        BinaryPrimitives.WriteInt32LittleEndian(framed, bytes.Length);
+        bytes.CopyTo(framed, 4);
+        return new MemoryStream(framed, writable: false);
     }
 }

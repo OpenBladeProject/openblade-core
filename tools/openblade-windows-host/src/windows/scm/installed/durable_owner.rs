@@ -32,6 +32,8 @@ pub(in crate::installed) struct Store {
     path: PathBuf,
     last: Option<Record>,
     activated_here: bool,
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    active_nonces: std::collections::BTreeSet<String>,
     #[cfg(test)]
     verifier: Option<Arc<dyn Fn(&File) -> io::Result<()> + Send + Sync>>,
 }
@@ -67,6 +69,8 @@ impl Store {
             path,
             last: None,
             activated_here: false,
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            active_nonces: Default::default(),
             #[cfg(test)]
             verifier: None,
         };
@@ -115,6 +119,10 @@ impl Store {
             {
                 return Err(deny());
             }
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            if record.phase == Phase::Active && !self.active_nonces.insert(record.nonce.clone()) {
+                return Err(deny()); // A nonce identifies exactly one authenticated Active owner.
+            }
             previous = Some(record);
         }
         self.last = previous;
@@ -144,6 +152,8 @@ impl Store {
             path,
             last: None,
             activated_here: false,
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            active_nonces: Default::default(),
             verifier: Some(verify),
         };
         store.load_history()?;
@@ -255,6 +265,9 @@ impl Store {
         }
         let mut bytes = vec![];
         file.read_to_end(&mut bytes)?;
+        if !pending {
+            self.validate_journal_owners(&bytes)?;
+        }
         Ok(Some(bytes))
     }
     #[cfg(feature = "service-thermal-mutation-v1")]
@@ -264,6 +277,7 @@ impl Store {
         bytes: &[u8],
     ) -> io::Result<()> {
         self.check(&self.root, Policy::ROOT)?;
+        self.validate_journal_owners(bytes)?;
         if bytes.len() > 1024 * 1024 || self.journal_read(false)?.as_deref() != expected {
             return Err(deny());
         }
@@ -295,6 +309,23 @@ impl Store {
         }
         Ok(())
     }
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn validate_journal_owners(&self, bytes: &[u8]) -> io::Result<()> {
+        if bytes.is_empty() || !bytes.ends_with(b"\n") {
+            return Err(deny());
+        }
+        #[derive(serde::Deserialize)]
+        struct OwnerBinding {
+            owner: String,
+        }
+        for line in bytes[..bytes.len() - 1].split(|b| *b == b'\n') {
+            let entry: OwnerBinding = serde_json::from_slice(line).map_err(|_| deny())?;
+            if !self.active_nonces.contains(&entry.owner) {
+                return Err(deny());
+            }
+        }
+        Ok(())
+    }
     fn check(&self, file: &File, policy: Policy) -> io::Result<()> {
         #[cfg(test)]
         if let Some(verify) = &self.verifier {
@@ -316,6 +347,10 @@ impl Store {
         Ok(file)
     }
     fn publish(&mut self, next: Record) -> io::Result<()> {
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        if next.phase == Phase::Active && self.active_nonces.contains(&next.nonce) {
+            return Err(deny());
+        }
         self.check(&self.root, Policy::ROOT)?;
         if let Some(prior) = &self.last {
             require_transition(prior, &next)?;
@@ -328,6 +363,10 @@ impl Store {
         file.sync_all()?;
         file.rewind()?;
         if bounded(&mut file)? != bytes {
+            return Err(deny());
+        }
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        if next.phase == Phase::Active && !self.active_nonces.insert(next.nonce.clone()) {
             return Err(deny());
         }
         self.last = Some(next);
