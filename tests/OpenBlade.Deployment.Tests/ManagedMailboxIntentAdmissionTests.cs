@@ -44,8 +44,11 @@ public sealed partial class ManagedMailboxCorrectionTests
             byte[] changed = File.ReadAllBytes(mapping); changed[^2] = changed[^2] == (byte)'a' ? (byte)'b' : (byte)'a';
             File.WriteAllBytes(mapping, changed);
         }
-        else { File.Delete(ManagedMailboxRecovery.PathFor(files, selected,
-            fault == "missing-native-proof" ? "native-proof" : "original-exit")); }
+        else
+        {
+            File.Delete(ManagedMailboxRecovery.PathFor(files, selected,
+                fault == "missing-native-proof" ? "native-proof" : "original-exit"));
+        }
         RemoveTerminalRepairProjections(files, selected);
         var before = Snapshot(files.Root); var nativeBefore = Snapshot(epochs.Root);
         void AssertIntentRefusal(Action action)
