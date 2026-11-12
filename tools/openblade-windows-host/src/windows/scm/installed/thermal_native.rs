@@ -50,15 +50,31 @@ impl WindowsGuard {
         sid: String,
         session: u32,
     ) -> io::Result<Arc<Self>> {
+        origin.lifecycle.verify_health().map_err(|_| {
+            super::thermal_mutation::fatal_admission("lifecycle state lock poisoned")
+        })?;
         origin.mutation_artifact()?;
         let identity = session_identity(session)?;
         if identity.sid != sid || identity.session != session || !identity.primary {
             return Err(deny());
         }
+        origin.lifecycle.verify_health().map_err(|_| {
+            super::thermal_mutation::fatal_admission("lifecycle state lock poisoned")
+        })?;
         let lifecycle = origin.lifecycle.active().ok_or_else(deny)?;
         let guard=Arc::new(Self{lifecycle,origin,custody,sid,session,authentication:(identity.authentication.LowPart,identity.authentication.HighPart),controllers:Mutex::new(openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission::native())});
-        guard.authorize().ok_or_else(deny)?;
+        let proof = guard.authorize();
+        guard.verify_health()?;
+        proof.ok_or_else(deny)?;
         Ok(guard)
+    }
+    pub(super) fn verify_health(&self) -> io::Result<()> {
+        self.origin.lifecycle.verify_health().map_err(|_| {
+            super::thermal_mutation::fatal_admission("lifecycle state lock poisoned")
+        })?;
+        self.controllers.lock().map(|_| ()).map_err(|_| {
+            super::thermal_mutation::fatal_admission("controller admission lock poisoned")
+        })
     }
     pub(super) fn authorize(&self) -> Option<ReadAdmission> {
         self.origin.verify().ok()?;

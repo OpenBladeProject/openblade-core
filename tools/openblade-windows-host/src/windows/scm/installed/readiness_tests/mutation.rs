@@ -81,6 +81,7 @@ impl Files for MemoryFiles {
 struct Custody {
     live: AtomicBool,
     fresh_refuse: AtomicBool,
+    fatal_health: AtomicBool,
     activation_refusal: AtomicU8,
     lifecycle: crate::scm_host::Lifecycle,
     activations: AtomicUsize,
@@ -93,6 +94,7 @@ impl Custody {
             port: port.state.clone(),
             live: AtomicBool::new(true),
             fresh_refuse: AtomicBool::new(false),
+            fatal_health: AtomicBool::new(false),
             activation_refusal: AtomicU8::new(0),
             lifecycle: Default::default(),
             activations: AtomicUsize::new(0),
@@ -157,8 +159,18 @@ impl ReadCustody for Custody {
     }
 }
 impl Fresh for Custody {
+    fn verify_health(&self) -> io::Result<()> {
+        if self.fatal_health.load(Ordering::Acquire) {
+            return Err(
+                crate::installed::readiness::thermal_mutation::fatal_admission(
+                    "injected controller admission lock poisoned",
+                ),
+            );
+        }
+        self.lifecycle.verify_health()
+    }
     fn authorize(&self) -> Option<ReadAdmission> {
-        if self.fresh_refuse.load(Ordering::Acquire) {
+        if self.fresh_refuse.load(Ordering::Acquire) || self.fatal_health.load(Ordering::Acquire) {
             return None;
         }
         ReadCustody::authorize(self)
@@ -188,6 +200,7 @@ struct Rig {
     entered: Rc<std::cell::Cell<u64>>,
     reader: ReadSource,
     origin: Arc<crate::loaded_origin::lifetime::Lifetime>,
+    fatal_capture: Arc<AtomicBool>,
 }
 impl Rig {
     fn new(files: MemoryFiles) -> Self {
@@ -217,7 +230,16 @@ impl Rig {
         );
         let storage = Storage::open(Box::new(files.clone()), SID).unwrap();
         let fresh = custody.clone();
+        let fatal_capture = Arc::new(AtomicBool::new(false));
+        let capture = fatal_capture.clone();
         let runtime = Runtime::injected(move |sid, session, _| {
+            if capture.load(Ordering::Acquire) {
+                return Err(
+                    crate::installed::readiness::thermal_mutation::fatal_admission(
+                        "injected lifecycle capture lock poisoned",
+                    ),
+                );
+            }
             assert_eq!(sid, SID);
             assert_eq!(session, 7);
             Ok((storage.clone(), fresh.clone()))
@@ -240,6 +262,7 @@ impl Rig {
             entered,
             reader,
             origin,
+            fatal_capture,
         }
     }
     async fn request(&self, request: Value) -> Value {
@@ -386,7 +409,10 @@ async fn installed_temporary_clear_and_application_precedence_use_saved_canonica
     assert_eq!(status["status"]["writesBlocked"], true);
     assert_eq!(result["result"]["status"], 1);
     assert_eq!(status["status"]["confirmedState"]["performance"], 2);
-    assert_eq!(status["status"]["desiredState"]["performance"]["source"], 2);
+    assert_eq!(status["status"]["activePowerSource"], 3);
+    // Typed mutation selected the application (confirmed 2 above), but later
+    // coarse external metadata cannot claim a resolved application power policy.
+    assert_eq!(status["status"]["desiredState"]["performance"]["source"], 1);
     assert!(status["status"]["performanceOverride"].is_null());
     rig.stop().await;
 }
@@ -797,6 +823,7 @@ fn manual_files() -> MemoryFiles {
     files
 }
 async fn fresh_observe(rig: &Rig) -> Value {
+    assert_eq!(rig.get().await["success"], true); // Same metadata readiness probe as installed prepare.
     rig.request(json!({"operation":"observeState","version":80,"requestId":"eeeeeeee-bbbb-cccc-dddd-000000000001","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})).await
 }
 #[tokio::test]
@@ -1352,4 +1379,73 @@ async fn correction_prepared_settlement_waits_for_actual_retirement_and_rejects_
         .insert("thermal-mutation.journal".into(), bytes);
     assert!(Storage::open(Box::new(files), SID).is_err());
     rig.stop().await;
+}
+
+#[tokio::test]
+async fn correction_outer_fatal_admission_terminates_and_preserves_possible_submission() {
+    for mode in [0, 1, 2] {
+        let after_submission = mode == 1;
+        let rig = Rig::new(MemoryFiles::default());
+        let events: Events = Rc::default();
+        let controls = Controls::new();
+        if after_submission {
+            let custody = rig.custody.clone();
+            let previous = rig.port.state.lock().unwrap().before_write.take().unwrap();
+            rig.port.state.lock().unwrap().before_write = Some(Arc::new(move |number| {
+                previous(number);
+                custody.fatal_health.store(true, Ordering::Release);
+            }));
+        } else {
+            if mode == 2 {
+                rig.fatal_capture.store(true, Ordering::Release);
+            } else {
+                rig.custody.fatal_health.store(true, Ordering::Release);
+            }
+        }
+        let (mut ports, tx) = ports(Fault::None, &events);
+        ports.source = rig.source.clone();
+        let (running, ready) = oneshot::channel();
+        let service = lifecycle(&controls, Ok(ports), &events, move || {
+            running.send(()).unwrap();
+        });
+        let exercise = async {
+            ready.await.unwrap();
+            let (mut client, server) = duplex(65536);
+            tx.send(Box::new(SidStream {
+                inner: test_stream(server, USER, Fault::None),
+                sid: SID.into(),
+            }))
+            .unwrap();
+            crate::service_frame::write_payload(&mut client,&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})).unwrap()).await.unwrap();
+            assert!(
+                crate::service_frame::read_payload(&mut client)
+                    .await
+                    .is_err()
+            );
+        };
+        let (result, ()) = tokio::join!(service, exercise);
+        assert!(result.is_err());
+        assert!(events.borrow().contains(&"failed"));
+        assert!(rig.custody.retired.load(Ordering::Acquire));
+        if after_submission {
+            assert_eq!(rig.port.state.lock().unwrap().writes, 1);
+            let bytes = rig.files.read("thermal-mutation.journal").unwrap().unwrap();
+            let storage = Storage::open(Box::new(rig.files.clone()), SID).unwrap();
+            assert!(storage.pending());
+            assert_eq!(storage.progress(), Some(1));
+            assert_eq!(
+                rig.files.read("thermal-mutation.journal").unwrap().unwrap(),
+                bytes
+            );
+        } else {
+            assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+            assert!(rig.files.read("manual-overrides.json").unwrap().is_none());
+            assert!(
+                rig.files
+                    .read("thermal-mutation.journal")
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
 }

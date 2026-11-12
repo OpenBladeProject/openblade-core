@@ -26,10 +26,28 @@ use std::{
 };
 use tokio::time::Instant;
 
+#[derive(Debug)]
+struct FatalAdmission(&'static str);
+impl std::fmt::Display for FatalAdmission {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+impl std::error::Error for FatalAdmission {}
+pub(super) fn fatal_admission(message: &'static str) -> io::Error {
+    io::Error::other(FatalAdmission(message))
+}
+
 pub(super) trait Fresh: Send + Sync {
+    fn verify_health(&self) -> io::Result<()> {
+        Ok(())
+    }
     fn authorize(&self) -> Option<ReadAdmission>;
 }
 impl Fresh for WindowsGuard {
+    fn verify_health(&self) -> io::Result<()> {
+        self.verify_health()
+    }
     fn authorize(&self) -> Option<ReadAdmission> {
         self.authorize()
     }
@@ -203,6 +221,12 @@ impl Runtime {
         };
         let (storage, fresh) = match (self.factory)(&sid, caller.session, reader.custody()) {
             Ok(v) => v,
+            Err(e)
+                if e.get_ref()
+                    .is_some_and(|cause| cause.is::<FatalAdmission>()) =>
+            {
+                return Err(e);
+            }
             Err(e) => {
                 return Ok((
                     Outcome::blocked(format!(
@@ -212,6 +236,7 @@ impl Runtime {
                 ));
             }
         };
+        fresh.verify_health()?;
         if storage.pending() {
             return Ok((
                 Outcome::blocked(if storage.configuration_failed() {
@@ -222,7 +247,9 @@ impl Runtime {
                 None,
             ));
         }
-        let Some(proof) = fresh.authorize() else {
+        let proof = fresh.authorize();
+        fresh.verify_health()?;
+        let Some(proof) = proof else {
             return Ok((
                 Outcome::blocked(
                     "Current thermal admission is unavailable; no intent or command was submitted.",
@@ -289,7 +316,14 @@ impl Runtime {
             cause: Mutex::new(Cause::CurrentAdmission),
         });
         let result = reader.mutate(permit.clone(), deadline).await;
-        if Instant::now() >= deadline || permit.fresh.authorize() != Some(proof) {
+        permit.fresh.verify_health()?;
+        let final_proof = if Instant::now() < deadline {
+            permit.fresh.authorize()
+        } else {
+            None
+        };
+        permit.fresh.verify_health()?;
+        if final_proof != Some(proof) {
             return Ok((
                 Outcome::blocked(
                     "Thermal result lost caller or owner admission; submission evidence is retained.",

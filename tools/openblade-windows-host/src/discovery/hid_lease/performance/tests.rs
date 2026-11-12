@@ -767,7 +767,7 @@ async fn correction_refused_initial_checkpoint_consumes_no_pair_but_reserved_ref
             .observe(
                 &mut || {
                     calls += 1;
-                    if calls == 1 { Some(proof) } else { None }
+                    if calls <= 2 { Some(proof) } else { None }
                 },
                 limit(&cancelled)
             )

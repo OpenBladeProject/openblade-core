@@ -293,6 +293,12 @@ impl Default for LifecycleState {
     }
 }
 impl Lifecycle {
+    pub(crate) fn verify_health(&self) -> io::Result<()> {
+        self.0
+            .lock()
+            .map(|_| ())
+            .map_err(|_| io::Error::other("lifecycle state lock poisoned"))
+    }
     pub(crate) fn ingress(&self, code: u32, event: u32) {
         use windows_sys::Win32::System::Services::{
             SERVICE_CONTROL_POWEREVENT, SERVICE_CONTROL_SESSIONCHANGE,
