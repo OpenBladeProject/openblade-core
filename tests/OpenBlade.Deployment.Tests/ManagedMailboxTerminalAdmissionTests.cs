@@ -53,9 +53,14 @@ public sealed partial class ManagedMailboxCorrectionTests
         }
         RemoveTerminalRepairProjections(files, selected);
         var before = Snapshot(files.Root); var nativeBefore = Snapshot(epochs.Root);
-        Assert.Throws<IOException>(() => ManagedMailboxRecovery.Selected(files));
+        void AssertTerminalRefusal(Action action)
+        {
+            if (fault == "malformed-terminal") { Assert.Throws<InvalidDataException>(action); }
+            else { Assert.Throws<IOException>(action); }
+        }
+        AssertTerminalRefusal(() => ManagedMailboxRecovery.Selected(files));
         Assert.Equal(before.Keys.Order(), Snapshot(files.Root).Keys.Order()); Preserved(files.Root, before);
-        Assert.Throws<IOException>(() => ResolvePrivateHistory(files, epochs));
+        AssertTerminalRefusal(() => ResolvePrivateHistory(files, epochs));
         Assert.Equal(before.Keys.Order(), Snapshot(files.Root).Keys.Order()); Preserved(files.Root, before);
         Assert.Equal(nativeBefore.Keys.Order(), Snapshot(epochs.Root).Keys.Order()); Preserved(epochs.Root, nativeBefore);
     }
