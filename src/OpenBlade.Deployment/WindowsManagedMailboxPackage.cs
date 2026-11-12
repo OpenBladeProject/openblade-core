@@ -172,16 +172,13 @@ internal sealed class WindowsManagedMailboxPackage : IDisposable
     private byte[] CacheBinding() => NativeCanonical.Lines("OpenBlade.ManagedMailboxPackage.v1", Installation, PackageDigest,
         NativeCanonical.Digest(manifest), NativeCanonical.Digest(signature), EnrollmentDigest);
 
-    internal static WindowsManagedMailboxPackage OpenCached(WindowsNativeEpochFiles files, string digest) =>
-        OpenCached(files, digest, NativeLocalDevEnrollment.Acquire);
-
     internal static WindowsManagedMailboxPackage OpenCachedHistorical(WindowsNativeEpochFiles files, string digest, byte[] projection) =>
         OpenCached(files, digest, () => NativeLocalDevEnrollment.FromProtectedProjection(projection));
 
-    internal static WindowsManagedMailboxPackage OpenCached(WindowsNativeEpochFiles files, string digest, Func<NativeLocalDevEnrollment> acquire)
+    internal static WindowsManagedMailboxPackage OpenCached(WindowsNativeEpochFiles files, string digest, Func<NativeLocalDevEnrollment>? acquire = null)
     {
         if (!NativeCanonical.IsHex(digest, 64)) { throw new InvalidDataException("Managed cached package identity differs."); }
-        var enrollment = acquire();
+        var enrollment = acquire is null ? AcquireDefaultEnrollment(files) : acquire();
         var leases = new HeldFiles();
         FileStream? package = null;
         try
@@ -200,6 +197,15 @@ internal sealed class WindowsManagedMailboxPackage : IDisposable
         }
         catch { package?.Dispose(); leases.Dispose(); enrollment.Dispose(); throw; }
     }
+    // A retained private owner positively identifies fixtures. Check it before
+    // selecting the product resolver; explicit private and historical readers remain valid.
+    internal static NativeLocalDevEnrollment AcquireDefaultEnrollment(WindowsNativeEpochFiles files,
+        Func<NativeLocalDevEnrollment>? productResolver = null)
+    {
+        if (files.IsPrivateFixture) { throw new InvalidOperationException("Private mailbox fixtures require explicit enrollment."); }
+        return (productResolver ?? NativeLocalDevEnrollment.Acquire)();
+    }
+
     private sealed class HeldFiles : IDisposable
     {
         private readonly List<IDisposable> held = [];

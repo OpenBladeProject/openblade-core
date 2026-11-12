@@ -28,7 +28,8 @@ internal sealed record ManagedMailboxSelection(long Ordinal, string PreviousTerm
 internal static class ManagedMailboxRecovery
 {
     internal static string PathFor(WindowsNativeEpochFiles files, ManagedMailboxSelection selected, string name) =>
-        Path.Combine(files.Root, "handoff-" + selected.Value.Request + "-" + name + ".bin");
+        name == "history" ? ManagedMailboxHistory.TransferPath(files, selected)
+            : Path.Combine(files.Root, "handoff-" + selected.Value.Request + "-" + name + ".bin");
     internal static byte[]? ReadOptional(WindowsNativeEpochFiles files, string path)
     {
         try { _ = File.GetAttributes(path); }
@@ -79,6 +80,7 @@ internal static class ManagedMailboxRecovery
             string suffix = string.Join("-", parts.Skip(2));
             if (parts.Length < 3 || !ids.Contains(parts[1]) || suffix is not ("selection.bin" or "request.bin" or "run.bin" or "receipt.bin" or "original-exit.bin" or "epoch-intent.bin" or "mapping.bin" or "native-proof.bin" or "terminal-intent.bin" or "terminal.bin" or "history.bin")) { throw new IOException("Unmatched transfer evidence was preserved."); }
         }
+        ManagedMailboxHistory.ValidateNamespace(files, names);
         byte[]? current = ReadOptional(files, Path.Combine(files.Root, "transfer-current.bin"));
         if (last is null)
         {
@@ -260,7 +262,7 @@ internal static class ManagedMailboxRecovery
         NativeCanonical.Lines("OpenBlade.ManagedMailboxRunHistory.v1", NativeCanonical.Digest(run),
             Convert.ToBase64String(binding), Convert.ToBase64String(projection));
     internal static void PreserveRunHistory(WindowsNativeEpochFiles files, byte[] run, byte[] binding, byte[] projection) =>
-        ExactOrPublish(files, Path.Combine(files.Root, "run-history-" + ManagedMailboxRun.Parse(run).Run + ".bin"), RunHistory(run, binding, projection));
+        ExactOrPublish(files, ManagedMailboxHistory.RunPath(files, ManagedMailboxRun.Parse(run).Run), RunHistory(run, binding, projection));
 
     private static Action Authenticate(WindowsNativeEpochFiles files, ManagedMailboxSelection selected, byte[]? projection, Func<NativeLocalDevEnrollment>? acquireEnrollment)
     {
@@ -271,9 +273,9 @@ internal static class ManagedMailboxRecovery
         { throw new IOException("Managed original signed binding differs."); }
         if (!Read(files, Path.Combine(files.Root, "run-" + run.Run + ".bin")).AsSpan().SequenceEqual(selected.Run))
         { throw new IOException("Managed original run differs from immutable history."); }
-        string runPath = Path.Combine(files.Root, "run-history-" + run.Run + ".bin");
-        byte[]? history = ReadOptional(files, runPath);
-        byte[]? transferHistory = ReadOptional(files, PathFor(files, selected, "history"));
+        string runPath = ManagedMailboxHistory.RunPath(files, run.Run);
+        byte[]? history = ManagedMailboxHistory.ReadRun(files, run.Run);
+        byte[]? transferHistory = ManagedMailboxHistory.ReadTransfer(files, selected);
         if (transferHistory is not null)
         {
             var f = NativeCanonical.ParseLines(transferHistory, "OpenBlade.ManagedMailboxTransferHistory.v1", 3);
@@ -285,14 +287,18 @@ internal static class ManagedMailboxRecovery
         if (history is not null)
         {
             var f = NativeCanonical.ParseLines(history, "OpenBlade.ManagedMailboxRunHistory.v1", 4);
-            projection = Convert.FromBase64String(f[2]);
+            byte[] historicalProjection = Convert.FromBase64String(f[2]);
+            // Native custody is an independent anchor, never replaced by managed history.
+            if (projection is not null && !projection.AsSpan().SequenceEqual(historicalProjection))
+            { throw new IOException("Historical managed projection differs from native original projection."); }
+            projection ??= historicalProjection;
             if (f[0] != binding.RunDigest || !Convert.FromBase64String(f[1]).AsSpan().SequenceEqual(bindingBytes)
                 || !history.AsSpan().SequenceEqual(RunHistory(selected.Run, bindingBytes, projection)))
             { throw new IOException("Original run/build history differs."); }
         }
         // Legacy data can upgrade only from positively recovered exact original
         // projection bytes, never from a merely compatible current enrollment.
-        using var package = projection is null ? WindowsManagedMailboxPackage.OpenCached(files, binding.Package, acquireEnrollment ?? NativeLocalDevEnrollment.Acquire)
+        using var package = projection is null ? WindowsManagedMailboxPackage.OpenCached(files, binding.Package, acquireEnrollment)
             : WindowsManagedMailboxPackage.OpenCachedHistorical(files, binding.Package, projection);
         if (package.Installation != binding.Installation || package.EnrollmentDigest != binding.Enrollment)
         { throw new IOException("Managed original enrolled package differs."); }

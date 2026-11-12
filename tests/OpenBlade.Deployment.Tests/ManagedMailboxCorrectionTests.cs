@@ -3,7 +3,7 @@ using OpenBlade.Deployment;
 namespace OpenBlade.Deployment.Tests;
 
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-public sealed class ManagedMailboxCorrectionTests
+public sealed partial class ManagedMailboxCorrectionTests
 {
     internal static WindowsNativeEpochFiles Bootstrap()
     {
@@ -623,7 +623,7 @@ public sealed class ManagedMailboxCorrectionTests
             case "binding": File.WriteAllBytes(Path.Combine(files.Root, "run-binding-" + run + ".bin"), "changed"u8.ToArray()); break;
             case "package": File.Delete(Path.Combine(cache, "package.exe")); break;
             case "signature": File.WriteAllBytes(Path.Combine(cache, "release.sig"), new byte[64]); break;
-            case "projection": File.WriteAllBytes(Path.Combine(files.Root, "run-history-" + run + ".bin"), "changed"u8.ToArray()); break;
+            case "projection": File.WriteAllBytes(ManagedMailboxHistory.RunPath(files, run), "changed"u8.ToArray()); break;
             case "transfer-history": File.WriteAllBytes(ManagedMailboxRecovery.PathFor(files, first, "history"), "changed"u8.ToArray()); break;
         }
         var before = Snapshot(epochs.Root); var history = Snapshot(files.Root);
@@ -654,10 +654,10 @@ public sealed class ManagedMailboxCorrectionTests
             epochs.PublishedForTests = path => { if (Path.GetFileName(path) == "preparation.bin") { throw new IOException("cut"); } };
             Assert.Throws<IOException>(() => WindowsNativeEpochTransaction.Begin(epochs, original.Native, Guid.ParseExact(first.Value.Request, "N"), managedTransfer: transfer, storage: Storage(files)));
             epochs.PublishedForTests = null;
-            File.Delete(Path.Combine(files.Root, "run-history-" + ManagedMailboxRun.Parse(first.Run).Run + ".bin"));
+            File.Delete(ManagedMailboxHistory.RunPath(files, ManagedMailboxRun.Parse(first.Run).Run));
         }
         string historyPath = cut == "history" ? ManagedMailboxRecovery.PathFor(files, first, "history")
-            : Path.Combine(files.Root, "run-history-" + ManagedMailboxRun.Parse(first.Run).Run + ".bin");
+            : ManagedMailboxHistory.RunPath(files, ManagedMailboxRun.Parse(first.Run).Run);
         files.PublishedForTests = path => { if (path == historyPath) { throw new IOException("new evidence renamed before failure"); } };
         using (var native = ManagedMailboxNativeCustody.AcquireForTests(epochs.RetainFixtureView()))
         using (var exclusion = files.AcquireServiceCustody(Path.Combine(files.Root, "exclusion.lock")))
@@ -834,7 +834,7 @@ public sealed class ManagedMailboxCorrectionTests
         { ManagedMailboxRecovery.Resolve(files, native); }
         // Private old-format fixture: parent terminal bytes carried no run or
         // transfer build projection. Keep those original terminal bytes exact.
-        File.Delete(Path.Combine(files.Root, "run-history-" + Run().Run + ".bin"));
+        File.Delete(ManagedMailboxHistory.RunPath(files, Run().Run));
         File.Delete(ManagedMailboxRecovery.PathFor(files, selected, "history"));
         var before = Snapshot(files.Root); int currentReads = 0;
         using var fresh = ManagedMailboxNativeCustody.AcquireForTests(epochs.RetainFixtureView());

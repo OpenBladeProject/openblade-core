@@ -206,11 +206,12 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
     private static WindowsManagedMailboxRun BeginRun(WindowsNativeEpochFiles files, FileStream exclusion,
         ManagedMailboxRun record, ManagedMailboxBuildBinding binding, IDisposable? authenticated, byte[]? projection = null)
     {
-        // Publish exact original trust bytes before the current-run projection.
-        if (projection is not null)
-        { ManagedMailboxRecovery.PreserveRunHistory(files, record.Encode(), binding.Encode(), projection); }
+        // Additive history requires its positive run/binding before publication,
+        // and remains durable before the current-run pointer can select this run.
         files.PublishCustody(Path.Combine(files.Root, "run-binding-" + record.Run + ".bin"), binding.Encode());
         files.PublishCustody(Path.Combine(files.Root, "run-" + record.Run + ".bin"), record.Encode());
+        if (projection is not null)
+        { ManagedMailboxRecovery.PreserveRunHistory(files, record.Encode(), binding.Encode(), projection); }
         files.PublishCurrent(record.Encode());
         return new(files, exclusion, record, authenticated) { installation = binding.Installation };
     }
