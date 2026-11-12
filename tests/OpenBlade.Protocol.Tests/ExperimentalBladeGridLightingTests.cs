@@ -111,11 +111,16 @@ public sealed partial class ExperimentalBladeLightingTests
     [InlineData(0x02C5)]
     [InlineData(0x029D)]
     [InlineData(0x029F)]
-    public async Task GridAnimation_UsesAcknowledgedRowsBeyondTransactionBudgetAndStopsOnReplacement(int productId)
+    public async Task GridAnimation_ProductionStream_UsesAcknowledgedRowsAndStopsOnReplacement(int productId)
     {
         ExperimentalBladeModel model = ModelFor((ushort)productId);
         var clock = new AnimationClock();
-        var session = new Session { Raw = 0, Effect = 0, ExpectedFrameTransactionId = 0xFF };
+        var session = new Session
+        {
+            Raw = 0,
+            Effect = 0,
+            ExpectedFrameTransactionId = productId == 0x029F ? null : (byte)0xFF,
+        };
         await using var port = new ExperimentalBladePort(session, new(), model, new(model),
             () => true, () => PowerSource.PluggedIn, lightingTimeProvider: clock);
         await port.SetLightingAsync(LightingSettingsFactory.Fire(50), CancellationToken.None);

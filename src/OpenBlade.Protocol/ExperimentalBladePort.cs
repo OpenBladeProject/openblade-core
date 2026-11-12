@@ -776,7 +776,9 @@ internal sealed partial class ExperimentalBladePort(
         try
         {
             result = await session.ExecuteAsync(command,
-                fixedTransactionId is { } fixedId
+                // Fixed vendor framing applies only to the continuous production
+                // session. Developer runs retain their finite, unique-ID allocator.
+                queryRecordingEnabled && fixedTransactionId is { } fixedId
                     ? () => TransactionIdAssignment.Valid(fixedId) : AllocateTransaction,
                 TimeSpan.FromSeconds(3), cancellationToken).ConfigureAwait(false);
         }

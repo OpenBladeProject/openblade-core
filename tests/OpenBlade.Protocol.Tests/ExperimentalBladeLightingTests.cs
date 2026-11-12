@@ -623,7 +623,9 @@ public sealed partial class ExperimentalBladeLightingTests
         ExperimentalBladeModel model = ModelFor(0x029F);
         var session = new Session();
         var policy = new ExperimentalFeaturesPolicy(model);
-        await using var port = Create(session, policy, model);
+        var clock = new AnimationClock();
+        await using var port = new ExperimentalBladePort(session, new(), model, policy,
+            () => true, () => PowerSource.PluggedIn, lightingTimeProvider: clock);
         policy.Record("BatteryProtection", "Readback", "Confirmed", confirmed: "80");
         policy.Record("Performance", "Readback", "Confirmed", confirmed: "Balanced");
         await port.SetLightingAsync(
@@ -632,6 +634,7 @@ public sealed partial class ExperimentalBladeLightingTests
 
         for (int frame = 0; frame < 100; frame++)
         {
+            clock.Advance(TimeSpan.FromMilliseconds(50));
             await port.PushUniformLightingFrameAsync(
                 new UniformLightingFrame(new RgbColor((byte)frame, 2, 3)),
                 CancellationToken.None);
@@ -651,6 +654,7 @@ public sealed partial class ExperimentalBladeLightingTests
             && item.Outcome == "Acknowledged");
 
         session.FailFrameRow = true;
+        clock.Advance(TimeSpan.FromMilliseconds(50));
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.PushUniformLightingFrameAsync(
                 new UniformLightingFrame(new RgbColor(1, 2, 3)),
@@ -675,6 +679,7 @@ public sealed partial class ExperimentalBladeLightingTests
             CancellationToken.None);
         for (int frame = 0; frame < 40; frame++)
         {
+            clock.Advance(TimeSpan.FromMilliseconds(50));
             await port.PushUniformLightingFrameAsync(
                 new UniformLightingFrame(new RgbColor((byte)frame, 4, 5)),
                 CancellationToken.None);
@@ -1140,8 +1145,14 @@ public sealed partial class ExperimentalBladeLightingTests
                 return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.IdentityBlocked)
                 { Diagnostic = new(HidSessionFailurePhase.Guard, HidSessionFailureKind.IdentityBlocked, null, null) });
             }
-            Commands.Add(command);
             TransactionIdAssignment assignment = assignTransactionId();
+            if (assignment.Failure is { } allocationFailure)
+            {
+                return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, allocationFailure)
+                { Diagnostic = new(HidSessionFailurePhase.Guard, allocationFailure, null, null) });
+            }
+            Commands.Add(command);
+            ExchangeTransactions.Add(assignment.TransactionId);
             if (ExpectedFrameTransactionId is { } expected && (IsFrameRow(command) || IsFrameActivation(command)))
             {
                 Assert.Equal(TransactionIdAssignment.Valid(expected), assignment);

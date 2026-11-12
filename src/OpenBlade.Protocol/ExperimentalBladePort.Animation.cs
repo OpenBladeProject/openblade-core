@@ -11,6 +11,9 @@ internal sealed partial class ExperimentalBladePort
     private Blade18SpatialLightingEffect? spatialAnimation;
     private ExperimentalGridLightingEffect? gridAnimation;
     private long animationStartedTimestamp;
+    // Refresh volatile custom rows while suppressing duplicate idle frames.
+    // This is a software policy, not another model's measured firmware timing.
+    private static readonly TimeSpan KeyTriggeredFrameKeepalive = TimeSpan.FromSeconds(5);
 
     private static bool SupportsBlade18Animation(ExperimentalBladeModel model) =>
         model.ProductId == 0x02A0;
@@ -117,6 +120,12 @@ internal sealed partial class ExperimentalBladePort
         ExperimentalGridLightingEffect? gridEffect = null)
     {
         CancellationToken token = owner.Token;
+        TimeSpan frameInterval = gridEffect is not null
+            ? ExperimentalGridLightingEffect.FrameInterval : Blade18LightingAnimation.FrameInterval;
+        bool keyTriggered = gridEffect?.IsKeyTriggered == true || spatialEffect?.IsKeyTriggered == true;
+        // StartAnimationCore follows the successful initial frame submission.
+        IReadOnlyList<RgbColor>? lastKeyFrame = keyTriggered ? keyboardMirrorFrame : null;
+        long lastKeyFrameTimestamp = started;
         bool sequencePlayback = sequenceEffect is not null || gridEffect?.IsSequence == true;
         TimeSpan? firstChange = gridEffect?.IsSequence == true
             ? gridEffect.GetNextFrameDelay(TimeSpan.Zero)
@@ -125,8 +134,7 @@ internal sealed partial class ExperimentalBladePort
         {
             return;
         }
-        TimeSpan deadline = firstChange > Blade18LightingAnimation.FrameInterval
-            ? firstChange.Value : Blade18LightingAnimation.FrameInterval;
+        TimeSpan deadline = firstChange > frameInterval ? firstChange.Value : frameInterval;
         try
         {
             while (true)
@@ -156,8 +164,12 @@ internal sealed partial class ExperimentalBladePort
                         {
                             IReadOnlyList<RgbColor> colors;
                             lock (animationEffectSync) { colors = gridEffect.RenderFrame(elapsed); }
-                            await SubmitExperimentalGridFrameAsync(colors, activate: false,
-                                CancellationToken.None, static () => { }).ConfigureAwait(false);
+                            if (ShouldSubmitFrame(colors))
+                            {
+                                await SubmitExperimentalGridFrameAsync(colors, activate: false,
+                                    CancellationToken.None, static () => { }).ConfigureAwait(false);
+                                RecordSubmittedFrame(colors);
+                            }
                         }
                         else
                         {
@@ -169,12 +181,15 @@ internal sealed partial class ExperimentalBladePort
                                     ?? standardEffect?.RenderFrame(elapsed)
                                     ?? Blade18LightingAnimation.Render(settings, elapsed);
                             }
-                            await SubmitBlade18FrameAsync(
-                                frame,
-                                activate: false,
-                                CancellationToken.None).ConfigureAwait(false);
+                            if (ShouldSubmitFrame(frame.Slots))
+                            {
+                                await SubmitBlade18FrameAsync(
+                                    frame,
+                                    activate: false,
+                                    CancellationToken.None).ConfigureAwait(false);
+                                RecordSubmittedFrame(frame.Slots);
+                            }
                         }
-                        policy.RecordAnimationFrameApplied(settings.Effect);
                     }
                     catch (BladeWriteException exception) when (LightingRecoveryWriteGate.IsDeferral(exception))
                     {
@@ -204,18 +219,33 @@ internal sealed partial class ExperimentalBladePort
                         return;
                     }
                     TimeSpan desired = renderedAt + next.Value;
-                    TimeSpan earliest = elapsed + Blade18LightingAnimation.FrameInterval;
+                    TimeSpan earliest = elapsed + frameInterval;
                     deadline = desired > earliest ? desired : earliest;
                 }
                 else
                 {
-                    long interval = Blade18LightingAnimation.FrameInterval.Ticks;
+                    long interval = frameInterval.Ticks;
                     deadline = TimeSpan.FromTicks((elapsed.Ticks / interval + 1) * interval);
                 }
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
+        }
+
+        bool ShouldSubmitFrame(IReadOnlyList<RgbColor> colors) => !keyTriggered
+            || lastKeyFrame is null
+            || !colors.SequenceEqual(lastKeyFrame)
+            || animationTime.GetElapsedTime(lastKeyFrameTimestamp) >= KeyTriggeredFrameKeepalive;
+
+        void RecordSubmittedFrame(IReadOnlyList<RgbColor> colors)
+        {
+            if (keyTriggered)
+            {
+                lastKeyFrame = colors;
+                lastKeyFrameTimestamp = animationTime.GetTimestamp();
+            }
+            policy.RecordAnimationFrameApplied(settings.Effect);
         }
     }
 

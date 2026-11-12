@@ -557,6 +557,7 @@ internal sealed partial class ExperimentalBladePort
         ExperimentalLightingBaseline? priorBaseline = lightingOwnership.Baseline;
         LightingSettings? priorIntent = lightingOwnership.Intent;
         int priorUniformFrameActivated = lightingOwnership.UniformFrameActivated;
+        long priorUniformFrameTimestamp = lightingOwnership.UniformFrameTimestamp;
         bool hostOwnershipAcquired = false;
         bool replacingOwnedFrame = IsOwnedFrameOwnership(priorOwnership);
         bool replacingFaultedFrame = priorOwnership == LightingRendererOwnershipState.Faulted;
@@ -690,10 +691,8 @@ internal sealed partial class ExperimentalBladePort
                 SetLightingOwnership(settings.Effect == LightingEffect.AmbientAwareness
                     ? LightingRendererOwnershipState.AmbientAwareness
                     : LightingRendererOwnershipState.AudioMeter);
-                if (blade18UniformRequest)
-                {
-                    lightingOwnership.UniformFrameActivated = 0;
-                }
+                lightingOwnership.UniformFrameActivated = 0;
+                lightingOwnership.UniformFrameTimestamp = 0;
                 hostOwnershipAcquired = true;
                 if (wakingFromDark)
                 {
@@ -913,6 +912,7 @@ internal sealed partial class ExperimentalBladePort
                 lightingOwnership.Baseline = priorBaseline;
                 lightingOwnership.Intent = priorIntent;
                 lightingOwnership.UniformFrameActivated = priorUniformFrameActivated;
+                lightingOwnership.UniformFrameTimestamp = priorUniformFrameTimestamp;
                 SetLightingOwnership(priorOwnership);
             }
             else if (capturedBaselineForFrameAttempt)
@@ -1200,24 +1200,24 @@ internal sealed partial class ExperimentalBladePort
         CancellationToken cancellationToken,
         Action onSubmitted)
     {
+        bool activate = lightingOwnership.UniformFrameActivated == 0;
+        if (!activate)
+        {
+            // Bound all source-reviewed uniform renderers to a deliberate
+            // software budget; this does not establish physical model timing.
+            TimeSpan remaining = Blade18LightingAnimation.FrameInterval
+                - animationTime.GetElapsedTime(lightingOwnership.UniformFrameTimestamp);
+            if (remaining > TimeSpan.Zero)
+            {
+                await Task.Delay(remaining, animationTime, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        long submittedAt = animationTime.GetTimestamp();
         if (model.ProductId == 0x02A0)
         {
             var colors = new RgbColor[Blade18LightingFrame.SlotCount];
             Array.Fill(colors, color);
-            bool activate = lightingOwnership.UniformFrameActivated == 0;
-            if (!activate)
-            {
-                // Uniform sampling may request 30/60 Hz. Keep this model's
-                // established 20 FPS transport budget without queuing frames.
-                TimeSpan remaining = Blade18LightingAnimation.FrameInterval
-                    - animationTime.GetElapsedTime(lightingOwnership.UniformFrameTimestamp);
-                if (remaining > TimeSpan.Zero)
-                {
-                    await Task.Delay(remaining, animationTime, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-            }
-            long submittedAt = animationTime.GetTimestamp();
             await SubmitBlade18FrameAsync(
                 new Blade18LightingFrame(colors),
                 activate,
@@ -1251,6 +1251,8 @@ internal sealed partial class ExperimentalBladePort
             recordAcknowledgedSubmission: false,
                 fixedTransactionId: ExperimentalLightingFrameTransactionId(model)).ConfigureAwait(false);
         onSubmitted();
+        lightingOwnership.UniformFrameActivated = 1;
+        lightingOwnership.UniformFrameTimestamp = submittedAt;
         RecordKeyboardMirrorFrame([color], 1, 1);
     }
 

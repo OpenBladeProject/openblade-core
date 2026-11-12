@@ -29,8 +29,9 @@ internal sealed partial class ExperimentalBladePort
             throw new CapabilityUnavailableException("Grid lighting is unavailable for this model.");
         }
         // Serialize acknowledged row exchanges. These exact models do not inherit
-        // Product 672's SET-only batch transport. FF is the pinned upstream frame
-        // transaction, reused only after the preceding exchange has completed.
+        // Product 672's SET-only batch transport. New Blade 14 production frames
+        // retain the source FF transaction; 029F retains its existing allocator.
+        // Developer runs always consume their finite, unique transaction IDs.
         bool submitted = false;
         try
         {
@@ -43,7 +44,7 @@ internal sealed partial class ExperimentalBladePort
                     true, token, variableResponse: true,
                     payloadValidator: static value => value.Length <= RazerReport.MaximumPayloadLength,
                     requireEcho: false, recordAcknowledgedSubmission: false,
-                    fixedTransactionId: 0xFF).ConfigureAwait(false);
+                    fixedTransactionId: ExperimentalLightingFrameTransactionId(model)).ConfigureAwait(false);
                 submitted = true;
                 onSubmitted();
             }
@@ -54,7 +55,7 @@ internal sealed partial class ExperimentalBladePort
                     [5, 0], true, token, variableResponse: true,
                     payloadValidator: static value => value.Length <= RazerReport.MaximumPayloadLength,
                     requireEcho: false, recordAcknowledgedSubmission: false,
-                    fixedTransactionId: 0xFF).ConfigureAwait(false);
+                    fixedTransactionId: ExperimentalLightingFrameTransactionId(model)).ConfigureAwait(false);
                 submitted = true;
                 onSubmitted();
             }
