@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
@@ -33,6 +35,18 @@ public sealed class ExperimentalEvidenceCatalogTests
                         Assert.Contains(source, feature.Sources);
                         Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
                     }
+                }
+                else if (feature.Feature == "MappedReactiveRippleAndSequence")
+                {
+                    Assert.Equal((ushort)0x02C5, model.ProductId);
+                    Assert.Equal("KeyboardMcuCommonRegionalBindingsWithoutRgbReadbackOrPhysicalValidation", feature.Basis);
+                    Assert.Equal(2, feature.Sources.Count);
+                    Assert.Equal("https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282025%29%20%7C%20RZ09-0530/PI4110-MCUv01.04.00.exe;SHA256=AED7039BE5CC4EC3F166A2728B0C1B90839BAE72C8A04150056654F64F20581F",
+                        feature.Sources[0]);
+                    using Stream map = typeof(Blade14KeyboardLightingLayout).Assembly.GetManifestResourceStream(
+                        "OpenBlade.Contracts.Fixtures.Blade14KeyboardLightingLayout.json")!;
+                    Assert.Equal($"Blade14KeyboardLightingLayout.json;SHA256={Convert.ToHexString(SHA256.HashData(map))}",
+                        feature.Sources[1]);
                 }
                 else if (model.ThermalPolicy is not null)
                 {

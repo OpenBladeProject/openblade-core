@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Add Static, Ambient Awareness, Audio Meter, and software lighting effects on Blade 14 (2023/2025) and Blade 16 (2023). ([#953](https://github.com/OSSBlade/openblade-core/pull/953))
+- Add Reactive, Ripple, and Keyboard `.chroma` imports on Blade 14 (2025) using its firmware-derived key map. ([#953](https://github.com/OSSBlade/openblade-core/pull/953))
 - Support Blade 15 Advanced (Mid 2021) RZ09-0409 and both 2019 Blade Pro 17 variants, RZ09-0287 and RZ09-0314, with source-reviewed Balanced/Custom performance and Automatic fan handback. Physical validation remains pending. ([#951](https://github.com/OSSBlade/openblade-core/pull/951))
 
 ## [0.58.7-nightly.112] - 2026-11-12

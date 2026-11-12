@@ -168,6 +168,25 @@ internal static class ExperimentalBladeModels
                 new("CustomAndChargeLimits50To100", "SourceBackedExtrapolation", [Blade18Source])],
             _ => [],
         };
+        if (model.ProductId is 0x029F or 0x029D or 0x02C5)
+        {
+            features = [.. features, new("HostGridLighting",
+                "SoftwarePatternsOnExactModelUpstreamFramesWithoutRgbReadbackOrPhysicalValidation",
+                [OpenRazerSource, "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerchromacommon.c#L450"])];
+            if (model.ProductId is 0x029D or 0x02C5)
+            {
+                features = [.. features, new("UniformStaticAmbientAndAudio",
+                    "ExactModelUpstreamFramesWithoutRgbReadbackOrPhysicalValidation",
+                    [OpenRazerSource, "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerchromacommon.c#L450"])];
+            }
+        }
+        if (model.ProductId == 0x02C5)
+        {
+            features = [.. features, new("MappedReactiveRippleAndSequence",
+                "KeyboardMcuCommonRegionalBindingsWithoutRgbReadbackOrPhysicalValidation",
+                ["https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282025%29%20%7C%20RZ09-0530/PI4110-MCUv01.04.00.exe;SHA256=AED7039BE5CC4EC3F166A2728B0C1B90839BAE72C8A04150056654F64F20581F",
+                 "Blade14KeyboardLightingLayout.json;SHA256=9356BC177DFBCB458E4C9E465D93AD7E32AF94A61ADBDF7C7E2A7319A7D3E623"])];
+        }
         features = [.. features, .. FanStopEvidenceFor(model)];
         return model.AdapterPowerEvidenceSource is { } source
             ? [.. features, new("AdapterPowerClassification", "SynapseSourceBacked", [source])]
