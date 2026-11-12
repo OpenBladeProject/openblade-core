@@ -16,53 +16,65 @@ internal static class ManagedMailboxHistory
     internal static byte[]? ReadTransfer(WindowsNativeEpochFiles files, ManagedMailboxSelection selected) => ReadPair(files,
         TransferPath(files, selected), Path.Combine(files.Root, "handoff-" + selected.Value.Request + "-history.bin"));
     private static byte[]? ReadPair(WindowsNativeEpochFiles files, string additive, string legacy)
+        => ReadPair(path => ManagedMailboxRecovery.ReadOptional(files, path), additive, legacy);
+    private static byte[]? ReadPair(Func<string, byte[]?> read, string additive, string legacy)
     {
-        byte[]? newer = ManagedMailboxRecovery.ReadOptional(files, additive);
-        byte[]? older = ManagedMailboxRecovery.ReadOptional(files, legacy);
+        byte[]? newer = read(additive);
+        byte[]? older = read(legacy);
         if (newer is not null && older is not null && !newer.AsSpan().SequenceEqual(older))
         { throw new IOException("Additive and legacy historical evidence disagree; both preserved."); }
         return newer ?? older;
     }
-    internal static void ValidateNamespace(WindowsNativeEpochFiles files, string[] transfers)
+    internal static void ValidateNamespace(WindowsNativeEpochFiles files, IReadOnlyDictionary<string, ManagedMailboxSelection> selected) =>
+        ValidateEntries(files.Root, Directory.EnumerateFileSystemEntries(files.Root, Prefix + "*"), selected,
+            path => ManagedMailboxRecovery.ReadOptional(files, path));
+
+    // Every retained run is inspected. Only the separately bounded transfer
+    // lookup and one record's inputs are retained, regardless of run count.
+    // The injected reader also exercises these exact streaming mechanics offline.
+    internal static void ValidateEntries(string root, IEnumerable<string> entries,
+        IReadOnlyDictionary<string, ManagedMailboxSelection> selected, Func<string, byte[]?> read)
     {
-        string[] entries = Directory.EnumerateFileSystemEntries(files.Root, Prefix + "*").Take(8193).ToArray();
-        if (entries.Length > 8192) { throw new IOException("Additive mailbox history exceeds its bound."); }
-        var selected = transfers.Select(p => ManagedMailboxSelection.Parse(ManagedMailboxRecovery.Read(files, p)))
-            .ToDictionary(s => s.Value.Request, StringComparer.Ordinal);
+        byte[] Required(string path) => read(path) ?? throw new IOException("Historical record is missing.");
+        byte[]? RunHistory(string id) => ReadPair(read, Path.Combine(root, Prefix + "run-" + id + ".bin"),
+            Path.Combine(root, "run-history-" + id + ".bin"));
         foreach (string path in entries)
         {
             string name = Path.GetFileName(path);
             string[] parts = name.Split('-');
             if (parts.Length != 4 || !parts[3].EndsWith(".bin", StringComparison.Ordinal)
-                || !NativeCanonical.IsHex(parts[3][..^4], 32))
+                || !NativeCanonical.IsHex(parts[3][..^4], 32)
+                || name != Prefix + parts[2] + "-" + parts[3])
             { throw new IOException("Unknown additive mailbox history was preserved."); }
             string id = parts[3][..^4];
             if (parts[2] == "run")
             {
-                byte[] run = ManagedMailboxRecovery.Read(files, Path.Combine(files.Root, "run-" + id + ".bin"));
+                byte[] run = Required(Path.Combine(root, "run-" + id + ".bin"));
                 if (ManagedMailboxRun.Parse(run).Run != id) { throw new IOException("Historical run name differs."); }
-                ValidateRun(files, run, ReadRun(files, id)!);
+                ValidateRun(root, read, run, RunHistory(id) ?? throw new IOException("Historical run is missing."));
             }
             else if (parts[2] == "transfer" && selected.TryGetValue(id, out var transfer))
             {
-                byte[] bytes = ReadTransfer(files, transfer)!;
+                byte[] bytes = ReadPair(read, Path.Combine(root, Prefix + "transfer-" + id + ".bin"),
+                    Path.Combine(root, "handoff-" + id + "-history.bin")) ?? throw new IOException("Historical transfer is missing.");
                 var fields = NativeCanonical.ParseLines(bytes, "OpenBlade.ManagedMailboxTransferHistory.v1", 3);
                 byte[] history = Convert.FromBase64String(fields[1]);
                 if (fields[0] != NativeCanonical.Digest(transfer.Encode()) || !bytes.AsSpan().SequenceEqual(
                     NativeCanonical.Lines("OpenBlade.ManagedMailboxTransferHistory.v1", fields[0], Convert.ToBase64String(history))))
                 { throw new IOException("Historical transfer name or commitment differs."); }
-                ValidateRun(files, transfer.Run, history);
-                byte[]? original = ReadRun(files, ManagedMailboxRun.Parse(transfer.Run).Run);
+                ValidateRun(root, read, transfer.Run, history);
+                byte[]? original = RunHistory(ManagedMailboxRun.Parse(transfer.Run).Run);
                 if (original is not null && !original.AsSpan().SequenceEqual(history))
                 { throw new IOException("Historical run and transfer disagree."); }
             }
             else { throw new IOException("Unmatched additive mailbox history was preserved."); }
         }
     }
-    private static void ValidateRun(WindowsNativeEpochFiles files, byte[] run, byte[] history)
+    private static void ValidateRun(string root, Func<string, byte[]?> read, byte[] run, byte[] history)
     {
         string id = ManagedMailboxRun.Parse(run).Run;
-        byte[] binding = ManagedMailboxRecovery.Read(files, Path.Combine(files.Root, "run-binding-" + id + ".bin"));
+        byte[] binding = read(Path.Combine(root, "run-binding-" + id + ".bin"))
+            ?? throw new IOException("Historical run binding is missing.");
         var value = ManagedMailboxBuildBinding.Parse(binding);
         var fields = NativeCanonical.ParseLines(history, "OpenBlade.ManagedMailboxRunHistory.v1", 4);
         byte[] projection = Convert.FromBase64String(fields[2]);

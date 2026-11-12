@@ -45,7 +45,23 @@ internal static class ManagedMailboxRecovery
         if (actual is null) { files.PublishCustody(path, bytes); }
         else if (!actual.AsSpan().SequenceEqual(bytes)) { throw new IOException("Immutable transfer publication conflicts; history retained."); }
     }
+    private sealed record Snapshot(ManagedMailboxSelection[] Transfers, byte[]? Current)
+    {
+        internal ManagedMailboxSelection? Last => Transfers.LastOrDefault();
+    }
     internal static ManagedMailboxSelection? Selected(WindowsNativeEpochFiles files)
+    {
+        var snapshot = ReadSnapshot(files);
+        PublishProjections(files, snapshot);
+        return snapshot.Last;
+    }
+    private static void ValidateProjection(WindowsNativeEpochFiles files, string path, byte[] expected)
+    {
+        byte[]? actual = ReadOptional(files, path);
+        if (actual is not null && !actual.AsSpan().SequenceEqual(expected))
+        { throw new IOException("Immutable transfer publication conflicts; history retained."); }
+    }
+    private static Snapshot ReadSnapshot(WindowsNativeEpochFiles files)
     {
         // Old bytes are evidence, never a silently adopted new request.
         foreach (string legacy in new[] { "request.bin", "receipt.bin", "mapping.bin" })
@@ -55,18 +71,20 @@ internal static class ManagedMailboxRecovery
         if (names.Length > 4096) { throw new IOException("Transfer history exceeds its bound."); }
         ManagedMailboxSelection? last = null;
         string previous = new('0', 64);
-        var ids = new HashSet<string>(StringComparer.Ordinal);
+        var selected = new Dictionary<string, ManagedMailboxSelection>(StringComparer.Ordinal);
+        var transfers = new ManagedMailboxSelection[names.Length];
         for (int i = 0; i < names.Length; i++)
         {
             var value = ManagedMailboxSelection.Parse(Read(files, names[i]));
             if (value.Ordinal != i + 1 || Path.GetFileName(names[i]) != $"transfer-{value.Ordinal:D20}.bin"
-                || value.PreviousTerminal != previous || !ids.Add(value.Value.Request))
+                || value.PreviousTerminal != previous || !selected.TryAdd(value.Value.Request, value))
             { throw new IOException("Transfer history is unmatched, active or malformed."); }
             // Every predecessor terminal is required before a new selection.
             if (last is not null) { ValidateTerminal(files, last); }
-            ExactOrPublish(files, PathFor(files, value, "selection"), value.Encode());
-            ExactOrPublish(files, PathFor(files, value, "request"), value.Request);
-            ExactOrPublish(files, PathFor(files, value, "run"), value.Run);
+            ValidateProjection(files, PathFor(files, value, "selection"), value.Encode());
+            ValidateProjection(files, PathFor(files, value, "request"), value.Request);
+            ValidateProjection(files, PathFor(files, value, "run"), value.Run);
+            transfers[i] = value;
             last = value;
             byte[]? terminal = ReadOptional(files, PathFor(files, value, "terminal"));
             previous = terminal is null ? new string('0', 64) : NativeCanonical.Digest(terminal);
@@ -78,27 +96,41 @@ internal static class ManagedMailboxRecovery
             string name = Path.GetFileName(extra);
             string[] parts = name.Split('-');
             string suffix = string.Join("-", parts.Skip(2));
-            if (parts.Length < 3 || !ids.Contains(parts[1]) || suffix is not ("selection.bin" or "request.bin" or "run.bin" or "receipt.bin" or "original-exit.bin" or "epoch-intent.bin" or "mapping.bin" or "native-proof.bin" or "terminal-intent.bin" or "terminal.bin" or "history.bin")) { throw new IOException("Unmatched transfer evidence was preserved."); }
+            if (parts.Length < 3 || !selected.ContainsKey(parts[1]) || suffix is not ("selection.bin" or "request.bin" or "run.bin" or "receipt.bin" or "original-exit.bin" or "epoch-intent.bin" or "mapping.bin" or "native-proof.bin" or "terminal-intent.bin" or "terminal.bin" or "history.bin")) { throw new IOException("Unmatched transfer evidence was preserved."); }
         }
-        ManagedMailboxHistory.ValidateNamespace(files, names);
+        ManagedMailboxHistory.ValidateNamespace(files, selected);
         byte[]? current = ReadOptional(files, Path.Combine(files.Root, "transfer-current.bin"));
         if (last is null)
         {
             if (current is not null) { throw new IOException("Transfer selection has no immutable intent."); }
-            return null;
+            return new(transfers, current);
         }
-        if (current is not null && !names.Any(p => Read(files, p).AsSpan().SequenceEqual(current)))
+        if (current is not null && !transfers.Any(value => value.Encode().AsSpan().SequenceEqual(current)))
         { throw new IOException("Transfer pointer is not authenticated by immutable history."); }
-        // Finishes only the projection of a positively recorded selection. This
-        // neither retires a transfer nor authorizes managed/native mailbox use.
-        if (current is null || !current.AsSpan().SequenceEqual(last.Encode()))
+        return new(transfers, current);
+    }
+    private static void PublishProjections(WindowsNativeEpochFiles files, Snapshot snapshot)
+    {
+        // The complete snapshot must pass before planned repair. Individual
+        // publications still can race or fail: exact-or-publish preserves conflicts
+        // and interruption can leave a truthful, recoverable partial projection.
+        foreach (var value in snapshot.Transfers)
+        {
+            ExactOrPublish(files, PathFor(files, value, "selection"), value.Encode());
+            ExactOrPublish(files, PathFor(files, value, "request"), value.Request);
+            ExactOrPublish(files, PathFor(files, value, "run"), value.Run);
+        }
+        var last = snapshot.Last;
+        if (last is not null && (snapshot.Current is null || !snapshot.Current.AsSpan().SequenceEqual(last.Encode())))
         { files.Publish(Path.Combine(files.Root, "transfer-current.bin"), last.Encode(), replace: true, privateCustody: true); }
-        return last;
     }
     internal static ManagedMailboxSelection Create(WindowsNativeEpochFiles files, byte[] run, ManagedMailboxRequest request)
     {
         using var writer = files.AcquireWriter();
-        var prior = Selected(files);
+        var snapshot = ReadSnapshot(files);
+        var prior = snapshot.Last;
+        if (snapshot.Transfers.Length >= 4096 || snapshot.Transfers.Any(value => value.Value.Request == request.Request))
+        { throw new IOException("Transfer history bound or request uniqueness differs."); }
         string previous = new('0', 64);
         if (prior is not null)
         {
@@ -108,9 +140,12 @@ internal static class ManagedMailboxRecovery
             { throw new IOException("Renewal requires a new authenticated managed run and request."); }
             previous = NativeCanonical.Digest(Read(files, PathFor(files, prior, "terminal")));
         }
-        var next = new ManagedMailboxSelection(checked((prior?.Ordinal ?? 0) + 1), previous, run, request.Encode());
+        var next = ManagedMailboxSelection.Parse(new ManagedMailboxSelection(checked((prior?.Ordinal ?? 0) + 1), previous, run, request.Encode()).Encode());
         ExactOrPublish(files, Path.Combine(files.Root, $"transfer-{next.Ordinal:D20}.bin"), next.Encode());
-        return Selected(files)!;
+        // The same writer protects the already validated history. Appending one
+        // new immutable selection needs no second complete retained-run scan.
+        PublishProjections(files, new([.. snapshot.Transfers, next], snapshot.Current));
+        return next;
     }
     internal static byte[] Receipt(ManagedMailboxSelection selected) => NativeCanonical.Lines("OpenBlade.ManagedMailboxQuiescent.v1",
         NativeCanonical.Digest(selected.Request), Convert.ToBase64String(selected.Run), "transport-quiescent-no-mutation");
