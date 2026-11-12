@@ -57,11 +57,7 @@ internal static class ManagedMailboxHistory
             {
                 byte[] bytes = ReadPair(read, Path.Combine(root, Prefix + "transfer-" + id + ".bin"),
                     Path.Combine(root, "handoff-" + id + "-history.bin")) ?? throw new IOException("Historical transfer is missing.");
-                var fields = NativeCanonical.ParseLines(bytes, "OpenBlade.ManagedMailboxTransferHistory.v1", 3);
-                byte[] history = Convert.FromBase64String(fields[1]);
-                if (fields[0] != NativeCanonical.Digest(transfer.Encode()) || !bytes.AsSpan().SequenceEqual(
-                    NativeCanonical.Lines("OpenBlade.ManagedMailboxTransferHistory.v1", fields[0], Convert.ToBase64String(history))))
-                { throw new IOException("Historical transfer name or commitment differs."); }
+                byte[] history = ParseTransfer(transfer, bytes);
                 ValidateRun(root, read, transfer.Run, history);
                 byte[]? original = RunHistory(ManagedMailboxRun.Parse(transfer.Run).Run);
                 if (original is not null && !original.AsSpan().SequenceEqual(history))
@@ -75,6 +71,19 @@ internal static class ManagedMailboxHistory
         string id = ManagedMailboxRun.Parse(run).Run;
         byte[] binding = read(Path.Combine(root, "run-binding-" + id + ".bin"))
             ?? throw new IOException("Historical run binding is missing.");
+        _ = ValidateRun(run, binding, history);
+    }
+    internal static byte[] ParseTransfer(ManagedMailboxSelection selected, byte[] bytes)
+    {
+        var fields = NativeCanonical.ParseLines(bytes, "OpenBlade.ManagedMailboxTransferHistory.v1", 3);
+        byte[] history = Convert.FromBase64String(fields[1]);
+        if (fields[0] != NativeCanonical.Digest(selected.Encode()) || !bytes.AsSpan().SequenceEqual(
+            NativeCanonical.Lines("OpenBlade.ManagedMailboxTransferHistory.v1", fields[0], Convert.ToBase64String(history))))
+        { throw new IOException("Historical transfer name or commitment differs."); }
+        return history;
+    }
+    internal static byte[] ValidateRun(byte[] run, byte[] binding, byte[] history)
+    {
         var value = ManagedMailboxBuildBinding.Parse(binding);
         var fields = NativeCanonical.ParseLines(history, "OpenBlade.ManagedMailboxRunHistory.v1", 4);
         byte[] projection = Convert.FromBase64String(fields[2]);
@@ -83,5 +92,8 @@ internal static class ManagedMailboxHistory
             || NativeCanonical.Digest(projection) != value.Enrollment
             || !history.AsSpan().SequenceEqual(ManagedMailboxRecovery.RunHistory(run, binding, projection)))
         { throw new IOException("Historical run/build namespace binding differs."); }
+        if (NativeLocalDevEnrollment.ParseProjection(projection).Installation.ToString("N") != value.Installation)
+        { throw new IOException("Historical projection installation differs from its build binding."); }
+        return projection;
     }
 }

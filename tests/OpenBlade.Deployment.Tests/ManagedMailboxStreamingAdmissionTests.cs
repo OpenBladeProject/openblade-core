@@ -12,7 +12,7 @@ public sealed partial class ManagedMailboxCorrectionTests
         IReadOnlyDictionary<string, ManagedMailboxSelection>? transfers = null)
     {
         int consumed = 0; bool readCurrent = false; string? active = null;
-        byte[] projection = "private streaming projection"u8.ToArray();
+        byte[] projection = PrivateStructuralProjection();
         ManagedMailboxRun? run = null; byte[]? binding = null; byte[]? history = null;
         IEnumerable<string> Entries()
         {
@@ -57,7 +57,7 @@ public sealed partial class ManagedMailboxCorrectionTests
         using var files = Handoff();
         ValidateStream(files, 8200);
         Assert.Null(ManagedMailboxRecovery.Selected(files));
-        byte[] projection = "private composition projection"u8.ToArray();
+        byte[] projection = PrivateStructuralProjection();
         var run = Run();
         var binding = new ManagedMailboxBuildBinding(NativeCanonical.Digest(run.Encode()), new string('5', 32),
             new string('7', 64), NativeCanonical.Digest(projection));

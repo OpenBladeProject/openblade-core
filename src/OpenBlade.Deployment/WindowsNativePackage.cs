@@ -194,12 +194,19 @@ internal sealed class NativeLocalDevEnrollment : IDisposable
 
     internal static NativeLocalDevEnrollment FromProtectedProjection(byte[] bytes)
     {
+        var projection = ParseProjection(bytes);
+        return new(projection.Installation, new(true, [new(projection.Key, projection.Spki)]), null, null) { Projection = (byte[])bytes.Clone() };
+    }
+
+    // Pure retained-envelope parsing; no current enrollment or key trust is acquired.
+    internal static (Guid Installation, string Key, string Spki) ParseProjection(byte[] bytes)
+    {
         string[] f = NativeCanonical.ParseLines(bytes, "OpenBlade.NativeVerification.v1", 7);
         if (f[0] != "LocalDev" || !Guid.TryParseExact(f[1], "D", out var installation) || installation == Guid.Empty
             || f[2].Length == 0 || !NativeCanonical.IsHex(f[3], 64) || !NativeCanonical.IsHex(f[5], 64)
             || NativeCanonical.Digest(Convert.FromBase64String(f[4])) != f[3])
         { throw new InvalidDataException("Native public verification projection differs."); }
-        return new(installation, new(true, [new(f[3], f[4])]), null, null) { Projection = (byte[])bytes.Clone() };
+        return (installation, f[3], f[4]);
     }
 
     internal static NativeLocalDevEnrollment FromHeld(FileStream original)

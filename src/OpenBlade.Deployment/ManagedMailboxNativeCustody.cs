@@ -180,28 +180,67 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
         generations.TryGetValue(epoch.Epoch, out var generation) ? generation.Projection
             : throw new IOException("Historical transfer has no authenticated native projection.");
 
-    internal void RequirePreservedResolution(ManagedMailboxSelection transfer, NativeEpochRecord? epoch, byte[] proof, string disposition)
+    // This parser establishes retained-byte consistency only. Fresh generation,
+    // reservation, owner and attempt custody remain required below.
+    internal static (string Disposition, string Epoch, NativeEpochRecord? Record, string[]? Retirement, string? Reservation)
+        ParseResolution(ManagedMailboxSelection transfer, NativeEpochRecord? epoch, byte[] proof)
     {
         var f = NativeCanonical.ParseLines(proof, "OpenBlade.ManagedNativeResolution.v2", 7);
         byte[] evidence = Convert.FromBase64String(f[5]);
-        if (f[0] != NativeCanonical.Digest(transfer.Encode()) || f[1] != disposition
-            || f[2] != (epoch?.Epoch ?? "not-reserved") || f[3] != NativeCanonical.Digest(evidence)
-            || !NativeCanonical.IsHex(f[4], 64))
+        if (f[0] != NativeCanonical.Digest(transfer.Encode()) || f[1] is not ("canceled-before-native-use" or "consumed-and-retired")
+            || f[3] != NativeCanonical.Digest(evidence) || !NativeCanonical.IsHex(f[4], 64)
+            || f[2] != "not-reserved" && !NativeCanonical.IsHex(f[2], 32)
+            || epoch is not null && f[2] != epoch.Epoch)
+        { throw new IOException("Preserved native resolution differs from its exact transfer."); }
+        NativeEpochRecord? record = null; string[]? retired = null; string? reservation = null;
+        byte[] spaceBytes = evidence;
+        if (f[2] == "not-reserved")
+        {
+            if (f[1] != "canceled-before-native-use") { throw new IOException("Unreserved resolution cannot claim retirement."); }
+        }
+        else
+        {
+            var g = NativeCanonical.ParseLines(evidence, "OpenBlade.ManagedNativeGenerationProof.v2", 5);
+            record = NativeEpochRecord.Parse(Convert.FromBase64String(g[0]));
+            retired = NativeCanonical.ParseLines(Convert.FromBase64String(g[1]), "OpenBlade.NativeRetirementProof.v2", 8);
+            reservation = g[2]; spaceBytes = Convert.FromBase64String(g[3]);
+            if (record.Epoch != f[2] || record.Request != transfer.Value.Request || record.Installation != transfer.Value.Installation
+                || record.Package != transfer.Value.Package || !NativeCanonical.IsHex(reservation, 64)
+                || record.Phase != (f[1] == "canceled-before-native-use" ? NativeEpochPhase.Provisional : NativeEpochPhase.Retired)
+                || epoch is not null && record with { Phase = epoch.Phase, Readiness = epoch.Readiness } != epoch
+                || retired[0] != record.Epoch || retired[1] != NativeCanonical.Digest(record.Encode())
+                || !NativeCanonical.IsHex(retired[2], 64) || retired[3] is not ("submission-retained" or "never-submitted")
+                || retired[4] is not ("no-admitted-metadata-attempt" or "metadata-attempts-classified" or "all-metadata-attempts-drained")
+                || !NativeCanonical.IsHex(retired[5], 64) || retired[6] != f[4])
+            { throw new IOException("Preserved generation proof differs from its transfer."); }
+        }
+        bool absent = spaceBytes.AsSpan().SequenceEqual(NativeCanonical.Lines("OpenBlade.ManagedNativeNamespace.v2", "native-namespace-absent", f[4]));
+        if (absent)
+        {
+            if (record is not null || f[4] != NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.NativeOwnerAbsent.v2", "verified-native-namespace-absent")))
+            { throw new IOException("Preserved absent namespace proof differs."); }
+        }
+        else
+        {
+            var space = NativeCanonical.ParseLines(spaceBytes, "OpenBlade.ManagedNativeNamespace.v2", 4);
+            if (space[0] is not ("unselected-authenticated-prefix" or "verified-bootstrap") && !NativeCanonical.IsHex(space[0], 64)
+                || space[1] != f[4] || !NativeCanonical.IsHex(space[2], 64))
+            { throw new IOException("Preserved native namespace proof differs."); }
+        }
+        return (f[1], f[2], record, retired, reservation);
+    }
+    internal void RequirePreservedResolution(ManagedMailboxSelection transfer, NativeEpochRecord? epoch, byte[] proof, string disposition)
+    {
+        var retained = ParseResolution(transfer, epoch, proof);
+        if (retained.Disposition != disposition || retained.Epoch != (epoch?.Epoch ?? "not-reserved"))
         { throw new IOException("Preserved native resolution differs from its exact transfer."); }
         if (epoch is null) { return; }
         var generation = generations[epoch.Epoch];
-        var g = NativeCanonical.ParseLines(evidence, "OpenBlade.ManagedNativeGenerationProof.v2", 5);
-        var retired = NativeCanonical.ParseLines(Convert.FromBase64String(g[1]), "OpenBlade.NativeRetirementProof.v2", 8);
         var fresh = NativeCanonical.ParseLines(generation.Proof, "OpenBlade.NativeRetirementProof.v2", 8);
-        // Owner history can advance between transfers. The original owner
-        // commitment is retained, while today's owner is independently fenced.
-        if (!Convert.FromBase64String(g[0]).AsSpan().SequenceEqual(generation.Record.Encode())
-            || g[2] != NativeCanonical.Digest(generation.Reservation) || retired[6] != f[4]
-            || !retired[..6].SequenceEqual(fresh[..6]))
+        // Owner history can advance; today's owner is independently fenced.
+        if (retained.Record != generation.Record || retained.Reservation != NativeCanonical.Digest(generation.Reservation)
+            || !retained.Retirement![..6].SequenceEqual(fresh[..6]))
         { throw new IOException("Preserved generation/attempt/reservation proof differs from fresh custody."); }
-        var space = NativeCanonical.ParseLines(Convert.FromBase64String(g[3]), "OpenBlade.ManagedNativeNamespace.v2", 4);
-        if (space[1] != f[4] || !NativeCanonical.IsHex(space[2], 64))
-        { throw new IOException("Preserved native namespace proof differs."); }
     }
     internal (NativeEpochRecord Epoch, byte[] Projection, string Source) RequireLegacyBinding(byte[] mapping)
     {
