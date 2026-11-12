@@ -6,11 +6,13 @@ public static class KeyboardLightingLayoutIds
 {
     public const string Rz09_0581 = "openblade.razer.rz09-0581.keyboard.6x17.v1";
     public const string Rz09_0484 = "openblade.razer.rz09-0484.keyboard.6x16.v1";
+    public const string Rz09_0530 = "openblade.razer.rz09-0530.keyboard.6x16.v1";
     public const string Rz09_0528 = "openblade.razer.rz09-0528.keyboard.6x17.v1";
 
     public static bool IsKnown(string? layoutId) =>
         string.Equals(layoutId, Rz09_0581, StringComparison.Ordinal)
         || string.Equals(layoutId, Rz09_0528, StringComparison.Ordinal)
+        || string.Equals(layoutId, Rz09_0530, StringComparison.Ordinal)
         || string.Equals(layoutId, Rz09_0484, StringComparison.Ordinal);
 }
 
@@ -155,9 +157,12 @@ public static class KeyboardLightingSequenceCodec
         }
     }
 
-    private static bool IsHole(int slot, string? layoutId) =>
-        layoutId == KeyboardLightingLayoutIds.Rz09_0484
-            ? !Blade18KeyboardLightingLayout.IsKeySlot(slot) : AmbientLightingFrame.IsHole(slot);
+    private static bool IsHole(int slot, string? layoutId) => layoutId switch
+    {
+        KeyboardLightingLayoutIds.Rz09_0484 => !Blade18KeyboardLightingLayout.IsKeySlot(slot),
+        KeyboardLightingLayoutIds.Rz09_0530 => !Blade14KeyboardLightingLayout.IsKeySlot(slot),
+        _ => AmbientLightingFrame.IsHole(slot),
+    };
 
     private static KeyboardLightingSequence? DecodeCore(
         string? timelineBase64,

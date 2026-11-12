@@ -9,6 +9,7 @@ internal sealed partial class ExperimentalBladePort
     private Task? animationTask;
     private readonly object animationEffectSync = new();
     private Blade18SpatialLightingEffect? spatialAnimation;
+    private ExperimentalGridLightingEffect? gridAnimation;
     private long animationStartedTimestamp;
 
     private static bool SupportsBlade18Animation(ExperimentalBladeModel model) =>
@@ -39,6 +40,7 @@ internal sealed partial class ExperimentalBladePort
         lock (animationEffectSync)
         {
             spatialAnimation = null;
+            gridAnimation = null;
         }
         if (animationTask is { } task)
         {
@@ -52,7 +54,8 @@ internal sealed partial class ExperimentalBladePort
     private void StartAnimationCore(
         LightingSettings settings, Blade18SpatialLightingEffect? spatialEffect,
         Blade18ImportedSequenceEffect? sequenceEffect,
-        Blade18StandardLightingEffect? standardEffect)
+        Blade18StandardLightingEffect? standardEffect,
+        ExperimentalGridLightingEffect? gridEffect = null)
     {
         var cancellation = new CancellationTokenSource();
         animationCancellation = cancellation;
@@ -61,9 +64,10 @@ internal sealed partial class ExperimentalBladePort
         {
             animationStartedTimestamp = started;
             spatialAnimation = spatialEffect;
+            gridAnimation = gridEffect;
         }
         animationTask = RunAnimationAsync(settings with { LogoMode = null },
-            cancellation, started, spatialEffect, sequenceEffect, standardEffect);
+            cancellation, started, spatialEffect, sequenceEffect, standardEffect, gridEffect);
     }
 
     public Task PulseReactiveKeyAsync(ReactiveKeyPulse pulse, CancellationToken cancellationToken)
@@ -71,6 +75,21 @@ internal sealed partial class ExperimentalBladePort
         cancellationToken.ThrowIfCancellationRequested();
         lock (animationEffectSync)
         {
+            if (model.ProductId == 0x02C5)
+            {
+                if (disposed || !policy.WritesAllowed || gridAnimation?.IsKeyTriggered != true
+                    || OwnershipState is not (LightingRendererOwnershipState.Reactive
+                        or LightingRendererOwnershipState.Ripple)
+                    || !Blade14KeyboardLightingLayout.IsKeySlot(pulse.MatrixSlot))
+                {
+                    throw new CapabilityUnavailableException(
+                        "Key-triggered lighting input is outside the reviewed Blade 14 map or owner.");
+                }
+                TimeSpan current = animationTime.GetElapsedTime(animationStartedTimestamp);
+                gridAnimation.Pulse(pulse.MatrixSlot, LightingKeyPulseTiming.ResolveElapsed(
+                    pulse, animationStartedTimestamp, current, animationTime));
+                return Task.CompletedTask;
+            }
             if (disposed || !policy.WritesAllowed || model.ProductId != 0x02A0
                 || spatialAnimation?.IsKeyTriggered != true
                 || OwnershipState is not (LightingRendererOwnershipState.Reactive
@@ -94,11 +113,15 @@ internal sealed partial class ExperimentalBladePort
         long started,
         Blade18SpatialLightingEffect? spatialEffect,
         Blade18ImportedSequenceEffect? sequenceEffect,
-        Blade18StandardLightingEffect? standardEffect)
+        Blade18StandardLightingEffect? standardEffect,
+        ExperimentalGridLightingEffect? gridEffect = null)
     {
         CancellationToken token = owner.Token;
-        TimeSpan? firstChange = sequenceEffect?.GetNextFrameDelay(TimeSpan.Zero);
-        if (sequenceEffect is not null && firstChange is null)
+        bool sequencePlayback = sequenceEffect is not null || gridEffect?.IsSequence == true;
+        TimeSpan? firstChange = gridEffect?.IsSequence == true
+            ? gridEffect.GetNextFrameDelay(TimeSpan.Zero)
+            : sequenceEffect?.GetNextFrameDelay(TimeSpan.Zero);
+        if (sequencePlayback && firstChange is null)
         {
             return;
         }
@@ -129,18 +152,28 @@ internal sealed partial class ExperimentalBladePort
                         renderedAt = elapsed;
                         // Normal replacement never cancels an in-flight native frame.
                         // Admission is checked independently at every row submission.
-                        Blade18LightingFrame frame;
-                        lock (animationEffectSync)
+                        if (gridEffect is not null)
                         {
-                            frame = spatialEffect?.RenderFrame(elapsed)
-                                ?? sequenceEffect?.RenderFrame(elapsed)
-                                ?? standardEffect?.RenderFrame(elapsed)
-                                ?? Blade18LightingAnimation.Render(settings, elapsed);
+                            IReadOnlyList<RgbColor> colors;
+                            lock (animationEffectSync) { colors = gridEffect.RenderFrame(elapsed); }
+                            await SubmitExperimentalGridFrameAsync(colors, activate: false,
+                                CancellationToken.None, static () => { }).ConfigureAwait(false);
                         }
-                        await SubmitBlade18FrameAsync(
-                            frame,
-                            activate: false,
-                            CancellationToken.None).ConfigureAwait(false);
+                        else
+                        {
+                            Blade18LightingFrame frame;
+                            lock (animationEffectSync)
+                            {
+                                frame = spatialEffect?.RenderFrame(elapsed)
+                                    ?? sequenceEffect?.RenderFrame(elapsed)
+                                    ?? standardEffect?.RenderFrame(elapsed)
+                                    ?? Blade18LightingAnimation.Render(settings, elapsed);
+                            }
+                            await SubmitBlade18FrameAsync(
+                                frame,
+                                activate: false,
+                                CancellationToken.None).ConfigureAwait(false);
+                        }
                         policy.RecordAnimationFrameApplied(settings.Effect);
                     }
                     catch (BladeWriteException exception) when (LightingRecoveryWriteGate.IsDeferral(exception))
@@ -161,9 +194,11 @@ internal sealed partial class ExperimentalBladePort
                 }
                 elapsed = animationTime.GetElapsedTime(started);
                 // Skip missed frames instead of building a queue or catch-up burst.
-                if (sequenceEffect is not null)
+                if (sequencePlayback)
                 {
-                    TimeSpan? next = sequenceEffect.GetNextFrameDelay(renderedAt);
+                    TimeSpan? next = gridEffect?.IsSequence == true
+                        ? gridEffect.GetNextFrameDelay(renderedAt)
+                        : sequenceEffect!.GetNextFrameDelay(renderedAt);
                     if (next is null)
                     {
                         return;

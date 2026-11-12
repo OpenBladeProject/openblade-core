@@ -1141,7 +1141,11 @@ public sealed partial class ExperimentalBladeLightingTests
                 { Diagnostic = new(HidSessionFailurePhase.Guard, HidSessionFailureKind.IdentityBlocked, null, null) });
             }
             Commands.Add(command);
-            _ = assignTransactionId();
+            TransactionIdAssignment assignment = assignTransactionId();
+            if (ExpectedFrameTransactionId is { } expected && (IsFrameRow(command) || IsFrameActivation(command)))
+            {
+                Assert.Equal(TransactionIdAssignment.Valid(expected), assignment);
+            }
             byte[] args = command.Arguments.ToArray();
             if (BlockFirstFrame
                 && command.ClassId == 0x03
