@@ -15849,6 +15849,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
 
         await PublishFullTransitionOutcomeAsync(
+            device,
             desired,
             outcome,
             observedLightingOwnership,
@@ -16123,6 +16124,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     }
 
     private async Task PublishFullTransitionOutcomeAsync(
+        IBladeDevice device,
         DesiredDeviceState desired,
         FullTransitionApplyOutcome outcome,
         LightingRendererOwnershipState observedLightingOwnership,
@@ -16224,12 +16226,15 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             DeviceSubsystem.Lighting);
         if (continuationScope is null || continuationScope.Contains(DeviceSubsystem.Lighting))
         {
+            // Display-off reconciliation can keep Applied while queuing a
+            // destination renderer retry. Only an actually accepted ownership
+            // result supersedes that queue; native effects still need no stream.
+            bool lightingAccepted = lightingResult.Status is ControlResultStatus.Applied
+                    or ControlResultStatus.Unchanged
+                && LightingOwnershipMatches(device, observedLightingOwnership, desired.Lighting.Value);
             UpdateOwnedLightingSnapshot(
                 observedLightingOwnership,
-                lightingResult.Status is ControlResultStatus.Applied
-                    or ControlResultStatus.Unchanged
-                    ? desired.Lighting.Value
-                    : null);
+                lightingAccepted ? desired.Lighting.Value : null);
             if (lightingResult.Status is ControlResultStatus.Applied
                 or ControlResultStatus.Unchanged)
             {
