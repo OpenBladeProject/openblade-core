@@ -11,6 +11,10 @@ pub(crate) trait Stream: AsyncRead + AsyncWrite + Unpin {
     fn server_pid(&self) -> io::Result<u32>;
     fn caller_after_read(&self) -> io::Result<Caller>;
     fn control_session(&self) -> io::Result<Option<u32>>;
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn user_sid_after_read(&self) -> io::Result<String> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

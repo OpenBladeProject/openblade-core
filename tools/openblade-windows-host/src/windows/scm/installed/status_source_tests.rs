@@ -605,6 +605,8 @@ async fn guarded_sticky_read_loss_retains_current_metadata_and_expires_both_proj
     let metadata_available = Arc::new(AtomicBool::new(true));
     let flag = metadata_available.clone();
     let mut source = GuardedStatus {
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        mutation: None,
         inner: ObservedStatus::new(move |_| {
             if flag.load(Ordering::Acquire) {
                 evidence(matched(HidMetadata::Candidate), Power::Battery)

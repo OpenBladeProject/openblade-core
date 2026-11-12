@@ -360,6 +360,14 @@ pub(super) fn native_status_source(
 ) -> io::Result<Box<dyn StatusSource>> {
     #[cfg(feature = "service-mailbox-observation-v1")]
     let mailbox = super::mailbox_read::MailboxSource::acquire(origin.clone())?;
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    return Ok(Box::new(GuardedStatus {
+        inner: ObservedStatus::new(read_windows),
+        mutation: Some(super::thermal_mutation::Runtime::native(origin.clone())),
+        origin,
+        mailbox,
+    }));
+    #[cfg(not(feature = "service-thermal-mutation-v1"))]
     Ok(compose_guarded_status(
         ObservedStatus::new(read_windows),
         origin,
@@ -375,6 +383,8 @@ fn compose_guarded_status(
     Box::new(GuardedStatus {
         inner,
         origin,
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        mutation: None,
         #[cfg(feature = "service-mailbox-observation-v1")]
         mailbox,
     })
@@ -401,12 +411,97 @@ impl StatusOrigin for crate::loaded_origin::Origin {
     }
 }
 struct GuardedStatus {
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    mutation: Option<super::thermal_mutation::Runtime>,
     inner: ObservedStatus,
     origin: Arc<dyn StatusOrigin>,
     #[cfg(feature = "service-mailbox-observation-v1")]
     mailbox: super::mailbox_read::MailboxSource,
 }
 impl StatusSource for GuardedStatus {
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn mutate(
+        &mut self,
+        caller: Caller,
+        sid: String,
+        request: crate::service_status::StatusRequest,
+        deadline: Instant,
+    ) -> super::Mutation {
+        let Some(runtime) = self.mutation.clone() else {
+            return Box::pin(async {
+                Ok((
+                    super::thermal_mutation::Outcome::blocked(
+                        "Signed mutation runtime is unavailable.",
+                    ),
+                    None,
+                ))
+            });
+        };
+        let mailbox = self.mailbox.clone();
+        let publisher = self.inner.publisher.clone();
+        Box::pin(async move {
+            let Some(publisher) = publisher else {
+                return Ok((
+                    super::thermal_mutation::Outcome::blocked("Status is not initialized."),
+                    None,
+                ));
+            };
+            match request {
+                crate::service_status::StatusRequest::ReportApplicationContext {
+                    instance_id,
+                    sequence,
+                    executable_path,
+                    ..
+                } => Ok((
+                    runtime.application(caller, sid, instance_id, sequence, executable_path),
+                    None,
+                )),
+                crate::service_status::StatusRequest::SetPerformanceOverride {
+                    request_id,
+                    value,
+                    ..
+                } => {
+                    let status = publisher.borrow().active.clone();
+                    let (outcome, status) = runtime
+                        .apply(
+                            mailbox.clone(),
+                            caller,
+                            sid,
+                            request_id,
+                            value,
+                            deadline,
+                            status,
+                        )
+                        .await?;
+                    if let Some(mut status) = status {
+                        if let super::mailbox_read::MailboxSource::Reader(reader) = &mailbox {
+                            reader.retain_mutation(&status);
+                        }
+                        status.set_observation_revision(
+                            publisher
+                                .borrow()
+                                .active
+                                .revision()
+                                .checked_add(1)
+                                .ok_or_else(|| invalid("status revision exhausted"))?,
+                        );
+                        publisher.send_replace(Arc::new(Publication {
+                            inactive: status.inactive_mutation(),
+                            active: status.clone(),
+                        }));
+                        Ok((outcome, Some(status)))
+                    } else {
+                        Ok((outcome, None))
+                    }
+                }
+                _ => Ok((
+                    super::thermal_mutation::Outcome::blocked("Unsupported mutation operation."),
+                    None,
+                )),
+            }
+        })
+    }
+
     fn observe_performance(&mut self, caller: Caller, deadline: Instant) -> Observation {
         #[cfg(feature = "service-mailbox-observation-v1")]
         {
@@ -590,3 +685,25 @@ pub(super) use tests::{in_memory_source, in_memory_source_with_firmware};
 
 #[cfg(all(test, feature = "service-mailbox-observation-v1"))]
 pub(super) use tests::in_memory_guarded_no_reader;
+
+#[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+pub(super) fn injected_mutation_source(
+    origin: Arc<dyn StatusOrigin>,
+    mailbox: super::mailbox_read::MailboxSource,
+    runtime: super::thermal_mutation::Runtime,
+) -> Box<dyn StatusSource> {
+    Box::new(GuardedStatus {
+        origin,
+        mailbox,
+        mutation: Some(runtime),
+        inner: ObservedStatus::new(|_| Evidence {
+            device: DeviceMetadata::MatchedHost {
+                model: "Razer Blade 16 (2025) RZ09-0581".into(),
+                hid: HidMetadata::Candidate,
+            },
+            power: Power::ExternalUnknown,
+            controllers: vec![],
+            controller_warning: None,
+        }),
+    })
+}

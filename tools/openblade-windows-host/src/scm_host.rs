@@ -66,6 +66,12 @@ impl Controls {
                 NO_ERROR
             }
             SERVICE_CONTROL_INTERROGATE => NO_ERROR,
+            windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT
+            | windows_sys::Win32::System::Services::SERVICE_CONTROL_SESSIONCHANGE
+                if cfg!(feature = "service-thermal-mutation-v1") =>
+            {
+                NO_ERROR
+            }
             _ => ERROR_CALL_NOT_IMPLEMENTED,
         }
     }
@@ -162,7 +168,14 @@ pub(crate) fn status_for(phase: Phase) -> SERVICE_STATUS {
         Phase::Starting => (SERVICE_START_PENDING, 0, 1, 5000, NO_ERROR),
         Phase::Running => (
             SERVICE_RUNNING,
-            SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN,
+            SERVICE_ACCEPT_STOP
+                | SERVICE_ACCEPT_SHUTDOWN
+                | if cfg!(feature = "service-thermal-mutation-v1") {
+                    windows_sys::Win32::System::Services::SERVICE_ACCEPT_POWEREVENT
+                        | windows_sys::Win32::System::Services::SERVICE_ACCEPT_SESSIONCHANGE
+                } else {
+                    0
+                },
             0,
             0,
             NO_ERROR,

@@ -367,6 +367,8 @@ impl Port for CustomPort {
                 };
                 (0, frame)
             }
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            Transfer::SendMutation(_) => panic!("read-only fixture received a mutation"),
             Transfer::ReceiveReply => (91, self.reply),
         });
         Ok(())

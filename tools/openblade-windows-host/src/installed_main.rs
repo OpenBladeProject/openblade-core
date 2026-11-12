@@ -70,3 +70,6 @@ fn main() -> std::process::ExitCode {
 
 #[cfg(windows)]
 mod native_owner_record;
+
+#[cfg(all(windows, feature = "service-thermal-mutation-v1"))]
+mod configuration;

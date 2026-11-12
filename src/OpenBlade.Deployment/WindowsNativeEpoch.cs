@@ -76,11 +76,11 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
             // Authenticate retained canceled preparations under this SAME writer.
             // Acquire original custody/owner before handoff exclusion, matching
             // startup/maintenance lock order. Never reacquire our own writer.
-            if (!package.Service.ReadOnlyMailbox && previous is null && WindowsNativeRecoveryState.Inspect(files).State != NativeInstallationState.VerifiedBootstrap)
+            if (!package.Service.RequiresMailboxHandoff && previous is null && WindowsNativeRecoveryState.Inspect(files).State != NativeInstallationState.VerifiedBootstrap)
             { throw new NativeRecoveryException(NativeRecoveryReason.UnknownBootstrapHistory, "Native bootstrap admission changed; preserved mappings/reservations/ownership were not reset."); }
-            using var prefix = package.Service.ReadOnlyMailbox ? ManagedMailboxNativeCustody.AcquireUnderWriter(files.RetainView()) : null;
+            using var prefix = package.Service.RequiresMailboxHandoff ? ManagedMailboxNativeCustody.AcquireUnderWriter(files.RetainView()) : null;
             using var legacyAdmission = prefix is null ? null : WindowsManagedMailboxRun.AcquireLegacyExclusion(prefix, storage);
-            using var handoff = package.Service.ReadOnlyMailbox
+            using var handoff = package.Service.RequiresMailboxHandoff
                 ? (managedTransfer ?? throw new IOException("A real managed transport handoff is required for native observation.")).AcquireForBegin(package, request) : null;
             if (prefix is not null)
             {
@@ -154,7 +154,7 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
             // neither an origin-only nor a mapping-only crash gap is authority.
             handoff?.PublishPreparation(files, value);
             files.Publish(Path.Combine(directory, "origin.bin"), selection);
-            if (package.Service.ReadOnlyMailbox)
+            if (package.Service.RequiresMailboxHandoff)
             {
                 handoff!.BindEpoch(files, value);
             }

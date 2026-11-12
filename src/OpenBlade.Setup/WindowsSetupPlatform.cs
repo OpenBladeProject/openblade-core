@@ -116,7 +116,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         if (request == Guid.Empty) { throw new ArgumentException("A selected native transaction requires its authenticated request."); }
         selectedNativePackage = package;
         nativeRequest = request;
-        if (package.Service.ReadOnlyMailbox)
+        if (package.Service.RequiresMailboxHandoff)
         { incomingMailbox = new(package.Release.Manifest.InstallationId.ToString("N"), NativeCanonical.Digest(package.Record)); }
     }
 

@@ -663,6 +663,10 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     let hardware = has("service-hardware-compile-check");
     let firmware = has("firmware-performance-compile-check");
     let observation = has("service-mailbox-observation-v1");
+    let mutation = has("service-thermal-mutation-v1");
+    if mutation && (!observation || !has("controller-admission-compile-check")) {
+        return Err(deny());
+    }
     if observation && (!hardware || metadata) {
         return Err(deny());
     }
@@ -695,6 +699,8 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         }
         if metadata {
             "private-service-custody-v1,service-metadata-only-v1"
+        } else if mutation {
+            "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1"
         } else if observation {
             "private-service-custody-v1,service-mailbox-observation-v1"
         } else {
@@ -737,6 +743,10 @@ fn startup_policy(identity: &[u8]) -> io::Result<&'static str> {
         Ok(
             if f[7] == "private-service-custody-v1,service-metadata-only-v1" {
                 "service-metadata-only-v1"
+            } else if f[7]
+                == "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1"
+            {
+                "service-thermal-mutation-v1"
             } else if f[7] == "private-service-custody-v1,service-mailbox-observation-v1" {
                 "service-mailbox-observation-v1"
             } else {
@@ -1151,14 +1161,20 @@ impl InstalledPackage {
             &self.epoch,
             &origin,
             image,
-            startup_policy(&self.service_identity)? == "service-mailbox-observation-v1",
+            matches!(
+                startup_policy(&self.service_identity)?,
+                "service-mailbox-observation-v1" | "service-thermal-mutation-v1"
+            ),
         )?;
         create_attempt_record(&attempts, &format!("launch-{pid}-{created}.bin"), &bytes)?;
         self.service_attempt = Some((attempts, digest(&bytes)));
         Ok(())
     }
     pub(crate) fn record_metadata_drain(&self, pid: u32, created: u64) -> io::Result<()> {
-        if startup_policy(&self.service_identity)? == "service-mailbox-observation-v1" {
+        if matches!(
+            startup_policy(&self.service_identity)?,
+            "service-mailbox-observation-v1" | "service-thermal-mutation-v1"
+        ) {
             return Err(deny());
         }
         let (attempts, launch) = self.service_attempt.as_ref().ok_or_else(deny)?;
@@ -1172,7 +1188,10 @@ impl InstalledPackage {
     pub(crate) fn record_transport_drain(&self, pid: u32, created: u64) -> io::Result<()> {
         let (attempts, launch) = self.service_attempt.as_ref().ok_or_else(deny)?;
         if self.service_custody.is_none()
-            || startup_policy(&self.service_identity)? != "service-mailbox-observation-v1"
+            || !matches!(
+                startup_policy(&self.service_identity)?,
+                "service-mailbox-observation-v1" | "service-thermal-mutation-v1"
+            )
         {
             return Err(deny());
         }
@@ -1191,7 +1210,10 @@ impl InstalledPackage {
         )
     }
     pub(crate) fn mailbox_mapping(&self) -> io::Result<Vec<u8>> {
-        if startup_policy(&self.service_identity)? != "service-mailbox-observation-v1" {
+        if !matches!(
+            startup_policy(&self.service_identity)?,
+            "service-mailbox-observation-v1" | "service-thermal-mutation-v1"
+        ) {
             return Err(deny());
         }
         let expected_prefix = [

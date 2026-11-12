@@ -13,7 +13,7 @@ public sealed class WindowsNativeEpochTests
 {
     private const string Features = "installed-service-candidate,native-agent-entry-compile-check,startup-custody-v1";
 
-    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1, int schema = 1, string? capabilities = null, bool mailbox = false, string? sourceRevision = null)
+    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1, int schema = 1, string? capabilities = null, bool mailbox = false, string? sourceRevision = null, bool mutation = false)
     {
         byte[] bytes = new byte[0xA00];
         void U16(int n, ushort v) => BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(n), v);
@@ -23,11 +23,11 @@ public sealed class WindowsNativeEpochTests
         U32(0x98 + 32, 0x1000); U32(0x98 + 36, 0x200); U32(0x98 + 56, 0x3000); U32(0x98 + 60, 0x400); U32(0x98 + 108, 16);
         U32(0x98 + 120, 0x2000); U32(0x98 + 124, 40);
         string[] fields = [new string(nonce, 64) + "-" + role, role, "x86_64-pc-windows-msvc", sourceRevision ?? new string('a', 40),
-            schema == 1 ? Features : mailbox ? "firmware-performance-compile-check,installed-service-candidate,native-agent-entry-compile-check,service-hardware-compile-check,service-mailbox-observation-v1,startup-custody-v1"
+            schema == 1 ? Features : mutation ? "controller-admission-compile-check,firmware-performance-compile-check,installed-service-candidate,native-agent-entry-compile-check,service-hardware-compile-check,service-mailbox-observation-v1,service-thermal-mutation-v1,startup-custody-v1" : mailbox ? "firmware-performance-compile-check,installed-service-candidate,native-agent-entry-compile-check,service-hardware-compile-check,service-mailbox-observation-v1,startup-custody-v1"
                 : "installed-service-candidate,native-agent-entry-compile-check,service-metadata-only-v1,startup-custody-v1",
             "rustc 1.99.1 (inert test data)", "debug"];
         byte[] metadata = NativeCanonical.Lines($"OpenBlade.NativeArtifact.v{schema}", schema == 1 ? fields
-            : [.. fields, capabilities ?? (role == "service" ? mailbox ? "private-service-custody-v1,service-mailbox-observation-v1" : "private-service-custody-v1,service-metadata-only-v1" : "none")]);
+            : [.. fields, capabilities ?? (role == "service" ? mutation ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1" : mailbox ? "private-service-custody-v1,service-mailbox-observation-v1" : "private-service-custody-v1,service-metadata-only-v1" : "none")]);
         int section = 0x98 + 240;
         ".obid"u8.CopyTo(bytes.AsSpan(section)); U32(section + 8, (uint)metadata.Length); U32(section + 12, 0x1000); U32(section + 16, 0x400); U32(section + 20, 0x400); U32(section + 36, 0x40000040);
         ".idata"u8.CopyTo(bytes.AsSpan(section + 40)); U32(section + 48, 0x200); U32(section + 52, 0x2000); U32(section + 56, 0x200); U32(section + 60, 0x800); U32(section + 76, 0x40000040);
@@ -65,6 +65,34 @@ public sealed class WindowsNativeEpochTests
         Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect([.. bytes], "service", new string('c', 40)));
         bytes[^1] ^= 1;
         Assert.NotEqual(artifact.Sha256, NativeArtifact.Inspect([.. bytes], "service", new string('a', 40)).Sha256);
+    }
+
+    [Fact]
+    public void ExplicitThermalMutationRoleRequiresSignedCapabilityAndMailboxCustody()
+    {
+        var artifact = NativeArtifact.Inspect([.. Image("service", schema: 2, mutation: true)], "service", new string('a', 40));
+        Assert.True(artifact.ThermalMutation);
+        Assert.True(artifact.RequiresMailboxHandoff);
+        Assert.False(artifact.ReadOnlyMailbox);
+        Assert.Equal("service-thermal-mutation-v1", artifact.StartupPolicy);
+        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, mutation: true, capabilities: "private-service-custody-v1,service-mailbox-observation-v1")], "service", new string('a', 40)));
+        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, mailbox: true, capabilities: "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1")], "service", new string('a', 40)));
+        var readOnly = NativeArtifact.Inspect([.. Image("service", schema: 2, mailbox: true)], "service", new string('a', 40));
+        Assert.True(readOnly.ReadOnlyMailbox);
+        Assert.False(readOnly.ThermalMutation);
+    }
+
+    [Fact]
+    public void ThermalSubmissionHistoryRequiresSeparateRecoveryEvenAfterTransportRetirement()
+    {
+        foreach (string name in new[] { "thermal-mutation.journal", "thermal-mutation.journal.pending" })
+        {
+            IOException error = Assert.Throws<IOException>(() => WindowsNativeTrustLifecycle.RequireNoThermalJournal(name));
+            Assert.Contains("transport retirement alone", error.Message, StringComparison.Ordinal);
+        }
+        WindowsNativeTrustLifecycle.RequireNoThermalJournal("owner-00000000000000000004.bin");
     }
 
     [Fact]

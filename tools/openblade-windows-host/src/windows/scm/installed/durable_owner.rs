@@ -25,12 +25,15 @@ use windows_sys::{
     Win32::Storage::FileSystem::{FILE_GENERIC_READ, FILE_GENERIC_WRITE},
 };
 
-struct Store {
+pub(in crate::installed) struct Store {
     root: File,
     _ancestors: Vec<File>,
     lock: File,
     path: PathBuf,
     last: Option<Record>,
+    activated_here: bool,
+    #[cfg(test)]
+    verifier: Option<Arc<dyn Fn(&File) -> io::Result<()> + Send + Sync>>,
 }
 impl Store {
     fn open() -> io::Result<Self> {
@@ -63,8 +66,15 @@ impl Store {
             lock,
             path,
             last: None,
+            activated_here: false,
+            #[cfg(test)]
+            verifier: None,
         };
-        let mut entries = std::fs::read_dir(&result.path)?
+        result.load_history()?;
+        Ok(result)
+    }
+    fn load_history(&mut self) -> io::Result<()> {
+        let mut entries = std::fs::read_dir(&self.path)?
             .map(|e| e.map(|e| e.file_name()))
             .collect::<io::Result<Vec<_>>>()?;
         if entries.len() > 4096 {
@@ -77,7 +87,16 @@ impl Store {
             if name == "writer.lock" {
                 continue;
             }
-            let mut held = open(&result.root, name, false)?;
+            // Older compositions must retain their complete-set refusal. Only
+            // this composition owns and validates the separate submission log.
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            if matches!(
+                name,
+                "thermal-mutation.journal" | "thermal-mutation.journal.pending"
+            ) {
+                continue;
+            }
+            let mut held = self.open_record(name, false)?;
             let bytes = bounded(&mut held)?;
             let record = Record::parse(&bytes)?;
             if name != format!("owner-{:020}.bin", record.sequence) {
@@ -98,8 +117,93 @@ impl Store {
             }
             previous = Some(record);
         }
-        result.last = previous;
-        Ok(result)
+        self.last = previous;
+        Ok(())
+    }
+    #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+    pub(in crate::installed) fn injected(
+        root: File,
+        path: PathBuf,
+        verify: Arc<dyn Fn(&File) -> io::Result<()> + Send + Sync>,
+    ) -> io::Result<Self> {
+        verify(&root)?;
+        let lock = paths::open_relative(
+            &root,
+            OsStr::new("writer.lock"),
+            FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+            0,
+            FILE_OPEN,
+            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
+        )?;
+        paths::check_regular_file(&lock)?;
+        verify(&lock)?;
+        let mut store = Self {
+            root,
+            _ancestors: vec![],
+            lock,
+            path,
+            last: None,
+            activated_here: false,
+            verifier: Some(verify),
+        };
+        store.load_history()?;
+        Ok(store)
+    }
+    #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+    pub(in crate::installed) fn activate_injected(&mut self, record: Record) -> io::Result<()> {
+        self.activate_bound(record)
+    }
+    // Only authenticated ReadLease custody calls this after actual reader drain.
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    pub(in crate::installed) fn activate_first(
+        &mut self,
+        origin: &Origin,
+        nonce: String,
+    ) -> io::Result<()> {
+        origin.verify()?;
+        let artifact = origin.mutation_artifact()?;
+        if !origin.committed()? {
+            return Err(deny());
+        }
+        self.activate_bound(Record {
+            phase: Phase::Reserved,
+            sequence: 1,
+            predecessor: "0".repeat(64),
+            installation: origin.installation.clone(),
+            epoch: origin.epoch.clone(),
+            artifact,
+            process: format!("{}:{}", origin.pid, origin.created),
+            nonce,
+        })
+    }
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn activate_bound(&mut self, mut reservation: Record) -> io::Result<()> {
+        if self.activated_here
+            || reservation.phase != Phase::Reserved
+            || !hex(&reservation.nonce, 64)
+        {
+            return Err(deny());
+        }
+        if let Some(prior) = &self.last {
+            if prior.phase != Phase::Retired {
+                return Err(deny());
+            }
+            reservation.sequence = prior.sequence.checked_add(1).ok_or_else(deny)?;
+            reservation.predecessor = digest(&prior.bytes());
+        }
+        Record::parse(&reservation.bytes())?;
+        self.publish(reservation)?;
+        self.advance(Phase::Active)?;
+        self.activated_here = true;
+        Ok(())
+    }
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    pub(in crate::installed) fn retire_active(&mut self) -> io::Result<()> {
+        if self.activated_here && self.last.as_ref().is_some_and(|r| r.phase == Phase::Active) {
+            self.advance(Phase::Retiring)?;
+            self.advance(Phase::Retired)?;
+        }
+        Ok(())
     }
     fn reserve(&mut self, origin: &Origin, artifact: String, nonce: String) -> io::Result<()> {
         origin.verify()?;
@@ -134,13 +238,90 @@ impl Store {
         };
         self.publish(next)
     }
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    pub(in crate::installed) fn journal_read(&self, pending: bool) -> io::Result<Option<Vec<u8>>> {
+        let name = if pending {
+            "thermal-mutation.journal.pending"
+        } else {
+            "thermal-mutation.journal"
+        };
+        let mut file = match self.open_record(name, false) {
+            Ok(f) => f,
+            Err(e) if paths::missing_leaf(&e) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        if file.metadata()?.len() > 1024 * 1024 {
+            return Err(deny());
+        }
+        let mut bytes = vec![];
+        file.read_to_end(&mut bytes)?;
+        Ok(Some(bytes))
+    }
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    pub(in crate::installed) fn journal_replace(
+        &self,
+        expected: Option<&[u8]>,
+        bytes: &[u8],
+    ) -> io::Result<()> {
+        self.check(&self.root, Policy::ROOT)?;
+        if bytes.len() > 1024 * 1024 || self.journal_read(false)?.as_deref() != expected {
+            return Err(deny());
+        }
+        let mut file = paths::open_relative(
+            &self.root,
+            OsStr::new("thermal-mutation.journal.pending"),
+            FILE_GENERIC_READ
+                | FILE_GENERIC_WRITE
+                | windows_sys::Win32::Storage::FileSystem::DELETE,
+            0,
+            FILE_CREATE,
+            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
+        )?;
+        paths::check_regular_file(&file)?;
+        self.check(&file, Policy::Record)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        file.rewind()?;
+        let mut check = vec![];
+        file.read_to_end(&mut check)?;
+        if check != bytes || self.journal_read(false)?.as_deref() != expected {
+            return Err(deny());
+        }
+        paths::rename_same_directory(&file, "thermal-mutation.journal", true)?;
+        file.sync_all()?;
+        drop(file);
+        if self.journal_read(false)?.as_deref() != Some(bytes) {
+            return Err(deny());
+        }
+        Ok(())
+    }
+    fn check(&self, file: &File, policy: Policy) -> io::Result<()> {
+        #[cfg(test)]
+        if let Some(verify) = &self.verifier {
+            return verify(file);
+        }
+        paths::verify_security(file, policy)
+    }
+    fn open_record(&self, name: &str, create: bool) -> io::Result<File> {
+        let file = paths::open_relative(
+            &self.root,
+            OsStr::new(name),
+            FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+            0,
+            if create { FILE_CREATE } else { FILE_OPEN },
+            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
+        )?;
+        paths::check_regular_file(&file)?;
+        self.check(&file, Policy::Record)?;
+        Ok(file)
+    }
     fn publish(&mut self, next: Record) -> io::Result<()> {
-        paths::verify_security(&self.root, Policy::ROOT)?;
+        self.check(&self.root, Policy::ROOT)?;
         if let Some(prior) = &self.last {
             require_transition(prior, &next)?;
         }
         let name = format!("owner-{:020}.bin", next.sequence);
-        let mut file = open(&self.root, &name, true)?;
+        let mut file = self.open_record(&name, true)?;
         let bytes = next.bytes();
         // A partial record is intentionally retained as an unresolved fence.
         file.write_all(&bytes)?;
@@ -156,9 +337,12 @@ impl Store {
 
 // Observation retains the real global owner serialization boundary. Empty
 // history is admitted only with the separate authenticated managed handoff;
+// the mutation composition also admits valid history for read-only recovery.
+// An unresolved predecessor cannot reserve or be retired by this new process;
 // it is never converted into a firmware Retired record or write reservation.
-pub(in crate::installed) fn acquire_empty_read_history() -> io::Result<impl Send + Sync> {
+pub(in crate::installed) fn acquire_empty_read_history() -> io::Result<Store> {
     let store = Store::open()?;
+    #[cfg(not(feature = "service-thermal-mutation-v1"))]
     if store.last.is_some() {
         return Err(deny());
     }

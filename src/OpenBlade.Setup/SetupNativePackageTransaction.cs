@@ -54,7 +54,7 @@ internal sealed class SetupNativePackageTransaction : ISetupPayloadTransaction
 
     internal void BindManagedHandoff(WindowsManagedMailboxTransfer transfer)
     {
-        if (managedTransfer is not null || preparationAttempted || disposed || !package.Service.ReadOnlyMailbox)
+        if (managedTransfer is not null || preparationAttempted || disposed || !package.Service.RequiresMailboxHandoff)
         { throw new IOException("Managed handoff may bind only once before native epoch activation."); }
         managedTransfer = transfer;
     }

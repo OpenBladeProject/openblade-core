@@ -1,0 +1,137 @@
+# Bounded installed native thermal mutation
+
+This opt-in source composition extends accepted native mailbox observation with
+`service-thermal-mutation-v1`. It does not select, install, run, or make the
+native backend the default. The normal publisher and installed product remain
+managed. Native Windows suppliers are compile-only during this stage's offline
+verification; neither software fixtures nor compiled suppliers establish live
+Windows or physical hardware proof.
+
+## Reachable composition and authority
+
+The compiled service artifact asserts the exact ordered capabilities
+`private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1`.
+The native artifact producer, native package consumer, managed artifact parser,
+selection and Setup handoff consumers retain the same authenticated mailbox
+handoff requirement. A correctly authenticated role inventory can carry this
+composition. There is no new default native publishing or installation path.
+
+The installed v79 dispatcher accepts typed `setPerformanceOverride` and
+`reportApplicationContext` requests only in this composition. The SID comes
+from the actual named-pipe peer token, with active interactive session continuity
+checked before and after the operation. The real supplier independently matches
+that SID/session/authentication LUID against the current Windows session token.
+It checks the loaded committed origin, competing-controller absence and known
+coarse power. Actual opened-port validation checks the reviewed exact RZ09-0581
+host/HID identity. Per-command 07/8C readback classifies adapter sufficiency.
+SCM power/session ingress irrevocably revokes this origin; this stage does not
+automatically reacquire mutation authority after a lifecycle boundary.
+
+The existing ReadLease owns the managed handoff exclusion and the single durable
+owner Store. It drains its actual native reader before publishing the genuine
+first Reserved then Active records. Later epochs require an actual Retired
+predecessor. It neither opens a second owner Store nor fabricates a first Retired
+record. Only the process that activated that Store can publish its retirement.
+The older hardware-compile prototype authority remains unavailable and is not
+on this installed route.
+
+A restarted, already consumed epoch can obtain process-bound read-only recovery
+custody after acquiring the original exclusion and owner writer handles. Its
+separate recovery acquisition/retirement records do not certify the original
+process's retirement and cannot activate a writer. Valid unresolved owner history
+remains readable and prevents a new mutation reservation.
+
+## Saved intent and the bounded compatible slice
+
+An existing protected ProgramData/OpenBlade/users/SID directory is selected only
+after authenticated SID/session binding. SYSTEM or Administrators ownership and
+safe inherited ACLs are admitted; untrusted modification or child replacement is
+not. No legacy-root discovery, owner guessing, user-root bootstrap, or default
+profile materialization occurs. The native writer retains its own exclusive
+configuration writer handle, protected relative paths, atomic replacement and
+independent byte readback.
+
+Current schema-8 manual overrides support Balanced/Performance, Persistent and
+UntilPowerSourceChange lifetimes, and explicit nullable clear. Each setter clears
+the other performance slot as managed setters do. Temporary state expires when
+its power source changes. Existing validated manual fan detail/custom/GPU fields
+are preserved when unrelated; schema 1-7 requires managed migration. Unsupported
+saved lighting overrides are preserved and refused rather than erased or labeled
+as corrupt. Future, malformed, duplicate-member and interrupted documents remain
+unchanged. A compatible committed schema-25 profile/preferences/commit envelope
+is required when an aggregate exists; hashes and consumed typed thermal fields
+are validated before saving. This does not implement all managed profile payload
+semantics or migrate/modify the aggregate.
+
+Resolution uses eligible manual intent, then the current application report's
+performance override, then the matching power profile. Application instances have
+monotonic sequence numbers and a 15-second lease, use full canonical executable
+paths and production Windows ordinal comparison, and cannot supply caller SID or
+hardware authority. Reports only select intent; this slice has no automatic
+profile reconciliation. It can use the existing managed reporter wire operation;
+complete native Session Agent producer parity is separate work. Private profile
+and accepted override projection carries a local authenticated SID binding. Final
+GetStatus, ObserveState and subscription projection rechecks the live peer;
+System, inactive and different-SID callers receive only public hardware fields.
+
+Configured GPU clock effects are Stored with an explicit incomplete outcome and
+no thermal pair. GPU clocks, manual fan application, display, lighting, and other
+native controls are not implemented here. Their saved fields are not confirmation.
+The broad capabilities snapshot remains null. Applied means this bounded thermal
+preset was independently confirmed, with GPU/broad capability incompleteness
+stated in the result. An ineligible saved request is Stored even if a different
+eligible profile's thermal preset was confirmed. Requested override, effective
+selected value/provenance, and observed state remain distinct.
+
+## Submission, ambiguity and finite transport lifetime
+
+The portable typed pair resolves both 0D/02 reports before the first mutation.
+Balanced and Performance use their destination directly, including from manual
+or Custom observations. No Balanced/Automatic reset is an entry prerequisite.
+The same native port worker and finite process transaction allocator are used;
+all write, per-command power and final readback identifiers are reserved before
+submission. Reopening a handle or replacing a worker does not reset that budget.
+An unexpected Custom final selector rejects confirmation without allocating
+unreserved Custom component queries. Ordinary full observation still reads both
+Custom components, and CustomManual High/High does not become known levels or a
+CustomMaximum confirmation.
+
+A machine-global thermal-mutation.journal lives under the SAME owner Store.
+Per-user configuration adapters route its I/O through retained ReadCustody, so a
+SID switch cannot bypass an earlier user's ambiguity. Each durable stage includes
+original request ID, SID, peer PID/session, owner-generation digest, full typed
+requested intent, intent hash, resolved destination, and ordered progress:
+Prepared, FirstIntent, FirstAcknowledged, SecondIntent, SecondAcknowledged,
+Confirmed. Intent is flushed and read back before each possible submission.
+Prepared proves no mutation intent was reached. This bounded stage conservatively
+fences Prepared too; it does not implement a no-submission settlement path.
+Later incomplete stages preserve
+possible submission. Persistence failures latch quarantine in memory and leave
+partial staging on disk. Cancellation retains the actual worker until native
+callback retirement; dropping a requester cannot release custody early.
+
+After ambiguity, explicit observation remains read-only. It can report current
+thermal state but does not clear the durable mutation fence or replay an uncertain
+request. Unresolved owner history cannot be repaired by guessing retirement.
+Managed native-to-managed recovery/cleanup explicitly refuses thermal journal
+history, including confirmed history, until a complete shared journal-history
+consumer is implemented. Transport retirement alone is not firmware reconciliation.
+This is a material packaging/recovery limitation, not full backend readiness.
+
+## Offline evidence boundaries
+
+The focused native dispatcher tests use the actual installed dispatcher, runtime,
+Storage, ReadSource, typed Reader and native worker lifecycle with explicitly
+injected memory-only metadata, caller, custody, files and ports. Separate prelisted
+own-user private-file tests use the actual ProtectedFiles and durable Store,
+including first reservation, atomic journal replacement, exclusive sharing,
+restart and cross-SID refusal. Constructors take those inputs before any default
+root resolution. Real controller/token/session/SCM/HID suppliers are compiled,
+not executed. Managed tests parse emitted native replies with the actual v79 codec
+and inspect explicit artifact capabilities and conservative recovery refusal.
+
+Final evidence must bind the exact clean commit/tree, full compiler inputs and
+outputs, actual feature/define sets, complete inspected test bodies, held harness
+hashes, exact prelists and original logs/TRXs. A prior stage's compiler/test packet
+is not evidence for this source. Installation, hardware validation, lifecycle
+experiments, package publication and default activation remain outside this stage.

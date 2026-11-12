@@ -4,6 +4,7 @@
 #![no_std]
 
 pub mod custom_performance;
+pub mod thermal_preset;
 
 use openblade_types::{ProtocolValidationFailure, ReportEncodingError};
 

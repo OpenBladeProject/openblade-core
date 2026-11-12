@@ -62,7 +62,7 @@ pub(super) struct Publication {
 }
 
 impl Publication {
-    fn for_peer(&self, stream: &dyn Stream, original: Caller) -> Result<&Snapshot, ExchangeError> {
+    fn for_peer(&self, stream: &dyn Stream, original: Caller) -> Result<Snapshot, ExchangeError> {
         let access = refresh_caller(stream, original)?
             .access()
             .map_err(ExchangeError::Client)?;
@@ -73,11 +73,15 @@ impl Publication {
                 "status projection revision mismatch",
             )));
         }
-        Ok(if access == 0 {
+        let status = if access == 0 {
             &self.active
         } else {
             &self.inactive
-        })
+        };
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        return super::project_private_status(stream, original, status);
+        #[cfg(not(feature = "service-thermal-mutation-v1"))]
+        Ok(status.clone())
     }
 }
 
@@ -149,7 +153,7 @@ pub(super) async fn serve_subscription(
             if snapshot.revision() <= revision {
                 continue;
             }
-            if !write_while_connected(stream, &encode_status_event(snapshot).map_err(Runtime)?)
+            if !write_while_connected(stream, &encode_status_event(&snapshot).map_err(Runtime)?)
                 .await?
             {
                 return Ok(());

@@ -111,6 +111,11 @@ impl AsyncWrite for TestStream {
 }
 
 impl Stream for TestStream {
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn user_sid_after_read(&self) -> io::Result<String> {
+        self.caller_after_read()?;
+        Ok("S-1-5-21-111-222-333-1001".into())
+    }
     fn server_pid(&self) -> io::Result<u32> {
         let reads = self.pid_reads.get();
         self.pid_reads.set(reads + 1);
@@ -814,3 +819,11 @@ async fn typed_stop_does_not_hide_real_scm_report_failures() {
         assert!(events.contains(&"ack"));
     }
 }
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[path = "readiness_tests/mutation.rs"]
+mod mutation;
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[path = "readiness_tests/private_mutation.rs"]
+mod private_mutation;

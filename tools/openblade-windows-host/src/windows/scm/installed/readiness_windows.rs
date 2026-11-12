@@ -427,6 +427,13 @@ impl tokio::io::AsyncWrite for NativeStream {
 }
 
 impl Stream for NativeStream {
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn user_sid_after_read(&self) -> io::Result<String> {
+        self.caller_after_read()?;
+        let token = peer_token(self.pipe.as_raw_handle())?;
+        Ok(crate::windows_token::Identity::read(&token)?.sid)
+    }
+
     fn server_pid(&self) -> io::Result<u32> {
         let Side::Client(session) = self.side else {
             return Err(denied("server PID requires the client handle"));

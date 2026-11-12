@@ -22,6 +22,8 @@ mod tests;
 #[cfg(test)]
 pub(crate) mod worker_tests;
 
+#[cfg(feature = "service-thermal-mutation-v1")]
+pub(crate) mod mutation;
 #[cfg(any(test, feature = "firmware-performance-compile-check"))]
 mod worker;
 #[cfg(all(windows, feature = "service-hardware-compile-check"))]
@@ -116,6 +118,8 @@ impl Limit<'_> {
 
 enum Transfer {
     SendGetter(Frame),
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    SendMutation(Frame),
     ReceiveReply,
 }
 
@@ -243,8 +247,20 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
         admission: A,
         limit: Limit<'_>,
     ) -> Option<ObservedPerformance> {
-        self.checkpoint(authorize, admission, limit).ok()?;
         let transactions = self.reader.port.reserve_pair()?;
+        self.read_reserved_pair(authorize, admission, limit, transactions, true)
+            .await
+    }
+
+    async fn read_reserved_pair(
+        &mut self,
+        authorize: Authorize<'_, A>,
+        admission: A,
+        limit: Limit<'_>,
+        transactions: [u8; 2],
+        include_custom: bool,
+    ) -> Option<ObservedPerformance> {
+        self.checkpoint(authorize, admission, limit).ok()?;
         let mut selectors = [(0, 0); 2];
         for (index, transaction) in transactions.into_iter().enumerate() {
             let channel = index as u8 + 1;
@@ -291,6 +307,7 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
             (6, 1) => Some(ObservedPerformance::BatteryBalancedManual),
             (0, 1) => Some(ObservedPerformance::FixedMaximum),
             (7, 0) => Some(ObservedPerformance::HyperBoostObserved),
+            (4, _) if !include_custom => None,
             (4, fan @ (0 | 1)) => {
                 // Reserve only after a complete Custom selector pair. A new handle
                 // does not replenish the process-wide budget or drain firmware replies.
@@ -381,3 +398,6 @@ impl<P: Port, A: ObservationProof> Drop for Attempt<'_, P, A> {
         }
     }
 }
+
+#[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+pub(crate) mod mutation_fixture;

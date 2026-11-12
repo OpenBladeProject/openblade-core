@@ -40,3 +40,27 @@ pub enum CustomPerformanceComponent {
     Cpu = 1,
     Gpu = 2,
 }
+
+/// The two exact RZ09-0581 destinations admitted by the installed slice.
+/// Numeric values preserve the managed PerformancePreset wire contract.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i32)]
+pub enum InstalledThermalPreset {
+    Balanced = 1,
+    Performance = 2,
+}
+impl InstalledThermalPreset {
+    pub const fn from_wire(value: i32) -> Option<Self> {
+        match value {
+            1 => Some(Self::Balanced),
+            2 => Some(Self::Performance),
+            _ => None,
+        }
+    }
+    pub const fn selector(self) -> u8 {
+        match self {
+            Self::Balanced => 0,
+            Self::Performance => 2,
+        }
+    }
+}

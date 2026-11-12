@@ -131,6 +131,11 @@ public static class WindowsNativeTrustLifecycle
             && ulong.TryParse(parts[1], out ulong created) && created > 0
             && value == pid.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + created.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
+    internal static void RequireNoThermalJournal(string name)
+    {
+        if (name is "thermal-mutation.journal" or "thermal-mutation.journal.pending")
+        { throw new IOException("Native thermal submission history is preserved; transport retirement alone cannot authorize managed recovery or cleanup."); }
+    }
     private static string RequireOwnerRetiredCore(WindowsNativeEpochFiles files, List<OwnerReference> references)
     {
         string owner = Path.Combine(files.Root, "owner");
@@ -141,6 +146,7 @@ public static class WindowsNativeTrustLifecycle
         foreach (string path in Directory.EnumerateFileSystemEntries(owner).Order(StringComparer.Ordinal))
         {
             if (Path.GetFileName(path) == "writer.lock") { continue; }
+            RequireNoThermalJournal(Path.GetFileName(path));
             if (++count > 4096) { throw new IOException("Native owner history exceeds its bound."); }
             using var held = files.OpenFile(path);
             byte[] bytes = WindowsNativeEpochFiles.ReadBounded(held, 4096);

@@ -15,7 +15,7 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
     private readonly HashSet<string> canceled = new(StringComparer.Ordinal);
     private readonly string ownerCommitment;
     private readonly byte[] namespaceProof;
-    private sealed record Generation(NativeEpochRecord Record, byte[] Proof, byte[] Reservation, bool Preparation, bool ReadOnlyMailbox, byte[] Projection, string Source, byte[]? PreparationBinding);
+    private sealed record Generation(NativeEpochRecord Record, byte[] Proof, byte[] Reservation, bool Preparation, bool RequiresMailboxHandoff, byte[] Projection, string Source, byte[]? PreparationBinding);
     private ManagedMailboxNativeCustody()
     {
         ownerCommitment = NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.NativeOwnerAbsent.v2", "verified-native-namespace-absent"));
@@ -152,7 +152,7 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
                 if (item.Preparation && Directory.EnumerateFileSystemEntries(Path.Combine(item.Directory, "attempts")).Any(p => Path.GetFileName(p) != "custody.lock"))
                 { throw new IOException("Unselected preparation contains a possible native attempt."); }
                 byte[] reservation = ManagedMailboxRecovery.Read(files, item.Directory + ".reserved");
-                generations.Add(item.Record.Epoch, new(item.Record, proof, reservation, item.Preparation, item.Package.ServiceArtifact.ReadOnlyMailbox, item.Package.ManagedVerificationProjection, item.Package.SourceRevision, item.PreparationBinding));
+                generations.Add(item.Record.Epoch, new(item.Record, proof, reservation, item.Preparation, item.Package.ServiceArtifact.RequiresMailboxHandoff, item.Package.ManagedVerificationProjection, item.Package.SourceRevision, item.PreparationBinding));
                 commitments.Add(NativeCanonical.Digest(proof));
             }
             namespaceProof = NativeCanonical.Lines("OpenBlade.ManagedNativeNamespace.v2", selected is null ? firstPreparation ? "unselected-authenticated-prefix" : "verified-bootstrap" : NativeCanonical.Digest(selected.Encode()),
@@ -169,7 +169,7 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
     internal void RequireBinding(NativeEpochRecord epoch, byte[] mapping)
     {
         if (files is null || !generations.TryGetValue(epoch.Epoch, out var generation)
-            || !generation.ReadOnlyMailbox || generation.Record with { Phase = epoch.Phase, Readiness = epoch.Readiness } != epoch)
+            || !generation.RequiresMailboxHandoff || generation.Record with { Phase = epoch.Phase, Readiness = epoch.Readiness } != epoch)
         { throw new IOException("Transfer epoch/package/reservation is unmatched."); }
         if (generation.PreparationBinding is not null && !generation.PreparationBinding.AsSpan().SequenceEqual(mapping))
         { throw new IOException("Native preparation binding differs from the exact transfer."); }

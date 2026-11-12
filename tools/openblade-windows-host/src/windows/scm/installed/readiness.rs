@@ -41,6 +41,15 @@ pub(super) mod ownership;
 
 #[path = "status_source.rs"]
 mod status_source;
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[path = "thermal_mutation.rs"]
+mod thermal_mutation;
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[path = "thermal_native.rs"]
+mod thermal_native;
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[path = "thermal_storage.rs"]
+mod thermal_storage;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
@@ -127,7 +136,21 @@ impl Endpoint for windows::NativeEndpoint {
 // observation can share it, using the projection for the resolved caller.
 type Observation = Pin<Box<dyn Future<Output = io::Result<Option<Snapshot>>> + 'static>>;
 
+#[cfg(feature = "service-thermal-mutation-v1")]
+type Mutation = Pin<
+    Box<dyn Future<Output = io::Result<(thermal_mutation::Outcome, Option<Snapshot>)>> + 'static>,
+>;
 trait StatusSource {
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn mutate(&mut self, _: Caller, _: String, _: StatusRequest, _: Instant) -> Mutation {
+        Box::pin(async {
+            Ok((
+                thermal_mutation::Outcome::blocked("This composition has no mutation authority."),
+                None,
+            ))
+        })
+    }
+
     fn snapshot(&mut self, caller: Caller, requested: Instant) -> Pending<'_, Snapshot>;
 
     // Only an admitted, independent read started for this call can supply
@@ -408,6 +431,16 @@ async fn serve_connection(
             async { source.lock().await.refresh_publications().await.map(drop) },
         )
         .await
+    } else if cfg!(feature = "service-thermal-mutation-v1")
+        && matches!(
+            request,
+            StatusRequest::SetPerformanceOverride { .. }
+                | StatusRequest::ReportApplicationContext { .. }
+        )
+    {
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        serve_mutation(&mut *stream, &request, caller, &source).await?;
+        guard().map_err(ExchangeError::Runtime)
     } else if request.is_observation() {
         serve_observation(&mut *stream, &request, caller, &source).await?;
         guard().map_err(ExchangeError::Runtime)
@@ -416,7 +449,7 @@ async fn serve_connection(
         let payload = {
             let mut source = source.lock().await;
             let caller = resolve_caller(&*stream, caller)?;
-            status_payload(&mut **source, &request, caller, requested).await?
+            status_payload(&mut **source, &request, caller, requested, Some(&*stream)).await?
         };
         guard().map_err(ExchangeError::Runtime)?;
         crate::service_frame::write_payload(&mut *stream, &payload)
@@ -475,6 +508,8 @@ async fn serve_observation(
         }) {
             source.lock().await.verify_origin().map_err(Runtime)?;
             status.verify(access).map_err(Runtime)?;
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            let status = project_private_status(stream, caller, &status)?;
             StatusResponse::success(request, status)
         } else {
             StatusResponse::failure(
@@ -540,7 +575,7 @@ async fn serve_get(
 ) -> Result<(), ExchangeError> {
     source.verify_origin().map_err(ExchangeError::Runtime)?;
     let caller = resolve_caller(stream, caller)?;
-    let payload = status_payload(source, request, caller, Instant::now()).await?;
+    let payload = status_payload(source, request, caller, Instant::now(), Some(stream)).await?;
     source.verify_origin().map_err(ExchangeError::Runtime)?;
     crate::service_frame::write_payload(stream, &payload)
         .await
@@ -553,6 +588,7 @@ async fn status_payload(
     request: &StatusRequest,
     caller: Caller,
     requested: Instant,
+    stream: Option<&dyn Stream>,
 ) -> Result<Vec<u8>, ExchangeError> {
     use ExchangeError::{Client, Runtime};
     let access = caller.access().map_err(Client)?;
@@ -561,6 +597,13 @@ async fn status_payload(
         .map_err(|e| Runtime(e.into()))?
         .map_err(Runtime)?;
     status.verify(access).map_err(Runtime)?;
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    let status = match stream {
+        Some(stream) => project_private_status(stream, caller, &status)?,
+        None => status.project_private(None),
+    };
+    #[cfg(not(feature = "service-thermal-mutation-v1"))]
+    let _ = stream;
     let response = StatusResponse::success(request, status);
     // Encoding errors (including oversized source data) are runtime failures,
     // while an individual client disconnect or write timeout is isolated.
@@ -578,4 +621,73 @@ fn acquisition_exclusion_probe(package: crate::candidate_receipt::CommittedServi
     let _ = FirmwareSource::native(1, None, |_| None);
     let _ = FirmwareSource::native_with_package(1, None, package, |_| None);
     let _ = crate::discovery::performance::native_worker(|| None);
+}
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+async fn serve_mutation(
+    stream: &mut dyn Stream,
+    request: &StatusRequest,
+    original: Caller,
+    source: &Mutex<Box<dyn StatusSource>>,
+) -> Result<(), ExchangeError> {
+    use ExchangeError::{Client, Runtime};
+    let caller = refresh_caller(stream, original)?;
+    let sid = stream.user_sid_after_read().map_err(Client)?;
+    let deadline = Instant::now() + FRAME_TIMEOUT;
+    let future = {
+        let mut source = source.lock().await;
+        source.verify_origin().map_err(Runtime)?;
+        timeout_at(deadline, source.snapshot(caller, Instant::now()))
+            .await
+            .map_err(|e| Runtime(e.into()))?
+            .map_err(Runtime)?;
+        source.mutate(caller, sid.clone(), request.clone(), deadline)
+    };
+    let mut probe = [0];
+    let (outcome, status) = tokio::select! {
+        biased;
+        disconnected=stream.read(&mut probe)=>{disconnected.map_err(Client)?;return Err(Client(io::ErrorKind::BrokenPipe.into()));}
+        result=timeout_at(deadline,future)=>result.map_err(|e|Client(e.into()))?.map_err(Runtime)?,
+    };
+    let current = refresh_caller(stream, original)?;
+    if current.access().map_err(Client)? != 0
+        || stream.user_sid_after_read().map_err(Client)? != sid
+        || Instant::now() >= deadline
+    {
+        return Err(Client(io::ErrorKind::PermissionDenied.into()));
+    }
+    source.lock().await.verify_origin().map_err(Runtime)?;
+    if let Some(status) = &status {
+        status.verify(0).map_err(Runtime)?;
+    }
+    let response = StatusResponse::mutation(
+        request,
+        serde_json::to_value(outcome).map_err(|e| Runtime(e.into()))?,
+        status,
+    );
+    write_payload(stream, &encode(&response).map_err(Runtime)?)
+        .await
+        .map_err(Client)?;
+    source.lock().await.verify_origin().map_err(Runtime)
+}
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+fn project_private_status(
+    stream: &dyn Stream,
+    caller: Caller,
+    status: &Snapshot,
+) -> Result<Snapshot, ExchangeError> {
+    let current = refresh_caller(stream, caller)?;
+    let sid = if current.logon == Logon::Interactive
+        && current.access().map_err(ExchangeError::Client)? == 0
+    {
+        Some(
+            stream
+                .user_sid_after_read()
+                .map_err(ExchangeError::Client)?,
+        )
+    } else {
+        None
+    };
+    Ok(status.project_private(sid.as_deref()))
 }

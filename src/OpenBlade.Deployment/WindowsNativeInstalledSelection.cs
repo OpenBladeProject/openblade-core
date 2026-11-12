@@ -33,7 +33,7 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
             var inspection = WindowsNativeRecoveryState.Inspect(files);
             if (inspection.State == NativeInstallationState.VerifiedBootstrap)
             {
-                if (incoming?.Service.ReadOnlyMailbox == true) { AuthenticateMailboxHistory(); }
+                if (incoming?.Service.RequiresMailboxHandoff == true) { AuthenticateMailboxHistory(); }
                 writer.Dispose(); files.Dispose(); return null;
             }
             if (inspection.State == NativeInstallationState.UnresolvedHistory)
@@ -42,7 +42,7 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
                 { throw new NativeRecoveryException(NativeRecoveryReason.UnknownBootstrapHistory, "Native selection is inconsistent with preserved history; no reset was performed."); }
                 // Begin preserves a fresh refusal too. Reject incompatible
                 // verified incoming composition before the runner stops anything.
-                if (incoming is not null && !incoming.Service.ReadOnlyMailbox)
+                if (incoming is not null && !incoming.Service.RequiresMailboxHandoff)
                 { throw new NativeRecoveryException(NativeRecoveryReason.UnknownBootstrapHistory, "Incoming package cannot renew retained mailbox preparation history."); }
                 AuthenticateMailboxHistory();
                 writer.Dispose(); files.Dispose(); return null;

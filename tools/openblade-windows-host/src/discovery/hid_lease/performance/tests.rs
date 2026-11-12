@@ -95,6 +95,8 @@ impl Port for Script {
                 self.sent.push(frame);
                 (0, frame)
             }
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            Transfer::SendMutation(_) => panic!("read-only fixture received a mutation"),
             Transfer::ReceiveReply => {
                 self.received += 1;
                 self.replies

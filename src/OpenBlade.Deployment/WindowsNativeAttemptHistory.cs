@@ -79,7 +79,7 @@ internal static class WindowsNativeAttemptHistory
                 || identity.Path != Path.Combine(directory, "app", "OpenBlade.Service.exe") || name != $"{identity.ProcessId}-{identity.Created}.bin")
             { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Native launch identity differs from the original package/process attempt."); }
             bool drained = drains.TryGetValue(name, out byte[]? drain);
-            if (drained && !drain!.AsSpan().SequenceEqual(NativeCanonical.Lines(service.ReadOnlyMailbox ? "OpenBlade.NativeTransportDrain.v1" : "OpenBlade.NativeStatusDrain.v2",
+            if (drained && !drain!.AsSpan().SequenceEqual(NativeCanonical.Lines(service.RequiresMailboxHandoff ? "OpenBlade.NativeTransportDrain.v1" : "OpenBlade.NativeStatusDrain.v2",
                 record.Epoch, NativeCanonical.Digest(bytes), f[5], f[6])))
             { throw new NativeRecoveryException(NativeRecoveryReason.MissingAttemptDrain, "The exact native process drain is malformed or mismatched."); }
             if (!drained && !service.MetadataOnly)

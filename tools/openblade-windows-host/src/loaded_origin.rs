@@ -153,6 +153,22 @@ impl Origin {
             .map_err(|_| deny())?
             .record_metadata_drain(self.pid, self.created)
     }
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    pub(crate) fn mutation_artifact(&self) -> io::Result<String> {
+        self.verify()?;
+        let package = self.package.lock().map_err(|_| deny())?;
+        let fields = crate::native_package::lines(
+            package.identity("service"),
+            "OpenBlade.NativeArtifact.v2",
+            8,
+        )?;
+        if fields[7]
+            != "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1"
+        {
+            return Err(deny());
+        }
+        Ok(fields[0].to_owned())
+    }
     pub(crate) fn mailbox_mapping(&self) -> io::Result<Vec<u8>> {
         self.verify()?;
         self.package.lock().map_err(|_| deny())?.mailbox_mapping()

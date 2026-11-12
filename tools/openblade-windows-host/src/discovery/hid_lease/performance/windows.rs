@@ -214,9 +214,11 @@ impl Port for NativePort {
         }
         // SAFETY: Successful CreateEventW returned an owned handle.
         let event = unsafe { OwnedHandle::from_raw_handle(event) };
-        let sending = matches!(transfer, Transfer::SendGetter(_));
+        let sending = !matches!(transfer, Transfer::ReceiveReply);
         let buffer = match transfer {
             Transfer::SendGetter(frame) => frame,
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            Transfer::SendMutation(frame) => frame,
             Transfer::ReceiveReply => [0; super::FRAME_LENGTH],
         };
         let mut operation = Operation {
@@ -368,4 +370,44 @@ fn native_firmware_observation_links() {
     // Retain the Windows composition in the test image without invoking it.
     let link = |authorize: fn() -> Option<Admission>| native_worker(authorize);
     std::hint::black_box(link as fn(fn() -> Option<Admission>) -> Worker);
+}
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+pub(super) fn mutation_worker(
+    permit: std::sync::Arc<dyn super::mutation::Permit>,
+) -> Worker<ReadAdmission> {
+    Worker::new(
+        move |job| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()?;
+            let limit = job.limit();
+            let mut authorize = || permit.authorize();
+            let Some(admission) = authorize() else {
+                return Ok(None);
+            };
+            let (port, selection) = NativePort::open(&mut authorize, admission, limit)?;
+            let mut reader = Reader::new(port, admission);
+            let observed = runtime.block_on(async {
+                let result = if reader
+                    .port
+                    .bind(selection, &mut authorize, admission, limit)
+                    .is_ok()
+                {
+                    reader.apply_preset(&*permit, limit).await
+                } else {
+                    None
+                };
+                reader.retire(None).await?;
+                Ok::<_, io::Error>(result)
+            })?;
+            Ok(observed
+                .filter(|_| limit.check().is_ok() && authorize() == Some(admission))
+                .map(|performance| Reading {
+                    admission,
+                    performance,
+                }))
+        },
+        Some(&OCCUPIED),
+    )
 }

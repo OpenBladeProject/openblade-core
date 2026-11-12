@@ -621,3 +621,66 @@ mod native_root_path_tests {
         }
     }
 }
+
+pub(crate) fn rename_same_directory(file: &File, target: &str, replace: bool) -> io::Result<()> {
+    use windows_sys::{
+        Wdk::Storage::FileSystem::{
+            FILE_RENAME_INFORMATION, FileRenameInformation, NtSetInformationFile,
+        },
+        Win32::{
+            Foundation::{HANDLE, RtlNtStatusToDosError},
+            System::IO::IO_STATUS_BLOCK,
+        },
+    };
+
+    #[repr(C)]
+    struct Rename {
+        replace: u32,
+        root: HANDLE,
+        byte_len: u32,
+        name: [u16; 128],
+    }
+    // The handle was opened relative to the pinned root. A simple name
+    // with no RootDirectory renames within that same directory.
+    let mut info = Rename {
+        replace: u32::from(replace),
+        root: ptr::null_mut(),
+        byte_len: 0,
+        name: [0; 128],
+    };
+    if target.is_empty()
+        || !target
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'))
+    {
+        return Err(denied("configuration rename target must be a simple name"));
+    }
+    let name: Vec<u16> = target.encode_utf16().collect();
+    if name.len() > info.name.len() {
+        return Err(denied("configuration rename target is too long"));
+    }
+    info.name[..name.len()].copy_from_slice(&name);
+    info.byte_len = (name.len() * size_of::<u16>()) as u32;
+    debug_assert_eq!(
+        std::mem::offset_of!(Rename, name),
+        std::mem::offset_of!(FILE_RENAME_INFORMATION, FileName)
+    );
+    let mut status_block = IO_STATUS_BLOCK::default();
+    // SAFETY: The source and buffers stay live throughout the synchronous call.
+    let status = unsafe {
+        NtSetInformationFile(
+            file.as_raw_handle(),
+            &mut status_block,
+            (&raw const info).cast(),
+            size_of::<Rename>() as u32,
+            FileRenameInformation,
+        )
+    };
+    if status < 0 {
+        // SAFETY: This only translates the returned status code.
+        return Err(io::Error::from_raw_os_error(
+            unsafe { RtlNtStatusToDosError(status) } as i32,
+        ));
+    }
+    Ok(())
+}

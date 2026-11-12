@@ -24,7 +24,7 @@ pub(crate) fn production_path() -> String {
 // LiveReadingSensors is a four-bit mask. The managed legacy default is All.
 const ALL_LIVE_READINGS: u8 = 15;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(
     tag = "operation",
     rename_all = "camelCase",
@@ -32,6 +32,20 @@ const ALL_LIVE_READINGS: u8 = 15;
     deny_unknown_fields
 )]
 pub(crate) enum StatusRequest {
+    SetPerformanceOverride {
+        version: i32,
+        request_id: String,
+        #[serde(deserialize_with = "Deserialize::deserialize")]
+        value: Option<PerformanceOverride>,
+    },
+    ReportApplicationContext {
+        version: i32,
+        request_id: String,
+        instance_id: String,
+        sequence: i64,
+        #[serde(deserialize_with = "Deserialize::deserialize")]
+        executable_path: Option<String>,
+    },
     GetStatus {
         version: i32,
         request_id: String,
@@ -116,8 +130,18 @@ impl StatusRequest {
         )
     }
 
-    fn header(&self) -> (i32, &str) {
+    pub(crate) fn header(&self) -> (i32, &str) {
         match self {
+            Self::SetPerformanceOverride {
+                version,
+                request_id,
+                ..
+            }
+            | Self::ReportApplicationContext {
+                version,
+                request_id,
+                ..
+            } => (*version, request_id),
             Self::GetStatus {
                 version,
                 request_id,
@@ -135,6 +159,19 @@ impl StatusRequest {
     }
 
     fn validate(&self) -> io::Result<()> {
+        if matches!(
+            self,
+            Self::SetPerformanceOverride { .. } | Self::ReportApplicationContext { .. }
+        ) && !cfg!(feature = "service-thermal-mutation-v1")
+        {
+            return Err(invalid("this signed composition is read-only"));
+        }
+        if let Self::SetPerformanceOverride {
+            value: Some(value), ..
+        } = self
+        {
+            value.validate()?;
+        }
         let (version, request_id) = self.header();
         if version != PROTOCOL_VERSION || !is_guid(request_id) {
             return Err(invalid("invalid Service status version or request ID"));
@@ -219,6 +256,24 @@ pub(crate) struct StatusResponse {
 }
 
 impl StatusResponse {
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    pub(crate) fn mutation(
+        request: &StatusRequest,
+        outcome: Value,
+        status: Option<Snapshot>,
+    ) -> Self {
+        Self {
+            frame: Frame::Response,
+            version: PROTOCOL_VERSION,
+            request_id: request.header().1.to_ascii_lowercase(),
+            success: true,
+            error: None,
+            status,
+            result: Some(outcome),
+            archive: None,
+            error_code: None,
+        }
+    }
     #[cfg(feature = "installed-service-candidate")]
     pub(crate) fn success(request: &StatusRequest, status: Snapshot) -> Self {
         Self {
@@ -373,6 +428,9 @@ type FeatureRecord = Map<String, Value>;
 pub(crate) struct Snapshot {
     #[serde(skip)]
     read_confirmation: Option<ReadConfirmation>,
+    // Private projection authority is local evidence, never supplied by wire JSON.
+    #[serde(skip)]
+    private_user_sid: Option<String>,
     revision: i64,
     device_verified: bool,
     writes_blocked: bool,
@@ -526,6 +584,7 @@ impl Snapshot {
 
         Self {
             read_confirmation: None,
+            private_user_sid: None,
             revision,
             device_verified: false,
             writes_blocked: true,
@@ -807,4 +866,150 @@ pub(crate) fn request_id() -> io::Result<String> {
         "{:08x}-{:04x}-{:04x}-{a:02x}{b:02x}-{c:02x}{d:02x}{e:02x}{f:02x}{g:02x}{h:02x}",
         id.data1, id.data2, id.data3
     ))
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct PerformanceOverride {
+    pub(crate) value: i32,
+    pub(crate) lifetime: u8,
+    pub(crate) custom_performance: Option<Value>,
+    pub(crate) gpu_clock_tuning: Option<Value>,
+}
+impl PerformanceOverride {
+    pub(crate) fn validate(&self) -> io::Result<()> {
+        if openblade_domain::thermal_mutation::Preset::from_wire(self.value).is_none()
+            || self.lifetime > 1
+            || self.custom_performance.is_some()
+        {
+            return Err(invalid("unsupported or invalid thermal override"));
+        }
+        if let Some(gpu) = &self.gpu_clock_tuning {
+            if gpu.as_object().is_none_or(|o| {
+                o.len() != 2
+                    || o.keys()
+                        .any(|k| !["enabled", "offsets"].contains(&k.as_str()))
+            }) || gpu["offsets"].as_object().is_none_or(|o| {
+                o.len() != 2
+                    || o.keys()
+                        .any(|k| !["coreMegahertz", "memoryMegahertz"].contains(&k.as_str()))
+            }) || !gpu["enabled"].is_boolean()
+                || ["coreMegahertz", "memoryMegahertz"]
+                    .iter()
+                    .any(|k| !matches!(gpu["offsets"][k].as_i64(), Some(-10000..=10000)))
+            {
+                return Err(invalid("unsupported or invalid thermal override"));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+impl Snapshot {
+    pub(crate) fn bind_private_user(mut self, sid: &str) -> Self {
+        self.private_user_sid = Some(sid.to_owned());
+        self
+    }
+    pub(crate) fn project_private(&self, sid: Option<&str>) -> Self {
+        if self
+            .private_user_sid
+            .as_deref()
+            .is_some_and(|owner| sid != Some(owner))
+        {
+            self.redact_private()
+        } else {
+            self.clone()
+        }
+    }
+    pub(crate) fn redact_private(&self) -> Self {
+        let mut result = self.clone();
+        let public = Self::observed_read_only(
+            self.revision,
+            self.control_access,
+            self.active_power_source == 1,
+            false,
+            vec![],
+            None,
+            String::new(),
+        );
+        result.private_user_sid = None;
+        result.profiles = public.profiles;
+        result.desired_state = public.desired_state;
+        result.performance_override = None;
+        result.fan_override = None;
+        result.lighting_override = None;
+        result.full_charge_override = false;
+        result.writes_blocked = true;
+        result.message =
+            "Public hardware observation; private configuration is unavailable to this caller."
+                .into();
+        result
+    }
+    pub(crate) fn thermal_intent(
+        mut self,
+        value: Option<&PerformanceOverride>,
+        destination: Option<openblade_domain::thermal_mutation::Preset>,
+        message: &str,
+        power: Option<i32>,
+    ) -> Self {
+        self.message = message.to_owned();
+        self.performance_override = value
+            .and_then(|value| serde_json::to_value(value).ok())
+            .and_then(|v| v.as_object().cloned());
+        if let Some(power) = power {
+            self.active_power_source = power;
+        }
+        if let Some(selected) = destination.map(|d| d as i32).or(value.map(|v| v.value)) {
+            self.desired_state.performance = Resolved {
+                value: selected,
+                source: value.map_or(1, |v| if v.lifetime == 1 { 4 } else { 3 }),
+            };
+        }
+        self
+    }
+    pub(crate) fn validate_thermal_profiles(profiles: &Value) -> io::Result<()> {
+        serde_json::from_value::<Profiles>(profiles.clone())
+            .map(|_| ())
+            .map_err(io::Error::other)
+    }
+    pub(crate) fn thermal_profiles(mut self, profiles: Option<Value>) -> io::Result<Self> {
+        if let Some(profiles) = profiles {
+            self.profiles = serde_json::from_value(profiles).map_err(io::Error::other)?;
+        }
+        Ok(self)
+    }
+    pub(crate) fn thermal_provenance(mut self, source: Option<i32>) -> Self {
+        if let Some(source) = source {
+            self.desired_state.performance.source = source;
+        }
+        self
+    }
+    pub(crate) fn thermal_write_admission(mut self, applied: bool) -> Self {
+        self.writes_blocked = !applied || !self.has_fresh_mailbox_read();
+        self
+    }
+    pub(crate) fn retain_thermal_intent(mut self, intent: &Self) -> Self {
+        self.writes_blocked =
+            self.control_access != 0 || intent.writes_blocked || !intent.has_fresh_mailbox_read();
+        self.device_verified |= intent.device_verified;
+        self.private_user_sid = intent.private_user_sid.clone();
+        self.profiles = intent.profiles.clone();
+        self.performance_override = intent.performance_override.clone();
+        self.desired_state.performance = intent.desired_state.performance.clone();
+        self.active_power_source = intent.active_power_source;
+        self.message = format!("{} {}", intent.message, self.message);
+        if self.control_access != 0 {
+            self.redact_private()
+        } else {
+            self
+        }
+    }
+    pub(crate) fn inactive_mutation(&self) -> Self {
+        let mut value = self.redact_private();
+        value.control_access = 1;
+        value.read_confirmation = None;
+        value.writes_blocked = true;
+        value
+    }
 }
