@@ -233,7 +233,10 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
         using var writer = files.AcquireWriter();
         var selected = ManagedMailboxRecovery.Selected(files);
         if (selected is null || selected.Value.RunDigest != NativeCanonical.Digest(Record.Encode())) { return; }
-        ManagedMailboxRecovery.RequireActive(files, selected);
+        // Selected just validated this view under the same metadata writer and
+        // retained run exclusion. Only the active-terminal condition remains;
+        // rescanning all historical runs here adds no fresh admission.
+        WindowsNativeEpochFiles.RequireAbsent(ManagedMailboxRecovery.PathFor(files, selected, "terminal"));
         var request = selected.Value;
         if (request.Installation != installation || !(files.ReadCurrent() ?? []).AsSpan().SequenceEqual(Record.Encode()))
         { throw new IOException("Managed handoff request belongs to another original run/build."); }
