@@ -1,5 +1,8 @@
 //! Standalone installed SCM entry. Fixture modules are outside this binary.
 
+#[cfg(windows)]
+pub(crate) mod origin_lifetime;
+
 include!(concat!(env!("OUT_DIR"), "/service_identity.rs"));
 
 #[cfg(windows)]

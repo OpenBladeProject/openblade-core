@@ -1,5 +1,8 @@
 //! Standalone installed sign-in entry. Fixture modules are outside this binary.
 
+#[cfg(windows)]
+pub(crate) mod origin_lifetime;
+
 include!(concat!(env!("OUT_DIR"), "/agent_identity.rs"));
 
 #[cfg(windows)]

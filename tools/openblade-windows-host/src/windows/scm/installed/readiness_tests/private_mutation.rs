@@ -345,3 +345,131 @@ fn private_foreign_confirmed_journal_owner_is_refused_without_rewriting_history(
         Phase::Retired
     );
 }
+
+#[test]
+fn private_prepared_settlement_authenticates_owner_prefix_and_reopens_terminal_history() {
+    use openblade_domain::thermal_mutation::{Preset, Progress};
+    use sha2::{Digest, Sha256};
+    // Actual worker retirement is covered by the injected outer composition.
+    // This fixture covers the protected owner-store/atomic-file parser boundary.
+    let user = PrivateRoot::open("protected-storage");
+    let machine = PrivateRoot::open("owner-journal");
+    let mut owner = machine.owner().unwrap();
+    owner.activate_injected(reservation('7')).unwrap();
+    let custody = Arc::new(JournalCustody(std::sync::Mutex::new(owner)));
+    let storage = Storage::open(
+        Box::new(CustodialFiles {
+            user: user.files().unwrap(),
+            custody: custody.clone(),
+        }),
+        &user.sid,
+    )
+    .unwrap();
+    let requested = Some(Override {
+        value: 1,
+        lifetime: 1,
+        custom_performance: None,
+        gpu_clock_tuning: None,
+    });
+    storage.save(requested.clone(), 0).unwrap();
+    let intent = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&requested).unwrap())
+    );
+    let request = "aaaaaaaa-bbbb-cccc-dddd-000000000003";
+    storage
+        .record(
+            request,
+            &"7".repeat(64),
+            Preset::Balanced,
+            &intent,
+            &requested,
+            42,
+            7,
+            Progress::Prepared,
+        )
+        .unwrap();
+    let prepared = custody
+        .0
+        .lock()
+        .unwrap()
+        .journal_read(false)
+        .unwrap()
+        .unwrap();
+    assert!(storage.pending());
+    storage
+        .record(
+            request,
+            &"7".repeat(64),
+            Preset::Balanced,
+            &intent,
+            &requested,
+            42,
+            7,
+            Progress::KnownNotSubmitted,
+        )
+        .unwrap();
+    let settled = custody
+        .0
+        .lock()
+        .unwrap()
+        .journal_read(false)
+        .unwrap()
+        .unwrap();
+    assert!(settled.starts_with(&prepared));
+    assert!(!storage.pending());
+    assert_eq!(storage.progress(), Some(6));
+    let mut rows: Vec<Value> = settled
+        .split(|b| *b == b'\n')
+        .filter(|v| !v.is_empty())
+        .map(|v| serde_json::from_slice(v).unwrap())
+        .collect();
+    rows[1]["owner"] = json!("f".repeat(64));
+    let mut foreign = Vec::new();
+    for row in rows {
+        foreign.extend(serde_json::to_vec(&row).unwrap());
+        foreign.push(b'\n');
+    }
+    assert!(
+        custody
+            .0
+            .lock()
+            .unwrap()
+            .journal_replace(Some(&settled), &foreign)
+            .is_err()
+    );
+    assert_eq!(
+        std::fs::read(machine.path.join("thermal-mutation.journal")).unwrap(),
+        settled
+    );
+    drop(storage);
+    custody.0.lock().unwrap().retire_active().unwrap();
+    drop(custody);
+    let mut owner = machine.owner().unwrap();
+    assert_eq!(owner.journal_read(false).unwrap().unwrap(), settled);
+    owner.activate_injected(reservation('8')).unwrap();
+    let custody = Arc::new(JournalCustody(std::sync::Mutex::new(owner)));
+    let storage = Storage::open(
+        Box::new(CustodialFiles {
+            user: user.files().unwrap(),
+            custody: custody.clone(),
+        }),
+        &user.sid,
+    )
+    .unwrap();
+    assert!(!storage.pending());
+    assert_eq!(storage.progress(), Some(6));
+    storage.save(None, 0).unwrap();
+    assert_eq!(
+        custody
+            .0
+            .lock()
+            .unwrap()
+            .journal_read(false)
+            .unwrap()
+            .unwrap(),
+        settled
+    );
+    drop(storage);
+    custody.0.lock().unwrap().retire_active().unwrap();
+}

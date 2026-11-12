@@ -1,4 +1,7 @@
 #[cfg(windows)]
+pub(crate) mod origin_lifetime;
+
+#[cfg(windows)]
 mod application_runtime;
 #[cfg(any(windows, test))]
 mod battery_policy;

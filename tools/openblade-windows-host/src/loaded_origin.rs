@@ -19,8 +19,7 @@ use windows_sys::Win32::System::{
     },
 };
 
-#[path = "origin_lifetime.rs"]
-pub(crate) mod lifetime;
+pub(crate) use crate::origin_lifetime as lifetime;
 
 pub(crate) struct Origin {
     package: Mutex<InstalledPackage>,
@@ -34,7 +33,7 @@ pub(crate) struct Origin {
     pub(crate) installation: String,
     role: &'static str,
     lifetime: lifetime::Lifetime,
-    pub(crate) lifecycle: crate::scm_host::Lifecycle,
+    pub(crate) lifecycle: lifetime::Lifecycle,
 }
 impl Origin {
     pub(crate) fn acquire(role: &'static str, compiled: &[u8]) -> io::Result<Arc<Self>> {
@@ -99,7 +98,7 @@ impl Origin {
             image,
             role,
             lifetime: lifetime::Lifetime::default(),
-            lifecycle: crate::scm_host::Lifecycle::default(),
+            lifecycle: lifetime::Lifecycle::default(),
         });
         value.verify()?;
         Ok(value)
