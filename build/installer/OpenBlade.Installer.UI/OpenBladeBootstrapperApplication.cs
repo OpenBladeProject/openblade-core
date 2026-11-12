@@ -71,6 +71,8 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private LaunchAction plannedAction = LaunchAction.Unknown;
     private bool installed;
     private bool applying;
+    private bool completing;
+    private bool setupPackageExecuted;
     private bool cancellationRequested;
     private bool purgeProfilesRequested;
     private bool sameVersionRelatedBundleCached;
@@ -83,6 +85,10 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
     private int executeProgress;
     private int result;
     private string? lastError;
+    private InstallerSetupFailure? setupFailure;
+    private string? failedPackage;
+    private string? failedPackageError;
+    private readonly object failureSync = new();
     private string bundleVersion = "unknown";
     private string? newerRelatedBundleVersion;
     private string? sameVersionRelatedBundleCode;
@@ -198,6 +204,11 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
         plannedAction = action;
         cancellationRequested = false;
+        lastError = null;
+        failedPackage = null;
+        failedPackageError = null;
+        setupPackageExecuted = false;
+        lock (failureSync) { setupFailure = null; }
         purgeProfilesRequested = purgeProfiles;
         cacheProgress = 0;
         executeProgress = 0;
@@ -226,7 +237,7 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     public void RequestCancel()
     {
-        if (!applying || cancellationRequested)
+        if (!applying || completing || cancellationRequested)
         {
             return;
         }
@@ -664,6 +675,8 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     private void OnExecutePackageBegin(object? sender, ExecutePackageBeginEventArgs e)
     {
+        if (e.PackageId == "OpenBladeSetup" && !cancellationRequested) { setupPackageExecuted = true; }
+        if (failedPackage is null) { lastError = null; }
         string package = GetPackageName(e.PackageId);
         bool relatedBundle = upgradeRelatedBundles.TryGetValue(
             e.PackageId,
@@ -691,6 +704,11 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     private void OnExecutePackageComplete(object? sender, ExecutePackageCompleteEventArgs e)
     {
+        if (Failed(e.Status) && failedPackage is null)
+        {
+            failedPackage = GetPackageName(e.PackageId);
+            failedPackageError = lastError;
+        }
         AddDetail(Failed(e.Status)
             ? $"{GetPackageName(e.PackageId)} failed with 0x{e.Status:X8}."
             : $"{GetPackageName(e.PackageId)} completed.");
@@ -725,9 +743,15 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     private void OnApplyComplete(object? sender, ApplyCompleteEventArgs e)
     {
-        applying = false;
-        progressPipe?.Dispose();
+        completing = true;
+        InstallerProgressPipe? completedPipe = progressPipe;
         progressPipe = null;
+        if (completedPipe is not null)
+        {
+            completedPipe.CompleteAsync(setupPackageExecuted).GetAwaiter().GetResult();
+        }
+        applying = false;
+        completing = false;
 
         int completionStatus = e.Status;
         string? completionFailure = null;
@@ -789,12 +813,9 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         if (Failed(completionStatus))
         {
             Ui(() => window?.ShowFailure(
-                cancellationRequested
-                    ? InstallerStrings.Get("Setup was cancelled and the previous state was restored.")
-                    : completionFailure
-                        ?? (lastError is null
-                            ? InstallerStrings.Format("Setup failed with 0x{0:X8}.", completionStatus)
-                            : InstallerStrings.Format("Setup failed: {0}", lastError)),
+                completionFailure ?? DescribeFailure(
+                    completionStatus, GetSetupFailure(), failedPackage,
+                    failedPackage is null ? lastError : failedPackageError, cancellationRequested),
                 TryGetVariable(BundleLogVariable)));
         }
         else
@@ -982,9 +1003,13 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
 
     private void AddPipeDetail(InstallerSetupProgress progress)
     {
-        Engine.Log(LogLevel.Standard, progress.WireValue);
+        if (progress.Failure is not null)
+        {
+            lock (failureSync) { setupFailure ??= progress.Failure; }
+        }
         Ui(() =>
         {
+            Engine.Log(LogLevel.Standard, progress.WireValue);
             PresentPipeProgress(window, progress);
         });
     }
@@ -993,13 +1018,62 @@ internal sealed class OpenBladeBootstrapperApplication : BootstrapperApplication
         InstallerWindow? target,
         InstallerSetupProgress progress)
     {
-        string visibleProgress = LocalizeProgress(progress);
+        string visibleProgress = progress.Failure is not null
+            ? InstallerStrings.Format("Setup failed: {0}", progress.Failure.Error)
+            : LocalizeProgress(progress);
         target?.AddDetail(visibleProgress);
-        target?.SetStatus(visibleProgress);
+        if (progress.Failure is null)
+        {
+            target?.SetStatus(visibleProgress);
+        }
+    }
+
+    private InstallerSetupFailure? GetSetupFailure()
+    {
+        lock (failureSync) { return setupFailure; }
+    }
+
+    internal static string DescribeFailure(
+        int status, InstallerSetupFailure? failure, string? package, string? error, bool cancelled)
+    {
+        string code = InstallerStrings.Format("Error code: 0x{0:X8}", status);
+        string cancellation = cancelled
+            ? InstallerStrings.Get("Setup was cancelled. See the setup log for the final installation state.")
+            : string.Empty;
+        if (failure is not null)
+        {
+            string message = InstallerStrings.Format("Failed step: {0}", LocalizeProgress(failure.Step))
+                + "\n\n" + failure.Error + "\n\n" + code;
+            if (!string.IsNullOrWhiteSpace(failure.RecoveryError))
+            {
+                message += "\n\n" + InstallerStrings.Format(
+                    "Additional cleanup or recovery error: {0}", failure.RecoveryError);
+            }
+            return cancelled ? cancellation + "\n\n" + message : message;
+        }
+        if (cancelled)
+        {
+            return cancellation + "\n\n" + code;
+        }
+        string reason = string.IsNullOrWhiteSpace(error)
+            ? InstallerStrings.Get("See the setup log for more information.")
+            : error!;
+        if (!string.IsNullOrWhiteSpace(package))
+        {
+            return InstallerStrings.Format("Setup failed while running {0}.", package!)
+                + "\n\n" + reason + "\n\n" + code;
+        }
+        return InstallerStrings.Format("Setup failed: {0}", reason) + "\n\n" + code;
     }
 
     internal static string LocalizeProgress(InstallerSetupProgress progress) => progress.Code switch
     {
+        InstallerSetupProgressCode.PrepareSetup =>
+            InstallerStrings.Get("Preparing setup…"),
+        InstallerSetupProgressCode.VerifyPayload =>
+            InstallerStrings.Get("Verifying OpenBlade files…"),
+        InstallerSetupProgressCode.EnsureCpuTemperaturePrerequisite =>
+            InstallerStrings.Get("Checking the CPU temperature driver…"),
         InstallerSetupProgressCode.InspectPayload =>
             InstallerStrings.Get("Preparing OpenBlade files…"),
         InstallerSetupProgressCode.ReadInstallState or

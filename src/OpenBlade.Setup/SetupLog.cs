@@ -47,10 +47,21 @@ public sealed class LoggingSetupProgressReporter(ISetupProgressReporter inner, S
     private SetupProgressCode? repeatedCode;
     private int repeats;
     private string? lastArguments;
+    private SetupProgressEvent? failureStep;
+    private bool recovering;
 
     public void Report(SetupProgressEvent progress)
     {
         ArgumentNullException.ThrowIfNull(progress);
+        if (progress.Code is SetupProgressCode.RestorePreviousState
+            or SetupProgressCode.RestoreRegistrationState or SetupProgressCode.RestoreFiles)
+        {
+            recovering = true;
+        }
+        if (!recovering && progress.Code != SetupProgressCode.Failure)
+        {
+            failureStep = progress;
+        }
         if (progress.Code == repeatedCode)
         {
             repeats++;
@@ -63,6 +74,20 @@ public sealed class LoggingSetupProgressReporter(ISetupProgressReporter inner, S
         }
         lastArguments = string.Join(", ", progress.Arguments);
         inner.Report(progress);
+    }
+
+    public void ReportFailure(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        try
+        {
+            Report(SetupFailureDetails.Create(
+                failureStep ?? SetupProgressEvent.Create(SetupProgressCode.PrepareSetup), exception));
+        }
+        catch
+        {
+            // The progress channel is diagnostic; preserve the original setup outcome.
+        }
     }
 
     public void Dispose()

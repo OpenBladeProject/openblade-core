@@ -258,17 +258,8 @@
   <data name="Setup failed" xml:space="preserve">
     <value>Сбой установки</value>
   </data>
-  <data name="Setup failed with 0x{0:X8}." xml:space="preserve">
-    <value>Сбой установки с кодом 0x{0:X8}.</value>
-  </data>
-  <data name="Setup failed: {0}" xml:space="preserve">
-    <value>Сбой установки: {0}</value>
-  </data>
   <data name="Setup progress" xml:space="preserve">
     <value>Ход установки</value>
-  </data>
-  <data name="Setup was cancelled and the previous state was restored." xml:space="preserve">
-    <value>Установка отменена, предыдущее состояние восстановлено.</value>
   </data>
   <data name="Show _details" xml:space="preserve">
     <value>Показать _подробности</value>
@@ -314,5 +305,32 @@
   </data>
   <data name="Setup completed successfully. Restart Windows to finish driver setup. CPU temperature sensing may remain unavailable until then." xml:space="preserve">
     <value>Установка завершена. Перезагрузите Windows, чтобы завершить настройку драйвера. До этого данные о температуре процессора могут быть недоступны.</value>
+  </data>
+  <data name="Setup was cancelled. See the setup log for the final installation state." xml:space="preserve">
+    <value>Установка отменена. Итоговое состояние установки указано в журнале.</value>
+  </data>
+  <data name="Checking the CPU temperature driver…" xml:space="preserve">
+    <value>Проверка драйвера температуры CPU…</value>
+  </data>
+  <data name="Failed step: {0}" xml:space="preserve">
+    <value>Сбой на этапе: {0}</value>
+  </data>
+  <data name="Error code: 0x{0:X8}" xml:space="preserve">
+    <value>Код ошибки: 0x{0:X8}</value>
+  </data>
+  <data name="Setup failed while running {0}." xml:space="preserve">
+    <value>Сбой установки при выполнении {0}.</value>
+  </data>
+  <data name="Setup failed: {0}" xml:space="preserve">
+    <value>Сбой установки: {0}</value>
+  </data>
+  <data name="Additional cleanup or recovery error: {0}" xml:space="preserve">
+    <value>Дополнительная ошибка при очистке или восстановлении: {0}</value>
+  </data>
+  <data name="Preparing setup…" xml:space="preserve">
+    <value>Подготовка программы установки…</value>
+  </data>
+  <data name="Verifying OpenBlade files…" xml:space="preserve">
+    <value>Проверка файлов OpenBlade…</value>
   </data>
 </root>

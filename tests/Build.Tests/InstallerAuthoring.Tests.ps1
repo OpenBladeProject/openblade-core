@@ -417,8 +417,8 @@ Assert-True ($progressPipeSource.Contains('BuiltinAdministratorsSid')) `
     'The elevated setup package must be able to write to the private progress channel.'
 Assert-True ($progressPipeSource.Contains('PipeAccessRights.ReadWrite')) `
     'Over-the-shoulder elevated setup must receive sufficient progress-pipe access.'
-Assert-True ($progressPipeSource.Contains('MaximumMessageLength = 4096')) `
-    'Versioned progress-pipe messages must remain bounded while accepting maximum UTF-8 arguments.'
+Assert-True ($progressPipeSource.Contains('MaximumMessageLength = 8192')) `
+    'Versioned progress and four-field failure messages must remain bounded while accepting maximum UTF-8 arguments.'
 Assert-True ($progressPipeSource.Contains('argument.Length > 512')) `
     'Dynamic setup progress arguments must remain bounded before reaching the UI.'
 

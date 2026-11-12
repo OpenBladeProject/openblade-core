@@ -14,6 +14,7 @@ internal sealed class InstallerProgressPipe : IDisposable
     private readonly NamedPipeServerStream server;
     private readonly Action<InstallerSetupProgress> onMessage;
     private bool disposed;
+    private Task readTask = Task.CompletedTask;
 
     private InstallerProgressPipe(string name, Action<InstallerSetupProgress> onMessage)
     {
@@ -66,8 +67,29 @@ internal sealed class InstallerProgressPipe : IDisposable
         InstallerProgressPipe pipe = new(
             PipePrefix + Guid.NewGuid().ToString("N"),
             onMessage);
-        _ = pipe.ReadAsync();
+        pipe.readTask = pipe.ReadAsync();
         return pipe;
+    }
+
+    internal async Task CompleteAsync(bool setupPackageExecuted = false)
+    {
+        // A prerequisite failure or a skipped Setup package has no writer to drain.
+        using var timeout = new System.Threading.CancellationTokenSource();
+        try
+        {
+            if (setupPackageExecuted || server.IsConnected)
+            {
+                // The callback waits only for the pipe reader, which queues presentation
+                // without calling Burn or waiting for the UI dispatcher.
+                await Task.WhenAny(readTask,
+                    Task.Delay(TimeSpan.FromSeconds(2), timeout.Token)).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            timeout.Cancel();
+            Dispose();
+        }
     }
 
     public void Dispose()
@@ -118,9 +140,10 @@ internal sealed class InstallerProgressPipe : IDisposable
         // A producer argument is bounded to 512 UTF-16 characters. Its UTF-8
         // bytes can expand to 1,536 bytes before Base64 encoding, so keep the
         // wire envelope above the resulting 2,048 characters plus fields.
-        const int MaximumMessageLength = 4096;
+        const int MaximumMessageLength = 8192;
         char[] buffer = new char[1024];
         StringBuilder line = new(MaximumMessageLength);
+        bool oversized = false;
         int read;
         while ((read = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
         {
@@ -129,17 +152,28 @@ internal sealed class InstallerProgressPipe : IDisposable
                 char value = buffer[index];
                 if (value == '\n')
                 {
-                    Dispatch(line.ToString(), messageHandler);
+                    if (!oversized)
+                    {
+                        Dispatch(line.ToString(), messageHandler);
+                    }
+                    oversized = false;
                     line.Clear();
                 }
-                else if (value != '\r' && line.Length < MaximumMessageLength)
+                else if (value != '\r')
                 {
-                    line.Append(value);
+                    if (line.Length < MaximumMessageLength)
+                    {
+                        line.Append(value);
+                    }
+                    else
+                    {
+                        oversized = true;
+                    }
                 }
             }
         }
 
-        if (line.Length > 0)
+        if (line.Length > 0 && !oversized)
         {
             Dispatch(line.ToString(), messageHandler);
         }
@@ -182,6 +216,10 @@ internal enum InstallerSetupProgressCode
     CopyFile,
     CommitFiles,
     RestoreFiles,
+    EnsureCpuTemperaturePrerequisite,
+    Failure,
+    PrepareSetup,
+    VerifyPayload,
 }
 
 internal sealed class InstallerSetupProgress
@@ -203,15 +241,33 @@ internal sealed class InstallerSetupProgress
     public InstallerSetupProgressCode Code { get; }
     public string? Argument { get; }
     public string WireValue { get; }
+    public InstallerSetupFailure? Failure { get; private set; }
 
     internal static bool TryParse(string value, out InstallerSetupProgress? progress)
     {
         progress = null;
+        if (value.Length > 8192)
+        {
+            return false;
+        }
         string[] fields = value.Split('|');
+        if (fields.Length == 6 && fields[0] == "v1" && fields[1] == "Failure")
+        {
+            if (!InstallerSetupFailure.TryParse(fields, out InstallerSetupFailure? failure))
+            {
+                return false;
+            }
+            progress = new InstallerSetupProgress(InstallerSetupProgressCode.Failure, null, value)
+            {
+                Failure = failure,
+            };
+            return true;
+        }
         if (fields.Length is < 2 or > 3
             || !string.Equals(fields[0], "v1", StringComparison.Ordinal)
             || !Enum.TryParse(fields[1], ignoreCase: false, out InstallerSetupProgressCode code)
-            || !Enum.IsDefined(typeof(InstallerSetupProgressCode), code))
+            || !Enum.IsDefined(typeof(InstallerSetupProgressCode), code)
+            || fields[1] != code.ToString() || code == InstallerSetupProgressCode.Failure)
         {
             return false;
         }
