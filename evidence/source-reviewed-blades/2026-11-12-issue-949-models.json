@@ -694,6 +694,22 @@
       "endByteExclusive": 6143839,
       "label": "Toggle CPU/GPU level lists",
       "text": "WR=[{key:\"low\",name:we.luF,value:0},{key:\"medium\",name:we.wbE,value:1},{key:\"high\",name:we.jT4,value:2}],VR=[{key:\"low\",name:we.luF,value:0},{key:\"medium\",name:we.wbE,value:1},{key:\"linear\",name:we.jT4,value:2}],KR=[{key:\"low\",name:we.luF,value:0},{k"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/main.6098ef0f83a9cd1c24a9.js",
+      "startByte": 144808,
+      "endByteExclusive": 144877,
+      "label": "Exact Balanced source-only fan bounds",
+      "text": "minFanSpeedValue:3400,maxFanSpeedValue:5200,defaultFanSpeedValue:4100"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/main.6098ef0f83a9cd1c24a9.js",
+      "startByte": 145617,
+      "endByteExclusive": 145685,
+      "label": "Exact Custom source-only fan bounds",
+      "text": "minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600"
     }
   ],
   "identitySources": [

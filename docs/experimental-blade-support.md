@@ -4,7 +4,7 @@
 
 English | [简体中文](zh-CN/experimental-blade-support.md) | [Русский](ru-RU/experimental-blade-support.md)
 
-These seventeen laptop families are officially supported using reviewed exact-model
+These twenty laptop families are officially supported using reviewed exact-model
 Synapse and upstream sources. OpenBlade recognizes them automatically in both
 stable and pre-release builds. Physical validation is tracked separately for each
 model and feature; source-reviewed support does not claim complete hardware
@@ -94,6 +94,21 @@ Physical validation remains pending. See the
 [2019/2020 source review](source-reviewed-blades-2019-2020.md) for evidence and
 reviewed candidates that still lack an exact Windows identity.
 
+### Blade 15 Advanced Mid 2021 and Blade Pro 17 2019
+
+| Laptop | Model | Available controls |
+| --- | --- | --- |
+| Blade 15 Advanced (Mid 2021) | `RZ09-0409` | Balanced/Custom on full-power AC; CPU Low/Medium/High/Boost, GPU Low/Medium/High; Automatic fans |
+| Blade Pro 17 (2019) | `RZ09-0287` | Balanced/Custom on full-power AC; CPU/GPU Low/Medium/High; Automatic fans |
+| Blade Pro 17 (Late 2019) | `RZ09-0314` | Balanced/Custom on full-power AC; CPU/GPU Low/Medium/High; Automatic fans |
+
+If fans are currently manual, explicitly select Automatic and confirm the handback
+before changing presets or Custom levels: these profiles cannot yet confirm and
+restore manual targets. Silent, Turbo, Maximum Fans, fixed fan targets, curves,
+charge controls, lighting, HyperBoost and driver/THX integrations are not admitted.
+Physical validation is pending. See the [exact-model review](source-reviewed-blades-issue-949.md)
+for source pins and limits for all three exact profiles.
+
 The following detailed control notes apply to the earlier five models.
 
 Close Synapse before using these controls, or use
@@ -175,17 +190,6 @@ Battery Saver and Battery Balanced on battery power.
   support charge limits. Blade 18 also offers experimental temporary full charge
   after valid state readback. Enabling it requires an active charge limit; other
   Power Mode Control options must be off.
-
-## Blade 15 Advanced Mid 2021 and Blade Pro 17 2019
-
-| Laptop | Model | Available controls |
-| --- | --- | --- |
-| Blade 15 Advanced (Mid 2021) | `RZ09-0409` | Balanced/Custom on full-power AC; CPU Low/Medium/High/Boost, GPU Low/Medium/High; Automatic fans |
-| Blade Pro 17 (2019) | `RZ09-0287` | Balanced/Custom on full-power AC; CPU/GPU Low/Medium/High; Automatic fans |
-| Blade Pro 17 (Late 2019) | `RZ09-0314` | Balanced/Custom on full-power AC; CPU/GPU Low/Medium/High; Automatic fans |
-
-Physical validation is pending. See the [exact-model review](source-reviewed-blades-issue-949.md)
-for evidence and limits for all three exact profiles.
 
 ## Send a useful test report
 

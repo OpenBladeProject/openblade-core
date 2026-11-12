@@ -1,7 +1,9 @@
 # Fan Stop coverage across Blade models
 
-All 19 supported model families were screened. Support below concerns the
-guarded Stop/Auto feature; ordinary fixed-RPM or Maximum Fans controls have
+This table covers all 22 supported model families. The earlier 19 were screened
+for the guarded Stop/Auto feature. The three newly admitted profiles below have
+no reviewed exact-model EC Stop contract; their ordinary thermal source review
+does not admit Stop commands. Ordinary fixed-RPM or Maximum Fans controls have
 separate contracts. A positive minimum RPM does not establish whether the EC
 can stop a fan.
 
@@ -32,6 +34,9 @@ separately; the new models do not inherit RZ09-0581's physical results.
 | Blade 15 Base RZ09-0351 | No exact Stop contract yet | [Signed OL510 selectors](fan-stop-reader-and-ec-followup.md#seven-models-with-missing-receiver-evidence) establish SSID `1A58200D`. A usable EC image remains missing. |
 | Blade 15 Advanced RZ09-0301 | No exact Stop contract yet | [Exact MCU bridge traced](fan-stop-reader-and-ec-followup.md#seven-models-with-missing-receiver-evidence). Receiver-side zero handling, actual duty and verified Auto remain open. |
 | Blade 15 Base RZ09-0300 | No exact Stop contract yet | [Signed D3 BIOS 1.03 inspected](fan-stop-blade15-missing-ec-evidence.md), including both exact Base 2019 variants. [Host EC interfaces traced](fan-stop-missing-model-host-interfaces.md); fan semantics still missing. |
+| Blade 15 Advanced RZ09-0409 | Not established; exact EC Stop contract not reviewed | [Ordinary thermal support](source-reviewed-blades-issue-949.md) only; no Stop commands admitted. |
+| Blade Pro 17 RZ09-0287 | Not established; exact EC Stop contract not reviewed | [Ordinary thermal support](source-reviewed-blades-issue-949.md) only; no Stop commands admitted. |
+| Blade Pro 17 RZ09-0314 | Not established; exact EC Stop contract not reviewed | [Ordinary thermal support](source-reviewed-blades-issue-949.md) only; no Stop commands admitted. |
 
 For the four models with additional channels, the [expanded scheduling model](fan-stop-it8320-trigger-investigation.md)
 finds no false read success from extra notifications alone under its writer and
