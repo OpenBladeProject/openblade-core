@@ -32353,6 +32353,11 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         public Action? BeforeReadLightingState { get; set; }
 
+        public bool LightingRequiresRendererOwnership { get; set; } = true;
+
+        public bool RequiresLightingRendererOwnership(LightingSettings settings) =>
+            LightingRequiresRendererOwnership && settings.Effect != LightingEffect.Off;
+
         public Action<DeviceSubsystem>? AfterSetter { get; set; }
 
         public Func<Task>? ChargeLimitSetterBoundary { get; set; }

@@ -24,6 +24,11 @@ internal sealed partial class ExperimentalBladePort
     public LightingRendererOwnershipState OwnershipState =>
         (LightingRendererOwnershipState)Volatile.Read(ref lightingOwnership.Ownership);
 
+    public bool RequiresLightingRendererOwnership(LightingSettings settings) =>
+        SupportsBlade18Animation(model) && IsBlade18Animation(settings)
+        || settings.Effect is LightingEffect.AmbientAwareness or LightingEffect.AudioMeter
+        || settings.Effect == LightingEffect.Static && SupportsUniformFrame(model);
+
     internal static bool SupportsExperimentalLighting(ExperimentalBladeModel model) =>
         model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x0255 or 0x02A0 or 0x0245;
 
@@ -232,13 +237,13 @@ internal sealed partial class ExperimentalBladePort
         return raw;
     }
 
-    private async Task<(LightingSettings? Settings, byte Raw)> ReadKeyboardLightingAsync(
+    private async Task<(LightingSettings? Settings, byte Raw, ReadOnlyMemory<byte> EffectPayload)> ReadKeyboardLightingAsync(
         CancellationToken token,
         bool allowConfirmedDark = false)
     {
         byte raw = await ReadBrightnessAsync(token).ConfigureAwait(false);
         (LightingEffect effect, ReadOnlyMemory<byte> effectPayload) =
-            await ReadEffectAsync(token).ConfigureAwait(false);
+            await ReadEffectAsync(token, allowAlternateWaveDirection: true).ConfigureAwait(false);
         byte percent = checked((byte)LightingBrightnessProtocol.RawToPercent(raw));
         if (effect != LightingEffect.Off && percent == 0)
         {
@@ -250,7 +255,7 @@ internal sealed partial class ExperimentalBladePort
                 // Host-frame requests still require a representable restoration baseline.
                 RecordQuery("KeyboardLighting", "Unavailable",
                     $"Effect={effect};Raw=0;Percent=0", "ConfirmedDarkEffect");
-                return (null, raw);
+                return (null, raw, effectPayload);
             }
             session.RetainQueryFailure(0x03, 0x83, FirmwareQueryOutcome.ContentRejected);
             session.RetainQueryFailure(0x0F, 0x82, FirmwareQueryOutcome.ContentRejected);
@@ -260,6 +265,22 @@ internal sealed partial class ExperimentalBladePort
                 "The reported effect at zero brightness cannot form a confirmed lighting setting.",
                 DeviceStateQuery.KeyboardLightingCombination,
                 DeviceStateContentRejection.FormatPayloads([1, 5, raw], effectPayload.Span));
+        }
+
+        if (effect == LightingEffect.Wave
+            && (effectPayload.Length == 3 || effectPayload.Span[3] == 2))
+        {
+            // The pinned blade-control getter reads only the effect ID from
+            // 0F/82 [1,5,0]. A compact Wave reply establishes no direction.
+            // Keep the complete setting unknown rather than invent Rightward.
+            // Wire 2 is the reviewed opposite direction, but our built-in
+            // restoration setter admits wire 1 only. It is a valid observation,
+            // not a restorable frame baseline or confirmation of Rightward.
+            bool compact = effectPayload.Length == 3;
+            RecordQuery("KeyboardLighting", "Unavailable",
+                $"Effect=Wave;Raw={raw};Direction={(compact ? "Unavailable" : "Alternate/Wire2")}",
+                compact ? "WaveDirectionReadbackUnavailable" : "WaveDirectionNotRestorable");
+            return (null, raw, effectPayload);
         }
 
         LightingSettings settings = effect switch
@@ -274,14 +295,20 @@ internal sealed partial class ExperimentalBladePort
                 LightingDirection.Rightward, percent),
             _ => throw new IOException("Experimental keyboard effect is not representable."),
         };
-        return (settings, raw);
+        return (settings, raw, effectPayload);
     }
 
     private async Task<(LightingEffect Effect, ReadOnlyMemory<byte> Payload)> ReadEffectAsync(
-        CancellationToken token)
+        CancellationToken token,
+        bool allowAlternateWaveDirection = false)
     {
+        // PI4110 MCU 1.04.00 (0x8826..0x8828) and PI490 MCU 1.04.00
+        // (0x97AA..0x97AC) write Wave direction at payload+3 without expanding
+        // header DataSize. Request that byte only for these reviewed contracts.
+        // See docs/compact-wave-readback.md and its pinned firmware proofs.
+        byte[] arguments = model.ProductId is 0x02C5 or 0x029D ? [1, 5, 0, 0] : [1, 5, 0];
         ReadOnlyMemory<byte> payload = await ExchangeAsync("KeyboardLighting", 0x0F, 0x82,
-            [1, 5, 0], false, token, variableResponse: true,
+            arguments, false, token, variableResponse: true,
             payloadValidator: static value => value.Length is >= 3
                 and <= RazerReport.MaximumPayloadLength).ConfigureAwait(false);
         ReadOnlySpan<byte> bytes = payload.Span;
@@ -294,7 +321,8 @@ internal sealed partial class ExperimentalBladePort
 
         byte mode = bytes[2];
         int parameterStart = mode == 4 ? 4 : 3;
-        bool parametersKnown = mode != 4 || bytes.Length >= 4 && bytes[3] == 1;
+        bool parametersKnown = mode != 4 || bytes.Length == 3 || bytes[3] == 1
+            || allowAlternateWaveDirection && bytes[3] == 2;
         bool supportedMode = mode is 0 or 2 or 3
             || mode == 4 && model.ProductId != 0x0255
             || mode == 1 && model.ProductId == 0x0255;
@@ -321,8 +349,10 @@ internal sealed partial class ExperimentalBladePort
             4 => LightingEffect.Wave,
             _ => throw new IOException("Experimental effect readback is unsupported."),
         };
+        string parameter = mode != 4 ? "None" : bytes.Length == 3 ? "Unavailable"
+            : bytes[3] == 1 ? "Rightward/Wire1" : "Alternate/Wire2";
         RecordQuery("KeyboardLighting", "Confirmed",
-            $"{effect};PayloadLength={bytes.Length};Parameter={(mode == 4 ? "Rightward/Wire1" : "None")}");
+            $"{effect};PayloadLength={bytes.Length};Parameter={parameter}");
         return (effect, payload);
     }
 
@@ -465,9 +495,7 @@ internal sealed partial class ExperimentalBladePort
         }
         bool blade18UniformRequest = model.ProductId == 0x02A0
             && settings.Effect is LightingEffect.AmbientAwareness or LightingEffect.AudioMeter;
-        bool hostFrameRequest = animationRequest
-            || settings.Effect is LightingEffect.AmbientAwareness or LightingEffect.AudioMeter
-            || settings.Effect == LightingEffect.Static && SupportsUniformFrame(model);
+        bool hostFrameRequest = RequiresLightingRendererOwnership(settings);
         if (blade18UniformRequest && session is not IRazerSetFeatureCommandSession)
         {
             throw new CapabilityUnavailableException("This model has no admitted uniform frame transport.");
@@ -528,8 +556,15 @@ internal sealed partial class ExperimentalBladePort
             }
             else
             {
-                (baseline, baselineRaw) = await ReadKeyboardLightingAsync(
+                (baseline, baselineRaw, _) = await ReadKeyboardLightingAsync(
                     cancellationToken, allowConfirmedDark: !hostFrameRequest).ConfigureAwait(false);
+            }
+            if (hostFrameRequest && baseline is null)
+            {
+                // Host rendering must restore the original complete effect;
+                // compact Wave readback cannot supply its direction.
+                throw new CapabilityUnavailableException(
+                    "A readable pre-frame lighting baseline is required for host rendering.");
             }
             LogoLightingMode? baselineLogo = settings.LogoMode is null
                 ? null
@@ -797,15 +832,19 @@ internal sealed partial class ExperimentalBladePort
                 return;
             }
 
-            (LightingSettings? confirmed, byte confirmedRaw) =
+            (LightingSettings? confirmed, byte confirmedRaw, ReadOnlyMemory<byte> finalEffectPayload) =
                 await ReadKeyboardLightingAsync(cancellationToken).ConfigureAwait(false);
-            if (confirmed is null || !KeyboardSettingsMatch(confirmed, settings) || confirmedRaw != raw)
+            bool waveDirectionUnavailable = confirmed is null
+                && finalEffectPayload.Span is [1, 5, 4] && settings.Effect == LightingEffect.Wave;
+            if ((!waveDirectionUnavailable && (confirmed is null || !KeyboardSettingsMatch(confirmed, settings)))
+                || confirmedRaw != raw)
             {
                 throw new IOException(
                     "Independent final lighting readback did not confirm the requested state.");
             }
-            policy.Record("KeyboardLighting", "Readback", "Confirmed", submitted,
-                requested, requested);
+            policy.Record("KeyboardLighting", "Readback", waveDirectionUnavailable ? "Unavailable" : "Confirmed", submitted,
+                requested, waveDirectionUnavailable ? $"Wave;Raw={confirmedRaw};Direction=Unavailable" : requested,
+                waveDirectionUnavailable ? "WaveDirectionReadbackUnavailable" : null);
             mirrorCommitted = true;
         }
         catch (DeviceStateContentRejectedException)

@@ -2416,6 +2416,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             CancellationToken cancellationToken) =>
             lightingSession.SetPlaybackMuteIndicatorAsync(muted, cancellationToken);
 
+        public bool RequiresLightingRendererOwnership(LightingSettings settings) =>
+            lightingSession.RequiresLightingRendererOwnership(settings);
+
         public Task<LightingRendererOwnershipState> ReadLightingRendererOwnershipAsync(
             CancellationToken cancellationToken) =>
             lightingSession.ReadLightingRendererOwnershipAsync(cancellationToken);

@@ -3266,9 +3266,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         LightingRendererOwnershipState ownership = resultingBrightness == 0
             ? LightingRendererOwnershipState.None
             : current.LightingRendererOwnership;
+        // A brightness-only step does not establish a missing host effect.
+        // Keep queued renderer recovery unless its existing ownership matches.
+        LightingSettings snapshot = resultingBrightness == 0
+            ? next : lighting with { Brightness = resultingBrightness };
         UpdateOwnedLightingSnapshot(
             ownership,
-            resultingBrightness == 0 ? next : lighting with { Brightness = resultingBrightness });
+            OwnershipMatches(ownership, snapshot) ? snapshot : null);
         lightingRecoveryPauseMessage = null;
         explicitLightingOwnershipActive = resultingBrightness > 0
             && IsExplicitLightingOwnership(ownership);
@@ -13599,7 +13603,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 .ConfigureAwait(false);
         bool restored = outcome.Result.Status is
                 ControlResultStatus.Applied or ControlResultStatus.Unchanged
-            && OwnershipMatches(observed, requested);
+            && LightingOwnershipMatches(device, observed, requested);
         UpdateOwnedLightingSnapshot(
             observed,
             restored ? requested : null);
@@ -14806,7 +14810,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         LightingSettings requested = desired.Lighting.Value;
         if (outcome.Result.Status is ControlResultStatus.Applied
                 or ControlResultStatus.Unchanged
-            && !OwnershipMatches(observed, requested))
+            && !LightingOwnershipMatches(device, observed, requested))
         {
             outcome = outcome with
             {
@@ -16069,7 +16073,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             DeviceSubsystem.Lighting);
         if (lightingResult.Status is ControlResultStatus.Applied
                 or ControlResultStatus.Unchanged
-            && !OwnershipMatches(observedLightingOwnership, desired.Lighting.Value))
+            && !LightingOwnershipMatches(device, observedLightingOwnership, desired.Lighting.Value))
         {
             if (outcome.Readback is { } readback
                 && IsLightingOffExplainedByDisplayOff(readback))
@@ -20958,7 +20962,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 .ConfigureAwait(false);
         bool recovered = outcome.Result.Status is
                 ControlResultStatus.Applied or ControlResultStatus.Unchanged
-            && OwnershipMatches(recoveredOwnership, requested);
+            && LightingOwnershipMatches(device, recoveredOwnership, requested);
         UpdateOwnedLightingSnapshot(
             recoveredOwnership,
             recovered ? requested : null);
@@ -21041,18 +21045,15 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         LightingRendererOwnershipState ownership,
         LightingSettings? appliedSettings)
     {
-        if (appliedSettings is not null && OwnershipMatches(ownership, appliedSettings))
+        if (appliedSettings is not null)
         {
-            // A successful newer effect or explicit Off supersedes any queued
-            // recovery. Observation alone must not consume a deferred retry.
+            // Callers supply a setting only after successful reconciliation,
+            // including the backend's native-versus-host ownership requirement.
+            // Every newer accepted effect or Off supersedes queued recovery;
+            // observation alone must not consume a deferred retry.
             faultedLightingRecoveryCandidate = null;
             pendingLightingRestore = null;
             pendingLightingRestoreFromLifecycle = false;
-        }
-
-        if (appliedSettings is not null
-            && IsExplicitLightingOwnership(ownership))
-        {
             lightingRecoveryPauseMessage = null;
         }
 
@@ -21124,6 +21125,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         LightingRendererOwnershipState ownership) => ownership is
         LightingRendererOwnershipState.Reactive or
         LightingRendererOwnershipState.Ripple;
+
+    private static bool LightingOwnershipMatches(
+        IBladeDevice device,
+        LightingRendererOwnershipState ownership,
+        LightingSettings settings) =>
+        // Native effects need no host stream. Off still requires the previous
+        // stream to be gone, and host-rendered settings retain exact ownership.
+        settings.Effect != LightingEffect.Off
+            && !device.RequiresLightingRendererOwnership(settings)
+        || OwnershipMatches(ownership, settings);
 
     private static bool OwnershipMatches(
         LightingRendererOwnershipState ownership,

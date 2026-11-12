@@ -133,6 +133,13 @@ Battery Saver and Battery Balanced on battery power.
   across the keyboard. Blade 18 also accepts per-key colors and sequence playback
   from classic Keyboard .chroma imports.
   Firmware idle fade can restore the built-in effect; select Static again to repaint.
+  Some firmware returns the Wave effect without its direction. OpenBlade keeps
+  the complete lighting setting unavailable and can directly apply another
+  built-in effect or logo setting. Wave writes include the requested direction;
+  readback confirms only the effect and brightness when direction is omitted.
+  Host-rendered effects require a complete, restorable baseline; select a
+  readable built-in effect first. See [compact Wave readback](compact-wave-readback.md)
+  for source evidence and model coverage.
   Blade 16 (2023) and Blade 18 (2023) also offer whole-keyboard Ambient Awareness
   and Audio Meter.
   The Blade 15 offers random or single-color Breathing. Additional Synapse
