@@ -792,7 +792,13 @@ impl ReadSource {
                 return Ok(None);
             }
             #[cfg(feature = "service-thermal-mutation-v1")]
-            let _serial = source.operation.lock().await;
+            // Observation preserves the worker's no-queue occupancy contract.
+            // Waiting here can deadlock a caller holding an earlier observation
+            // while asking whether another read can enter. Mutation still owns
+            // serialization and actual transport retirement.
+            let Ok(_serial) = source.operation.try_lock() else {
+                return Ok(None);
+            };
             #[cfg(feature = "service-thermal-mutation-v1")]
             source.drain_mutation().await?;
             let worker = source.worker.borrow().clone();
@@ -1396,15 +1402,18 @@ mod tests {
             assert_eq!(held.submitted.load(Ordering::Acquire), 7); // CPU succeeded; GPU SET may have submitted.
             // A second queued whole-observation cannot claim the occupied Reader.
             assert!(
-                source
-                    .observe(
+                timeout(
+                    Duration::from_secs(2),
+                    source.observe(
                         status(0),
                         Instant::now() + Duration::from_secs(2),
                         publisher.clone()
                     )
-                    .await
-                    .unwrap()
-                    .is_none()
+                )
+                .await
+                .expect("overlapping observation must refuse without waiting for native retirement")
+                .unwrap()
+                .is_none()
             );
             assert_eq!(held.submitted.load(Ordering::Acquire), 7);
         }
