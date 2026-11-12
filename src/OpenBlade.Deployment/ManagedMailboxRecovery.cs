@@ -89,6 +89,11 @@ internal static class ManagedMailboxRecovery
             byte[]? terminal = ReadOptional(files, PathFor(files, value, "terminal"));
             previous = terminal is null ? new string('0', 64) : NativeCanonical.Digest(terminal);
         }
+        // A terminal is a completed publication, including on the latest transfer.
+        // Validate it before accepting metadata repair; an active publication cut
+        // without a terminal still may repair its deterministic projections.
+        if (last is not null && ReadOptional(files, PathFor(files, last, "terminal")) is not null)
+        { ValidateTerminal(files, last); }
         string[] extras = Directory.EnumerateFiles(files.Root, "handoff-*.bin").Where(p => Path.GetFileName(p) != "handoff-root.bin").Take(32769).ToArray();
         if (extras.Length > 32768) { throw new IOException("Transfer evidence exceeds its bound."); }
         foreach (string extra in extras)
@@ -176,9 +181,14 @@ internal static class ManagedMailboxRecovery
     {
         RequireOriginal(files, selected);
         byte[] proof = Read(files, PathFor(files, selected, "native-proof"));
-        string[] f = NativeCanonical.ParseLines(Read(files, PathFor(files, selected, "terminal")), "OpenBlade.ManagedMailboxTerminal.v2", 7);
+        byte[] terminal = Read(files, PathFor(files, selected, "terminal"));
+        // Both current and pinned predecessor writers publish these same bytes
+        // to intent before terminal. A completed terminal cannot repair that intent.
+        if (!Read(files, PathFor(files, selected, "terminal-intent")).AsSpan().SequenceEqual(terminal))
+        { throw new IOException("Completed terminal intent differs from its terminal."); }
+        string[] f = NativeCanonical.ParseLines(terminal, "OpenBlade.ManagedMailboxTerminal.v2", 7);
         if (f[3] is not ("canceled-before-native-use" or "consumed-and-retired")
-            || !Read(files, PathFor(files, selected, "terminal")).AsSpan().SequenceEqual(Terminal(files, selected, f[3], proof)))
+            || !terminal.AsSpan().SequenceEqual(Terminal(files, selected, f[3], proof)))
         { throw new IOException("Terminal evidence differs from the exact original request."); }
         // The native proof is the full protected, custody-produced snapshot, not
         // a tombstone, absent-file assertion or mutable selected-current marker.
