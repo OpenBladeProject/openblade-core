@@ -28,7 +28,7 @@ The published RZ09-03009 BIOS 1.03 guide links `https://rzr.to/CaQyK`; on the re
 
 ## Reviewed candidates still pending admission
 
-RZ09-0313/024B and RZ09-0314/024C (2019), plus RZ09-0329/0256 (2020), have useful command-source evidence but lack a confirmed exact Windows product identity in this review. They remain outside the supported catalog. Product 587's middleware support link points to the different RZ09-0301 page; its exact guide and UI support link identify RZ09-0313. That stale navigation link does not authorize using RZ09-0301 identity evidence.
+RZ09-0313/024B (2019) and RZ09-0329/0256 (2020) have useful command-source evidence but lack a confirmed exact Windows product identity in this review. They remain outside the supported catalog. RZ09-0314/024C was also pending here; the later [issue 949 review](source-reviewed-blades-issue-949.md) establishes its exact identity and admits it separately. Product 587's middleware support link points to the different RZ09-0301 page; its exact guide and UI support link identify RZ09-0313. That stale navigation link does not authorize using RZ09-0301 identity evidence.
 
 ## Verification boundary
 
