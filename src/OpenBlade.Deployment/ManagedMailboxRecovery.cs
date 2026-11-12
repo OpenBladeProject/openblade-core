@@ -89,11 +89,16 @@ internal static class ManagedMailboxRecovery
             byte[]? terminal = ReadOptional(files, PathFor(files, value, "terminal"));
             previous = terminal is null ? new string('0', 64) : NativeCanonical.Digest(terminal);
         }
-        // A terminal is a completed publication, including on the latest transfer.
-        // Validate it before accepting metadata repair; an active publication cut
-        // without a terminal still may repair its deterministic projections.
-        if (last is not null && ReadOptional(files, PathFor(files, last, "terminal")) is not null)
-        { ValidateTerminal(files, last); }
+        // Validate either retained candidate before repairing deterministic metadata.
+        // A valid intent-only publication cut is recoverable, but an inconsistent
+        // protected snapshot must refuse without adding projections or authority.
+        if (last is not null)
+        {
+            if (ReadOptional(files, PathFor(files, last, "terminal")) is not null)
+            { ValidateTerminal(files, last); }
+            else if (ReadOptional(files, PathFor(files, last, "terminal-intent")) is { } intent)
+            { ValidateTerminalRecord(files, last, intent); }
+        }
         string[] extras = Directory.EnumerateFiles(files.Root, "handoff-*.bin").Where(p => Path.GetFileName(p) != "handoff-root.bin").Take(32769).ToArray();
         if (extras.Length > 32768) { throw new IOException("Transfer evidence exceeds its bound."); }
         foreach (string extra in extras)
@@ -179,13 +184,19 @@ internal static class ManagedMailboxRecovery
     }
     internal static void ValidateTerminal(WindowsNativeEpochFiles files, ManagedMailboxSelection selected)
     {
-        RequireOriginal(files, selected);
-        byte[] proof = Read(files, PathFor(files, selected, "native-proof"));
         byte[] terminal = Read(files, PathFor(files, selected, "terminal"));
         // Both current and pinned predecessor writers publish these same bytes
         // to intent before terminal. A completed terminal cannot repair that intent.
         if (!Read(files, PathFor(files, selected, "terminal-intent")).AsSpan().SequenceEqual(terminal))
         { throw new IOException("Completed terminal intent differs from its terminal."); }
+        ValidateTerminalRecord(files, selected, terminal);
+    }
+    private static void ValidateTerminalRecord(WindowsNativeEpochFiles files, ManagedMailboxSelection selected, byte[] terminal)
+    {
+        // Immutable selection, original receipt/exit, mapping and retained proof
+        // are sufficient here; missing deterministic projections are not inputs.
+        RequireOriginal(files, selected);
+        byte[] proof = Read(files, PathFor(files, selected, "native-proof"));
         string[] f = NativeCanonical.ParseLines(terminal, "OpenBlade.ManagedMailboxTerminal.v2", 7);
         if (f[3] is not ("canceled-before-native-use" or "consumed-and-retired")
             || !terminal.AsSpan().SequenceEqual(Terminal(files, selected, f[3], proof)))
