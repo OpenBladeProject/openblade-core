@@ -252,8 +252,27 @@ async fn installed_dispatcher_direct_pair_persists_before_applied_and_retains_pu
     let files = MemoryFiles::default();
     files.profiles(1);
     let rig = Rig::new(files);
+    // Production prepare performs a typed GetStatus readiness probe before
+    // serving observations. Use the same injected dispatcher round trip here.
+    let metadata = rig.get().await;
+    assert_eq!(metadata["success"], true);
+    assert_eq!(metadata["status"]["writesBlocked"], true);
+    assert!(metadata["status"]["confirmedState"].is_null());
     let initial=rig.request(json!({"operation":"observeState","version":79,"requestId":"dddddddd-bbbb-cccc-dddd-000000000001","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})).await;
+    assert_eq!(initial["success"], true);
+    assert_eq!(initial["status"]["confirmedState"]["performance"], 5);
+    assert_eq!(initial["status"]["confirmedState"]["fans"], 3);
     assert!(initial["status"]["confirmedState"]["customPerformance"].is_null());
+    {
+        let port = rig.port.state.lock().unwrap();
+        assert!(
+            port.opened > 0,
+            "a real injected read port must precede activation"
+        );
+        assert_eq!(port.writes, 0);
+        assert!(port.sent.iter().any(|request| request.1 == 0x87));
+    }
+    assert_eq!(rig.custody.activations.load(Ordering::Acquire), 0);
     assert_eq!(initial["status"]["writesBlocked"], true);
     let result = rig.set(1, value(1, 1)).await;
     let status = rig.get().await;
