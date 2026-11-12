@@ -247,6 +247,23 @@ internal static class ExperimentalBladeModels
         CreateSourceReviewed("RZ09-0423", "Blade 17 (2022) - RZ09-0423", 0x028B,
             "main.8378c0c79039a3f2ba23.js", "rzDevice25.7ffcfe7d1ddb6103ac44.js",
             "A9442C86AB7D8F0549E18016324462A52A040E5578410F296BDF72884A383962", false, cpuBoost: true, turbo: false),
+        // Exact 2019 Pro 17 DMI and product 564 guide establish this profile.
+        // Only reviewed thermal HID controls are admitted; native GPU clocks remain outside scope.
+        CreateSourceReviewed("RZ09-0287", "Blade Pro 17 (2019)", 0x0234,
+            "main.cd82ad6254565b1185d9.js", "rzDevice25.c85377977ca9cfdbb0b0.js",
+            "65C38CDAAFC263682BADF4695C9239DF96FA1F26091274FB4AE0E81C5ACD8C17", false,
+            turbo: false, silent: false, balancedDc: false, batteryProtection: false),
+        // The same owner report pairs this exact DMI product with 1532:024C.
+        // https://forum.manjaro.org/t/login-screen-not-showing-up-50-of-time-nvidia/83863
+        CreateSourceReviewed("RZ09-0314", "Blade Pro 17 (Fall 2019)", 0x024C,
+            "main.aef91a9c8a23c54b3711.js", "rzDevice25.c9cde47d1f5b9618158b.js",
+            "B299E84011BB04545123498F4B17DC0F774CB2560BF21C2F2BE7B9393B416AE5", false,
+            turbo: false, silent: false, balancedDc: false, batteryProtection: false),
+        // Exact Mid 2021 model source exposes CPU Boost 3 and GPU levels 0-2 on AC.
+        CreateSourceReviewed("RZ09-0409", "Blade 15 Advanced Model (Mid 2021) - RZ09-0409", 0x0276,
+            "main.6098ef0f83a9cd1c24a9.js", "rzDevice25.7fc62fb8a269279f7b9e.js",
+            "940EE59B6B034BEE82B77779323617F817D8D400F7BF526058BFD10CDC1568BA", false,
+            cpuBoost: true, turbo: false, silent: false, balancedDc: false, batteryProtection: false),
         // CPU Boost requires an EC update; no readable exact-model EC admission is established.
         CreateSourceReviewed("RZ09-0330", "Blade 15 Advanced Model (Early 2020) - RZ09-033", 0x0253,
             "main.11dfb9173b8a1c795ffd.js", "rzDevice25.1dbf16d259718708f12a.js",
@@ -289,6 +306,26 @@ internal static class ExperimentalBladeModels
     private static System.Collections.Immutable.ImmutableArray<string> SourceReviewedEvidence(ushort product) =>
         product switch
         {
+            564 => [
+                "https://apps.razer.com/synapse/products/564/mw/main.cd82ad6254565b1185d9.js;SHA256=E8E61CE165B2E724DE80C9FB2F8AA2D6F3D3CF8B89AF0D1F1866C5624A3FD48C",
+                "https://apps.razer.com/synapse/products/564/mw/6737.09466ede91c383e63db5.js;SHA256=578C055A626C97F320A8642DDCF6D727EDEC267C02BF4BDF68D9921A7DF92A8F",
+                "https://apps.razer.com/synapse/products/564/mw/rzDevice25.c85377977ca9cfdbb0b0.js;SHA256=65C38CDAAFC263682BADF4695C9239DF96FA1F26091274FB4AE0E81C5ACD8C17",
+                "https://apps.razer.com/synapse/products/564/mw/rzDevice25LedMatrixBlade.cf43cdc9a0705593c034.js;SHA256=EEF7D6D017DA455DCDB3A283F157256B7BE3FE033BCC589647E24C67BB58217A",
+                "https://apps.razer.com/synapse/products/564/ui/static/js/main.c6dfa6fe.js;SHA256=1E832E271629A0B9924BD0E47D9C9B6C71ACA2AEEA49301B8E804AB31A1CD3C3"],
+            588 => [
+                "https://apps.razer.com/synapse/products/588/mw/main.aef91a9c8a23c54b3711.js;SHA256=58C8699616E125BE2F8F4FFFD490FFCD632F30EC171898229BA76275701558ED",
+                "https://apps.razer.com/synapse/products/588/mw/6737.486962f684c3054bcd0c.js;SHA256=62AC7270B6927323605CDF45D699EA07E48C1063FC6F5642F2FC4ABC6CDD12FA",
+                "https://apps.razer.com/synapse/products/588/mw/rzDevice25.c9cde47d1f5b9618158b.js;SHA256=B299E84011BB04545123498F4B17DC0F774CB2560BF21C2F2BE7B9393B416AE5",
+                "https://apps.razer.com/synapse/products/588/mw/rzDevice25LedMatrixBlade.a3ca67aee2e5d66c4d8a.js;SHA256=009DA3FDDF6D567F09F5DFFF330FF88F9BC56F11844D72557C3D6DD89C0F5DC2",
+                "https://apps.razer.com/synapse/products/588/mw/rzDevice25LedMatrixBladeWattage.6400257deb0580f370f5.js;SHA256=A0F2E3A06ABE8BFBABE561F5808BDA5B175857E8C38D8E0460B74D149BF0D330",
+                "https://apps.razer.com/synapse/products/588/ui/static/js/main.5ff20197.js;SHA256=2FA82D9AC334FF3453E73676CEDBA0532093C90BDE0B0F9030EE57A47CC707A0"],
+            630 => [
+                "https://apps.razer.com/synapse/products/630/mw/main.6098ef0f83a9cd1c24a9.js;SHA256=57D83A4D3928BE973205AF873268D65662A1833452165EA8199F816D27BAB51B",
+                "https://apps.razer.com/synapse/products/630/mw/6737.71d0d0b36aad77ffb446.js;SHA256=80A872631CBD5E16F713467DA13B9B7D76889487E22A6CE3DB854A15E1631558",
+                "https://apps.razer.com/synapse/products/630/mw/rzDevice25.7fc62fb8a269279f7b9e.js;SHA256=940EE59B6B034BEE82B77779323617F817D8D400F7BF526058BFD10CDC1568BA",
+                "https://apps.razer.com/synapse/products/630/mw/rzDevice25LedMatrixBlade.5258f7f0a1f14ad07643.js;SHA256=494AD54804E7DBFB10CA6D405EB4A307B6DDF614BC5013C01280135E4CAA972F",
+                "https://apps.razer.com/synapse/products/630/mw/rzDevice25LedMatrixBladeWattage.cb42c79fefbfdc6d1216.js;SHA256=E75F29F664214B9F08295F22CBDB2B75614E0D0240B0D0044E18DE2ED1621325",
+                "https://apps.razer.com/synapse/products/630/ui/static/js/main.64a01e0e.js;SHA256=1C5A6D450F5E544FE8855FFF92D95BC3ABCE2697574CC58D37AA76817D9F95E5"],
             581 => [
                 "https://apps.razer.com/synapse/products/581/mw/main.450b813b36b314f7abf0.js;SHA256=F7A863CF5E95D94539ABD3F4C29076E1710901B5D02624EFDC0275265C651D7A",
                 "https://apps.razer.com/synapse/products/581/mw/6737.f49b9965ecd5cf011e43.js;SHA256=5B11C5CD3E26BBD74DAC7A98413AB31315DAFEFAD5B783DBF0CF014E6A33D017",
