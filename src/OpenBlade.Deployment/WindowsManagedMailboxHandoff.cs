@@ -100,7 +100,7 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
     internal static IDisposable? AcquireLegacyExclusion(ManagedMailboxNativeCustody native) => AcquireLegacyExclusion(native, null);
     internal static IDisposable? AcquireLegacyExclusion(ManagedMailboxNativeCustody native, ManagedMailboxStorage? storage)
     {
-        storage ??= ManagedMailboxStorage.Product;
+        storage = ManagedMailboxStorage.Resolve(native, storage);
         WindowsNativeEpochFiles files;
         try
         {
@@ -136,7 +136,7 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
     internal static void AuthenticateLegacyTerminal(ManagedMailboxNativeCustody native) => AuthenticateLegacyTerminal(native, null);
     internal static void AuthenticateLegacyTerminal(ManagedMailboxNativeCustody native, ManagedMailboxStorage? storage)
     {
-        storage ??= ManagedMailboxStorage.Product;
+        storage = ManagedMailboxStorage.Resolve(native, storage);
         if (!storage.LegacyPresent()) { return; }
         using var files = storage.OpenLegacy();
         AuthenticateLegacyTerminal(files, native);

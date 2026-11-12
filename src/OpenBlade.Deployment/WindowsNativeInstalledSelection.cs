@@ -55,8 +55,9 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
         void AuthenticateMailboxHistory()
         {
             using var native = ManagedMailboxNativeCustody.AcquireUnderWriter(files.RetainView());
-            WindowsManagedMailboxRun.AuthenticateLegacyTerminal(native, storage);
-            using var managed = (storage ?? ManagedMailboxStorage.Product).OpenManaged();
+            var resolvedStorage = ManagedMailboxStorage.Resolve(native, storage);
+            WindowsManagedMailboxRun.AuthenticateLegacyTerminal(native, resolvedStorage);
+            using var managed = resolvedStorage.OpenManaged();
             ManagedMailboxRecovery.AuthenticateRetainedTerminals(managed, native);
         }
     }

@@ -8,6 +8,7 @@ namespace OpenBlade.Deployment;
 internal sealed class ManagedMailboxNativeCustody : IDisposable
 {
     private readonly WindowsNativeEpochFiles? files;
+    internal bool IsPrivateFixture => files?.IsPrivateFixture == true;
     private FileStream? writer;
     private readonly List<IDisposable> held = [];
     private readonly Dictionary<string, Generation> generations = new(StringComparer.Ordinal);

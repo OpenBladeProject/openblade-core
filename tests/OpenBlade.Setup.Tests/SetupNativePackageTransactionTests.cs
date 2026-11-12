@@ -342,7 +342,9 @@ public sealed partial class SetupCommandRunnerTests
         await using var native = new SetupNativePackageTransaction(new NativePayload(), files, package, Guid.NewGuid());
         native.ObservePredecessorTransition(SetupServiceTransition.NativeRetirementPossible);
         var scm = new InertNativeScm();
-        var platform = WindowsSetupPlatformTestFactory.Create(serviceControl: scm, fileOperations: new InertNativeFiles());
+        var paths = SetupPaths.Create(@"C:\Offline\Programs", @"C:\Offline\Data", @"C:\Offline\User", @"C:\Offline\Menu\Startup");
+        var platform = WindowsSetupPlatformTestFactory.Create(serviceControl: scm, paths: paths,
+            fileOperations: new InertNativeFiles(), currentUserSid: "S-1-5-21-1-2-3-1001");
         platform.BindSelectedNativeTransaction(native);
         await Assert.ThrowsAsync<NativeRecoveryException>(() => platform.RestoreServiceInstallStateAsync(new SetupServiceInstallState(true, true), CancellationToken.None));
         Assert.Empty(scm.Commands);

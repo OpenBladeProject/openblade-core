@@ -267,7 +267,7 @@ public sealed class ManagedMailboxCorrectionTests
         ManagedMailboxStartup.Admission? startup = null;
         try
         {
-            Assert.ThrowsAny<IOException>(() => WindowsNativeEpochTransaction.Begin(epochs, package, Guid.ParseExact(new string('6', 32), "N"), managedTransfer: transfer,
+            Assert.ThrowsAny<IOException>(() => WindowsNativeEpochTransaction.Begin(epochs, package, Guid.ParseExact(new string('6', 32), "N"), managedTransfer: transfer, storage: Storage(files),
                 testCrashBoundary: boundary =>
                 {
                     if (boundary != NativeEpochBoundary.AdmissionRequested) { return; }
@@ -289,7 +289,7 @@ public sealed class ManagedMailboxCorrectionTests
         using var files = Handoff(); using var epochs = Bootstrap(); using var package = await WindowsNativeEpochTests.Package(epochs, schema: 2, mailbox: true);
         using var transfer = Transfer(files, package, Run(), '6');
         int checkedBoundaries = 0;
-        using var tx = WindowsNativeEpochTransaction.Begin(epochs, package, Guid.ParseExact(new string('6', 32), "N"), managedTransfer: transfer,
+        using var tx = WindowsNativeEpochTransaction.Begin(epochs, package, Guid.ParseExact(new string('6', 32), "N"), managedTransfer: transfer, storage: Storage(files),
             testCrashBoundary: boundary =>
             {
                 if (boundary == NativeEpochBoundary.AdmissionRequested) { return; }
@@ -532,6 +532,66 @@ public sealed class ManagedMailboxCorrectionTests
         Assert.ThrowsAny<IOException>(() => ManagedMailboxStartup.Open(() => ManagedMailboxNativeCustody.AcquireForTests(epochs.RetainFixtureView()),
             _ => null, _ => null, _ => { ordinary = true; return null; }));
         Assert.False(ordinary);
+    }
+
+    [Fact]
+    public void PrivateFixtureOmittedStorageRefusesBeforeInvokingProductResolver()
+    {
+        using var epochs = Bootstrap(); using var managed = Handoff();
+        using var native = ManagedMailboxNativeCustody.AcquireForTests(epochs.RetainFixtureView());
+        int resolved = 0;
+        ManagedMailboxStorage ProductResolver() { resolved++; throw new Exception("Product resolver must never run."); }
+        var error = Assert.Throws<InvalidOperationException>(() => ManagedMailboxStorage.Resolve(native, null, ProductResolver));
+        Assert.Equal("Private mailbox fixtures require explicit storage.", error.Message);
+        Assert.Equal(0, resolved);
+        var storage = Storage(managed);
+        Assert.Same(storage, ManagedMailboxStorage.Resolve(native, storage, ProductResolver));
+        Assert.Equal(0, resolved);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BothLegacyAdaptersRejectPrivateFixtureStorageOmission(bool terminalOnly)
+    {
+        using var epochs = Bootstrap();
+        var before = Snapshot(epochs.Root);
+        using (var native = ManagedMailboxNativeCustody.AcquireForTests(epochs.RetainFixtureView()))
+        {
+            Action invoke = terminalOnly
+                ? () => WindowsManagedMailboxRun.AuthenticateLegacyTerminal(native)
+                : () => WindowsManagedMailboxRun.AcquireLegacyExclusion(native)?.Dispose();
+            var error = Assert.Throws<InvalidOperationException>(invoke);
+            Assert.Equal("Private mailbox fixtures require explicit storage.", error.Message);
+        }
+        Preserved(epochs.Root, before);
+    }
+
+    [Fact]
+    public async Task MailboxBeginRejectsPrivateFixtureStorageOmissionBeforePublication()
+    {
+        using var files = Handoff(); using var epochs = Bootstrap();
+        using var package = await WindowsNativeEpochTests.Package(epochs, schema: 2, mailbox: true);
+        using var transfer = Transfer(files, package, Run(), '6');
+        var before = Snapshot(epochs.Root); var mailboxBefore = Snapshot(files.Root);
+        var error = Assert.Throws<InvalidOperationException>(() => WindowsNativeEpochTransaction.Begin(epochs, package,
+            Guid.ParseExact(new string('6', 32), "N"), managedTransfer: transfer));
+        Assert.Equal("Private mailbox fixtures require explicit storage.", error.Message);
+        Assert.Equal(before.Keys.Order(), Snapshot(epochs.Root).Keys.Order()); Preserved(epochs.Root, before);
+        Assert.Equal(mailboxBefore.Keys.Order(), Snapshot(files.Root).Keys.Order()); Preserved(files.Root, mailboxBefore);
+    }
+
+    [Fact]
+    public async Task MailboxPreflightRejectsPrivateFixtureStorageOmissionButMetadataOnlyInspectionDoesNotResolveStorage()
+    {
+        using var epochs = Bootstrap();
+        using var package = await WindowsNativeEpochTests.Package(epochs, schema: 2, mailbox: true);
+        var before = Snapshot(epochs.Root);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => WindowsNativeInstalledSelection.OpenForSetupAsync(
+            epochs.RetainFixtureView(), CancellationToken.None, incoming: package));
+        Assert.Equal("Private mailbox fixtures require explicit storage.", error.Message);
+        Assert.Null(await WindowsNativeInstalledSelection.OpenForSetupAsync(epochs.RetainFixtureView(), CancellationToken.None));
+        Assert.Equal(before.Keys.Order(), Snapshot(epochs.Root).Keys.Order()); Preserved(epochs.Root, before);
     }
 
     private static ManagedMailboxStorage Storage(WindowsNativeEpochFiles managed, WindowsNativeEpochFiles? legacy = null) =>

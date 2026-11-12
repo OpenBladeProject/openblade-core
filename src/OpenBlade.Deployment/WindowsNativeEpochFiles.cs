@@ -31,6 +31,7 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
     }
 
     internal string Root { get; }
+    internal bool IsPrivateFixture => owner is not null;
 #if OPENBLADE_NATIVE_PACKAGE_TESTS
     internal NativeFileBoundary? CrashBoundaryForTests { get; set; }
     internal ManagedBootstrapBoundary? BootstrapCrashForTests { get; set; }
