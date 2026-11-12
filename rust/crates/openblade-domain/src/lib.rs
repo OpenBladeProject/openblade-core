@@ -4,6 +4,8 @@
 //! enum payloads and display values retain the host's validation order.
 #![no_std]
 
+pub mod thermal_observation;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FanControlProjection {
     pub mode: i32,

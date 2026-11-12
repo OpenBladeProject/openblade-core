@@ -1,7 +1,10 @@
-//! RZ09-0581 standard performance observation on a single admitted HID lease.
+//! RZ09-0581 performance observation on a single admitted HID lease.
 //! Only the Windows composition below can open a native feature handle.
 
-use openblade_protocol::{REPORT_LENGTH, RazerReport};
+use openblade_protocol::{
+    REPORT_LENGTH, RazerReport,
+    custom_performance::{CustomPerformanceComponent, CustomPerformanceQuery},
+};
 use std::{
     io,
     sync::atomic::{AtomicBool, AtomicU8, Ordering},
@@ -41,38 +44,7 @@ const POLL: Duration = Duration::from_millis(5);
 const MAX_OBSERVATION: Duration = Duration::from_secs(3);
 type Frame = [u8; FRAME_LENGTH];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ObservedPerformance {
-    BalancedAutomatic,
-    PerformanceAutomatic,
-    SilentAutomatic,
-    SilentManual,
-    PerformanceManual,
-    BatterySaverAutomatic,
-    BatteryBalancedAutomatic,
-    BatterySaverManual,
-    BatteryBalancedManual,
-    FixedMaximum,
-    HyperBoostObserved,
-}
-
-impl ObservedPerformance {
-    pub(crate) fn projection(self) -> (Option<i32>, i32, Option<bool>) {
-        match self {
-            Self::BalancedAutomatic => (Some(1), 0, Some(false)),
-            Self::PerformanceAutomatic => (Some(2), 0, Some(false)),
-            Self::SilentAutomatic => (Some(0), 0, Some(false)),
-            Self::SilentManual => (Some(0), 3, Some(false)),
-            Self::PerformanceManual => (Some(2), 3, Some(false)),
-            Self::BatterySaverAutomatic => (Some(3), 0, Some(false)),
-            Self::BatteryBalancedAutomatic => (Some(4), 0, Some(false)),
-            Self::BatterySaverManual => (Some(3), 3, Some(false)),
-            Self::BatteryBalancedManual => (Some(4), 3, Some(false)),
-            Self::FixedMaximum => (None, 3, Some(false)),
-            Self::HyperBoostObserved => (None, 0, Some(true)),
-        }
-    }
-}
+pub(crate) use openblade_domain::thermal_observation::ObservedPerformance;
 
 // Only a live service owner can supply this evidence. An epoch must change
 // across ownership, power, controller or lifecycle transitions, even if the
@@ -319,9 +291,56 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
             (6, 1) => Some(ObservedPerformance::BatteryBalancedManual),
             (0, 1) => Some(ObservedPerformance::FixedMaximum),
             (7, 0) => Some(ObservedPerformance::HyperBoostObserved),
-            // Custom requires actual CPU/GPU 0D/87 getters; no guessed levels.
+            (4, fan @ (0 | 1)) => {
+                // Reserve only after a complete Custom selector pair. A new handle
+                // does not replenish the process-wide budget or drain firmware replies.
+                let [cpu_id, gpu_id] = self.reader.port.reserve_pair()?;
+                let cpu = self
+                    .read_custom(
+                        CustomPerformanceQuery::new(cpu_id, CustomPerformanceComponent::Cpu),
+                        authorize,
+                        admission,
+                        limit,
+                    )
+                    .await?;
+                let gpu = self
+                    .read_custom(
+                        CustomPerformanceQuery::new(gpu_id, CustomPerformanceComponent::Gpu),
+                        authorize,
+                        admission,
+                        limit,
+                    )
+                    .await?;
+                self.checkpoint(authorize, admission, limit).ok()?;
+                ObservedPerformance::rz09_0581_custom(fan == 1, cpu, gpu)
+            }
             _ => None,
         }
+    }
+
+    async fn read_custom(
+        &mut self,
+        query: CustomPerformanceQuery,
+        authorize: Authorize<'_, A>,
+        admission: A,
+        limit: Limit<'_>,
+    ) -> Option<openblade_protocol::custom_performance::CustomPerformanceLevel> {
+        // Invocation is not submission. This Reader owns the enclosing attempt;
+        // canceled/incomplete results seal it until actual native retirement.
+        self.checkpoint(authorize, admission, limit).ok()?;
+        let mut frame = [0; FRAME_LENGTH];
+        frame[1..].copy_from_slice(&query.request().encode());
+        self.transfer(Transfer::SendGetter(frame), limit)
+            .await
+            .ok()?;
+        limit.wait(SETTLE).await.ok()?;
+        self.checkpoint(authorize, admission, limit).ok()?;
+        let (length, frame) = self.transfer(Transfer::ReceiveReply, limit).await.ok()?;
+        if !matches!(length, REPORT_LENGTH | FRAME_LENGTH) || frame[0] != 0 {
+            return None;
+        }
+        // Return CPU success directly: GPU invocation owns its admission check.
+        query.decode(&frame[1..]).ok()
     }
 
     fn checkpoint(

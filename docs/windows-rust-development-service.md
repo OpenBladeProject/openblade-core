@@ -147,16 +147,28 @@ selection, then verifies the retained overlapped handle as
 `SET_FEATURE` submits the `0D/82` getter for each of the two channels.
 After the managed 30 ms settling interval, HID `GET_FEATURE` reads the
 corresponding reply. Both replies must pass report ID, length, checksum,
-transaction, command, status and channel validation and agree on
-Balanced or Performance with automatic fans. These observations carry
-no RPM, Custom settings, HyperBoost state or live sensor readings.
+transaction, command, status and channel validation and agree on one reviewed
+thermal state. The installed mailbox read path also decodes ordinary manual,
+battery and HyperBoost selectors. Custom reads use the shared typed `0D/87`
+codec: CPU `01 01 00`, then GPU `01 02 00`, with distinct transaction IDs.
+Both three-byte responses must confirm their selector and a Low, Medium or
+High level. Boost is rejected. Automatic High/High rejects the observation;
+Manual High/High confirms Custom/Maximum with unknown levels, preserving the
+managed Automatic handback interpretation. It never publishes High/High levels
+or carries earlier levels into that confirmed unknown result. RPM, targets,
+GPU offsets and live sensors remain unobserved.
 
-The adapter requires live sole-owner, active session, full adapter,
-controller clearance and awake evidence from the same authority epoch
-before each transfer and before returning a result. It reserves a pair of
-transaction IDs across leases in the process and stops after 127 pairs
-without wrapping. Cancellation seals the lease and targets the current
-operation.
+The legacy guarded adapter retains its full-adapter and active-session
+requirements. The installed mailbox reader instead uses the existing typed
+read custody, independently of write capabilities, power resolution or a
+nonzero UI session. Both recheck their applicable identity/custody proof before
+traffic and publication. The allocator reserves pairs across leases in the
+process, stopping after 127 reservations without wrapping. Standard reads use
+one pair; Custom reserves a second pair only after its selectors agree.
+At most 63 complete Custom observations fit, and cancellation can burn a
+reservation. Exhaustion submits no further command and cannot renew the
+retained timestamp; presentation expires at five seconds. Sustained reads
+remain a required full-backend item.
 
 Phase 10m runs the getter on one owned OS thread per accepted observation.
 Discovery, open, ConfigMgr registration, same-handle verification, submission,
@@ -165,6 +177,15 @@ The Service refuses concurrent observations without queueing them. It releases
 the status-source lock before waiting, so GetStatus and subscription refresh
 can proceed. The request deadline or disconnect revokes delivery. The worker
 rechecks authority and rejects a reply that completes after its deadline.
+
+The managed getter invokes GPU after successful CPU decoding without a gap
+cancellation check. Its shared gate can return QueuedCanceled without a native
+submission or port poison; a claimed Canceled result poisons the port even if
+the inner session remains Healthy. The native worker owns an entire claimed
+observation and its private Reader, with no component queue or reusable port
+exposed to callers. GPU invocation performs fresh pre-submit admission; any
+canceled claimed observation seals that Reader and retires it before returning.
+A concurrent observation cannot submit. Incomplete reads publish no levels.
 
 The worker releases its process-wide fence only after terminal I/O, callback
 drain, and handle closure. A blocked call retains the lease and fence even
@@ -175,9 +196,12 @@ and retirement is unconfirmed. An explicit cleanup failure retains the
 resources and quarantines the native slot until process exit.
 
 The typed result can populate a fresh v79 reply only with independently
-verified status guards for the same live authority epoch. It confirms the
-decoded preset and Automatic fan mode and leaves HyperBoost and other
-unobserved state unknown. It does not publish this reply as ordinary status.
+verified status guards for the same live authority epoch. The installed read
+projection carries the complete decoded preset/fan state,
+HyperBoost observation and nullable Custom settings in the existing v79 schema.
+Accepted levels use numeric CPU/GPU values and maximumFans=false; the manual
+selector does not imply that separate setting. Retained ordinary status has no
+fresh-read witness.
 The installed loaded-generation and sole-owner proofs are still unavailable.
 The metadata observer therefore continues to refuse firmware observation.
 Offline fixtures block native-call substitutes and feed the pinned report

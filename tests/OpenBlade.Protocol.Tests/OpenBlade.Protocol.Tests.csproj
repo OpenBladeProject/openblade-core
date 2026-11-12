@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="..\Fixtures\Parity\rz09-0581-custom-observation.json" Link="Parity\rz09-0581-custom-observation.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\Fixtures\Parity\rz09-0581-thermal-pair-observation.json"
           Link="Parity\rz09-0581-thermal-pair-observation.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\OpenBlade.Protocol\Fixtures\Rz09_0581_02e0_4_00_PadAbsentHyperBoostAdapterTransitionPlan.json"

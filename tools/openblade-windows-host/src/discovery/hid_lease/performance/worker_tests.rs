@@ -14,6 +14,7 @@ use tokio::{sync::oneshot, time::timeout};
 pub(crate) enum BlockAt {
     Verify,
     Submit,
+    GpuSubmit,
     Retire,
 }
 
@@ -60,9 +61,15 @@ impl Port for BlockingPort {
 
     fn submit(&mut self, transfer: Transfer, limit: Limit<'_>) -> io::Result<()> {
         limit.check()?;
+        let gpu =
+            matches!(&transfer, Transfer::SendGetter(frame) if frame[8] == 0x87 && frame[10] == 2);
         self.script.submit(transfer, limit)?;
         self.submitted.fetch_add(1, Ordering::AcqRel);
-        self.block(BlockAt::Submit);
+        self.block(if gpu {
+            BlockAt::GpuSubmit
+        } else {
+            BlockAt::Submit
+        });
         Ok(())
     }
 
@@ -90,6 +97,23 @@ pub(crate) fn blocking_worker_with_authority<A: ObservationProof>(
     fence: Option<&'static AtomicBool>,
     authorize: impl Fn() -> Option<A> + Send + Sync + 'static,
 ) -> (Worker<A>, Held) {
+    blocking_worker_with_script(at, fence, authorize, || Script::pair([2, 2]))
+}
+
+pub(crate) fn blocking_custom_worker_with_authority<A: ObservationProof>(
+    at: BlockAt,
+    authorize: impl Fn() -> Option<A> + Send + Sync + 'static,
+) -> (Worker<A>, Held) {
+    blocking_worker_with_script(at, None, authorize, || {
+        Script::custom(0, &[1, 1, 1], &[1, 2, 2], 1)
+    })
+}
+fn blocking_worker_with_script<A: ObservationProof>(
+    at: BlockAt,
+    fence: Option<&'static AtomicBool>,
+    authorize: impl Fn() -> Option<A> + Send + Sync + 'static,
+    script: impl Fn() -> Script + Send + Sync + 'static,
+) -> (Worker<A>, Held) {
     let (entered, seen) = oneshot::channel();
     let (release, released) = mpsc::channel();
     let block = Mutex::new(Some(Block {
@@ -114,7 +138,7 @@ pub(crate) fn blocking_worker_with_authority<A: ObservationProof>(
                 return Ok(None);
             }
             let port = BlockingPort {
-                script: Script::pair([2, 2]),
+                script: script(),
                 block: block.lock().unwrap().take(),
                 submitted: submitted.clone(),
                 cancelled: cancelled.clone(),
@@ -278,6 +302,115 @@ async fn firmware_worker_quarantines_unconfirmed_retirement() {
 pub(crate) fn failing_worker<A: ObservationProof>() -> Worker<A> {
     Worker::new(
         |_| Err(io::Error::other("injected native retirement failure")),
+        None,
+    )
+}
+
+// The installed path owns a private Reader for each claimed whole observation.
+// This fake replaces only feature I/O; Worker, Reader and retirement are real.
+pub(crate) struct CustomIo {
+    transactions: Transactions,
+    pub(crate) getters: AtomicUsize,
+    pub(crate) retirements: AtomicUsize,
+    pub(crate) fan: AtomicU8,
+    pub(crate) cpu: AtomicU8,
+    pub(crate) gpu: AtomicU8,
+}
+impl CustomIo {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self {
+            transactions: Transactions::new(),
+            getters: AtomicUsize::new(0),
+            retirements: AtomicUsize::new(0),
+            fan: AtomicU8::new(0),
+            cpu: AtomicU8::new(1),
+            gpu: AtomicU8::new(2),
+        })
+    }
+}
+struct CustomPort {
+    io: Arc<CustomIo>,
+    reply: Frame,
+    pending: Option<(usize, Frame)>,
+}
+impl Port for CustomPort {
+    fn reserve_pair(&mut self) -> Option<[u8; 2]> {
+        self.io.transactions.reserve_pair()
+    }
+    fn verify(&mut self, limit: Limit<'_>) -> io::Result<()> {
+        limit.check()
+    }
+    fn submit(&mut self, transfer: Transfer, limit: Limit<'_>) -> io::Result<()> {
+        limit.check()?;
+        assert!(self.pending.is_none());
+        self.pending = Some(match transfer {
+            Transfer::SendGetter(frame) => {
+                self.io.getters.fetch_add(1, Ordering::AcqRel);
+                let transaction = frame[2];
+                let channel = frame[10];
+                self.reply = if frame[8] == 0x82 {
+                    super::tests::reply(
+                        transaction,
+                        &[1, channel, 4, self.io.fan.load(Ordering::Acquire)],
+                    )
+                } else {
+                    assert_eq!(frame[8], 0x87);
+                    let level = if channel == 1 {
+                        &self.io.cpu
+                    } else {
+                        &self.io.gpu
+                    };
+                    super::tests::custom_reply(
+                        transaction,
+                        &[1, channel, level.load(Ordering::Acquire)],
+                    )
+                };
+                (0, frame)
+            }
+            Transfer::ReceiveReply => (91, self.reply),
+        });
+        Ok(())
+    }
+    fn poll(&mut self) -> Option<io::Result<(usize, Frame)>> {
+        self.pending.take().map(Ok)
+    }
+    fn cancel(&mut self) {}
+    fn poll_retirement(&mut self) -> io::Result<bool> {
+        self.pending.take();
+        self.io.retirements.fetch_add(1, Ordering::AcqRel);
+        Ok(true)
+    }
+}
+pub(crate) fn custom_io_worker(
+    io: Arc<CustomIo>,
+    authorize: impl Fn() -> Option<ReadAdmission> + Send + Sync + 'static,
+) -> Worker<ReadAdmission> {
+    Worker::new(
+        move |job| {
+            let Some(admission) = authorize() else {
+                return Ok(None);
+            };
+            let mut reader = Reader::new(
+                CustomPort {
+                    io: io.clone(),
+                    reply: [0; FRAME_LENGTH],
+                    pending: None,
+                },
+                admission,
+            );
+            tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .start_paused(true)
+                .build()?
+                .block_on(async {
+                    let performance = reader.observe(&mut || authorize(), job.limit()).await;
+                    reader.retire(None).await?;
+                    Ok(performance.map(|performance| Reading {
+                        admission,
+                        performance,
+                    }))
+                })
+        },
         None,
     )
 }

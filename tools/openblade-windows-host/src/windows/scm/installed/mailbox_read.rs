@@ -685,7 +685,7 @@ impl ReadSource {
             // source mutex. Never assign its newer revision to an old snapshot.
             let current = publisher.borrow().active.clone();
             let mut observed = current.with_mailbox_read(
-                reading.performance.projection(),
+                reading.performance,
                 crate::service_status::ReadConfirmation::new(deadline, move || {
                     lease.authorize() == Some(proof)
                 }),
@@ -1095,5 +1095,203 @@ mod tests {
         assert!(source.stop().await.is_err());
         assert!(source.confirm_drained().is_err());
         assert_eq!(custody.releases.load(Ordering::Acquire), 0);
+    }
+    #[tokio::test]
+    async fn installed_custom_budget_keeps_63_results_then_expires_without_timestamp_renewal() {
+        use crate::discovery::performance::worker_tests::{CustomIo, custom_io_worker};
+        let io = CustomIo::new();
+        let custody = Arc::new(InjectedCustody {
+            proof: ReadAdmission {
+                generation: [7; 32],
+            },
+            live: AtomicBool::new(true),
+            retired: AtomicBool::new(false),
+            releases: AtomicUsize::new(0),
+        });
+        let source = ReadSource::compose(custody.clone(), |lease| {
+            custom_io_worker(io.clone(), move || lease.authorize())
+        });
+        let publisher = publisher();
+        for _ in 0..63 {
+            let observed = source
+                .observe(
+                    status(0),
+                    Instant::now() + Duration::from_secs(2),
+                    publisher.clone(),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+            let json = serde_json::to_value(observed).unwrap();
+            assert_eq!(
+                json["confirmedState"]["customPerformance"],
+                serde_json::json!({"cpu":1,"gpu":2,"maximumFans":false})
+            );
+            assert_eq!(json["confirmedState"]["performance"], 5);
+        }
+        assert_eq!(io.getters.load(Ordering::Acquire), 252);
+        let completed = source.last.borrow().as_ref().unwrap().1;
+        // Pair 127 can read the Custom selector, but cannot admit CPU/GPU IDs.
+        assert!(
+            source
+                .observe(
+                    status(0),
+                    Instant::now() + Duration::from_secs(2),
+                    publisher.clone()
+                )
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(io.getters.load(Ordering::Acquire), 254);
+        assert_eq!(source.last.borrow().as_ref().unwrap().1, completed);
+        assert!(
+            source
+                .observe(
+                    status(0),
+                    Instant::now() + Duration::from_secs(2),
+                    publisher.clone()
+                )
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(io.getters.load(Ordering::Acquire), 254);
+        assert_eq!(source.last.borrow().as_ref().unwrap().1, completed);
+        source
+            .decorate_at(
+                &publisher,
+                None,
+                completed + RETENTION_WINDOW - Duration::from_millis(1),
+            )
+            .unwrap();
+        assert!(!publisher.borrow().active.metadata_only());
+        source
+            .decorate_at(&publisher, None, completed + RETENTION_WINDOW)
+            .unwrap();
+        assert!(publisher.borrow().active.metadata_only());
+        assert_eq!(io.retirements.load(Ordering::Acquire), 65);
+        source.stop().await.unwrap();
+        source.confirm_drained().unwrap();
+        assert_eq!(custody.releases.load(Ordering::Acquire), 1);
+    }
+
+    #[tokio::test]
+    async fn installed_custom_manual_high_high_replaces_old_levels_automatic_rejects() {
+        use crate::discovery::performance::worker_tests::{CustomIo, custom_io_worker};
+        let io = CustomIo::new();
+        let custody = Arc::new(InjectedCustody {
+            proof: ReadAdmission {
+                generation: [7; 32],
+            },
+            live: AtomicBool::new(true),
+            retired: AtomicBool::new(false),
+            releases: AtomicUsize::new(0),
+        });
+        let source = ReadSource::compose(custody.clone(), |lease| {
+            custom_io_worker(io.clone(), move || lease.authorize())
+        });
+        let publisher = publisher();
+        let deadline = || Instant::now() + Duration::from_secs(2);
+        assert!(
+            source
+                .observe(status(0), deadline(), publisher.clone())
+                .await
+                .unwrap()
+                .is_some()
+        );
+        io.cpu.store(2, Ordering::Release);
+        io.fan.store(1, Ordering::Release);
+        let observed = source
+            .observe(status(0), deadline(), publisher.clone())
+            .await
+            .unwrap()
+            .unwrap();
+        let json = serde_json::to_value(observed).unwrap();
+        assert_eq!(json["confirmedState"]["performance"], 5);
+        assert_eq!(json["confirmedState"]["fans"], 3);
+        assert!(json["confirmedState"]["customPerformance"].is_null());
+        assert!(serde_json::to_value(publisher.borrow().active.clone()).unwrap()["confirmedState"]["customPerformance"].is_null());
+        let completed = source.last.borrow().as_ref().unwrap().1;
+        io.fan.store(0, Ordering::Release);
+        assert!(
+            source
+                .observe(status(0), deadline(), publisher.clone())
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(source.last.borrow().as_ref().unwrap().1, completed);
+        assert!(serde_json::to_value(publisher.borrow().active.clone()).unwrap()["confirmedState"]["customPerformance"].is_null());
+        source
+            .decorate_at(&publisher, None, completed + RETENTION_WINDOW)
+            .unwrap();
+        assert!(publisher.borrow().active.metadata_only());
+        source.stop().await.unwrap();
+    }
+    #[tokio::test]
+    async fn installed_custom_gpu_possible_submission_keeps_custody_until_native_retirement() {
+        use crate::discovery::performance::worker_tests::blocking_custom_worker_with_authority;
+        let custody = Arc::new(InjectedCustody {
+            proof: ReadAdmission {
+                generation: [7; 32],
+            },
+            live: AtomicBool::new(true),
+            retired: AtomicBool::new(false),
+            releases: AtomicUsize::new(0),
+        });
+        let mut held = None;
+        let source = ReadSource::compose(custody.clone(), |lease| {
+            let (worker, control) =
+                blocking_custom_worker_with_authority(BlockAt::GpuSubmit, move || {
+                    lease.authorize()
+                });
+            held = Some(control);
+            worker
+        });
+        let held = held.unwrap();
+        let publisher = publisher();
+        {
+            let observed = source.observe(
+                status(0),
+                Instant::now() + Duration::from_secs(2),
+                publisher.clone(),
+            );
+            tokio::pin!(observed);
+            tokio::select! {entered=held.entered=>entered.unwrap(),_=&mut observed=>panic!("escaped pending GPU submit")}
+            assert_eq!(held.submitted.load(Ordering::Acquire), 7); // CPU succeeded; GPU SET may have submitted.
+            // A second queued whole-observation cannot claim the occupied Reader.
+            assert!(
+                source
+                    .observe(
+                        status(0),
+                        Instant::now() + Duration::from_secs(2),
+                        publisher.clone()
+                    )
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert_eq!(held.submitted.load(Ordering::Acquire), 7);
+        }
+        assert!(
+            timeout(Duration::from_millis(20), source.stop())
+                .await
+                .is_err()
+        );
+        assert_eq!(custody.releases.load(Ordering::Acquire), 0);
+        assert!(source.confirm_drained().is_err());
+        assert!(publisher.borrow().active.metadata_only());
+        assert!(source.last.borrow().is_none());
+        held.release.send(()).unwrap();
+        timeout(Duration::from_secs(2), source.stop())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(held.cancelled.load(Ordering::Acquire));
+        assert_eq!(held.submitted.load(Ordering::Acquire), 7);
+        assert_eq!(custody.releases.load(Ordering::Acquire), 1);
+        source.confirm_drained().unwrap();
+        assert!(publisher.borrow().active.metadata_only());
     }
 }

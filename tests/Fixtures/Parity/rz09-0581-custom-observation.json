@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 1,
+  "model": "RZ09-0581",
+  "cases": [
+    {
+      "id": "automatic-medium-high",
+      "fan": 0,
+      "cpuPayload": [
+        1,
+        1,
+        1
+      ],
+      "gpuPayload": [
+        1,
+        2,
+        2
+      ],
+      "expected": {
+        "performance": 5,
+        "fans": 0,
+        "hyperBoostActive": false,
+        "customPerformance": {
+          "cpu": 1,
+          "gpu": 2,
+          "maximumFans": false
+        }
+      },
+      "queryCount": 4,
+      "portHealthy": true
+    },
+    {
+      "id": "manual-low-medium",
+      "fan": 1,
+      "cpuPayload": [
+        1,
+        1,
+        0
+      ],
+      "gpuPayload": [
+        1,
+        2,
+        1
+      ],
+      "expected": {
+        "performance": 5,
+        "fans": 3,
+        "hyperBoostActive": false,
+        "customPerformance": {
+          "cpu": 0,
+          "gpu": 1,
+          "maximumFans": false
+        }
+      },
+      "queryCount": 4,
+      "portHealthy": true
+    },
+    {
+      "id": "automatic-high-low",
+      "fan": 0,
+      "cpuPayload": [
+        1,
+        1,
+        2
+      ],
+      "gpuPayload": [
+        1,
+        2,
+        0
+      ],
+      "expected": {
+        "performance": 5,
+        "fans": 0,
+        "hyperBoostActive": false,
+        "customPerformance": {
+          "cpu": 2,
+          "gpu": 0,
+          "maximumFans": false
+        }
+      },
+      "queryCount": 4,
+      "portHealthy": true
+    },
+    {
+      "id": "automatic-high-high-poisons",
+      "fan": 0,
+      "cpuPayload": [
+        1,
+        1,
+        2
+      ],
+      "gpuPayload": [
+        1,
+        2,
+        2
+      ],
+      "expected": null,
+      "queryCount": 4,
+      "portHealthy": false
+    },
+    {
+      "id": "manual-high-high-unknown-healthy",
+      "fan": 1,
+      "cpuPayload": [
+        1,
+        1,
+        2
+      ],
+      "gpuPayload": [
+        1,
+        2,
+        2
+      ],
+      "expected": {
+        "performance": 5,
+        "fans": 3,
+        "hyperBoostActive": false,
+        "customPerformance": null
+      },
+      "queryCount": 4,
+      "portHealthy": true
+    },
+    {
+      "id": "cpu-boost",
+      "fan": 0,
+      "cpuPayload": [
+        1,
+        1,
+        3
+      ],
+      "gpuPayload": [
+        1,
+        2,
+        1
+      ],
+      "expected": null,
+      "queryCount": 3,
+      "portHealthy": false
+    },
+    {
+      "id": "gpu-boost",
+      "fan": 1,
+      "cpuPayload": [
+        1,
+        1,
+        1
+      ],
+      "gpuPayload": [
+        1,
+        2,
+        3
+      ],
+      "expected": null,
+      "queryCount": 4,
+      "portHealthy": false
+    },
+    {
+      "id": "cpu-wrong-selector",
+      "fan": 0,
+      "cpuPayload": [
+        1,
+        2,
+        1
+      ],
+      "gpuPayload": [
+        1,
+        2,
+        1
+      ],
+      "expected": null,
+      "queryCount": 3,
+      "portHealthy": false
+    },
+    {
+      "id": "gpu-wrong-selector",
+      "fan": 0,
+      "cpuPayload": [
+        1,
+        1,
+        1
+      ],
+      "gpuPayload": [
+        1,
+        1,
+        1
+      ],
+      "expected": null,
+      "queryCount": 4,
+      "portHealthy": false
+    },
+    {
+      "id": "cpu-short",
+      "fan": 0,
+      "cpuPayload": [
+        1,
+        1
+      ],
+      "gpuPayload": [
+        1,
+        2,
+        1
+      ],
+      "expected": null,
+      "queryCount": 3,
+      "portHealthy": false
+    },
+    {
+      "id": "gpu-long",
+      "fan": 0,
+      "cpuPayload": [
+        1,
+        1,
+        1
+      ],
+      "gpuPayload": [
+        1,
+        2,
+        1,
+        0
+      ],
+      "expected": null,
+      "queryCount": 4,
+      "portHealthy": false
+    },
+    {
+      "id": "gpu-wrong-header",
+      "fan": 0,
+      "cpuPayload": [
+        1,
+        1,
+        1
+      ],
+      "gpuPayload": [
+        0,
+        2,
+        1
+      ],
+      "expected": null,
+      "queryCount": 4,
+      "portHealthy": false
+    }
+  ]
+}

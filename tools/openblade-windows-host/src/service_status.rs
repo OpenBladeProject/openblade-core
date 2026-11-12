@@ -581,17 +581,20 @@ impl Snapshot {
     #[cfg(all(windows, feature = "service-mailbox-observation-v1"))]
     pub(crate) fn with_mailbox_read(
         mut self,
-        projection: (Option<i32>, i32, Option<bool>),
+        observation: openblade_domain::thermal_observation::ObservedPerformance,
         confirmation: ReadConfirmation,
     ) -> Self {
         // The shared Agent status module does not own Service discovery types.
-        let (performance, fans, hyper_boost) = projection;
+        let (performance, fans, hyper_boost) = observation.projection();
         self.confirmed_state = Some(Map::from_iter([
             ("performance".into(), serde_json::json!(performance)),
             ("fans".into(), serde_json::json!(fans)),
             ("battery".into(), Value::Null),
             ("lighting".into(), Value::Null),
             ("hyperBoostActive".into(), serde_json::json!(hyper_boost)),
+            ("customPerformance".into(), observation.custom_levels().map_or(Value::Null, |levels| {
+                serde_json::json!({ "cpu": levels.cpu as u8, "gpu": levels.gpu as u8, "maximumFans": false })
+            })),
         ]));
         self.device_verified = true; // Real opened exact host/HID validation preceded this result.
         self.writes_blocked = true;

@@ -4,7 +4,7 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
 
-public sealed class ProductionBatteryPortTests
+public sealed partial class ProductionBatteryPortTests
 {
     [Fact]
     public void HyperBoostCommandSet_RequiresEveryWritableRestorationWithoutInventingBalancedAliases()

@@ -3,6 +3,8 @@
 
 #![no_std]
 
+pub mod custom_performance;
+
 use openblade_types::{ProtocolValidationFailure, ReportEncodingError};
 
 pub const REPORT_LENGTH: usize = 90;

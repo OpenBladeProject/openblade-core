@@ -24,3 +24,19 @@ pub enum ReportEncodingError {
     PayloadTooLarge { actual: usize },
     DestinationLength { actual: usize },
 }
+
+/// The exact-model getter vocabulary; broader saved settings may include Boost.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum CustomPerformanceLevel {
+    Low = 0,
+    Medium = 1,
+    High = 2,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum CustomPerformanceComponent {
+    Cpu = 1,
+    Gpu = 2,
+}

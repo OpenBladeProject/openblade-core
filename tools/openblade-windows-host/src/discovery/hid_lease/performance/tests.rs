@@ -36,7 +36,7 @@ fn fixture() -> Value {
     )).unwrap()
 }
 
-fn reply(transaction: u8, payload: &[u8]) -> Frame {
+pub(super) fn reply(transaction: u8, payload: &[u8]) -> Frame {
     let mut frame = [0; FRAME_LENGTH];
     frame[1..].copy_from_slice(
         &RazerReport::create(transaction, CLASS, GET_THERMAL, payload)
@@ -186,7 +186,7 @@ async fn paired_observation_fixture_uses_typed_read_custody_without_power_or_ui_
                 .await
                 .is_none()
         );
-        assert_eq!(reader.port.sent.len(), 2);
+        assert_eq!(reader.port.sent.len(), 3);
     }
 }
 
@@ -508,4 +508,230 @@ async fn dropping_observation_cancels_and_keeps_its_pending_storage() {
     drop(observation);
     assert_eq!(reader.port.cancels, 1);
     assert!(reader.port.pending.is_some());
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CustomFixture {
+    schema_version: u32,
+    model: String,
+    cases: Vec<CustomCase>,
+}
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CustomCase {
+    id: String,
+    fan: u8,
+    cpu_payload: Vec<u8>,
+    gpu_payload: Vec<u8>,
+    #[serde(deserialize_with = "required_nullable")]
+    expected: Option<CustomExpected>,
+    query_count: usize,
+    port_healthy: bool,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CustomExpected {
+    performance: u8,
+    fans: u8,
+    hyper_boost_active: bool,
+    #[serde(deserialize_with = "required_nullable")]
+    custom_performance: Option<CustomLevelsExpected>,
+}
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct CustomLevelsExpected {
+    cpu: u8,
+    gpu: u8,
+    maximum_fans: bool,
+}
+fn required_nullable<'de, D: serde::Deserializer<'de>, T: serde::Deserialize<'de>>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error> {
+    serde::Deserialize::deserialize(deserializer)
+}
+
+pub(super) fn custom_reply(transaction: u8, payload: &[u8]) -> Frame {
+    let mut frame = [0; FRAME_LENGTH];
+    frame[1..].copy_from_slice(
+        &RazerReport::create(transaction, CLASS, 0x87, payload)
+            .unwrap()
+            .encode(),
+    );
+    frame[1] = 2;
+    frame
+}
+impl Script {
+    pub(super) fn custom(fan: u8, cpu: &[u8], gpu: &[u8], first: u8) -> Self {
+        let mut script = Self::pair([4, 4]);
+        script.transactions.0.store(first - 1, Ordering::Relaxed);
+        script.replies = VecDeque::from([
+            (90, reply(first, &[1, 1, 4, fan])),
+            (91, reply(first + 1, &[1, 2, 4, fan])),
+            (90, custom_reply(first + 2, cpu)),
+            (91, custom_reply(first + 3, gpu)),
+        ]);
+        script
+    }
+}
+#[tokio::test(start_paused = true)]
+async fn custom_shared_parity_is_complete_ordered_and_preserves_manual_unknown_health() {
+    let text =
+        include_str!("../../../../../../tests/Fixtures/Parity/rz09-0581-custom-observation.json");
+    let fixture: CustomFixture = serde_json::from_str(text).unwrap();
+    assert_eq!(fixture.schema_version, 1);
+    assert_eq!(fixture.model, MODEL);
+    let proof = ReadAdmission {
+        generation: [8; 32],
+    };
+    let cancelled = AtomicBool::new(false);
+    for row in fixture.cases {
+        let mut reader = Reader::new(
+            Script::custom(row.fan, &row.cpu_payload, &row.gpu_payload, 1),
+            proof,
+        );
+        let result = reader.observe(&mut || Some(proof), limit(&cancelled)).await;
+        let actual = result.map(|state| {
+            let (performance,fans,hyper) = state.projection();
+            serde_json::json!({"performance":performance,"fans":fans,"hyperBoostActive":hyper,
+                "customPerformance":state.custom_levels().map(|v| serde_json::json!({"cpu":v.cpu as u8,"gpu":v.gpu as u8,"maximumFans":false}))})
+        });
+        assert_eq!(
+            serde_json::json!(actual),
+            serde_json::to_value(&row.expected).unwrap(),
+            "{}",
+            row.id
+        );
+        assert_eq!(!reader.poisoned, row.port_healthy, "{}", row.id);
+        assert_eq!(reader.port.sent.len(), row.query_count, "{}", row.id);
+        for (index, frame) in reader.port.sent.iter().enumerate() {
+            assert_eq!(frame[2], index as u8 + 1);
+            assert_eq!(frame[8], if index < 2 { 0x82 } else { 0x87 });
+            if index >= 2 {
+                assert_eq!(&frame[9..12], &[1, index as u8 - 1, 0]);
+            }
+        }
+        reader.port.replies =
+            VecDeque::from([(91, reply(5, &[1, 1, 0, 0])), (91, reply(6, &[1, 2, 0, 0]))]);
+        assert_eq!(
+            reader.observe(&mut || Some(proof), limit(&cancelled)).await,
+            row.port_healthy
+                .then_some(ObservedPerformance::BalancedAutomatic)
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn custom_component_faults_and_lost_custody_never_publish_partial_levels() {
+    let cancelled = AtomicBool::new(false);
+    for corrupt in 0..8 {
+        let mut script = Script::custom(0, &[1, 1, 1], &[1, 2, 2], 1);
+        let (length, frame) = &mut script.replies[3];
+        match corrupt {
+            0 => *length = 89,
+            1 => frame[0] = 1,
+            2 => frame[89] ^= 1,
+            3 => frame[2] = 3,
+            4 => frame[1] = 3,
+            5 => {
+                frame[7] = 0;
+                frame[89] = openblade_protocol::calculate_checksum(&frame[1..]).unwrap();
+            }
+            6 => {
+                frame[8] = 0x82;
+                frame[89] = openblade_protocol::calculate_checksum(&frame[1..]).unwrap();
+            }
+            7 => {
+                script.replies.pop_back();
+            }
+            _ => unreachable!(),
+        }
+        let mut reader = Reader::new(script, ADMITTED);
+        assert!(
+            reader
+                .observe(&mut || Some(ADMITTED), limit(&cancelled))
+                .await
+                .is_none()
+        );
+        assert!(reader.poisoned);
+        assert_eq!(reader.port.sent.len(), 4);
+        assert!(
+            reader
+                .observe(&mut || Some(ADMITTED), limit(&cancelled))
+                .await
+                .is_none()
+        );
+        assert_eq!(reader.port.sent.len(), 4);
+    }
+    for revoke in [13, 15, 17, 19] {
+        let mut reader = Reader::new(Script::custom(0, &[1, 1, 1], &[1, 2, 2], 1), ADMITTED);
+        let mut calls = 0;
+        assert!(
+            reader
+                .observe(
+                    &mut || {
+                        calls += 1;
+                        (calls < revoke).then_some(ADMITTED)
+                    },
+                    limit(&cancelled)
+                )
+                .await
+                .is_none()
+        );
+        assert!(reader.poisoned);
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn custom_cpu_success_then_claimed_gpu_admission_cancel_submits_no_gpu() {
+    let cancelled = AtomicBool::new(false);
+    let proof = ReadAdmission {
+        generation: [9; 32],
+    };
+    let mut calls = 0;
+    let mut reader = Reader::new(Script::custom(0, &[1, 1, 1], &[1, 2, 2], 1), proof);
+    let observed = reader
+        .observe(
+            &mut || {
+                calls += 1;
+                // Initial/pair checkpoints consume ten calls; CPU entry/read consume
+                // four. CPU has decoded successfully before GPU invokes admission.
+                if calls == 15 {
+                    cancelled.store(true, Ordering::Release);
+                }
+                Some(proof)
+            },
+            limit(&cancelled),
+        )
+        .await;
+    assert!(observed.is_none());
+    assert!(reader.poisoned);
+    assert_eq!(reader.port.received, 3);
+    assert_eq!(reader.port.sent.len(), 3);
+    assert!(reader.port.pending.is_none());
+    assert_eq!(reader.port.cancels, 1);
+    reader.retire(None).await.unwrap();
+    assert!(reader.port.retired);
+}
+
+#[test]
+fn custom_fixture_rejects_missing_nullable_unknown_duplicate_and_non_numeric_fields() {
+    let json =
+        include_str!("../../../../../../tests/Fixtures/Parity/rz09-0581-custom-observation.json");
+    for replacement in [
+        r#""cpu": 1, "cpu": 2"#,
+        r#""cpu": "1""#,
+        r#""unexpected": 1"#,
+    ] {
+        let changed = json.replacen(r#""cpu": 1"#, replacement, 1);
+        assert_ne!(changed, json);
+        assert!(serde_json::from_str::<CustomFixture>(&changed).is_err());
+    }
+    let mut value: serde_json::Value = serde_json::from_str(json).unwrap();
+    value["cases"][4]["expected"]
+        .as_object_mut()
+        .unwrap()
+        .remove("customPerformance");
+    assert!(serde_json::from_value::<CustomFixture>(value).is_err());
 }
