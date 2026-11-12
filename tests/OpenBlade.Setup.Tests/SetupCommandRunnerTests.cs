@@ -966,6 +966,7 @@ public sealed partial class SetupCommandRunnerTests
         public SetupServiceTransition ServiceTransition { get; set; }
         public SetupServiceTransition PreparedTransition { get; init; } = SetupServiceTransition.ManagedPrepared;
         public Action? PrepareNativeTransition { get; init; }
+        public Action<string>? ObserveOperation { get; init; }
         public bool ServiceWasRunning { get; init; } = true;
         public SetupStartupRegistration TrayStartup { get; init; } = SetupStartupRegistration.Shortcut;
         public SetupStartupRegistration SessionAgentStartup { get; init; } = SetupStartupRegistration.Shortcut;
@@ -1205,6 +1206,7 @@ public sealed partial class SetupCommandRunnerTests
         private Task AddAsync(string operation, CancellationToken token)
         {
             Operations.Add(operation);
+            ObserveOperation?.Invoke(operation);
             if (Operations.Contains("payload-activate")
                 && operation is "tray-startup-remove" or "agent-startup-remove" or "start-menu-remove"
                     or "uninstall-shortcut-remove" or "uninstall-registration-remove"

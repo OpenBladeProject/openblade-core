@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 namespace OpenBlade.Deployment;
 
 internal enum NativeEpochPhase { Provisional, Committed, Unresolved, Retired }
-internal enum NativeEpochBoundary { Reserved, PackageWritten, OriginWritten, PhaseWritten, FrontierWritten, SelectionPublished, EvidenceRetaining, EvidenceRetained }
+internal enum NativeEpochBoundary { Reserved, PackageWritten, OriginWritten, PhaseWritten, FrontierWritten, SelectionPublished, EvidenceRetaining, EvidenceRetained, AdmissionRequested, HandoffAcquired }
 
 internal sealed record NativeEpochRecord(NativeEpochPhase Phase, string Epoch, string Predecessor,
     long Ordinal, string Installation, string Package, string Request, string ServiceId, string AgentId,
@@ -62,17 +62,35 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
 
     internal static WindowsNativeEpochTransaction Begin(WindowsNativeEpochFiles files, WindowsNativePackage package,
         Guid request, string? explicitlyRecoverCurrent = null,
-        Action<NativeEpochBoundary>? testCrashBoundary = null, WindowsManagedMailboxTransfer? managedTransfer = null)
+        Action<NativeEpochBoundary>? testCrashBoundary = null, WindowsManagedMailboxTransfer? managedTransfer = null,
+        Func<ManagedMailboxNativeCustody, IDisposable?>? acquireLegacy = null)
     {
         if (request == Guid.Empty) { throw new InvalidDataException("Native epoch requires a fresh Setup request."); }
+        testCrashBoundary?.Invoke(NativeEpochBoundary.AdmissionRequested);
         var writer = files.AcquireWriter();
         WindowsNativeEpochFiles.DirectoryLease? generation = null;
         try
         {
             byte[]? previous = files.ReadCurrent();
             RequireFrontier(files, previous);
-            if (previous is null && WindowsNativeRecoveryState.Inspect(files).State != NativeInstallationState.VerifiedBootstrap)
+            // Authenticate retained canceled preparations under this SAME writer.
+            // Acquire original custody/owner before handoff exclusion, matching
+            // startup/maintenance lock order. Never reacquire our own writer.
+            if (!package.Service.ReadOnlyMailbox && previous is null && WindowsNativeRecoveryState.Inspect(files).State != NativeInstallationState.VerifiedBootstrap)
             { throw new NativeRecoveryException(NativeRecoveryReason.UnknownBootstrapHistory, "Native bootstrap admission changed; preserved mappings/reservations/ownership were not reset."); }
+            using var prefix = package.Service.ReadOnlyMailbox ? ManagedMailboxNativeCustody.AcquireUnderWriter(files.RetainView()) : null;
+#if OPENBLADE_NATIVE_PACKAGE_TESTS
+            using var legacyAdmission = prefix is null ? null : acquireLegacy?.Invoke(prefix);
+#else
+            using var legacyAdmission = prefix is null ? null : (acquireLegacy ?? WindowsManagedMailboxRun.AcquireLegacyExclusion)(prefix);
+#endif
+            using var handoff = package.Service.ReadOnlyMailbox
+                ? (managedTransfer ?? throw new IOException("A real managed transport handoff is required for native observation.")).AcquireForBegin(package, request) : null;
+            if (prefix is not null)
+            {
+                handoff!.AuthenticatePrefix(prefix);
+            }
+            testCrashBoundary?.Invoke(NativeEpochBoundary.HandoffAcquired);
             var predecessor = previous is null ? null : NativeEpochRecord.Parse(previous);
             if (predecessor is { Phase: NativeEpochPhase.Provisional or NativeEpochPhase.Unresolved }
                 && (explicitlyRecoverCurrent is null || NativeCanonical.Digest(previous!) != explicitlyRecoverCurrent))
@@ -135,11 +153,14 @@ internal sealed class WindowsNativeEpochTransaction : IDisposable
             files.PublishCustody(Path.Combine(directory, "attempts", "custody.lock"), NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", epoch));
             files.Publish(Path.Combine(directory, "startup-policy.bin"), NativeCanonical.Lines("OpenBlade.NativeStartupPolicy.v1",
                 epoch, NativeCanonical.Digest(selection), package.Service.Id, package.Service.StartupPolicy));
+            // One atomic envelope contains BOTH origin and exact transfer. Each
+            // interruption after positive preparation can recover the same bytes;
+            // neither an origin-only nor a mapping-only crash gap is authority.
+            handoff?.PublishPreparation(files, value);
             files.Publish(Path.Combine(directory, "origin.bin"), selection);
             if (package.Service.ReadOnlyMailbox)
             {
-                (managedTransfer ?? throw new IOException("A real managed transport handoff is required for native observation."))
-                    .BindEpoch(files, value);
+                handoff!.BindEpoch(files, value);
             }
             testCrashBoundary?.Invoke(NativeEpochBoundary.OriginWritten);
             files.Publish(Path.Combine(directory, "Provisional.bin"), selection);

@@ -360,6 +360,15 @@ public sealed class OpenBladeSignedReleaseVerifierTests
             return clone;
         }
 
+        internal TestRelease SignSiblingInstaller(byte[] bytes)
+        {
+            var manifest = OpenBladeReleaseManifestCodec.ParseCanonical(ManifestBytes) with
+            { InstallerSize = bytes.Length, InstallerSha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)) };
+            byte[] encoded = OpenBladeReleaseManifestCodec.SerializeCanonical(manifest);
+            byte[] signature = signingKey.SignHash(OpenBladeSignedReleaseVerifier.ComputeSigningDigest(encoded), DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+            return new(CloneSigningKey(), encoded, signature, Policy, bytes, manifest.InstallerSha256) { SigningKeyId = SigningKeyId };
+        }
+
         public static TestRelease Create()
         {
             return CreateCore(12345678, new string('b', 64), []);

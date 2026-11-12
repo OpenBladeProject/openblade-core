@@ -14,7 +14,7 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
     private readonly HashSet<string> canceled = new(StringComparer.Ordinal);
     private readonly string ownerCommitment;
     private readonly byte[] namespaceProof;
-    private sealed record Generation(NativeEpochRecord Record, byte[] Proof, byte[] Reservation, bool Preparation, bool ReadOnlyMailbox, byte[] Projection, string Source);
+    private sealed record Generation(NativeEpochRecord Record, byte[] Proof, byte[] Reservation, bool Preparation, bool ReadOnlyMailbox, byte[] Projection, string Source, byte[]? PreparationBinding);
     private ManagedMailboxNativeCustody()
     {
         ownerCommitment = NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.NativeOwnerAbsent.v2", "verified-native-namespace-absent"));
@@ -29,12 +29,14 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
 #if OPENBLADE_NATIVE_PACKAGE_TESTS
     internal static ManagedMailboxNativeCustody AcquireForTests(WindowsNativeEpochFiles files) => new(files);
 #endif
-    private ManagedMailboxNativeCustody(WindowsNativeEpochFiles files)
+    // Caller already retains the SAME native writer; this view never releases it.
+    internal static ManagedMailboxNativeCustody AcquireUnderWriter(WindowsNativeEpochFiles files) => new(files, acquireWriter: false);
+    private ManagedMailboxNativeCustody(WindowsNativeEpochFiles files, bool acquireWriter = true)
     {
         this.files = files;
         try
         {
-            writer = files.AcquireWriter();
+            if (acquireWriter) { writer = files.AcquireWriter(); }
             var inspection = WindowsNativeRecoveryState.Inspect(files);
             bool firstPreparation = inspection.State == NativeInstallationState.UnresolvedHistory
                 && inspection.Selection is null && WindowsNativeEpochTransaction.ReadFrontier(files) is null;
@@ -45,7 +47,7 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
             { throw new IOException("Selected native generation is active or unretired."); }
             using (var marker = files.OpenFile(Path.Combine(files.Root, "root.bin")))
             { WindowsNativeEpochFiles.RequireExact(marker, NativeCanonical.Lines("OpenBlade.NativeRoot.v1", "legacy-store-absent")); }
-            var authenticated = new List<(WindowsNativeInstalledSelection Package, NativeEpochRecord Record, string Directory, bool Preparation)>();
+            var authenticated = new List<(WindowsNativeInstalledSelection Package, NativeEpochRecord Record, string Directory, bool Preparation, byte[]? PreparationBinding)>();
             string[] directories = Directory.EnumerateDirectories(files.Root).Where(p => Path.GetFileName(p) != "owner").Take(4097).ToArray();
             if (directories.Length > 4096) { throw new IOException("Native history exceeds its bound."); }
             foreach (string directory in directories)
@@ -57,7 +59,20 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
                 if (reservation.Length != 0) { throw new IOException("Native permanent reservation differs."); }
                 byte[]? retired = ManagedMailboxRecovery.ReadOptional(files, Path.Combine(directory, "Retired.bin"));
                 bool preparation = retired is null;
-                var record = NativeEpochRecord.Parse(retired ?? ManagedMailboxRecovery.Read(files, Path.Combine(directory, "origin.bin")));
+                byte[]? origin = ManagedMailboxRecovery.ReadOptional(files, Path.Combine(directory, "origin.bin"));
+                byte[]? preparationBinding = null;
+                byte[]? preparationOrigin = null;
+                byte[]? preparationBytes = ManagedMailboxRecovery.ReadOptional(files, Path.Combine(directory, "preparation.bin"));
+                if (preparationBytes is not null)
+                {
+                    var f = NativeCanonical.ParseLines(preparationBytes, "OpenBlade.ManagedNativePreparation.v2", 3);
+                    preparationOrigin = Convert.FromBase64String(f[0]); preparationBinding = Convert.FromBase64String(f[1]);
+                    _ = NativeEpochRecord.Parse(preparationOrigin);
+                    if (origin is not null && !origin.AsSpan().SequenceEqual(preparationOrigin)) { throw new IOException("Native preparation origin differs."); }
+                    held.Add(files.OpenFile(Path.Combine(directory, "preparation.bin")));
+                }
+                var record = NativeEpochRecord.Parse(retired ?? origin ?? preparationOrigin
+                    ?? throw new IOException("Native preparation has no positive origin intent."));
                 if (record.Epoch != epoch || record.Phase != (preparation ? NativeEpochPhase.Provisional : NativeEpochPhase.Retired))
                 { throw new IOException("Native retained generation differs."); }
                 if (preparation)
@@ -72,12 +87,12 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
                     }
                     WindowsNativeEpochFiles.RequireAbsent(Path.Combine(directory, "submission.bin"));
                 }
-                var package = WindowsNativeInstalledSelection.AuthenticateManagedHistoryAsync(files.RetainView(), record, preparation, CancellationToken.None).GetAwaiter().GetResult();
+                var package = WindowsNativeInstalledSelection.AuthenticateManagedHistoryAsync(files.RetainView(), record, preparation, CancellationToken.None, preparation ? preparationOrigin : null).GetAwaiter().GetResult();
                 held.Add(package);
                 var attempts = files.RetainDirectory(Path.Combine(directory, "attempts")); held.Add(attempts);
                 var custody = files.AcquireServiceCustody(Path.Combine(directory, "attempts", "custody.lock")); held.Add(custody);
                 WindowsNativeEpochFiles.RequireExact(custody, NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", epoch));
-                authenticated.Add((package, record, directory, preparation));
+                authenticated.Add((package, record, directory, preparation, preparationBinding));
             }
             var knownEpochs = directories.Select(Path.GetFileName).ToHashSet(StringComparer.Ordinal);
             string[] entries = Directory.EnumerateFileSystemEntries(files.Root).Take(32769).ToArray();
@@ -97,11 +112,11 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
             var commitments = new List<string>();
             foreach (var item in authenticated)
             {
-                byte[] proof = WindowsNativeAttemptHistory.RequireDrained(files, item.Record, item.Directory, item.Package.ServiceArtifact, ownerCommitment);
+                byte[] proof = WindowsNativeAttemptHistory.RequireDrained(files, item.Record, item.Directory, item.Package.ServiceArtifact, ownerCommitment, preparationOrigin: item.Preparation ? item.Record.Encode() : null);
                 if (item.Preparation && Directory.EnumerateFileSystemEntries(Path.Combine(item.Directory, "attempts")).Any(p => Path.GetFileName(p) != "custody.lock"))
                 { throw new IOException("Unselected preparation contains a possible native attempt."); }
                 byte[] reservation = ManagedMailboxRecovery.Read(files, item.Directory + ".reserved");
-                generations.Add(item.Record.Epoch, new(item.Record, proof, reservation, item.Preparation, item.Package.ServiceArtifact.ReadOnlyMailbox, item.Package.ManagedVerificationProjection, item.Package.SourceRevision));
+                generations.Add(item.Record.Epoch, new(item.Record, proof, reservation, item.Preparation, item.Package.ServiceArtifact.ReadOnlyMailbox, item.Package.ManagedVerificationProjection, item.Package.SourceRevision, item.PreparationBinding));
                 commitments.Add(NativeCanonical.Digest(proof));
             }
             namespaceProof = NativeCanonical.Lines("OpenBlade.ManagedNativeNamespace.v2", selected is null ? firstPreparation ? "unselected-authenticated-prefix" : "verified-bootstrap" : NativeCanonical.Digest(selected.Encode()),
@@ -120,8 +135,37 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
         if (files is null || !generations.TryGetValue(epoch.Epoch, out var generation)
             || !generation.ReadOnlyMailbox || generation.Record with { Phase = epoch.Phase, Readiness = epoch.Readiness } != epoch)
         { throw new IOException("Transfer epoch/package/reservation is unmatched."); }
+        if (generation.PreparationBinding is not null && !generation.PreparationBinding.AsSpan().SequenceEqual(mapping))
+        { throw new IOException("Native preparation binding differs from the exact transfer."); }
         byte[]? existing = ManagedMailboxRecovery.ReadOptional(files, Path.Combine(files.Root, epoch.Epoch, "managed-handoff.bin"));
         if (existing is not null && !existing.AsSpan().SequenceEqual(mapping)) { throw new IOException("Transfer mapping differs."); }
+    }
+    internal byte[] RequireProjection(NativeEpochRecord epoch) =>
+        generations.TryGetValue(epoch.Epoch, out var generation) ? generation.Projection
+            : throw new IOException("Historical transfer has no authenticated native projection.");
+
+    internal void RequirePreservedResolution(ManagedMailboxSelection transfer, NativeEpochRecord? epoch, byte[] proof, string disposition)
+    {
+        var f = NativeCanonical.ParseLines(proof, "OpenBlade.ManagedNativeResolution.v2", 7);
+        byte[] evidence = Convert.FromBase64String(f[5]);
+        if (f[0] != NativeCanonical.Digest(transfer.Encode()) || f[1] != disposition
+            || f[2] != (epoch?.Epoch ?? "not-reserved") || f[3] != NativeCanonical.Digest(evidence)
+            || !NativeCanonical.IsHex(f[4], 64))
+        { throw new IOException("Preserved native resolution differs from its exact transfer."); }
+        if (epoch is null) { return; }
+        var generation = generations[epoch.Epoch];
+        var g = NativeCanonical.ParseLines(evidence, "OpenBlade.ManagedNativeGenerationProof.v2", 5);
+        var retired = NativeCanonical.ParseLines(Convert.FromBase64String(g[1]), "OpenBlade.NativeRetirementProof.v2", 8);
+        var fresh = NativeCanonical.ParseLines(generation.Proof, "OpenBlade.NativeRetirementProof.v2", 8);
+        // Owner history can advance between transfers. The original owner
+        // commitment is retained, while today's owner is independently fenced.
+        if (!Convert.FromBase64String(g[0]).AsSpan().SequenceEqual(generation.Record.Encode())
+            || g[2] != NativeCanonical.Digest(generation.Reservation) || retired[6] != f[4]
+            || !retired[..6].SequenceEqual(fresh[..6]))
+        { throw new IOException("Preserved generation/attempt/reservation proof differs from fresh custody."); }
+        var space = NativeCanonical.ParseLines(Convert.FromBase64String(g[3]), "OpenBlade.ManagedNativeNamespace.v2", 4);
+        if (space[1] != f[4] || !NativeCanonical.IsHex(space[2], 64))
+        { throw new IOException("Preserved native namespace proof differs."); }
     }
     internal (NativeEpochRecord Epoch, byte[] Projection, string Source) RequireLegacyBinding(byte[] mapping)
     {
@@ -137,15 +181,41 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
         RequireBinding(epoch, mapping);
         // A legacy mapping cannot be reconstructed from absence. Its SAME
         // immutable native copy is mandatory; no receipt is rebound or replayed.
-        if (!ManagedMailboxRecovery.Read(files!, Path.Combine(files!.Root, epoch.Epoch, "managed-handoff.bin")).AsSpan().SequenceEqual(mapping))
+        if (!ManagedMailboxRecovery.Read(files!, Path.Combine(files!.Root, epoch.Epoch, "origin.bin")).AsSpan().SequenceEqual(epoch.Encode())
+            || !ManagedMailboxRecovery.Read(files!, Path.Combine(files!.Root, epoch.Epoch, "managed-handoff.bin")).AsSpan().SequenceEqual(mapping))
         { throw new IOException("Legacy original mapping is missing."); }
         return (epoch, generation.Projection, generation.Source);
     }
 
+    internal void ConfirmResolved(NativeEpochRecord? epoch)
+    { if (epoch is not null && generations[epoch.Epoch].Preparation) { canceled.Add(epoch.Epoch); } }
+
+    internal NativeEpochRecord? MatchUnboundPreparation(ManagedMailboxSelection transfer)
+    {
+        var matches = generations.Values.Where(g => g.Record.Request == transfer.Value.Request).ToArray();
+        if (matches.Length == 0) { return null; }
+        if (matches.Length != 1 || !matches[0].Preparation) { throw new IOException("Unmatched native request history remains fenced."); }
+        var epoch = matches[0].Record;
+        // This exact native copy was published under handoff exclusion BEFORE
+        // origin. It positively binds the crash gap before managed epoch-intent;
+        // a bare origin/reservation or guessed request is never sufficient.
+        byte[] mapping = ManagedMailboxRecovery.Mapping(transfer, epoch);
+        RequireBinding(epoch, mapping);
+        if (matches[0].PreparationBinding is null) { RequirePublishedMapping(epoch, mapping); }
+        return epoch;
+    }
+    internal void RequirePublishedMapping(NativeEpochRecord epoch, byte[] mapping)
+    {
+        RequireBinding(epoch, mapping);
+        if (!ManagedMailboxRecovery.Read(files!, Path.Combine(files!.Root, epoch.Epoch, "managed-handoff.bin")).AsSpan().SequenceEqual(mapping))
+        { throw new IOException("Historical native mapping is missing or differs."); }
+    }
     internal void PublishMapping(NativeEpochRecord epoch, byte[] mapping)
     {
         RequireBinding(epoch, mapping);
         ManagedMailboxRecovery.ExactOrPublish(files!, Path.Combine(files!.Root, epoch.Epoch, "managed-handoff.bin"), mapping);
+        if (generations[epoch.Epoch].PreparationBinding is not null)
+        { ManagedMailboxRecovery.ExactOrPublish(files!, Path.Combine(files!.Root, epoch.Epoch, "origin.bin"), epoch.Encode()); }
     }
     internal (string Disposition, byte[] Proof) Resolve(ManagedMailboxSelection transfer, NativeEpochRecord? epoch)
     {
@@ -155,7 +225,6 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
         {
             if (generations.Values.Any(g => g.Record.Request == transfer.Value.Request))
             { throw new IOException("Unmatched native reservation exists for the original request."); }
-            RequireSafe();
             disposition = "canceled-before-native-use";
             evidence = namespaceProof;
         }
@@ -166,7 +235,6 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
                 || generation.Record.Installation != transfer.Value.Installation)
             { throw new IOException("Native transfer origin differs from its exact request."); }
             disposition = generation.Preparation ? "canceled-before-native-use" : "consumed-and-retired";
-            if (generation.Preparation) { canceled.Add(epoch.Epoch); }
             evidence = NativeCanonical.Lines("OpenBlade.ManagedNativeGenerationProof.v2", Convert.ToBase64String(generation.Record.Encode()),
                 Convert.ToBase64String(generation.Proof), NativeCanonical.Digest(generation.Reservation), Convert.ToBase64String(namespaceProof));
         }

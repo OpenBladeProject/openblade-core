@@ -25,7 +25,8 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
         try { return await OpenForSetupAsync(files, token); }
         catch { files.Dispose(); throw; }
     }
-    internal static async Task<WindowsNativeInstalledSelection?> OpenForSetupAsync(WindowsNativeEpochFiles files, CancellationToken token)
+    internal static async Task<WindowsNativeInstalledSelection?> OpenForSetupAsync(WindowsNativeEpochFiles files, CancellationToken token, Func<WindowsNativeEpochFiles>? openManaged = null,
+        Action<ManagedMailboxNativeCustody>? authenticateLegacy = null)
     {
         var writer = files.AcquireWriter();
         try
@@ -34,7 +35,21 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
             if (inspection.State == NativeInstallationState.VerifiedBootstrap)
             { writer.Dispose(); files.Dispose(); return null; }
             if (inspection.State == NativeInstallationState.UnresolvedHistory)
-            { throw new NativeRecoveryException(NativeRecoveryReason.UnknownBootstrapHistory, "Native selection is absent/inconsistent with preserved history; no bootstrap reset was performed."); }
+            {
+                if (inspection.Selection is not null || WindowsNativeEpochTransaction.ReadFrontier(files) is not null)
+                { throw new NativeRecoveryException(NativeRecoveryReason.UnknownBootstrapHistory, "Native selection is inconsistent with preserved history; no reset was performed."); }
+                using (var native = ManagedMailboxNativeCustody.AcquireUnderWriter(files.RetainView()))
+                {
+#if OPENBLADE_NATIVE_PACKAGE_TESTS
+                    authenticateLegacy?.Invoke(native);
+#else
+                    (authenticateLegacy ?? WindowsManagedMailboxRun.AuthenticateLegacyTerminal)(native);
+#endif
+                    using var managed = (openManaged ?? WindowsNativeEpochFiles.CreateOrOpenManagedHandoff)();
+                    ManagedMailboxRecovery.AuthenticateRetainedTerminals(managed, native);
+                }
+                writer.Dispose(); files.Dispose(); return null;
+            }
             var value = await OpenWithWriterAsync(files, inspection.Selection!, writer, token,
                 inspection.State == NativeInstallationState.InterruptedPublication);
             return value;
@@ -48,7 +63,7 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
         catch { writer.Dispose(); throw; }
     }
     private static async Task<WindowsNativeInstalledSelection> OpenWithWriterAsync(WindowsNativeEpochFiles files, byte[] selected,
-        IDisposable writer, CancellationToken token, bool interrupted, bool historical = false, bool preparation = false)
+        IDisposable writer, CancellationToken token, bool interrupted, bool historical = false, bool preparation = false, byte[]? preparationOrigin = null)
     {
         var value = new WindowsNativeInstalledSelection(files, selected);
         try
@@ -60,7 +75,10 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
             value.held.Add(files.RetainDirectory(Path.Combine(directory, "app")));
             byte[] Read(string name, int max = 16384)
             {
-                var stream = files.OpenFile(Path.Combine(directory, name)); value.held.Add(stream);
+                string path = Path.Combine(directory, name);
+                if (preparation && name == "origin.bin" && preparationOrigin is not null && ManagedMailboxRecovery.ReadOptional(files, path) is null)
+                { return preparationOrigin; }
+                var stream = files.OpenFile(path); value.held.Add(stream);
                 return WindowsNativeEpochFiles.ReadBounded(stream, max);
             }
             byte[] phase = preparation ? Read("origin.bin") : Read(value.Record.Phase + ".bin");
@@ -106,8 +124,8 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
     // Caller retains the epoch writer, original attempt custody and owner lock.
     // Historical authentication grants no selection or startup authority.
     internal static Task<WindowsNativeInstalledSelection> AuthenticateManagedHistoryAsync(
-        WindowsNativeEpochFiles files, NativeEpochRecord record, bool preparation, CancellationToken token) =>
-        OpenWithWriterAsync(files, record.Encode(), new NoLease(), token, false, historical: true, preparation: preparation);
+        WindowsNativeEpochFiles files, NativeEpochRecord record, bool preparation, CancellationToken token, byte[]? preparationOrigin = null) =>
+        OpenWithWriterAsync(files, record.Encode(), new NoLease(), token, false, historical: true, preparation: preparation, preparationOrigin: preparationOrigin);
 
     internal void RequireCurrent()
     {

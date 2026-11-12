@@ -69,6 +69,58 @@ public sealed partial class SetupCommandRunnerTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ActualRunnerCleanupAwaitCancellationRefusesBeginWithoutOrphanOrPayloadActivation(bool retainStartup)
+    {
+        using var epochs = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var handoff = WindowsNativeEpochFiles.CreatePrivateFixture();
+        handoff.PublishCustody(Path.Combine(handoff.Root, "exclusion.lock"), NativeCanonical.Lines("OpenBlade.MailboxExclusion.v1"));
+        using var package = await WindowsNativeEpochTests.Package(epochs, schema: 2, mailbox: true);
+        var run = new ManagedMailboxRun(new string('1', 32), "17:100", new string('2', 64), new string('3', 64), new string('4', 32));
+        using var owner = WindowsManagedMailboxRun.StartForTests(handoff.RetainFixtureView(), run, package.Release.Manifest.InstallationId.ToString("N"));
+        using var transfer = new WindowsManagedMailboxTransfer(handoff.RetainFixtureView(), run.Encode(),
+            new(NativeCanonical.Digest(run.Encode()), package.Release.Manifest.InstallationId.ToString("N"), new string('6', 32), NativeCanonical.Digest(package.Record)));
+        owner.PublishQuiescent(); owner.Dispose(); transfer.ConfirmOriginalExited();
+        var selected = ManagedMailboxRecovery.Selected(handoff)!;
+        byte[] originalExit = File.ReadAllBytes(ManagedMailboxRecovery.PathFor(handoff, selected, "original-exit"));
+        byte[] receipt = File.ReadAllBytes(ManagedMailboxRecovery.PathFor(handoff, selected, "receipt"));
+        var payload = new NativePayload();
+        var native = new SetupNativePackageTransaction(payload, epochs.RetainFixtureView(), package, Guid.ParseExact(selected.Value.Request, "N"), managedTransfer: transfer);
+        ManagedMailboxStartup.Admission? startup = null;
+        bool scheduled = false;
+        var platform = new RecordingSetupPlatform
+        {
+            PayloadOverride = native,
+            ServiceExists = true,
+            Transaction = new RecordingPayloadTransaction(true),
+            ObserveOperation = operation =>
+            {
+                if (operation != "tray-stop" || scheduled) { return; }
+                scheduled = true;
+                startup = ManagedMailboxStartup.Open(() => ManagedMailboxNativeCustody.AcquireForTests(epochs.RetainFixtureView()), _ => null, _ => null,
+                    fresh => WindowsManagedMailboxRun.AcquireUnenrolledExclusion(handoff.RetainFixtureView(), fresh, _ => { }));
+                if (!retainStartup) { startup.Dispose(); startup = null; }
+            }
+        };
+        try
+        {
+            await Assert.ThrowsAsync<IOException>(() => new SetupCommandRunner(platform).RunAsync(["install"], default));
+            Assert.True(scheduled);
+            Assert.Equal(0, payload.Activations); Assert.Equal(1, payload.Rollbacks); Assert.Equal(1, payload.Disposals);
+            Assert.False(native.RequiresExplicitNativeRecovery);
+            Assert.DoesNotContain("service-install", platform.Operations);
+            Assert.Contains("service-restore", platform.Operations);
+            Assert.Equal(new[] { "owner" }, Directory.EnumerateDirectories(epochs.Root).Select(Path.GetFileName));
+            Assert.Null(epochs.ReadCurrent());
+            Assert.Equal(originalExit, File.ReadAllBytes(ManagedMailboxRecovery.PathFor(handoff, selected, "original-exit")));
+            Assert.Equal(receipt, File.ReadAllBytes(ManagedMailboxRecovery.PathFor(handoff, selected, "receipt")));
+            Assert.Null(ManagedMailboxRecovery.ReadOptional(handoff, ManagedMailboxRecovery.PathFor(handoff, selected, "epoch-intent")));
+        }
+        finally { startup?.Dispose(); await native.DisposeAsync(); }
+    }
+
+    [Theory]
     [InlineData((int)NativeEpochBoundary.Reserved)]
     [InlineData((int)NativeEpochBoundary.FrontierWritten)]
     [InlineData((int)NativeEpochBoundary.SelectionPublished)]

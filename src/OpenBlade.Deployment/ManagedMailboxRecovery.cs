@@ -157,49 +157,115 @@ internal static class ManagedMailboxRecovery
     {
         var selected = Selected(files);
         if (selected is null) { native.RequireSafe(); return; }
+        // Fresh custody authenticates every retained predecessor before the
+        // latest request. A previous in-memory canceled set is never authority.
+        foreach (string path in Directory.EnumerateFiles(files.Root, "transfer-*.bin")
+            .Where(p => Path.GetFileName(p) != "transfer-current.bin").Order(StringComparer.Ordinal))
+        {
+            var transfer = ManagedMailboxSelection.Parse(Read(files, path));
+            ResolveOne(files, native, transfer, authenticate, terminalOnly: transfer.Ordinal < selected.Ordinal);
+        }
+        native.RequireSafe();
+    }
+    // Setup selection may run while a NEW managed run owns exclusion. Under the
+    // native writer plus managed metadata writer, authenticate immutable terminals
+    // only; do not cancel a live transfer or repair publication without exclusion.
+    internal static void AuthenticateRetainedTerminals(WindowsNativeEpochFiles files, ManagedMailboxNativeCustody native, ManagedMailboxSelection? active = null)
+    {
+        using var writer = files.AcquireWriter();
+        var selected = Selected(files);
+        if (selected is not null)
+        {
+            foreach (string path in Directory.EnumerateFiles(files.Root, "transfer-*.bin")
+                .Where(p => Path.GetFileName(p) != "transfer-current.bin").Order(StringComparer.Ordinal))
+            {
+                var transfer = ManagedMailboxSelection.Parse(Read(files, path));
+                if (active is not null && transfer.Encode().AsSpan().SequenceEqual(active.Encode())) { continue; }
+                ResolveOne(files, native, transfer, null, terminalOnly: true);
+            }
+        }
+        native.RequireSafe();
+    }
+    private static void ResolveOne(WindowsNativeEpochFiles files, ManagedMailboxNativeCustody native,
+        ManagedMailboxSelection selected, Action<ManagedMailboxSelection>? authenticate, bool terminalOnly)
+    {
         RequireOriginal(files, selected);
         bool alreadyTerminal = ReadOptional(files, PathFor(files, selected, "terminal")) is not null;
+        if (terminalOnly && !alreadyTerminal) { throw new IOException("Active historical transfer remains fenced."); }
         if (alreadyTerminal) { ValidateTerminal(files, selected); }
-        else if (authenticate is null) { Authenticate(files, selected); } else { authenticate(selected); }
         byte[]? intent = ReadOptional(files, PathFor(files, selected, "epoch-intent"));
         if (intent is null && ReadOptional(files, PathFor(files, selected, "mapping")) is not null)
         { throw new IOException("A mapping without its immutable binding intent remains fenced."); }
         NativeEpochRecord? epoch = intent is null ? null : NativeEpochRecord.Parse(Convert.FromBase64String(
             NativeCanonical.ParseLines(intent, "OpenBlade.ManagedMailboxEpochIntent.v2", 3)[1]));
+        if (epoch is null && !alreadyTerminal)
+        {
+            epoch = native.MatchUnboundPreparation(selected);
+            if (epoch is not null)
+            {
+                intent = NativeCanonical.Lines("OpenBlade.ManagedMailboxEpochIntent.v2", NativeCanonical.Digest(selected.Encode()), Convert.ToBase64String(epoch.Encode()));
+            }
+        }
         if (epoch is not null)
         {
             byte[] expectedIntent = NativeCanonical.Lines("OpenBlade.ManagedMailboxEpochIntent.v2", NativeCanonical.Digest(selected.Encode()), Convert.ToBase64String(epoch.Encode()));
             if (!intent!.AsSpan().SequenceEqual(expectedIntent) || epoch.Request != selected.Value.Request
                 || epoch.Installation != selected.Value.Installation || epoch.Package != selected.Value.Package)
             { throw new IOException("Transfer epoch intent differs."); }
-            // Reconcile either half of mapping publication to the SAME original
-            // epoch/receipt. No remapping or alternate sequence is permitted.
             byte[] mapping = Mapping(selected, epoch);
             native.RequireBinding(epoch, mapping);
-            ExactOrPublish(files, PathFor(files, selected, "mapping"), mapping);
-            native.PublishMapping(epoch, mapping);
+            if (alreadyTerminal)
+            {
+                // Terminal predecessors must be complete; never repair history
+                // to make a terminal string appear authoritative.
+                if (!Read(files, PathFor(files, selected, "mapping")).AsSpan().SequenceEqual(mapping))
+                { throw new IOException("Terminal mapping is missing or differs."); }
+                native.RequirePublishedMapping(epoch, mapping);
+            }
+        }
+        // A retained preparation carries its own signed enrollment projection.
+        // Reauthenticate its original managed cache even after enrollment rotates.
+        if (!alreadyTerminal || epoch is not null)
+        {
+            if (authenticate is null) { Authenticate(files, selected, epoch is null ? null : native.RequireProjection(epoch)); }
+            else { authenticate(selected); }
         }
         var resolution = native.Resolve(selected, epoch);
         byte[] proof = ReadOptional(files, PathFor(files, selected, "native-proof")) ?? resolution.Proof;
-        var preserved = NativeCanonical.ParseLines(proof, "OpenBlade.ManagedNativeResolution.v2", 7);
-        if (preserved[0] != NativeCanonical.Digest(selected.Encode()) || preserved[1] != resolution.Disposition
-            || preserved[2] != (epoch?.Epoch ?? "not-reserved") || preserved[3] != NativeCanonical.Digest(Convert.FromBase64String(preserved[5]))
-            || !NativeCanonical.IsHex(preserved[4], 64))
-        { throw new IOException("Preserved terminal proof differs from the freshly admitted exact transfer."); }
+        native.RequirePreservedResolution(selected, epoch, proof, resolution.Disposition);
+        // No publication repairs precede exact original/cache/proof admission.
+        if (!alreadyTerminal && epoch is not null)
+        {
+            ExactOrPublish(files, PathFor(files, selected, "epoch-intent"), intent!);
+            byte[] mapping = Mapping(selected, epoch);
+            ExactOrPublish(files, PathFor(files, selected, "mapping"), mapping);
+            native.PublishMapping(epoch, mapping);
+        }
         byte[] terminal = Terminal(files, selected, resolution.Disposition, proof);
-        ExactOrPublish(files, PathFor(files, selected, "native-proof"), proof);
-        ExactOrPublish(files, PathFor(files, selected, "terminal-intent"), terminal);
-        ExactOrPublish(files, PathFor(files, selected, "terminal"), terminal);
+        if (alreadyTerminal)
+        {
+            if (!Read(files, PathFor(files, selected, "terminal-intent")).AsSpan().SequenceEqual(terminal))
+            { throw new IOException("Terminal intent differs from authenticated history."); }
+        }
+        else
+        {
+            ExactOrPublish(files, PathFor(files, selected, "native-proof"), proof);
+            ExactOrPublish(files, PathFor(files, selected, "terminal-intent"), terminal);
+            ExactOrPublish(files, PathFor(files, selected, "terminal"), terminal);
+        }
         ValidateTerminal(files, selected);
-        native.RequireSafe();
+        native.ConfirmResolved(epoch);
     }
-    private static void Authenticate(WindowsNativeEpochFiles files, ManagedMailboxSelection selected)
+    private static void Authenticate(WindowsNativeEpochFiles files, ManagedMailboxSelection selected, byte[]? projection)
     {
         var run = ManagedMailboxRun.Parse(selected.Run);
         var binding = ManagedMailboxBuildBinding.Parse(Read(files, Path.Combine(files.Root, "run-binding-" + run.Run + ".bin")));
         if (binding.RunDigest != NativeCanonical.Digest(selected.Run) || binding.Installation != selected.Value.Installation)
         { throw new IOException("Managed original signed binding differs."); }
-        using var package = WindowsManagedMailboxPackage.OpenCached(files, binding.Package);
+        if (!Read(files, Path.Combine(files.Root, "run-" + run.Run + ".bin")).AsSpan().SequenceEqual(selected.Run))
+        { throw new IOException("Managed original run differs from immutable history."); }
+        using var package = projection is null ? WindowsManagedMailboxPackage.OpenCached(files, binding.Package)
+            : WindowsManagedMailboxPackage.OpenCachedHistorical(files, binding.Package, projection);
         if (package.Installation != binding.Installation || package.EnrollmentDigest != binding.Enrollment)
         { throw new IOException("Managed original enrolled package differs."); }
     }

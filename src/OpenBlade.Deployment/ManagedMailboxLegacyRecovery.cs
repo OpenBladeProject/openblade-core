@@ -11,7 +11,7 @@ internal static class ManagedMailboxLegacyRecovery
     internal const string ExitBeforeBindingSource = "ffc20060aa9a8953d7aba44837a0f02dc09c9295";
     private const string ExitBeforeBindingTree = "e7531d11d9cf8bc24ddde28b8d6ff41d98034a06";
     internal static void Resolve(WindowsNativeEpochFiles files, ManagedMailboxNativeCustody native,
-        Action<ManagedMailboxRun, ManagedMailboxBuildBinding, byte[]>? authenticate = null)
+        Action<ManagedMailboxRun, ManagedMailboxBuildBinding, byte[]>? authenticate = null, bool terminalOnly = false)
     {
         byte[] runBytes = files.ReadCurrent() ?? throw new IOException("Legacy original managed run is missing.");
         var run = ManagedMailboxRun.Parse(runBytes);
@@ -54,11 +54,19 @@ internal static class ManagedMailboxLegacyRecovery
         if (fields[0] != NativeCanonical.Digest(transfer.Encode()) || fields[1] != fresh.Disposition || fields[2] != original.Epoch.Epoch
             || fields[3] != NativeCanonical.Digest(Convert.FromBase64String(fields[5])) || !NativeCanonical.IsHex(fields[4], 64))
         { throw new IOException("Legacy terminal proof is unmatched."); }
+        native.RequirePreservedResolution(transfer, original.Epoch, proof, fresh.Disposition);
         byte[] terminal = NativeCanonical.Lines("OpenBlade.ManagedMailboxLegacyTerminal.v2", NativeCanonical.Digest(runBytes), NativeCanonical.Digest(requestBytes),
             NativeCanonical.Digest(receipt), NativeCanonical.Digest(mapping), NativeCanonical.Digest(bindingBytes), NativeCanonical.Digest(attestation), fresh.Disposition, NativeCanonical.Digest(proof));
-        ManagedMailboxRecovery.ExactOrPublish(files, Path.Combine(files.Root, "legacy-original-exit-contract-v2.bin"), attestation);
-        ManagedMailboxRecovery.ExactOrPublish(files, proofPath, proof);
-        ManagedMailboxRecovery.ExactOrPublish(files, Path.Combine(files.Root, "legacy-terminal-intent-v2.bin"), terminal);
-        ManagedMailboxRecovery.ExactOrPublish(files, Path.Combine(files.Root, "legacy-terminal-v2.bin"), terminal);
+        void RequireOrPublish(string path, byte[] bytes)
+        {
+            if (!terminalOnly) { ManagedMailboxRecovery.ExactOrPublish(files, path, bytes); }
+            else if (!ManagedMailboxRecovery.Read(files, path).AsSpan().SequenceEqual(bytes))
+            { throw new IOException("Legacy terminal is incomplete or differs; no pre-stop recovery was admitted."); }
+        }
+        RequireOrPublish(Path.Combine(files.Root, "legacy-original-exit-contract-v2.bin"), attestation);
+        RequireOrPublish(proofPath, proof);
+        RequireOrPublish(Path.Combine(files.Root, "legacy-terminal-intent-v2.bin"), terminal);
+        RequireOrPublish(Path.Combine(files.Root, "legacy-terminal-v2.bin"), terminal);
+        native.ConfirmResolved(original.Epoch);
     }
 }

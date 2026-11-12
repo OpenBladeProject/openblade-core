@@ -9,13 +9,16 @@ internal static class WindowsNativeAttemptHistory
     internal const int MaximumEntries = 1 + 2 * MaximumAttempts;
 
     internal static byte[] RequireDrained(WindowsNativeEpochFiles files, NativeEpochRecord record, string directory,
-        NativeArtifact service, string ownerCommitment, uint? expectedPid = null, long? expectedCreated = null)
+        NativeArtifact service, string ownerCommitment, uint? expectedPid = null, long? expectedCreated = null, byte[]? preparationOrigin = null)
     {
         if (!service.HasStartupCustody)
         { throw new NativeRecoveryException(NativeRecoveryReason.LegacyLaunchEvidenceUnavailable, "This native artifact predates durable launch custody; stopped-state drain is unproven."); }
         byte[] Read(string path, int max = 16384)
         { using var held = files.OpenFile(path); return WindowsNativeEpochFiles.ReadBounded(held, max); }
-        byte[] origin = Read(Path.Combine(directory, "origin.bin"));
+        byte[] origin = preparationOrigin is null ? Read(Path.Combine(directory, "origin.bin"))
+            : ManagedMailboxRecovery.ReadOptional(files, Path.Combine(directory, "origin.bin")) ?? preparationOrigin;
+        if (preparationOrigin is not null && !origin.AsSpan().SequenceEqual(preparationOrigin))
+        { throw new IOException("Native preparation origin differs from its positive intent."); }
         byte[] policy = Read(Path.Combine(directory, "startup-policy.bin"));
         if (!policy.AsSpan().SequenceEqual(NativeCanonical.Lines("OpenBlade.NativeStartupPolicy.v1", record.Epoch,
             NativeCanonical.Digest(origin), record.ServiceId, service.StartupPolicy)))

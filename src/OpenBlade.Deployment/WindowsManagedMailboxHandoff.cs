@@ -86,13 +86,13 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
         if (files is null) { native.RequireSafe(); return null; }
         return AcquireUnenrolledExclusion(files, native);
     }
-    internal static IDisposable AcquireUnenrolledExclusion(WindowsNativeEpochFiles files, ManagedMailboxNativeCustody native)
+    internal static IDisposable AcquireUnenrolledExclusion(WindowsNativeEpochFiles files, ManagedMailboxNativeCustody native, Action<ManagedMailboxSelection>? authenticate = null)
     {
         FileStream? exclusion = null;
         try
         {
             exclusion = files.AcquireServiceCustody(Path.Combine(files.Root, "exclusion.lock"));
-            ManagedMailboxRecovery.Resolve(files, native);
+            ManagedMailboxRecovery.Resolve(files, native, authenticate);
             return new UnenrolledExclusion(files, exclusion);
         }
         catch { exclusion?.Dispose(); files.Dispose(); throw; }
@@ -110,7 +110,8 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
         { return null; } // An untrusted leaf cannot admit the old native reader.
         return AcquireLegacyExclusion(files, native);
     }
-    internal static IDisposable? AcquireLegacyExclusion(WindowsNativeEpochFiles files, ManagedMailboxNativeCustody native)
+    internal static IDisposable? AcquireLegacyExclusion(WindowsNativeEpochFiles files, ManagedMailboxNativeCustody native,
+        Action<ManagedMailboxRun, ManagedMailboxBuildBinding, byte[]>? authenticate = null)
     {
         FileStream? exclusion = null;
         try
@@ -125,10 +126,27 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
             }
             exclusion = files.AcquireServiceCustody(Path.Combine(files.Root, "exclusion.lock"));
             if (history)
-            { ManagedMailboxLegacyRecovery.Resolve(files, native); }
+            { ManagedMailboxLegacyRecovery.Resolve(files, native, authenticate); }
             return new UnenrolledExclusion(files, exclusion);
         }
         catch { exclusion?.Dispose(); files.Dispose(); throw; }
+    }
+    internal static void AuthenticateLegacyTerminal(ManagedMailboxNativeCustody native)
+    {
+        if (!WindowsNativeEpochFiles.IsPresentDirectory(WindowsNativeEpochFiles.LegacyManagedHandoffRoot)) { return; }
+        using var files = WindowsNativeEpochFiles.OpenProtected(WindowsNativeEpochFiles.LegacyManagedHandoffRoot);
+        AuthenticateLegacyTerminal(files, native);
+    }
+    internal static void AuthenticateLegacyTerminal(WindowsNativeEpochFiles files, ManagedMailboxNativeCustody native,
+        Action<ManagedMailboxRun, ManagedMailboxBuildBinding, byte[]>? authenticate = null)
+    {
+        // A new managed run retains legacy exclusion until it exits. Pre-stop
+        // Setup only validates complete immutable terminals under metadata writer;
+        // it never competes for that lifetime exclusion or repairs publication.
+        using var writer = files.AcquireWriter();
+        bool history = new[] { "request.bin", "receipt.bin", "mapping.bin", "legacy-native-proof-v2.bin", "legacy-original-exit-contract-v2.bin", "legacy-terminal-intent-v2.bin", "legacy-terminal-v2.bin" }
+            .Any(name => ManagedMailboxRecovery.ReadOptional(files, Path.Combine(files.Root, name)) is not null);
+        if (history) { ManagedMailboxLegacyRecovery.Resolve(files, native, authenticate, terminalOnly: true); }
     }
     private sealed class UnenrolledExclusion(IDisposable files, IDisposable exclusion) : IDisposable
     { public void Dispose() { try { exclusion.Dispose(); } finally { files.Dispose(); } } }
@@ -191,10 +209,10 @@ internal sealed class WindowsManagedMailboxRun : IManagedMailboxRun
     }
 
 #if OPENBLADE_NATIVE_PACKAGE_TESTS
-    internal static WindowsManagedMailboxRun StartForTests(WindowsNativeEpochFiles files, ManagedMailboxRun record, string? installation = null)
+    internal static WindowsManagedMailboxRun StartForTests(WindowsNativeEpochFiles files, ManagedMailboxRun record, string? installation = null, ManagedMailboxBuildBinding? binding = null)
     {
         var exclusion = AcquireRunExclusion(files);
-        return BeginRun(files, exclusion, record, new(NativeCanonical.Digest(record.Encode()), installation ?? new string('5', 32), new string('7', 64), new string('8', 64)), null);
+        return BeginRun(files, exclusion, record, binding ?? new(NativeCanonical.Digest(record.Encode()), installation ?? new string('5', 32), new string('7', 64), new string('8', 64)), null);
     }
 #endif
 
@@ -258,20 +276,61 @@ internal sealed class WindowsManagedMailboxTransfer : IDisposable, IManagedMailb
         if (predecessor is WindowsManagedMailboxPackage package) { package.ReleaseInstalledPins(); }
     }
     void IManagedMailboxReceipt.ConfirmOriginalExited() => ConfirmOriginalExited();
+    // Native writer -> original attempt custody -> owner writer -> managed
+    // metadata writer/exclusion. Begin holds this lease before any publication.
+    internal BeginLease AcquireForBegin(WindowsNativePackage package, Guid request)
+    {
+        if (receipt is null) { throw new IOException("Managed handoff was not confirmed against the original process."); }
+        var value = selected.Value;
+        if (value.Installation != package.Release.Manifest.InstallationId.ToString("N") || value.Request != request.ToString("N")
+            || value.Package != NativeCanonical.Digest(package.Record))
+        { throw new IOException("Managed handoff incoming request/package changed."); }
+        var exclusion = files.AcquireServiceCustody(Path.Combine(files.Root, "exclusion.lock"));
+        try { RequireBeginActive(); return new(this, exclusion); }
+        catch { exclusion.Dispose(); throw; }
+    }
+    private void RequireBeginActive()
+    {
+        ManagedMailboxRecovery.RequireActive(files, selected);
+        ManagedMailboxRecovery.RequireOriginal(files, selected);
+        if (receipt is null || !receipt.AsSpan().SequenceEqual(ManagedMailboxRecovery.Receipt(selected)))
+        { throw new IOException("Managed original receipt changed."); }
+    }
+    internal sealed class BeginLease(WindowsManagedMailboxTransfer transfer, IDisposable exclusion) : IDisposable
+    {
+        internal void AuthenticatePrefix(ManagedMailboxNativeCustody native) =>
+            ManagedMailboxRecovery.AuthenticateRetainedTerminals(transfer.files, native, transfer.selected);
+        internal void PublishPreparation(WindowsNativeEpochFiles epochs, NativeEpochRecord epoch)
+        {
+            transfer.RequireBeginActive();
+            byte[] bytes = NativeCanonical.Lines("OpenBlade.ManagedNativePreparation.v2", Convert.ToBase64String(epoch.Encode()),
+                Convert.ToBase64String(ManagedMailboxRecovery.Mapping(transfer.selected, epoch)));
+            ManagedMailboxRecovery.ExactOrPublish(epochs, Path.Combine(epochs.Root, epoch.Epoch, "preparation.bin"), bytes);
+        }
+        internal void PublishNativeBinding(WindowsNativeEpochFiles epochs, NativeEpochRecord epoch)
+        {
+            transfer.RequireBeginActive();
+            var value = transfer.selected.Value;
+            if (value.Installation != epoch.Installation || value.Request != epoch.Request || value.Package != epoch.Package)
+            { throw new IOException("Managed handoff epoch changed."); }
+            ManagedMailboxRecovery.ExactOrPublish(epochs, Path.Combine(epochs.Root, epoch.Epoch, "managed-handoff.bin"), ManagedMailboxRecovery.Mapping(transfer.selected, epoch));
+        }
+        internal void BindEpoch(WindowsNativeEpochFiles epochs, NativeEpochRecord epoch)
+        {
+            PublishNativeBinding(epochs, epoch);
+            var selected = transfer.selected;
+            byte[] intent = NativeCanonical.Lines("OpenBlade.ManagedMailboxEpochIntent.v2", NativeCanonical.Digest(selected.Encode()), Convert.ToBase64String(epoch.Encode()));
+            ManagedMailboxRecovery.ExactOrPublish(transfer.files, ManagedMailboxRecovery.PathFor(transfer.files, selected, "epoch-intent"), intent);
+            ManagedMailboxRecovery.ExactOrPublish(transfer.files, ManagedMailboxRecovery.PathFor(transfer.files, selected, "mapping"), ManagedMailboxRecovery.Mapping(selected, epoch));
+        }
+        public void Dispose() => exclusion.Dispose();
+    }
     internal void BindEpoch(WindowsNativeEpochFiles epochs, NativeEpochRecord epoch)
     {
         if (receipt is null) { throw new IOException("Managed handoff was not confirmed against the original process."); }
-        var value = ManagedMailboxRequest.Parse(request);
-        if (value.Installation != epoch.Installation || value.Request != epoch.Request || value.Package != epoch.Package)
-        { throw new IOException("Managed handoff incoming request/package changed."); }
         using var exclusion = files.AcquireServiceCustody(Path.Combine(files.Root, "exclusion.lock"));
-        ManagedMailboxRecovery.RequireActive(files, selected);
-        ManagedMailboxRecovery.RequireOriginal(files, selected);
-        byte[] intent = NativeCanonical.Lines("OpenBlade.ManagedMailboxEpochIntent.v2", NativeCanonical.Digest(selected.Encode()), Convert.ToBase64String(epoch.Encode()));
-        ManagedMailboxRecovery.ExactOrPublish(files, ManagedMailboxRecovery.PathFor(files, selected, "epoch-intent"), intent);
-        byte[] mapping = ManagedMailboxRecovery.Mapping(selected, epoch);
-        ManagedMailboxRecovery.ExactOrPublish(files, ManagedMailboxRecovery.PathFor(files, selected, "mapping"), mapping);
-        ManagedMailboxRecovery.ExactOrPublish(epochs, Path.Combine(epochs.Root, epoch.Epoch, "managed-handoff.bin"), mapping);
+        using var lease = new BeginLease(this, exclusion);
+        lease.BindEpoch(epochs, epoch);
     }
     public void Dispose() { try { predecessor?.Dispose(); } finally { files.Dispose(); } }
 }
