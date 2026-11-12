@@ -19,14 +19,26 @@ public sealed class NativeThermalMutationResponseTests
         var seen = new HashSet<ControlOperationStatus>();
         bool sawAppliedStatus = false;
         bool sawPartialCustom = false;
+        var decodeErrors = new List<string>();
+        int index = 0;
         foreach (JsonElement element in document.RootElement.EnumerateArray())
         {
+            int frameIndex = index++;
             byte[] bytes = Encoding.UTF8.GetBytes(element.GetRawText());
             byte[] framed = new byte[bytes.Length + 4];
             BinaryPrimitives.WriteInt32LittleEndian(framed, bytes.Length);
             bytes.CopyTo(framed, 4);
             using var stream = new MemoryStream(framed, writable: false);
-            var response = Assert.IsType<ServiceResponse>(await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+            ServiceResponse response;
+            try
+            {
+                response = Assert.IsType<ServiceResponse>(await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+            }
+            catch (Exception exception)
+            {
+                decodeErrors.Add($"Frame {frameIndex}: {exception.Message} {exception.InnerException?.Message}");
+                continue;
+            }
             Assert.Equal(OpenBladeIpc.ProtocolVersion, response.Version);
             Assert.NotEqual(Guid.Empty, response.RequestId);
             if (!response.Success)
@@ -77,6 +89,7 @@ public sealed class NativeThermalMutationResponseTests
                 Assert.Contains("GPU", result.Message, StringComparison.Ordinal);
             }
         }
+        Assert.True(decodeErrors.Count == 0, string.Join(Environment.NewLine, decodeErrors));
         Assert.True(sawPartialCustom, "Actual CustomManual observation must retain known selectors and unknown settings.");
         using var requestedFrame = FrameJson("""{"operation":"setPerformanceOverride","version":79,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":5,"lifetime":1,"customPerformance":null,"gpuClockTuning":null}}""");
         await Assert.ThrowsAsync<InvalidDataException>(() => IpcMessageCodec.ReadRequestAsync(requestedFrame, CancellationToken.None));

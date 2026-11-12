@@ -219,11 +219,17 @@ impl Rig {
             let bytes = crate::service_frame::read_payload(&mut client)
                 .await
                 .unwrap();
-            serde_json::from_slice::<Value>(&bytes).unwrap()
+            (serde_json::from_slice::<Value>(&bytes).unwrap(), bytes)
         };
-        let (server, response) = tokio::join!(server, client);
+        let (server, (response, bytes)) = tokio::join!(server, client);
         assert!(server.is_ok());
-        println!("NATIVE_THERMAL_MUTATION_RESPONSE {}", response);
+        // Preserve the actual encoder bytes. Re-serializing Value sorts object
+        // keys and can move the managed polymorphic discriminator out of first place.
+        assert!(bytes.starts_with(br#"{"frame":"response","#));
+        println!(
+            "NATIVE_THERMAL_MUTATION_RESPONSE {}",
+            std::str::from_utf8(&bytes).unwrap()
+        );
         response
     }
     async fn get(&self) -> Value {

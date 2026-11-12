@@ -144,6 +144,9 @@ restart and cross-SID refusal. Constructors take those inputs before any default
 root resolution. Real controller/token/session/SCM/HID suppliers are compiled,
 not executed. Managed tests parse emitted native replies with the actual v79 codec
 and inspect explicit artifact capabilities and conservative recovery refusal.
+The native test marker emits the original received UTF-8 payload, preserving
+property order and the leading polymorphic discriminator. Extraction retains
+those payload strings unchanged; parsed/sorted JSON is not wire evidence.
 
 Final evidence must bind the exact clean commit/tree, full compiler inputs and
 outputs, actual feature/define sets, complete inspected test bodies, held harness
