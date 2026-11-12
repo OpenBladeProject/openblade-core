@@ -231,6 +231,7 @@ public sealed partial class ManagedMailboxCorrectionTests
                 // This is a real native preparation before either managed binding record.
                 Assert.False(File.Exists(ManagedMailboxRecovery.PathFor(files, selected, "epoch-intent")));
                 Assert.False(File.Exists(ManagedMailboxRecovery.PathFor(files, selected, "mapping")));
+                Assert.False(File.Exists(ManagedMailboxRecovery.PathFor(files, selected, "native-proof")));
                 files.PublishedForTests = Cut;
                 var error = Assert.Throws<IOException>(() => ResolvePrivateHistory(files, epochs));
                 Assert.Equal("actual retained publication cut: " + stage, error.Message);
@@ -238,6 +239,13 @@ public sealed partial class ManagedMailboxCorrectionTests
             }
         }
         Assert.True(File.Exists(cut));
+        if (stage == "native-proof")
+        {
+            Assert.True(File.Exists(ManagedMailboxRecovery.PathFor(files, selected, "epoch-intent")));
+            Assert.True(File.Exists(ManagedMailboxRecovery.PathFor(files, selected, "mapping")));
+        }
+        if (stage is "epoch-intent" or "mapping")
+        { Assert.False(File.Exists(ManagedMailboxRecovery.PathFor(files, selected, "native-proof"))); }
         string? future = stage switch
         {
             "receipt" => "original-exit",

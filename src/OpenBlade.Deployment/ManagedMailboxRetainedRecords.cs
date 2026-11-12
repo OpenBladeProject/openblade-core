@@ -57,7 +57,11 @@ internal static partial class ManagedMailboxRecovery
             if (Proof is not null)
             {
                 RequireOriginal();
-                _ = ManagedMailboxNativeCustody.ParseResolution(selected, Epoch, Proof);
+                var proof = ManagedMailboxNativeCustody.ParseResolution(selected, Epoch, Proof);
+                // ResolveOne publishes both managed bindings before a reserved
+                // proof. Missing predecessors contradict even a proof-only cut.
+                if (proof.Epoch != "not-reserved" && (Epoch is null || MappingBytes is null))
+                { throw new IOException("Reserved native proof lacks its managed binding predecessors."); }
             }
             if (Intent is not null) { ValidateCandidate(selected, Intent); }
             if (Completed is not null)
@@ -82,10 +86,7 @@ internal static partial class ManagedMailboxRecovery
             if (Proof is null) { throw new IOException("Required immutable transfer evidence is missing."); }
             var proof = ManagedMailboxNativeCustody.ParseResolution(selected, Epoch, Proof);
             _ = NativeCanonical.ParseLines(candidate, "OpenBlade.ManagedMailboxTerminal.v2", 7);
-            // Proof publication follows binding repair. A reserved terminal
-            // candidate cannot masquerade as an earlier active cut.
-            if (proof.Epoch != "not-reserved" && (Epoch is null || MappingBytes is null)
-                || !candidate.AsSpan().SequenceEqual(Terminal(selected, MappingBytes, proof.Disposition, Proof)))
+            if (!candidate.AsSpan().SequenceEqual(Terminal(selected, MappingBytes, proof.Disposition, Proof)))
             { throw new IOException("Terminal evidence differs from the exact original request."); }
         }
     }
