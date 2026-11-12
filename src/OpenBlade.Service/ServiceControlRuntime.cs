@@ -2659,7 +2659,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
 
         FanTemperatureReadings temperatures =
-            await fanTemperatureSource.ReadAsync(cancellationToken);
+            await fanTemperatureSource.ReadForFanCurveAsync(cancellationToken);
         FanTargetSpeeds targets = FanCurveCalculator.Calculate(
             settings.ManualCurve,
             temperatures,
@@ -20133,7 +20133,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         long sampleTimestamp = timeProvider.GetTimestamp();
         try
         {
-            readings = await fanTemperatureSource.ReadAsync(token).ConfigureAwait(false);
+            readings = await fanTemperatureSource.ReadForFanStopAsync(token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch
@@ -20312,7 +20312,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
 
         FanTemperatureReadings temperatures = await fanTemperatureSource
-            .ReadAsync(cancellationToken);
+            .ReadForFanCurveAsync(cancellationToken);
         ServiceStatusSnapshot current = GetStatus();
         FanTargetSpeeds freshTargets = FanCurveCalculator.Calculate(
             authority.Settings.ManualCurve,

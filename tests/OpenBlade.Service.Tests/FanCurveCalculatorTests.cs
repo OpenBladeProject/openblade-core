@@ -82,14 +82,15 @@ public sealed class FanCurveCalculatorTests
     }
 
     [Fact]
-    public void InactiveGpuUsesCpuTemperatureWithoutFailSafe()
+    public void PoweredDownGpuUsesCpuTemperatureWithoutFailSafe()
     {
         FanTargetSpeeds targets = FanCurveCalculator.Calculate(
             ManualFanCurve.Default,
             new FanTemperatureReadings(
                 CpuCelsius: 60,
                 GpuCelsius: null,
-                GpuInactive: true));
+                GpuInactive: true,
+                GpuPoweredDown: true));
 
         Assert.False(targets.FailSafe);
         Assert.Equal(ManualFanCurve.Default.InterpolateCpu(60), targets.Fan1Rpm);
@@ -97,7 +98,7 @@ public sealed class FanCurveCalculatorTests
     }
 
     [Fact]
-    public async Task InactiveGpuDoesNotInvokeNvmlTemperatureReader()
+    public async Task PoweredDownGpuDoesNotInvokeNvmlTemperatureReader()
     {
         int gpuReads = 0;
         using var source = new SafeWindowsFanTemperatureSource(
@@ -107,9 +108,10 @@ public sealed class FanCurveCalculatorTests
             {
                 gpuReads++;
                 return 52;
-            });
+            },
+            gpuPowerState: () => FanStopGpuPowerState.PoweredDown);
 
-        FanTemperatureReadings readings = await source.ReadAsync(
+        FanTemperatureReadings readings = await source.ReadForFanCurveAsync(
             includeCpu: true,
             includeGpu: true,
             CancellationToken.None);
@@ -117,6 +119,7 @@ public sealed class FanCurveCalculatorTests
         Assert.Equal(48, readings.CpuCelsius);
         Assert.Null(readings.GpuCelsius);
         Assert.True(readings.GpuInactive);
+        Assert.True(readings.GpuPoweredDown);
         Assert.Equal(0, gpuReads);
     }
 
@@ -131,9 +134,10 @@ public sealed class FanCurveCalculatorTests
             {
                 gpuReads++;
                 return 52;
-            });
+            },
+            gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
 
-        FanTemperatureReadings readings = await source.ReadAsync(
+        FanTemperatureReadings readings = await source.ReadForFanCurveAsync(
             includeCpu: false,
             includeGpu: true,
             CancellationToken.None);
@@ -145,7 +149,7 @@ public sealed class FanCurveCalculatorTests
     }
 
     [Fact]
-    public async Task UnknownGpuDoesNotInvokeNvmlAndRetainsFanFailSafe()
+    public async Task UnknownGpuPowerDoesNotInvokeNvmlAndRetainsFanFailSafe()
     {
         int gpuReads = 0;
         using var source = new SafeWindowsFanTemperatureSource(
@@ -155,9 +159,10 @@ public sealed class FanCurveCalculatorTests
             {
                 gpuReads++;
                 return 52;
-            });
+            },
+            gpuPowerState: () => FanStopGpuPowerState.Unknown);
 
-        FanTemperatureReadings readings = await source.ReadAsync(
+        FanTemperatureReadings readings = await source.ReadForFanCurveAsync(
             includeCpu: true,
             includeGpu: true,
             CancellationToken.None);
@@ -215,9 +220,10 @@ public sealed class FanCurveCalculatorTests
             {
                 gpuReads++;
                 return 52;
-            });
+            },
+            gpuPowerState: () => gpuInactive ? FanStopGpuPowerState.PoweredDown : FanStopGpuPowerState.PoweredOn);
 
-        FanTemperatureReadings readings = await source.ReadAsync(CancellationToken.None);
+        FanTemperatureReadings readings = await source.ReadForFanCurveAsync(CancellationToken.None);
         Assert.Null(readings.CpuCelsius);
         Assert.Equal(gpuInactive ? null : (int?)52, readings.GpuCelsius);
         Assert.Equal(gpuInactive, readings.GpuInactive);
@@ -237,10 +243,11 @@ public sealed class FanCurveCalculatorTests
             activity,
             cpuTemperatureReader: () => 48,
             session,
-            time);
+            time,
+            gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
 
-        FanTemperatureReadings first = await source.ReadAsync(CancellationToken.None);
-        FanTemperatureReadings second = await source.ReadAsync(CancellationToken.None);
+        FanTemperatureReadings first = await source.ReadForFanCurveAsync(CancellationToken.None);
+        FanTemperatureReadings second = await source.ReadForFanCurveAsync(CancellationToken.None);
 
         Assert.Equal(52, first.GpuCelsius);
         Assert.Equal(52, second.GpuCelsius);
@@ -251,11 +258,11 @@ public sealed class FanCurveCalculatorTests
             time.LastDueTime);
 
         activity.Active = false;
-        FanTemperatureReadings inactive = await source.ReadAsync(CancellationToken.None);
+        FanTemperatureReadings inactive = await source.ReadForFanCurveAsync(CancellationToken.None);
 
-        Assert.Null(inactive.GpuCelsius);
+        Assert.Equal(52, inactive.GpuCelsius);
         Assert.True(inactive.GpuInactive);
-        Assert.Equal(2, session.Reads);
+        Assert.Equal(3, session.Reads);
         Assert.Equal(1, session.Releases);
         Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
     }
@@ -269,7 +276,7 @@ public sealed class FanCurveCalculatorTests
         using var source = new SafeWindowsFanTemperatureSource(activity, () => 48, session, time,
             gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
 
-        await source.ReadAsync(CancellationToken.None);
+        await source.ReadForFanCurveAsync(CancellationToken.None);
         time.Advance(TimeSpan.FromSeconds(1));
         FanTemperatureReadings reading = await source.ReadForFanStopAsync(CancellationToken.None);
 
@@ -307,7 +314,7 @@ public sealed class FanCurveCalculatorTests
         using var source = new SafeWindowsFanTemperatureSource(activity, () => 48, session, time,
             gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
 
-        await source.ReadAsync(CancellationToken.None);
+        await source.ReadForFanCurveAsync(CancellationToken.None);
         activity.Active = false;
         Assert.Equal(52, (await source.ReadForFanStopAsync(CancellationToken.None)).GpuCelsius);
         Assert.Equal(1, session.Releases);
@@ -322,7 +329,7 @@ public sealed class FanCurveCalculatorTests
         using var source = new SafeWindowsFanTemperatureSource(new SettableGpuActivitySource { Active = true },
             () => 48, session, time, gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
 
-        await source.ReadAsync(CancellationToken.None);
+        await source.ReadForFanCurveAsync(CancellationToken.None);
         time.Advance(SafeWindowsFanTemperatureSource.GpuSessionIdleTimeout);
         await source.ReadForFanStopAsync(CancellationToken.None);
         Assert.Equal(1, session.Releases);
@@ -334,12 +341,14 @@ public sealed class FanCurveCalculatorTests
     {
         var session = new CountingGpuTemperatureSession(52);
         var time = new ManualTimeProvider();
+        bool transitionDuringRead = false;
         int powerReads = 0;
         using var source = new SafeWindowsFanTemperatureSource(new SettableGpuActivitySource { Active = true },
-            () => 48, session, time, gpuPowerState: () => ++powerReads == 1
+            () => 48, session, time, gpuPowerState: () => !transitionDuringRead || ++powerReads == 1
                 ? FanStopGpuPowerState.PoweredOn : FanStopGpuPowerState.PoweredDown);
 
-        await source.ReadAsync(CancellationToken.None);
+        await source.ReadForFanCurveAsync(CancellationToken.None);
+        transitionDuringRead = true;
         FanTemperatureReadings reading = await source.ReadForFanStopAsync(CancellationToken.None);
         Assert.Null(reading.GpuCelsius);
         Assert.False(reading.GpuPoweredDown);
@@ -348,7 +357,7 @@ public sealed class FanCurveCalculatorTests
     }
 
     [Fact]
-    public async Task UnknownGpuActivityReleasesTheDriverSession()
+    public async Task UnknownGpuActivityStillReadsAwakeTemperatureAndReleasesTheDriverSession()
     {
         var activity = new SettableGpuActivitySource { Active = true };
         var session = new CountingGpuTemperatureSession(52);
@@ -356,15 +365,16 @@ public sealed class FanCurveCalculatorTests
             activity,
             cpuTemperatureReader: () => 48,
             session,
-            new ManualTimeProvider());
+            new ManualTimeProvider(),
+            gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
 
-        await source.ReadAsync(CancellationToken.None);
+        await source.ReadForFanCurveAsync(CancellationToken.None);
         activity.Active = null;
-        FanTemperatureReadings unknown = await source.ReadAsync(CancellationToken.None);
+        FanTemperatureReadings unknown = await source.ReadForFanCurveAsync(CancellationToken.None);
 
-        Assert.Null(unknown.GpuCelsius);
+        Assert.Equal(52, unknown.GpuCelsius);
         Assert.False(unknown.GpuInactive);
-        Assert.Equal(1, session.Reads);
+        Assert.Equal(2, session.Reads);
         Assert.Equal(1, session.Releases);
     }
 
@@ -378,9 +388,10 @@ public sealed class FanCurveCalculatorTests
             activity,
             cpuTemperatureReader: () => 48,
             session,
-            time);
+            time,
+            gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
 
-        await source.ReadAsync(CancellationToken.None);
+        await source.ReadForFanCurveAsync(CancellationToken.None);
         Assert.Equal(0, session.Releases);
 
         time.FireTimers();
@@ -398,9 +409,10 @@ public sealed class FanCurveCalculatorTests
             activity,
             cpuTemperatureReader: () => 48,
             session,
-            new ManualTimeProvider());
+            new ManualTimeProvider(),
+            gpuPowerState: () => throw new InvalidOperationException("CPU-only samples must not inspect GPU power."));
 
-        FanTemperatureReadings readings = await source.ReadAsync(
+        FanTemperatureReadings readings = await source.ReadForFanCurveAsync(
             includeCpu: true,
             includeGpu: false,
             CancellationToken.None);
@@ -429,11 +441,12 @@ public sealed class FanCurveCalculatorTests
                 return 48;
             },
             session,
-            time);
-        await source.ReadAsync(CancellationToken.None);
+            time,
+            gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+        await source.ReadForFanCurveAsync(CancellationToken.None);
         expireDuringRead = true;
 
-        await source.ReadAsync(true, false, CancellationToken.None);
+        await source.ReadForFanCurveAsync(true, false, CancellationToken.None);
 
         Assert.Equal(0, session.Releases);
         Assert.Equal(SafeWindowsFanTemperatureSource.GpuSessionIdleRetry, time.LastDueTime);
@@ -448,10 +461,11 @@ public sealed class FanCurveCalculatorTests
         var session = new CountingGpuTemperatureSession(52);
         var time = new ManualTimeProvider();
         using var source = new SafeWindowsFanTemperatureSource(
-            new SettableGpuActivitySource { Active = true }, () => 48, session, time);
-        await source.ReadAsync(CancellationToken.None);
+            new SettableGpuActivitySource { Active = true }, () => 48, session, time,
+            gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+        await source.ReadForFanCurveAsync(CancellationToken.None);
         time.Advance(SafeWindowsFanTemperatureSource.GpuSessionIdleTimeout);
-        await source.ReadAsync(CancellationToken.None);
+        await source.ReadForFanCurveAsync(CancellationToken.None);
 
         // The original expiry was already queued when the newer sample rearmed it.
         time.FireTimers(advanceToDueTime: false);
@@ -473,8 +487,9 @@ public sealed class FanCurveCalculatorTests
             cpuTemperatureReader: () => 48,
             session,
             new ManualTimeProvider(),
-            cpuTemperatureOwner: owner);
-        await source.ReadAsync(CancellationToken.None);
+            cpuTemperatureOwner: owner,
+            gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+        await source.ReadForFanCurveAsync(CancellationToken.None);
 
         source.Dispose();
         source.Dispose();
@@ -483,7 +498,221 @@ public sealed class FanCurveCalculatorTests
         Assert.True(owner.Disposed);
         Assert.True(activity.Disposed);
         await Assert.ThrowsAsync<ObjectDisposedException>(
-            () => source.ReadAsync(CancellationToken.None).AsTask());
+            () => source.ReadForFanCurveAsync(CancellationToken.None).AsTask());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HotGpuKeepsDrivingCurvesAfterWorkloadEndsUntilItsMeasuredTemperatureFalls(bool useHigherTemperature)
+    {
+        ManualFanCurve curve = new(
+            [new(40, 2000), new(80, 4000)],
+            [new(40, 2000), new(80, 5000)],
+            useHigherTemperature);
+        var activity = new SettableGpuActivitySource { Active = true };
+        var session = new CountingGpuTemperatureSession(80);
+        var time = new ManualTimeProvider();
+        FanStopGpuPowerState power = FanStopGpuPowerState.PoweredOn;
+        using var source = new SafeWindowsFanTemperatureSource(activity, () => 40, session, time,
+            gpuPowerState: () => power);
+
+        FanTargetSpeeds hotTargets = new(useHigherTemperature ? 4000 : 2000, 5000, FailSafe: false);
+        Assert.Equal(hotTargets, FanCurveCalculator.Calculate(curve, await source.ReadForFanCurveAsync(default)));
+        Assert.Equal(0, session.Releases);
+
+        activity.Active = false;
+        FanTemperatureReadings idle = await source.ReadForFanCurveAsync(default);
+        Assert.True(idle.GpuInactive);
+        Assert.False(idle.GpuPoweredDown);
+        Assert.Equal(80, idle.GpuCelsius);
+        Assert.Equal(hotTargets, FanCurveCalculator.Calculate(curve, idle));
+        Assert.Equal(1, session.Releases);
+        Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
+
+        session.Temperature = 60;
+        Assert.Equal(new FanTargetSpeeds(useHigherTemperature ? 3000 : 2000, 3500, FailSafe: false),
+            FanCurveCalculator.Calculate(curve, await source.ReadForFanCurveAsync(default)));
+        session.Temperature = 40;
+        Assert.Equal(new FanTargetSpeeds(2000, 2000, FailSafe: false),
+            FanCurveCalculator.Calculate(curve, await source.ReadForFanCurveAsync(default)));
+        Assert.Equal(4, session.Reads);
+
+        // Power-down ends GPU sampling immediately, without a retained hot
+        // reading or a timed fan hold. Returning to D0 obtains a fresh sample.
+        power = FanStopGpuPowerState.PoweredDown;
+        session.Temperature = 80;
+        FanTemperatureReadings sleeping = await source.ReadForFanCurveAsync(default);
+        Assert.True(sleeping.GpuPoweredDown);
+        Assert.Null(sleeping.GpuCelsius);
+        Assert.Equal(4, session.Reads);
+        Assert.Equal(new FanTargetSpeeds(2000, 2000, FailSafe: false), FanCurveCalculator.Calculate(curve, sleeping));
+        power = FanStopGpuPowerState.PoweredOn;
+        Assert.Equal(hotTargets, FanCurveCalculator.Calculate(curve, await source.ReadForFanCurveAsync(default)));
+        Assert.Equal(5, session.Reads);
+        Assert.Equal(5, session.Releases);
+    }
+
+    [Theory]
+    [InlineData(false, null)]
+    [InlineData(true, null)]
+    [InlineData(false, 0)]
+    [InlineData(true, 0)]
+    [InlineData(false, 9)]
+    [InlineData(true, 9)]
+    [InlineData(false, 126)]
+    [InlineData(true, 126)]
+    [InlineData(false, 87)]
+    [InlineData(true, 87)]
+    public async Task IdleAwakeGpuRetainsMissingTemperatureAndEmergencyFailSafe(bool fanStopSample, int? gpuCelsius)
+    {
+        var session = new CountingGpuTemperatureSession(gpuCelsius);
+        using var source = new SafeWindowsFanTemperatureSource(new FixedGpuActivitySource(false),
+            () => 40, session, new ManualTimeProvider(), gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+
+        FanTemperatureReadings reading = fanStopSample
+            ? await source.ReadForFanStopAsync(default) : await source.ReadForFanCurveAsync(default);
+
+        Assert.True(reading.GpuInactive);
+        Assert.False(reading.GpuPoweredDown);
+        Assert.Equal(gpuCelsius is >= 10 and <= 125 ? gpuCelsius : null, reading.GpuCelsius);
+        Assert.Equal(new FanTargetSpeeds(5000, 5000, FailSafe: true),
+            FanCurveCalculator.Calculate(ManualFanCurve.Default, reading, maximumRpm: 5000));
+        Assert.Equal(1, session.Reads);
+        Assert.Equal(1, session.Releases);
+    }
+
+    [Theory]
+    [InlineData(false, false, 0)]
+    [InlineData(false, true, 0)]
+    [InlineData(false, null, 0)]
+    [InlineData(false, false, 2)]
+    [InlineData(false, true, 2)]
+    [InlineData(false, null, 2)]
+    [InlineData(true, false, 0)]
+    [InlineData(true, true, 0)]
+    [InlineData(true, null, 0)]
+    [InlineData(true, false, 2)]
+    [InlineData(true, true, 2)]
+    [InlineData(true, null, 2)]
+    public async Task UnknownOrPoweredDownGpuNeverReadsTemperatureRegardlessOfWorkload(
+        bool fanStopSample, bool? active, int power)
+    {
+        var session = new CountingGpuTemperatureSession(80);
+        using var source = new SafeWindowsFanTemperatureSource(new FixedGpuActivitySource(active),
+            () => 40, session, new ManualTimeProvider(), gpuPowerState: () => (FanStopGpuPowerState)power);
+
+        FanTemperatureReadings reading = fanStopSample
+            ? await source.ReadForFanStopAsync(default) : await source.ReadForFanCurveAsync(default);
+
+        bool confirmedPowerDown = power == (int)FanStopGpuPowerState.PoweredDown && active is not true;
+        Assert.Equal(confirmedPowerDown, reading.GpuPoweredDown);
+        Assert.Null(reading.GpuCelsius);
+        Assert.Equal(0, session.Reads);
+        Assert.Equal(1, session.Releases);
+        Assert.Equal(!confirmedPowerDown, FanCurveCalculator.Calculate(ManualFanCurve.Default, reading).FailSafe);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task GpuPowerTransitionDuringSamplingInvalidatesTemperatureAndReleasesSession(
+        bool fanStopSample, bool active)
+    {
+        var session = new CountingGpuTemperatureSession(80);
+        var time = new ManualTimeProvider();
+        int powerReads = 0;
+        using var source = new SafeWindowsFanTemperatureSource(new FixedGpuActivitySource(active),
+            () => 40, session, time, gpuPowerState: () => ++powerReads == 1
+                ? FanStopGpuPowerState.PoweredOn : FanStopGpuPowerState.PoweredDown);
+
+        FanTemperatureReadings reading = fanStopSample
+            ? await source.ReadForFanStopAsync(default) : await source.ReadForFanCurveAsync(default);
+
+        Assert.Null(reading.GpuCelsius);
+        Assert.False(reading.GpuPoweredDown);
+        Assert.True(FanCurveCalculator.Calculate(ManualFanCurve.Default, reading).FailSafe);
+        Assert.Equal(1, session.Reads);
+        Assert.Equal(1, session.Releases);
+        Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
+    }
+
+    [Fact]
+    public async Task PowerDownBetweenSamplesReleasesActiveSessionWithoutAnotherTemperatureRead()
+    {
+        var activity = new SettableGpuActivitySource { Active = true };
+        var session = new CountingGpuTemperatureSession(80);
+        var time = new ManualTimeProvider();
+        FanStopGpuPowerState power = FanStopGpuPowerState.PoweredOn;
+        using var source = new SafeWindowsFanTemperatureSource(activity, () => 40, session, time,
+            gpuPowerState: () => power);
+        await source.ReadForFanCurveAsync(default);
+
+        activity.Active = false;
+        power = FanStopGpuPowerState.PoweredDown;
+        FanTemperatureReadings sleeping = await source.ReadForFanCurveAsync(default);
+
+        Assert.True(sleeping.GpuPoweredDown);
+        Assert.Null(sleeping.GpuCelsius);
+        Assert.Equal(1, session.Reads);
+        Assert.Equal(1, session.Releases);
+        Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
+        time.FireTimers();
+        Assert.Equal(1, session.Reads);
+        Assert.Equal(1, session.Releases);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CanceledIdleTemperatureReadReleasesSessionAndSamplingGate(bool fanStopSample)
+    {
+        var activity = new SettableGpuActivitySource { Active = true };
+        var session = new CountingGpuTemperatureSession(80);
+        var time = new ManualTimeProvider();
+        using var source = new SafeWindowsFanTemperatureSource(activity, () => 40, session, time,
+            gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
+        await source.ReadForFanCurveAsync(default);
+
+        using var cancellation = new CancellationTokenSource();
+        activity.Active = false;
+        session.BeforeRead = cancellation.Cancel;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => (fanStopSample
+            ? source.ReadForFanStopAsync(cancellation.Token) : source.ReadForFanCurveAsync(cancellation.Token)).AsTask());
+
+        Assert.Equal(2, session.Reads);
+        Assert.Equal(1, session.Releases);
+        Assert.Equal(Timeout.InfiniteTimeSpan, time.LastDueTime);
+        session.BeforeRead = null;
+        FanTemperatureReadings recovered = await source.ReadForFanCurveAsync(default).AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(80, recovered.GpuCelsius);
+        Assert.Equal(2, session.Releases);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CancellationDuringPowerRecheckReleasesSessionAndRejectsTheSample(bool fanStopSample)
+    {
+        var session = new CountingGpuTemperatureSession(80);
+        using var cancellation = new CancellationTokenSource();
+        int powerReads = 0;
+        using var source = new SafeWindowsFanTemperatureSource(new FixedGpuActivitySource(false),
+            () => 40, session, new ManualTimeProvider(), gpuPowerState: () =>
+            {
+                if (++powerReads == 2)
+                {
+                    cancellation.Cancel();
+                }
+                return FanStopGpuPowerState.PoweredOn;
+            });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => (fanStopSample
+            ? source.ReadForFanStopAsync(cancellation.Token) : source.ReadForFanCurveAsync(cancellation.Token)).AsTask());
+        Assert.Equal(1, session.Reads);
+        Assert.Equal(1, session.Releases);
     }
 
     private sealed record FixedGpuActivitySource(bool? IsActive) : IGpuActivitySource
@@ -515,6 +744,10 @@ public sealed class FanCurveCalculatorTests
 
     private sealed class CountingGpuTemperatureSession(int? temperature) : IGpuTemperatureSession
     {
+        public int? Temperature { get; set; } = temperature;
+
+        public Action? BeforeRead { get; set; }
+
         public int Reads { get; private set; }
 
         public int Releases { get; private set; }
@@ -522,7 +755,8 @@ public sealed class FanCurveCalculatorTests
         public int? TryRead()
         {
             Reads++;
-            return temperature;
+            BeforeRead?.Invoke();
+            return Temperature;
         }
 
         public void Release() => Releases++;

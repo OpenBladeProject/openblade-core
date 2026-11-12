@@ -499,10 +499,10 @@ internal sealed class CoolingPadControlRuntime(
     private async Task<int> CurveTargetAsync(CoolingPadSettings settings, CancellationToken token)
     {
         lastTemperatureTimestamp = null;
-        FanTemperatureReadings reading = await temperatures.ReadAsync(token).ConfigureAwait(false);
-        long acquired = clock.GetTimestamp();
         bool cpu = settings.TemperatureSource is CoolingPadTemperatureSource.Cpu or CoolingPadTemperatureSource.Both;
         bool gpu = settings.TemperatureSource is CoolingPadTemperatureSource.Gpu or CoolingPadTemperatureSource.Both;
+        FanTemperatureReadings reading = await temperatures.ReadForFanCurveAsync(cpu, gpu, token).ConfigureAwait(false);
+        long acquired = clock.GetTimestamp();
         if (cpu && reading.CpuCelsius is not (>= 0 and <= 115) || gpu && reading.GpuCelsius is not (>= 0 and <= 115))
         { throw new InvalidOperationException("Cooling pad curve paused because a selected temperature source is unavailable."); }
         int target = cpu ? Evaluate(settings.CpuCurve, reading.CpuCelsius!.Value) : CoolingPadSettings.MinimumRpm;
