@@ -66,6 +66,8 @@ public static class RazerBladeModelCatalog
         new("RZ09-0351", "Razer Blade 15 Base", 2020) { UsbVendorId = "1532", UsbProductId = "0268", SupportBasis = BladeSupportBasis.SourceReviewed },
         new("RZ09-0301", "Razer Blade 15 Advanced", 2019) { UsbVendorId = "1532", UsbProductId = "0245", SupportBasis = BladeSupportBasis.SourceReviewed },
         new("RZ09-0300", "Razer Blade 15 Base", 2019) { UsbVendorId = "1532", UsbProductId = "0246", SupportBasis = BladeSupportBasis.SourceReviewed },
+        new("RZ09-0409", "Razer Blade 15 Advanced", 2021) { UsbVendorId = "1532", UsbProductId = "0276", SupportBasis = BladeSupportBasis.SourceReviewed },
+        new("RZ09-0287", "Razer Blade Pro 17", 2019) { UsbVendorId = "1532", UsbProductId = "0234", SupportBasis = BladeSupportBasis.SourceReviewed },
     ];
 
     public static IReadOnlyList<RazerBladeModelInfo> All { get; } = Array.AsReadOnly(Models);
