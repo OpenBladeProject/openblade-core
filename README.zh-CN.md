@@ -44,11 +44,14 @@ OpenBlade 是一款免费的 Razer Blade 笔记本管理工具，在 Windows 系
 | Razer Blade 15 (2022) | `RZ09-0421` |
 | Razer Blade 17 (2022) | `RZ09-0423` |
 | Razer Blade 14 (2021) | `RZ09-0370` |
+| Razer Blade 15 Advanced（2021 年中） | `RZ09-0409` |
 | Razer Blade 15 Base (Early 2020) | `RZ09-0328` |
 | Razer Blade 15 Advanced (Early 2020) | `RZ09-0330` |
 | Razer Blade 15 Base (Late 2020) | `RZ09-0351` |
 | Razer Blade 15 Advanced (Mid 2019) | `RZ09-0301` |
 | Razer Blade 15 Base (2019) | `RZ09-0300` |
+| Razer Blade Pro 17 (2019) | `RZ09-0287` |
+| Razer Blade Pro 17（2019 年末） | `RZ09-0314` |
 
 OpenBlade 会根据你的型号显示可用设置。兼容性信息见[使用指南](https://openblade.sh/zh-CN/)，
 各型号的功能和测试详情见[型号支持指南](docs/zh-CN/experimental-blade-support.md)。

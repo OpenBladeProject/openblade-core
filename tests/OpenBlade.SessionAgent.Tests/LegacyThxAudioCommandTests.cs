@@ -39,6 +39,9 @@ public sealed class LegacyThxAudioCommandTests
             ("RZ09-0300", "0246"),
             ("RZ09-0330", "0253"),
             ("RZ09-0351", "0268"),
+            ("RZ09-0409", "0276"),
+            ("RZ09-0287", "0234"),
+            ("RZ09-0314", "024C"),
         ];
         var admitted = ThxAudioCompatibility.Profiles.Select(profile => (profile.ModelNumber, profile.UsbProductId));
         var excluded = ThxAudioCompatibility.ExcludedModels.Select(profile => (profile.ModelNumber, profile.UsbProductId));

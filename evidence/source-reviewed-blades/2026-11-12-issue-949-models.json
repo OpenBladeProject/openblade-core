@@ -1,0 +1,768 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-11-12",
+  "trackingIssue": "https://github.com/OSSBlade/openblade-core/issues/949",
+  "baseCoreRevision": "46442cb9ec2b23682cd275da8fd472a870ddb6a8",
+  "supportPolicy": "Official source-reviewed support; physical validation pending per model and feature.",
+  "models": [
+    {
+      "modelNumber": "RZ09-0409",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "0276"
+      },
+      "vendorProductId": 630,
+      "vendorBuild": 2609301504,
+      "vendorRevision": "c8f9bacea06d246e7f579debb84827b98e2635f9",
+      "productName": "Blade 15 Advanced Model (Mid 2021) - RZ09-0409",
+      "transport": {
+        "reportId": 0,
+        "claimInterface": 2,
+        "protocolReportBytes": 90,
+        "nativeFeatureReportBytes": 91,
+        "maximumTransactionId": 31
+      },
+      "queryProfile": 1,
+      "presets": {
+        "Balanced": 0,
+        "Custom": 4
+      },
+      "customCpuLevels": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "customGpuLevels": [
+        0,
+        1,
+        2
+      ],
+      "batteryBalancedRaw": 0,
+      "fanBoundsSourceOnly": {
+        "Balanced": {
+          "min": 3400,
+          "max": 5200,
+          "default": 4100
+        },
+        "Custom": {
+          "min": 4000,
+          "max": 5300,
+          "default": 4600
+        }
+      },
+      "chargeProtection": false,
+      "supportBasis": "SourceReviewed",
+      "physicalValidation": "Pending",
+      "maximumFans": false,
+      "notAdmitted": [
+        "Manual fan targets",
+        "Fan curves",
+        "Lighting",
+        "Charge limits",
+        "Maximum Fans",
+        "HyperBoost",
+        "Keyboard driver or THX integration"
+      ]
+    },
+    {
+      "modelNumber": "RZ09-0287",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "0234"
+      },
+      "vendorProductId": 564,
+      "vendorBuild": 2609301515,
+      "vendorRevision": "82fd6b9d5365e2d4bfb949c7bf12d8f2c05f2b8f",
+      "productName": "Blade Pro 17 (2019)",
+      "transport": {
+        "reportId": 0,
+        "claimInterface": 2,
+        "protocolReportBytes": 90,
+        "nativeFeatureReportBytes": 91,
+        "maximumTransactionId": 31
+      },
+      "queryProfile": 1,
+      "presets": {
+        "Balanced": 0,
+        "Custom": 4
+      },
+      "customCpuLevels": [
+        0,
+        1,
+        2
+      ],
+      "customGpuLevels": [
+        0,
+        1,
+        2
+      ],
+      "batteryBalancedRaw": 0,
+      "fanBoundsSourceOnly": {
+        "Balanced": {
+          "min": 3400,
+          "max": 5200,
+          "default": 4100
+        },
+        "Custom": {
+          "min": 4000,
+          "max": 5300,
+          "default": 4600
+        }
+      },
+      "chargeProtection": false,
+      "supportBasis": "SourceReviewed",
+      "physicalValidation": "Pending",
+      "maximumFans": false,
+      "notAdmitted": [
+        "Manual fan targets",
+        "Fan curves",
+        "Lighting",
+        "Charge limits",
+        "Maximum Fans",
+        "HyperBoost",
+        "Keyboard driver or THX integration"
+      ]
+    },
+    {
+      "modelNumber": "RZ09-0314",
+      "usbIdentity": {
+        "vid": "1532",
+        "pid": "024C"
+      },
+      "vendorProductId": 588,
+      "vendorBuild": 2609301519,
+      "vendorRevision": "19d84f2fcd28c11ddcbe756db1a9a63af908e065",
+      "productName": "Blade Pro 17 (Fall 2019)",
+      "transport": {
+        "reportId": 0,
+        "claimInterface": 2,
+        "protocolReportBytes": 90,
+        "nativeFeatureReportBytes": 91,
+        "maximumTransactionId": 31
+      },
+      "queryProfile": 1,
+      "presets": {
+        "Balanced": 0,
+        "Custom": 4
+      },
+      "customCpuLevels": [
+        0,
+        1,
+        2
+      ],
+      "customGpuLevels": [
+        0,
+        1,
+        2
+      ],
+      "batteryBalancedRaw": 0,
+      "fanBoundsSourceOnly": {
+        "Balanced": {
+          "min": 3400,
+          "max": 5200,
+          "default": 4100
+        },
+        "Custom": {
+          "min": 4000,
+          "max": 5300,
+          "default": 4600
+        }
+      },
+      "chargeProtection": false,
+      "supportBasis": "SourceReviewed",
+      "physicalValidation": "Pending",
+      "maximumFans": false,
+      "notAdmitted": [
+        "Manual fan targets",
+        "Fan curves",
+        "Lighting",
+        "Charge limits",
+        "Maximum Fans",
+        "HyperBoost",
+        "Keyboard driver or THX integration"
+      ]
+    }
+  ],
+  "sourceFiles": [
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/6737.09466ede91c383e63db5.js",
+      "bytes": 2354613,
+      "sha256": "578C055A626C97F320A8642DDCF6D727EDEC267C02BF4BDF68D9921A7DF92A8F"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/index.html",
+      "bytes": 4284,
+      "sha256": "A1EB83B44C18A109EDD9FEF191021349180A6B66FE4EE1527110CE5625A19110"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/main.cd82ad6254565b1185d9.js",
+      "bytes": 164734,
+      "sha256": "E8E61CE165B2E724DE80C9FB2F8AA2D6F3D3CF8B89AF0D1F1866C5624A3FD48C"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/manifest.json",
+      "bytes": 4573,
+      "sha256": "7ECBD36ED73D367B1095CA48050FC4767F6D84D3B005BA77E40D72AF8C8D105F"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/onLoad.ea45807b7cd245ed0470.js",
+      "bytes": 45453,
+      "sha256": "F17AA04A073869C8253E639F183AA1340D2C8167412DDE72D0A6525AD2FED1D1"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/rzDevice25.c85377977ca9cfdbb0b0.js",
+      "bytes": 279030,
+      "sha256": "65C38CDAAFC263682BADF4695C9239DF96FA1F26091274FB4AE0E81C5ACD8C17"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/rzDevice25LedMatrixBlade.cf43cdc9a0705593c034.js",
+      "bytes": 13101,
+      "sha256": "EEF7D6D017DA455DCDB3A283F157256B7BE3FE033BCC589647E24C67BB58217A"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/rzDevice25LedMatrixBladeWattage.bdfb6f4b5e494723f800.js",
+      "bytes": 2925,
+      "sha256": "A53E30762A36B2E253DF86E33574A39AD138EE9B912E355BB9312E1DE59BEA5F"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/ui/static/js/main.c6dfa6fe.js",
+      "bytes": 6439376,
+      "sha256": "1E832E271629A0B9924BD0E47D9C9B6C71ACA2AEEA49301B8E804AB31A1CD3C3"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/index.html",
+      "bytes": 4389,
+      "sha256": "35F15A49E7CDD566E011869129EC745B7BAB65359134FA4FB241E4DFE1812DC5"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/main.6098ef0f83a9cd1c24a9.js",
+      "bytes": 162936,
+      "sha256": "57D83A4D3928BE973205AF873268D65662A1833452165EA8199F816D27BAB51B"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/manifest.json",
+      "bytes": 6675,
+      "sha256": "E8D0C08305BA433112BB778C5D5D2833D26F5DBB1FB59A76C403AB8DE2FCC910"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/6737.71d0d0b36aad77ffb446.js",
+      "bytes": 2353865,
+      "sha256": "80A872631CBD5E16F713467DA13B9B7D76889487E22A6CE3DB854A15E1631558"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/rzDevice25.7fc62fb8a269279f7b9e.js",
+      "bytes": 279034,
+      "sha256": "940EE59B6B034BEE82B77779323617F817D8D400F7BF526058BFD10CDC1568BA"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/rzDevice25LedMatrixBlade.5258f7f0a1f14ad07643.js",
+      "bytes": 13105,
+      "sha256": "494AD54804E7DBFB10CA6D405EB4A307B6DDF614BC5013C01280135E4CAA972F"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/rzDevice25LedMatrixBladeWattage.cb42c79fefbfdc6d1216.js",
+      "bytes": 2929,
+      "sha256": "E75F29F664214B9F08295F22CBDB2B75614E0D0240B0D0044E18DE2ED1621325"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/ui/static/js/main.64a01e0e.js",
+      "bytes": 6586793,
+      "sha256": "1C5A6D450F5E544FE8855FFF92D95BC3ABCE2697574CC58D37AA76817D9F95E5"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/6737.486962f684c3054bcd0c.js",
+      "bytes": 2353651,
+      "sha256": "62AC7270B6927323605CDF45D699EA07E48C1063FC6F5642F2FC4ABC6CDD12FA"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/index.html",
+      "bytes": 4284,
+      "sha256": "990B3E9F2611632715D82D54820C68E8CFFC696FD4B8922C1872B51222ABD292"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/main.aef91a9c8a23c54b3711.js",
+      "bytes": 162529,
+      "sha256": "58C8699616E125BE2F8F4FFFD490FFCD632F30EC171898229BA76275701558ED"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/manifest.json",
+      "bytes": 4580,
+      "sha256": "FD67308D971810E01AC058A446C726A50DF9853D2B57DA48E024C80AF41A1498"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/onLoad.fee3b6178d95fa07ef5d.js",
+      "bytes": 45451,
+      "sha256": "4F7CD667B342D1A7333B0464539B64240A3C4196F0A06EE5008EB0D810F58861"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/rzDevice25.c9cde47d1f5b9618158b.js",
+      "bytes": 279030,
+      "sha256": "B299E84011BB04545123498F4B17DC0F774CB2560BF21C2F2BE7B9393B416AE5"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/rzDevice25LedMatrixBlade.a3ca67aee2e5d66c4d8a.js",
+      "bytes": 13101,
+      "sha256": "009DA3FDDF6D567F09F5DFFF330FF88F9BC56F11844D72557C3D6DD89C0F5DC2"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/rzDevice25LedMatrixBladeWattage.6400257deb0580f370f5.js",
+      "bytes": 2925,
+      "sha256": "A0F2E3A06ABE8BFBABE561F5808BDA5B175857E8C38D8E0460B74D149BF0D330"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/ui/static/js/main.5ff20197.js",
+      "bytes": 6376629,
+      "sha256": "2FA82D9AC334FF3453E73676CEDBA0532093C90BDE0B0F9030EE57A47CC707A0"
+    }
+  ],
+  "sourceExcerpts": [
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/main.cd82ad6254565b1185d9.js",
+      "startByte": 25024,
+      "endByteExclusive": 27774,
+      "label": "Exact product, interface and supported presets",
+      "text": "nput,KeyInput:e.KeyInput,KeyGroup:e.KeyGroup}),_={productId:564,vendorId:5426,deviceName:\"Razer Blade Pro 17\",backlightStep:6.25,masterGuideURL:\"https://dl.razerzone.com/master-guides/RazerSynapse3/BladePro17-00000564-\",supportPage:\"https://support.razer.com/gaming-laptops/razer-blade-pro-17-late-2019/\",WAVE_DIRECTION:\"LeftRight\",category:\"SYSTEM\",claimInterface:2},u=[{id:1,mode:i.mNQ.Balanced_Mode,title:n.Y_1,content:n.OC,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.021,0,0,1,22,4m0-2A20,20,0,1,0,42,22,20,20,0,0,0,22,2Zm1,5H21v4h2ZM15.366,8.51l-1.732,1,2,3.464,1.732-1ZM9.51,13.634l-1,1.732,3.464,2,1-1.732ZM7,21v2h4V21Zm1.51,7.634,1,1.732,3.464-2-1-1.732Zm25.98,1.732,1-1.732-3.464-2-1,1.732ZM37,23V21H33v2Zm-1.51-7.634-1-1.732-3.464,2,1,1.732ZM30.366,9.51l-1.732-1-2,3.464,1.732,1ZM22,15s-2,10.9-2,12a2,2,0,0,0,4,0C24,25.9,22,15,22,15Z\",isShowOnBattery:!0,minFanSpeedValue:3400,maxFanSpeedValue:5200,defaultFanSpeedValue:4100},{id:2,mode:i.mNQ.Custom_Mode,title:n.DBO,content:n.lJc,icon:\"M22,4A18,18,0,1,0,40,22,18.021,18.021,0,0,0,22,4m0-2A20,20,0,1,1,2,22,20,20,0,0,1,22,2Zm9,19H28.959a6.976,6.976,0,0,0-1.34-3.2l1.452-1.453a1,1,0,1,0-1.414-1.414L26.2,16.387A6.969,6.969,0,0,0,23,15.076V13a1,1,0,0,0-2,0v2.083a6.964,6.964,0,0,0-3.18,1.322l-1.477-1.476a1,1,0,1,0-1.414,1.414l1.476,1.477A6.964,6.964,0,0,0,15.083,21H13a1,1,0,0,0,0,2h2.076a6.964,6.964,0,0,0,1.312,3.2l-1.459,1.459a1,1,0,1,0,1.414,1.414L17.8,27.618A6.971,6.971,0,0,0,21,28.959V31a1,1,0,0,0,2,0V28.966a6.981,6.981,0,0,0,3.222-1.33l1.435,1.435a1,1,0,0,0,1.414-1.414l-1.435-1.435A6.981,6.981,0,0,0,28.966,23H31a1,1,0,0,0,0-2Zm-8.979,6.042a5.021,5.021,0,1,1,5.021-5.021A5.027,5.027,0,0,1,22.021,27.042Z\",minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600}],d={category:_.category.toLowerCase(),vendorId:_.vendorId,family:i.oRF.CHROMA_FAMILY_7},p=[{name:n.Rb7,id:i.AoV.Ambient_Effect},{name:n.ncy,id:i.AoV.Audio_Meter_Effect},{name:n.xkP,id:i.AoV.Breathing_Effect},{name:n.ZKq,id:i.AoV.Fire_Effect},{name:n.ckz,id:i.AoV.Reactive_Effect},{name:n.NnH,id:i.AoV.Ripple_Effect},{name:n.k9y,id:i.AoV.Spectrum_Effect},{name:n.fYY,id:i.AoV.Starlight_Effect},{name:n.DU0,id:i.AoV.Static_Effect},{name:n.wrM,id:i.AoV.Wave_Effect},{name:n.eaG,id:i.AoV.Wheel_Effect},{name:n.jag,id:i.AoV.Tidal_Effect}],f=[{outputType:`${s.CLP}`,isHyperShift:!0,inputType:\"KeyInput\",inputID:\"KEY_F1\",multimediaGroup:{multimediaAssignment:\"MuteVolume\"}},{outputType:`${s.CLP}`,isHyperShift:!0,inputType:\"KeyInput\",inputID:\"KEY_F2\",multimediaGroup:{multimediaAssignment:\"VolumeDown\",useTurbo:!0}},{outputType:`${s.CLP}`,isHyperShift:!0,inputType:\"KeyInput\",inputID:\"KEY_F3\",multimediaGroup:{multimediaAssignment:\"VolumeUp\",useTurbo:!0}},{outputType:`${s.G7s}`,isHyperShift:!0,inputType:\"KeyInput\",inp"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/main.cd82ad6254565b1185d9.js",
+      "startByte": 29743,
+      "endByteExclusive": 30423,
+      "label": "AC custom, battery Balanced default profile",
+      "text": "z\"},{content:\"60 Hz\"}],g=[{name:\"58 Hz\",value:58},{name:\"144 Hz\",value:144}],m={performance:{plugged:{mode:\"balanced\",balanced:{active:\"auto\",manualFanSpeed:4100},custom:{active:\"auto\",cpu:1,gpu:1}},battery:{mode:\"balanced\",balanced:{active:\"auto\",manualFanSpeed:4100}}},screenRefreshRate:60,refreshRateList:[{name:\"60 Hz\",value:60}],colorProfilesList:{profiles:[{name:\"Blade.icm\",fileName:\"Blade.icm\",profileName:\"blade\"},{name:\"Blade2.icm\",fileName:\"Blade2.icm\",profileName:\"blade2\"}],defaultProfile:\"\"}},N={guid:\"\",name:\"\",brightness:{plugged:{isEnabled:!0,value:100},battery:{isEnabled:!0,value:50},twoMode:{isEnabled:!0,value:100},isTwoMode:!1},logoLighting:{plugged:{effectI"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/main.cd82ad6254565b1185d9.js",
+      "startByte": 75621,
+      "endByteExclusive": 75761,
+      "label": "Exact selected backend",
+      "text": "useFeature(\"rzDeviceType\",\"rzDevice25LedMatrixBlade\"),a.A.injectToDependencyList(\"runtimeCache\",c.A),a.A.injectData(\"initMemoryStorageCache\""
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/6737.09466ede91c383e63db5.js",
+      "startByte": 1924541,
+      "endByteExclusive": 1925421,
+      "label": "Thermal mode raw enum and fan IDs",
+      "text": "uiet:0,Cool:1,Balanced:2,GamingOptimized:3,VirtualRealityOptimized:4});const n={Balanced_Mode:0,Gaming_Mode:1,Productivity_Creator_Mode:2,BatterySaver_Ultrabook_LowPowerMode:3,Custom_Mode:4,Silent_Mode:5,Normal_Mode:6,Performance_Mode:7};Object.freeze(n),Object.freeze({Auto:0,Manual:1,ForceAuto:2});const o={NotApplicable:0,CPU_Fan:1,GPU_Fan:2,BAT_Fan1:3,BAT_Fan2:4,Fan1:5,Fan2:6,Fan3:7,Fan4:8,Fan5:9,Fan6:10,Fan7:11,Fan8:12};Object.freeze(o),Object.freeze(o);const r={Low:0,Medium:1,High:2,Extreme:3};Object.freeze(r),Object.freeze({Microsoft_Hybrid:0,Discrete_MUX:1});const a={UHD:0,FHD:1};Object.freeze(a);const s={DDS:1,Mini_LED_Resolution:2,Illegal_Battery_Support:4},l={Low:0,Medium:1,High:2,Quiet:3,Balanced:4,Performance:5,TurnOffFan:6};Object.freeze(l);const c={Firmware:0,Synapse:1};Object.freeze(c)},84140:(e,t,i)=>{e=i.nmd(e);var n=i(52381),o=t&&!t.nodeType&&t,r=o&&e"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/6737.09466ede91c383e63db5.js",
+      "startByte": 1502291,
+      "endByteExclusive": 1503071,
+      "label": "All thermal profiles default to selector1",
+      "text": ".d(t,{A:()=>r});var n=i(3327);const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},51147:(e,t,i)=>{\"use strict\";var n=i(88205),o=i(6949),r=i(49902),a=i(98722),s=i(97128),l=i(89977).iterator;e.exports=function(e){return\"function\"==typeof s(e)[l]?e[l]():n(e)?new r(e):o(e)?new a(e):new r(e)}},51494:(e,t,i)=>{\"use strict\";var n=i(63954);e.exports=function(e,t,i,o,r){var a=new Error(e);return n(a,t,i,o,r)}},51727:(e,t,i)=>{\"use strict\";var"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/6737.09466ede91c383e63db5.js",
+      "startByte": 163172,
+      "endByteExclusive": 163802,
+      "label": "Cleanup typed profile1 automatic handback",
+      "text": "0:l.performanceMode))console.log(\"cleanUpDevice - setThermalFanMode\",e,i),yield r.setThermalFanMode(1,e,i,0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)}));else if(B.IwP.SERIES_12===(null==Jn?void 0:Jn.bladeSeries)&&!t&&!to){to=!0;const t=yield(0,Tt.getLocalStorageDeviceCache)(),n=t.profiles.find((e=>e.guid===t.activeProfile)),o=\"plugged\",a=n.performance[o].mode;\"smartFanCurve\"===n.performance[o][a].active&&(console.log(\"cleanUpDevice - restore fan curve mode\"),yield r.setThermalFanMode(1,e,i,0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/6737.09466ede91c383e63db5.js",
+      "startByte": 846561,
+      "endByteExclusive": 847161,
+      "label": "Keyboard read-before-write Driver3 Normal0",
+      "text": "urn(!t||!i)&&i}));function re(e){return x(this,void 0,void 0,(function*(){const t=r.jf.rzDevice;try{let i=yield t.getDeviceMode();if(console.log(\"get driver mode\",i.jsonData),i.jsonData.mode===te[e])return void console.debug(\"setDeviceMode skip setting same device mode,\",e);i=\"driver\"===e?yield t.setDeviceMode(3,0):yield t.setDeviceMode(0,0),console.log(`setDeviceMode - set device to ${e} mode with result`,i)}catch(e){console.debug(\"Error setDeviceMode: \",e)}}))}const ae=e=>x(void 0,void 0,void 0,(function*(){var t,i;const l=yield(e=>x(void 0,void 0,void 0,(function*(){const t=o.A.getFeatures("
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/6737.09466ede91c383e63db5.js",
+      "startByte": 863248,
+      "endByteExclusive": 864898,
+      "label": "Actual and recommended adapter comparison plus rejected fallback",
+      "text": "ch(e){console.error(\"Tartarus Led indicator\",e)}}));let je=0;const Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function ze(){var e,t,i,n;return x(this,void 0,void 0,(function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFirmwareInfo)&&void 0!==e?e:null,A=null!==(t=Q.hasDockExtended)&&void 0!==t?t:null,d={};let p,g;const f={};if(a.getExtendedFirmwareVersion){try{const{jsonData:e}=yield a.getExtendedFirmwareVersion();if(e.version&&(p=e.version),void 0!==e.major&&(p=`${e.major}.${e.minor}.${e.internal}.${e.reserved}`),!p)return;d.currentFWVe"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/rzDevice25.c85377977ca9cfdbb0b0.js",
+      "startByte": 111308,
+      "endByteExclusive": 113108,
+      "label": "Report geometry, transaction1..31 and XOR checksum",
+      "text": "hProcessing=!0,this.useSendCommandEx=!1,this.instanceId=t.deviceContainerId,this.lockName=`${this.name}-${this.device.productId}-${this.containerId}`,this.reportLength=91,this.ignoreSetDeviceModeTimeoutError=!1,this.reportId=null!==(l=null==u?void 0:u.reportId)&&void 0!==l?l:0,this.restoreFileSuffix=\"\",this.isElectron){const t=window.apiElectron.engineVersion;\"darwin\"===a.R0()?this.supportHIDMutex=!0:a.Zy(t,\"4.0.174\")<0?this.supportHIDMutex=!1:this.supportHIDMutex=!0}else this.supportHIDMutex=!1;console.log(`${this.name} this.supportHidMutex:`,this.supportHIDMutex),console.log(`${this._getLoggerPrepend()} ${a.bV(this.device.productId)}, productName: ${this.device.productName}, claimInterface:${n}, reportId:${this.reportId}, regionId:${this.regionId}, lockName:${this.lockName}, constructor`)}setUseSendCommandEx(t){this.useSendCommandEx=!1}_calculateChecksum(t){let n=0;for(let e=2;e<88;e++)n=t[e]^n;return n}_getTransactionId(){return 31===this.transactionId&&(this.transactionId=0),this.transactionId++}_createDataSend(t,n,e){const o=new Uint8Array(90),i=this._getTransactionId();o[0]=0,o[1]=i,o[2]=0,o[3]=0,o[4]=0,o[5]=t[0],o[6]=t[1],o[7]=t[2],void 0!==e&&\"\"!==e&&-1!==e&&!isNaN(e)&&e>0&&(o[5]=e);for(let t=0;t<n.length&&t<o[5];t++)o[t+8]=n[t];const r=this._calculateChecksum(o);return o[88]=r,o}connectDevice(){var t;return ja(this,void 0,void 0,(function*(){const n=\"connectDevice\";if(void 0===this.device)return{result:!1,error:i.ERROR_VALUE_UNDEFINED};const e={result:!1,error:\"\"};if(this.isElectron){const o=La.K_,i=new Uint8Array,r=this._createDataSend(o,i);for(let o=0;o<3;o++)try{const n=[a.Yh()?this.claimInterface:this.reportId,...r],o=yield Ta.A.connectHidDevice({productId:this.device.productId||this.productId,vendorId:this.device.vendorId,deviceContainerId:this.containerId"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/rzDevice25.c85377977ca9cfdbb0b0.js",
+      "startByte": 277406,
+      "endByteExclusive": 278936,
+      "label": "Thermal command tuples",
+      "text": "onst o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),S=\"Set Thermal Fan Table\",A=new Uint8Array([80,13,133]),I=(new Uint8Array([80,13,5]),\"Get Thermal Reading\"),y=new Uint8Array([7,13,134]),U=(new Uint8Array([7,13,6]),\"Get Thermal Active Core Radio Limit\"),N=new Uint8Array([3,13,135]),C=new Uint8Array([3,13,7]),w=\"Get Thermal Advance Fan Mode\",g=\"Set Thermal Advance Fan Mode\",E=new Uint8Array([3,13,135]),D=new Uint8Array([3,13,7]),_=\"Get Thermal Advance Fan Mode Wattage\",R=\"Set Thermal Advance Fan Mode Wattage\",p=new Uint8Array([3,13,136]),T=\"Get Thermal Fan Current Speed\",L=new Uint8Array([2,13,137]),P=new Uint8Array([2,13,9]),O=\"Get VGA Configure Setting\",V=\"Set VGA Configure Setting\",j=new Uint8Array([3,13,144]),$=new Uint8Array([3,13,16]),k=\"Get Thermal Fan Cooling Mode\",M=\"Set Thermal Fan Cooling Mode\",b=new Uint8Array([2,13,138]),z=\"Get VGA Hardware Information\",x=new Uint8Array([2,13,139]),F=\"Get Synapse UI Setting\",G=\"Get Thermal Fan Duty Cycle\",B=\"Set Thermal Fan Duty Cycle\",H=new Uint8Array([1,13,142]),K=new Uint8Array([1,13,14]),J=\"Get Mini LED Panel Resolution\",W=\"Set Mini LED Panel Resolution\",Y=new Uint8Array([1,13,143]),Q=\"Ge"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/rzDevice25.c85377977ca9cfdbb0b0.js",
+      "startByte": 2932,
+      "endByteExclusive": 4382,
+      "label": "Thermal mode response and payload schema",
+      "text": ":${e}, thermalFanSpeed:${r}`),u(s),s})),v=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],fanMode:t.data[2],fanModeEnum:a.np(r.IH,t.data[2]),fanModeValue:t.data[3]})},h=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.tI[1],commandId:i.tI[2],commandDesc:i.Bu});const r=new Uint8Array(i.tI[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.tI,i.Bu,r);return v(a),a})),f=(t,n,e,r,c=0)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===r||void 0===c||isNaN(n)||isNaN(e)||isNaN(r)||isNaN(c))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.ZK[1],commandId:i.ZK[2],commandDesc:i.F8});const s=new Uint8Array(i.ZK[0]);s[0]=n,s[1]=e,s[2]=r,s[3]=c;const u=yield t.sendCommand(i.ZK,i.F8,s);return yield a.yy(200),console.log(`setThermalFanMode classId:${n}, thermalId:${e}, fanMode:${r}, fanModeValue:${c}`),v(u),u})),S=(t,n)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||isNaN(n))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Uo[1],commandId:i.Uo[2],commandDesc:i.yz});const e=new Uint8Array(i.Uo[0]);e[0]=n;const r=yield t.sendCommand(i.Uo,i.yz,e);return(t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],GPU:a.Jz(t.data[1],t.data[2]),VRAM:a.Jz(t.data[3],t.data[4]),A:t.data[5],B:t.data[6],C"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/rzDevice25.c85377977ca9cfdbb0b0.js",
+      "startByte": 13537,
+      "endByteExclusive": 13867,
+      "label": "Adapter07/8C tuple",
+      "text": "),g=new Uint8Array([5,7,11]),E=\"Get Time To Dim\",D=\"Set Time To Dim\",_=new Uint8Array([2,7,140]),R=\"Get Adapter Wattage Level\",p=new Uint8Array([3,7,142]),T=\"Get Power Security Status\",L=new Uint8Array([1,7,143]),P=new Uint8Array([1,7,15]),O=\"Get CPU Boost Control\",V=\"Set CPU Boost Control\",j=new Uint8Array([1,7,143]),$=new Uint"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/mw/rzDevice25.c85377977ca9cfdbb0b0.js",
+      "startByte": 19028,
+      "endByteExclusive": 19678,
+      "label": "Adapter actual/recommended response schema",
+      "text": "s(void 0,void 0,void 0,(function*(){const n=new Uint8Array(i.A$[0]),e=yield t.sendCommand(i.A$,i.wH,n);return(t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={adapterWattageLevel:t.data[0],adapterWattageLevelEnum:a.np(r.d_,t.data[0]),recommendedAdapterWattageLevel:t.data[1],recommendedAdapterWattageLevelEnum:a.np(r.d_,t.data[1])})})(e),e})),_=t=>s(void 0,void 0,void 0,(function*(){const n=new Uint8Array(i.lj[0]),e=yield t.sendCommand(i.lj,i.Xu,n);return(t=>{if(t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0){const n=[];for(let e=7;e>=0;e--)n.push(t.data[2]>>e&1);t.jsonData={shortCondition:t.data[0],abnormalVoltage:t.d"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/ui/static/js/main.c6dfa6fe.js",
+      "startByte": 6238195,
+      "endByteExclusive": 6238515,
+      "label": "Exact 2019 CPU and GPU0..2 caller",
+      "text": "hildren:(0,i_.jsxs)(us,{children:[(0,i_.jsx)(cs,{direction:\"left\",children:(0,i_.jsx)(XR,{supportedPerformanceModes:E})}),(0,i_.jsx)(cs,{direction:\"right\",children:!1===this.props.isDDSSku&&1===this.props.supportedFlag?(0,i_.jsx)(al,{}):(0,i_.jsx)(ol,{})})]})})}}const rl=(0,F.connect)(e=>({fanValues:e.performanceReduce"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/ui/static/js/main.c6dfa6fe.js",
+      "startByte": 6222444,
+      "endByteExclusive": 6223434,
+      "label": "Ordinary CPU and GPU sliders default0..2",
+      "text": "en:(0,i_.jsxs)(\"div\",{className:\"cpu-gpu-slider\",children:[(0,i_.jsxs)(\"div\",{className:\"cpu-slider\",children:[(0,i_.jsx)(\"div\",{style:{margin:\"0px 0px 10px 0px\"},children:(0,i_.jsx)(M_.A,{text:Ke.j8N})}),(0,i_.jsx)(Ps.A,{min:O?O.cpu.min:0,max:O?O.cpu.max:2,step:1,noTip:!0,midTag:Ke.E_p,boostTag:O?3===O.cpu.max&&Ke.YyC:null,active:_,value:k,changeValue:Se})]}),(0,i_.jsx)(\"br\",{}),(0,i_.jsxs)(\"div\",{className:\"gpu-slider\",children:[(0,i_.jsx)(\"div\",{style:{margin:\"0px 0px 10px 0px\"},children:(0,i_.jsx)(M_.A,{text:Ke.VnK})}),(0,i_.jsx)(Ps.A,{min:O?O.gpu.min:0,max:O?O.gpu.max:2,step:1,noTip:!0,midTag:Ke.E_p,active:_,value:X,changeValue:Re})]})]})}):b!==Be.ZCP&&b!==Be.TxO?!y&&P&&(()=>{const e=V===Be.XuP.manual,{minVal:E,maxVal:a,defaultValue:t}=Oe(b);return(0,i_.jsxs)(\"div\",{className:\"fan-mode \"+(i?\"\":\"disabled\"),children:[(0,i_.jsx)(\"div\",{className:\"fan-title\",children:(0,i_.jsx)(M_.A,{text:Ke.qTB})}),(0,i_.jsx)(aO.A,{name:Ke.GMJ,id:Be.XuP.auto,extraClass:\"display_content\",act"
+    },
+    {
+      "product": 564,
+      "url": "https://apps.razer.com/synapse/products/564/ui/static/js/main.c6dfa6fe.js",
+      "startByte": 6210481,
+      "endByteExclusive": 6210731,
+      "label": "Toggle CPU/GPU level lists",
+      "text": "bR=[{key:\"low\",name:Ke.luF,value:0},{key:\"medium\",name:Ke.wbE,value:1},{key:\"high\",name:Ke.jT4,value:2}],WR=[{key:\"low\",name:Ke.luF,value:0},{key:\"medium\",name:Ke.wbE,value:1},{key:\"linear\",name:Ke.jT4,value:2}],VR=[{key:\"low\",name:Ke.luF,value:0},{k"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/main.6098ef0f83a9cd1c24a9.js",
+      "startByte": 142291,
+      "endByteExclusive": 143041,
+      "label": "Exact product and control interface",
+      "text": ",3,4,5,6,7,9,11,12,16],u=\"Razer Blade 15 Advanced Model\",d={productId:630,vendorId:5426,deviceName:u,backlightStep:6.25,masterGuideURL:\"https://dl.razer.com/master-guides/RazerSynapse3/Blade-00000630-\",supportPage:\"https://support.razer.com/gaming-laptops/razer-blade-15-2019-advanced/\",WAVE_DIRECTION:\"LeftRight\",category:\"SYSTEM\",claimInterface:2},p={performance:{plugged:{mode:\"balanced\",balanced:{active:\"auto\",manualFanSpeed:4100},custom:{active:\"auto\",cpu:1,gpu:1}},battery:{mode:\"balanced\",balanced:{active:\"auto\",manualFanSpeed:4100}}},screenRefreshRate:60,refreshRateList:[{name:\"60 Hz\",value:60}],colorProfilesList:{profiles:[{name:\"Blade.icm\",fileName:\"Blade.icm\",profileName:\"blade\"},{name:\"Blade2.icm\",fileName:\"Blade2.icm\",profileName:\""
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/main.6098ef0f83a9cd1c24a9.js",
+      "startByte": 142644,
+      "endByteExclusive": 143094,
+      "label": "Balanced and Custom policy",
+      "text": "performance:{plugged:{mode:\"balanced\",balanced:{active:\"auto\",manualFanSpeed:4100},custom:{active:\"auto\",cpu:1,gpu:1}},battery:{mode:\"balanced\",balanced:{active:\"auto\",manualFanSpeed:4100}}},screenRefreshRate:60,refreshRateList:[{name:\"60 Hz\",value:60}],colorProfilesList:{profiles:[{name:\"Blade.icm\",fileName:\"Blade.icm\",profileName:\"blade\"},{name:\"Blade2.icm\",fileName:\"Blade2.icm\",profileName:\"blade2\"}],defaultProfile:\"\"}},f={guid:\"\",name:\"Defaul"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/main.6098ef0f83a9cd1c24a9.js",
+      "startByte": 150932,
+      "endByteExclusive": 151062,
+      "label": "Exact transport subclass",
+      "text": "useFeature(\"rzDeviceType\",\"rzDevice25LedMatrixBladeWattage\"),a.A.injectToDependencyList(\"runtimeCache\",c.A),a.A.injectData(\"initMe"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/6737.71d0d0b36aad77ffb446.js",
+      "startByte": 874549,
+      "endByteExclusive": 875149,
+      "label": "Mode and zone constants",
+      "text": "Balanced_Mode:0,Gaming_Mode:1,Productivity_Creator_Mode:2,BatterySaver_Ultrabook_LowPowerMode:3,Custom_Mode:4,Silent_Mode:5,Normal_Mode:6,Performance_Mode:7};Object.freeze(n),Object.freeze({Auto:0,Manual:1,ForceAuto:2});const o={NotApplicable:0,CPU_Fan:1,GPU_Fan:2,BAT_Fan1:3,BAT_Fan2:4,Fan1:5,Fan2:6,Fan3:7,Fan4:8,Fan5:9,Fan6:10,Fan7:11,Fan8:12};Object.freeze(o),Object.freeze(o);const r={Low:0,Medium:1,High:2,Extreme:3};Object.freeze(r),Object.freeze({Microsoft_Hybrid:0,Discrete_MUX:1});const a={UHD:0,FHD:1};Object.freeze(a);const s={DDS:1,Mini_LED_Resolution:2,Illegal_Battery_Support:4},l={Low"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/6737.71d0d0b36aad77ffb446.js",
+      "startByte": 2265811,
+      "endByteExclusive": 2266261,
+      "label": "Profile 1 defaults",
+      "text": "static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},25434:(e,t,i)=>{\"use strict\";i.d(t,{L:()=>n});const n=e=>{const t=e.outputType;return\"object\"==typeof e[t"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/ui/static/js/main.64a01e0e.js",
+      "startByte": 6374296,
+      "endByteExclusive": 6374476,
+      "label": "Exact model enables CPU Boost selector",
+      "text": ":[(0,$a.jsxs)(_s,{direction:\"left\",children:[(0,$a.jsx)(GR,{supportedPerformanceModes:E,isCPUBoost:!0}),(0,$a.jsx)($R,{})]}),(0,$a.jsxs)(_s,{direction:\"right\",children:[this.props."
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/ui/static/js/main.64a01e0e.js",
+      "startByte": 6346657,
+      "endByteExclusive": 6347207,
+      "label": "CPU Boost passed to shared selector",
+      "text": ",batteryPerformanceModes:a,canUpdateCpuGpu:_,canUpdateFanMode:i,cpuPowerLimit:n,isCPUBoost:o,supportsShortcut:s,lang:T,isLowPower:r,customMode:I,specificCustomModeValue:O,supportMaxFanSpeedModeEnabled:A,supportCpuOverclocking:S,supportGpuOverclocking:R,supportCpuVoltageOptimizer:l,supportCpuBoostEnabled:N,isCpuOptimizeEnabled:d,maxFanSpeedModeEnabled:u,cpuBoostEnabled:C,isCpuGpuToggle:c,isCPUPowerLimit:D,showPerformanceMsg:L,powerStatus:p,supportFixedFanSpeed:P=!0,hyperboost:M,unsupportedCpuBoostOption:m,isMaxCpuSupported:U,isMaxGpuSupported:h,"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/rzDevice25.7fc62fb8a269279f7b9e.js",
+      "startByte": 112354,
+      "endByteExclusive": 112884,
+      "label": "Transactions 1..31 and 90-byte encoding",
+      "text": "_getTransactionId(){return 31===this.transactionId&&(this.transactionId=0),this.transactionId++}_createDataSend(t,n,e){const o=new Uint8Array(90),i=this._getTransactionId();o[0]=0,o[1]=i,o[2]=0,o[3]=0,o[4]=0,o[5]=t[0],o[6]=t[1],o[7]=t[2],void 0!==e&&\"\"!==e&&-1!==e&&!isNaN(e)&&e>0&&(o[5]=e);for(let t=0;t<n.length&&t<o[5];t++)o[t+8]=n[t];const r=this._calculateChecksum(o);return o[88]=r,o}connectDevice(){var t;return ja(this,void 0,void 0,(function*(){const n=\"connectDevice\";if(void 0===this.device)return{result:!1,error:i.ERR"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/rzDevice25.7fc62fb8a269279f7b9e.js",
+      "startByte": 65521,
+      "endByteExclusive": 66621,
+      "label": "Typed thermal tuples",
+      "text": "const o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),S=\"Set Thermal Fan Table\",A=new Uint8Array([80,13,133]),I=(new Uint8Array([80,13,5]),\"Get Thermal Reading\"),y=new Uint8Array([7,13,134]),U=(new Uint8Array([7,13,6]),\"Get Thermal Active Core Radio Limit\"),N=new Uint8Array([3,13,135]),C=new Uint8Array([3,13,7]),w=\"Get Thermal Advance Fan Mode\",g=\"Set Thermal Advance Fan Mode\",E=new Uint8Array([3,13,135]),D=new Uint8Array([3,13,7]),_=\"Get Thermal Advance Fan Mode Wattage\",R=\"Set Thermal Advance Fan Mode Wattage\",p=new Uint8Array([3,13,136]),T=\"Get Thermal Fan Current Speed\",L=new Uint8Array([2,13,137]),P=new Uint8Array([2,13,9]),O=\"Get VGA Configure Setting\",V=\"Set VGA Configure Setting\",j=new Uint8Array([3,13,144]),$="
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/rzDevice25.7fc62fb8a269279f7b9e.js",
+      "startByte": 59382,
+      "endByteExclusive": 60282,
+      "label": "Advanced level encoding",
+      "text": "N=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.ey[1],commandId:i.ey[2],commandDesc:i._m});const r=new Uint8Array(i.ey[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.ey,i._m,r);return U(a),a})),C=(t,n,e,r)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===r||isNaN(n)||isNaN(e)||isNaN(r))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.iG[1],commandId:i.iG[2],commandDesc:i.OO});const a=new Uint8Array(i.iG[0]);a[0]=n,a[1]=e,a[2]=r;const s=yield t.sendCommand(i.iG,i.OO,a);return console.log(`setThermalAdvanceFanMode classId:${n}, thermalId:${e}, fanMode:${r}`),U(s),s})),w=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],wattage:t.data[2]})},g=(t,n,e)=>s(void 0,void 0,void 0,(function*("
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/rzDevice25.7fc62fb8a269279f7b9e.js",
+      "startByte": 52298,
+      "endByteExclusive": 52468,
+      "label": "Typed adapter query",
+      "text": "),g=new Uint8Array([5,7,11]),E=\"Get Time To Dim\",D=\"Set Time To Dim\",_=new Uint8Array([2,7,140]),R=\"Get Adapter Wattage Level\",p=new Uint8Array([3,7,142]),T=\"Get Power Se"
+    },
+    {
+      "product": 630,
+      "url": "https://apps.razer.com/synapse/products/630/mw/rzDevice25.7fc62fb8a269279f7b9e.js",
+      "startByte": 46301,
+      "endByteExclusive": 46731,
+      "label": "Independent adapter result fields",
+      "text": ".A$[0]),e=yield t.sendCommand(i.A$,i.wH,n);return(t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={adapterWattageLevel:t.data[0],adapterWattageLevelEnum:a.np(r.d_,t.data[0]),recommendedAdapterWattageLevel:t.data[1],recommendedAdapterWattageLevelEnum:a.np(r.d_,t.data[1])})})(e),e})),_=t=>s(void 0,void 0,void 0,(function*(){const n=new Uint8Array(i.lj[0]),e=yield t.sendCommand(i.lj,i.Xu,n);return(t=>{if(t.st"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/main.aef91a9c8a23c54b3711.js",
+      "startByte": 142420,
+      "endByteExclusive": 145170,
+      "label": "Exact product, interface and supported presets",
+      "text": "nput,KeyInput:e.KeyInput,KeyGroup:e.KeyGroup}),E={productId:588,vendorId:5426,deviceName:\"Razer Blade Pro 17\",backlightStep:6.25,masterGuideURL:\"https://dl.razer.com/master-guides/RazerSynapse3/BladePro17-00000588-\",supportPage:\"https://support.razer.com/gaming-laptops/razer-blade-pro-17-early-2019/\",WAVE_DIRECTION:\"LeftRight\",category:\"SYSTEM\",claimInterface:2},u=[{id:1,mode:i.mNQ.Balanced_Mode,title:n.Y_1,content:n.OC,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.021,0,0,1,22,4m0-2A20,20,0,1,0,42,22,20,20,0,0,0,22,2Zm1,5H21v4h2ZM15.366,8.51l-1.732,1,2,3.464,1.732-1ZM9.51,13.634l-1,1.732,3.464,2,1-1.732ZM7,21v2h4V21Zm1.51,7.634,1,1.732,3.464-2-1-1.732Zm25.98,1.732,1-1.732-3.464-2-1,1.732ZM37,23V21H33v2Zm-1.51-7.634-1-1.732-3.464,2,1,1.732ZM30.366,9.51l-1.732-1-2,3.464,1.732,1ZM22,15s-2,10.9-2,12a2,2,0,0,0,4,0C24,25.9,22,15,22,15Z\",isShowOnBattery:!0,minFanSpeedValue:3400,maxFanSpeedValue:5200,defaultFanSpeedValue:4100},{id:2,mode:i.mNQ.Custom_Mode,title:n.DBO,content:n.lJc,icon:\"M22,4A18,18,0,1,0,40,22,18.021,18.021,0,0,0,22,4m0-2A20,20,0,1,1,2,22,20,20,0,0,1,22,2Zm9,19H28.959a6.976,6.976,0,0,0-1.34-3.2l1.452-1.453a1,1,0,1,0-1.414-1.414L26.2,16.387A6.969,6.969,0,0,0,23,15.076V13a1,1,0,0,0-2,0v2.083a6.964,6.964,0,0,0-3.18,1.322l-1.477-1.476a1,1,0,1,0-1.414,1.414l1.476,1.477A6.964,6.964,0,0,0,15.083,21H13a1,1,0,0,0,0,2h2.076a6.964,6.964,0,0,0,1.312,3.2l-1.459,1.459a1,1,0,1,0,1.414,1.414L17.8,27.618A6.971,6.971,0,0,0,21,28.959V31a1,1,0,0,0,2,0V28.966a6.981,6.981,0,0,0,3.222-1.33l1.435,1.435a1,1,0,0,0,1.414-1.414l-1.435-1.435A6.981,6.981,0,0,0,28.966,23H31a1,1,0,0,0,0-2Zm-8.979,6.042a5.021,5.021,0,1,1,5.021-5.021A5.027,5.027,0,0,1,22.021,27.042Z\",minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600}],d={category:E.category.toLowerCase(),vendorId:E.vendorId,family:i.oRF.CHROMA_FAMILY_7},p=[{name:n.Rb7,id:i.AoV.Ambient_Effect},{name:n.ncy,id:i.AoV.Audio_Meter_Effect},{name:n.xkP,id:i.AoV.Breathing_Effect},{name:n.ZKq,id:i.AoV.Fire_Effect},{name:n.ckz,id:i.AoV.Reactive_Effect},{name:n.NnH,id:i.AoV.Ripple_Effect},{name:n.k9y,id:i.AoV.Spectrum_Effect},{name:n.fYY,id:i.AoV.Starlight_Effect},{name:n.DU0,id:i.AoV.Static_Effect},{name:n.wrM,id:i.AoV.Wave_Effect},{name:n.eaG,id:i.AoV.Wheel_Effect},{name:n.jag,id:i.AoV.Tidal_Effect}],f=[{outputType:`${s.CLP}`,isHyperShift:!0,inputType:\"KeyInput\",inputID:\"KEY_F1\",multimediaGroup:{multimediaAssignment:\"MuteVolume\"}},{outputType:`${s.CLP}`,isHyperShift:!0,inputType:\"KeyInput\",inputID:\"KEY_F2\",multimediaGroup:{multimediaAssignment:\"VolumeDown\",useTurbo:!0}},{outputType:`${s.CLP}`,isHyperShift:!0,inputType:\"KeyInput\",inputID:\"KEY_F3\",multimediaGroup:{multimediaAssignment:\"VolumeUp\",useTurbo:!0}},{outputType:`${s.G7s}`,isHyperShift:!0,inputType:\"KeyInput\",inputI"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/main.aef91a9c8a23c54b3711.js",
+      "startByte": 147136,
+      "endByteExclusive": 147816,
+      "label": "AC custom, battery Balanced default profile",
+      "text": "z\"},{content:\"60 Hz\"}],g=[{name:\"58 Hz\",value:58},{name:\"144 Hz\",value:144}],m={performance:{plugged:{mode:\"balanced\",balanced:{active:\"auto\",manualFanSpeed:4100},custom:{active:\"auto\",cpu:1,gpu:1}},battery:{mode:\"balanced\",balanced:{active:\"auto\",manualFanSpeed:4100}}},screenRefreshRate:60,refreshRateList:[{name:\"60 Hz\",value:60}],colorProfilesList:{profiles:[{name:\"Blade.icm\",fileName:\"Blade.icm\",profileName:\"blade\"},{name:\"Blade2.icm\",fileName:\"Blade2.icm\",profileName:\"blade2\"}],defaultProfile:\"\"}},N={guid:\"\",name:\"\",brightness:{plugged:{isEnabled:!0,value:100},battery:{isEnabled:!0,value:50},twoMode:{isEnabled:!0,value:100},isTwoMode:!1},logoLighting:{plugged:{effectI"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/main.aef91a9c8a23c54b3711.js",
+      "startByte": 150675,
+      "endByteExclusive": 150815,
+      "label": "Exact selected backend",
+      "text": "useFeature(\"rzDeviceType\",\"rzDevice25LedMatrixBladeWattage\"),a.A.injectToDependencyList(\"runtimeCache\",c.A),a.A.injectData(\"initMemoryStorag"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/6737.486962f684c3054bcd0c.js",
+      "startByte": 874270,
+      "endByteExclusive": 875150,
+      "label": "Thermal mode raw enum and fan IDs",
+      "text": "uiet:0,Cool:1,Balanced:2,GamingOptimized:3,VirtualRealityOptimized:4});const n={Balanced_Mode:0,Gaming_Mode:1,Productivity_Creator_Mode:2,BatterySaver_Ultrabook_LowPowerMode:3,Custom_Mode:4,Silent_Mode:5,Normal_Mode:6,Performance_Mode:7};Object.freeze(n),Object.freeze({Auto:0,Manual:1,ForceAuto:2});const o={NotApplicable:0,CPU_Fan:1,GPU_Fan:2,BAT_Fan1:3,BAT_Fan2:4,Fan1:5,Fan2:6,Fan3:7,Fan4:8,Fan5:9,Fan6:10,Fan7:11,Fan8:12};Object.freeze(o),Object.freeze(o);const r={Low:0,Medium:1,High:2,Extreme:3};Object.freeze(r),Object.freeze({Microsoft_Hybrid:0,Discrete_MUX:1});const a={UHD:0,FHD:1};Object.freeze(a);const s={DDS:1,Mini_LED_Resolution:2,Illegal_Battery_Support:4},l={Low:0,Medium:1,High:2,Quiet:3,Balanced:4,Performance:5,TurnOffFan:6};Object.freeze(l);const c={Firmware:0,Synapse:1};Object.freeze(c)},70353:(e,t,i)=>{\"use strict\";i.d(t,{A0:()=>o,EI:()=>r,FN:()=>c,NV:()"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/6737.486962f684c3054bcd0c.js",
+      "startByte": 2265526,
+      "endByteExclusive": 2266306,
+      "label": "All thermal profiles default to selector1",
+      "text": ".d(t,{A:()=>r});var n=i(3327);const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},25434:(e,t,i)=>{\"use strict\";i.d(t,{L:()=>n});const n=e=>{const t=e.outputType;return\"object\"==typeof e[t]&&0===Object.keys(e[t]).length}},34938:(e,t,i)=>{\"use strict\";i.d(t,{KB:()=>X,jM:()=>q,zV:()=>Z,N:()=>ee,rh:()=>pe,c6:()=>ze,HA:()=>ae,FI:()=>Ve,Hj:()=>Se,iF:()=>Ae,fU:()=>_e,h3:()=>Fe,W1:()=>De,xs:()=>we,Xj:()=>Be,Kj:()=>Le,Zo:()=>Ne,PM:()=>ye,e:()"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/6737.486962f684c3054bcd0c.js",
+      "startByte": 1172922,
+      "endByteExclusive": 1173552,
+      "label": "Cleanup typed profile1 automatic handback",
+      "text": "0:l.performanceMode))console.log(\"cleanUpDevice - setThermalFanMode\",e,i),yield r.setThermalFanMode(1,e,i,0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)}));else if(B.IwP.SERIES_12===(null==Jn?void 0:Jn.bladeSeries)&&!t&&!to){to=!0;const t=yield(0,bt.getLocalStorageDeviceCache)(),n=t.profiles.find((e=>e.guid===t.activeProfile)),o=\"plugged\",a=n.performance[o].mode;\"smartFanCurve\"===n.performance[o][a].active&&(console.log(\"cleanUpDevice - restore fan curve mode\"),yield r.setThermalFanMode(1,e,i,0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/6737.486962f684c3054bcd0c.js",
+      "startByte": 2270170,
+      "endByteExclusive": 2270770,
+      "label": "Keyboard read-before-write Driver3 Normal0",
+      "text": "urn(!t||!i)&&i}));function re(e){return x(this,void 0,void 0,(function*(){const t=r.jf.rzDevice;try{let i=yield t.getDeviceMode();if(console.log(\"get driver mode\",i.jsonData),i.jsonData.mode===te[e])return void console.debug(\"setDeviceMode skip setting same device mode,\",e);i=\"driver\"===e?yield t.setDeviceMode(3,0):yield t.setDeviceMode(0,0),console.log(`setDeviceMode - set device to ${e} mode with result`,i)}catch(e){console.debug(\"Error setDeviceMode: \",e)}}))}const ae=e=>x(void 0,void 0,void 0,(function*(){var t,i;const l=yield(e=>x(void 0,void 0,void 0,(function*(){const t=o.A.getFeatures("
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/6737.486962f684c3054bcd0c.js",
+      "startByte": 2286857,
+      "endByteExclusive": 2288507,
+      "label": "Actual and recommended adapter comparison plus rejected fallback",
+      "text": "ch(e){console.error(\"Tartarus Led indicator\",e)}}));let je=0;const Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function ze(){var e,t,i,n;return x(this,void 0,void 0,(function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFirmwareInfo)&&void 0!==e?e:null,A=null!==(t=Q.hasDockExtended)&&void 0!==t?t:null,d={};let p,g;const f={};if(a.getExtendedFirmwareVersion){try{const{jsonData:e}=yield a.getExtendedFirmwareVersion();if(e.version&&(p=e.version),void 0!==e.major&&(p=`${e.major}.${e.minor}.${e.internal}.${e.reserved}`),!p)return;d.currentFWVe"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/rzDevice25.c9cde47d1f5b9618158b.js",
+      "startByte": 111431,
+      "endByteExclusive": 113231,
+      "label": "Report geometry, transaction1..31 and XOR checksum",
+      "text": "hProcessing=!0,this.useSendCommandEx=!1,this.instanceId=t.deviceContainerId,this.lockName=`${this.name}-${this.device.productId}-${this.containerId}`,this.reportLength=91,this.ignoreSetDeviceModeTimeoutError=!1,this.reportId=null!==(l=null==u?void 0:u.reportId)&&void 0!==l?l:0,this.restoreFileSuffix=\"\",this.isElectron){const t=window.apiElectron.engineVersion;\"darwin\"===a.R0()?this.supportHIDMutex=!0:a.Zy(t,\"4.0.174\")<0?this.supportHIDMutex=!1:this.supportHIDMutex=!0}else this.supportHIDMutex=!1;console.log(`${this.name} this.supportHidMutex:`,this.supportHIDMutex),console.log(`${this._getLoggerPrepend()} ${a.bV(this.device.productId)}, productName: ${this.device.productName}, claimInterface:${n}, reportId:${this.reportId}, regionId:${this.regionId}, lockName:${this.lockName}, constructor`)}setUseSendCommandEx(t){this.useSendCommandEx=!1}_calculateChecksum(t){let n=0;for(let e=2;e<88;e++)n=t[e]^n;return n}_getTransactionId(){return 31===this.transactionId&&(this.transactionId=0),this.transactionId++}_createDataSend(t,n,e){const o=new Uint8Array(90),i=this._getTransactionId();o[0]=0,o[1]=i,o[2]=0,o[3]=0,o[4]=0,o[5]=t[0],o[6]=t[1],o[7]=t[2],void 0!==e&&\"\"!==e&&-1!==e&&!isNaN(e)&&e>0&&(o[5]=e);for(let t=0;t<n.length&&t<o[5];t++)o[t+8]=n[t];const r=this._calculateChecksum(o);return o[88]=r,o}connectDevice(){var t;return ja(this,void 0,void 0,(function*(){const n=\"connectDevice\";if(void 0===this.device)return{result:!1,error:i.ERROR_VALUE_UNDEFINED};const e={result:!1,error:\"\"};if(this.isElectron){const o=La.K_,i=new Uint8Array,r=this._createDataSend(o,i);for(let o=0;o<3;o++)try{const n=[a.Yh()?this.claimInterface:this.reportId,...r],o=yield Ta.A.connectHidDevice({productId:this.device.productId||this.productId,vendorId:this.device.vendorId,deviceContainerId:this.containerId"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/rzDevice25.c9cde47d1f5b9618158b.js",
+      "startByte": 65518,
+      "endByteExclusive": 67048,
+      "label": "Thermal command tuples",
+      "text": "onst o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),S=\"Set Thermal Fan Table\",A=new Uint8Array([80,13,133]),I=(new Uint8Array([80,13,5]),\"Get Thermal Reading\"),y=new Uint8Array([7,13,134]),U=(new Uint8Array([7,13,6]),\"Get Thermal Active Core Radio Limit\"),N=new Uint8Array([3,13,135]),C=new Uint8Array([3,13,7]),w=\"Get Thermal Advance Fan Mode\",g=\"Set Thermal Advance Fan Mode\",E=new Uint8Array([3,13,135]),D=new Uint8Array([3,13,7]),_=\"Get Thermal Advance Fan Mode Wattage\",R=\"Set Thermal Advance Fan Mode Wattage\",p=new Uint8Array([3,13,136]),T=\"Get Thermal Fan Current Speed\",L=new Uint8Array([2,13,137]),P=new Uint8Array([2,13,9]),O=\"Get VGA Configure Setting\",V=\"Set VGA Configure Setting\",j=new Uint8Array([3,13,144]),$=new Uint8Array([3,13,16]),k=\"Get Thermal Fan Cooling Mode\",M=\"Set Thermal Fan Cooling Mode\",b=new Uint8Array([2,13,138]),z=\"Get VGA Hardware Information\",x=new Uint8Array([2,13,139]),F=\"Get Synapse UI Setting\",G=\"Get Thermal Fan Duty Cycle\",B=\"Set Thermal Fan Duty Cycle\",H=new Uint8Array([1,13,142]),K=new Uint8Array([1,13,14]),J=\"Get Mini LED Panel Resolution\",W=\"Set Mini LED Panel Resolution\",Y=new Uint8Array([1,13,143]),Q=\"Ge"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/rzDevice25.c9cde47d1f5b9618158b.js",
+      "startByte": 55920,
+      "endByteExclusive": 57370,
+      "label": "Thermal mode response and payload schema",
+      "text": ":${e}, thermalFanSpeed:${r}`),u(s),s})),v=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],fanMode:t.data[2],fanModeEnum:a.np(r.IH,t.data[2]),fanModeValue:t.data[3]})},h=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.tI[1],commandId:i.tI[2],commandDesc:i.Bu});const r=new Uint8Array(i.tI[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.tI,i.Bu,r);return v(a),a})),f=(t,n,e,r,c=0)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===r||void 0===c||isNaN(n)||isNaN(e)||isNaN(r)||isNaN(c))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.ZK[1],commandId:i.ZK[2],commandDesc:i.F8});const s=new Uint8Array(i.ZK[0]);s[0]=n,s[1]=e,s[2]=r,s[3]=c;const u=yield t.sendCommand(i.ZK,i.F8,s);return yield a.yy(200),console.log(`setThermalFanMode classId:${n}, thermalId:${e}, fanMode:${r}, fanModeValue:${c}`),v(u),u})),S=(t,n)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||isNaN(n))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Uo[1],commandId:i.Uo[2],commandDesc:i.yz});const e=new Uint8Array(i.Uo[0]);e[0]=n;const r=yield t.sendCommand(i.Uo,i.yz,e);return(t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],GPU:a.Jz(t.data[1],t.data[2]),VRAM:a.Jz(t.data[3],t.data[4]),A:t.data[5],B:t.data[6],C"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/rzDevice25.c9cde47d1f5b9618158b.js",
+      "startByte": 52294,
+      "endByteExclusive": 52624,
+      "label": "Adapter07/8C tuple",
+      "text": "),g=new Uint8Array([5,7,11]),E=\"Get Time To Dim\",D=\"Set Time To Dim\",_=new Uint8Array([2,7,140]),R=\"Get Adapter Wattage Level\",p=new Uint8Array([3,7,142]),T=\"Get Power Security Status\",L=new Uint8Array([1,7,143]),P=new Uint8Array([1,7,15]),O=\"Get CPU Boost Control\",V=\"Set CPU Boost Control\",j=new Uint8Array([1,7,143]),$=new Uint"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/mw/rzDevice25.c9cde47d1f5b9618158b.js",
+      "startByte": 46237,
+      "endByteExclusive": 46887,
+      "label": "Adapter actual/recommended response schema",
+      "text": "s(void 0,void 0,void 0,(function*(){const n=new Uint8Array(i.A$[0]),e=yield t.sendCommand(i.A$,i.wH,n);return(t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={adapterWattageLevel:t.data[0],adapterWattageLevelEnum:a.np(r.d_,t.data[0]),recommendedAdapterWattageLevel:t.data[1],recommendedAdapterWattageLevelEnum:a.np(r.d_,t.data[1])})})(e),e})),_=t=>s(void 0,void 0,void 0,(function*(){const n=new Uint8Array(i.lj[0]),e=yield t.sendCommand(i.lj,i.Xu,n);return(t=>{if(t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0){const n=[];for(let e=7;e>=0;e--)n.push(t.data[2]>>e&1);t.jsonData={shortCondition:t.data[0],abnormalVoltage:t.d"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/ui/static/js/main.5ff20197.js",
+      "startByte": 6171342,
+      "endByteExclusive": 6171662,
+      "label": "Exact 2019 CPU and GPU0..2 caller",
+      "text": "hildren:(0,n_.jsxs)(Cs,{children:[(0,n_.jsx)(Ds,{direction:\"left\",children:(0,n_.jsx)(jR,{isCpuGpuToggle:!0,supportedPerformanceModes:E})}),(0,n_.jsxs)(Ds,{direction:\"right\",children:[(0,n_.jsx)(tl,{}),(0,n_.jsx)(sl,{isShowScreenRefreshrate:!1})]})]})})}}const Tl=(0,B.connect)(e=>({fanValues:e.performanceReducer.fanVal"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/ui/static/js/main.5ff20197.js",
+      "startByte": 6155552,
+      "endByteExclusive": 6156542,
+      "label": "Ordinary CPU and GPU sliders default0..2",
+      "text": "en:(0,n_.jsxs)(\"div\",{className:\"cpu-gpu-slider\",children:[(0,n_.jsxs)(\"div\",{className:\"cpu-slider\",children:[(0,n_.jsx)(\"div\",{style:{margin:\"0px 0px 10px 0px\"},children:(0,n_.jsx)(m_.A,{text:we.j8N})}),(0,n_.jsx)(Ms.A,{min:O?O.cpu.min:0,max:O?O.cpu.max:2,step:1,noTip:!0,midTag:we.E_p,boostTag:O?3===O.cpu.max&&we.YyC:null,active:_,value:k,changeValue:Se})]}),(0,n_.jsx)(\"br\",{}),(0,n_.jsxs)(\"div\",{className:\"gpu-slider\",children:[(0,n_.jsx)(\"div\",{style:{margin:\"0px 0px 10px 0px\"},children:(0,n_.jsx)(m_.A,{text:we.VnK})}),(0,n_.jsx)(Ms.A,{min:O?O.gpu.min:0,max:O?O.gpu.max:2,step:1,noTip:!0,midTag:we.E_p,active:_,value:X,changeValue:Re})]})]})}):b!==ye.ZCP&&b!==ye.TxO?!y&&P&&(()=>{const e=V===ye.XuP.manual,{minVal:E,maxVal:a,defaultValue:t}=Oe(b);return(0,n_.jsxs)(\"div\",{className:\"fan-mode \"+(i?\"\":\"disabled\"),children:[(0,n_.jsx)(\"div\",{className:\"fan-title\",children:(0,n_.jsx)(m_.A,{text:we.qTB})}),(0,n_.jsx)(tO.A,{name:we.GMJ,id:ye.XuP.auto,extraClass:\"display_content\",act"
+    },
+    {
+      "product": 588,
+      "url": "https://apps.razer.com/synapse/products/588/ui/static/js/main.5ff20197.js",
+      "startByte": 6143589,
+      "endByteExclusive": 6143839,
+      "label": "Toggle CPU/GPU level lists",
+      "text": "WR=[{key:\"low\",name:we.luF,value:0},{key:\"medium\",name:we.wbE,value:1},{key:\"high\",name:we.jT4,value:2}],VR=[{key:\"low\",name:we.luF,value:0},{key:\"medium\",name:we.wbE,value:1},{key:\"linear\",name:we.jT4,value:2}],KR=[{key:\"low\",name:we.luF,value:0},{k"
+    }
+  ],
+  "identitySources": [
+    {
+      "url": "https://raw.githubusercontent.com/linuxhw/DMI/57b21bc6fdd863380e99c228c22aafcd1509528c/Notebook/Razer/Blade/Blade%20Pro%2017/66A9D97E700A",
+      "gitBlobSha": "854ba390f9fab6bd87e7a0e6dc4925f4daf80fc3",
+      "manufacturer": "Razer",
+      "productName": "Blade Pro 17 (2019)",
+      "sku": "RZ09-02878W92",
+      "bytes": 21249,
+      "sha256": "CB4C17C41E4F38E0ACDEF7F67040866EC36B305F9FA5B9747A7F810B7D2B3723"
+    },
+    {
+      "url": "https://dl.razerzone.com/master-guides/RazerSynapse3/BladePro17-00000564-ja.pdf",
+      "modelNumber": "RZ09-02876",
+      "page": 3,
+      "bytes": 1472269,
+      "sha256": "7758F2F7DCF5763CA5814E7FCCBD7FF17521F8A120054830D7F38B849DBE8E91"
+    },
+    {
+      "url": "https://github.com/user-attachments/files/34744435/OpenBlade-identity-report.zip",
+      "bytes": 1078,
+      "sha256": "2A1B4FA2E6D82537A5DAF2BE42CE041B0507CE884CA39BA62A6F3F5F4B91B41D",
+      "modelNumber": "RZ09-0409",
+      "productName": "Blade 15 Advanced Model (Mid 2021) - RZ09-0409",
+      "evidence": "Cached service BIOS registry identity, corroborated by both registry identity sources in the Observer inventory."
+    },
+    {
+      "url": "https://github.com/user-attachments/files/34744433/blade-evidence-20261112-112131.zip",
+      "bytes": 12621,
+      "sha256": "66F1A8F366D5E1A7C950BEF235017D2C7F8CE2BFCE2FC8AB63B124A574D3B70C",
+      "modelNumber": "RZ09-0409",
+      "productName": "Blade 15 Advanced Model (Mid 2021) - RZ09-0409",
+      "evidence": "Registry identity and installed RzDev_0276 inventory only; zero control observations, native observer unavailable."
+    },
+    {
+      "url": "https://dl.razerzone.com/master-guides/RazerSynapse3/Blade-00000630-en.pdf",
+      "bytes": 3057543,
+      "sha256": "7E7F6D03824A2EBD428C36E4AAF9E8FA002D0BCC0D34264C6CE30E487AAAA09C",
+      "modelNumber": "RZ09-0409",
+      "page": 3
+    },
+    {
+      "url": "https://forum.manjaro.org/raw/83863/1",
+      "modelNumber": "RZ09-0314",
+      "manufacturer": "Razer",
+      "productName": "Blade Pro 17 (Fall 2019)",
+      "usbProductId": "024C",
+      "identityLine": 22,
+      "usbIdentityLine": 149,
+      "observation": "The same inxi report pairs the exact DMI product and VID/PID.",
+      "bytes": 98073,
+      "sha256": "C1F35AA3E7E9E249F1AF5D512E0039C4C13E0FD897305B90CB7BD46F398B82B3"
+    },
+    {
+      "url": "https://dl.razerzone.com/master-guides/RazerSynapse3/BladePro17-00000588-ja.pdf",
+      "modelNumber": "RZ09-0314",
+      "page": 3,
+      "bytes": 1431956,
+      "sha256": "F0C694397B4CAD88FF3E05E2A20AB65A63DDFE2C7716AAF5CEF91EC9EC80F2B0"
+    }
+  ],
+  "powerAdmission": "Fresh valid 07/8C actual/recommended wattage, Windows power agreement and exact-device/controller/session/ownership checks before each write. Reject unknown/failed/limited/contradictory power; no vendor permissive fallback.",
+  "recovery": "Independent readback; ambiguous submission pauses further writes and reconciles read-only without replay. Automatic fan handback preserves current admitted preset and exact levels without target writes.",
+  "pendingCandidates": [],
+  "boundaries": [
+    "No hardware operations performed. Source evidence establishes typed implementation only; physical validation pending.",
+    "Manual fan targets, curves, lighting, charge control, drivers and THX are outside this review.",
+    "Do not copy Synapse automatic resubmission, fixed-default writes, GPU native overclock calls, or failed-adapter fallback.",
+    "RZ09-0314 exact SMBIOS product/PID is established by a primary owner system report and its own vendor guide; no hardware control observation is implied."
+  ]
+}

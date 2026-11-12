@@ -4,7 +4,7 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed partial class SourceReviewedBladeModelTests
 {
-    public static TheoryData<int> EarlyProducts => new() { 0x0270, 0x028C, 0x028A, 0x028B };
+    public static TheoryData<int> EarlyProducts => new() { 0x0270, 0x0276, 0x028C, 0x028A, 0x028B };
     public static TheoryData<int> EarlyBatteryProducts => new() { 0x028C, 0x028A, 0x028B };
 
     [Theory]
@@ -13,7 +13,7 @@ public sealed partial class SourceReviewedBladeModelTests
     {
         ExperimentalBladeModel model = Model(product);
         DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(model, true);
-        PerformancePreset[] expected = product == 0x0270
+        PerformancePreset[] expected = product is 0x0270 or 0x0276
             ? [PerformancePreset.Balanced, PerformancePreset.Custom]
             : [PerformancePreset.Balanced, PerformancePreset.Custom, PerformancePreset.Silent, PerformancePreset.BatteryBalanced];
         Assert.Equal(expected.Order(), capabilities.PerformancePresets.Order());
@@ -30,7 +30,7 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Null(capabilities.ThxAudio);
         Assert.False(capabilities.SupportsKeyboardBrightness);
         Assert.False(capabilities.SupportsUniformLightingFrames);
-        Assert.Equal(product == 0x0270 ? Array.Empty<int>() : [50, 55, 60, 65, 70, 75, 80, 100], capabilities.ChargeLimits.Order());
+        Assert.Equal(product is 0x0270 or 0x0276 ? Array.Empty<int>() : [50, 55, 60, 65, 70, 75, 80, 100], capabilities.ChargeLimits.Order());
         CustomPerformanceCapabilities custom = Assert.IsType<CustomPerformanceCapabilities>(capabilities.CustomPerformance);
         Assert.Equal(12, custom.AllowedCombinations.Count);
         Assert.False(custom.SupportsMaximumFans);
@@ -39,7 +39,7 @@ public sealed partial class SourceReviewedBladeModelTests
             Assert.InRange((int)pair.Cpu, 0, 3);
             Assert.InRange((int)pair.Gpu, 0, 2);
         });
-        Assert.Equal(product == 0x0270 ? "NotEstablished" : "SynapseSourceBackedWithoutPhysicalValidation",
+        Assert.Equal(product is 0x0270 or 0x0276 ? "NotEstablished" : "SynapseSourceBackedWithoutPhysicalValidation",
             Assert.Single(ExperimentalBladeModels.FeatureEvidenceFor(model), feature => feature.Feature == "ChargeLimits50To80Step5AndOff").Basis);
     }
 
@@ -74,7 +74,7 @@ public sealed partial class SourceReviewedBladeModelTests
         {
             await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetPerformanceAsync(preset, default));
         }
-        if (product == 0x0270)
+        if (product is 0x0270 or 0x0276)
         {
             await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetPerformanceAsync(PerformancePreset.Silent, default));
             await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetPerformanceAsync(PerformancePreset.BatteryBalanced, default));
@@ -93,7 +93,7 @@ public sealed partial class SourceReviewedBladeModelTests
     [MemberData(nameof(EarlyProducts))]
     public async Task EarlyUnsupportedRawMode_DoesNotBecomeTurboOrSilent(int product)
     {
-        foreach (byte mode in product == 0x0270 ? new byte[] { 1, 2, 3, 5, 6, 7 } : new byte[] { 1, 2, 3, 7 })
+        foreach (byte mode in product is 0x0270 or 0x0276 ? new byte[] { 1, 2, 3, 5, 6, 7 } : new byte[] { 1, 2, 3, 7 })
         {
             var session = new Session { Mode = mode };
             await using var port = Create(product, session);
@@ -138,11 +138,13 @@ public sealed partial class SourceReviewedBladeModelTests
         AssertFreshAdapterBeforeSetters(session);
     }
 
-    [Fact]
-    public async Task EarlyBlade14BatteryHandback_PreservesRawZeroAndUnknownBatteryState()
+    [Theory]
+    [InlineData(0x0270)]
+    [InlineData(0x0276)]
+    public async Task EarlyBatteryHandback_PreservesRawZeroAndUnknownBatteryState(int product)
     {
         var session = new Session { Mode = 0, Manual = 1, Adapter = [0, 0x11] };
-        await using var port = Create(0x0270, session, power: () => PowerSource.Battery);
+        await using var port = Create(product, session, power: () => PowerSource.Battery);
         await port.SetFanModeAsync(FanMode.Automatic, default);
         ConfirmedDeviceState state = await port.ReadRecoveryStateAsync(default);
         Assert.Equal(PerformancePreset.Balanced, state.Performance);
@@ -171,6 +173,8 @@ public sealed partial class SourceReviewedBladeModelTests
 
     [Theory]
     [MemberData(nameof(EarlyProducts))]
+    [InlineData(0x0234)]
+    [InlineData(0x024C)]
     public async Task EarlyUnconfirmedPreset_PausesWithoutReplay(int product)
     {
         var session = new Session { Mode = 4, IgnoreWrites = true };

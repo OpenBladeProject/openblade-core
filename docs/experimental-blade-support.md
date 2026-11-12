@@ -176,6 +176,17 @@ Battery Saver and Battery Balanced on battery power.
   after valid state readback. Enabling it requires an active charge limit; other
   Power Mode Control options must be off.
 
+## Blade 15 Advanced Mid 2021 and Blade Pro 17 2019
+
+| Laptop | Model | Available controls |
+| --- | --- | --- |
+| Blade 15 Advanced (Mid 2021) | `RZ09-0409` | Balanced/Custom on full-power AC; CPU Low/Medium/High/Boost, GPU Low/Medium/High; Automatic fans |
+| Blade Pro 17 (2019) | `RZ09-0287` | Balanced/Custom on full-power AC; CPU/GPU Low/Medium/High; Automatic fans |
+| Blade Pro 17 (Late 2019) | `RZ09-0314` | Balanced/Custom on full-power AC; CPU/GPU Low/Medium/High; Automatic fans |
+
+Physical validation is pending. See the [exact-model review](source-reviewed-blades-issue-949.md)
+for evidence and limits for all three exact profiles.
+
 ## Send a useful test report
 
 The earlier five models also offer [SnapTap](snap-tap.md#supported-driver-profiles) through

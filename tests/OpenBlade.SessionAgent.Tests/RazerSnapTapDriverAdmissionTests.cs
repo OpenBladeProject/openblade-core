@@ -380,6 +380,9 @@ public sealed class RazerSnapTapDriverAdmissionTests
             ("RZ09-0300", "0246"),
             ("RZ09-0330", "0253"),
             ("RZ09-0351", "0268"),
+            ("RZ09-0409", "0276"),
+            ("RZ09-0287", "0234"),
+            ("RZ09-0314", "024C"),
         ];
         var models = OpenBlade.Contracts.RazerBladeModelCatalog.All;
         foreach (var decision in notAdmitted)
