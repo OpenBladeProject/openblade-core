@@ -80,7 +80,7 @@ public sealed class FanStopTemperatureSourceTests
     {
         using var source = new SafeWindowsFanTemperatureSource(new Inactive(),
             _ => throw new InvalidOperationException("CPU sampling was not requested."),
-            new Gpu(), TimeProvider.System);
+            new Gpu(), TimeProvider.System, gpuPowerState: () => FanStopGpuPowerState.PoweredOn);
         Assert.Null((await source.ReadAsync(includeCpu: false, includeGpu: true, default)).CpuCelsius);
     }
 
@@ -134,14 +134,16 @@ public sealed class FanStopTemperatureSourceTests
     }
 
     [Fact]
-    public async Task OrdinaryCurveSamplingRetainsWorkloadBasedNoWakeBehavior()
+    public async Task BackgroundTelemetryDoesNotProbeAnIdleD0Gpu()
     {
         var gpu = new Gpu();
-        using var source = Create(gpu, () => throw new InvalidOperationException("Ordinary samples must not use the new source."));
+        using var source = Create(gpu, () => FanStopGpuPowerState.PoweredOn);
         FanTemperatureReadings reading = await source.ReadAsync(default);
         Assert.True(reading.GpuInactive);
         Assert.False(reading.GpuPoweredDown);
+        Assert.Null(reading.GpuCelsius);
         Assert.Equal(0, gpu.Reads);
+        Assert.Equal(1, gpu.Releases);
     }
 
     [Theory]
