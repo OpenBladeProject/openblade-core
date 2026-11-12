@@ -207,7 +207,8 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
     internal void RequirePublishedMapping(NativeEpochRecord epoch, byte[] mapping)
     {
         RequireBinding(epoch, mapping);
-        if (!ManagedMailboxRecovery.Read(files!, Path.Combine(files!.Root, epoch.Epoch, "managed-handoff.bin")).AsSpan().SequenceEqual(mapping))
+        if (!ManagedMailboxRecovery.Read(files!, Path.Combine(files!.Root, epoch.Epoch, "origin.bin")).AsSpan().SequenceEqual(epoch.Encode())
+            || !ManagedMailboxRecovery.Read(files!, Path.Combine(files!.Root, epoch.Epoch, "managed-handoff.bin")).AsSpan().SequenceEqual(mapping))
         { throw new IOException("Historical native mapping is missing or differs."); }
     }
     internal void PublishMapping(NativeEpochRecord epoch, byte[] mapping)
