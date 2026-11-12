@@ -44,11 +44,10 @@ public static class FanCurveCalculator
         {
             gpu = gpuTemperature;
         }
-        else if (temperatures.GpuInactive)
+        else if (temperatures.GpuPoweredDown)
         {
-            // A powered-down discrete GPU contributes no heat of its own. Use
-            // the CPU sensor for both curves so manual control remains safe
-            // without waking the GPU merely to obtain a temperature.
+            // Only confirmed power-down permits CPU-only control. Workload
+            // absence does not establish that an awake GPU has cooled down.
             gpu = cpu;
         }
         else
@@ -93,7 +92,17 @@ public interface IFanTemperatureSource
 
     ValueTask<FanTemperatureReadings> ReadAsync(CancellationToken cancellationToken);
 
-    // Stop temperature policy needs device-power evidence, not workload absence.
+    // Curves need the temperature of an awake GPU even without a workload.
+    // Background telemetry may omit that read to avoid unnecessary NVML work.
+    ValueTask<FanTemperatureReadings> ReadForFanCurveAsync(CancellationToken cancellationToken) =>
+        ReadForFanCurveAsync(includeCpu: true, includeGpu: true, cancellationToken);
+
+    ValueTask<FanTemperatureReadings> ReadForFanCurveAsync(
+        bool includeCpu,
+        bool includeGpu,
+        CancellationToken cancellationToken) => ReadAsync(includeCpu, includeGpu, cancellationToken);
+
+    // Fan temperature policy needs device-power evidence, not workload absence.
     // Sources without that evidence must provide an actual GPU temperature.
     ValueTask<FanTemperatureReadings> ReadForFanStopAsync(CancellationToken cancellationToken) => ReadAsync(cancellationToken);
 
@@ -196,10 +205,10 @@ internal sealed class NativeStatusChangeObserver(
 // user-mode source for the NVIDIA GPU temperature.
 public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDisposable
 {
-    // A GPU workload that ends between samples leaves the NVML session open
-    // until the next sample reports the GPU inactive. If no sample arrives at
-    // all (manual curve off, Tray hidden), this bound releases it so the
-    // service never holds the driver session across an idle GPU.
+    // Active workloads may reuse NVML until the next idle or non-D0 sample.
+    // Cooling requests read idle D0 temperature and immediately release it.
+    // If sampling stops entirely, this bound releases an active lease too;
+    // it is a driver-session lifetime limit, not a fan cooldown timer.
     internal static readonly TimeSpan GpuSessionIdleTimeout = TimeSpan.FromSeconds(5);
     internal static readonly TimeSpan GpuSessionIdleRetry = TimeSpan.FromMilliseconds(100);
 
@@ -243,12 +252,14 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
     internal SafeWindowsFanTemperatureSource(
         IGpuActivitySource gpuActivitySource,
         Func<int?> cpuTemperatureReader,
-        Func<int?> gpuTemperatureReader)
+        Func<int?> gpuTemperatureReader,
+        Func<FanStopGpuPowerState>? gpuPowerState = null)
         : this(
             gpuActivitySource,
             cpuTemperatureReader,
             new DelegateGpuTemperatureSession(gpuTemperatureReader),
-            TimeProvider.System)
+            TimeProvider.System,
+            gpuPowerState: gpuPowerState)
     {
     }
 
@@ -306,47 +317,19 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
             includeGpu: true,
             cancellationToken);
 
-    public async ValueTask<FanTemperatureReadings> ReadForFanStopAsync(CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        bool? active = await gpuActivitySource.IsActiveAsync(cancellationToken).ConfigureAwait(false);
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            ObjectDisposedException.ThrowIf(disposed, this);
-            int? cpu = await cpuTemperatureReader(cancellationToken).ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-            FanStopGpuPowerState power = gpuPowerState();
-            cancellationToken.ThrowIfCancellationRequested();
-            int? gpu = null;
-            if (power == FanStopGpuPowerState.PoweredOn)
-            {
-                bool release = true;
-                try
-                {
-                    gpu = gpuTemperature.TryRead();
-                    cancellationToken.ThrowIfCancellationRequested();
-                    // A transition during the read invalidates this sample. Do
-                    // not infer that an unreadable active GPU is asleep.
-                    if (gpuPowerState() != FanStopGpuPowerState.PoweredOn)
-                    { gpu = null; power = FanStopGpuPowerState.Unknown; }
-                    // Borrow only an ordinary active-GPU reader's existing
-                    // lease. Stop never renews that lease or its idle deadline.
-                    TimeSpan leaseAge = timeProvider.GetElapsedTime(lastGpuReadTimestamp);
-                    release = !(power == FanStopGpuPowerState.PoweredOn && gpu is >= 10 and <= 125
-                        && active is true && gpuIdleReleasePending
-                        && leaseAge >= TimeSpan.Zero && leaseAge < GpuSessionIdleTimeout);
-                }
-                finally { if (release) { ReleaseFanStopGpuSession(); } }
-            }
-            else { ReleaseFanStopGpuSession(); }
-            return new(cpu, gpu, GpuInactive: active is false,
-                GpuPoweredDown: power == FanStopGpuPowerState.PoweredDown && active is not true);
-        }
-        finally { gate.Release(); }
-    }
+    public ValueTask<FanTemperatureReadings> ReadForFanStopAsync(CancellationToken cancellationToken) =>
+        ReadCoreAsync(includeCpu: true, includeGpu: true, renewActiveGpuSession: false, sampleIdleGpu: true, cancellationToken);
 
-    private void ReleaseFanStopGpuSession()
+    public ValueTask<FanTemperatureReadings> ReadForFanCurveAsync(CancellationToken cancellationToken) =>
+        ReadForFanCurveAsync(includeCpu: true, includeGpu: true, cancellationToken);
+
+    public ValueTask<FanTemperatureReadings> ReadForFanCurveAsync(
+        bool includeCpu,
+        bool includeGpu,
+        CancellationToken cancellationToken) =>
+        ReadCoreAsync(includeCpu, includeGpu, renewActiveGpuSession: true, sampleIdleGpu: true, cancellationToken);
+
+    private void ReleaseGpuSession()
     {
         try { gpuTemperature.Release(); }
         finally
@@ -356,9 +339,17 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
         }
     }
 
-    public async ValueTask<FanTemperatureReadings> ReadAsync(
+    public ValueTask<FanTemperatureReadings> ReadAsync(
         bool includeCpu,
         bool includeGpu,
+        CancellationToken cancellationToken) =>
+        ReadCoreAsync(includeCpu, includeGpu, renewActiveGpuSession: true, sampleIdleGpu: false, cancellationToken);
+
+    private async ValueTask<FanTemperatureReadings> ReadCoreAsync(
+        bool includeCpu,
+        bool includeGpu,
+        bool renewActiveGpuSession,
+        bool sampleIdleGpu,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -371,27 +362,64 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDi
             ObjectDisposedException.ThrowIf(disposed, this);
             int? cpuCelsius = includeCpu
                 ? await cpuTemperatureReader(cancellationToken).ConfigureAwait(false) : null;
-            int? gpuCelsius = null;
-            if (gpuActive is true)
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!includeGpu)
             {
-                gpuCelsius = gpuTemperature.TryRead();
-                lastGpuReadTimestamp = timeProvider.GetTimestamp();
-                gpuIdleReleasePending = true;
-                gpuSessionIdleRelease.Change(GpuSessionIdleTimeout, Timeout.InfiniteTimeSpan);
-            }
-            else if (includeGpu)
-            {
-                // Inactive or unknown: never hold the driver session across a
-                // GPU that may be asleep.
-                gpuSessionIdleRelease.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
-                gpuIdleReleasePending = false;
-                gpuTemperature.Release();
+                return new FanTemperatureReadings(cpuCelsius, null);
             }
 
-            return new FanTemperatureReadings(
-                cpuCelsius,
-                gpuCelsius,
-                GpuInactive: includeGpu && gpuActive is false);
+            bool release = true;
+            try
+            {
+                FanStopGpuPowerState power = gpuPowerState();
+                cancellationToken.ThrowIfCancellationRequested();
+                int? gpuCelsius = null;
+                // Idle D0 can still be hot. D3 or unknown power must not open
+                // NVML, even when a workload counter still reports activity.
+                if (power == FanStopGpuPowerState.PoweredOn && (sampleIdleGpu || gpuActive is true))
+                {
+                    gpuCelsius = gpuTemperature.TryRead();
+                    if (gpuCelsius is not (>= 10 and <= 125))
+                    {
+                        gpuCelsius = null;
+                    }
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (gpuPowerState() != FanStopGpuPowerState.PoweredOn)
+                    {
+                        gpuCelsius = null;
+                        power = FanStopGpuPowerState.Unknown;
+                    }
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    if (power == FanStopGpuPowerState.PoweredOn && gpuCelsius is not null
+                        && gpuActive is true)
+                    {
+                        if (renewActiveGpuSession)
+                        {
+                            lastGpuReadTimestamp = timeProvider.GetTimestamp();
+                            gpuIdleReleasePending = true;
+                            gpuSessionIdleRelease.Change(GpuSessionIdleTimeout, Timeout.InfiniteTimeSpan);
+                        }
+                        // Stop may borrow an ordinary active-GPU lease, but
+                        // never extend it. Idle samples always release NVML so
+                        // cooling observations do not keep the GPU awake.
+                        TimeSpan leaseAge = timeProvider.GetElapsedTime(lastGpuReadTimestamp);
+                        release = !(gpuIdleReleasePending
+                            && leaseAge >= TimeSpan.Zero && leaseAge < GpuSessionIdleTimeout);
+                    }
+                }
+
+                return new FanTemperatureReadings(cpuCelsius, gpuCelsius,
+                    GpuInactive: gpuActive is false,
+                    GpuPoweredDown: power == FanStopGpuPowerState.PoweredDown && gpuActive is not true);
+            }
+            finally
+            {
+                if (release)
+                {
+                    ReleaseGpuSession();
+                }
+            }
         }
         finally
         {
