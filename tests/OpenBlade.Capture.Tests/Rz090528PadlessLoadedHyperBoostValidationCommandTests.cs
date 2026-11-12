@@ -121,7 +121,9 @@ public sealed class Rz090528PadlessLoadedHyperBoostValidationCommandTests
         Task<bool> closing;
         try
         {
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            // This is a worker-startup deadlock guard, not the cancellation
+            // deadline. Match the completion guard under cold CI scheduling.
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
             cancellation.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read);
             // The blocked read still owns the worker, so closing cannot finish

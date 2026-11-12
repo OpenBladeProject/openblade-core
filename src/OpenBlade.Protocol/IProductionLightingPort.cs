@@ -51,6 +51,11 @@ public interface IProductionLightingPort : IAsyncDisposable
 
     LightingRendererOwnershipState OwnershipState { get; }
 
+    /// <summary>Whether this backend needs a live host renderer for the selected setting.
+    /// This describes implementation, not firmware readback or write admission.</summary>
+    bool RequiresLightingRendererOwnership(LightingSettings settings) =>
+        settings.Effect != LightingEffect.Off;
+
     DriverModeRestoreOutcome DriverModeRestoreOutcome =>
         DriverModeRestoreOutcome.NotOwned;
 

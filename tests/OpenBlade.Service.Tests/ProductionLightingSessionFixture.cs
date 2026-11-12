@@ -143,6 +143,11 @@ internal static class ProductionLightingSessionFixture
 
         public DeviceCapabilities Capabilities { get; }
 
+        public bool LightingRequiresRendererOwnership { get; set; } = true;
+
+        public bool RequiresLightingRendererOwnership(LightingSettings settings) =>
+            LightingRequiresRendererOwnership && settings.Effect != LightingEffect.Off;
+
         public Func<bool>? RecoveryWriteAdmission { get; private set; }
 
         public void SetRecoveryWriteAdmission(Func<bool> admission) => RecoveryWriteAdmission = admission;

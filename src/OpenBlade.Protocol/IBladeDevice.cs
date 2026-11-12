@@ -101,6 +101,11 @@ public interface IBladeDevice
 
     Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken);
 
+    /// <summary>Whether this backend needs a live host renderer for the selected setting.
+    /// This describes implementation, not firmware readback or write admission.</summary>
+    bool RequiresLightingRendererOwnership(LightingSettings settings) =>
+        settings.Effect != LightingEffect.Off;
+
     Task SetLightingAsync(LightingSettings value, CancellationToken cancellationToken);
 
     Task<ConfirmedDeviceState> ReadIndependentLightingStateAsync(

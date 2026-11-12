@@ -87,6 +87,21 @@ public sealed class FirmwareQueryDiagnosticsTests
         Assert.True(FirmwareQueryDiagnostics.CanRecord(new(0x0D, 0x80, new byte[80], 80)));
     }
 
+    [Theory]
+    [InlineData("01050000", true)]
+    [InlineData("01050001", false)]
+    [InlineData("0105000000", false)]
+    public void CanRecord_BoundsDirectionBearingEffectQuery(string payload, bool allowed)
+    {
+        RazerCommandSpec effect = Command(0x0F, 0x82, payload) with
+        {
+            AllowVariableResponseLength = true,
+            PayloadValidator = static value => value.Length is >= 3 and <= 80,
+        };
+
+        Assert.Equal(allowed, FirmwareQueryDiagnostics.CanRecord(effect));
+    }
+
     [Fact]
     public void FailureEvidence_SurvivesSuccessAndSubsequentFailureWithoutReply()
     {

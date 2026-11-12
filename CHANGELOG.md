@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fix keyboard and logo controls blocked by Wave readback, and prevent unnecessary lighting retries on source-reviewed models. ([#947](https://github.com/OpenBladeProject/openblade-core/pull/947))
 - Keep laptop and cooling-pad fan curves responsive to hot, idle GPUs while skipping temperature reads for GPUs reported powered down. Require GPU cooling evidence before Battery Saver fan stop. ([#946](https://github.com/OpenBladeProject/openblade-core/pull/946))
 
 ## [0.58.5-nightly.111] - 2026-11-10

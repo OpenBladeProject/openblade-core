@@ -826,8 +826,10 @@ public sealed partial class ExperimentalBladeLightingTests
 
     [Theory]
     [InlineData(1, 3, 0, false)]
-    [InlineData(4, 3, 1, false)]
-    [InlineData(4, 4, 2, false)]
+    [InlineData(4, 4, 0, false)]
+    [InlineData(4, 4, 255, false)]
+    [InlineData(4, 6, 2, true)]
+    [InlineData(4, 6, 1, true)]
     [InlineData(3, 6, 0, true)]
     public async Task UnrepresentableBaseline_BlocksEverySetter(byte effect, int length, byte direction, bool unknownTail)
     {
@@ -1101,6 +1103,7 @@ public sealed partial class ExperimentalBladeLightingTests
         internal byte Effect { get; set; } = 3;
         internal byte Direction { get; set; } = 1;
         internal int EffectReplyLength { get; set; } = 6;
+        internal bool EffectReplyMatchesRequestLength { get; set; }
         internal bool UnknownTail { get; set; }
         internal bool LogoOn { get; set; }
         internal byte LogoEffect { get; set; }
@@ -1161,7 +1164,7 @@ public sealed partial class ExperimentalBladeLightingTests
             }
             else if (command.ClassId == 0x0F && command.CommandId == 0x82)
             {
-                response = new byte[EffectReplyLength];
+                response = new byte[EffectReplyMatchesRequestLength ? args.Length : EffectReplyLength];
                 response[0] = 1; response[1] = 5; response[2] = Effect;
                 if (Effect == 4 && response.Length > 3)
                 {
