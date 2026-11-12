@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Show the failing installer step and underlying error, including separate cleanup or recovery failures, instead of only a generic error code. ([#952](https://github.com/OSSBlade/openblade-core/pull/952))
+
 ## [0.58.7-nightly.112] - 2026-11-12
 
 ### Fixed
