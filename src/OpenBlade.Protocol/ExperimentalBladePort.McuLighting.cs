@@ -177,8 +177,13 @@ internal sealed partial class ExperimentalBladePort
         }
         if (payload.Span[2] != 0 && percent == 0)
         {
-            if (allowConfirmedDark && raw == 0)
+            if (raw == 0)
             {
+                // Independent brightness can legitimately darken a selected
+                // built-in effect. Ordinary status reads must preserve that
+                // confirmed field without inventing Off or a zero-brightness
+                // complete setting. MCU models admit no host-frame baseline,
+                // so this does not depend on allowConfirmedDark's frame gate.
                 RecordQuery("KeyboardLighting", "Unavailable", "ConfirmedDarkEffect");
                 return (null, raw, payload);
             }

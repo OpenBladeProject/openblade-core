@@ -37,6 +37,74 @@ public sealed partial class SourceReviewedBladeModelTests
 
     [Theory]
     [MemberData(nameof(McuLightingProducts))]
+    public async Task McuLighting_IndependentZeroBrightnessKeepsBuiltinUnknownAcrossStatusAndRecovery(int product)
+    {
+        byte[][] activePayloads =
+        [
+            [0, 5, 1, 0, 0, 1, 20, 40, 60, 0, 0, 0],
+            [0, 5, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 5, 2, 0, 0, 1, 20, 40, 60, 0, 0, 0],
+            [0, 5, 2, 0, 0, 2, 20, 40, 60, 80, 100, 120],
+            [0, 5, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 5, 4, 1, 40, 0, 0, 0, 0, 0, 0, 0],
+            [0, 5, 4, 2, 40, 0, 0, 0, 0, 0, 0, 0],
+        ];
+        foreach (byte[] payload in activePayloads)
+        {
+            var session = new Session { McuLighting = payload.ToArray() };
+            var policy = new ExperimentalFeaturesPolicy(Model(product));
+            await using var port = Create(product, session, policy);
+            LightingSettings? before = await port.ReadStateAsync(default);
+            await port.SetIndependentLightingAsync(new(0, null), default);
+            Assert.Equal(0, session.Brightness);
+            Assert.Equal(payload, session.McuLighting);
+            Assert.Null(await port.ReadStateAsync(default));
+            Assert.Null(await port.ReadStateAsync(default));
+            Assert.Equal(new IndependentLightingSettings(0, null),
+                await port.ReadIndependentLightingAsync(new(0, null), default));
+            ConfirmedDeviceState recovered = await port.ReadRecoveryStateAsync(default);
+            Assert.Null(recovered.Lighting);
+            Assert.Equal((byte)0, recovered.IndependentLighting!.Brightness);
+            Assert.True(policy.WritesAllowed);
+            RazerCommandSpec setter = Assert.Single(session.Commands, command => command.CommandId < 0x80);
+            Assert.Equal((3, 3), ((int)setter.ClassId, (int)setter.CommandId));
+            Assert.Equal(new byte[] { 0, 5, 0 }, setter.Arguments.ToArray());
+
+            // Restoring only brightness exposes the same independently read
+            // setting when representable, including its original RGB/direction.
+            await port.SetIndependentLightingAsync(new(50, null), default);
+            Assert.Equal(before, await port.ReadStateAsync(default));
+            Assert.Equal(payload, session.McuLighting);
+            Assert.DoesNotContain(session.Commands, command => command.ClassId == 0x0F && command.CommandId < 0x80
+                || command.ClassId == 3 && command.CommandId == 0x0A);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(McuLightingProducts))]
+    public async Task McuLighting_DarkReadStillRejectsMalformedOrRoundedNonzeroState(int product)
+    {
+        var session = new Session { Brightness = 0, McuLighting = [0, 5, 2, 0, 0, 0, 99, 0, 0, 0, 0, 0] };
+        await using var port = Create(product, session);
+        await Assert.ThrowsAsync<DeviceStateContentRejectedException>(() => port.ReadStateAsync(default));
+        session.Brightness = 1; // Rounds to zero percent but is not confirmed dark.
+        session.McuLighting = [0, 5, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        await Assert.ThrowsAsync<DeviceStateContentRejectedException>(() => port.ReadStateAsync(default));
+        Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
+    }
+
+    [Theory]
+    [MemberData(nameof(McuLightingProducts))]
+    public async Task McuLighting_ZeroBrightnessOffRemainsIndependentlyConfirmed(int product)
+    {
+        var session = new Session { Brightness = 0, McuLighting = [0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] };
+        await using var port = Create(product, session);
+        Assert.Equal(LightingSettingsFactory.Off(), await port.ReadStateAsync(default));
+        Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
+    }
+
+    [Theory]
+    [MemberData(nameof(McuLightingProducts))]
     public async Task McuLighting_DarkCustomRemainsUnknownAndAllowsDirectBuiltinWake(int product)
     {
         var session = new Session { Brightness = 0, EchoLightingAck = true, McuLighting = [0, 5, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0] };

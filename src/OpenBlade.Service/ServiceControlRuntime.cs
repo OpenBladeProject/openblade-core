@@ -18707,7 +18707,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
 
         if (confirmed?.Lighting is { Effect: not LightingEffect.Off } observed
-            && (observed with { LogoMode = null }) != (desired with { LogoMode = null }))
+            && (observed with { LogoMode = null, ControlsKeyboardEffect = false })
+                != (desired with { LogoMode = null, ControlsKeyboardEffect = false }))
         {
             return true;
         }

@@ -32,7 +32,7 @@ internal sealed partial class ExperimentalBladePort
 
     internal static bool SupportsExperimentalLighting(ExperimentalBladeModel model) =>
         model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x0255 or 0x02A0
-            || SupportsIndependentLighting(model) || SupportsReviewedMcuLighting(model);
+            || SupportsIndependentLighting(model);
 
     internal static bool SupportsExperimentalKeyboardBrightness(
         ExperimentalBladeModel model,
@@ -112,10 +112,10 @@ internal sealed partial class ExperimentalBladePort
                 LightingEffect.Reactive, LightingEffect.Ripple,
             };
         }
-        if (SupportsIndependentLighting(model) || SupportsReviewedMcuLighting(model))
+        if (SupportsIndependentLighting(model))
         {
-            // Exact-product UI catalogs establish discovery only. The old matrix
-            // setter has no reviewed matching getter; writable effects stay empty.
+            // Exact-product UI catalogs establish discovery only. Writable effects
+            // are admitted separately from each model's reviewed MCU state contract.
             return new HashSet<LightingEffect>
             {
                 LightingEffect.AmbientAwareness, LightingEffect.AudioMeter,
@@ -821,7 +821,6 @@ internal sealed partial class ExperimentalBladePort
             else if (replacingOwnedFrame
                 || replacingFaultedFrame
                 || baseline?.Effect != settings.Effect
-                || SupportsReviewedMcuLighting(model) && !Equals(baseline?.Parameters, settings.Parameters)
                 || model.ProductId == 0x0255
                     && settings.Parameters is BreathingLightingParameters
                     {
