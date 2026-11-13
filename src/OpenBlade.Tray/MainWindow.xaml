@@ -75,14 +75,22 @@
                    BasedOn="{StaticResource SettingsRowStyle}">
                 <Setter Property="BorderThickness" Value="0" />
             </Style>
+            <!-- The row owns padding, hover and separators; this wrapper adds native
+                 activation and system keyboard focus without another painted surface. -->
             <Style x:Key="ProfileNavigationButtonStyle" TargetType="Button"
                    BasedOn="{StaticResource AppCustomCommandButtonStyle}">
-                <Setter Property="Padding" Value="0" />
-                <Setter Property="BorderThickness" Value="0" />
-                <Setter Property="CornerRadius" Value="0" />
-                <Setter Property="Background" Value="Transparent" />
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="UseSystemFocusVisuals" Value="True" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <ContentPresenter Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              HorizontalContentAlignment="Stretch" />
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
             <!-- Expanders let their headers and child rows own pointer feedback. -->
             <Style x:Key="SettingsExpanderRowStyle"
@@ -3174,7 +3182,7 @@
                             <Border Style="{StaticResource SettingsGroupStyle}">
                                 <StackPanel>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="PowerMode"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockLaptopPerformance2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfilePowerModeTitle1.Text, ViewModel.PluggedInProfilePresentation.PowerMode, ViewModel.UsbCProfilePresentation.PowerMode, ViewModel.BatteryProfilePresentation.PowerMode), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions>
@@ -3183,7 +3191,7 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockLaptopPerformance2.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfilePowerModeTitle1" Text="{CustomResource MainWindow_TextBlockLaptopPerformance2.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.PowerMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.PowerMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.PowerMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3191,7 +3199,7 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="WindowsPowerMode"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockWindowsPowerMode2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileWindowsPowerModeTitle1.Text, ViewModel.PluggedInProfilePresentation.WindowsPowerMode, ViewModel.UsbCProfilePresentation.WindowsPowerMode, ViewModel.BatteryProfilePresentation.WindowsPowerMode), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions>
@@ -3200,7 +3208,7 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockWindowsPowerMode2.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileWindowsPowerModeTitle1" Text="{CustomResource MainWindow_TextBlockWindowsPowerMode2.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.WindowsPowerMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.WindowsPowerMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.WindowsPowerMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3208,7 +3216,7 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="GpuTuning"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockGPUTuning2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileGpuTuningTitle1.Text, ViewModel.PluggedInProfilePresentation.GpuTuning, ViewModel.UsbCProfilePresentation.GpuTuning, ViewModel.BatteryProfilePresentation.GpuTuning), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions>
@@ -3217,7 +3225,7 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockGPUTuning2.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileGpuTuningTitle1" Text="{CustomResource MainWindow_TextBlockGPUTuning2.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.GpuTuning, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.GpuTuning, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.GpuTuning, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3225,7 +3233,7 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="Fans"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockFans3.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileFansTitle1.Text, ViewModel.PluggedInProfilePresentation.Fans, ViewModel.UsbCProfilePresentation.Fans, ViewModel.BatteryProfilePresentation.Fans), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsLastRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions>
@@ -3234,7 +3242,7 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockFans3.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileFansTitle1" Text="{CustomResource MainWindow_TextBlockFans3.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.Fans, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.Fans, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.Fans, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3248,11 +3256,11 @@
                             <Border Style="{StaticResource SettingsGroupStyle}">
                                 <StackPanel>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="BatteryProtection"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockBatteryProtection2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileBatteryProtectionTitle1.Text, ViewModel.PluggedInProfilePresentation.BatteryProtection, ViewModel.UsbCProfilePresentation.BatteryProtection, ViewModel.BatteryProfilePresentation.BatteryProtection), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockBatteryProtection2.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileBatteryProtectionTitle1" Text="{CustomResource MainWindow_TextBlockBatteryProtection2.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.BatteryProtection, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.BatteryProtection, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.BatteryProtection, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3260,11 +3268,11 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="ChargeLimit"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockChargeLimit2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileChargeLimitTitle1.Text, ViewModel.BatteryPolicyPresentation, ViewModel.BatteryPolicyPresentation, ViewModel.BatteryPolicyPresentation), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsLastRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockChargeLimit2.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileChargeLimitTitle1" Text="{CustomResource MainWindow_TextBlockChargeLimit2.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.BatteryPolicyPresentation, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.BatteryPolicyPresentation, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryPolicyPresentation, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3278,11 +3286,11 @@
                             <Border Style="{StaticResource SettingsGroupStyle}">
                                 <StackPanel>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="LightingEffect"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockEffect2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileLightingEffectTitle1.Text, ViewModel.PluggedInProfilePresentation.LightingEffect, ViewModel.UsbCProfilePresentation.LightingEffect, ViewModel.BatteryProfilePresentation.LightingEffect), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockEffect2.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileLightingEffectTitle1" Text="{CustomResource MainWindow_TextBlockEffect2.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.LightingEffect, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.LightingEffect, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.LightingEffect, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3290,11 +3298,11 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="LightingBrightness"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockBrightness2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileLightingBrightnessTitle1.Text, ViewModel.PluggedInProfilePresentation.LightingBrightness, ViewModel.UsbCProfilePresentation.LightingBrightness, ViewModel.BatteryProfilePresentation.LightingBrightness), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockBrightness2.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileLightingBrightnessTitle1" Text="{CustomResource MainWindow_TextBlockBrightness2.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.LightingBrightness, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.LightingBrightness, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.LightingBrightness, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3302,11 +3310,11 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="LightingColor"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockColor.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileLightingColorTitle1.Text, ViewModel.PluggedInProfilePresentation.LightingColor, ViewModel.UsbCProfilePresentation.LightingColor, ViewModel.BatteryProfilePresentation.LightingColor), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockColor.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileLightingColorTitle1" Text="{CustomResource MainWindow_TextBlockColor.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.LightingColor, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.LightingColor, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.LightingColor, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3314,11 +3322,11 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="LogoLighting"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockLaptopLidLogo.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileLogoLightingTitle1.Text, ViewModel.PluggedInProfilePresentation.LogoLighting, ViewModel.UsbCProfilePresentation.LogoLighting, ViewModel.BatteryProfilePresentation.LogoLighting), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockLaptopLidLogo.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileLogoLightingTitle1" Text="{CustomResource MainWindow_TextBlockLaptopLidLogo.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.LogoLighting, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.LogoLighting, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.LogoLighting, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3326,11 +3334,11 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="LightingDisplayOff"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockDisplayTurnsOff.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileLightingDisplayOffTitle1.Text, ViewModel.PluggedInProfilePresentation.LightingDisplayOff, ViewModel.UsbCProfilePresentation.LightingDisplayOff, ViewModel.BatteryProfilePresentation.LightingDisplayOff), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockDisplayTurnsOff.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileLightingDisplayOffTitle1" Text="{CustomResource MainWindow_TextBlockDisplayTurnsOff.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.LightingDisplayOff, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.LightingDisplayOff, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.LightingDisplayOff, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3338,11 +3346,11 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="LightingIdle"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockInactivityTimeout2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileLightingIdleTitle1.Text, ViewModel.PluggedInProfilePresentation.LightingIdle, ViewModel.UsbCProfilePresentation.LightingIdle, ViewModel.BatteryProfilePresentation.LightingIdle), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsLastRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockInactivityTimeout2.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileLightingIdleTitle1" Text="{CustomResource MainWindow_TextBlockInactivityTimeout2.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.LightingIdle, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.LightingIdle, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.LightingIdle, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3356,11 +3364,11 @@
                             <Border Style="{StaticResource SettingsGroupStyle}">
                                 <StackPanel>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="DisplayRefreshRate"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockRefreshRate2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileDisplayRefreshRateTitle1.Text, ViewModel.PluggedInProfilePresentation.DisplayRefreshRate, ViewModel.UsbCProfilePresentation.DisplayRefreshRate, ViewModel.BatteryProfilePresentation.DisplayRefreshRate), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockRefreshRate2.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileDisplayRefreshRateTitle1" Text="{CustomResource MainWindow_TextBlockRefreshRate2.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayRefreshRate, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.DisplayRefreshRate, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.DisplayRefreshRate, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3368,11 +3376,11 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="DisplayHdr"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockHDR.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileDisplayHdrTitle1.Text, ViewModel.PluggedInProfilePresentation.DisplayHdr, ViewModel.UsbCProfilePresentation.DisplayHdr, ViewModel.BatteryProfilePresentation.DisplayHdr), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockHDR.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileDisplayHdrTitle1" Text="{CustomResource MainWindow_TextBlockHDR.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayHdr, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.DisplayHdr, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.DisplayHdr, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3380,11 +3388,11 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="DisplayColorProfile"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockColorProfile2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileDisplayColorProfileTitle1.Text, ViewModel.PluggedInProfilePresentation.DisplayColorProfile, ViewModel.UsbCProfilePresentation.DisplayColorProfile, ViewModel.BatteryProfilePresentation.DisplayColorProfile), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockColorProfile2.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileDisplayColorProfileTitle1" Text="{CustomResource MainWindow_TextBlockColorProfile2.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayColorProfile, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.DisplayColorProfile, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.DisplayColorProfile, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3392,11 +3400,11 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="DisplayBrightness"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_ProfileDisplayBrightnessTitle.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileDisplayBrightnessTitle1.Text, ViewModel.PluggedInProfilePresentation.DisplayBrightness, ViewModel.UsbCProfilePresentation.DisplayBrightness, ViewModel.BatteryProfilePresentation.DisplayBrightness), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_ProfileDisplayBrightnessTitle.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileDisplayBrightnessTitle1" Text="{CustomResource MainWindow_ProfileDisplayBrightnessTitle.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayBrightness, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.DisplayBrightness, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.DisplayBrightness, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3410,11 +3418,11 @@
                             <Border Style="{StaticResource SettingsGroupStyle}">
                                 <StackPanel>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="FunctionKeyBehavior"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockFunctionKeys.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileFunctionKeyBehaviorTitle1.Text, ViewModel.PluggedInProfilePresentation.FunctionKeyBehavior, ViewModel.UsbCProfilePresentation.FunctionKeyBehavior, ViewModel.BatteryProfilePresentation.FunctionKeyBehavior), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockFunctionKeys.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileFunctionKeyBehaviorTitle1" Text="{CustomResource MainWindow_TextBlockFunctionKeys.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3422,11 +3430,11 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="GamingMode"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockGamingMode2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileGamingModeTitle1.Text, ViewModel.PluggedInProfilePresentation.GamingMode, ViewModel.UsbCProfilePresentation.GamingMode, ViewModel.BatteryProfilePresentation.GamingMode), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockGamingMode2.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileGamingModeTitle1" Text="{CustomResource MainWindow_TextBlockGamingMode2.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.GamingMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.GamingMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.GamingMode, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3434,11 +3442,11 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="GamingModeWindowsKey"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockBlockWindowsKey.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileGamingModeWindowsKeyTitle1.Text, ViewModel.PluggedInProfilePresentation.GamingModeWindowsKey, ViewModel.UsbCProfilePresentation.GamingModeWindowsKey, ViewModel.BatteryProfilePresentation.GamingModeWindowsKey), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockBlockWindowsKey.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileGamingModeWindowsKeyTitle1" Text="{CustomResource MainWindow_TextBlockBlockWindowsKey.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3446,11 +3454,11 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="GamingModeAltTab"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockBlockAltTab2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileGamingModeAltTabTitle1.Text, ViewModel.PluggedInProfilePresentation.GamingModeAltTab, ViewModel.UsbCProfilePresentation.GamingModeAltTab, ViewModel.BatteryProfilePresentation.GamingModeAltTab), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockBlockAltTab2.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileGamingModeAltTabTitle1" Text="{CustomResource MainWindow_TextBlockBlockAltTab2.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.GamingModeAltTab, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.GamingModeAltTab, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.GamingModeAltTab, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3458,11 +3466,11 @@
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="StartupAnimation"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockStartupAnimation2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileStartupAnimationTitle1.Text, ViewModel.PluggedInProfilePresentation.StartupAnimation, ViewModel.UsbCProfilePresentation.StartupAnimation, ViewModel.BatteryProfilePresentation.StartupAnimation), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsLastRowStyle}">
                                             <Grid ColumnSpacing="16">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <TextBlock Text="{CustomResource MainWindow_TextBlockStartupAnimation2.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock x:Name="ProfileStartupAnimationTitle1" Text="{CustomResource MainWindow_TextBlockStartupAnimation2.Text}" Style="{StaticResource CardTitleStyle}" />
                                                 <ContentControl Grid.Column="1" Content="{x:Bind ViewModel.PluggedInProfilePresentation.StartupAnimation, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="2" Content="{x:Bind ViewModel.UsbCProfilePresentation.StartupAnimation, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
                                                 <ContentControl Grid.Column="3" Content="{x:Bind ViewModel.BatteryProfilePresentation.StartupAnimation, Mode=OneWay}" ContentTemplate="{StaticResource ProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" />
@@ -3494,129 +3502,129 @@
                             <Border Style="{StaticResource SettingsGroupStyle}">
                                 <StackPanel>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="PowerMode"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockLaptopPerformance3.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfilePowerModeTitle2.Text, ViewModel.SelectedProfilePresentation.PowerMode), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockLaptopPerformance3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.PowerMode, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfilePowerModeTitle2" Text="{CustomResource MainWindow_TextBlockLaptopPerformance3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.PowerMode, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="WindowsPowerMode"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockWindowsPowerMode3.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileWindowsPowerModeTitle2.Text, ViewModel.SelectedProfilePresentation.WindowsPowerMode), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockWindowsPowerMode3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.WindowsPowerMode, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileWindowsPowerModeTitle2" Text="{CustomResource MainWindow_TextBlockWindowsPowerMode3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.WindowsPowerMode, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="GpuTuning"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockGPUTuning3.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileGpuTuningTitle2.Text, ViewModel.SelectedProfilePresentation.GpuTuning), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockGPUTuning3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.GpuTuning, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileGpuTuningTitle2" Text="{CustomResource MainWindow_TextBlockGPUTuning3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.GpuTuning, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="Fans"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockFans4.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileFansTitle2.Text, ViewModel.SelectedProfilePresentation.Fans), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockFans4.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.Fans, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileFansTitle2" Text="{CustomResource MainWindow_TextBlockFans4.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.Fans, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="BatteryProtection"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockBatteryProtection3.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileBatteryProtectionTitle2.Text, ViewModel.SelectedProfilePresentation.BatteryProtection), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockBatteryProtection3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.BatteryProtection, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileBatteryProtectionTitle2" Text="{CustomResource MainWindow_TextBlockBatteryProtection3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.BatteryProtection, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="ChargeLimit"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockChargeLimit3.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileChargeLimitTitle2.Text, ViewModel.BatteryPolicyPresentation), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockChargeLimit3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.BatteryPolicyPresentation, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileChargeLimitTitle2" Text="{CustomResource MainWindow_TextBlockChargeLimit3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.BatteryPolicyPresentation, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="LightingEffect"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockLightingEffect.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileLightingEffectTitle2.Text, ViewModel.SelectedProfilePresentation.LightingEffect), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockLightingEffect.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingEffect, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileLightingEffectTitle2" Text="{CustomResource MainWindow_TextBlockLightingEffect.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingEffect, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="LightingBrightness"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockLightingBrightness.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileLightingBrightnessTitle2.Text, ViewModel.SelectedProfilePresentation.LightingBrightness), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockLightingBrightness.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingBrightness, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileLightingBrightnessTitle2" Text="{CustomResource MainWindow_TextBlockLightingBrightness.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingBrightness, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="LightingColor"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockLightingColor.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileLightingColorTitle2.Text, ViewModel.SelectedProfilePresentation.LightingColor), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockLightingColor.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingColor, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileLightingColorTitle2" Text="{CustomResource MainWindow_TextBlockLightingColor.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingColor, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="LogoLighting"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockLaptopLidLogo2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileLogoLightingTitle2.Text, ViewModel.SelectedProfilePresentation.LogoLighting), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockLaptopLidLogo2.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LogoLighting, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileLogoLightingTitle2" Text="{CustomResource MainWindow_TextBlockLaptopLidLogo2.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LogoLighting, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="DisplayRefreshRate"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockRefreshRate3.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileDisplayRefreshRateTitle2.Text, ViewModel.SelectedProfilePresentation.DisplayRefreshRate), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockRefreshRate3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.DisplayRefreshRate, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileDisplayRefreshRateTitle2" Text="{CustomResource MainWindow_TextBlockRefreshRate3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.DisplayRefreshRate, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="DisplayHdr"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockHDR2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileDisplayHdrTitle2.Text, ViewModel.SelectedProfilePresentation.DisplayHdr), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockHDR2.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.DisplayHdr, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileDisplayHdrTitle2" Text="{CustomResource MainWindow_TextBlockHDR2.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.DisplayHdr, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="DisplayColorProfile"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockColorProfile3.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileDisplayColorProfileTitle2.Text, ViewModel.SelectedProfilePresentation.DisplayColorProfile), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockColorProfile3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.DisplayColorProfile, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileDisplayColorProfileTitle2" Text="{CustomResource MainWindow_TextBlockColorProfile3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.DisplayColorProfile, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="DisplayBrightness"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_ProfileDisplayBrightnessCompactTitle.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileDisplayBrightnessTitle2.Text, ViewModel.SelectedProfilePresentation.DisplayBrightness), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_ProfileDisplayBrightnessCompactTitle.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.DisplayBrightness, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileDisplayBrightnessTitle2" Text="{CustomResource MainWindow_ProfileDisplayBrightnessCompactTitle.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.DisplayBrightness, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="LightingDisplayOff"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockDisplayTurnsOff2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileLightingDisplayOffTitle2.Text, ViewModel.SelectedProfilePresentation.LightingDisplayOff), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockDisplayTurnsOff2.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingDisplayOff, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileLightingDisplayOffTitle2" Text="{CustomResource MainWindow_TextBlockDisplayTurnsOff2.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingDisplayOff, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="LightingIdle"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockInactivityTimeout3.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileLightingIdleTitle2.Text, ViewModel.SelectedProfilePresentation.LightingIdle), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockInactivityTimeout3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingIdle, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileLightingIdleTitle2" Text="{CustomResource MainWindow_TextBlockInactivityTimeout3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.LightingIdle, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="FunctionKeyBehavior"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockFunctionKeys2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileFunctionKeyBehaviorTitle2.Text, ViewModel.SelectedProfilePresentation.FunctionKeyBehavior), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockFunctionKeys2.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileFunctionKeyBehaviorTitle2" Text="{CustomResource MainWindow_TextBlockFunctionKeys2.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="GamingMode"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockGamingMode3.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileGamingModeTitle2.Text, ViewModel.SelectedProfilePresentation.GamingMode), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockGamingMode3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.GamingMode, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileGamingModeTitle2" Text="{CustomResource MainWindow_TextBlockGamingMode3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.GamingMode, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="GamingModeWindowsKey"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockBlockWindowsKey2.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileGamingModeWindowsKeyTitle2.Text, ViewModel.SelectedProfilePresentation.GamingModeWindowsKey), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockBlockWindowsKey2.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileGamingModeWindowsKeyTitle2" Text="{CustomResource MainWindow_TextBlockBlockWindowsKey2.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="GamingModeAltTab"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockBlockAltTab3.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileGamingModeAltTabTitle2.Text, ViewModel.SelectedProfilePresentation.GamingModeAltTab), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockBlockAltTab3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.GamingModeAltTab, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileGamingModeAltTabTitle2" Text="{CustomResource MainWindow_TextBlockBlockAltTab3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.GamingModeAltTab, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                     <Button Style="{StaticResource ProfileNavigationButtonStyle}" Tag="StartupAnimation"
-                                            Click="OnProfileSettingClick" AutomationProperties.Name="{CustomResource MainWindow_TextBlockStartupAnimation3.Text}">
+                                            Click="OnProfileSettingClick" AutomationProperties.Name="{x:Bind ProfileNavigationName(ProfileStartupAnimationTitle2.Text, ViewModel.SelectedProfilePresentation.StartupAnimation), Mode=OneWay}">
                                         <Border Style="{StaticResource SettingsLastRowStyle}">
-                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{CustomResource MainWindow_TextBlockStartupAnimation3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.StartupAnimation, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
+                                            <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="ProfileStartupAnimationTitle2" Text="{CustomResource MainWindow_TextBlockStartupAnimation3.Text}" Style="{StaticResource CardTitleStyle}" /><ContentControl Grid.Column="1" Content="{x:Bind ViewModel.SelectedProfilePresentation.StartupAnimation, Mode=OneWay}" ContentTemplate="{StaticResource CompactProfileValuePresentationTemplate}" HorizontalContentAlignment="Stretch" /></Grid>
                                         </Border>
                                     </Button>
                                 </StackPanel>

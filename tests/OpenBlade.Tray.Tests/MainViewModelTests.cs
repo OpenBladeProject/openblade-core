@@ -26,6 +26,8 @@ public sealed partial class MainViewModelTests
             viewModel.SelectedProfileComparisonOption = viewModel.ProfileComparisonOptions[1];
             Assert.False(viewModel.IsSelectedProfileActive);
             Assert.Equal(source, viewModel.ActivePowerSource);
+            viewModel.SelectActiveProfileComparison();
+            Assert.True(viewModel.IsSelectedProfileActive);
         }
     }
 

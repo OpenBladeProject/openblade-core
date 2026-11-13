@@ -6,13 +6,15 @@ namespace OpenBlade.Tray;
 
 public sealed partial class MainWindow
 {
-    private void SelectActiveProfileComparison()
-    {
-        if (ViewModel.ActivePowerSource is PowerSource.PluggedIn or PowerSource.UsbC or PowerSource.Battery)
-        {
-            ViewModel.SelectedProfileComparisonOption = ViewModel.ProfileComparisonOptions[0];
-        }
-    }
+    private static string ProfileNavigationName(string title, ProfileValuePresentation value) =>
+        $"{title}. {value.AccessibilityDescription}";
+
+    private static string ProfileNavigationName(
+        string title,
+        ProfileValuePresentation pluggedIn,
+        ProfileValuePresentation usbC,
+        ProfileValuePresentation battery) =>
+        $"{title}. {pluggedIn.AccessibilityDescription}. {usbC.AccessibilityDescription}. {battery.AccessibilityDescription}";
 
     private void OnProfileSettingClick(object sender, RoutedEventArgs args)
     {
@@ -63,11 +65,31 @@ public sealed partial class MainWindow
         {
             throw new InvalidOperationException("Profiles did not open with the active profile selected.");
         }
+        // Hidden destinations must preserve the current page, including when an
+        // availability change arrives after the profile summaries were rendered.
+        Visibility lightingVisibility = LightingNavigationItem.Visibility;
+        LightingNavigationItem.Visibility = Visibility.Collapsed;
+        OnProfileSettingClick(rows.Single(row => (string)row.Tag == "LightingEffect"), new RoutedEventArgs());
+        if (!ReferenceEquals(MainNavigation.SelectedItem, ProfilesNavigationItem)
+            || ProfilesPage.Visibility != Visibility.Visible)
+        {
+            throw new InvalidOperationException("A hidden profile destination blanked the current page.");
+        }
+        LightingNavigationItem.Visibility = lightingVisibility;
         foreach (Button row in rows)
         {
             SelectLocalizationSnapshotPage("profiles");
             GlobalSearchResult destination = GetProfileSettingDestination((string)row.Tag)
                 ?? throw new InvalidOperationException($"Missing destination: {row.Tag}");
+            if (!IsGlobalSearchResultAvailable(destination))
+            {
+                continue;
+            }
+            string accessibleName = Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(row);
+            if (string.IsNullOrWhiteSpace(accessibleName) || !accessibleName.Contains(". ", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"Missing profile summary accessibility: {row.Tag}");
+            }
             var peer = new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(row);
             ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)peer.GetPattern(
                 Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();

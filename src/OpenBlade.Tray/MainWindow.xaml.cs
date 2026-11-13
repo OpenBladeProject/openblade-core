@@ -3667,7 +3667,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         UpdateGpuAppObservationState();
         if (destination == "profiles")
         {
-            SelectActiveProfileComparison();
+            ViewModel.SelectActiveProfileComparison();
             RefreshApplicationProfiles();
             dispatcherQueue.TryEnqueue(
                 DispatcherQueuePriority.Low,
@@ -6087,7 +6087,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         profilesUseCompactLayout = useCompactLayout;
         if (useCompactLayout)
         {
-            SelectActiveProfileComparison();
+            ViewModel.SelectActiveProfileComparison();
         }
         comparisonLayout.Visibility = useCompactLayout
             ? Visibility.Collapsed

@@ -1044,10 +1044,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             Notify(nameof(ActivePowerSource));
             Notify(nameof(ProfileComparisonOptions));
-            if (value is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
-            {
-                SelectedProfileComparisonOption = ComparisonOptions.First(option => option.Source == value);
-            }
+            SelectActiveProfileComparison();
             NotifySelectedProfilePresentation();
             Notify(nameof(IsPluggedInProfileActive));
             Notify(nameof(IsBatteryProfileActive));
@@ -1103,6 +1100,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public IReadOnlyList<ProfileComparisonOption> ProfileComparisonOptions => ComparisonOptions
         .OrderBy(option => option.Source == ActivePowerSource ? 0 : 1)
         .ToArray();
+
+    public void SelectActiveProfileComparison()
+    {
+        if (ActivePowerSource is PowerSource.PluggedIn or PowerSource.UsbC or PowerSource.Battery)
+        {
+            SelectedProfileComparisonOption = ComparisonOptions.First(option => option.Source == ActivePowerSource);
+        }
+    }
 
     public ProfileComparisonOption SelectedProfileComparisonOption
     {

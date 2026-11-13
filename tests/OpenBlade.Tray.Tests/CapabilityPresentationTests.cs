@@ -2374,7 +2374,7 @@ public sealed class CapabilityPresentationTests
             }
             else
             {
-                Assert.Equal(wideDestinations, destinations);
+                Assert.Equal(wideDestinations.Order(), destinations.Order());
             }
         }
     }

@@ -360,6 +360,12 @@ public sealed partial class MainWindow
 
     private void OpenGlobalSearchResult(GlobalSearchResult result)
     {
+        // Every caller must validate before changing navigation: selecting a hidden
+        // page first can collapse all content even when deferred arrival is refused.
+        if (!IsGlobalSearchResultAvailable(result))
+        {
+            return;
+        }
         NavigationViewItem navigation = result.Navigation!;
         XamlScrollViewer page = result.Page!;
         if (ReferenceEquals(navigation, SettingsNavigationItem) && trayDashboardCustomizationActive)
