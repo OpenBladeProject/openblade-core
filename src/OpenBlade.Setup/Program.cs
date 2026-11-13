@@ -40,6 +40,7 @@ _ = SetupCommandParser.TryParseInvocation(
 var log = new SetupLog(invocation.LogPath);
 using var diagnosticTraceListener = new SetupDiagnosticTraceListener(log);
 bool diagnosticTraceListenerAdded = false;
+LoggingSetupProgressReporter? progress = null;
 try
 {
     Trace.Listeners.Add(diagnosticTraceListener);
@@ -62,7 +63,7 @@ try
 #else
     string? enrolledUserSid = null;
 #endif
-    using ISetupProgressReporter progress = new LoggingSetupProgressReporter(
+    progress = new LoggingSetupProgressReporter(
         SetupProgressReporter.Create(invocation.ProgressPipeName),
         log);
     int exitCode = await new SetupCommandRunner(
@@ -84,6 +85,7 @@ try
 catch (Exception exception)
 {
     log.WriteFailure(exception);
+    progress?.ReportFailure(exception);
     if (interactiveRequested || interactiveRelay)
     {
         UninstallUserInterface.ShowFailure(exception.Message);
@@ -105,6 +107,14 @@ finally
     }
     finally
     {
+        try
+        {
+            progress?.Dispose();
+        }
+        catch
+        {
+            // Diagnostic channel cleanup must preserve the setup result.
+        }
         if (diagnosticTraceListenerAdded)
         {
             try

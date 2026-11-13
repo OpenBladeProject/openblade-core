@@ -869,6 +869,38 @@ public sealed class SetupPayloadTransactionTests
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StagePayload_PostCopyVerificationFailure_ReportsVerificationInsteadOfLastCopy(bool changeSource)
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        var recorded = new RecordingSetupProgressReporter();
+        using var progress = new LoggingSetupProgressReporter(recorded, new SetupLog(null));
+        DelegatingPayloadFileSystem files = new()
+        {
+            AfterCopy = (source, destination) =>
+            {
+                if (Path.GetFileName(source) == "OpenBlade.Tray.dll")
+                {
+                    File.AppendAllText(changeSource ? source : destination, "changed");
+                }
+            },
+        };
+
+        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
+            () => tree.CreatePlatform(files, progress).StagePayloadAsync(CancellationToken.None));
+        progress.ReportFailure(error);
+
+        SetupProgressEvent failure = recorded.Events.Last();
+        Assert.Equal(SetupProgressCode.Failure, failure.Code);
+        Assert.Equal("VerifyPayload", failure.Arguments[0]);
+        Assert.Empty(failure.Arguments[1]);
+        Assert.Contains("OpenBlade.Tray.dll", failure.Arguments[2], StringComparison.Ordinal);
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
+    }
+
     [Fact]
     public async Task StagePayload_CancellationDuringCopy_CleansStagingAndLeavesLiveTree()
     {

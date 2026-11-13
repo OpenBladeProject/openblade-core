@@ -30,12 +30,14 @@ public enum SetupProgressCode
     CopyFile,
     CommitFiles,
     RestoreFiles,
+    EnsureCpuTemperaturePrerequisite,
+    Failure,
+    PrepareSetup,
+    VerifyPayload,
 }
 
 public sealed record SetupProgressEvent
 {
-    private const int MaximumArgumentLength = 512;
-
     private SetupProgressEvent(SetupProgressCode code, IReadOnlyList<string> arguments)
     {
         Code = code;
@@ -55,7 +57,12 @@ public sealed record SetupProgressEvent
         }
 
         ArgumentNullException.ThrowIfNull(arguments);
-        int expectedArgumentCount = code == SetupProgressCode.CopyFile ? 1 : 0;
+        int expectedArgumentCount = code switch
+        {
+            SetupProgressCode.CopyFile => 1,
+            SetupProgressCode.Failure => 4,
+            _ => 0,
+        };
         if (arguments.Length != expectedArgumentCount)
         {
             throw new ArgumentException(
@@ -68,9 +75,16 @@ public sealed record SetupProgressEvent
         {
             string argument = arguments[index]
                 ?? throw new ArgumentException("Progress arguments cannot be null.", nameof(arguments));
-            boundedArguments[index] = argument.Length <= MaximumArgumentLength
-                ? argument
-                : argument[..MaximumArgumentLength];
+            boundedArguments[index] = SetupFailureDetails.Sanitize(argument);
+        }
+
+        if (code == SetupProgressCode.Failure
+            && (!Enum.TryParse(boundedArguments[0], out SetupProgressCode step)
+                || !Enum.IsDefined(step) || step == SetupProgressCode.Failure
+                || !string.Equals(boundedArguments[0], step.ToString(), StringComparison.Ordinal)
+                || (step != SetupProgressCode.CopyFile && boundedArguments[1].Length != 0)))
+        {
+            throw new ArgumentException("Failure progress must identify a setup step and its applicable argument.", nameof(arguments));
         }
 
         return new SetupProgressEvent(code, boundedArguments);
@@ -118,6 +132,11 @@ public sealed record SetupProgressEvent
             Arguments[0]),
         SetupProgressCode.CommitFiles => "Committing the OpenBlade file transaction",
         SetupProgressCode.RestoreFiles => "Restoring the previous OpenBlade files",
+        SetupProgressCode.EnsureCpuTemperaturePrerequisite => "Checking and provisioning the CPU temperature prerequisite",
+        SetupProgressCode.PrepareSetup => "Preparing OpenBlade setup",
+        SetupProgressCode.VerifyPayload => "Verifying the staged OpenBlade files",
+        SetupProgressCode.Failure => $"Setup failed during {Arguments[0]}: {Arguments[2]}"
+            + (Arguments[3].Length == 0 ? string.Empty : $"; recovery failed: {Arguments[3]}"),
         _ => Code.ToString(),
     };
 }

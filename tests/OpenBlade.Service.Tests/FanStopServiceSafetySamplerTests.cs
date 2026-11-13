@@ -46,34 +46,67 @@ public sealed class FanStopServiceSafetySamplerTests
     [Fact]
     public async Task DefaultCadenceKeepsProofFreshAcrossNonzeroAcquisitionTime()
     {
+        var clock = new TimerClock();
+        var acquisition = TimeSpan.FromMilliseconds(700);
+        var readsStarted = Channel.CreateUnbounded<bool>();
+        using var completeRead = new SemaphoreSlim(0, 1);
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        var entryWait = new TaskCompletionSource<TimeSpan>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var beginOwned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var source = new Source
         {
             ReadOverride = async () =>
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(700));
+                readsStarted.Writer.TryWrite(true);
+                await completeRead.WaitAsync(bound.Token);
                 return new(50, null, true, true);
             },
         };
-        // Use the production cadence and clock: an extra one-second wait after
-        // each 700ms read leaves a 400ms expired-proof interval on every cycle.
-        using var sampler = new So6120ServiceSafetySampler(source, Custom, TimeProvider.System, () => new(true));
+        var sampler = new So6120ServiceSafetySampler(source, Custom, clock, () => new(true),
+            async (delay, token) =>
+            {
+                if (entryWait.TrySetResult(delay)) { await beginOwned.Task.WaitAsync(token); }
+                else { clock.Advance(delay); }
+            });
         try
         {
-            Assert.True((await sampler.WaitForInitialAsync()).Admitted);
-            var owned = await sampler.BeginOwnedStopAsync();
-            Assert.True(owned.Admitted);
-            using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(8));
-            while (sampler.Current.Revision < owned.Revision + 3)
+            await readsStarted.Reader.ReadAsync(bound.Token);
+            clock.Advance(acquisition);
+            completeRead.Release();
+            Assert.True((await sampler.WaitForInitialAsync(bound.Token)).Admitted);
+
+            Assert.Equal(TimeSpan.FromMilliseconds(300), await entryWait.Task.WaitAsync(bound.Token));
+            Task<So6120ServiceSafetySnapshot> ownership = sampler.BeginOwnedStopAsync();
+            beginOwned.SetResult();
+            await readsStarted.Reader.ReadAsync(bound.Token);
+            clock.Advance(acquisition);
+            completeRead.Release();
+            var owned = await ownership.WaitAsync(bound.Token);
+            Assert.True(owned.Admitted, owned.Detail);
+
+            for (int index = 0; index < 3; index++)
             {
-                Assert.True(sampler.ReadFresh().Admitted);
-                await Task.Delay(20, bound.Token);
+                // Hold the next read at the end of its acquisition so only
+                // the previous proof can admit Stop at this point.
+                await readsStarted.Reader.ReadAsync(bound.Token);
+                clock.Advance(acquisition);
+                var fresh = sampler.ReadFresh();
+                Assert.True(fresh.Admitted, fresh.Detail);
+                Assert.Equal(owned.Revision + index, fresh.Revision);
+                Assert.Equal(TimeSpan.FromMilliseconds(1700), clock.GetElapsedTime(fresh.AdmissionStarted));
+                completeRead.Release();
             }
-            Assert.True(sampler.ReadFresh().Admitted);
+
+            await readsStarted.Reader.ReadAsync(bound.Token);
+            var latest = sampler.ReadFresh();
+            Assert.True(latest.Admitted, latest.Detail);
+            Assert.Equal(owned.Revision + 3, latest.Revision);
             Assert.Equal(1, source.MaximumConcurrentReads);
         }
         finally
         {
             sampler.Dispose();
+            bound.Cancel();
             await sampler.Completion.WaitAsync(TimeSpan.FromSeconds(3));
         }
         Assert.False(source.DisposedDuringRead);
@@ -93,7 +126,7 @@ public sealed class FanStopServiceSafetySamplerTests
             },
         };
         using var sampler = new So6120ServiceSafetySampler(source, Custom, clock, () => new(true),
-            async token => { await ticks.Reader.ReadAsync(token); });
+            async (_, token) => { await ticks.Reader.ReadAsync(token); });
         var finish = new TaskCompletionSource<FanTemperatureReadings>(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
@@ -396,7 +429,7 @@ public sealed class FanStopServiceSafetySamplerTests
             {
                 Interlocked.Increment(ref AdmissionReads);
                 return Admission;
-            }, async token => { await ticks.Reader.ReadAsync(token); });
+            }, async (_, token) => { await ticks.Reader.ReadAsync(token); });
         }
 
         internal void Wake() => Assert.True(ticks.Writer.TryWrite(true));

@@ -410,6 +410,17 @@ $programSource = Get-Content -LiteralPath (
     Join-Path $repository 'build\installer\OpenBlade.Installer.UI\Program.cs') -Raw
 Assert-True (-not $programSource.Contains('[STAThread]')) `
     'The managed BA entry point must let the WiX native host initialize COM.'
+$completionCallback = [regex]::Match(
+    $bootstrapperSource,
+    '(?s)private void OnExecutePackageComplete\(.*?(?=private void OnUnregisterBegin)').Value
+$unifiedSetupLog = $completionCallback.Contains('InstallerPackageLog.AppendToBundleLog') -and
+    $completionCallback.Contains('BundleLogVariable + "_" + OpenBladeSetupPackage') -and
+    -not $completionCallback.Contains('Display.') -and
+    -not $completionCallback.Contains('command.Display') -and
+    -not $completionCallback.Contains('window') -and
+    -not $completionCallback.Contains('Ui(')
+Assert-True $unifiedSetupLog 'Setup diagnostics must reach the main Burn log for interactive, passive and quiet runs before rollback/cache cleanup.'
+
 $progressPipeSource = Get-Content -LiteralPath (
     Join-Path $repository (
         'build\installer\OpenBlade.Installer.UI\InstallerProgressPipe.cs')) -Raw
@@ -417,8 +428,8 @@ Assert-True ($progressPipeSource.Contains('BuiltinAdministratorsSid')) `
     'The elevated setup package must be able to write to the private progress channel.'
 Assert-True ($progressPipeSource.Contains('PipeAccessRights.ReadWrite')) `
     'Over-the-shoulder elevated setup must receive sufficient progress-pipe access.'
-Assert-True ($progressPipeSource.Contains('MaximumMessageLength = 4096')) `
-    'Versioned progress-pipe messages must remain bounded while accepting maximum UTF-8 arguments.'
+Assert-True ($progressPipeSource.Contains('MaximumMessageLength = 8192')) `
+    'Versioned progress and four-field failure messages must remain bounded while accepting maximum UTF-8 arguments.'
 Assert-True ($progressPipeSource.Contains('argument.Length > 512')) `
     'Dynamic setup progress arguments must remain bounded before reaching the UI.'
 

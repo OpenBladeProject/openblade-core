@@ -315,10 +315,33 @@ public sealed class InstallerWindowTests
                     window => window.ShowSuccess(LaunchAction.Install, purgeProfiles: false, rebootRequired: true),
                     window => [window.SuccessHeading, window.SuccessMessage, window.LaunchButton, window.SuccessCloseButton]);
                 break;
+            case "failure-long":
+                Capture(
+                    "installer-failure-long",
+                    window =>
+                    {
+                        Assert.True(InstallerSetupProgress.TryParse(
+                            InstallerFailureTests.Wire("CopyFile", new string('界', 512),
+                                new string('界', 512), new string('界', 512)),
+                            out InstallerSetupProgress? progress));
+                        window.ShowFailure(OpenBladeBootstrapperApplication.DescribeFailure(
+                            unchecked((int)0x80070001), progress!.Failure, null, null, false), "setup.log");
+                    },
+                    window => [window.FailureContent, window.OpenLogButton, window.FailureCloseButton]);
+                break;
             case "failure":
                 Capture(
                     "installer-failure",
-                    window => window.ShowFailure(string.Empty, null),
+                    window =>
+                    {
+                        Assert.True(InstallerSetupProgress.TryParse(
+                            InstallerFailureTests.Wire("VerifyServiceHealth", "",
+                                "The OpenBlade service did not respond before the timeout.",
+                                "The previous service could not be started."),
+                            out InstallerSetupProgress? progress));
+                        window.ShowFailure(OpenBladeBootstrapperApplication.DescribeFailure(
+                            unchecked((int)0x80070001), progress!.Failure, null, null, false), "setup.log");
+                    },
                     window => [window.OpenLogButton, window.FailureCloseButton]);
                 break;
             default:
@@ -716,12 +739,18 @@ public sealed class InstallerWindowTests
             foreach (InstallerSetupProgressCode code in Enum.GetValues(
                          typeof(InstallerSetupProgressCode)))
             {
-                string wireValue = code == InstallerSetupProgressCode.CopyFile
-                    ? "v1|CopyFile|T3BlbkJsYWRlLlRyYXkuZXhl"
-                    : $"v1|{code}";
+                string wireValue = code switch
+                {
+                    InstallerSetupProgressCode.CopyFile => "v1|CopyFile|T3BlbkJsYWRlLlRyYXkuZXhl",
+                    InstallerSetupProgressCode.Failure =>
+                        InstallerFailureTests.Wire("InstallService", "", "Access denied."),
+                    _ => $"v1|{code}",
+                };
                 Assert.True(InstallerSetupProgress.TryParse(wireValue, out InstallerSetupProgress? progress));
 
-                string status = OpenBladeBootstrapperApplication.LocalizeProgress(progress!);
+                string status = progress!.Failure is null
+                    ? OpenBladeBootstrapperApplication.LocalizeProgress(progress)
+                    : OpenBladeBootstrapperApplication.DescribeFailure(-1, progress.Failure, null, null, false);
 
                 Assert.StartsWith("[!! ", status, StringComparison.Ordinal);
                 Assert.False(status.StartsWith("v1|", StringComparison.Ordinal));

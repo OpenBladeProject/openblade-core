@@ -181,6 +181,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
                 files.CopyFile(source, destination);
                 cancellationToken.ThrowIfCancellationRequested();
 
+                progressReporter.Report(SetupProgressCode.VerifyPayload);
                 PayloadEntry currentSource = ReadEntry(payloadRoot, source, files);
                 if (!entry.ContentEquals(currentSource))
                 {
@@ -189,6 +190,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
                 }
             }
 
+            progressReporter.Report(SetupProgressCode.VerifyPayload);
             IReadOnlyDictionary<string, PayloadEntry> stagedManifest =
                 BuildManifest(staging, files, cancellationToken);
             RequireExactManifest(sourceManifest, stagedManifest);

@@ -122,6 +122,7 @@ public sealed class SetupCommandRunner(
                         + "Setup stopped before making changes; perform a manual repair or uninstall first.");
                 }
 
+                progress.Report(SetupProgressCode.EnsureCpuTemperaturePrerequisite);
                 bool rebootRequired = await platform.EnsureCpuTemperaturePrerequisiteAsync(
                     transaction.StagedPayloadDirectory, cancellationToken);
                 mutationStarted = true;

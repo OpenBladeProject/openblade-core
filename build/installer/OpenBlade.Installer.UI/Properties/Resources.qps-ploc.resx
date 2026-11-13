@@ -246,17 +246,8 @@
   <data name="Setup failed" xml:space="preserve">
     <value>[!! Sétúp fáíléd ~~~~ !!]</value>
   </data>
-  <data name="Setup failed with 0x{0:X8}." xml:space="preserve">
-    <value>[!! Sétúp fáíléd wíth 0x{0:X8}. ~~~~~~ !!]</value>
-  </data>
-  <data name="Setup failed: {0}" xml:space="preserve">
-    <value>[!! Sétúp fáíléd: {0} ~~~~ !!]</value>
-  </data>
   <data name="Setup progress" xml:space="preserve">
     <value>[!! Sétúp prógréss ~~~~~ !!]</value>
-  </data>
-  <data name="Setup was cancelled and the previous state was restored." xml:space="preserve">
-    <value>[!! Sétúp wás cáncélléd ánd thé prévíóús státé wás réstóréd. ~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Show _details" xml:space="preserve">
     <value>[!! Shów _détáíls ~~~~ !!]</value>
@@ -314,5 +305,32 @@
   </data>
   <data name="Setup completed successfully. Restart Windows to finish driver setup. CPU temperature sensing may remain unavailable until then." xml:space="preserve">
     <value>[!! Sétúp cómplétéd súccéssfúllý. Réstárt Windows tó fínísh drívér sétúp. CPÚ témpérátúré sénsíng máý rémáín únáváíláblé úntíl thén. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Checking the CPU temperature driver…" xml:space="preserve">
+    <value>[!! Chéckíng thé CPÚ témpérátúré drívér… ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Setup was cancelled. See the setup log for the final installation state." xml:space="preserve">
+    <value>[!! Sétúp wás cáncélléd. Séé thé sétúp lóg fór thé fínál ínstállátíón státé. ~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Error code: 0x{0:X8}" xml:space="preserve">
+    <value>[!! Érrór códé: 0x{0:X8} ~~~~ !!]</value>
+  </data>
+  <data name="Failed step: {0}" xml:space="preserve">
+    <value>[!! Fáíléd stép: {0} ~~~~ !!]</value>
+  </data>
+  <data name="Setup failed while running {0}." xml:space="preserve">
+    <value>[!! Sétúp fáíléd whílé rúnníng {0}. ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Setup failed: {0}" xml:space="preserve">
+    <value>[!! Sétúp fáíléd: {0} ~~~~ !!]</value>
+  </data>
+  <data name="Additional cleanup or recovery error: {0}" xml:space="preserve">
+    <value>[!! Áddítíónál cléánúp ór récóvérý érrór: {0} ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Preparing setup…" xml:space="preserve">
+    <value>[!! Prépáríng sétúp… ~~~~~ !!]</value>
+  </data>
+  <data name="Verifying OpenBlade files…" xml:space="preserve">
+    <value>[!! Vérífýíng OpenBlade fílés… ~~~~~ !!]</value>
   </data>
 </root>

@@ -324,11 +324,14 @@
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
-          <StackPanel>
-            <TextBlock Text="Setup could not finish" FontSize="18" FontWeight="SemiBold" />
-            <TextBlock x:Name="FailureMessage" Margin="0,12,0,0" TextWrapping="Wrap"
-                       Foreground="{DynamicResource SecondaryTextBrush}" />
-          </StackPanel>
+          <ScrollViewer x:Name="FailureContent" VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Disabled" Margin="0,0,0,12">
+            <StackPanel>
+              <TextBlock Text="Setup could not finish" FontSize="18" FontWeight="SemiBold" />
+              <TextBlock x:Name="FailureMessage" Margin="0,12,0,0" TextWrapping="Wrap"
+                         Foreground="{DynamicResource SecondaryTextBrush}" />
+            </StackPanel>
+          </ScrollViewer>
           <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button x:Name="OpenLogButton" Content="_Open log" Click="OpenLogButton_Click" />
             <Button x:Name="FailureCloseButton" Content="_Close" Click="CloseButton_Click" />
