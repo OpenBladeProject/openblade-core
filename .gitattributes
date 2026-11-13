@@ -38,3 +38,7 @@ tools/openblade-windows-host/tests/fixtures/custom-gpu-maximum.json -text whites
 # Preserve exact ProfileStore producer bytes, including CRLF.
 tools/openblade-windows-host/tests/fixtures/app-fans-*.json -text whitespace=cr-at-eol
 .trail/learnings/2026-11-13-admit-fresh-custody-and-complete-app-fans-jack.md text eol=lf
+
+# Preserve the bounded thermal history learning's exact CLI bytes.
+.trail/learnings/2026-11-13-preserve-original-thermal-history-across-bounded-jack.md text eol=lf
+.trail/learnings/2026-11-13-admit-legacy-no-thermal-proofs-only-jack.md text eol=lf

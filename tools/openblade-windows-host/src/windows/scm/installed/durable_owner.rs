@@ -25,6 +25,10 @@ use windows_sys::{
     Win32::Storage::FileSystem::{FILE_GENERIC_READ, FILE_GENERIC_WRITE},
 };
 
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[path = "thermal_history_store.rs"]
+mod thermal_history_store;
+
 pub(in crate::installed) struct Store {
     root: File,
     _ancestors: Vec<File>,
@@ -37,6 +41,9 @@ pub(in crate::installed) struct Store {
     active_nonces: std::collections::BTreeSet<String>,
     #[cfg(test)]
     verifier: Option<Arc<dyn Fn(&File) -> io::Result<()> + Send + Sync>>,
+    #[cfg(test)]
+    pub(in crate::installed) history_boundary:
+        Option<Arc<dyn Fn(&str) -> io::Result<()> + Send + Sync>>,
 }
 impl Store {
     fn open() -> io::Result<Self> {
@@ -75,16 +82,34 @@ impl Store {
             active_nonces: Default::default(),
             #[cfg(test)]
             verifier: None,
+            #[cfg(test)]
+            history_boundary: None,
         };
         result.load_history()?;
         Ok(result)
     }
     fn load_history(&mut self) -> io::Result<()> {
-        let mut entries = std::fs::read_dir(&self.path)?
-            .map(|e| e.map(|e| e.file_name()))
-            .collect::<io::Result<Vec<_>>>()?;
-        if entries.len() > 4096 {
-            return Err(deny());
+        let mut entries = Vec::new();
+        for entry in std::fs::read_dir(&self.path)? {
+            let name = entry?.file_name();
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            if matches!(
+                name.to_str(),
+                Some(
+                    "thermal-mutation.journal"
+                        | "thermal-mutation.journal.pending"
+                        | "thermal-mutation.journal.rollover"
+                        | "thermal-history"
+                )
+            ) {
+                continue;
+            }
+            // Preserve the old 4096-entry owner budget including writer.lock;
+            // thermal namespace growth never consumes/refills owner capacity.
+            if entries.len() == 4096 {
+                return Err(deny());
+            }
+            entries.push(name);
         }
         entries.sort();
         let mut previous: Option<Record> = None;
@@ -98,7 +123,10 @@ impl Store {
             #[cfg(feature = "service-thermal-mutation-v1")]
             if matches!(
                 name,
-                "thermal-mutation.journal" | "thermal-mutation.journal.pending"
+                "thermal-mutation.journal"
+                    | "thermal-mutation.journal.pending"
+                    | "thermal-mutation.journal.rollover"
+                    | "thermal-history"
             ) {
                 continue;
             }
@@ -158,6 +186,7 @@ impl Store {
             #[cfg(feature = "service-thermal-mutation-v1")]
             active_nonces: Default::default(),
             verifier: Some(verify),
+            history_boundary: None,
         };
         store.load_history()?;
         Ok(store)
@@ -279,30 +308,15 @@ impl Store {
     }
     #[cfg(feature = "service-thermal-mutation-v1")]
     pub(in crate::installed) fn journal_read(&self, pending: bool) -> io::Result<Option<Vec<u8>>> {
-        self.verify_journal_custody()?;
-        let name = if pending {
-            "thermal-mutation.journal.pending"
-        } else {
-            "thermal-mutation.journal"
-        };
-        let mut file = match self.open_record(name, false) {
-            Ok(f) => f,
-            Err(e) if paths::missing_leaf(&e) => return Ok(None),
-            Err(error) => return Err(error),
-        };
-        if file.metadata()?.len() > 1024 * 1024 {
-            return Err(deny());
-        }
-        let mut bytes = vec![];
-        file.read_to_end(&mut bytes)?;
         if !pending {
-            self.validate_journal_owners(&bytes).map_err(|_| {
-                crate::installed::readiness::thermal_mutation::fatal_admission(
-                    "Thermal journal original owner binding changed.",
-                )
-            })?;
+            let view = self.journal_view()?;
+            return Ok(view.physical.map(|_| view.tail));
         }
-        Ok(Some(bytes))
+        use crate::thermal_history::Backend;
+        thermal_history_store::History(self).read(
+            "thermal-mutation.journal.pending",
+            crate::thermal_history::SEGMENT + 2048,
+        )
     }
     #[cfg(feature = "service-thermal-mutation-v1")]
     pub(in crate::installed) fn journal_replace(
@@ -316,7 +330,27 @@ impl Store {
                 "Thermal settlement original owner binding is invalid.",
             )
         })?;
-        if bytes.len() > 1024 * 1024 || self.journal_read(false)?.as_deref() != expected {
+        let view = self.journal_view()?;
+        if bytes.len() > 1024 * 1024 || view.tail.as_slice() != expected.unwrap_or_default() {
+            return Err(deny());
+        }
+        let proposed = crate::thermal_history::View {
+            physical: None,
+            tail: bytes.to_vec(),
+            sequence: view.sequence,
+            head: view.head.clone(),
+        };
+        crate::thermal_history::inspect_prefix(
+            &thermal_history_store::History(self),
+            &proposed,
+            |e, r| self.join_row(e, r),
+        )?;
+        let physical = if view.sequence == 0 {
+            bytes.to_vec()
+        } else {
+            crate::thermal_history::envelope(view.sequence, &view.head, bytes)
+        };
+        if self.journal_read(false)?.as_deref() != expected {
             return Err(deny());
         }
         let mut file = paths::open_relative(
@@ -336,12 +370,12 @@ impl Store {
                     "Thermal settlement staging protection is invalid.",
                 )
             })?;
-        file.write_all(bytes)?;
+        file.write_all(&physical)?;
         file.sync_all()?;
         file.rewind()?;
         let mut check = vec![];
         file.read_to_end(&mut check)?;
-        if check != bytes || self.journal_read(false)?.as_deref() != expected {
+        if check != physical || self.journal_read(false)?.as_deref() != expected {
             return Err(deny());
         }
         paths::rename_same_directory(&file, "thermal-mutation.journal", true)?;

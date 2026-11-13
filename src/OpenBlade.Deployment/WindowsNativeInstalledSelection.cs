@@ -151,13 +151,20 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
             pid.ToString(System.Globalization.CultureInfo.InvariantCulture), created.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         // Legacy recovery requires the independently retained live original and
         // actual exit at the caller. An absent process never enters this route.
+        using var originals = AcquireThermalPredecessors();
         using var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
+        originals.RequireDrained(files, owner, Record.Epoch);
+        if (owner.Thermal.Epochs.Contains(Record.Epoch, StringComparer.Ordinal)) { throw new IOException("Legacy producer cannot attest thermal settlement."); }
         Recover(NativeRecoveryReason.RetirementPublicationFailed, () => { PublishRetirement(directory, owner); return true; });
     }
     internal void RetireRecoverableSelection(uint? expectedPid = null, long? expectedCreated = null)
     {
         RequireCurrent();
-        if (Record.Phase == NativeEpochPhase.Retired) { return; }
+        if (Record.Phase == NativeEpochPhase.Retired)
+        {
+            if (HasThermalNamespace()) { using var fresh = AcquireRetirementProof(Record); }
+            return;
+        }
         string directory = Path.Combine(files.Root, Record.Epoch);
         if (!package!.Service.HasStartupCustody)
         { throw new NativeRecoveryException(NativeRecoveryReason.LegacyLaunchEvidenceUnavailable, "Legacy native stopped state lacks original launch/drain evidence; history was preserved."); }
@@ -171,9 +178,11 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
             return true;
         });
         RequireCurrent();
+        using var originals = AcquireThermalPredecessors();
         using var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
+        originals.RequireDrained(files, owner, Record.Epoch);
         byte[] proof = Recover(NativeRecoveryReason.UnknownAttemptHistory,
-            () => WindowsNativeAttemptHistory.RequireDrained(files, Record, directory, package.Service, owner.Commitment, expectedPid, expectedCreated));
+            () => WindowsNativeAttemptHistory.RequireDrained(files, Record, directory, package.Service, owner, expectedPid, expectedCreated));
         Recover(NativeRecoveryReason.RetirementPublicationFailed, () =>
         {
             PublishProofSnapshot(directory, proof);
@@ -188,6 +197,7 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
             () => files.RetainDirectory(Path.Combine(directory, "attempts")));
         FileStream? custody = null;
         WindowsNativeTrustLifecycle.OwnerLease? owner = null;
+        ThermalPredecessors? originals = null;
         try
         {
             custody = AcquireRecoveryCustody(Path.Combine(directory, "attempts", "custody.lock"));
@@ -196,17 +206,64 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
                 WindowsNativeEpochFiles.RequireExact(custody, NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", Record.Epoch));
                 return true;
             });
+            originals = AcquireThermalPredecessors();
             owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
+            originals.RequireDrained(files, owner, Record.Epoch);
             byte[] proof = Recover(NativeRecoveryReason.UnknownAttemptHistory,
-                () => WindowsNativeAttemptHistory.RequireDrained(files, proofRecord, directory, package!.Service, owner.Commitment));
+                () => WindowsNativeAttemptHistory.RequireDrained(files, proofRecord, directory, package!.Service, owner));
             Recover(NativeRecoveryReason.RetirementPublicationFailed, () => { PublishProofSnapshot(directory, proof); return true; });
-            return new RecoveryCustody(attempts, custody, owner);
+            return new RecoveryCustody(attempts, custody, owner, originals);
         }
-        catch { owner?.Dispose(); custody?.Dispose(); attempts.Dispose(); throw; }
+        catch { owner?.Dispose(); originals?.Dispose(); custody?.Dispose(); attempts.Dispose(); throw; }
     }
-    private sealed class RecoveryCustody(IDisposable attempts, IDisposable custody, IDisposable owner) : IDisposable
+    private sealed class RecoveryCustody(IDisposable attempts, IDisposable custody, IDisposable owner, IDisposable originals) : IDisposable
     {
-        public void Dispose() { try { owner.Dispose(); } finally { try { custody.Dispose(); } finally { attempts.Dispose(); } } }
+        public void Dispose() { try { owner.Dispose(); } finally { try { originals.Dispose(); } finally { try { custody.Dispose(); } finally { attempts.Dispose(); } } } }
+    }
+    private bool HasThermalNamespace() => Directory.EnumerateFileSystemEntries(Path.Combine(files.Root, "owner"))
+        .Any(p => WindowsNativeThermalHistory.IsNamespace(Path.GetFileName(p)));
+    private ThermalPredecessors AcquireThermalPredecessors()
+    {
+        var result = new ThermalPredecessors();
+        if (!HasThermalNamespace()) { return result; }
+        try
+        {
+            int count = 0;
+            foreach (string directory in Directory.EnumerateDirectories(files.Root))
+            {
+                string epoch = Path.GetFileName(directory);
+                if (epoch == "owner" || epoch == Record.Epoch) { continue; }
+                if (++count > 4096 || !NativeCanonical.IsHex(epoch, 32)) { throw new IOException("Unknown original thermal generation."); }
+                byte[]? retired = ManagedMailboxRecovery.ReadOptional(files, Path.Combine(directory, "Retired.bin"));
+                if (retired is null) { continue; }
+                var record = NativeEpochRecord.Parse(retired);
+                if (record.Phase != NativeEpochPhase.Retired || record.Epoch != epoch) { throw new IOException("Original thermal generation is unretired or differs."); }
+                var original = AuthenticateManagedHistoryAsync(files.RetainView(), record, false, CancellationToken.None).GetAwaiter().GetResult();
+                result.Held.Add(original);
+                if (!original.ServiceArtifact.HasStartupCustody) { continue; }
+                result.Held.Add(files.RetainDirectory(Path.Combine(directory, "attempts")));
+                var custody = files.AcquireServiceCustody(Path.Combine(directory, "attempts", "custody.lock"), authenticatedLegacyCleanup: original.ServiceArtifact.Schema == 1);
+                result.Held.Add(custody);
+                WindowsNativeEpochFiles.RequireExact(custody, NativeCanonical.Lines("OpenBlade.NativeServiceCustody.v1", record.Epoch));
+                result.Generations.Add(epoch, original);
+            }
+            return result;
+        }
+        catch { result.Dispose(); throw; }
+    }
+    private sealed class ThermalPredecessors : IDisposable
+    {
+        internal List<IDisposable> Held { get; } = [];
+        internal Dictionary<string, WindowsNativeInstalledSelection> Generations { get; } = new(StringComparer.Ordinal);
+        internal void RequireDrained(WindowsNativeEpochFiles files, WindowsNativeTrustLifecycle.OwnerLease owner, string current)
+        {
+            foreach (string epoch in owner.Thermal.Epochs.Where(e => e != current))
+            {
+                if (!Generations.TryGetValue(epoch, out var original)) { throw new IOException("Thermal history lacks its original signed generation and custody."); }
+                _ = WindowsNativeAttemptHistory.RequireDrained(files, original.Record, Path.Combine(files.Root, epoch), original.ServiceArtifact, owner);
+            }
+        }
+        public void Dispose() { for (int i = Held.Count - 1; i >= 0; i--) { Held[i].Dispose(); } Held.Clear(); }
     }
     private static T Recover<T>(NativeRecoveryReason reason, Func<T> operation)
     {
@@ -240,10 +297,11 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
                 continue;
             }
             byte[] bytes = WindowsNativeEpochFiles.ReadBounded(held, 2048);
-            bool v2 = bytes.AsSpan().StartsWith("OpenBlade.NativeRetirementProof.v2\n"u8);
-            string[] fields = NativeCanonical.ParseLines(bytes, v2 ? "OpenBlade.NativeRetirementProof.v2" : "OpenBlade.NativeRetirementProof.v1", v2 ? 8 : 7);
+            bool v3 = bytes.AsSpan().StartsWith("OpenBlade.NativeRetirementProof.v3\n"u8);
+            bool v2 = v3 || bytes.AsSpan().StartsWith("OpenBlade.NativeRetirementProof.v2\n"u8);
+            string[] fields = NativeCanonical.ParseLines(bytes, v3 ? "OpenBlade.NativeRetirementProof.v3" : v2 ? "OpenBlade.NativeRetirementProof.v2" : "OpenBlade.NativeRetirementProof.v1", v3 ? 9 : v2 ? 8 : 7);
             if (Path.GetFileName(existing) != NativeCanonical.Digest(bytes) + ".bin" || fields[0] != Record.Epoch
-                || !IsDigest(fields[1]) || !IsDigest(fields[2]) || !IsDigest(fields[5]) || v2 && !IsDigest(fields[6])
+                || !IsDigest(fields[1]) || !IsDigest(fields[2]) || !IsDigest(fields[5]) || v2 && !IsDigest(fields[6]) || v3 && !IsDigest(fields[7])
                 || fields[3] is not ("submission-retained" or "never-submitted")
                 || fields[4] is not ("no-admitted-metadata-attempt" or "all-metadata-attempts-drained") && !(v2 && fields[4] == "metadata-attempts-classified"))
             { throw new InvalidDataException("Native retirement snapshot is malformed or differs from its content address."); }

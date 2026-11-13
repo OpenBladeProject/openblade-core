@@ -26,6 +26,7 @@ const USER: Caller = Caller {
 struct MemoryFiles {
     bytes: Arc<StdMutex<BTreeMap<String, Vec<u8>>>>,
     fail: Arc<AtomicBool>,
+    capacity_refuse: Arc<AtomicBool>,
     fail_terminal: Arc<AtomicBool>,
     fail_prepared: Arc<AtomicU8>,
     fail_first_intent: Arc<AtomicU8>,
@@ -75,6 +76,22 @@ impl MemoryFiles {
     }
 }
 impl Files for MemoryFiles {
+    fn reserve(&self, expected: Option<&[u8]>, needed: usize) -> io::Result<Option<Vec<u8>>> {
+        if self.capacity_refuse.load(Ordering::Acquire)
+            || needed > crate::thermal_history::SEGMENT
+            || expected
+                .unwrap_or_default()
+                .len()
+                .checked_add(needed)
+                .is_none_or(|n| n > crate::thermal_history::SEGMENT)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::StorageFull,
+                "Thermal operation progress capacity unavailable before Prepared.",
+            ));
+        }
+        Ok(expected.map(<[u8]>::to_vec))
+    }
     fn read(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
         Ok(self.bytes.lock().unwrap().get(name).cloned())
     }
@@ -3375,4 +3392,34 @@ async fn correction_first_intent_io_failure_retains_uncertainty_and_all_evidence
         assert_eq!(port.writes, 0);
         assert_eq!(port.opened, port.retired);
     }
+}
+
+#[tokio::test]
+async fn history_dispatcher_capacity_refusal_precedes_prepared_and_all_transport_writes() {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    files.capacity_refuse.store(true, Ordering::Release);
+    let rig = Rig::new(files);
+    let result = rig.set(99, value(2, 1)).await;
+    assert_eq!(result["result"]["status"], 2);
+    assert!(
+        result["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("no submission intent or thermal setter")
+    );
+    assert_eq!(rig.files.prepared_attempts.load(Ordering::Acquire), 0);
+    assert_eq!(
+        rig.files.submission_intent_attempts.load(Ordering::Acquire),
+        0
+    );
+    assert!(
+        rig.files
+            .read("thermal-mutation.journal")
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+    rig.stop().await;
+    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
 }

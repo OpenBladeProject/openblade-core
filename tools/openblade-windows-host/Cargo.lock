@@ -100,6 +100,9 @@ name = "openblade-domain"
 version = "0.0.0"
 dependencies = [
  "openblade-types",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

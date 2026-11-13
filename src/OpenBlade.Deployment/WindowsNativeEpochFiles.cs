@@ -86,6 +86,9 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
     // product path or a persistent machine trust-store change.
     internal static WindowsNativeEpochFiles CreatePrivateFixture()
     {
+#if OPENBLADE_NATIVE_PACKAGE_TESTS
+        if (FixtureFactoryForTests.Value is { } create) { return create(); }
+#endif
         using WindowsIdentity identity = WindowsIdentity.GetCurrent();
         var user = identity.User ?? throw new UnauthorizedAccessException();
         string root = Path.Combine(Path.GetTempPath(), RootPrefix + Guid.NewGuid().ToString("N"));
@@ -102,6 +105,23 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         return value;
     }
 
+#if OPENBLADE_NATIVE_PACKAGE_TESTS
+    // Explicit private own-SID fixture inputs. No token/default/product discovery.
+    internal static AsyncLocal<Func<WindowsNativeEpochFiles>?> FixtureFactoryForTests { get; } = new();
+    internal static WindowsNativeEpochFiles CreateSuppliedPrivateFixture(string root, string sid)
+    {
+        if (!Path.IsPathFullyQualified(root) || !Path.GetFileName(root).StartsWith(RootPrefix, StringComparison.Ordinal)
+            || !sid.StartsWith("S-1-5-21-", StringComparison.Ordinal)) { throw new InvalidOperationException("Explicit private fixture required."); }
+        var user = new SecurityIdentifier(sid);
+        var security = new DirectorySecurity(); security.SetOwner(user); security.SetAccessRuleProtection(true, false);
+        security.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+        RequireAbsent(root);
+        new DirectoryInfo(root).Create(security);
+        var value = new WindowsNativeEpochFiles(root, user);
+        try { var lease = value.PinDirectory(root); value.retained.Add(lease); RequireNtfs(lease); return value; }
+        catch { value.Dispose(); throw; }
+    }
+#endif
 #if OPENBLADE_NATIVE_PACKAGE_TESTS
     internal WindowsNativeEpochFiles RetainFixtureView()
     {

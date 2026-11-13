@@ -74,9 +74,9 @@ public sealed partial class ManagedMailboxCorrectionTests
     }
     internal sealed record SignedPair(WindowsNativePackage Native, WindowsManagedMailboxPackage Managed) : IDisposable
     { public void Dispose() { Managed.Dispose(); Native.Dispose(); } }
-    internal static async Task<SignedPair> Packages(char nonce = 'b', string? sourceRevision = null)
+    internal static async Task<SignedPair> Packages(char nonce = 'b', string? sourceRevision = null, bool mutation = false)
     {
-        byte[] nativeBytes = WindowsNativeInventoryBurnExtractorTests.NativeEpochBundle(WindowsNativeEpochTests.Image("service", nonce, schema: 2, mailbox: true, sourceRevision: sourceRevision), WindowsNativeEpochTests.Image("agent", nonce, schema: 2, mailbox: true, sourceRevision: sourceRevision), sourceRevision);
+        byte[] nativeBytes = WindowsNativeInventoryBurnExtractorTests.NativeEpochBundle(WindowsNativeEpochTests.Image("service", nonce, schema: 2, mailbox: true, sourceRevision: sourceRevision, mutation: mutation), WindowsNativeEpochTests.Image("agent", nonce, schema: 2, mailbox: true, sourceRevision: sourceRevision, mutation: mutation), sourceRevision);
         using var signed = OpenBladeSignedReleaseVerifierTests.TestRelease.CreateWithInstallerBytes(nativeBytes, sourceRevision);
         var nativeFiles = WindowsNativeEpochFiles.CreatePrivateFixture();
         File.WriteAllBytes(Path.Combine(nativeFiles.Root, "package.exe"), nativeBytes);

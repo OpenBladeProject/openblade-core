@@ -148,7 +148,7 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
             var commitments = new List<string>();
             foreach (var item in authenticated)
             {
-                byte[] proof = WindowsNativeAttemptHistory.RequireDrained(files, item.Record, item.Directory, item.Package.ServiceArtifact, ownerCommitment, preparationOrigin: item.Preparation ? item.Record.Encode() : null);
+                byte[] proof = WindowsNativeAttemptHistory.RequireDrained(files, item.Record, item.Directory, item.Package.ServiceArtifact, owner, preparationOrigin: item.Preparation ? item.Record.Encode() : null);
                 if (item.Preparation && Directory.EnumerateFileSystemEntries(Path.Combine(item.Directory, "attempts")).Any(p => Path.GetFileName(p) != "custody.lock"))
                 { throw new IOException("Unselected preparation contains a possible native attempt."); }
                 byte[] reservation = ManagedMailboxRecovery.Read(files, item.Directory + ".reserved");
@@ -202,7 +202,7 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
         {
             var g = NativeCanonical.ParseLines(evidence, "OpenBlade.ManagedNativeGenerationProof.v2", 5);
             record = NativeEpochRecord.Parse(Convert.FromBase64String(g[0]));
-            retired = NativeCanonical.ParseLines(Convert.FromBase64String(g[1]), "OpenBlade.NativeRetirementProof.v2", 8);
+            retired = ParseRetirement(Convert.FromBase64String(g[1]));
             reservation = g[2]; spaceBytes = Convert.FromBase64String(g[3]);
             if (record.Epoch != f[2] || record.Request != transfer.Value.Request || record.Installation != transfer.Value.Installation
                 || record.Package != transfer.Value.Package || !NativeCanonical.IsHex(reservation, 64)
@@ -229,6 +229,13 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
         }
         return (f[1], f[2], record, retired, reservation);
     }
+    internal static string[] ParseRetirement(byte[] proof)
+    {
+        bool v3 = proof.AsSpan().StartsWith("OpenBlade.NativeRetirementProof.v3\n"u8);
+        var fields = NativeCanonical.ParseLines(proof, v3 ? "OpenBlade.NativeRetirementProof.v3" : "OpenBlade.NativeRetirementProof.v2", v3 ? 9 : 8);
+        if (v3 && !NativeCanonical.IsHex(fields[7], 64)) { throw new IOException("Thermal settlement commitment differs."); }
+        return fields;
+    }
     internal void RequirePreservedResolution(ManagedMailboxSelection transfer, NativeEpochRecord? epoch, byte[] proof, string disposition)
     {
         var retained = ParseResolution(transfer, epoch, proof);
@@ -236,10 +243,18 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
         { throw new IOException("Preserved native resolution differs from its exact transfer."); }
         if (epoch is null) { return; }
         var generation = generations[epoch.Epoch];
-        var fresh = NativeCanonical.ParseLines(generation.Proof, "OpenBlade.NativeRetirementProof.v2", 8);
+        var fresh = ParseRetirement(generation.Proof);
+        // Fresh v3 admission independently proves the complete original history.
+        // A preserved v2 may survive only when that generation has no thermal
+        // rows; it never supplies a thermal-settlement guarantee.
+        bool legacyEmpty = retained.Retirement!.Length == 7 && fresh.Length == 8
+            && fresh[7] == WindowsNativeThermalHistory.Empty(generation.Record.Installation, generation.Record.Epoch, generation.Record.ServiceId);
+        bool sameThermal = retained.Retirement.Length == fresh.Length
+            && (fresh.Length != 8 || retained.Retirement[7] == fresh[7]);
         // Owner history can advance; today's owner is independently fenced.
         if (retained.Record != generation.Record || retained.Reservation != NativeCanonical.Digest(generation.Reservation)
-            || !retained.Retirement![..6].SequenceEqual(fresh[..6]))
+            || !retained.Retirement![..6].SequenceEqual(fresh[..6])
+            || !(sameThermal || legacyEmpty))
         { throw new IOException("Preserved generation/attempt/reservation proof differs from fresh custody."); }
     }
     internal (NativeEpochRecord Epoch, byte[] Projection, string Source) RequireLegacyBinding(byte[] mapping)

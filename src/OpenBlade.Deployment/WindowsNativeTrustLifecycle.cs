@@ -109,16 +109,19 @@ public static class WindowsNativeTrustLifecycle
             directory = files.RetainDirectory(Path.Combine(files.Root, "owner"));
             writer = files.AcquireOwnerWriter();
             var references = new List<OwnerReference>();
-            string commitment = RequireOwnerRetiredCore(files, references);
-            return new OwnerLease(directory, writer, commitment, references.ToImmutableArray());
+            string ownerCommitment = RequireOwnerRetiredCore(files, references);
+            var thermal = WindowsNativeThermalHistory.Read(files, references);
+            string commitment = thermal.Present ? NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.NativeOwnerHistory.v2", ownerCommitment, thermal.Commitment)) : ownerCommitment;
+            return new OwnerLease(directory, writer, commitment, references.ToImmutableArray(), thermal);
         }
-        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException or KeyNotFoundException or FormatException or OverflowException)
         { writer?.Dispose(); directory?.Dispose(); throw new NativeRecoveryException(NativeRecoveryReason.FirmwareOwnerUnresolved, "Native firmware ownership history is active, partial or unknown; no drain was inferred.", error); }
     }
-    internal sealed record OwnerReference(string Installation, string Epoch, string Service);
-    internal sealed class OwnerLease(IDisposable directory, IDisposable writer, string commitment, ImmutableArray<OwnerReference> references) : IDisposable
+    internal sealed record OwnerReference(string Installation, string Epoch, string Service, string Process, string Nonce, string Active);
+    internal sealed class OwnerLease(IDisposable directory, IDisposable writer, string commitment, ImmutableArray<OwnerReference> references, WindowsNativeThermalHistory thermal) : IDisposable
     {
         internal string Commitment { get; } = commitment;
+        internal WindowsNativeThermalHistory Thermal { get; } = thermal;
         internal ImmutableArray<OwnerReference> References { get; } = references;
         internal bool IsKnownEmpty => References.IsEmpty;
         public void Dispose() { try { writer.Dispose(); } finally { directory.Dispose(); } }
@@ -146,7 +149,7 @@ public static class WindowsNativeTrustLifecycle
         foreach (string path in Directory.EnumerateFileSystemEntries(owner).Order(StringComparer.Ordinal))
         {
             if (Path.GetFileName(path) == "writer.lock") { continue; }
-            RequireNoThermalJournal(Path.GetFileName(path));
+            if (WindowsNativeThermalHistory.IsNamespace(Path.GetFileName(path))) { continue; }
             if (++count > 4096) { throw new IOException("Native owner history exceeds its bound."); }
             using var held = files.OpenFile(path);
             byte[] bytes = WindowsNativeEpochFiles.ReadBounded(held, 4096);
@@ -166,7 +169,11 @@ public static class WindowsNativeTrustLifecycle
                 bool replacement = priorFields[0] == "Retired" && f[0] == "Reserved" && priorFields[3] == f[3] && priorFields[4] != f[4];
                 if (!(same && transition || replacement)) { throw new IOException("Native owner transition differs."); }
             }
-            if (f[0] == "Reserved") { references.Add(new(f[3], f[4], f[5])); }
+            if (f[0] == "Active")
+            {
+                if (references.Any(r => r.Nonce == f[7])) { throw new IOException("Native owner nonce was reused."); }
+                references.Add(new(f[3], f[4], f[5], f[6], f[7], NativeCanonical.Digest(bytes)));
+            }
             previous = bytes; priorFields = f;
         }
         if (priorFields is not null && priorFields[0] != "Retired")

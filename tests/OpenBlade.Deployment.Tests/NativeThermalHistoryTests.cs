@@ -1,0 +1,235 @@
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+
+namespace OpenBlade.Deployment.Tests;
+
+// Explicitly supplied private-root/SID closure. No token, product discovery,
+// service process, pipe, firmware, helper or default-root supplier is executed.
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+public sealed class NativeThermalHistoryTests : IDisposable
+{
+    public NativeThermalHistoryTests()
+    {
+        string root = Environment.GetEnvironmentVariable("OPENBLADE_HISTORY_MANAGED_FIXTURE_ROOT") ?? throw new InvalidOperationException("Explicit fixture root required.");
+        string sid = Environment.GetEnvironmentVariable("OPENBLADE_THERMAL_FIXTURE_SID") ?? throw new InvalidOperationException("Explicit supplied own SID required.");
+        if (!Path.IsPathFullyQualified(root)) { throw new InvalidOperationException("Absolute fixture root required."); }
+        WindowsNativeEpochFiles.FixtureFactoryForTests.Value = () => WindowsNativeEpochFiles.CreateSuppliedPrivateFixture(Path.Combine(root, "OpenBlade.NativeEpochFixture-" + Guid.NewGuid().ToString("N")), sid);
+    }
+    public void Dispose() => WindowsNativeEpochFiles.FixtureFactoryForTests.Value = null;
+    private static byte[] Bytes(string text) => Encoding.UTF8.GetBytes(text);
+    private static byte[] Rows(string nonce, int first, int count, bool confirmed = false)
+    {
+        using var stream = new MemoryStream();
+        for (int n = first; n < first + count; n++)
+        {
+            foreach (int progress in confirmed ? new[] { 0, 1, 2, 3, 4, 5 } : new[] { 0, 6 })
+            {
+                byte[] row = JsonSerializer.SerializeToUtf8Bytes(new { request = $"aaaaaaaa-bbbb-cccc-dddd-{n:D12}", owner = nonce, user_sid = "S-1-5-21-111-222-333-1002", caller_pid = 42, session = 7, requested = (object?)null, destination = 1, intent = NativeCanonical.Digest("null"u8), progress });
+                stream.Write(row); stream.WriteByte(10);
+            }
+        }
+        return stream.ToArray();
+    }
+    private static byte[] Owner(WindowsNativeEpochFiles files, NativeEpochRecord record, string nonce, ulong start = 1, string? previous = null, string process = "17:1")
+    {
+        byte[] active = [];
+        foreach (string phase in new[] { "Reserved", "Active", "Retiring", "Retired" })
+        {
+            byte[] bytes = NativeCanonical.Lines("OpenBlade.NativeOwner.v1", phase, start.ToString(CultureInfo.InvariantCulture), previous ?? new string('0', 64), record.Installation, record.Epoch, record.ServiceId, process, nonce);
+            files.Publish(Path.Combine(files.Root, "owner", $"owner-{start:D20}.bin"), bytes);
+            if (phase == "Active") { active = bytes; }
+            start++; previous = NativeCanonical.Digest(bytes);
+        }
+        return active;
+    }
+    private static void Thermal(WindowsNativeEpochFiles files, byte[] tail) => File.WriteAllBytes(Path.Combine(files.Root, "owner", "thermal-mutation.journal"), tail);
+    private static void Drain(WindowsNativeEpochFiles files, NativeEpochRecord record)
+    {
+        NativeRecoveryTests.AddAttempt(files, record, 17, 1, false);
+        byte[] launch = File.ReadAllBytes(Path.Combine(files.Root, record.Epoch, "attempts", "launch-17-1.bin"));
+        files.Publish(Path.Combine(files.Root, record.Epoch, "attempts", "drain-17-1.bin"), NativeCanonical.Lines("OpenBlade.NativeTransportDrain.v1", record.Epoch, NativeCanonical.Digest(launch), "17", "1"));
+    }
+    private static void Roll(WindowsNativeEpochFiles files, byte[] segment, byte[] tail)
+    {
+        string directory = Path.Combine(files.Root, "owner", "thermal-history");
+        // Controlled private fixture construction; production uses original native
+        // handle-relative metadata writer, tested independently in Rust.
+        Directory.CreateDirectory(directory);
+        ulong rows = (ulong)segment.Count(b => b == 10);
+        byte[] cp = NativeCanonical.Lines("OpenBlade.ThermalCheckpoint.v1", "1", new string('0', 64), NativeCanonical.Digest(segment), segment.Length.ToString(CultureInfo.InvariantCulture), rows.ToString(CultureInfo.InvariantCulture), WindowsNativeThermalHistory.Contract);
+        byte[] empty = WindowsNativeThermalHistory.Envelope(1, NativeCanonical.Digest(cp), []);
+        File.WriteAllBytes(Path.Combine(directory, WindowsNativeThermalHistory.Name("segment", 1)), segment);
+        files.Publish(Path.Combine(directory, WindowsNativeThermalHistory.Name("checkpoint", 1)), cp);
+        files.Publish(Path.Combine(directory, WindowsNativeThermalHistory.Name("roll", 1)), NativeCanonical.Lines("OpenBlade.ThermalRoll.v1", NativeCanonical.Digest(segment), NativeCanonical.Digest(empty), NativeCanonical.Digest(cp), WindowsNativeThermalHistory.Contract));
+        Thermal(files, WindowsNativeThermalHistory.Envelope(1, NativeCanonical.Digest(cp), tail));
+    }
+    [Fact]
+    public void CanonicalRustManagedVectorsAndMalformedRowsUseProductionReader()
+    {
+        using var vector = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "thermal-history-v1.json")));
+        var v = vector.RootElement;
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        string[] f = NativeCanonical.ParseLines(Bytes(v.GetProperty("owner").GetString()!), "OpenBlade.NativeOwner.v1", 9);
+        var original = new WindowsNativeTrustLifecycle.OwnerReference(f[3], f[4], f[5], f[6], f[7], NativeCanonical.Digest(Bytes(v.GetProperty("owner").GetString()!)));
+        byte[] segment = Bytes(v.GetProperty("segment").GetString()!);
+        Thermal(files, segment);
+        var legacy = WindowsNativeThermalHistory.Read(files, [original]);
+        var record = new NativeEpochRecord(NativeEpochPhase.Retired, f[4], new string('0', 64), 1, f[3], new string('a', 64), new string('b', 32), f[5], new string('c', 64) + "-agent", new string('0', 64), new string('d', 64));
+        var service = NativeArtifact.Inspect([.. WindowsNativeEpochTests.Image("service", nonce: '3', schema: 2, mutation: true)], "service", new string('a', 40));
+        var launches = new Dictionary<string, byte[]> { ["17-1.bin"] = [] };
+        Assert.Equal(v.GetProperty("generation").GetString(), legacy.Generation(record, service, [original], launches));
+        foreach (int destination in new[] { 1, 2, 0 })
+        {
+            byte[] candidate = Bytes(Encoding.UTF8.GetString(segment).Replace("\"destination\":1", "\"destination\":" + destination.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal));
+            Thermal(files, candidate);
+            if (destination == 0) { Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [original])); }
+            else { _ = WindowsNativeThermalHistory.Read(files, [original]); }
+        }
+        Thermal(files, segment);
+        Roll(files, segment, []);
+        var segmented = WindowsNativeThermalHistory.Read(files, [original]);
+        Assert.Equal(v.GetProperty("global").GetString(), segmented.Commitment);
+        Thermal(files, WindowsNativeThermalHistory.Envelope(1, NativeCanonical.Digest(Bytes(v.GetProperty("checkpoint").GetString()!)), segment));
+        Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [original]));
+        Thermal(files, WindowsNativeThermalHistory.Envelope(1, NativeCanonical.Digest(Bytes(v.GetProperty("checkpoint").GetString()!)), []));
+        Assert.Equal(legacy.Generation(record, service, [original], launches), segmented.Generation(record, service, [original], launches));
+        Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, []));
+        // Actual previous reader's refusal boundary is retained explicitly.
+        Assert.Throws<IOException>(() => WindowsNativeTrustLifecycle.RequireNoThermalJournal("thermal-mutation.journal"));
+        foreach (var bad in v.GetProperty("rejectedRows").EnumerateArray())
+        {
+            using var badFiles = ManagedMailboxCorrectionTests.Bootstrap(); Thermal(badFiles, Bytes(bad.GetString()!));
+            Assert.ThrowsAny<Exception>(() => WindowsNativeThermalHistory.Read(badFiles, [original]));
+        }
+    }
+    [Theory]
+    [InlineData("pending")]
+    [InlineData("empty")]
+    [InlineData("orphan-rollover")]
+    [InlineData("unsettled")]
+    [InlineData("foreign")]
+    [InlineData("missing-drain")]
+    [InlineData("wrong-process")]
+    [InlineData("missing-segment")]
+    [InlineData("unknown")]
+    [InlineData("producer")]
+    public async Task OriginalEvidenceAndIndependentDrainAreMandatoryBeforeRetirement(string fault)
+    {
+        using var epochs = ManagedMailboxCorrectionTests.Bootstrap(); using var managed = ManagedMailboxCorrectionTests.Handoff();
+        using var packages = await ManagedMailboxCorrectionTests.Packages(mutation: fault != "producer");
+        var run = new ManagedMailboxRun(new string('1', 32), "17:100", new string('2', 64), new string('3', 64), new string('4', 32));
+        using var transfer = ManagedMailboxCorrectionTests.SignedTransfer(managed, packages, run, '6');
+        var storage = new ManagedMailboxStorage(() => false, () => throw new InvalidOperationException("No legacy root"), () => managed.RetainFixtureView());
+        NativeEpochRecord record;
+        using (var tx = WindowsNativeEpochTransaction.Begin(epochs.RetainFixtureView(), packages.Native, Guid.ParseExact(new string('6', 32), "N"), managedTransfer: transfer, storage: storage))
+        { record = tx.Record; tx.MarkStartupSubmitted(); Drain(epochs, record); tx.CommitAfterBoundReadiness(new string('e', 64)); }
+        string nonce = new('4', 64); _ = Owner(epochs, record, nonce, process: fault == "wrong-process" ? "18:2" : "17:1");
+        byte[] rows = Rows(fault == "foreign" ? new string('5', 64) : nonce, 1, 1, confirmed: true);
+        if (fault == "unsettled") { rows = rows[..(Array.LastIndexOf(rows, (byte)10, rows.Length - 2) + 1)]; }
+        Thermal(epochs, rows);
+        if (fault == "empty") { Thermal(epochs, []); }
+        if (fault == "orphan-rollover") { File.WriteAllBytes(Path.Combine(epochs.Root, "owner", "thermal-mutation.journal.rollover"), "partial metadata"u8.ToArray()); }
+        if (fault == "pending") { epochs.Publish(Path.Combine(epochs.Root, "owner", "thermal-mutation.journal.pending"), rows); }
+        if (fault == "missing-drain") { File.Delete(Path.Combine(epochs.Root, record.Epoch, "attempts", "drain-17-1.bin")); }
+        if (fault == "missing-segment") { Roll(epochs, rows, []); File.Delete(Path.Combine(epochs.Root, "owner", "thermal-history", WindowsNativeThermalHistory.Name("segment", 1))); }
+        if (fault == "unknown") { epochs.Publish(Path.Combine(epochs.Root, "owner", "unknown.bin"), "unknown"u8.ToArray()); }
+        byte[] before = File.ReadAllBytes(Path.Combine(epochs.Root, "owner", "thermal-mutation.journal"));
+        using var selection = await WindowsNativeInstalledSelection.OpenAsync(epochs.RetainFixtureView(), default);
+        Assert.ThrowsAny<IOException>(() => selection.RetireRecoverableSelection(17, 1));
+        Assert.Equal(before, File.ReadAllBytes(Path.Combine(epochs.Root, "owner", "thermal-mutation.journal")));
+        Assert.False(File.Exists(Path.Combine(epochs.Root, record.Epoch, "Retired.bin")));
+    }
+    [Fact]
+    public async Task PositiveManagedNativeManagedGrowthKeepsOldGenerationProofAndCompatibleRollbackFresh()
+    {
+        using var epochs = ManagedMailboxCorrectionTests.Bootstrap(); using var managed = ManagedMailboxCorrectionTests.Handoff();
+        using var packages = await ManagedMailboxCorrectionTests.Packages(mutation: true);
+        var storage = new ManagedMailboxStorage(() => false, () => throw new InvalidOperationException("No legacy root"), () => managed.RetainFixtureView());
+        var run = new ManagedMailboxRun(new string('1', 32), "17:100", new string('2', 64), new string('3', 64), new string('4', 32));
+        using var firstTransfer = ManagedMailboxCorrectionTests.SignedTransfer(managed, packages, run, '6');
+        NativeEpochRecord first;
+        using (var tx = WindowsNativeEpochTransaction.Begin(epochs.RetainFixtureView(), packages.Native, Guid.ParseExact(new string('6', 32), "N"), managedTransfer: firstTransfer, storage: storage))
+        { first = tx.Record; tx.MarkStartupSubmitted(); Drain(epochs, first); tx.CommitAfterBoundReadiness(new string('e', 64)); }
+        string nonce = new('4', 64); _ = Owner(epochs, first, nonce);
+        byte[] segment = [.. Rows(nonce, 0, 999), .. Rows(nonce, 999, 1, confirmed: true)]; Assert.InRange(segment.Length, 1, WindowsNativeThermalHistory.SegmentBytes);
+        Thermal(epochs, segment);
+        using (var selection = await WindowsNativeInstalledSelection.OpenAsync(epochs.RetainFixtureView(), default)) { selection.RetireRecoverableSelection(17, 1); first = selection.Record; }
+        Assert.ThrowsAny<IOException>(() => PinnedPredecessorThermalTrustLifecycle.RequireOwnerRetired(epochs));
+        var firstManaged = ManagedMailboxRecovery.Selected(managed)!;
+        using (var native = ManagedMailboxNativeCustody.AcquireForTests(epochs.RetainFixtureView())) { ManagedMailboxRecovery.Resolve(managed, native, _ => { }); }
+        string[] originalProof;
+        using (var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(epochs))
+        { originalProof = ManagedMailboxNativeCustody.ParseRetirement(WindowsNativeAttemptHistory.RequireDrained(epochs, first, Path.Combine(epochs.Root, first.Epoch), packages.Native.Service, owner)); }
+        Assert.Equal(8, originalProof.Length);
+        byte[] oldTerminal = File.ReadAllBytes(ManagedMailboxRecovery.PathFor(managed, firstManaged, "native-proof"));
+        using var secondTransfer = ManagedMailboxCorrectionTests.SignedTransfer(managed, packages, run with { Run = new string('9', 32), Process = "18:101" }, 'a');
+        NativeEpochRecord second;
+        using (var tx = WindowsNativeEpochTransaction.Begin(epochs.RetainFixtureView(), packages.Native, Guid.ParseExact(new string('a', 32), "N"), managedTransfer: secondTransfer, storage: storage))
+        { second = tx.Record; tx.MarkStartupSubmitted(); Drain(epochs, second); tx.CommitAfterBoundReadiness(new string('e', 64)); }
+        string predecessor = NativeCanonical.Digest(File.ReadAllBytes(Path.Combine(epochs.Root, "owner", "owner-00000000000000000004.bin")));
+        _ = Owner(epochs, second, new string('5', 64), 5, predecessor);
+        // Keep both per-file bounds while total retained history crosses 1 MiB.
+        byte[] tail = Rows(new string('5', 64), 2000, 1000);
+        Assert.InRange(tail.Length, 1, WindowsNativeThermalHistory.SegmentBytes); Assert.True(segment.Length + tail.Length > WindowsNativeThermalHistory.SegmentBytes);
+        Roll(epochs, segment, tail);
+        using (var selection = await WindowsNativeInstalledSelection.OpenAsync(epochs.RetainFixtureView(), default)) { selection.RetireRecoverableSelection(17, 1); }
+        using (var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(epochs))
+        {
+            var fresh = ManagedMailboxNativeCustody.ParseRetirement(WindowsNativeAttemptHistory.RequireDrained(epochs, first, Path.Combine(epochs.Root, first.Epoch), packages.Native.Service, owner));
+            Assert.Equal(originalProof[7], fresh[7]); Assert.NotEqual(originalProof[6], fresh[6]);
+        }
+        using (var native = ManagedMailboxNativeCustody.AcquireForTests(epochs.RetainFixtureView()))
+        { native.RequirePreservedResolution(firstManaged, first, oldTerminal, "consumed-and-retired"); ManagedMailboxRecovery.Resolve(managed, native, _ => { }); }
+        Assert.Equal(oldTerminal, File.ReadAllBytes(ManagedMailboxRecovery.PathFor(managed, firstManaged, "native-proof")));
+        // Same authenticated package, fresh compatible reader, new rollback epoch.
+        using var rollback = ManagedMailboxCorrectionTests.SignedTransfer(managed, packages, run with { Run = new string('c', 32), Process = "19:102" }, 'c');
+        using var next = WindowsNativeEpochTransaction.Begin(epochs.RetainFixtureView(), packages.Native, Guid.ParseExact(new string('c', 32), "N"), managedTransfer: rollback, storage: storage);
+        Assert.Equal(3, next.Record.Ordinal); Assert.NotEqual(first.Epoch, next.Record.Epoch);
+    }
+    [Fact]
+    public async Task GenuinePredecessorV2NoThermalTerminalRequiresFreshEmptyGenerationAndNeverAttestsLaterRows()
+    {
+        using var epochs = ManagedMailboxCorrectionTests.Bootstrap(); using var managed = ManagedMailboxCorrectionTests.Handoff();
+        using var packages = await ManagedMailboxCorrectionTests.Packages(mutation: true);
+        var storage = new ManagedMailboxStorage(() => false, () => throw new InvalidOperationException("No legacy root"), () => managed.RetainFixtureView());
+        var run = new ManagedMailboxRun(new string('1', 32), "17:100", new string('2', 64), new string('3', 64), new string('4', 32));
+        using var transfer = ManagedMailboxCorrectionTests.SignedTransfer(managed, packages, run, '6');
+        NativeEpochRecord record;
+        using (var tx = WindowsNativeEpochTransaction.Begin(epochs.RetainFixtureView(), packages.Native, Guid.ParseExact(new string('6', 32), "N"), managedTransfer: transfer, storage: storage))
+        { record = tx.Record; tx.MarkStartupSubmitted(); Drain(epochs, record); tx.CommitAfterBoundReadiness(new string('e', 64)); }
+        string nonce = new('4', 64); _ = Owner(epochs, record, nonce);
+        using (var selection = await WindowsNativeInstalledSelection.OpenAsync(epochs.RetainFixtureView(), default)) { selection.RetireRecoverableSelection(17, 1); record = selection.Record; }
+        byte[] predecessor;
+        using (var oldOwner = PinnedPredecessorThermalTrustLifecycle.AcquireRetiredOwner(epochs))
+        { predecessor = PinnedPredecessorThermalAttemptHistory.RequireDrained(epochs, record, Path.Combine(epochs.Root, record.Epoch), packages.Native.Service, oldOwner.Commitment); }
+        Assert.Equal(7, ManagedMailboxNativeCustody.ParseRetirement(predecessor).Length);
+        var selected = ManagedMailboxRecovery.Selected(managed)!;
+        byte[] legacyResolution;
+        using (var native = ManagedMailboxNativeCustody.AcquireForTests(epochs.RetainFixtureView()))
+        {
+            var outer = NativeCanonical.ParseLines(native.Resolve(selected, record).Proof, "OpenBlade.ManagedNativeResolution.v2", 7);
+            var generation = NativeCanonical.ParseLines(Convert.FromBase64String(outer[5]), "OpenBlade.ManagedNativeGenerationProof.v2", 5);
+            var space = NativeCanonical.ParseLines(Convert.FromBase64String(generation[3]), "OpenBlade.ManagedNativeNamespace.v2", 4);
+            // Exact predecessor single-generation namespace commitment uses its
+            // actual v2 proof, not the current fresh v3 proof's content address.
+            byte[] oldSpace = NativeCanonical.Lines("OpenBlade.ManagedNativeNamespace.v2", space[0], space[1], NativeCanonical.Digest(Bytes(NativeCanonical.Digest(predecessor))));
+            byte[] evidence = NativeCanonical.Lines("OpenBlade.ManagedNativeGenerationProof.v2", generation[0], Convert.ToBase64String(predecessor), generation[2], Convert.ToBase64String(oldSpace));
+            legacyResolution = NativeCanonical.Lines("OpenBlade.ManagedNativeResolution.v2", outer[0], outer[1], outer[2], NativeCanonical.Digest(evidence), outer[4], Convert.ToBase64String(evidence));
+            managed.Publish(ManagedMailboxRecovery.PathFor(managed, selected, "native-proof"), legacyResolution);
+            using var exclusion = managed.AcquireServiceCustody(Path.Combine(managed.Root, "exclusion.lock"));
+            PinnedPredecessorMailboxRecovery.Resolve(managed, native, _ => { });
+        }
+        byte[] terminal = File.ReadAllBytes(ManagedMailboxRecovery.PathFor(managed, selected, "terminal"));
+        using (var native = ManagedMailboxNativeCustody.AcquireForTests(epochs.RetainFixtureView()))
+        { ManagedMailboxRecovery.Resolve(managed, native, _ => { }); }
+        Assert.Equal(legacyResolution, File.ReadAllBytes(ManagedMailboxRecovery.PathFor(managed, selected, "native-proof")));
+        Assert.Equal(terminal, File.ReadAllBytes(ManagedMailboxRecovery.PathFor(managed, selected, "terminal")));
+        Thermal(epochs, Rows(nonce, 1, 1, confirmed: true));
+        using (var native = ManagedMailboxNativeCustody.AcquireForTests(epochs.RetainFixtureView()))
+        { Assert.ThrowsAny<IOException>(() => ManagedMailboxRecovery.Resolve(managed, native, _ => { })); }
+        Assert.Equal(legacyResolution, File.ReadAllBytes(ManagedMailboxRecovery.PathFor(managed, selected, "native-proof")));
+        Assert.Equal(terminal, File.ReadAllBytes(ManagedMailboxRecovery.PathFor(managed, selected, "terminal")));
+    }
+
+}

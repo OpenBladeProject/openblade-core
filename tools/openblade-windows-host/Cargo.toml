@@ -74,7 +74,7 @@ test = false
 bench = false
 
 [dependencies]
-openblade-domain = { path = '../../rust/crates/openblade-domain' }
+openblade-domain = { path = '../../rust/crates/openblade-domain', features = ['thermal-history'] }
 openblade-protocol = { path = '../../rust/crates/openblade-protocol' }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = { version = "=1.0.149", features = ["arbitrary_precision", "raw_value"] }

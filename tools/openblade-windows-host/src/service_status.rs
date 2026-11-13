@@ -866,62 +866,7 @@ pub(crate) fn request_id() -> io::Result<String> {
     ))
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct PerformanceOverride {
-    pub(crate) value: i32,
-    pub(crate) lifetime: u8,
-    pub(crate) custom_performance: Option<Value>,
-    pub(crate) gpu_clock_tuning: Option<Value>,
-}
-impl PerformanceOverride {
-    pub(crate) fn validate(&self) -> io::Result<()> {
-        if openblade_domain::thermal_mutation::Preset::from_wire(self.value).is_none()
-            || self.lifetime > 1
-            || self.custom_performance.is_some()
-        {
-            return Err(invalid("unsupported or invalid thermal override"));
-        }
-        if let Some(gpu) = &self.gpu_clock_tuning {
-            validate_gpu_tuning(gpu)?;
-        }
-        Ok(())
-    }
-}
-
-// Shared by saved intent and typed requests. Managed GpuClockTuningSettings
-// emits EffectiveOffsets as a computed property (Profiles.cs); it grants no
-// extra intent and must agree with Enabled/Offsets when it is present.
-pub(crate) fn validate_gpu_tuning(gpu: &Value) -> io::Result<()> {
-    let valid_offsets = |value: &Value| {
-        value.as_object().is_some_and(|o| {
-            o.len() == 2
-                && o.keys()
-                    .all(|k| ["coreMegahertz", "memoryMegahertz"].contains(&k.as_str()))
-        }) && ["coreMegahertz", "memoryMegahertz"]
-            .iter()
-            .all(|k| matches!(value[k].as_i64(), Some(-10000..=10000)))
-    };
-    if gpu.as_object().is_none_or(|o| {
-        o.keys()
-            .any(|k| !["enabled", "offsets", "effectiveOffsets"].contains(&k.as_str()))
-    }) || !gpu["enabled"].is_boolean()
-        || !valid_offsets(&gpu["offsets"])
-    {
-        return Err(invalid("unsupported or invalid thermal override"));
-    }
-    if let Some(effective) = gpu.get("effectiveOffsets") {
-        let expected = if gpu["enabled"] == true {
-            gpu["offsets"].clone()
-        } else {
-            serde_json::json!({"coreMegahertz":0,"memoryMegahertz":0})
-        };
-        if !valid_offsets(effective) || effective != &expected {
-            return Err(invalid("inconsistent computed GPU offsets"));
-        }
-    }
-    Ok(())
-}
+pub(crate) use openblade_domain::thermal_history::{PerformanceOverride, validate_gpu_tuning};
 
 #[cfg(feature = "service-thermal-mutation-v1")]
 impl Snapshot {

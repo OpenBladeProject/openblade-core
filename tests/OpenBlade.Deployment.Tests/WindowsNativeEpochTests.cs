@@ -35,9 +35,9 @@ public sealed class WindowsNativeEpochTests
         return bytes;
     }
 
-    internal static async Task<WindowsNativePackage> Package(WindowsNativeEpochFiles files, char nonce = 'b', byte marker = 1, int schema = 1, bool mailbox = false, string? sourceRevision = null)
+    internal static async Task<WindowsNativePackage> Package(WindowsNativeEpochFiles files, char nonce = 'b', byte marker = 1, int schema = 1, bool mailbox = false, string? sourceRevision = null, bool mutation = false)
     {
-        byte[] bytes = WindowsNativeInventoryBurnExtractorTests.NativeEpochBundle(Image("service", nonce, marker, schema, mailbox: mailbox, sourceRevision: sourceRevision), Image("agent", nonce, 2, schema, mailbox: mailbox, sourceRevision: sourceRevision), sourceRevision);
+        byte[] bytes = WindowsNativeInventoryBurnExtractorTests.NativeEpochBundle(Image("service", nonce, marker, schema, mailbox: mailbox, sourceRevision: sourceRevision, mutation: mutation), Image("agent", nonce, 2, schema, mailbox: mailbox, sourceRevision: sourceRevision, mutation: mutation), sourceRevision);
         using var signed = OpenBladeSignedReleaseVerifierTests.TestRelease.CreateWithInstallerBytes(bytes, sourceRevision ?? new string('a', 40));
         if (!File.Exists(Path.Combine(files.Root, "root.bin")))
         {

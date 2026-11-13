@@ -4,6 +4,9 @@
 //! enum payloads and display values retain the host's validation order.
 #![no_std]
 
+#[cfg(feature = "thermal-history")]
+extern crate std;
+
 pub mod thermal_mutation;
 pub mod thermal_observation;
 
@@ -136,3 +139,6 @@ pub fn apply_display<'a>(
 pub mod automation;
 pub mod function_row;
 pub mod recovery;
+
+#[cfg(feature = "thermal-history")]
+pub mod thermal_history;

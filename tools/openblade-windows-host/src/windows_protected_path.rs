@@ -388,28 +388,7 @@ pub(crate) fn verify_descriptor(
     file: &File,
     accepts: impl FnOnce(&[u8]) -> Option<bool>,
 ) -> io::Result<()> {
-    let mut descriptor = ptr::null_mut();
-    // SAFETY: file owns the handle opened with READ_CONTROL, and descriptor is
-    // writable. Only the owner and DACL are requested.
-    let status = unsafe {
-        GetSecurityInfo(
-            file.as_raw_handle(),
-            SE_FILE_OBJECT,
-            OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
-            ptr::null_mut(),
-            ptr::null_mut(),
-            ptr::null_mut(),
-            ptr::null_mut(),
-            &mut descriptor,
-        )
-    };
-    if status != 0 {
-        return Err(io::Error::from_raw_os_error(status as i32));
-    }
-    if descriptor.is_null() {
-        return Err(denied("missing configuration security descriptor"));
-    }
-    let descriptor = LocalDescriptor(descriptor);
+    let descriptor = retain_descriptor(file)?;
     // SAFETY: The live self-relative descriptor and its allocation come from Windows.
     let size = unsafe { GetSecurityDescriptorLength(descriptor.0) } as usize;
     const MAX_DESCRIPTOR: usize = 20 + u16::MAX as usize + 2 * (8 + 15 * 4);
@@ -683,4 +662,32 @@ pub(crate) fn rename_same_directory(file: &File, target: &str, replace: bool) ->
         ));
     }
     Ok(())
+}
+
+/// Retain an existing protected descriptor for a child with the same policy.
+/// The caller verifies both parent and new child; this never grants wider ACLs.
+pub(crate) fn retain_descriptor(file: &File) -> io::Result<LocalDescriptor> {
+    let mut descriptor = ptr::null_mut();
+    // SAFETY: file owns the handle opened with READ_CONTROL, and descriptor is
+    // writable. Only the owner and DACL are requested.
+    let status = unsafe {
+        GetSecurityInfo(
+            file.as_raw_handle(),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            &mut descriptor,
+        )
+    };
+    if status != 0 {
+        return Err(io::Error::from_raw_os_error(status as i32));
+    }
+    if descriptor.is_null() {
+        return Err(denied("missing configuration security descriptor"));
+    }
+    let descriptor = LocalDescriptor(descriptor);
+    Ok(descriptor)
 }

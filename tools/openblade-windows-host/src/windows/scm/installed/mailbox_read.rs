@@ -74,6 +74,10 @@ pub(super) trait ReadCustody: Send + Sync {
         Err(deny())
     }
     #[cfg(feature = "service-thermal-mutation-v1")]
+    fn journal_reserve(&self, _: Option<&[u8]>, _: usize) -> io::Result<Option<Vec<u8>>> {
+        Err(deny())
+    }
+    #[cfg(feature = "service-thermal-mutation-v1")]
     fn journal_replace(&self, _: Option<&[u8]>, _: &[u8]) -> io::Result<()> {
         Err(deny())
     }
@@ -119,6 +123,14 @@ impl ReadCustody for GuardedReadCustody {
     fn journal_read(&self, pending: bool) -> io::Result<Option<Vec<u8>>> {
         self.verify_integrity()?;
         self.original.journal_read(pending)
+    }
+    fn journal_reserve(
+        &self,
+        expected: Option<&[u8]>,
+        needed: usize,
+    ) -> io::Result<Option<Vec<u8>>> {
+        self.verify_integrity()?;
+        self.original.journal_reserve(expected, needed)
     }
     fn journal_replace(&self, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
         self.verify_integrity()?;
@@ -568,6 +580,21 @@ impl ReadCustody for ReadLease {
             .ok_or_else(deny)?
             ._owner
             .journal_read(pending)
+    }
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn journal_reserve(
+        &self,
+        expected: Option<&[u8]>,
+        needed: usize,
+    ) -> io::Result<Option<Vec<u8>>> {
+        self.authorize().ok_or_else(deny)?;
+        self.resources
+            .lock()
+            .map_err(|_| deny())?
+            .as_ref()
+            .ok_or_else(deny)?
+            ._owner
+            .journal_reserve(expected, needed)
     }
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn journal_replace(&self, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {

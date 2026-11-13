@@ -31,10 +31,20 @@ impl PrivateRoot {
                 .expect("prelisted private fixture root"),
         );
         assert!(base.is_absolute());
-        assert!(matches!(
-            leaf,
-            "protected-storage" | "owner-history" | "owner-journal" | "owner-journal-foreign"
-        ));
+        assert!(
+            (leaf.starts_with("history-cut-")
+                && leaf.len() == 14
+                && leaf[12..]
+                    .parse::<usize>()
+                    .is_ok_and(|n| n < 18 && leaf == format!("history-cut-{n:02}")))
+                || matches!(
+                    leaf,
+                    "protected-storage"
+                        | "owner-history"
+                        | "owner-journal"
+                        | "owner-journal-foreign"
+                )
+        );
         let sid = std::env::var("OPENBLADE_THERMAL_FIXTURE_SID").expect("prelisted own-user SID");
         assert!(sid.starts_with("S-1-5-21-"));
         let wide: Vec<u16> = sid.encode_utf16().chain([0]).collect();
@@ -118,6 +128,13 @@ impl crate::installed::readiness::mailbox_read::ReadCustody for JournalCustody {
     }
     fn journal_read(&self, pending: bool) -> io::Result<Option<Vec<u8>>> {
         self.0.lock().unwrap().journal_read(pending)
+    }
+    fn journal_reserve(
+        &self,
+        expected: Option<&[u8]>,
+        needed: usize,
+    ) -> io::Result<Option<Vec<u8>>> {
+        self.0.lock().unwrap().journal_reserve(expected, needed)
     }
     fn journal_replace(&self, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
         self.0.lock().unwrap().journal_replace(expected, bytes)
@@ -574,4 +591,262 @@ fn private_pending_terminal_file_preserves_intact_original_owner_custody() {
         pending
     );
     custody.0.lock().unwrap().retire_active().unwrap();
+}
+
+#[test]
+fn history_growth_real_storage_reserves_before_prepared_across_original_owners() {
+    use crate::thermal_history::{self as history, Entry};
+    use openblade_domain::thermal_mutation::{Preset, Progress};
+    let user = PrivateRoot::open("protected-storage");
+    let machine = PrivateRoot::open("owner-journal");
+    let mut owner = machine.owner().unwrap();
+    owner.activate_injected(reservation('7')).unwrap();
+    let requested = None;
+    let intent = crate::native_owner_record::digest(b"null");
+    let mut seed = vec![];
+    let mut n = 0;
+    loop {
+        let mut transaction = vec![];
+        for progress in [0, 6] {
+            let e = Entry {
+                request: format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),
+                owner: "7".repeat(64),
+                user_sid: user.sid.clone(),
+                caller_pid: 42,
+                session: 7,
+                requested: None,
+                destination: 1,
+                intent: intent.clone(),
+                progress,
+            };
+            transaction.extend(serde_json::to_vec(&e).unwrap());
+            transaction.push(b'\n');
+        }
+        if seed.len() + transaction.len() > history::SEGMENT {
+            break;
+        }
+        seed.extend(transaction);
+        n += 1;
+    }
+    owner.journal_replace(None, &seed).unwrap();
+    owner.retire_active().unwrap();
+    drop(owner);
+    let mut owner = machine.owner().unwrap();
+    owner.activate_injected(reservation('8')).unwrap();
+    let custody = Arc::new(JournalCustody(std::sync::Mutex::new(owner)));
+    let storage = Storage::open(
+        Box::new(CustodialFiles {
+            user: user.files().unwrap(),
+            custody: custody.clone(),
+        }),
+        &user.sid,
+    )
+    .unwrap();
+    let request = "bbbbbbbb-cccc-dddd-eeee-000000000001";
+    storage
+        .record(
+            request,
+            &"8".repeat(64),
+            Preset::Balanced,
+            &intent,
+            &requested,
+            42,
+            7,
+            Progress::Prepared,
+        )
+        .unwrap();
+    assert_eq!(
+        std::fs::read(
+            machine
+                .path
+                .join("thermal-history/segment-00000000000000000001.bin")
+        )
+        .unwrap(),
+        seed
+    );
+    assert!(
+        custody
+            .0
+            .lock()
+            .unwrap()
+            .journal_read(false)
+            .unwrap()
+            .unwrap()
+            .len()
+            < history::ROW
+    );
+    // Same actual storage chronology, typed terminal guarantee remains distinct.
+    for p in [
+        Progress::FirstIntent,
+        Progress::FirstAcknowledged,
+        Progress::SecondIntent,
+        Progress::SecondAcknowledged,
+        Progress::Confirmed,
+    ] {
+        storage
+            .record(
+                request,
+                &"8".repeat(64),
+                Preset::Balanced,
+                &intent,
+                &requested,
+                42,
+                7,
+                p,
+            )
+            .unwrap();
+    }
+    drop(storage);
+    let mut owner = custody.0.lock().unwrap();
+    owner.retire_active().unwrap();
+    drop(owner);
+    drop(custody);
+    let mut owner = machine.owner().unwrap();
+    owner.activate_injected(reservation('9')).unwrap();
+    let custody = Arc::new(JournalCustody(std::sync::Mutex::new(owner)));
+    let storage = Storage::open(
+        Box::new(CustodialFiles {
+            user: user.files().unwrap(),
+            custody: custody.clone(),
+        }),
+        &user.sid,
+    )
+    .unwrap();
+    assert!(!storage.pending());
+    let request = "cccccccc-dddd-eeee-ffff-000000000001";
+    storage
+        .record(
+            request,
+            &"9".repeat(64),
+            Preset::Performance,
+            &intent,
+            &requested,
+            42,
+            7,
+            Progress::Prepared,
+        )
+        .unwrap();
+    storage
+        .record(
+            request,
+            &"9".repeat(64),
+            Preset::Performance,
+            &intent,
+            &requested,
+            42,
+            7,
+            Progress::KnownNotSubmitted,
+        )
+        .unwrap();
+    let tail = custody
+        .0
+        .lock()
+        .unwrap()
+        .journal_read(false)
+        .unwrap()
+        .unwrap();
+    assert!(seed.len() + tail.len() > history::SEGMENT);
+    assert_eq!(
+        history::rows(&tail, |_, _| Ok(()))
+            .unwrap()
+            .1
+            .unwrap()
+            .progress,
+        6
+    );
+}
+
+#[test]
+fn history_protected_publication_cuts_recover_only_matched_metadata_and_preserve_every_byte() {
+    let vector: Value = serde_json::from_str(include_str!(
+        "../../../../../tests/data/thermal-history-v1.json"
+    ))
+    .unwrap();
+    let original = vector["segment"].as_str().unwrap().as_bytes().to_vec();
+    let boundaries = [
+        "segment:created",
+        "segment:written",
+        "segment:flushed",
+        "segment:readback",
+        "checkpoint:created",
+        "checkpoint:written",
+        "checkpoint:flushed",
+        "checkpoint:readback",
+        "roll:created",
+        "roll:written",
+        "roll:flushed",
+        "roll:readback",
+        "active:created",
+        "active:written",
+        "active:flushed",
+        "active:readback",
+        "active:renamed",
+        "active:verified",
+    ];
+    for (index, boundary) in boundaries.into_iter().enumerate() {
+        let machine = PrivateRoot::open(&format!("history-cut-{index:02}"));
+        let mut owner = machine.owner().unwrap();
+        owner.activate_injected(reservation('4')).unwrap();
+        owner.journal_replace(None, &original).unwrap();
+        let triggered = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let seen = triggered.clone();
+        owner.history_boundary = Some(Arc::new(move |point| {
+            if point == boundary {
+                seen.store(true, std::sync::atomic::Ordering::Release);
+                Err(io::ErrorKind::StorageFull.into())
+            } else {
+                Ok(())
+            }
+        }));
+        assert!(
+            owner
+                .journal_reserve(Some(&original), crate::thermal_history::SEGMENT)
+                .is_err()
+        );
+        assert!(triggered.load(std::sync::atomic::Ordering::Acquire));
+        drop(owner);
+        let owner = machine.owner().unwrap();
+        let recovered = owner.journal_read(false);
+        let recoverable = matches!(index,9..=11|13..=17);
+        assert_eq!(recovered.is_ok(), recoverable, "{boundary}");
+        if recoverable {
+            assert!(recovered.unwrap().unwrap().is_empty());
+        }
+        let active = std::fs::read(machine.path.join("thermal-mutation.journal")).unwrap();
+        let archived = std::fs::read(
+            machine
+                .path
+                .join("thermal-history/segment-00000000000000000001.bin"),
+        )
+        .ok();
+        assert!(active == original || archived.as_ref() == Some(&original));
+        assert!(
+            !machine
+                .path
+                .join("thermal-mutation.journal.pending")
+                .exists()
+        );
+        println!(
+            "THERMAL_METADATA_CUT {boundary} recovered={recoverable} original_sha256={}",
+            crate::native_owner_record::digest(&original)
+        );
+    }
+}
+
+#[test]
+fn history_orphan_rollover_staging_without_directory_is_never_empty_native_history() {
+    let machine = PrivateRoot::open("owner-journal-foreign");
+    let mut owner = machine.owner().unwrap();
+    owner.activate_injected(reservation('4')).unwrap();
+    let path = machine.path.join("thermal-mutation.journal.rollover");
+    let evidence = b"partial metadata, never firmware intent";
+    std::fs::write(&path, evidence).unwrap();
+    assert!(!machine.path.join("thermal-history").exists());
+    assert!(owner.journal_read(false).is_err());
+    assert!(owner.journal_reserve(None, 1000).is_err());
+    drop(owner);
+    let owner = machine.owner().unwrap();
+    assert!(owner.journal_read(false).is_err());
+    assert_eq!(std::fs::read(path).unwrap(), evidence);
+    assert!(!machine.path.join("thermal-mutation.journal").exists());
 }

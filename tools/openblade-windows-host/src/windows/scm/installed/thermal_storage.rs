@@ -2,7 +2,6 @@
 //! explicit storage first; the injected path never resolves a product root.
 use crate::configuration::{self, File as ConfigFile, Inspection, RecoveryRecord};
 use openblade_domain::thermal_mutation::{Preset, Progress, progress_follows, settled};
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::Digest;
 use std::{
@@ -14,6 +13,21 @@ const OVERRIDES: &str = "manual-overrides.json";
 const JOURNAL: &str = "thermal-mutation.journal";
 pub(super) trait Files: Send + Sync {
     fn read(&self, name: &str) -> io::Result<Option<Vec<u8>>>;
+    fn reserve(&self, expected: Option<&[u8]>, needed: usize) -> io::Result<Option<Vec<u8>>> {
+        if needed > crate::thermal_history::SEGMENT
+            || expected
+                .unwrap_or_default()
+                .len()
+                .checked_add(needed)
+                .is_none_or(|n| n > crate::thermal_history::SEGMENT)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::StorageFull,
+                "Thermal progress capacity unavailable before Prepared.",
+            ));
+        }
+        Ok(expected.map(<[u8]>::to_vec))
+    }
     fn replace(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()>;
 }
 fn denied() -> io::Error {
@@ -195,19 +209,7 @@ fn fan_control(v: &Value) -> io::Result<()> {
 }
 
 pub(super) use crate::service_status::PerformanceOverride as Override;
-#[derive(Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct Entry {
-    request: String,
-    owner: String,
-    user_sid: String,
-    caller_pid: u32,
-    session: u32,
-    requested: Option<Override>,
-    destination: i32,
-    intent: String,
-    progress: u8,
-}
+use crate::thermal_history::Entry;
 struct State {
     quarantined: bool,
     configuration_failed: bool,
@@ -256,59 +258,8 @@ impl Storage {
         let bytes = files.read(OVERRIDES)?;
         let document = overrides(bytes.as_deref())?;
         let journal = files.read(JOURNAL)?;
-        let mut last: Option<Entry> = None;
-        if let Some(bytes) = &journal {
-            if bytes.len() > 1024 * 1024 || !bytes.ends_with(b"\n") {
-                return Err(denied());
-            }
-            for line in bytes.split(|b| *b == b'\n').filter(|line| !line.is_empty()) {
-                let entry: Entry = serde_json::from_slice(line).map_err(|_| denied())?;
-                if let Some(v) = &entry.requested {
-                    v.validate()?;
-                }
-                if !entry.user_sid.starts_with("S-1-5-21-")
-                    || !entry
-                        .user_sid
-                        .bytes()
-                        .all(|b| b.is_ascii_digit() || b"S-".contains(&b))
-                    || entry.caller_pid == 0
-                    || entry.session == 0
-                    || format!(
-                        "{:x}",
-                        sha2::Sha256::digest(serde_json::to_vec(&entry.requested)?)
-                    ) != entry.intent
-                {
-                    return Err(denied());
-                }
-                if !crate::service_frame::is_guid(&entry.request)
-                    || Preset::from_wire(entry.destination).is_none()
-                    || !crate::native_owner_record::hex(&entry.owner, 64)
-                    || !crate::native_owner_record::hex(&entry.intent, 64)
-                    || entry.progress > 6
-                {
-                    return Err(denied());
-                }
-                if let Some(prior) = &last {
-                    if entry.request == prior.request {
-                        if entry.user_sid != prior.user_sid
-                            || entry.caller_pid != prior.caller_pid
-                            || entry.session != prior.session
-                            || entry.owner != prior.owner
-                            || entry.intent != prior.intent
-                            || entry.destination != prior.destination
-                            || !progress_follows(prior.progress, entry.progress)
-                        {
-                            return Err(denied());
-                        }
-                    } else if !settled(prior.progress) || entry.progress != 0 {
-                        return Err(denied());
-                    }
-                } else if entry.progress != 0 {
-                    return Err(denied());
-                }
-                last = Some(entry);
-            }
-        }
+        let last =
+            crate::thermal_history::rows(journal.as_deref().unwrap_or_default(), |_, _| Ok(()))?.1;
         Ok(Arc::new(Self {
             same_path,
             user_sid: user_sid.into(),
@@ -619,6 +570,26 @@ impl Storage {
             intent: intent.into(),
             progress: progress as u8,
         };
+        if progress == Progress::Prepared {
+            // Reserve the exact request's largest legal branch (0..5). Row
+            // progress is one digit, including the shorter 0->6 retirement path.
+            let row = serde_json::to_vec(&entry)?
+                .len()
+                .checked_add(1)
+                .ok_or_else(denied)?;
+            if row > crate::thermal_history::ROW {
+                return Err(denied());
+            }
+            let needed = row.checked_mul(6).ok_or_else(denied)?;
+            match self.files.reserve(s.journal.as_deref(), needed) {
+                Ok(journal) => s.journal = journal,
+                Err(error) => {
+                    s.quarantined = true;
+                    s.preparation_failed = true;
+                    return Err(error);
+                }
+            }
+        }
         let mut bytes = s.journal.clone().unwrap_or_default();
         bytes.extend(serde_json::to_vec(&entry)?);
         bytes.push(b'\n');

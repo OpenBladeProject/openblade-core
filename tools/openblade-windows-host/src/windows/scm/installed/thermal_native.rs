@@ -328,6 +328,9 @@ pub(super) struct CustodialFiles {
     pub(super) custody: Arc<dyn ReadCustody>,
 }
 impl Files for CustodialFiles {
+    fn reserve(&self, expected: Option<&[u8]>, needed: usize) -> io::Result<Option<Vec<u8>>> {
+        self.custody.journal_reserve(expected, needed)
+    }
     fn read(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
         match name {
             "thermal-mutation.journal" => self.custody.journal_read(false),

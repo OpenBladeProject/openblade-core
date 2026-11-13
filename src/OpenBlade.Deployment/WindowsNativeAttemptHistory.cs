@@ -9,7 +9,7 @@ internal static class WindowsNativeAttemptHistory
     internal const int MaximumEntries = 1 + 2 * MaximumAttempts;
 
     internal static byte[] RequireDrained(WindowsNativeEpochFiles files, NativeEpochRecord record, string directory,
-        NativeArtifact service, string ownerCommitment, uint? expectedPid = null, long? expectedCreated = null, byte[]? preparationOrigin = null)
+        NativeArtifact service, WindowsNativeTrustLifecycle.OwnerLease owner, uint? expectedPid = null, long? expectedCreated = null, byte[]? preparationOrigin = null)
     {
         if (!service.HasStartupCustody)
         { throw new NativeRecoveryException(NativeRecoveryReason.LegacyLaunchEvidenceUnavailable, "This native artifact predates durable launch custody; stopped-state drain is unproven."); }
@@ -94,9 +94,12 @@ internal static class WindowsNativeAttemptHistory
         // No launch is accepted only because this signed entry recipe MUST hold
         // custody and durably record its attempt before dispatcher/factory. A
         // pending submission cannot cross admission after retirement under lock.
-        return NativeCanonical.Lines("OpenBlade.NativeRetirementProof.v2", record.Epoch, NativeCanonical.Digest(record.Encode()),
+        string thermal = owner.Thermal.Generation(record, service, owner.References, launches);
+        string[] fields = [record.Epoch, NativeCanonical.Digest(record.Encode()),
             NativeCanonical.Digest(origin), submitted ? "submission-retained" : "never-submitted",
             launches.Count == 0 ? "no-admitted-metadata-attempt" : abandoned ? "metadata-attempts-classified" : "all-metadata-attempts-drained",
-            NativeCanonical.Digest(System.Text.Encoding.ASCII.GetBytes("OpenBlade.NativeAttemptSet.v2\n" + string.Join('\n', commitments) + "\n")), ownerCommitment);
+            NativeCanonical.Digest(System.Text.Encoding.ASCII.GetBytes("OpenBlade.NativeAttemptSet.v2\n" + string.Join('\n', commitments) + "\n")), owner.Commitment];
+        return NativeCanonical.Lines(service.ThermalMutation ? "OpenBlade.NativeRetirementProof.v3" : "OpenBlade.NativeRetirementProof.v2", service.ThermalMutation ? [.. fields, thermal] : fields);
+
     }
 }

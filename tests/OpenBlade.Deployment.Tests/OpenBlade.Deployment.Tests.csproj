@@ -12,6 +12,7 @@
     <PackageReference Include="coverlet.collector" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="../../tools/openblade-windows-host/tests/data/thermal-history-v1.json" Link="thermal-history-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <Using Include="Xunit" />
     <InternalsVisibleTo Include="OpenBlade.Setup.Tests" />
   </ItemGroup>
