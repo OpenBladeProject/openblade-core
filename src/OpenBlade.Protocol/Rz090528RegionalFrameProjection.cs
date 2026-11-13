@@ -21,6 +21,8 @@ internal static class Rz090528RegionalFrameProjection
         Rz090528MatrixFrame.RowCount == 6
         && Rz090528MatrixFrame.ColumnCount == 17
         && Rz090528MatrixRowProtocol.RowPayloadLength == 55
+        && Blade16AmdKeyboardLightingLayout.SourceFixtureSha256
+            == "F8F0BA8D85804187B3B063363460BC3E867BC1A147D9AE2895970A62DE1A1013"
         && SemanticFingerprint() == "F902BA6F27945ADE8C70CF16F6C3308DCA6ACCD69B5648121C7E2C22090DDC15";
 
     private static readonly Lazy<string> Fingerprint = new(ComputeSemanticFingerprint);

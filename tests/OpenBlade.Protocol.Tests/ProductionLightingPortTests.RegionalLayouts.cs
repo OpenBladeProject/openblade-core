@@ -6,6 +6,26 @@ namespace OpenBlade.Protocol.Tests;
 public sealed partial class ProductionLightingPortTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Rz090528LegacyUnownedPulse_IsIgnoredWithoutFirmwareTraffic(bool ripple)
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(session, new BatteryCommands(), new TemporaryCommands()),
+            TimeSpan.FromSeconds(1), allSynapseEffectsAdmitted: true,
+            timeProvider: new ManualTimeProvider());
+        await port.SetLightingAsync(ripple
+            ? LightingSettingsFactory.Ripple(new RgbColor(1, 2, 3), 100)
+            : LightingSettingsFactory.Reactive(new RgbColor(1, 2, 3), 100, ReactiveLightingDuration.Short), default);
+        int count = session.Commands.Count;
+
+        await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(94), default);
+
+        Assert.Equal(count, session.Commands.Count);
+    }
+
+    [Theory]
     [InlineData(3, 129, 7)]
     [InlineData(1, 128, 1)]
     [InlineData(12, 0, 0)]

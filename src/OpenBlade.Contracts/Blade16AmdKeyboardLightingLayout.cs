@@ -17,6 +17,9 @@ public static class Blade16AmdKeyboardLightingLayout
     private static readonly bool[] UnionKeys = new bool[SlotCount];
     private static readonly byte[] Canvas;
 
+    /// <summary>SHA-256 of the loaded and validated exact-model source fixture.</summary>
+    public static string SourceFixtureSha256 { get; }
+
     public static IReadOnlyList<int> CanvasHoleSlots { get; }
     public static IReadOnlyList<int> UnionHoleSlots { get; }
 
@@ -28,7 +31,8 @@ public static class Blade16AmdKeyboardLightingLayout
         using var buffer = new MemoryStream();
         stream.CopyTo(buffer);
         byte[] bytes = buffer.ToArray();
-        Require(Convert.ToHexString(SHA256.HashData(bytes)) == FixtureSha256, "source pin");
+        SourceFixtureSha256 = Convert.ToHexString(SHA256.HashData(bytes));
+        Require(SourceFixtureSha256 == FixtureSha256, "source pin");
         using JsonDocument document = JsonDocument.Parse(bytes);
         JsonElement root = document.RootElement;
         Require(root.GetProperty("schemaVersion").GetInt32() == 1

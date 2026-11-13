@@ -277,7 +277,7 @@ internal static class ProductionLightingEvidenceSource
                 Pid02E0MatrixReportCodec.FeatureReportBufferLength,
                 Pid02E0MatrixFrame.SlotCount,
                 Pid02E0MatrixLayout.CapturedHoleSlots.ToArray(),
-                "187711408FC0667273CABB19A1CB73B57CA53F98688993BA76E7352A8F2AE0FB",
+                Blade16KeyboardLightingLayout.SourceFixtureSha256,
                 Pid02E0RegionalFrameProjection.SemanticFingerprint(),
                 transactionId,
                 $"{knownColor.Red:X2}{knownColor.Green:X2}{knownColor.Blue:X2}",

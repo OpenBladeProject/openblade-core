@@ -300,8 +300,10 @@ type static class OpenBlade.Contracts.Blade16AmdKeyboardLightingLayout
   method static System.Byte UsageAt(System.Int32 slot, System.Byte layoutId)
   method static System.Collections.Generic.IReadOnlyList<System.Int32> get_CanvasHoleSlots()
   method static System.Collections.Generic.IReadOnlyList<System.Int32> get_UnionHoleSlots()
+  method static System.String get_SourceFixtureSha256()
   property System.Collections.Generic.IReadOnlyList<System.Int32> CanvasHoleSlots { get; }
   property System.Collections.Generic.IReadOnlyList<System.Int32> UnionHoleSlots { get; }
+  property System.String SourceFixtureSha256 { get; }
 type static class OpenBlade.Contracts.Blade16KeyboardLightingLayout
   field const System.Int32 Columns = 17
   field const System.Int32 Rows = 6
@@ -312,8 +314,10 @@ type static class OpenBlade.Contracts.Blade16KeyboardLightingLayout
   method static System.Byte UsageAt(System.Int32 slot, System.Byte layoutId)
   method static System.Collections.Generic.IReadOnlyList<System.Int32> get_CanvasHoleSlots()
   method static System.Collections.Generic.IReadOnlyList<System.Int32> get_UnionHoleSlots()
+  method static System.String get_SourceFixtureSha256()
   property System.Collections.Generic.IReadOnlyList<System.Int32> CanvasHoleSlots { get; }
   property System.Collections.Generic.IReadOnlyList<System.Int32> UnionHoleSlots { get; }
+  property System.String SourceFixtureSha256 { get; }
 type static class OpenBlade.Contracts.Blade18KeyboardLightingLayout
   field const System.Int32 Columns = 16
   field const System.Int32 Rows = 6

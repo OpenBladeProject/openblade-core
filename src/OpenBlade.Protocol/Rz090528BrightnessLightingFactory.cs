@@ -931,6 +931,13 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort, 
                         "PID 02C6 key-triggered lighting is not currently active."));
                 }
 
+                // Older clients could submit this unowned canvas cell. Keep it
+                // a harmless no-op; Right Alt remains the legacy identity at 91.
+                if (pulse.MatrixSlot == 94)
+                {
+                    return Task.CompletedTask;
+                }
+
                 TimeSpan elapsed = timeProvider.GetElapsedTime(
                     effectStartedTimestamp);
                 triggered.Pulse(pulse.MatrixSlot, elapsed);
