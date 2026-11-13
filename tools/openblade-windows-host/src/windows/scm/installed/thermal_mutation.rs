@@ -115,6 +115,7 @@ impl Outcome {
 impl Runtime {
     #[cfg(test)]
     pub(super) fn injected(
+        mailbox: &MailboxSource,
         factory: impl Fn(&str, u32, Arc<dyn ReadCustody>) -> io::Result<(Arc<Storage>, Arc<dyn Fresh>)>
         + 'static,
     ) -> Self {
@@ -122,12 +123,12 @@ impl Runtime {
             factory: Rc::new(factory),
             application: Rc::default(),
             gate: Rc::default(),
-            fatal: Arc::default(),
+            fatal: mailbox.fatal_evidence(),
             #[cfg(test)]
             entered: Rc::default(),
         }
     }
-    pub(super) fn native(origin: Arc<Origin>) -> Self {
+    pub(super) fn native(origin: Arc<Origin>, mailbox: &MailboxSource) -> Self {
         let stores = RefCell::new(None::<(String, Arc<Storage>)>);
         Self {
             factory: Rc::new(move |sid, session, custody| {
@@ -171,7 +172,7 @@ impl Runtime {
             }),
             application: Rc::default(),
             gate: Rc::default(),
-            fatal: Arc::default(),
+            fatal: mailbox.fatal_evidence(),
             #[cfg(test)]
             entered: Rc::default(),
         }

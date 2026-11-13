@@ -297,7 +297,8 @@ impl Rig {
         let fresh = custody.clone();
         let fatal_capture = Arc::new(AtomicBool::new(false));
         let capture = fatal_capture.clone();
-        let runtime = Runtime::injected(move |sid, session, _| {
+        let mailbox = MailboxSource::Reader(reader.clone());
+        let runtime = Runtime::injected(&mailbox, move |sid, session, _| {
             if capture.load(Ordering::Acquire) {
                 return Err(
                     crate::installed::readiness::thermal_mutation::fatal_admission(
@@ -314,7 +315,7 @@ impl Rig {
         let origin = Arc::new(crate::loaded_origin::lifetime::Lifetime::default());
         let source = injected_mutation_source(
             Arc::new(Origin(origin.clone())),
-            MailboxSource::Reader(reader.clone()),
+            mailbox,
             runtime,
             metadata.clone(),
         );
@@ -2856,4 +2857,134 @@ async fn correction_absent_null_and_fans_only_app_policy_preserve_inheritance() 
         );
         rig.stop().await;
     }
+}
+
+#[tokio::test]
+async fn correction_disconnected_first_intent_fatal_precedes_later_owner_loss() {
+    let rig = Rig::new(MemoryFiles::default());
+    rig.files.fatal_first_intent.store(true, Ordering::Release);
+    let reached = Arc::new(AtomicBool::new(false));
+    let release = Arc::new(AtomicBool::new(false));
+    struct Release(Arc<AtomicBool>);
+    impl Drop for Release {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Release);
+        }
+    }
+    let _release_on_failure = Release(release.clone());
+    let entered = reached.clone();
+    let gate = release.clone();
+    rig.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+        entered.store(true, Ordering::Release);
+        while !gate.load(Ordering::Acquire) {
+            std::thread::yield_now();
+        }
+    }));
+    let (mut client, server) = duplex(65536);
+    let publications = rig.source.lock().await.publications();
+    let server = serve_connection(
+        Box::new(SidStream {
+            inner: test_stream(server, USER, Fault::None),
+            sid: SID.into(),
+        }),
+        rig.source.clone(),
+        publications,
+        Rc::new(Subscriptions::new(2)),
+    );
+    let disconnect = async {
+        crate::service_frame::write_payload(
+            &mut client,
+            &serde_json::to_vec(&json!({
+                "operation":"setPerformanceOverride","version":80,
+                "requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000091","value":value(1,1)
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while !reached.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        // Exercise serve_mutation's real biased disconnect branch while the
+        // accepted mutation future is still waiting for actual retirement.
+        drop(client);
+    };
+    let (server, ()) = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        tokio::join!(server, disconnect)
+    })
+    .await
+    .unwrap();
+    assert!(matches!(server, Err(ExchangeError::Client(_))));
+    rig.source.lock().await.verify_origin().unwrap();
+    assert_eq!(rig.files.first_intent_attempts.load(Ordering::Acquire), 1);
+    let prepared = rig.files.read("thermal-mutation.journal").unwrap();
+    assert_eq!(prepared, *rig.files.first_intent_prior.lock().unwrap());
+    // A was retained by the worker before the disconnected caller disappeared.
+    // B must never replace A at an earlier reader-admission checkpoint.
+    rig.custody.integrity_lost.store(true, Ordering::Release);
+    release.store(true, Ordering::Release);
+    for (operation, sid) in [
+        ("getStatus", SID),
+        ("observeState", SID),
+        ("setPerformanceOverride", "S-1-5-21-111-222-333-1002"),
+    ] {
+        let request = if operation == "setPerformanceOverride" {
+            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
+        } else if operation == "observeState" {
+            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000097","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
+        } else {
+            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096"})
+        };
+        let (mut client, server) = duplex(65536);
+        let publications = rig.source.lock().await.publications();
+        let server = serve_connection(
+            Box::new(SidStream {
+                inner: test_stream(server, USER, Fault::None),
+                sid: sid.into(),
+            }),
+            rig.source.clone(),
+            publications,
+            Rc::new(Subscriptions::new(2)),
+        );
+        let client = async {
+            crate::service_frame::write_payload(
+                &mut client,
+                &serde_json::to_vec(&request).unwrap(),
+            )
+            .await
+            .unwrap();
+            crate::service_frame::read_payload(&mut client).await
+        };
+        let (server, reply) = tokio::join!(server, client);
+        assert!(matches!(server, Err(ExchangeError::Runtime(error))
+            if crate::installed::readiness::thermal_mutation::is_fatal_admission(&error)
+                && error.to_string() == "injected FirstIntent staging protection failure"));
+        assert!(reply.is_err());
+    }
+    let stopped = rig.reader.stop().await;
+    assert!(
+        stopped.is_ok()
+            || stopped
+                .as_ref()
+                .is_err_and(crate::installed::readiness::thermal_mutation::is_fatal_admission)
+    );
+    assert_eq!(rig.files.first_intent_attempts.load(Ordering::Acquire), 1);
+    assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 0);
+    assert_eq!(
+        rig.files.read("thermal-mutation.journal").unwrap(),
+        prepared
+    );
+    assert!(
+        rig.files
+            .read("thermal-mutation.journal.pending")
+            .unwrap()
+            .is_none()
+    );
+    let port = rig.port.state.lock().unwrap();
+    assert_eq!(port.writes, 0);
+    assert_eq!(port.opened, port.retired);
 }

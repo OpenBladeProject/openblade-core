@@ -363,7 +363,10 @@ pub(super) fn native_status_source(
     #[cfg(feature = "service-thermal-mutation-v1")]
     return Ok(Box::new(GuardedStatus {
         inner: ObservedStatus::new(read_windows),
-        mutation: Some(super::thermal_mutation::Runtime::native(origin.clone())),
+        mutation: Some(super::thermal_mutation::Runtime::native(
+            origin.clone(),
+            &mailbox,
+        )),
         origin,
         mailbox,
     }));

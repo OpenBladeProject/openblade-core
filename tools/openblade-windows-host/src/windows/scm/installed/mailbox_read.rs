@@ -85,7 +85,7 @@ pub(super) trait ReadCustody: Send + Sync {
 #[cfg(feature = "service-thermal-mutation-v1")]
 struct GuardedReadCustody {
     original: Arc<dyn ReadCustody>,
-    fatal: Mutex<Option<&'static str>>,
+    fatal: Arc<Mutex<Option<&'static str>>>,
 }
 #[cfg(feature = "service-thermal-mutation-v1")]
 impl ReadCustody for GuardedReadCustody {
@@ -641,6 +641,13 @@ pub(super) enum MailboxSource {
     },
 }
 impl MailboxSource {
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    pub(super) fn fatal_evidence(&self) -> Arc<Mutex<Option<&'static str>>> {
+        match self {
+            Self::Reader(reader) => reader.fatal.clone(),
+            Self::NoReader { .. } => Arc::default(),
+        }
+    }
     pub(super) fn acquire(origin: Arc<Origin>) -> io::Result<Self> {
         let actual = origin.clone();
         Self::compose(origin, || ReadSource::acquire(actual))
@@ -758,6 +765,9 @@ enum MutationPhase {
 
 #[derive(Clone)]
 pub(super) struct ReadSource {
+    // One first-cause record spans reader admission and canceled mutation completion.
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fatal: Arc<Mutex<Option<&'static str>>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
     factories: Option<Rc<MutationFactories>>,
     lease: Arc<dyn ReadCustody>,
@@ -807,12 +817,16 @@ impl ReadSource {
         factory: impl FnOnce(Arc<dyn ReadCustody>) -> Worker<ReadAdmission>,
     ) -> Self {
         #[cfg(feature = "service-thermal-mutation-v1")]
+        let fatal = Arc::default();
+        #[cfg(feature = "service-thermal-mutation-v1")]
         let lease: Arc<dyn ReadCustody> = Arc::new(GuardedReadCustody {
             original: lease,
-            fatal: Mutex::new(None),
+            fatal: Arc::clone(&fatal),
         });
         let worker = factory(lease.clone());
         Self {
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            fatal,
             lease,
             #[cfg(feature = "service-thermal-mutation-v1")]
             factories: None,
