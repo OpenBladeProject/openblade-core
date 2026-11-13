@@ -59,6 +59,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
             let intent = permit.resolve_fan(source, baseline).ok()??;
             let plan = Plan::select(baseline, intent, source)?;
             if plan.unchanged {
+                permit.confirm_fan_noop(source, baseline).ok()?;
                 return Some(baseline);
             } // No ownership, no journal or setter.
             let mut reserve = || {

@@ -233,10 +233,10 @@ fn rows_from(
         {
             return Err(deny());
         }
-        let resumed_release = entry.progress == 31
+        let resumed_release = matches!(entry.progress, 31 | 51)
             && owned.as_ref().is_some_and(|owner| {
                 let mut resumed = owner.clone();
-                resumed.progress = 31;
+                resumed.progress = entry.progress;
                 serde_json::to_vec(&resumed).ok() == serde_json::to_vec(&entry).ok()
             });
         if let Some(p) = &last {
@@ -272,7 +272,7 @@ fn rows_from(
         if entry.fan.is_some() {
             if entry.progress == 30 {
                 owned = Some(entry.clone());
-            } else if entry.progress == 50 {
+            } else if matches!(entry.progress, 50 | 51) {
                 owned = None;
             }
         }
@@ -447,7 +447,7 @@ pub fn recover(
             || !handback_complete(&segment)?
             || last
                 .as_ref()
-                .is_none_or(|e| !matches!(e.progress, 5 | 6 | 50))
+                .is_none_or(|e| !matches!(e.progress, 5 | 6 | 50 | 51))
             || f != [
                 digest(&old),
                 digest(&new),
@@ -496,7 +496,7 @@ pub fn inspect_prefix(
             || !handback_complete(&segment)?
             || last
                 .as_ref()
-                .is_none_or(|e| !matches!(e.progress, 5 | 6 | 50))
+                .is_none_or(|e| !matches!(e.progress, 5 | 6 | 50 | 51))
         {
             return Err(deny());
         }
@@ -546,7 +546,7 @@ pub fn handback_complete(bytes: &[u8]) -> io::Result<bool> {
         if e.fan.is_some() {
             if e.progress == 30 {
                 owned = true;
-            } else if e.progress == 50 {
+            } else if matches!(e.progress, 50 | 51) {
                 owned = false;
             }
         }
@@ -592,7 +592,7 @@ pub fn reserve(
     }
     if last
         .as_ref()
-        .is_none_or(|e| !matches!(e.progress, 5 | 6 | 50))
+        .is_none_or(|e| !matches!(e.progress, 5 | 6 | 50 | 51))
         || !handback_complete(&view.tail)?
     {
         return Err(deny());

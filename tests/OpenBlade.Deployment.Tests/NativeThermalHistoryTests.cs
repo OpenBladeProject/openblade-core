@@ -274,4 +274,55 @@ public sealed class NativeThermalHistoryTests : IDisposable
             Thermal(files, Bytes(invalid)); Assert.ThrowsAny<Exception>(() => WindowsNativeThermalHistory.Read(files, [original]));
         }
     }
+    [Theory]
+    [InlineData("sameScope", true)]
+    [InlineData("foreignSid", false)]
+    [InlineData("foreignSession", false)]
+    public void CompleteFanCallerScopeHistoryMustPassBothPublicReadAndRetiredOwner(string key, bool valid)
+    {
+        using var vector = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fan-history-v2.json")));
+        byte[] raw = Bytes(vector.RootElement.GetProperty(key).GetString()!);
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        var record = new NativeEpochRecord(NativeEpochPhase.Retired, new string('2', 32), new string('0', 64), 1, new string('1', 32), new string('a', 64), new string('b', 32), new string('3', 64) + "-service", new string('c', 64) + "-agent", new string('0', 64), new string('d', 64));
+        byte[] active = Owner(files, record, new string('7', 64));
+        var original = new WindowsNativeTrustLifecycle.OwnerReference(record.Installation, record.Epoch, record.ServiceId, "17:1", new string('7', 64), NativeCanonical.Digest(active));
+        Thermal(files, raw);
+        if (valid)
+        {
+            _ = WindowsNativeThermalHistory.Read(files, [original]);
+            using var retired = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
+        }
+        else
+        {
+            Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [original]));
+            Assert.Throws<NativeRecoveryException>(() => WindowsNativeTrustLifecycle.AcquireRetiredOwner(files));
+        }
+        Assert.Equal(raw, File.ReadAllBytes(Path.Combine(files.Root, "owner", "thermal-mutation.journal")));
+    }
+    [Fact]
+    public void FanV3ObservedAutomaticProofPreservesLegacyBytesAndExactOwner()
+    {
+        using var vector = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fan-history-v3.json")));
+        var v = vector.RootElement;
+        Assert.Equal(v.GetProperty("canonical").GetString(), Encoding.UTF8.GetString(WindowsNativeFanHistory.Canonical(v.GetProperty("fan"))));
+        Assert.Equal(v.GetProperty("intent").GetString(), NativeCanonical.Digest(WindowsNativeFanHistory.Canonical(v.GetProperty("fan"))));
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        var original = new WindowsNativeTrustLifecycle.OwnerReference(new string('1', 32), new string('2', 32), new string('3', 64) + "-service", "17:1", new string('7', 64), new string('8', 64));
+        foreach (string key in new[] { "released", "observedAutomatic", "retiredThenObservedAutomatic" })
+        {
+            string raw = v.GetProperty(key).GetString()!;
+            Thermal(files, Bytes(raw)); _ = WindowsNativeThermalHistory.Read(files, [original]);
+            var rows = raw.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            var last = System.Text.Json.Nodes.JsonNode.Parse(rows[^1])!;
+            last["caller_pid"] = 99;
+            rows[^1] = last.ToJsonString();
+            Thermal(files, Bytes(string.Join('\n', rows) + "\n"));
+            Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [original]));
+        }
+        using var legacy = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fan-history-v2.json")));
+        Assert.False(WindowsNativeFanHistory.ValidProgress(legacy.RootElement.GetProperty("fan"), 51));
+        Assert.True(WindowsNativeFanHistory.ValidProgress(v.GetProperty("fan"), 51));
+        Assert.False(WindowsNativeFanHistory.Follows(v.GetProperty("fan"), 31, 51));
+    }
+
 }

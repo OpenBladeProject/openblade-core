@@ -68,6 +68,9 @@ impl WindowsGuard {
         proof.ok_or_else(deny)?;
         Ok(guard)
     }
+    pub(super) fn authentication(&self) -> (u32, i32) {
+        self.authentication
+    }
     pub(super) fn verify_health(&self) -> io::Result<()> {
         self.custody.verify_integrity()?;
         self.origin.lifecycle.verify_health().map_err(|_| {

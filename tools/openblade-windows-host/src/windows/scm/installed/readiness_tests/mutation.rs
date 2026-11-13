@@ -243,6 +243,8 @@ impl Files for MemoryFiles {
     }
 }
 struct Custody {
+    generation: AtomicU8,
+    authentication: AtomicUsize,
     live: AtomicBool,
     origin_for_fan: StdMutex<Option<Arc<crate::origin_lifetime::Lifetime>>>,
     authority_for_fan: AtomicU8,
@@ -258,6 +260,8 @@ struct Custody {
 impl Custody {
     fn new(port: &Fixture) -> Arc<Self> {
         Arc::new(Self {
+            generation: AtomicU8::new(7),
+            authentication: AtomicUsize::new(1),
             port: port.state.clone(),
             live: AtomicBool::new(true),
             origin_for_fan: StdMutex::new(None),
@@ -283,7 +287,7 @@ impl ReadCustody for Custody {
         }
         Some(ReadAdmission {
             lifecycle: self.lifecycle.active()?,
-            generation: [7; 32],
+            generation: [self.generation.load(Ordering::Acquire); 32],
         })
     }
     fn verify_integrity(&self) -> io::Result<()> {
@@ -301,7 +305,7 @@ impl ReadCustody for Custody {
         if let Some(origin) = &*self.origin_for_fan.lock().unwrap() {
             let proof = ReadAdmission {
                 lifecycle: self.lifecycle.active()?,
-                generation: [7; 32],
+                generation: [self.generation.load(Ordering::Acquire); 32],
             };
             return crate::installed::readiness::mailbox_read::authorize_original(
                 &self.authority_for_fan,
@@ -312,7 +316,7 @@ impl ReadCustody for Custody {
         }
         self.live.load(Ordering::Acquire).then_some(ReadAdmission {
             lifecycle: self.lifecycle.active()?,
-            generation: [7; 32],
+            generation: [self.generation.load(Ordering::Acquire); 32],
         })
     }
     fn activate_mutation(
@@ -365,6 +369,9 @@ impl ReadCustody for Custody {
     }
 }
 impl Fresh for Custody {
+    fn authentication(&self) -> Option<(u32, i32)> {
+        Some((self.authentication.load(Ordering::Acquire) as u32, 0))
+    }
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         self.verify_health().ok()?;
         if self.fresh_refuse.load(Ordering::Acquire) {
@@ -409,6 +416,8 @@ impl StatusOrigin for Origin {
     }
 }
 struct Rig {
+    factory_calls: Arc<AtomicUsize>,
+    storage: Arc<Storage>,
     source: Rc<Mutex<Box<dyn StatusSource>>>,
     port: Fixture,
     files: MemoryFiles,
@@ -453,11 +462,15 @@ impl Rig {
             },
         );
         let storage = Storage::open(Box::new(files.clone()), SID).unwrap();
+        let retained_storage = storage.clone();
         let fresh = custody.clone();
         let fatal_capture = Arc::new(AtomicBool::new(false));
         let capture = fatal_capture.clone();
         let mailbox = MailboxSource::Reader(reader.clone());
+        let factory_calls = Arc::new(AtomicUsize::new(0));
+        let calls = factory_calls.clone();
         let runtime = Runtime::injected(&mailbox, move |sid, session, _| {
+            calls.fetch_add(1, Ordering::AcqRel);
             if capture.load(Ordering::Acquire) {
                 return Err(
                     crate::installed::readiness::thermal_mutation::fatal_admission(
@@ -465,8 +478,9 @@ impl Rig {
                     ),
                 );
             }
-            assert_eq!(sid, SID);
-            assert_eq!(session, 7);
+            if sid != SID || session != 7 {
+                return Err(io::ErrorKind::PermissionDenied.into());
+            }
             Ok((storage.clone(), fresh.clone()))
         });
         let entered = runtime.entered.clone();
@@ -479,6 +493,8 @@ impl Rig {
             metadata.clone(),
         );
         Self {
+            factory_calls,
+            storage: retained_storage,
             source: Rc::new(Mutex::new(source)),
             port,
             files,
@@ -3700,9 +3716,17 @@ async fn fan_v2_each_ambiguous_setter_fences_all_families_without_replay() {
         r.get().await;
         r.port.state.lock().unwrap().corrupt_ack = Some(cut);
         let out = r.request(fan_request(104, Some(1), 3700)).await;
-        assert_eq!(out["result"]["status"], 0);
+        assert_eq!(out["result"]["status"], 2);
+        assert!(
+            out["result"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("unresolved")
+        );
         assert_eq!(r.port.state.lock().unwrap().writes, cut);
         let before = r.files.read("thermal-mutation.journal").unwrap();
+        let fan_blocked = r.request(fan_request(106, Some(0), 3700)).await;
+        assert_eq!(fan_blocked["result"]["status"], 2);
         let blocked = r.set(105, value(1, 1)).await;
         assert_ne!(blocked["result"]["status"], 1);
         assert_eq!(r.port.state.lock().unwrap().writes, cut);
@@ -3858,7 +3882,7 @@ async fn fan_v2_prepared_only_stop_keeps_original_owner_and_resumes_exact_releas
         }
     }));
     let request = crate::service_status::StatusRequest::decode(
-        &serde_json::to_vec(&fan_request(151, Some(1), 3700)).unwrap(),
+        &serde_json::to_vec(&fan_request(151, Some(1), 4000)).unwrap(),
     )
     .unwrap();
     let future = r.source.lock().await.mutate(
@@ -3940,7 +3964,7 @@ async fn fan_v2_known_capacity_refusal_preserves_owner_but_uncertain_reservation
         } else {
             r.files.capacity_refuse.store(true, Ordering::Release);
         }
-        let result = r.request(fan_request(171, Some(1), 3700)).await;
+        let result = r.request(fan_request(171, Some(1), 4000)).await;
         assert_ne!(result["result"]["status"], 1);
         assert_eq!(r.files.read("thermal-mutation.journal").unwrap(), before);
         assert_eq!(r.port.state.lock().unwrap().writes, 4);
@@ -3978,4 +4002,415 @@ async fn fan_v2_owned_limited_source_performance_stays_stored_without_consuming_
     r.stop().await;
     assert_eq!(r.port.state.lock().unwrap().writes, 6);
     assert_eq!(fan_rows(&r).last().unwrap()["progress"], 50);
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_correction_fresh_epoch_auto_recovery_and_true_noop_close_original_owner() {
+    for already_auto in [false, true] {
+        for resume in [false, true] {
+            let r = fan_rig(2, 0);
+            r.get().await;
+            assert_eq!(
+                r.request(fan_request(180, Some(1), 3700)).await["result"]["status"],
+                1
+            );
+            let original = fan_rows(&r).last().unwrap().clone();
+            let bytes = r.files.read("thermal-mutation.journal").unwrap();
+            if resume {
+                r.custody.lifecycle.ingress(
+                    windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+                    4,
+                );
+                assert_eq!(
+                    r.request(fan_request(181, Some(0), 3700)).await["result"]["status"],
+                    2
+                );
+                assert_eq!(r.files.read("thermal-mutation.journal").unwrap(), bytes);
+                r.custody.lifecycle.ingress(
+                    windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+                    18,
+                );
+            } else {
+                r.custody.lifecycle.ingress(
+                    windows_sys::Win32::System::Services::SERVICE_CONTROL_SESSIONCHANGE,
+                    0,
+                );
+            }
+            let writes = r.port.state.lock().unwrap().writes;
+            r.custody.fresh_refuse.store(true, Ordering::Release);
+            assert_eq!(
+                r.request(fan_request(182, Some(0), 3700)).await["result"]["status"],
+                2
+            );
+            r.custody.fresh_refuse.store(false, Ordering::Release);
+            let captures = r.factory_calls.load(Ordering::Acquire);
+            assert_eq!(
+                r.request_as(
+                    fan_request(183, Some(0), 3700),
+                    USER,
+                    "S-1-5-21-111-222-333-1002"
+                )
+                .await["result"]["status"],
+                2
+            );
+            assert_eq!(
+                r.request_as(
+                    fan_request(184, Some(0), 3700),
+                    Caller {
+                        session: 8,
+                        control_session: Some(8),
+                        ..USER
+                    },
+                    SID
+                )
+                .await["result"]["status"],
+                2
+            );
+            let foreign_performance = json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000186","value":value(1, 1)});
+            assert_eq!(
+                r.request_as(foreign_performance, USER, "S-1-5-21-111-222-333-1002")
+                    .await["result"]["status"],
+                2
+            );
+            assert_eq!(r.factory_calls.load(Ordering::Acquire), captures);
+            assert_eq!(r.files.read("thermal-mutation.journal").unwrap(), bytes);
+            assert_eq!(r.port.state.lock().unwrap().writes, writes);
+            if already_auto {
+                r.port.state.lock().unwrap().fans = [0; 2];
+            }
+            let out = r.request(fan_request(185, Some(0), 3700)).await;
+            assert_eq!(out["result"]["status"], 1, "{out}");
+            let rows = fan_rows(&r);
+            if already_auto {
+                let mut expected = original;
+                expected["progress"] = json!(51);
+                assert_eq!(*rows.last().unwrap(), expected);
+                assert!(
+                    out["result"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("no fan setter")
+                );
+            } else {
+                assert_eq!(rows.last().unwrap()["progress"], 50);
+            }
+            assert_eq!(
+                r.port.state.lock().unwrap().writes,
+                writes + if already_auto { 0 } else { 2 }
+            );
+            let before_stop = r.files.read("thermal-mutation.journal").unwrap();
+            r.origin.stop();
+            r.stop().await;
+            assert_eq!(
+                r.files.read("thermal-mutation.journal").unwrap(),
+                before_stop
+            );
+        }
+    }
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_correction_cancelled_positive_worker_then_refusal_releases_latest_exact_owner() {
+    let r = fan_rig(2, 0);
+    r.get().await;
+    r.request(fan_request(190, Some(1), 3700)).await;
+    let entered = Arc::new(AtomicBool::new(false));
+    let release = Arc::new(AtomicBool::new(false));
+    let hook_entered = entered.clone();
+    let hook_release = release.clone();
+    r.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+        hook_entered.store(true, Ordering::Release);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !hook_release.load(Ordering::Acquire) {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }));
+    let request = crate::service_status::StatusRequest::decode(
+        &serde_json::to_vec(&fan_request(191, Some(1), 3700)).unwrap(),
+    )
+    .unwrap();
+    let mut future = r.source.lock().await.mutate(
+        USER,
+        SID.into(),
+        request,
+        Instant::now() + Duration::from_secs(3),
+    );
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !entered.load(Ordering::Acquire) {
+        assert!(Instant::now() < deadline);
+        tokio::select! { result=&mut future => panic!("retirement hold ended early: {}", result.is_ok()), _=tokio::time::sleep(Duration::from_millis(5))=>{} }
+    }
+    let owner = fan_rows(&r).last().unwrap().clone();
+    assert_eq!(owner["request"], "aaaaaaaa-bbbb-cccc-dddd-000000000191");
+    assert_eq!(owner["progress"], 30);
+    drop(future);
+    r.port.state.lock().unwrap().on_mutation_retired = None;
+    release.store(true, Ordering::Release);
+    r.files.capacity_refuse.store(true, Ordering::Release);
+    assert_eq!(
+        r.request(fan_request(192, Some(1), 3700)).await["result"]["status"],
+        0
+    );
+    let saved = r.files.read("manual-overrides.json").unwrap();
+    let writes = r.port.state.lock().unwrap().writes;
+    r.origin.stop();
+    r.stop().await;
+    let mut expected = owner;
+    expected["progress"] = json!(50);
+    assert_eq!(*fan_rows(&r).last().unwrap(), expected);
+    assert_eq!(r.files.read("manual-overrides.json").unwrap(), saved);
+    let state = r.port.state.lock().unwrap();
+    assert_eq!(state.writes, writes + 2);
+    assert_eq!(state.opened, state.retired);
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_correction_saved_pending_profile_edit_and_temporary_expiry_keep_cleanup_provenance() {
+    for kind in 0..3 {
+        let r = fan_rig(0, 0);
+        let profile = |rpm: u16| {
+            let mut p = r.files.document("profiles.json");
+            let mut fan = crate::installed::readiness::thermal_storage::legacy_fan(1);
+            fan["fixedSpeedRpm"] = json!(rpm);
+            p["profiles"]["pluggedIn"]["fanControl"] = fan;
+            p["profiles"]["pluggedIn"]["fans"] = json!(1);
+            r.files.put("profiles.json", p);
+            let mut c = r.files.document("battery-configuration.commit.json");
+            c["profileSha256"] = json!(crate::configuration::digest_hex(
+                &r.files.read("profiles.json").unwrap().unwrap()
+            ));
+            r.files.put("battery-configuration.commit.json", c);
+        };
+        if kind == 1 {
+            profile(3700);
+        }
+        r.get().await;
+        let mut request = fan_request(200, if kind == 1 { None } else { Some(1) }, 3700);
+        if kind == 2 {
+            request["value"]["lifetime"] = json!(0);
+        }
+        assert_eq!(r.request(request).await["result"]["status"], 1);
+        let owner = fan_rows(&r).last().unwrap().clone();
+        if kind == 0 {
+            assert_eq!(
+                r.request(fan_request(201, Some(2), 4000)).await["result"]["status"],
+                0
+            );
+        } else if kind == 1 {
+            profile(4000);
+        } else {
+            let _ = r.storage.desired_fan(2, None).unwrap();
+            assert!(r.storage.current_fan_override(0).unwrap().is_none());
+        }
+        let saved = r.files.read("manual-overrides.json").unwrap();
+        let writes = r.port.state.lock().unwrap().writes;
+        r.origin.stop();
+        r.stop().await;
+        let mut expected = owner;
+        expected["progress"] = json!(50);
+        assert_eq!(*fan_rows(&r).last().unwrap(), expected);
+        assert_eq!(r.files.read("manual-overrides.json").unwrap(), saved);
+        assert_eq!(r.port.state.lock().unwrap().writes, writes + 2);
+    }
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_correction_fresh_scope_and_stale_implicit_stop_remain_fenced() {
+    for reason in 0..6 {
+        let r = fan_rig(0, 0);
+        r.get().await;
+        r.request(fan_request(210, Some(1), 3700)).await;
+        let before = r.files.read("thermal-mutation.journal").unwrap();
+        let saved = r.files.read("manual-overrides.json").unwrap();
+        let writes = r.port.state.lock().unwrap().writes;
+        r.custody.lifecycle.ingress(
+            windows_sys::Win32::System::Services::SERVICE_CONTROL_SESSIONCHANGE,
+            0,
+        );
+        match reason {
+            0 => {
+                r.custody.authentication.store(2, Ordering::Release);
+            }
+            1 => {
+                r.custody.generation.store(8, Ordering::Release);
+            }
+            2 => r.origin.lose_trust(),
+            3 => r.custody.integrity_lost.store(true, Ordering::Release),
+            5 => {
+                let mut v = r.files.document("manual-overrides.json");
+                v["overrides"]["fans"] = json!(3);
+                r.files.put("manual-overrides.json", v);
+            }
+            _ => {}
+        }
+        if reason < 4 {
+            let request = crate::service_status::StatusRequest::decode(
+                &serde_json::to_vec(&fan_request(211, Some(0), 3700)).unwrap(),
+            )
+            .unwrap();
+            let result = r
+                .source
+                .lock()
+                .await
+                .mutate(
+                    USER,
+                    SID.into(),
+                    request,
+                    Instant::now() + Duration::from_secs(3),
+                )
+                .await;
+            assert!(result.is_err() || result.unwrap().0.status == 2);
+        }
+        let saved = if reason == 5 {
+            r.files.read("manual-overrides.json").unwrap()
+        } else {
+            saved
+        };
+        r.origin.stop();
+        assert!(r.source.lock().await.drain().await.is_err());
+        assert_eq!(r.files.read("thermal-mutation.journal").unwrap(), before);
+        assert_eq!(r.files.read("manual-overrides.json").unwrap(), saved);
+        assert_eq!(r.port.state.lock().unwrap().writes, writes);
+    }
+    let r = fan_rig(0, 0);
+    r.get().await;
+    r.files.fail.store(true, Ordering::Release);
+    assert_eq!(
+        r.request(fan_request(212, Some(1), 3700)).await["result"]["status"],
+        2
+    );
+    assert!(fan_rows(&r).is_empty());
+    assert_eq!(r.port.state.lock().unwrap().writes, 0);
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_correction_cancelled_auto_terminal_does_not_obstruct_later_true_noop() {
+    for already_auto in [false, true] {
+        let r = fan_rig(2, 0);
+        r.get().await;
+        r.request(fan_request(220, Some(1), 3700)).await;
+        if already_auto {
+            r.port.state.lock().unwrap().fans = [0; 2];
+        }
+        let entered = Arc::new(AtomicBool::new(false));
+        let release = Arc::new(AtomicBool::new(false));
+        let hook_entered = entered.clone();
+        let hook_release = release.clone();
+        r.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+            hook_entered.store(true, Ordering::Release);
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !hook_release.load(Ordering::Acquire) {
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        }));
+        let request = crate::service_status::StatusRequest::decode(
+            &serde_json::to_vec(&fan_request(221, Some(0), 3700)).unwrap(),
+        )
+        .unwrap();
+        let mut future = r.source.lock().await.mutate(
+            USER,
+            SID.into(),
+            request,
+            Instant::now() + Duration::from_secs(3),
+        );
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !entered.load(Ordering::Acquire) {
+            assert!(Instant::now() < deadline);
+            tokio::select! { result=&mut future => panic!("retirement hold ended early: {}", result.is_ok()), _=tokio::time::sleep(Duration::from_millis(5))=>{} }
+        }
+        assert_eq!(
+            fan_rows(&r).last().unwrap()["progress"],
+            if already_auto { 51 } else { 50 }
+        );
+        drop(future);
+        r.port.state.lock().unwrap().on_mutation_retired = None;
+        release.store(true, Ordering::Release);
+        let bytes = r.files.read("thermal-mutation.journal").unwrap();
+        let writes = r.port.state.lock().unwrap().writes;
+        assert_eq!(
+            r.request(fan_request(222, Some(0), 3700)).await["result"]["status"],
+            1
+        );
+        r.origin.stop();
+        r.stop().await;
+        assert_eq!(r.files.read("thermal-mutation.journal").unwrap(), bytes);
+        let state = r.port.state.lock().unwrap();
+        assert_eq!(state.writes, writes);
+        assert_eq!(state.opened, state.retired);
+    }
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_correction_cancelled_registered_preflight_keeps_scope_until_native_join() {
+    let r = fan_rig(0, 0);
+    r.get().await;
+    let held = Arc::new(AtomicBool::new(false));
+    let opened = r.port.state.lock().unwrap().opened;
+    r.port.state.lock().unwrap().held_read = Some(held.clone());
+    let request = crate::service_status::StatusRequest::decode(
+        &serde_json::to_vec(&fan_request(230, Some(1), 3700)).unwrap(),
+    )
+    .unwrap();
+    let mut future = r.source.lock().await.mutate(
+        USER,
+        SID.into(),
+        request,
+        Instant::now() + Duration::from_secs(3),
+    );
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while r.port.state.lock().unwrap().opened == opened {
+        assert!(Instant::now() < deadline);
+        tokio::select! { result=&mut future => panic!("held preflight ended early: {}", result.is_ok()), _=tokio::time::sleep(Duration::from_millis(5))=>{} }
+    }
+    drop(future);
+    assert!(fan_rows(&r).is_empty());
+    let captures = r.factory_calls.load(Ordering::Acquire);
+    let foreign = json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000231","value":value(1, 1)});
+    assert_eq!(
+        r.request_as(foreign, USER, "S-1-5-21-111-222-333-1002")
+            .await["result"]["status"],
+        2
+    );
+    assert_eq!(r.factory_calls.load(Ordering::Acquire), captures);
+    held.store(true, Ordering::Release);
+    assert_eq!(
+        r.request(fan_request(232, Some(0), 3700)).await["result"]["status"],
+        1
+    );
+    assert!(fan_rows(&r).is_empty());
+    r.origin.stop();
+    r.stop().await;
+    let state = r.port.state.lock().unwrap();
+    assert_eq!(state.writes, 0);
+    assert_eq!(state.opened, state.retired);
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_correction_known_unpublished_activation_does_not_keep_scope_fence() {
+    let r = fan_rig(0, 0);
+    r.get().await;
+    r.custody.activation_refusal.store(1, Ordering::Release);
+    assert_eq!(
+        r.request(fan_request(240, Some(1), 3700)).await["result"]["status"],
+        2
+    );
+    let captures = r.factory_calls.load(Ordering::Acquire);
+    let foreign = json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000241","value":value(1, 1)});
+    assert_eq!(
+        r.request_as(foreign, USER, "S-1-5-21-111-222-333-1002")
+            .await["result"]["status"],
+        2
+    );
+    assert_eq!(r.factory_calls.load(Ordering::Acquire), captures + 1);
+    assert!(fan_rows(&r).is_empty());
+    assert_eq!(r.port.state.lock().unwrap().writes, 0);
+    r.origin.stop();
+    r.stop().await;
 }

@@ -8,6 +8,8 @@ use std::sync::Arc;
 /// The implementation retains the actual owner, original request, loaded epoch,
 /// user configuration and durable journal through callback retirement.
 pub(crate) trait Permit: Send + Sync {
+    /// Called synchronously before the Reader registers a native mutation worker.
+    fn mutation_registered(&self) {}
     fn authorize(&self) -> Option<ReadAdmission>;
     /// Result publication is distinct from permission to submit another command.
     fn result_admitted(&self, expected: ReadAdmission) -> bool {
@@ -22,6 +24,9 @@ pub(crate) trait Permit: Send + Sync {
         _baseline: ObservedPerformance,
     ) -> io::Result<Option<openblade_domain::fan_recipe::FanIntent>> {
         Ok(None)
+    }
+    fn confirm_fan_noop(&self, _source: i32, _baseline: ObservedPerformance) -> io::Result<()> {
+        Ok(())
     }
     fn prepare_fan(&self, _record: openblade_domain::fan_history::FanRecord) -> io::Result<()> {
         Err(io::ErrorKind::PermissionDenied.into())

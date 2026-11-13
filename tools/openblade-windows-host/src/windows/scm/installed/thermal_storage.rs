@@ -557,6 +557,19 @@ impl Storage {
             }
         }))
     }
+    // Integrity remains mandatory for release; mutable policy equality is not.
+    pub(super) fn verify_fan_configuration(&self) -> io::Result<()> {
+        aggregate(self.files.as_ref(), self.same_path)?;
+        let mut s = self.state.lock().map_err(|_| denied())?;
+        if self.files.read(OVERRIDES)? != s.bytes {
+            s.quarantined = true;
+            s.configuration_changed = true;
+        }
+        if s.quarantined {
+            return Err(denied());
+        }
+        Ok(())
+    }
     pub(super) fn desired_fan(
         &self,
         power: i32,
@@ -658,7 +671,7 @@ impl Storage {
                 if e.fan.is_some() {
                     if e.progress == 30 {
                         held = Some(e.clone());
-                    } else if e.progress == 50 {
+                    } else if matches!(e.progress, 50 | 51) {
                         held = None;
                     }
                 }

@@ -855,15 +855,32 @@ fn history_orphan_rollover_staging_without_directory_is_never_empty_native_histo
 #[cfg(feature = "service-fan-mutation-v2")]
 #[test]
 fn fan_v2_real_protected_history_retains_owned_fence_across_reload_and_rollover() {
+    verify_fan_protected_history(
+        serde_json::from_str(include_str!(
+            "../../../../../tests/data/fan-history-v2.json"
+        ))
+        .unwrap(),
+        "released",
+    );
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[test]
+fn fan_v3_observed_auto_protected_history_reloads_and_rolls_losslessly() {
+    verify_fan_protected_history(
+        serde_json::from_str(include_str!(
+            "../../../../../tests/data/fan-history-v3.json"
+        ))
+        .unwrap(),
+        "observedAutomatic",
+    );
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+fn verify_fan_protected_history(vector: Value, terminal: &str) {
     let machine = PrivateRoot::open("owner-journal");
     let mut owner = machine.owner().unwrap();
     owner.activate_injected(reservation('7')).unwrap();
-    let vector: Value = serde_json::from_str(include_str!(
-        "../../../../../tests/data/fan-history-v2.json"
-    ))
-    .unwrap();
     let owned = vector["owned"].as_str().unwrap().as_bytes();
-    let released = vector["released"].as_str().unwrap().as_bytes();
+    let released = vector[terminal].as_str().unwrap().as_bytes();
     owner.journal_replace(None, owned).unwrap();
     assert_eq!(owner.journal_read(false).unwrap().unwrap(), owned);
     let refusal = owner

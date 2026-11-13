@@ -7,7 +7,10 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{io, string::ToString, vec::Vec};
-pub const CONTRACT: &str = "service-fan-mutation-v2/rz09-0581-linked-v1";
+// v3 row grammar adds only progress51: independent Automatic observation tied
+// to the exact original owner, without setter claims. Readers ship first.
+pub const LEGACY_CONTRACT: &str = "service-fan-mutation-v2/rz09-0581-linked-v1";
+pub const CONTRACT: &str = "service-fan-mutation-v2/rz09-0581-linked-v2";
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct FanRecord {
@@ -26,7 +29,7 @@ impl FanRecord {
         if self.entry { 4 } else { 2 }
     }
     pub fn validate(&self) -> io::Result<()> {
-        if self.contract != CONTRACT
+        if !matches!(self.contract.as_str(), CONTRACT | LEGACY_CONTRACT)
             || FanIntent::checked(self.intent.mode, self.intent.rpm) != Some(self.intent)
             || !matches!(self.selector, 0 | 2)
             || !matches!(self.source, 0 | 2)
@@ -66,12 +69,14 @@ impl FanRecord {
         Ok(digest(&serde_json::to_vec(self)?))
     }
     pub fn valid_progress(&self, p: u8) -> bool {
-        matches!(p, 0 | 6 | 50)
+        (p == 51 && self.contract == CONTRACT && self.intent.manual())
+            || matches!(p, 0 | 6 | 50)
             || (10..10 + self.setters() as u8 * 2).contains(&p)
             || self.intent.manual() && matches!(p, 30 | 31 | 40..=43)
     }
     pub fn follows(&self, p: u8, n: u8) -> bool {
-        (p == 0 && matches!(n, 6 | 10))
+        (p == 30 && n == 51 && self.contract == CONTRACT && self.intent.manual())
+            || (p == 0 && matches!(n, 6 | 10))
             || (p >= 10 && p < 9 + self.setters() as u8 * 2 && n == p + 1)
             || (p == 9 + self.setters() as u8 * 2
                 && n == if self.intent.manual() { 30 } else { 50 })
@@ -179,6 +184,56 @@ pub fn validate_requested(v: &Value) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn complete_cross_scope_histories_are_rejected_and_v3_auto_proof_is_exact() {
+        let legacy: Value = serde_json::from_str(include_str!(
+            "../../../../tools/openblade-windows-host/tests/data/fan-history-v2.json"
+        ))
+        .unwrap();
+        for (key, valid) in [
+            ("sameScope", true),
+            ("foreignSid", false),
+            ("foreignSession", false),
+        ] {
+            assert_eq!(
+                crate::thermal_history::handback_complete(legacy[key].as_str().unwrap().as_bytes())
+                    .is_ok(),
+                valid,
+                "{key}"
+            );
+        }
+        let v: Value = serde_json::from_str(include_str!(
+            "../../../../tools/openblade-windows-host/tests/data/fan-history-v3.json"
+        ))
+        .unwrap();
+        let r: FanRecord = serde_json::from_value(v["fan"].clone()).unwrap();
+        r.validate().unwrap();
+        assert_eq!(r.hash().unwrap(), v["intent"]);
+        assert!(r.valid_progress(51));
+        assert!(r.follows(30, 51));
+        assert!(!r.follows(31, 51));
+        for key in [
+            "released",
+            "observedAutomatic",
+            "retiredThenObservedAutomatic",
+        ] {
+            let raw = v[key].as_str().unwrap().as_bytes();
+            assert!(crate::thermal_history::handback_complete(raw).unwrap());
+            let mut rows: Vec<Value> = v[key]
+                .as_str()
+                .unwrap()
+                .lines()
+                .map(|l| serde_json::from_str(l).unwrap())
+                .collect();
+            rows.last_mut().unwrap()["caller_pid"] = serde_json::json!(99);
+            let mut bad = Vec::new();
+            for row in rows {
+                bad.extend(serde_json::to_vec(&row).unwrap());
+                bad.push(10);
+            }
+            assert!(crate::thermal_history::rows(&bad, |_, _| Ok(())).is_err());
+        }
+    }
     #[test]
     fn shared_fan_vectors_preserve_mode_target_and_handback_contract() {
         let v: Value = serde_json::from_str(include_str!(

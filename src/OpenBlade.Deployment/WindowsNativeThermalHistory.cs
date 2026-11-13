@@ -120,13 +120,13 @@ internal sealed class WindowsNativeThermalHistory
             JsonElement requested = e.TryGetProperty("requested", out var v) ? v : default;
             if (fan is not null && requested.ValueKind != JsonValueKind.Null || NativeCanonical.Digest(fan ?? Intent(requested)) != row.Intent) { throw Denied(); }
             if (ownedFan is not null && (row.Owner != ownedFan.Owner || fan is null)) { throw Denied(); }
-            bool resumedRelease = row.Progress == 31 && ownedFan is not null && ownedFan with { Progress = 31 } == row;
+            bool resumedRelease = row.Progress is 31 or 51 && ownedFan is not null && ownedFan with { Progress = row.Progress } == row;
             if (last is not null && last.Request == row.Request)
             {
                 if (last with { Progress = row.Progress } != row || !(fan is null ? last.Progress < 5 && row.Progress == last.Progress + 1 || last.Progress == 0 && row.Progress == 6 : WindowsNativeFanHistory.Follows(f, last.Progress, row.Progress))) { throw Denied(); }
             }
-            else if (last is not null && last.Progress is not (5 or 6 or 30 or 50) || !resumedRelease && row.Progress != 0) { throw Denied(); }
-            if (fan is not null) { if (row.Progress == 30) { ownedFan = row; } else if (row.Progress == 50) { ownedFan = null; } }
+            else if (last is not null && last.Progress is not (5 or 6 or 30 or 50 or 51) || !resumedRelease && (row.Progress != 0 || last?.Progress == 30 && (fan is null || row.Owner != last.Owner || row.Sid != last.Sid || row.Session != last.Session))) { throw Denied(); }
+            if (fan is not null) { if (row.Progress == 30) { ownedFan = row; } else if (row.Progress is 50 or 51) { ownedFan = null; } }
             var matches = owners.Where(o => o.Nonce == row.Owner).ToArray();
             if (matches.Length != 1) { throw Denied(); }
             var original = matches[0];
@@ -136,7 +136,7 @@ internal sealed class WindowsNativeThermalHistory
             generations[key] = NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.ThermalGenerationRow.v1", prior, NativeCanonical.Digest(raw), original.Active));
             last = row; count = checked(count + 1);
         }
-        if (requireSettled && (ownedFan is not null || last is not null && last.Progress is not (5 or 6 or 50))) { throw Denied(); }
+        if (requireSettled && (ownedFan is not null || last is not null && last.Progress is not (5 or 6 or 50 or 51))) { throw Denied(); }
         frontier = last;
         return count;
     }

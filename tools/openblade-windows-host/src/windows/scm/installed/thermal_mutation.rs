@@ -68,6 +68,9 @@ pub(super) fn remember_failure(fatal: &Mutex<Option<&'static str>>, error: &io::
 #[path = "fan_mutation.rs"]
 mod fan;
 pub(super) trait Fresh: Send + Sync {
+    fn authentication(&self) -> Option<(u32, i32)> {
+        None
+    }
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         None
     }
@@ -77,6 +80,9 @@ pub(super) trait Fresh: Send + Sync {
     fn authorize(&self) -> Option<ReadAdmission>;
 }
 impl Fresh for WindowsGuard {
+    fn authentication(&self) -> Option<(u32, i32)> {
+        Some(self.authentication())
+    }
     fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         self.authorize_owned_stop()
     }
@@ -266,7 +272,7 @@ impl Runtime {
             ));
         };
         reader.custody().verify_integrity()?;
-        let (storage, fresh) = match (self.factory)(&sid, caller.session, reader.custody()) {
+        let (storage, fresh) = match self.capture(&sid, caller.session, reader.custody()) {
             Ok(v) => v,
             Err(e) if is_fatal_admission(&e) => {
                 return Err(e);
@@ -306,12 +312,12 @@ impl Runtime {
         reader.retain_policy(Rc::new(move |base| {
             verify_retained_failure(&runtime.fatal)?;
             let base = base.redact_private();
-            let (store, fresh) =
-                match (runtime.factory)(&policy_sid, caller.session, custody.clone()) {
-                    Ok(value) => value,
-                    Err(error) if is_fatal_admission(&error) => return Err(error),
-                    Err(_) => return Ok(base.private_policy_unavailable()),
-                };
+            let (store, fresh) = match runtime.capture(&policy_sid, caller.session, custody.clone())
+            {
+                Ok(value) => value,
+                Err(error) if is_fatal_admission(&error) => return Err(error),
+                Err(_) => return Ok(base.private_policy_unavailable()),
+            };
             fresh.verify_health()?;
             let admitted = fresh.authorize().is_some();
             fresh.verify_health()?;

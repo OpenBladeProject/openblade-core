@@ -1817,6 +1817,7 @@ impl ReadSource {
             return Err(deny());
         }
         let factory = self.factories.as_ref().ok_or_else(deny)?;
+        permit.mutation_registered();
         let worker = (factory.write)(permit.clone());
         *self.mutation.borrow_mut() = Some((worker.clone(), permit));
         self.phase.set(MutationPhase::Active);
@@ -1857,6 +1858,7 @@ impl ReadSource {
             }
             self.activated.set(true);
         }
+        permit.mutation_registered();
         let worker = (factory.write)(permit.clone());
         *self.mutation.borrow_mut() = Some((worker.clone(), permit.clone()));
         self.phase.set(MutationPhase::Active);

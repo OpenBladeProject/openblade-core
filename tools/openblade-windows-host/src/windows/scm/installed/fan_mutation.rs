@@ -14,6 +14,10 @@ pub(super) struct FanPermit {
     owner: String,
     caller_pid: u32,
     session: u32,
+    sid: String,
+    authentication: Option<(u32, i32)>,
+    custody: Arc<dyn ReadCustody>,
+    prior: Mutex<Option<Arc<FanPermit>>>,
     requested: Value,
     value: Option<FanOverride>,
     settings: Option<Value>,
@@ -25,7 +29,19 @@ pub(super) struct FanPermit {
     owned: AtomicBool,
     release: AtomicBool,
     prepared: AtomicBool,
+    joined: AtomicBool,
+    registered: AtomicBool,
     fatal: Arc<Mutex<Option<&'static str>>>,
+}
+// A canceled/refused future which never registered a mutation worker cannot
+// later submit one. Do not retain false cross-scope authority for that case.
+struct FanAwaitGuard(Arc<FanPermit>);
+impl Drop for FanAwaitGuard {
+    fn drop(&mut self) {
+        if !self.0.registered.load(Ordering::Acquire) {
+            self.0.joined.store(true, Ordering::Release);
+        }
+    }
 }
 impl FanPermit {
     fn write(&self, progress: u8) -> io::Result<()> {
@@ -53,6 +69,9 @@ impl FanPermit {
     }
 }
 impl Permit for FanPermit {
+    fn mutation_registered(&self) {
+        self.registered.store(true, Ordering::Release);
+    }
     fn result_admitted(&self, expected: ReadAdmission) -> bool {
         if self.cleanup() && self.storage.progress() == Some(50) {
             return verify_retained_failure(&self.fatal).is_ok()
@@ -85,15 +104,22 @@ impl Permit for FanPermit {
         if proof != Some(self.proof) {
             return None;
         }
-        if let Some((source, settings)) = &*self.selected.lock().ok()? {
-            if self
-                .storage
-                .desired_fan(*source, self.application.as_deref())
-                .ok()?
-                .as_ref()
-                != Some(settings)
-            {
-                return None;
+        // Saved policy is request admission, never the release provenance of a
+        // positively established owner. Cleanup preserves newer saved intent.
+        if self.cleanup() {
+            self.storage.verify_fan_configuration().ok()?;
+        }
+        if !self.cleanup() {
+            if let Some((source, settings)) = &*self.selected.lock().ok()? {
+                if self
+                    .storage
+                    .desired_fan(*source, self.application.as_deref())
+                    .ok()?
+                    .as_ref()
+                    != Some(settings)
+                {
+                    return None;
+                }
             }
         }
         proof
@@ -125,6 +151,37 @@ impl Permit for FanPermit {
         *self.selected.lock().map_err(|_| io::ErrorKind::Other)? = Some((power, settings));
         Ok(intent.filter(|i| Plan::select(baseline, *i, power).is_some()))
     }
+    fn confirm_fan_noop(&self, source: i32, baseline: ObservedPerformance) -> io::Result<()> {
+        self.authorize().ok_or(io::ErrorKind::PermissionDenied)?;
+        let mut prior = self.prior.lock().map_err(|_| io::ErrorKind::Other)?;
+        if let Some(owner) = prior.as_ref() {
+            let record = owner
+                .record
+                .lock()
+                .map_err(|_| io::ErrorKind::Other)?
+                .clone()
+                .ok_or(io::ErrorKind::PermissionDenied)?;
+            let auto = Plan::select(baseline, FanIntent::checked(0, 3700).unwrap(), source)
+                .ok_or(io::ErrorKind::PermissionDenied)?;
+            if !owner.owned.load(Ordering::Acquire)
+                || owner.release.load(Ordering::Acquire)
+                || record.contract != CONTRACT
+                || record.source != source
+                || record.selector != auto.selector
+                || !auto.unchanged
+                || !auto.confirms(baseline)
+                || self.storage.pending()
+            {
+                return Err(io::ErrorKind::PermissionDenied.into());
+            }
+            // Fresh explicit request authority, exact retained original owner bytes.
+            // 51 is v3's independently observed Automatic proof: no setter ACKs.
+            owner.write(51)?;
+            owner.owned.store(false, Ordering::Release);
+        }
+        prior.take();
+        Ok(())
+    }
     fn fan_record(&self) -> Option<FanRecord> {
         self.record.lock().ok()?.clone().or_else(|| {
             Some(FanRecord {
@@ -154,9 +211,11 @@ impl Permit for FanPermit {
             self.prepared.store(true, Ordering::Release);
         }
         if progress == 30 {
+            self.prior.lock().map_err(|_| io::ErrorKind::Other)?.take();
             self.owned.store(true, Ordering::Release);
         }
         if progress == 50 {
+            self.prior.lock().map_err(|_| io::ErrorKind::Other)?.take();
             self.owned.store(false, Ordering::Release);
         }
         Ok(())
@@ -176,10 +235,33 @@ impl Permit for FanPermit {
                 return Ok(Settlement::Unresolved(e));
             }
         }
+        self.joined.store(true, Ordering::Release);
         Ok(Settlement::Complete)
     }
 }
 impl Runtime {
+    // Shared by explicit fan/performance requests and retained policy refresh.
+    // Do not evict the sole original per-user Storage cache while its positive
+    // in-process fan owner still owes a release. No stale proof is renewed.
+    pub(super) fn capture(
+        &self,
+        sid: &str,
+        session: u32,
+        custody: Arc<dyn ReadCustody>,
+    ) -> io::Result<(Arc<Storage>, Arc<dyn Fresh>)> {
+        let pending = self.fan_pending.borrow().clone();
+        let owner = self.fan_owner.borrow().clone();
+        if pending.iter().chain(owner.iter()).any(|p| {
+            (!p.joined.load(Ordering::Acquire)
+                || p.storage.pending()
+                || p.storage.outstanding_fan())
+                && (p.sid != sid || p.session != session)
+        }) {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
+        (self.factory)(sid, session, custody)
+    }
+
     pub(in super::super) async fn apply_fan(
         &self,
         mailbox: MailboxSource,
@@ -208,8 +290,17 @@ impl Runtime {
                 None,
             ));
         };
+        reader.drain_active().await?;
+        if let Some(p) = self
+            .fan_pending
+            .borrow()
+            .as_ref()
+            .filter(|p| p.owned.load(Ordering::Acquire))
+        {
+            *self.fan_owner.borrow_mut() = Some(p.clone());
+        }
         reader.custody().verify_integrity()?;
-        let (storage, fresh) = match (self.factory)(&sid, caller.session, reader.custody()) {
+        let (storage, fresh) = match self.capture(&sid, caller.session, reader.custody()) {
             Ok(v) => v,
             Err(e) if is_fatal_admission(&e) => return Err(e),
             Err(e) => {
@@ -222,11 +313,29 @@ impl Runtime {
         if storage.pending() {
             return Ok((Outcome::blocked(storage.pending_reason()?), None));
         }
+        fresh.verify_health()?;
+        let Some(proof) = fresh.authorize() else {
+            return Ok((
+                Outcome::blocked("Current fan admission is unavailable."),
+                None,
+            ));
+        };
+        // A canceled explicit Auto may already have durably closed ownership on
+        // its worker. After joining it, discard only that positively settled
+        // obligation; never let a stale pointer obstruct a later true no-op.
+        if !storage.outstanding_fan() {
+            self.fan_owner.borrow_mut().take();
+        }
+        let prior = self.fan_owner.borrow().clone();
         if storage.outstanding_fan()
-            && self.fan_owner.borrow().as_ref().is_none_or(|p| {
+            && prior.as_ref().is_none_or(|p| {
                 !p.owned.load(Ordering::Acquire)
+                    || p.release.load(Ordering::Acquire)
+                    || p.sid != sid
                     || p.session != caller.session
-                    || p.authorize().is_none()
+                    || p.proof.generation != proof.generation
+                    || !Arc::ptr_eq(&p.custody, &reader.custody())
+                    || p.authentication != fresh.authentication()
             })
         {
             return Ok((
@@ -236,26 +345,26 @@ impl Runtime {
                 None,
             ));
         }
-        fresh.verify_health()?;
-        let Some(proof) = fresh.authorize() else {
-            return Ok((
-                Outcome::blocked("Current fan admission is unavailable."),
-                None,
-            ));
-        };
         let application = self
             .application
             .borrow()
             .as_ref()
             .filter(|a| a.sid == sid && a.session == caller.session && Instant::now() < a.expires)
             .and_then(|a| a.path.clone());
+        if let Some(p) = &prior {
+            p.fresh.verify_health()?;
+        }
         let permit = Arc::new(FanPermit {
+            authentication: fresh.authentication(),
             storage,
             fresh,
             request,
             owner: format!("{:x}", Sha256::digest(proof.generation)),
             caller_pid: caller.pid.unwrap(),
             session: caller.session,
+            sid: sid.clone(),
+            custody: reader.custody(),
+            prior: Mutex::new(prior),
             requested: json!({"value":value,"settings":settings}),
             value,
             settings,
@@ -267,6 +376,8 @@ impl Runtime {
             owned: AtomicBool::new(false),
             release: AtomicBool::new(false),
             prepared: AtomicBool::new(false),
+            joined: AtomicBool::new(false),
+            registered: AtomicBool::new(false),
             fatal: self.fatal.clone(),
         });
         let store = permit.storage.clone();
@@ -310,7 +421,9 @@ impl Runtime {
         }));
         // Retain before awaiting: cancellation cannot discard an owned Stop obligation.
         *self.fan_pending.borrow_mut() = Some(permit.clone());
+        let awaiting = FanAwaitGuard(permit.clone());
         let result = reader.mutate(permit.clone(), deadline).await;
+        drop(awaiting);
         verify_retained_failure(&self.fatal)?;
         permit.fresh.verify_health()?;
         if permit.owned.load(Ordering::Acquire) {
@@ -318,13 +431,18 @@ impl Runtime {
         } else if !permit.storage.outstanding_fan() && !permit.storage.pending() {
             self.fan_owner.borrow_mut().take();
         }
-        let status = u8::from(
-            result.as_ref().is_ok_and(Option::is_some)
-                && permit.authorize() == Some(proof)
-                && (permit.owned.load(Ordering::Acquire)
-                    || !permit.prepared.load(Ordering::Acquire)
-                    || permit.storage.progress() == Some(50)),
-        );
+        let applied = result.as_ref().is_ok_and(Option::is_some)
+            && permit.authorize() == Some(proof)
+            && (permit.owned.load(Ordering::Acquire)
+                || !permit.prepared.load(Ordering::Acquire)
+                || permit.storage.progress() == Some(50));
+        let status = if permit.storage.pending() || !permit.accepted.load(Ordering::Acquire) {
+            2
+        } else if applied {
+            1
+        } else {
+            0
+        };
         let message = if status == 1 {
             "Fan setters completed and independent mode was confirmed. Target RPM and rotation are not readable on this backend."
         } else if permit.storage.pending() {
