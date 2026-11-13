@@ -386,6 +386,30 @@ public sealed class Rz090528BatteryValidationFactoryTests
     }
 
     [Theory]
+    [InlineData(false, 0x11, 0x07)]
+    [InlineData(false, 0x07, 0x11)]
+    [InlineData(true, 0x11, 0x07)]
+    [InlineData(true, 0x07, 0x11)]
+    public async Task DirectHyperBoostExit_PowerClassChangeAfterFirstWriteStopsWithoutReplay(
+        bool custom, byte initialAdapter, byte changedAdapter)
+    {
+        byte mode = custom ? (byte)4 : (byte)2;
+        var session = new ScriptedSession(
+            [1, 1, 7, 0], [1, 2, 7, 0],
+            [initialAdapter, 0x11], [1, 1, mode, 0], [changedAdapter, 0x11]);
+        await using IProductionBatteryPort port = await OpenProductionPortAsync(session);
+        Task ApplyAsync() => custom
+            ? port.SetCustomPerformanceAsync(new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Low), default)
+            : port.SetPerformanceAsync(PerformancePreset.Performance, default);
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(ApplyAsync);
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(new[] { $"0101{mode:X2}00" }, Writes(session));
+        int count = session.Commands.Count;
+        await Assert.ThrowsAnyAsync<Exception>(ApplyAsync);
+        Assert.Equal(count, session.Commands.Count);
+    }
+
+    [Theory]
     [InlineData(CoolingPadConnectionState.Absent, false)]
     [InlineData(CoolingPadConnectionState.PresentExact, true)]
     public async Task DirectManualHyperBoost_UsesExactMode7PairForTheSelectedPadPath(

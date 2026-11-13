@@ -12754,6 +12754,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.DedicatedButton,
                 CancellationToken.None);
+        ControlOperationResult batteryBalanced = await context.Runtime
+            .CyclePerformanceShortcutAsync(PerformanceShortcutSource.DedicatedButton, CancellationToken.None);
+        ControlOperationResult batterySaver = await context.Runtime
+            .CyclePerformanceShortcutAsync(PerformanceShortcutSource.FunctionP, CancellationToken.None);
         ControlOperationResult wrapped = await context.Runtime
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.FunctionP,
@@ -12773,9 +12777,13 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         Assert.Equal("Fn+P selected Creator.", creator.Message);
         Assert.Equal(ControlOperationStatus.Applied, custom.Status);
         Assert.Equal("The performance button selected Custom.", custom.Message);
+        Assert.Equal(ControlOperationStatus.Applied, batteryBalanced.Status);
+        Assert.Equal(ControlOperationStatus.Applied, batterySaver.Status);
+        Assert.Equal(PerformancePreset.BatteryBalanced, context.Device.PerformanceWrites[^3]);
+        Assert.Equal(PerformancePreset.BatterySaver, context.Device.PerformanceWrites[^2]);
         Assert.Equal(ControlOperationStatus.Applied, wrapped.Status);
         Assert.Equal("Fn+P selected Balanced.", wrapped.Message);
-        Assert.Equal(8, context.Device.PerformanceSetCalls);
+        Assert.Equal(10, context.Device.PerformanceSetCalls);
         Assert.Equal(
             new PerformanceOverride(
                 PerformancePreset.Balanced,
@@ -12943,7 +12951,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task PerformanceShortcut_IsNoOpOnUsbCWhereOnlyBalancedIsAdmitted()
+    public async Task PerformanceShortcut_CyclesExactAdmittedModesOnUsbC()
     {
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -12956,14 +12964,16 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             ConfirmedBattery(80),
             usbC.Lighting);
 
+        await context.Runtime.ObserveAsync(CancellationToken.None);
         ControlOperationResult result = await context.Runtime
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.DedicatedButton,
                 CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.Null(context.Runtime.GetStatus().PerformanceOverride);
-        Assert.Equal(0, context.Device.PerformanceSetCalls);
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(PerformancePreset.Silent, context.Runtime.GetStatus().PerformanceOverride?.Value);
+        Assert.Equal(PowerSource.UsbC, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
     }
 
     [Fact]
@@ -16844,8 +16854,6 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     }
 
     [Theory]
-    [InlineData(PowerSource.PluggedIn, PerformancePreset.BatterySaver)]
-    [InlineData(PowerSource.PluggedIn, PerformancePreset.BatteryBalanced)]
     [InlineData(PowerSource.Battery, PerformancePreset.Silent)]
     [InlineData(PowerSource.Battery, PerformancePreset.Balanced)]
     [InlineData(PowerSource.Battery, PerformancePreset.Performance)]

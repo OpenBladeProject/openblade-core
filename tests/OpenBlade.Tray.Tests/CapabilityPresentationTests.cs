@@ -3298,6 +3298,9 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             ProfileDefaults.CreateSafeDefaults().Battery,
             client.SavedProfiles.Battery);
+        Assert.Equal(
+            ProfileDefaults.CreateSafeDefaults().UsbC,
+            client.SavedProfiles.UsbC);
     }
 
     [Fact]

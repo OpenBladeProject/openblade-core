@@ -28,6 +28,8 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
             PerformancePreset.Performance,
             new DateTimeOffset(2026, 8, 11, 12, 0, 0, TimeSpan.Zero))
         {
+            RestorePowerSource = PowerSource.UsbC,
+            RestoreUsesCurrentPowerDestination = true,
             RestoreIntent = new HyperBoostRestoreIntent(
                 PerformancePreset.Custom,
                 CustomPerformanceSettings.Default,
@@ -120,6 +122,51 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
 
         Assert.False(loaded.Invalid);
         Assert.Equal(expected, loaded.Journal);
+    }
+
+    [Fact]
+    public async Task Load_SchemaSevenRetainsLegacyFullPowerOriginAndTransitionId()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "legacy-source.json");
+        Guid transitionId = Guid.NewGuid();
+        var document = new HyperBoostOwnershipJournalDocument(7,
+            HyperBoostOwnershipJournalState.OwnedConfirmed, PerformancePreset.Balanced,
+            DateTimeOffset.UtcNow, RequiresCoolingPad: false,
+            RestorePerformance: PerformancePreset.Silent,
+            RestoreFanControl: FanControlSettings.Default, TransitionId: transitionId);
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(document,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+
+        HyperBoostOwnershipJournalLoadResult loaded = await new HyperBoostOwnershipJournalStore(path)
+            .LoadAsync(CancellationToken.None);
+
+        Assert.False(loaded.Invalid);
+        Assert.Equal(PowerSource.PluggedIn, loaded.Journal?.RestorePowerSource);
+        Assert.Equal(transitionId, loaded.Journal?.TransitionId);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(PowerSource.ExternalUnknown)]
+    [InlineData((PowerSource)99)]
+    public async Task Load_CurrentSchemaRefusesMissingOrUnclassifiedRestoreSource(PowerSource? source)
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "invalid-source.json");
+        var document = new HyperBoostOwnershipJournalDocument(8,
+            HyperBoostOwnershipJournalState.OwnedConfirmed, PerformancePreset.Balanced,
+            DateTimeOffset.UtcNow, RequiresCoolingPad: false,
+            RestorePerformance: PerformancePreset.Silent,
+            RestoreFanControl: FanControlSettings.Default, RestorePowerSource: source);
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(document,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+
+        HyperBoostOwnershipJournalLoadResult loaded = await new HyperBoostOwnershipJournalStore(path)
+            .LoadAsync(CancellationToken.None);
+
+        Assert.True(loaded.Invalid);
+        Assert.Null(loaded.Journal);
     }
 
     [Fact]

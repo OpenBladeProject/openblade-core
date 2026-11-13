@@ -583,6 +583,19 @@ public sealed class ProfileStoreTests : IDisposable
     }
 
     [Fact]
+    public void NormalizeLegacyBatteryProfile_PreservesOrdinaryUsbCWithoutInventingCustomIntent()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+
+        ProfileSet normalized = ProfileStore.NormalizeLegacyBatteryProfile(
+            defaults, out bool migrated, batteryProtectionDefault: true);
+
+        Assert.Equal(defaults, normalized);
+        Assert.False(migrated);
+        Assert.Null(normalized.UsbC.CustomPerformance);
+    }
+
+    [Fact]
     public void NormalizeLegacyBatteryProfile_MigratesUsbCGpuTuningButPreservesBatteryIntent()
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();

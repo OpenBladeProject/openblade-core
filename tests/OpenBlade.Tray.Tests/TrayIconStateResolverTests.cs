@@ -5,6 +5,19 @@ namespace OpenBlade.Tray.Tests;
 public sealed class TrayIconStateResolverTests
 {
     [Theory]
+    [InlineData(PerformancePreset.Balanced)]
+    [InlineData(PerformancePreset.BatteryBalanced)]
+    public void UsbCBalancedPresetsShareTheSourceGlyphAndDischargeBadge(PerformancePreset preset)
+    {
+        TrayIconState state = TrayIconStateResolver.Resolve(true, true, PowerSource.UsbC, preset);
+        Assert.Equal(TrayIconState.UsbCBalanced, state);
+        Assert.Equal(Path.Combine("Tray", "usb-c-balanced-light.ico"),
+            TrayIconAssetPath.Resolve(state, useLightGlyphs: true));
+        Assert.Equal(Path.Combine("Tray", "usb-c-balanced-discharging-light.ico"),
+            TrayIconAssetPath.Resolve(state, useLightGlyphs: true, externalPowerDischarging: true));
+    }
+
+    [Theory]
     [InlineData(PowerSource.PluggedIn)]
     [InlineData(PowerSource.UsbC)]
     public void EveryExternalPresetSupportsTheExistingDischargeBadge(PowerSource source)
@@ -82,7 +95,7 @@ public sealed class TrayIconStateResolverTests
             { PowerSource.UsbC, PerformancePreset.Performance, TrayIconState.AcPerformance },
             { PowerSource.UsbC, PerformancePreset.MaximumPower, TrayIconState.AcPerformance },
             { PowerSource.UsbC, PerformancePreset.Creator, TrayIconState.AcPerformance },
-            { PowerSource.UsbC, PerformancePreset.BatteryBalanced, TrayIconState.AcBalanced },
+            { PowerSource.UsbC, PerformancePreset.BatteryBalanced, TrayIconState.UsbCBalanced },
             { PowerSource.PluggedIn, PerformancePreset.BatterySaver, TrayIconState.AcSilent },
             { PowerSource.Battery, PerformancePreset.Balanced, TrayIconState.BatteryBalanced },
             { PowerSource.Battery, PerformancePreset.BatteryBalanced, TrayIconState.BatteryBalanced },

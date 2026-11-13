@@ -175,8 +175,14 @@ function Build-OpenBladeNativePayload {
     # Restore the entire process environment, including VsDevCmd's changes.
     $savedEnvironment = @{}
     foreach ($entry in [Environment]::GetEnvironmentVariables('Process').GetEnumerator()) { $savedEnvironment[$entry.Key] = $entry.Value }
+    # Keep the shared Cargo output bound to this build through copy and admission.
+    $cacheMutex = [Threading.Mutex]::new($false, 'Global\OpenBlade.CargoCache.OpenSynapse')
+    $cacheMutexHeld = $false
     Push-Location (Join-Path $Repository 'rust')
     try {
+        try { $cacheMutexHeld = $cacheMutex.WaitOne([TimeSpan]::FromMinutes(10)) }
+        catch [Threading.AbandonedMutexException] { $cacheMutexHeld = $true }
+        if (-not $cacheMutexHeld) { throw 'Shared native build cache is busy.' }
         # Cargo config/wrappers can change source replacement and native tools.
         # Release provenance admits only the checked-in recipe and pinned tools.
         $configDirectory = [IO.DirectoryInfo](Get-Location).Path
@@ -296,6 +302,8 @@ Rust standard library: MIT OR Apache-2.0; notices follow (from the pinned toolch
         Assert-OpenBladeNativePayload -Payload $outputPath -Repository $Repository -BuildIdentity $BuildIdentity
     }
     finally {
+        if ($cacheMutexHeld) { $cacheMutex.ReleaseMutex() }
+        $cacheMutex.Dispose()
         Pop-Location
         foreach ($key in @([Environment]::GetEnvironmentVariables('Process').Keys)) {
             if (-not $savedEnvironment.ContainsKey($key)) { [Environment]::SetEnvironmentVariable($key, $null, 'Process') }

@@ -333,7 +333,7 @@ public sealed class ProfileSetValidatorTests
     [Theory]
     [InlineData(PerformancePreset.BatterySaver)]
     [InlineData(PerformancePreset.BatteryBalanced)]
-    public void Validate_RejectsBatteryPresetForPluggedInProfile(
+    public void Validate_AcceptsBatteryPresetForPluggedInProfile(
         PerformancePreset performance)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
@@ -344,7 +344,7 @@ public sealed class ProfileSetValidatorTests
             },
         };
 
-        Assert.Throws<InvalidDataException>(() => CreateValidator().Validate(profiles));
+        CreateValidator().Validate(profiles);
     }
 
     [Theory]

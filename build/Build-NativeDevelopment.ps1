@@ -16,8 +16,16 @@ function Get-NativeSha256([string]$Path) {
     try { return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-', '').ToLowerInvariant() }
     finally { $algorithm.Dispose(); $stream.Dispose() }
 }
+# Cargo releases its own lock before our artifact copy. Hold one cross-process
+# lease through build, copy and provenance so another worktree cannot replace it.
+$cacheMutexName = if ($env:OS -eq 'Windows_NT') { 'Global\OpenBlade.CargoCache.OpenSynapse' } else { 'OpenBlade.CargoCache.OpenSynapse' }
+$cacheMutex = [Threading.Mutex]::new($false, $cacheMutexName)
+$cacheMutexHeld = $false
 Push-Location (Join-Path $repository 'rust')
 try {
+    try { $cacheMutexHeld = $cacheMutex.WaitOne([TimeSpan]::FromMinutes(10)) }
+    catch [Threading.AbandonedMutexException] { $cacheMutexHeld = $true }
+    if (-not $cacheMutexHeld) { throw 'Shared native build cache is busy.' }
     $pin = [regex]::Match((Get-Content rust-toolchain.toml -Raw), '(?m)^channel = "([0-9.]+)"$').Groups[1].Value
     if (-not $pin) { throw 'Missing exact Rust toolchain pin.' }
     $version = & rustc "+$pin" -vV
@@ -73,4 +81,8 @@ try {
         [IO.File]::WriteAllText($manifestPath, $text, [Text.UTF8Encoding]::new($false))
     }
 }
-finally { Pop-Location }
+finally {
+    if ($cacheMutexHeld) { $cacheMutex.ReleaseMutex() }
+    $cacheMutex.Dispose()
+    Pop-Location
+}

@@ -5509,9 +5509,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    private void ApplyStatus(
+    private void ApplyStatus(ServiceStatusSnapshot status, bool trayOnly = false) =>
+        ApplyStatusWithPresentation(status, trayOnly, forcePresentation: false);
+
+    private void ApplyStatusWithPresentation(
         ServiceStatusSnapshot status,
-        bool trayOnly = false)
+        bool trayOnly,
+        bool forcePresentation)
     {
         if (trayOnly && TryApplyTrayLiveReadingsOnly(status))
         {
@@ -5523,7 +5527,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool presentationApplied;
         try
         {
-            presentationApplied = ApplyStatusCore(status);
+            presentationApplied = ApplyStatusCore(status, forcePresentation);
         }
         finally
         {
@@ -5545,7 +5549,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    private bool ApplyStatusCore(ServiceStatusSnapshot status)
+    private bool ApplyStatusCore(ServiceStatusSnapshot status, bool forcePresentation = false)
     {
         if (status.Revision < latestAcceptedRevision)
         {
@@ -5561,6 +5565,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         CoolingPad.ApplyStatus(status.CoolingPad, status.ControlAccess == SessionControlAccess.Active);
         NotifyComputed(nameof(ActiveApplicationProfileName), ActiveApplicationProfileName);
         if (IsConnected
+            && !forcePresentation
             && previousStatus is not null
             && !performanceHoldReleased
             && !fanControlHoldReleased
@@ -7195,7 +7200,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             await ClearOverrideAsync(
                 TrayText.Get("Fragment.Performance", "performance"),
-                cancellationToken => serviceClient.SetPerformanceOverrideAsync(null, cancellationToken),
+                ClearPerformanceOverrideAsync,
                 hardwareNotApplied,
                 token).ConfigureAwait(false);
         }
@@ -7930,6 +7935,40 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    private async Task<ControlOperationResult> ClearPerformanceOverrideAsync(CancellationToken token)
+    {
+        PendingPerformanceHold? supersededHold = pendingPerformance;
+        long revisionBeforeClear = latestAcceptedRevision;
+        PowerSource sourceBeforeClear = ActivePowerSource;
+        ControlOperationResult result = await serviceClient.SetPerformanceOverrideAsync(null, token);
+        if (result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored)
+        {
+            await dispatcher.InvokeAsync(() =>
+            {
+                if (!ReferenceEquals(pendingPerformance, supersededHold))
+                {
+                    return;
+                }
+                // An accepted clear supersedes the old optimistic edit, even
+                // when the watch stream coalesced its override echo.
+                pendingPerformance = null;
+                if (supersededHold is not null
+                    && latestStatus is { PerformanceOverride: null } observed
+                    && observed.Revision > revisionBeforeClear
+                    && observed.ActivePowerSource == sourceBeforeClear
+                    && observed.ConfirmedState is { Performance: { } performance } confirmed
+                    && (performance != PerformancePreset.Custom || confirmed.CustomPerformance is not null))
+                {
+                    // The final observation may precede the clear response.
+                    // Re-present that actual readback, bypassing the metadata
+                    // shortcut; never substitute the saved profile or baseline.
+                    ApplyStatusWithPresentation(observed, trayOnly: false, forcePresentation: true);
+                }
+            }, token);
+        }
+        return result;
+    }
+
     private async Task<bool> ClearActiveProfileHardwareOverridesAsync(
         CancellationToken token,
         ProfileDraftGroup? group = null,
@@ -7940,9 +7979,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && (force || activeProfileDraft.Performance is not null))
         {
             restored &= await RunOperationAsync(
-                cancellationToken => serviceClient.SetPerformanceOverrideAsync(
-                    null,
-                    cancellationToken),
+                ClearPerformanceOverrideAsync,
                 token);
         }
         if ((group is null or ProfileDraftGroup.Thermal or ProfileDraftGroup.Laptop)
@@ -8402,7 +8439,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             Performance = UsbCPerformanceEditor,
             CustomPerformance = Profiles.UsbC.CustomPerformance
-                ?? CustomPerformanceSettings.Default,
+                ?? (UsbCPerformanceEditor == PerformancePreset.Custom
+                    ? CustomPerformanceSettings.Default
+                    : null),
             Fans = UsbCFanModeEditor,
             Lighting = UsbCLightingEditor,
         },

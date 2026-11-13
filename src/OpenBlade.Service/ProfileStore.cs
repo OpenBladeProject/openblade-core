@@ -398,7 +398,12 @@ public sealed class ProfileStore
         usbC = NormalizeLegacyDisplay(usbC);
         pluggedIn = NormalizeLegacyCustomPerformance(pluggedIn);
         pluggedIn = NormalizeLegacyGpuClockTuning(pluggedIn);
-        usbC = NormalizeLegacyCustomPerformance(usbC);
+        // Ordinary limited-power profiles may legitimately have no saved Custom intent.
+        // Only an actual legacy Custom selection needs a default before migration.
+        if (usbC.Performance == PerformancePreset.Custom)
+        {
+            usbC = NormalizeLegacyCustomPerformance(usbC);
+        }
         usbC = NormalizeLegacyGpuClockTuning(usbC);
         LightingPowerPolicy legacyLightingPowerPolicy =
             profiles.LightingPowerPolicy ?? LightingPowerPolicy.Disabled;

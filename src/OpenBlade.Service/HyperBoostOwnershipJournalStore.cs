@@ -74,6 +74,12 @@ internal sealed record HyperBoostOwnershipJournal(
     internal HyperBoostRestoreIntent RestoreIntent { get; init; } =
         HyperBoostRestoreIntent.BalancedAutomatic;
 
+    // Pre-external-mode journals could only capture entry intent on full-power AC.
+    internal PowerSource RestorePowerSource { get; init; } = PowerSource.PluggedIn;
+
+    // Monotonic for one owned session: returning to the entry source cannot revive expired intent.
+    internal bool RestoreUsesCurrentPowerDestination { get; init; }
+
     internal HyperBoostRecoveryBaseline? RecoveryBaseline { get; init; }
 
     internal HyperBoostRestoreRetryDisposition RestoreRetryDisposition { get; init; }
@@ -100,6 +106,7 @@ internal sealed record HyperBoostOwnershipJournal(
             || BaseMode == PerformancePreset.Custom
                 && RestoreIntent is { CustomPerformance: not null })
         && RestoreIntent is { IsWellFormed: true }
+        && RestorePowerSource is (PowerSource.PluggedIn or PowerSource.UsbC or PowerSource.Battery)
         && Enum.IsDefined(RestoreRetryDisposition)
         && Enum.IsDefined(RestoreRetryTarget)
         && (TransitionId is null || TransitionId != Guid.Empty)
@@ -144,7 +151,9 @@ internal sealed record HyperBoostOwnershipJournalDocument(
     HyperBoostRecoveryBaseline? RecoveryBaseline = null,
     HyperBoostRestoreRetryDisposition? RestoreRetryDisposition = null,
     HyperBoostRestoreRetryTarget? RestoreRetryTarget = null,
-    Guid? TransitionId = null);
+    Guid? TransitionId = null,
+    PowerSource? RestorePowerSource = null,
+    bool RestoreUsesCurrentPowerDestination = false);
 
 internal interface IHyperBoostOwnershipJournalStore
     : IServiceOwnershipJournalCleaner
@@ -220,7 +229,8 @@ internal sealed class UnavailableHyperBoostOwnershipJournalStore
 
 internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJournalStore
 {
-    private const int CurrentSchemaVersion = 7;
+    private const int CurrentSchemaVersion = 8;
+    private const int TransitionIdSchemaVersion = 7;
     private const int RetryDispositionSchemaVersion = 5;
     private const int RetryTargetSchemaVersion = 6;
     private static readonly JsonSerializerOptions SerializerOptions =
@@ -267,7 +277,7 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                     or
                 {
                     SchemaVersion: 3 or 4 or RetryDispositionSchemaVersion
-                        or RetryTargetSchemaVersion or CurrentSchemaVersion,
+                        or RetryTargetSchemaVersion or TransitionIdSchemaVersion or CurrentSchemaVersion,
                     RequiresCoolingPad: not null,
                     RestorePerformance: not null,
                     RestoreFanControl: not null,
@@ -275,7 +285,7 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                 HyperBoostRestoreIntent restoreIntent = document is
                 {
                     SchemaVersion: 3 or 4 or RetryDispositionSchemaVersion
-                        or RetryTargetSchemaVersion or CurrentSchemaVersion,
+                        or RetryTargetSchemaVersion or TransitionIdSchemaVersion or CurrentSchemaVersion,
                     RestorePerformance: { } restorePerformance,
                     RestoreFanControl: { } restoreFanControl,
                 }
@@ -302,23 +312,28 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                         document.UpdatedAtUtc)
                     {
                         RestoreIntent = restoreIntent,
+                        RestorePowerSource = document.SchemaVersion == CurrentSchemaVersion
+                            ? document.RestorePowerSource ?? (PowerSource)(-1)
+                            : PowerSource.PluggedIn,
+                        RestoreUsesCurrentPowerDestination = document.SchemaVersion == CurrentSchemaVersion
+                            && document.RestoreUsesCurrentPowerDestination,
                         RecoveryBaseline = document.SchemaVersion
                             is 4 or RetryDispositionSchemaVersion
-                                or RetryTargetSchemaVersion or CurrentSchemaVersion
+                                or RetryTargetSchemaVersion or TransitionIdSchemaVersion or CurrentSchemaVersion
                                 ? document.RecoveryBaseline
                                 : null,
                         RestoreRetryDisposition = document.SchemaVersion
                             is RetryDispositionSchemaVersion
-                                or RetryTargetSchemaVersion or CurrentSchemaVersion
+                                or RetryTargetSchemaVersion or TransitionIdSchemaVersion or CurrentSchemaVersion
                                 ? document.RestoreRetryDisposition
                                     ?? HyperBoostRestoreRetryDisposition.None
                                 : HyperBoostRestoreRetryDisposition.None,
                         RestoreRetryTarget = document.SchemaVersion
-                            is RetryTargetSchemaVersion or CurrentSchemaVersion
+                            is RetryTargetSchemaVersion or TransitionIdSchemaVersion or CurrentSchemaVersion
                                 ? document.RestoreRetryTarget
                                     ?? HyperBoostRestoreRetryTarget.None
                                 : HyperBoostRestoreRetryTarget.None,
-                        TransitionId = document.SchemaVersion == CurrentSchemaVersion
+                        TransitionId = document.SchemaVersion is TransitionIdSchemaVersion or CurrentSchemaVersion
                             ? document.TransitionId
                             : null,
                     };
@@ -331,7 +346,7 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                         AllowsExplicitRecoveryBaselineCapture:
                             document!.SchemaVersion is 3 or 4
                                 or RetryDispositionSchemaVersion
-                                or RetryTargetSchemaVersion or CurrentSchemaVersion
+                                or RetryTargetSchemaVersion or TransitionIdSchemaVersion or CurrentSchemaVersion
                             && journal.State
                                 == HyperBoostOwnershipJournalState.RestorePending
                             && journal.RecoveryBaseline is null,
@@ -497,6 +512,8 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                 journal.RecoveryBaseline,
                 journal.RestoreRetryDisposition,
                 journal.RestoreRetryTarget,
-                journal.TransitionId),
+                journal.TransitionId,
+                journal.RestorePowerSource,
+                journal.RestoreUsesCurrentPowerDestination),
             SerializerOptions);
 }

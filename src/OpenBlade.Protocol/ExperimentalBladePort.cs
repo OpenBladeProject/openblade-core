@@ -164,7 +164,6 @@ internal sealed partial class ExperimentalBladePort(
             // Custom getters, unlike validated backends' shared manual selector.
             // See sqmagellan 9c66e705/librazer/src/command.rs and descriptor.rs.
             ReportsPerformanceWithManualFans = enabled && GetExperimentalFanRange(model) is not null,
-            SupportsManualFansOnLimitedPower = enabled && GetExperimentalFanRange(model) is not null,
             SupportsKeyboardBrightness = SupportsExperimentalKeyboardBrightness(model, enabled),
             SupportsIndependentLightingControls = SupportsIndependentLighting(model),
             LogoLightingModes = CreateExperimentalLogoModes(model, enabled),
@@ -606,7 +605,8 @@ internal sealed partial class ExperimentalBladePort(
         byte commandClass,
         byte commandId,
         byte[] arguments,
-        PowerSource? admittedFanSource)
+        PowerSource? admittedFanSource,
+        PowerSource? admittedFanPowerSource)
     {
         // The exact 02A0 full-charge bit changes battery policy, not thermal mode.
         // It retains general submission admission and its own shared-mask guard.
@@ -623,7 +623,8 @@ internal sealed partial class ExperimentalBladePort(
         {
             return admittedFanSource is { } source
                 && capturePowerSource() == source
-                && FanCommandSourceIsAdmitted(source, operation, arguments);
+                && admittedFanPowerSource is { } classifiedSource
+                && FanCommandSourceIsAdmitted(classifiedSource, operation, arguments);
         }
 
         // Balanced/Automatic is the typed HyperBoost low-power handoff. Its
@@ -693,6 +694,7 @@ internal sealed partial class ExperimentalBladePort(
         ObjectDisposedException.ThrowIf(disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
         PowerSource? admittedFanSource = null;
+        PowerSource? admittedFanPowerSource = null;
         PowerSource? admittedThermalSource = write && IsThermalSet(commandClass, commandId)
             && !IsTemporaryFullChargeSet(operation, commandClass, commandId, arguments)
                 ? capturePowerSource() : null;
@@ -714,12 +716,18 @@ internal sealed partial class ExperimentalBladePort(
             }
             bool confirmedExternalPower = ExternalPowerReported(currentSource)
                 && FanPowerMatchesSource(adapter, currentSource);
+            // Windows reports only external presence. The fresh adapter query
+            // supplies the actual class for the existing model-specific fan gate.
+            PowerSource classifiedFanSource = currentSource == PowerSource.ExternalUnknown
+                ? IsLimitedAdapter(adapter) ? PowerSource.UsbC : PowerSource.PluggedIn
+                : currentSource;
             bool fanPowerAllowed = fanOperation
                 && FanPowerMatchesSource(adapter, currentSource)
-                && FanCommandSourceIsAdmitted(currentSource, operation, arguments);
+                && FanCommandSourceIsAdmitted(classifiedFanSource, operation, arguments);
             if (fanPowerAllowed)
             {
                 admittedFanSource = currentSource;
+                admittedFanPowerSource = classifiedFanSource;
             }
             if (operation == "HyperBoostRestore" && !FanPowerMatchesSource(adapter, currentSource))
             {
@@ -772,7 +780,8 @@ internal sealed partial class ExperimentalBladePort(
                     commandClass,
                     commandId,
                     arguments,
-                    admittedFanSource) : null,
+                    admittedFanSource,
+                    admittedFanPowerSource) : null,
         };
         LightingRecoveryWriteGate.SubmissionGuard? recoveryGuard = write
             ? recoveryWriteGate.CreateSubmissionGuard(command.SubmissionAllowed) : null;
@@ -912,17 +921,19 @@ internal sealed partial class ExperimentalBladePort(
 
     private bool FanModeSourceIsAdmitted(PowerSource source, FanMode mode)
     {
-        // Keep the model-specific battery restriction; every confirmed external
-        // source can use the already-admitted manual fan commands.
-        if (UsesDynamicExperimentalFanRange(model) && !ExternalPowerReported(source)
+        // Preserve existing fan-source capabilities independently of performance
+        // modes. Raw Windows AC presence is classified before every setter.
+        if (UsesDynamicExperimentalFanRange(model)
+            && source is not (PowerSource.PluggedIn or PowerSource.ExternalUnknown)
             && mode is FanMode.Fixed or FanMode.ManualCurve)
         {
             return false;
         }
         return source switch
         {
-            PowerSource.PluggedIn or PowerSource.UsbC or PowerSource.ExternalUnknown or PowerSource.Battery =>
+            PowerSource.PluggedIn or PowerSource.ExternalUnknown or PowerSource.Battery =>
                 mode is FanMode.Automatic or FanMode.Fixed or FanMode.ManualCurve,
+            PowerSource.UsbC => mode == FanMode.Automatic,
             _ => false,
         };
     }
@@ -931,7 +942,9 @@ internal sealed partial class ExperimentalBladePort(
         PowerSource source,
         string operation,
         byte[] arguments) => (!UsesDynamicExperimentalFanRange(model)
-                || ExternalPowerReported(source)
+                || source == PowerSource.PluggedIn
+                || operation == "Fans" && arguments.Length == 4 && arguments[3] == 0)
+            && (source != PowerSource.UsbC
                 || operation == "Fans" && arguments.Length == 4 && arguments[3] == 0);
 
     private static bool FanPowerMatchesSource(

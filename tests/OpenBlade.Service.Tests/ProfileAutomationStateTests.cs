@@ -259,28 +259,33 @@ public sealed class ProfileAutomationStateTests
         Assert.Null(onBattery.GpuClockTuning);
     }
 
-    [Fact]
-    public void PersistentBatteryPerformanceOverride_PausesOnAcAndReturnsOnBattery()
+    [Theory]
+    [InlineData(PerformancePreset.BatterySaver, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.BatteryBalanced, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.BatterySaver, PowerSource.UsbC)]
+    [InlineData(PerformancePreset.BatteryBalanced, PowerSource.UsbC)]
+    public void PersistentBatteryPerformanceOverride_RemainsActiveOnConfirmedExternal(
+        PerformancePreset preset, PowerSource externalSource)
     {
         ProfileAutomationState state = CreateState(PowerSource.Battery);
         state.SetPerformanceOverride(new ManualOverride<PerformancePreset>(
-            PerformancePreset.BatteryBalanced,
+            preset,
             OverrideLifetime.Persistent));
 
-        state.ChangePowerSource(PowerSource.PluggedIn);
+        state.ChangePowerSource(externalSource);
         DesiredDeviceState onAc = state.Resolve(
             new ConfirmedDeviceState(null, null, null, null));
 
-        Assert.Equal(PerformancePreset.Balanced, onAc.Performance.Value);
-        Assert.Equal(SettingValueSource.PowerProfile, onAc.Performance.Source);
-        Assert.Equal(PerformancePreset.BatteryBalanced, state.PerformanceOverride!.Value);
+        Assert.Equal(preset, onAc.Performance.Value);
+        Assert.Equal(SettingValueSource.PersistentOverride, onAc.Performance.Source);
+        Assert.Equal(preset, state.PerformanceOverride!.Value);
         Assert.Equal(OverrideLifetime.Persistent, state.PerformanceOverride.Lifetime);
 
         state.ChangePowerSource(PowerSource.Battery);
         DesiredDeviceState onBattery = state.Resolve(
             new ConfirmedDeviceState(null, null, null, null));
 
-        Assert.Equal(PerformancePreset.BatteryBalanced, onBattery.Performance.Value);
+        Assert.Equal(preset, onBattery.Performance.Value);
         Assert.Equal(SettingValueSource.PersistentOverride, onBattery.Performance.Source);
     }
 

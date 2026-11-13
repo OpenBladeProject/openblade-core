@@ -61,11 +61,11 @@ public static class TrayIconStateResolver
                 TrayIconState.AcPerformance,
             (PowerSource.PluggedIn or PowerSource.UsbC, PerformancePreset.Custom) =>
                 TrayIconState.AcCustom,
-            (PowerSource.UsbC, PerformancePreset.Balanced) =>
+            (PowerSource.UsbC, PerformancePreset.Balanced or PerformancePreset.BatteryBalanced) =>
                 TrayIconState.UsbCBalanced,
             (PowerSource.Battery, PerformancePreset.Balanced) =>
                 TrayIconState.BatteryBalanced,
-            (PowerSource.PluggedIn or PowerSource.UsbC, PerformancePreset.BatteryBalanced) =>
+            (PowerSource.PluggedIn, PerformancePreset.BatteryBalanced) =>
                 TrayIconState.AcBalanced,
             (PowerSource.Battery, PerformancePreset.BatteryBalanced) =>
                 TrayIconState.BatteryBalanced,

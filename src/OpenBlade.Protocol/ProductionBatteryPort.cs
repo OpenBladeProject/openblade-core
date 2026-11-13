@@ -1538,7 +1538,6 @@ internal sealed class ProductionBatteryPort :
         Battery,
         LimitedExternal,
         FullPower,
-        External,
     }
 
     private static bool IsLimitedExternalAdapter(AdapterPowerState adapter) => adapter is
@@ -1578,10 +1577,7 @@ internal sealed class ProductionBatteryPort :
         AdapterPowerState adapter = await QueryThermalWritePowerAsync(
             submitted,
             cancellationToken).ConfigureAwait(false);
-        ThermalWritePowerRequirement? actualPower = ClassifyThermalWritePower(adapter);
-        if (requiredPower == ThermalWritePowerRequirement.External
-            ? actualPower is not (ThermalWritePowerRequirement.FullPower or ThermalWritePowerRequirement.LimitedExternal)
-            : actualPower != requiredPower)
+        if (ClassifyThermalWritePower(adapter) != requiredPower)
         {
             throw ThermalWritePowerFailure(
                 submitted,
@@ -2300,15 +2296,24 @@ internal sealed class ProductionBatteryPort :
                 await validateEligibility(cancellationToken).ConfigureAwait(false);
             }
 
+            ThermalWritePowerRequirement? directExitPowerClass = null;
             for (int index = 0; index < commands.Length; index++)
             {
                 RazerCommandDefinition command = commands[index];
                 cancellationToken.ThrowIfCancellationRequested();
                 if (exitedHyperBoost && requireExternalPowerOnDirectHyperBoostExit)
                 {
-                    await EnsureThermalWritePowerAsync(
-                        ThermalWritePowerRequirement.External, submitted, cancellationToken)
-                        .ConfigureAwait(false);
+                    ThermalWritePowerRequirement? freshClass = ClassifyThermalWritePower(
+                        await QueryThermalWritePowerAsync(submitted, cancellationToken).ConfigureAwait(false));
+                    if (freshClass is not (ThermalWritePowerRequirement.FullPower or ThermalWritePowerRequirement.LimitedExternal)
+                        || directExitPowerClass is { } admittedClass && freshClass != admittedClass)
+                    {
+                        throw ThermalWritePowerFailure(submitted,
+                            "The adapter power class changed or was not confirmed during the direct HyperBoost exit.");
+                    }
+                    // Either external class is an admitted starting point, but a
+                    // class change after submission must stop without replay.
+                    directExitPowerClass = freshClass;
                 }
                 if (revalidateEligibilityPerCommand && validateEligibility is not null)
                 {
