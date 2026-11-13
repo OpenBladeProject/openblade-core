@@ -825,3 +825,137 @@ async fn in_memory_guarded_no_reader_serves_status_subscription_and_own_transpor
     .await
     .unwrap();
 }
+
+// Pure async source: its refresh holds the production source mutex across an
+// origin tick. No worker, OS supplier or hardware runs.
+struct HeldPublicationSource {
+    inner: TestSource,
+    armed: Rc<Cell<bool>>,
+    entered: Rc<tokio::sync::Notify>,
+    release: Rc<tokio::sync::Notify>,
+    completed: Rc<Cell<bool>>,
+    origin_lost: Rc<Cell<bool>>,
+    origin_checks: Rc<Cell<usize>>,
+    publish: watch::Sender<Arc<Publication>>,
+    event: Arc<Publication>,
+}
+
+impl StatusSource for HeldPublicationSource {
+    fn snapshot(&mut self, caller: Caller, requested: Instant) -> Pending<'_, Snapshot> {
+        self.inner.snapshot(caller, requested)
+    }
+    fn publications(&self) -> Option<watch::Receiver<Arc<Publication>>> {
+        self.inner.publications()
+    }
+    fn refresh_publications(&mut self) -> Pending<'_, Instant> {
+        Box::pin(async move {
+            if self.armed.replace(false) {
+                self.entered.notify_one();
+                self.release.notified().await;
+                self.completed.set(true);
+                if !self.origin_lost.get() {
+                    self.publish.send_replace(Arc::clone(&self.event));
+                }
+            }
+            Ok(Instant::now() + subscription::REFRESH_INTERVAL)
+        })
+    }
+    fn verify_origin(&self) -> io::Result<()> {
+        self.origin_checks.set(self.origin_checks.get() + 1);
+        if self.origin_lost.get() {
+            Err(io::Error::other("injected retained origin lost"))
+        } else {
+            Ok(())
+        }
+    }
+    fn drain(&mut self) -> Pending<'_, ()> {
+        self.inner.drain()
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn edge_outer_held_refresh_preserves_origin_checks_and_shutdown() {
+    // 0: release delivers an event; 1: origin loss fails the runtime;
+    // 2: STOP cancels the held async refresh and drains the source.
+    for mode in 0..3 {
+        let initial = frame_value(replay()[1]);
+        let event = frame_value(replay()[2]);
+        let (publish, feed) = watch::channel(publication(initial["status"].clone()));
+        let events = Events::default();
+        let (mut ports, tx) = ports_with_feed(Fault::None, &events, None);
+        let armed = Rc::new(Cell::new(false));
+        let entered = Rc::new(tokio::sync::Notify::new());
+        let release = Rc::new(tokio::sync::Notify::new());
+        let completed = Rc::new(Cell::new(false));
+        let origin_lost = Rc::new(Cell::new(false));
+        let origin_checks = Rc::new(Cell::new(0));
+        ports.source = Rc::new(Mutex::new(Box::new(HeldPublicationSource {
+            inner: TestSource {
+                fault: Fault::None,
+                events: events.clone(),
+                publications: Some(feed),
+            },
+            armed: Rc::clone(&armed),
+            entered: Rc::clone(&entered),
+            release: Rc::clone(&release),
+            completed: Rc::clone(&completed),
+            origin_lost: Rc::clone(&origin_lost),
+            origin_checks: Rc::clone(&origin_checks),
+            publish,
+            event: publication(event["status"].clone()),
+        })));
+        let source = Rc::clone(&ports.source);
+        let (shutdown, stop) = oneshot::channel();
+        let (failed, failure) = oneshot::channel();
+        let (_, driver) = prepare(PID, stop, failed, Ok(ports)).await.unwrap();
+        let clients = async {
+            let mut client = connect(&tx, 128);
+            assert_eq!(send_subscribe(&mut client).await, initial);
+            armed.set(true);
+            advance(subscription::REFRESH_INTERVAL).await;
+            entered.notified().await;
+            assert!(source.try_lock().is_err(), "refresh must own source mutex");
+            eprintln!("ORIGIN_CYCLE held mode={mode}");
+            let checks_before = origin_checks.get();
+            // Poll the outer select after the origin deadline, while held.
+            advance(Duration::from_millis(501)).await;
+            tokio::task::yield_now().await;
+            assert_eq!(origin_checks.get(), checks_before);
+            assert!(!completed.get());
+            eprintln!("ORIGIN_CYCLE tick-polled mode={mode}");
+            if mode == 2 {
+                shutdown.send(()).unwrap();
+            } else {
+                origin_lost.set(mode == 1);
+                release.notify_one();
+                eprintln!("ORIGIN_CYCLE released mode={mode}");
+                if mode == 0 {
+                    assert_eq!(read_json(&mut client).await, event);
+                    get_status(&tx).await;
+                    assert!(origin_checks.get() > checks_before);
+                } else {
+                    failure.await.unwrap();
+                    assert!(origin_checks.get() > checks_before);
+                }
+                assert!(completed.get());
+                shutdown.send(()).unwrap();
+            }
+            assert_eof(&mut client).await;
+        };
+        let (result, ()) = timeout(Duration::from_secs(10), async {
+            tokio::join!(driver, clients)
+        })
+        .await
+        .expect("outer runtime must poll refresh, origin and STOP concurrently");
+        if mode == 1 {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "injected retained origin lost"
+            );
+        } else {
+            result.unwrap();
+        }
+        assert_eq!(completed.get(), mode != 2);
+        assert!(events.borrow().ends_with(&["close", "drain"]));
+    }
+}

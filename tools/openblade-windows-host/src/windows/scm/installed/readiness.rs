@@ -312,11 +312,22 @@ impl Ports {
         tokio::pin!(refresh);
         let mut connections = JoinSet::new();
         let mut accept = self.endpoint.accept();
-        let mut origin_check = tokio::time::interval(Duration::from_millis(500));
+        // Keep lock acquisition in a polled future. Awaiting it inside the
+        // selected tick branch would stop polling a refresh that owns the lock.
+        let origin_check = async {
+            let mut interval = tokio::time::interval(Duration::from_millis(500));
+            loop {
+                interval.tick().await;
+                if let Err(error) = self.source.lock().await.verify_origin() {
+                    return Err::<(), _>(error);
+                }
+            }
+        };
+        tokio::pin!(origin_check);
         let outcome = loop {
             tokio::select! {
                 biased;
-                _ = origin_check.tick() => { if let Err(error) = self.source.lock().await.verify_origin() { break (Err(error), false); } },
+                result = &mut origin_check => break (result, false),
                 signal = &mut *shutdown => break (signal.map_err(|_| lost_shutdown()), true),
                 result = &mut refresh, if publications.is_some() => break (result, false),
                 joined = connections.join_next(), if !connections.is_empty() => match joined {
