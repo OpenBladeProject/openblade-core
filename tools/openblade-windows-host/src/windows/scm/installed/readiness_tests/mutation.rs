@@ -113,7 +113,7 @@ impl Files for MemoryFiles {
                         .as_u64()
                         .unwrap()
                 });
-            if progress == Some(1) {
+            if progress == Some(1) || progress == Some(60) {
                 self.submission_intent_attempts
                     .fetch_add(1, Ordering::AcqRel);
                 let cut = self.fail_first_intent.load(Ordering::Acquire);
@@ -154,7 +154,7 @@ impl Files for MemoryFiles {
                 if cut != 0 {
                     let mut files = self.bytes.lock().unwrap();
                     assert_eq!(files.get(name).map(Vec::as_slice), expected);
-                    assert!(files.contains_key("manual-overrides.json"));
+                    // Both thermal and battery requests reserve before Prepared.
                     *self.prepared_bytes.lock().unwrap() = Some(bytes.to_vec());
                     match cut {
                         1 => {} // ordinary staging-open failure
@@ -434,7 +434,7 @@ impl Rig {
         let custody = Custody::new(&port);
         let persisted = files.clone();
         port.state.lock().unwrap().before_write = Some(Arc::new(move |number| {
-            assert!(persisted.read("manual-overrides.json").unwrap().is_some());
+            // Battery overrides are memory-scoped, not manual-overrides fields.
             let journal = persisted.read("thermal-mutation.journal").unwrap().unwrap();
             let last = journal
                 .split(|b| *b == b'\n')
@@ -442,12 +442,16 @@ impl Rig {
                 .last()
                 .unwrap();
             let entry: Value = serde_json::from_slice(last).unwrap();
-            if entry.get("fan").is_some() {
+            if entry.get("battery").is_some() {
+                assert_eq!(entry["progress"], 60);
+            } else if entry.get("fan").is_some() {
+                assert!(persisted.read("manual-overrides.json").unwrap().is_some());
                 assert!(matches!(
                     entry["progress"].as_u64(),
                     Some(10 | 12 | 14 | 16 | 40 | 42)
                 ));
             } else {
+                assert!(persisted.read("manual-overrides.json").unwrap().is_some());
                 assert_eq!(entry["progress"], if number % 2 == 1 { 1 } else { 3 });
             }
             assert_eq!(entry["user_sid"], SID);
@@ -4413,4 +4417,437 @@ async fn fan_correction_known_unpublished_activation_does_not_keep_scope_fence()
     assert_eq!(r.port.state.lock().unwrap().writes, 0);
     r.origin.stop();
     r.stop().await;
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+fn battery_request(n: u32, operation: &str, value: Value) -> Value {
+    let mut r = json!({"operation":operation,"version":80,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}")});
+    r[if operation == "setBatteryPolicy" {
+        "value"
+    } else {
+        "enabled"
+    }] = value;
+    r
+}
+#[cfg(feature = "service-battery-policy-v1")]
+#[test]
+fn battery_v1_strict_existing_requests_no_raw_or_lifetime_escape() {
+    use crate::service_status::StatusRequest;
+    let valid = battery_request(1, "setBatteryPolicy", json!({"chargeLimitPercent":70}));
+    assert!(StatusRequest::decode(&serde_json::to_vec(&valid).unwrap()).is_ok());
+    for value in [
+        json!({"chargeLimitPercent":49}),
+        json!({"chargeLimitPercent":100}),
+        json!({"chargeLimitPercent":70,"lifetime":1}),
+        Value::Null,
+    ] {
+        let mut v = valid.clone();
+        v["value"] = value;
+        assert!(StatusRequest::decode(&serde_json::to_vec(&v).unwrap()).is_err());
+    }
+    for (k, v) in [
+        ("lifetime", json!(1)),
+        ("version", json!(81)),
+        ("raw", json!(198)),
+        ("requestId", json!("bad")),
+    ] {
+        let mut r = valid.clone();
+        r[k] = v;
+        assert!(StatusRequest::decode(&serde_json::to_vec(&r).unwrap()).is_err());
+    }
+    let duplicate = serde_json::to_string(&valid).unwrap().replace(
+        "\"chargeLimitPercent\":70",
+        "\"chargeLimitPercent\":70,\"chargeLimitPercent\":65",
+    );
+    assert!(StatusRequest::decode(duplicate.as_bytes()).is_err());
+    for op in ["setBatteryProtection", "setFullChargeOverride"] {
+        for value in [true, false] {
+            assert!(
+                StatusRequest::decode(
+                    &serde_json::to_vec(&battery_request(2, op, json!(value))).unwrap()
+                )
+                .is_ok()
+            );
+        }
+    }
+}
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_v1_direct_off_limit_and_noop_preserve_configuration_and_separate_reads() {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let r = Rig::new(files);
+    r.get().await;
+    let original = r.files.read("profiles.json").unwrap();
+    for (n, op, value, target, writes) in [
+        (
+            1,
+            "setBatteryPolicy",
+            json!({"chargeLimitPercent":70}),
+            0xc6,
+            1,
+        ),
+        (2, "setBatteryProtection", json!(false), 0x50, 2),
+        (
+            3,
+            "setBatteryPolicy",
+            json!({"chargeLimitPercent":65}),
+            0x50,
+            2,
+        ),
+        (4, "setBatteryProtection", json!(true), 0xc1, 3),
+        (5, "setBatteryProtection", json!(true), 0xc1, 3),
+    ] {
+        let result = r.request(battery_request(n, op, value)).await;
+        assert_eq!(result["result"]["status"], 1, "{result}");
+        assert_eq!(r.port.state.lock().unwrap().battery_raw, target);
+        assert_eq!(r.port.state.lock().unwrap().writes, writes);
+        let current = r.get().await;
+        assert_eq!(
+            current["status"]["confirmedState"]["battery"]["protectionEnabled"],
+            target != 0x50
+        );
+    }
+    let status = r.get().await;
+    assert_eq!(
+        status["status"]["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"],
+        65
+    );
+    assert_eq!(r.files.read("profiles.json").unwrap(), original);
+    assert!(r.files.read("manual-overrides.json").unwrap().is_none());
+    let rows = fan_rows(&r);
+    assert_eq!(rows.last().unwrap()["progress"], 63);
+    let s = r.port.state.lock().unwrap();
+    assert_eq!(s.sent.iter().filter(|v| v.0 == 7 && v.1 == 0x12).count(), 3);
+    assert_eq!(s.sent.iter().filter(|v| v.0 == 7 && v.1 == 0x8f).count(), 5);
+    assert_eq!(
+        s.sent
+            .iter()
+            .map(|v| v.3)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        s.sent.len()
+    );
+    drop(s);
+    r.stop().await;
+}
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_v1_unknown_temporary_and_active_do_not_mint_authority_or_infer_false() {
+    for raw in [4, 0x80] {
+        let r = Rig::new(MemoryFiles::default());
+        r.get().await;
+        r.port.state.lock().unwrap().temporary_raw = raw;
+        let result = r
+            .request(battery_request(1, "setBatteryProtection", json!(false)))
+            .await;
+        assert_eq!(result["result"]["status"], 2);
+        assert_eq!(r.port.state.lock().unwrap().writes, 0);
+        assert!(fan_rows(&r).is_empty());
+        let status = r.get().await;
+        assert_eq!(
+            status["status"]["confirmedState"]["battery"]["temporaryFullCharge"],
+            if raw == 4 { json!(true) } else { Value::Null }
+        );
+        let result = r
+            .request(battery_request(2, "setFullChargeOverride", json!(false)))
+            .await;
+        assert_eq!(result["result"]["status"], 2);
+        assert!(
+            result["result"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("integration is pending")
+        );
+        assert_eq!(r.port.state.lock().unwrap().writes, 0);
+        r.stop().await;
+    }
+}
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_v1_only_exact_stale_baseline_waits_nine_reads_with_one_setter() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    r.port.state.lock().unwrap().battery_replies = std::iter::repeat_n(0xd0, 8).collect();
+    let result = r
+        .request(battery_request(
+            1,
+            "setBatteryPolicy",
+            json!({"chargeLimitPercent":70}),
+        ))
+        .await;
+    assert_eq!(result["result"]["status"], 1, "{result}");
+    let s = r.port.state.lock().unwrap();
+    assert_eq!(s.battery_reads, 10);
+    assert_eq!(s.writes, 1);
+    let times: Vec<_> = s
+        .sent
+        .iter()
+        .zip(&s.sent_at)
+        .filter(|(v, _)| v.0 == 7 && v.1 == 0x92)
+        .map(|(_, t)| *t)
+        .collect();
+    for pair in times[1..].windows(2) {
+        assert!(pair[1] - pair[0] >= Duration::from_millis(250));
+    }
+    drop(s);
+    r.stop().await;
+}
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_v1_failed_ack_other_invalid_failed_or_exhausted_reads_fence_without_replay() {
+    for case in 0..5 {
+        let r = Rig::new(MemoryFiles::default());
+        r.get().await;
+        {
+            let mut s = r.port.state.lock().unwrap();
+            match case {
+                0 => s.battery_bad_ack = true,
+                1 => s.battery_replies.push_back(0xc1),
+                2 => s.battery_bad_read = true,
+                3 => s.battery_fail_read = true,
+                _ => s.battery_replies = std::iter::repeat_n(0xd0, 9).collect(),
+            }
+        }
+        let result = r
+            .request(battery_request(
+                1,
+                "setBatteryPolicy",
+                json!({"chargeLimitPercent":70}),
+            ))
+            .await;
+        assert_eq!(result["result"]["status"], 2, "{case} {result}");
+        assert!(r.storage.pending());
+        assert_eq!(r.port.state.lock().unwrap().writes, 1);
+        let result = r
+            .request(battery_request(2, "setBatteryProtection", json!(false)))
+            .await;
+        assert_eq!(result["result"]["status"], 2);
+        assert_eq!(r.port.state.lock().unwrap().writes, 1);
+        assert!(
+            !crate::thermal_history::rows(
+                &r.files.read("thermal-mutation.journal").unwrap().unwrap(),
+                |_, _| Ok(())
+            )
+            .unwrap()
+            .1
+            .is_some_and(|e| e.progress == 62)
+        );
+        r.stop().await;
+    }
+}
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_v1_positive_fan_coexists_then_original_reserved_release_on_stop() {
+    let r = fan_rig(0, 0);
+    r.get().await;
+    let result = r.request(fan_request(1, Some(1), 3700)).await;
+    assert_eq!(result["result"]["status"], 1);
+    let owner = fan_rows(&r).last().unwrap().clone();
+    let before = r.files.read("manual-overrides.json").unwrap();
+    let writes = r.port.state.lock().unwrap().writes;
+    let result = r
+        .request(battery_request(2, "setBatteryProtection", json!(false)))
+        .await;
+    assert_eq!(result["result"]["status"], 1, "{result}");
+    assert_eq!(r.port.state.lock().unwrap().writes, writes + 1);
+    assert!(r.storage.outstanding_fan());
+    assert_eq!(r.files.read("manual-overrides.json").unwrap(), before);
+    let battery = fan_rows(&r).last().unwrap().clone();
+    assert!(battery["battery"]["fan_owner"].is_string());
+    assert_eq!(battery["progress"], 62);
+    r.stop().await;
+    let rows = fan_rows(&r);
+    let last = rows.last().unwrap();
+    assert_eq!(last["progress"], 50);
+    assert_eq!(last["request"], owner["request"]);
+    assert_eq!(last["fan"], owner["fan"]);
+    assert!(!r.storage.outstanding_fan());
+    let s = r.port.state.lock().unwrap();
+    assert_eq!(
+        s.sent
+            .iter()
+            .map(|v| v.3)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        s.sent.len()
+    );
+    assert_eq!(s.sent.iter().filter(|v| v.0 == 7 && v.1 == 0x12).count(), 1);
+}
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_v1_prepublication_budget_and_durable_cuts_keep_fences_distinct() {
+    for case in 0..5 {
+        let r = Rig::new(MemoryFiles::default());
+        r.get().await;
+        match case {
+            0 => r.port.reserve_for_tests(121),
+            1 => r.files.capacity_refuse.store(true, Ordering::Release),
+            2 => r.files.reserve_uncertain.store(true, Ordering::Release),
+            3 => r.files.fail_prepared.store(3, Ordering::Release),
+            _ => r.files.fail_first_intent.store(3, Ordering::Release),
+        };
+        let result = r
+            .request(battery_request(1, "setBatteryProtection", json!(false)))
+            .await;
+        assert_eq!(result["result"]["status"], 2, "{case} {result}");
+        assert_eq!(r.port.state.lock().unwrap().writes, 0);
+        assert_eq!(r.storage.pending(), case >= 2);
+        r.stop().await;
+    }
+}
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_v1_battery_source_and_other_temporary_bits_are_admitted() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    {
+        let mut s = r.port.state.lock().unwrap();
+        s.actual = 0;
+        s.temporary_raw = 0x0b;
+    }
+    let result = r
+        .request(battery_request(
+            1,
+            "setBatteryPolicy",
+            json!({"chargeLimitPercent":60}),
+        ))
+        .await;
+    assert_eq!(result["result"]["status"], 1, "{result}");
+    assert_eq!(r.port.state.lock().unwrap().writes, 1);
+    assert_eq!(fan_rows(&r).last().unwrap()["battery"]["source"], 1);
+    r.stop().await;
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_v1_fresh_power_controller_owner_changes_never_submit() {
+    for change in 0..4 {
+        let r = Rig::new(MemoryFiles::default());
+        if change == 3 {
+            r.files.profiles(1);
+        }
+        r.get().await;
+        if change == 0 {
+            r.port.state.lock().unwrap().change_power = Some((2, 0));
+        } else {
+            let c = r.custody.clone();
+            let files = r.files.clone();
+            r.port.state.lock().unwrap().on_power = Some(Arc::new(move |n| {
+                if n == 2 {
+                    if change == 1 {
+                        c.fresh_refuse.store(true, Ordering::Release);
+                    } else if change == 2 {
+                        c.generation.store(8, Ordering::Release);
+                    } else {
+                        let mut profile = files.document("profiles.json");
+                        profile["profiles"]["pluggedIn"]["batteryProtectionEnabled"] = json!(false);
+                        files.put("profiles.json", profile);
+                        let mut commit = files.document("battery-configuration.commit.json");
+                        commit["profileSha256"] = json!(crate::configuration::digest_hex(
+                            &files.read("profiles.json").unwrap().unwrap()
+                        ));
+                        files.put("battery-configuration.commit.json", commit);
+                    }
+                }
+            }));
+        }
+        let result = r
+            .request(battery_request(1, "setBatteryProtection", json!(false)))
+            .await;
+        assert_eq!(result["result"]["status"], 2, "{change} {result}");
+        assert_eq!(r.port.state.lock().unwrap().writes, 0);
+        let rows = fan_rows(&r);
+        assert!(rows.last().is_none_or(|v| v["progress"] == 6));
+        r.stop().await;
+    }
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    let result = r
+        .request_as(
+            battery_request(2, "setBatteryProtection", json!(false)),
+            Caller {
+                session: 8,
+                control_session: Some(8),
+                ..USER
+            },
+            SID,
+        )
+        .await;
+    assert_eq!(result["result"]["status"], 2);
+    assert_eq!(r.port.state.lock().unwrap().writes, 0);
+    r.stop().await;
+}
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_v1_known_capacity_refusal_retains_original_fan_release() {
+    for journal in [false, true] {
+        let r = fan_rig(0, 0);
+        r.get().await;
+        assert_eq!(
+            r.request(fan_request(1, Some(1), 3700)).await["result"]["status"],
+            1
+        );
+        let owner = fan_rows(&r).last().unwrap().clone();
+        let writes = r.port.state.lock().unwrap().writes;
+        if journal {
+            r.files.capacity_refuse.store(true, Ordering::Release);
+        } else {
+            r.port.exhaust();
+        }
+        assert_eq!(
+            r.request(battery_request(2, "setBatteryProtection", json!(false)))
+                .await["result"]["status"],
+            2
+        );
+        assert_eq!(r.port.state.lock().unwrap().writes, writes);
+        assert!(r.storage.outstanding_fan());
+        assert!(!r.storage.pending());
+        r.stop().await;
+        let rows = fan_rows(&r);
+        assert_eq!(rows.last().unwrap()["progress"], 50);
+        assert_eq!(rows.last().unwrap()["fan"], owner["fan"]);
+    }
+}
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_v1_canceled_possible_submission_keeps_global_fence_and_original_fan() {
+    let r = fan_rig(0, 0);
+    r.get().await;
+    assert_eq!(
+        r.request(fan_request(1, Some(1), 3700)).await["result"]["status"],
+        1
+    );
+    let writes = r.port.state.lock().unwrap().writes;
+    let held = Arc::new(AtomicBool::new(false));
+    r.port.state.lock().unwrap().held_write = Some((writes + 1, held.clone()));
+    {
+        let request = r.request(battery_request(2, "setBatteryProtection", json!(false)));
+        tokio::pin!(request);
+        tokio::select! {v=&mut request=>panic!("held request completed {v}"),_=async{while r.port.state.lock().unwrap().writes==writes{tokio::time::sleep(Duration::from_millis(5)).await;}}=>{}}
+    }
+    assert!(r.storage.pending());
+    assert!(r.storage.outstanding_fan());
+    {
+        let s = r.port.state.lock().unwrap();
+        assert!(s.opened > s.retired);
+    }
+    held.store(true, Ordering::Release);
+    r.reader.drain_active().await.unwrap();
+    let result = r
+        .request(battery_request(
+            3,
+            "setBatteryPolicy",
+            json!({"chargeLimitPercent":60}),
+        ))
+        .await;
+    assert_eq!(result["result"]["status"], 2);
+    assert_eq!(r.port.state.lock().unwrap().writes, writes + 1);
+    assert!(r.storage.outstanding_fan());
+    assert!(r.storage.pending());
+    // Normal Stop must not submit a fan alternative through unresolved battery output.
+    let result = r.source.lock().await.drain().await;
+    assert!(result.is_err());
+    assert_eq!(r.port.state.lock().unwrap().writes, writes + 1);
+    assert!(r.storage.outstanding_fan());
 }

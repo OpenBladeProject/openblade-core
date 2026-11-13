@@ -10,7 +10,8 @@ use std::{io, string::ToString, vec::Vec};
 // v3 row grammar adds only progress51: independent Automatic observation tied
 // to the exact original owner, without setter claims. Readers ship first.
 pub const LEGACY_CONTRACT: &str = "service-fan-mutation-v2/rz09-0581-linked-v1";
-pub const CONTRACT: &str = "service-fan-mutation-v2/rz09-0581-linked-v2";
+pub const PREVIOUS_CONTRACT: &str = "service-fan-mutation-v2/rz09-0581-linked-v2";
+pub const CONTRACT: &str = "service-battery-policy-v1/rz09-0581-fan-linked-v3";
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct FanRecord {
@@ -29,8 +30,10 @@ impl FanRecord {
         if self.entry { 4 } else { 2 }
     }
     pub fn validate(&self) -> io::Result<()> {
-        if !matches!(self.contract.as_str(), CONTRACT | LEGACY_CONTRACT)
-            || FanIntent::checked(self.intent.mode, self.intent.rpm) != Some(self.intent)
+        if !matches!(
+            self.contract.as_str(),
+            CONTRACT | PREVIOUS_CONTRACT | LEGACY_CONTRACT
+        ) || FanIntent::checked(self.intent.mode, self.intent.rpm) != Some(self.intent)
             || !matches!(self.selector, 0 | 2)
             || !matches!(self.source, 0 | 2)
             || self.selector == 2 && self.source != 0
@@ -69,13 +72,18 @@ impl FanRecord {
         Ok(digest(&serde_json::to_vec(self)?))
     }
     pub fn valid_progress(&self, p: u8) -> bool {
-        (p == 51 && self.contract == CONTRACT && self.intent.manual())
+        (p == 51
+            && matches!(self.contract.as_str(), CONTRACT | PREVIOUS_CONTRACT)
+            && self.intent.manual())
             || matches!(p, 0 | 6 | 50)
             || (10..10 + self.setters() as u8 * 2).contains(&p)
             || self.intent.manual() && matches!(p, 30 | 31 | 40..=43)
     }
     pub fn follows(&self, p: u8, n: u8) -> bool {
-        (p == 30 && n == 51 && self.contract == CONTRACT && self.intent.manual())
+        (p == 30
+            && n == 51
+            && matches!(self.contract.as_str(), CONTRACT | PREVIOUS_CONTRACT)
+            && self.intent.manual())
             || (p == 0 && matches!(n, 6 | 10))
             || (p >= 10 && p < 9 + self.setters() as u8 * 2 && n == p + 1)
             || (p == 9 + self.setters() as u8 * 2
@@ -186,16 +194,30 @@ mod tests {
     use super::*;
     #[test]
     fn retained_owner_scope_survives_retired_request_chains() {
-        let vectors: Value = serde_json::from_str(include_str!("../../../../tools/openblade-windows-host/tests/data/fan-caller-scope-chains.json")).unwrap();
+        let vectors: Value = serde_json::from_str(include_str!(
+            "../../../../tools/openblade-windows-host/tests/data/fan-caller-scope-chains.json"
+        ))
+        .unwrap();
         let mut mismatches = Vec::new();
         for case in vectors["cases"].as_array().unwrap() {
             let raw = case["journal"].as_str().unwrap().as_bytes();
             let valid = case["valid"].as_bool().unwrap();
             let parsed = crate::thermal_history::rows(raw, |_, _| Ok(()));
-            if parsed.is_ok() != valid { mismatches.push(case["name"].as_str().unwrap()); }
-            if valid { assert!(crate::thermal_history::handback_complete(raw).unwrap(), "{}", case["name"]); }
+            if parsed.is_ok() != valid {
+                mismatches.push(case["name"].as_str().unwrap());
+            }
+            if valid {
+                assert!(
+                    crate::thermal_history::handback_complete(raw).unwrap(),
+                    "{}",
+                    case["name"]
+                );
+            }
         }
-        assert!(mismatches.is_empty(), "retained owner scope mismatches: {mismatches:?}");
+        assert!(
+            mismatches.is_empty(),
+            "retained owner scope mismatches: {mismatches:?}"
+        );
     }
     #[test]
     fn complete_cross_scope_histories_are_rejected_and_v3_auto_proof_is_exact() {

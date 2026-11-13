@@ -360,4 +360,38 @@ public sealed class NativeThermalHistoryTests : IDisposable
         Assert.Equal(raw, File.ReadAllBytes(Path.Combine(files.Root, "owner", "thermal-mutation.journal")));
     }
 
+
+    [Fact]
+    public void BatteryV1CanonicalRowsRequireOriginalSignedFamilyAndPreserveFanHandback()
+    {
+        using var v = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "battery-history-v1.json")));
+        var vector = v.RootElement;
+        Assert.Equal(vector.GetProperty("canonical").GetString(), Encoding.UTF8.GetString(WindowsNativeBatteryHistory.Canonical(vector.GetProperty("battery"))));
+        Assert.Equal(vector.GetProperty("intent").GetString(), NativeCanonical.Digest(WindowsNativeBatteryHistory.Canonical(vector.GetProperty("battery"))));
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        var original = new WindowsNativeTrustLifecycle.OwnerReference(new string('1', 32), new string('2', 32), new string('3', 64) + "-service", "17:1", new string('7', 64), new string('8', 64));
+        var record = new NativeEpochRecord(NativeEpochPhase.Retired, original.Epoch, new string('0', 64), 1, original.Installation, new string('a', 64), new string('b', 32), original.Service, new string('c', 64) + "-agent", new string('0', 64), new string('d', 64));
+        var old = NativeArtifact.Inspect([.. WindowsNativeEpochTests.Image("service", nonce: '3', schema: 2, fan: true)], "service", new string('a', 40));
+        var producer = NativeArtifact.Inspect([.. WindowsNativeEpochTests.Image("service", nonce: '3', schema: 2, battery: true)], "service", new string('a', 40));
+        Assert.Equal("service-battery-policy-v1", producer.StartupPolicy);
+        var launches = new Dictionary<string, byte[]> { { "17-1.bin", [] } };
+        foreach (string key in new[] { "standalone", "released" })
+        {
+            Thermal(files, Bytes(vector.GetProperty(key).GetString()!)); var history = WindowsNativeThermalHistory.Read(files, [original]);
+            Assert.Throws<IOException>(() => history.Generation(record, old, [original], launches)); Assert.NotEmpty(history.Generation(record, producer, [original], launches));
+        }
+        foreach (string key in new[] { "interleaved", "legacyRejected" }) { Thermal(files, Bytes(vector.GetProperty(key).GetString()!)); Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [original])); }
+        // The invalid byte has a matching canonical payload digest, so rejection
+        // must enforce the byte range rather than merely detect a stale hash.
+        string oversized = vector.GetProperty("oversizedBaselineRejected").GetString()!;
+        using (var row = JsonDocument.Parse(oversized.Split('\n')[0]))
+        {
+            Assert.Equal(454, row.RootElement.GetProperty("battery").GetProperty("baseline").GetInt32());
+            Assert.Equal(row.RootElement.GetProperty("intent").GetString(), NativeCanonical.Digest(Bytes(row.RootElement.GetProperty("battery").GetRawText())));
+        }
+        Thermal(files, Bytes(oversized));
+        Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [original]));
+        string released = vector.GetProperty("released").GetString()!;
+        foreach (string bad in new[] { released.Replace("\"caller_pid\":44", "\"caller_pid\":0", StringComparison.Ordinal), released.Replace("\"progress\":62", "\"progress\":5", StringComparison.Ordinal), released.Replace("\"target\":198", "\"target\":-0", StringComparison.Ordinal) }) { Thermal(files, Bytes(bad)); Assert.ThrowsAny<Exception>(() => WindowsNativeThermalHistory.Read(files, [original])); }
+    }
 }

@@ -445,7 +445,10 @@ async fn serve_connection(
     } else if cfg!(feature = "service-thermal-mutation-v1")
         && matches!(
             request,
-            StatusRequest::SetFanOverride { .. }
+            StatusRequest::SetBatteryPolicy { .. }
+                | StatusRequest::SetBatteryProtection { .. }
+                | StatusRequest::SetFullChargeOverride { .. }
+                | StatusRequest::SetFanOverride { .. }
                 | StatusRequest::SetPerformanceOverride { .. }
                 | StatusRequest::ReportApplicationContext { .. }
         )
@@ -479,7 +482,12 @@ async fn serve_observation(
 ) -> Result<(), ExchangeError> {
     use ExchangeError::{Client, Runtime};
     caller.access().map_err(Client)?;
-    let deadline = Instant::now() + FRAME_TIMEOUT;
+    let deadline = Instant::now()
+        + if request.battery_request().is_some() {
+            Duration::from_secs(6)
+        } else {
+            FRAME_TIMEOUT
+        };
     let response = if refresh_caller(stream, caller)?.access().map_err(Client)? != 0 {
         StatusResponse::failure(
             request,
@@ -649,7 +657,12 @@ async fn serve_mutation(
     use ExchangeError::{Client, Runtime};
     let caller = refresh_caller(stream, original)?;
     let sid = stream.user_sid_after_read().map_err(Client)?;
-    let deadline = Instant::now() + FRAME_TIMEOUT;
+    let deadline = Instant::now()
+        + if request.battery_request().is_some() {
+            Duration::from_secs(6)
+        } else {
+            FRAME_TIMEOUT
+        };
     let future = {
         let mut source = source.lock().await;
         source.verify_origin().map_err(Runtime)?;

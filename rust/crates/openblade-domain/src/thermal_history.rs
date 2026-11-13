@@ -160,6 +160,8 @@ pub const STAGING: &str = "thermal-mutation.journal.rollover";
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Entry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub battery: Option<crate::battery_history::BatteryRecord>,
     pub request: String,
     pub owner: String,
     pub user_sid: String,
@@ -171,6 +173,20 @@ pub struct Entry {
     pub progress: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fan: Option<crate::fan_history::FanRecord>,
+}
+pub fn battery_fan_binding(e: &Entry) -> io::Result<String> {
+    let fan = e.fan.as_ref().ok_or_else(deny)?;
+    Ok(digest(&lines(
+        "OpenBlade.BatteryFanOwner.v1",
+        &[
+            e.request.clone(),
+            e.owner.clone(),
+            e.user_sid.clone(),
+            e.caller_pid.to_string(),
+            e.session.to_string(),
+            fan.hash()?,
+        ],
+    )))
 }
 /// Validate complete rows without retaining the lifetime log. Callback joins each
 /// original row to authenticated owner/producer custody; no current-owner relabel.
@@ -199,6 +215,11 @@ fn rows_from(
         if let Some(v) = &entry.requested {
             v.validate()?;
         }
+        if let Some(battery) = &entry.battery {
+            let raw: Value = serde_json::from_slice(line).map_err(|_| deny())?;
+            crate::fan_history::validate_numbers(&raw["battery"])?;
+            battery.validate()?;
+        }
         if let Some(fan) = &entry.fan {
             let raw: Value = serde_json::from_slice(line).map_err(|_| deny())?;
             crate::fan_history::validate_numbers(&raw["fan"])?;
@@ -214,7 +235,13 @@ fn rows_from(
                 .all(|b| b.is_ascii_digit() || b"S-".contains(&b))
             || entry.caller_pid == 0
             || entry.session == 0
-            || if let Some(f) = &entry.fan {
+            || if let Some(b) = &entry.battery {
+                entry.fan.is_some()
+                    || entry.requested.is_some()
+                    || entry.destination != 0
+                    || !b.valid_progress(entry.progress)
+                    || b.hash()? != entry.intent
+            } else if let Some(f) = &entry.fan {
                 entry.requested.is_some()
                     || entry.destination != 0
                     || !f.valid_progress(entry.progress)
@@ -227,16 +254,35 @@ fn rows_from(
         {
             return Err(deny());
         }
-        if owned
-            .as_ref()
-            .is_some_and(|owner| {
-                entry.owner != owner.owner
-                    || entry.user_sid != owner.user_sid
-                    || entry.session != owner.session
-                    || entry.fan.is_none()
-            })
-        {
+        if owned.as_ref().is_some_and(|owner| {
+            entry.owner != owner.owner
+                || entry.user_sid != owner.user_sid
+                || entry.session != owner.session
+                || entry.fan.is_none()
+                    && !(entry.battery.is_some()
+                        && owner
+                            .fan
+                            .as_ref()
+                            .is_some_and(|f| f.contract == crate::fan_history::CONTRACT))
+        }) {
             return Err(deny());
+        }
+        if let Some(b) = &entry.battery {
+            let expected = owned.as_ref().map(battery_fan_binding).transpose()?;
+            if b.fan_owner != expected {
+                return Err(deny());
+            }
+            if let Some(f) = owned.as_ref().and_then(|o| o.fan.as_ref()) {
+                if f.preflight
+                    .iter()
+                    .chain(f.ids.iter())
+                    .chain(f.cleanup.iter())
+                    .flatten()
+                    .any(|id| b.ids.contains(id))
+                {
+                    return Err(deny());
+                }
+            }
         }
         let resumed_release = matches!(entry.progress, 31 | 51)
             && owned.as_ref().is_some_and(|owner| {
@@ -252,9 +298,15 @@ fn rows_from(
                     || p.session != entry.session
                     || p.destination != entry.destination
                     || p.intent != entry.intent
+                    || p.battery != entry.battery
                     || p.fan != entry.fan
                     || !entry.fan.as_ref().map_or_else(
-                        || progress_follows(p.progress, entry.progress),
+                        || {
+                            entry.battery.as_ref().map_or_else(
+                                || progress_follows(p.progress, entry.progress),
+                                |b| b.follows(p.progress, entry.progress),
+                            )
+                        },
                         |f| f.follows(p.progress, entry.progress),
                     )
                 {
@@ -265,6 +317,10 @@ fn rows_from(
                     && (entry.progress != 0
                         || p.progress == 30
                             && (entry.fan.is_none()
+                                && !(entry.battery.is_some()
+                                    && p.fan.as_ref().is_some_and(|f| {
+                                        f.contract == crate::fan_history::CONTRACT
+                                    }))
                                 || entry.owner != p.owner
                                 || entry.user_sid != p.user_sid
                                 || entry.session != p.session))

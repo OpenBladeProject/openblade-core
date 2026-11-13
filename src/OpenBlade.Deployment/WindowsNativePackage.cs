@@ -15,10 +15,11 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
     internal bool PrivateCustody => Schema == 2 && Capabilities.Split(',').Contains("private-service-custody-v1", StringComparer.Ordinal);
     internal bool MetadataOnly => Schema == 2 && Capabilities.Split(',').Contains("service-metadata-only-v1", StringComparer.Ordinal);
     internal bool ReadOnlyMailbox => !ThermalMutation && Schema == 2 && Capabilities.Split(',').Contains("service-mailbox-observation-v1", StringComparer.Ordinal);
+    internal bool BatteryMutation => Schema == 2 && Capabilities.Split(',').Contains("service-battery-policy-v1", StringComparer.Ordinal);
     internal bool FanMutation => Schema == 2 && Capabilities.Split(',').Contains("service-fan-mutation-v2", StringComparer.Ordinal);
     internal bool ThermalMutation => Schema == 2 && Capabilities.Split(',').Contains("service-thermal-mutation-v1", StringComparer.Ordinal);
     internal bool RequiresMailboxHandoff => ReadOnlyMailbox || ThermalMutation;
-    internal string StartupPolicy => FanMutation ? "service-fan-mutation-v2" : ThermalMutation ? "service-thermal-mutation-v1" : MetadataOnly ? "service-metadata-only-v1" : ReadOnlyMailbox ? "service-mailbox-observation-v1" : Schema == 1 ? "metadata-only-no-firmware" : "service-hardware-compile-check";
+    internal string StartupPolicy => BatteryMutation ? "service-battery-policy-v1" : FanMutation ? "service-fan-mutation-v2" : ThermalMutation ? "service-thermal-mutation-v1" : MetadataOnly ? "service-metadata-only-v1" : ReadOnlyMailbox ? "service-mailbox-observation-v1" : Schema == 1 ? "metadata-only-no-firmware" : "service-hardware-compile-check";
 
     internal byte[] Encode()
     {
@@ -43,6 +44,8 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         bool observation = features.Contains("service-mailbox-observation-v1", StringComparer.Ordinal);
         bool mutation = features.Contains("service-thermal-mutation-v1", StringComparer.Ordinal);
         bool fan = features.Contains("service-fan-mutation-v2", StringComparer.Ordinal);
+        bool battery = features.Contains("service-battery-policy-v1", StringComparer.Ordinal);
+        if (battery && !fan) { throw new InvalidDataException("Battery mutation requires shared fan custody."); }
         if (fan && !mutation) { throw new InvalidDataException("Fan mutation requires the thermal custody contract."); }
         if (mutation && (!observation || !features.Contains("controller-admission-compile-check", StringComparer.Ordinal))) { throw new InvalidDataException("Thermal mutation requires mailbox custody and fresh controller admission."); }
         if (observation && (!hardware || metadata)) { throw new InvalidDataException("Mailbox observation requires its exclusive acquisition composition."); }
@@ -60,7 +63,7 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         {
             if (metadata == hardware || !features.Contains("startup-custody-v1", StringComparer.Ordinal) || hardware != firmware)
             { throw new InvalidDataException("Native Service requires an explicit coherent composition."); }
-            expected = metadata ? "private-service-custody-v1,service-metadata-only-v1" : fan ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2" : mutation ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1" : observation ? "private-service-custody-v1,service-mailbox-observation-v1" : "private-service-custody-v1";
+            expected = metadata ? "private-service-custody-v1,service-metadata-only-v1" : battery ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1" : fan ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2" : mutation ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1" : observation ? "private-service-custody-v1,service-mailbox-observation-v1" : "private-service-custody-v1";
         }
         if (capabilities != expected) { throw new InvalidDataException("Native capabilities differ from the authenticated role composition."); }
     }

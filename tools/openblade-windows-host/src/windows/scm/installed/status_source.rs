@@ -461,6 +461,37 @@ impl StatusSource for GuardedStatus {
                     None,
                 ));
             };
+            if let Some(battery) = request.battery_request() {
+                let request_id = request.header().1.to_owned();
+                let status = publisher.borrow().active.clone();
+                let (outcome, status) = runtime
+                    .apply_battery(
+                        mailbox.clone(),
+                        caller,
+                        sid,
+                        request_id,
+                        battery,
+                        deadline,
+                        status,
+                    )
+                    .await?;
+                if let Some(mut status) = status {
+                    status.set_observation_revision(
+                        publisher
+                            .borrow()
+                            .active
+                            .revision()
+                            .checked_add(1)
+                            .ok_or_else(|| invalid("status revision exhausted"))?,
+                    );
+                    publisher.send_replace(Arc::new(Publication {
+                        inactive: status.inactive_mutation(),
+                        active: status.clone(),
+                    }));
+                    return Ok((outcome, Some(status)));
+                }
+                return Ok((outcome, None));
+            }
             match request {
                 crate::service_status::StatusRequest::SetFanOverride {
                     request_id,

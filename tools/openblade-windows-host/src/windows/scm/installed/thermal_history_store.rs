@@ -168,12 +168,36 @@ impl Backend for History<'_> {
 }
 impl Store {
     pub(super) fn join_row(&self, entry: &Entry, _raw: &[u8]) -> io::Result<()> {
-        if !self.active_nonces.contains(&entry.owner) {
+        if !self.active_records.contains_key(&entry.owner) {
             return Err(
                 crate::installed::readiness::thermal_mutation::fatal_admission(
                     "Thermal journal original owner binding changed.",
                 ),
             );
+        }
+        if entry.battery.is_some()
+            || entry
+                .fan
+                .as_ref()
+                .is_some_and(|f| f.contract == openblade_domain::fan_history::CONTRACT)
+        {
+            let original = self.active_records.get(&entry.owner).ok_or_else(deny)?;
+            #[cfg(test)]
+            if self.verifier.is_some() {
+                return self.battery_producer_fixture.as_ref().ok_or_else(deny)?(original);
+            }
+            let mut cache = self.battery_producers.lock().map_err(|_| deny())?;
+            if !cache.contains_key(&original.epoch) {
+                let proof = crate::native_package::historical_battery_producer(
+                    self.path.parent().ok_or_else(deny)?,
+                    original,
+                )?;
+                cache.insert(original.epoch.clone(), proof);
+            }
+            cache
+                .get(&original.epoch)
+                .ok_or_else(deny)?
+                .verify(original)?;
         }
         Ok(())
     }

@@ -7,6 +7,7 @@ namespace OpenBlade.Deployment;
 internal static class WindowsNativeFanHistory
 {
     internal const string LegacyContract = "service-fan-mutation-v2/rz09-0581-linked-v1";
+    internal const string CoexistenceContract = "service-battery-policy-v1/rz09-0581-fan-linked-v3";
     internal const string Contract = "service-fan-mutation-v2/rz09-0581-linked-v2";
     private static IOException Denied() => new("Fan history is invalid or unsupported.");
     private static void Members(JsonElement e, params string[] keys)
@@ -47,7 +48,7 @@ internal static class WindowsNativeFanHistory
     internal static byte[] Canonical(JsonElement f)
     {
         Members(f, "contract", "requested", "intent", "selector", "entry", "source", "preflight", "ids", "cleanup");
-        if (f.GetProperty("contract").GetString() is not (Contract or LegacyContract)) { throw Denied(); }
+        if (f.GetProperty("contract").GetString() is not (Contract or LegacyContract or CoexistenceContract)) { throw Denied(); }
         Requested(f.GetProperty("requested")); var intent = f.GetProperty("intent"); Members(intent, "mode", "rpm");
         int mode = Number(intent.GetProperty("mode")); int rpm = Number(intent.GetProperty("rpm")); int selector = Number(f.GetProperty("selector")); int source = Number(f.GetProperty("source")); bool entry = f.GetProperty("entry").GetBoolean();
         if (mode is not (0 or 1 or 3) || !Speed(intent.GetProperty("rpm")) || mode == 3 && rpm != 5400 || selector is not (0 or 2) || source is not (0 or 2) || selector == 2 && source != 0 || entry && mode == 0) { throw Denied(); }
@@ -84,11 +85,11 @@ internal static class WindowsNativeFanHistory
     internal static bool ValidProgress(JsonElement f, byte p)
     {
         int setters = f.GetProperty("entry").GetBoolean() ? 4 : 2; bool manual = f.GetProperty("intent").GetProperty("mode").GetInt32() != 0;
-        return p == 51 && manual && f.GetProperty("contract").GetString() == Contract || p is 0 or 6 or 50 || p >= 10 && p < 10 + setters * 2 || manual && p is 30 or 31 or >= 40 and <= 43;
+        return p == 51 && manual && f.GetProperty("contract").GetString() is Contract or CoexistenceContract || p is 0 or 6 or 50 || p >= 10 && p < 10 + setters * 2 || manual && p is 30 or 31 or >= 40 and <= 43;
     }
     internal static bool Follows(JsonElement f, byte p, byte n)
     {
         int end = 9 + (f.GetProperty("entry").GetBoolean() ? 4 : 2) * 2; bool manual = f.GetProperty("intent").GetProperty("mode").GetInt32() != 0;
-        return p == 30 && n == 51 && manual && f.GetProperty("contract").GetString() == Contract || p == 0 && n is 6 or 10 || p >= 10 && p < end && n == p + 1 || p == end && n == (manual ? 30 : 50) || manual && (p == 30 && n == 31 || p == 31 && n == 40 || p is >= 40 and <= 42 && n == p + 1 || p == 43 && n == 50);
+        return p == 30 && n == 51 && manual && f.GetProperty("contract").GetString() is Contract or CoexistenceContract || p == 0 && n is 6 or 10 || p >= 10 && p < end && n == p + 1 || p == end && n == (manual ? 30 : 50) || manual && (p == 30 && n == 31 || p == 31 && n == 40 || p is >= 40 and <= 42 && n == p + 1 || p == 43 && n == 50);
     }
 }

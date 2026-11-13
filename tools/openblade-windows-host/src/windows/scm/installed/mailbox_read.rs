@@ -889,6 +889,8 @@ pub(super) struct ReadSource {
     operation: Rc<tokio::sync::Mutex<()>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
     intent: Rc<RefCell<Option<Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>>>>,
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    battery_intent: Rc<RefCell<Option<Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>>>>,
     last: Rc<RefCell<Option<(Snapshot, Instant)>>>,
     metadata: Rc<RefCell<Option<Arc<Publication>>>>,
 }
@@ -940,6 +942,8 @@ impl ReadSource {
             operation: Rc::default(),
             #[cfg(feature = "service-thermal-mutation-v1")]
             intent: Rc::default(),
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            battery_intent: Rc::default(),
             last: Rc::default(),
             metadata: Rc::default(),
         }
@@ -1730,6 +1734,12 @@ mod tests {
 
 #[cfg(feature = "service-thermal-mutation-v1")]
 impl ReadSource {
+    pub(super) fn retain_battery_policy(
+        &self,
+        policy: Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>,
+    ) {
+        *self.battery_intent.borrow_mut() = Some(policy);
+    }
     pub(super) fn retain_policy(&self, policy: Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>) {
         *self.intent.borrow_mut() = Some(policy);
     }
@@ -1749,7 +1759,11 @@ impl ReadSource {
             .as_ref()
             .map_or(Ok(value.clone()), |policy| policy(value.clone()))
         {
-            Ok(value) => Ok(value),
+            Ok(value) => self
+                .battery_intent
+                .borrow()
+                .as_ref()
+                .map_or(Ok(value.clone()), |policy| policy(value)),
             Err(error) if super::thermal_mutation::is_fatal_admission(&error) => Err(error),
             Err(_) => Ok(value.private_policy_unavailable()),
         }
@@ -1819,9 +1833,15 @@ impl ReadSource {
         let factory = self.factories.as_ref().ok_or_else(deny)?;
         permit.mutation_registered();
         let worker = (factory.write)(permit.clone());
-        *self.mutation.borrow_mut() = Some((worker.clone(), permit));
+        *self.mutation.borrow_mut() = Some((worker.clone(), permit.clone()));
         self.phase.set(MutationPhase::Active);
-        let result = worker.observe(deadline, None).await;
+        let result = if permit.is_battery() {
+            worker
+                .observe_with_budget(deadline, None, std::time::Duration::from_secs(6))
+                .await
+        } else {
+            worker.observe(deadline, None).await
+        };
         let drained = self.drain_mutation(false).await;
         drained?;
         result.map(|r| r.map(|r| r.performance))
@@ -1862,7 +1882,13 @@ impl ReadSource {
         let worker = (factory.write)(permit.clone());
         *self.mutation.borrow_mut() = Some((worker.clone(), permit.clone()));
         self.phase.set(MutationPhase::Active);
-        let result = worker.observe(deadline, None).await;
+        let result = if permit.is_battery() {
+            worker
+                .observe_with_budget(deadline, None, std::time::Duration::from_secs(6))
+                .await
+        } else {
+            worker.observe(deadline, None).await
+        };
         if let Err(error) = &result {
             permit.failed(error);
         }

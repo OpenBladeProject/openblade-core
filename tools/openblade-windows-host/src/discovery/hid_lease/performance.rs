@@ -23,6 +23,8 @@ mod tests;
 pub(crate) mod worker_tests;
 
 #[cfg(feature = "service-thermal-mutation-v1")]
+mod battery;
+#[cfg(feature = "service-thermal-mutation-v1")]
 mod fan;
 #[cfg(feature = "service-thermal-mutation-v1")]
 pub(crate) mod mutation;

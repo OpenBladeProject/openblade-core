@@ -115,7 +115,16 @@ impl<A: ObservationProof> Worker<A> {
         deadline: Instant,
         session: Option<u32>,
     ) -> io::Result<Option<Reading<A>>> {
-        let deadline = deadline.min(Instant::now() + MAX_OBSERVATION);
+        self.observe_with_budget(deadline, session, MAX_OBSERVATION)
+            .await
+    }
+    pub(crate) async fn observe_with_budget(
+        &self,
+        deadline: Instant,
+        session: Option<u32>,
+        budget: std::time::Duration,
+    ) -> io::Result<Option<Reading<A>>> {
+        let deadline = deadline.min(Instant::now() + budget);
         let Some(_cancel) = self.start(deadline, session)? else {
             return Ok(None);
         };

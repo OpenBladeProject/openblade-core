@@ -609,6 +609,7 @@ fn history_growth_real_storage_reserves_before_prepared_across_original_owners()
         let mut transaction = vec![];
         for progress in [0, 6] {
             let e = Entry {
+                battery: None,
                 fan: None,
                 request: format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),
                 owner: "7".repeat(64),
@@ -909,4 +910,66 @@ fn verify_fan_protected_history(vector: Value, terminal: &str) {
     )
     .unwrap();
     assert_eq!(segment, released);
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[test]
+fn battery_v1_protected_history_requires_original_producer_and_retains_interleaved_release() {
+    let vector: Value = serde_json::from_str(include_str!(
+        "../../../../../tests/data/battery-history-v1.json"
+    ))
+    .unwrap();
+    let machine = PrivateRoot::open("owner-journal");
+    let mut owner = machine.owner().unwrap();
+    owner.activate_injected(reservation('7')).unwrap();
+    let admitted: Arc<dyn Fn(&Record) -> io::Result<()> + Send + Sync> = Arc::new(|original| {
+        if original.nonce == "7".repeat(64)
+            && original.epoch == "7".repeat(32)
+            && original.installation == "1".repeat(32)
+            && original.artifact == format!("{}-service", "3".repeat(64))
+        {
+            Ok(())
+        } else {
+            Err(io::ErrorKind::PermissionDenied.into())
+        }
+    });
+    let mixed = vector["interleaved"].as_str().unwrap().as_bytes();
+    let released = vector["released"].as_str().unwrap().as_bytes();
+    // Injected Store denies missing supplier before any real path/package resolver.
+    assert!(owner.journal_replace(None, mixed).is_err());
+    assert!(!machine.path.join("thermal-mutation.journal").exists());
+    owner.battery_producer_fixture = Some(admitted.clone());
+    owner.journal_replace(None, mixed).unwrap();
+    assert!(crate::thermal_history::known_capacity_refusal(
+        &owner
+            .journal_reserve(Some(mixed), crate::thermal_history::SEGMENT)
+            .unwrap_err()
+    ));
+    owner.retire_active().unwrap();
+    drop(owner);
+    let mut owner = machine.owner().unwrap();
+    owner.battery_producer_fixture =
+        Some(Arc::new(|_| Err(io::ErrorKind::PermissionDenied.into())));
+    assert!(owner.journal_read(false).is_err());
+    assert_eq!(
+        std::fs::read(machine.path.join("thermal-mutation.journal")).unwrap(),
+        mixed
+    );
+    owner.battery_producer_fixture = Some(admitted);
+    assert_eq!(owner.journal_read(false).unwrap().unwrap(), mixed);
+    owner.journal_replace(Some(mixed), released).unwrap();
+    let tail = owner
+        .journal_reserve(Some(released), crate::thermal_history::SEGMENT)
+        .unwrap()
+        .unwrap();
+    assert!(tail.is_empty());
+    assert_eq!(
+        std::fs::read(
+            machine
+                .path
+                .join("thermal-history/segment-00000000000000000001.bin")
+        )
+        .unwrap(),
+        released
+    );
 }

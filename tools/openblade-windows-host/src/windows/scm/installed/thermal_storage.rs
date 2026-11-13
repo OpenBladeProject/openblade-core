@@ -9,6 +9,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+#[path = "battery_storage.rs"]
+mod battery;
 const OVERRIDES: &str = "manual-overrides.json";
 const JOURNAL: &str = "thermal-mutation.journal";
 pub(super) trait Files: Send + Sync {
@@ -228,6 +230,9 @@ struct State {
     last: Option<Entry>,
     temporary: Option<(Override, i32)>,
     temporary_fan: Option<(Value, i32)>,
+    battery_limit: Option<u8>,
+    battery_protection: Option<(bool, u8)>,
+    battery_temporary: Option<bool>,
 }
 pub(super) struct Storage {
     same_path: fn(&str, &str) -> bool,
@@ -283,6 +288,9 @@ impl Storage {
                 last,
                 temporary: None,
                 temporary_fan: None,
+                battery_limit: None,
+                battery_protection: None,
+                battery_temporary: None,
             }),
         }))
     }
@@ -817,6 +825,7 @@ impl Storage {
             return Err(denied());
         }
         let entry = Entry {
+            battery: None,
             fan: None,
             request: request.into(),
             owner: owner.into(),

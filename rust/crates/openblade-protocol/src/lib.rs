@@ -3,6 +3,7 @@
 
 #![no_std]
 
+pub mod battery;
 pub mod custom_performance;
 pub mod fan;
 pub mod thermal_preset;

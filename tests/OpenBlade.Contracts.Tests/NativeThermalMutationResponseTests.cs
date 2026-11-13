@@ -99,6 +99,27 @@ public sealed class NativeThermalMutationResponseTests
         Assert.Contains(ControlOperationStatus.Applied, seen);
         Assert.Contains(ControlOperationStatus.Blocked, seen);
     }
+
+    [Fact]
+    public async Task ActualNativeBatteryResponsesKeepConfirmedPolicyDesiredLimitAndUnknownTemporarySeparate()
+    {
+        string path = Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_BATTERY_RESPONSES") ?? throw new InvalidOperationException("Explicit actual native battery responses required.");
+        Assert.True(Path.IsPathFullyQualified(path)); using var document = JsonDocument.Parse(await File.ReadAllBytesAsync(path));
+        bool off = false, active = false, unknown = false, storedLimit = false; var outcomes = new HashSet<ControlOperationStatus>();
+        foreach (var element in document.RootElement.EnumerateArray())
+        {
+            using var frame = FrameJson(element.GetRawText()); var response = Assert.IsType<ServiceResponse>(await IpcMessageCodec.ReadServerFrameAsync(frame, CancellationToken.None));
+            Assert.Equal(80, response.Version); Assert.True(response.Success);
+            if (response.Result is { } result) { outcomes.Add(result.Status); Assert.Null(response.Status); }
+            if (response.Status is { } status)
+            {
+                if (status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent == 65) { storedLimit = true; }
+                if (status.ConfirmedState?.Battery is { } battery) { if (battery.ProtectionEnabled) { active = true; Assert.NotNull(battery.ChargeLimitPercent); } else { off = true; Assert.Null(battery.ChargeLimitPercent); } if (battery.TemporaryFullCharge is null) { unknown = true; } }
+            }
+        }
+        Assert.True(off); Assert.True(active); Assert.True(unknown); Assert.True(storedLimit);
+        Assert.Contains(ControlOperationStatus.Applied, outcomes); Assert.Contains(ControlOperationStatus.Blocked, outcomes);
+    }
     private static MemoryStream FrameJson(string json)
     {
         byte[] bytes = Encoding.UTF8.GetBytes(json);

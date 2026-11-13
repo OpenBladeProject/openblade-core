@@ -665,6 +665,10 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     let observation = has("service-mailbox-observation-v1");
     let mutation = has("service-thermal-mutation-v1");
     let fan = has("service-fan-mutation-v2");
+    let battery = has("service-battery-policy-v1");
+    if battery && !fan {
+        return Err(deny());
+    }
     if fan && !mutation {
         return Err(deny());
     }
@@ -703,6 +707,8 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         }
         if metadata {
             "private-service-custody-v1,service-metadata-only-v1"
+        } else if battery {
+            "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1"
         } else if fan {
             "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2"
         } else if mutation {
@@ -749,6 +755,10 @@ fn startup_policy(identity: &[u8]) -> io::Result<&'static str> {
         Ok(
             if f[7] == "private-service-custody-v1,service-metadata-only-v1" {
                 "service-metadata-only-v1"
+            } else if f[7]
+                == "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1"
+            {
+                "service-battery-policy-v1"
             } else if f[7]
                 == "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2"
             {
@@ -1176,6 +1186,7 @@ impl InstalledPackage {
                 "service-mailbox-observation-v1"
                     | "service-thermal-mutation-v1"
                     | "service-fan-mutation-v2"
+                    | "service-battery-policy-v1"
             ),
         )?;
         create_attempt_record(&attempts, &format!("launch-{pid}-{created}.bin"), &bytes)?;
@@ -1188,6 +1199,7 @@ impl InstalledPackage {
             "service-mailbox-observation-v1"
                 | "service-thermal-mutation-v1"
                 | "service-fan-mutation-v2"
+                | "service-battery-policy-v1"
         ) {
             return Err(deny());
         }
@@ -1207,6 +1219,7 @@ impl InstalledPackage {
                 "service-mailbox-observation-v1"
                     | "service-thermal-mutation-v1"
                     | "service-fan-mutation-v2"
+                    | "service-battery-policy-v1"
             )
         {
             return Err(deny());
@@ -1231,6 +1244,7 @@ impl InstalledPackage {
             "service-mailbox-observation-v1"
                 | "service-thermal-mutation-v1"
                 | "service-fan-mutation-v2"
+                | "service-battery-policy-v1"
         ) {
             return Err(deny());
         }
@@ -1615,3 +1629,110 @@ fn read_package(allow_provisional: bool) -> io::Result<InstalledPackage> {
 #[cfg(test)]
 #[path = "native_package/tests.rs"]
 mod tests;
+
+/// Original generation proof for the new battery/coexistence family. It does
+/// not consult current selection or launch a retired image. All authenticated
+/// inputs remain pinned against replacement for the lifetime of the owner Store.
+#[cfg(feature = "service-thermal-mutation-v1")]
+pub(crate) struct HistoricalBatteryProducer {
+    installation: String,
+    epoch: String,
+    artifact: String,
+    _held: Vec<File>,
+}
+#[cfg(feature = "service-thermal-mutation-v1")]
+impl HistoricalBatteryProducer {
+    pub(crate) fn verify(&self, owner: &crate::native_owner_record::Record) -> io::Result<()> {
+        if owner.installation != self.installation
+            || owner.epoch != self.epoch
+            || owner.artifact != self.artifact
+        {
+            return Err(deny());
+        }
+        Ok(())
+    }
+}
+#[cfg(feature = "service-thermal-mutation-v1")]
+pub(crate) fn historical_battery_producer(
+    root_path: &std::path::Path,
+    owner: &crate::native_owner_record::Record,
+) -> io::Result<HistoricalBatteryProducer> {
+    let (root, mut ancestors) = pin(root_path)?;
+    let mut held = Vec::new();
+    if retain_bytes(&root, "root.bin", 256, &mut held)?
+        != b"OpenBlade.NativeRoot.v1\nlegacy-store-absent\n"
+    {
+        return Err(deny());
+    }
+    let generation = paths::open_directory(&root, OsStr::new(&owner.epoch))?;
+    paths::verify_security(&generation, Policy::Directory { extra_rights: 0 })?;
+    let origin = Epoch::parse(&retain_bytes(&generation, "origin.bin", 16384, &mut held)?)?;
+    if origin.phase != "Provisional"
+        || origin.id != owner.epoch
+        || origin.installation != owner.installation
+        || origin.service != owner.artifact
+    {
+        return Err(deny());
+    }
+    let package = retain_bytes(&generation, "package.bin", 16384, &mut held)?;
+    if digest(&package) != origin.package {
+        return Err(deny());
+    }
+    let f = lines(&package, "OpenBlade.NativePackage.v2", 12)?;
+    let manifest = retain_bytes(&generation, "release.json", 4096, &mut held)?;
+    let signature = retain_bytes(&generation, "release.sig", 64, &mut held)?;
+    let projection = retain_bytes(&generation, "verification.bin", 2048, &mut held)?;
+    let release = authenticate_bound_projection(&projection, f[11], &manifest, &signature)?;
+    if f[0] != "LocalDev"
+        || f[1] != origin.installation
+        || f[1] != release.installation_id.replace('-', "")
+        || f[2] != release.installer_sha256
+        || f[3] != release.installer_size.to_string()
+        || f[4] != digest(&manifest)
+        || f[5] != digest(&signature)
+        || f[6] != release.signing_key_id
+        || f[10] != "two-executables-static-crt-system-imports-v2"
+    {
+        return Err(deny());
+    }
+    let mut original = open_file(&generation, "package.exe", false)?;
+    if original.metadata()?.len() != release.installer_size {
+        return Err(deny());
+    }
+    let mut hash = Sha256::new();
+    let mut buffer = [0u8; 81920];
+    let mut length = 0u64;
+    loop {
+        let n = original.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        length = length.checked_add(n as u64).ok_or_else(deny)?;
+        if length > release.installer_size {
+            return Err(deny());
+        }
+        hash.update(&buffer[..n]);
+    }
+    if length != release.installer_size || hex(&hash.finalize()) != release.installer_sha256 {
+        return Err(deny());
+    }
+    held.push(original);
+    let app = paths::open_directory(&generation, OsStr::new("app"))?;
+    paths::verify_security(&app, Policy::Directory { extra_rights: 0 })?;
+    let service = retain_bytes(&app, "OpenBlade.Service.exe", 64 * 1024 * 1024, &mut held)?;
+    if inspect_artifact(&decode64(f[8])?, &service, "service", &release)? != owner.artifact
+        || startup_policy(compiled_record(&service)?)? != "service-battery-policy-v1"
+    {
+        return Err(deny());
+    }
+    held.push(app);
+    held.push(generation);
+    held.push(root);
+    held.append(&mut ancestors);
+    Ok(HistoricalBatteryProducer {
+        installation: owner.installation.clone(),
+        epoch: owner.epoch.clone(),
+        artifact: owner.artifact.clone(),
+        _held: held,
+    })
+}

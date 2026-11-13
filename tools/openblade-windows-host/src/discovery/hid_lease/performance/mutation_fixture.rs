@@ -5,6 +5,13 @@ use super::*;
 use std::sync::{Arc, Mutex};
 #[derive(Default)]
 pub(crate) struct State {
+    pub(crate) battery_raw: u8,
+    pub(crate) temporary_raw: u8,
+    pub(crate) battery_reads: usize,
+    pub(crate) battery_replies: std::collections::VecDeque<u8>,
+    pub(crate) battery_bad_ack: bool,
+    pub(crate) battery_bad_read: bool,
+    pub(crate) battery_fail_read: bool,
     pub(crate) sent: Vec<(u8, u8, Vec<u8>, u8)>,
     pub(crate) sent_at: Vec<Instant>,
     pub(crate) corrupt_ack: Option<usize>,
@@ -38,6 +45,7 @@ impl Fixture {
     pub(crate) fn new() -> Self {
         Self {
             state: Arc::new(Mutex::new(State {
+                battery_raw: 0xd0,
                 actual: 15,
                 recommended: 15,
                 selectors: [4, 4],
@@ -204,6 +212,39 @@ impl Port for MemoryPort {
                         ]
                     }
                     (13, 0x87) => vec![1, payload[1], s.custom_levels[(payload[1] - 1) as usize]],
+                    (7, 0x92) => {
+                        s.battery_reads += 1;
+                        if s.battery_reads > 1 {
+                            self.reply_timeout = s.battery_fail_read;
+                        }
+                        vec![if s.battery_reads > 1 {
+                            s.battery_replies.pop_front().unwrap_or(s.battery_raw)
+                        } else {
+                            s.battery_raw
+                        }]
+                    }
+                    (7, 0x8f) => vec![s.temporary_raw],
+                    (7, 0x12) => {
+                        if let Some(check) = &s.before_write {
+                            check(s.writes + 1);
+                        }
+                        assert_eq!(payload.len(), 1);
+                        s.writes += 1;
+                        s.battery_raw = payload[0];
+                        if let Some((number, release)) = &s.held_write {
+                            if *number == s.writes {
+                                self.held = Some(release.clone());
+                            }
+                        }
+                        if s.fail_write == Some(s.writes) {
+                            return Err(io::ErrorKind::Other.into());
+                        }
+                        vec![if s.battery_bad_ack {
+                            payload[0] ^ 1
+                        } else {
+                            payload[0]
+                        }]
+                    }
                     (7, 0x8c) => {
                         s.power_reads += 1;
                         if let Some(hook) = &s.on_power {
@@ -233,6 +274,9 @@ impl Port for MemoryPort {
                     if s.final_read_malformed {
                         reply[0] = 1;
                     }
+                }
+                if class == 7 && command == 0x92 && s.battery_reads > 1 && s.battery_bad_read {
+                    reply[0] = 1;
                 }
                 self.reply = Some(reply);
                 self.pending = Some((0, frame));

@@ -52,6 +52,7 @@ impl FanPermit {
             .clone()
             .ok_or(io::ErrorKind::PermissionDenied)?;
         let entry = Entry {
+            battery: None,
             request: self.request.clone(),
             owner: self.owner.clone(),
             user_sid: String::new(),
@@ -165,7 +166,10 @@ impl Permit for FanPermit {
                 .ok_or(io::ErrorKind::PermissionDenied)?;
             if !owner.owned.load(Ordering::Acquire)
                 || owner.release.load(Ordering::Acquire)
-                || record.contract != CONTRACT
+                || !matches!(
+                    record.contract.as_str(),
+                    CONTRACT | openblade_domain::fan_history::PREVIOUS_CONTRACT
+                )
                 || record.source != source
                 || record.selector != auto.selector
                 || !auto.unchanged
@@ -185,7 +189,12 @@ impl Permit for FanPermit {
     fn fan_record(&self) -> Option<FanRecord> {
         self.record.lock().ok()?.clone().or_else(|| {
             Some(FanRecord {
-                contract: CONTRACT.into(),
+                contract: if cfg!(feature = "service-battery-policy-v1") {
+                    CONTRACT
+                } else {
+                    openblade_domain::fan_history::PREVIOUS_CONTRACT
+                }
+                .into(),
                 requested: self.requested.clone(),
                 intent: FanIntent::checked(0, 3700)?,
                 selector: 0,

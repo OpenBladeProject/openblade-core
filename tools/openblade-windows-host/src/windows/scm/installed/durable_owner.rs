@@ -38,7 +38,13 @@ pub(in crate::installed) struct Store {
     activated_here: bool,
     activation_started: bool,
     #[cfg(feature = "service-thermal-mutation-v1")]
-    active_nonces: std::collections::BTreeSet<String>,
+    active_records: std::collections::BTreeMap<String, Record>,
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    battery_producers:
+        Mutex<std::collections::BTreeMap<String, crate::native_package::HistoricalBatteryProducer>>,
+    #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+    pub(in crate::installed) battery_producer_fixture:
+        Option<Arc<dyn Fn(&Record) -> io::Result<()> + Send + Sync>>,
     #[cfg(test)]
     verifier: Option<Arc<dyn Fn(&File) -> io::Result<()> + Send + Sync>>,
     #[cfg(test)]
@@ -79,7 +85,11 @@ impl Store {
             activated_here: false,
             activation_started: false,
             #[cfg(feature = "service-thermal-mutation-v1")]
-            active_nonces: Default::default(),
+            active_records: Default::default(),
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            battery_producers: Default::default(),
+            #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+            battery_producer_fixture: None,
             #[cfg(test)]
             verifier: None,
             #[cfg(test)]
@@ -150,7 +160,12 @@ impl Store {
                 return Err(deny());
             }
             #[cfg(feature = "service-thermal-mutation-v1")]
-            if record.phase == Phase::Active && !self.active_nonces.insert(record.nonce.clone()) {
+            if record.phase == Phase::Active
+                && self
+                    .active_records
+                    .insert(record.nonce.clone(), record.clone())
+                    .is_some()
+            {
                 return Err(deny()); // A nonce identifies exactly one authenticated Active owner.
             }
             previous = Some(record);
@@ -184,7 +199,11 @@ impl Store {
             activated_here: false,
             activation_started: false,
             #[cfg(feature = "service-thermal-mutation-v1")]
-            active_nonces: Default::default(),
+            active_records: Default::default(),
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            battery_producers: Default::default(),
+            #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+            battery_producer_fixture: None,
             verifier: Some(verify),
             history_boundary: None,
         };
@@ -397,7 +416,7 @@ impl Store {
         }
         for line in bytes[..bytes.len() - 1].split(|b| *b == b'\n') {
             let entry: OwnerBinding = serde_json::from_slice(line).map_err(|_| deny())?;
-            if !self.active_nonces.contains(&entry.owner) {
+            if !self.active_records.contains_key(&entry.owner) {
                 return Err(deny());
             }
         }
@@ -432,7 +451,7 @@ impl Store {
     }
     fn publish(&mut self, next: Record) -> io::Result<()> {
         #[cfg(feature = "service-thermal-mutation-v1")]
-        if next.phase == Phase::Active && self.active_nonces.contains(&next.nonce) {
+        if next.phase == Phase::Active && self.active_records.contains_key(&next.nonce) {
             return Err(deny());
         }
         self.check(&self.root, Policy::ROOT)?;
@@ -450,7 +469,12 @@ impl Store {
             return Err(deny());
         }
         #[cfg(feature = "service-thermal-mutation-v1")]
-        if next.phase == Phase::Active && !self.active_nonces.insert(next.nonce.clone()) {
+        if next.phase == Phase::Active
+            && self
+                .active_records
+                .insert(next.nonce.clone(), next.clone())
+                .is_some()
+        {
             return Err(deny());
         }
         self.last = Some(next);

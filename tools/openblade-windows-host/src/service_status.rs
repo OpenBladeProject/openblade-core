@@ -35,6 +35,21 @@ const ALL_LIVE_READINGS: u8 = 15;
     deny_unknown_fields
 )]
 pub(crate) enum StatusRequest {
+    SetBatteryPolicy {
+        version: i32,
+        request_id: String,
+        value: openblade_domain::battery_history::Policy,
+    },
+    SetBatteryProtection {
+        version: i32,
+        request_id: String,
+        enabled: bool,
+    },
+    SetFullChargeOverride {
+        version: i32,
+        request_id: String,
+        enabled: bool,
+    },
     SetFanOverride {
         version: i32,
         request_id: String,
@@ -145,6 +160,21 @@ impl StatusRequest {
 
     pub(crate) fn header(&self) -> (i32, &str) {
         match self {
+            Self::SetBatteryPolicy {
+                version,
+                request_id,
+                ..
+            }
+            | Self::SetBatteryProtection {
+                version,
+                request_id,
+                ..
+            }
+            | Self::SetFullChargeOverride {
+                version,
+                request_id,
+                ..
+            } => (*version, request_id),
             Self::SetFanOverride {
                 version,
                 request_id,
@@ -176,7 +206,28 @@ impl StatusRequest {
         }
     }
 
+    pub(crate) fn battery_request(&self) -> Option<openblade_domain::battery_history::Request> {
+        use openblade_domain::battery_history::Request;
+        match self {
+            Self::SetBatteryPolicy { value, .. } => Some(Request::SetBatteryPolicy {
+                value: value.clone(),
+            }),
+            Self::SetBatteryProtection { enabled, .. } => {
+                Some(Request::SetBatteryProtection { enabled: *enabled })
+            }
+            Self::SetFullChargeOverride { enabled, .. } => {
+                Some(Request::SetFullChargeOverride { enabled: *enabled })
+            }
+            _ => None,
+        }
+    }
     fn validate(&self) -> io::Result<()> {
+        if let Some(request) = self.battery_request() {
+            if !cfg!(feature = "service-battery-policy-v1") {
+                return Err(invalid("signed battery composition is unavailable"));
+            }
+            request.validate()?;
+        }
         if matches!(
             self,
             Self::SetFanOverride { .. }
@@ -901,6 +952,41 @@ pub(crate) use openblade_domain::thermal_history::{PerformanceOverride, validate
 
 #[cfg(feature = "service-thermal-mutation-v1")]
 impl Snapshot {
+    pub(crate) fn battery_projection(
+        mut self,
+        desired: Option<openblade_domain::battery_history::Desired>,
+        observation: Option<(u8, Option<bool>)>,
+        message: &str,
+    ) -> Self {
+        if let Some(d) = desired {
+            self.desired_state
+                .battery
+                .configured_policy
+                .charge_limit_percent = d.limit as i32;
+            self.desired_state.battery.protection_enabled = d.protection;
+            self.desired_state.battery.temporary_full_charge = d.temporary;
+            self.full_charge_override = d.temporary;
+        }
+        if let Some((raw, temporary)) = observation {
+            // Managed ConfirmedDeviceState admits nullable thermal members.
+            // Preserve unrelated observations and unknowns without manufacturing
+            // a thermal result to carry a confirmed battery reading.
+            if !(raw == 0x50 && temporary == Some(true)) {
+                let state = self.confirmed_state.get_or_insert_with(|| {
+                    Map::from_iter([
+                        ("performance".into(), Value::Null),
+                        ("fans".into(), Value::Null),
+                        ("lighting".into(), Value::Null),
+                        ("hyperBoostActive".into(), Value::Null),
+                    ])
+                });
+                state.insert("battery".into(),serde_json::json!({"protectionEnabled":raw!=0x50,"chargeLimitPercent":if raw==0x50{None}else{Some(raw&0x7f)},"temporaryFullCharge":temporary}));
+            }
+        }
+        self.message = message.into();
+        self.writes_blocked = true;
+        self
+    }
     pub(crate) fn bind_private_user(mut self, sid: &str) -> Self {
         self.private_user_sid = Some(sid.to_owned());
         self

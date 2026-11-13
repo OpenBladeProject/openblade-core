@@ -80,7 +80,12 @@ impl<P: Port> Reader<P, ReadAdmission> {
             }
             // Request bytes are supplied by the retained permit, never client recipe bytes.
             let mut record = permit.fan_record()?;
-            record.contract = CONTRACT.into();
+            record.contract = if cfg!(feature = "service-battery-policy-v1") {
+                CONTRACT
+            } else {
+                openblade_domain::fan_history::PREVIOUS_CONTRACT
+            }
+            .into();
             record.intent = intent;
             record.selector = plan.selector;
             record.entry = plan.entry;

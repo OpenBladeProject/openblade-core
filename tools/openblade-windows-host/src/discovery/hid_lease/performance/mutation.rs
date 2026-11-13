@@ -15,6 +15,22 @@ pub(crate) trait Permit: Send + Sync {
     fn result_admitted(&self, expected: ReadAdmission) -> bool {
         self.authorize() == Some(expected)
     }
+    fn is_battery(&self) -> bool {
+        false
+    }
+    fn resolve_battery(
+        &self,
+        _source: u8,
+        _baseline: u8,
+        _temporary: Option<bool>,
+        _ids: [u8; 14],
+    ) -> io::Result<Option<openblade_domain::battery_history::BatteryRecord>> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
+    fn record_battery(&self, _progress: u8) -> io::Result<()> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
+    fn observe_battery(&self, _raw: u8, _temporary: Option<bool>) {}
     fn is_fan(&self) -> bool {
         false
     }
@@ -68,6 +84,11 @@ impl<P: Port> Reader<P, ReadAdmission> {
         permit: &dyn Permit,
         limit: Limit<'_>,
     ) -> Option<ObservedPerformance> {
+        if permit.is_battery() {
+            self.apply_battery(permit, limit).await;
+            // Battery results travel through their typed permit, never a fabricated thermal value.
+            return None;
+        }
         if permit.is_fan() {
             return self.apply_fan(permit, limit).await;
         }

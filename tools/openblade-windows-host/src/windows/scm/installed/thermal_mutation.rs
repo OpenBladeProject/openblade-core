@@ -65,6 +65,8 @@ pub(super) fn remember_failure(fatal: &Mutex<Option<&'static str>>, error: &io::
     }
 }
 
+#[path = "battery_mutation.rs"]
+mod battery;
 #[path = "fan_mutation.rs"]
 mod fan;
 pub(super) trait Fresh: Send + Sync {
