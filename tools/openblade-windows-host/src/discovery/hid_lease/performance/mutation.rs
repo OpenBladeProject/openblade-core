@@ -11,6 +11,7 @@ pub(crate) trait Permit: Send + Sync {
     fn authorize(&self) -> Option<ReadAdmission>;
     fn resolve(&self, power: i32, baseline: ObservedPerformance) -> io::Result<Option<Preset>>;
     fn refused(&self, _cause: Refusal) {}
+    fn failed(&self, _error: &io::Error) {}
     fn retired(&self) -> io::Result<Settlement> {
         Ok(Settlement::Complete)
     }

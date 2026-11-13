@@ -1582,7 +1582,11 @@ impl ReadSource {
         let active = self.mutation.borrow().clone();
         let mut settlement_error = None;
         if let Some((worker, permit)) = active {
-            worker.stop().await?; // Only positive callback/worker retirement clears active I/O.
+            // Only positive callback/worker retirement clears active I/O.
+            if let Err(error) = worker.stop().await {
+                permit.failed(&error);
+                return Err(error);
+            }
             self.mutation.borrow_mut().take();
             self.phase.set(MutationPhase::ReaderDrain);
             let settlement = self.lease.verify_integrity().and_then(|_| permit.retired());
@@ -1647,11 +1651,22 @@ impl ReadSource {
             self.activated.set(true);
         }
         let worker = (factory.write)(permit.clone());
-        *self.mutation.borrow_mut() = Some((worker.clone(), permit));
+        *self.mutation.borrow_mut() = Some((worker.clone(), permit.clone()));
         self.phase.set(MutationPhase::Active);
         let result = worker.observe(deadline, None).await;
-        self.drain_mutation(true).await?;
-        result.map(|reading| reading.map(|reading| reading.performance))
+        if let Err(error) = &result {
+            permit.failed(error);
+        }
+        let drained = self.drain_mutation(true).await;
+        // A generic unconfirmed-stop error must not erase the original typed
+        // trust failure. Drain still runs and retains its worker/ownership fence.
+        match result {
+            Err(error) if super::thermal_mutation::is_fatal_admission(&error) => Err(error),
+            result => {
+                drained?;
+                result.map(|reading| reading.map(|reading| reading.performance))
+            }
+        }
     }
 }
 

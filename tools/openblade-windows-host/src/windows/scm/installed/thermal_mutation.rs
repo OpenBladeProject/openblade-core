@@ -44,6 +44,16 @@ pub(super) fn is_fatal_admission(error: &io::Error) -> bool {
         .is_some_and(|cause| cause.is::<FatalAdmission>())
 }
 
+fn verify_retained_failure(fatal: &Mutex<Option<&'static str>>) -> io::Result<()> {
+    match *fatal
+        .lock()
+        .map_err(|_| fatal_admission("Thermal fatal evidence lock poisoned."))?
+    {
+        Some(message) => Err(fatal_admission(message)),
+        None => Ok(()),
+    }
+}
+
 pub(super) trait Fresh: Send + Sync {
     fn verify_health(&self) -> io::Result<()> {
         Ok(())
@@ -65,6 +75,7 @@ pub(super) struct Runtime {
     factory: Rc<Factory>,
     application: Rc<RefCell<Option<Application>>>,
     gate: Rc<tokio::sync::Mutex<()>>,
+    fatal: Arc<Mutex<Option<&'static str>>>,
     #[cfg(test)]
     pub(super) entered: Rc<std::cell::Cell<u64>>,
 }
@@ -100,6 +111,7 @@ impl Runtime {
             factory: Rc::new(factory),
             application: Rc::default(),
             gate: Rc::default(),
+            fatal: Arc::default(),
             #[cfg(test)]
             entered: Rc::default(),
         }
@@ -148,6 +160,7 @@ impl Runtime {
             }),
             application: Rc::default(),
             gate: Rc::default(),
+            fatal: Arc::default(),
             #[cfg(test)]
             entered: Rc::default(),
         }
@@ -210,6 +223,7 @@ impl Runtime {
         #[cfg(test)]
         self.entered.set(self.entered.get() + 1);
         let _serial = self.gate.lock().await;
+        verify_retained_failure(&self.fatal)?;
         // Metadata may retain a previous user's projection. New accepted intent
         // starts from the public view even when this user has no profile file.
         let status = status.redact_private().without_thermal_observation();
@@ -263,6 +277,7 @@ impl Runtime {
         let policy_sid = sid.clone();
         let custody = reader.custody();
         reader.retain_policy(Rc::new(move |base| {
+            verify_retained_failure(&runtime.fatal)?;
             let base = base.redact_private();
             let (store, fresh) =
                 match (runtime.factory)(&policy_sid, caller.session, custody.clone()) {
@@ -314,8 +329,14 @@ impl Runtime {
             power: Mutex::new(None),
             selected_source: Mutex::new(None),
             cause: Mutex::new(Cause::CurrentAdmission),
+            fatal: self.fatal.clone(),
         });
         let result = reader.mutate(permit.clone(), deadline).await;
+        permit.verify_failure()?;
+        let result = match result {
+            Err(error) if is_fatal_admission(&error) => return Err(error),
+            result => result,
+        };
         permit.fresh.verify_health()?;
         let final_proof = if Instant::now() < deadline {
             permit.fresh.authorize()
@@ -421,6 +442,8 @@ struct RequestPermit {
     power: Mutex<Option<i32>>,
     selected_source: Mutex<Option<i32>>,
     cause: Mutex<Cause>,
+    // Reader refusal is Option-valued; retain typed trust loss across that boundary.
+    fatal: Arc<Mutex<Option<&'static str>>>,
 }
 #[derive(Debug)]
 enum Cause {
@@ -448,6 +471,19 @@ impl Cause {
     }
 }
 impl RequestPermit {
+    fn remember_failure(&self, error: &io::Error) {
+        if let Some(fatal) = error
+            .get_ref()
+            .and_then(|cause| cause.downcast_ref::<FatalAdmission>())
+        {
+            if let Ok(mut retained) = self.fatal.lock() {
+                retained.get_or_insert(fatal.0);
+            }
+        }
+    }
+    fn verify_failure(&self) -> io::Result<()> {
+        verify_retained_failure(&self.fatal)
+    }
     fn set_cause(&self, cause: Cause) {
         if let Ok(mut current) = self.cause.lock() {
             *current = cause;
@@ -455,45 +491,53 @@ impl RequestPermit {
     }
 }
 impl Permit for RequestPermit {
+    fn failed(&self, error: &io::Error) {
+        self.remember_failure(error);
+    }
     fn authorize(&self) -> Option<ReadAdmission> {
+        self.verify_failure().ok()?;
         self.fresh.authorize()
     }
     fn resolve(&self, power: i32, baseline: ObservedPerformance) -> io::Result<Option<Preset>> {
-        if self.accepted.load(Ordering::Acquire) {
-            return Err(io::ErrorKind::PermissionDenied.into());
-        }
-        self.storage
-            .save(self.value.clone(), power)
-            .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))?;
-        self.accepted.store(true, Ordering::Release);
-        *self.power.lock().map_err(|_| io::ErrorKind::Other)? = Some(power);
-        if self
-            .storage
-            .gpu_incomplete(power, self.application.as_deref())?
-        {
-            self.set_cause(Cause::Gpu);
-            return Ok(None);
-        }
-        let desired = self.storage.desired(power, self.application.as_deref())?;
-        *self
-            .selected_source
-            .lock()
-            .map_err(|_| io::ErrorKind::Other)? = desired.map(|(_, s)| s);
-        let desired = desired.map(|(p, _)| p);
-        *self.destination.lock().map_err(|_| io::ErrorKind::Other)? = desired;
-        if openblade_domain::thermal_mutation::defer_manual_performance(
-            baseline,
-            power,
+        self.verify_failure()?;
+        (|| {
+            if self.accepted.load(Ordering::Acquire) {
+                return Err(io::ErrorKind::PermissionDenied.into());
+            }
             self.storage
-                .desired_manual_fans(power, self.application.as_deref())?,
-        ) {
-            self.set_cause(Cause::ManualDeferred);
-            return Ok(None);
-        }
-        if desired.is_none() {
-            self.set_cause(Cause::NoEligiblePolicy);
-        }
-        Ok(desired)
+                .save(self.value.clone(), power)
+                .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))?;
+            self.accepted.store(true, Ordering::Release);
+            *self.power.lock().map_err(|_| io::ErrorKind::Other)? = Some(power);
+            if self
+                .storage
+                .gpu_incomplete(power, self.application.as_deref())?
+            {
+                self.set_cause(Cause::Gpu);
+                return Ok(None);
+            }
+            let desired = self.storage.desired(power, self.application.as_deref())?;
+            *self
+                .selected_source
+                .lock()
+                .map_err(|_| io::ErrorKind::Other)? = desired.map(|(_, s)| s);
+            let desired = desired.map(|(p, _)| p);
+            *self.destination.lock().map_err(|_| io::ErrorKind::Other)? = desired;
+            if openblade_domain::thermal_mutation::defer_manual_performance(
+                baseline,
+                power,
+                self.storage
+                    .desired_manual_fans(power, self.application.as_deref())?,
+            ) {
+                self.set_cause(Cause::ManualDeferred);
+                return Ok(None);
+            }
+            if desired.is_none() {
+                self.set_cause(Cause::NoEligiblePolicy);
+            }
+            Ok(desired)
+        })()
+        .inspect_err(|error| self.remember_failure(error))
     }
     fn refused(&self, cause: Refusal) {
         self.set_cause(match cause {
@@ -503,6 +547,7 @@ impl Permit for RequestPermit {
         });
     }
     fn retired(&self) -> io::Result<Settlement> {
+        self.verify_failure()?;
         // Transport retirement is already positive. Settlement is attempted once;
         // an uncertain append keeps the original evidence and global write fence.
         self.fresh.verify_health()?;
@@ -523,6 +568,7 @@ impl Permit for RequestPermit {
         }
     }
     fn record(&self, progress: Progress) -> io::Result<()> {
+        self.verify_failure()?;
         self.authorize().ok_or(io::ErrorKind::PermissionDenied)?;
         self.record_progress(progress)
             .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))
@@ -535,15 +581,17 @@ impl RequestPermit {
             .lock()
             .map_err(|_| io::ErrorKind::Other)?
             .ok_or(io::ErrorKind::PermissionDenied)?;
-        self.storage.record(
-            &self.request,
-            &self.owner,
-            destination,
-            &self.intent,
-            &self.value,
-            self.caller_pid,
-            self.session,
-            progress,
-        )
+        self.storage
+            .record(
+                &self.request,
+                &self.owner,
+                destination,
+                &self.intent,
+                &self.value,
+                self.caller_pid,
+                self.session,
+                progress,
+            )
+            .inspect_err(|error| self.remember_failure(error))
     }
 }

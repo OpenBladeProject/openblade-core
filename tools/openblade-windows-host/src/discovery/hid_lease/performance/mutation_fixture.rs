@@ -13,6 +13,7 @@ pub(crate) struct State {
     pub(crate) final_read_malformed: bool,
     pub(crate) on_power: Option<Arc<dyn Fn(usize) + Send + Sync>>,
     pub(crate) on_mutation_retired: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub(crate) mutation_worker_error: Option<Arc<dyn Fn() -> io::Error + Send + Sync>>,
     pub(crate) actual: u8,
     pub(crate) recommended: u8,
     pub(crate) selectors: [u8; 2],
@@ -101,6 +102,10 @@ impl Fixture {
                             let hook = fixture.state.lock().unwrap().on_mutation_retired.clone();
                             if let Some(hook) = hook {
                                 hook();
+                            }
+                            let error = fixture.state.lock().unwrap().mutation_worker_error.clone();
+                            if let Some(error) = error {
+                                return Err(error());
                             }
                         }
                         Ok(observed.map(|performance| Reading {

@@ -27,6 +27,10 @@ struct MemoryFiles {
     bytes: Arc<StdMutex<BTreeMap<String, Vec<u8>>>>,
     fail: Arc<AtomicBool>,
     fail_terminal: Arc<AtomicBool>,
+    fatal_terminal: Arc<AtomicBool>,
+    fatal_first_intent: Arc<AtomicBool>,
+    first_intent_attempts: Arc<AtomicUsize>,
+    first_intent_prior: Arc<StdMutex<Option<Vec<u8>>>>,
     terminal_attempts: Arc<AtomicUsize>,
 }
 impl MemoryFiles {
@@ -70,6 +74,28 @@ impl Files for MemoryFiles {
     }
     fn replace(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
         if name == "thermal-mutation.journal"
+            && self.fatal_first_intent.load(Ordering::Acquire)
+            && bytes
+                .split(|b| *b == b'\n')
+                .filter(|line| !line.is_empty())
+                .last()
+                .is_some_and(|line| serde_json::from_slice::<Value>(line).unwrap()["progress"] == 1)
+        {
+            let prior = self.bytes.lock().unwrap().get(name).cloned().unwrap();
+            assert_eq!(Some(prior.as_slice()), expected);
+            assert_eq!(
+                serde_json::from_slice::<Value>(prior.strip_suffix(b"\n").unwrap()).unwrap()["progress"],
+                0
+            );
+            *self.first_intent_prior.lock().unwrap() = Some(prior);
+            self.first_intent_attempts.fetch_add(1, Ordering::AcqRel);
+            return Err(
+                crate::installed::readiness::thermal_mutation::fatal_admission(
+                    "injected FirstIntent staging protection failure",
+                ),
+            );
+        }
+        if name == "thermal-mutation.journal"
             && bytes
                 .split(|b| *b == b'\n')
                 .filter(|line| !line.is_empty())
@@ -77,6 +103,13 @@ impl Files for MemoryFiles {
                 .is_some_and(|line| serde_json::from_slice::<Value>(line).unwrap()["progress"] == 6)
         {
             self.terminal_attempts.fetch_add(1, Ordering::AcqRel);
+            if self.fatal_terminal.load(Ordering::Acquire) {
+                return Err(
+                    crate::installed::readiness::thermal_mutation::fatal_admission(
+                        "injected terminal staging protection failure",
+                    ),
+                );
+            }
             if self.fail_terminal.load(Ordering::Acquire) {
                 self.bytes
                     .lock()
@@ -2288,5 +2321,268 @@ async fn edge_shutdown_publishes_actual_retirement_after_one_failed_settlement()
         rig.files.read("thermal-mutation.journal.pending").unwrap(),
         pending
     );
+    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+}
+
+#[tokio::test]
+async fn edge_outer_terminal_fatal_survives_healthy_fresh_recheck() {
+    let rig = Rig::new(MemoryFiles::default());
+    let retired = Arc::new(AtomicBool::new(false));
+    let flag = retired.clone();
+    let files = rig.files.clone();
+    let original = Arc::new(StdMutex::new(None));
+    let captured = original.clone();
+    {
+        let mut port = rig.port.state.lock().unwrap();
+        port.change_power = Some((2, 0));
+        port.on_mutation_retired = Some(Arc::new(move || {
+            let prepared = files.read("thermal-mutation.journal").unwrap().unwrap();
+            assert_eq!(
+                serde_json::from_slice::<Value>(prepared.strip_suffix(b"\n").unwrap()).unwrap()["progress"],
+                0
+            );
+            *captured.lock().unwrap() = Some(prepared);
+            files.fatal_terminal.store(true, Ordering::Release);
+            flag.store(true, Ordering::Release);
+        }));
+    }
+    let events: Events = Rc::default();
+    let controls = Controls::new();
+    let (mut ports, tx) = ports(Fault::None, &events);
+    ports.source = rig.source.clone();
+    let (running, ready) = oneshot::channel();
+    let service = lifecycle(&controls, Ok(ports), &events, move || {
+        running.send(()).unwrap();
+    });
+    let exercise = async {
+        ready.await.unwrap();
+        let (mut client, server) = duplex(65536);
+        tx.send(Box::new(SidStream {
+            inner: test_stream(server, USER, Fault::None),
+            sid: SID.into(),
+        }))
+        .unwrap();
+        crate::service_frame::write_payload(
+            &mut client,
+            &serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":80,
+                "requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000099","value":value(1,1)}))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            crate::service_frame::read_payload(&mut client)
+                .await
+                .is_err(),
+            "terminal FatalAdmission must not become an ordinary Blocked reply"
+        );
+    };
+    let (result, ()) = tokio::join!(service, exercise);
+    assert!(result.is_err());
+    assert!(events.borrow().contains(&"failed"));
+    assert!(retired.load(Ordering::Acquire));
+    Fresh::verify_health(rig.custody.as_ref()).unwrap();
+    assert!(!rig.fatal_capture.load(Ordering::Acquire));
+    assert!(!rig.custody.fatal_health.load(Ordering::Acquire));
+    assert!(!rig.custody.integrity_lost.load(Ordering::Acquire));
+    assert_eq!(rig.custody.activations.load(Ordering::Acquire), 1);
+    assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 1);
+    assert_eq!(
+        rig.files.read("thermal-mutation.journal").unwrap(),
+        *original.lock().unwrap()
+    );
+    assert!(
+        rig.files
+            .read("thermal-mutation.journal.pending")
+            .unwrap()
+            .is_none()
+    );
+    assert!(rig.custody.retired.load(Ordering::Acquire));
+    let port = rig.port.state.lock().unwrap();
+    assert_eq!(port.writes, 0);
+    assert_eq!(port.opened, port.retired);
+}
+
+#[tokio::test]
+async fn edge_outer_first_intent_and_worker_fatals_preserve_class_and_fences() {
+    for worker_error in [false, true] {
+        let rig = Rig::new(MemoryFiles::default());
+        let original = Arc::new(StdMutex::new(None));
+        let captured = original.clone();
+        let files = rig.files.clone();
+        rig.files
+            .fatal_first_intent
+            .store(!worker_error, Ordering::Release);
+        {
+            let mut port = rig.port.state.lock().unwrap();
+            if worker_error {
+                port.change_power = Some((2, 0));
+                port.mutation_worker_error = Some(Arc::new(|| {
+                    crate::installed::readiness::thermal_mutation::fatal_admission(
+                        "injected original worker fatal",
+                    )
+                }));
+            }
+            port.on_mutation_retired = Some(Arc::new(move || {
+                let prepared = files.read("thermal-mutation.journal").unwrap().unwrap();
+                assert_eq!(
+                    serde_json::from_slice::<Value>(prepared.strip_suffix(b"\n").unwrap()).unwrap()
+                        ["progress"],
+                    0
+                );
+                *captured.lock().unwrap() = Some(prepared);
+            }));
+        }
+        let events: Events = Rc::default();
+        let controls = Controls::new();
+        let (mut ports, tx) = ports(Fault::None, &events);
+        ports.source = rig.source.clone();
+        let (running, ready) = oneshot::channel();
+        let service = lifecycle(&controls, Ok(ports), &events, move || {
+            running.send(()).unwrap();
+        });
+        let exercise = async {
+            ready.await.unwrap();
+            let (mut client, server) = duplex(65536);
+            tx.send(Box::new(SidStream {
+                inner: test_stream(server, USER, Fault::None),
+                sid: SID.into(),
+            }))
+            .unwrap();
+            crate::service_frame::write_payload(
+                &mut client,
+                &serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":80,
+                "requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000099","value":value(1,1)}))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+            assert!(
+                crate::service_frame::read_payload(&mut client)
+                    .await
+                    .is_err(),
+                "typed fatal became ordinary reply"
+            );
+        };
+        let (result, ()) = tokio::join!(service, exercise);
+        assert!(result.is_err());
+        assert!(events.borrow().contains(&"failed"));
+        Fresh::verify_health(rig.custody.as_ref()).unwrap();
+        assert!(!rig.fatal_capture.load(Ordering::Acquire));
+        assert_eq!(
+            rig.files.first_intent_attempts.load(Ordering::Acquire),
+            usize::from(!worker_error)
+        );
+        assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 0);
+        let prepared = rig.files.read("thermal-mutation.journal").unwrap();
+        assert_eq!(prepared, *original.lock().unwrap());
+        if !worker_error {
+            assert_eq!(prepared, *rig.files.first_intent_prior.lock().unwrap());
+        }
+        assert!(
+            rig.files
+                .read("thermal-mutation.journal.pending")
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            rig.custody.retired.load(Ordering::Acquire),
+            !worker_error,
+            "an unconfirmed worker must never publish custody retirement"
+        );
+        let port = rig.port.state.lock().unwrap();
+        assert_eq!(port.writes, 0);
+        assert_eq!(port.opened, port.retired);
+    }
+}
+
+#[tokio::test]
+async fn edge_canceled_first_intent_fatal_is_sticky_for_get_observe_and_new_sid() {
+    let rig = Rig::new(MemoryFiles::default());
+    rig.files.fatal_first_intent.store(true, Ordering::Release);
+    let reached = Arc::new(AtomicBool::new(false));
+    let release = Arc::new(AtomicBool::new(false));
+    let entered = reached.clone();
+    let gate = release.clone();
+    rig.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+        entered.store(true, Ordering::Release);
+        while !gate.load(Ordering::Acquire) {
+            std::thread::yield_now();
+        }
+    }));
+    {
+        let request = rig.set(91, value(1, 1));
+        tokio::pin!(request);
+        let held = async {
+            while !reached.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        };
+        tokio::select! { _ = &mut request => panic!("fatal request completed before controlled retirement release"), r = tokio::time::timeout(std::time::Duration::from_secs(2), held) => r.unwrap() }
+    }
+    Fresh::verify_health(rig.custody.as_ref()).unwrap();
+    assert_eq!(rig.files.first_intent_attempts.load(Ordering::Acquire), 1);
+    let prepared = rig.files.read("thermal-mutation.journal").unwrap();
+    release.store(true, Ordering::Release);
+    for (operation, sid) in [
+        ("getStatus", SID),
+        ("observeState", SID),
+        ("setPerformanceOverride", "S-1-5-21-111-222-333-1002"),
+    ] {
+        let request = if operation == "setPerformanceOverride" {
+            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
+        } else if operation == "observeState" {
+            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000097","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
+        } else {
+            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096"})
+        };
+        let (mut client, server) = duplex(65536);
+        let publications = rig.source.lock().await.publications();
+        let server = serve_connection(
+            Box::new(SidStream {
+                inner: test_stream(server, USER, Fault::None),
+                sid: sid.into(),
+            }),
+            rig.source.clone(),
+            publications,
+            Rc::new(Subscriptions::new(2)),
+        );
+        let client = async {
+            crate::service_frame::write_payload(
+                &mut client,
+                &serde_json::to_vec(&request).unwrap(),
+            )
+            .await
+            .unwrap();
+            crate::service_frame::read_payload(&mut client).await
+        };
+        let (server, reply) = tokio::join!(server, client);
+        assert!(
+            matches!(server, Err(ExchangeError::Runtime(error))
+            if crate::installed::readiness::thermal_mutation::is_fatal_admission(&error)
+                && error.to_string() == "injected FirstIntent staging protection failure"),
+            "{operation} must propagate the same retained typed fatal"
+        );
+        assert!(
+            reply.is_err(),
+            "{operation} must not emit ordinary response"
+        );
+    }
+    let opened = rig.port.state.lock().unwrap().opened;
+    let stopped = rig.reader.stop().await;
+    assert!(
+        stopped.is_ok()
+            || stopped
+                .as_ref()
+                .is_err_and(crate::installed::readiness::thermal_mutation::is_fatal_admission)
+    );
+    assert_eq!(rig.port.state.lock().unwrap().opened, opened);
+    assert_eq!(rig.files.first_intent_attempts.load(Ordering::Acquire), 1);
+    assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 0);
+    assert_eq!(
+        rig.files.read("thermal-mutation.journal").unwrap(),
+        prepared
+    );
+    assert_eq!(prepared, *rig.files.first_intent_prior.lock().unwrap());
     assert_eq!(rig.port.state.lock().unwrap().writes, 0);
 }
