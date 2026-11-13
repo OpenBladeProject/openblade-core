@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.61.1-nightly.114] - 2026-11-13
+
 ### Added
 
 - Expand source-reviewed lighting with independent brightness and available logo controls on 15 Blade profiles, MCU-backed keyboard effects on seven models, and software Fire on Blade 16 RZ09-0581. Existing field-only profiles keep their behavior. ([#960](https://github.com/OSSBlade/openblade-core/pull/960))
@@ -2414,7 +2416,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.60.0-nightly.113...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.61.1-nightly.114...HEAD
+[0.61.1-nightly.114]: https://github.com/OSSBlade/openblade-core/compare/v0.60.0-nightly.113...v0.61.1-nightly.114
 [0.60.0-nightly.113]: https://github.com/OSSBlade/openblade-core/compare/v0.58.7-nightly.112...v0.60.0-nightly.113
 [0.58.7-nightly.112]: https://github.com/OSSBlade/openblade-core/compare/v0.58.5-nightly.111...v0.58.7-nightly.112
 [0.58.5-nightly.111]: https://github.com/OSSBlade/openblade-core/compare/v0.58.4...v0.58.5-nightly.111
