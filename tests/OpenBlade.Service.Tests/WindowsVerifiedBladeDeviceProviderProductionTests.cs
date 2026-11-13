@@ -647,7 +647,7 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
                 PerformancePreset.Balanced,
                 FanMode.Automatic));
         var gpu = new FakeGpuClockOffsetController();
-        var activity = new BlockingGpuActivitySource();
+        using var activity = new BlockingGpuActivitySource();
         using var provider = ReadyProvider(
             new FakeProductionFactory(capabilities, port),
             gpu,
@@ -661,17 +661,20 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
             new GpuClockOffsetSettings(125, 500),
             default);
         Task<ConfirmedDeviceState> read = Task.Run(() => device.ReadStateAsync(cancellation.Token));
-        Assert.True(activity.Entered.Wait(TimeSpan.FromSeconds(5)));
-        Task<GpuClockOffsetManagementState> stateRead = Task.Run(
-            () => managedDevice.GpuClockOffsetManagementState);
-
         try
         {
-            Task completed = await Task.WhenAny(stateRead, Task.Delay(100));
-            Assert.Same(stateRead, completed);
+            Assert.True(activity.Entered.Wait(TimeSpan.FromSeconds(5)));
+            // Probe and property access must overlap; thread-pool queue latency
+            // is not part of the management-lock contract.
+            Task<GpuClockOffsetManagementState> stateRead = Task.Factory.StartNew(
+                () => managedDevice.GpuClockOffsetManagementState,
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
             Assert.Equal(
                 GpuClockOffsetManagementState.Managed,
-                await stateRead);
+                await stateRead.WaitAsync(TimeSpan.FromSeconds(2)));
+            Assert.False(read.IsCompleted);
         }
         finally
         {
@@ -3860,10 +3863,7 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
         public ValueTask<bool?> IsActiveAsync(CancellationToken cancellationToken = default)
         {
             Entered.Set();
-            if (!Release.Wait(TimeSpan.FromSeconds(5), cancellationToken))
-            {
-                throw new TimeoutException("GPU activity probe was not released.");
-            }
+            Release.Wait(cancellationToken);
             return new(true);
         }
 
