@@ -56,6 +56,28 @@ public sealed partial class MainWindow
 #if OPENBLADE_DEVELOPER_HARNESS
     internal async Task VerifyProfileNavigationAsync(bool compact)
     {
+        double previousWidth = ProfilesPage.Width;
+        try
+        {
+            // Hosted desktops may constrain the outer snapshot window. The
+            // image has already been captured; give this interaction check a
+            // deterministic page width so it exercises both responsive layouts.
+            SelectLocalizationSnapshotPage("profiles");
+            ProfilesPage.Width = ProfilesStackThresholdDip + (compact ? -100 : 100);
+            ProfilesPage.UpdateLayout();
+            UpdateProfilesLayout();
+            await VerifyProfileNavigationCoreAsync(compact);
+        }
+        finally
+        {
+            ProfilesPage.Width = previousWidth;
+            ProfilesPage.UpdateLayout();
+            UpdateProfilesLayout();
+        }
+    }
+
+    private async Task VerifyProfileNavigationCoreAsync(bool compact)
+    {
         SelectLocalizationSnapshotPage("profiles");
         await Task.Delay(100);
         FrameworkElement layout = (FrameworkElement)Root.FindName(
@@ -64,7 +86,9 @@ public sealed partial class MainWindow
             .Where(button => button.Tag is string).ToArray();
         if (layout.Visibility != Visibility.Visible || rows.Length != 21)
         {
-            throw new InvalidOperationException("The expected profile comparison layout was not realized.");
+            throw new InvalidOperationException(
+                $"The profile comparison layout was not realized: compact={compact}, "
+                + $"width={ProfilesPage.ActualWidth}, visibility={layout.Visibility}, rows={rows.Length}.");
         }
         ViewModel.SelectedProfileComparisonOption = ViewModel.ProfileComparisonOptions[1];
         SelectLocalizationSnapshotPage("laptop");
