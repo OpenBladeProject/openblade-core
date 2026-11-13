@@ -122,7 +122,7 @@ public sealed class ExperimentalThermalPersistenceTests : IDisposable
         await store.SaveAsync(new(PerformancePreset.Custom, null, null, custom), CancellationToken.None);
         Assert.Equal(custom, (await store.LoadAsync(CancellationToken.None)).Overrides.CustomPerformance);
         JsonNode document = JsonNode.Parse(await File.ReadAllTextAsync(path))!;
-        Assert.Equal(8, document["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(9, document["schemaVersion"]!.GetValue<int>());
         document["schemaVersion"] = 6;
         document["overrides"]!["customPerformance"]!["cpu"] = 1;
         document["overrides"]!["customPerformance"]!.AsObject().Remove("maximumFans");
@@ -130,7 +130,7 @@ public sealed class ExperimentalThermalPersistenceTests : IDisposable
         PersistentOverrideLoadResult loaded = await new PersistentOverrideStore(path).LoadAsync(CancellationToken.None);
         Assert.False(loaded.Recovered);
         Assert.False(loaded.Overrides.CustomPerformance!.MaximumFans);
-        Assert.Contains("\"schemaVersion\": 8", await File.ReadAllTextAsync(path));
+        Assert.Contains("\"schemaVersion\": 9", await File.ReadAllTextAsync(path));
     }
 
     public void Dispose()
