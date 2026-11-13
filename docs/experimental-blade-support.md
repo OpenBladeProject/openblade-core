@@ -21,16 +21,21 @@ installed; PawnIO supplies CPU temperatures only.
 
 | Models | Lighting controls |
 | --- | --- |
-| RZ09-0287, RZ09-0301, RZ09-0314, RZ09-0330, RZ09-0370, RZ09-0409, RZ09-0508 | Keyboard brightness; logo Off, Static and Breathing |
+| RZ09-0287, RZ09-0314, RZ09-0330, RZ09-0370, RZ09-0409, RZ09-0508 | Keyboard brightness; logo Off, Static and Breathing |
 | RZ09-0300, RZ09-0351 | Keyboard brightness |
-| RZ09-0421, RZ09-0423, RZ09-0427 | Brightness; keyboard Off, random Breathing, Spectrum and Wave; logo controls on 0423/0427 |
-| RZ09-0509, RZ09-0510, RZ09-0529 | Brightness; keyboard Off, random Breathing and Wave; logo Off, Static and Breathing |
+| RZ09-0301 | Brightness; keyboard Off, Static, Breathing, Spectrum and Wave; logo controls |
+| RZ09-0421 | Brightness; keyboard Off, Breathing, Spectrum and Wave |
+| RZ09-0423, RZ09-0427 | Brightness; keyboard Off, Static, Breathing, Spectrum and Wave; logo controls |
+| RZ09-0510 | Brightness; keyboard Off, Breathing and Wave; logo controls |
+| RZ09-0509, RZ09-0529 | Brightness; keyboard Off, Static, Breathing and Wave; logo controls |
 
-The new controls use reviewed sources for each exact model; physical validation
-remains pending. Keyboard color selection and other effects remain unavailable on these
-additional profiles. The earlier lighting backends retain their existing features.
-See the [lighting review](source-reviewed-lighting.md) for all 22 supported
-profiles, MCU evidence and remaining gaps.
+The seven MCU-backed additions support random, single-color and dual-color
+Breathing, and both Wave directions. RZ09-0301 also retains independent
+brightness/logo editing and existing field-only profiles. The added controls
+use exact-model source evidence; physical validation remains pending. Existing
+lighting backends retain their own admission. See the
+[lighting review](source-reviewed-lighting.md) for all 22 profiles, MCU-first
+and upstream evidence, frame/input mapping and remaining gaps.
 
 ## Available controls
 
