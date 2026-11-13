@@ -35,9 +35,21 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Equal(product == 0x02B7, capabilities.HasFanStopSourceEvidence);
         Assert.False(capabilities.HasFanStopTrialEvidence);
         Assert.False(capabilities.SupportsFanStop); // The live guardian projects fresh availability.
-        Assert.Empty(capabilities.LightingEffects);
-        Assert.Empty(capabilities.LogoLightingModes);
-        Assert.False(capabilities.SupportsKeyboardBrightness);
+        if (product == 0x02B6)
+        {
+            Assert.Empty(capabilities.LightingEffects);
+        }
+        else
+        {
+            LightingEffect[] effects = product == 0x02B7
+                ? [LightingEffect.Off, LightingEffect.Breathing, LightingEffect.Wave]
+                : [LightingEffect.Off, LightingEffect.Static, LightingEffect.Breathing, LightingEffect.Wave];
+            Assert.Equal(effects.Order(),
+                capabilities.LightingEffects.Order());
+        }
+        Assert.Equal(3, capabilities.LogoLightingModes.Count);
+        Assert.True(capabilities.SupportsKeyboardBrightness);
+        Assert.True(capabilities.SupportsIndependentLightingControls);
         Assert.False(capabilities.SupportsUniformLightingFrames);
         Assert.Null(capabilities.HyperBoostAccess);
         Assert.Null(capabilities.ThxAudio);
@@ -357,12 +369,22 @@ public sealed partial class SourceReviewedBladeModelTests
         await using var port = Create(product, session);
         ConfirmedDeviceState recovered = await port.ReadRecoveryStateAsync(default);
         Assert.Null(recovered.Lighting);
-        Assert.Null(recovered.LogoLighting);
+        if (product == 0x02B6)
+        {
+            Assert.Null(recovered.LogoLighting);
+            Assert.Equal(new IndependentLightingSettings(50, LogoLightingMode.Static), recovered.IndependentLighting);
+        }
+        else
+        {
+            Assert.Equal(LogoLightingMode.Static, recovered.LogoLighting);
+        }
         Assert.NotNull(recovered.Battery);
         Assert.Null(recovered.Battery.TemporaryFullCharge);
         Assert.All(session.Commands, command =>
             Assert.True(command.ClassId == 0x0D && command.CommandId is 0x82 or 0x87
-                || command.ClassId == 0x07 && command.CommandId is 0x92 or 0x8F));
+                || command.ClassId == 0x07 && command.CommandId is 0x92 or 0x8F
+                || command.ClassId == 0x03 && command.CommandId is 0x80 or 0x82 or 0x83
+                || command.ClassId == 0x0F && command.CommandId == 0x82));
         if (product == 0x02C7)
         {
             Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x8F);
@@ -475,6 +497,11 @@ public sealed partial class SourceReviewedBladeModelTests
         internal byte Brightness = 128;
         internal byte LogoOn = 1;
         internal byte LogoEffect;
+        internal byte[] McuLighting = [0, 5, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        internal bool EchoLightingAck;
+        internal byte SavedBrightness = 128;
+        internal bool McuCustomOverlay;
+        internal bool McuStaticEqualityShortcut;
         internal bool RejectLightingQuery;
         internal bool RetireOnQueryFailure;
         private RazerCommandSessionDisposition disposition;
@@ -522,10 +549,13 @@ public sealed partial class SourceReviewedBladeModelTests
             byte[] arguments = command.Arguments.ToArray();
             byte[] payload = (command.ClassId, command.CommandId) switch
             {
-                (0x03, 0x83) => [1, 5, Brightness],
+                (0x03, 0x83) => [arguments[0], 5, Brightness],
                 (0x03, 0x80) => [0, 4, LogoOn],
                 (0x03, 0x82) => [0, 4, LogoEffect],
-                (0x03, 0x00) or (0x03, 0x02) or (0x03, 0x03) => [],
+                (0x03, 0x00) or (0x03, 0x02) or (0x03, 0x03) => EchoLightingAck ? arguments : [],
+                (0x0F, 0x82) => McuLighting.ToArray(),
+                (0x0F, 0x02) => arguments,
+                (0x03, 0x0A) => [],
                 (0x07, 0x8C) => Adapter,
                 (0x07, 0x8F) => [Flags],
                 (0x07, 0x92) => [Battery],
@@ -543,6 +573,49 @@ public sealed partial class SourceReviewedBladeModelTests
                     case (0x03, 0x03): Brightness = arguments[2]; break;
                     case (0x03, 0x02): LogoEffect = arguments[2]; break;
                     case (0x03, 0x00): LogoOn = arguments[2]; break;
+                    case (0x03, 0x0A):
+                        byte mode = arguments[0] switch { 0 => 0, 6 => 1, 4 => 3, 3 => 2, 1 => 4, _ => throw new InvalidOperationException() };
+                        McuLighting = [0, 5, mode, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+                        if (mode == 1)
+                        {
+                            McuLighting[5] = 1;
+                            arguments.AsSpan(1, 3).CopyTo(McuLighting.AsSpan(6));
+                        }
+                        if (mode == 2 && arguments[1] is 1 or 2)
+                        {
+                            McuLighting[5] = arguments[1];
+                            arguments.AsSpan(2).CopyTo(McuLighting.AsSpan(6));
+                        }
+                        if (mode == 4)
+                        {
+                            McuLighting[3] = arguments[1];
+                            McuLighting[4] = 40;
+                        }
+                        Brightness = SavedBrightness;
+                        McuCustomOverlay = false;
+                        break;
+                    case (0x0F, 0x02):
+                        if (arguments[2] == 0 && McuLighting[2] == 0)
+                        {
+                            break; // Exact newer MCU shortcut precedes overlay cleanup.
+                        }
+                        McuCustomOverlay = false;
+                        if (McuStaticEqualityShortcut && arguments[2] == 1 && McuLighting[2] == 1
+                            || arguments[2] == 2 && McuLighting[2] == 2 && McuLighting[5] == arguments[5])
+                        {
+                            break; // RGB is not copied by these firmware equality branches.
+                        }
+                        McuLighting = [arguments[0], 5, arguments[2], 0, 0, 0, 0, 0, 0, 0, 0, 0];
+                        if (arguments[2] is 1 or 2)
+                        {
+                            arguments.AsSpan(3).CopyTo(McuLighting.AsSpan(3));
+                        }
+                        if (arguments[2] == 4)
+                        {
+                            McuLighting[3] = arguments[3];
+                            McuLighting[4] = 40;
+                        }
+                        break;
                     case (0x07, 0x12): Battery = arguments[0]; break;
                     case (0x07, 0x0F): Flags = arguments[0]; break;
                     case (0x0D, 0x02): Mode = arguments[2]; Manual = arguments[3]; break;

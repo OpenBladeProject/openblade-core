@@ -127,14 +127,8 @@ internal sealed class ExperimentalGridLightingEffect
         return Scale(color, 0.5 - 0.5 * Math.Cos(phase * 2 * Math.PI));
     }
 
-    private static RgbColor Fire(int row, int column, TimeSpan elapsed)
-    {
-        double time = Phase(elapsed, 12) * 2 * Math.PI;
-        double flicker = 0.5 + 0.25 * Math.Sin(column * 1.7 + row * 0.9 - time * 3)
-            + 0.25 * Math.Sin(column * 0.6 - row * 1.3 + time * 5);
-        double heat = Math.Clamp(0.2 + row * 0.1 + flicker * 0.3, 0, 1);
-        return new(ToByte(heat * 255), ToByte(heat * heat * 140), 0);
-    }
+    private static RgbColor Fire(int row, int column, TimeSpan elapsed) =>
+        FromMatrix(SoftwareFirePattern.Render(row, column, elapsed));
 
     private static RgbColor Wheel(int row, int column, WheelLightingParameters value, TimeSpan elapsed)
     {

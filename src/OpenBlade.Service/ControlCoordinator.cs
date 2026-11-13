@@ -1239,7 +1239,7 @@ public sealed class ControlCoordinator
             IsLightingValid(value),
             capabilities =>
             {
-                independent = capabilities.SupportsIndependentLightingControls;
+                independent = UsesIndependentLighting(capabilities, value);
                 return LightingSupported(capabilities, value);
             },
             state => LightingMatches(state, value, independent),
@@ -1651,14 +1651,14 @@ public sealed class ControlCoordinator
                 "Lighting",
                 IsLightingValid(desired.Lighting.Value)
                     && LightingSupported(capabilities, desired.Lighting.Value),
-                LightingMatches(initial, desired.Lighting.Value, capabilities.SupportsIndependentLightingControls),
-                token => capabilities.SupportsIndependentLightingControls
+                LightingMatches(initial, desired.Lighting.Value, UsesIndependentLighting(capabilities, desired.Lighting.Value)),
+                token => UsesIndependentLighting(capabilities, desired.Lighting.Value)
                     ? desired.Lighting.Value.IndependentControls is { } fields
                         ? device.SetIndependentLightingAsync(fields, token) : Task.CompletedTask
                     : device.SetLightingAsync(desired.Lighting.Value, token),
-                state => LightingMatches(state, desired.Lighting.Value, capabilities.SupportsIndependentLightingControls),
+                state => LightingMatches(state, desired.Lighting.Value, UsesIndependentLighting(capabilities, desired.Lighting.Value)),
                 AcceptSetterCompletionWithoutReadback:
-                    !capabilities.SupportsIndependentLightingControls && desired.Lighting.Value.Effect != LightingEffect.Off),
+                    !UsesIndependentLighting(capabilities, desired.Lighting.Value) && desired.Lighting.Value.Effect != LightingEffect.Off),
         };
     }
 
@@ -2876,10 +2876,14 @@ public sealed class ControlCoordinator
     private static bool IsLightingValid(LightingSettings value)
         => LightingSettingsValidation.IsWellFormed(value);
 
+    private static bool UsesIndependentLighting(DeviceCapabilities capabilities, LightingSettings value) =>
+        capabilities.SupportsIndependentLightingControls
+        && (value.IndependentControls is not null || !value.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0);
+
     private static bool LightingSupported(
         DeviceCapabilities capabilities,
         LightingSettings value) =>
-        capabilities.SupportsIndependentLightingControls
+        UsesIndependentLighting(capabilities, value)
             ? value.IndependentControls is null
                 || value.IndependentControls is { IsWellFormed: true } fields
                     && (!fields.Brightness.HasValue || capabilities.SupportsKeyboardBrightness)
@@ -2899,9 +2903,9 @@ public sealed class ControlCoordinator
                 || (!fields.Brightness.HasValue || confirmed.IndependentLighting?.Brightness == fields.Brightness)
                     && (fields.LogoMode is null || (confirmed.IndependentLighting?.LogoMode ?? confirmed.LogoLighting) == fields.LogoMode);
         }
-        LightingSettings desiredKeyboard = desired with { LogoMode = null };
+        LightingSettings desiredKeyboard = desired with { LogoMode = null, ControlsKeyboardEffect = false };
         LightingSettings? confirmedKeyboard = confirmed.Lighting is { } lighting
-            ? lighting with { LogoMode = null }
+            ? lighting with { LogoMode = null, ControlsKeyboardEffect = false }
             : null;
         return confirmedKeyboard == desiredKeyboard && LogoMatches(confirmed, desired);
     }

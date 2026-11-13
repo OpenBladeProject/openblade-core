@@ -1,0 +1,583 @@
+{
+  "schemaVersion": 1,
+  "scope": "Nine independent-control model families; official index and retained corpus, with embedded resource inspection for the positive RZ09-0301 updater.",
+  "physicalValidationPerformed": false,
+  "models": [
+    {
+      "model": "RZ09-0287",
+      "pid": "0234",
+      "indexUrl": "https://mysupport.razer.com/app/answers/detail/a_id/4166",
+      "indexSha256": "23cd734552e054c23caf144f17965e94308e8cef3ca8b47e91260dd2d4527b20",
+      "indexRows": [
+        {
+          "heading": "Blade Pro 17” (2019) | RZ09-0287x",
+          "entries": [
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5808",
+              "title": "Razer Blade Intel Firmware Updater: INTEL-SA-00459"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5208",
+              "title": "Razer Blade Intel Firmware Updater | INTEL-SA-00391"
+            },
+            {
+              "url": "https://dl.razerzone.com/drivers/Razer%20Blade%20Pro%2017%22%20%282019%29/Razer%20Blade%20Pro%2017%202019%20-%20BIOS%20Updater%20Version%201.04.pdf",
+              "title": "Razer Blade Pro 17\" 2019 - BIOS Updater v1.04 Guide"
+            },
+            {
+              "url": "https://rzr.to/em5018",
+              "title": "Razer Blade Pro 17\" 2019 - Realtek Card Reader Driver"
+            },
+            {
+              "url": "https://rzr.to/26jpc0",
+              "title": "Razer Blade Pro 17\" 2019 - Realtek LAN Driver"
+            },
+            {
+              "url": "https://rzr.to/wjpaiz",
+              "title": "Razer Blade Pro 17\" 2019 - NVIDIA Graphics Driver"
+            },
+            {
+              "url": "https://rzr.to/dfg0ml",
+              "title": "Razer Blade Pro 17\" 2019 - NVIDIA GeForce Experience App"
+            },
+            {
+              "url": "https://rzr.to/7a2rty",
+              "title": "Razer Blade Pro 17\" 2019 - Intel Wireless-AX 200 Bluetooth Driver"
+            },
+            {
+              "url": "https://rzr.to/ntsx2m",
+              "title": "Razer Blade Pro 17\" 2019 - Intel Wireless-AX 200 WLAN Driver"
+            },
+            {
+              "url": "https://rzr.to/6xla85",
+              "title": "Razer Blade Pro 17\" 2019 - Intel(R) UHD Graphics 630"
+            },
+            {
+              "url": "https://rzr.to/peyzk0",
+              "title": "Razer Blade Pro 17\" 2019 - Intel ME Driver"
+            },
+            {
+              "url": "https://rzr.to/f9ycml",
+              "title": "Razer Blade Pro 17” 2019 - Intel DPTF Driver"
+            },
+            {
+              "url": "https://rzr.to/63o4y0",
+              "title": "Razer Blade Pro 17\" 2019 - Intel Chipset Driver"
+            },
+            {
+              "url": "https://rzr.to/DkqNg",
+              "title": "Razer Blade Pro 17\" 2019 - Intel ME Firmware Updater Guide v1.1.1.2"
+            },
+            {
+              "url": "https://rzr.to/vfs8f5",
+              "title": "Razer Blade Pro 17\" 2019 - RazerUpdater_v1.1.1.2_D17-2-MEv120381430"
+            }
+          ]
+        }
+      ],
+      "keyboardMcuLocated": false,
+      "conclusion": "No exact keyboard MCU located in the reviewed official index and retained corpus; not an assertion of absence elsewhere."
+    },
+    {
+      "model": "RZ09-0301",
+      "pid": "0245",
+      "indexUrl": "https://mysupport.razer.com/app/answers/detail/a_id/4166",
+      "indexSha256": "23cd734552e054c23caf144f17965e94308e8cef3ca8b47e91260dd2d4527b20",
+      "indexRows": [
+        {
+          "heading": "Blade 15” Advanced (2019) | RZ09-0301x",
+          "entries": [
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5808",
+              "title": "Razer Blade Intel Firmware Updater: INTEL-SA-00459"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5208",
+              "title": "Razer Blade Intel Firmware Updater | INTEL-SA-00391"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/2803",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x BIOS Updates"
+            },
+            {
+              "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20Mid%202019/Razer%20Blade%2015%20%28Mid%202019%29%20Advanced%20-%20Keyboard%20Firmware%20Customer%20Updater.pdf",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - Keyboard Firmware Updater Guide v1.00.01.00"
+            },
+            {
+              "url": "https://dl.razerzone.com/master-guides/Blade/Intel%20ME%20Updater_v1.1.1.2.pdf",
+              "title": "Intel ME Firmware Updater Guide v1.1.1.2"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5795",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - NVIDIA GeForce Experience App"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5796",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - NVIDIA Graphics Driver"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5797",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - Intel UHD Graphics 630 Driver"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5816",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - Intel Bluetooth Driver"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5825",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - Intel Wireless-AX 200 WLAN Driver"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5827",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - Intel DPTF Driver"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5829",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - Intel Chipset Driver"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5831",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - NVIDIA GeForce Experience App (UHD-T)"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5832",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - NVIDIA Graphics Driver (UHD-T)"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5834",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - Intel UHD Graphics 630 Driver (UHD-T)"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5835",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - Intel WLAN Driver (UHD-T)"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5836",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - Intel Bluetooth Driver (UHD-T)"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5839",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - Intel ME Driver (UHD-T)"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5837",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - Intel DPTF Driver (UHD-T)"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5838",
+              "title": "Razer Blade 15 Advanced (2019) | RZ09-0301x - Intel Chipset Driver (UHD-T)"
+            }
+          ]
+        }
+      ],
+      "keyboardMcuLocated": true,
+      "conclusion": "Exact keyboard MCU reconstructed from updater resources; semantics reviewed separately."
+    },
+    {
+      "model": "RZ09-0300",
+      "pid": "0246",
+      "indexUrl": "https://mysupport.razer.com/app/answers/detail/a_id/4166",
+      "indexSha256": "23cd734552e054c23caf144f17965e94308e8cef3ca8b47e91260dd2d4527b20",
+      "indexRows": [
+        {
+          "heading": "Blade 15” Base (2019) | RZ09-03009",
+          "entries": [
+            {
+              "url": "https://dl.razerzone.com/manuals/UPDATER%20GUIDE.pdf",
+              "title": "Intel ME Firmware Updater Guide v1.1.1.2"
+            },
+            {
+              "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20%28Late%202019%29%20-%20GTX1660%20-%20Base%20Model/Razer%20Blade%2015%20Base%20GTX1660%20%282019%29%20BIOS%20Firmware%20Updater.pdf",
+              "title": "Razer Blade 15 Base GTX1660 (2019) BIOS Firmware Updater Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Dolby%20Atmos%20App%20Version%203.20301.311.0_v1.0_Install%20Guide.pdf",
+              "title": "Blade 15\" (Late 2019) - GTX1660 - Base Model Dolby Atmos App Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Dolby%20Atmos%20Driver%20Version%204.403.734.24_v1.0_Install%20Guide.pdf",
+              "title": "Blade 15\" (Late 2019) - GTX1660 - Base Model Dolby Atmos Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Realtek%20Audio%20Control%20App%20Version%201.3.180.0_v1.0_Install%20Guide.pdf",
+              "title": "Blade 15\" (Late 2019) - GTX1660 - Base Model Realtek Audio App Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Realtek%20Audio%20Driver%20Version%206.0.8710.1_v1.0_Install%20Guide.pdf",
+              "title": "Blade 15 (Late 2019) - GTX1660 - Base Model Realtek Audio Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Nvidia%20Control%20Panel%20App%20Version%208.1.953.0_v1.0_Install%20Guide.pdf",
+              "title": "Blade 15\" (Late 2019) - GTX1660 - Base Model NVIDIA Control Panel App Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Nvidia%20GeForce%20Experience%20App%20Version%203.18.0.102_v1.0_Install%20Guide.pdf",
+              "title": "Blade 15\" (Late 2019) - GTX1660 - Base Model NVIDIA GeForce Experience App Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Nvidia%20Graphics%20Driver%20Version%2025.21.14.2545_v1.0_Install%20Guide.pdf",
+              "title": "Blade 15\" (Late 2019) - GTX1660 - Base Model NVIDIA Graphics Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Thunderbolt%203%20Control%20Center%20App%20Version%201.0.13.0_v1.0_Install%20Guide.pdf",
+              "title": "Blade 15\" (Late 2019) - GTX1660 - Base Model Intel Thunderbolt 3 App Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Intel%20Display%20App%20Version%202.5.0.0_Install%20Guide.pdf",
+              "title": "Blade 15\" (Late 2019) - GTX1660 - Base Model Intel Display App Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Intel%20Display%20Driver%2025.20.100.06577_Install%20Guide.pdf",
+              "title": "Blade 15\" (Late 2019) - GTX1660 - Base Model Intel Display Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Realtek%20LAN%20Driver%20Version%2010.32.1206.2018.pdf",
+              "title": "Blade 15\" (Late 2019) - GTX1660 - Base Model Realtek LAN Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Intel%20Software%20guard%20extensions%20driver%20version%202.2.100.47975_Install%20Guide.pdf",
+              "title": "Blade 15 (Late 2019) - GTX1660 - Base Model Intel SGX Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Intel%20Bluetooth%20Driver%20Version%2020.120.0.3_v1.0_Install%20Guide.pdf",
+              "title": "Blade 15 (Late 2019) - GTX1660 - Base Model Intel(R) Wireless Bluetooth(R) Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Intel%20WIFI%20Driver%20Version%2020.120.1.1_Install%20Guide.pdf",
+              "title": "Blade 15 (Late 2019) - GTX1660 - Base Model WIFI - Intel WLAN Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Intel%20ME%20Driver%20Version%201914.12.0.1256_Install%20Guide.pdf",
+              "title": "Blade 15 (Late 2019) - GTX1660 - Base Model - Intel ME Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Intel_DPTF_Driver_Install%20Guide.pdf",
+              "title": "Blade 15\" (Late 2019) - GTX1660 - Base Model - Intel DPTF Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Intel%20Serial%20IO%20Driver%20Version%2030.100.1902.3_install%20Guide.pdf",
+              "title": "Blade 15 (Late 2019) - GTX1660 - Base Model - Intel Serial IO Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%2015%20Late%202019%20-%20GTX1660%20-%20Base%20Model/Intel%20Chipset%20Driver%20Version%2010.1.16.6_Install%20Guide.pdf",
+              "title": "Blade 15 (Late 2019) - GTX1660 - Base Model - Intel Chipset Driver Guide"
+            }
+          ]
+        },
+        {
+          "heading": "Blade 15” Base (2019) | RZ09-03006",
+          "entries": [
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5808",
+              "title": "Razer Blade Intel Firmware Updater: INTEL-SA-00459"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5208",
+              "title": "Razer Blade Intel Firmware Updater | INTEL-SA-00391"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/UPDATER%20GUIDE.pdf",
+              "title": "Razer Blade 15 Base (2019) - BIOS Updater Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/UPDATER%20GUIDE.pdf",
+              "title": "Razer Blade 15 Base (2019) - Intel ME Firmware Updater Guide"
+            }
+          ]
+        }
+      ],
+      "keyboardMcuLocated": false,
+      "conclusion": "No exact keyboard MCU located in the reviewed official index and retained corpus; not an assertion of absence elsewhere."
+    },
+    {
+      "model": "RZ09-0314",
+      "pid": "024C",
+      "indexUrl": "https://mysupport.razer.com/app/answers/detail/a_id/4166",
+      "indexSha256": "23cd734552e054c23caf144f17965e94308e8cef3ca8b47e91260dd2d4527b20",
+      "indexRows": [
+        {
+          "heading": "Blade Pro 17” (2019) | RZ09-0314x",
+          "entries": [
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5808",
+              "title": "Razer Blade Intel Firmware Updater: INTEL-SA-00459"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5208",
+              "title": "Razer Blade Intel Firmware Updater | INTEL-SA-00391"
+            },
+            {
+              "url": "https://dl.razerzone.com/drivers/Razer%20Blade%20Pro%2017%22%20%282019%29/Razer%20Blade%20Pro%2017%20%282019%29%20BIOS%20Updater%20Guide.pdf",
+              "title": "Razer Blade Pro 17\" (2019) BIOS Updater Guide v1.04"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Realtek%20LAN%20Driver%20Version%2010.35.510.2019_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Realtek LAN Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Realtek%20Cardreader%20Driver%20Version%2010.0.18362.21321_v1.0.pdf",
+              "title": "Razer Blade Pro 17 (Late 2019) Realtek Cardreader Driver Guide (Late 2019) Realtek Cardreader Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Intel%20Wireless%20AX%20200%20%28Wifi%29%20Driver%20Version%2021.20.0.5_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Intel Wireless AX 200 (Wifi) Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Intel%20Wireless%20AX%20200%20%28Bluetooth%29%20Driver%20Version%2021.20.0.5_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Intel Wireless AX 200 (Bluetooth) Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Intel%20Software%20Guard%20Extensions%20%28SGX%29%20Driver%20Version%202.3.100.49777_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Intel Software Guard Extensions (SGX) Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Intel%20Smart%20Sound%20Technology%20Driver%20Version%2010.23.00.2796_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Intel Smart Sound Technology Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Intel%20Serial%20IO%20Driver%20Version%2030.100.1915.1_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Intel Serial IO Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Intel%20ME%20Driver%20Version%201914.12.0.1256_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Intel ME Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Intel%20Dynamic%20Tuning%20Driver%20Version%208.6.10400.9366_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Intel Dynamic Tuning Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Intel%20Chipset%20Driver%20Version%2010.1.12.2_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Intel Chipset Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Thunderbolt%E2%84%A2%203%20Driver%20Version%201.41.648.5_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Thunderbolt 3 Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Thunderbolt%E2%84%A2%203%20Control%20Center%20App%20Version%201.0.16.0_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Thunderbolt 3 Control Center App Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Realtek%20Audio%20Driver%20Version%206.0.8761.1_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Realtek Audio Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Realtek%20Audio%20Control%20App%20Version%201.4.187.0_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Realtek Audio Control App Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Nvidia%20Control%20Panel%20App%20Version%208.1.951.0_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Nvidia Control Panel App Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/NVIDIA%20Graphics%20Driver%20Version%2026.21.14.3170_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) NVIDIA Graphics Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/NVIDIA%20GeForce%20Experience%20App%20Version%203.19.0.107_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) NVIDIA GeForce Experience App Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Intel%C2%AE%20UHD%20Graphics%20630%20Driver%20Version%2026.20.100.6911%20-4ID_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Intel UHD Graphics 630 Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Intel%C2%AE%20Graphics%20Control%20Panel%20App%20Version%203.1.0.0_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Intel Graphics Control Panel App Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Dolby%20Driver%20Version%204.704.329.46_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Dolby Atmos Driver Guide"
+            },
+            {
+              "url": "https://dl.razerzone.com/manuals/Razer%20Blade%20Pro%2017%20Late%202019/Dolby%20Atmos%20APP%20Version%203.20402.409.0_v1.0.pdf",
+              "title": "Razer Blade Pro 17\" (Late 2019) Dolby Atmos App Guide"
+            }
+          ]
+        }
+      ],
+      "keyboardMcuLocated": false,
+      "conclusion": "No exact keyboard MCU located in the reviewed official index and retained corpus; not an assertion of absence elsewhere."
+    },
+    {
+      "model": "RZ09-0330",
+      "pid": "0253",
+      "indexUrl": "https://mysupport.razer.com/app/answers/detail/a_id/4166",
+      "indexSha256": "23cd734552e054c23caf144f17965e94308e8cef3ca8b47e91260dd2d4527b20",
+      "indexRows": [
+        {
+          "heading": "Blade 15\" Advanced (2020) | RZ09-0330x",
+          "entries": [
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5808",
+              "title": "Razer Blade Intel Firmware Updater: INTEL-SA-00459"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5208",
+              "title": "Razer Blade Intel Firmware Updater | INTEL-SA-00391"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/2570",
+              "title": "Razer Blade 15 (2020) Firmware Updater | RZ09-0330x"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/2827",
+              "title": "Razer Blade 15 Advanced and Studio Edition (2020) EC Updates"
+            }
+          ]
+        },
+        {
+          "heading": "Blade 15” Studio Edition (2020) | RZ09-0330Q",
+          "entries": [
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5208",
+              "title": "Razer Blade Intel Firmware Updater | INTEL-SA-00391"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/2570",
+              "title": "Razer Blade 15 (2020) BIOS Updater | RZ09-0330Q"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/2827",
+              "title": "Razer Blade 15 Advanced and Studio Edition (2020) EC Updates"
+            }
+          ]
+        }
+      ],
+      "keyboardMcuLocated": false,
+      "conclusion": "No exact keyboard MCU located in the reviewed official index and retained corpus; not an assertion of absence elsewhere."
+    },
+    {
+      "model": "RZ09-0351",
+      "pid": "0268",
+      "indexUrl": "https://mysupport.razer.com/app/answers/detail/a_id/4166",
+      "indexSha256": "23cd734552e054c23caf144f17965e94308e8cef3ca8b47e91260dd2d4527b20",
+      "indexRows": [
+        {
+          "heading": "Blade 15\" (2020) | RZ09-03519",
+          "entries": [
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5808",
+              "title": "Razer Blade Intel Firmware Updater: INTEL-SA-00459"
+            },
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5208",
+              "title": "Razer Blade Intel Firmware Updater | INTEL-SA-00391"
+            }
+          ]
+        }
+      ],
+      "keyboardMcuLocated": false,
+      "conclusion": "No exact keyboard MCU located in the reviewed official index and retained corpus; not an assertion of absence elsewhere."
+    },
+    {
+      "model": "RZ09-0370",
+      "pid": "0270",
+      "indexUrl": "https://mysupport.razer.com/app/answers/detail/a_id/4166",
+      "indexSha256": "23cd734552e054c23caf144f17965e94308e8cef3ca8b47e91260dd2d4527b20",
+      "indexRows": [
+        {
+          "heading": "Blade 14\" (2021) | RZ09-0370x",
+          "entries": [
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5502",
+              "title": "Razer Blade 14 (2021) BIOS Updater | RZ09-0370"
+            }
+          ]
+        }
+      ],
+      "keyboardMcuLocated": false,
+      "conclusion": "No exact keyboard MCU located in the reviewed official index and retained corpus; not an assertion of absence elsewhere."
+    },
+    {
+      "model": "RZ09-0409",
+      "pid": "0276",
+      "indexUrl": "https://mysupport.razer.com/app/answers/detail/a_id/4166",
+      "indexSha256": "23cd734552e054c23caf144f17965e94308e8cef3ca8b47e91260dd2d4527b20",
+      "indexRows": [
+        {
+          "heading": "Blade 15” Advanced (2021) | RZ09-0409x",
+          "entries": [
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/5589",
+              "title": "Razer Blade 15 Advanced (2021) BIOS Updater | RZ09-0409"
+            }
+          ]
+        }
+      ],
+      "keyboardMcuLocated": false,
+      "conclusion": "No exact keyboard MCU located in the reviewed official index and retained corpus; not an assertion of absence elsewhere."
+    },
+    {
+      "model": "RZ09-0508",
+      "pid": "02B6",
+      "indexUrl": "https://mysupport.razer.com/app/answers/detail/a_id/4166",
+      "indexSha256": "23cd734552e054c23caf144f17965e94308e8cef3ca8b47e91260dd2d4527b20",
+      "indexRows": [
+        {
+          "heading": "Blade 14” (2024) | RZ09-0508x",
+          "entries": [
+            {
+              "url": "https://mysupport.razer.com/app/answers/detail/a_id/13930",
+              "title": "Razer Blade 14\" (2024) BIOS Updater | RZ09-0508x"
+            }
+          ]
+        }
+      ],
+      "keyboardMcuLocated": false,
+      "conclusion": "No exact keyboard MCU located in the reviewed official index and retained corpus; not an assertion of absence elsewhere."
+    }
+  ],
+  "rz090301Acquisition": {
+    "model": "RZ09-0301",
+    "pid": "0245",
+    "officialArticleUrl": "https://mysupport.razer.com/app/answers/detail/a_id/1967",
+    "exactArticleApplicability": [
+      "RZ09-03017",
+      "RZ09-03018"
+    ],
+    "updaterVersion": "1.00.01_r2",
+    "carrierUrl": "https://rzr.to/KkxlH",
+    "carrierBytes": 19370352,
+    "carrierSha256": "58F880CC46A64379131E7EDC3D1A8C63418DC2989179D3A514D6D79EA38E49E5",
+    "carrierSignatureObservation": "Valid Razer USA signature at acquisition; updater was not executed.",
+    "resourceName": "DeviceUpdater.resources",
+    "resourceSha256": "35C1FFB2FB3B7FD0F1947D761436F5667F6266C85E658E41D392DD74E3C35783",
+    "firmwareResourceMetadata": {
+      "VID": "1532",
+      "PID": "0245",
+      "DevFWVer": "1.00.01",
+      "FlashFWVer": "1.09.00",
+      "DevFWLineNum": 3673
+    },
+    "reconstructedIntelHexBytes": 165169,
+    "reconstructedIntelHexSha256": "33F5FAA3B57C60F5F0DCB2976066B792953C53D5840E0DD2D75BF60518F5941A",
+    "intelHexChecksumsVerified": true,
+    "decodedBytes": 58892,
+    "decodedSha256": "2B0073E46D07119027A44136F9CC9CA25D8EBD072418193E9A6F36C267720C98",
+    "vendorWaveReferences": [
+      {
+        "SHA256": "C29CE6F4E66E5658B9B7FC4443AE27057EFA4C06DF3A96F6C0E70B79E712DB85",
+        "Offset": 3903235,
+        "Excerpt": "WAVE_DIRECTION:\"LeftRight\",category:\"SYSTEM\"},T=[{id:1,mode:i.mNQ.Balanced_Mode,title:t.Y_1,content:t.OC,icon:",
+        "url": "https://apps.razer.com/synapse/products/581/ui/static/js/main.98cf2efe.js"
+      },
+      {
+        "SHA256": "F7A863CF5E95D94539ABD3F4C29076E1710901B5D02624EFDC0275265C651D7A",
+        "Offset": 25506,
+        "Excerpt": "WAVE_DIRECTION:\"LeftRight\",category:\"SYSTEM\",claimInterface:2},T=[{id:1,mode:r.mNQ.Balanced_Mode,title:n.Y_1,c",
+        "url": "https://apps.razer.com/synapse/products/581/mw/main.450b813b36b314f7abf0.js"
+      },
+      {
+        "SHA256": "5B11C5CD3E26BBD74DAC7A98413AB31315DAFEFAD5B783DBF0CF014E6A33D017",
+        "Offset": 1813456,
+        "Excerpt": "WAVE_DIRECTION.RIGHT:i=2;break;default:i=1}}return i}static getEffectRate(e,t){let i=0;switch(e){case n.CHROMA",
+        "url": "https://apps.razer.com/synapse/products/581/mw/6737.f49b9965ecd5cf011e43.js"
+      }
+    ],
+    "sourceProof": "2026-11-13-rz09-0301-lighting-mcu.json",
+    "independentReview": "2026-11-13-rz09-0301-lighting-counterreview.json",
+    "runtimeIdentity": "Fresh exact host and 1532:0245 admission remains required; configurable descriptor defaults do not attest installed bytes."
+  }
+}

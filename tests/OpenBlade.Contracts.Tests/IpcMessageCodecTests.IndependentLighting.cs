@@ -46,6 +46,7 @@ public sealed partial class IpcMessageCodecTests
         Assert.True(ReadFrozenProtocol51Frame(stream).Status!.WritesBlocked);
         string json = FramedJsonObject(stream).ToJsonString();
         Assert.DoesNotContain("independentControls", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("controlsKeyboardEffect", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("independentLighting", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("supportsIndependentLightingControls", json, StringComparison.OrdinalIgnoreCase);
     }
@@ -53,7 +54,7 @@ public sealed partial class IpcMessageCodecTests
     private static ServiceStatusSnapshot CreateIndependentStatus()
     {
         ServiceStatusSnapshot status = CreateStatus();
-        LightingSettings wrapper = status.Profiles.PluggedIn.Lighting with { IndependentControls = new(70, null) };
+        LightingSettings wrapper = status.Profiles.PluggedIn.Lighting with { IndependentControls = new(70, null), ControlsKeyboardEffect = true };
         return status with
         {
             Capabilities = status.Capabilities! with { SupportsIndependentLightingControls = true },

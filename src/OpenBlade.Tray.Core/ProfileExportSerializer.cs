@@ -12,7 +12,7 @@ public sealed record ProfileExportDocument(
 
 public static class ProfileExportSerializer
 {
-    public const int CurrentSchemaVersion = 16;
+    public const int CurrentSchemaVersion = 17;
     public const int MaximumFileSizeBytes = 1024 * 1024;
 
     private static readonly JsonSerializerOptions SerializerOptions =
@@ -85,7 +85,7 @@ public static class ProfileExportSerializer
             11 => DeserializeVersion11(json),
             12 => DeserializeVersion11(json),
             13 => DeserializeVersion11(json),
-            14 or 15 or 16 => DeserializeCurrentShape(json),
+            14 or 15 or 16 or 17 => DeserializeCurrentShape(json),
             > CurrentSchemaVersion => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} was created by a newer version of OpenBlade."),
             _ => throw new InvalidDataException(
@@ -125,6 +125,10 @@ public static class ProfileExportSerializer
             {
                 RejectLegacyIndependentLighting(document.RootElement);
             }
+            if (schemaVersion < 17)
+            {
+                RejectLegacyKeyboardEffectControl(document.RootElement);
+            }
             return schemaVersion;
         }
         catch (Exception exception) when (exception is
@@ -155,6 +159,29 @@ public static class ProfileExportSerializer
             foreach (JsonElement child in element.EnumerateArray())
             {
                 RejectLegacyIndependentLighting(child);
+            }
+        }
+    }
+
+    private static void RejectLegacyKeyboardEffectControl(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "controlsKeyboardEffect", StringComparison.OrdinalIgnoreCase)
+                    && property.Value.ValueKind != JsonValueKind.False)
+                {
+                    throw new InvalidDataException("Keyboard effect control requires profile export schema 17.");
+                }
+                RejectLegacyKeyboardEffectControl(property.Value);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement child in element.EnumerateArray())
+            {
+                RejectLegacyKeyboardEffectControl(child);
             }
         }
     }

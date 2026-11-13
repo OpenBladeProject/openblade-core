@@ -1788,6 +1788,12 @@ public partial class App
             ApplyExperimentalBatterySnapshotState(window, state == "blade18-battery-off");
             return;
         }
+        if (state is "rz0301-hybrid-lighting-unknown" or "rz0301-hybrid-lighting-static")
+        {
+            ApplyRz0301IndependentLightingSnapshotState(window, populated: true, paused: false,
+                hybrid: true, fullEffect: state == "rz0301-hybrid-lighting-static");
+            return;
+        }
         if (state is "rz0301-lighting-unknown" or "rz0301-lighting-populated" or "rz0301-lighting-paused")
         {
             ApplyRz0301IndependentLightingSnapshotState(window,
@@ -2229,19 +2235,29 @@ public partial class App
     }
 
     private static void ApplyRz0301IndependentLightingSnapshotState(
-        MainWindow window, bool populated, bool paused)
+        MainWindow window, bool populated, bool paused, bool hybrid = false, bool fullEffect = false)
     {
         // Synthetic observations only. Snapshot windows never start the service
         // client or native integration, and this fixture cannot access hardware.
         IndependentLightingSettings? controls = populated ? new(65, LogoLightingMode.Static) : null;
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
-        LightingSettings lighting = profiles.PluggedIn.Lighting with { IndependentControls = controls };
+        LightingSettings lighting = fullEffect
+            ? LightingSettingsFactory.Static(new RgbColor(40, 170, 240), 65) with
+            {
+                ControlsKeyboardEffect = true,
+                LogoMode = LogoLightingMode.Static,
+            }
+            : profiles.PluggedIn.Lighting with { IndependentControls = hybrid ? null : controls };
         profiles = profiles with { PluggedIn = profiles.PluggedIn with { Lighting = lighting } };
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
         {
             PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Balanced },
             FanModes = new HashSet<FanMode> { FanMode.Automatic },
-            LightingEffects = new HashSet<LightingEffect>(),
+            LightingEffects = hybrid
+                ? new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Static, LightingEffect.Spectrum, LightingEffect.Breathing, LightingEffect.Wave }
+                : new HashSet<LightingEffect>(),
+            SupportedBreathingColorModes = new HashSet<BreathingColorMode> { BreathingColorMode.Single, BreathingColorMode.Dual, BreathingColorMode.Random },
+            SupportsWaveDirectionSelection = hybrid,
             SupportsKeyboardBrightness = true,
             SupportsIndependentLightingControls = true,
             LogoLightingModes = new HashSet<LogoLightingMode>
@@ -2251,7 +2267,7 @@ public partial class App
             1, true, paused, [], null, [], "Source-reviewed RZ09-0301 independent lighting preview",
             capabilities,
             new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, null, null)
-            { IndependentLighting = controls }, profiles,
+            { IndependentLighting = controls, Lighting = fullEffect ? lighting with { ControlsKeyboardEffect = false } : null, LogoLighting = controls?.LogoMode }, profiles,
             new DesiredDeviceState(
                 new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
                 new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
@@ -2286,7 +2302,10 @@ public partial class App
         applyStatus.Invoke(window.ViewModel, [status, false]);
         if (window.ViewModel.LightingBrightnessValueText != (populated ? "65" : "—")
             || window.ViewModel.SelectedLogoLightingModeOption?.Mode != controls?.LogoMode
-            || window.ViewModel.IsKeyboardEffectSelectionVisible
+            || window.ViewModel.IsKeyboardEffectSelectionVisible != hybrid
+            || window.ViewModel.UsesIndependentLightingControls == fullEffect
+            || window.ViewModel.LightingShowsPrimaryColor != fullEffect
+            || window.ViewModel.IsKeyboardEffectUnconfirmed == fullEffect
             || window.ViewModel.IsLightingApplyPending || window.ViewModel.CanControlLighting == paused)
         {
             throw new InvalidOperationException("The independent lighting preview state is incomplete.");

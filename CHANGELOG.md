@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Expand source-reviewed lighting with independent brightness and available logo controls on 15 Blade profiles, MCU-backed keyboard effects on seven models, and software Fire on Blade 16 RZ09-0581. Existing field-only profiles keep their behavior. ([#960](https://github.com/OSSBlade/openblade-core/pull/960))
+
 ### Fixed
 
 - Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))

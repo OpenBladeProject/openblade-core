@@ -51,10 +51,19 @@
     "wave",
     "wheel",
     "ripple",
-    "ambientAwareness"
+    "ambientAwareness",
+    "fire"
   ],
   "supportedRefreshRates": [
     "thirtyHz",
     "sixtyHz"
+  ],
+  "softwareEffects": [
+    {
+      "effect": "fire",
+      "basis": "SoftwarePatternWithoutPhysicalValidation",
+      "physicalValidation": "Pending",
+      "implementation": "SoftwareFirePattern"
+    }
   ]
 }

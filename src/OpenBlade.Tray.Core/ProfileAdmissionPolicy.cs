@@ -67,6 +67,7 @@ internal static class ProfileAdmissionPolicy
             || (draft.Fans == current.Fans
                 && !capabilities.FanModes.Contains(draft.Fans)))
         && (capabilities.SupportsIndependentLightingControls
+            && (draft.Lighting.IndependentControls is not null || !draft.Lighting.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0)
             ? LightingSupported(draft.Lighting, capabilities)
                 && (draft.Lighting with { IndependentControls = null })
                     == (current.Lighting with { IndependentControls = null })
@@ -94,7 +95,8 @@ internal static class ProfileAdmissionPolicy
         LightingSettings lighting,
         DeviceCapabilities capabilities)
     {
-        if (capabilities.SupportsIndependentLightingControls)
+        if (capabilities.SupportsIndependentLightingControls
+            && (lighting.IndependentControls is not null || !lighting.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0))
         {
             return LightingSettingsValidation.IsWellFormed(lighting)
                 && (lighting.IndependentControls is null || lighting.IndependentControls.IsWellFormed)

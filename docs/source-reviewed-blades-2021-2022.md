@@ -1,5 +1,7 @@
 # Blade 2021/2022 source review
 
+The later [lighting review](source-reviewed-lighting.md) adds bounded lighting controls to these profiles. Lighting exclusions below describe the original admission.
+
 This review covers four exact Blade profiles. Pinned Synapse middleware and UI
 sources establish bounded thermal controls. The three 2022 profiles also have a
 reviewed battery charge-limiter contract. Physical validation is pending for

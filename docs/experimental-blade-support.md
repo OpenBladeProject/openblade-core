@@ -17,6 +17,26 @@ The seven additions use separately reviewed firmware contracts and have not
 been physically tested. They require the reviewed InpOut driver already
 installed; PawnIO supplies CPU temperatures only.
 
+## Lighting coverage
+
+| Models | Lighting controls |
+| --- | --- |
+| RZ09-0287, RZ09-0314, RZ09-0330, RZ09-0370, RZ09-0409, RZ09-0508 | Keyboard brightness; logo Off, Static and Breathing |
+| RZ09-0300, RZ09-0351 | Keyboard brightness |
+| RZ09-0301 | Brightness; keyboard Off, Static, Breathing, Spectrum and Wave; logo controls |
+| RZ09-0421 | Brightness; keyboard Off, Breathing, Spectrum and Wave |
+| RZ09-0423, RZ09-0427 | Brightness; keyboard Off, Static, Breathing, Spectrum and Wave; logo controls |
+| RZ09-0510 | Brightness; keyboard Off, Breathing and Wave; logo controls |
+| RZ09-0509, RZ09-0529 | Brightness; keyboard Off, Static, Breathing and Wave; logo controls |
+
+The seven MCU-backed additions support random, single-color and dual-color
+Breathing, and both Wave directions. RZ09-0301 also retains independent
+brightness/logo editing and existing field-only profiles. The added controls
+use exact-model source evidence; physical validation remains pending. Existing
+lighting backends retain their own admission. See the
+[lighting review](source-reviewed-lighting.md) for all 22 profiles, MCU-first
+and upstream evidence, frame/input mapping and remaining gaps.
+
 ## Available controls
 
 The earlier five models retain the following controls. The additional models
@@ -44,7 +64,7 @@ and Blade 16 (2024) additionally offer CPU Boost.
 
 All four offer Balanced on battery. The other listed presets require confirmed
 full-power AC, except Battery Saver on Blade 18 (2025), which is a battery mode.
-Fixed fan speeds, curves, HyperBoost, lighting, driver integrations and additional
+Fixed fan speeds, curves, HyperBoost, driver integrations and additional
 controls are not admitted on these four models. Their support does not inherit
 the earlier models' feature list. If fans are currently manual, choose Automatic
 and confirm the handback before changing presets or Custom levels: these profiles
@@ -67,7 +87,7 @@ updates; OpenBlade does not update firmware automatically.
 The three 2022 models also offer Balanced on battery; Silent and Custom require
 confirmed full-power AC. The 2021 model's admitted thermal controls require AC.
 These four models do not admit Turbo, Maximum Fans, fixed fans, fan curves,
-lighting, HyperBoost or driver/THX integrations. If the current fan mode is
+HyperBoost or driver/THX integrations. If the current fan mode is
 manual, explicitly select Automatic and confirm handback before changing
 performance. Physical validation remains pending. See the
 [2021/2022 source review](source-reviewed-blades-2021-2022.md) for exact identities
@@ -86,7 +106,7 @@ These three models offer Balanced with Automatic fans on battery. AC performance
 changes require a fresh successful adapter-power read and agreement with Windows
 power status. If fans are manual, explicitly select Automatic and confirm
 handback before changing performance. Fixed fans, curves, charge limits, Silent,
-Maximum Fans, lighting, HyperBoost and driver/THX integrations remain unavailable.
+Maximum Fans, HyperBoost and driver/THX integrations remain unavailable.
 The Advanced model's CPU Boost requires an EC prerequisite that OpenBlade cannot
 yet verify, so its CPU choices stop at High. Gaming on the 2019 Base selects the
 reviewed HID preset; it does not apply Synapse's additional native GPU overclock.
@@ -105,7 +125,7 @@ reviewed candidates that still lack an exact Windows identity.
 If fans are currently manual, explicitly select Automatic and confirm the handback
 before changing presets or Custom levels: these profiles cannot yet confirm and
 restore manual targets. Silent, Turbo, Maximum Fans, fixed fan targets, curves,
-charge controls, lighting, HyperBoost and driver/THX integrations are not admitted.
+charge controls, HyperBoost and driver/THX integrations are not admitted.
 Physical validation is pending. See the [exact-model review](source-reviewed-blades-issue-949.md)
 for source pins and limits for all three exact profiles.
 
@@ -142,7 +162,7 @@ Battery Saver and Battery Balanced on battery power.
   saved fan setting remains available when returning to an admitted preset.
   Blade 16 (2023) and Blade 14 (2023) preserve readable fixed fans when entering
   Custom or changing CPU/GPU levels.
-- The Blade 15 uses single-zone RGB lighting; Wave and logo controls are not
+- RZ09-0328 uses single-zone RGB lighting; Wave and logo controls are not
   supported. The newer models offer brightness, built-in effects, and logo
   lighting. Static RGB on both Blade 14 models, Blade 16 (2023), and Blade 18 (2023) is one color
   across the keyboard. Blade 18 also accepts per-key colors and sequence playback
@@ -163,7 +183,7 @@ Battery Saver and Battery Balanced on battery power.
   Reactive, Ripple and imported Keyboard .chroma sequences using its
   [firmware-derived key map](blade14-keymap.md). Regional keys whose addresses
   differ between firmware layouts remain unavailable.
-  The Blade 15 offers random or single-color Breathing. Additional Synapse
+  RZ09-0328 offers random or single-color Breathing. Additional Synapse
   effects observed for the Blade 18 are recorded in diagnostics. Blade 18 also
   offers experimental Fire, clockwise or counterclockwise Wheel, and Starlight.
   Fire repeats a short recorded sample; Wheel plays a recorded cycle. Starlight

@@ -2908,18 +2908,80 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(LogoLightingMode.Static, vm.LogoLightingModeEditor);
     }
 
-    private static ServiceStatusSnapshot CreateIndependentLightingStatus(byte? brightness, LogoLightingMode? logo)
+    [Fact]
+    public async Task HybridLighting_UnknownEffectRetainsFieldOnlyEditingAndOffersExplicitEffects()
+    {
+        var client = new PresentationClient();
+        await using var vm = new MainViewModel(client, new ImmediateDispatcher());
+        await vm.StartAsync();
+        await client.PublishAndWaitAsync(CreateIndependentLightingStatus(65, LogoLightingMode.Static, hybrid: true));
+        Assert.True(vm.UsesIndependentLightingControls);
+        Assert.True(vm.IsKeyboardEffectSelectionVisible);
+        Assert.True(vm.IsKeyboardEffectUnconfirmed);
+        Assert.Null(vm.SelectedLightingEffectOption);
+        Assert.NotEmpty(vm.AvailableLightingEffectOptions);
+        vm.LightingBrightnessEditor = 42;
+        LightingSettings draft = vm.LightingDraft;
+        await Assert.IsType<AsyncRelayCommand>(vm.SetLightingCommand).ExecuteAsync(draft);
+        Assert.Equal(new IndependentLightingSettings(42, null), client.IndependentLightingRequest?.Value);
+        Assert.Null(client.ClassicLightingRequest);
+        await Assert.IsType<AsyncRelayCommand>(vm.SaveLightingProfileDraftCommand).ExecuteAsync(null);
+        Assert.Equal(draft, client.SavedProfiles?.PluggedIn.Lighting);
+    }
+
+    [Fact]
+    public async Task HybridLighting_ExplicitEffectSelectionReplacesIndependentIntent()
+    {
+        var client = new PresentationClient();
+        await using var vm = new MainViewModel(client, new ImmediateDispatcher());
+        await vm.StartAsync();
+        await client.PublishAndWaitAsync(CreateIndependentLightingStatus(65, LogoLightingMode.Static, hybrid: true));
+        vm.LightingBrightnessEditor = 42;
+        var queued = new LightingCommitRequest(vm.LightingDraft, null) { EditorGeneration = vm.LightingCommitGeneration };
+        vm.SelectedLightingEffectOption = vm.AvailableLightingEffectOptions.Single(option => option.Effect == LightingEffect.Spectrum);
+        Assert.False(vm.IsLightingCommitCurrent(queued));
+        Assert.False(vm.UsesIndependentLightingControls);
+        Assert.True(vm.LightingDraft.ControlsKeyboardEffect);
+        Assert.False(vm.IsKeyboardEffectUnconfirmed);
+        Assert.Null(vm.LightingDraft.IndependentControls);
+        Assert.True(vm.IsLightingApplyPending);
+        Assert.True(vm.SetLightingCommand.CanExecute(vm.LightingDraft));
+        await Assert.IsType<AsyncRelayCommand>(vm.SetLightingCommand).ExecuteAsync(vm.LightingDraft);
+        Assert.Equal(LightingEffect.Spectrum, client.ClassicLightingRequest?.Value.Effect);
+        Assert.Null(client.IndependentLightingRequest);
+        Assert.False(vm.IsLightingApplyPending);
+    }
+
+    [Fact]
+    public async Task HybridLighting_ExplicitQuickChoiceOptsInWithoutReusingIndependentFields()
+    {
+        var client = new PresentationClient();
+        await using var vm = new MainViewModel(client, new ImmediateDispatcher());
+        await vm.StartAsync();
+        await client.PublishAndWaitAsync(CreateIndependentLightingStatus(65, LogoLightingMode.Static, hybrid: true));
+        LightingSettings choice = vm.AvailableLightingSettings.Single(value => value.Effect == LightingEffect.Spectrum);
+        Assert.True(choice.ControlsKeyboardEffect);
+        Assert.Null(choice.IndependentControls);
+        Assert.True(vm.SetLightingCommand.CanExecute(choice));
+        await Assert.IsType<AsyncRelayCommand>(vm.SetLightingCommand).ExecuteAsync(choice);
+        Assert.Equal(choice, client.ClassicLightingRequest?.Value);
+        Assert.Null(client.IndependentLightingRequest);
+    }
+
+    private static ServiceStatusSnapshot CreateIndependentLightingStatus(byte? brightness, LogoLightingMode? logo, bool hybrid = false)
     {
         ServiceStatusSnapshot status = CreateStatus(true, false, DeviceCapabilities.Unavailable() with
         {
             SupportsIndependentLightingControls = true,
             SupportsKeyboardBrightness = true,
+            LightingEffects = hybrid ? new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Static, LightingEffect.Spectrum } : new HashSet<LightingEffect>(),
             LogoLightingModes = new HashSet<LogoLightingMode> { LogoLightingMode.Off, LogoLightingMode.Static, LogoLightingMode.Breathing },
         });
         return status with
         {
             ConfirmedState = status.ConfirmedState! with
             {
+                Lighting = hybrid ? null : status.ConfirmedState.Lighting,
                 IndependentLighting = brightness.HasValue || logo.HasValue ? new(brightness, logo) : null,
             },
         };

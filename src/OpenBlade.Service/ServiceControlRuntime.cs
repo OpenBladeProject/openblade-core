@@ -1817,7 +1817,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 }
                 RefreshBatterySaverFanStopReadInterest();
                 LightingSettings updatedLightingIntent = ResolveAutomationDesired(profileResolutionState).Lighting.Value;
-                if (GetStatus().Capabilities?.SupportsIndependentLightingControls == true
+                if (UsesIndependentLightingIntent(GetStatus().Capabilities, updatedLightingIntent)
                     ? updatedLightingIntent.IndependentControls != priorLightingIntent.IndependentControls
                     : updatedLightingIntent != priorLightingIntent)
                 {
@@ -2869,7 +2869,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         ManualOverride<LightingSettings>? value,
         CancellationToken token)
     {
-        if (value is not null && GetStatus().Capabilities?.SupportsIndependentLightingControls == true)
+        if (value is not null && GetStatus().Capabilities is
+            { SupportsIndependentLightingControls: true, LightingEffects.Count: 0 })
         {
             return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Blocked,
                 "Keyboard effect requests are unavailable; use independent brightness and logo controls."));
@@ -4770,9 +4771,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
             bool isSuppressed = lightingSuppressions.Count > 0;
 
-            if (GetStatus().Capabilities?.SupportsIndependentLightingControls == true
-                && ResolveAutomationDesired(current.ConfirmedState ?? UnknownConfirmedState)
-                    .Lighting.Value.IndependentControls?.Brightness is null)
+            LightingSettings suppressionIntent = ResolveAutomationDesired(current.ConfirmedState ?? UnknownConfirmedState).Lighting.Value;
+            if (UsesIndependentLightingIntent(GetStatus().Capabilities, suppressionIntent)
+                && suppressionIntent.IndependentControls?.Brightness is null)
             {
                 lightingSuppressionWritePending = false;
                 const string unmanaged = "Keyboard brightness is not managed by this profile; its lighting power policy was recorded.";
@@ -13456,8 +13457,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         pendingLightingRestore = null;
         if (requested.Effect == LightingEffect.Off
             && current.ConfirmedState?.Lighting is { } confirmedLighting
-            && LightingSettingsFactory.NormalizeLegacyOff(confirmedLighting)
-                == LightingSettingsFactory.NormalizeLegacyOff(requested))
+            && LightingSettingsFactory.NormalizeLegacyOff(confirmedLighting with { ControlsKeyboardEffect = false })
+                == LightingSettingsFactory.NormalizeLegacyOff(requested with { ControlsKeyboardEffect = false }))
         {
             await TryPersistLastKnownLightingAsync(requested, cancellationToken)
                 .ConfigureAwait(false);
@@ -13521,8 +13522,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 : state =>
                 {
                     if (state.Lighting is { Effect: not LightingEffect.Off } observed
-                        && LightingSettingsFactory.NormalizeLegacyOff(observed)
-                            != LightingSettingsFactory.NormalizeLegacyOff(requested))
+                        && LightingSettingsFactory.NormalizeLegacyOff(observed with { ControlsKeyboardEffect = false })
+                            != LightingSettingsFactory.NormalizeLegacyOff(requested with { ControlsKeyboardEffect = false }))
                     {
                         recoveryLightingChanged = true;
                         return "Lighting changed after crash-recovery classification; the saved effect was not restored.";
@@ -18612,12 +18613,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             Lighting = desired.Lighting with
             {
-                Value = capabilities?.SupportsIndependentLightingControls == true
+                Value = UsesIndependentLightingIntent(capabilities, desired.Lighting.Value)
                     ? desired.Lighting.Value with
                     {
                         IndependentControls = SuppressIndependentBrightness(desired.Lighting.Value.IndependentControls, suppressed: true),
                     }
-                    : LightingSettingsFactory.Off(),
+                    : LightingSettingsFactory.Off() with { ControlsKeyboardEffect = desired.Lighting.Value.ControlsKeyboardEffect },
             },
         };
     }
@@ -18706,7 +18707,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
 
         if (confirmed?.Lighting is { Effect: not LightingEffect.Off } observed
-            && (observed with { LogoMode = null }) != (desired with { LogoMode = null }))
+            && (observed with { LogoMode = null, ControlsKeyboardEffect = false })
+                != (desired with { LogoMode = null, ControlsKeyboardEffect = false }))
         {
             return true;
         }
@@ -20995,11 +20997,15 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         });
     }
 
+    private static bool UsesIndependentLightingIntent(DeviceCapabilities? capabilities, LightingSettings lighting) =>
+        capabilities?.SupportsIndependentLightingControls == true
+        && (lighting.IndependentControls is not null || !lighting.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0);
+
     private async Task PersistLastKnownLightingAsync(
         LightingSettings lighting,
         CancellationToken cancellationToken)
     {
-        if (GetStatus().Capabilities?.SupportsIndependentLightingControls == true)
+        if (UsesIndependentLightingIntent(GetStatus().Capabilities, lighting))
         {
             return; // An independent field observation cannot confirm a keyboard effect.
         }
