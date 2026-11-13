@@ -28,6 +28,8 @@ struct MemoryFiles {
     fail: Arc<AtomicBool>,
     fail_terminal: Arc<AtomicBool>,
     fail_prepared: Arc<AtomicU8>,
+    fail_first_intent: Arc<AtomicU8>,
+    first_intent_bytes: Arc<StdMutex<Option<Vec<u8>>>>,
     prepared_attempts: Arc<AtomicUsize>,
     submission_intent_attempts: Arc<AtomicUsize>,
     prepared_bytes: Arc<StdMutex<Option<Vec<u8>>>>,
@@ -90,6 +92,37 @@ impl Files for MemoryFiles {
             if progress == Some(1) {
                 self.submission_intent_attempts
                     .fetch_add(1, Ordering::AcqRel);
+                let cut = self.fail_first_intent.load(Ordering::Acquire);
+                if cut != 0 {
+                    let mut files = self.bytes.lock().unwrap();
+                    let prior = files.get(name).cloned().unwrap();
+                    assert_eq!(Some(prior.as_slice()), expected);
+                    assert!(bytes.starts_with(&prior));
+                    assert!(!files.contains_key("thermal-mutation.journal.pending"));
+                    *self.first_intent_prior.lock().unwrap() = Some(prior.clone());
+                    *self.first_intent_bytes.lock().unwrap() = Some(bytes.to_vec());
+                    self.first_intent_attempts.fetch_add(1, Ordering::AcqRel);
+                    match cut {
+                        1 => {
+                            let partial = prior.len() + (bytes.len() - prior.len()) / 2;
+                            files.insert(
+                                "thermal-mutation.journal.pending".into(),
+                                bytes[..partial].to_vec(),
+                            );
+                        }
+                        2 => {
+                            files.insert("thermal-mutation.journal.pending".into(), bytes.to_vec());
+                        }
+                        3 => {
+                            files.insert(name.into(), bytes.to_vec());
+                        } // published, final sync/readback failed
+                        _ => panic!("unknown FirstIntent I/O cut"),
+                    }
+                    return Err(io::Error::new(
+                        io::ErrorKind::StorageFull,
+                        "injected ordinary FirstIntent persistence failure",
+                    ));
+                }
             }
             if progress == Some(0) {
                 self.prepared_attempts.fetch_add(1, Ordering::AcqRel);
@@ -1681,7 +1714,11 @@ async fn edge_terminal_settlement_failure_recovers_reads_without_retry_or_writes
             flag.store(true, Ordering::Release);
         }));
     }
-    assert_eq!(rig.set(91, value(1, 1)).await["result"]["status"], 2);
+    let result = rig.set(91, value(1, 1)).await;
+    assert_eq!(result["result"]["status"], 2);
+    let message = result["result"]["message"].as_str().unwrap();
+    assert!(message.contains("no mutation submission intent was reached"));
+    assert!(!message.contains("submission-intent journal publication could not be confirmed"));
     assert!(retired.load(Ordering::Acquire));
     assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 1);
     let prepared = rig.files.read("thermal-mutation.journal").unwrap();
@@ -3221,4 +3258,121 @@ async fn correction_first_prepared_protection_failure_remains_fatal() {
     assert_eq!(rig.port.state.lock().unwrap().writes, 0);
     // A fatal fence is retained; only the actual local reader is drained.
     let _ = rig.reader.stop().await;
+}
+
+#[tokio::test]
+async fn correction_first_intent_io_failure_retains_uncertainty_and_all_evidence() {
+    for cut in 1..=3 {
+        let files = MemoryFiles::default();
+        files.fail_first_intent.store(cut, Ordering::Release);
+        let rig = Rig::new(files);
+        let retired = Arc::new(AtomicBool::new(false));
+        let flag = retired.clone();
+        rig.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+            flag.store(true, Ordering::Release);
+        }));
+        let result = rig.set(91, value(1, 1)).await;
+        assert!(retired.load(Ordering::Acquire));
+        assert_eq!(result["result"]["status"], 2);
+        let message = result["result"]["message"].as_str().unwrap();
+        assert!(message.contains("submission-intent journal publication could not be confirmed"));
+        assert!(
+            message.contains("Read-only reconciliation")
+                && message.contains("no mutation will be replayed")
+        );
+        assert!(!message.contains("no mutation submission intent was reached"));
+        let prepared = rig
+            .files
+            .first_intent_prior
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap();
+        let attempted = rig
+            .files
+            .first_intent_bytes
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap();
+        let rows: Vec<Value> = attempted
+            .split(|b| *b == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice(line).unwrap())
+            .collect();
+        assert_eq!(
+            rows.iter()
+                .map(|row| row["progress"].as_u64().unwrap())
+                .collect::<Vec<_>>(),
+            [0, 1]
+        );
+        assert!(
+            rows.iter()
+                .all(|row| row["request"] == "aaaaaaaa-bbbb-cccc-dddd-000000000091")
+        );
+        assert_eq!(
+            rig.files.read("thermal-mutation.journal").unwrap(),
+            Some(if cut == 3 {
+                attempted.clone()
+            } else {
+                prepared.clone()
+            })
+        );
+        let pending = match cut {
+            1 => {
+                Some(attempted[..prepared.len() + (attempted.len() - prepared.len()) / 2].to_vec())
+            }
+            2 => Some(attempted.clone()),
+            _ => None,
+        };
+        assert_eq!(
+            rig.files.read("thermal-mutation.journal.pending").unwrap(),
+            pending
+        );
+        let retained = rig.files.bytes.lock().unwrap().clone();
+        let status = rig.get().await;
+        assert_eq!(status["status"]["writesBlocked"], true);
+        let observed = fresh_observe(&rig).await;
+        assert_eq!(observed["success"], true);
+        assert_eq!(observed["status"]["writesBlocked"], true);
+        let later = rig.set(92, value(2, 1)).await;
+        assert_eq!(later["result"]["status"], 2);
+        assert_eq!(later["result"]["message"], result["result"]["message"]);
+        assert_eq!(*rig.files.bytes.lock().unwrap(), retained);
+        let reopened = Storage::open(Box::new(rig.files.clone()), SID);
+        if cut == 3 {
+            let storage = reopened.unwrap();
+            assert_eq!(storage.progress(), Some(1));
+            assert!(storage.pending());
+            assert!(
+                storage
+                    .pending_reason()
+                    .unwrap()
+                    .contains("may have been submitted")
+            );
+        } else {
+            assert!(
+                reopened.is_err(),
+                "remaining pending file must refuse reopen"
+            );
+        }
+        assert_eq!(rig.files.prepared_attempts.load(Ordering::Acquire), 1);
+        assert_eq!(
+            rig.files.submission_intent_attempts.load(Ordering::Acquire),
+            1
+        );
+        assert_eq!(rig.files.first_intent_attempts.load(Ordering::Acquire), 1);
+        assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 0);
+        assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+        rig.stop().await;
+        assert_eq!(*rig.files.bytes.lock().unwrap(), retained);
+        assert_eq!(
+            rig.files.submission_intent_attempts.load(Ordering::Acquire),
+            1
+        );
+        assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 0);
+        let port = rig.port.state.lock().unwrap();
+        assert_eq!(port.writes, 0);
+        assert_eq!(port.opened, port.retired);
+    }
 }

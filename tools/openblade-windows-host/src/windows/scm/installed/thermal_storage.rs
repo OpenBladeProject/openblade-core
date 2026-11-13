@@ -213,6 +213,7 @@ struct State {
     configuration_failed: bool,
     configuration_changed: bool,
     preparation_failed: bool,
+    intent_append_failed: bool,
     bytes: Option<Vec<u8>>,
     document: Value,
     journal: Option<Vec<u8>>,
@@ -317,6 +318,7 @@ impl Storage {
                 configuration_failed: false,
                 configuration_changed: false,
                 preparation_failed: false,
+                intent_append_failed: false,
                 bytes,
                 document,
                 journal,
@@ -463,6 +465,8 @@ impl Storage {
                 .is_some_and(|entry| entry.progress >= 1 && !settled(entry.progress))
             {
                 "A thermal command may have been submitted. Read-only reconciliation is required and no mutation will be replayed."
+            } else if s.intent_append_failed {
+                "Thermal submission-intent journal publication could not be confirmed. Pending or published journal evidence is retained. Read-only reconciliation is required and no mutation will be replayed."
             } else if s.preparation_failed {
                 "Thermal journal preparation could not be confirmed; storage reconciliation is required. The failed preparation reached no submission intent or thermal setter. Pending or published journal evidence is retained."
             } else if s.last.as_ref().is_some_and(|entry| entry.progress == 0) {
@@ -630,6 +634,10 @@ impl Storage {
             // Staging or publication may already have left durable bytes.
             // Existing unresolved history cannot reach this append.
             s.preparation_failed = progress == Progress::Prepared;
+            // An unsuccessful intent append may already be pending or published.
+            // Cached Prepared is not proof that no intent evidence exists.
+            s.intent_append_failed =
+                matches!(progress, Progress::FirstIntent | Progress::SecondIntent);
             return Err(error);
         }
         s.journal = Some(bytes);
