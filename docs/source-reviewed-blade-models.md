@@ -1,6 +1,6 @@
 # Source-reviewed additional Blade models
 
-OpenBlade officially supports the eleven exact-model profiles below using reviewed
+OpenBlade officially supports the additional exact-model profiles below using reviewed
 Synapse definitions. Physical validation is a separate evidence status and remains
 pending for these implementations. Source review does not establish measured fan
 behavior, successful restoration on a laptop, or another model's capabilities.
@@ -102,11 +102,26 @@ manual target restoration is unestablished. The 2019 Base's HID Gaming preset
 does not grant the vendor native-library GPU overclock side effect.
 
 Fixed fans, curves, charge limits, Maximum Fans, HyperBoost, lighting and driver
-integration are not admitted. Physical validation remains pending. RZ09-0313,
-RZ09-0314 and RZ09-0329 were reviewed as candidates but lack a pinned exact Windows
+integration are not admitted. Physical validation remains pending. RZ09-0313
+and RZ09-0329 were reviewed as candidates but lack a pinned exact Windows
 product name and remain excluded. No sibling or Studio identity is inferred.
 See the [2019/2020 source review](source-reviewed-blades-2019-2020.md) and its
 [admission manifest](../evidence/source-reviewed-blades/2026-11-07-models-2019-2020.json).
+
+## Issue 949 and the 2019 Blade Pro 17
+
+| Laptop | Exact Windows product name | USB identity | Synapse product | Initial controls |
+| --- | --- | --- | --- | --- |
+| Blade 15 Advanced (Mid 2021), RZ09-0409 | `Blade 15 Advanced Model (Mid 2021) - RZ09-0409` | `1532:0276` | 630 | Full-power AC Balanced/Custom, CPU 0–3 including Boost, GPU 0–2, Automatic fans |
+| Blade Pro 17 (2019), RZ09-0287 | `Blade Pro 17 (2019)` | `1532:0234` | 564 | Full-power AC Balanced/Custom, CPU/GPU 0–2, Automatic fans |
+| Blade Pro 17 (Late 2019), RZ09-0314 | `Blade Pro 17 (Fall 2019)` | `1532:024C` | 588 | Full-power AC Balanced/Custom, CPU/GPU 0–2, Automatic fans |
+
+All three use thermal query/write profile 1 and raw modes 0 (Balanced) and 4
+(Custom). Battery Automatic handback preserves Balanced raw 0. Their initial
+controls do not include charge limits, manual fan targets, lighting, Maximum
+Fans, HyperBoost or driver/audio integration. Physical validation is pending.
+See the [exact-model review](source-reviewed-blades-issue-949.md) for source pins,
+identity evidence, including the primary report for the late-2019 variant.
 
 ## Admission and recovery
 

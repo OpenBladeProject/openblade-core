@@ -80,11 +80,12 @@ public sealed partial class ExperimentalBladeLightingTests
         await using var port = AnimatedPort(session, clock, policy);
         await port.SetLightingAsync(SpatialSetting(LightingEffect.Reactive), CancellationToken.None);
         await clock.WaitForTimerCountAsync(1);
+        Assert.True(Blade18KeyboardLightingLayout.TryMapScanCode(0x10, false, out byte slot));
+        await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(slot), CancellationToken.None);
         clock.Advance(TimeSpan.FromMilliseconds(50));
         await WaitUntilAsync(() => port.OwnershipState == LightingRendererOwnershipState.Faulted);
         Assert.False(policy.WritesAllowed);
         int before = session.Commands.Count;
-        Assert.True(Blade18KeyboardLightingLayout.TryMapScanCode(0x10, false, out byte slot));
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
             port.PulseReactiveKeyAsync(new ReactiveKeyPulse(slot), CancellationToken.None));
         clock.Advance(TimeSpan.FromSeconds(10));

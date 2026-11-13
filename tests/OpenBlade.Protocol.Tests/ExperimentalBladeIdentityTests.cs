@@ -84,6 +84,9 @@ public sealed class ExperimentalBladeIdentityTests
     }
 
     [Theory]
+    [InlineData(0x0234, "Blade Pro 17 (2019)")]
+    [InlineData(0x024C, "Blade Pro 17 (Fall 2019)")]
+    [InlineData(0x0276, "Blade 15 Advanced Model (Mid 2021) - RZ09-0409")]
     [InlineData(0x0270, "Blade 14 - RZ09-0370")]
     [InlineData(0x028C, "Blade 14 (2022) - RZ09-0427")]
     [InlineData(0x028A, "Blade 15 (2022) - RZ09-0421")]

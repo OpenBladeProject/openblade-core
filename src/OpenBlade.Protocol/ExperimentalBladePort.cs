@@ -187,8 +187,12 @@ internal sealed partial class ExperimentalBladePort(
                 ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.StartupAnimation } : [],
             HostManagedLaptopControls = enabled && model.ProductId == 0x02A0
                 ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.GamingMode, OneShotLaptopControl.FunctionKeyPrimary } : [],
-            KeyboardLightingLayoutId = enabled && model.ProductId == 0x02A0
-                ? KeyboardLightingLayoutIds.Rz09_0484 : null,
+            KeyboardLightingLayoutId = !enabled ? null : model.ProductId switch
+            {
+                0x02A0 => KeyboardLightingLayoutIds.Rz09_0484,
+                0x02C5 => KeyboardLightingLayoutIds.Rz09_0530,
+                _ => null,
+            },
             ObservedLightingEffects = CreateObservedExperimentalLightingEffects(model),
             ThxAudio = model.ProductId == 0x02C5
                 ? new ThxAudioCapabilities(
@@ -681,7 +685,8 @@ internal sealed partial class ExperimentalBladePort(
         byte commandId, byte[] arguments, bool write, CancellationToken cancellationToken,
         bool variableResponse = false, Func<ReadOnlyMemory<byte>, bool>? payloadValidator = null,
         bool requireEcho = true, bool recordAcknowledgedSubmission = true,
-        bool requireAdequateAdapter = false, Func<bool>? writeAdmission = null)
+        bool requireAdequateAdapter = false, Func<bool>? writeAdmission = null,
+        byte? fixedTransactionId = null)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
@@ -771,7 +776,10 @@ internal sealed partial class ExperimentalBladePort(
         try
         {
             result = await session.ExecuteAsync(command,
-                AllocateTransaction,
+                // Fixed vendor framing applies only to the continuous production
+                // session. Developer runs retain their finite, unique-ID allocator.
+                queryRecordingEnabled && fixedTransactionId is { } fixedId
+                    ? () => TransactionIdAssignment.Valid(fixedId) : AllocateTransaction,
                 TimeSpan.FromSeconds(3), cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (write)

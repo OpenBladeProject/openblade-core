@@ -26,6 +26,7 @@ internal sealed partial class ExperimentalBladePort
 
     public bool RequiresLightingRendererOwnership(LightingSettings settings) =>
         SupportsBlade18Animation(model) && IsBlade18Animation(settings)
+        || SupportsExperimentalGridAnimation(model) && ExperimentalGridLightingEffect.IsSupported(settings)
         || settings.Effect is LightingEffect.AmbientAwareness or LightingEffect.AudioMeter
         || settings.Effect == LightingEffect.Static && SupportsUniformFrame(model);
 
@@ -55,11 +56,11 @@ internal sealed partial class ExperimentalBladePort
         {
             effects.Add(LightingEffect.Wave);
         }
-        if (model.ProductId is 0x029F or 0x0255 or 0x02A0)
+        if (SupportsUniformFrame(model) || model.ProductId == 0x0255)
         {
             effects.Add(LightingEffect.Static);
         }
-        if (model.ProductId is 0x029F or 0x02A0)
+        if (SupportsUniformFrame(model))
         {
             effects.Add(LightingEffect.AmbientAwareness);
             effects.Add(LightingEffect.AudioMeter);
@@ -74,12 +75,36 @@ internal sealed partial class ExperimentalBladePort
             effects.Add(LightingEffect.Sequence);
             effects.Add(LightingEffect.Wheel);
         }
+        if (SupportsExperimentalGridAnimation(model))
+        {
+            effects.UnionWith([LightingEffect.Fire, LightingEffect.Wheel,
+                LightingEffect.Starlight, LightingEffect.Tidal]);
+        }
+        if (model.ProductId == 0x02C5)
+        {
+            // PI4110's independently reviewed HID-to-row/column maps, using
+            // only bindings common to every firmware-selected regional table.
+            effects.UnionWith([LightingEffect.Reactive, LightingEffect.Ripple, LightingEffect.Sequence]);
+        }
         return effects;
     }
 
     internal static IReadOnlySet<LightingEffect> CreateObservedExperimentalLightingEffects(
         ExperimentalBladeModel model)
     {
+        if (SupportsExperimentalGridAnimation(model))
+        {
+            // Read-only discovery from each exact OpenRazer class's METHODS.
+            // This newly allocated set is used only in ObservedLightingEffects.
+            // Writable admission is separate: 02C5 uses its reviewed MCU map,
+            // while the two older models keep these key effects observed-only.
+            return new HashSet<LightingEffect>
+            {
+                LightingEffect.Off, LightingEffect.Static, LightingEffect.Spectrum,
+                LightingEffect.Breathing, LightingEffect.Wave, LightingEffect.Starlight,
+                LightingEffect.Reactive, LightingEffect.Ripple,
+            };
+        }
         if (model.ProductId == 0x0245)
         {
             // Exact581 UI catalog, discovery only. The separate writable-effects
@@ -92,18 +117,18 @@ internal sealed partial class ExperimentalBladePort
                 LightingEffect.Static, LightingEffect.Wave, LightingEffect.Wheel, LightingEffect.Tidal,
             };
         }
-        var effects = new HashSet<LightingEffect>(CreateExperimentalLightingEffects(model, enabled: true));
-        effects.Remove(LightingEffect.Sequence);
+        var observedEffects = new HashSet<LightingEffect>(CreateExperimentalLightingEffects(model, enabled: true));
+        observedEffects.Remove(LightingEffect.Sequence);
         if (model.ProductId == 0x02A0)
         {
             // Product 672's pinned quick-effect catalog is discovery evidence,
             // not admission for spatial frames or unimplemented firmware commands.
-            effects.UnionWith([
+            observedEffects.UnionWith([
                 LightingEffect.AmbientAwareness, LightingEffect.AudioMeter,
                 LightingEffect.Fire, LightingEffect.Reactive, LightingEffect.Ripple,
                 LightingEffect.Starlight, LightingEffect.Wheel, LightingEffect.Tidal]);
         }
-        return effects;
+        return observedEffects;
     }
 
     internal static IReadOnlySet<LogoLightingMode> CreateExperimentalLogoModes(
@@ -113,20 +138,22 @@ internal sealed partial class ExperimentalBladePort
             : new HashSet<LogoLightingMode>();
 
     internal static bool SupportsExperimentalBreathingColorSelection(
-        ExperimentalBladeModel model) => model.ProductId == 0x02A0;
+        ExperimentalBladeModel model) => model.ProductId == 0x02A0
+            || SupportsExperimentalGridAnimation(model);
 
     internal static bool SupportsExperimentalWaveDirectionSelection(
-        ExperimentalBladeModel model) => model.ProductId == 0x02A0;
+        ExperimentalBladeModel model) => model.ProductId == 0x02A0
+            || SupportsExperimentalGridAnimation(model);
 
     internal static bool SupportsExperimentalUniformFrames(
         ExperimentalBladeModel model,
-        bool enabled) => enabled && model.ProductId is 0x029F or 0x02A0;
+        bool enabled) => enabled && SupportsUniformFrame(model);
 
     internal static IReadOnlySet<BreathingColorMode> CreateExperimentalBreathingColorModes(
         ExperimentalBladeModel model,
         bool enabled) => !enabled
             ? new HashSet<BreathingColorMode>()
-            : model.ProductId == 0x02A0
+            : model.ProductId == 0x02A0 || SupportsExperimentalGridAnimation(model)
                 ? new HashSet<BreathingColorMode>(Enum.GetValues<BreathingColorMode>())
                 : model.ProductId == 0x0255
                 ? new HashSet<BreathingColorMode>
@@ -140,7 +167,7 @@ internal sealed partial class ExperimentalBladePort
         model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x02A0 or 0x0245;
 
     private static bool SupportsUniformFrame(ExperimentalBladeModel model) =>
-        model.ProductId is 0x029F or 0x02A0;
+        model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x02A0;
 
     public async Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken)
     {
@@ -488,8 +515,11 @@ internal sealed partial class ExperimentalBladePort
                 "The requested lighting setting is not admitted for this experimental model.");
         }
 
-        bool animationRequest = SupportsBlade18Animation(model) && IsBlade18Animation(settings);
-        if (animationRequest && session is not IRazerSetFeatureCommandSession)
+        ExperimentalGridLightingEffect? gridEffect = SupportsExperimentalGridAnimation(model)
+            && ExperimentalGridLightingEffect.IsSupported(settings) ? new(settings) : null;
+        bool animationRequest = gridEffect is not null
+            || SupportsBlade18Animation(model) && IsBlade18Animation(settings);
+        if (animationRequest && gridEffect is null && session is not IRazerSetFeatureCommandSession)
         {
             throw new CapabilityUnavailableException("This model has no admitted animation stream transport.");
         }
@@ -500,15 +530,15 @@ internal sealed partial class ExperimentalBladePort
         {
             throw new CapabilityUnavailableException("This model has no admitted uniform frame transport.");
         }
-        Blade18SpatialLightingEffect? spatialEffect = animationRequest
+        Blade18SpatialLightingEffect? spatialEffect = animationRequest && gridEffect is null
             && IsBlade18SpatialEffect(settings.Effect)
                 ? new Blade18SpatialLightingEffect(settings, blade18KeyboardLayoutId) : null;
         Blade18ImportedSequenceEffect? sequenceEffect = settings.Parameters is SequenceLightingParameters sequence
             && model.ProductId == 0x02A0 ? new(sequence, blade18KeyboardLayoutId) : null;
-        Blade18StandardLightingEffect? standardEffect = animationRequest
+        Blade18StandardLightingEffect? standardEffect = animationRequest && gridEffect is null
             && settings.Effect is LightingEffect.Breathing or LightingEffect.Wave
                 ? new(settings, blade18KeyboardLayoutId) : null;
-        Blade18LightingFrame? firstAnimationFrame = animationRequest
+        Blade18LightingFrame? firstAnimationFrame = animationRequest && gridEffect is null
             ? spatialEffect?.RenderFrame(TimeSpan.Zero)
                 ?? sequenceEffect?.RenderFrame(TimeSpan.Zero)
                 ?? standardEffect?.RenderFrame(TimeSpan.Zero)
@@ -527,6 +557,7 @@ internal sealed partial class ExperimentalBladePort
         ExperimentalLightingBaseline? priorBaseline = lightingOwnership.Baseline;
         LightingSettings? priorIntent = lightingOwnership.Intent;
         int priorUniformFrameActivated = lightingOwnership.UniformFrameActivated;
+        long priorUniformFrameTimestamp = lightingOwnership.UniformFrameTimestamp;
         bool hostOwnershipAcquired = false;
         bool replacingOwnedFrame = IsOwnedFrameOwnership(priorOwnership);
         bool replacingFaultedFrame = priorOwnership == LightingRendererOwnershipState.Faulted;
@@ -622,8 +653,16 @@ internal sealed partial class ExperimentalBladePort
                 });
                 hostOwnershipAcquired = true;
                 frameWriteAttempted = true;
-                await SubmitBlade18FrameAsync(firstAnimationFrame!, activate: true,
-                    cancellationToken).ConfigureAwait(false);
+                if (gridEffect is not null)
+                {
+                    await SubmitExperimentalGridFrameAsync(gridEffect.RenderFrame(TimeSpan.Zero),
+                        activate: true, cancellationToken, () => submitted = true).ConfigureAwait(false);
+                }
+                else
+                {
+                    await SubmitBlade18FrameAsync(firstAnimationFrame!, activate: true,
+                        cancellationToken).ConfigureAwait(false);
+                }
                 submitted = true;
                 policy.RecordAnimationFrameApplied(settings.Effect);
                 setOnlyFrame = true;
@@ -652,10 +691,8 @@ internal sealed partial class ExperimentalBladePort
                 SetLightingOwnership(settings.Effect == LightingEffect.AmbientAwareness
                     ? LightingRendererOwnershipState.AmbientAwareness
                     : LightingRendererOwnershipState.AudioMeter);
-                if (blade18UniformRequest)
-                {
-                    lightingOwnership.UniformFrameActivated = 0;
-                }
+                lightingOwnership.UniformFrameActivated = 0;
+                lightingOwnership.UniformFrameTimestamp = 0;
                 hostOwnershipAcquired = true;
                 if (wakingFromDark)
                 {
@@ -689,11 +726,13 @@ internal sealed partial class ExperimentalBladePort
                     RequireWriteAdmission();
                     frameWriteAttempted = true;
                     await ExchangeAsync("KeyboardStaticFrame", 0x03, 0x0B,
-                        ExperimentalBladeLightingFrame.CreateUniformRow(row, settings.Color),
+                        ExperimentalBladeLightingFrame.CreateUniformRow(row, settings.Color,
+                            UsesPaddedExperimentalLightingRows(model)),
                         true, cancellationToken, variableResponse: true,
                         payloadValidator: static value =>
                             value.Length <= RazerReport.MaximumPayloadLength,
-                        requireEcho: false).ConfigureAwait(false);
+                        requireEcho: false,
+                        fixedTransactionId: ExperimentalLightingFrameTransactionId(model)).ConfigureAwait(false);
                     submitted = true;
                 }
                 RequireWriteAdmission();
@@ -702,7 +741,8 @@ internal sealed partial class ExperimentalBladePort
                     [5, 0], true, cancellationToken, variableResponse: true,
                     payloadValidator: static value =>
                         value.Length <= RazerReport.MaximumPayloadLength,
-                    requireEcho: false).ConfigureAwait(false);
+                    requireEcho: false,
+                    fixedTransactionId: ExperimentalLightingFrameTransactionId(model)).ConfigureAwait(false);
                 submitted = true;
                 lightingOwnership.Baseline = frameBaseline;
                 lightingOwnership.Intent = settings with { LogoMode = null };
@@ -824,7 +864,7 @@ internal sealed partial class ExperimentalBladePort
                 }
                 if (animationRequest)
                 {
-                    StartAnimationCore(lightingOwnership.Intent!, spatialEffect, sequenceEffect, standardEffect);
+                    StartAnimationCore(lightingOwnership.Intent!, spatialEffect, sequenceEffect, standardEffect, gridEffect);
                 }
                 policy.Record("KeyboardLighting", "Readback", "Unavailable", submitted,
                     requested, "OwnedFrameIntent", "FrameColorReadbackUnavailable");
@@ -872,6 +912,7 @@ internal sealed partial class ExperimentalBladePort
                 lightingOwnership.Baseline = priorBaseline;
                 lightingOwnership.Intent = priorIntent;
                 lightingOwnership.UniformFrameActivated = priorUniformFrameActivated;
+                lightingOwnership.UniformFrameTimestamp = priorUniformFrameTimestamp;
                 SetLightingOwnership(priorOwnership);
             }
             else if (capturedBaselineForFrameAttempt)
@@ -907,10 +948,11 @@ internal sealed partial class ExperimentalBladePort
                     .Contains(parameters.ColorMode),
             LightingEffect.Wave => settings.Parameters is
                 WaveLightingParameters { Direction: LightingDirection.Rightward }
-                || model.ProductId == 0x02A0 && settings.Parameters is WaveLightingParameters,
+                || (model.ProductId == 0x02A0 || SupportsExperimentalGridAnimation(model))
+                    && settings.Parameters is WaveLightingParameters,
             LightingEffect.Sequence => settings.Parameters is SequenceLightingParameters sequence
-                && model.ProductId == 0x02A0
-                && sequence.LayoutId == KeyboardLightingLayoutIds.Rz09_0484,
+                && (model.ProductId == 0x02A0 && sequence.LayoutId == KeyboardLightingLayoutIds.Rz09_0484
+                    || model.ProductId == 0x02C5 && sequence.LayoutId == KeyboardLightingLayoutIds.Rz09_0530),
             LightingEffect.Static => settings.Parameters is StaticLightingParameters,
             LightingEffect.AmbientAwareness => settings.Parameters is
                 AmbientAwarenessLightingParameters,
@@ -1158,24 +1200,24 @@ internal sealed partial class ExperimentalBladePort
         CancellationToken cancellationToken,
         Action onSubmitted)
     {
+        bool activate = lightingOwnership.UniformFrameActivated == 0;
+        if (!activate)
+        {
+            // Bound all source-reviewed uniform renderers to a deliberate
+            // software budget; this does not establish physical model timing.
+            TimeSpan remaining = Blade18LightingAnimation.FrameInterval
+                - animationTime.GetElapsedTime(lightingOwnership.UniformFrameTimestamp);
+            if (remaining > TimeSpan.Zero)
+            {
+                await Task.Delay(remaining, animationTime, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        long submittedAt = animationTime.GetTimestamp();
         if (model.ProductId == 0x02A0)
         {
             var colors = new RgbColor[Blade18LightingFrame.SlotCount];
             Array.Fill(colors, color);
-            bool activate = lightingOwnership.UniformFrameActivated == 0;
-            if (!activate)
-            {
-                // Uniform sampling may request 30/60 Hz. Keep this model's
-                // established 20 FPS transport budget without queuing frames.
-                TimeSpan remaining = Blade18LightingAnimation.FrameInterval
-                    - animationTime.GetElapsedTime(lightingOwnership.UniformFrameTimestamp);
-                if (remaining > TimeSpan.Zero)
-                {
-                    await Task.Delay(remaining, animationTime, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-            }
-            long submittedAt = animationTime.GetTimestamp();
             await SubmitBlade18FrameAsync(
                 new Blade18LightingFrame(colors),
                 activate,
@@ -1190,12 +1232,14 @@ internal sealed partial class ExperimentalBladePort
         {
             RequireWriteAdmission();
             await ExchangeAsync("KeyboardUniformFrame", 0x03, 0x0B,
-                ExperimentalBladeLightingFrame.CreateUniformRow(row, color),
+                ExperimentalBladeLightingFrame.CreateUniformRow(row, color,
+                    UsesPaddedExperimentalLightingRows(model)),
                 true, cancellationToken, variableResponse: true,
                 payloadValidator: static value =>
                     value.Length <= RazerReport.MaximumPayloadLength,
                 requireEcho: false,
-                recordAcknowledgedSubmission: false).ConfigureAwait(false);
+                recordAcknowledgedSubmission: false,
+            fixedTransactionId: ExperimentalLightingFrameTransactionId(model)).ConfigureAwait(false);
             onSubmitted();
         }
         RequireWriteAdmission();
@@ -1204,8 +1248,11 @@ internal sealed partial class ExperimentalBladePort
             payloadValidator: static value =>
                 value.Length <= RazerReport.MaximumPayloadLength,
             requireEcho: false,
-            recordAcknowledgedSubmission: false).ConfigureAwait(false);
+            recordAcknowledgedSubmission: false,
+                fixedTransactionId: ExperimentalLightingFrameTransactionId(model)).ConfigureAwait(false);
         onSubmitted();
+        lightingOwnership.UniformFrameActivated = 1;
+        lightingOwnership.UniformFrameTimestamp = submittedAt;
         RecordKeyboardMirrorFrame([color], 1, 1);
     }
 

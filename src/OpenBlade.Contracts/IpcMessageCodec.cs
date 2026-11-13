@@ -8,7 +8,8 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 79;
+    // Earlier peers reject the RZ09-0530 layout in capabilities and typed sequences.
+    public const int ProtocolVersion = 80;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;

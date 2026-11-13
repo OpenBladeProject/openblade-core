@@ -306,6 +306,8 @@ public static class ReactiveRawKeyboardInput
                     out secondary),
             RazerBladeInputDeviceKind.Rz09_0484 =>
                 TryCreateBlade18Pulse(blade18KeyboardLayoutId, makeCode, isExtended, out primary, out secondary),
+            RazerBladeInputDeviceKind.Rz09_0530 =>
+                TryCreateBlade14Pulse(makeCode, isExtended, out primary, out secondary),
             RazerBladeInputDeviceKind.Rz09_0528 =>
                 Rz09_0528ReactiveKeyMap.TryMap(
                     makeCode,
@@ -314,6 +316,19 @@ public static class ReactiveRawKeyboardInput
                     out secondary),
             _ => ReturnUnsupported(out primary, out secondary),
         };
+    }
+
+    private static bool TryCreateBlade14Pulse(
+        ushort makeCode, bool extended, out ReactiveKeyPulse primary, out ReactiveKeyPulse? secondary)
+    {
+        secondary = null;
+        if (Blade14KeyboardLightingLayout.TryMapScanCode(makeCode, extended, out byte slot))
+        {
+            primary = new(slot);
+            return true;
+        }
+        primary = default;
+        return false;
     }
 
     private static bool TryCreateBlade18Pulse(
@@ -488,12 +503,18 @@ public enum RazerBladeInputDeviceKind
     Rz09_0581,
     Rz09_0528,
     Rz09_0484,
+    Rz09_0530,
 }
 
 public static class RazerBladeReactiveInputDevice
 {
     public static RazerBladeInputDeviceKind ClassifyPath(string? path)
     {
+        if (!string.IsNullOrWhiteSpace(path) && HasIdentity(path, "VID_1532&PID_02C5"))
+        {
+            return IsBlade14LightingKeyboardPath(path)
+                ? RazerBladeInputDeviceKind.Rz09_0530 : RazerBladeInputDeviceKind.Unsupported;
+        }
         // Product 672's SYSTEM report geometry does not inherit MI_01.
         if (!string.IsNullOrWhiteSpace(path) && HasIdentity(path, "VID_1532&PID_02A0"))
         {
@@ -524,8 +545,35 @@ public static class RazerBladeReactiveInputDevice
                 RazerBladeInputDeviceKind.Rz09_0528,
             RazerBladeModelCatalog.Rz090484ModelNumber =>
                 RazerBladeInputDeviceKind.Rz09_0484,
+            "RZ09-0530" =>
+                RazerBladeInputDeviceKind.Rz09_0530,
             _ => RazerBladeInputDeviceKind.Unsupported,
         };
+
+    private static bool IsBlade14LightingKeyboardPath(string path)
+    {
+        // PI4110 MCU image SHA256 1ac3f05486d0bca5fbbb1a4a52b874943
+        // ad491a00afd298b8d6b857a49d98f11: USB configuration at 0xC474,
+        // MI00 report descriptor 0xC2CF is a single keyboard TLC; MI01's
+        // descriptor at 0xC230 has keyboard as its first TLC. MI03 is vendor
+        // input despite its keyboard interface protocol and is not admitted.
+        int start = path.IndexOf("VID_1532&PID_02C5", StringComparison.OrdinalIgnoreCase);
+        int end = path.IndexOfAny(['#', '\\'], start);
+        string identity = end < 0 ? path[start..] : path[start..end];
+        string[] fields = identity.Split('&');
+        string[] interfaces = fields.Where(field => field.StartsWith("MI_", StringComparison.OrdinalIgnoreCase)).ToArray();
+        string[] collections = fields.Where(field => field.StartsWith("COL", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (interfaces.Length != 1 || collections.Length > 1)
+        {
+            return false;
+        }
+        bool firstCollection = collections.Length == 1
+            && string.Equals(collections[0], "COL01", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(interfaces[0], "MI_00", StringComparison.OrdinalIgnoreCase)
+            && (collections.Length == 0 || firstCollection)
+            || string.Equals(interfaces[0], "MI_01", StringComparison.OrdinalIgnoreCase)
+                && firstCollection;
+    }
 
     private static bool HasIdentity(string path, string identity)
     {
