@@ -379,10 +379,10 @@ public sealed record DeviceCapabilities(
         && (ThxAudio is null || ThxAudio.IsWellFormed)
         && (Blade18KeyboardLayoutId is null
             || Blade18KeyboardLightingLayout.IsKnownLayout(Blade18KeyboardLayoutId.Value))
-        && (KeyboardLightingLayoutId is null
-            ? !LightingEffects.Contains(LightingEffect.Sequence)
-            : KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutId)
-                && LightingEffects.Contains(LightingEffect.Sequence))
+        && (KeyboardLightingLayoutId is null || KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutId))
+        && (!LightingEffects.Contains(LightingEffect.Sequence)
+            || KeyboardLightingLayoutId is not null
+                && KeyboardLightingLayoutId != KeyboardLightingLayoutIds.Rz09_0529)
         && (!ChargeLimits.Contains(100) || SupportsBatteryProtectionOff)
         && IsValidEnumSet(SupportedLightingRefreshRates)
         && IsValidEnumSet(ObservedLightingEffects)

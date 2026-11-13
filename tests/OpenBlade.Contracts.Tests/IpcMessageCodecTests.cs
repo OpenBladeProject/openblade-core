@@ -2543,7 +2543,7 @@ public sealed partial class IpcMessageCodecTests
 
     [Theory]
     [InlineData(null, true)]
-    [InlineData(KeyboardLightingLayoutIds.Rz09_0581, false)]
+    [InlineData("openblade.razer.unknown.keyboard.6x16.v1", false)]
     public async Task WriteServerFrameAsync_RejectsInconsistentSequenceLayoutCapability(
         string? layoutId,
         bool includesSequence)
