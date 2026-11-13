@@ -24,6 +24,7 @@ public sealed class IpcWireShapeManifestTests
             "property vbiosGpuName:System.String default=\"Unavailable\"",
             manifest,
             StringComparison.Ordinal);
+        Assert.Contains("property controlsKeyboardEffect:System.Boolean member ignore=WhenWritingDefault", manifest, StringComparison.Ordinal);
         Assert.Contains("property supportsBreathingColorSelection:System.Boolean member", manifest, StringComparison.Ordinal);
         Assert.Contains("property supportsWaveDirectionSelection:System.Boolean member", manifest, StringComparison.Ordinal);
         Assert.Contains("property blade18KeyboardLayoutId:System.Byte? member", manifest, StringComparison.Ordinal);
@@ -81,6 +82,8 @@ public sealed class IpcWireShapeManifestTests
             79 => "9CCDE658405F2DA4E58E6D4FF00D5B2A9F5562974BE2AF74DDE53E848B45431D",
             // Protocol 80 admits the RZ09-0530 layout string; JSON fields and types are unchanged.
             80 => "9CCDE658405F2DA4E58E6D4FF00D5B2A9F5562974BE2AF74DDE53E848B45431D",
+            // Protocol 81 adds explicit keyboard-effect intent for hybrid lighting controls.
+            81 => "E4913F08C67EFFEF1B442726373F4957D1A8B982375F793C9E4F015505ED503F",
             _ => null,
         };
 

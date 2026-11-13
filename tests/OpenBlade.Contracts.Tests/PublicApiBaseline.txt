@@ -2146,11 +2146,13 @@ type sealed class OpenBlade.Contracts.LightingSettings
   method OpenBlade.Contracts.LightingEffectParameters get_Parameters()
   method OpenBlade.Contracts.LightingSettings <Clone>$()
   method OpenBlade.Contracts.RgbColor get_Color()
+  method System.Boolean get_ControlsKeyboardEffect()
   method System.Byte get_Brightness()
   method System.Nullable<OpenBlade.Contracts.LogoLightingMode> get_LogoMode()
   method System.Void Deconstruct(out OpenBlade.Contracts.LightingEffect Effect, out OpenBlade.Contracts.RgbColor Color, out System.Byte Brightness)
   method System.Void set_Brightness(System.Byte value)
   method System.Void set_Color(OpenBlade.Contracts.RgbColor value)
+  method System.Void set_ControlsKeyboardEffect(System.Boolean value)
   method System.Void set_Effect(OpenBlade.Contracts.LightingEffect value)
   method System.Void set_IndependentControls(OpenBlade.Contracts.IndependentLightingSettings value)
   method System.Void set_LogoMode(System.Nullable<OpenBlade.Contracts.LogoLightingMode> value)
@@ -2165,6 +2167,7 @@ type sealed class OpenBlade.Contracts.LightingSettings
   property OpenBlade.Contracts.LightingEffect Effect { get; init; }
   property OpenBlade.Contracts.LightingEffectParameters Parameters { get; init; }
   property OpenBlade.Contracts.RgbColor Color { get; init; }
+  property System.Boolean ControlsKeyboardEffect { get; init; }
   property System.Byte Brightness { get; init; }
   property System.Nullable<OpenBlade.Contracts.LogoLightingMode> LogoMode { get; init; }
 type static class OpenBlade.Contracts.LightingSettingsFactory
@@ -2333,7 +2336,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 80
+  field const System.Int32 ProtocolVersion = 81
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
