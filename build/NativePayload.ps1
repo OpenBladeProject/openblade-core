@@ -5,6 +5,24 @@ $ErrorActionPreference = 'Stop'
 $script:OpenBladeNativeFileName = 'openblade_ffi.dll'
 $script:OpenBladeNativeManifestName = 'OpenBlade.Native.provenance.json'
 
+function Get-OpenBladeSharedCargoCache {
+    param([Parameter(Mandatory)][string]$Repository)
+
+    # Linked worktrees and short junction views retain the main repository name,
+    # so build steps share both the artifact directory and its publication lease.
+    $commonDirectory = & git -C $Repository rev-parse --path-format=absolute --git-common-dir
+    if ($LASTEXITCODE -ne 0 -or -not $commonDirectory) { throw 'Cannot determine shared Cargo cache identity.' }
+    $repositoryName = Split-Path -Leaf (Split-Path -Parent ([string]$commonDirectory).Trim())
+    if (-not $repositoryName) { throw 'Cannot determine shared Cargo cache repository name.' }
+    $cacheRoot = if ($env:OS -eq 'Windows_NT') { 'C:\build-cache\cargo' }
+        else { Join-Path ([IO.Path]::GetTempPath()) 'openblade-cargo-cache' }
+    $mutexPrefix = if ($env:OS -eq 'Windows_NT') { 'Global\' } else { '' }
+    [pscustomobject]@{
+        TargetDirectory = Join-Path $cacheRoot $repositoryName
+        MutexName = $mutexPrefix + 'OpenBlade.CargoCache.' + $repositoryName
+    }
+}
+
 function Get-OpenBladeNativeInputs {
     param([Parameter(Mandatory)][string]$Repository)
 
@@ -176,7 +194,8 @@ function Build-OpenBladeNativePayload {
     $savedEnvironment = @{}
     foreach ($entry in [Environment]::GetEnvironmentVariables('Process').GetEnumerator()) { $savedEnvironment[$entry.Key] = $entry.Value }
     # Keep the shared Cargo output bound to this build through copy and admission.
-    $cacheMutex = [Threading.Mutex]::new($false, 'Global\OpenBlade.CargoCache.OpenSynapse')
+    $cargoCache = Get-OpenBladeSharedCargoCache -Repository $Repository
+    $cacheMutex = [Threading.Mutex]::new($false, $cargoCache.MutexName)
     $cacheMutexHeld = $false
     Push-Location (Join-Path $Repository 'rust')
     try {
@@ -255,7 +274,7 @@ END
         [IO.File]::WriteAllText($resource, $resourceText, [Text.Encoding]::ASCII)
         & $resourceCompiler /nologo "/fo$resourceObject" $resource
         if ($LASTEXITCODE -ne 0) { throw 'Native version resource compilation failed.' }
-        $env:CARGO_TARGET_DIR = if ($env:OS -eq 'Windows_NT') { 'C:\build-cache\cargo\OpenSynapse' } else { Join-Path ([IO.Path]::GetTempPath()) 'openblade-cargo-cache' }
+        $env:CARGO_TARGET_DIR = $cargoCache.TargetDirectory
         $flags = @('-C', 'target-feature=+crt-static', '-C', 'link-arg=/Brepro', "--remap-path-prefix=$Repository=/openblade")
         $env:CARGO_ENCODED_RUSTFLAGS = $flags -join [char]31
         $env:RUSTFLAGS = $null

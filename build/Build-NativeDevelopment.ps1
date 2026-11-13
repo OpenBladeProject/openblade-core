@@ -18,7 +18,9 @@ function Get-NativeSha256([string]$Path) {
 }
 # Cargo releases its own lock before our artifact copy. Hold one cross-process
 # lease through build, copy and provenance so another worktree cannot replace it.
-$cacheMutexName = if ($env:OS -eq 'Windows_NT') { 'Global\OpenBlade.CargoCache.OpenSynapse' } else { 'OpenBlade.CargoCache.OpenSynapse' }
+. (Join-Path $PSScriptRoot 'NativePayload.ps1')
+$cargoCache = Get-OpenBladeSharedCargoCache -Repository $repository
+$cacheMutexName = $cargoCache.MutexName
 $cacheMutex = [Threading.Mutex]::new($false, $cacheMutexName)
 $cacheMutexHeld = $false
 Push-Location (Join-Path $repository 'rust')
@@ -50,7 +52,7 @@ try {
     $env:CARGO_ENCODED_RUSTFLAGS = $null
     $env:CARGO_PROFILE_DEV_PANIC = 'unwind'
     $env:CARGO_PROFILE_RELEASE_PANIC = 'unwind'
-    $env:CARGO_TARGET_DIR = if ($env:OS -eq 'Windows_NT') { 'C:\build-cache\cargo\OpenSynapse' } else { Join-Path ([IO.Path]::GetTempPath()) 'openblade-cargo-cache' }
+    $env:CARGO_TARGET_DIR = $cargoCache.TargetDirectory
     $arguments = @("+$pin", 'build', '--locked', '--offline', '-p', 'openblade-ffi', '--lib', '--target', $target)
     $profile = 'debug'
     if ($Configuration -eq 'Release') { $arguments += '--release'; $profile = 'release' }

@@ -110,6 +110,25 @@ try {
     if ((ConvertTo-Json -InputObject $lfInputs -Compress) -cne (ConvertTo-Json -InputObject $crlfInputs -Compress)) {
         throw 'Native source identity depends on checkout line endings.'
     }
+    # A linked checkout must not allocate a per-worktree cache or mutex.
+    $linkedFixture = Join-Path $testRoot 'different-checkout-name'
+    & git -C $sourceFixture worktree add --quiet --detach $linkedFixture HEAD
+    if ($LASTEXITCODE -ne 0) { throw 'Linked cache fixture creation failed.' }
+    try {
+        $mainCache = Get-OpenBladeSharedCargoCache -Repository $sourceFixture
+        $linkedCache = Get-OpenBladeSharedCargoCache -Repository $linkedFixture
+        if ($mainCache.TargetDirectory -cne $linkedCache.TargetDirectory -or $mainCache.MutexName -cne $linkedCache.MutexName) {
+            throw 'Linked worktrees must share the Cargo output and publication mutex.'
+        }
+        if ((Split-Path -Leaf $mainCache.TargetDirectory) -cne 'source') {
+            throw 'The Cargo cache must retain the main repository name.'
+        }
+    }
+    finally {
+        & git -C $sourceFixture worktree remove $linkedFixture
+        if ($LASTEXITCODE -ne 0) { throw 'Linked cache fixture cleanup failed.' }
+    }
+
     [IO.File]::AppendAllText($properties, 'changed')
     Assert-NativeThrows { Get-OpenBladeNativeInputs -Repository $sourceFixture } '*Commit native build inputs*'
 
