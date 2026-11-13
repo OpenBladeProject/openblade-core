@@ -34,7 +34,7 @@ internal sealed class Pid02E0ImportedSequenceEffect : IPid02E0LightingEffect
             RgbColor color = source[slot];
             slots[slot] = new MatrixRgb(color.Red, color.Green, color.Blue);
         }
-        return new Pid02E0MatrixFrame(slots);
+        return new Pid02E0MatrixFrame(slots, logicalKeyColors: true);
     }
 }
 
@@ -64,7 +64,7 @@ internal sealed class Rz090528ImportedSequenceEffect : IRz090528LightingEffect
         timeline.GetNextFrameDelay(elapsed);
 
     public Rz090528MatrixFrame RenderFrame(TimeSpan elapsed) =>
-        new(timeline.FrameAt(elapsed).Slots.ToArray());
+        new(timeline.FrameAt(elapsed).Slots.ToArray(), logicalKeyColors: true);
 }
 
 internal sealed class ImportedSequenceTimeline

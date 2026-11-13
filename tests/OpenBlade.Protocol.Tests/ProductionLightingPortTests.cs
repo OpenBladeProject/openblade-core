@@ -1921,9 +1921,9 @@ public sealed partial class ProductionLightingPortTests
         Assert.Equal(
             [
                 (0x03, 0x83, "010500"),
+                (0x00, 0x86, "000000"),
                 (0x03, 0x03, "0105C5"),
                 (0x03, 0x83, "010500"),
-                (0x00, 0x86, "000000"),
                 (0x00, 0x84, "0000"),
                 (0x03, 0x0A, "0500"),
             ],
@@ -2011,7 +2011,7 @@ public sealed partial class ProductionLightingPortTests
     }
 
     [Fact]
-    public async Task TransitionFailureReportsSanitizedCommandAndValidationCategory()
+    public async Task LayoutReadFailureReportsSanitizedCommandAndValidationCategory()
     {
         var session = new LightingSession(initialBrightness: 0xC5)
         {
@@ -2033,14 +2033,15 @@ public sealed partial class ProductionLightingPortTests
         var writer = new MatrixWriter();
         await using var port = CreatePort(session, writer, admitted: true);
 
-        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+        IOException error = await Assert.ThrowsAnyAsync<IOException>(() =>
             port.SetLightingAsync(
                 LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 77),
                 default));
 
-        Assert.Equal(
-            "The lighting command 00/86 failed (ProtocolFailure, PayloadValidator).",
-            error.Message);
+        Assert.Contains("00/86", error.Message);
+        Assert.Empty(writer.Reports);
+        Assert.DoesNotContain(session.Commands,
+            command => command.ClassId == 0x03 && command.CommandId is 0x03 or 0x0A);
     }
 
     [Theory]
@@ -3506,6 +3507,8 @@ public sealed partial class ProductionLightingPortTests
 
         internal byte[]? Transition84Response { get; set; }
 
+        internal byte[] Transition86Response { get; set; } = [0x01, 0x00, 0x00];
+
         internal byte[]? BrightnessResponse { get; set; }
 
         internal Exception? DisposeFailure { get; init; }
@@ -3621,7 +3624,7 @@ public sealed partial class ProductionLightingPortTests
                     [command.Arguments.Span[0], 0x04, LogoEffect],
                 (0x03, 0x00) => SetLogoState(command.Arguments.Span),
                 (0x03, 0x02) => SetLogoEffect(command.Arguments.Span),
-                (0x00, 0x86) => [0x01, 0x00, 0x00],
+                (0x00, 0x86) => Transition86Response,
                 (0x00, 0x04) => SetDeviceMode(command.Arguments.Span),
                 (0x00, 0x84) => Transition84Response
                     ?? DeviceModeProtocol.CreateSetArguments(

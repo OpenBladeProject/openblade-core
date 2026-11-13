@@ -3,8 +3,8 @@ using OpenBlade.Contracts;
 namespace OpenBlade.Protocol;
 
 /// <summary>
-/// Exact six-row host-rendered matrix observed on RZ09-0528 / PID 02C6.
-/// The slot order is protocol order and is not a claimed physical key map.
+/// One bounded six-row RGB frame for RZ09-0528 / PID 02C6. The final write
+/// boundary projects its stable logical canvas through the model's source map.
 /// </summary>
 internal sealed class Rz090528MatrixFrame
 {
@@ -12,30 +12,38 @@ internal sealed class Rz090528MatrixFrame
     internal const int ColumnCount = 17;
     internal const int SlotCount = RowCount * ColumnCount;
 
+    // The stable logical canvas comes from this model's own source report.
+    // Regional physical holes are applied only by its source projection.
     private static readonly int[] CapturedHoles =
-        [0, 17, 31, 34, 48, 51, 64, 65, 68, 70, 81, 82, 85, 89, 92, 93];
+        Blade16AmdKeyboardLightingLayout.CanvasHoleSlots.ToArray();
     private static readonly bool[] HoleMask = CreateHoleMask();
     private readonly RgbColor[] slots;
 
-    internal Rz090528MatrixFrame(ReadOnlySpan<RgbColor> values)
+    internal Rz090528MatrixFrame(ReadOnlySpan<RgbColor> values, bool logicalKeyColors = false)
     {
         ValidateLength(values.Length, nameof(values));
         slots = values.ToArray();
+        LogicalKeyColors = logicalKeyColors;
     }
 
-    private Rz090528MatrixFrame(RgbColor[] values, TakeOwnership _)
+    private Rz090528MatrixFrame(RgbColor[] values, TakeOwnership _, bool logicalKeyColors)
     {
         ArgumentNullException.ThrowIfNull(values);
         ValidateLength(values.Length, nameof(values));
         slots = values;
+        LogicalKeyColors = logicalKeyColors;
     }
 
     internal static IReadOnlyList<int> CapturedHoleSlots => CapturedHoles;
 
     internal RgbColor this[int index] => slots[index];
 
-    internal static Rz090528MatrixFrame FromOwnedSlots(RgbColor[] values) =>
-        new(values, default(TakeOwnership));
+    internal bool LogicalKeyColors { get; }
+
+    internal ReadOnlySpan<RgbColor> AsSpan() => slots;
+
+    internal static Rz090528MatrixFrame FromOwnedSlots(RgbColor[] values, bool logicalKeyColors = false) =>
+        new(values, default(TakeOwnership), logicalKeyColors);
 
     internal static Rz090528MatrixFrame Uniform(RgbColor color)
     {

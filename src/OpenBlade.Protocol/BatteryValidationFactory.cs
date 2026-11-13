@@ -703,11 +703,14 @@ public static class BatteryValidationFactory
     private static IProductionLightingPortFactory
         CreateWindowsRz090528ProductionLighting(
             FirmwareCompatibilityPolicy? compatibilityPolicy)
-        => CreateWindowsRz090528BrightnessLighting(
-            staticEffectAdmitted: true,
-            spectrumEffectAdmitted: true,
-            allSynapseEffectsAdmitted: true,
+    {
+        bool sourceAdmitted = Rz090528RegionalFrameProjection.IsSourceContractApproved();
+        return CreateWindowsRz090528BrightnessLighting(
+            staticEffectAdmitted: sourceAdmitted,
+            spectrumEffectAdmitted: sourceAdmitted,
+            allSynapseEffectsAdmitted: sourceAdmitted,
             compatibilityPolicy: compatibilityPolicy);
+    }
 
     internal static IProductionLightingPortFactory
         CreateWindowsRz090528BrightnessLighting()
