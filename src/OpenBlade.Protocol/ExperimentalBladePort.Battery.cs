@@ -108,19 +108,23 @@ internal sealed partial class ExperimentalBladePort
                 : model.ThermalPolicy is not null ? (byte)(baselineRaw & 0x7F) : (byte)0x50;
             // Exact-model Synapse parsers populate battery JSON only when the
             // successful SET ACK has data (694 bytes 22017..22413; 695 49350..49742).
-            // Accept empty ACKs, validate any returned byte, then independently GET.
+            // The optional byte is returned state, not a required echo or confirmation.
+            // Keep its one-byte geometry and require an independent exact GET below.
             bool statusAck = model.ThermalPolicy is not null;
             await ExchangeAsync("BatteryProtection", 0x07, 0x12, [requestedRaw],
                 true, cancellationToken, variableResponse: statusAck,
                 payloadValidator: statusAck
-                    ? payload => payload.Length == 0 || payload.Length == 1 && payload.Span[0] == requestedRaw
+                    ? payload => payload.Length <= 1
                     : null,
                 requireEcho: !statusAck).ConfigureAwait(false);
             submitted = true;
             // 029F firmware may return the previous valid state for 1-2 seconds after a SET.
             // https://github.com/sqmagellan/razer-ctl/blob/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a/README.md
-            // Retry only valid stale GET results. Never replay the setter or retry failed/invalid reads.
-            int maximumConfirmationReads = model.ProductId == 0x029F ? 9 : 1;
+            // Source-reviewed limiter models use the same bounded read-only window,
+            // but only their exact pre-write raw byte is treated as stale. This is
+            // software confirmation tolerance, not a claim of observed firmware delay.
+            // Never replay the setter or retry failed/invalid reads.
+            int maximumConfirmationReads = statusAck || model.ProductId == 0x029F ? 9 : 1;
             for (int attempt = 0; attempt < maximumConfirmationReads; attempt++)
             {
                 if (attempt > 0)
@@ -134,6 +138,10 @@ internal sealed partial class ExperimentalBladePort
                 {
                     policy.Record("BatteryProtection", "Readback", "Confirmed", true, requested, requested);
                     return;
+                }
+                if (statusAck && confirmedRaw != baselineRaw)
+                {
+                    break;
                 }
             }
             throw new IOException("Independent battery readback did not converge to the requested value.");

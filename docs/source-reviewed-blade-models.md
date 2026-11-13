@@ -32,6 +32,14 @@ Charge protection offers 50, 55, 60, 65, 70, 75 and 80 percent. The application'
 81% through 100% or intermediate one-percent values. Readback and restoration
 retain the actual saved threshold and protection flag separately.
 
+A successful charge-policy acknowledgment may be empty or contain one returned
+state byte; it need not echo the request. Only an independent GET of the exact
+requested raw byte confirms the change. If the exact pre-write byte persists,
+OpenBlade allows up to nine reads, 250 ms apart, without repeating the SET.
+Other mismatches or failed, invalid or canceled reads pause writes. The same
+confirmation policy applies to the three 2022 limiter profiles below; firmware
+latency on these models remains physically unverified.
+
 Maximum Fans is available only on products 694, 695 and 696, in Custom. Its
 whole-byte Power Mode Control write requires all other settings to be clear.
 Leaving Custom clears an owned Maximum Fans setting through the guarded cleanup
