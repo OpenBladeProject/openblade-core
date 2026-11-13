@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Explain unavailable startup and lighting controls when another Razer app is running or cannot be checked. ([#954](https://github.com/OSSBlade/openblade-core/pull/954))
+
 ## [0.60.0-nightly.113] - 2026-11-12
 
 ### Added
