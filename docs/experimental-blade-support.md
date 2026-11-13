@@ -4,7 +4,7 @@
 
 English | [简体中文](zh-CN/experimental-blade-support.md) | [Русский](ru-RU/experimental-blade-support.md)
 
-These seventeen laptop families are officially supported using reviewed exact-model
+These twenty laptop families are officially supported using reviewed exact-model
 Synapse and upstream sources. OpenBlade recognizes them automatically in both
 stable and pre-release builds. Physical validation is tracked separately for each
 model and feature; source-reviewed support does not claim complete hardware
@@ -94,6 +94,21 @@ Physical validation remains pending. See the
 [2019/2020 source review](source-reviewed-blades-2019-2020.md) for evidence and
 reviewed candidates that still lack an exact Windows identity.
 
+### Blade 15 Advanced Mid 2021 and Blade Pro 17 2019
+
+| Laptop | Model | Available controls |
+| --- | --- | --- |
+| Blade 15 Advanced (Mid 2021) | `RZ09-0409` | Balanced/Custom on full-power AC; CPU Low/Medium/High/Boost, GPU Low/Medium/High; Automatic fans |
+| Blade Pro 17 (2019) | `RZ09-0287` | Balanced/Custom on full-power AC; CPU/GPU Low/Medium/High; Automatic fans |
+| Blade Pro 17 (Late 2019) | `RZ09-0314` | Balanced/Custom on full-power AC; CPU/GPU Low/Medium/High; Automatic fans |
+
+If fans are currently manual, explicitly select Automatic and confirm the handback
+before changing presets or Custom levels: these profiles cannot yet confirm and
+restore manual targets. Silent, Turbo, Maximum Fans, fixed fan targets, curves,
+charge controls, lighting, HyperBoost and driver/THX integrations are not admitted.
+Physical validation is pending. See the [exact-model review](source-reviewed-blades-issue-949.md)
+for source pins and limits for all three exact profiles.
+
 The following detailed control notes apply to the earlier five models.
 
 Close Synapse before using these controls, or use
@@ -129,7 +144,7 @@ Battery Saver and Battery Balanced on battery power.
   Custom or changing CPU/GPU levels.
 - The Blade 15 uses single-zone RGB lighting; Wave and logo controls are not
   supported. The newer models offer brightness, built-in effects, and logo
-  lighting. Static RGB on the Blade 16 (2023) and Blade 18 (2023) is one color
+  lighting. Static RGB on both Blade 14 models, Blade 16 (2023), and Blade 18 (2023) is one color
   across the keyboard. Blade 18 also accepts per-key colors and sequence playback
   from classic Keyboard .chroma imports.
   Firmware idle fade can restore the built-in effect; select Static again to repaint.
@@ -140,8 +155,14 @@ Battery Saver and Battery Balanced on battery power.
   Host-rendered effects require a complete, restorable baseline; select a
   readable built-in effect first. See [compact Wave readback](compact-wave-readback.md)
   for source evidence and model coverage.
-  Blade 16 (2023) and Blade 18 (2023) also offer whole-keyboard Ambient Awareness
+  Both Blade 14 models, Blade 16 (2023), and Blade 18 (2023) offer whole-keyboard Ambient Awareness
   and Audio Meter.
+  Both Blade 14 models and Blade 16 (2023) also offer single- and dual-color
+  Breathing, leftward Wave, Fire, Wheel, Starlight and Tidal as
+  [software grid effects](blade14-lighting-parity.md). Blade 14 (2025) also offers
+  Reactive, Ripple and imported Keyboard .chroma sequences using its
+  [firmware-derived key map](blade14-keymap.md). Regional keys whose addresses
+  differ between firmware layouts remain unavailable.
   The Blade 15 offers random or single-color Breathing. Additional Synapse
   effects observed for the Blade 18 are recorded in diagnostics. Blade 18 also
   offers experimental Fire, clockwise or counterclockwise Wheel, and Starlight.

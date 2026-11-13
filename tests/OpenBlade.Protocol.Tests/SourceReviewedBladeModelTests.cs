@@ -6,6 +6,16 @@ public sealed partial class SourceReviewedBladeModelTests
 {
     public static TheoryData<int> Products => new() { 0x02B6, 0x02B7, 0x02B8, 0x02C7 };
 
+    [Fact]
+    public void ThermalCommandEvidence_IsIncludedInTheModelSourcePins()
+    {
+        foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All.Where(model => model.ThermalPolicy is not null))
+        {
+            SourceReviewedThermalPolicy policy = model.ThermalPolicy!;
+            Assert.Contains(policy.CommandEvidenceSource, policy.EvidenceSources);
+        }
+    }
+
     private static ExperimentalBladeModel Model(int product) =>
         ExperimentalBladeModels.All.Single(model => model.ProductId == product);
 

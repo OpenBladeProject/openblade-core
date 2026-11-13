@@ -365,7 +365,8 @@ public sealed class RazerSnapTapDriverAdmissionTests
     {
         // These exact source-reviewed models have no admitted keyboard driver API/setup
         // contract. See evidence/source-reviewed-blades/2026-11-07-models{,-2021-2022,-2019-2020}.json
-        // and evidence/source-reviewed-blades/2026-11-07-rz09-0301.json.
+        // and evidence/source-reviewed-blades/2026-11-07-rz09-0301.json
+        // plus evidence/source-reviewed-blades/2026-11-12-issue-949-models.json.
         (string ModelNumber, string UsbProductId)[] notAdmitted =
         [
             ("RZ09-0508", "02B6"),
@@ -380,6 +381,9 @@ public sealed class RazerSnapTapDriverAdmissionTests
             ("RZ09-0300", "0246"),
             ("RZ09-0330", "0253"),
             ("RZ09-0351", "0268"),
+            ("RZ09-0409", "0276"),
+            ("RZ09-0287", "0234"),
+            ("RZ09-0314", "024C"),
         ];
         var models = OpenBlade.Contracts.RazerBladeModelCatalog.All;
         foreach (var decision in notAdmitted)

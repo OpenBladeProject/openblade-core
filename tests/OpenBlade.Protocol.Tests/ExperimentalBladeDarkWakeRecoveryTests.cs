@@ -33,7 +33,7 @@ public sealed partial class ExperimentalBladeLightingTests
             command => Assert.True(command.CommandId >= 0x80));
         Assert.Equal(0, session.Raw);
         Assert.False(policy.WritesAllowed);
-        if (productId is not (0x029F or 0x02A0))
+        if (productId == 0x0255)
         {
             Assert.Contains(policy.Snapshot().Observations, item =>
                 item.FailureCategory == "ConfirmedDarkEffect"
@@ -145,8 +145,6 @@ public sealed partial class ExperimentalBladeLightingTests
         }
     }
     [Theory]
-    [InlineData(0x029D)]
-    [InlineData(0x02C5)]
     [InlineData(0x0255)]
     public async Task Recovery_DoesNotAcceptRoundedZeroWithNonzeroRawBrightness(int productId)
     {
@@ -164,8 +162,6 @@ public sealed partial class ExperimentalBladeLightingTests
     }
 
     [Theory]
-    [InlineData(0x029D)]
-    [InlineData(0x02C5)]
     [InlineData(0x0255)]
     public async Task Recovery_DoesNotAcceptUnknownEffectAtConfirmedZero(int productId)
     {
@@ -183,6 +179,10 @@ public sealed partial class ExperimentalBladeLightingTests
     }
 
     [Theory]
+    [InlineData(0x029D, 1, 3)]
+    [InlineData(0x02C5, 1, 3)]
+    [InlineData(0x029D, 0, 0x7F)]
+    [InlineData(0x02C5, 0, 0x7F)]
     [InlineData(0x029F, 1, 3)]
     [InlineData(0x02A0, 1, 3)]
     [InlineData(0x029F, 0, 0x7F)]

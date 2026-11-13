@@ -9,6 +9,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Show the failing installer step and underlying error, including separate cleanup or recovery failures, instead of only a generic error code. Include Setup diagnostics in the main installer log so a single shared log contains the failure details. ([#952](https://github.com/OSSBlade/openblade-core/pull/952))
 
+## [0.60.0-nightly.113] - 2026-11-12
+
+### Added
+
+- Add Static, Ambient Awareness, Audio Meter, and software lighting effects on Blade 14 (2023/2025) and Blade 16 (2023). ([#953](https://github.com/OSSBlade/openblade-core/pull/953))
+- Add Reactive, Ripple, and Keyboard `.chroma` imports on Blade 14 (2025) using its firmware-derived key map. ([#953](https://github.com/OSSBlade/openblade-core/pull/953))
+- Support Blade 15 Advanced (Mid 2021) RZ09-0409 and both 2019 Blade Pro 17 variants, RZ09-0287 and RZ09-0314, with source-reviewed Balanced/Custom performance and Automatic fan handback. Physical validation remains pending. ([#951](https://github.com/OSSBlade/openblade-core/pull/951))
+
 ## [0.58.7-nightly.112] - 2026-11-12
 
 ### Fixed
@@ -2399,7 +2407,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.58.7-nightly.112...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.60.0-nightly.113...HEAD
+[0.60.0-nightly.113]: https://github.com/OSSBlade/openblade-core/compare/v0.58.7-nightly.112...v0.60.0-nightly.113
 [0.58.7-nightly.112]: https://github.com/OSSBlade/openblade-core/compare/v0.58.5-nightly.111...v0.58.7-nightly.112
 [0.58.5-nightly.111]: https://github.com/OSSBlade/openblade-core/compare/v0.58.4...v0.58.5-nightly.111
 [0.58.4]: https://github.com/OSSBlade/openblade-core/compare/v0.58.2-nightly.110...v0.58.4

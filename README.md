@@ -42,11 +42,14 @@ OpenBlade requires Windows 11 x64, version 24H2 or later.
 | Razer Blade 15 (2022) | `RZ09-0421` |
 | Razer Blade 17 (2022) | `RZ09-0423` |
 | Razer Blade 14 (2021) | `RZ09-0370` |
+| Razer Blade 15 Advanced (Mid 2021) | `RZ09-0409` |
 | Razer Blade 15 Base (Early 2020) | `RZ09-0328` |
 | Razer Blade 15 Advanced (Early 2020) | `RZ09-0330` |
 | Razer Blade 15 Base (Late 2020) | `RZ09-0351` |
 | Razer Blade 15 Advanced (Mid 2019) | `RZ09-0301` |
 | Razer Blade 15 Base (2019) | `RZ09-0300` |
+| Razer Blade Pro 17 (2019) | `RZ09-0287` |
+| Razer Blade Pro 17 (Late 2019) | `RZ09-0314` |
 
 OpenBlade shows the controls available on your model. See the
 [user guide](https://github.com/OSSBlade/openblade-docs) for compatibility and the

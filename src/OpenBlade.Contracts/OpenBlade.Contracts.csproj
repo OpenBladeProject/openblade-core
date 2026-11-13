@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Fixtures\Blade18KeyboardLightingLayout.json" />
+    <EmbeddedResource Include="Fixtures\Blade14KeyboardLightingLayout.json" />
   </ItemGroup>
 
 </Project>

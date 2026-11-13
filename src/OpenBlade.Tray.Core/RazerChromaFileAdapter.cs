@@ -196,6 +196,10 @@ public static partial class RazerChromaFileAdapter
     private static IReadOnlyDictionary<int, byte> CreateLogicalKeyProjection(
         string? layoutId, byte? blade18Region)
     {
+        if (layoutId == KeyboardLightingLayoutIds.Rz09_0530)
+        {
+            return CreateBlade14Projection();
+        }
         if (layoutId == KeyboardLightingLayoutIds.Rz09_0484)
         {
             return CreateBlade18Projection(blade18Region);
@@ -269,6 +273,57 @@ public static partial class RazerChromaFileAdapter
             Add(2, 17, 50);
         }
 
+        return map;
+    }
+
+    private static IReadOnlyDictionary<int, byte> CreateBlade14Projection()
+    {
+        // Generic RZKEY named-key canvas from HTML5ChromaSDK
+        // ec61d7a1924a6facc0e136a84a00b8b87f7ce4ba/ChromaSDKImpl.js.
+        // Resolve identities through the MCU-backed common map; never project
+        // by another laptop's physical positions or copy its RGB slot numbers.
+        var map = new Dictionary<int, byte>();
+        void Add(int row, int column, ushort scan, bool extended = false)
+        {
+            if (Blade14KeyboardLightingLayout.TryMapScanCode(scan, extended, out byte slot))
+            {
+                map.Add(row * 22 + column, slot);
+            }
+        }
+        Add(0, 1, 0x01);
+        for (int i = 0; i < 10; i++)
+        {
+            Add(0, 3 + i, (ushort)(0x3B + i));
+            Add(1, 2 + i, (ushort)(0x02 + i));
+            Add(2, 2 + i, (ushort)(0x10 + i));
+        }
+        Add(0, 13, 0x57);
+        Add(0, 14, 0x58);
+        Add(1, 1, 0x29);
+        Add(1, 12, 0x0C);
+        Add(1, 13, 0x0D);
+        Add(1, 14, 0x0E);
+        Add(2, 1, 0x0F);
+        Add(2, 12, 0x1A);
+        Add(2, 13, 0x1B);
+        Add(2, 15, 0x53, true);
+        Add(3, 1, 0x3A);
+        for (int i = 0; i < 11; i++)
+        {
+            Add(3, 2 + i, (ushort)(0x1E + i));
+        }
+        Add(4, 1, 0x2A);
+        for (int i = 0; i < 10; i++)
+        {
+            Add(4, 3 + i, (ushort)(0x2C + i));
+        }
+        Add(4, 14, 0x36);
+        Add(4, 16, 0x48, true);
+        Add(5, 1, 0x1D);
+        Add(5, 2, 0x5B, true);
+        Add(5, 15, 0x4B, true);
+        Add(5, 16, 0x50, true);
+        Add(5, 17, 0x4D, true);
         return map;
     }
 
