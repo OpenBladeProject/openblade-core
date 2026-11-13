@@ -24,3 +24,5 @@ rust/** text eol=lf
 tools/openblade-discovery/** text eol=lf
 src/OpenBlade.Contracts/Fixtures/Blade16KeyboardLightingLayout.json text eol=crlf
 src/OpenBlade.Contracts/Fixtures/Blade16AmdKeyboardLightingLayout.json text eol=lf
+src/OpenBlade.Contracts/Fixtures/Rz090529KeyboardLightingLayout.json text eol=crlf
+evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json text eol=crlf

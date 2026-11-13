@@ -9,6 +9,8 @@ public sealed partial class MainViewModel
     private IndependentLightingSettings? independentLightingDelta;
     private byte? independentBrightness;
     private LogoLightingMode? independentLogo;
+    private bool? independentVaporChamber;
+    private bool? independentTouchpadIndicator;
     private PowerSource independentLightingSource;
     private long independentLightingCommitGeneration;
     private bool presentedIndependentLighting;
@@ -32,6 +34,63 @@ public sealed partial class MainViewModel
     public bool HasLightingBrightnessValue => !UsesIndependentLightingControls || independentBrightness.HasValue;
     public string LightingBrightnessValueText => HasLightingBrightnessValue
         ? LightingBrightnessEditor.ToString(CultureInfo.CurrentCulture) : "—";
+
+    public bool CanEditVaporChamberLighting => Capabilities.SupportsVaporChamberLighting
+        && CanRequestHardwareControl && VaporChamberLightingEnabledEditor.HasValue;
+    public bool ShowVaporChamberLighting => Capabilities.SupportsVaporChamberLighting;
+    public bool CanEditTouchpadStatusIndicator => Capabilities.SupportsTouchpadStatusIndicator
+        && CanRequestHardwareControl && TouchpadStatusIndicatorEnabledEditor.HasValue;
+    public bool? VaporChamberLightingEnabledEditor
+    {
+        get => UsesIndependentLightingControls ? independentVaporChamber
+            : latestStatus?.ConfirmedState?.IndependentLighting?.VaporChamberLightingEnabled;
+        set => SetIndependentZone(false, value);
+    }
+    public bool? TouchpadStatusIndicatorEnabledEditor
+    {
+        get => UsesIndependentLightingControls ? independentTouchpadIndicator
+            : latestStatus?.ConfirmedState?.IndependentLighting?.TouchpadStatusIndicatorEnabled;
+        set => SetIndependentZone(true, value);
+    }
+
+    private void SetIndependentZone(bool touchpadIndicator, bool? value)
+    {
+        if (value is not { } enabled || !(touchpadIndicator ? CanEditTouchpadStatusIndicator : CanEditVaporChamberLighting)
+            || (touchpadIndicator ? TouchpadStatusIndicatorEnabledEditor : VaporChamberLightingEnabledEditor) == enabled)
+        {
+            return;
+        }
+        if (!UsesIndependentLightingControls)
+        {
+            LoadIndependentLightingEditor(SelectedLighting, latestStatus?.ConfirmedState?.IndependentLighting);
+        }
+        IndependentLightingSettings delta = independentLightingDelta ?? new();
+        if (touchpadIndicator)
+        {
+            independentTouchpadIndicator = enabled;
+            independentLightingDelta = delta with { TouchpadStatusIndicatorEnabled = enabled };
+        }
+        else
+        {
+            independentVaporChamber = enabled;
+            independentLightingDelta = delta with { VaporChamberLightingEnabled = enabled };
+        }
+        NotifyIndependentLightingEdited();
+    }
+
+    private IReadOnlyList<string> ObservedOnlyLightingEffectLabels =>
+        Capabilities.ObservedLightingEffects
+            .Except(Capabilities.LightingEffects)
+            .OrderBy(effect => effect)
+            .Select(LightingPresentation.LightingEffectLabel)
+            .ToArray();
+
+    public bool ShowObservedOnlyLightingEffects => ObservedOnlyLightingEffectLabels.Count > 0;
+
+    public string ObservedOnlyLightingEffectsText => ShowObservedOnlyLightingEffects
+        ? TrayText.Format("Synapse lists these effects for this model; OpenBlade cannot control them yet: {0}",
+            string.Join(Environment.NewLine, ObservedOnlyLightingEffectLabels.Select(label => $"• {label}")))
+        : string.Empty;
 
     private string FormatPresentedLightingProfile(LightingSettings lighting) =>
         Capabilities.SupportsIndependentLightingControls && !lighting.ControlsKeyboardEffect
@@ -70,7 +129,9 @@ public sealed partial class MainViewModel
     private static IndependentLightingSettings? MergeIndependentLighting(
         IndependentLightingSettings? baseline, IndependentLightingSettings? update) =>
         update is null ? baseline : new(update.Brightness ?? baseline?.Brightness,
-            update.LogoMode ?? baseline?.LogoMode);
+            update.LogoMode ?? baseline?.LogoMode,
+            update.VaporChamberLightingEnabled ?? baseline?.VaporChamberLightingEnabled,
+            update.TouchpadStatusIndicatorEnabled ?? baseline?.TouchpadStatusIndicatorEnabled);
 
     private bool CanSubmitLightingDraft(LightingSettings value) =>
         ProfileAdmissionPolicy.LightingSupported(value, CommandCapabilities)
@@ -130,7 +191,7 @@ public sealed partial class MainViewModel
         }
 
         independentBrightness = (byte)value;
-        independentLightingDelta = new((byte)value, independentLightingDelta?.LogoMode);
+        independentLightingDelta = (independentLightingDelta ?? new()) with { Brightness = (byte)value };
         NotifyIndependentLightingEdited();
     }
 
@@ -143,7 +204,7 @@ public sealed partial class MainViewModel
         }
 
         independentLogo = logo;
-        independentLightingDelta = new(independentLightingDelta?.Brightness, logo);
+        independentLightingDelta = (independentLightingDelta ?? new()) with { LogoMode = logo };
         NotifyIndependentLightingEdited();
     }
 
@@ -168,6 +229,10 @@ public sealed partial class MainViewModel
         NotifyComputed(nameof(LightingBrightnessMinimum), LightingBrightnessMinimum);
         NotifyComputed(nameof(HasLightingBrightnessValue), HasLightingBrightnessValue);
         NotifyComputed(nameof(LightingBrightnessValueText), LightingBrightnessValueText);
+        NotifyComputed(nameof(VaporChamberLightingEnabledEditor), VaporChamberLightingEnabledEditor);
+        NotifyComputed(nameof(TouchpadStatusIndicatorEnabledEditor), TouchpadStatusIndicatorEnabledEditor);
+        NotifyComputed(nameof(CanEditVaporChamberLighting), CanEditVaporChamberLighting);
+        NotifyComputed(nameof(CanEditTouchpadStatusIndicator), CanEditTouchpadStatusIndicator);
         // Classic editor events already own their value notifications. Refresh
         // these getters only for independent values or an actual backend switch.
         if (independent || backendChanged)
@@ -186,6 +251,8 @@ public sealed partial class MainViewModel
         independentLightingDelta = null;
         independentBrightness = observations?.Brightness;
         independentLogo = observations?.LogoMode;
+        independentVaporChamber = observations?.VaporChamberLightingEnabled;
+        independentTouchpadIndicator = observations?.TouchpadStatusIndicatorEnabled;
         independentLightingSource = ActivePowerSource;
         NotifyIndependentLightingEdited();
     }

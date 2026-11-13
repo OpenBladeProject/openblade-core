@@ -93,7 +93,25 @@ internal static class ExperimentalBladeModels
                 new("MaximumFans", thermal.SupportsMaximumFans ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
                 new("AdapterPowerClassification", "SynapseSourceBacked", sources),
                 .. FanStopEvidenceFor(model),
-                new(ExperimentalBladePort.SupportsReviewedMcuLighting(model)
+                .. (model.ProductId == 0x02C7
+                    ? new ExperimentalFeatureEvidence[]
+                    {
+                        new("KeyboardOnlyCustomFramesAndSoftwareEffects",
+                            "ExactMcuAndSynapseSourceBackedWithoutPhysicalValidation",
+                            [ReviewedMcuLightingSource(model),
+                                "evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json",
+                                "https://apps.razer.com/synapse/lighting-engine/manifest/DeviceManifest_711_0.json;SHA256=FDD5D817BF28F152B3DF498AC6E908291993BBCC6939BE4D86F94AD74F52A9F1"]),
+                        new("KeyboardReactiveAndRippleCommonInputMap",
+                            "ExactModelRegionalIntersectionWithoutPhysicalValidation",
+                            ["Rz090529KeyboardLightingLayout.json;SHA256=71B8324BFA5EECA880701B032F159A4357A09046C718565236DA73DE7A095613"]),
+                        new("VaporChamberEnabledAndTouchpadStatusIndicator",
+                            "ExactMcuAndSelectedSynapseFieldsWithoutPhysicalValidation",
+                            [ReviewedMcuLightingSource(model),
+                                "evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json"]),
+                    }
+                    : []),
+                new(model.ProductId == 0x02C7 ? "HyperBoost"
+                    : ExperimentalBladePort.SupportsReviewedMcuLighting(model)
                     ? "CustomFramesAdditionalEffectsAndHyperBoost"
                     : ExperimentalBladePort.SupportsIndependentLighting(model)
                     ? "KeyboardEffectsFramesAndHyperBoost" : "LightingAndHyperBoost", "NotEstablished", sources),

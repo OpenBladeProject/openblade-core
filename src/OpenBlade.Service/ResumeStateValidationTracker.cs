@@ -338,6 +338,8 @@ internal sealed class ResumeStateValidationTracker
             && (baseline.Confirmed.Lighting is null || observed.Lighting is not null)
             && (baseline.Confirmed.IndependentLighting?.Brightness is null || observed.IndependentLighting?.Brightness is not null)
             && (baseline.Confirmed.IndependentLighting?.LogoMode is null || observed.IndependentLighting?.LogoMode is not null)
+            && (baseline.Confirmed.IndependentLighting?.VaporChamberLightingEnabled is null || observed.IndependentLighting?.VaporChamberLightingEnabled is not null)
+            && (baseline.Confirmed.IndependentLighting?.TouchpadStatusIndicatorEnabled is null || observed.IndependentLighting?.TouchpadStatusIndicatorEnabled is not null)
             && (baseline.Confirmed.Lighting is not null && observed.Lighting is not null
                 || baseline.Confirmed.IndependentLighting is { IsWellFormed: true }))
         {
@@ -410,6 +412,8 @@ internal sealed class ResumeStateValidationTracker
                     CompareWhenBothKnown(baseline.Lighting, observed.Lighting)
                     && CompareWhenBothKnown(baseline.IndependentLighting?.Brightness, observed.IndependentLighting?.Brightness)
                     && CompareWhenBothKnown(baseline.IndependentLighting?.LogoMode, observed.IndependentLighting?.LogoMode)
+                    && CompareWhenBothKnown(baseline.IndependentLighting?.VaporChamberLightingEnabled, observed.IndependentLighting?.VaporChamberLightingEnabled)
+                    && CompareWhenBothKnown(baseline.IndependentLighting?.TouchpadStatusIndicatorEnabled, observed.IndependentLighting?.TouchpadStatusIndicatorEnabled)
                     && CompareWhenBothKnown(
                         baseline.LogoLighting,
                         observed.LogoLighting),

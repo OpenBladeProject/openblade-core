@@ -112,6 +112,8 @@ internal static class ServiceStatusSnapshotComparer
             && left.WritableSpecialKeySlots == right.WritableSpecialKeySlots
             && left.LampArrayLightingAccess == right.LampArrayLightingAccess
             && left.SupportsIndependentLightingControls == right.SupportsIndependentLightingControls
+            && left.SupportsVaporChamberLighting == right.SupportsVaporChamberLighting
+            && left.SupportsTouchpadStatusIndicator == right.SupportsTouchpadStatusIndicator
             && left.ObservedPowerSourceBehaviors.SequenceEqual(
                 right.ObservedPowerSourceBehaviors)
             && left.FanModes.SetEquals(right.FanModes)
@@ -131,6 +133,7 @@ internal static class ServiceStatusSnapshotComparer
             && left.SupportsManualFansOnLimitedPower == right.SupportsManualFansOnLimitedPower
             && left.LightingEffects.SetEquals(right.LightingEffects)
             && left.ObservedLightingEffects.SetEquals(right.ObservedLightingEffects)
+            && left.ObservedLightingZones.SetEquals(right.ObservedLightingZones)
             && left.SupportedLightingRefreshRates.SetEquals(
                 right.SupportedLightingRefreshRates)
             && left.LogoLightingModes.SetEquals(right.LogoLightingModes)

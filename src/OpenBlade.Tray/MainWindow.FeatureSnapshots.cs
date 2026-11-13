@@ -20,6 +20,30 @@ public sealed partial class MainWindow
     private static readonly DateTimeOffset FeatureSnapshotTime =
         new(2026, 10, 21, 12, 0, 0, TimeSpan.Zero);
 
+    internal void ShowRz090529LightingZonesSnapshot()
+    {
+        if (!localizationSnapshotMode)
+        {
+            throw new InvalidOperationException("Lighting samples require disconnected snapshot mode.");
+        }
+        ApplyPageLayoutPreferences([]);
+        if (!TryRegisterLightingPageSections())
+        {
+            throw new InvalidOperationException("Lighting sections were not realized.");
+        }
+        foreach (PageSectionOption section in pageSections[CustomizablePageKind.Lighting])
+        {
+            section.IsVisible = section.Kind is PageSectionKind.LightingTouchpad
+                or PageSectionKind.LightingUnderGlass or PageSectionKind.LightingVaporChamber;
+        }
+        if (!ViewModel.CanEditTouchpadStatusIndicator || !ViewModel.CanEditVaporChamberLighting
+            || pageSectionPresentations[PageSectionKind.LightingTouchpad].Parent is null
+            || pageSectionPresentations[PageSectionKind.LightingVaporChamber].Parent is null)
+        {
+            throw new InvalidOperationException("The lighting-zone controls were removed or are not editable.");
+        }
+    }
+
     internal void InvokeLabsGuideSnapshot(bool showRefreshRate)
     {
         // Snapshot mode skips loading saved preferences; initialize its isolated layout first.

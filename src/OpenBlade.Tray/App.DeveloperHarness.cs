@@ -926,6 +926,11 @@ public partial class App
                     }
                     string? controlSnapshot = Environment.GetEnvironmentVariable(
                         "OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE");
+                    if (destination == "lighting" && controlSnapshot == "rz0529-lighting")
+                    {
+                        snapshotMainWindow.ShowRz090529LightingZonesSnapshot();
+                        await WaitForSnapshotLayoutAsync();
+                    }
                     if (destination == "laptop" && (controlSnapshot?.StartsWith(
                             "one-shot-", StringComparison.Ordinal) == true
                         || controlSnapshot == "blade18-function-row"))
@@ -1788,6 +1793,12 @@ public partial class App
             ApplyExperimentalBatterySnapshotState(window, state == "blade18-battery-off");
             return;
         }
+        if (state == "rz0529-lighting")
+        {
+            ApplyRz0301IndependentLightingSnapshotState(window, populated: true, paused: false,
+                hybrid: true, fullEffect: true, rz090529: true);
+            return;
+        }
         if (state is "rz0301-hybrid-lighting-unknown" or "rz0301-hybrid-lighting-static")
         {
             ApplyRz0301IndependentLightingSnapshotState(window, populated: true, paused: false,
@@ -2235,11 +2246,15 @@ public partial class App
     }
 
     private static void ApplyRz0301IndependentLightingSnapshotState(
-        MainWindow window, bool populated, bool paused, bool hybrid = false, bool fullEffect = false)
+        MainWindow window, bool populated, bool paused, bool hybrid = false, bool fullEffect = false, bool rz090529 = false)
     {
         // Synthetic observations only. Snapshot windows never start the service
         // client or native integration, and this fixture cannot access hardware.
         IndependentLightingSettings? controls = populated ? new(65, LogoLightingMode.Static) : null;
+        if (rz090529)
+        {
+            controls = new(65, LogoLightingMode.Static, true, false);
+        }
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         LightingSettings lighting = fullEffect
             ? LightingSettingsFactory.Static(new RgbColor(40, 170, 240), 65) with
@@ -2263,8 +2278,19 @@ public partial class App
             LogoLightingModes = new HashSet<LogoLightingMode>
                 { LogoLightingMode.Off, LogoLightingMode.Static, LogoLightingMode.Breathing },
         };
+        if (rz090529)
+        {
+            capabilities = capabilities with
+            {
+                LightingEffects = Enum.GetValues<LightingEffect>().Where(effect => effect != LightingEffect.Sequence).ToHashSet(),
+                SupportsVaporChamberLighting = true,
+                SupportsTouchpadStatusIndicator = true,
+                ObservedLightingZones = new HashSet<ObservedLightingZone> { ObservedLightingZone.Touchpad, ObservedLightingZone.UnderGlass },
+            };
+        }
         ServiceStatusSnapshot status = new(
-            1, true, paused, [], null, [], "Source-reviewed RZ09-0301 independent lighting preview",
+            1, true, paused, [], null, [], rz090529
+                ? "Source-reviewed RZ09-0529 lighting preview" : "Source-reviewed RZ09-0301 independent lighting preview",
             capabilities,
             new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, null, null)
             { IndependentLighting = controls, Lighting = fullEffect ? lighting with { ControlsKeyboardEffect = false } : null, LogoLighting = controls?.LogoMode }, profiles,
@@ -2277,7 +2303,8 @@ public partial class App
         {
             IsExperimentalDevice = true,
             AllowExperimentalFeatures = true,
-            ExperimentalSupportSource = "SynapseSourceBacked:RZ09-0301:581",
+            ExperimentalSupportSource = rz090529
+                ? "SynapseSourceBacked:RZ09-0529:711" : "SynapseSourceBacked:RZ09-0301:581",
             ExperimentalWritesPaused = paused,
         };
         System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(

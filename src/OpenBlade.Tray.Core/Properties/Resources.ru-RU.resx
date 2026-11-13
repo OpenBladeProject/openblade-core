@@ -771,6 +771,9 @@
   <data name="Lighting brightness" xml:space="preserve">
     <value>Яркость подсветки</value>
   </data>
+  <data name="Synapse lists these effects for this model; OpenBlade cannot control them yet: {0}" xml:space="preserve">
+    <value>Synapse указывает эти эффекты для данной модели, но OpenBlade пока не может ими управлять:\n{0}</value>
+  </data>
   <data name="Lighting color" xml:space="preserve">
     <value>Цвет подсветки</value>
   </data>
@@ -1133,6 +1136,18 @@
   </data>
   <data name="Switch off lighting" xml:space="preserve">
     <value>Выключить подсветку</value>
+  </data>
+  <data name="Touchpad lighting" xml:space="preserve">
+    <value>Подсветка тачпада</value>
+  </data>
+  <data name="Show Touchpad lighting when the laptop reports this zone." xml:space="preserve">
+    <value>Показывать, когда ноутбук сообщает о наличии этой зоны подсветки.</value>
+  </data>
+  <data name="Under-glass lighting" xml:space="preserve">
+    <value>Подсветка под стеклом</value>
+  </data>
+  <data name="Show Under-glass lighting when the laptop reports this zone." xml:space="preserve">
+    <value>Показывать, когда ноутбук сообщает о наличии этой зоны подсветки.</value>
   </data>
   <data name="Temperatures" xml:space="preserve">
     <value>Температуры</value>
@@ -1862,4 +1877,6 @@
   <data name="Both" xml:space="preserve">
     <value>Оба</value>
   </data>
+  <data name="Vapor chamber lighting" xml:space="preserve"><value>Подсветка испарительной камеры</value></data>
+  <data name="Touchpad status indicator" xml:space="preserve"><value>Индикатор состояния тачпада</value></data>
 </root>

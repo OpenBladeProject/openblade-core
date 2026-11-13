@@ -66,6 +66,28 @@ public sealed class ExperimentalEvidenceCatalogTests
                         $"https://apps.razer.com/synapse/products/{model.ProductId}/", source));
                     Assert.Equal("Pending", snapshot.PhysicalValidation);
                 }
+                else if (feature.Feature == "KeyboardOnlyCustomFramesAndSoftwareEffects")
+                {
+                    Assert.Equal((ushort)0x02C7, model.ProductId);
+                    Assert.Equal("ExactMcuAndSynapseSourceBackedWithoutPhysicalValidation", feature.Basis);
+                    Assert.Contains(";SHA256=", feature.Sources[0], StringComparison.Ordinal);
+                    Assert.Equal("evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json", feature.Sources[1]);
+                    Assert.EndsWith(";SHA256=FDD5D817BF28F152B3DF498AC6E908291993BBCC6939BE4D86F94AD74F52A9F1", feature.Sources[2]);
+                }
+                else if (feature.Feature == "KeyboardReactiveAndRippleCommonInputMap")
+                {
+                    Assert.Equal((ushort)0x02C7, model.ProductId);
+                    using Stream map = typeof(Rz090529KeyboardLightingLayout).Assembly.GetManifestResourceStream(
+                        "OpenBlade.Contracts.Fixtures.Rz090529KeyboardLightingLayout.json")!;
+                    Assert.Equal($"Rz090529KeyboardLightingLayout.json;SHA256={Convert.ToHexString(SHA256.HashData(map))}",
+                        Assert.Single(feature.Sources));
+                }
+                else if (feature.Feature == "VaporChamberEnabledAndTouchpadStatusIndicator")
+                {
+                    Assert.Equal((ushort)0x02C7, model.ProductId);
+                    Assert.Equal("ExactMcuAndSelectedSynapseFieldsWithoutPhysicalValidation", feature.Basis);
+                    Assert.Equal("evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json", feature.Sources[1]);
+                }
                 else if (model.ThermalPolicy is not null)
                 {
                     Assert.Equal("Supported", snapshot.SupportStatus);

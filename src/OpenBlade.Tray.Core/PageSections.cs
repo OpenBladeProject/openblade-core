@@ -41,6 +41,9 @@ public enum PageSectionKind
     LaptopBatteryHistory,
     ProfilesApplications,
     SettingsNotifications,
+    LightingTouchpad,
+    LightingUnderGlass,
+    LightingVaporChamber,
 }
 
 public sealed record PageSectionPreference(
@@ -161,6 +164,21 @@ public static class PageLayoutPreferenceDefaults
             PageSectionKind.LightingPowerSaving,
             TrayText.Get("Switch off lighting"),
             TrayText.Get("Turn keyboard lighting off with the display or after inactivity.")),
+        new(
+            CustomizablePageKind.Lighting,
+            PageSectionKind.LightingTouchpad,
+            TrayText.Get("Touchpad status indicator"),
+            TrayText.Get("Touchpad status indicator")),
+        new(
+            CustomizablePageKind.Lighting,
+            PageSectionKind.LightingUnderGlass,
+            TrayText.Get("Under-glass lighting"),
+            TrayText.Get("Show Under-glass lighting when the laptop reports this zone.")),
+        new(
+            CustomizablePageKind.Lighting,
+            PageSectionKind.LightingVaporChamber,
+            TrayText.Get("Vapor chamber lighting"),
+            TrayText.Get("Vapor chamber lighting")),
         new(
             CustomizablePageKind.Settings,
             PageSectionKind.SettingsBehavior,

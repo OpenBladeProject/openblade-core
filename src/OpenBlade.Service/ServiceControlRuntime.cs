@@ -16400,8 +16400,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         // outside this operation's scope; never use cached state as confirmation.
         byte? brightness = requested.Brightness.HasValue ? readback?.Brightness : cached?.Brightness;
         LogoLightingMode? logo = requested.LogoMode.HasValue ? readback?.LogoMode : cached?.LogoMode;
-        return brightness.HasValue || logo.HasValue
-            ? new IndependentLightingSettings(brightness, logo)
+        bool? vaporChamber = requested.VaporChamberLightingEnabled.HasValue
+            ? readback?.VaporChamberLightingEnabled : cached?.VaporChamberLightingEnabled;
+        bool? touchpadIndicator = requested.TouchpadStatusIndicatorEnabled.HasValue
+            ? readback?.TouchpadStatusIndicatorEnabled : cached?.TouchpadStatusIndicatorEnabled;
+        return brightness.HasValue || logo.HasValue || vaporChamber.HasValue || touchpadIndicator.HasValue
+            ? new IndependentLightingSettings(brightness, logo, vaporChamber, touchpadIndicator)
             : null;
     }
 

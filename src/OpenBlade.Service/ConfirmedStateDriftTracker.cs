@@ -16,6 +16,8 @@ public sealed class ConfirmedStateDriftTracker
     private LightingSettings? lighting;
     private byte? independentBrightness;
     private LogoLightingMode? independentLogo;
+    private bool? independentVaporChamber;
+    private bool? independentTouchpadIndicator;
     private readonly Func<bool>? retireCompletedTemporaryFullCharge;
 
     public ConfirmedStateDriftTracker(Func<bool>? retireCompletedTemporaryFullCharge = null) =>
@@ -39,6 +41,8 @@ public sealed class ConfirmedStateDriftTracker
         ObserveValue(state.Lighting, ref lighting, DeviceSubsystem.Lighting);
         ObserveValue(state.IndependentLighting?.Brightness, ref independentBrightness, DeviceSubsystem.Lighting);
         ObserveValue(state.IndependentLighting?.LogoMode, ref independentLogo, DeviceSubsystem.Lighting);
+        ObserveValue(state.IndependentLighting?.VaporChamberLightingEnabled, ref independentVaporChamber, DeviceSubsystem.Lighting);
+        ObserveValue(state.IndependentLighting?.TouchpadStatusIndicatorEnabled, ref independentTouchpadIndicator, DeviceSubsystem.Lighting);
     }
 
     public void ConfirmIntentional(DeviceSubsystem subsystem, bool matched)

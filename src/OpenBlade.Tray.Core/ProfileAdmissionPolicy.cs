@@ -100,6 +100,8 @@ internal static class ProfileAdmissionPolicy
         {
             return LightingSettingsValidation.IsWellFormed(lighting)
                 && (lighting.IndependentControls is null || lighting.IndependentControls.IsWellFormed)
+                && (lighting.IndependentControls?.VaporChamberLightingEnabled is null || capabilities.SupportsVaporChamberLighting)
+                && (lighting.IndependentControls?.TouchpadStatusIndicatorEnabled is null || capabilities.SupportsTouchpadStatusIndicator)
                 && (lighting.IndependentControls?.LogoMode is not { } logo
                     || capabilities.LogoLightingModes.Contains(logo));
         }

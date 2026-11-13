@@ -2239,6 +2239,19 @@
                                 </Button>
                             </Border>
                         </Border>
+                        <Border Style="{StaticResource SettingsGroupStyle}"
+                                Margin="0,10,0,0"
+                                Visibility="{x:Bind ShowObservedOnlyLightingEffects, Mode=OneWay}">
+                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Text="{CustomResource MainWindow_TextBlockEffectsListedInSynapse.Text}"
+                                               Style="{StaticResource CardTitleStyle}" />
+                                    <TextBlock Text="{x:Bind ObservedOnlyLightingEffectsText, Mode=OneWay}"
+                                               Style="{StaticResource SecondaryTextStyle}"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                        </Border>
                         <Border x:Name="LightingRefreshRateCard"
                                 Style="{StaticResource SettingsGroupStyle}"
                                 Margin="0,10,0,0"
@@ -2316,6 +2329,71 @@
                         </Border>
                         </StackPanel>
                         </ContentControl>
+                        </StackPanel>
+
+                        <StackPanel x:Name="LightingTouchpadSection"
+                                    Visibility="{x:Bind ShowObservedTouchpadLighting, Mode=OneWay}">
+                            <TextBlock local:CardReorder.IsHeader="True"
+                                       Text="{CustomResource MainWindow_TextBlockTouchpadLighting.Text}"
+                                       Style="{StaticResource SectionHeaderStyle}"
+                                       Margin="0,24,0,10" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="{CustomResource MainWindow_TextBlockTouchpadStatusIndicator.Text}" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{CustomResource MainWindow_TextBlockChangesTheFirmwareIndicatorNotTheWindows.Text}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <CheckBox x:Name="TouchpadStatusIndicatorControl" Grid.Column="1" VerticalAlignment="Center"
+                                                  AutomationProperties.Name="{CustomResource MainWindow_TouchpadStatusIndicatorControlText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                  IsThreeState="False"
+                                                  IsChecked="{x:Bind TouchpadStatusIndicatorEnabledEditor, Mode=TwoWay}"
+                                                  IsEnabled="{x:Bind CanEditTouchpadStatusIndicator, Mode=OneWay}" />
+                                    </Grid>
+                                </Border>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel x:Name="LightingUnderGlassSection"
+                                    Visibility="{x:Bind ShowObservedUnderGlassLighting, Mode=OneWay}">
+                            <TextBlock local:CardReorder.IsHeader="True"
+                                       Text="{CustomResource MainWindow_TextBlockUnderGlassLighting.Text}"
+                                       Style="{StaticResource SectionHeaderStyle}"
+                                       Margin="0,24,0,10" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="{CustomResource MainWindow_TextBlockLightingObservedOnly.Text}"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="{CustomResource MainWindow_TextBlockLightingObservedOnlyDescription.Text}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel x:Name="LightingVaporChamberSection"
+                                    Visibility="{x:Bind ShowVaporChamberLighting, Mode=OneWay}">
+                            <TextBlock local:CardReorder.IsHeader="True" Text="{CustomResource MainWindow_TextBlockVaporChamberLighting.Text}"
+                                       Style="{StaticResource SectionHeaderStyle}" Margin="0,24,0,10" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="{CustomResource MainWindow_TextBlockVaporChamberLighting2.Text}" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{CustomResource MainWindow_TextBlockChangesTheEnabledStateSleepSettingsStay.Text}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <CheckBox x:Name="VaporChamberLightingControl" Grid.Column="1" VerticalAlignment="Center"
+                                                  AutomationProperties.Name="{CustomResource MainWindow_VaporChamberLightingControlText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                  IsThreeState="False"
+                                                  IsChecked="{x:Bind VaporChamberLightingEnabledEditor, Mode=TwoWay}"
+                                                  IsEnabled="{x:Bind CanEditVaporChamberLighting, Mode=OneWay}" />
+                                    </Grid>
+                                </Border>
+                            </Border>
                         </StackPanel>
 
                         <StackPanel x:Name="LightingPowerSavingSection"

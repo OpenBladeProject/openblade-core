@@ -128,7 +128,9 @@ internal sealed class BatteryTestDevice : IBladeDevice
             {
                 IndependentLighting = new(
                     value.Brightness ?? State.IndependentLighting?.Brightness,
-                    value.LogoMode ?? State.IndependentLighting?.LogoMode),
+                    value.LogoMode ?? State.IndependentLighting?.LogoMode,
+                    value.VaporChamberLightingEnabled ?? State.IndependentLighting?.VaporChamberLightingEnabled,
+                    value.TouchpadStatusIndicatorEnabled ?? State.IndependentLighting?.TouchpadStatusIndicatorEnabled),
                 LogoLighting = value.LogoMode ?? State.LogoLighting,
             };
         }

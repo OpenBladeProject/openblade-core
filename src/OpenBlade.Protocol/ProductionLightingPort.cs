@@ -647,6 +647,12 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        // The shared IPC pulse also carries wider exact-model layouts. Reject
+        // those slots before enqueueing so they cannot fault this renderer.
+        if (pulse.MatrixSlot >= Pid02E0MatrixFrame.SlotCount)
+        {
+            throw KnownNotApplied("The key is outside the reviewed keyboard map.");
+        }
         lock (lifecycleSync)
         {
             if (closing || disposed)

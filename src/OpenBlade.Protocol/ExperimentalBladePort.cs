@@ -166,6 +166,8 @@ internal sealed partial class ExperimentalBladePort(
             ReportsPerformanceWithManualFans = enabled && GetExperimentalFanRange(model) is not null,
             SupportsKeyboardBrightness = SupportsExperimentalKeyboardBrightness(model, enabled),
             SupportsIndependentLightingControls = SupportsIndependentLighting(model),
+            SupportsVaporChamberLighting = enabled && model.ProductId == 0x02C7,
+            SupportsTouchpadStatusIndicator = enabled && model.ProductId == 0x02C7,
             LogoLightingModes = CreateExperimentalLogoModes(model, enabled),
             SupportsBreathingColorSelection = false,
             SupportedBreathingColorModes =
@@ -174,6 +176,13 @@ internal sealed partial class ExperimentalBladePort(
                 SupportsExperimentalWaveDirectionSelection(model),
             SupportsUniformLightingFrames =
                 SupportsExperimentalUniformFrames(model, enabled),
+            ObservedLightingZones = model.ProductId == 0x02C7
+                ? new HashSet<ObservedLightingZone>
+                {
+                    ObservedLightingZone.Touchpad,
+                    ObservedLightingZone.UnderGlass,
+                }
+                : new HashSet<ObservedLightingZone>(),
             HyperBoostAccess = SupportsExperimentalHyperBoost(model) && enabled ? DeviceFeatureAccess.ReadWrite
                 : model.ProductId is 0x02A0 or 0x029F or 0x029D ? DeviceFeatureAccess.ObservedOnly : null,
             HyperBoostWithoutCoolingPadAccess = SupportsExperimentalHyperBoost(model) && enabled ? DeviceFeatureAccess.ReadWrite : null,
@@ -192,6 +201,7 @@ internal sealed partial class ExperimentalBladePort(
             {
                 0x02A0 => KeyboardLightingLayoutIds.Rz09_0484,
                 0x02C5 => KeyboardLightingLayoutIds.Rz09_0530,
+                0x02C7 => KeyboardLightingLayoutIds.Rz09_0529,
                 _ => null,
             },
             ObservedLightingEffects = CreateObservedExperimentalLightingEffects(model),

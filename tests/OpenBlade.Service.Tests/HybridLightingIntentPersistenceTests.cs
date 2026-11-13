@@ -45,7 +45,7 @@ public sealed class HybridLightingIntentPersistenceTests : IDisposable
         var store = new ProfileStore(Path.Combine(directory, "profiles.json"));
         Assert.Throws<JsonException>(() => store.ReadDocument(JsonSerializer.SerializeToUtf8Bytes(document)));
         document["profiles"]!["pluggedIn"]!["lighting"]!.AsObject().Remove("controlsKeyboardEffect");
-        document["schemaVersion"] = 27;
+        document["schemaVersion"] = 28;
         Assert.Throws<InvalidDataException>(() => store.ReadDocument(JsonSerializer.SerializeToUtf8Bytes(document)));
     }
 
@@ -63,7 +63,7 @@ public sealed class HybridLightingIntentPersistenceTests : IDisposable
         PersistentOverrideLoadResult result = await new PersistentOverrideStore(path).LoadAsync(default);
         Assert.False(result.Recovered);
         Assert.Equal(expected, result.Overrides);
-        Assert.Equal(9, JsonNode.Parse(await File.ReadAllTextAsync(path))!["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(10, JsonNode.Parse(await File.ReadAllTextAsync(path))!["schemaVersion"]!.GetValue<int>());
     }
 
     [Fact]
@@ -117,7 +117,7 @@ public sealed class HybridLightingIntentPersistenceTests : IDisposable
         Assert.False(migrated.Recovered);
         Assert.False(migrated.Preferences.LastKnownLighting!.ControlsKeyboardEffect);
         Assert.Equal(baseline, migrated.Preferences.LastKnownLighting);
-        Assert.Equal(26, JsonNode.Parse(await File.ReadAllTextAsync(markerPath))!["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(27, JsonNode.Parse(await File.ReadAllTextAsync(markerPath))!["schemaVersion"]!.GetValue<int>());
     }
 
     public void Dispose()

@@ -5681,8 +5681,18 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         StackPanel? powerSaving = FindDescendant<StackPanel>(
             LightingCard,
             "LightingPowerSavingSection");
+        StackPanel? touchpad = FindDescendant<StackPanel>(
+            LightingCard,
+            "LightingTouchpadSection");
+        StackPanel? underGlass = FindDescendant<StackPanel>(
+            LightingCard,
+            "LightingUnderGlassSection");
+        StackPanel? vaporChamber = FindDescendant<StackPanel>(
+            LightingCard,
+            "LightingVaporChamberSection");
         StackPanel? labControls = FindDescendant<StackPanel>(LightingCard, "LightingLabControls");
-        if (host is null || keyboard is null || logo is null || powerSaving is null || labControls is null)
+        if (host is null || keyboard is null || logo is null || powerSaving is null
+            || touchpad is null || underGlass is null || vaporChamber is null || labControls is null)
         {
             return false;
         }
@@ -5694,6 +5704,9 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         pageSectionPresentations[PageSectionKind.LightingKeyboard] = keyboard;
         pageSectionPresentations[PageSectionKind.LightingLogo] = logo;
         pageSectionPresentations[PageSectionKind.LightingPowerSaving] = powerSaving;
+        pageSectionPresentations[PageSectionKind.LightingTouchpad] = touchpad;
+        pageSectionPresentations[PageSectionKind.LightingUnderGlass] = underGlass;
+        pageSectionPresentations[PageSectionKind.LightingVaporChamber] = vaporChamber;
         RefreshPageSections(CustomizablePageKind.Lighting);
         return true;
     }

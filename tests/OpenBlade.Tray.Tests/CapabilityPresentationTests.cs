@@ -2757,6 +2757,116 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("{x:Bind IsKeyboardEffectSelectionVisible, Mode=OneWay}", Attribute(effect, "Visibility"));
     }
 
+    [Fact]
+    public async Task ObservedLightingZones_KeepUnmappedUnderGlassSeparateFromTypedIndicators()
+    {
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        XElement touchpad = document.Descendants().Single(element =>
+            Attribute(element, "Name") == "LightingTouchpadSection");
+        XElement underGlass = document.Descendants().Single(element =>
+            Attribute(element, "Name") == "LightingUnderGlassSection");
+        XElement vaporChamber = document.Descendants().Single(element =>
+            Attribute(element, "Name") == "LightingVaporChamberSection");
+        string windowCode = ReadTraySource("MainWindow.xaml.cs");
+        Assert.Equal("{x:Bind ShowObservedTouchpadLighting, Mode=OneWay}",
+            Attribute(touchpad, "Visibility"));
+        Assert.Equal("{x:Bind ShowObservedUnderGlassLighting, Mode=OneWay}",
+            Attribute(underGlass, "Visibility"));
+        Assert.Contains("\"LightingTouchpadSection\"", windowCode, StringComparison.Ordinal);
+        Assert.Contains("\"LightingUnderGlassSection\"", windowCode, StringComparison.Ordinal);
+        Assert.Contains("PageSectionKind.LightingTouchpad", windowCode, StringComparison.Ordinal);
+        Assert.Contains("PageSectionKind.LightingUnderGlass", windowCode, StringComparison.Ordinal);
+        Assert.Contains("pageSectionPresentations[PageSectionKind.LightingVaporChamber] = vaporChamber;", windowCode, StringComparison.Ordinal);
+        Assert.Equal("{x:Bind ShowVaporChamberLighting, Mode=OneWay}", Attribute(vaporChamber, "Visibility"));
+        Assert.Contains(vaporChamber.Descendants(), element =>
+            Attribute(element, "IsChecked") == "{x:Bind VaporChamberLightingEnabledEditor, Mode=TwoWay}");
+        Assert.Contains(touchpad.Descendants(), element =>
+            Attribute(element, "IsChecked") == "{x:Bind TouchpadStatusIndicatorEnabledEditor, Mode=TwoWay}");
+        Assert.Contains(touchpad.Descendants(), element =>
+            Attribute(element, "Text") == "Changes the firmware indicator, not the Windows touchpad setting.");
+        Assert.Contains(underGlass.Descendants(), element =>
+            Attribute(element, "Text") == "This zone was reported on this model. OpenBlade cannot control it yet.");
+
+        var client = new PresentationClient();
+        await using var vm = new MainViewModel(client, new ImmediateDispatcher());
+        await vm.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            ObservedLightingZones = new HashSet<ObservedLightingZone>
+            {
+                ObservedLightingZone.Touchpad,
+                ObservedLightingZone.UnderGlass,
+            },
+        };
+        await client.PublishAndWaitAsync(CreateStatus(true, false, capabilities));
+        Assert.True(vm.ShowObservedTouchpadLighting);
+        Assert.True(vm.ShowObservedUnderGlassLighting);
+        await client.PublishAndWaitAsync(CreateStatus(true, false,
+            capabilities with { ObservedLightingZones = new HashSet<ObservedLightingZone>() }) with
+        {
+            Revision = 2,
+        });
+        Assert.False(vm.ShowObservedTouchpadLighting);
+        Assert.False(vm.ShowObservedUnderGlassLighting);
+    }
+
+    [Fact]
+    public async Task ObservedLightingEffects_AreListedWithoutBecomingSelectable()
+    {
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        XElement observedEffects = document.Descendants().Single(element =>
+            Attribute(element, "Visibility")
+                == "{x:Bind ShowObservedOnlyLightingEffects, Mode=OneWay}");
+        Assert.Contains(observedEffects.Descendants(), element =>
+            Attribute(element, "Text") == "{x:Bind ObservedOnlyLightingEffectsText, Mode=OneWay}");
+
+        var client = new PresentationClient();
+        await using var vm = new MainViewModel(client, new ImmediateDispatcher());
+        await vm.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+                LightingEffect.Breathing,
+                LightingEffect.Wave,
+            },
+            ObservedLightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+                LightingEffect.Breathing,
+                LightingEffect.Wave,
+                LightingEffect.AmbientAwareness,
+                LightingEffect.AudioMeter,
+                LightingEffect.Fire,
+                LightingEffect.Reactive,
+                LightingEffect.Ripple,
+                LightingEffect.Starlight,
+                LightingEffect.Tidal,
+                LightingEffect.Wheel,
+            },
+        };
+        await client.PublishAndWaitAsync(CreateStatus(true, false, capabilities));
+
+        Assert.True(vm.ShowObservedOnlyLightingEffects);
+        foreach (LightingEffect effect in new[]
+        {
+            LightingEffect.AmbientAwareness, LightingEffect.AudioMeter,
+            LightingEffect.Fire, LightingEffect.Reactive, LightingEffect.Ripple,
+            LightingEffect.Starlight, LightingEffect.Tidal, LightingEffect.Wheel,
+        })
+        {
+            Assert.Contains(LightingPresentation.LightingEffectLabel(effect),
+                vm.ObservedOnlyLightingEffectsText, StringComparison.Ordinal);
+            Assert.DoesNotContain(vm.AvailableLightingEffectOptions,
+                option => option.Effect == effect);
+        }
+        Assert.DoesNotContain(LightingPresentation.LightingEffectLabel(LightingEffect.Wave),
+            vm.ObservedOnlyLightingEffectsText, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(null, null)]
     [InlineData((byte)73, LogoLightingMode.Breathing)]
@@ -2798,6 +2908,77 @@ public sealed class CapabilityPresentationTests
         Assert.False(vm.IsKeyboardEffectSelectionVisible);
         Assert.Equal(logo, vm.SelectedLogoLightingModeOption?.Mode);
         Assert.Equal(brightness?.ToString() ?? "—", vm.LightingBrightnessValueText);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task IndependentZones_EditDispatchesOnlyRequestedFieldAndSavesIntent(bool touchpad)
+    {
+        var client = new PresentationClient();
+        await using var vm = new MainViewModel(client, new ImmediateDispatcher());
+        await vm.StartAsync();
+        ServiceStatusSnapshot status = CreateIndependentLightingStatus(50, LogoLightingMode.Static);
+        status = status with
+        {
+            Capabilities = status.Capabilities! with { SupportsVaporChamberLighting = true, SupportsTouchpadStatusIndicator = true },
+            ConfirmedState = status.ConfirmedState! with { IndependentLighting = new(50, LogoLightingMode.Static, false, false) },
+        };
+        await client.PublishAndWaitAsync(status);
+        Assert.True(vm.CanEditVaporChamberLighting);
+        Assert.True(vm.CanEditTouchpadStatusIndicator);
+        if (touchpad)
+        {
+            vm.TouchpadStatusIndicatorEnabledEditor = true;
+        }
+        else
+        {
+            vm.VaporChamberLightingEnabledEditor = true;
+        }
+        LightingSettings draft = vm.LightingDraft;
+        await Assert.IsType<AsyncRelayCommand>(vm.SetLightingCommand).ExecuteAsync(draft);
+        Assert.Equal(touchpad ? new IndependentLightingSettings(null, null, null, true)
+            : new(null, null, true), client.IndependentLightingRequest?.Value);
+        Assert.Null(client.ClassicLightingRequest);
+        await Assert.IsType<AsyncRelayCommand>(vm.SaveLightingProfileDraftCommand).ExecuteAsync(null);
+        Assert.Equal(draft, client.SavedProfiles?.PluggedIn.Lighting);
+    }
+
+    [Fact]
+    public async Task IndependentZones_UnknownReadbackStaysNullableAndCannotBeEdited()
+    {
+        var client = new PresentationClient();
+        await using var vm = new MainViewModel(client, new ImmediateDispatcher());
+        await vm.StartAsync();
+        ServiceStatusSnapshot status = CreateIndependentLightingStatus(50, LogoLightingMode.Static);
+        await client.PublishAndWaitAsync(status with
+        {
+            Capabilities = status.Capabilities! with { SupportsVaporChamberLighting = true, SupportsTouchpadStatusIndicator = true },
+        });
+        Assert.Null(vm.VaporChamberLightingEnabledEditor);
+        Assert.Null(vm.TouchpadStatusIndicatorEnabledEditor);
+        Assert.False(vm.CanEditVaporChamberLighting);
+        Assert.False(vm.CanEditTouchpadStatusIndicator);
+        vm.VaporChamberLightingEnabledEditor = true;
+        vm.TouchpadStatusIndicatorEnabledEditor = true;
+        Assert.Null(vm.LightingDraft.IndependentControls);
+        Assert.Null(client.IndependentLightingRequest);
+    }
+
+    [Fact]
+    public void IndependentZoneRowsUseSharedPresentationAndNeverExposeSleepControls()
+    {
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        foreach (string name in new[] { "VaporChamberLightingControl", "TouchpadStatusIndicatorControl" })
+        {
+            XElement control = document.Descendants().Single(element => Attribute(element, "Name") == name);
+            Assert.Equal("CheckBox", control.Name.LocalName);
+            Assert.Contains("Mode=TwoWay", Attribute(control, "IsChecked"));
+            Assert.Contains("CanEdit", Attribute(control, "IsEnabled"));
+            XElement row = control.Ancestors().First(element => element.Name.LocalName == "Border");
+            Assert.Equal("{StaticResource SettingsLastRowStyle}", Attribute(row, "Style"));
+            Assert.DoesNotContain(row.Descendants(), element => element.Name.LocalName == "Slider");
+        }
     }
 
     [Theory]

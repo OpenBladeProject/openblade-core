@@ -9,7 +9,7 @@ namespace OpenBlade.Contracts;
 /// </summary>
 public readonly record struct ReactiveKeyPulse
 {
-    public const byte MaximumMatrixSlot = 101;
+    public const byte MaximumMatrixSlot = 113;
 
     [JsonConstructor]
     public ReactiveKeyPulse(byte matrixSlot, long? observedTimestamp = null)

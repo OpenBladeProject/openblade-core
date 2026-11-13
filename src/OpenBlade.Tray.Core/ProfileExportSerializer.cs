@@ -12,7 +12,7 @@ public sealed record ProfileExportDocument(
 
 public static class ProfileExportSerializer
 {
-    public const int CurrentSchemaVersion = 17;
+    public const int CurrentSchemaVersion = 18;
     public const int MaximumFileSizeBytes = 1024 * 1024;
 
     private static readonly JsonSerializerOptions SerializerOptions =
@@ -85,7 +85,7 @@ public static class ProfileExportSerializer
             11 => DeserializeVersion11(json),
             12 => DeserializeVersion11(json),
             13 => DeserializeVersion11(json),
-            14 or 15 or 16 or 17 => DeserializeCurrentShape(json),
+            14 or 15 or 16 or 17 or 18 => DeserializeCurrentShape(json),
             > CurrentSchemaVersion => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} was created by a newer version of OpenBlade."),
             _ => throw new InvalidDataException(
@@ -121,6 +121,10 @@ public static class ProfileExportSerializer
                     "The profile file does not contain a valid schema version.");
             }
 
+            if (schemaVersion < 18 && LightingSettingsValidation.ContainsZoneControlIntent(document.RootElement))
+            {
+                throw new InvalidDataException("Lighting zone controls require profile schema 18.");
+            }
             if (schemaVersion < 16)
             {
                 RejectLegacyIndependentLighting(document.RootElement);

@@ -2434,6 +2434,25 @@ public sealed partial class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task ReactivePulse_RejectsWiderLayoutBeforeQueueingAndKeepsRendererUsable()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        await port.SetLightingAsync(LightingSettingsFactory.Reactive(
+            new RgbColor(0x12, 0x34, 0x56), 100, ReactiveLightingDuration.Medium), default);
+        foreach (byte slot in new byte[] { 102, 113 })
+        {
+            BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+                port.PulseReactiveKeyAsync(new ReactiveKeyPulse(slot), default));
+            Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        }
+        await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(19), default);
+        await writer.WaitForWriteCountAsync(2, TimeSpan.FromSeconds(2));
+        Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[19]);
+    }
+
+    [Fact]
     public async Task ReactivePulse_WritesTheRequestedSlotWhenLiveRendererIsReactive()
     {
         var session = new LightingSession(initialBrightness: 0xFF);

@@ -2887,6 +2887,8 @@ public sealed class ControlCoordinator
             ? value.IndependentControls is null
                 || value.IndependentControls is { IsWellFormed: true } fields
                     && (!fields.Brightness.HasValue || capabilities.SupportsKeyboardBrightness)
+                    && (!fields.VaporChamberLightingEnabled.HasValue || capabilities.SupportsVaporChamberLighting)
+                    && (!fields.TouchpadStatusIndicatorEnabled.HasValue || capabilities.SupportsTouchpadStatusIndicator)
                     && (fields.LogoMode is null || capabilities.LogoLightingModes.Contains(fields.LogoMode.Value))
             : value.IndependentControls is null
                 && capabilities.LightingEffects.Contains(value.Effect)
@@ -2901,6 +2903,8 @@ public sealed class ControlCoordinator
         {
             return desired.IndependentControls is not { } fields
                 || (!fields.Brightness.HasValue || confirmed.IndependentLighting?.Brightness == fields.Brightness)
+                    && (!fields.VaporChamberLightingEnabled.HasValue || confirmed.IndependentLighting?.VaporChamberLightingEnabled == fields.VaporChamberLightingEnabled)
+                    && (!fields.TouchpadStatusIndicatorEnabled.HasValue || confirmed.IndependentLighting?.TouchpadStatusIndicatorEnabled == fields.TouchpadStatusIndicatorEnabled)
                     && (fields.LogoMode is null || (confirmed.IndependentLighting?.LogoMode ?? confirmed.LogoLighting) == fields.LogoMode);
         }
         LightingSettings desiredKeyboard = desired with { LogoMode = null, ControlsKeyboardEffect = false };

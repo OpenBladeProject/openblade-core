@@ -1309,6 +1309,15 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_TextBlockLighting.Text" xml:space="preserve">
     <value>Подсветка</value>
   </data>
+  <data name="MainWindow_TextBlockLightingObservedOnly.Text" xml:space="preserve">
+    <value>Только наблюдение</value>
+  </data>
+  <data name="MainWindow_TextBlockEffectsListedInSynapse.Text" xml:space="preserve">
+    <value>Эффекты из Synapse</value>
+  </data>
+  <data name="MainWindow_TextBlockLightingObservedOnlyDescription.Text" xml:space="preserve">
+    <value>Владелец сообщил о наличии этой зоны на модели. OpenBlade пока не может управлять ею.</value>
+  </data>
   <data name="MainWindow_TextBlockLightingBrightness.Text" xml:space="preserve">
     <value>Яркость подсветки</value>
   </data>
@@ -1585,6 +1594,9 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_TextBlockTouchpadFirmware.Text" xml:space="preserve">
     <value>Сенсорная панель</value>
   </data>
+  <data name="MainWindow_TextBlockTouchpadLighting.Text" xml:space="preserve">
+    <value>Сенсорная панель</value>
+  </data>
   <data name="MainWindow_TextBlockTrayDashboard.Text" xml:space="preserve">
     <value>Панель в области уведомлений</value>
   </data>
@@ -1593,6 +1605,9 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="MainWindow_TextBlockUnsaved.Text" xml:space="preserve">
     <value>Не сохранено</value>
+  </data>
+  <data name="MainWindow_TextBlockUnderGlassLighting.Text" xml:space="preserve">
+    <value>Подсветка под стеклом</value>
   </data>
   <data name="MainWindow_TextBlockUpdateChannel.Text" xml:space="preserve">
     <value>Канал обновлений</value>
@@ -3076,4 +3091,11 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_CoolingPadDemandToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Разрешить приложениям запрашивать усиленное охлаждение</value>
   </data>
+  <data name="MainWindow_TextBlockChangesTheEnabledStateSleepSettingsStay.Text" xml:space="preserve"><value>Включает или выключает подсветку. Настройки сна не меняются.</value></data>
+  <data name="MainWindow_TextBlockChangesTheFirmwareIndicatorNotTheWindows.Text" xml:space="preserve"><value>Меняет индикатор, а не настройку тачпада в Windows.</value></data>
+  <data name="MainWindow_TextBlockTouchpadStatusIndicator.Text" xml:space="preserve"><value>Индикатор состояния тачпада</value></data>
+  <data name="MainWindow_TextBlockVaporChamberLighting.Text" xml:space="preserve"><value>Подсветка испарительной камеры</value></data>
+  <data name="MainWindow_TextBlockVaporChamberLighting2.Text" xml:space="preserve"><value>Подсветка испарительной камеры</value></data>
+  <data name="MainWindow_TouchpadStatusIndicatorControlText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Индикатор состояния тачпада</value></data>
+  <data name="MainWindow_VaporChamberLightingControlText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Подсветка испарительной камеры</value></data>
 </root>

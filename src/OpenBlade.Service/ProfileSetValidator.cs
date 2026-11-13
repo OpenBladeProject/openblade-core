@@ -53,6 +53,8 @@ public sealed class ProfileValidationPolicy
     public IReadOnlySet<LightingEffect> SupportedLightingEffects { get; }
 
     public bool SupportsIndependentLightingControls { get; init; }
+    public bool SupportsVaporChamberLighting { get; init; }
+    public bool SupportsTouchpadStatusIndicator { get; init; }
 
     public CustomPerformanceCapabilities? CustomPerformance { get; }
 
@@ -146,6 +148,8 @@ public sealed class ProfileValidationPolicy
             batteryCapabilities.FanSpeedRangesByPerformancePreset)
         {
             SupportsIndependentLightingControls = lightingCapabilities.SupportsIndependentLightingControls,
+            SupportsVaporChamberLighting = lightingCapabilities.SupportsVaporChamberLighting,
+            SupportsTouchpadStatusIndicator = lightingCapabilities.SupportsTouchpadStatusIndicator,
         };
     }
 }
@@ -478,6 +482,12 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             if (!LightingSettingsValidation.IsWellFormed(lighting))
             {
                 throw Invalid($"The {name} independent lighting settings are invalid.");
+            }
+            if (!allowStoredIndependentIntent
+                && (lighting.IndependentControls?.VaporChamberLightingEnabled is not null && !validationPolicy.SupportsVaporChamberLighting
+                    || lighting.IndependentControls?.TouchpadStatusIndicatorEnabled is not null && !validationPolicy.SupportsTouchpadStatusIndicator))
+            {
+                throw Invalid($"The {name} independent lighting indicators are unavailable.");
             }
             return;
         }

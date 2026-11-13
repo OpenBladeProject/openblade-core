@@ -61,11 +61,15 @@ internal static class WriteConfirmationPolicy
     {
         byte? brightness = confirmed.IndependentLighting?.Brightness;
         LogoLightingMode? logo = confirmed.IndependentLighting?.LogoMode ?? confirmed.LogoLighting;
-        if (requested.Brightness.HasValue && !brightness.HasValue || requested.LogoMode.HasValue && !logo.HasValue)
+        if (requested.Brightness.HasValue && !brightness.HasValue || requested.LogoMode.HasValue && !logo.HasValue
+            || requested.VaporChamberLightingEnabled.HasValue && confirmed.IndependentLighting?.VaporChamberLightingEnabled is null
+            || requested.TouchpadStatusIndicatorEnabled.HasValue && confirmed.IndependentLighting?.TouchpadStatusIndicatorEnabled is null)
         {
             return PendingConfirmationResult.Unavailable;
         }
         return (!requested.Brightness.HasValue || requested.Brightness == brightness)
+            && (!requested.VaporChamberLightingEnabled.HasValue || requested.VaporChamberLightingEnabled == confirmed.IndependentLighting?.VaporChamberLightingEnabled)
+            && (!requested.TouchpadStatusIndicatorEnabled.HasValue || requested.TouchpadStatusIndicatorEnabled == confirmed.IndependentLighting?.TouchpadStatusIndicatorEnabled)
             && (!requested.LogoMode.HasValue || requested.LogoMode == logo)
                 ? PendingConfirmationResult.Match : PendingConfirmationResult.Mismatch;
     }

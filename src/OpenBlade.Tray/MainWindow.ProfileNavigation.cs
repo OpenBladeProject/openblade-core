@@ -44,6 +44,9 @@ public sealed partial class MainWindow
             "LightingKeyboardSection" => PageSectionKind.LightingKeyboard,
             "LightingLogoSection" => PageSectionKind.LightingLogo,
             "LightingPowerSavingSection" => PageSectionKind.LightingPowerSaving,
+            "LightingTouchpadSection" => PageSectionKind.LightingTouchpad,
+            "LightingUnderGlassSection" => PageSectionKind.LightingUnderGlass,
+            "LightingVaporChamberSection" => PageSectionKind.LightingVaporChamber,
             _ => null,
         };
         for (DependencyObject? current = destination.Anchor; section is null && current is not null;

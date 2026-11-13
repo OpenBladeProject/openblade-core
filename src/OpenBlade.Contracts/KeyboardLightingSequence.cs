@@ -8,11 +8,13 @@ public static class KeyboardLightingLayoutIds
     public const string Rz09_0484 = "openblade.razer.rz09-0484.keyboard.6x16.v1";
     public const string Rz09_0530 = "openblade.razer.rz09-0530.keyboard.6x16.v1";
     public const string Rz09_0528 = "openblade.razer.rz09-0528.keyboard.6x17.v1";
+    public const string Rz09_0529 = "openblade.razer.rz09-0529.keyboard.6x19.v1";
 
     public static bool IsKnown(string? layoutId) =>
         string.Equals(layoutId, Rz09_0581, StringComparison.Ordinal)
         || string.Equals(layoutId, Rz09_0528, StringComparison.Ordinal)
         || string.Equals(layoutId, Rz09_0530, StringComparison.Ordinal)
+        || string.Equals(layoutId, Rz09_0529, StringComparison.Ordinal)
         || string.Equals(layoutId, Rz09_0484, StringComparison.Ordinal);
 }
 
@@ -151,7 +153,10 @@ public static class KeyboardLightingSequenceCodec
 
     private static void RequireKnownLayout(string layoutId)
     {
-        if (!KeyboardLightingLayoutIds.IsKnown(layoutId))
+        // The current sequence encoding has a fixed 102-slot canvas. A known
+        // reactive-input layout is not necessarily a sequence-compatible layout.
+        if (!KeyboardLightingLayoutIds.IsKnown(layoutId)
+            || layoutId == KeyboardLightingLayoutIds.Rz09_0529)
         {
             throw new InvalidDataException("The sequence keyboard layout is unknown.");
         }

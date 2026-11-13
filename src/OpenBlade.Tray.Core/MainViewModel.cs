@@ -3225,6 +3225,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsSpecialKeyBindingsEditable));
             Notify(nameof(IsWindowsDynamicLightingAvailable));
             Notify(nameof(CanControlLighting));
+            Notify(nameof(ShowObservedOnlyLightingEffects));
+            Notify(nameof(ObservedOnlyLightingEffectsText));
+            Notify(nameof(ShowObservedTouchpadLighting));
+            Notify(nameof(ShowObservedUnderGlassLighting));
+            Notify(nameof(ShowVaporChamberLighting));
             Notify(nameof(SupportsSixtyHzLighting));
             Notify(nameof(CanSetLightingRefreshRate));
             NotifyGamingModeKeyPolicy();
@@ -4518,6 +4523,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public bool IsLogoLightingVisible => AvailableLogoLightingModeOptions.Count > 0;
+
+    public bool ShowObservedTouchpadLighting =>
+        Capabilities.ObservedLightingZones.Contains(ObservedLightingZone.Touchpad);
+
+    public bool ShowObservedUnderGlassLighting =>
+        Capabilities.ObservedLightingZones.Contains(ObservedLightingZone.UnderGlass);
 
     public bool LightingShowsBrightness => UsesIndependentLightingControls || LightingEffectEditor != LightingEffect.Off;
 
@@ -8557,7 +8568,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return activeProfileDraft.Lighting is not null
                     ? savedControls != currentControls
                     : ConfiguredValueDiffers(savedControls?.Brightness, independentBrightness)
-                        || ConfiguredValueDiffers(savedControls?.LogoMode, independentLogo);
+                        || ConfiguredValueDiffers(savedControls?.LogoMode, independentLogo)
+                        || ConfiguredValueDiffers(savedControls?.VaporChamberLightingEnabled, independentVaporChamber)
+                        || ConfiguredValueDiffers(savedControls?.TouchpadStatusIndicatorEnabled, independentTouchpadIndicator);
             }
             bool keyboardDiffers = (activeProfileDraft.Lighting is not null
                     || !IsKeyboardEffectUnconfirmed)

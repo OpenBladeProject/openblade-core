@@ -486,6 +486,10 @@ public sealed class BatteryConfigurationStore
                 "The current battery preference document contains a legacy setting.");
         }
 
+        if (expectedSchemaVersion < 27 && LightingSettingsValidation.ContainsZoneControlIntent(preferencesElement))
+        {
+            throw new InvalidDataException("Lighting zone controls require profile schema 27.");
+        }
         if (expectedSchemaVersion < ProfileStore.KeyboardEffectControlSchemaVersion)
         {
             ProfileStore.RejectKeyboardEffectControlInLegacySchema(preferencesElement);

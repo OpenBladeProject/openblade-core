@@ -1292,6 +1292,15 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_TextBlockLighting.Text" xml:space="preserve">
     <value>灯光</value>
   </data>
+  <data name="MainWindow_TextBlockLightingObservedOnly.Text" xml:space="preserve">
+    <value>仅供观察</value>
+  </data>
+  <data name="MainWindow_TextBlockEffectsListedInSynapse.Text" xml:space="preserve">
+    <value>Synapse 中列出的效果</value>
+  </data>
+  <data name="MainWindow_TextBlockLightingObservedOnlyDescription.Text" xml:space="preserve">
+    <value>据机主反馈，此型号配有此灯光区域。OpenBlade 目前无法控制它。</value>
+  </data>
   <data name="MainWindow_TextBlockLightingBrightness.Text" xml:space="preserve">
     <value>灯光亮度</value>
   </data>
@@ -1568,6 +1577,9 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_TextBlockTouchpadFirmware.Text" xml:space="preserve">
     <value>触摸板</value>
   </data>
+  <data name="MainWindow_TextBlockTouchpadLighting.Text" xml:space="preserve">
+    <value>触摸板</value>
+  </data>
   <data name="MainWindow_TextBlockTrayDashboard.Text" xml:space="preserve">
     <value>托盘仪表板</value>
   </data>
@@ -1576,6 +1588,9 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   </data>
   <data name="MainWindow_TextBlockUnsaved.Text" xml:space="preserve">
     <value>未保存</value>
+  </data>
+  <data name="MainWindow_TextBlockUnderGlassLighting.Text" xml:space="preserve">
+    <value>玻璃下方灯光</value>
   </data>
   <data name="MainWindow_TextBlockUpdateChannel.Text" xml:space="preserve">
     <value>更新通道</value>
@@ -3059,4 +3074,11 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_CoolingPadDemandToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>允许应用请求加强散热</value>
   </data>
+  <data name="MainWindow_TextBlockChangesTheEnabledStateSleepSettingsStay.Text" xml:space="preserve"><value>开启或关闭灯光，不更改睡眠设置。</value></data>
+  <data name="MainWindow_TextBlockChangesTheFirmwareIndicatorNotTheWindows.Text" xml:space="preserve"><value>仅更改固件指示灯，不更改 Windows 触控板设置。</value></data>
+  <data name="MainWindow_TextBlockTouchpadStatusIndicator.Text" xml:space="preserve"><value>触控板状态指示灯</value></data>
+  <data name="MainWindow_TextBlockVaporChamberLighting.Text" xml:space="preserve"><value>均热板灯光</value></data>
+  <data name="MainWindow_TextBlockVaporChamberLighting2.Text" xml:space="preserve"><value>均热板灯光</value></data>
+  <data name="MainWindow_TouchpadStatusIndicatorControlText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>触控板状态指示灯</value></data>
+  <data name="MainWindow_VaporChamberLightingControlText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>均热板灯光</value></data>
 </root>

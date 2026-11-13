@@ -460,7 +460,12 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     public async Task ReadCapabilities_BatteryUnavailableStillReportsIndependentLighting()
     {
         var batteryFactory = new FakeQueryFactory();
-        var lightingPort = new FakeLightingPort();
+        var lightingPort = new FakeLightingPort(
+            observedLightingZones: new HashSet<ObservedLightingZone>
+            {
+                ObservedLightingZone.Touchpad,
+                ObservedLightingZone.UnderGlass,
+            }, supportsZoneFields: true);
         var lightingFactory = new FakeLightingFactory(lightingPort);
         using var provider = new WindowsVerifiedBladeDeviceProvider(
             () => Probe(BatteryValidationProbeClassification.Ready),
@@ -476,6 +481,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             capabilities.LightingEffects.Order());
         Assert.True(capabilities.ObservedLightingEffects.SetEquals(
             [LightingEffect.Ripple, LightingEffect.Wheel]));
+        Assert.True(capabilities.ObservedLightingZones.SetEquals(
+            [ObservedLightingZone.Touchpad, ObservedLightingZone.UnderGlass]));
+        Assert.True(capabilities.SupportsVaporChamberLighting);
+        Assert.True(capabilities.SupportsTouchpadStatusIndicator);
         Assert.Equal(
             DeviceFeatureAccess.ReadWrite,
             capabilities.SpecialKeyBindingsAccess);

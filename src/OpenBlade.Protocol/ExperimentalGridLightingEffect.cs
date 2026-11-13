@@ -3,14 +3,15 @@ using OpenBlade.Contracts;
 namespace OpenBlade.Protocol;
 
 /// <summary>
-/// Software patterns over an independently admitted 6-by-16 address grid.
+/// Software patterns over an independently admitted six-row address grid.
 /// This renderer establishes neither physical key positions nor device admission.
 /// </summary>
 internal sealed class ExperimentalGridLightingEffect
 {
     internal static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(50);
     private const int Rows = 6;
-    private const int Columns = 16;
+    private readonly int columns;
+    private readonly bool rz090529;
     private readonly LightingSettings settings;
     private readonly StarlightPattern? starlight;
     private readonly ImportedSequenceTimeline? sequence;
@@ -19,14 +20,16 @@ internal sealed class ExperimentalGridLightingEffect
     internal bool IsKeyTriggered => settings.Effect is LightingEffect.Reactive or LightingEffect.Ripple;
     internal bool IsSequence => sequence is not null;
 
-    internal ExperimentalGridLightingEffect(LightingSettings settings)
+    internal ExperimentalGridLightingEffect(LightingSettings settings, bool rz090529 = false)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        if (!IsSupported(settings))
+        if (!IsSupported(settings, rz090529))
         {
             throw new ArgumentException("The settings do not describe a supported typed grid effect.", nameof(settings));
         }
         this.settings = settings;
+        this.rz090529 = rz090529;
+        columns = rz090529 ? Rz090529KeyboardLightingLayout.Columns : 16;
         if (settings.Parameters is SequenceLightingParameters playback)
         {
             if (playback.LayoutId != KeyboardLightingLayoutIds.Rz09_0530)
@@ -53,15 +56,16 @@ internal sealed class ExperimentalGridLightingEffect
         }
     }
 
-    internal static bool IsSupported(LightingSettings? settings) =>
+    internal static bool IsSupported(LightingSettings? settings, bool rz090529 = false) =>
         LightingSettingsValidation.IsWellFormed(settings)
-        && settings!.Parameters is
-            BreathingLightingParameters { ColorMode: BreathingColorMode.Single or BreathingColorMode.Dual }
-            or WaveLightingParameters { Direction: LightingDirection.Leftward }
-            or FireLightingParameters or WheelLightingParameters
-            or StarlightLightingParameters or TidalLightingParameters
-            or ReactiveLightingParameters or RippleLightingParameters
-            or SequenceLightingParameters { LayoutId: KeyboardLightingLayoutIds.Rz09_0530 };
+        && (rz090529 && settings!.Parameters is SpectrumCyclingLightingParameters
+            || !rz090529 && settings!.Parameters is
+                BreathingLightingParameters { ColorMode: BreathingColorMode.Single or BreathingColorMode.Dual }
+                or WaveLightingParameters { Direction: LightingDirection.Leftward }
+                or SequenceLightingParameters { LayoutId: KeyboardLightingLayoutIds.Rz09_0530 }
+            || settings!.Parameters is FireLightingParameters or WheelLightingParameters
+                or StarlightLightingParameters or TidalLightingParameters
+                or ReactiveLightingParameters or RippleLightingParameters);
 
     internal TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
@@ -74,9 +78,11 @@ internal sealed class ExperimentalGridLightingEffect
     internal void Pulse(int slot, TimeSpan at)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(at, TimeSpan.Zero);
-        if (!IsKeyTriggered || !Blade14KeyboardLightingLayout.IsKeySlot(slot))
+        if (!IsKeyTriggered || !(rz090529
+            ? Rz090529KeyboardLightingLayout.IsKeySlot(slot)
+            : Blade14KeyboardLightingLayout.IsKeySlot(slot)))
         {
-            throw new CapabilityUnavailableException("The key is outside the reviewed Blade 14 map.");
+            throw new CapabilityUnavailableException("The key is outside the reviewed keyboard map.");
         }
         if (pulses.Count == 64) { pulses.RemoveAt(0); }
         pulses.Add((slot, at));
@@ -87,22 +93,23 @@ internal sealed class ExperimentalGridLightingEffect
         ArgumentOutOfRangeException.ThrowIfLessThan(elapsed, TimeSpan.Zero);
         if (sequence is not null)
         {
-            return sequence.FrameAt(elapsed).Slots.Take(Rows * Columns).ToArray();
+            return sequence.FrameAt(elapsed).Slots.Take(Rows * columns).ToArray();
         }
         if (IsKeyTriggered)
         {
             TimeSpan duration = PulseDuration();
             pulses.RemoveAll(pulse => elapsed - pulse.At >= duration);
         }
-        var colors = new RgbColor[Rows * Columns];
+        var colors = new RgbColor[Rows * columns];
         for (int slot = 0; slot < colors.Length; slot++)
         {
-            int row = slot / Columns;
-            int column = slot % Columns;
+            int row = slot / columns;
+            int column = slot % columns;
             colors[slot] = settings.Parameters switch
             {
                 BreathingLightingParameters breathing => Breathing(breathing, elapsed),
-                WaveLightingParameters => Hue(column / (double)Columns + Phase(elapsed, 3)),
+                WaveLightingParameters => Hue(column / (double)columns + Phase(elapsed, 3)),
+                SpectrumCyclingLightingParameters => Hue(Phase(elapsed, 12)),
                 FireLightingParameters => Fire(row, column, elapsed),
                 WheelLightingParameters wheel => Wheel(row, column, wheel, elapsed),
                 TidalLightingParameters tidal => Tidal(row, column, tidal, elapsed),
@@ -130,16 +137,17 @@ internal sealed class ExperimentalGridLightingEffect
     private static RgbColor Fire(int row, int column, TimeSpan elapsed) =>
         FromMatrix(SoftwareFirePattern.Render(row, column, elapsed));
 
-    private static RgbColor Wheel(int row, int column, WheelLightingParameters value, TimeSpan elapsed)
+    private RgbColor Wheel(int row, int column, WheelLightingParameters value, TimeSpan elapsed)
     {
-        double angle = Math.Atan2(row - 2.5, column - 7.5) / (2 * Math.PI);
+        double angle = Math.Atan2(row - 2.5, column - (columns - 1) / 2.0) / (2 * Math.PI);
         double rotation = Phase(elapsed, 6);
         return Hue(angle + (value.Direction == LightingRotationDirection.Clockwise ? -rotation : rotation));
     }
 
-    private static RgbColor Tidal(int row, int column, TidalLightingParameters value, TimeSpan elapsed)
+    private RgbColor Tidal(int row, int column, TidalLightingParameters value, TimeSpan elapsed)
     {
-        double x = (column - 7.5) / 7.5;
+        double center = (columns - 1) / 2.0;
+        double x = (column - center) / center;
         double y = (row - 2.5) / 2.5;
         double radius = Math.Sqrt((x * x + y * y) / 2);
         double time = Phase(elapsed, 5);
@@ -164,7 +172,8 @@ internal sealed class ExperimentalGridLightingEffect
 
     private RgbColor RenderPulses(int slot, TimeSpan elapsed)
     {
-        if (!Blade14KeyboardLightingLayout.TryGetKeyPosition(slot, out double x, out double y))
+        bool hasPosition = TryGetKeyPosition(slot, out double x, out double y);
+        if (settings.Effect == LightingEffect.Ripple && !hasPosition)
         {
             return default;
         }
@@ -181,7 +190,10 @@ internal sealed class ExperimentalGridLightingEffect
             }
             else
             {
-                _ = Blade14KeyboardLightingLayout.TryGetKeyPosition(origin, out double ox, out double oy);
+                if (!TryGetKeyPosition(origin, out double ox, out double oy))
+                {
+                    continue;
+                }
                 double distance = Math.Sqrt((x - ox) * (x - ox) + (y - oy) * (y - oy));
                 double band = Math.Max(0, 1 - Math.Abs(distance - age / duration * 18) / 1.25);
                 intensity = band * (1 - age / duration);
@@ -195,6 +207,10 @@ internal sealed class ExperimentalGridLightingEffect
 
     private static double Phase(TimeSpan elapsed, int seconds) =>
         elapsed.Ticks % (seconds * TimeSpan.TicksPerSecond) / (double)(seconds * TimeSpan.TicksPerSecond);
+
+    private bool TryGetKeyPosition(int slot, out double x, out double y) => rz090529
+        ? Rz090529KeyboardLightingLayout.TryGetKeyPosition(slot, out x, out y)
+        : Blade14KeyboardLightingLayout.TryGetKeyPosition(slot, out x, out y);
 
     private static double Fraction(double value) => value - Math.Floor(value);
 
