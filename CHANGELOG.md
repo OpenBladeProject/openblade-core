@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Expand source-reviewed lighting with independent brightness and available logo controls on 15 Blade profiles, MCU-backed keyboard effects on seven models, and software Fire on Blade 16 RZ09-0581. Existing field-only profiles keep their behavior. ([#960](https://github.com/OSSBlade/openblade-core/pull/960))
+
 ### Fixed
 
 - Show the failing installer step and underlying error, including separate cleanup or recovery failures, instead of only a generic error code. Include Setup diagnostics in the main installer log so a single shared log contains the failure details. ([#952](https://github.com/OSSBlade/openblade-core/pull/952))
