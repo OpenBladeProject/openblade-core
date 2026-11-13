@@ -48,11 +48,19 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal($"Blade14KeyboardLightingLayout.json;SHA256={Convert.ToHexString(SHA256.HashData(map))}",
                         feature.Sources[1]);
                 }
-                else if (feature.Feature == "ActiveKeyboardLightingAndBrightness")
+                else if (feature.Feature is "ActiveKeyboardLightingAndBrightness"
+                    or "KeyboardBreathingRandomSingleDualColors" or "KeyboardWaveBothDirections" or "KeyboardStaticColor")
                 {
-                    Assert.Contains(model.ProductId, new ushort[] { 0x028A, 0x028B, 0x028C, 0x02B7, 0x02B8, 0x02C7 });
-                    Assert.Equal("ExactMcuAndSynapseSourceBackedWithoutPhysicalValidation", feature.Basis);
-                    Assert.StartsWith("https://dl.razerzone.com/drivers/", feature.Sources[0]);
+                    Assert.Contains(model.ProductId, new ushort[] { 0x0245, 0x028A, 0x028B, 0x028C, 0x02B7, 0x02B8, 0x02C7 });
+                    string basis = feature.Feature switch
+                    {
+                        "ActiveKeyboardLightingAndBrightness" => "ExactMcuAndSynapseSourceBackedWithoutPhysicalValidation",
+                        "KeyboardWaveBothDirections" => "ExactMcuAndSelectedModelLabelsWithoutPhysicalValidation",
+                        "KeyboardStaticColor" when model.ProductId is 0x028A or 0x02B7 => "NotEstablishedHiddenPaletteSelector",
+                        _ => "ExactMcuSourceBackedWithoutPhysicalValidation",
+                    };
+                    Assert.Equal(basis, feature.Basis);
+                    Assert.StartsWith(model.ProductId == 0x0245 ? "https://rzr.to/KkxlH;SHA256=" : "https://dl.razerzone.com/drivers/", feature.Sources[0]);
                     Assert.All(feature.Sources, source => Assert.Matches(@";SHA256=[0-9A-F]{64}$", source));
                     Assert.All(feature.Sources.Skip(1), source => Assert.StartsWith(
                         $"https://apps.razer.com/synapse/products/{model.ProductId}/", source));

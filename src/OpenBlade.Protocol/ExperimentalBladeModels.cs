@@ -67,14 +67,21 @@ internal static class ExperimentalBladeModels
                         new("ManualFanEnvelope3700To5300Step100", "SourceDerivedOuterEnvelopeRequiresFreshFirmwareIntersection", sources) }
                     : []),
                 .. (ExperimentalBladePort.SupportsIndependentLighting(model)
-                    ? new ExperimentalFeatureEvidence[] { new(model.ProductId is 0x0246 or 0x0268
+                    ? new ExperimentalFeatureEvidence[] { new(model.ProductId is 0x0246 or 0x0268 or 0x028A
                         ? "IndependentKeyboardBrightness" : "IndependentKeyboardBrightnessAndLogo",
                         "SynapseSourceBackedWithoutPhysicalValidation", sources) }
                     : []),
                 .. (ExperimentalBladePort.SupportsReviewedMcuLighting(model)
                     ? new ExperimentalFeatureEvidence[] { new("ActiveKeyboardLightingAndBrightness",
                         "ExactMcuAndSynapseSourceBackedWithoutPhysicalValidation",
-                        [ReviewedMcuLightingSource(model), .. sources]) }
+                        [ReviewedMcuLightingSource(model), .. sources]),
+                        new("KeyboardBreathingRandomSingleDualColors", "ExactMcuSourceBackedWithoutPhysicalValidation",
+                            [ReviewedMcuLightingSource(model), .. sources]),
+                        new("KeyboardWaveBothDirections", "ExactMcuAndSelectedModelLabelsWithoutPhysicalValidation",
+                            [ReviewedMcuLightingSource(model), .. sources]),
+                        new("KeyboardStaticColor", model.ProductId is 0x028A or 0x02B7
+                            ? "NotEstablishedHiddenPaletteSelector" : "ExactMcuSourceBackedWithoutPhysicalValidation",
+                            [ReviewedMcuLightingSource(model), .. sources]) }
                     : []),
                 new("AutomaticFanHandback", "SynapseSourceBackedWithoutPhysicalValidation", sources),
                 new("FixedAndCurveFanWrites", model.ProductId == 0x0245
@@ -86,10 +93,10 @@ internal static class ExperimentalBladeModels
                 new("MaximumFans", thermal.SupportsMaximumFans ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
                 new("AdapterPowerClassification", "SynapseSourceBacked", sources),
                 .. FanStopEvidenceFor(model),
-                new(ExperimentalBladePort.SupportsIndependentLighting(model)
-                    ? "KeyboardEffectsFramesAndHyperBoost"
-                    : ExperimentalBladePort.SupportsReviewedMcuLighting(model)
-                    ? "CustomFramesColoredLightingAndHyperBoost" : "LightingAndHyperBoost", "NotEstablished", sources),
+                new(ExperimentalBladePort.SupportsReviewedMcuLighting(model)
+                    ? "CustomFramesAdditionalEffectsAndHyperBoost"
+                    : ExperimentalBladePort.SupportsIndependentLighting(model)
+                    ? "KeyboardEffectsFramesAndHyperBoost" : "LightingAndHyperBoost", "NotEstablished", sources),
             ];
         }
         IReadOnlyList<ExperimentalFeatureEvidence> features = model.ProductId switch
@@ -318,6 +325,7 @@ internal static class ExperimentalBladeModels
     // Exact acquisition pins are source provenance, not installed firmware admission.
     private static string ReviewedMcuLightingSource(ExperimentalBladeModel model) => model.ProductId switch
     {
+        0x0245 => "https://rzr.to/KkxlH;SHA256=58F880CC46A64379131E7EDC3D1A8C63418DC2989179D3A514D6D79EA38E49E5",
         0x028A => "https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20%282022%29%20%7C%20RZ09-0421x/RazerUpdater_v1.1.1.3_CH580_EC_0103_MCU_010300_v2.exe;SHA256=6FCFD96615C514C6CD25944405980B6B39D8A2B0458F8CABCE299DAC37728118",
         0x028B => "https://dl.razerzone.com/drivers/Razer%20Blade%2017%22%20%282022%29%20%7C%20RZ09-0423x/RazerUpdater_v1.1.1.3_DI780-ECv0105_MCUv010200_VBIOS_v3.exe;SHA256=3F096851BED1679A83630FA588DAF0D977F0944634075E75493658CFAD03C554",
         0x028C => "https://dl.razerzone.com/drivers/Razer%20Blade%2014%20%282022%29%20%E2%80%93%20RZ09-0427/RazerUpdater_v1.1.1.3_PI480-MCUv010100-PDv11-BIOSv3.06v1-ECv0106.exe;SHA256=6DC6495A1BDEBF7AEA343F2A5F1E82E5565AECE7D1FBF50CBD2E450CC18B04EF",
@@ -488,6 +496,7 @@ internal enum ExperimentalRecoveryScope
 {
     All,
     ThermalOnly,
+    LightingFieldsOnly,
 }
 
 internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
@@ -527,13 +536,13 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
     {
         lock (sync)
         {
-            // Only a known thermal operation can omit unrelated limiter state.
-            // A later thermal fault cannot narrow an existing battery/unknown obligation.
-            if (!IsPaused || scope != ExperimentalRecoveryScope.ThermalOnly)
-            {
-                recoveryScope = scope == ExperimentalRecoveryScope.ThermalOnly
-                    ? ExperimentalRecoveryScope.ThermalOnly : ExperimentalRecoveryScope.All;
-            }
+            // A known field-only lighting operation needs no effect baseline.
+            // Different obligations combine to All; no later fault can narrow
+            // an existing battery, effect or unknown submission obligation.
+            ExperimentalRecoveryScope requested = scope is ExperimentalRecoveryScope.ThermalOnly
+                or ExperimentalRecoveryScope.LightingFieldsOnly ? scope : ExperimentalRecoveryScope.All;
+            recoveryScope = !IsPaused ? requested
+                : recoveryScope == requested ? recoveryScope : ExperimentalRecoveryScope.All;
             Volatile.Write(ref recoveryRequired, 1);
         }
     }

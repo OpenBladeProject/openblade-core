@@ -25,14 +25,23 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.True(capabilities.SupportsIndependentLightingControls);
         Assert.True(capabilities.SupportsKeyboardBrightness);
         Assert.Equal(hasLogo ? 3 : 0, capabilities.LogoLightingModes.Count);
-        Assert.Empty(capabilities.LightingEffects);
+        Assert.Equal(product == 0x0245, capabilities.LightingEffects.Count > 0);
         Assert.NotEmpty(capabilities.ObservedLightingEffects);
         Assert.False(capabilities.SupportsUniformLightingFrames);
         Assert.Null(capabilities.KeyboardLightingLayoutId);
         var session = new Session();
         await using var port = Create(product, session);
-        Assert.Null(await port.ReadStateAsync(default));
-        Assert.Empty(session.Commands);
+        if (product == 0x0245)
+        {
+            Assert.NotNull(await port.ReadStateAsync(default));
+            Assert.Contains(session.Commands, command => command.ClassId == 0x0F && command.CommandId == 0x82);
+        }
+        else
+        {
+            Assert.Null(await port.ReadStateAsync(default));
+            Assert.Empty(session.Commands);
+        }
+        session.Commands.Clear();
         Assert.Equal(new IndependentLightingSettings(50, hasLogo ? LogoLightingMode.Static : null),
             await port.ReadIndependentLightingAsync(default));
         Assert.All(session.Commands, command => Assert.True(command.ClassId == 3
@@ -47,7 +56,7 @@ public sealed partial class SourceReviewedBladeModelTests
     [MemberData(nameof(IndependentLightingProducts))]
     public async Task IndependentLighting_ConfirmsOnlyRequestedBrightnessAndRetainsUnknownEffects(int product, bool hasLogo)
     {
-        var session = new Session();
+        var session = new Session { McuLighting = [0, 5, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0] };
         await using var port = Create(product, session);
         await port.SetIndependentLightingAsync(new(73, null), default);
         Assert.Equal(187, session.Brightness);
@@ -57,8 +66,11 @@ public sealed partial class SourceReviewedBladeModelTests
             && command.CommandId is 3 or 0x83));
         Assert.Single(session.Commands, command => command.CommandId == 3);
         Assert.Null(await port.ReadStateAsync(default));
-        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetLightingAsync(
-            LightingSettingsFactory.SpectrumCycling(73), default));
+        if (product != 0x0245)
+        {
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetLightingAsync(
+                LightingSettingsFactory.SpectrumCycling(73), default));
+        }
         Assert.Equal(hasLogo ? 3 : 0, port.Capabilities.LogoLightingModes.Count);
     }
 
@@ -95,7 +107,7 @@ public sealed partial class SourceReviewedBladeModelTests
     [MemberData(nameof(IndependentLightingProducts))]
     public async Task IndependentLighting_UnconfirmedWriteStopsWithoutReplayAndRecoveryIsReadOnly(int product, bool hasLogo)
     {
-        var session = new Session { IgnoreWrites = true };
+        var session = new Session { IgnoreWrites = true, McuLighting = [0, 5, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0] };
         var policy = new ExperimentalFeaturesPolicy(Model(product));
         await using var port = Create(product, session, policy);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>

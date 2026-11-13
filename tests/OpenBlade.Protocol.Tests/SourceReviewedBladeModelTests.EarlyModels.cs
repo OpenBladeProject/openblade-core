@@ -28,16 +28,19 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.False(capabilities.ReportsPerformanceWithManualFans);
         LightingEffect[] expectedLighting = IsEarlyAcOnly(product)
             ? []
-            : [LightingEffect.Off, LightingEffect.Breathing, LightingEffect.Spectrum, LightingEffect.Wave];
+            : product == 0x028A
+            ? [LightingEffect.Off, LightingEffect.Breathing, LightingEffect.Spectrum, LightingEffect.Wave]
+            : [LightingEffect.Off, LightingEffect.Static, LightingEffect.Breathing, LightingEffect.Spectrum, LightingEffect.Wave];
         Assert.Equal(expectedLighting.Order(), capabilities.LightingEffects.Order());
         LogoLightingMode[] expectedLogo = product == 0x028A
             ? []
             : [LogoLightingMode.Off, LogoLightingMode.Static, LogoLightingMode.Breathing];
         Assert.Equal(expectedLogo.Order(), capabilities.LogoLightingModes.Order());
-        Assert.Equal(IsEarlyAcOnly(product), capabilities.SupportsIndependentLightingControls);
+        Assert.True(capabilities.SupportsIndependentLightingControls);
         Assert.False(capabilities.SupportsBreathingColorSelection);
-        Assert.Equal(new[] { BreathingColorMode.Random }, capabilities.SupportedBreathingColorModes);
-        Assert.False(capabilities.SupportsWaveDirectionSelection);
+        Assert.Equal((IsEarlyAcOnly(product) ? [BreathingColorMode.Random] : Enum.GetValues<BreathingColorMode>()).Order(),
+            capabilities.SupportedBreathingColorModes!.Order());
+        Assert.Equal(!IsEarlyAcOnly(product), capabilities.SupportsWaveDirectionSelection);
         Assert.Empty(capabilities.OneShotLaptopControls);
         Assert.Empty(capabilities.HostManagedLaptopControls);
         Assert.Null(capabilities.HyperBoostAccess);

@@ -86,7 +86,8 @@ internal sealed partial class ExperimentalBladePort
                 if (baseline != raw)
                 {
                     RequireWriteAdmission();
-                    await WriteIndependentLightingCommandAsync(0x03, [1, 5, raw], cancellationToken).ConfigureAwait(false);
+                    await WriteIndependentLightingCommandAsync(0x03,
+                        [SupportsReviewedMcuLighting(model) ? (byte)0 : (byte)1, 5, raw], cancellationToken).ConfigureAwait(false);
                     submitted = true;
                     if (await ReadBrightnessAsync(cancellationToken).ConfigureAwait(false) != raw)
                     {
