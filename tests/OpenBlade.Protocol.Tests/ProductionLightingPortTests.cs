@@ -3506,6 +3506,8 @@ public sealed partial class ProductionLightingPortTests
 
         internal byte[]? Transition84Response { get; set; }
 
+        internal byte[] Transition86Response { get; set; } = [0x01, 0x00, 0x00];
+
         internal byte[]? BrightnessResponse { get; set; }
 
         internal Exception? DisposeFailure { get; init; }
@@ -3621,7 +3623,7 @@ public sealed partial class ProductionLightingPortTests
                     [command.Arguments.Span[0], 0x04, LogoEffect],
                 (0x03, 0x00) => SetLogoState(command.Arguments.Span),
                 (0x03, 0x02) => SetLogoEffect(command.Arguments.Span),
-                (0x00, 0x86) => [0x01, 0x00, 0x00],
+                (0x00, 0x86) => Transition86Response,
                 (0x00, 0x04) => SetDeviceMode(command.Arguments.Span),
                 (0x00, 0x84) => Transition84Response
                     ?? DeviceModeProtocol.CreateSetArguments(

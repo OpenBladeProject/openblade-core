@@ -143,6 +143,8 @@ internal sealed record ProductionLightingMatrixEvidence(
     int FeatureReportLength,
     int SlotCount,
     int[] HoleSlots,
+    string SourceLayoutSha256,
+    string RegionalProjectionSha256,
     byte KnownAnswerTransactionId,
     string KnownAnswerColor,
     string KnownAnswerFeatureReportSha256);
@@ -162,7 +164,7 @@ internal static class ProductionLightingEvidenceSource
         "5177FA9F6F91D96C9C34C5506CDA8EDC0A86EE5B5EEFA5F4322F4E4633C23521";
 
     private const string ApprovedSemanticAdmissionFixtureSha256 =
-        "96A2768F91726EA6C5C149423AD5E7538E1A9083FD6A0760711C30D9E398E858";
+        "70F1CEF71ADF1B4F86268634D4DB23950D85E1DEE571AFFF06BA5C71FBAA42CD";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -275,6 +277,8 @@ internal static class ProductionLightingEvidenceSource
                 Pid02E0MatrixReportCodec.FeatureReportBufferLength,
                 Pid02E0MatrixFrame.SlotCount,
                 Pid02E0MatrixLayout.CapturedHoleSlots.ToArray(),
+                "187711408FC0667273CABB19A1CB73B57CA53F98688993BA76E7352A8F2AE0FB",
+                Pid02E0RegionalFrameProjection.SemanticFingerprint(),
                 transactionId,
                 $"{knownColor.Red:X2}{knownColor.Green:X2}{knownColor.Blue:X2}",
                 Convert.ToHexString(SHA256.HashData(knownReport))),
@@ -316,6 +320,8 @@ internal static class ProductionLightingEvidenceSource
         && approved.Matrix.FeatureReportLength == current.Matrix.FeatureReportLength
         && approved.Matrix.SlotCount == current.Matrix.SlotCount
         && approved.Matrix.HoleSlots.SequenceEqual(current.Matrix.HoleSlots)
+        && approved.Matrix.SourceLayoutSha256 == current.Matrix.SourceLayoutSha256
+        && approved.Matrix.RegionalProjectionSha256 == current.Matrix.RegionalProjectionSha256
         && approved.Matrix.KnownAnswerTransactionId == current.Matrix.KnownAnswerTransactionId
         && approved.Matrix.KnownAnswerColor == current.Matrix.KnownAnswerColor
         && approved.Matrix.KnownAnswerFeatureReportSha256

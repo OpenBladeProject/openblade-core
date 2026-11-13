@@ -34,7 +34,7 @@ internal sealed class Pid02E0ImportedSequenceEffect : IPid02E0LightingEffect
             RgbColor color = source[slot];
             slots[slot] = new MatrixRgb(color.Red, color.Green, color.Blue);
         }
-        return new Pid02E0MatrixFrame(slots);
+        return new Pid02E0MatrixFrame(slots, logicalKeyColors: true);
     }
 }
 

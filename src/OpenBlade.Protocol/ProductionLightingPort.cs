@@ -1139,12 +1139,19 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         }
     }
 
+    private byte keyboardLayoutId;
+
     private async Task ExecuteTransitionHandshakeCoreAsync(
         CancellationToken cancellationToken)
     {
-        await ExecuteWriteCoreAsync(
-            Spec(0x00, 0x86, [0x00, 0x00, 0x00], [0x01, 0x00, 0x00]),
+        ReadOnlyMemory<byte> layoutReply = await ExecuteWriteCoreAsync(
+            // Exact product 736 getEdition (base SDK SHA256 BC7DC47E18261AB38393589D336C11F321CC431D700ED32147997144F64628CA,
+            // module 73932): layout, edition and firmware ID are metadata, not a
+            // required US-layout response. Only the three-byte reply shape is fixed.
+            new RazerCommandSpec(0x00, 0x86, [0x00, 0x00, 0x00], 3,
+                payload => payload.Length == 3),
             cancellationToken).ConfigureAwait(false);
+        keyboardLayoutId = layoutReply.Span[0];
         ReadOnlyMemory<byte> transitionState = await ExecuteWriteCoreAsync(
             new RazerCommandSpec(
                 DeviceModeProtocol.OperationClass,
@@ -1401,6 +1408,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
                 }
             }
 
+            // The source-selected physical map owns addresses; renderers retain
+            // the stable logical canvas used by IPC, imports and key pulses.
+            frame = Pid02E0RegionalFrameProjection.Project(frame, keyboardLayoutId);
             result = await matrixWriter.WriteAsync(
                 new Pid02E0MatrixReport(AllocateMatrixTransaction(), frame)
                 {

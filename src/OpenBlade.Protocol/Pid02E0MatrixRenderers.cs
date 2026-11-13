@@ -62,7 +62,7 @@ internal sealed class Pid02E0ReactiveFrame
     internal MatrixRgb this[int slot] => matrix[slot];
 
     internal Pid02E0MatrixFrame ToMatrixFrame() =>
-        new(matrix.ToArray());
+        new(matrix.ToArray(), logicalKeyColors: true);
 
     internal static Pid02E0ReactiveFrame BlackIdle() =>
         new(new MatrixRgb[Pid02E0MatrixFrame.SlotCount]);

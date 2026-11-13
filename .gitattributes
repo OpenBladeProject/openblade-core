@@ -22,3 +22,4 @@ third_party/LibreHardwareMonitor/** -text -whitespace
 # Rust tooling uses LF on every platform.
 rust/** text eol=lf
 tools/openblade-discovery/** text eol=lf
+src/OpenBlade.Contracts/Fixtures/Blade16KeyboardLightingLayout.json text eol=lf

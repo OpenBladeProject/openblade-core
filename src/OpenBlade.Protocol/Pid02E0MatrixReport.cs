@@ -28,7 +28,7 @@ internal sealed class Pid02E0MatrixFrame
 
     private readonly MatrixRgb[] frameSlots;
 
-    internal Pid02E0MatrixFrame(ReadOnlySpan<MatrixRgb> slots)
+    internal Pid02E0MatrixFrame(ReadOnlySpan<MatrixRgb> slots, bool logicalKeyColors = false)
     {
         if (slots.Length != SlotCount)
         {
@@ -39,7 +39,12 @@ internal sealed class Pid02E0MatrixFrame
         }
 
         frameSlots = slots.ToArray();
+        LogicalKeyColors = logicalKeyColors;
     }
+
+    // Per-key content leaves regional keys absent from its canvas black.
+    // Spatial content can sample those extra cells from nearby canvas colors.
+    internal bool LogicalKeyColors { get; }
 
     internal MatrixRgb this[int index] => frameSlots[index];
 
@@ -61,7 +66,7 @@ internal sealed class Pid02E0MatrixFrame
 
         MatrixRgb[] slots = ToArray();
         slots[index] = color;
-        return new Pid02E0MatrixFrame(slots);
+        return new Pid02E0MatrixFrame(slots, LogicalKeyColors);
     }
 }
 
