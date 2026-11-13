@@ -5,12 +5,12 @@ namespace OpenBlade.Protocol.Tests;
 public sealed partial class SourceReviewedBladeModelTests
 {
     [Fact]
-    public void Rz090301_IndependentLightingDoesNotAdmitEffectOrFrameWrites()
+    public void Rz090301_IndependentLightingCoexistsWithReviewedEffectsWithoutFrames()
     {
         DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(Model(0x0245), true);
         Assert.True(capabilities.SupportsIndependentLightingControls);
         Assert.True(capabilities.SupportsKeyboardBrightness);
-        Assert.Empty(capabilities.LightingEffects);
+        Assert.Equal(new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Static, LightingEffect.Spectrum, LightingEffect.Breathing, LightingEffect.Wave }, capabilities.LightingEffects.ToHashSet());
         Assert.Contains(LightingEffect.Static, capabilities.ObservedLightingEffects);
         Assert.False(capabilities.SupportsUniformLightingFrames);
         Assert.Equal(3, capabilities.LogoLightingModes.Count);
@@ -26,16 +26,18 @@ public sealed partial class SourceReviewedBladeModelTests
     [InlineData(100, 255)]
     public async Task Rz090301_AbsoluteBrightnessChangesNoEffectOrLogo(int percent, int raw)
     {
-        var session = new Session { Brightness = 127 };
+        var session = new Session { Brightness = 127, McuLighting = [0, 5, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0] };
         await using var port = Create(0x0245, session);
         await port.SetIndependentLightingAsync(new((byte)percent, null), default);
         Assert.Equal(raw, session.Brightness);
         Assert.Single(session.Commands, command => command.ClassId == 3 && command.CommandId == 3);
         Assert.All(session.Commands, command => Assert.True(command.ClassId == 3 && command.CommandId is 3 or 0x83));
         RazerCommandSpec setter = session.Commands.Single(command => command.CommandId == 3);
-        Assert.Equal(new byte[] { 1, 5, (byte)raw }, setter.Arguments.ToArray());
+        Assert.Equal(new byte[] { 0, 5, (byte)raw }, setter.Arguments.ToArray());
         Assert.True(setter.PayloadValidator?.Invoke(ReadOnlyMemory<byte>.Empty));
         Assert.False(setter.PayloadValidator?.Invoke(new byte[] { 99 }));
+        Assert.Equal(new IndependentLightingSettings((byte)percent, null),
+            await port.ReadIndependentLightingAsync(new(0, null), default));
         Assert.Null(await port.ReadStateAsync(default));
     }
 
@@ -68,12 +70,11 @@ public sealed partial class SourceReviewedBladeModelTests
     }
 
     [Fact]
-    public async Task Rz090301_UnknownLightingBaselineDoesNotWriteAndExplicitEffectsAreRejected()
+    public async Task Rz090301_UnknownBrightnessBaselineDoesNotWriteAndNativeStepsRemainUnavailable()
     {
         var session = new Session { RejectLightingQuery = true };
         await using var port = Create(0x0245, session);
         await Assert.ThrowsAsync<BladeWriteException>(() => port.SetIndependentLightingAsync(new(40, null), default));
-        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetLightingAsync(LightingSettingsFactory.SpectrumCycling(80), default));
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.StepBrightnessAsync(KeyboardBrightnessDirection.Increase, default));
         Assert.DoesNotContain(session.Commands, command => command.CommandId < 0x80);
     }
@@ -81,7 +82,7 @@ public sealed partial class SourceReviewedBladeModelTests
     [Fact]
     public async Task Rz090301_UnconfirmedBrightnessPausesAndAllRecoveryReadsOnlyIndependentFields()
     {
-        var session = new Session { IgnoreWrites = true };
+        var session = new Session { IgnoreWrites = true, McuLighting = [0, 5, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0] };
         var policy = new ExperimentalFeaturesPolicy(Model(0x0245));
         await using var port = Create(0x0245, session, policy);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(

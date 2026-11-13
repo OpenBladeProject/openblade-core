@@ -7,11 +7,17 @@ namespace OpenBlade.Service.Tests;
 public sealed class IndependentLightingControlTests
 {
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task IndependentFieldsPreserveUnknownEffectAndUnrequestedField(bool brightnessOnly)
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task IndependentFieldsPreserveUnknownEffectAndUnrequestedField(bool brightnessOnly, bool hybrid)
     {
         BatteryTestDevice device = CreateDevice();
+        if (hybrid)
+        {
+            device.Capabilities = device.Capabilities with { LightingEffects = new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Spectrum } };
+        }
         var requested = brightnessOnly ? new IndependentLightingSettings(70, null) : new(null, LogoLightingMode.Off);
         LightingSettings intent = LightingSettingsFactory.SpectrumCycling(80) with { IndependentControls = requested };
         ScopedApplyOutcome outcome = await new ControlCoordinator(device).ApplyLightingOutcomeAsync(intent, default);
@@ -23,10 +29,16 @@ public sealed class IndependentLightingControlTests
         Assert.Equal(brightnessOnly ? LogoLightingMode.Static : LogoLightingMode.Off, device.State.IndependentLighting.LogoMode);
     }
 
-    [Fact]
-    public async Task OldProfileWithoutIndependentOptInDoesNotWriteOrInventEffect()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OldProfileWithoutIndependentOptInDoesNotWriteOrInventEffect(bool hybrid)
     {
         BatteryTestDevice device = CreateDevice();
+        if (hybrid)
+        {
+            device.Capabilities = device.Capabilities with { LightingEffects = new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Spectrum } };
+        }
         device.State = device.State with { IndependentLighting = null };
         ScopedApplyOutcome outcome = await new ControlCoordinator(device).ApplyLightingOutcomeAsync(
             LightingSettingsFactory.SpectrumCycling(80), default);
@@ -83,6 +95,30 @@ public sealed class IndependentLightingControlTests
         json = System.Text.Encoding.UTF8.GetBytes(System.Text.Encoding.UTF8.GetString(json).Replace("independentControls", propertyName, StringComparison.Ordinal));
         var store = new ProfileStore(Path.Combine(Path.GetTempPath(), "independent-profile-not-written.json"));
         Assert.Throws<InvalidDataException>(() => store.ReadDocument(json, out _, out _, true));
+    }
+
+    [Fact]
+    public void HybridValidationPreservesIndependentWrapperButValidatesFullEffectSupport()
+    {
+        DeviceCapabilities capabilities = CreateDevice().Capabilities with
+        {
+            LightingEffects = new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Static, LightingEffect.Spectrum },
+        };
+        ProfileSetValidator validator = ProfileSetValidator.CreateForLightingCapabilities(capabilities);
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        LightingSettings unsupported = LightingSettingsFactory.Wave(LightingDirection.Rightward, 70) with { ControlsKeyboardEffect = true };
+        Assert.Throws<InvalidDataException>(() => validator.Validate(profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { Lighting = unsupported },
+        }));
+        validator.Validate(profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { Lighting = unsupported with { IndependentControls = new(42, null) } },
+        });
+        validator.Validate(profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { Lighting = LightingSettingsFactory.SpectrumCycling(70) with { ControlsKeyboardEffect = true } },
+        });
     }
 
     private static BatteryTestDevice CreateDevice() => new()

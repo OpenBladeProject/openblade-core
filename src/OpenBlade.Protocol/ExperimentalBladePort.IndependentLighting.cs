@@ -21,7 +21,7 @@ internal sealed partial class ExperimentalBladePort
     private async Task<IndependentLightingSettings?> ReadAvailableIndependentLightingAsync(
         bool includeBrightness, bool includeLogo, CancellationToken token)
     {
-        if (model.ProductId != 0x0245)
+        if (!SupportsIndependentLighting(model))
         {
             return null;
         }
@@ -41,7 +41,7 @@ internal sealed partial class ExperimentalBladePort
                     RecordQuery("KeyboardBrightness", "Unavailable", failure: exception.GetType().Name);
                 }
             }
-            if (includeLogo)
+            if (includeLogo && SupportsExperimentalLogo(model))
             {
                 try
                 {
@@ -61,13 +61,14 @@ internal sealed partial class ExperimentalBladePort
     }
     private async Task<IndependentLightingSettings> ReadIndependentLightingCoreAsync(CancellationToken token) => new(
         checked((byte)(await ReadBrightnessAsync(token).ConfigureAwait(false) * 100 / 255)),
-        await ReadLogoAsync(token).ConfigureAwait(false));
+        SupportsExperimentalLogo(model) ? await ReadLogoAsync(token).ConfigureAwait(false) : null);
 
     public async Task SetIndependentLightingAsync(IndependentLightingSettings value, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(value);
         recoveryWriteGate.ThrowIfBlocked();
-        if (model.ProductId != 0x0245 || !value.IsWellFormed)
+        if (!SupportsIndependentLighting(model) || !value.IsWellFormed
+            || value.LogoMode.HasValue && !SupportsExperimentalLogo(model))
         {
             throw new CapabilityUnavailableException("The independent lighting request is outside this model's reviewed contract.");
         }
@@ -78,14 +79,15 @@ internal sealed partial class ExperimentalBladePort
             RequireWriteAdmission();
             if (value.Brightness is { } percent)
             {
-                // Exact product581 uses ceil(percent * 255 / 100), with floor on
+                // Each admitted product uses ceil(percent * 255 / 100), with floor on
                 // readback. Retain the actual raw baseline, never an inferred effect.
                 byte raw = checked((byte)((percent * 255 + 99) / 100));
                 byte baseline = await ReadBrightnessAsync(cancellationToken).ConfigureAwait(false);
                 if (baseline != raw)
                 {
                     RequireWriteAdmission();
-                    await WriteIndependentLightingCommandAsync(0x03, [1, 5, raw], cancellationToken).ConfigureAwait(false);
+                    await WriteIndependentLightingCommandAsync(0x03,
+                        [SupportsReviewedMcuLighting(model) ? (byte)0 : (byte)1, 5, raw], cancellationToken).ConfigureAwait(false);
                     submitted = true;
                     if (await ReadBrightnessAsync(cancellationToken).ConfigureAwait(false) != raw)
                     {

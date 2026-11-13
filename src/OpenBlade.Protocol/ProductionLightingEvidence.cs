@@ -114,7 +114,14 @@ internal sealed record ProductionLightingSemanticAdmissionEvidence(
     ProductionLightingLogoEvidence Logo,
     ProductionLightingMatrixEvidence Matrix,
     LightingEffect[] SupportedEffects,
-    LightingRefreshRate[] SupportedRefreshRates);
+    LightingRefreshRate[] SupportedRefreshRates,
+    ProductionLightingSoftwareEffectEvidence[] SoftwareEffects);
+
+internal sealed record ProductionLightingSoftwareEffectEvidence(
+    LightingEffect Effect,
+    string Basis,
+    string PhysicalValidation,
+    string Implementation);
 
 internal sealed record ProductionLightingControlEnvelopeEvidence(
     int ReportLength,
@@ -164,7 +171,7 @@ internal static class ProductionLightingEvidenceSource
         "5177FA9F6F91D96C9C34C5506CDA8EDC0A86EE5B5EEFA5F4322F4E4633C23521";
 
     private const string ApprovedSemanticAdmissionFixtureSha256 =
-        "60848DB96DCD6EED2FEDB3FB1DAD31E87112C236DDDEDEABE34D76A43172C07F";
+        "9F70CE8889361D153D50BDAA14E414A71CEDEF54BD3D5FE4B6EE612BE3DEED31";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -294,10 +301,17 @@ internal static class ProductionLightingEvidenceSource
                 LightingEffect.Wheel,
                 LightingEffect.Ripple,
                 LightingEffect.AmbientAwareness,
+                // Host-software Fire reuses the same exact-model frame contract.
+                // The original physical-capture action list remains unchanged.
+                LightingEffect.Fire,
             ],
             [
                 LightingRefreshRate.ThirtyHz,
                 LightingRefreshRate.SixtyHz,
+            ],
+            [
+                new(LightingEffect.Fire, "SoftwarePatternWithoutPhysicalValidation",
+                    "Pending", nameof(SoftwareFirePattern)),
             ]);
     }
 
@@ -327,6 +341,7 @@ internal static class ProductionLightingEvidenceSource
         && approved.Matrix.KnownAnswerFeatureReportSha256
             == current.Matrix.KnownAnswerFeatureReportSha256
         && approved.SupportedEffects.SequenceEqual(current.SupportedEffects)
+        && approved.SoftwareEffects.SequenceEqual(current.SoftwareEffects)
         && approved.SupportedRefreshRates.SequenceEqual(
             current.SupportedRefreshRates);
 

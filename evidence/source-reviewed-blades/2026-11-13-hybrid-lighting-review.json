@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 1,
+  "decision": "PASS",
+  "scope": "Independent managed hybrid intent, normalization, migration and strict IPC review",
+  "combinedManifestSha256": "8e5f9e429ec460d45fb4cbbfbca7dfa15bbada63c1304c29c9ee712413d47df0",
+  "repairManifestSha256": "708212bc75963fe8b6e382aad80f6ce59f9e79faf45d476f39fed3fdab1d586c",
+  "files": [
+    {
+      "path": "src/OpenBlade.Contracts/IpcMessageCodec.cs",
+      "eol": "LF",
+      "sha256": "9d07d28e2762f39d63df01ca3e983f0bd5d401a11240d922528d09e3f00ffc64"
+    },
+    {
+      "path": "src/OpenBlade.Contracts/Profiles.cs",
+      "eol": "LF",
+      "sha256": "861e93d4702cca11f081d07c25134cedfaa8753c0e18b49ea68745eb0137a315"
+    },
+    {
+      "path": "src/OpenBlade.Service/BatteryConfigurationStore.cs",
+      "eol": "CRLF",
+      "sha256": "cd9ca6d81d4a2108e3271350abf035a9dc167011b02f943e4076fc4835ffaf17"
+    },
+    {
+      "path": "src/OpenBlade.Service/ControlCoordinator.cs",
+      "eol": "CRLF",
+      "sha256": "da664931d3c4633bbd24f5bca2c226af18ea06ebad9a780c50ba4b52d280966f"
+    },
+    {
+      "path": "src/OpenBlade.Service/PersistentOverrideStore.cs",
+      "eol": "CRLF",
+      "sha256": "859f86a979387221b2ab9dd403c9f0909b497d346687882ead4f0e2eac9b9384"
+    },
+    {
+      "path": "src/OpenBlade.Service/ProfileSetValidator.cs",
+      "eol": "CRLF",
+      "sha256": "d08fa1436f424612eb23a027fa805c229011453461db1f90bdc16c863e5b611e"
+    },
+    {
+      "path": "src/OpenBlade.Service/ProfileStore.cs",
+      "eol": "CRLF",
+      "sha256": "3d95e95216489130ad0c8604809212e40a6c8c0417b9476b1734ad3f4301ff37"
+    },
+    {
+      "path": "src/OpenBlade.Service/ServiceControlRuntime.cs",
+      "eol": "CRLF",
+      "sha256": "473625aa83f3dd914b56142f1daf6e55e99e288005484552bbba92f15d0e22dd"
+    },
+    {
+      "path": "src/OpenBlade.Service/WriteConfirmationPolicy.cs",
+      "eol": "CRLF",
+      "sha256": "a715267328f3c38c894db851fc90bc1094e5c691e87ebbcb9cd90be41cef30e7"
+    },
+    {
+      "path": "src/OpenBlade.Tray.Core/MainViewModel.IndependentLighting.cs",
+      "eol": "CRLF",
+      "sha256": "c1abfb304b35cb0ecf6add270bd0d82c4d5baa08519c22f2b253d629f6655760"
+    },
+    {
+      "path": "src/OpenBlade.Tray.Core/MainViewModel.cs",
+      "eol": "CRLF",
+      "sha256": "034d78a263015a0ba45e64ae242ca5ad06e5887aea0e3e612d2b593e19f6a894"
+    },
+    {
+      "path": "src/OpenBlade.Tray.Core/ProfileAdmissionPolicy.cs",
+      "eol": "CRLF",
+      "sha256": "3639969fb19e5ec1d1717cbfb2c90c1d5330c5a7bc034432e2bea08d21eabeac"
+    },
+    {
+      "path": "src/OpenBlade.Tray/App.DeveloperHarness.cs",
+      "eol": "CRLF",
+      "sha256": "3c63676535b851cec2bc90a9d8749315856807a24b4124e9a6d1b4852983bea9"
+    },
+    {
+      "path": "tests/OpenBlade.Contracts.Tests/IpcMessageCodecTests.IndependentLighting.cs",
+      "eol": "CRLF",
+      "sha256": "394cabde7394ee15b07660a31bd21bca28bf389b0ba0a94441caabd8d375a56e"
+    },
+    {
+      "path": "tests/OpenBlade.Contracts.Tests/IpcMessageCodecTests.cs",
+      "eol": "CRLF",
+      "sha256": "723ef6cef195f1bd160924c46c4d0de40124176d22dc2e04391a8850785cc0a1"
+    },
+    {
+      "path": "tests/OpenBlade.Contracts.Tests/IpcMessageCodecTests.HybridLighting.cs",
+      "eol": "CRLF",
+      "sha256": "15c9ee98c30785495aef62fdda9151517d1edae9e3b4f17e62ae5416465ce072"
+    },
+    {
+      "path": "tests/OpenBlade.Protocol.Tests/SourceReviewedBladeModelTests.IndependentLighting.cs",
+      "eol": "CRLF",
+      "sha256": "ee21f9ec9add2d4a38beeb7804d0bc884656485c8f48b940beb0d2f77409ecb8"
+    },
+    {
+      "path": "tests/OpenBlade.Protocol.Tests/SourceReviewedBladeModelTests.LightingCoverage.cs",
+      "eol": "CRLF",
+      "sha256": "db60471536138e321ad5c79fae7a0abcd16f31f37ad9943edd5b5828b861205a"
+    },
+    {
+      "path": "tests/OpenBlade.Service.Tests/IndependentLightingControlTests.cs",
+      "eol": "CRLF",
+      "sha256": "2b750028e09a5b66da446177edfd0b5894d544b870733d6a5fad9e705f12c227"
+    },
+    {
+      "path": "tests/OpenBlade.Service.Tests/PersistentOverrideStoreTests.cs",
+      "eol": "CRLF",
+      "sha256": "6923321c38530381c8d56ecbe8234378510ed53d4ee39741c9780b9cf1a45cc5"
+    },
+    {
+      "path": "tests/OpenBlade.Service.Tests/ServiceControlRuntimeTests.IndependentLighting.cs",
+      "eol": "CRLF",
+      "sha256": "277557e17785bf92112dd5d6adc388bed3569a2243de2df89d354fb931297a52"
+    },
+    {
+      "path": "tests/OpenBlade.Service.Tests/HybridLightingIntentPersistenceTests.cs",
+      "eol": "CRLF",
+      "sha256": "568a894a1490fbad3909862a45401c3499f325728dc6b111198be02b29810eeb"
+    },
+    {
+      "path": "tests/OpenBlade.Tray.Tests/CapabilityPresentationTests.cs",
+      "eol": "CRLF",
+      "sha256": "38fb85d397a35b06b4380df0ae7c3b7fe14f9683e3decb1c9b323757dd2f1d01"
+    },
+    {
+      "path": "src/OpenBlade.Contracts/Lighting.cs",
+      "eol": "LF",
+      "sha256": "9003dfc9d3a73546e09d8b205985f7fa775217713e846796f92cf9e8d3f0db4a"
+    },
+    {
+      "path": "src/OpenBlade.Tray.Core/ProfileExportSerializer.cs",
+      "eol": "CRLF",
+      "sha256": "cc8884bdb26394931a6e8a15f4cab54d06d02f9629be3ebf3d0cf442e137a171"
+    },
+    {
+      "path": "tests/OpenBlade.Contracts.Tests/LightingNormalizationIntentTests.cs",
+      "eol": "CRLF",
+      "sha256": "268c747d64ad602e5d6ad081c87c934a661aca936295d1a32e2f14d65fa37fc4"
+    },
+    {
+      "path": "tests/OpenBlade.Tray.Tests/ProfileExportSerializerTests.cs",
+      "eol": "CRLF",
+      "sha256": "c589fe41982e1ac88dc2c03cfd3436e843174b62e08291962fe80ae5f5fbd1a4"
+    },
+    {
+      "path": "tests/OpenBlade.Tray.Tests/HybridLightingExportTests.cs",
+      "eol": "CRLF",
+      "sha256": "36a03715eb8ac93a37b057900f1af42ea860690133a4b62745e0f68ba9e61df4"
+    }
+  ],
+  "repairFiles": [
+    {
+      "path": "src/OpenBlade.Contracts/Lighting.cs",
+      "eol": "LF",
+      "sha256": "9003dfc9d3a73546e09d8b205985f7fa775217713e846796f92cf9e8d3f0db4a"
+    },
+    {
+      "path": "src/OpenBlade.Tray.Core/ProfileExportSerializer.cs",
+      "eol": "CRLF",
+      "sha256": "cc8884bdb26394931a6e8a15f4cab54d06d02f9629be3ebf3d0cf442e137a171"
+    },
+    {
+      "path": "tests/OpenBlade.Contracts.Tests/LightingNormalizationIntentTests.cs",
+      "eol": "CRLF",
+      "sha256": "268c747d64ad602e5d6ad081c87c934a661aca936295d1a32e2f14d65fa37fc4"
+    },
+    {
+      "path": "tests/OpenBlade.Service.Tests/ServiceControlRuntimeTests.IndependentLighting.cs",
+      "eol": "CRLF",
+      "sha256": "277557e17785bf92112dd5d6adc388bed3569a2243de2df89d354fb931297a52"
+    },
+    {
+      "path": "tests/OpenBlade.Tray.Tests/ProfileExportSerializerTests.cs",
+      "eol": "CRLF",
+      "sha256": "c589fe41982e1ac88dc2c03cfd3436e843174b62e08291962fe80ae5f5fbd1a4"
+    },
+    {
+      "path": "tests/OpenBlade.Tray.Tests/HybridLightingExportTests.cs",
+      "eol": "CRLF",
+      "sha256": "36a03715eb8ac93a37b057900f1af42ea860690133a4b62745e0f68ba9e61df4"
+    }
+  ],
+  "verified": [
+    "Explicit full intent versus field-only/unmanaged routing agrees across coordinator, runtime, validators and Tray",
+    "Independent non-null fields take priority; old null intent stays unmanaged",
+    "Hardware comparisons and frozen51 projection strip request-only marker; persistence retains it",
+    "Core Off/invisible normalization clones input metadata and actual legacy-Off dispatch is covered",
+    "Profiles/preferences26, overrides9 and export17 migrate without optin and reject old-schema hidden optin",
+    "Strict serviceIPC81 and frozenreadonly51; display-onlySession2 unchanged",
+    "Queued stale field commits invalidate on explicit full effect selection"
+  ],
+  "focusedTests": {
+    "ServiceHybrid": 193,
+    "ContractsNormalization": 27,
+    "TrayExportAndHybrid": 85
+  },
+  "renderReview": {
+    "method": "Disconnected private desktop; source preview auto-exit; no installed service or Session Agent started",
+    "result": "PASS: effect selection, independent brightness/logo and Static color editor inspected",
+    "states": [
+      "rz0301-hybrid-lighting-unknown",
+      "rz0301-hybrid-lighting-static"
+    ]
+  },
+  "hardwareActionsPerformed": false
+}

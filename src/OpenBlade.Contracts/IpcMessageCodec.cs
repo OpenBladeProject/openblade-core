@@ -8,8 +8,8 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    // Earlier peers reject the RZ09-0530 layout in capabilities and typed sequences.
-    public const int ProtocolVersion = 80;
+    // Earlier peers reject explicit hybrid keyboard-effect intent.
+    public const int ProtocolVersion = 81;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -991,7 +991,7 @@ public static class IpcMessageCodec
                     ? null : status.ConfirmedState.Fans,
                 Lighting = status.ConfirmedState.Lighting is { } confirmedLighting
                     && IsProtocol51LightingSetting(confirmedLighting)
-                        ? confirmedLighting with { IndependentControls = null }
+                        ? confirmedLighting with { IndependentControls = null, ControlsKeyboardEffect = false }
                         : null,
             };
 
@@ -1112,7 +1112,7 @@ public static class IpcMessageCodec
     // in this read-only projection; unrepresentable confirmed lighting stays unknown.
     private static LightingSettings ProjectProtocol51LightingSetting(LightingSettings settings) =>
         IsProtocol51LightingSetting(settings)
-            ? settings with { IndependentControls = null }
+            ? settings with { IndependentControls = null, ControlsKeyboardEffect = false }
             : LightingSettingsFactory.Off() with { LogoMode = settings.LogoMode };
 
     private static bool ValidThxAudioProfiles(ProfileSet profiles) =>

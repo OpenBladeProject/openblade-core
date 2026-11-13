@@ -329,7 +329,7 @@ public static class LightingSettingsFactory
             && settings.Effect == LightingEffect.Off
             && settings.Color == default
             && settings.Brightness == 0
-                ? Off() with { LogoMode = settings.LogoMode, IndependentControls = settings.IndependentControls }
+                ? settings with { Parameters = Off().Parameters }
                 : settings;
     }
 
@@ -345,7 +345,7 @@ public static class LightingSettingsFactory
         RgbColor visibleColor = settings.Color == default
             ? DefaultVisibleColor
             : settings.Color;
-        return settings.Parameters switch
+        LightingSettings normalized = settings.Parameters switch
         {
             StaticLightingParameters => Static(visibleColor, DefaultVisibleBrightness),
             SpectrumCyclingLightingParameters => SpectrumCycling(DefaultVisibleBrightness),
@@ -435,6 +435,15 @@ public static class LightingSettingsFactory
                 _ => settings,
             },
             _ => settings,
+        };
+        // Retain control authority and independent fields while normalizing
+        // effect data. Cloning the input also preserves future intent metadata.
+        return ReferenceEquals(normalized, settings) ? settings : settings with
+        {
+            Effect = normalized.Effect,
+            Color = normalized.Color,
+            Brightness = normalized.Brightness,
+            Parameters = normalized.Parameters,
         };
     }
 

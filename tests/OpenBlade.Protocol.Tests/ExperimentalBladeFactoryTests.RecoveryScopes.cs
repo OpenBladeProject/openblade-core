@@ -35,6 +35,7 @@ public sealed partial class ExperimentalBladeFactoryTests
         Assert.False(factory.IsWritesPaused);
         Assert.All(io.Commands.Skip(beforeRecovery), command => Assert.True(command.Id >= 0x80));
         Assert.DoesNotContain(io.Commands, command => command == (0x07, 0x92));
+        Assert.DoesNotContain(io.Commands.Skip(beforeRecovery), command => command.Class is 0x03 or 0x0F);
         Assert.Equal(2, io.Commands.Count(command => command == (0x0D, 0x02)));
         io.IgnoreThermalWrites = false;
         await using ExperimentalBladePort next = Assert.IsType<ExperimentalBladePort>((await factory.OpenAsync(default)).Value);
@@ -153,6 +154,10 @@ public sealed partial class ExperimentalBladeFactoryTests
                 {
                     case (0x0D, 0x82): buffer[11] = mode; break;
                     case (0x07, 0x8C): buffer[9] = 0x11; buffer[10] = 0x11; break;
+                    case (0x03, 0x83): buffer[11] = 128; break;
+                    case (0x03, 0x80): buffer[11] = 1; break;
+                    case (0x03, 0x82): buffer[11] = 0; break;
+                    case (0x0F, 0x82): buffer[11] = 3; break;
                     case (0x07, 0x92):
                         buffer[9] = battery;
                         if (RejectBatteryGet)

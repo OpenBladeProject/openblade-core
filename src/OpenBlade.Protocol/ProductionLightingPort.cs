@@ -29,6 +29,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
             LightingEffect.AmbientAwareness,
             LightingEffect.AudioMeter,
             LightingEffect.Sequence,
+            LightingEffect.Fire,
         ]);
 
     private readonly ValidationActor actor;
@@ -1473,6 +1474,10 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
                 Color(value.Color),
                 ReactiveFadeDuration(value.Duration)),
             RippleLightingParameters value => new Pid02E0RippleEffect(Color(value.Color)),
+            // This is an explicit software pattern on the existing source-reviewed
+            // 02E0 frame contract, not another model's captured Fire oracle.
+            FireLightingParameters when settings.Effect == LightingEffect.Fire =>
+                new Pid02E0FireEffect(),
             AmbientAwarenessLightingParameters
                 when settings.Effect == LightingEffect.AmbientAwareness =>
                 new Pid02E0SessionFrameEffect(),
@@ -1996,6 +2001,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
             LightingEffect.AmbientAwareness => LightingRendererOwnershipState.AmbientAwareness,
             LightingEffect.AudioMeter => LightingRendererOwnershipState.AudioMeter,
             LightingEffect.Sequence => LightingRendererOwnershipState.Sequence,
+            LightingEffect.Fire => LightingRendererOwnershipState.Fire,
             _ => throw new ArgumentOutOfRangeException(nameof(effect)),
         };
 
@@ -2059,7 +2065,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         or LightingEffect.Starlight
         or LightingEffect.Wave
         or LightingEffect.Wheel
-        or LightingEffect.Ripple;
+        or LightingEffect.Ripple
+        or LightingEffect.Fire;
 
     private sealed record OwnedEffectSnapshot(
         IPid02E0LightingEffect Effect,

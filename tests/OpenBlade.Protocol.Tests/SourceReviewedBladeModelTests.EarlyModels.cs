@@ -26,13 +26,26 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Empty(capabilities.FanSpeedRangesByPerformancePreset);
         Assert.False(capabilities.SupportsDirectManualFanTransitions);
         Assert.False(capabilities.ReportsPerformanceWithManualFans);
-        Assert.Empty(capabilities.LightingEffects);
-        Assert.Empty(capabilities.LogoLightingModes);
+        LightingEffect[] expectedLighting = IsEarlyAcOnly(product)
+            ? []
+            : product == 0x028A
+            ? [LightingEffect.Off, LightingEffect.Breathing, LightingEffect.Spectrum, LightingEffect.Wave]
+            : [LightingEffect.Off, LightingEffect.Static, LightingEffect.Breathing, LightingEffect.Spectrum, LightingEffect.Wave];
+        Assert.Equal(expectedLighting.Order(), capabilities.LightingEffects.Order());
+        LogoLightingMode[] expectedLogo = product == 0x028A
+            ? []
+            : [LogoLightingMode.Off, LogoLightingMode.Static, LogoLightingMode.Breathing];
+        Assert.Equal(expectedLogo.Order(), capabilities.LogoLightingModes.Order());
+        Assert.True(capabilities.SupportsIndependentLightingControls);
+        Assert.False(capabilities.SupportsBreathingColorSelection);
+        Assert.Equal((IsEarlyAcOnly(product) ? [BreathingColorMode.Random] : Enum.GetValues<BreathingColorMode>()).Order(),
+            capabilities.SupportedBreathingColorModes!.Order());
+        Assert.Equal(!IsEarlyAcOnly(product), capabilities.SupportsWaveDirectionSelection);
         Assert.Empty(capabilities.OneShotLaptopControls);
         Assert.Empty(capabilities.HostManagedLaptopControls);
         Assert.Null(capabilities.HyperBoostAccess);
         Assert.Null(capabilities.ThxAudio);
-        Assert.False(capabilities.SupportsKeyboardBrightness);
+        Assert.True(capabilities.SupportsKeyboardBrightness);
         Assert.False(capabilities.SupportsUniformLightingFrames);
         Assert.Equal(IsEarlyAcOnly(product) ? Array.Empty<int>() : [50, 55, 60, 65, 70, 75, 80, 100], capabilities.ChargeLimits.Order());
         CustomPerformanceCapabilities custom = Assert.IsType<CustomPerformanceCapabilities>(capabilities.CustomPerformance);

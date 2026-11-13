@@ -17,7 +17,7 @@ public sealed class ProfileExportSerializerTests
         };
         ProfileSet source = defaults with { PluggedIn = defaults.PluggedIn with { Lighting = lighting } };
         string json = ProfileExportSerializer.Serialize(source, "1.0.0", DateTimeOffset.UtcNow);
-        Assert.Equal(16, JsonNode.Parse(json)!["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(17, JsonNode.Parse(json)!["schemaVersion"]!.GetValue<int>());
         Assert.Equal(lighting, ProfileExportSerializer.Deserialize(json).PluggedIn.Lighting);
     }
 

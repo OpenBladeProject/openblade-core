@@ -1,0 +1,897 @@
+{
+  "schemaVersion": 1,
+  "reviewDate": "2026-11-13",
+  "scope": "Feature-by-feature lighting pass across all 22 supported profiles, with exact-model MCU evidence first and pinned upstream fallback where no exact keyboard MCU was located.",
+  "physicalValidationPerformed": false,
+  "knownCustomState": {
+    "mode": 8,
+    "unusedPayloadBytes": "3..11 must all be zero",
+    "pixelsReadable": false,
+    "settings": null,
+    "directBuiltinReplacement": "Allowed by exact reviewed setter cleanup; no guessed pixel baseline.",
+    "postWriteBuiltinConfirmation": "Custom8 cannot confirm a builtin destination.",
+    "fullRecovery": "A fresh valid custom8 observation may preserve null Lighting; malformed/unknown modes still fail."
+  },
+  "priorCoverage": "2026-11-13-lighting-coverage.json",
+  "upstreamReview": "2026-11-13-upstream-lighting.json",
+  "mcuInventory": "2026-11-13-mcu-availability.json",
+  "proofs": [
+    {
+      "path": "2026-11-13-mcu-color-wave-review.json",
+      "sha256": "82f8ff18b7f12b332ba9f63c7e9c1ee3a81cc099e6749f147c9cabef408e13c1"
+    },
+    {
+      "path": "2026-11-13-rz09-0301-lighting-mcu.json",
+      "sha256": "49fe34d4807f6bc17853a72161b904f796dfcbec1bf1fbc8cdc26303f8e93216"
+    },
+    {
+      "path": "2026-11-13-rz09-0301-lighting-counterreview.json",
+      "sha256": "8401136dcef5bac40b248a70d4325f953701bd4f7a343f3e1acc86748c735aa2"
+    },
+    {
+      "path": "2026-11-13-rz09-0482-descriptor-followup.json",
+      "sha256": "95bb769b76bf43139141aba1af1db6040a352815c6c55addb7afc8d38e5fdd6c"
+    },
+    {
+      "path": "2026-11-13-rz09-0483-descriptor-followup.json",
+      "sha256": "566ca4dabd491f40a4a7595508afe02b05812b73ec6ffdde47ef9252e2e61b8a"
+    },
+    {
+      "path": "2026-11-13-mcu-lighting-counterreview.json",
+      "sha256": "ccf35edef204487b967812a2678ddd29ad8f3080874e8457e9245dc1b093323c"
+    },
+    {
+      "path": "2026-11-13-rz09-0581-software-fire-review.json",
+      "sha256": "70aaf231f8f091871b73260eedc9b8d1df252f5677d992581557e540ba598d0e"
+    },
+    {
+      "path": "2026-11-13-hybrid-lighting-review.json",
+      "sha256": "7277d17b85a335e35f05e93bbf295da544e1d745a7b64da8adab29796036f257"
+    }
+  ],
+  "models": [
+    {
+      "model": "RZ09-0287",
+      "pid": "0234",
+      "primaryEvidence": "Exact-model Synapse independent fields; pinned OpenRazer/OpenRGB setter cross-check after MCU inventory",
+      "mcuAvailabilityRecord": "2026-11-13-mcu-availability.json",
+      "upstreamReview": "2026-11-13-upstream-lighting.json",
+      "brightness": true,
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "writableEffects": [],
+      "independentFieldControls": true,
+      "frameTransport": "Upstream setters are evidence only; independent firmware effect baseline/restoration is not established.",
+      "geometry": "Not admitted by this backend; exact upstream declarations are recorded separately.",
+      "keyMap": "No exact physical input-to-light map admitted.",
+      "readback": "Independent brightness and available logo fields; keyboard effect/RGB unavailable.",
+      "restoration": "Field-specific baseline and readback; no effect or pixel write.",
+      "gaps": [
+        "No exact-model keyboard MCU located in reviewed sources.",
+        "Upstream effect getters use software intent, without an independently confirmed firmware baseline."
+      ],
+      "physicalValidation": "Pending for these additions."
+    },
+    {
+      "model": "RZ09-0300",
+      "pid": "0246",
+      "primaryEvidence": "Exact-model Synapse independent fields; pinned OpenRazer/OpenRGB setter cross-check after MCU inventory",
+      "mcuAvailabilityRecord": "2026-11-13-mcu-availability.json",
+      "upstreamReview": "2026-11-13-upstream-lighting.json",
+      "brightness": true,
+      "logo": [],
+      "writableEffects": [],
+      "independentFieldControls": true,
+      "frameTransport": "Upstream setters are evidence only; independent firmware effect baseline/restoration is not established.",
+      "geometry": "Not admitted by this backend; exact upstream declarations are recorded separately.",
+      "keyMap": "No exact physical input-to-light map admitted.",
+      "readback": "Independent brightness and available logo fields; keyboard effect/RGB unavailable.",
+      "restoration": "Field-specific baseline and readback; no effect or pixel write.",
+      "gaps": [
+        "No exact-model keyboard MCU located in reviewed sources.",
+        "Upstream effect getters use software intent, without an independently confirmed firmware baseline."
+      ],
+      "physicalValidation": "Pending for these additions."
+    },
+    {
+      "model": "RZ09-0301",
+      "pid": "0245",
+      "primaryEvidence": "Exact keyboard MCU setters, active bank getter and renderer consumers; selected exact-model vendor UI for labels.",
+      "mcuProof": "2026-11-13-rz09-0301-lighting-mcu.json",
+      "parameterProof": "2026-11-13-rz09-0301-lighting-mcu.json",
+      "brightness": true,
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "writableEffects": [
+        "Off",
+        "Breathing",
+        "Wave",
+        "Spectrum",
+        "Static"
+      ],
+      "breathingColorModes": [
+        "Random",
+        "Single",
+        "Dual"
+      ],
+      "waveDirections": [
+        "Leftward",
+        "Rightward"
+      ],
+      "waveWireDirections": {
+        "Leftward": 1,
+        "Rightward": 2
+      },
+      "independentFieldsRetained": true,
+      "independentFieldControls": true,
+      "geometry": "MCU frame bounds 6x16",
+      "frameTransport": "Source bounds recorded; no custom-frame backend or ownership lifecycle admitted in this change.",
+      "keyMap": "No exact physical input-to-light map admitted.",
+      "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
+      "restoration": "Per-submission admission, independent effect confirmation; legacy setters require fresh active-brightness read then requested target. No framebuffer restoration claim.",
+      "gaps": [
+        "Custom-frame ownership, lifecycle and pixel restoration backend is not admitted.",
+        "Key input mapping and advanced key-triggered controls need their own source review."
+      ],
+      "physicalValidation": "Pending for these additions."
+    },
+    {
+      "model": "RZ09-0314",
+      "pid": "024C",
+      "primaryEvidence": "Exact-model Synapse independent fields; pinned OpenRazer/OpenRGB setter cross-check after MCU inventory",
+      "mcuAvailabilityRecord": "2026-11-13-mcu-availability.json",
+      "upstreamReview": "2026-11-13-upstream-lighting.json",
+      "brightness": true,
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "writableEffects": [],
+      "independentFieldControls": true,
+      "frameTransport": "Upstream setters are evidence only; independent firmware effect baseline/restoration is not established.",
+      "geometry": "Not admitted by this backend; exact upstream declarations are recorded separately.",
+      "keyMap": "No exact physical input-to-light map admitted.",
+      "readback": "Independent brightness and available logo fields; keyboard effect/RGB unavailable.",
+      "restoration": "Field-specific baseline and readback; no effect or pixel write.",
+      "gaps": [
+        "No exact-model keyboard MCU located in reviewed sources.",
+        "Upstream effect getters use software intent, without an independently confirmed firmware baseline."
+      ],
+      "physicalValidation": "Pending for these additions."
+    },
+    {
+      "model": "RZ09-0328",
+      "pid": "0255",
+      "logo": [],
+      "geometry": "Single RGB zone; no matrix is admitted.",
+      "frameTransport": "Static uses 03/0A [06,R,G,B]; single-color Breathing uses [03,01,R,G,B]. No RGB row or custom-frame path is admitted.",
+      "keyMap": "Not applicable to the admitted single-zone contract.",
+      "mcu": {
+        "status": "No exact keyboard MCU located in retained inventory or the model's reviewed current official index row. This does not establish absence elsewhere.",
+        "indexUrl": "https://mysupport.razer.com/app/answers/detail/a_id/4166",
+        "indexSha256": "23cd734552e054c23caf144f17965e94308e8cef3ca8b47e91260dd2d4527b20",
+        "observedModelRow": "Blade 15 Base (2020) | RZ09-0328x",
+        "observedEntries": [
+          "Razer Blade Intel Firmware Updater | INTEL-SA-00391",
+          "Razer Blade Intel Firmware Updater | INTEL-SA-00459",
+          "Razer Blade 15 Base (2020) BIOS Updater | RZ09-0328x"
+        ],
+        "matchingMcuEntryObserved": false
+      },
+      "readback": "Independent 03/8A [00,00,00,00,00] RGB/mode and built-in 0F/82 readback, plus 03/83 brightness. Random Breathing requires the known zero standard-effect response. Wave is excluded.",
+      "restoration": "Readable zone RGB/mode and exact raw brightness allow restoration of admitted settings.",
+      "gaps": [
+        "No Wave, logo or per-key capability is established; the exact upstream model has the same single-zone boundary.",
+        "Dual-color Breathing is not admitted; a matching complete round-trip RGB getter contract is not established."
+      ],
+      "brightness": true,
+      "physicalValidation": "Retains its recorded exact-model source/upstream evidence; this audit performs no physical validation.",
+      "primaryEvidence": "Exact-model vendor/upstream fallback; no exact keyboard MCU located",
+      "writableEffects": [
+        "Off",
+        "Static",
+        "Spectrum",
+        "Breathing"
+      ],
+      "sourcePriorityDecision": "Reuse established source proof; remaining MCU descriptor/getter gaps recorded without widening admission."
+    },
+    {
+      "model": "RZ09-0330",
+      "pid": "0253",
+      "primaryEvidence": "Exact-model Synapse independent fields; pinned OpenRazer/OpenRGB setter cross-check after MCU inventory",
+      "mcuAvailabilityRecord": "2026-11-13-mcu-availability.json",
+      "upstreamReview": "2026-11-13-upstream-lighting.json",
+      "brightness": true,
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "writableEffects": [],
+      "independentFieldControls": true,
+      "frameTransport": "Upstream setters are evidence only; independent firmware effect baseline/restoration is not established.",
+      "geometry": "Not admitted by this backend; exact upstream declarations are recorded separately.",
+      "keyMap": "No exact physical input-to-light map admitted.",
+      "readback": "Independent brightness and available logo fields; keyboard effect/RGB unavailable.",
+      "restoration": "Field-specific baseline and readback; no effect or pixel write.",
+      "gaps": [
+        "No exact-model keyboard MCU located in reviewed sources.",
+        "Upstream effect getters use software intent, without an independently confirmed firmware baseline."
+      ],
+      "physicalValidation": "Pending for these additions."
+    },
+    {
+      "model": "RZ09-0351",
+      "pid": "0268",
+      "primaryEvidence": "Exact-model Synapse independent fields; pinned OpenRazer/OpenRGB setter cross-check after MCU inventory",
+      "mcuAvailabilityRecord": "2026-11-13-mcu-availability.json",
+      "upstreamReview": "2026-11-13-upstream-lighting.json",
+      "brightness": true,
+      "logo": [],
+      "writableEffects": [],
+      "independentFieldControls": true,
+      "frameTransport": "Upstream setters are evidence only; independent firmware effect baseline/restoration is not established.",
+      "geometry": "Not admitted by this backend; exact upstream declarations are recorded separately.",
+      "keyMap": "No exact physical input-to-light map admitted.",
+      "readback": "Independent brightness and available logo fields; keyboard effect/RGB unavailable.",
+      "restoration": "Field-specific baseline and readback; no effect or pixel write.",
+      "gaps": [
+        "No exact-model keyboard MCU located in reviewed sources.",
+        "Upstream effect getters use software intent, without an independently confirmed firmware baseline."
+      ],
+      "physicalValidation": "Pending for these additions."
+    },
+    {
+      "model": "RZ09-0370",
+      "pid": "0270",
+      "primaryEvidence": "Exact-model Synapse independent fields; pinned OpenRazer/OpenRGB setter cross-check after MCU inventory",
+      "mcuAvailabilityRecord": "2026-11-13-mcu-availability.json",
+      "upstreamReview": "2026-11-13-upstream-lighting.json",
+      "brightness": true,
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "writableEffects": [],
+      "independentFieldControls": true,
+      "frameTransport": "Upstream setters are evidence only; independent firmware effect baseline/restoration is not established.",
+      "geometry": "Not admitted by this backend; exact upstream declarations are recorded separately.",
+      "keyMap": "No exact physical input-to-light map admitted.",
+      "readback": "Independent brightness and available logo fields; keyboard effect/RGB unavailable.",
+      "restoration": "Field-specific baseline and readback; no effect or pixel write.",
+      "gaps": [
+        "No exact-model keyboard MCU located in reviewed sources.",
+        "Upstream effect getters use software intent, without an independently confirmed firmware baseline."
+      ],
+      "physicalValidation": "Pending for these additions."
+    },
+    {
+      "model": "RZ09-0409",
+      "pid": "0276",
+      "primaryEvidence": "Exact-model Synapse independent fields; pinned OpenRazer/OpenRGB setter cross-check after MCU inventory",
+      "mcuAvailabilityRecord": "2026-11-13-mcu-availability.json",
+      "upstreamReview": "2026-11-13-upstream-lighting.json",
+      "brightness": true,
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "writableEffects": [],
+      "independentFieldControls": true,
+      "frameTransport": "Upstream setters are evidence only; independent firmware effect baseline/restoration is not established.",
+      "geometry": "Not admitted by this backend; exact upstream declarations are recorded separately.",
+      "keyMap": "No exact physical input-to-light map admitted.",
+      "readback": "Independent brightness and available logo fields; keyboard effect/RGB unavailable.",
+      "restoration": "Field-specific baseline and readback; no effect or pixel write.",
+      "gaps": [
+        "No exact-model keyboard MCU located in reviewed sources.",
+        "Upstream effect getters use software intent, without an independently confirmed firmware baseline."
+      ],
+      "physicalValidation": "Pending for these additions."
+    },
+    {
+      "model": "RZ09-0421",
+      "pid": "028A",
+      "primaryEvidence": "Exact keyboard MCU setters, active bank getter and renderer consumers; selected exact-model vendor UI for labels.",
+      "mcuProof": "2026-11-13-modern-mcu-lighting.json",
+      "parameterProof": "2026-11-13-mcu-color-wave-review.json",
+      "brightness": true,
+      "logo": [],
+      "writableEffects": [
+        "Off",
+        "Breathing",
+        "Wave",
+        "Spectrum"
+      ],
+      "breathingColorModes": [
+        "Random",
+        "Single",
+        "Dual"
+      ],
+      "waveDirections": [
+        "Leftward",
+        "Rightward"
+      ],
+      "waveWireDirections": {
+        "Leftward": 1,
+        "Rightward": 2
+      },
+      "independentFieldsRetained": false,
+      "independentFieldControls": true,
+      "geometry": "MCU frame bounds 6x16",
+      "frameTransport": "Source bounds recorded; no custom-frame backend or ownership lifecycle admitted in this change.",
+      "keyMap": "No exact physical input-to-light map admitted.",
+      "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
+      "restoration": "Per-submission admission, independent effect confirmation; legacy setters require fresh active-brightness read then requested target. No framebuffer restoration claim.",
+      "gaps": [
+        "Static hidden palette selector is not readable.",
+        "Custom-frame ownership, lifecycle and pixel restoration backend is not admitted.",
+        "Key input mapping and advanced key-triggered controls need their own source review."
+      ],
+      "physicalValidation": "Pending for these additions."
+    },
+    {
+      "model": "RZ09-0423",
+      "pid": "028B",
+      "primaryEvidence": "Exact keyboard MCU setters, active bank getter and renderer consumers; selected exact-model vendor UI for labels.",
+      "mcuProof": "2026-11-13-modern-mcu-lighting.json",
+      "parameterProof": "2026-11-13-mcu-color-wave-review.json",
+      "brightness": true,
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "writableEffects": [
+        "Off",
+        "Breathing",
+        "Wave",
+        "Spectrum",
+        "Static"
+      ],
+      "breathingColorModes": [
+        "Random",
+        "Single",
+        "Dual"
+      ],
+      "waveDirections": [
+        "Leftward",
+        "Rightward"
+      ],
+      "waveWireDirections": {
+        "Leftward": 1,
+        "Rightward": 2
+      },
+      "independentFieldsRetained": false,
+      "independentFieldControls": true,
+      "geometry": "MCU frame bounds 6x16",
+      "frameTransport": "Source bounds recorded; no custom-frame backend or ownership lifecycle admitted in this change.",
+      "keyMap": "No exact physical input-to-light map admitted.",
+      "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
+      "restoration": "Per-submission admission, independent effect confirmation; legacy setters require fresh active-brightness read then requested target. No framebuffer restoration claim.",
+      "gaps": [
+        "Custom-frame ownership, lifecycle and pixel restoration backend is not admitted.",
+        "Key input mapping and advanced key-triggered controls need their own source review."
+      ],
+      "physicalValidation": "Pending for these additions."
+    },
+    {
+      "model": "RZ09-0427",
+      "pid": "028C",
+      "primaryEvidence": "Exact keyboard MCU setters, active bank getter and renderer consumers; selected exact-model vendor UI for labels.",
+      "mcuProof": "2026-11-13-modern-mcu-lighting.json",
+      "parameterProof": "2026-11-13-mcu-color-wave-review.json",
+      "brightness": true,
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "writableEffects": [
+        "Off",
+        "Breathing",
+        "Wave",
+        "Spectrum",
+        "Static"
+      ],
+      "breathingColorModes": [
+        "Random",
+        "Single",
+        "Dual"
+      ],
+      "waveDirections": [
+        "Leftward",
+        "Rightward"
+      ],
+      "waveWireDirections": {
+        "Leftward": 1,
+        "Rightward": 2
+      },
+      "independentFieldsRetained": false,
+      "independentFieldControls": true,
+      "geometry": "MCU frame bounds 6x16",
+      "frameTransport": "Source bounds recorded; no custom-frame backend or ownership lifecycle admitted in this change.",
+      "keyMap": "No exact physical input-to-light map admitted.",
+      "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
+      "restoration": "Per-submission admission, independent effect confirmation; legacy setters require fresh active-brightness read then requested target. No framebuffer restoration claim.",
+      "gaps": [
+        "Custom-frame ownership, lifecycle and pixel restoration backend is not admitted.",
+        "Key input mapping and advanced key-triggered controls need their own source review."
+      ],
+      "physicalValidation": "Pending for these additions."
+    },
+    {
+      "model": "RZ09-0482",
+      "pid": "029D",
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "geometry": "6x16, 96 addresses under the exact upstream row contract.",
+      "frameTransport": "Acknowledged FF transactions; 03/0B rows declare 70 bytes: 52 meaningful bytes plus 18 zero padding bytes. Custom activation is 03/0A [05,00].",
+      "keyMap": "An exact input-to-light map is not admitted. The PI490 follow-up now identifies three selected packed maps and their active lookup/render path.",
+      "mcu": {
+        "carrierName": "RazerUpdater_v1.1.1.3_PI490-MCUv010400v2.exe",
+        "version": "1.04",
+        "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282023%29%20%7C%20RZ09-0482x/RazerUpdater_v1.1.1.3_PI490-MCUv010400v2.exe",
+        "sha256": "9653d899701a889f3e533e8e4a6733869ca3b4bc5c66942b6512d3d848c40e51",
+        "bytes": 1330264,
+        "keyboardMembers": [
+          {
+            "name": "PI490_keyboard_FW_v1.04.00_20230608.hex",
+            "bytes": 166752,
+            "sha256": "42adb76bcb84203237284ed652955e6cdc1ebfb86de4fedb4b780cdf364be54c"
+          }
+        ],
+        "decodedSha256": "dc4d17d4e552922c7712225301bd31474d61e4b12908e00ffa02da4e2fccbe05",
+        "readbackProof": "evidence/source-reviewed-blades/2026-11-12-pi490-lighting-readback.json"
+      },
+      "readback": "The reviewed four-byte 0F/82 query exposes Wave direction. Brightness and logo are independently queried. Compact Wave remains incomplete; no RGB frame getter is established.",
+      "restoration": "Host frames require a complete independently confirmed built-in baseline and exact raw brightness.",
+      "gaps": [
+        "PI490 descriptor follow-up is concrete but needs command-copy linkage, complete auxiliary routing, input collection/Windows binding review and a pinned fixture before Reactive/Ripple or per-key admission.",
+        "No RGB frame readback is established."
+      ],
+      "brightness": true,
+      "physicalValidation": "Retains its recorded exact-model source/upstream evidence; this audit performs no physical validation.",
+      "primaryEvidence": "Existing exact-model MCU/capture contract",
+      "writableEffects": [
+        "Off",
+        "Static",
+        "Spectrum",
+        "Breathing",
+        "Wave",
+        "AmbientAwareness",
+        "AudioMeter",
+        "Fire",
+        "Wheel",
+        "Starlight",
+        "Tidal"
+      ],
+      "sourcePriorityDecision": "Reuse established source proof; remaining MCU descriptor/getter gaps recorded without widening admission."
+    },
+    {
+      "model": "RZ09-0483",
+      "pid": "029F",
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "geometry": "6x16, 96 addresses under the exact upstream row contract.",
+      "frameTransport": "Serialized acknowledged 03/0B rows declare 52 bytes. Custom activation is 03/0A [05,00]. Keep its rolling production transactions.",
+      "keyMap": "An exact input-to-light map is not admitted. The SO690 follow-up now identifies six selected packed maps and their active lookup/render path.",
+      "mcu": {
+        "carrierName": "SO690_MCU_010600.exe",
+        "version": "1.06.00",
+        "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282023%29%20%7C%20RZ09-0483/SO690_MCU_010600.exe",
+        "sha256": "552518c8ed1f590ea0d58e57de27e2ed0c1985a5b61faece69f984d25aab1935",
+        "bytes": 1503488,
+        "keyboardMembers": [
+          {
+            "name": "SO690_keyboard_FW_v1.06.00_20250205.hex",
+            "bytes": 182171,
+            "sha256": "ea274a6e6b41dde2ac20fb3409ed7bed72b7e0a52f79c0949d4b78f3304c52cf"
+          }
+        ]
+      },
+      "readback": "Independent 0F/82 built-in effect, 03/83 brightness and 03/80 plus 03/82 logo queries. Compact Wave lacks direction; opposite direction is not a complete restorable baseline. No RGB frame getter is established.",
+      "restoration": "Host frames require a complete independently confirmed built-in baseline and exact raw brightness. Retiring the renderer restores and confirms that baseline. Recovery leaves frame colors unknown.",
+      "gaps": [
+        "SO690 descriptor follow-up is concrete but needs command-copy linkage, complete auxiliary routing, input collection/Windows binding review and a pinned fixture before Reactive/Ripple or per-key admission.",
+        "No RGB frame readback is established."
+      ],
+      "brightness": true,
+      "physicalValidation": "Retains its recorded exact-model source/upstream evidence; this audit performs no physical validation.",
+      "primaryEvidence": "Existing exact-model MCU/capture contract",
+      "writableEffects": [
+        "Off",
+        "Static",
+        "Spectrum",
+        "Breathing",
+        "Wave",
+        "AmbientAwareness",
+        "AudioMeter",
+        "Fire",
+        "Wheel",
+        "Starlight",
+        "Tidal"
+      ],
+      "sourcePriorityDecision": "Reuse established source proof; remaining MCU descriptor/getter gaps recorded without widening admission."
+    },
+    {
+      "model": "RZ09-0484",
+      "pid": "02A0",
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "geometry": "6x16 transport, with an independent 15-column by 7-row logical spatial grid. Nine regional layouts across two editions define 87 output slots.",
+      "frameTransport": "Six SET-only 52-byte 03/0B rows. Activate custom mode once on entry; preserve the 20 FPS software budget.",
+      "keyMap": "Eighteen pinned Product 672 regional UI definitions and its exact 00/86 getter select the physical region. Unknown regions retain unambiguous fallback bindings; ambiguous Fn addresses are not guessed.",
+      "mcu": {
+        "carrierName": "RazerUpdater_v1.1.1.3_KI890_EC_0107_MCU_010400_TP_VBIOS_v5 1.exe",
+        "version": "EC1.07-MCU1.04",
+        "url": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0484/RazerUpdater_v1.1.1.3_KI890_EC_0107_MCU_010400_TP_VBIOS_v5%201.exe",
+        "sha256": "6e383e9ea40ac5d45be0dbd38cba9c8f92368317d4ad06ad8da1d411e7edb2d7",
+        "bytes": 16927128,
+        "keyboardMembers": [
+          {
+            "name": "KI890_Keyboard_FW_v1.04.00_20230412.hex",
+            "bytes": 166863,
+            "sha256": "2a89c1ff6b856551328afe667bb81b31d55722f83618d27311d5b070f2962c73"
+          }
+        ]
+      },
+      "readback": "Independent built-in 0F/82, brightness and logo queries. Compact Wave is incomplete. No RGB frame getter is established.",
+      "restoration": "Retains a complete built-in baseline and exact raw brightness. Owned RGB is intent, and recovery does not replay it.",
+      "gaps": [
+        "KI890 MCU is available; its lighting descriptor/getter bindings have not been independently traced against the existing Synapse/upstream contract in this bounded pass.",
+        "No RGB frame readback is established."
+      ],
+      "brightness": true,
+      "physicalValidation": "Retains its recorded exact-model source/upstream evidence; this audit performs no physical validation.",
+      "primaryEvidence": "Existing exact-model MCU/capture contract",
+      "writableEffects": [
+        "Off",
+        "Static",
+        "Spectrum",
+        "Breathing",
+        "Wave",
+        "AmbientAwareness",
+        "AudioMeter",
+        "Fire",
+        "Wheel",
+        "Starlight",
+        "Tidal",
+        "Reactive",
+        "Ripple",
+        "Sequence"
+      ],
+      "sourcePriorityDecision": "Reuse established source proof; remaining MCU descriptor/getter gaps recorded without widening admission."
+    },
+    {
+      "model": "RZ09-0508",
+      "pid": "02B6",
+      "primaryEvidence": "Exact-model Synapse independent fields; pinned OpenRazer/OpenRGB setter cross-check after MCU inventory",
+      "mcuAvailabilityRecord": "2026-11-13-mcu-availability.json",
+      "upstreamReview": "2026-11-13-upstream-lighting.json",
+      "brightness": true,
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "writableEffects": [],
+      "independentFieldControls": true,
+      "frameTransport": "Upstream setters are evidence only; independent firmware effect baseline/restoration is not established.",
+      "geometry": "Not admitted by this backend; exact upstream declarations are recorded separately.",
+      "keyMap": "No exact physical input-to-light map admitted.",
+      "readback": "Independent brightness and available logo fields; keyboard effect/RGB unavailable.",
+      "restoration": "Field-specific baseline and readback; no effect or pixel write.",
+      "gaps": [
+        "No exact-model keyboard MCU located in reviewed sources.",
+        "Upstream effect getters use software intent, without an independently confirmed firmware baseline."
+      ],
+      "physicalValidation": "Pending for these additions."
+    },
+    {
+      "model": "RZ09-0509",
+      "pid": "02B8",
+      "primaryEvidence": "Exact keyboard MCU setters, active bank getter and renderer consumers; selected exact-model vendor UI for labels.",
+      "mcuProof": "2026-11-13-modern-mcu-lighting.json",
+      "parameterProof": "2026-11-13-mcu-color-wave-review.json",
+      "brightness": true,
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "writableEffects": [
+        "Off",
+        "Breathing",
+        "Wave",
+        "Static"
+      ],
+      "breathingColorModes": [
+        "Random",
+        "Single",
+        "Dual"
+      ],
+      "waveDirections": [
+        "Leftward",
+        "Rightward"
+      ],
+      "waveWireDirections": {
+        "Leftward": 1,
+        "Rightward": 2
+      },
+      "independentFieldsRetained": false,
+      "independentFieldControls": true,
+      "geometry": "MCU frame bounds 6x16",
+      "frameTransport": "Source bounds recorded; no custom-frame backend or ownership lifecycle admitted in this change.",
+      "keyMap": "No exact physical input-to-light map admitted.",
+      "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
+      "restoration": "Per-submission admission, independent effect confirmation; legacy setters require fresh active-brightness read then requested target. No framebuffer restoration claim.",
+      "gaps": [
+        "Spectrum hidden policy/palette is not readable.",
+        "Custom-frame ownership, lifecycle and pixel restoration backend is not admitted.",
+        "Key input mapping and advanced key-triggered controls need their own source review."
+      ],
+      "physicalValidation": "Pending for these additions."
+    },
+    {
+      "model": "RZ09-0510",
+      "pid": "02B7",
+      "primaryEvidence": "Exact keyboard MCU setters, active bank getter and renderer consumers; selected exact-model vendor UI for labels.",
+      "mcuProof": "2026-11-13-modern-mcu-lighting.json",
+      "parameterProof": "2026-11-13-mcu-color-wave-review.json",
+      "brightness": true,
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "writableEffects": [
+        "Off",
+        "Breathing",
+        "Wave"
+      ],
+      "breathingColorModes": [
+        "Random",
+        "Single",
+        "Dual"
+      ],
+      "waveDirections": [
+        "Leftward",
+        "Rightward"
+      ],
+      "waveWireDirections": {
+        "Leftward": 1,
+        "Rightward": 2
+      },
+      "independentFieldsRetained": false,
+      "independentFieldControls": true,
+      "geometry": "MCU frame bounds 6x16",
+      "frameTransport": "Source bounds recorded; no custom-frame backend or ownership lifecycle admitted in this change.",
+      "keyMap": "No exact physical input-to-light map admitted.",
+      "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
+      "restoration": "Per-submission admission, independent effect confirmation; legacy setters require fresh active-brightness read then requested target. No framebuffer restoration claim.",
+      "gaps": [
+        "Static hidden palette selector is not readable.",
+        "Spectrum hidden policy/palette is not readable.",
+        "Custom-frame ownership, lifecycle and pixel restoration backend is not admitted.",
+        "Key input mapping and advanced key-triggered controls need their own source review."
+      ],
+      "physicalValidation": "Pending for these additions."
+    },
+    {
+      "model": "RZ09-0528",
+      "pid": "02C6",
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "geometry": "6x17, 102 logical slots; six independently pinned SO6110 regional maps. Legacy Right Alt canvas 91 projects to physical 94 or 95.",
+      "frameTransport": "90-byte protocol / 91-byte Windows Feature buffer. Six standard 03/0B rows use [00,row,start,end,RGB], followed by custom activation. Streaming batches retain their SET-only transport.",
+      "keyMap": "The exact SO6110 map is selected through 00/86. Its own input collections and regional pulse/import projection remain authoritative.",
+      "mcu": {
+        "name": "SO6110 MCU 1.09",
+        "url": "https://dl.razerzone.com/drivers/RazerBlade16RZ09-0528/SO6110-MCUv01.09.00.exe",
+        "carrierSha256": "4d62ce4ae2c0faaa48f69e8a18816140ca23f1c9cb1cbc0d18a07a716f4025bc",
+        "decodedSha256": "371c590b86e578720a063bd2e1ee6795a233dfb54dc09613472e4cfbe4d648c1",
+        "proof": "docs/blade16-amd-regional-lighting.md"
+      },
+      "readback": "Independent brightness and logo readback. Only confirmed zero brightness proves Off; arbitrary matrix RGB/effect remains unknown.",
+      "restoration": "Retains exact raw brightness, optional logo and previous owned renderer state. Arbitrary unowned RGB cannot be reconstructed.",
+      "gaps": [
+        "Existing MCU regional/transport proofs do not establish complete built-in effect getter coverage."
+      ],
+      "brightness": true,
+      "physicalValidation": "Retains its existing separate physical validation. Source-backed regional extensions do not inherit physical validation.",
+      "primaryEvidence": "Existing exact-model MCU/capture contract",
+      "writableEffects": [
+        "Off",
+        "Static",
+        "Spectrum",
+        "Breathing",
+        "Reactive",
+        "Tidal",
+        "Starlight",
+        "Wave",
+        "Wheel",
+        "Ripple",
+        "AmbientAwareness",
+        "AudioMeter",
+        "Sequence",
+        "Fire"
+      ],
+      "sourcePriorityDecision": "Reuse established source proof; remaining MCU descriptor/getter gaps recorded without widening admission."
+    },
+    {
+      "model": "RZ09-0529",
+      "pid": "02C7",
+      "primaryEvidence": "Exact keyboard MCU setters, active bank getter and renderer consumers; selected exact-model vendor UI for labels.",
+      "mcuProof": "2026-11-13-modern-mcu-lighting.json",
+      "parameterProof": "2026-11-13-mcu-color-wave-review.json",
+      "brightness": true,
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "writableEffects": [
+        "Off",
+        "Breathing",
+        "Wave",
+        "Static"
+      ],
+      "breathingColorModes": [
+        "Random",
+        "Single",
+        "Dual"
+      ],
+      "waveDirections": [
+        "Leftward",
+        "Rightward"
+      ],
+      "waveWireDirections": {
+        "Leftward": 1,
+        "Rightward": 2
+      },
+      "independentFieldsRetained": false,
+      "independentFieldControls": true,
+      "geometry": "MCU frame bounds 6x19",
+      "frameTransport": "Source bounds recorded; no custom-frame backend or ownership lifecycle admitted in this change.",
+      "keyMap": "No exact physical input-to-light map admitted.",
+      "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
+      "restoration": "Per-submission admission, independent effect confirmation; legacy setters require fresh active-brightness read then requested target. No framebuffer restoration claim.",
+      "gaps": [
+        "Spectrum hidden policy/palette is not readable.",
+        "Custom-frame ownership, lifecycle and pixel restoration backend is not admitted.",
+        "Key input mapping and advanced key-triggered controls need their own source review."
+      ],
+      "physicalValidation": "Pending for these additions."
+    },
+    {
+      "model": "RZ09-0530",
+      "pid": "02C5",
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "geometry": "6x16, 96 addresses.",
+      "frameTransport": "Acknowledged FF transactions with 70-byte 03/0B rows and 03/0A [05,00] activation.",
+      "keyMap": "PI4110 proof contains three packed 96x8 tables. Current product scope intentionally binds only 74 usage pairs common to all maps, including 71 reviewed ordinary Windows scan bindings. Regional disagreements stay unavailable.",
+      "mcu": {
+        "carrierName": "PI4110-MCUv01.04.00.exe",
+        "version": "01.04.00",
+        "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282025%29%20%7C%20RZ09-0530/PI4110-MCUv01.04.00.exe",
+        "sha256": "aed7039be5cc4ec3f166a2728b0c1b90839bae72c8a04150056654f64f20581f",
+        "bytes": 1439888,
+        "keyboardMembers": [
+          {
+            "name": "PI4110_keyboard_FW_v1.04.00_20250918.hex",
+            "bytes": 147513,
+            "sha256": "4787f3c382d57c165dd2de099147b678070d0251e0febb5b6cc5a7902048bcd3"
+          }
+        ],
+        "decodedSha256": "1ac3f05486d0bca5fbbb1a4a52b874943ad491a00afd298b8d6b857a49d98f11",
+        "readbackProof": "evidence/source-reviewed-blades/2026-11-12-pi4110-lighting-readback.json",
+        "keyMapProof": "evidence/source-reviewed-blades/2026-11-12-pi4110-keymap.json"
+      },
+      "readback": "MCU-proved four-byte Wave query, independent brightness and logo queries. Frame RGB remains unknown.",
+      "restoration": "Retains a complete built-in baseline and exact raw brightness. Partial frames pause further writes without replay.",
+      "gaps": [
+        "Selecting full per-region maps would be an optional product expansion; the current common intersection is intentional and already has a complete source basis.",
+        "No RGB frame readback is established."
+      ],
+      "brightness": true,
+      "physicalValidation": "Retains its recorded exact-model source/upstream evidence; this audit performs no physical validation.",
+      "primaryEvidence": "Existing exact-model MCU/capture contract",
+      "writableEffects": [
+        "Off",
+        "Static",
+        "Spectrum",
+        "Breathing",
+        "Wave",
+        "AmbientAwareness",
+        "AudioMeter",
+        "Fire",
+        "Wheel",
+        "Starlight",
+        "Tidal",
+        "Reactive",
+        "Ripple",
+        "Sequence"
+      ],
+      "sourcePriorityDecision": "Reuse established source proof; remaining MCU descriptor/getter gaps recorded without widening admission."
+    },
+    {
+      "model": "RZ09-0581",
+      "pid": "02E0",
+      "logo": [
+        "Off",
+        "Static",
+        "Breathing"
+      ],
+      "geometry": "6x17, 102 logical slots; six independently pinned SO6120 regional maps.",
+      "frameTransport": "374-byte extended 03/0B payload, 375-byte Windows Feature buffer. Preserve activation before the first frame.",
+      "keyMap": "The exact SO6120 map selected through 00/86 supports regional ISO/Japanese pulses and per-key imports. Unspecified or absent keys remain black.",
+      "mcu": {
+        "name": "SO6120 MCU 1.07",
+        "carrierSha256": "252618ae4cb3c865de557d198ac3b7cf1310865e529eb1daab9790675792feb7",
+        "decodedSha256": "90bbe0d8dd1ca31614a2465c7c8821347b2a667606c39bedadbd59b98886344f",
+        "proof": "docs/blade16-regional-lighting.md"
+      },
+      "readback": "Independent brightness and logo readback. No arbitrary matrix RGB or effect query is implemented; only confirmed zero brightness proves Off.",
+      "restoration": "Retains exact raw brightness, optional logo baseline and the previous owned renderer snapshot. It cannot reconstruct arbitrary unowned RGB.",
+      "gaps": [
+        "Fire is missing from admitted effects. A pure host-software implementation is feasible without the 0528 capture oracle.",
+        "Existing MCU regional/transport proofs do not establish complete built-in effect getter coverage."
+      ],
+      "brightness": true,
+      "physicalValidation": "Retains its existing separate physical validation. Source-backed regional extensions do not inherit physical validation.",
+      "primaryEvidence": "Existing exact-model MCU/capture contract",
+      "writableEffects": [
+        "Off",
+        "Static",
+        "Spectrum",
+        "Breathing",
+        "Reactive",
+        "Tidal",
+        "Starlight",
+        "Wave",
+        "Wheel",
+        "Ripple",
+        "AmbientAwareness",
+        "AudioMeter",
+        "Sequence",
+        "Fire"
+      ],
+      "softwareEffects": [
+        {
+          "effect": "Fire",
+          "basis": "SoftwarePatternWithoutPhysicalValidation",
+          "physicalValidation": "Pending",
+          "implementation": "SoftwareFirePattern",
+          "semanticAdmission": "src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_3_01_LightingSemanticAdmission.json"
+        }
+      ],
+      "sourcePriorityDecision": "Reuse established source proof; remaining MCU descriptor/getter gaps recorded without widening admission."
+    }
+  ]
+}

@@ -35,13 +35,25 @@ public sealed partial class SourceReviewedBladeModelTests
             Assert.Null(capabilities.FanSpeedRange);
         }
         Assert.Empty(capabilities.ChargeLimits);
-        Assert.Empty(capabilities.LightingEffects);
-        Assert.Equal(product == 0x0245 ? 3 : 0, capabilities.LogoLightingModes.Count);
+        if (product == 0x0245)
+        {
+            Assert.Equal(new[] { LightingEffect.Off, LightingEffect.Static, LightingEffect.Spectrum,
+                LightingEffect.Breathing, LightingEffect.Wave }.Order(), capabilities.LightingEffects.Order());
+        }
+        else { Assert.Empty(capabilities.LightingEffects); }
+        LogoLightingMode[] expectedLogo = IsLegacyAdvanced(product)
+            ? [LogoLightingMode.Off, LogoLightingMode.Static, LogoLightingMode.Breathing]
+            : [];
+        Assert.Equal(expectedLogo.Order(), capabilities.LogoLightingModes.Order());
+        Assert.True(capabilities.SupportsIndependentLightingControls);
+        Assert.False(capabilities.SupportsBreathingColorSelection);
+        Assert.Equal((product == 0x0245 ? Enum.GetValues<BreathingColorMode>() : [BreathingColorMode.Random]).Order(), capabilities.SupportedBreathingColorModes!.Order());
+        Assert.Equal(product == 0x0245, capabilities.SupportsWaveDirectionSelection);
         Assert.Empty(capabilities.OneShotLaptopControls);
         Assert.Empty(capabilities.HostManagedLaptopControls);
         Assert.Null(capabilities.HyperBoostAccess);
         Assert.Null(capabilities.ThxAudio);
-        Assert.Equal(product == 0x0245, capabilities.SupportsKeyboardBrightness);
+        Assert.True(capabilities.SupportsKeyboardBrightness);
         Assert.False(capabilities.SupportsUniformLightingFrames);
         if (IsLegacyAdvanced(product))
         {
@@ -192,8 +204,16 @@ public sealed partial class SourceReviewedBladeModelTests
         ConfirmedDeviceState recovered = await supportedPort.ReadRecoveryStateAsync(default);
         Assert.Equal(IsLegacyAdvanced(product) ? PerformancePreset.Custom : PerformancePreset.Creator, recovered.Performance);
         Assert.Null(recovered.Battery);
-        Assert.Null(recovered.Lighting);
-        Assert.Null(recovered.LogoLighting);
+        if (product == 0x0245)
+        {
+            Assert.Equal(LightingSettingsFactory.SpectrumCycling(50), recovered.Lighting);
+            Assert.Equal(LogoLightingMode.Static, recovered.LogoLighting);
+        }
+        else
+        {
+            Assert.Null(recovered.Lighting);
+            Assert.Null(recovered.LogoLighting);
+        }
         Assert.DoesNotContain(supported.Commands, command => command.CommandId is 0x92 or 0x8F);
     }
 

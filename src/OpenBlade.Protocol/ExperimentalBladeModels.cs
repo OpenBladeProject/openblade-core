@@ -64,8 +64,24 @@ internal static class ExperimentalBladeModels
                 .. (model.ProductId == 0x0245
                     ? new ExperimentalFeatureEvidence[] { new("CustomGpuWattageLevels0To2",
                         "SynapseSourceBackedWithoutPhysicalValidation", sources),
-                        new("ManualFanEnvelope3700To5300Step100", "SourceDerivedOuterEnvelopeRequiresFreshFirmwareIntersection", sources),
-                        new("IndependentKeyboardBrightnessAndLogo", "SynapseSourceBackedWithoutPhysicalValidation", sources) }
+                        new("ManualFanEnvelope3700To5300Step100", "SourceDerivedOuterEnvelopeRequiresFreshFirmwareIntersection", sources) }
+                    : []),
+                .. (ExperimentalBladePort.SupportsIndependentLighting(model)
+                    ? new ExperimentalFeatureEvidence[] { new(model.ProductId is 0x0246 or 0x0268 or 0x028A
+                        ? "IndependentKeyboardBrightness" : "IndependentKeyboardBrightnessAndLogo",
+                        "SynapseSourceBackedWithoutPhysicalValidation", sources) }
+                    : []),
+                .. (ExperimentalBladePort.SupportsReviewedMcuLighting(model)
+                    ? new ExperimentalFeatureEvidence[] { new("ActiveKeyboardLightingAndBrightness",
+                        "ExactMcuAndSynapseSourceBackedWithoutPhysicalValidation",
+                        [ReviewedMcuLightingSource(model), .. sources]),
+                        new("KeyboardBreathingRandomSingleDualColors", "ExactMcuSourceBackedWithoutPhysicalValidation",
+                            [ReviewedMcuLightingSource(model), .. sources]),
+                        new("KeyboardWaveBothDirections", "ExactMcuAndSelectedModelLabelsWithoutPhysicalValidation",
+                            [ReviewedMcuLightingSource(model), .. sources]),
+                        new("KeyboardStaticColor", model.ProductId is 0x028A or 0x02B7
+                            ? "NotEstablishedHiddenPaletteSelector" : "ExactMcuSourceBackedWithoutPhysicalValidation",
+                            [ReviewedMcuLightingSource(model), .. sources]) }
                     : []),
                 new("AutomaticFanHandback", "SynapseSourceBackedWithoutPhysicalValidation", sources),
                 new("FixedAndCurveFanWrites", model.ProductId == 0x0245
@@ -77,7 +93,10 @@ internal static class ExperimentalBladeModels
                 new("MaximumFans", thermal.SupportsMaximumFans ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
                 new("AdapterPowerClassification", "SynapseSourceBacked", sources),
                 .. FanStopEvidenceFor(model),
-                new(model.ProductId == 0x0245 ? "KeyboardEffectsFramesAndHyperBoost" : "LightingAndHyperBoost", "NotEstablished", sources),
+                new(ExperimentalBladePort.SupportsReviewedMcuLighting(model)
+                    ? "CustomFramesAdditionalEffectsAndHyperBoost"
+                    : ExperimentalBladePort.SupportsIndependentLighting(model)
+                    ? "KeyboardEffectsFramesAndHyperBoost" : "LightingAndHyperBoost", "NotEstablished", sources),
             ];
         }
         IReadOnlyList<ExperimentalFeatureEvidence> features = model.ProductId switch
@@ -303,6 +322,19 @@ internal static class ExperimentalBladeModels
                 SourceReviewedEvidence(product), turbo, silent, balancedDc, custom, gaming, creator));
     }
 
+    // Exact acquisition pins are source provenance, not installed firmware admission.
+    private static string ReviewedMcuLightingSource(ExperimentalBladeModel model) => model.ProductId switch
+    {
+        0x0245 => "https://rzr.to/KkxlH;SHA256=58F880CC46A64379131E7EDC3D1A8C63418DC2989179D3A514D6D79EA38E49E5",
+        0x028A => "https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20%282022%29%20%7C%20RZ09-0421x/RazerUpdater_v1.1.1.3_CH580_EC_0103_MCU_010300_v2.exe;SHA256=6FCFD96615C514C6CD25944405980B6B39D8A2B0458F8CABCE299DAC37728118",
+        0x028B => "https://dl.razerzone.com/drivers/Razer%20Blade%2017%22%20%282022%29%20%7C%20RZ09-0423x/RazerUpdater_v1.1.1.3_DI780-ECv0105_MCUv010200_VBIOS_v3.exe;SHA256=3F096851BED1679A83630FA588DAF0D977F0944634075E75493658CFAD03C554",
+        0x028C => "https://dl.razerzone.com/drivers/Razer%20Blade%2014%20%282022%29%20%E2%80%93%20RZ09-0427/RazerUpdater_v1.1.1.3_PI480-MCUv010100-PDv11-BIOSv3.06v1-ECv0106.exe;SHA256=6DC6495A1BDEBF7AEA343F2A5F1E82E5565AECE7D1FBF50CBD2E450CC18B04EF",
+        0x02B7 => "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282024%29%20%7C%20RZ09-0510/RazerUpdater_v1.1.1.3_SO6100_EC_0102_MCU_010300_VBIOS.exe;SHA256=2912408C872D57176E42D2DA09B68566CECF9B723F51CCE4AE4E717A9E98E295",
+        0x02B8 => "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0509/RazerUpdater_v1.1.1.3_KI8100_EC_1.02_MCU_010100v2.exe;SHA256=6E06D131E1A77A733FBF5C37E5BA95CCDA2E496257A7BB4747B1E274DDA74C38",
+        0x02C7 => "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0529/KI8110-MCUv01.07.00.exe;SHA256=30C06BA3D2D057593BBF3C812249D4EDD020D17FC157A8CC7C29264A9E72F9DC",
+        _ => throw new ArgumentOutOfRangeException(nameof(model)),
+    };
+
     private static System.Collections.Immutable.ImmutableArray<string> SourceReviewedEvidence(ushort product) =>
         product switch
         {
@@ -311,21 +343,24 @@ internal static class ExperimentalBladeModels
                 "https://apps.razer.com/synapse/products/564/mw/6737.09466ede91c383e63db5.js;SHA256=578C055A626C97F320A8642DDCF6D727EDEC267C02BF4BDF68D9921A7DF92A8F",
                 "https://apps.razer.com/synapse/products/564/mw/rzDevice25.c85377977ca9cfdbb0b0.js;SHA256=65C38CDAAFC263682BADF4695C9239DF96FA1F26091274FB4AE0E81C5ACD8C17",
                 "https://apps.razer.com/synapse/products/564/mw/rzDevice25LedMatrixBlade.cf43cdc9a0705593c034.js;SHA256=EEF7D6D017DA455DCDB3A283F157256B7BE3FE033BCC589647E24C67BB58217A",
-                "https://apps.razer.com/synapse/products/564/ui/static/js/main.c6dfa6fe.js;SHA256=1E832E271629A0B9924BD0E47D9C9B6C71ACA2AEEA49301B8E804AB31A1CD3C3"],
+                "https://apps.razer.com/synapse/products/564/ui/static/js/main.c6dfa6fe.js;SHA256=1E832E271629A0B9924BD0E47D9C9B6C71ACA2AEEA49301B8E804AB31A1CD3C3",
+                "https://apps.razer.com/synapse/products/564/mw/rzDevice25LedMatrix.07dcd79a57a435233647.js;SHA256=A2B50251DBB0960C41954A3676D7801F800B8370457AA903039E9D64BC039929"],
             588 => [
                 "https://apps.razer.com/synapse/products/588/mw/main.aef91a9c8a23c54b3711.js;SHA256=58C8699616E125BE2F8F4FFFD490FFCD632F30EC171898229BA76275701558ED",
                 "https://apps.razer.com/synapse/products/588/mw/6737.486962f684c3054bcd0c.js;SHA256=62AC7270B6927323605CDF45D699EA07E48C1063FC6F5642F2FC4ABC6CDD12FA",
                 "https://apps.razer.com/synapse/products/588/mw/rzDevice25.c9cde47d1f5b9618158b.js;SHA256=B299E84011BB04545123498F4B17DC0F774CB2560BF21C2F2BE7B9393B416AE5",
                 "https://apps.razer.com/synapse/products/588/mw/rzDevice25LedMatrixBlade.a3ca67aee2e5d66c4d8a.js;SHA256=009DA3FDDF6D567F09F5DFFF330FF88F9BC56F11844D72557C3D6DD89C0F5DC2",
                 "https://apps.razer.com/synapse/products/588/mw/rzDevice25LedMatrixBladeWattage.6400257deb0580f370f5.js;SHA256=A0F2E3A06ABE8BFBABE561F5808BDA5B175857E8C38D8E0460B74D149BF0D330",
-                "https://apps.razer.com/synapse/products/588/ui/static/js/main.5ff20197.js;SHA256=2FA82D9AC334FF3453E73676CEDBA0532093C90BDE0B0F9030EE57A47CC707A0"],
+                "https://apps.razer.com/synapse/products/588/ui/static/js/main.5ff20197.js;SHA256=2FA82D9AC334FF3453E73676CEDBA0532093C90BDE0B0F9030EE57A47CC707A0",
+                "https://apps.razer.com/synapse/products/588/mw/rzDevice25LedMatrix.16e169229a175ac38a8c.js;SHA256=F22899E74898C2007C53BA61A64F474297527123CA600680E902D37DDEF0DA9E"],
             630 => [
                 "https://apps.razer.com/synapse/products/630/mw/main.6098ef0f83a9cd1c24a9.js;SHA256=57D83A4D3928BE973205AF873268D65662A1833452165EA8199F816D27BAB51B",
                 "https://apps.razer.com/synapse/products/630/mw/6737.71d0d0b36aad77ffb446.js;SHA256=80A872631CBD5E16F713467DA13B9B7D76889487E22A6CE3DB854A15E1631558",
                 "https://apps.razer.com/synapse/products/630/mw/rzDevice25.7fc62fb8a269279f7b9e.js;SHA256=940EE59B6B034BEE82B77779323617F817D8D400F7BF526058BFD10CDC1568BA",
                 "https://apps.razer.com/synapse/products/630/mw/rzDevice25LedMatrixBlade.5258f7f0a1f14ad07643.js;SHA256=494AD54804E7DBFB10CA6D405EB4A307B6DDF614BC5013C01280135E4CAA972F",
                 "https://apps.razer.com/synapse/products/630/mw/rzDevice25LedMatrixBladeWattage.cb42c79fefbfdc6d1216.js;SHA256=E75F29F664214B9F08295F22CBDB2B75614E0D0240B0D0044E18DE2ED1621325",
-                "https://apps.razer.com/synapse/products/630/ui/static/js/main.64a01e0e.js;SHA256=1C5A6D450F5E544FE8855FFF92D95BC3ABCE2697574CC58D37AA76817D9F95E5"],
+                "https://apps.razer.com/synapse/products/630/ui/static/js/main.64a01e0e.js;SHA256=1C5A6D450F5E544FE8855FFF92D95BC3ABCE2697574CC58D37AA76817D9F95E5",
+                "https://apps.razer.com/synapse/products/630/mw/rzDevice25LedMatrix.0bdbcce58345eb489009.js;SHA256=CAFDC975CC5A5E1B69EE0145B84B91B52EF6AFDABE19BF2B481067A58A3B8279"],
             581 => [
                 "https://apps.razer.com/synapse/products/581/mw/main.450b813b36b314f7abf0.js;SHA256=F7A863CF5E95D94539ABD3F4C29076E1710901B5D02624EFDC0275265C651D7A",
                 "https://apps.razer.com/synapse/products/581/mw/6737.f49b9965ecd5cf011e43.js;SHA256=5B11C5CD3E26BBD74DAC7A98413AB31315DAFEFAD5B783DBF0CF014E6A33D017",
@@ -341,60 +376,98 @@ internal static class ExperimentalBladeModels
                 "https://apps.razer.com/synapse/products/582/mw/main.c9ac81170313d8740ddc.js;SHA256=EAEE32B144B086165E43FC97446378D22919FB19360826028A0434B03D7190C4",
                 "https://apps.razer.com/synapse/products/582/mw/rzDevice25.56d11fe9830f93920735.js;SHA256=A5F75408C2D859ACF0F3418B950989271E98DFEE5056DD17DCA6BA5557FDD4C6",
                 "https://apps.razer.com/synapse/products/582/mw/rzDevice25LedMatrixBladeWattage.45c847b37f79a031cbaf.js;SHA256=71D91DFF87CB617384535C5DEC4643A2CC551C3CDE63EE691A29D7282FF96AB2",
-                "https://apps.razer.com/synapse/products/582/ui/static/js/main.6ce6c0b6.js;SHA256=B4BEB1A616F01AE0F9DD29741B6AE6A66ED794CD2E109C92E57D9BBF232FDF1F"],
+                "https://apps.razer.com/synapse/products/582/ui/static/js/main.6ce6c0b6.js;SHA256=B4BEB1A616F01AE0F9DD29741B6AE6A66ED794CD2E109C92E57D9BBF232FDF1F",
+                "https://apps.razer.com/synapse/products/582/mw/rzDevice25LedMatrix.e2382008c1993f0aa740.js;SHA256=A679866CD21F4F47E645C495F5026C3083A2E163E98F64898FC869C2EC995EAF",
+                "https://apps.razer.com/synapse/products/582/mw/rzDevice25LedMatrixBlade.a4db46356fdb831037e2.js;SHA256=B43A923BCF590E180CBF7E1F8143CD9F3E4F96FE1045E690E924D3CE7D13EB9C"],
             595 => [
                 "https://apps.razer.com/synapse/products/595/mw/6737.6a4f810f43bf4dd7ea5d.js;SHA256=AC6F2091BC3ABE952B1AA7D8F156F2C6859E3195112A06D15AA03BB41FA81F6A",
                 "https://apps.razer.com/synapse/products/595/mw/main.11dfb9173b8a1c795ffd.js;SHA256=95A5CB17A346AC87CBF033E734EC18955E8B42BBFD572B666AAED36FBB3342D1",
                 "https://apps.razer.com/synapse/products/595/mw/rzDevice25.1dbf16d259718708f12a.js;SHA256=ED1BEF8C07D7E5BBFEEFE235179B351B85BFAE6F1BCC3A0A131F7A99BB157E1C",
                 "https://apps.razer.com/synapse/products/595/mw/rzDevice25LedMatrixBladeWattage.372543c0af163eb3248d.js;SHA256=E2212888DAC1E9026061079E38464221F38E72A17B71EE059902C6065851FE3F",
+                "https://apps.razer.com/synapse/products/595/mw/rzDevice25LedMatrixBlade.79a5d89deb2d7a89f414.js;SHA256=5DABD32211A6FD805ADF1FD5DA0921CDA6D269A43A6A2B4E1CB4EA803BD92A8E",
+                "https://apps.razer.com/synapse/products/595/mw/rzDevice25LedMatrix.c2826f7990981b78f559.js;SHA256=D24550DC01703E0BF6E17BA971DA7EB877A9AFDF45F0E15407E432F68C116CC7",
                 "https://apps.razer.com/synapse/products/595/ui/static/js/main.cb0bb66b.js;SHA256=F18BBCF3BB5A24FEC8272213DE8AA93E55FFA8E9952F90F5556C3DE62E79EE08"],
             616 => [
                 "https://apps.razer.com/synapse/products/616/mw/2592.2faacaabe55016689a38.js;SHA256=D7C0644CA124900DB2A57812E85CF94C0C75A75ACE11CAB903B11A81438B4B92",
                 "https://apps.razer.com/synapse/products/616/mw/main.f9ef043eaf3feceba719.js;SHA256=ABC074EB488E0848E4751D8417D6B3EF3BA02FAC06C9C98ED32B5E1E1350B2C7",
                 "https://apps.razer.com/synapse/products/616/mw/rzDevice25.9c9299b0f9660c882e16.js;SHA256=330835150F88BC505B181EAC4828506750CD7365F9F4CB242437CF3CFC133A24",
                 "https://apps.razer.com/synapse/products/616/mw/rzDevice25LedMatrixBladeWattage.f57ee707817ebfa7e2d8.js;SHA256=51BC8EF2FEFDA5FE8263E26F175F20B25BF0703CF0EEA8E9DE0D7B8AB1959426",
-                "https://apps.razer.com/synapse/products/616/ui/static/js/main.700be592.js;SHA256=A802348F6BA596483A820A90D583C3680903C74AEB1CCB559174CBEB47C0E2F2"],
+                "https://apps.razer.com/synapse/products/616/ui/static/js/main.700be592.js;SHA256=A802348F6BA596483A820A90D583C3680903C74AEB1CCB559174CBEB47C0E2F2",
+                "https://apps.razer.com/synapse/products/616/mw/rzDevice25LedMatrix.4c26238bf2faca60f170.js;SHA256=90578F207DC08DFD31291281D4381E442426757900A061FAAA97D9ABAFD99D8B",
+                "https://apps.razer.com/synapse/products/616/mw/rzDevice25LedMatrixBlade.4495de9ea9ea03b9e8de.js;SHA256=3B48422C14BDC098904459710AF66336429EC4350623C197A6994CCC4433D4C9"],
             624 => [
                 "https://apps.razer.com/synapse/products/624/mw/6737.6b47e5cb8059a1bdacfb.js;SHA256=C36EFB8BD1F15DC65F8C235895EFA5F20A59D71D45BC6D22BF92D88C9C8D79F7",
                 "https://apps.razer.com/synapse/products/624/mw/main.c661207b6abe5eb319cb.js;SHA256=50DFF3488639F22BD3890596A047378D14CB52334A49EDDCEDDAFC7EAF0669C2",
                 "https://apps.razer.com/synapse/products/624/mw/rzDevice25.1672779ed3e58b9415ca.js;SHA256=F696504C78559A2E04E503F8CF7B069D87F1298BFB767677912CD649EEB49456",
-                "https://apps.razer.com/synapse/products/624/ui/static/js/main.2709843a.js;SHA256=48359BAFE13C56156017A81A72E82CEDB3F44BAD5A52BB921D4FBE96E1F1A1FE"],
+                "https://apps.razer.com/synapse/products/624/ui/static/js/main.2709843a.js;SHA256=48359BAFE13C56156017A81A72E82CEDB3F44BAD5A52BB921D4FBE96E1F1A1FE",
+                "https://apps.razer.com/synapse/products/624/mw/rzDevice25LedMatrix.41a9a87e480e7e8e752a.js;SHA256=9BBA49FAE78CF93BB397A4EE76BDD147234C83DA5BFE63FF412A25E2143125CE",
+                "https://apps.razer.com/synapse/products/624/mw/rzDevice25LedMatrixBlade.c61a8d4fcda5f10441ea.js;SHA256=9293920B3D6B4065F4539972C8A69E87FF3C79354309F6BA214FA4D8BD430CAF",
+                "https://apps.razer.com/synapse/products/624/mw/rzDevice25LedMatrixBlade2.58b0677575a642f3900f.js;SHA256=1D0A0B7FDB95DE34A8D14BB9F3E8C20B3D84E9F68A5D8470BEA5FA8621CEE958",
+                "https://apps.razer.com/synapse/products/624/mw/rzDevice25LedMatrixBladeWattage.42a7744269064ea241c2.js;SHA256=A83F5FE396DABF9D5FB1AA1DAF77CC65E0927BE2D23EDDD4CC3A19633AC002F5"],
             652 => [
                 "https://apps.razer.com/synapse/products/652/mw/6737.4b526d5a88f50676de59.js;SHA256=B1A181C2F4A95C1871A5AEEDC5F820DBC991A61A067CB060BAC9ABEBF04EE488",
                 "https://apps.razer.com/synapse/products/652/mw/main.825dec01b9aefa0b84ac.js;SHA256=77AD6A8F51278C2950D07AAB3CA4E98EC67001527067F4118F50AF00954EABA1",
                 "https://apps.razer.com/synapse/products/652/mw/rzDevice25.ceef38d32121535173d9.js;SHA256=D94B40BB4B1AEDD17C0028A625C28D00D8BC14B26361CBF25133A3CE4E5B0C67",
-                "https://apps.razer.com/synapse/products/652/ui/static/js/main.ca1e43bb.js;SHA256=9C640FF7F3359DFB8F8D7AA005DB01336F5C05A4EFB25C219550BA6D05A6C407"],
+                "https://apps.razer.com/synapse/products/652/ui/static/js/main.ca1e43bb.js;SHA256=9C640FF7F3359DFB8F8D7AA005DB01336F5C05A4EFB25C219550BA6D05A6C407",
+                "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrix.b6323801c081b7493b2b.js;SHA256=9D59660DEE9014DDFFC0EDEE828B402F906320232C37559DFFEA1B5DB1947519",
+                "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrixBlade.af4e2a8f0926c1f15907.js;SHA256=DD844382088CD971CD0D831D06221F9F05230083503271BC52C1C5BD9F5BE626",
+                "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrixBlade2.032e7086bcdb3c4d6e9d.js;SHA256=96F6D3F024A5217FDCF7C6604D3EDC324CA1C7D0D0DBCF390851CD3B2AC45CC2",
+                "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrixBladeWattage.2c379fa5a66007f7b183.js;SHA256=9B07B08CEFCAE9288DCF37BBD65D28B4DEBFCB92F14FE7BC08172F1BD7634447"],
             650 => [
                 "https://apps.razer.com/synapse/products/650/mw/6737.1cc98c1e1650ffce7912.js;SHA256=8B31CFB0033A9C75F5E6E69D914A3A36BAE0A4944886B5CC6D076329434D1DF9",
                 "https://apps.razer.com/synapse/products/650/mw/main.3650e97f35689328d442.js;SHA256=270D5D4E4AF9674D2219EFBE609294DC46E1BAF4E08A14AF32306D4495CB5A98",
                 "https://apps.razer.com/synapse/products/650/mw/rzDevice25.33bbbe9e1d2d72bdf1a1.js;SHA256=CEF5D482E96F2833C84998E2FE998D0A41AA7CA4483E4E69156424F76475D513",
-                "https://apps.razer.com/synapse/products/650/ui/static/js/main.90e358d5.js;SHA256=06C52972C023B65B11DDF1C379671526E96C68B46105FC3EDCC714F0EF4944B0"],
+                "https://apps.razer.com/synapse/products/650/ui/static/js/main.90e358d5.js;SHA256=06C52972C023B65B11DDF1C379671526E96C68B46105FC3EDCC714F0EF4944B0",
+                "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrix.e196c7f06b29ad9b9887.js;SHA256=2594338071860022682DA7363407B8CD204AF8C6196FE979D00AE1BE1F9557BD",
+                "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrixBlade.a041b7342ce44c78ec3b.js;SHA256=F0E34A36BC2A09A953835DE05F83C545CF18B11F139C86D0A0055942F8FBEA32",
+                "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrixBlade2.71032c5b3b3df82a387d.js;SHA256=E19A44993E93CAC2E79FB0FF9242CCC735A8283344CCDFA57E8E42180B29601E",
+                "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrixBladeWattage.a715fa3adc2631c080dc.js;SHA256=70687428706956400D3CB5227E35BB03EFFB13D75E70429E06A94A7369202306"],
             651 => [
                 "https://apps.razer.com/synapse/products/651/mw/6737.003892ae34f5de0292c0.js;SHA256=E8A2CFF2F19A59B8F425E7EC70BFF5873551479560005435E1B04B34F9CC7454",
                 "https://apps.razer.com/synapse/products/651/mw/main.8378c0c79039a3f2ba23.js;SHA256=F227CBA8959DFEE0B898077D4CC77651066B7BFFF8CAA20910E9B3946E026AC4",
                 "https://apps.razer.com/synapse/products/651/mw/rzDevice25.7ffcfe7d1ddb6103ac44.js;SHA256=A9442C86AB7D8F0549E18016324462A52A040E5578410F296BDF72884A383962",
-                "https://apps.razer.com/synapse/products/651/ui/static/js/main.8fce5f78.js;SHA256=FF4ACE62F536DAD8E14A674177638FAC74ED462C74FECC7A42D66B2F3616C254"],
+                "https://apps.razer.com/synapse/products/651/ui/static/js/main.8fce5f78.js;SHA256=FF4ACE62F536DAD8E14A674177638FAC74ED462C74FECC7A42D66B2F3616C254",
+                "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrix.91ecd705f076a69cb74b.js;SHA256=40237B74FDC3A2F05F47C05501117EF1E97131C88055614D9A9ED58DAB96EF31",
+                "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrixBlade.3d7a6466eb25ba2e5f2d.js;SHA256=66A45A45F7B471426FE41875D2C84E7F0EFD62CCB1066CF3657949B02A163C27",
+                "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrixBlade2.82d68898207246f09200.js;SHA256=C92ED2B6966AEEEE991819C291A5E054F9EC04B72D8202C1435A76DBC8219945",
+                "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrixBladeWattage.d708c5b081c8f56a50b6.js;SHA256=204DB11C43D4ECFC33EC476A770AC246FB19085A001140582A08831CBE77689D"],
             694 => [
                 "https://apps.razer.com/synapse/products/694/mw/6737.63910b6756fd6d249dc6.js;SHA256=488D72368F0EBFB2A4DD80BE68E8C2BAB8020CBBCC65CA786757FEA79507B997",
                 "https://apps.razer.com/synapse/products/694/mw/main.1b1b68e07824e5af9833.js;SHA256=F1AEEAFF4BBDB631B4E66BF8B2B6415FB0EADDF24343A146787B091F89AA7BDC",
                 "https://apps.razer.com/synapse/products/694/mw/rzDevice25.06135650b7453937e0e8.js;SHA256=0E5BD5C21DD610E5D889F608B2EBB1D80BFC7CA90237FBBC3A292ADBAF06EF90",
-                "https://apps.razer.com/synapse/products/694/ui/static/js/main.415cc878.js;SHA256=C22750AAD6E54EE86E04B3D7F7D7DA520636293C209734358FC26A744D84F6B1"],
+                "https://apps.razer.com/synapse/products/694/ui/static/js/main.415cc878.js;SHA256=C22750AAD6E54EE86E04B3D7F7D7DA520636293C209734358FC26A744D84F6B1",
+                "https://apps.razer.com/synapse/products/694/mw/rzDevice25LedMatrix.0f011b08f1cdafea199c.js;SHA256=E60132332EC11942F9FAB607ECC7085220157EE6E701FC03C7FAA4BC40A1B98E",
+                "https://apps.razer.com/synapse/products/694/mw/rzDevice25LedMatrixBlade.b65ad2e4cc7347193091.js;SHA256=2D630C25A05AD475E2E382CB653FC281A972DCAD6C2465ECAE387800A4EA0AA2",
+                "https://apps.razer.com/synapse/products/694/mw/rzDevice25LedMatrixBlade2.f195d8975ab02884ce66.js;SHA256=2C67D03295574A782387614E2BE285D16976A325A70AF1C4227E054DE83510ED",
+                "https://apps.razer.com/synapse/products/694/mw/rzDevice25LedMatrixBladeWattage.a4b526ca0148004c643a.js;SHA256=B808AC85FBFBA3B2BF7C8A0593DD38520DF005D309E66C80A28B7D7122D95EB4"],
             695 => [
                 "https://apps.razer.com/synapse/products/695/mw/6737.7ec91e479ef65c194b6c.js;SHA256=22D359EB7EDA08A9D2F4766EB6898A875A5F009EDB666BA4CD5A0425491AD1DA",
                 "https://apps.razer.com/synapse/products/695/mw/main.27df2e7ddab0b6bc34cc.js;SHA256=A12CD7047CC1CF093DBB458D703BA4D18CFE77110F47391B180EA5B33BA5E379",
                 "https://apps.razer.com/synapse/products/695/mw/rzDevice25.60bfcef58690c8bb715d.js;SHA256=2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491",
-                "https://apps.razer.com/synapse/products/695/ui/static/js/main.65ed4ee5.js;SHA256=74ECA71816B57B4C9BE3F83D3E5D894F95A2050D88FB2DF4B63A5AFFF5271612"],
+                "https://apps.razer.com/synapse/products/695/ui/static/js/main.65ed4ee5.js;SHA256=74ECA71816B57B4C9BE3F83D3E5D894F95A2050D88FB2DF4B63A5AFFF5271612",
+                "https://apps.razer.com/synapse/products/695/mw/rzDevice25LedMatrix.76e9ad52d76940bbf7be.js;SHA256=9F2DE3A4CD127BF010E4AAD81C02A1D0D207B6F5CB7334D7F3822177A5B8A923",
+                "https://apps.razer.com/synapse/products/695/mw/rzDevice25LedMatrixBlade.29566ed5280fbcc73b83.js;SHA256=8DF7DC371EECE383F791C206D7E44CBFB0EC98A2500337F634DF3A4A5C39EB93",
+                "https://apps.razer.com/synapse/products/695/mw/rzDevice25LedMatrixBlade2.d7fc499124d26b637274.js;SHA256=EC3F8BCA0656F5BBB0872358ACAC387F7A2DFED42C9F5636D651DF1E85F1FF28",
+                "https://apps.razer.com/synapse/products/695/mw/rzDevice25LedMatrixBladeWattage.8339706f4c96d35087e4.js;SHA256=BF2C42A139F3AC092A7DF913EBEC56684EE14C07241C6B56A0B276E54B3AD0F5"],
             696 => [
                 "https://apps.razer.com/synapse/products/696/mw/6737.2463f7361e4d145671a2.js;SHA256=4EF6AFB6402DD50CD6DE07CA96E191F475797903507C82CAE194F0AF63E32ECC",
                 "https://apps.razer.com/synapse/products/696/mw/main.ded18de8aee09a8f8238.js;SHA256=1A9CC3E1E8E28BB827AD17A720A03E6C62BA7A37F27774E8FA1B1B8E827E281F",
                 "https://apps.razer.com/synapse/products/696/mw/rzDevice25.6339454cb5b2fe587300.js;SHA256=8780AA380D11665A2D551174D162C7278404465772219D0530A29B09E297BC81",
-                "https://apps.razer.com/synapse/products/696/ui/static/js/main.cb24c0fc.js;SHA256=C882F2130FC41DC73EDA31A141BA82F8786B84F45992C490CC0DC5AC3EC28DCD"],
+                "https://apps.razer.com/synapse/products/696/ui/static/js/main.cb24c0fc.js;SHA256=C882F2130FC41DC73EDA31A141BA82F8786B84F45992C490CC0DC5AC3EC28DCD",
+                "https://apps.razer.com/synapse/products/696/mw/rzDevice25LedMatrix.9b4ab2e4321a6a556e6f.js;SHA256=8459713BCE0AA2D8F34A5A7C8382AA56DB65384570C12C02ACDBDD554FED40D6",
+                "https://apps.razer.com/synapse/products/696/mw/rzDevice25LedMatrixBlade.d8b6805b3fb6452e52ce.js;SHA256=2F26EA7DA86C0504119A4C15C47430048E4C9A581BEB52F85A0847DB264FE4EA",
+                "https://apps.razer.com/synapse/products/696/mw/rzDevice25LedMatrixBlade2.4a271d921402284f66f0.js;SHA256=2CF06F137FDC7AFD550D1D6CC8229A37C05CE96D9A9F4223F90E02BC456FF0E5",
+                "https://apps.razer.com/synapse/products/696/mw/rzDevice25LedMatrixBladeWattage.522f5c0abf239227310d.js;SHA256=F99EAF5D64598CA475E5700602243520790C8E8E2F7ADCA4C78C85584FF14886"],
             711 => [
                 "https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js;SHA256=3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88",
                 "https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js;SHA256=C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E",
                 "https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js;SHA256=02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9",
                 "https://apps.razer.com/synapse/products/711/ui/static/js/892.12b29c32.chunk.js;SHA256=FE1298AD9FAAE66301E76B439311F19393E4A46E1F8C5EB42B65350DA88F9100",
-                "https://apps.razer.com/synapse/products/711/ui/static/js/main.a649ed49.js;SHA256=4B42EF4995470865B7D02587B85724247B886BDF2376EB6A78DA38BB9B6CBF99"],
+                "https://apps.razer.com/synapse/products/711/ui/static/js/main.a649ed49.js;SHA256=4B42EF4995470865B7D02587B85724247B886BDF2376EB6A78DA38BB9B6CBF99",
+                "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrix.69e3b36effe3a85ab0de.js;SHA256=65C1FD97AD41460B8AFE33B08C0F8051D990CAF15DCF40D23930583DBC85664F",
+                "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrixBlade.1ac7639291bd0bca2295.js;SHA256=CFD5529379EDE7C7EE0AA9C82A2726840DBB5B0B718C45024D8B7AD7486B7B85",
+                "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrixBlade2.d678cb5b99e6382aebe0.js;SHA256=62356152B59E6D172AF8D07677534EBA0BF9DBFEBA973AFE51BEC8437D031FD8",
+                "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrixBladeWattage.eb36277c35277a49ce09.js;SHA256=D48002486906EFA165DBC5219F37D810658010EDB5C7B9E61D945EE36A361E97"],
             _ => [],
         };
 
@@ -423,6 +496,7 @@ internal enum ExperimentalRecoveryScope
 {
     All,
     ThermalOnly,
+    LightingFieldsOnly,
 }
 
 internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
@@ -462,13 +536,13 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
     {
         lock (sync)
         {
-            // Only a known thermal operation can omit unrelated limiter state.
-            // A later thermal fault cannot narrow an existing battery/unknown obligation.
-            if (!IsPaused || scope != ExperimentalRecoveryScope.ThermalOnly)
-            {
-                recoveryScope = scope == ExperimentalRecoveryScope.ThermalOnly
-                    ? ExperimentalRecoveryScope.ThermalOnly : ExperimentalRecoveryScope.All;
-            }
+            // A known field-only lighting operation needs no effect baseline.
+            // Different obligations combine to All; no later fault can narrow
+            // an existing battery, effect or unknown submission obligation.
+            ExperimentalRecoveryScope requested = scope is ExperimentalRecoveryScope.ThermalOnly
+                or ExperimentalRecoveryScope.LightingFieldsOnly ? scope : ExperimentalRecoveryScope.All;
+            recoveryScope = !IsPaused ? requested
+                : recoveryScope == requested ? recoveryScope : ExperimentalRecoveryScope.All;
             Volatile.Write(ref recoveryRequired, 1);
         }
     }
