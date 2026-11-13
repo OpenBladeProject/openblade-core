@@ -119,7 +119,7 @@ internal sealed class WindowsNativeThermalHistory
                 || row.Pid == 0 || row.Session == 0 || (fan is null ? row.Destination is not (1 or 2) || row.Progress > 6 : row.Destination != 0 || !WindowsNativeFanHistory.ValidProgress(f, row.Progress))) { throw Denied(); }
             JsonElement requested = e.TryGetProperty("requested", out var v) ? v : default;
             if (fan is not null && requested.ValueKind != JsonValueKind.Null || NativeCanonical.Digest(fan ?? Intent(requested)) != row.Intent) { throw Denied(); }
-            if (ownedFan is not null && (row.Owner != ownedFan.Owner || fan is null)) { throw Denied(); }
+            if (ownedFan is not null && (row.Owner != ownedFan.Owner || row.Sid != ownedFan.Sid || row.Session != ownedFan.Session || fan is null)) { throw Denied(); }
             bool resumedRelease = row.Progress is 31 or 51 && ownedFan is not null && ownedFan with { Progress = row.Progress } == row;
             if (last is not null && last.Request == row.Request)
             {

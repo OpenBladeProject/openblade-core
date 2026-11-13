@@ -229,7 +229,12 @@ fn rows_from(
         }
         if owned
             .as_ref()
-            .is_some_and(|owner| entry.owner != owner.owner || entry.fan.is_none())
+            .is_some_and(|owner| {
+                entry.owner != owner.owner
+                    || entry.user_sid != owner.user_sid
+                    || entry.session != owner.session
+                    || entry.fan.is_none()
+            })
         {
             return Err(deny());
         }

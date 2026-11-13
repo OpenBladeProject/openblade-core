@@ -185,6 +185,19 @@ pub fn validate_requested(v: &Value) -> io::Result<()> {
 mod tests {
     use super::*;
     #[test]
+    fn retained_owner_scope_survives_retired_request_chains() {
+        let vectors: Value = serde_json::from_str(include_str!("../../../../tools/openblade-windows-host/tests/data/fan-caller-scope-chains.json")).unwrap();
+        let mut mismatches = Vec::new();
+        for case in vectors["cases"].as_array().unwrap() {
+            let raw = case["journal"].as_str().unwrap().as_bytes();
+            let valid = case["valid"].as_bool().unwrap();
+            let parsed = crate::thermal_history::rows(raw, |_, _| Ok(()));
+            if parsed.is_ok() != valid { mismatches.push(case["name"].as_str().unwrap()); }
+            if valid { assert!(crate::thermal_history::handback_complete(raw).unwrap(), "{}", case["name"]); }
+        }
+        assert!(mismatches.is_empty(), "retained owner scope mismatches: {mismatches:?}");
+    }
+    #[test]
     fn complete_cross_scope_histories_are_rejected_and_v3_auto_proof_is_exact() {
         let legacy: Value = serde_json::from_str(include_str!(
             "../../../../tools/openblade-windows-host/tests/data/fan-history-v2.json"

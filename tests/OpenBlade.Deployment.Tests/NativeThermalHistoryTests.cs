@@ -325,4 +325,39 @@ public sealed class NativeThermalHistoryTests : IDisposable
         Assert.False(WindowsNativeFanHistory.Follows(v.GetProperty("fan"), 31, 51));
     }
 
+    public static IEnumerable<object[]> RetainedFanCallerScopeCases()
+    {
+        using var vectors = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fan-caller-scope-chains.json")));
+        foreach (var item in vectors.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            yield return [item.GetProperty("name").GetString()!, item.GetProperty("valid").GetBoolean()];
+        }
+    }
+    [Theory]
+    [MemberData(nameof(RetainedFanCallerScopeCases))]
+    public void RetainedFanCallerScopeSurvivesRetiredRequestChains(string name, bool valid)
+    {
+        using var vectors = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fan-caller-scope-chains.json")));
+        var item = vectors.RootElement.GetProperty("cases").EnumerateArray().Single(c => c.GetProperty("name").GetString() == name);
+        byte[] raw = Bytes(item.GetProperty("journal").GetString()!);
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        var record = new NativeEpochRecord(NativeEpochPhase.Retired, new string('2', 32), new string('0', 64), 1, new string('1', 32), new string('a', 64), new string('b', 32), new string('3', 64) + "-service", new string('c', 64) + "-agent", new string('0', 64), new string('d', 64));
+        byte[] active = Owner(files, record, new string('7', 64));
+        var original = new WindowsNativeTrustLifecycle.OwnerReference(record.Installation, record.Epoch, record.ServiceId, "17:1", new string('7', 64), NativeCanonical.Digest(active));
+        Thermal(files, raw);
+        if (valid)
+        {
+            var history = WindowsNativeThermalHistory.Read(files, [original]);
+            using var retired = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
+            Assert.Equal(history.Commitment, retired.Thermal.Commitment);
+        }
+        else
+        {
+            Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [original]));
+            Assert.Equal(raw, File.ReadAllBytes(Path.Combine(files.Root, "owner", "thermal-mutation.journal")));
+            Assert.Throws<NativeRecoveryException>(() => WindowsNativeTrustLifecycle.AcquireRetiredOwner(files));
+        }
+        Assert.Equal(raw, File.ReadAllBytes(Path.Combine(files.Root, "owner", "thermal-mutation.journal")));
+    }
+
 }
