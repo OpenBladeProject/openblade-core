@@ -1067,6 +1067,10 @@ public partial class App
                                 snapshotMainWindow.Content,
                                 Path.Combine(resolvedDirectory, $"main-{destination}.png"));
                         }
+                        if (destination is "profiles-wide" or "profiles-narrow")
+                        {
+                            await snapshotMainWindow.VerifyProfileNavigationAsync(destination == "profiles-narrow");
+                        }
                         if (captureGlobalSearch)
                         {
                             FrameworkElement results = snapshotMainWindow.GetGlobalSearchSnapshotResults()

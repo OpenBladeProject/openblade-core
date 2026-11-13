@@ -2348,6 +2348,38 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void ProfileComparisonRowsUseNamedNativeButtonsInBothLayouts()
+    {
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        string[]? wideDestinations = null;
+        foreach (string layout in new[] { "ProfilesComparisonLayout", "ProfilesCompactLayout" })
+        {
+            XElement root = NamedElement(document, "StackPanel", layout);
+            XElement[] buttons = root.Descendants().Where(element =>
+                Attribute(element, "Click") == "OnProfileSettingClick").ToArray();
+            Assert.Equal(21, buttons.Length);
+            Assert.All(buttons, button =>
+            {
+                Assert.Equal("Button", button.Name.LocalName);
+                Assert.Equal("{StaticResource ProfileNavigationButtonStyle}", Attribute(button, "Style"));
+                Assert.False(string.IsNullOrWhiteSpace(Attribute(button, "AutomationProperties.Name")));
+                Assert.Equal("Border", button.Elements().Single().Name.LocalName);
+                Assert.Contains(Attribute(button.Elements().Single(), "Style"),
+                    new[] { "{StaticResource SettingsRowStyle}", "{StaticResource SettingsLastRowStyle}" });
+            });
+            string[] destinations = buttons.Select(button => Attribute(button, "Tag")!).ToArray();
+            if (wideDestinations is null)
+            {
+                wideDestinations = destinations;
+            }
+            else
+            {
+                Assert.Equal(wideDestinations, destinations);
+            }
+        }
+    }
+
+    [Fact]
     public void MainWindow_UsesResponsiveProfileNamesAndNativeTypography()
     {
         string xaml = ReadMainWindowXaml();

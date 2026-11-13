@@ -10,6 +10,26 @@ namespace OpenBlade.Tray.Tests;
 public sealed partial class MainViewModelTests
 {
     [Fact]
+    public async Task CompactProfileComparison_PutsTheActiveProfileFirstAndStillAllowsReviewingOthers()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        var baseline = CreateStatus(verified: true, blocked: false);
+        foreach (PowerSource source in new[] { PowerSource.UsbC, PowerSource.Battery, PowerSource.PluggedIn })
+        {
+            client.Publish(baseline with { ActivePowerSource = source });
+            await WaitUntilAsync(() => viewModel.ActivePowerSource == source);
+            Assert.Equal(source, viewModel.ProfileComparisonOptions[0].Source);
+            Assert.Equal(source, viewModel.SelectedProfileComparisonOption.Source);
+            Assert.Equal(3, viewModel.ProfileComparisonOptions.Select(option => option.Source).Distinct().Count());
+            viewModel.SelectedProfileComparisonOption = viewModel.ProfileComparisonOptions[1];
+            Assert.False(viewModel.IsSelectedProfileActive);
+            Assert.Equal(source, viewModel.ActivePowerSource);
+        }
+    }
+
+    [Fact]
     public async Task LocalizedInstanceDefaultsFollowTheCurrentCulture()
     {
         string englishUnavailable;
