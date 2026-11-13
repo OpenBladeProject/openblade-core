@@ -42,3 +42,6 @@ tools/openblade-windows-host/tests/fixtures/app-fans-*.json -text whitespace=cr-
 # Preserve the bounded thermal history learning's exact CLI bytes.
 .trail/learnings/2026-11-13-preserve-original-thermal-history-across-bounded-jack.md text eol=lf
 .trail/learnings/2026-11-13-admit-legacy-no-thermal-proofs-only-jack.md text eol=lf
+
+# Preserve the focused native fan ownership learning bytes.
+.trail/learnings/2026-11-13-retain-native-fan-ownership-and-cleanup-jack.md text eol=lf

@@ -232,4 +232,46 @@ public sealed class NativeThermalHistoryTests : IDisposable
         Assert.Equal(terminal, File.ReadAllBytes(ManagedMailboxRecovery.PathFor(managed, selected, "terminal")));
     }
 
+
+    [Fact]
+    public void FanV2CanonicalVectorRequiresModeProofAndOwnedAutomaticHandback()
+    {
+        using var v = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fan-history-v2.json")));
+        var vector = v.RootElement;
+        Assert.Equal(vector.GetProperty("canonical").GetString(), Encoding.UTF8.GetString(WindowsNativeFanHistory.Canonical(vector.GetProperty("fan"))));
+        Assert.Equal(vector.GetProperty("intent").GetString(), NativeCanonical.Digest(WindowsNativeFanHistory.Canonical(vector.GetProperty("fan"))));
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        var original = new WindowsNativeTrustLifecycle.OwnerReference(new string('1', 32), new string('2', 32), new string('3', 64) + "-service", "17:1", new string('7', 64), new string('8', 64));
+        Thermal(files, Bytes(vector.GetProperty("owned").GetString()!));
+        Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [original]));
+        Thermal(files, Bytes(vector.GetProperty("released").GetString()!));
+        var history = WindowsNativeThermalHistory.Read(files, [original]);
+        var record = new NativeEpochRecord(NativeEpochPhase.Retired, original.Epoch, new string('0', 64), 1, original.Installation, new string('a', 64), new string('b', 32), original.Service, new string('c', 64) + "-agent", new string('0', 64), new string('d', 64));
+        var old = NativeArtifact.Inspect([.. WindowsNativeEpochTests.Image("service", nonce: '3', schema: 2, mutation: true)], "service", new string('a', 40));
+        var compatible = NativeArtifact.Inspect([.. WindowsNativeEpochTests.Image("service", nonce: '3', schema: 2, fan: true)], "service", new string('a', 40));
+        var launches = new Dictionary<string, byte[]> { ["17-1.bin"] = [] };
+        Assert.Throws<IOException>(() => history.Generation(record, old, [original], launches));
+        Assert.NotEmpty(history.Generation(record, compatible, [original], launches));
+        Assert.Equal("service-fan-mutation-v2", compatible.StartupPolicy);
+        // A later Prepared-only retired request cannot erase the old owner's
+        // obligation; only its exact retained release may resume afterward.
+        string owned = vector.GetProperty("owned").GetString()!;
+        using var first = JsonDocument.Parse(owned.Split('\n')[0]);
+        var next = System.Text.Json.Nodes.JsonNode.Parse(first.RootElement.GetRawText())!;
+        next["request"] = "aaaaaaaa-bbbb-cccc-dddd-000000000002";
+        next["progress"] = 0;
+        string prepared = owned + next.ToJsonString() + "\n";
+        next["progress"] = 6;
+        string retired = prepared + next.ToJsonString() + "\n";
+        Thermal(files, Bytes(retired)); Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [original]));
+        string release = string.Join('\n', vector.GetProperty("released").GetString()!.Split('\n').Skip(10));
+        Thermal(files, Bytes(retired + release)); _ = WindowsNativeThermalHistory.Read(files, [original]);
+        Thermal(files, Bytes(prepared + release)); Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [original]));
+
+        string raw = vector.GetProperty("released").GetString()!;
+        foreach (string invalid in new[] { raw.Replace("linked-v1", "linked-v9", StringComparison.Ordinal), raw.Replace("\"progress\":50", "\"progress\":30", StringComparison.Ordinal), raw.Replace("\"rpm\":3700", "\"rpm\":3701", StringComparison.Ordinal) })
+        {
+            Thermal(files, Bytes(invalid)); Assert.ThrowsAny<Exception>(() => WindowsNativeThermalHistory.Read(files, [original]));
+        }
+    }
 }

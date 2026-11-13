@@ -3,6 +3,9 @@
 //! and never interprets feature data as independent device or write evidence.
 
 use std::io;
+#[path = "fan_request.rs"]
+mod fan_request;
+pub(crate) use fan_request::FanOverride;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -32,6 +35,14 @@ const ALL_LIVE_READINGS: u8 = 15;
     deny_unknown_fields
 )]
 pub(crate) enum StatusRequest {
+    SetFanOverride {
+        version: i32,
+        request_id: String,
+        #[serde(deserialize_with = "Deserialize::deserialize")]
+        value: Option<FanOverride>,
+        #[serde(default)]
+        settings: Option<Value>,
+    },
     SetPerformanceOverride {
         version: i32,
         request_id: String,
@@ -104,6 +115,8 @@ impl StatusRequest {
 
     #[cfg(feature = "installed-service-candidate")]
     pub(crate) fn decode(payload: &[u8]) -> io::Result<Self> {
+        openblade_domain::thermal_history::validate_json_members(payload)
+            .map_err(|_| invalid("duplicate Service request member"))?;
         let request: Self = serde_json::from_slice(payload)
             .map_err(|_| invalid("invalid Service status request"))?;
         request.validate()?;
@@ -132,6 +145,11 @@ impl StatusRequest {
 
     pub(crate) fn header(&self) -> (i32, &str) {
         match self {
+            Self::SetFanOverride {
+                version,
+                request_id,
+                ..
+            } => (*version, request_id),
             Self::SetPerformanceOverride {
                 version,
                 request_id,
@@ -161,7 +179,9 @@ impl StatusRequest {
     fn validate(&self) -> io::Result<()> {
         if matches!(
             self,
-            Self::SetPerformanceOverride { .. } | Self::ReportApplicationContext { .. }
+            Self::SetFanOverride { .. }
+                | Self::SetPerformanceOverride { .. }
+                | Self::ReportApplicationContext { .. }
         ) && !cfg!(feature = "service-thermal-mutation-v1")
         {
             return Err(invalid("this signed composition is read-only"));
@@ -171,6 +191,17 @@ impl StatusRequest {
         } = self
         {
             value.validate()?;
+        }
+        if let Self::SetFanOverride {
+            value, settings, ..
+        } = self
+        {
+            if !cfg!(feature = "service-fan-mutation-v2") {
+                return Err(invalid("signed fan composition is unavailable"));
+            }
+            openblade_domain::fan_history::validate_requested(
+                &serde_json::json!({"value":value,"settings":settings}),
+            )?;
         }
         let (version, request_id) = self.header();
         if version != PROTOCOL_VERSION || !is_guid(request_id) {
@@ -901,6 +932,7 @@ impl Snapshot {
         result.desired_state = public.desired_state;
         result.performance_override = None;
         result.fan_override = None;
+        result.feature_fields.remove("fanControlOverride");
         result.lighting_override = None;
         result.full_charge_override = false;
         result.writes_blocked = true;
@@ -908,6 +940,37 @@ impl Snapshot {
             "Public hardware observation; private configuration is unavailable to this caller."
                 .into();
         result
+    }
+    pub(crate) fn fan_intent(
+        mut self,
+        value: Option<&FanOverride>,
+        settings: Option<Value>,
+        power: i32,
+        message: &str,
+    ) -> Self {
+        self.message = message.into();
+        self.active_power_source = power;
+        self.fan_override = value
+            .and_then(|v| serde_json::to_value(v).ok())
+            .and_then(|v| v.as_object().cloned());
+        if let Some(settings) = settings {
+            self.desired_state.fans = Resolved {
+                value: settings["mode"].as_i64().unwrap_or(0) as i32,
+                source: value.map_or(1, |v| if v.lifetime == 1 { 4 } else { 3 }),
+            };
+            self.feature_fields.insert(
+                "fanControlOverride".into(),
+                if value.is_some() {
+                    settings.clone()
+                } else {
+                    Value::Null
+                },
+            );
+            self.desired_state
+                .feature_fields
+                .insert("fanControl".into(), settings);
+        }
+        self
     }
     pub(crate) fn thermal_intent(
         mut self,
@@ -973,6 +1036,19 @@ impl Snapshot {
         result.private_user_sid = self.private_user_sid.clone();
         result.profiles = self.profiles.clone();
         result.performance_override = self.performance_override.clone();
+        result.fan_override = self.fan_override.clone();
+        result.desired_state.fans = self.desired_state.fans.clone();
+        if let Some(v) = self.feature_fields.get("fanControlOverride") {
+            result
+                .feature_fields
+                .insert("fanControlOverride".into(), v.clone());
+        }
+        if let Some(v) = self.desired_state.feature_fields.get("fanControl") {
+            result
+                .desired_state
+                .feature_fields
+                .insert("fanControl".into(), v.clone());
+        }
         result.desired_state.performance = self.desired_state.performance.clone();
         result.message = self.message.clone();
         result.read_confirmation = None;

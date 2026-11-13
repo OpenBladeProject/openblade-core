@@ -78,11 +78,28 @@ impl WindowsGuard {
         })
     }
     pub(super) fn authorize(&self) -> Option<ReadAdmission> {
-        self.origin.verify().ok()?;
+        self.authorize_for(false)
+    }
+    pub(super) fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
+        self.authorize_for(true)
+    }
+    fn authorize_for(&self, stop: bool) -> Option<ReadAdmission> {
+        let verify = || {
+            if stop {
+                self.origin.verify_owned_stop()
+            } else {
+                self.origin.verify()
+            }
+        };
+        verify().ok()?;
         if self.origin.lifecycle.active() != Some(self.lifecycle) {
             return None;
         }
-        if !self.origin.committed().ok()? || crate::console_session::observe() != Some(self.session)
+        if !if stop {
+            self.origin.owned_stop_committed().ok()?
+        } else {
+            self.origin.committed().ok()?
+        } || crate::console_session::observe() != Some(self.session)
         {
             return None;
         }
@@ -111,11 +128,15 @@ impl WindowsGuard {
         }
         // Mutable callback fencing cannot revive an earlier operation. A new
         // request captures a fresh epoch and rechecks every Windows supplier.
-        self.origin.verify().ok()?;
+        verify().ok()?;
         if self.origin.lifecycle.active() != Some(self.lifecycle) {
             return None;
         }
-        self.custody.authorize()
+        if stop {
+            self.custody.authorize_owned_stop()
+        } else {
+            self.custody.authorize()
+        }
     }
 }
 // Exact current-session read; source/compile-only during offline validation.
@@ -328,6 +349,18 @@ pub(super) struct CustodialFiles {
     pub(super) custody: Arc<dyn ReadCustody>,
 }
 impl Files for CustodialFiles {
+    fn replace_retired(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        if name != "thermal-mutation.journal" {
+            return Err(deny());
+        }
+        self.custody.journal_retire_prepared(expected, bytes)
+    }
+    fn replace_cleanup(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        if name != "thermal-mutation.journal" {
+            return Err(deny());
+        }
+        self.custody.journal_replace_cleanup(expected, bytes)
+    }
     fn reserve(&self, expected: Option<&[u8]>, needed: usize) -> io::Result<Option<Vec<u8>>> {
         self.custody.journal_reserve(expected, needed)
     }

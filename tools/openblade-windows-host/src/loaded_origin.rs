@@ -104,7 +104,20 @@ impl Origin {
         Ok(value)
     }
     pub(crate) fn verify(&self) -> io::Result<()> {
-        self.lifetime.verify()?;
+        self.verify_mode(false)
+    }
+    pub(crate) fn verify_owned_stop(&self) -> io::Result<()> {
+        self.verify_mode(true)
+    }
+    fn verify_mode(&self, stop: bool) -> io::Result<()> {
+        let check = || {
+            if stop {
+                self.lifetime.verify_owned_stop()
+            } else {
+                self.lifetime.verify()
+            }
+        };
+        check()?;
         let result = (|| {
             self.package.lock().map_err(|_| deny())?.require_current()?;
             let mut process = self.process.lock().map_err(|_| deny())?;
@@ -136,7 +149,7 @@ impl Origin {
         if result.is_err() {
             self.revoke();
         }
-        result.and_then(|()| self.lifetime.verify())
+        result.and_then(|()| check())
     }
     // Callback ingress and any failed/unknown observation latch before coalescing.
     // This makes no claim about transients never delivered or sampled.
@@ -164,7 +177,11 @@ impl Origin {
             8,
         )?;
         if fields[7]
-            != "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1"
+            != if cfg!(feature = "service-fan-mutation-v2") {
+                "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2"
+            } else {
+                "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1"
+            }
         {
             return Err(deny());
         }
@@ -179,6 +196,14 @@ impl Origin {
             .lock()
             .map_err(|_| deny())?
             .record_transport_drain(self.pid, self.created)
+    }
+    pub(crate) fn owned_stop_committed(&self) -> io::Result<bool> {
+        self.verify_owned_stop()?;
+        Ok(self.package.lock().map_err(|_| deny())?.is_committed())
+    }
+    pub(crate) fn owned_stop_mapping(&self) -> io::Result<Vec<u8>> {
+        self.verify_owned_stop()?;
+        self.package.lock().map_err(|_| deny())?.mailbox_mapping()
     }
     pub(crate) fn committed(&self) -> io::Result<bool> {
         self.verify()?;

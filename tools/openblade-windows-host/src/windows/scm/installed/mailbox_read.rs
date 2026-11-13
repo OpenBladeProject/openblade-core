@@ -58,6 +58,15 @@ impl ActivationFailure {
 
 pub(super) trait ReadCustody: Send + Sync {
     fn authorize(&self) -> Option<ReadAdmission>;
+    fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
+        None
+    }
+    fn journal_replace_cleanup(&self, _expected: Option<&[u8]>, _bytes: &[u8]) -> io::Result<()> {
+        Err(deny())
+    }
+    fn journal_retire_prepared(&self, _expected: Option<&[u8]>, _bytes: &[u8]) -> io::Result<()> {
+        Err(deny())
+    }
     fn revoke(&self);
     fn retire(&self) -> io::Result<()>;
     fn confirm_drained(&self) -> io::Result<()>;
@@ -105,6 +114,18 @@ impl ReadCustody for GuardedReadCustody {
     fn authorize(&self) -> Option<ReadAdmission> {
         self.verify_integrity().ok()?;
         self.original.authorize()
+    }
+    fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
+        self.verify_integrity().ok()?;
+        self.original.authorize_owned_stop()
+    }
+    fn journal_replace_cleanup(&self, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        self.verify_integrity()?;
+        self.original.journal_replace_cleanup(expected, bytes)
+    }
+    fn journal_retire_prepared(&self, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        self.verify_integrity()?;
+        self.original.journal_retire_prepared(expected, bytes)
     }
     fn revoke(&self) {
         self.original.revoke();
@@ -250,7 +271,7 @@ fn deny() -> io::Error {
         "original managed mailbox handoff/read custody is unavailable",
     )
 }
-fn authorize_original(
+pub(super) fn authorize_original(
     state: &AtomicU8,
     committed: io::Result<bool>,
     mapping: impl FnOnce() -> io::Result<()>,
@@ -261,7 +282,15 @@ fn authorize_original(
     }
     match committed {
         Ok(false) => None,
-        Ok(true) if mapping().is_ok() => Some(proof),
+        Ok(true) => match mapping() {
+            Ok(()) => Some(proof),
+            Err(e) if crate::origin_lifetime::expected_stop(&e) => None,
+            Err(_) => {
+                state.store(1, Ordering::Release);
+                None
+            }
+        },
+        Err(e) if crate::origin_lifetime::expected_stop(&e) => None,
         _ => {
             state.store(1, Ordering::Release);
             None
@@ -550,6 +579,47 @@ impl ReadLease {
     }
 }
 impl ReadCustody for ReadLease {
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn journal_retire_prepared(&self, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        self.verify_integrity()?;
+        crate::thermal_history::validate_prepared_retirement(
+            expected.ok_or_else(deny)?,
+            bytes,
+            &digest(&self.proof.generation),
+        )?;
+        let held = self.resources.lock().map_err(|_| deny())?;
+        let owner = &held.as_ref().ok_or_else(deny)?._owner;
+        if owner.journal_read(true)?.is_some() {
+            return Err(deny());
+        }
+        owner.journal_replace(expected, bytes)
+    }
+    fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
+        if self.state.load(Ordering::Acquire) != 0 {
+            return None;
+        }
+        self.origin.verify_owned_stop().ok()?;
+        authorize_original(
+            &self.state,
+            self.origin.owned_stop_committed(),
+            || self.origin.owned_stop_mapping().map(drop),
+            ReadAdmission {
+                lifecycle: self.origin.lifecycle.active()?,
+                ..self.proof
+            },
+        )
+    }
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn journal_replace_cleanup(&self, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        self.authorize_owned_stop().ok_or_else(deny)?;
+        self.resources
+            .lock()
+            .map_err(|_| deny())?
+            .as_ref()
+            .ok_or_else(deny)?
+            ._owner
+            .journal_replace(expected, bytes)
+    }
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn verify_integrity(&self) -> io::Result<()> {
         let result = self
@@ -1730,6 +1800,36 @@ impl ReadSource {
             Err(io::Error::other(UnresolvedSettlement(error)))
         })
     }
+    pub(super) async fn mutate_cleanup(
+        &self,
+        permit: Arc<dyn crate::discovery::performance::mutation::Permit>,
+        deadline: Instant,
+    ) -> io::Result<Option<crate::discovery::performance::ObservedPerformance>> {
+        let _serial = self.operation.lock().await;
+        self.lease.verify_integrity()?;
+        self.drain_mutation(false).await?;
+        self.worker.borrow().clone().stop().await?;
+        if !self.activated.get()
+            || !permit.cleanup()
+            || permit.authorize().is_none()
+            || permit.authorize() != self.lease.authorize_owned_stop()
+        {
+            return Err(deny());
+        }
+        let factory = self.factories.as_ref().ok_or_else(deny)?;
+        let worker = (factory.write)(permit.clone());
+        *self.mutation.borrow_mut() = Some((worker.clone(), permit));
+        self.phase.set(MutationPhase::Active);
+        let result = worker.observe(deadline, None).await;
+        let drained = self.drain_mutation(false).await;
+        drained?;
+        result.map(|r| r.map(|r| r.performance))
+    }
+    pub(super) async fn drain_active(&self) -> io::Result<()> {
+        let _serial = self.operation.lock().await;
+        self.drain_mutation(false).await?;
+        self.worker.borrow().clone().stop().await
+    }
     pub(super) async fn mutate(
         &self,
         permit: Arc<dyn crate::discovery::performance::mutation::Permit>,
@@ -1794,4 +1894,23 @@ impl ReadSource {
         source.factories = Some(Rc::new(factories));
         source
     }
+}
+
+#[cfg(all(test, feature = "service-fan-mutation-v2"))]
+#[test]
+fn fan_v2_expected_stop_denies_ordinary_read_without_revoking_original_custody() {
+    let live = crate::origin_lifetime::Lifetime::default();
+    live.stop();
+    let state = AtomicU8::new(0);
+    let p = ReadAdmission {
+        lifecycle: 1,
+        generation: [7; 32],
+    };
+    assert!(authorize_original(&state, live.verify().map(|_| true), || Ok(()), p).is_none());
+    assert_eq!(state.load(Ordering::Acquire), 0);
+    assert!(authorize_original(&state, Ok(true), || live.verify(), p).is_none());
+    assert_eq!(state.load(Ordering::Acquire), 0);
+    live.lose_trust();
+    assert!(authorize_original(&state, live.verify().map(|_| true), || Ok(()), p).is_none());
+    assert_eq!(state.load(Ordering::Acquire), 1);
 }

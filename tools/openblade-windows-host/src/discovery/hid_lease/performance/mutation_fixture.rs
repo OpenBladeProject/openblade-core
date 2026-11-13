@@ -6,6 +6,8 @@ use std::sync::{Arc, Mutex};
 #[derive(Default)]
 pub(crate) struct State {
     pub(crate) sent: Vec<(u8, u8, Vec<u8>, u8)>,
+    pub(crate) sent_at: Vec<Instant>,
+    pub(crate) corrupt_ack: Option<usize>,
     pub(crate) writes: usize,
     pub(crate) fail_write: Option<usize>,
     pub(crate) mismatch: bool,
@@ -108,6 +110,12 @@ impl Fixture {
                                 return Err(error());
                             }
                         }
+                        let observed = observed.filter(|_| {
+                            permit.as_ref().map_or_else(
+                                || authorize() == Some(admission),
+                                |p| p.result_admitted(admission),
+                            )
+                        });
                         Ok(observed.map(|performance| Reading {
                             admission,
                             performance,
@@ -152,17 +160,22 @@ impl Port for MemoryPort {
                 let id = frame[2];
                 let payload = &frame[9..9 + frame[6] as usize];
                 s.sent.push((class, command, payload.to_vec(), id));
+                s.sent_at.push(Instant::now());
                 let response = match (class, command) {
-                    (13, 2) => {
+                    (13, 1 | 2) => {
                         if let Some(check) = &s.before_write {
                             check(s.writes + 1);
                         }
-                        assert_eq!(payload.len(), 4);
+                        assert_eq!(payload.len(), if command == 2 { 4 } else { 3 });
                         assert_eq!(payload[0], 1);
-                        assert_eq!(payload[3], 0);
+                        if command == 2 {
+                            assert!(payload[3] <= 1);
+                        }
                         let index = (payload[1] - 1) as usize;
-                        s.selectors[index] = payload[2];
-                        s.fans[index] = 0;
+                        if command == 2 {
+                            s.selectors[index] = payload[2];
+                            s.fans[index] = payload[3];
+                        }
                         s.writes += 1;
                         if let Some((number, release)) = &s.held_write {
                             if *number == s.writes {
@@ -212,6 +225,9 @@ impl Port for MemoryPort {
                         .encode(),
                 );
                 reply[1] = 2;
+                if class == 13 && matches!(command, 1 | 2) && s.corrupt_ack == Some(s.writes) {
+                    reply[2] ^= 1;
+                }
                 if class == 13 && command == 0x82 && s.writes == 2 {
                     self.reply_timeout = s.final_read_timeout;
                     if s.final_read_malformed {

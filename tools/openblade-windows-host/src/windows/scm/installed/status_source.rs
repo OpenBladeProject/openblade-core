@@ -396,10 +396,22 @@ fn compose_guarded_status(
 pub(super) trait StatusOrigin: Send + Sync {
     fn verify(&self) -> io::Result<()>;
     fn revoke(&self);
+    fn normal_stop(&self) {
+        self.revoke();
+    }
+    fn admit_owned_stop(&self) -> io::Result<()> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
     fn confirm_metadata_drain(&self) -> io::Result<()>;
     fn confirm_transport_drain(&self) -> io::Result<()>;
 }
 impl StatusOrigin for crate::loaded_origin::Origin {
+    fn normal_stop(&self) {
+        self.revoke_for_stop()
+    }
+    fn admit_owned_stop(&self) -> io::Result<()> {
+        self.verify_owned_stop()
+    }
     fn verify(&self) -> io::Result<()> {
         self.verify()
     }
@@ -450,6 +462,47 @@ impl StatusSource for GuardedStatus {
                 ));
             };
             match request {
+                crate::service_status::StatusRequest::SetFanOverride {
+                    request_id,
+                    value,
+                    settings,
+                    ..
+                } => {
+                    let status = publisher.borrow().active.clone();
+                    let (outcome, status) = runtime
+                        .apply_fan(
+                            mailbox.clone(),
+                            caller,
+                            sid,
+                            request_id,
+                            value,
+                            settings,
+                            deadline,
+                            status,
+                        )
+                        .await?;
+                    if let Some(status) = status {
+                        let mut status = status.rebase_thermal_mutation(&publisher.borrow().active);
+                        if let super::mailbox_read::MailboxSource::Reader(reader) = &mailbox {
+                            reader.retain_mutation(&status);
+                        }
+                        status.set_observation_revision(
+                            publisher
+                                .borrow()
+                                .active
+                                .revision()
+                                .checked_add(1)
+                                .ok_or_else(|| invalid("status revision exhausted"))?,
+                        );
+                        publisher.send_replace(Arc::new(Publication {
+                            inactive: status.inactive_mutation(),
+                            active: status.clone(),
+                        }));
+                        Ok((outcome, Some(status)))
+                    } else {
+                        Ok((outcome, None))
+                    }
+                }
                 crate::service_status::StatusRequest::ReportApplicationContext {
                     instance_id,
                     sequence,
@@ -609,11 +662,28 @@ impl StatusSource for GuardedStatus {
         // Cleanup remains possible after revocation; retained origin and package
         // guards outlive listener/worker drain. It grants no firmware authority.
         Box::pin(async move {
-            self.origin.revoke();
-            self.inner.drain().await?;
+            self.origin.normal_stop();
+            let mut result = self.inner.drain().await;
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            if let Some(runtime) = &self.mutation {
+                let fans = if self.origin.admit_owned_stop().is_ok() {
+                    runtime.stop_fans(&self.mailbox).await
+                } else {
+                    runtime.refuse_stop_fans()
+                };
+                if result.is_ok() {
+                    result = fans;
+                }
+            }
             #[cfg(feature = "service-mailbox-observation-v1")]
-            self.mailbox.stop().await?;
-            Ok(())
+            {
+                let drained = self.mailbox.stop().await;
+                if result.is_ok() {
+                    result = drained;
+                }
+            }
+            self.origin.revoke();
+            result
         })
     }
 }

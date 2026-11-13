@@ -93,7 +93,9 @@ internal sealed class WindowsNativeThermalHistory
         return result;
     }
     private Row? frontier;
-    private sealed record Row(string Request, string Owner, string Sid, uint Pid, uint Session, int Destination, string Intent, byte Progress);
+    private Row? ownedFan;
+    private readonly HashSet<string> fanGenerations = new(StringComparer.Ordinal);
+    private sealed record Row(string Request, string Owner, string Sid, uint Pid, uint Session, int Destination, string Intent, byte Progress, string? Fan);
     // Each segment ends positively settled; chronology cannot be split by rolling.
     private ulong Rows(byte[] bytes, IReadOnlyList<WindowsNativeTrustLifecycle.OwnerReference> owners, bool requireSettled)
     {
@@ -108,34 +110,40 @@ internal sealed class WindowsNativeThermalHistory
             byte[] raw = bytes[position..(position + length)]; position += length;
             using var document = JsonDocument.Parse(raw);
             JsonElement e = document.RootElement;
-            Members(e, ["request", "owner", "user_sid", "caller_pid", "session", "requested", "destination", "intent", "progress"]);
+            Members(e, ["request", "owner", "user_sid", "caller_pid", "session", "requested", "destination", "intent", "progress", "fan"]);
             string Text(string key) => e.GetProperty(key).GetString() ?? throw Denied();
-            var row = new Row(Text("request"), Text("owner"), Text("user_sid"), e.GetProperty("caller_pid").GetUInt32(), e.GetProperty("session").GetUInt32(), e.GetProperty("destination").GetInt32(), Text("intent"), e.GetProperty("progress").GetByte());
+            byte[]? fan = e.TryGetProperty("fan", out var f) ? WindowsNativeFanHistory.Canonical(f) : null;
+            var row = new Row(Text("request"), Text("owner"), Text("user_sid"), e.GetProperty("caller_pid").GetUInt32(), e.GetProperty("session").GetUInt32(), e.GetProperty("destination").GetInt32(), Text("intent"), e.GetProperty("progress").GetByte(), fan is null ? null : Encoding.UTF8.GetString(fan));
             if (!Guid.TryParseExact(row.Request, "D", out var request) || request == Guid.Empty || !NativeCanonical.IsHex(row.Owner, 64) || !NativeCanonical.IsHex(row.Intent, 64)
                 || !row.Sid.StartsWith("S-1-5-21-", StringComparison.Ordinal) || row.Sid.Any(c => !char.IsAsciiDigit(c) && c is not ('S' or '-'))
-                || row.Pid == 0 || row.Session == 0 || row.Destination is not (1 or 2) || row.Progress > 6) { throw Denied(); }
+                || row.Pid == 0 || row.Session == 0 || (fan is null ? row.Destination is not (1 or 2) || row.Progress > 6 : row.Destination != 0 || !WindowsNativeFanHistory.ValidProgress(f, row.Progress))) { throw Denied(); }
             JsonElement requested = e.TryGetProperty("requested", out var v) ? v : default;
-            if (NativeCanonical.Digest(Intent(requested)) != row.Intent) { throw Denied(); }
+            if (fan is not null && requested.ValueKind != JsonValueKind.Null || NativeCanonical.Digest(fan ?? Intent(requested)) != row.Intent) { throw Denied(); }
+            if (ownedFan is not null && (row.Owner != ownedFan.Owner || fan is null)) { throw Denied(); }
+            bool resumedRelease = row.Progress == 31 && ownedFan is not null && ownedFan with { Progress = 31 } == row;
             if (last is not null && last.Request == row.Request)
             {
-                if (last with { Progress = row.Progress } != row || !(last.Progress < 5 && row.Progress == last.Progress + 1 || last.Progress == 0 && row.Progress == 6)) { throw Denied(); }
+                if (last with { Progress = row.Progress } != row || !(fan is null ? last.Progress < 5 && row.Progress == last.Progress + 1 || last.Progress == 0 && row.Progress == 6 : WindowsNativeFanHistory.Follows(f, last.Progress, row.Progress))) { throw Denied(); }
             }
-            else if (row.Progress != 0 || last is not null && last.Progress is not (5 or 6)) { throw Denied(); }
+            else if (last is not null && last.Progress is not (5 or 6 or 30 or 50) || !resumedRelease && row.Progress != 0) { throw Denied(); }
+            if (fan is not null) { if (row.Progress == 30) { ownedFan = row; } else if (row.Progress == 50) { ownedFan = null; } }
             var matches = owners.Where(o => o.Nonce == row.Owner).ToArray();
             if (matches.Length != 1) { throw Denied(); }
             var original = matches[0];
             string key = original.Epoch;
+            if (fan is not null) { fanGenerations.Add(key); }
             string prior = generations.GetValueOrDefault(key) ?? Empty(original.Installation, original.Epoch, original.Service);
             generations[key] = NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.ThermalGenerationRow.v1", prior, NativeCanonical.Digest(raw), original.Active));
             last = row; count = checked(count + 1);
         }
-        if (requireSettled && last is not null && last.Progress is not (5 or 6)) { throw Denied(); }
+        if (requireSettled && (ownedFan is not null || last is not null && last.Progress is not (5 or 6 or 50))) { throw Denied(); }
         frontier = last;
         return count;
     }
     internal static string Empty(string installation, string epoch, string service) => NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.ThermalGeneration.v1", installation, epoch, service));
     internal string Generation(NativeEpochRecord record, NativeArtifact service, IReadOnlyList<WindowsNativeTrustLifecycle.OwnerReference> owners, IReadOnlyDictionary<string, byte[]> launches)
     {
+        if (fanGenerations.Contains(record.Epoch) && !service.FanMutation) { throw Denied(); }
         if (service.Id != record.ServiceId) { throw Denied(); }
         var original = owners.Where(o => o.Epoch == record.Epoch).ToArray();
         foreach (var owner in original.Where(_ => service.ThermalMutation || generations.ContainsKey(record.Epoch)))

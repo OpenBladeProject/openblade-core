@@ -1,0 +1,244 @@
+//! Versioned exact0581 fan evidence. Owned mode proof is deliberately unsettled
+//! until independent Automatic release; callback retirement alone cannot hand back.
+use crate::{
+    fan_recipe::FanIntent,
+    thermal_history::{deny, digest},
+};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::{io, string::ToString, vec::Vec};
+pub const CONTRACT: &str = "service-fan-mutation-v2/rz09-0581-linked-v1";
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct FanRecord {
+    pub contract: std::string::String,
+    pub requested: Value,
+    pub intent: FanIntent,
+    pub selector: u8,
+    pub entry: bool,
+    pub source: i32,
+    pub preflight: [[u8; 2]; 2],
+    pub ids: Vec<[u8; 2]>,
+    pub cleanup: Vec<[u8; 2]>,
+}
+impl FanRecord {
+    pub fn setters(&self) -> usize {
+        if self.entry { 4 } else { 2 }
+    }
+    pub fn validate(&self) -> io::Result<()> {
+        if self.contract != CONTRACT
+            || FanIntent::checked(self.intent.mode, self.intent.rpm) != Some(self.intent)
+            || !matches!(self.selector, 0 | 2)
+            || !matches!(self.source, 0 | 2)
+            || self.selector == 2 && self.source != 0
+            || self.entry && !self.intent.manual()
+            || self.ids.len() != self.setters() + 1 + usize::from(self.entry && self.selector == 2)
+            || self.cleanup.len() != if self.intent.manual() { 5 } else { 0 }
+        {
+            return Err(deny());
+        }
+        let mut seen = [false; 256];
+        for pair in self
+            .preflight
+            .iter()
+            .chain(self.ids.iter())
+            .chain(self.cleanup.iter())
+        {
+            for &id in pair {
+                if id == 0 || id == 255 || seen[id as usize] {
+                    return Err(deny());
+                }
+                seen[id as usize] = true;
+            }
+        }
+        validate_requested(&self.requested)?;
+        if let Some(mode) = self.requested["value"]["value"].as_u64() {
+            let rpm = self.requested["settings"]["fixedSpeedRpm"]
+                .as_u64()
+                .unwrap_or(3700) as u16;
+            if FanIntent::checked(mode as u8, rpm) != Some(self.intent) {
+                return Err(deny());
+            }
+        }
+        Ok(())
+    }
+    pub fn hash(&self) -> io::Result<std::string::String> {
+        Ok(digest(&serde_json::to_vec(self)?))
+    }
+    pub fn valid_progress(&self, p: u8) -> bool {
+        matches!(p, 0 | 6 | 50)
+            || (10..10 + self.setters() as u8 * 2).contains(&p)
+            || self.intent.manual() && matches!(p, 30 | 31 | 40..=43)
+    }
+    pub fn follows(&self, p: u8, n: u8) -> bool {
+        (p == 0 && matches!(n, 6 | 10))
+            || (p >= 10 && p < 9 + self.setters() as u8 * 2 && n == p + 1)
+            || (p == 9 + self.setters() as u8 * 2
+                && n == if self.intent.manual() { 30 } else { 50 })
+            || (self.intent.manual()
+                && ((p == 30 && n == 31)
+                    || (p == 31 && n == 40)
+                    || (matches!(p, 40..=42) && n == p + 1)
+                    || (p == 43 && n == 50)))
+    }
+}
+// Fan fields are nonnegative integer contracts. Preserve lexical agreement with
+// the managed reader, including rejection of negative zero and exponent forms.
+pub fn validate_numbers(v: &Value) -> io::Result<()> {
+    match v {
+        Value::Number(n) => {
+            let value = n.as_u64().ok_or_else(deny)?;
+            if n.to_string() != value.to_string() {
+                return Err(deny());
+            }
+        }
+        Value::Array(a) => {
+            for v in a {
+                validate_numbers(v)?;
+            }
+        }
+        Value::Object(o) => {
+            for v in o.values() {
+                validate_numbers(v)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+pub fn validate_settings(v: &Value) -> io::Result<()> {
+    fn members(v: &Value, keys: &[&str]) -> io::Result<()> {
+        if v.as_object()
+            .is_none_or(|o| o.len() != keys.len() || o.keys().any(|k| !keys.contains(&k.as_str())))
+        {
+            Err(deny())
+        } else {
+            Ok(())
+        }
+    }
+    fn speed(v: &Value) -> bool {
+        matches!(v.as_u64(),Some(n)if(2000..=5400).contains(&n)&&n%100==0)
+    }
+    members(v, &["mode", "fixedSpeedRpm", "manualCurve"])?;
+    if !matches!(v["mode"].as_u64(), Some(0..=3)) || !speed(&v["fixedSpeedRpm"]) {
+        return Err(deny());
+    }
+    let c = &v["manualCurve"];
+    members(c, &["cpu", "gpu", "useHigherTemperatureForBoth"])?;
+    if !c["useHigherTemperatureForBoth"].is_boolean() {
+        return Err(deny());
+    }
+    for key in ["cpu", "gpu"] {
+        let pts = c[key].as_array().ok_or_else(deny)?;
+        if !(2..=10).contains(&pts.len()) {
+            return Err(deny());
+        }
+        let mut last = None;
+        for p in pts {
+            members(p, &["temperatureCelsius", "speedRpm"])?;
+            let t = p["temperatureCelsius"].as_u64().ok_or_else(deny)?;
+            let rpm = p["speedRpm"].as_u64().ok_or_else(deny)?;
+            if !(20..=100).contains(&t)
+                || !speed(&p["speedRpm"])
+                || last.is_some_and(|(pt, pr)| t <= pt || rpm < pr)
+            {
+                return Err(deny());
+            }
+            last = Some((t, rpm));
+        }
+    }
+    Ok(())
+}
+pub fn validate_requested(v: &Value) -> io::Result<()> {
+    let o = v.as_object().ok_or_else(deny)?;
+    if o.len() != 2 || !o.contains_key("value") || !o.contains_key("settings") {
+        return Err(deny());
+    }
+    if v["value"].is_null() {
+        if !v["settings"].is_null() {
+            return Err(deny());
+        }
+        return Ok(());
+    }
+    let value = v["value"].as_object().ok_or_else(deny)?;
+    if value.len() != 2
+        || !matches!(v["value"]["value"].as_u64(), Some(0..=3))
+        || !matches!(v["value"]["lifetime"].as_u64(), Some(0..=1))
+    {
+        return Err(deny());
+    }
+    if !v["settings"].is_null() {
+        validate_settings(&v["settings"])?;
+        if v["value"]["value"] != v["settings"]["mode"] {
+            return Err(deny());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn shared_fan_vectors_preserve_mode_target_and_handback_contract() {
+        let v: Value = serde_json::from_str(include_str!(
+            "../../../../tools/openblade-windows-host/tests/data/fan-history-v2.json"
+        ))
+        .unwrap();
+        let r: FanRecord = serde_json::from_value(v["fan"].clone()).unwrap();
+        r.validate().unwrap();
+        assert_eq!(
+            serde_json::to_string(&r).unwrap(),
+            v["canonical"].as_str().unwrap()
+        );
+        assert_eq!(r.hash().unwrap(), v["intent"]);
+        let owned = v["owned"].as_str().unwrap().as_bytes();
+        let released = v["released"].as_str().unwrap().as_bytes();
+        assert!(crate::thermal_history::rows(owned, |_, _| Ok(())).is_ok());
+        assert!(!crate::thermal_history::handback_complete(owned).unwrap());
+        assert!(crate::thermal_history::handback_complete(released).unwrap());
+        for mut bad in [r.clone(), r.clone(), r.clone()] {
+            bad.ids[0][0] = bad.cleanup[0][0];
+            assert!(bad.validate().is_err());
+        }
+        let mut bad = r.clone();
+        bad.contract.push('x');
+        assert!(bad.validate().is_err());
+        for p in [1, 5, 7, 18, 32, 44, 51] {
+            assert!(!r.valid_progress(p));
+        }
+        assert!(!r.follows(30, 50));
+        assert!(!r.follows(11, 14));
+        assert!(r.follows(43, 50));
+        let mut b = Vec::from(owned);
+        let mut next: Value =
+            serde_json::from_str(v["owned"].as_str().unwrap().lines().next().unwrap()).unwrap();
+        next["request"] = serde_json::json!("aaaaaaaa-bbbb-cccc-dddd-000000000002");
+        for p in [0, 6] {
+            next["progress"] = serde_json::json!(p);
+            let row: crate::thermal_history::Entry = serde_json::from_value(next.clone()).unwrap();
+            b.extend(serde_json::to_vec(&row).unwrap());
+            b.push(10);
+        }
+        assert!(!crate::thermal_history::handback_complete(&b).unwrap());
+        let prior = b.clone();
+        let owner = next["owner"].as_str().unwrap().to_string();
+        let mut prepared = Vec::from(owned);
+        next["progress"] = serde_json::json!(0);
+        let row: crate::thermal_history::Entry = serde_json::from_value(next.clone()).unwrap();
+        prepared.extend(serde_json::to_vec(&row).unwrap());
+        prepared.push(10);
+        crate::thermal_history::validate_prepared_retirement(&prepared, &prior, &owner).unwrap();
+        for line in v["released"].as_str().unwrap().lines().skip(10) {
+            b.extend(line.as_bytes());
+            b.push(10);
+        }
+        assert!(crate::thermal_history::handback_complete(&b).unwrap());
+        let mut unsafe_resume = prepared.clone();
+        for line in v["released"].as_str().unwrap().lines().skip(10) {
+            unsafe_resume.extend(line.as_bytes());
+            unsafe_resume.push(10);
+        }
+        assert!(crate::thermal_history::rows(&unsafe_resume, |_, _| Ok(())).is_err());
+    }
+}

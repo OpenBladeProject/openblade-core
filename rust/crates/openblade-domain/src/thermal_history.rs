@@ -169,6 +169,8 @@ pub struct Entry {
     pub destination: i32,
     pub intent: String,
     pub progress: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fan: Option<crate::fan_history::FanRecord>,
 }
 /// Validate complete rows without retaining the lifetime log. Callback joins each
 /// original row to authenticated owner/producer custody; no current-owner relabel.
@@ -186,6 +188,7 @@ fn rows_from(
     if bytes.len() > SEGMENT || !bytes.is_empty() && !bytes.ends_with(b"\n") {
         return Err(deny());
     }
+    let mut owned = last.as_ref().filter(|e| e.progress == 30).cloned();
     let mut count = 0u64;
     for line in bytes.split_inclusive(|b| *b == b'\n') {
         if line.len() < 2 || line.len() > ROW {
@@ -195,6 +198,11 @@ fn rows_from(
         let entry: Entry = serde_json::from_slice(line).map_err(|_| deny())?;
         if let Some(v) = &entry.requested {
             v.validate()?;
+        }
+        if let Some(fan) = &entry.fan {
+            let raw: Value = serde_json::from_slice(line).map_err(|_| deny())?;
+            crate::fan_history::validate_numbers(&raw["fan"])?;
+            fan.validate()?;
         }
         if !is_guid(&entry.request)
             || !hex(&entry.owner, 64)
@@ -206,12 +214,31 @@ fn rows_from(
                 .all(|b| b.is_ascii_digit() || b"S-".contains(&b))
             || entry.caller_pid == 0
             || entry.session == 0
-            || Preset::from_wire(entry.destination).is_none()
-            || entry.progress > 6
-            || digest(&serde_json::to_vec(&entry.requested)?) != entry.intent
+            || if let Some(f) = &entry.fan {
+                entry.requested.is_some()
+                    || entry.destination != 0
+                    || !f.valid_progress(entry.progress)
+                    || f.hash()? != entry.intent
+            } else {
+                Preset::from_wire(entry.destination).is_none()
+                    || entry.progress > 6
+                    || digest(&serde_json::to_vec(&entry.requested)?) != entry.intent
+            }
         {
             return Err(deny());
         }
+        if owned
+            .as_ref()
+            .is_some_and(|owner| entry.owner != owner.owner || entry.fan.is_none())
+        {
+            return Err(deny());
+        }
+        let resumed_release = entry.progress == 31
+            && owned.as_ref().is_some_and(|owner| {
+                let mut resumed = owner.clone();
+                resumed.progress = 31;
+                serde_json::to_vec(&resumed).ok() == serde_json::to_vec(&entry).ok()
+            });
         if let Some(p) = &last {
             if p.request == entry.request {
                 if p.owner != entry.owner
@@ -220,15 +247,34 @@ fn rows_from(
                     || p.session != entry.session
                     || p.destination != entry.destination
                     || p.intent != entry.intent
-                    || !progress_follows(p.progress, entry.progress)
+                    || p.fan != entry.fan
+                    || !entry.fan.as_ref().map_or_else(
+                        || progress_follows(p.progress, entry.progress),
+                        |f| f.follows(p.progress, entry.progress),
+                    )
                 {
                     return Err(deny());
                 }
-            } else if !settled(p.progress) || entry.progress != 0 {
+            } else if !settled(p.progress)
+                || !resumed_release
+                    && (entry.progress != 0
+                        || p.progress == 30
+                            && (entry.fan.is_none()
+                                || entry.owner != p.owner
+                                || entry.user_sid != p.user_sid
+                                || entry.session != p.session))
+            {
                 return Err(deny());
             }
         } else if entry.progress != 0 {
             return Err(deny());
+        }
+        if entry.fan.is_some() {
+            if entry.progress == 30 {
+                owned = Some(entry.clone());
+            } else if entry.progress == 50 {
+                owned = None;
+            }
         }
         visit(&entry, line)?;
         count = count.checked_add(1).ok_or_else(deny)?;
@@ -398,7 +444,10 @@ pub fn recover(
             || cp.segment != digest(&segment)
             || cp.length != segment.len() as u64
             || cp.records != n
-            || last.as_ref().is_none_or(|e| !settled(e.progress))
+            || !handback_complete(&segment)?
+            || last
+                .as_ref()
+                .is_none_or(|e| !matches!(e.progress, 5 | 6 | 50))
             || f != [
                 digest(&old),
                 digest(&new),
@@ -444,7 +493,10 @@ pub fn inspect_prefix(
             || cp.segment != digest(&segment)
             || cp.length != segment.len() as u64
             || cp.records != n
-            || last.as_ref().is_none_or(|e| !settled(e.progress))
+            || !handback_complete(&segment)?
+            || last
+                .as_ref()
+                .is_none_or(|e| !matches!(e.progress, 5 | 6 | 50))
         {
             return Err(deny());
         }
@@ -472,6 +524,51 @@ pub fn inspect_prefix(
     rows_from(&view.tail, prior, &mut join)?;
     Ok(())
 }
+pub fn validate_prepared_retirement(expected: &[u8], bytes: &[u8], owner: &str) -> io::Result<()> {
+    let (n, last) = rows(expected, |_, _| Ok(()))?;
+    let mut prior = last.ok_or_else(deny)?;
+    if prior.progress != 0 || prior.owner != owner || !bytes.starts_with(expected) {
+        return Err(deny());
+    }
+    prior.progress = 6;
+    let mut required = expected.to_vec();
+    required.extend(serde_json::to_vec(&prior)?);
+    required.push(10);
+    let (m, _) = rows(bytes, |_, _| Ok(()))?;
+    if n.checked_add(1) != Some(m) || bytes != required {
+        return Err(deny());
+    }
+    Ok(())
+}
+pub fn handback_complete(bytes: &[u8]) -> io::Result<bool> {
+    let mut owned = false;
+    rows(bytes, |e, _| {
+        if e.fan.is_some() {
+            if e.progress == 30 {
+                owned = true;
+            } else if e.progress == 50 {
+                owned = false;
+            }
+        }
+        Ok(())
+    })?;
+    Ok(!owned)
+}
+#[derive(Debug)]
+struct PrepublicationCapacity;
+impl fmt::Display for PrepublicationCapacity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Thermal progress capacity refused before publication; retained cleanup reservation remains intact.")
+    }
+}
+impl std::error::Error for PrepublicationCapacity {}
+pub fn capacity_refusal() -> io::Error {
+    io::Error::new(io::ErrorKind::StorageFull, PrepublicationCapacity)
+}
+pub fn known_capacity_refusal(e: &io::Error) -> bool {
+    e.get_ref()
+        .is_some_and(|e| e.is::<PrepublicationCapacity>())
+}
 pub fn reserve(
     b: &impl Backend,
     expected: Option<&[u8]>,
@@ -479,10 +576,7 @@ pub fn reserve(
     mut join: impl FnMut(&Entry, &[u8]) -> io::Result<()>,
 ) -> io::Result<Vec<u8>> {
     if needed > SEGMENT {
-        return Err(io::Error::new(
-            io::ErrorKind::StorageFull,
-            "Thermal operation exceeds its reserved progress capacity.",
-        ));
+        return Err(capacity_refusal());
     }
     let view = active(b.read(ACTIVE, SEGMENT + 2048)?)?;
     inspect(b, &view, &mut join)?;
@@ -493,7 +587,14 @@ pub fn reserve(
         return Ok(view.tail);
     }
     let (records, last) = rows(&view.tail, &mut join)?;
-    if last.as_ref().is_none_or(|e| !settled(e.progress)) {
+    if !handback_complete(&view.tail)? {
+        return Err(capacity_refusal());
+    }
+    if last
+        .as_ref()
+        .is_none_or(|e| !matches!(e.progress, 5 | 6 | 50))
+        || !handback_complete(&view.tail)?
+    {
         return Err(deny());
     }
     let seq = view.sequence.checked_add(1).ok_or_else(deny)?;

@@ -20,6 +20,13 @@ impl Lifetime {
     pub(crate) fn lose_trust(&self) {
         self.0.store(LOST, Ordering::Release);
     }
+    pub(crate) fn verify_owned_stop(&self) -> io::Result<()> {
+        if self.0.load(Ordering::Acquire) == STOP {
+            Ok(())
+        } else {
+            Err(io::ErrorKind::PermissionDenied.into())
+        }
+    }
     pub(crate) fn verify(&self) -> io::Result<()> {
         match self.0.load(Ordering::Acquire) {
             LIVE => Ok(()),

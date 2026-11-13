@@ -65,13 +65,21 @@ pub(super) fn remember_failure(fatal: &Mutex<Option<&'static str>>, error: &io::
     }
 }
 
+#[path = "fan_mutation.rs"]
+mod fan;
 pub(super) trait Fresh: Send + Sync {
+    fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
+        None
+    }
     fn verify_health(&self) -> io::Result<()> {
         Ok(())
     }
     fn authorize(&self) -> Option<ReadAdmission>;
 }
 impl Fresh for WindowsGuard {
+    fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
+        self.authorize_owned_stop()
+    }
     fn verify_health(&self) -> io::Result<()> {
         self.verify_health()
     }
@@ -85,6 +93,8 @@ type Factory =
 pub(super) struct Runtime {
     factory: Rc<Factory>,
     application: Rc<RefCell<Option<Application>>>,
+    fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
+    fan_pending: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     gate: Rc<tokio::sync::Mutex<()>>,
     fatal: Arc<Mutex<Option<&'static str>>>,
     #[cfg(test)]
@@ -122,6 +132,8 @@ impl Runtime {
         Self {
             factory: Rc::new(factory),
             application: Rc::default(),
+            fan_owner: Rc::default(),
+            fan_pending: Rc::default(),
             gate: Rc::default(),
             fatal: mailbox.fatal_evidence(),
             #[cfg(test)]
@@ -171,6 +183,8 @@ impl Runtime {
                 Ok((stores.as_ref().unwrap().1.clone(), guard))
             }),
             application: Rc::default(),
+            fan_owner: Rc::default(),
+            fan_pending: Rc::default(),
             gate: Rc::default(),
             fatal: mailbox.fatal_evidence(),
             #[cfg(test)]
@@ -324,6 +338,12 @@ impl Runtime {
                     None,
                 )
                 .thermal_provenance(desired.map(|(_, s)| s))
+                .fan_intent(
+                    store.current_fan_override(power)?.as_ref(),
+                    store.desired_fan(power, application.as_deref())?,
+                    power,
+                    "Saved thermal policy; firmware mode is reported independently.",
+                )
                 .bind_private_user(&policy_sid))
         }));
         let intent = format!("{:x}", Sha256::digest(serde_json::to_vec(&value)?));
@@ -525,12 +545,14 @@ impl Permit for RequestPermit {
                 .map_err(|_| io::ErrorKind::Other)? = desired.map(|(_, s)| s);
             let desired = desired.map(|(p, _)| p);
             *self.destination.lock().map_err(|_| io::ErrorKind::Other)? = desired;
-            if openblade_domain::thermal_mutation::defer_manual_performance(
-                baseline,
-                power,
-                self.storage
-                    .desired_manual_fans(power, self.application.as_deref())?,
-            ) {
+            if self.storage.outstanding_fan()
+                || openblade_domain::thermal_mutation::defer_manual_performance(
+                    baseline,
+                    power,
+                    self.storage
+                        .desired_manual_fans(power, self.application.as_deref())?,
+                )
+            {
                 self.set_cause(Cause::ManualDeferred);
                 return Ok(None);
             }

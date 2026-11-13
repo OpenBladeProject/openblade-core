@@ -3,7 +3,7 @@
 use crate::configuration::{self, File as ConfigFile, Inspection, RecoveryRecord};
 use openblade_domain::thermal_mutation::{Preset, Progress, progress_follows, settled};
 use serde_json::{Value, json};
-use sha2::Digest;
+
 use std::{
     io,
     sync::{Arc, Mutex},
@@ -29,6 +29,12 @@ pub(super) trait Files: Send + Sync {
         Ok(expected.map(<[u8]>::to_vec))
     }
     fn replace(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()>;
+    fn replace_cleanup(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        self.replace(name, expected, bytes)
+    }
+    fn replace_retired(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        self.replace(name, expected, bytes)
+    }
 }
 fn denied() -> io::Error {
     io::Error::new(
@@ -221,6 +227,7 @@ struct State {
     journal: Option<Vec<u8>>,
     last: Option<Entry>,
     temporary: Option<(Override, i32)>,
+    temporary_fan: Option<(Value, i32)>,
 }
 pub(super) struct Storage {
     same_path: fn(&str, &str) -> bool,
@@ -275,8 +282,20 @@ impl Storage {
                 journal,
                 last,
                 temporary: None,
+                temporary_fan: None,
             }),
         }))
+    }
+    pub(super) fn outstanding_fan(&self) -> bool {
+        self.state.lock().map_or(true, |s| {
+            !crate::thermal_history::handback_complete(s.journal.as_deref().unwrap_or_default())
+                .unwrap_or(false)
+        })
+    }
+    pub(super) fn owned_tail(&self) -> bool {
+        self.state
+            .lock()
+            .map_or(true, |s| s.last.as_ref().is_some_and(|e| e.progress == 30))
     }
     pub(super) fn pending(&self) -> bool {
         self.state.lock().map_or(true, |s| {
@@ -470,12 +489,237 @@ impl Storage {
                 .cloned(),
         }))
     }
+    pub(super) fn save_fan(
+        &self,
+        value: Option<crate::service_status::FanOverride>,
+        settings: Option<Value>,
+        power: i32,
+    ) -> io::Result<()> {
+        openblade_domain::fan_history::validate_requested(
+            &json!({"value":value,"settings":settings}),
+        )?;
+        aggregate(self.files.as_ref(), self.same_path)?;
+        let mut s = self.state.lock().map_err(|_| denied())?;
+        if s.quarantined || s.last.as_ref().is_some_and(|e| !settled(e.progress)) {
+            return Err(denied());
+        }
+        let resolved = value.as_ref().map(|v| {
+            let mut s = settings.unwrap_or_else(|| legacy_fan(v.value));
+            if v.value == 3 {
+                s["fixedSpeedRpm"] = json!(5400);
+            }
+            s
+        });
+        let saved = value.as_ref().is_some_and(|v| v.lifetime == 1);
+        let mut next = s.document.clone();
+        next["overrides"]["fans"] = if saved {
+            json!(value.as_ref().unwrap().value)
+        } else {
+            Value::Null
+        };
+        next["overrides"]["fanControl"] = if saved {
+            resolved.clone().unwrap()
+        } else {
+            Value::Null
+        };
+        let bytes = serde_json::to_vec(&next)?;
+        if let Err(e) = self.files.replace(OVERRIDES, s.bytes.as_deref(), &bytes) {
+            s.quarantined = true;
+            s.configuration_failed = true;
+            return Err(e);
+        }
+        s.bytes = Some(bytes);
+        s.document = next;
+        s.temporary_fan = if !saved {
+            resolved.map(|v| (v, power))
+        } else {
+            None
+        };
+        Ok(())
+    }
+    pub(super) fn current_fan_override(
+        &self,
+        power: i32,
+    ) -> io::Result<Option<crate::service_status::FanOverride>> {
+        let s = self.state.lock().map_err(|_| denied())?;
+        if let Some((v, p)) = &s.temporary_fan {
+            if *p == power {
+                return Ok(Some(crate::service_status::FanOverride {
+                    value: v["mode"].as_u64().ok_or_else(denied)? as u8,
+                    lifetime: 0,
+                }));
+            }
+        }
+        Ok(s.document["overrides"]["fans"].as_u64().map(|mode| {
+            crate::service_status::FanOverride {
+                value: mode as u8,
+                lifetime: 1,
+            }
+        }))
+    }
+    pub(super) fn desired_fan(
+        &self,
+        power: i32,
+        application: Option<&str>,
+    ) -> io::Result<Option<Value>> {
+        let mut s = self.state.lock().map_err(|_| denied())?;
+        if self.files.read(OVERRIDES)? != s.bytes {
+            s.quarantined = true;
+            s.configuration_changed = true;
+            return Err(denied());
+        }
+        if s.temporary_fan.as_ref().is_some_and(|(_, p)| *p != power) {
+            s.temporary_fan = None;
+        }
+        if let Some((v, _)) = &s.temporary_fan {
+            return Ok(Some(v.clone()));
+        }
+        if !s.document["overrides"]["fanControl"].is_null() {
+            return Ok(Some(s.document["overrides"]["fanControl"].clone()));
+        }
+        drop(s);
+        let Some(doc) = aggregate(self.files.as_ref(), self.same_path)? else {
+            return Ok(None);
+        };
+        let key = match power {
+            0 => "pluggedIn",
+            1 => "battery",
+            2 => "usbC",
+            _ => return Ok(None),
+        };
+        let profiles = &doc["profiles"];
+        let app = application.and_then(|path| {
+            profiles["applicationProfiles"]
+                .as_array()?
+                .iter()
+                .find(|p| {
+                    p["enabled"] == true
+                        && p["executablePath"]
+                            .as_str()
+                            .is_some_and(|s| (self.same_path)(s, path))
+                })
+        });
+        let base = &profiles[key];
+        let over = app.map(|a| &a["overrides"][key]);
+        let selected = over
+            .filter(|o| !o["fanControl"].is_null())
+            .map(|o| o["fanControl"].clone())
+            .or_else(|| {
+                over.and_then(|o| o["fans"].as_u64())
+                    .map(|m| legacy_fan(m as u8))
+            })
+            .unwrap_or_else(|| {
+                if base["fanControl"].is_null() {
+                    legacy_fan(base["fans"].as_u64().unwrap_or(0) as u8)
+                } else {
+                    base["fanControl"].clone()
+                }
+            });
+        openblade_domain::fan_history::validate_settings(&selected)?;
+        Ok(Some(selected))
+    }
+    pub(super) fn record_fan(&self, mut entry: Entry, cleanup: bool) -> io::Result<()> {
+        let mut s = self.state.lock().map_err(|_| denied())?;
+        if s.quarantined {
+            return Err(denied());
+        }
+        entry.user_sid = self.user_sid.clone();
+        let record = entry.fan.as_ref().ok_or_else(denied)?;
+        record.validate()?;
+        if entry.progress == 6
+            && (s.last.as_ref().is_none_or(|p| p.progress != 0)
+                || self
+                    .files
+                    .read("thermal-mutation.journal.pending")?
+                    .is_some()
+                || self.files.read(JOURNAL)? != s.journal)
+        {
+            return Err(denied());
+        }
+        if entry.progress == 0 {
+            if s.last.as_ref().is_some_and(|e| !settled(e.progress)) {
+                return Err(denied());
+            }
+            // Full manual operation plus owned Stop release, including two-digit
+            // progress values, must fit without rollover while ownership is live.
+            let mut largest = entry.clone();
+            largest.progress = 50;
+            let row = serde_json::to_vec(&largest)?.len() + 1;
+            let rows = if record.intent.manual() {
+                8 + 2 * record.setters()
+            } else {
+                2 + 2 * record.setters()
+            };
+            if row > crate::thermal_history::ROW {
+                return Err(denied());
+            }
+            let mut held = None;
+            crate::thermal_history::rows(s.journal.as_deref().unwrap_or_default(), |e, _| {
+                if e.fan.is_some() {
+                    if e.progress == 30 {
+                        held = Some(e.clone());
+                    } else if e.progress == 50 {
+                        held = None;
+                    }
+                }
+                Ok(())
+            })?;
+            let retained = if let Some(mut old) = held {
+                old.progress = 50;
+                (serde_json::to_vec(&old)?.len() + 1)
+                    .checked_mul(6)
+                    .ok_or_else(denied)?
+            } else {
+                0
+            };
+            let needed = row
+                .checked_mul(rows)
+                .and_then(|n| n.checked_add(retained))
+                .ok_or_else(denied)?;
+            match self.files.reserve(s.journal.as_deref(), needed) {
+                Ok(j) => s.journal = j,
+                Err(e) if crate::thermal_history::known_capacity_refusal(&e) => return Err(e),
+                Err(e) => {
+                    s.quarantined = true;
+                    s.preparation_failed = true;
+                    return Err(e);
+                }
+            }
+        }
+        let mut bytes = s.journal.clone().unwrap_or_default();
+        bytes.extend(serde_json::to_vec(&entry)?);
+        bytes.push(b'\n');
+        crate::thermal_history::rows(&bytes, |_, _| Ok(()))?;
+        let result = if entry.progress == 6 {
+            self.files
+                .replace_retired(JOURNAL, s.journal.as_deref(), &bytes)
+        } else if cleanup {
+            self.files
+                .replace_cleanup(JOURNAL, s.journal.as_deref(), &bytes)
+        } else {
+            self.files.replace(JOURNAL, s.journal.as_deref(), &bytes)
+        };
+        if let Err(e) = result {
+            s.quarantined = true;
+            s.preparation_failed = entry.progress == 0;
+            s.intent_append_failed = matches!(entry.progress, 10 | 12 | 14 | 16 | 40 | 42);
+            return Err(e);
+        }
+        s.journal = Some(bytes);
+        s.last = Some(entry);
+        Ok(())
+    }
     pub(super) fn desired_manual_fans(
         &self,
         power: i32,
         application: Option<&str>,
     ) -> io::Result<bool> {
         let s = self.state.lock().map_err(|_| denied())?;
+        if let Some((v, p)) = &s.temporary_fan {
+            if *p == power {
+                return Ok(v["mode"] != 0);
+            }
+        }
         if let Some(mode) = s.document["overrides"]["fans"].as_i64() {
             return Ok(mode != 0);
         }
@@ -560,6 +804,7 @@ impl Storage {
             return Err(denied());
         }
         let entry = Entry {
+            fan: None,
             request: request.into(),
             owner: owner.into(),
             user_sid: self.user_sid.clone(),
@@ -583,6 +828,9 @@ impl Storage {
             let needed = row.checked_mul(6).ok_or_else(denied)?;
             match self.files.reserve(s.journal.as_deref(), needed) {
                 Ok(journal) => s.journal = journal,
+                Err(error) if crate::thermal_history::known_capacity_refusal(&error) => {
+                    return Err(error);
+                }
                 Err(error) => {
                     s.quarantined = true;
                     s.preparation_failed = true;
@@ -721,4 +969,16 @@ pub(super) fn valid_application_path(p: &str) -> bool {
         && p.to_ascii_lowercase().ends_with(".exe")
         && !p.chars().any(char::is_control)
         && !p.split(['\\', '/']).any(|part| matches!(part, "." | ".."))
+}
+
+// Exact managed FromLegacy defaults; only intent, never firmware confirmation.
+pub(super) fn legacy_fan(mode: u8) -> Value {
+    let points = |temps: [u8; 6], speeds: [u16; 6]| {
+        temps
+            .into_iter()
+            .zip(speeds)
+            .map(|(t, r)| json!({"temperatureCelsius":t,"speedRpm":r}))
+            .collect::<Vec<_>>()
+    };
+    json!({"mode":mode,"fixedSpeedRpm":if mode==3{5400}else{3700},"manualCurve":{"cpu":points([40,50,60,70,80,90],[2000,2100,2600,3400,4400,5400]),"gpu":points([35,45,55,65,75,85],[2000,2100,2700,3600,4500,5400]),"useHigherTemperatureForBoth":true}})
 }

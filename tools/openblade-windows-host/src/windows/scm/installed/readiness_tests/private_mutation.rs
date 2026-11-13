@@ -609,6 +609,7 @@ fn history_growth_real_storage_reserves_before_prepared_across_original_owners()
         let mut transaction = vec![];
         for progress in [0, 6] {
             let e = Entry {
+                fan: None,
                 request: format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),
                 owner: "7".repeat(64),
                 user_sid: user.sid.clone(),
@@ -849,4 +850,46 @@ fn history_orphan_rollover_staging_without_directory_is_never_empty_native_histo
     assert!(owner.journal_read(false).is_err());
     assert_eq!(std::fs::read(path).unwrap(), evidence);
     assert!(!machine.path.join("thermal-mutation.journal").exists());
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[test]
+fn fan_v2_real_protected_history_retains_owned_fence_across_reload_and_rollover() {
+    let machine = PrivateRoot::open("owner-journal");
+    let mut owner = machine.owner().unwrap();
+    owner.activate_injected(reservation('7')).unwrap();
+    let vector: Value = serde_json::from_str(include_str!(
+        "../../../../../tests/data/fan-history-v2.json"
+    ))
+    .unwrap();
+    let owned = vector["owned"].as_str().unwrap().as_bytes();
+    let released = vector["released"].as_str().unwrap().as_bytes();
+    owner.journal_replace(None, owned).unwrap();
+    assert_eq!(owner.journal_read(false).unwrap().unwrap(), owned);
+    let refusal = owner
+        .journal_reserve(Some(owned), crate::thermal_history::SEGMENT)
+        .unwrap_err();
+    assert!(crate::thermal_history::known_capacity_refusal(&refusal));
+    assert_eq!(owner.journal_read(false).unwrap().unwrap(), owned);
+    owner.retire_active().unwrap();
+    drop(owner);
+    let owner = machine.owner().unwrap();
+    assert_eq!(owner.journal_read(false).unwrap().unwrap(), owned);
+    drop(owner);
+    // Completion uses the same retained authenticated original producer; a new
+    // generation cannot adopt fan ownership. This fixture appends only evidence.
+    let owner = machine.owner().unwrap();
+    owner.journal_replace(Some(owned), released).unwrap();
+    let tail = owner
+        .journal_reserve(Some(released), crate::thermal_history::SEGMENT)
+        .unwrap()
+        .unwrap();
+    assert!(tail.is_empty());
+    let segment = std::fs::read(
+        machine
+            .path
+            .join("thermal-history/segment-00000000000000000001.bin"),
+    )
+    .unwrap();
+    assert_eq!(segment, released);
 }

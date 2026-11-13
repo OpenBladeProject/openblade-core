@@ -23,6 +23,8 @@ mod tests;
 pub(crate) mod worker_tests;
 
 #[cfg(feature = "service-thermal-mutation-v1")]
+mod fan;
+#[cfg(feature = "service-thermal-mutation-v1")]
 pub(crate) mod mutation;
 #[cfg(any(test, feature = "firmware-performance-compile-check"))]
 mod worker;
@@ -309,7 +311,10 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
             (6, 1) => Some(ObservedPerformance::BatteryBalancedManual),
             (0, 1) => Some(ObservedPerformance::FixedMaximum),
             (7, 0) => Some(ObservedPerformance::HyperBoostObserved),
-            (4, _) if !include_custom => None,
+            (4, fan @ (0 | 1)) if !include_custom => Some(ObservedPerformance::Custom {
+                manual: fan == 1,
+                levels: None,
+            }),
             (4, fan @ (0 | 1)) => {
                 // Reserve only after a complete Custom selector pair. A new handle
                 // does not replenish the process-wide budget or drain firmware replies.

@@ -402,7 +402,7 @@ pub(super) fn mutation_worker(
                 Ok::<_, io::Error>(result)
             })?;
             Ok(observed
-                .filter(|_| limit.check().is_ok() && authorize() == Some(admission))
+                .filter(|_| limit.check().is_ok() && permit.result_admitted(admission))
                 .map(|performance| Reading {
                     admission,
                     performance,

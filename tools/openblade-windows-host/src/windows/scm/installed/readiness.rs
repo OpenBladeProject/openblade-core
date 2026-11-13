@@ -445,7 +445,8 @@ async fn serve_connection(
     } else if cfg!(feature = "service-thermal-mutation-v1")
         && matches!(
             request,
-            StatusRequest::SetPerformanceOverride { .. }
+            StatusRequest::SetFanOverride { .. }
+                | StatusRequest::SetPerformanceOverride { .. }
                 | StatusRequest::ReportApplicationContext { .. }
         )
     {

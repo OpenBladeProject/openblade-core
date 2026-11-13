@@ -27,6 +27,7 @@ struct MemoryFiles {
     bytes: Arc<StdMutex<BTreeMap<String, Vec<u8>>>>,
     fail: Arc<AtomicBool>,
     capacity_refuse: Arc<AtomicBool>,
+    reserve_uncertain: Arc<AtomicBool>,
     fail_terminal: Arc<AtomicBool>,
     fail_prepared: Arc<AtomicU8>,
     fail_first_intent: Arc<AtomicU8>,
@@ -77,6 +78,12 @@ impl MemoryFiles {
 }
 impl Files for MemoryFiles {
     fn reserve(&self, expected: Option<&[u8]>, needed: usize) -> io::Result<Option<Vec<u8>>> {
+        if self.reserve_uncertain.load(Ordering::Acquire) {
+            return Err(io::Error::other("injected uncertain reservation I/O"));
+        }
+        if self.capacity_refuse.load(Ordering::Acquire) {
+            return Err(crate::thermal_history::capacity_refusal());
+        }
         if self.capacity_refuse.load(Ordering::Acquire)
             || needed > crate::thermal_history::SEGMENT
             || expected
@@ -237,6 +244,8 @@ impl Files for MemoryFiles {
 }
 struct Custody {
     live: AtomicBool,
+    origin_for_fan: StdMutex<Option<Arc<crate::origin_lifetime::Lifetime>>>,
+    authority_for_fan: AtomicU8,
     fresh_refuse: AtomicBool,
     fatal_health: AtomicBool,
     integrity_lost: AtomicBool,
@@ -251,6 +260,8 @@ impl Custody {
         Arc::new(Self {
             port: port.state.clone(),
             live: AtomicBool::new(true),
+            origin_for_fan: StdMutex::new(None),
+            authority_for_fan: AtomicU8::new(0),
             fresh_refuse: AtomicBool::new(false),
             fatal_health: AtomicBool::new(false),
             integrity_lost: AtomicBool::new(false),
@@ -262,6 +273,19 @@ impl Custody {
     }
 }
 impl ReadCustody for Custody {
+    fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
+        if !self.live.load(Ordering::Acquire) || self.authority_for_fan.load(Ordering::Acquire) != 0
+        {
+            return None;
+        }
+        if let Some(origin) = &*self.origin_for_fan.lock().unwrap() {
+            origin.verify_owned_stop().ok()?;
+        }
+        Some(ReadAdmission {
+            lifecycle: self.lifecycle.active()?,
+            generation: [7; 32],
+        })
+    }
     fn verify_integrity(&self) -> io::Result<()> {
         if self.integrity_lost.load(Ordering::Acquire) {
             Err(
@@ -274,6 +298,18 @@ impl ReadCustody for Custody {
         }
     }
     fn authorize(&self) -> Option<ReadAdmission> {
+        if let Some(origin) = &*self.origin_for_fan.lock().unwrap() {
+            let proof = ReadAdmission {
+                lifecycle: self.lifecycle.active()?,
+                generation: [7; 32],
+            };
+            return crate::installed::readiness::mailbox_read::authorize_original(
+                &self.authority_for_fan,
+                origin.verify().map(|_| true),
+                || origin.verify(),
+                proof,
+            );
+        }
         self.live.load(Ordering::Acquire).then_some(ReadAdmission {
             lifecycle: self.lifecycle.active()?,
             generation: [7; 32],
@@ -329,6 +365,13 @@ impl ReadCustody for Custody {
     }
 }
 impl Fresh for Custody {
+    fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
+        self.verify_health().ok()?;
+        if self.fresh_refuse.load(Ordering::Acquire) {
+            return None;
+        }
+        ReadCustody::authorize_owned_stop(self)
+    }
     fn verify_health(&self) -> io::Result<()> {
         self.verify_integrity()?;
         if self.fatal_health.load(Ordering::Acquire) {
@@ -349,6 +392,9 @@ impl Fresh for Custody {
 }
 struct Origin(Arc<crate::loaded_origin::lifetime::Lifetime>);
 impl StatusOrigin for Origin {
+    fn admit_owned_stop(&self) -> io::Result<()> {
+        self.0.verify_owned_stop()
+    }
     fn verify(&self) -> io::Result<()> {
         self.0.verify()
     }
@@ -387,7 +433,14 @@ impl Rig {
                 .last()
                 .unwrap();
             let entry: Value = serde_json::from_slice(last).unwrap();
-            assert_eq!(entry["progress"], if number % 2 == 1 { 1 } else { 3 });
+            if entry.get("fan").is_some() {
+                assert!(matches!(
+                    entry["progress"].as_u64(),
+                    Some(10 | 12 | 14 | 16 | 40 | 42)
+                ));
+            } else {
+                assert_eq!(entry["progress"], if number % 2 == 1 { 1 } else { 3 });
+            }
             assert_eq!(entry["user_sid"], SID);
         }));
         let read = port.clone();
@@ -3422,4 +3475,507 @@ async fn history_dispatcher_capacity_refusal_precedes_prepared_and_all_transport
     assert_eq!(rig.port.state.lock().unwrap().writes, 0);
     rig.stop().await;
     assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+}
+
+// Fan v2 tests execute only the preinspected in-memory dispatcher/Reader closure.
+#[cfg(feature = "service-fan-mutation-v2")]
+fn fan_request(n: u32, mode: Option<u8>, rpm: u16) -> Value {
+    let value = mode.map(|m| json!({"value":m,"lifetime":1}));
+    let settings = mode.map(|m| {
+        let mut v = crate::installed::readiness::thermal_storage::legacy_fan(m);
+        v["fixedSpeedRpm"] = json!(rpm);
+        v
+    });
+    json!({"operation":"setFanOverride","version":80,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value,"settings":settings})
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+fn fan_rig(selector: u8, manual: u8) -> Rig {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let rig = Rig::new(files);
+    *rig.custody.origin_for_fan.lock().unwrap() = Some(rig.origin.clone());
+    {
+        let mut s = rig.port.state.lock().unwrap();
+        s.selectors = [selector; 2];
+        s.fans = [manual; 2];
+    }
+    rig
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+fn fan_rows(r: &Rig) -> Vec<Value> {
+    r.files
+        .read("thermal-mutation.journal")
+        .unwrap()
+        .unwrap_or_default()
+        .split(|b| *b == 10)
+        .filter(|b| !b.is_empty())
+        .map(|b| serde_json::from_slice(b).unwrap())
+        .collect()
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[test]
+fn fan_v2_strict_managed_shapes_and_target_validation() {
+    use crate::service_status::StatusRequest;
+    for mode in [0, 1, 2, 3] {
+        for rpm in [2000, 2100, 3700, 4000, 5400] {
+            assert!(
+                StatusRequest::decode(
+                    &serde_json::to_vec(&fan_request(1, Some(mode), rpm)).unwrap()
+                )
+                .is_ok()
+            );
+        }
+    }
+    assert!(
+        StatusRequest::decode(&serde_json::to_vec(&fan_request(1, None, 3700)).unwrap()).is_ok()
+    );
+    for rpm in [1999, 2001, 5500] {
+        assert!(
+            StatusRequest::decode(&serde_json::to_vec(&fan_request(1, Some(1), rpm)).unwrap())
+                .is_err()
+        );
+    }
+    let valid = fan_request(1, Some(1), 3700);
+    for (key, value) in [
+        ("version", json!(81)),
+        ("requestId", json!("bad")),
+        ("extra", json!(1)),
+    ] {
+        let mut v = valid.clone();
+        v[key] = value;
+        assert!(StatusRequest::decode(&serde_json::to_vec(&v).unwrap()).is_err());
+    }
+    for text in [
+        r#"{"operation":"setFanOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001"}"#,
+        r#"{"operation":"setFanOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":1,"value":3,"lifetime":1}}"#,
+    ] {
+        assert!(StatusRequest::decode(text.as_bytes()).is_err());
+    }
+    let mut v = fan_request(1, None, 3700);
+    v["settings"] = valid["settings"].clone();
+    assert!(StatusRequest::decode(&serde_json::to_vec(&v).unwrap()).is_err());
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_actual_dispatch_recipes_ownership_stop_timing_and_private_intent() {
+    for (selector, manual, mode, rpm, setters, remaining) in [
+        (0, 0, 1, 3700, 4, 10),
+        (2, 0, 3, 3700, 4, 12),
+        (0, 1, 1, 4000, 2, 6),
+        (2, 1, 0, 3700, 2, 6),
+    ] {
+        let r = fan_rig(selector, manual);
+        r.get().await;
+        let outcome = r.request(fan_request(101, Some(mode), rpm)).await;
+        assert_eq!(outcome["result"]["status"], 1, "{outcome}");
+        let before = r.files.read("manual-overrides.json").unwrap();
+        let rows = fan_rows(&r);
+        let last = rows.last().unwrap();
+        assert_eq!(last["progress"], if mode == 0 { 50 } else { 30 });
+        let recipe = &last["fan"];
+        assert_eq!(recipe["selector"], selector);
+        assert_eq!(recipe["intent"]["rpm"], if mode == 3 { 5400 } else { rpm });
+        assert_eq!(recipe["intent"]["mode"], mode);
+        let ids = recipe["ids"].as_array().unwrap();
+        assert_eq!(ids.len() * 2, remaining);
+        let state = r.port.state.lock().unwrap();
+        assert_eq!(state.writes, setters);
+        let writes: Vec<_> = state
+            .sent
+            .iter()
+            .zip(&state.sent_at)
+            .filter(|((c, k, _, _), _)| *c == 13 && matches!(*k, 1 | 2))
+            .collect();
+        for pair in writes.windows(2) {
+            let ((_, prior, p, _), at) = pair[0];
+            let ((_, next, _, _), bt) = pair[1];
+            let min = if *prior == 2 && *next == 1 {
+                210
+            } else if *prior == 1 {
+                65
+            } else {
+                10
+            };
+            assert!(
+                *bt - *at >= std::time::Duration::from_millis(min),
+                "{p:?} timing {min}"
+            );
+        }
+        assert!(
+            state
+                .sent
+                .iter()
+                .all(|(c, k, _, _)| !(*c == 13 && *k == 0x81))
+        );
+        drop(state);
+        let public=r.request_as(json!({"operation":"getStatus","version":80,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000077"}),USER,"S-1-5-21-111-222-333-1002").await;
+        assert!(public["status"]["fanOverride"].is_null());
+        assert!(public["status"]["fanControlOverride"].is_null());
+        r.origin.stop();
+        r.stop().await;
+        assert_eq!(
+            r.files.read("manual-overrides.json").unwrap(),
+            before,
+            "Stop rewrote saved fan intent"
+        );
+        let s = r.port.state.lock().unwrap();
+        assert_eq!(s.writes, setters + if mode == 0 { 0 } else { 2 });
+        assert_eq!(s.fans, [0, 0]);
+        assert_eq!(s.selectors, [selector; 2]);
+        assert_eq!(s.opened, s.retired);
+        drop(s);
+        assert_eq!(fan_rows(&r).last().unwrap()["progress"], 50);
+    }
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_noop_observation_and_pending_modes_never_mint_owner() {
+    for (selector, manual, mode) in [
+        (0, 0, 0),
+        (4, 0, 1),
+        (5, 0, 1),
+        (3, 0, 1),
+        (7, 0, 1),
+        (0, 1, 2),
+    ] {
+        let r = fan_rig(selector, manual);
+        r.get().await;
+        let out = r.request(fan_request(102, Some(mode), 3700)).await;
+        assert_eq!(
+            out["result"]["status"],
+            if selector == 0 && manual == 0 && mode == 0 {
+                1
+            } else {
+                0
+            }
+        );
+        assert_eq!(r.port.state.lock().unwrap().writes, 0);
+        assert_eq!(
+            r.files.document("manual-overrides.json")["overrides"]["fans"],
+            mode
+        );
+        assert!(fan_rows(&r).is_empty());
+        r.origin.stop();
+        r.stop().await;
+        assert_eq!(r.port.state.lock().unwrap().writes, 0);
+    }
+    let r = fan_rig(0, 1);
+    r.get().await;
+    r.origin.stop();
+    r.stop().await;
+    assert_eq!(r.port.state.lock().unwrap().writes, 0);
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_reserves_operation_and_stop_before_prepared_and_never_refills() {
+    for (selector, manual, remaining) in [(0, 1, 6usize), (0, 0, 10), (2, 0, 12)] {
+        for enough in [false, true] {
+            let r = fan_rig(selector, manual);
+            r.get().await;
+            // GetStatus is metadata-only. Explicit fan preflight consumes four IDs.
+            let required = 4 + remaining + 10;
+            let available = required - if enough { 0 } else { 2 };
+            r.port.reserve_for_tests(127 - available / 2);
+            let out = r.request(fan_request(103, Some(1), 3700)).await;
+            if enough {
+                assert_eq!(out["result"]["status"], 1, "{out}");
+                r.port.exhaust();
+                r.origin.stop();
+                r.stop().await;
+                assert_eq!(fan_rows(&r).last().unwrap()["progress"], 50);
+            } else {
+                assert_eq!(r.port.state.lock().unwrap().writes, 0);
+                assert!(fan_rows(&r).is_empty());
+                r.origin.stop();
+                r.stop().await;
+            }
+        }
+    }
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_each_ambiguous_setter_fences_all_families_without_replay() {
+    for cut in 1..=4 {
+        let r = fan_rig(2, 0);
+        r.get().await;
+        r.port.state.lock().unwrap().corrupt_ack = Some(cut);
+        let out = r.request(fan_request(104, Some(1), 3700)).await;
+        assert_eq!(out["result"]["status"], 0);
+        assert_eq!(r.port.state.lock().unwrap().writes, cut);
+        let before = r.files.read("thermal-mutation.journal").unwrap();
+        let blocked = r.set(105, value(1, 1)).await;
+        assert_ne!(blocked["result"]["status"], 1);
+        assert_eq!(r.port.state.lock().unwrap().writes, cut);
+        r.origin.stop();
+        assert!(r.source.lock().await.drain().await.is_err());
+        assert!(r.custody.retired.load(Ordering::Acquire));
+        assert_eq!(r.files.read("thermal-mutation.journal").unwrap(), before);
+    }
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_owned_updates_direct_auto_and_cleanup_refusals_preserve_evidence() {
+    let r = fan_rig(0, 0);
+    r.get().await;
+    r.request(fan_request(110, Some(1), 3700)).await;
+    r.request(fan_request(111, Some(3), 3700)).await;
+    assert_eq!(r.port.state.lock().unwrap().writes, 6);
+    let out = r.request(fan_request(112, Some(0), 3700)).await;
+    assert_eq!(out["result"]["status"], 1);
+    assert_eq!(r.port.state.lock().unwrap().writes, 8);
+    r.origin.stop();
+    r.stop().await;
+    assert_eq!(r.port.state.lock().unwrap().writes, 8);
+    for reason in 0..4 {
+        let r = fan_rig(2, 0);
+        r.get().await;
+        r.request(fan_request(113, Some(1), 3700)).await;
+        let saved = r.files.read("manual-overrides.json").unwrap();
+        match reason {
+            0 => r.custody.fresh_refuse.store(true, Ordering::Release),
+            1 => r.origin.lose_trust(),
+            2 => r.custody.lifecycle.ingress(
+                windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+                4,
+            ),
+            _ => r.port.state.lock().unwrap().actual = 0,
+        };
+        r.origin.stop();
+        assert!(r.source.lock().await.drain().await.is_err());
+        assert_eq!(r.port.state.lock().unwrap().writes, 4);
+        assert_eq!(r.files.read("manual-overrides.json").unwrap(), saved);
+        assert_eq!(fan_rows(&r).last().unwrap()["progress"], 30);
+    }
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_stop_refusal_is_one_shot_and_saved_nonfan_fields_survive() {
+    let r = fan_rig(0, 0);
+    r.get().await;
+    let perf = r.set(120, value(2, 1)).await;
+    assert_eq!(perf["result"]["status"], 1);
+    let before = r.files.document("manual-overrides.json");
+    r.request(fan_request(121, Some(1), 3700)).await;
+    let saved = r.files.document("manual-overrides.json");
+    assert_eq!(
+        before["overrides"]["performance"],
+        saved["overrides"]["performance"]
+    );
+    assert_eq!(
+        before["overrides"]["gpuClockTuning"],
+        saved["overrides"]["gpuClockTuning"]
+    );
+    let current = r.get().await;
+    assert_eq!(current["status"]["desiredState"]["fans"]["value"], 1);
+    assert_eq!(
+        current["status"]["fanControlOverride"]["fixedSpeedRpm"],
+        3700
+    );
+    r.port.state.lock().unwrap().actual = 0;
+    r.origin.stop();
+    assert!(r.source.lock().await.drain().await.is_err());
+    let sent = r.port.state.lock().unwrap().sent.len();
+    assert!(r.source.lock().await.drain().await.is_err());
+    assert_eq!(r.port.state.lock().unwrap().sent.len(), sent);
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_actual_read_stop_race_retains_only_expected_cleanup_custody() {
+    for expected in [true, false] {
+        let r = fan_rig(2, 0);
+        r.get().await;
+        r.request(fan_request(130, Some(1), 3700)).await;
+        r.reader.expire_for_tests();
+        let held = Arc::new(AtomicBool::new(false));
+        let opened = r.port.state.lock().unwrap().opened;
+        r.port.state.lock().unwrap().held_read = Some(held.clone());
+        let observation = r
+            .source
+            .lock()
+            .await
+            .observe_performance(USER, Instant::now() + Duration::from_secs(3));
+        let stopping = async {
+            let end = Instant::now() + Duration::from_secs(2);
+            while r.port.state.lock().unwrap().opened == opened {
+                assert!(Instant::now() < end);
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            if expected {
+                r.origin.stop();
+            } else {
+                r.origin.lose_trust();
+            }
+            assert!(ReadCustody::authorize(&*r.custody).is_none());
+            assert_eq!(
+                ReadCustody::authorize_owned_stop(&*r.custody).is_some(),
+                expected
+            );
+            // Keep the original native callback retained through the Stop request.
+            assert_eq!(r.port.state.lock().unwrap().writes, 4);
+            held.store(true, Ordering::Release);
+            let drained = r.source.lock().await.drain().await;
+            assert_eq!(drained.is_ok(), expected);
+        };
+        let (read, ()) = tokio::join!(observation, stopping);
+        assert!(read.unwrap().is_none());
+        let state = r.port.state.lock().unwrap();
+        assert_eq!(state.writes, if expected { 6 } else { 4 });
+        assert_eq!(state.opened, state.retired);
+    }
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_identical_refused_request_keeps_original_owner_and_reserved_stop_ids() {
+    let r = fan_rig(2, 0);
+    r.get().await;
+    r.request(fan_request(140, Some(1), 3700)).await;
+    let bytes = r.files.read("manual-overrides.json").unwrap();
+    r.port.exhaust();
+    let out = r.request(fan_request(141, Some(1), 3700)).await;
+    assert_ne!(out["result"]["status"], 1);
+    assert_eq!(r.port.state.lock().unwrap().writes, 4);
+    r.origin.stop();
+    r.stop().await;
+    assert_eq!(r.port.state.lock().unwrap().writes, 6);
+    assert_eq!(r.files.read("manual-overrides.json").unwrap(), bytes);
+    assert_eq!(fan_rows(&r).last().unwrap()["progress"], 50);
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_prepared_only_stop_keeps_original_owner_and_resumes_exact_release() {
+    let r = fan_rig(2, 0);
+    r.get().await;
+    r.request(fan_request(150, Some(1), 3700)).await;
+    let at = r.port.state.lock().unwrap().power_reads + 2;
+    let origin = r.origin.clone();
+    r.port.state.lock().unwrap().on_power = Some(Arc::new(move |n| {
+        if n == at {
+            origin.stop();
+        }
+    }));
+    let request = crate::service_status::StatusRequest::decode(
+        &serde_json::to_vec(&fan_request(151, Some(1), 3700)).unwrap(),
+    )
+    .unwrap();
+    let future = r.source.lock().await.mutate(
+        USER,
+        SID.into(),
+        request,
+        Instant::now() + Duration::from_secs(3),
+    );
+    let _ = future.await.unwrap();
+    assert_eq!(r.port.state.lock().unwrap().writes, 4);
+    assert_eq!(fan_rows(&r).last().unwrap()["progress"], 6);
+    r.stop().await;
+    assert_eq!(r.port.state.lock().unwrap().writes, 6);
+    assert_eq!(
+        fan_rows(&r).last().unwrap()["request"],
+        "aaaaaaaa-bbbb-cccc-dddd-000000000150"
+    );
+    assert_eq!(fan_rows(&r).last().unwrap()["progress"], 50);
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_held_target_callback_blocks_retirement_then_retains_ambiguity() {
+    let r = fan_rig(0, 1);
+    r.get().await;
+    let held = Arc::new(AtomicBool::new(false));
+    r.port.state.lock().unwrap().held_write = Some((1, held.clone()));
+    let request = crate::service_status::StatusRequest::decode(
+        &serde_json::to_vec(&fan_request(160, Some(1), 3700)).unwrap(),
+    )
+    .unwrap();
+    let mut mutation = r.source.lock().await.mutate(
+        USER,
+        SID.into(),
+        request,
+        Instant::now() + Duration::from_secs(3),
+    );
+    let end = Instant::now() + Duration::from_secs(2);
+    while r.port.state.lock().unwrap().writes == 0 {
+        assert!(Instant::now() < end);
+        tokio::select! {result=&mut mutation=>panic!("held target completed early: {}",result.is_ok()),_=tokio::time::sleep(Duration::from_millis(5))=>{}}
+    }
+    drop(mutation);
+    r.origin.stop();
+    let mut source = r.source.lock().await;
+    let mut draining = source.drain();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), &mut draining)
+            .await
+            .is_err()
+    );
+    assert!(!r.custody.retired.load(Ordering::Acquire));
+    assert_eq!(r.port.state.lock().unwrap().writes, 1);
+    held.store(true, Ordering::Release);
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), draining)
+            .await
+            .unwrap()
+            .is_err()
+    );
+    assert!(r.custody.retired.load(Ordering::Acquire));
+    let s = r.port.state.lock().unwrap();
+    assert_eq!(s.opened, s.retired);
+    assert_eq!(s.writes, 1);
+    drop(s);
+    assert_eq!(fan_rows(&r).last().unwrap()["progress"], 10);
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_known_capacity_refusal_preserves_owner_but_uncertain_reservation_fences() {
+    for uncertain in [false, true] {
+        let r = fan_rig(2, 0);
+        r.get().await;
+        r.request(fan_request(170, Some(1), 3700)).await;
+        let before = r.files.read("thermal-mutation.journal").unwrap();
+        if uncertain {
+            r.files.reserve_uncertain.store(true, Ordering::Release);
+        } else {
+            r.files.capacity_refuse.store(true, Ordering::Release);
+        }
+        let result = r.request(fan_request(171, Some(1), 3700)).await;
+        assert_ne!(result["result"]["status"], 1);
+        assert_eq!(r.files.read("thermal-mutation.journal").unwrap(), before);
+        assert_eq!(r.port.state.lock().unwrap().writes, 4);
+        r.origin.stop();
+        let drained = r.source.lock().await.drain().await;
+        assert_eq!(drained.is_err(), uncertain);
+        assert_eq!(
+            r.port.state.lock().unwrap().writes,
+            if uncertain { 4 } else { 6 }
+        );
+        assert_eq!(
+            fan_rows(&r).last().unwrap()["progress"],
+            if uncertain { 30 } else { 50 }
+        );
+    }
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_owned_limited_source_performance_stays_stored_without_consuming_release() {
+    let r = fan_rig(0, 0);
+    r.port.state.lock().unwrap().actual = 10;
+    r.get().await;
+    let applied = r.request(fan_request(180, Some(1), 3700)).await;
+    assert_eq!(applied["result"]["status"], 1);
+    let before = fan_rows(&r).len();
+    let perf = r.set(181, value(1, 1)).await;
+    assert_eq!(perf["result"]["status"], 0);
+    assert_eq!(fan_rows(&r).len(), before);
+    assert_eq!(r.port.state.lock().unwrap().writes, 4);
+    let desired = r.files.document("manual-overrides.json");
+    assert_eq!(desired["overrides"]["performance"], 1);
+    assert_eq!(desired["overrides"]["fanControl"]["fixedSpeedRpm"], 3700);
+    r.origin.stop();
+    r.stop().await;
+    assert_eq!(r.port.state.lock().unwrap().writes, 6);
+    assert_eq!(fan_rows(&r).last().unwrap()["progress"], 50);
 }

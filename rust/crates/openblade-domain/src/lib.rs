@@ -7,6 +7,9 @@
 #[cfg(feature = "thermal-history")]
 extern crate std;
 
+#[cfg(feature = "thermal-history")]
+pub mod fan_history;
+pub mod fan_recipe;
 pub mod thermal_mutation;
 pub mod thermal_observation;
 

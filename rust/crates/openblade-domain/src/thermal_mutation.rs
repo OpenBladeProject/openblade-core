@@ -82,7 +82,7 @@ mod tests {
 }
 
 pub fn settled(progress: u8) -> bool {
-    matches!(progress, 5 | 6)
+    matches!(progress, 5 | 6 | 30 | 50)
 }
 pub fn progress_follows(prior: u8, next: u8) -> bool {
     (prior < 5 && next == prior + 1) || (prior == 0 && next == 6)

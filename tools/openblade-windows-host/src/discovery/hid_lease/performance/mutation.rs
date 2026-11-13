@@ -9,6 +9,32 @@ use std::sync::Arc;
 /// user configuration and durable journal through callback retirement.
 pub(crate) trait Permit: Send + Sync {
     fn authorize(&self) -> Option<ReadAdmission>;
+    /// Result publication is distinct from permission to submit another command.
+    fn result_admitted(&self, expected: ReadAdmission) -> bool {
+        self.authorize() == Some(expected)
+    }
+    fn is_fan(&self) -> bool {
+        false
+    }
+    fn resolve_fan(
+        &self,
+        _power: i32,
+        _baseline: ObservedPerformance,
+    ) -> io::Result<Option<openblade_domain::fan_recipe::FanIntent>> {
+        Ok(None)
+    }
+    fn prepare_fan(&self, _record: openblade_domain::fan_history::FanRecord) -> io::Result<()> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
+    fn fan_record(&self) -> Option<openblade_domain::fan_history::FanRecord> {
+        None
+    }
+    fn record_fan(&self, _progress: u8) -> io::Result<()> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
+    fn cleanup(&self) -> bool {
+        false
+    }
     fn resolve(&self, power: i32, baseline: ObservedPerformance) -> io::Result<Option<Preset>>;
     fn refused(&self, _cause: Refusal) {}
     fn failed(&self, _error: &io::Error) {}
@@ -37,6 +63,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
         permit: &dyn Permit,
         limit: Limit<'_>,
     ) -> Option<ObservedPerformance> {
+        if permit.is_fan() {
+            return self.apply_fan(permit, limit).await;
+        }
         let mut authorize = || permit.authorize();
         let baseline = self.observe(&mut authorize, limit).await?;
         let initial_power_ids = self.port.reserve_pair()?;
@@ -129,12 +158,12 @@ impl<P: Port> Reader<P, ReadAdmission> {
     }
 }
 #[derive(Clone, Copy)]
-struct Power {
+pub(super) struct Power {
     actual: u16,
     recommended: u16,
 }
 impl Power {
-    fn source(self) -> Option<i32> {
+    pub(super) fn source(self) -> Option<i32> {
         if self.recommended == 0 {
             None
         } else if self.actual == 0 {
@@ -145,7 +174,7 @@ impl Power {
             Some(2)
         }
     }
-    fn admits(self, destination: Preset) -> bool {
+    pub(super) fn admits(self, destination: Preset) -> bool {
         // Managed battery policy admits BatterySaver/BatteryBalanced, not
         // these AC/limited-external destinations (automation::performance_source_eligible).
         self.actual > 0
@@ -165,7 +194,7 @@ fn watts(level: u8) -> Option<u16> {
     }
 }
 impl<P: Port> Attempt<'_, P, ReadAdmission> {
-    async fn read_power(
+    pub(super) async fn read_power(
         &mut self,
         id: u8,
         authorize: Authorize<'_, ReadAdmission>,
