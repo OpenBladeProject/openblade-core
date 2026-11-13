@@ -761,9 +761,7 @@ async fn installed_private_projection_is_bound_to_sid_for_get_observe_and_subscr
     for operation in ["getStatus", "observeState", "subscribeStatus"] {
         let request = json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0});
         // Get/subscription DTOs reject observation-only members.
-        let request = if operation == "setPerformanceOverride" {
-            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
-        } else if operation == "observeState" {
+        let request = if operation == "observeState" {
             request
         } else {
             json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077"})
