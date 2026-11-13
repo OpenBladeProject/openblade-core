@@ -190,14 +190,17 @@ impl Store {
             if !cache.contains_key(&original.epoch) {
                 let proof = crate::native_package::historical_battery_producer(
                     self.path.parent().ok_or_else(deny)?,
-                    original,
+                    &original.installation,
+                    &original.epoch,
+                    &original.artifact,
                 )?;
                 cache.insert(original.epoch.clone(), proof);
             }
-            cache
-                .get(&original.epoch)
-                .ok_or_else(deny)?
-                .verify(original)?;
+            cache.get(&original.epoch).ok_or_else(deny)?.verify(
+                &original.installation,
+                &original.epoch,
+                &original.artifact,
+            )?;
         }
         Ok(())
     }

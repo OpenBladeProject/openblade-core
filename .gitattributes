@@ -49,3 +49,4 @@ tools/openblade-windows-host/tests/fixtures/app-fans-*.json -text whitespace=cr-
 # Preserve the native battery policy learning's exact CLI bytes.
 .trail/learnings/2026-11-13-preserve-fan-release-across-native-battery-jack.md text eol=lf
 .trail/learnings/2026-11-13-scope-native-battery-trail-findings-to-jack.md text eol=lf
+.trail/learnings/2026-11-13-keep-historical-producer-identity-independent-of-jack.md text eol=lf

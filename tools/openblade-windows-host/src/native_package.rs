@@ -1642,11 +1642,8 @@ pub(crate) struct HistoricalBatteryProducer {
 }
 #[cfg(feature = "service-thermal-mutation-v1")]
 impl HistoricalBatteryProducer {
-    pub(crate) fn verify(&self, owner: &crate::native_owner_record::Record) -> io::Result<()> {
-        if owner.installation != self.installation
-            || owner.epoch != self.epoch
-            || owner.artifact != self.artifact
-        {
+    pub(crate) fn verify(&self, installation: &str, epoch: &str, artifact: &str) -> io::Result<()> {
+        if installation != self.installation || epoch != self.epoch || artifact != self.artifact {
             return Err(deny());
         }
         Ok(())
@@ -1655,8 +1652,16 @@ impl HistoricalBatteryProducer {
 #[cfg(feature = "service-thermal-mutation-v1")]
 pub(crate) fn historical_battery_producer(
     root_path: &std::path::Path,
-    owner: &crate::native_owner_record::Record,
+    installation: &str,
+    epoch: &str,
+    artifact: &str,
 ) -> io::Result<HistoricalBatteryProducer> {
+    // The service supplies these fields from its immutable authenticated Active
+    // record. Keep this shared package verifier independent of service ownership
+    // types; the agent gains no owner-store or mutation authority.
+    if !is_hex(installation, 32) || !is_hex(epoch, 32) || !artifact_id(artifact, "service") {
+        return Err(deny());
+    }
     let (root, mut ancestors) = pin(root_path)?;
     let mut held = Vec::new();
     if retain_bytes(&root, "root.bin", 256, &mut held)?
@@ -1664,13 +1669,13 @@ pub(crate) fn historical_battery_producer(
     {
         return Err(deny());
     }
-    let generation = paths::open_directory(&root, OsStr::new(&owner.epoch))?;
+    let generation = paths::open_directory(&root, OsStr::new(epoch))?;
     paths::verify_security(&generation, Policy::Directory { extra_rights: 0 })?;
     let origin = Epoch::parse(&retain_bytes(&generation, "origin.bin", 16384, &mut held)?)?;
     if origin.phase != "Provisional"
-        || origin.id != owner.epoch
-        || origin.installation != owner.installation
-        || origin.service != owner.artifact
+        || origin.id != epoch
+        || origin.installation != installation
+        || origin.service != artifact
     {
         return Err(deny());
     }
@@ -1720,7 +1725,7 @@ pub(crate) fn historical_battery_producer(
     let app = paths::open_directory(&generation, OsStr::new("app"))?;
     paths::verify_security(&app, Policy::Directory { extra_rights: 0 })?;
     let service = retain_bytes(&app, "OpenBlade.Service.exe", 64 * 1024 * 1024, &mut held)?;
-    if inspect_artifact(&decode64(f[8])?, &service, "service", &release)? != owner.artifact
+    if inspect_artifact(&decode64(f[8])?, &service, "service", &release)? != artifact
         || startup_policy(compiled_record(&service)?)? != "service-battery-policy-v1"
     {
         return Err(deny());
@@ -1730,9 +1735,9 @@ pub(crate) fn historical_battery_producer(
     held.push(root);
     held.append(&mut ancestors);
     Ok(HistoricalBatteryProducer {
-        installation: owner.installation.clone(),
-        epoch: owner.epoch.clone(),
-        artifact: owner.artifact.clone(),
+        installation: installation.to_owned(),
+        epoch: epoch.to_owned(),
+        artifact: artifact.to_owned(),
         _held: held,
     })
 }
