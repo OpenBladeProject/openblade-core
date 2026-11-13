@@ -27,9 +27,41 @@ public sealed partial class MainWindow
     private void OnProfileSettingClick(object sender, RoutedEventArgs args)
     {
         if (sender is Button { Tag: string setting }
-            && GetProfileSettingDestination(setting) is { } destination)
+            && GetProfileSettingDestination(setting) is { } destination
+            && IsGlobalSearchPageAvailable(destination))
         {
+            RevealProfileDestinationSection(destination);
             OpenGlobalSearchResult(destination);
+        }
+    }
+
+    private void RevealProfileDestinationSection(GlobalSearchResult destination)
+    {
+        // Like a Labs guide, an explicit profile link requests its target even
+        // when Customize removed that section. Lighting can still be unrealized.
+        PageSectionKind? section = destination.RowId switch
+        {
+            "LightingKeyboardSection" => PageSectionKind.LightingKeyboard,
+            "LightingLogoSection" => PageSectionKind.LightingLogo,
+            "LightingPowerSavingSection" => PageSectionKind.LightingPowerSaving,
+            _ => null,
+        };
+        for (DependencyObject? current = destination.Anchor; section is null && current is not null;
+            current = GetGlobalSearchParent(current))
+        {
+            foreach (var presentation in pageSectionPresentations)
+            {
+                if (ReferenceEquals(presentation.Value, current))
+                {
+                    section = presentation.Key;
+                    break;
+                }
+            }
+        }
+        if (section is { } kind && pageSections.Values.SelectMany(options => options)
+            .FirstOrDefault(option => option.Kind == kind) is { } option)
+        {
+            option.IsVisible = true;
         }
     }
 
@@ -78,6 +110,10 @@ public sealed partial class MainWindow
 
     private async Task VerifyProfileNavigationCoreAsync(bool compact)
     {
+        if (pageSections.Count == 0)
+        {
+            ApplyPageLayoutPreferences([]);
+        }
         SelectLocalizationSnapshotPage("profiles");
         await Task.Delay(100);
         FrameworkElement layout = (FrameworkElement)Root.FindName(
@@ -108,6 +144,28 @@ public sealed partial class MainWindow
             throw new InvalidOperationException("A hidden profile destination blanked the current page.");
         }
         LightingNavigationItem.Visibility = lightingVisibility;
+        PageSectionOption fansSection = pageSections[CustomizablePageKind.Laptop]
+            .Single(option => option.Kind == PageSectionKind.LaptopFans);
+        fansSection.IsVisible = false;
+        OnProfileSettingClick(rows.Single(row => (string)row.Tag == "Fans"), new RoutedEventArgs());
+        await Task.Delay(150);
+        if (!fansSection.IsVisible || !ReferenceEquals(MainNavigation.SelectedItem, LaptopNavigationItem)
+            || !HasVisibleSearchPath(FansCard, LaptopPage.Content))
+        {
+            throw new InvalidOperationException("The profile link did not reveal its hidden Fans section.");
+        }
+        SelectLocalizationSnapshotPage("profiles");
+        PageSectionOption lightingSection = pageSections[CustomizablePageKind.Lighting]
+            .Single(option => option.Kind == PageSectionKind.LightingKeyboard);
+        lightingSection.IsVisible = false;
+        OnProfileSettingClick(rows.Single(row => (string)row.Tag == "LightingEffect"), new RoutedEventArgs());
+        await Task.Delay(150);
+        FrameworkElement? keyboardSection = FindGlobalSearchRow(LightingCard, "LightingKeyboardSection");
+        if (!lightingSection.IsVisible || !ReferenceEquals(MainNavigation.SelectedItem, LightingNavigationItem)
+            || keyboardSection is null || !HasVisibleSearchPath(keyboardSection, LightingPage.Content))
+        {
+            throw new InvalidOperationException("The profile link did not reveal its hidden Lighting section.");
+        }
         foreach (Button row in rows)
         {
             SelectLocalizationSnapshotPage("profiles");
