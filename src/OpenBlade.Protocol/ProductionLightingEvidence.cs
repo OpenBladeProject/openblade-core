@@ -164,7 +164,7 @@ internal static class ProductionLightingEvidenceSource
         "5177FA9F6F91D96C9C34C5506CDA8EDC0A86EE5B5EEFA5F4322F4E4633C23521";
 
     private const string ApprovedSemanticAdmissionFixtureSha256 =
-        "70F1CEF71ADF1B4F86268634D4DB23950D85E1DEE571AFFF06BA5C71FBAA42CD";
+        "60848DB96DCD6EED2FEDB3FB1DAD31E87112C236DDDEDEABE34D76A43172C07F";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

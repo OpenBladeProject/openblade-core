@@ -62,7 +62,7 @@ packed eight-byte records. The first byte is the firmware key usage; record
 index establishes the RGB slot. Search `0x57EC` and renderer `0x674C` use
 `row*136 + column*8` for records and `row*51 + column*3` for RGB. The renderer's
 nine selectable auxiliary descriptor variants address only populated slots in
-the corresponding main map. The union has 93 active slots and nine holes:
+the corresponding main map. The union has 93 nonzero descriptors and nine holes:
 `0,17,34,51,65,68,81,85,92`.
 
 The saved canvas remains the original ANSI 6x17 coordinate contract. At the
@@ -70,7 +70,7 @@ physical projection boundary, its Enter slot 66 maps by usage `28` to slot 48
 where required. Backslash slot 49 maps by usage `31`, or the explicit regional
 usage `32` alias when `31` is absent. Supplemental canvas slot 70 represents
 usage `64` only on layouts that contain it. Missing usages remain unmapped;
-there is no nearest-key guess. This RGB alias does not establish a new Raw Input
+spatial sampling does not create a key identity. This RGB alias does not establish a new Raw Input
 identity. The public union mask describes physical availability, not a change
 to the serialized canvas or permission to bind proprietary usage bytes to input.
 
@@ -113,3 +113,23 @@ commands or unattended validation authority.
 Existing captured rendering/calibration assets may continue to define the legacy
 canvas appearance. They are not command or regional-layout authority and must
 not gate hardware admission; the exact-model source proof owns that boundary.
+
+## Regional-only input and rendering
+
+The serialized canvas stays unchanged. Typed transient pulses additionally use
+reserved canvas identities for the ISO key and Japanese Ro, Yen, Convert,
+Non-convert and Katakana/Hiragana keys. Each backend resolves these identities
+through its own device-selected source map. Keys absent from that selected map
+produce no physical output; no proprietary usage gains a Windows input binding.
+
+The standard HID-to-Scan-Code-Set-1 bindings were independently checked using
+[Windows HidP_TranslateUsagesToI8042ScanCodes](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/hidpi/nf-hidpi-hidp_translateusagestoi8042scancodes)
+with a data-collecting callback, without input injection or device access:
+64→56, 87→73, 88→70, 89→7D, 8A→79 and 8B→7B (hexadecimal).
+
+Spatial effects sample an additional regional cell from the nearest represented
+canvas position. That is OpenBlade's color-rendering policy, not a guessed key
+identity. Reactive and per-key imports leave unspecified keys black. Existing
+appearance-calibration assets remain rendering data; firmware source owns command,
+address, selector and input admission. The layout byte is cached only for the
+lifetime of the admitted device session; brightness-only operations need no read.

@@ -19,8 +19,8 @@ internal readonly record struct MatrixRgb(byte Red, byte Green, byte Blue)
 }
 
 /// <summary>
-/// The 102 captured RGB positions, including the sixteen positions that are
-/// always black on the RZ09-0581 keyboard layout.
+/// One bounded 102-cell RGB frame. Renderers use the stable logical canvas;
+/// the write boundary selects this model's source-reviewed physical layout.
 /// </summary>
 internal sealed class Pid02E0MatrixFrame
 {
@@ -50,6 +50,8 @@ internal sealed class Pid02E0MatrixFrame
 
     internal MatrixRgb[] ToArray() => (MatrixRgb[])frameSlots.Clone();
 
+    internal ReadOnlySpan<MatrixRgb> AsSpan() => frameSlots;
+
     internal Pid02E0MatrixFrame WithSlot(int index, MatrixRgb color)
     {
         if ((uint)index >= SlotCount)
@@ -71,14 +73,16 @@ internal sealed class Pid02E0MatrixFrame
 }
 
 /// <summary>
-/// Captured layout mask for the RZ09-0581 / PID 02E0 matrix stream. The slot
+/// Source-defined logical canvas mask for RZ09-0581 / PID 02E0. The slot
 /// numbering is protocol order, not a claimed physical key map.
 /// </summary>
 internal static class Pid02E0MatrixLayout
 {
     private static readonly bool[] HoleMask = CreateHoleMask();
 
-    internal static IReadOnlyList<int> CapturedHoleSlots => AmbientLightingFrame.LayoutHoleSlots;
+    // Legacy name retained for calibration callers; this is the source-defined
+    // logical canvas mask, not a region-independent physical keyboard mask.
+    internal static IReadOnlyList<int> CapturedHoleSlots => Blade16KeyboardLightingLayout.CanvasHoleSlots;
 
     internal static bool IsHole(int slot)
     {
@@ -104,7 +108,7 @@ internal static class Pid02E0MatrixLayout
     private static bool[] CreateHoleMask()
     {
         bool[] mask = new bool[Pid02E0MatrixFrame.SlotCount];
-        foreach (int slot in AmbientLightingFrame.LayoutHoleSlots)
+        foreach (int slot in CapturedHoleSlots)
         {
             mask[slot] = true;
         }

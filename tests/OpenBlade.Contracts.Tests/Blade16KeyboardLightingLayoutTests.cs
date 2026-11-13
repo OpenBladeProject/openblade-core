@@ -72,7 +72,7 @@ public sealed class Blade16KeyboardLightingLayoutTests
             {
                 Assert.Equal(target[slot], Blade16KeyboardLightingLayout.UsageAt(slot, layout));
                 Assert.Equal(target[slot] != 0, Blade16KeyboardLightingLayout.IsKeySlot(slot, layout));
-                byte usage = slot == 70 ? (byte)0x64 : canvas[slot];
+                byte usage = slot switch { 31 => 0x89, 48 => 0x8B, 64 => 0x88, 70 => 0x64, 82 => 0x87, 93 => 0x8A, _ => canvas[slot] };
                 if (usage == 0x31 && !target.Contains(usage))
                 {
                     usage = 0x32;

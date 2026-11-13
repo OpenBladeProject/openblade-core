@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix unlit ISO and Japanese keys in keyboard lighting on Blade 16 RZ09-0581 and RZ09-0528. ([#958](https://github.com/OSSBlade/openblade-core/pull/958))
+
 ## [0.60.0-nightly.113] - 2026-11-12
 
 ### Added

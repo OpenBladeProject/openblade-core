@@ -319,7 +319,7 @@ internal sealed class Pid02E0ReactiveEffect : IPid02E0KeyTriggeredLightingEffect
             throw new ArgumentOutOfRangeException(nameof(slot));
         }
 
-        if (Pid02E0MatrixLayout.IsHole(slot))
+        if (!Blade16KeyboardLightingLayout.IsCanvasPulseSlot(slot))
         {
             throw new ArgumentException(
                 $"Captured layout-hole slot {slot} cannot receive a Reactive pulse.",

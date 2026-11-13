@@ -117,6 +117,13 @@ public static class Rz09_0581ReactiveKeyMap
             return true;
         }
 
+        if (Blade16RegionalInputMap.TryMap(makeCode, isExtended, out byte regionalSlot))
+        {
+            primary = new ReactiveKeyPulse(regionalSlot);
+            secondary = null;
+            return true;
+        }
+
         IReadOnlyDictionary<ushort, byte> map = isExtended
             ? ExtendedScanCodes
             : StandardScanCodes;
@@ -244,6 +251,13 @@ public static class Rz09_0528ReactiveKeyMap
         out ReactiveKeyPulse primary,
         out ReactiveKeyPulse? secondary)
     {
+        if (Blade16RegionalInputMap.TryMap(makeCode, isExtended, out byte regionalSlot))
+        {
+            primary = new ReactiveKeyPulse(regionalSlot);
+            secondary = null;
+            return true;
+        }
+
         IReadOnlyDictionary<ushort, byte> map = isExtended
             ? ExtendedScanCodes
             : StandardScanCodes;
@@ -600,4 +614,25 @@ public static class Rz09_0528ReactiveInputDevice
     public static bool IsTargetPath(string? path) =>
         RazerBladeReactiveInputDevice.ClassifyPath(path)
             == RazerBladeInputDeviceKind.Rz09_0528;
+}
+
+// Standard USB keyboard usages from each model's pinned regional descriptors.
+// Windows HidP_TranslateUsagesToI8042ScanCodes independently verifies these
+// scan-code bindings; physical output is selected by each admitted backend.
+internal static class Blade16RegionalInputMap
+{
+    internal static bool TryMap(ushort makeCode, bool extended, out byte slot)
+    {
+        slot = makeCode switch
+        {
+            0x56 => 70, // HID 64: OEM102
+            0x73 => 82, // HID 87: Ro
+            0x70 => 64, // HID 88: Katakana/Hiragana
+            0x7D => 31, // HID 89: Yen
+            0x79 => 93, // HID 8A: Convert
+            0x7B => 48, // HID 8B: Non-convert
+            _ => 0,
+        };
+        return !extended && slot != 0;
+    }
 }

@@ -100,8 +100,14 @@ public static class Blade16KeyboardLightingLayout
     public static byte UsageAt(int slot, byte layoutId) =>
         slot >= 0 && slot < SlotCount ? Layouts[layoutId][slot] : (byte)0;
 
+    // Supplemental identities are transient pulse slots only. Serialized
+    // frames keep these cells black under the existing canvas contract.
+    public static bool IsCanvasPulseSlot(int slot) =>
+        slot >= 0 && slot < SlotCount
+        && (Canvas[slot] != 0 || slot is 31 or 48 or 64 or 70 or 82 or 93);
+
     /// <summary>Maps a stable canvas identity to the device's physical RGB slot.
-    /// Slot 70 additionally represents OEM102 on layouts with usage 64.</summary>
+    /// Supplemental transient slots represent reviewed ISO/Japanese usages.</summary>
     public static bool TryMapCanvasSlot(byte canvasSlot, byte layoutId, out byte physicalSlot)
     {
         physicalSlot = 0;
@@ -109,7 +115,16 @@ public static class Blade16KeyboardLightingLayout
         {
             return false;
         }
-        byte usage = canvasSlot == 70 ? (byte)0x64 : Canvas[canvasSlot];
+        byte usage = canvasSlot switch
+        {
+            31 => 0x89, // Yen
+            48 => 0x8B, // Non-convert
+            64 => 0x88, // Katakana/Hiragana
+            70 => 0x64, // OEM102
+            82 => 0x87, // Ro
+            93 => 0x8A, // Convert
+            _ => Canvas[canvasSlot],
+        };
         if (usage == 0)
         {
             return false;

@@ -132,6 +132,7 @@ internal sealed class Rz090528BrightnessLightingFactory : IProductionLightingPor
 internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort, ILightingRecoveryWriteAdmission
 {
     private readonly LightingRecoveryWriteGate recoveryWriteGate = new();
+    private byte? keyboardLayoutId;
 
     public void SetRecoveryWriteAdmission(Func<bool> admission) => recoveryWriteGate.Set(admission);
 
@@ -632,6 +633,14 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort, 
                 : await QueryLogoCoreAsync(cancellationToken).ConfigureAwait(false);
             byte requestedRaw = LightingBrightnessProtocol.PercentToRaw(
                 settings.Brightness);
+            if (settings.Effect != LightingEffect.Off && keyboardLayoutId is null)
+            {
+                ReadOnlyMemory<byte> layout = await ExecuteCoreAsync(
+                    KeyboardLayoutProtocol.CreateQuery(), write: false,
+                    cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                keyboardLayoutId = layout.Span[0];
+            }
             (IRz090528LightingEffect? Effect, LightingSettings? Settings,
                 long StartedTimestamp, LightingRendererOwnershipState Ownership) previous =
                 CaptureOwnedEffectCore();
@@ -1221,6 +1230,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort, 
         CancellationToken cancellationToken,
         bool expectResponse = true)
     {
+        frame = Rz090528RegionalFrameProjection.Project(frame, keyboardLayoutId
+            ?? throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                "The keyboard layout has not been read."));
         if (!expectResponse)
         {
             await SubmitMatrixFrameCoreAsync(frame, cancellationToken)

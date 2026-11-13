@@ -1,3 +1,4 @@
+# Reviewed exported API baseline. Regenerate with build/Update-PublicApiBaselines.ps1 and review the diff.
 type sealed class OpenBlade.Contracts.AcknowledgeThermalPolicyUpgradeDisclosureRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.AcknowledgeThermalPolicyUpgradeDisclosureRequest>
@@ -289,6 +290,30 @@ type static class OpenBlade.Contracts.Blade14KeyboardLightingLayout
   method static System.Boolean IsKeySlot(System.Int32 slot)
   method static System.Boolean TryGetKeyPosition(System.Int32 slot, out System.Double x, out System.Double y)
   method static System.Boolean TryMapScanCode(System.UInt16 scanCode, System.Boolean extended, out System.Byte slot)
+type static class OpenBlade.Contracts.Blade16AmdKeyboardLightingLayout
+  field const System.Int32 Columns = 17
+  field const System.Int32 Rows = 6
+  field const System.Int32 SlotCount = 102
+  method static System.Boolean IsCanvasPulseSlot(System.Int32 slot)
+  method static System.Boolean IsKeySlot(System.Int32 slot, System.Nullable<System.Byte> layoutId = null)
+  method static System.Boolean TryMapCanvasSlot(System.Byte canvasSlot, System.Byte layoutId, out System.Byte physicalSlot)
+  method static System.Byte UsageAt(System.Int32 slot, System.Byte layoutId)
+  method static System.Collections.Generic.IReadOnlyList<System.Int32> get_CanvasHoleSlots()
+  method static System.Collections.Generic.IReadOnlyList<System.Int32> get_UnionHoleSlots()
+  property System.Collections.Generic.IReadOnlyList<System.Int32> CanvasHoleSlots { get; }
+  property System.Collections.Generic.IReadOnlyList<System.Int32> UnionHoleSlots { get; }
+type static class OpenBlade.Contracts.Blade16KeyboardLightingLayout
+  field const System.Int32 Columns = 17
+  field const System.Int32 Rows = 6
+  field const System.Int32 SlotCount = 102
+  method static System.Boolean IsCanvasPulseSlot(System.Int32 slot)
+  method static System.Boolean IsKeySlot(System.Int32 slot, System.Nullable<System.Byte> layoutId = null)
+  method static System.Boolean TryMapCanvasSlot(System.Byte canvasSlot, System.Byte layoutId, out System.Byte physicalSlot)
+  method static System.Byte UsageAt(System.Int32 slot, System.Byte layoutId)
+  method static System.Collections.Generic.IReadOnlyList<System.Int32> get_CanvasHoleSlots()
+  method static System.Collections.Generic.IReadOnlyList<System.Int32> get_UnionHoleSlots()
+  property System.Collections.Generic.IReadOnlyList<System.Int32> CanvasHoleSlots { get; }
+  property System.Collections.Generic.IReadOnlyList<System.Int32> UnionHoleSlots { get; }
 type static class OpenBlade.Contracts.Blade18KeyboardLightingLayout
   field const System.Int32 Columns = 16
   field const System.Int32 Rows = 6

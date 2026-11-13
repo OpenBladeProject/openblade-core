@@ -8,6 +8,7 @@
     <EmbeddedResource Include="Fixtures\Blade18KeyboardLightingLayout.json" />
     <EmbeddedResource Include="Fixtures\Blade14KeyboardLightingLayout.json" />
     <EmbeddedResource Include="Fixtures\Blade16KeyboardLightingLayout.json" />
+    <EmbeddedResource Include="Fixtures\Blade16AmdKeyboardLightingLayout.json" />
   </ItemGroup>
 
 </Project>

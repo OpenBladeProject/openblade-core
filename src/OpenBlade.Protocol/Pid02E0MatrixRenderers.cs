@@ -48,7 +48,8 @@ internal sealed class Pid02E0ReactiveFrame
 
         foreach (int hole in Pid02E0MatrixLayout.CapturedHoleSlots)
         {
-            if (slots[hole] != MatrixRgb.Black)
+            if (!OpenBlade.Contracts.Blade16KeyboardLightingLayout.IsCanvasPulseSlot(hole)
+                && slots[hole] != MatrixRgb.Black)
             {
                 throw new ArgumentException(
                     $"Captured layout-hole slot {hole} must remain black.",

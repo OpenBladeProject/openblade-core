@@ -64,7 +64,7 @@ internal sealed class Rz090528ImportedSequenceEffect : IRz090528LightingEffect
         timeline.GetNextFrameDelay(elapsed);
 
     public Rz090528MatrixFrame RenderFrame(TimeSpan elapsed) =>
-        new(timeline.FrameAt(elapsed).Slots.ToArray());
+        new(timeline.FrameAt(elapsed).Slots.ToArray(), logicalKeyColors: true);
 }
 
 internal sealed class ImportedSequenceTimeline
