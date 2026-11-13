@@ -48,6 +48,16 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal($"Blade14KeyboardLightingLayout.json;SHA256={Convert.ToHexString(SHA256.HashData(map))}",
                         feature.Sources[1]);
                 }
+                else if (feature.Feature == "ActiveKeyboardLightingAndBrightness")
+                {
+                    Assert.Contains(model.ProductId, new ushort[] { 0x028A, 0x028B, 0x028C, 0x02B7, 0x02B8, 0x02C7 });
+                    Assert.Equal("ExactMcuAndSynapseSourceBackedWithoutPhysicalValidation", feature.Basis);
+                    Assert.StartsWith("https://dl.razerzone.com/drivers/", feature.Sources[0]);
+                    Assert.All(feature.Sources, source => Assert.Matches(@";SHA256=[0-9A-F]{64}$", source));
+                    Assert.All(feature.Sources.Skip(1), source => Assert.StartsWith(
+                        $"https://apps.razer.com/synapse/products/{model.ProductId}/", source));
+                    Assert.Equal("Pending", snapshot.PhysicalValidation);
+                }
                 else if (model.ThermalPolicy is not null)
                 {
                     Assert.Equal("Supported", snapshot.SupportStatus);

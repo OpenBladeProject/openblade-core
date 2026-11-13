@@ -36,12 +36,19 @@ public sealed partial class SourceReviewedBladeModelTests
         }
         Assert.Empty(capabilities.ChargeLimits);
         Assert.Empty(capabilities.LightingEffects);
-        Assert.Equal(product == 0x0245 ? 3 : 0, capabilities.LogoLightingModes.Count);
+        LogoLightingMode[] expectedLogo = IsLegacyAdvanced(product)
+            ? [LogoLightingMode.Off, LogoLightingMode.Static, LogoLightingMode.Breathing]
+            : [];
+        Assert.Equal(expectedLogo.Order(), capabilities.LogoLightingModes.Order());
+        Assert.True(capabilities.SupportsIndependentLightingControls);
+        Assert.False(capabilities.SupportsBreathingColorSelection);
+        Assert.Equal(new[] { BreathingColorMode.Random }, capabilities.SupportedBreathingColorModes);
+        Assert.False(capabilities.SupportsWaveDirectionSelection);
         Assert.Empty(capabilities.OneShotLaptopControls);
         Assert.Empty(capabilities.HostManagedLaptopControls);
         Assert.Null(capabilities.HyperBoostAccess);
         Assert.Null(capabilities.ThxAudio);
-        Assert.Equal(product == 0x0245, capabilities.SupportsKeyboardBrightness);
+        Assert.True(capabilities.SupportsKeyboardBrightness);
         Assert.False(capabilities.SupportsUniformLightingFrames);
         if (IsLegacyAdvanced(product))
         {

@@ -65,6 +65,7 @@ internal sealed partial class ExperimentalBladePort(
             // an admitted full-charge query, preserve null rather than infer Off.
             (LightingSettings? lighting, LogoLightingMode? logo) =
                 SupportsExperimentalLighting(model)
+                    && policy.RecoveryScope != ExperimentalRecoveryScope.ThermalOnly
                     ? await ReadRecoveryLightingStateAsync(cancellationToken).ConfigureAwait(false)
                     : (null, null);
             return new(performance.Performance, performance.Fans, battery, lighting)
@@ -72,7 +73,7 @@ internal sealed partial class ExperimentalBladePort(
                 HyperBoostActive = performance.HyperBoostActive,
                 CustomPerformance = performance.CustomPerformance,
                 LogoLighting = logo,
-                IndependentLighting = model.ProductId == 0x0245
+                IndependentLighting = SupportsIndependentLighting(model)
                     && policy.RecoveryScope != ExperimentalRecoveryScope.ThermalOnly
                     ? await ReadIndependentLightingCoreAsync(cancellationToken).ConfigureAwait(false) : null,
             };
@@ -164,7 +165,7 @@ internal sealed partial class ExperimentalBladePort(
             // See sqmagellan 9c66e705/librazer/src/command.rs and descriptor.rs.
             ReportsPerformanceWithManualFans = enabled && GetExperimentalFanRange(model) is not null,
             SupportsKeyboardBrightness = SupportsExperimentalKeyboardBrightness(model, enabled),
-            SupportsIndependentLightingControls = model.ProductId == 0x0245,
+            SupportsIndependentLightingControls = SupportsIndependentLighting(model),
             LogoLightingModes = CreateExperimentalLogoModes(model, enabled),
             SupportsBreathingColorSelection = false,
             SupportedBreathingColorModes =
