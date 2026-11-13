@@ -583,7 +583,7 @@ public sealed class ProfileStoreTests : IDisposable
     }
 
     [Fact]
-    public void NormalizeLegacyBatteryProfile_DoesNotMigrateGpuTuningOutsidePluggedIn()
+    public void NormalizeLegacyBatteryProfile_MigratesUsbCGpuTuningButPreservesBatteryIntent()
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         var offsets = new GpuClockOffsetSettings(125, 500);
@@ -614,8 +614,8 @@ public sealed class ProfileStoreTests : IDisposable
 
         Assert.Null(normalized.Battery.GpuClockTuning);
         Assert.Equal(offsets, normalized.Battery.CustomPerformance?.GpuClockOffsets);
-        Assert.Null(normalized.UsbC.GpuClockTuning);
-        Assert.Equal(offsets, normalized.UsbC.CustomPerformance?.GpuClockOffsets);
+        Assert.Equal(new GpuClockTuningSettings(true, offsets), normalized.UsbC.GpuClockTuning);
+        Assert.Null(normalized.UsbC.CustomPerformance?.GpuClockOffsets);
     }
 
     [Fact]

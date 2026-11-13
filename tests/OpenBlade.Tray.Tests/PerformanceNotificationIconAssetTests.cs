@@ -15,6 +15,13 @@ public sealed class PerformanceNotificationIconAssetTests
     [InlineData(PowerSource.PluggedIn, PerformancePreset.Silent, "ac-silent")]
     [InlineData(PowerSource.PluggedIn, PerformancePreset.Custom, "ac-custom")]
     [InlineData(PowerSource.UsbC, PerformancePreset.Balanced, "usb-c-balanced")]
+    [InlineData(PowerSource.UsbC, PerformancePreset.BatteryBalanced, "ac-balanced")]
+    [InlineData(PowerSource.PluggedIn, PerformancePreset.BatterySaver, "ac-silent")]
+    [InlineData(PowerSource.UsbC, PerformancePreset.Creator, "ac-performance")]
+    [InlineData(PowerSource.UsbC, PerformancePreset.Turbo, "ac-performance")]
+    [InlineData(PowerSource.UsbC, PerformancePreset.Performance, "ac-performance")]
+    [InlineData(PowerSource.UsbC, PerformancePreset.Custom, "ac-custom")]
+    [InlineData(PowerSource.UsbC, PerformancePreset.Silent, "ac-silent")]
     [InlineData(PowerSource.Battery, PerformancePreset.BatteryBalanced, "battery-balanced")]
     [InlineData(PowerSource.Battery, PerformancePreset.BatterySaver, "battery-saver")]
     public void Resolve_ReturnsExpectedConfirmedModeAsset(
@@ -28,11 +35,8 @@ public sealed class PerformanceNotificationIconAssetTests
     }
 
     [Theory]
-    [InlineData(PowerSource.UsbC, PerformancePreset.Performance)]
-    [InlineData(PowerSource.UsbC, PerformancePreset.Turbo)]
     [InlineData(PowerSource.Battery, PerformancePreset.MaximumPower)]
     [InlineData(PowerSource.Battery, PerformancePreset.Gaming)]
-    [InlineData(PowerSource.UsbC, PerformancePreset.Creator)]
     [InlineData(PowerSource.ExternalUnknown, PerformancePreset.Balanced)]
     public void Resolve_ReturnsNullForUnsupportedCombination(
         PowerSource powerSource,

@@ -13,16 +13,20 @@ public static class PerformanceNotificationIconAsset
         {
             (PowerSource.PluggedIn, PerformancePreset.Balanced) =>
                 Asset("ac-balanced"),
-            (PowerSource.PluggedIn, PerformancePreset.Performance
+            (PowerSource.PluggedIn or PowerSource.UsbC, PerformancePreset.Performance
                 or PerformancePreset.Turbo or PerformancePreset.MaximumPower
                 or PerformancePreset.Gaming or PerformancePreset.Creator) =>
                 Asset("ac-performance"),
-            (PowerSource.PluggedIn, PerformancePreset.Silent) =>
+            (PowerSource.PluggedIn or PowerSource.UsbC, PerformancePreset.Silent) =>
                 Asset("ac-silent"),
-            (PowerSource.PluggedIn, PerformancePreset.Custom) =>
+            (PowerSource.PluggedIn or PowerSource.UsbC, PerformancePreset.Custom) =>
                 Asset("ac-custom"),
             (PowerSource.UsbC, PerformancePreset.Balanced) =>
                 Asset("usb-c-balanced"),
+            (PowerSource.PluggedIn or PowerSource.UsbC, PerformancePreset.BatteryBalanced) =>
+                Asset("ac-balanced"),
+            (PowerSource.PluggedIn or PowerSource.UsbC, PerformancePreset.BatterySaver) =>
+                Asset("ac-silent"),
             (PowerSource.Battery, PerformancePreset.Balanced
                 or PerformancePreset.BatteryBalanced) =>
                 Asset("battery-balanced"),

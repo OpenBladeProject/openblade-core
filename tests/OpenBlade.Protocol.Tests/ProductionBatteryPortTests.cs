@@ -59,6 +59,10 @@ public sealed class ProductionBatteryPortTests
     [Theory]
     [InlineData(0x11, 0x11)]
     [InlineData(0x0C, 0x0C)]
+    [InlineData(0x02, 0x11)]
+    [InlineData(0x07, 0x11)]
+    [InlineData(0x0C, 0x11)]
+    [InlineData(0x11, 0x12)]
     public async Task PadRequiredPerformance_AdmitsOnlyPerformanceRestoreAndRechecksEveryEnableChannel(
         byte actual, byte recommended)
     {
@@ -84,10 +88,10 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Theory]
-    [InlineData(0x0C, 0x11)]
-    [InlineData(0x11, 0x12)]
+    [InlineData(0x00, 0x11)]
+    [InlineData(0xFF, 0xFF)]
     [InlineData(0x0C, 0x10)]
-    public async Task PadRequiredPerformance_RejectsInsufficientOrUnknownWattageBeforeWrites(
+    public async Task PadRequiredPerformance_RejectsBatteryOrUnknownAdapterBeforeWrites(
         byte actual, byte recommended)
     {
         var session = new ScriptedSession(
@@ -118,18 +122,20 @@ public sealed class ProductionBatteryPortTests
             hyperBoostEligibility: pad);
 
     [Theory]
-    [InlineData(CoolingPadConnectionState.Absent, false)]
-    [InlineData(CoolingPadConnectionState.PresentExact, true)]
+    [InlineData(CoolingPadConnectionState.Absent, false, 0x12)]
+    [InlineData(CoolingPadConnectionState.PresentExact, true, 0x12)]
+    [InlineData(CoolingPadConnectionState.Absent, false, 0x02)]
+    [InlineData(CoolingPadConnectionState.PresentExact, true, 0x07)]
     public async Task HyperBoost_DirectManualEntryPreservesEligibilityAndPairOrdering(
         CoolingPadConnectionState padState,
-        bool requiresCoolingPad)
+        bool requiresCoolingPad, byte adapter)
     {
         var session = new ScriptedSession(
             Success([0x01, 0x01, 0x00, 0x01]),
             Success([0x01, 0x02, 0x00, 0x01]),
-            Success([0x12, 0x11]),
+            Success([adapter, 0x11]),
             Success([0x01, 0x01, 0x07, 0x00]),
-            Success([0x12, 0x11]),
+            Success([adapter, 0x11]),
             Success([0x01, 0x02, 0x07, 0x00]),
             Success([0x01, 0x01, 0x07, 0x00]),
             Success([0x01, 0x02, 0x07, 0x00]));
@@ -152,6 +158,22 @@ public sealed class ProductionBatteryPortTests
                 .Where(command => command.CommandId == 0x02)
                 .Select(command => Convert.ToHexString(command.Arguments.Span))
                 .ToArray());
+    }
+
+    [Fact]
+    public async Task DirectHyperBoostExitToPerformance_AdmitsLimitedPowerWithoutBalancedReset()
+    {
+        var session = new ScriptedSession(
+            Success([1, 1, 7, 0]), Success([1, 2, 7, 0]),
+            Success([2, 17]), Success([1, 1, 2, 0]),
+            Success([2, 17]), Success([1, 2, 2, 0]),
+            Success([1, 1, 2, 0]), Success([1, 2, 2, 0]));
+        await using var port = CreateDirectManualHyperBoostPort(session, CoolingPadConnectionState.Absent);
+        await port.SetPerformanceAsync(PerformancePreset.Performance, default);
+        Assert.Equal(new[] { "01010200", "01020200" },
+            session.Commands.Where(command => command.CommandId == 2)
+                .Select(command => Convert.ToHexString(command.Arguments.Span)));
+        Assert.Equal(2, session.Commands.Count(command => command.CommandId == 0x8C));
     }
 
     [Theory]
@@ -212,7 +234,7 @@ public sealed class ProductionBatteryPortTests
             new ValidationRunContext(),
             TimeSpan.FromSeconds(1),
             admittedAdapterPowerStates:
-                new HashSet<AdapterPowerState> { AdapterPowerState.FullPower330W },
+                AdapterPowerProtocol.SynapseAdapterStates,
             hyperBoostAccess: DeviceFeatureAccess.ReadWrite,
             hyperBoostWithoutCoolingPadAccess: DeviceFeatureAccess.ReadWrite,
             hyperBoostBaseModes: new HyperBoostBaseModeCapabilities(
@@ -968,11 +990,13 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Theory]
-    [InlineData(0x02, FanMode.Fixed, 4000)]
-    [InlineData(0x02, FanMode.Maximum, 5400)]
-    [InlineData(0x02, FanMode.ManualCurve, 5400)]
-    [InlineData(0x05, FanMode.Fixed, 4000)]
-    public async Task DirectManualFanSetter_PreservesFullPowerPreset(byte mode, FanMode fans, int rpm)
+    [InlineData(0x02, FanMode.Fixed, 4000, 0x11)]
+    [InlineData(0x02, FanMode.Maximum, 5400, 0x11)]
+    [InlineData(0x02, FanMode.ManualCurve, 5400, 0x11)]
+    [InlineData(0x05, FanMode.Fixed, 4000, 0x11)]
+    [InlineData(0x02, FanMode.Fixed, 4000, 0x02)]
+    [InlineData(0x05, FanMode.Fixed, 4000, 0x07)]
+    public async Task DirectManualFanSetter_PreservesExternalPowerPreset(byte mode, FanMode fans, int rpm, byte adapter)
     {
         byte target = (byte)(rpm / 100);
         byte[] firstManual = [0x01, 0x01, mode, 0x01];
@@ -980,11 +1004,11 @@ public sealed class ProductionBatteryPortTests
         var session = new ScriptedSession(
             Success([0x01, 0x01, mode, 0x00]),
             Success([0x01, 0x02, mode, 0x00]),
-            Success([0x11, 0x11]), Success(firstManual),
-            Success([0x11, 0x11]), Success(secondManual),
+            Success([adapter, 0x11]), Success(firstManual),
+            Success([adapter, 0x11]), Success(secondManual),
             Success(firstManual), Success(secondManual),
-            Success([0x11, 0x11]), Success([0x01, 0x01, target]),
-            Success([0x11, 0x11]), Success([0x01, 0x02, target]),
+            Success([adapter, 0x11]), Success([0x01, 0x01, target]),
+            Success([adapter, 0x11]), Success([0x01, 0x02, target]),
             Success(firstManual), Success(secondManual));
         await using var port = CreatePort(
             session,
@@ -1216,7 +1240,9 @@ public sealed class ProductionBatteryPortTests
     [Theory]
     [InlineData(0x03, 0x12, 0x11)]
     [InlineData(0x06, 0x0C, 0x0C)]
-    public async Task DirectManualFanSetter_StaleBatterySelectorOnExternalPowerUsesBalancedManualEntry(
+    [InlineData(0x03, 0x02, 0x11)]
+    [InlineData(0x06, 0x07, 0x11)]
+    public async Task DirectManualFanSetter_BatterySelectorOnExternalPowerPreservesRequestedManualEntry(
         byte thermalMode,
         byte actual,
         byte recommended)
@@ -1225,9 +1251,9 @@ public sealed class ProductionBatteryPortTests
             Success([0x01, 0x01, thermalMode, 0x00]),
             Success([0x01, 0x02, thermalMode, 0x00]),
             Success([actual, recommended]),
-            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x01, 0x01, thermalMode, 0x01]),
             Success([actual, recommended]),
-            Success([0x01, 0x02, 0x00, 0x01]),
+            Success([0x01, 0x02, thermalMode, 0x01]),
             Success([actual, recommended]),
             Success([0x01, 0x01, 0x28]),
             Success([actual, recommended]),
@@ -1246,7 +1272,7 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal([0x82, 0x82, 0x8C, 0x02, 0x8C, 0x02, 0x8C, 0x01, 0x8C, 0x01],
             session.Commands.Select(command => command.CommandId).ToArray());
         Assert.Equal(
-            ["01010001", "01020001"],
+            [$"0101{thermalMode:X2}01", $"0102{thermalMode:X2}01"],
             session.Commands.Where(command => command.CommandId == 0x02)
                 .Select(command => Convert.ToHexString(command.Arguments.Span)).ToArray());
     }

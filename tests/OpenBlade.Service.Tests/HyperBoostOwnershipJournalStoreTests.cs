@@ -84,7 +84,11 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
     [Theory]
     [InlineData(PerformancePreset.BatterySaver)]
     [InlineData(PerformancePreset.BatteryBalanced)]
-    public async Task WriteAndLoad_RoundTripsLowPowerRestoreIntent(
+    [InlineData(PerformancePreset.Turbo)]
+    [InlineData(PerformancePreset.MaximumPower)]
+    [InlineData(PerformancePreset.Gaming)]
+    [InlineData(PerformancePreset.Creator)]
+    public async Task WriteAndLoad_RoundTripsAdmittedDestinationRestoreIntent(
         PerformancePreset restorePerformance)
     {
         string path = Path.Combine(directory, "hyperboost-ownership.json");

@@ -21,7 +21,7 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.Equal(maximum, caps.CustomPerformance.SupportsMaximumFans);
         Assert.Equal(fixedFans, caps.FanModes.Contains(FanMode.Fixed));
         Assert.Equal(fixedFans, caps.ReportsPerformanceWithManualFans);
-        Assert.False(caps.SupportsManualFansOnLimitedPower);
+        Assert.Equal(fixedFans, caps.SupportsManualFansOnLimitedPower);
         Assert.Equal(pid == 0x02A0, caps.FanModes.Contains(FanMode.ManualCurve));
         Assert.False(ExperimentalBladePort.CreateCapabilities(Model(pid), false).PerformancePresets.Any());
         Assert.False(ExperimentalBladePort.CreateCapabilities(Model(pid), false).ReportsPerformanceWithManualFans);
@@ -195,16 +195,16 @@ public sealed partial class ExperimentalThermalExpansionTests
     [Theory]
     [InlineData(0x029F)]
     [InlineData(0x029D)]
-    public async Task FixedFans_RejectUsbCBeforeWriteWithoutExactManualFlagEvidence(int pid)
+    public async Task FixedFans_AdmitConfirmedLimitedExternalPower(int pid)
     {
         var session = new Session { AdapterPowerPayload = [0x07, 0x11] };
         await using var port = Create(pid, session, power: () => PowerSource.UsbC);
 
-        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
-            port.SetFanTargetsAsync(pid == 0x029F ? 2000 : 2200, 5000, CancellationToken.None));
-
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
-        Assert.Empty(session.Writes);
+        await port.SetFanTargetsAsync(pid == 0x029F ? 2000 : 2200, 5000, CancellationToken.None);
+        Assert.Equal(1, session.Fan);
+        Assert.Equal(pid == 0x029F ? 20 : 22, session.FirstTarget);
+        Assert.Equal(50, session.SecondTarget);
+        Assert.Equal(4, session.Writes.Count());
     }
 
     [Theory]

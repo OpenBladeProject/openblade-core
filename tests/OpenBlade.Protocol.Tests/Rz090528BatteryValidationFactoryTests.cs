@@ -330,22 +330,24 @@ public sealed class Rz090528BatteryValidationFactoryTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task DirectHyperBoostExit_UsesRequestedPerformanceOrCustomWithoutBalanced(bool custom)
+    [InlineData(false, 0x11)]
+    [InlineData(false, 0x02)]
+    [InlineData(true, 0x11)]
+    [InlineData(true, 0x07)]
+    public async Task DirectHyperBoostExit_UsesRequestedPerformanceOrCustomWithoutBalanced(bool custom, byte actual)
     {
         byte mode = custom ? (byte)4 : (byte)2;
         byte[] first = [1, 1, mode, 0];
         byte[] second = [1, 2, mode, 0];
         byte[] cpu = [1, 1, 1];
         byte[] gpu = [1, 2, 0];
-        byte[] fullPower = [0x11, 0x11];
+        byte[] adapter = [actual, 0x11];
         var session = custom
             ? new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0],
-                fullPower, first, fullPower, second, fullPower, cpu, fullPower, gpu,
+                adapter, first, adapter, second, adapter, cpu, adapter, gpu,
                 first, second, cpu, gpu)
             : new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0],
-                fullPower, first, fullPower, second, first, second);
+                adapter, first, adapter, second, first, second);
         await using IProductionBatteryPort port = await OpenProductionPortAsync(session);
 
         if (custom)
@@ -367,12 +369,12 @@ public sealed class Rz090528BatteryValidationFactoryTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task DirectHyperBoostExit_StopsOnLimitedAdapterPower(bool afterFirstWrite)
+    public async Task DirectHyperBoostExit_StopsOnBatteryAdapterPower(bool afterFirstWrite)
     {
-        byte[] limited = [0x07, 0x11];
+        byte[] battery = [0x00, 0x11];
         var session = afterFirstWrite
-            ? new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0], [0x11, 0x11], [1, 1, 2, 0], limited)
-            : new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0], limited);
+            ? new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0], [0x11, 0x11], [1, 1, 2, 0], battery)
+            : new ScriptedSession([1, 1, 7, 0], [1, 2, 7, 0], battery);
         await using IProductionBatteryPort port = await OpenProductionPortAsync(session);
 
         BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(

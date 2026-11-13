@@ -38,12 +38,7 @@ internal sealed record HyperBoostRestoreIntent(
         FanControlSettings.FromLegacy(FanMode.Automatic));
 
     internal bool IsWellFormed =>
-        Performance is (PerformancePreset.BatterySaver
-            or PerformancePreset.BatteryBalanced
-            or PerformancePreset.Silent
-            or PerformancePreset.Balanced
-            or PerformancePreset.Performance
-            or PerformancePreset.Custom)
+        Enum.IsDefined(Performance)
         && (Performance == PerformancePreset.Custom
             ? CustomPerformanceSettings.IsWellFormed(CustomPerformance)
             : CustomPerformance is null)
@@ -61,13 +56,7 @@ internal sealed record HyperBoostRecoveryBaseline(
     GpuClockOffsetSettings? GpuClockOffsets = null)
 {
     internal bool IsWellFormed =>
-        (Performance is null
-            or PerformancePreset.BatterySaver
-            or PerformancePreset.BatteryBalanced
-            or PerformancePreset.Silent
-            or PerformancePreset.Balanced
-            or PerformancePreset.Performance
-            or PerformancePreset.Custom)
+        (Performance is null || Enum.IsDefined(Performance.Value))
         && Enum.IsDefined(Fans)
         && !HyperBoostActive
         && (CustomPerformance is null

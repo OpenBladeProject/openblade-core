@@ -249,7 +249,7 @@ END
         [IO.File]::WriteAllText($resource, $resourceText, [Text.Encoding]::ASCII)
         & $resourceCompiler /nologo "/fo$resourceObject" $resource
         if ($LASTEXITCODE -ne 0) { throw 'Native version resource compilation failed.' }
-        $env:CARGO_TARGET_DIR = Join-Path $nativeBuild 'target'
+        $env:CARGO_TARGET_DIR = if ($env:OS -eq 'Windows_NT') { 'C:\build-cache\cargo\OpenSynapse' } else { Join-Path ([IO.Path]::GetTempPath()) 'openblade-cargo-cache' }
         $flags = @('-C', 'target-feature=+crt-static', '-C', 'link-arg=/Brepro', "--remap-path-prefix=$Repository=/openblade")
         $env:CARGO_ENCODED_RUSTFLAGS = $flags -join [char]31
         $env:RUSTFLAGS = $null

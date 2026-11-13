@@ -321,23 +321,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         PerformancePreset performance,
         PowerSource source)
     {
-        bool valid = source switch
-        {
-            PowerSource.PluggedIn => performance is
-                PerformancePreset.Silent
-                or PerformancePreset.Balanced
-                or PerformancePreset.Performance
-                or PerformancePreset.Turbo
-                or PerformancePreset.MaximumPower
-                or PerformancePreset.Gaming
-                or PerformancePreset.Creator
-                or PerformancePreset.Custom,
-            PowerSource.Battery => performance is
-                PerformancePreset.BatterySaver
-                or PerformancePreset.BatteryBalanced,
-            PowerSource.UsbC => performance is PerformancePreset.Balanced,
-            _ => false,
-        };
+        bool valid = PerformancePowerSourcePolicy.IsAllowed(source, performance);
         if (!valid)
         {
             throw Invalid("The performance preset is not valid for this power source.");
@@ -384,7 +368,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         string name,
         PowerSource source)
     {
-        if (profile.GpuClockTuning is not null && source != PowerSource.PluggedIn)
+        if (profile.GpuClockTuning is not null && !PowerSourcePolicy.IsExternal(source))
         {
             throw Invalid($"The {name} profile cannot configure GPU clock tuning.");
         }

@@ -215,6 +215,11 @@ public sealed class ProfileSetValidatorTests
     [InlineData(PerformancePreset.MaximumPower, PowerSource.PluggedIn)]
     [InlineData(PerformancePreset.Gaming, PowerSource.PluggedIn)]
     [InlineData(PerformancePreset.Creator, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.BatterySaver, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.BatteryBalanced, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.Custom, PowerSource.UsbC)]
+    [InlineData(PerformancePreset.BatterySaver, PowerSource.UsbC)]
+    [InlineData(PerformancePreset.BatteryBalanced, PowerSource.UsbC)]
     [InlineData(PerformancePreset.BatterySaver, PowerSource.Battery)]
     [InlineData(PerformancePreset.BatteryBalanced, PowerSource.Battery)]
     public void SourceAwareCombinationValidation_AcceptsCompatiblePreset(
@@ -246,8 +251,12 @@ public sealed class ProfileSetValidatorTests
         {
             Battery = defaults.Battery with { Performance = performance },
         }));
-        Assert.Throws<InvalidDataException>(() => validator.ValidatePerformanceFanCombination(
-            performance, FanMode.Automatic, PowerSource.UsbC));
+        validator.Validate(defaults with
+        {
+            UsbC = defaults.UsbC with { Performance = performance },
+        });
+        validator.ValidatePerformanceFanCombination(
+            performance, FanMode.Automatic, PowerSource.UsbC);
     }
 
     [Fact]
@@ -271,16 +280,13 @@ public sealed class ProfileSetValidatorTests
             PerformancePreset.Balanced,
             FanMode.Maximum,
             PowerSource.UsbC);
-        Assert.Throws<InvalidDataException>(() =>
-            validator.ValidatePerformanceFanCombination(
-                PerformancePreset.Silent,
-                FanMode.Automatic,
-                PowerSource.UsbC));
+        validator.ValidatePerformanceFanCombination(
+            PerformancePreset.Silent,
+            FanMode.Automatic,
+            PowerSource.UsbC);
     }
 
     [Theory]
-    [InlineData(PerformancePreset.BatterySaver, PowerSource.PluggedIn)]
-    [InlineData(PerformancePreset.BatteryBalanced, PowerSource.PluggedIn)]
     [InlineData(PerformancePreset.Silent, PowerSource.Battery)]
     [InlineData(PerformancePreset.Balanced, PowerSource.Battery)]
     [InlineData(PerformancePreset.Performance, PowerSource.Battery)]
@@ -691,8 +697,7 @@ public sealed class ProfileSetValidatorTests
 
     [Theory]
     [InlineData(PowerSource.Battery)]
-    [InlineData(PowerSource.UsbC)]
-    public void Validate_RejectsGpuClockTuningOutsidePluggedInProfile(
+    public void Validate_RejectsGpuClockTuningOutsideExternalProfile(
         PowerSource source)
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
@@ -719,6 +724,22 @@ public sealed class ProfileSetValidatorTests
             CreateValidator().Validate(profiles));
 
         Assert.Contains("cannot configure GPU clock tuning", exception.Message);
+    }
+
+    [Fact]
+    public void Validate_UsbCCustomPreservesLevelsAndGpuTuning()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            UsbC = defaults.UsbC with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = CustomPerformanceSettings.Default,
+                GpuClockTuning = GpuClockTuningSettings.Disabled,
+            },
+        };
+        CreateValidator(customPerformance: Rz090528CustomPerformance()).Validate(profiles);
     }
 
     [Fact]

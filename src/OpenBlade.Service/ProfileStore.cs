@@ -398,6 +398,8 @@ public sealed class ProfileStore
         usbC = NormalizeLegacyDisplay(usbC);
         pluggedIn = NormalizeLegacyCustomPerformance(pluggedIn);
         pluggedIn = NormalizeLegacyGpuClockTuning(pluggedIn);
+        usbC = NormalizeLegacyCustomPerformance(usbC);
+        usbC = NormalizeLegacyGpuClockTuning(usbC);
         LightingPowerPolicy legacyLightingPowerPolicy =
             profiles.LightingPowerPolicy ?? LightingPowerPolicy.Disabled;
         pluggedIn = NormalizeLightingPowerPolicy(pluggedIn, legacyLightingPowerPolicy);

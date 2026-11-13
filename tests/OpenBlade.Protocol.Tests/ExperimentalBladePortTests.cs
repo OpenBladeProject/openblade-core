@@ -177,7 +177,7 @@ public sealed class ExperimentalBladePortTests
     {
         var session = new Session();
         await using var port = new ExperimentalBladePort(session, new(), ExperimentalBladeModels.All[0],
-            Enabled(), () => false, () => PowerSource.ExternalUnknown);
+            Enabled(), () => false, () => PowerSource.PluggedIn);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetProtectionOffAsync(CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
@@ -203,7 +203,7 @@ public sealed class ExperimentalBladePortTests
                 identityChecks++;
                 return exactHostPresent;
             },
-            () => PowerSource.ExternalUnknown);
+            () => PowerSource.PluggedIn);
         port.SetAdditionalWriteAdmission(() =>
         {
             sessionChecks++;
@@ -268,7 +268,7 @@ public sealed class ExperimentalBladePortTests
 
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
         Assert.Equal(
-            "Thermal writes require confirmed external power; the current source is Battery. Connect the factory charger and retry.",
+            "Thermal writes require confirmed external power; the current source is Battery. Confirm the external power source and retry.",
             failure.Message);
         Assert.Empty(session.Commands);
         ExperimentalControlObservation observation = Assert.Single(policy.Snapshot().Observations,
@@ -284,21 +284,21 @@ public sealed class ExperimentalBladePortTests
         var session = new Session();
         var policy = new ExperimentalFeaturesPolicy(model);
         await using var port = new ExperimentalBladePort(session, new(), model, policy,
-            () => true, () => PowerSource.UsbC);
+            () => true, () => (PowerSource)999);
 
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetFanTargetsAsync(2000, 2000, CancellationToken.None));
 
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
         Assert.Equal(
-            "Fan mode Fixed is not admitted on UsbC power. Connect the factory charger or choose a fan mode admitted for that source.",
+            "Fan mode Fixed is not admitted on 999 power. Connect the factory charger or choose a fan mode admitted for that source.",
             failure.Message);
         Assert.Empty(session.Commands);
         ExperimentalControlObservation observation = Assert.Single(policy.Snapshot().Observations,
             item => item.Operation == "WriteAdmission");
         Assert.Equal("FanModePowerSourceRejected", observation.FailureCategory);
         Assert.Equal("FanMode=Fixed", observation.RequestedValue);
-        Assert.Equal("PowerSource=UsbC", observation.ConfirmedValue);
+        Assert.Equal("PowerSource=999", observation.ConfirmedValue);
     }
 
     [Fact]
@@ -362,7 +362,7 @@ public sealed class ExperimentalBladePortTests
             [1, 1, 5, 0], [1, 2, 5, 0], [0, 1, 5, 0], [0, 2, 5, 0]);
         var policy = new ExperimentalFeaturesPolicy(model);
         await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true,
-            () => PowerSource.ExternalUnknown);
+            () => PowerSource.PluggedIn);
         await port.SetPerformanceAsync(PerformancePreset.Silent, CancellationToken.None);
         Assert.Equal(2, session.Commands.Count(command => command.CommandId == 2));
     }
@@ -386,7 +386,7 @@ public sealed class ExperimentalBladePortTests
         var model = new ExperimentalBladeModel("Unknown", "Unknown", 0xFFFF, false, "TestEvidence");
         var session = new Session();
         await using var port = new ExperimentalBladePort(session, new(), model,
-            new ExperimentalFeaturesPolicy(model), () => true, () => PowerSource.ExternalUnknown);
+            new ExperimentalFeaturesPolicy(model), () => true, () => PowerSource.PluggedIn);
         Assert.Equal(AdapterPowerState.Unknown,
             await port.QueryAdapterPowerStateAsync(CancellationToken.None));
         Assert.Empty(session.Commands);
@@ -399,7 +399,7 @@ public sealed class ExperimentalBladePortTests
         var session = new Session();
         var policy = new ExperimentalFeaturesPolicy(model);
         await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true,
-            () => PowerSource.ExternalUnknown);
+            () => PowerSource.PluggedIn);
         Assert.False(port.SupportsProtectionQuery);
         Assert.Empty(port.Capabilities.ChargeLimits);
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetChargeLimitAsync(80, CancellationToken.None));
@@ -475,7 +475,7 @@ public sealed class ExperimentalBladePortTests
         var session = new Session([.. baseline, [1, 1, 5, 0], [1, 2, 5, 0], [0, 1, 5, 0], [0, 2, 5, 0]]);
         var policy = new ExperimentalFeaturesPolicy(model);
         await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true,
-            () => PowerSource.ExternalUnknown);
+            () => PowerSource.PluggedIn);
         Assert.Equal(DeviceFeatureAccess.ObservedOnly, port.Capabilities.HyperBoostAccess);
         Assert.Contains(LightingEffect.Spectrum, port.Capabilities.LightingEffects);
         Assert.Contains(LightingEffect.Wave, port.Capabilities.ObservedLightingEffects);
@@ -495,7 +495,7 @@ public sealed class ExperimentalBladePortTests
         var session = new Session([0x50], [0xD0], [0xD0]);
         var policy = new ExperimentalFeaturesPolicy(model);
         await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true,
-            () => PowerSource.ExternalUnknown);
+            () => PowerSource.PluggedIn);
         await port.SetChargeLimitAsync(80, CancellationToken.None);
         Assert.Equal(new byte[] { 0x92, 0x8F, 0x12, 0x92 }, session.Commands.Select(item => item.CommandId));
     }
@@ -549,7 +549,7 @@ public sealed class ExperimentalBladePortTests
 
     private static ExperimentalBladePort Create(Session session, ExperimentalFeaturesPolicy policy,
         Func<TimeSpan, CancellationToken, Task>? confirmationDelay = null) =>
-        new(session, new(), ExperimentalBladeModels.All[0], policy, () => true, () => PowerSource.ExternalUnknown,
+        new(session, new(), ExperimentalBladeModels.All[0], policy, () => true, () => PowerSource.PluggedIn,
             confirmationDelay ?? ((_, _) => Task.CompletedTask));
 
     private sealed class Session(params byte[][] responses) : IRazerCommandSession

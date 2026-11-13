@@ -1127,7 +1127,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string ActivePerformanceLabel => IsConnected
         ? HyperBoostActive
             ? TrayText.Get("HyperBoost")
-            : PerformancePresetPresentation.Label(SelectedPerformance)
+            : PerformancePresetPresentation.Label(SelectedPerformance, ActivePowerSource)
         : UnavailableLabel;
 
     public string ActiveFanModeLabel => IsConnected
@@ -1358,9 +1358,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             ControlAccess: SessionControlAccess.Active,
             DeviceVerified: true,
-            ActivePowerSource: PowerSource.PluggedIn,
             ControllerDetectionWarning: null,
         }
+        && PowerSourcePolicy.IsExternal(latestStatus.ActivePowerSource)
         && !HasBlockingHyperBoostController(latestStatus)
         && !IsHyperBoostRestoreRecoveryInProgress;
 
@@ -2319,10 +2319,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         SelectedWindowsPowerModeOption.Value is null
             ? TrayText.Format(
                 "Leaves the Windows setting unchanged whenever {0} is selected.",
-                PerformancePresetPresentation.Label(SelectedPerformance))
+                PerformancePresetPresentation.Label(SelectedPerformance, ActivePowerSource))
             : TrayText.Format(
                 "Used whenever {0} is selected. {1}",
-                PerformancePresetPresentation.Label(SelectedPerformance),
+                PerformancePresetPresentation.Label(SelectedPerformance, ActivePowerSource),
                 SelectedWindowsPowerModeOption.Description);
 
     public bool CanEditWindowsPowerMode =>
@@ -2523,7 +2523,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool IsPerformanceSelected => SelectedPerformance == PerformancePreset.Performance;
 
     public bool IsCustomPerformanceVisible =>
-        ActivePowerSource == PowerSource.PluggedIn
+        PowerSourcePolicy.IsExternal(ActivePowerSource)
         && SelectedPerformance == PerformancePreset.Custom
         && AvailablePerformancePresets.Contains(PerformancePreset.Custom);
 
@@ -2571,7 +2571,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public bool IsGpuClockTuningVisible =>
-        ActivePowerSource == PowerSource.PluggedIn
+        PowerSourcePolicy.IsExternal(ActivePowerSource)
         && (AvailablePerformancePresets.Contains(PerformancePreset.Custom)
             || Capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite });
 
@@ -2898,7 +2898,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanToggleGpuClockTuning =>
         (HyperBoostActive
             ? CanMutate
-                && ActivePowerSource == PowerSource.PluggedIn
+                && PowerSourcePolicy.IsExternal(ActivePowerSource)
                 && !IsRetainedPowerSourceRecheck(latestStatus)
                 && !IsPerformanceOperationInProgress
                 && !IsHyperBoostOperationInProgress
@@ -3349,9 +3349,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && !HasControllerDetectionWarning
         && !HasBlockingHyperBoostController(latestStatus)
         && (HyperBoostActive
-            || ActivePowerSource == PowerSource.PluggedIn
+            || PowerSourcePolicy.IsExternal(ActivePowerSource)
                 && PerformancePresetPresentation.IsAvailable(
-                    PowerSource.PluggedIn,
+                    ActivePowerSource,
                     SelectedPerformance)
                 && Capabilities.PerformancePresets.Contains(SelectedPerformance)
                 && Capabilities.FanModes.Contains(SelectedFanMode)
@@ -3372,7 +3372,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 || CanToggleHyperBoost
                 || IsHyperBoostOperationInProgress
                 || IsPerformanceOperationInProgress
-                || latestStatus?.ActivePowerSource is PowerSource.Battery or PowerSource.UsbC)
+                || latestStatus?.ActivePowerSource is PowerSource.Battery)
             {
                 return string.Empty;
             }
@@ -5680,7 +5680,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 { Performance: PerformancePreset.Custom, CustomPerformance: { } observed }
                 ? observed
                 : status.DesiredState.CustomPerformance
-                    ?? status.Profiles.PluggedIn.CustomPerformance
+                    ?? (status.ActivePowerSource == PowerSource.UsbC
+                        ? status.Profiles.UsbC.CustomPerformance
+                        : status.Profiles.PluggedIn.CustomPerformance)
                     ?? CustomPerformanceSettings.Default;
         SelectedCustomCpuLevel = customPerformance.Cpu;
         SelectedCustomGpuLevel = customPerformance.Gpu;
@@ -5689,7 +5691,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ?? status.DesiredState.GpuClockTuning;
         PerformancePreset gpuTuningPerformance = pendingPerformance?.Requested.Value
             ?? status.DesiredState.Performance.Value;
-        if (status.ActivePowerSource == PowerSource.PluggedIn
+        if (PowerSourcePolicy.IsExternal(status.ActivePowerSource)
             && gpuTuningPerformance == PerformancePreset.Custom
             && gpuClockTuning is null
             && customPerformance.GpuClockOffsets is { } legacyOffsets)
@@ -8342,14 +8344,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     };
 
     private CustomPerformanceSettings GetActiveProfileCustomPerformance() =>
-        ActivePowerSource is PowerSource.PluggedIn
-            ? GetPresentedProfile(PowerSource.PluggedIn).CustomPerformance
+        PowerSourcePolicy.IsExternal(ActivePowerSource)
+            ? GetPresentedProfile(ActivePowerSource).CustomPerformance
                 ?? CustomPerformanceSettings.Default
             : CustomPerformanceSettings.Default;
 
     private GpuClockTuningSettings? GetActiveProfileGpuClockTuning()
     {
-        if (ActivePowerSource is not PowerSource.PluggedIn)
+        if (!PowerSourcePolicy.IsExternal(ActivePowerSource))
         {
             return null;
         }
@@ -8399,6 +8401,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Profiles.UsbC with
         {
             Performance = UsbCPerformanceEditor,
+            CustomPerformance = Profiles.UsbC.CustomPerformance
+                ?? CustomPerformanceSettings.Default,
             Fans = UsbCFanModeEditor,
             Lighting = UsbCLightingEditor,
         },

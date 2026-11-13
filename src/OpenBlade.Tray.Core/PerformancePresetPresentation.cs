@@ -20,7 +20,7 @@ public sealed record LaptopPerformanceOption(
 
 public static class PerformancePresetPresentation
 {
-    private static readonly PerformancePreset[] PluggedInOrder =
+    private static readonly PerformancePreset[] ExternalOrder =
     [
         PerformancePreset.Balanced,
         PerformancePreset.Silent,
@@ -30,17 +30,14 @@ public static class PerformancePresetPresentation
         PerformancePreset.Gaming,
         PerformancePreset.Creator,
         PerformancePreset.Custom,
+        PerformancePreset.BatteryBalanced,
+        PerformancePreset.BatterySaver,
     ];
 
     private static readonly PerformancePreset[] BatteryOrder =
     [
         PerformancePreset.BatteryBalanced,
         PerformancePreset.BatterySaver,
-    ];
-
-    private static readonly PerformancePreset[] UsbCOrder =
-    [
-        PerformancePreset.Balanced,
     ];
 
     public static string Label(PerformancePreset value) => value switch
@@ -58,22 +55,13 @@ public static class PerformancePresetPresentation
         _ => value.ToString(),
     };
 
-    public static bool IsAvailable(PowerSource source, PerformancePreset value) => source switch
-    {
-        PowerSource.PluggedIn => value is PerformancePreset.Balanced
-            or PerformancePreset.Silent
-            or PerformancePreset.Performance
-            or PerformancePreset.Turbo
-            or PerformancePreset.MaximumPower
-            or PerformancePreset.Gaming
-            or PerformancePreset.Creator
-            or PerformancePreset.Custom,
-        PowerSource.Battery => value is PerformancePreset.BatteryBalanced
-            or PerformancePreset.BatterySaver,
-        PowerSource.UsbC => value == PerformancePreset.Balanced,
-        PowerSource.ExternalUnknown => false,
-        _ => false,
-    };
+    public static string Label(PerformancePreset value, PowerSource source) =>
+        value == PerformancePreset.BatteryBalanced && PowerSourcePolicy.IsExternal(source)
+            ? $"{Label(value)} ({TrayText.Get("Battery")})"
+            : Label(value);
+
+    public static bool IsAvailable(PowerSource source, PerformancePreset value) =>
+        PerformancePowerSourcePolicy.IsAllowed(source, value);
 
     public static IReadOnlyList<PerformancePresetOption> CreateOptions(
         PowerSource source,
@@ -82,15 +70,14 @@ public static class PerformancePresetPresentation
         ArgumentNullException.ThrowIfNull(admitted);
         PerformancePreset[] order = source switch
         {
-            PowerSource.PluggedIn => PluggedInOrder,
+            PowerSource.PluggedIn or PowerSource.UsbC => ExternalOrder,
             PowerSource.Battery => BatteryOrder,
-            PowerSource.UsbC => UsbCOrder,
             PowerSource.ExternalUnknown => [],
             _ => [],
         };
         return order
             .Where(admitted.Contains)
-            .Select(value => new PerformancePresetOption(value, Label(value)))
+            .Select(value => new PerformancePresetOption(value, Label(value, source)))
             .ToArray();
     }
 

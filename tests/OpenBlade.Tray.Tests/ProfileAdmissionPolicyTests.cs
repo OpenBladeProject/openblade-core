@@ -51,6 +51,29 @@ public sealed class ProfileAdmissionPolicyTests
     }
 
     [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.UsbC)]
+    public void ExternalPerformanceEditsRetainExactCapabilityFiltering(PowerSource source)
+    {
+        ProfileSet current = ProfileDefaults.CreateSafeDefaults();
+        PowerProfile profile = (source == PowerSource.UsbC ? current.UsbC : current.PluggedIn) with
+        {
+            Performance = PerformancePreset.Custom,
+            CustomPerformance = CustomPerformanceSettings.Default,
+            Fans = FanMode.Automatic,
+        };
+        ProfileSet draft = source == PowerSource.UsbC
+            ? current with { UsbC = profile }
+            : current with { PluggedIn = profile };
+        DeviceCapabilities capabilities = SupportedCapabilities();
+        Assert.True(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+        Assert.False(ProfileAdmissionPolicy.Supports(draft, current, capabilities with
+        {
+            PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+        }));
+    }
+
+    [Theory]
     [InlineData(PerformancePreset.Silent, FanMode.Fixed)]
     [InlineData(PerformancePreset.Silent, FanMode.ManualCurve)]
     [InlineData(PerformancePreset.Silent, FanMode.Maximum)]

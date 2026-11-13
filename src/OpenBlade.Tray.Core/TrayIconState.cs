@@ -34,7 +34,7 @@ public static class TrayIconStateResolver
 
         if (hyperBoostActive)
         {
-            return powerSource == PowerSource.PluggedIn
+            return PowerSourcePolicy.IsExternal(powerSource)
                 && effectivePerformance is PerformancePreset.Balanced
                     or PerformancePreset.Silent
                     or PerformancePreset.Performance
@@ -43,6 +43,8 @@ public static class TrayIconStateResolver
                     or PerformancePreset.Gaming
                     or PerformancePreset.Creator
                     or PerformancePreset.Custom
+                    or PerformancePreset.BatteryBalanced
+                    or PerformancePreset.BatterySaver
                 ? TrayIconState.AcHyperBoost
                 : TrayIconState.GenericError;
         }
@@ -51,20 +53,24 @@ public static class TrayIconStateResolver
         {
             (PowerSource.PluggedIn, PerformancePreset.Balanced) =>
                 TrayIconState.AcBalanced,
-            (PowerSource.PluggedIn, PerformancePreset.Silent) =>
+            (PowerSource.PluggedIn or PowerSource.UsbC, PerformancePreset.Silent) =>
                 TrayIconState.AcSilent,
-            (PowerSource.PluggedIn, PerformancePreset.Performance
+            (PowerSource.PluggedIn or PowerSource.UsbC, PerformancePreset.Performance
                 or PerformancePreset.Turbo or PerformancePreset.MaximumPower
                 or PerformancePreset.Gaming or PerformancePreset.Creator) =>
                 TrayIconState.AcPerformance,
-            (PowerSource.PluggedIn, PerformancePreset.Custom) =>
+            (PowerSource.PluggedIn or PowerSource.UsbC, PerformancePreset.Custom) =>
                 TrayIconState.AcCustom,
             (PowerSource.UsbC, PerformancePreset.Balanced) =>
                 TrayIconState.UsbCBalanced,
             (PowerSource.Battery, PerformancePreset.Balanced) =>
                 TrayIconState.BatteryBalanced,
+            (PowerSource.PluggedIn or PowerSource.UsbC, PerformancePreset.BatteryBalanced) =>
+                TrayIconState.AcBalanced,
             (PowerSource.Battery, PerformancePreset.BatteryBalanced) =>
                 TrayIconState.BatteryBalanced,
+            (PowerSource.PluggedIn or PowerSource.UsbC, PerformancePreset.BatterySaver) =>
+                TrayIconState.AcSilent,
             (PowerSource.Battery, PerformancePreset.BatterySaver) =>
                 TrayIconState.BatterySaver,
             _ => TrayIconState.GenericError,

@@ -22150,6 +22150,16 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 CancellationToken.None);
         }
 
+        if (destination == PowerSource.UsbC)
+        {
+            Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+            Assert.Equal(destination, context.Runtime.GetStatus().ActivePowerSource);
+            Assert.Equal(hyperBoostWritesBeforeChange, context.Device.HyperBoostSetCalls);
+            Assert.Equal(HyperBoostOwnershipJournalState.OwnedConfirmed, journal.Journal?.State);
+            Assert.False(context.Runtime.GetStatus().WritesBlocked);
+            return;
+        }
+
         DesiredDeviceState destinationIntent = context.Runtime.GetStatus().DesiredState;
         Assert.False(context.Device.ConfirmedState.HyperBoostActive);
         Assert.Equal(destination, context.Runtime.GetStatus().ActivePowerSource);
@@ -23915,7 +23925,6 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
     [Theory]
     [InlineData(PowerSource.Battery)]
-    [InlineData(PowerSource.UsbC)]
     public async Task PadlessHyperBoost_DeferredExactRestoreDoesNotCrossPowerBoundary(
         PowerSource powerSource)
     {
@@ -28377,7 +28386,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task RecoverHyperBoostRestore_LowPowerJournalReResolvesAcDestination()
+    public async Task RecoverHyperBoostRestore_ExternalRecoveryPreservesSupportedBatteryPreset()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
         TestContext context = CreateContext(
@@ -28425,7 +28434,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(settersBeforeRecovery + 1, context.Device.TotalSetterCalls);
-        Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
+        Assert.Equal(PerformancePreset.BatterySaver, context.Device.ConfirmedState.Performance);
         Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
         Assert.Null(journal.Journal);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
@@ -29271,7 +29280,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
     [Theory]
     [InlineData(PowerSource.Battery)]
-    [InlineData(PowerSource.UsbC)]
+    [InlineData(PowerSource.ExternalUnknown)]
     public async Task RecoverHyperBoostRestore_LowPowerSourceDoesNotWrite(
         PowerSource powerSource)
     {
@@ -29290,6 +29299,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: journal);
         ConfigurePadlessHyperBoost(context);
+        if (powerSource == PowerSource.ExternalUnknown)
+        {
+            context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        }
         await context.Runtime.ObserveAsync(CancellationToken.None);
         int settersBeforeRecovery = context.Device.TotalSetterCalls;
 
@@ -30448,13 +30461,18 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         }
     }
 
-    [Fact]
-    public async Task DirectPadlessHyperBoost_AdmittedCustomAutomaticEntryDoesNotBridge()
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, false)]
+    [InlineData(PowerSource.UsbC, false)]
+    [InlineData(PowerSource.PluggedIn, true)]
+    [InlineData(PowerSource.UsbC, true)]
+    public async Task DirectPadlessHyperBoost_AdmittedCustomAutomaticEntryDoesNotBridge(
+        PowerSource source, bool requiresCoolingPad)
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
-        TestContext context = CreateContext(true,
+        TestContext context = CreateContext(true, initialPowerSource: source,
             hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
-                CoolingPadConnectionState.Absent),
+                requiresCoolingPad ? CoolingPadConnectionState.PresentExact : CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: journal);
         ConfigurePadlessHyperBoost(context);
         context.Device.UseScopedPerformanceFanRead = true;
@@ -30488,6 +30506,13 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(performanceWrites, context.Device.PerformanceWrites.Count);
         Assert.Equal(fanWrites, context.Device.FanControlWrites.Count);
         Assert.Equal(PerformancePreset.Custom, journal.Journal?.BaseMode);
+        Assert.Equal(source, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(false, CancellationToken.None)).Status);
+        Assert.Equal(PerformancePreset.Custom, context.Device.ConfirmedState.Performance);
+        Assert.Equal(CustomPerformanceSettings.Default, context.Device.ConfirmedState.CustomPerformance);
+        Assert.Null(journal.Journal);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
     [Fact]

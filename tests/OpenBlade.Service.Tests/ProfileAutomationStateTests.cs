@@ -199,6 +199,30 @@ public sealed class ProfileAutomationStateTests
         Assert.Equal(SettingValueSource.PersistentOverride, restored.Performance.Source);
     }
 
+    [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.UsbC)]
+    public void ExternalCustomProfileAndGpuTuningResolveWithoutChangingSource(PowerSource source)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var tuning = new GpuClockTuningSettings(true, new GpuClockOffsetSettings(125, 500));
+        PowerProfile custom = defaults.UsbC with
+        {
+            Performance = PerformancePreset.Custom,
+            CustomPerformance = CustomPerformanceSettings.Default,
+            GpuClockTuning = tuning,
+        };
+        var state = new ProfileAutomationState(defaults with { PluggedIn = custom, UsbC = custom },
+            new BatteryAutomationPreferences(), source);
+
+        DesiredDeviceState desired = state.Resolve(new ConfirmedDeviceState(null, null, null, null));
+
+        Assert.Equal(source, state.PowerSource);
+        Assert.Equal(PerformancePreset.Custom, desired.Performance.Value);
+        Assert.Equal(CustomPerformanceSettings.Default, desired.CustomPerformance);
+        Assert.Equal(tuning, desired.GpuClockTuning);
+    }
+
     [Fact]
     public void GpuClockTuning_ResolvesOnAcAndFailsClosedOnBattery()
     {
@@ -289,9 +313,9 @@ public sealed class ProfileAutomationStateTests
         DesiredDeviceState desired = state.Resolve(
             new ConfirmedDeviceState(null, null, null, null), supportsManualFansOnLimitedPower);
 
-        Assert.Equal(PerformancePreset.Balanced, desired.Performance.Value);
+        Assert.Equal(PerformancePreset.Performance, desired.Performance.Value);
         Assert.Equal(supportsManualFansOnLimitedPower ? FanMode.Maximum : FanMode.Automatic, desired.Fans.Value);
-        Assert.Equal(SettingValueSource.PowerProfile, desired.Performance.Source);
+        Assert.Equal(SettingValueSource.PersistentOverride, desired.Performance.Source);
         Assert.Equal(supportsManualFansOnLimitedPower
             ? SettingValueSource.PersistentOverride : SettingValueSource.PowerProfile, desired.Fans.Source);
         Assert.Equal(PerformancePreset.Performance, state.PerformanceOverride!.Value);
