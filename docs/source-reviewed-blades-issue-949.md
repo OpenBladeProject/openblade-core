@@ -1,5 +1,7 @@
 # Blade 15 Advanced Mid 2021 and Blade Pro 17 2019
 
+The later [lighting review](source-reviewed-lighting.md) adds bounded lighting controls to these profiles. Lighting exclusions below describe the original admission.
+
 Issue [#949](https://github.com/OSSBlade/openblade-core/issues/949) requests
 RZ09-0409. This review also adds both 2019 Blade Pro 17 variants, RZ09-0287 and
 RZ09-0314. All three are officially supported on reviewed sources; physical validation is pending.
