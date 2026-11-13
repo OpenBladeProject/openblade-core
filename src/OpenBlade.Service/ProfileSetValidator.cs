@@ -469,7 +469,9 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid($"The {name} lighting effect is undefined.");
         }
 
-        if (validationPolicy.SupportsIndependentLightingControls || allowStoredIndependentIntent && lighting.IndependentControls is not null)
+        if (validationPolicy.SupportsIndependentLightingControls
+                && (lighting.IndependentControls is not null || !lighting.ControlsKeyboardEffect || validationPolicy.SupportedLightingEffects.Count == 0)
+            || allowStoredIndependentIntent && lighting.IndependentControls is not null)
         {
             // Preserve the well-formed saved effect as unmanaged intent. This
             // capability applies only the independently opted-in nullable fields.

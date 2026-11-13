@@ -49,7 +49,8 @@ internal static class WriteConfirmationPolicy
                 MatchIndependentLighting(fields, confirmed),
             DeviceSubsystem.Lighting => confirmed.Lighting is null
                 ? PendingConfirmationResult.Unavailable
-                : confirmed.Lighting == pending.Target.Lighting.Value
+                : (confirmed.Lighting with { ControlsKeyboardEffect = false })
+                    == (pending.Target.Lighting.Value with { ControlsKeyboardEffect = false })
                     ? PendingConfirmationResult.Match
                     : PendingConfirmationResult.Mismatch,
             _ => PendingConfirmationResult.Unavailable,

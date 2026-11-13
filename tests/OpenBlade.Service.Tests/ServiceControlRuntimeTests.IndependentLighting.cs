@@ -76,10 +76,12 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(0, context.Device.LightingSetCalls);
     }
 
-    [Fact]
-    public async Task IndependentLighting_UnconfirmedRuntimeWriteBlocksReplayAndReconcilesRequestedFieldsOnly()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task IndependentLighting_UnconfirmedRuntimeWriteBlocksReplayAndReconcilesRequestedFieldsOnly(bool hybrid)
     {
-        TestContext context = await CreateIndependentLightingContextAsync();
+        TestContext context = await CreateIndependentLightingContextAsync(hybrid: hybrid);
         context.Device.SuppressConfirmationFor = DeviceSubsystem.Lighting;
         ControlOperationResult failed = await context.Runtime.SetIndependentLightingOverrideAsync(
             new(new(70, null), OverrideLifetime.Persistent), default);
@@ -161,14 +163,92 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(writes + 1, context.Device.IndependentLightingWrites.Count);
     }
 
-    private async Task<TestContext> CreateIndependentLightingContextAsync(string? overridePath = null)
+    [Fact]
+    public async Task HybridLighting_DispatchesExplicitEffectAndIndependentPatchSeparately()
+    {
+        TestContext context = await CreateIndependentLightingContextAsync(hybrid: true);
+        LightingSettings effect = LightingSettingsFactory.SpectrumCycling(70) with { ControlsKeyboardEffect = true };
+        int before = context.Device.LightingSetCalls;
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Lighting && context.Device.ConfirmedState.Lighting is { } observed)
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState with
+                {
+                    Lighting = observed with { ControlsKeyboardEffect = false },
+                };
+            }
+        };
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetLightingOverrideAsync(
+            new(effect, OverrideLifetime.Persistent), default)).Status);
+        Assert.Equal(before + 1, context.Device.LightingSetCalls);
+        Assert.Empty(context.Device.IndependentLightingWrites);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with { Lighting = null };
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetIndependentLightingOverrideAsync(
+            new(new(42, null), OverrideLifetime.Persistent), default)).Status);
+        Assert.Equal(before + 1, context.Device.LightingSetCalls);
+        Assert.Equal(new IndependentLightingSettings(42, null), Assert.Single(context.Device.IndependentLightingWrites));
+        Assert.Equal(effect.Effect, context.Runtime.GetStatus().LightingOverride!.Value.Effect);
+        Assert.Equal(new IndependentLightingSettings(42, null), context.Runtime.GetStatus().LightingOverride!.Value.IndependentControls);
+        Assert.Null(context.Runtime.GetStatus().ConfirmedState!.Lighting);
+    }
+
+    [Fact]
+    public async Task HybridLighting_FullIntentPowerPolicyUsesEffectOffAndPreservesOptIn()
+    {
+        TestContext context = await CreateIndependentLightingContextAsync(hybrid: true);
+        await context.Runtime.SetLightingOverrideAsync(new(
+            LightingSettingsFactory.SpectrumCycling(70) with { ControlsKeyboardEffect = true }, OverrideLifetime.Persistent), default);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        await context.Runtime.UpdateProfilesAsync(profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { LightingPowerPolicy = new(true, null) },
+        }, default);
+        int before = context.Device.LightingSetCalls;
+        ControlOperationResult result = await context.Runtime.SetLightingSuppressionAsync(LightingSuppressionReason.DisplayOff, true, default);
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(before + 1, context.Device.LightingSetCalls);
+        Assert.Equal(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
+        Assert.True(context.Runtime.GetStatus().LightingOverride!.Value.ControlsKeyboardEffect);
+        Assert.Empty(context.Device.IndependentLightingWrites);
+    }
+
+    [Fact]
+    public async Task HybridLighting_LegacyShapeOffRetainsOptInAndActuallyDispatches()
+    {
+        TestContext context = await CreateIndependentLightingContextAsync(hybrid: true);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = LightingSettingsFactory.SpectrumCycling(70),
+        };
+        var legacy = new LightingSettings(LightingEffect.Off, default, 0)
+        {
+            ControlsKeyboardEffect = true,
+            LogoMode = LogoLightingMode.Static,
+        };
+        int before = context.Device.LightingSetCalls;
+        ControlOperationResult result = await context.Runtime.SetLightingOverrideAsync(
+            new(legacy, OverrideLifetime.Persistent), default);
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(before + 1, context.Device.LightingSetCalls);
+        Assert.Empty(context.Device.IndependentLightingWrites);
+        LightingSettings saved = context.Runtime.GetStatus().LightingOverride!.Value;
+        Assert.True(saved.ControlsKeyboardEffect);
+        Assert.Equal(LightingSettingsFactory.Off().Parameters, saved.Parameters);
+        Assert.Equal(LogoLightingMode.Static, saved.LogoMode);
+        Assert.Equal(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
+    }
+
+    private async Task<TestContext> CreateIndependentLightingContextAsync(string? overridePath = null, bool hybrid = false)
     {
         TestContext context = CreateContext(true, persistentOverridePath: overridePath);
         context.Device.Capabilities = context.Device.Capabilities with
         {
             SupportsIndependentLightingControls = true,
             SupportsKeyboardBrightness = true,
-            LightingEffects = new HashSet<LightingEffect>(),
+            LightingEffects = hybrid
+                ? new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Static, LightingEffect.Spectrum }
+                : new HashSet<LightingEffect>(),
             LogoLightingModes = Enum.GetValues<LogoLightingMode>().ToHashSet(),
         };
         context.Device.ConfirmedState = context.Device.ConfirmedState with

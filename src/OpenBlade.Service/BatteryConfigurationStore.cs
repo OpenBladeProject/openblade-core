@@ -486,6 +486,10 @@ public sealed class BatteryConfigurationStore
                 "The current battery preference document contains a legacy setting.");
         }
 
+        if (expectedSchemaVersion < ProfileStore.KeyboardEffectControlSchemaVersion)
+        {
+            ProfileStore.RejectKeyboardEffectControlInLegacySchema(preferencesElement);
+        }
         BatteryAutomationPreferences preferences = document.Preferences;
         if (expectedSchemaVersion >= ProfileStore.FanStopSettingsSchemaVersion
             && (!preferencesElement.TryGetProperty("fanStopSettings", out JsonElement stopSettings)

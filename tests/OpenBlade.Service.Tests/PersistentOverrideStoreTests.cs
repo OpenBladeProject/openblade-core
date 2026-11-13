@@ -55,7 +55,7 @@ public sealed class PersistentOverrideStoreTests : IDisposable
         Assert.False(loaded.Recovered);
         Assert.Equal(expected, loaded.Overrides);
         Assert.Contains(
-            "\"schemaVersion\": 8",
+            "\"schemaVersion\": 9",
             await File.ReadAllTextAsync(
                 Path.Combine(directory, "manual-overrides.json")),
             StringComparison.Ordinal);
@@ -140,7 +140,7 @@ public sealed class PersistentOverrideStoreTests : IDisposable
                 new GpuClockOffsetSettings(125, 500)),
             loaded.Overrides.GpuClockTuning);
         Assert.Contains(
-            "\"schemaVersion\": 8",
+            "\"schemaVersion\": 9",
             await File.ReadAllTextAsync(path),
             StringComparison.Ordinal);
     }

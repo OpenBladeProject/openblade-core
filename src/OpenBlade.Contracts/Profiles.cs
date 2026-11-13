@@ -511,6 +511,12 @@ public sealed record LightingSettings(
     // Effect remains saved intent; it is never synthesized as confirmed state.
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IndependentLightingSettings? IndependentControls { get; init; }
+
+    // Explicit full-effect intent on a backend that also supports independent
+    // fields. Missing keeps older unmanaged wrappers non-destructive. This is
+    // user intent, never a value reported or confirmed by firmware.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ControlsKeyboardEffect { get; init; }
 }
 
 public sealed record PowerProfile(

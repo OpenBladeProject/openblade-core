@@ -13,7 +13,8 @@ public sealed record ProfileLoadResult(
 
 public sealed class ProfileStore
 {
-    internal const int CurrentSchemaVersion = 25;
+    internal const int CurrentSchemaVersion = 26;
+    internal const int KeyboardEffectControlSchemaVersion = 26;
     internal const int FanStopRollingAverageSchemaVersion = 25;
     internal const int FanStopSettingsSchemaVersion = 24;
     internal const int AutomaticExperimentalSupportSchemaVersion = 19;
@@ -205,6 +206,10 @@ public sealed class ProfileStore
         {
             RejectIndependentControlsInLegacySchema(parsed.RootElement);
         }
+        if (schemaVersion < KeyboardEffectControlSchemaVersion)
+        {
+            RejectKeyboardEffectControlInLegacySchema(parsed.RootElement);
+        }
         ProfileSet profiles;
         if (schemaVersion is >= ObsoleteSupportedSchemaVersion and <= CurrentSchemaVersion)
         {
@@ -316,6 +321,29 @@ public sealed class ProfileStore
             foreach (JsonElement child in element.EnumerateArray())
             {
                 RejectIndependentControlsInLegacySchema(child);
+            }
+        }
+    }
+
+    internal static void RejectKeyboardEffectControlInLegacySchema(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "controlsKeyboardEffect", StringComparison.OrdinalIgnoreCase)
+                    && property.Value.ValueKind != JsonValueKind.False)
+                {
+                    throw new InvalidDataException("Keyboard effect control requires the current lighting-intent schema.");
+                }
+                RejectKeyboardEffectControlInLegacySchema(property.Value);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement child in element.EnumerateArray())
+            {
+                RejectKeyboardEffectControlInLegacySchema(child);
             }
         }
     }

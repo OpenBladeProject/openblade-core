@@ -12,14 +12,20 @@ public sealed partial class MainViewModel
     private PowerSource independentLightingSource;
     private long independentLightingCommitGeneration;
     private bool presentedIndependentLighting;
+    private bool independentLightingEditorActive;
+    private bool controlsKeyboardEffect;
     private IReadOnlyList<LogoLightingMode> independentLogoDisplayModes = [];
 
-    public bool UsesIndependentLightingControls => Capabilities.SupportsIndependentLightingControls;
-    public bool IsKeyboardEffectSelectionVisible => !UsesIndependentLightingControls;
-    public bool ShowLightingEffectLabControls => !UsesIndependentLightingControls;
+    public bool UsesIndependentLightingControls => Capabilities.SupportsIndependentLightingControls
+        && (Capabilities.LightingEffects.Count == 0 || independentLightingEditorActive);
+    public bool IsKeyboardEffectSelectionVisible => !Capabilities.SupportsIndependentLightingControls
+        || Capabilities.LightingEffects.Count > 0;
+    public bool ShowLightingEffectLabControls => IsKeyboardEffectSelectionVisible;
     public long LightingCommitGeneration => UsesIndependentLightingControls ? independentLightingCommitGeneration : 0;
-    public bool IsLightingCommitCurrent(LightingCommitRequest request) => !UsesIndependentLightingControls
-        || independentLightingDelta is not null && request.EditorGeneration == independentLightingCommitGeneration
+    public bool IsLightingCommitCurrent(LightingCommitRequest request) => request.Lighting?.IndependentControls is null
+        ? !UsesIndependentLightingControls
+        : UsesIndependentLightingControls && independentLightingDelta is not null
+            && request.EditorGeneration == independentLightingCommitGeneration
             && request.Lighting == IndependentLightingDraft;
     public string LogoLightingPlaceholderText => "—";
     public int LightingBrightnessMinimum => UsesIndependentLightingControls ? 0 : 1;
@@ -28,7 +34,8 @@ public sealed partial class MainViewModel
         ? LightingBrightnessEditor.ToString(CultureInfo.CurrentCulture) : "—";
 
     private string FormatPresentedLightingProfile(LightingSettings lighting) =>
-        UsesIndependentLightingControls && lighting.IndependentControls is null
+        Capabilities.SupportsIndependentLightingControls && !lighting.ControlsKeyboardEffect
+            && lighting.IndependentControls is null
             ? TrayText.Get("Not set") : LightingPresentation.FormatLightingProfile(lighting);
 
     private IReadOnlyList<LogoLightingMode> PreserveIndependentLogoPresentation(
@@ -67,11 +74,53 @@ public sealed partial class MainViewModel
 
     private bool CanSubmitLightingDraft(LightingSettings value) =>
         ProfileAdmissionPolicy.LightingSupported(value, CommandCapabilities)
-        && (!UsesIndependentLightingControls
-            || independentLightingDelta is not null && value == IndependentLightingDraft
+        && (value.IndependentControls is null
+            ? !UsesIndependentLightingControls || value.ControlsKeyboardEffect && Capabilities.SupportsIndependentLightingControls
+            : UsesIndependentLightingControls && independentLightingDelta is not null && value == IndependentLightingDraft
                 && value.IndependentControls is { IsWellFormed: true }
                 && (value with { IndependentControls = null })
                     == ((independentLightingWrapper ?? SelectedLighting) with { IndependentControls = null }));
+
+    private bool PrepareFullLightingEffect(LightingEffect effect)
+    {
+        if (!Capabilities.SupportsIndependentLightingControls)
+        {
+            return true;
+        }
+        if (!Capabilities.LightingEffects.Contains(effect))
+        {
+            return false;
+        }
+        if (UsesIndependentLightingControls)
+        {
+            // Selecting an effect explicitly replaces field-only intent. Until
+            // then unknown effects retain independent brightness/logo editing.
+            LightingSettings baseline = (independentLightingWrapper ?? SelectedLighting) with
+            {
+                IndependentControls = null,
+                ControlsKeyboardEffect = true,
+                Brightness = independentBrightness ?? 50,
+                LogoMode = independentLogo,
+            };
+            independentLightingEditorActive = false;
+            controlsKeyboardEffect = true;
+            independentLightingDelta = null;
+            independentLightingCommitGeneration++;
+            lightingEditor.Load(LightingSettingsFactory.NormalizeLegacyOff(baseline));
+            lightingEditor.SetEffectUnconfirmed(true);
+            NotifyIndependentLightingPresentation();
+        }
+        return true;
+    }
+
+    private bool ShouldPresentIndependentLighting(ServiceStatusSnapshot status) =>
+        status.Capabilities?.SupportsIndependentLightingControls == true
+        && (status.Capabilities.LightingEffects.Count == 0
+            || independentLightingDelta is not null
+            || !lightingEditor.IsDirty && !IsLightingOperationInProgress && pendingLighting is null
+                && ((status.LightingOverride?.Value ?? status.DesiredState.Lighting.Value) is
+    { IndependentControls: not null } or { ControlsKeyboardEffect: false }
+                    || status.ConfirmedState?.Lighting is null));
 
     private void SetIndependentBrightness(int value)
     {
@@ -132,6 +181,7 @@ public sealed partial class MainViewModel
     private void LoadIndependentLightingEditor(
         LightingSettings wrapper, IndependentLightingSettings? observations)
     {
+        independentLightingEditorActive = true;
         independentLightingWrapper = wrapper;
         independentLightingDelta = null;
         independentBrightness = observations?.Brightness;
