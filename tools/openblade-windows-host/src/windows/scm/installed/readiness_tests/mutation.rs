@@ -26,6 +26,8 @@ const USER: Caller = Caller {
 struct MemoryFiles {
     bytes: Arc<StdMutex<BTreeMap<String, Vec<u8>>>>,
     fail: Arc<AtomicBool>,
+    fail_terminal: Arc<AtomicBool>,
+    terminal_attempts: Arc<AtomicUsize>,
 }
 impl MemoryFiles {
     fn put(&self, name: &str, value: Value) {
@@ -67,6 +69,22 @@ impl Files for MemoryFiles {
         Ok(self.bytes.lock().unwrap().get(name).cloned())
     }
     fn replace(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        if name == "thermal-mutation.journal"
+            && bytes
+                .split(|b| *b == b'\n')
+                .filter(|line| !line.is_empty())
+                .last()
+                .is_some_and(|line| serde_json::from_slice::<Value>(line).unwrap()["progress"] == 6)
+        {
+            self.terminal_attempts.fetch_add(1, Ordering::AcqRel);
+            if self.fail_terminal.load(Ordering::Acquire) {
+                self.bytes
+                    .lock()
+                    .unwrap()
+                    .insert("thermal-mutation.journal.pending".into(), bytes.to_vec());
+                return Err(io::ErrorKind::PermissionDenied.into());
+            }
+        }
         if self.fail.load(Ordering::Acquire) {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
@@ -82,6 +100,7 @@ struct Custody {
     live: AtomicBool,
     fresh_refuse: AtomicBool,
     fatal_health: AtomicBool,
+    integrity_lost: AtomicBool,
     activation_refusal: AtomicU8,
     lifecycle: crate::scm_host::Lifecycle,
     activations: AtomicUsize,
@@ -95,6 +114,7 @@ impl Custody {
             live: AtomicBool::new(true),
             fresh_refuse: AtomicBool::new(false),
             fatal_health: AtomicBool::new(false),
+            integrity_lost: AtomicBool::new(false),
             activation_refusal: AtomicU8::new(0),
             lifecycle: Default::default(),
             activations: AtomicUsize::new(0),
@@ -103,6 +123,17 @@ impl Custody {
     }
 }
 impl ReadCustody for Custody {
+    fn verify_integrity(&self) -> io::Result<()> {
+        if self.integrity_lost.load(Ordering::Acquire) {
+            Err(
+                crate::installed::readiness::thermal_mutation::fatal_admission(
+                    "injected original owner integrity lost",
+                ),
+            )
+        } else {
+            Ok(())
+        }
+    }
     fn authorize(&self) -> Option<ReadAdmission> {
         self.live.load(Ordering::Acquire).then_some(ReadAdmission {
             lifecycle: self.lifecycle.active()?,
@@ -160,6 +191,7 @@ impl ReadCustody for Custody {
 }
 impl Fresh for Custody {
     fn verify_health(&self) -> io::Result<()> {
+        self.verify_integrity()?;
         if self.fatal_health.load(Ordering::Acquire) {
             return Err(
                 crate::installed::readiness::thermal_mutation::fatal_admission(
@@ -269,6 +301,7 @@ impl Rig {
         self.request_as(request, USER, SID).await
     }
     async fn request_as(&self, request: Value, caller: Caller, sid: &str) -> Value {
+        let operation = request["operation"].as_str().unwrap().to_owned();
         let (client, server) = duplex(65536);
         let source = self.source.clone();
         let publications = source.lock().await.publications();
@@ -301,6 +334,11 @@ impl Rig {
         assert!(bytes.starts_with(br#"{"frame":"response","#));
         println!(
             "NATIVE_THERMAL_MUTATION_RESPONSE {}",
+            std::str::from_utf8(&bytes).unwrap()
+        );
+        println!(
+            "NATIVE_THERMAL_EDGE_TRACE {} {}",
+            operation,
             std::str::from_utf8(&bytes).unwrap()
         );
         response
@@ -1365,7 +1403,9 @@ async fn correction_prepared_settlement_waits_for_actual_retirement_and_rejects_
             bytes
         );
     }
-    lines[0]["progress"] = json!(1);
+    let mut first_intent = lines[0].clone();
+    first_intent["progress"] = json!(1);
+    lines.insert(1, first_intent); // Valid Prepared -> FirstIntent prefix; only 1 -> 6 is forbidden.
     let files = MemoryFiles::default();
     let mut bytes = Vec::new();
     for line in lines {
@@ -1448,4 +1488,805 @@ async fn correction_outer_fatal_admission_terminates_and_preserves_possible_subm
             );
         }
     }
+}
+
+#[tokio::test]
+async fn edge_configuration_drift_keeps_public_read_proof_and_truthful_cause() {
+    let rig = Rig::new(MemoryFiles::default());
+    let mut desired = value(2, 1);
+    desired["gpuClockTuning"] =
+        json!({"enabled":true,"offsets":{"coreMegahertz":10,"memoryMegahertz":20}});
+    assert_eq!(rig.set(91, desired).await["result"]["status"], 0);
+    let before = fresh_observe(&rig).await;
+    let mut foreign = rig.files.document("manual-overrides.json");
+    foreign["overrides"]["performance"] = json!(1);
+    rig.files.put("manual-overrides.json", foreign);
+    let bytes = rig.files.read("manual-overrides.json").unwrap();
+    let after = fresh_observe(&rig).await;
+    assert_eq!(after["success"], true);
+    assert_eq!(
+        after["status"]["confirmedState"],
+        before["status"]["confirmedState"]
+    );
+    assert!(after["status"]["performanceOverride"].is_null());
+    assert_eq!(after["status"]["writesBlocked"], true);
+    assert!(
+        after["status"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("private policy")
+    );
+    assert!(
+        !after["status"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("permission is revoked")
+    );
+    let observed = rig
+        .source
+        .lock()
+        .await
+        .observe_performance(USER, Instant::now() + std::time::Duration::from_secs(2))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(observed.has_fresh_mailbox_read());
+    let stamp = rig.reader.last_completed_for_tests();
+    assert!(
+        rig.reader
+            .current_policy(observed.clone())
+            .unwrap()
+            .has_fresh_mailbox_read()
+    );
+    tokio::time::pause();
+    tokio::time::advance(std::time::Duration::from_secs(3)).await;
+    assert!(
+        !rig.reader
+            .current_policy(observed)
+            .unwrap()
+            .has_fresh_mailbox_read()
+    );
+    assert_eq!(rig.reader.last_completed_for_tests(), stamp);
+    tokio::time::resume();
+    let refused = rig.set(92, value(1, 1)).await;
+    assert!(
+        refused["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("configuration changed")
+    );
+    assert!(
+        !refused["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("earlier thermal submission")
+    );
+    assert_eq!(rig.files.read("manual-overrides.json").unwrap(), bytes);
+    assert!(
+        rig.files
+            .read("thermal-mutation.journal")
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+    rig.stop().await;
+}
+
+#[tokio::test]
+async fn edge_terminal_settlement_failure_recovers_reads_without_retry_or_writes() {
+    let rig = Rig::new(MemoryFiles::default());
+    let retired = Arc::new(AtomicBool::new(false));
+    let flag = retired.clone();
+    let files = rig.files.clone();
+    {
+        let mut port = rig.port.state.lock().unwrap();
+        port.change_power = Some((2, 0));
+        port.on_mutation_retired = Some(Arc::new(move || {
+            let prepared = files.read("thermal-mutation.journal").unwrap().unwrap();
+            assert_eq!(
+                serde_json::from_slice::<Value>(prepared.strip_suffix(b"\n").unwrap()).unwrap()["progress"],
+                0
+            );
+            files.fail_terminal.store(true, Ordering::Release);
+            flag.store(true, Ordering::Release);
+        }));
+    }
+    assert_eq!(rig.set(91, value(1, 1)).await["result"]["status"], 2);
+    assert!(retired.load(Ordering::Acquire));
+    assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 1);
+    let prepared = rig.files.read("thermal-mutation.journal").unwrap();
+    let pending = rig.files.read("thermal-mutation.journal.pending").unwrap();
+    assert!(pending.is_some());
+    let opened = rig.port.state.lock().unwrap().opened;
+    assert_eq!(fresh_observe(&rig).await["success"], true);
+    assert!(rig.port.state.lock().unwrap().opened > opened);
+    assert_eq!(rig.set(92, value(2, 1)).await["result"]["status"], 2);
+    assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 1);
+    assert_eq!(
+        rig.files.read("thermal-mutation.journal").unwrap(),
+        prepared
+    );
+    assert_eq!(
+        rig.files.read("thermal-mutation.journal.pending").unwrap(),
+        pending
+    );
+    assert!(Storage::open(Box::new(rig.files.clone()), "S-1-5-21-111-222-333-1002").is_err());
+    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+    rig.stop().await;
+    assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 1);
+    assert_eq!(
+        rig.files.read("thermal-mutation.journal").unwrap(),
+        prepared
+    );
+    assert_eq!(
+        rig.files.read("thermal-mutation.journal.pending").unwrap(),
+        pending
+    );
+}
+
+#[tokio::test]
+async fn edge_manual_stored_requires_new_explicit_request_after_automatic() {
+    let rig = Rig::new(manual_files());
+    let stored = rig.set(91, value(1, 1)).await;
+    assert_eq!(stored["result"]["status"], 0);
+    let message = stored["result"]["message"].as_str().unwrap();
+    assert!(message.contains("saved, not applied") && message.contains("new performance request"));
+    {
+        let mut port = rig.port.state.lock().unwrap();
+        port.selectors = [2, 2];
+        port.fans = [0, 0];
+    }
+    assert_eq!(fresh_observe(&rig).await["success"], true);
+    rig.get().await;
+    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+    assert!(
+        rig.files
+            .read("thermal-mutation.journal")
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(rig.set(92, value(1, 1)).await["result"]["status"], 1);
+    assert_eq!(rig.port.state.lock().unwrap().writes, 2);
+    rig.stop().await;
+}
+
+#[tokio::test]
+async fn edge_pre_activation_cancellation_and_suspend_recover_only_after_callback_retirement() {
+    for suspend in [false, true] {
+        let rig = Rig::new(MemoryFiles::default());
+        rig.get().await;
+        let release = Arc::new(AtomicBool::new(false));
+        rig.port.state.lock().unwrap().held_read = Some(release.clone());
+        {
+            let observation = rig
+                .source
+                .lock()
+                .await
+                .observe_performance(USER, Instant::now() + std::time::Duration::from_secs(5));
+            tokio::pin!(observation);
+            let opened = async {
+                while !rig
+                    .port
+                    .state
+                    .lock()
+                    .unwrap()
+                    .sent
+                    .iter()
+                    .any(|(class, command, _, _)| *class == 13 && *command == 0x82)
+                {
+                    tokio::task::yield_now().await;
+                }
+            };
+            tokio::select! { _ = &mut observation => panic!("held getter completed"), r = tokio::time::timeout(std::time::Duration::from_secs(2), opened) => r.unwrap() }
+        } // Cancel the actual read future, leaving its native callback held.
+        {
+            let request = rig.set(91, value(1, 1));
+            tokio::pin!(request);
+            let entered = async {
+                while rig.entered.get() == 0 {
+                    tokio::task::yield_now().await;
+                }
+            };
+            tokio::select! { _ = &mut request => panic!("request escaped held pre-activation drain"), r = tokio::time::timeout(std::time::Duration::from_secs(2), entered) => r.unwrap() }
+            assert_eq!(rig.entered.get(), 1);
+            assert_eq!(rig.port.state.lock().unwrap().opened, 1);
+            assert_eq!(rig.port.state.lock().unwrap().retired, 0);
+            assert_eq!(rig.custody.activations.load(Ordering::Acquire), 0);
+            if suspend {
+                rig.custody.lifecycle.ingress(13, 4);
+                release.store(true, Ordering::Release);
+                assert_eq!(request.await["result"]["status"], 2);
+            }
+        } // Other arm cancels while pre-activation stop is pending.
+        release.store(true, Ordering::Release);
+        if suspend {
+            rig.custody.lifecycle.ingress(13, 7);
+        }
+        assert_eq!(fresh_observe(&rig).await["success"], true);
+        let state = rig.port.state.lock().unwrap();
+        assert_eq!(state.opened, state.retired);
+        assert!(state.opened > 1);
+        assert_eq!(state.writes, 0);
+        drop(state);
+        assert_eq!(rig.custody.activations.load(Ordering::Acquire), 0);
+        assert!(
+            rig.files
+                .read("thermal-mutation.journal")
+                .unwrap()
+                .is_none()
+        );
+        rig.stop().await;
+    }
+}
+
+#[tokio::test]
+async fn edge_outer_policy_fatal_capture_and_health_fail_get_and_observe() {
+    for (capture, observe) in [(true, false), (false, false), (true, true), (false, true)] {
+        let rig = Rig::new(MemoryFiles::default());
+        let mut saved = value(1, 1);
+        saved["gpuClockTuning"] =
+            json!({"enabled":true,"offsets":{"coreMegahertz":10,"memoryMegahertz":20}});
+        assert_eq!(rig.set(91, saved).await["result"]["status"], 0);
+        let journal = rig.files.read("thermal-mutation.journal").unwrap();
+        let events: Events = Rc::default();
+        let controls = Controls::new();
+        let (mut ports, tx) = ports(Fault::None, &events);
+        let entered = Rc::new(std::cell::Cell::new(false));
+        let flag = if capture {
+            rig.fatal_capture.clone()
+        } else {
+            Arc::new(AtomicBool::new(false))
+        };
+        ports.source = Rc::new(Mutex::new(Box::new(RouteFatalSource {
+            inner: rig.source.clone(),
+            publications: rig.source.lock().await.publications(),
+            observe,
+            entered: entered.clone(),
+            capture: flag,
+            health: if capture {
+                None
+            } else {
+                Some(rig.custody.clone())
+            },
+        })));
+        let (running, ready) = oneshot::channel();
+        let service = lifecycle(&controls, Ok(ports), &events, move || {
+            running.send(()).unwrap();
+        });
+        let exercise = async {
+            ready.await.unwrap();
+            assert!(!entered.get());
+            let (mut client, server) = duplex(65536);
+            tx.send(Box::new(SidStream {
+                inner: test_stream(server, USER, Fault::None),
+                sid: SID.into(),
+            }))
+            .unwrap();
+            let request = if observe {
+                json!({"operation":"observeState","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
+            } else {
+                json!({"operation":"getStatus","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098"})
+            };
+            crate::service_frame::write_payload(
+                &mut client,
+                &serde_json::to_vec(&request).unwrap(),
+            )
+            .await
+            .unwrap();
+            assert!(
+                crate::service_frame::read_payload(&mut client)
+                    .await
+                    .is_err()
+            );
+        };
+        let (result, ()) = tokio::join!(service, exercise);
+        assert!(
+            entered.get(),
+            "the requested Get/Observe route must arm policy failure"
+        );
+        assert!(result.is_err());
+        assert!(events.borrow().contains(&"failed"));
+        assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+        assert_eq!(rig.files.read("thermal-mutation.journal").unwrap(), journal);
+    }
+}
+
+// Arm only from the actual requested route. Once armed, injected background
+// refresh is held so it cannot satisfy the requested fatal-dispatch assertion.
+struct RouteFatalSource {
+    inner: Rc<Mutex<Box<dyn StatusSource>>>,
+    publications: Option<watch::Receiver<Arc<Publication>>>,
+    observe: bool,
+    entered: Rc<std::cell::Cell<bool>>,
+    capture: Arc<AtomicBool>,
+    health: Option<Arc<Custody>>,
+}
+impl RouteFatalSource {
+    fn arm(&self) {
+        assert!(!self.entered.replace(true));
+        if let Some(health) = &self.health {
+            health.fatal_health.store(true, Ordering::Release);
+        } else {
+            self.capture.store(true, Ordering::Release);
+        }
+    }
+}
+impl StatusSource for RouteFatalSource {
+    fn snapshot(&mut self, caller: Caller, requested: Instant) -> Pending<'_, Snapshot> {
+        if !self.observe && caller.logon == Logon::Interactive {
+            self.arm();
+        }
+        Box::pin(async move { self.inner.lock().await.snapshot(caller, requested).await })
+    }
+    fn observe_performance(&mut self, caller: Caller, deadline: Instant) -> Observation {
+        assert!(self.observe);
+        self.arm();
+        let inner = self.inner.clone();
+        Box::pin(async move {
+            let observation = inner.lock().await.observe_performance(caller, deadline);
+            observation.await
+        })
+    }
+    fn publications(&self) -> Option<watch::Receiver<Arc<Publication>>> {
+        self.publications.clone()
+    }
+    fn refresh_publications(&mut self) -> Pending<'_, Instant> {
+        Box::pin(async move {
+            if self.entered.get() {
+                Ok(Instant::now() + std::time::Duration::from_secs(60))
+            } else {
+                self.inner.lock().await.refresh_publications().await
+            }
+        })
+    }
+    fn drain(&mut self) -> Pending<'_, ()> {
+        Box::pin(async move { self.inner.lock().await.drain().await })
+    }
+}
+
+#[tokio::test]
+async fn edge_original_owner_integrity_loss_after_retirement_never_reopens_reads() {
+    let rig = Rig::new(MemoryFiles::default());
+    let custody = rig.custody.clone();
+    {
+        let mut port = rig.port.state.lock().unwrap();
+        port.change_power = Some((2, 0));
+        port.on_mutation_retired = Some(Arc::new(move || {
+            custody.integrity_lost.store(true, Ordering::Release)
+        }));
+    }
+    rig.get().await;
+    let request = crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})).unwrap()).unwrap();
+    let result = rig
+        .source
+        .lock()
+        .await
+        .mutate(
+            USER,
+            SID.into(),
+            request,
+            Instant::now() + std::time::Duration::from_secs(3),
+        )
+        .await;
+    assert!(result.is_err());
+    let opened = rig.port.state.lock().unwrap().opened;
+    let observation = rig
+        .source
+        .lock()
+        .await
+        .observe_performance(USER, Instant::now() + std::time::Duration::from_secs(3));
+    assert!(observation.await.is_err());
+    assert_eq!(rig.port.state.lock().unwrap().opened, opened);
+    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+    assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 0);
+    let journal = rig.files.read("thermal-mutation.journal").unwrap();
+    rig.stop().await;
+    assert_eq!(rig.files.read("thermal-mutation.journal").unwrap(), journal);
+}
+
+#[tokio::test]
+async fn edge_stored_temporary_publication_cannot_resurrect_expired_policy() {
+    let rig = Rig::new(MemoryFiles::default());
+    let observed = fresh_observe(&rig).await;
+    let timestamp = rig.reader.last_completed_for_tests();
+    let retired = Arc::new(AtomicBool::new(false));
+    let release = Arc::new(AtomicBool::new(false));
+    let flag = retired.clone();
+    let gate = release.clone();
+    rig.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+        flag.store(true, Ordering::Release);
+        while !gate.load(Ordering::Acquire) {
+            std::thread::yield_now();
+        }
+    }));
+    let (mut client, server) = duplex(65536);
+    let source = rig.source.clone();
+    let publications = source.lock().await.publications();
+    let server = serve_connection(
+        Box::new(SidStream {
+            inner: test_stream(server, USER, Fault::None),
+            sid: SID.into(),
+        }),
+        source,
+        publications,
+        Rc::new(Subscriptions::new(2)),
+    );
+    let exercise = async {
+        crate::service_frame::write_payload(&mut client, &serde_json::to_vec(&json!({"operation":"subscribeStatus","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000090"})).unwrap()).await.unwrap();
+        crate::service_frame::read_payload(&mut client)
+            .await
+            .unwrap();
+        let mut desired = value(2, 0);
+        desired["gpuClockTuning"] =
+            json!({"enabled":true,"offsets":{"coreMegahertz":10,"memoryMegahertz":20}});
+        let request = rig.set(91, desired);
+        tokio::pin!(request);
+        let held = async {
+            while !retired.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        };
+        tokio::select! { _ = &mut request => panic!("retirement must remain held"), result = tokio::time::timeout(std::time::Duration::from_secs(2), held) => result.unwrap() }
+        assert_eq!(
+            rig.files.document("manual-overrides.json")["overrides"]["performance"],
+            Value::Null
+        );
+        rig.metadata.store(1, Ordering::Release);
+        let expired = rig.get().await;
+        assert_eq!(expired["status"]["activePowerSource"], 1);
+        assert!(expired["status"]["performanceOverride"].is_null());
+        // Consume the expiry publication, then the queued Stored publication,
+        // without a repairing Get between them.
+        let expiry: Value = serde_json::from_slice(
+            &crate::service_frame::read_payload(&mut client)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(expiry["status"]["performanceOverride"].is_null());
+        release.store(true, Ordering::Release);
+        assert_eq!(request.await["result"]["status"], 0);
+        let bytes = crate::service_frame::read_payload(&mut client)
+            .await
+            .unwrap();
+        let committed: Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(committed["status"]["performanceOverride"].is_null());
+        assert_eq!(committed["status"]["activePowerSource"], 1);
+        assert_eq!(
+            committed["status"]["desiredState"],
+            expiry["status"]["desiredState"]
+        );
+        assert_eq!(
+            committed["status"]["confirmedState"],
+            observed["status"]["confirmedState"]
+        );
+        assert!(
+            committed["status"]["revision"].as_u64().unwrap()
+                > expiry["status"]["revision"].as_u64().unwrap()
+        );
+        assert_eq!(rig.reader.last_completed_for_tests(), timestamp);
+        assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+        println!(
+            "NATIVE_THERMAL_EDGE_AFTER_STORED {}",
+            std::str::from_utf8(&bytes).unwrap()
+        );
+        drop(client);
+    };
+    let (result, ()) = tokio::join!(server, exercise);
+    assert!(result.is_ok());
+    let foreign = rig.request_as(json!({"operation":"getStatus","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000099"}), USER, "S-1-5-21-111-222-333-1002").await;
+    assert!(foreign["status"]["performanceOverride"].is_null());
+    rig.stop().await;
+}
+
+fn managed_application_files(bytes: &[u8]) -> MemoryFiles {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    files
+        .bytes
+        .lock()
+        .unwrap()
+        .insert("profiles.json".into(), bytes.into());
+    let all = files.bytes.lock().unwrap();
+    let profile = crate::configuration::digest_hex(&all["profiles.json"]);
+    let preferences = crate::configuration::digest_hex(&all["battery-preferences.json"]);
+    drop(all);
+    files.put(
+        "battery-configuration.commit.json",
+        json!({"schemaVersion":25,"profileSha256":profile,"preferencesSha256":preferences}),
+    );
+    files
+}
+async fn report_game(rig: &Rig) {
+    let result = rig.request(json!({"operation":"reportApplicationContext","version":80,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
+    assert_eq!(result["result"]["status"], 0);
+}
+#[tokio::test]
+async fn edge_managed_fan_control_only_application_precedence_and_lease_are_composed() {
+    let fixed = include_bytes!("../../../../../tests/fixtures/app-fans-0-1.json").as_slice();
+    let curve = include_bytes!("../../../../../tests/fixtures/app-fans-0-2.json").as_slice();
+    let automatic = include_bytes!("../../../../../tests/fixtures/app-fans-1-0.json").as_slice();
+    for (bytes, report, expired, persistent, expected) in [
+        (fixed, true, false, false, 0),
+        (curve, true, false, false, 0),
+        (automatic, true, false, false, 1),
+        (fixed, false, false, false, 1),
+        (fixed, true, true, false, 1),
+        (automatic, true, false, true, 0),
+    ] {
+        let files = managed_application_files(bytes);
+        if persistent {
+            files.bytes.lock().unwrap().insert(
+                "manual-overrides.json".into(),
+                manual_files()
+                    .read("manual-overrides.json")
+                    .unwrap()
+                    .unwrap(),
+            );
+        }
+        let rig = Rig::new(files);
+        let before = fresh_observe(&rig).await;
+        assert_eq!(before["status"]["confirmedState"]["performance"], 5);
+        assert!(before["status"]["confirmedState"]["customPerformance"].is_null());
+        if report {
+            report_game(&rig).await;
+        }
+        if expired {
+            tokio::time::pause();
+            tokio::time::advance(std::time::Duration::from_secs(16)).await;
+            tokio::time::resume();
+        }
+        let result = rig.set(91, value(1, 1)).await;
+        assert_eq!(
+            result["result"]["status"], expected,
+            "report={report} expired={expired} persistent={persistent}"
+        );
+        assert_eq!(
+            rig.port.state.lock().unwrap().writes,
+            if expected == 1 { 2 } else { 0 }
+        );
+        if expected == 0 {
+            assert!(
+                rig.files
+                    .read("thermal-mutation.journal")
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        rig.stop().await;
+    }
+    // Explicit coherent Fans remains authoritative; it does not fall through to base Automatic.
+    let files = managed_application_files(fixed);
+    let mut profile = files.document("profiles.json");
+    profile["profiles"]["applicationProfiles"][0]["overrides"]["pluggedIn"]["fans"] = json!(1);
+    let files = managed_application_files(&serde_json::to_vec(&profile).unwrap());
+    let rig = Rig::new(files);
+    report_game(&rig).await;
+    assert_eq!(rig.set(91, value(1, 1)).await["result"]["status"], 0);
+    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+    rig.stop().await;
+    // Custom Automatic has real supported CPU Medium/GPU High observations and
+    // takes the direct pair even when saved application fan intent is manual.
+    let rig = Rig::new(managed_application_files(fixed));
+    {
+        let mut port = rig.port.state.lock().unwrap();
+        port.fans = [0, 0];
+        port.custom_levels = [1, 2];
+    }
+    report_game(&rig).await;
+    let observed = fresh_observe(&rig).await;
+    assert_eq!(observed["success"], true);
+    assert_eq!(
+        observed["status"]["confirmedState"]["customPerformance"]["cpu"],
+        1
+    );
+    assert_eq!(rig.set(91, value(1, 1)).await["result"]["status"], 1);
+    let port = rig.port.state.lock().unwrap();
+    assert_eq!(port.writes, 2);
+    assert_eq!(
+        port.sent
+            .iter()
+            .filter(|(class, command, _, _)| *class == 13 && *command == 2)
+            .count(),
+        2
+    );
+    drop(port);
+    rig.stop().await;
+    // Persistent FanControl without Fans is a different, invalid document shape.
+    let files = manual_files();
+    let mut invalid = files.document("manual-overrides.json");
+    invalid["overrides"]["fans"] = Value::Null;
+    files.put("manual-overrides.json", invalid);
+    let before = files.read("manual-overrides.json").unwrap();
+    assert!(Storage::open(Box::new(files.clone()), SID).is_err());
+    assert_eq!(files.read("manual-overrides.json").unwrap(), before);
+}
+#[tokio::test]
+async fn edge_managed_saved_custom_survives_unpublished_activation_and_private_frames() {
+    let managed: Value = serde_json::from_slice(include_bytes!(
+        "../../../../../tests/fixtures/custom-gpu-maximum.json"
+    ))
+    .unwrap();
+    let gpu = managed["overrides"]["gpuClockTuning"].clone();
+    for key in ["effectiveOffsets", "offsets"] {
+        let files = MemoryFiles::default();
+        let mut invalid = managed.clone();
+        invalid["overrides"]["gpuClockTuning"][key]["coreMegahertz"] = json!(10001);
+        files.put("manual-overrides.json", invalid);
+        assert!(Storage::open(Box::new(files), SID).is_err());
+    }
+    let mut custom_request = value(5, 1);
+    custom_request["customPerformance"] = managed["overrides"]["customPerformance"].clone();
+    let custom: crate::service_status::PerformanceOverride =
+        serde_json::from_value(custom_request).unwrap();
+    assert!(
+        custom.validate().is_err(),
+        "saved Custom never grants a Custom setter"
+    );
+    for enabled in [false, true] {
+        let rig = Rig::new(MemoryFiles::default());
+        let mut request = value(1, 1);
+        request["gpuClockTuning"] = gpu.clone();
+        request["gpuClockTuning"]["enabled"] = json!(enabled);
+        if !enabled {
+            request["gpuClockTuning"]["effectiveOffsets"] =
+                json!({"coreMegahertz":0,"memoryMegahertz":0});
+        }
+        assert_eq!(rig.set(91, request).await["result"]["status"], 0);
+        assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+        assert!(
+            rig.files
+                .read("thermal-mutation.journal")
+                .unwrap()
+                .is_none()
+        );
+        rig.stop().await;
+    }
+
+    for bytes in [
+        include_bytes!("../../../../../tests/fixtures/custom-basic.json").as_slice(),
+        include_bytes!("../../../../../tests/fixtures/custom-gpu-maximum.json").as_slice(),
+    ] {
+        let files = MemoryFiles::default();
+        files
+            .bytes
+            .lock()
+            .unwrap()
+            .insert("manual-overrides.json".into(), bytes.into());
+        let expected: Value = serde_json::from_slice(bytes).unwrap();
+        let rig = Rig::new(files);
+        rig.custody.activation_refusal.store(1, Ordering::Release);
+        assert_eq!(rig.set(91, value(1, 1)).await["result"]["status"], 2);
+        assert_eq!(
+            rig.files.read("manual-overrides.json").unwrap().unwrap(),
+            bytes
+        );
+        assert!(
+            rig.files
+                .read("thermal-mutation.journal")
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(rig.custody.activations.load(Ordering::Acquire), 0);
+        for operation in ["getStatus", "observeState", "subscribeStatus"] {
+            let mut request = json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000078"});
+            if operation == "observeState" {
+                request["includeLiveReadings"] = json!(false);
+                request["requestedLiveReadings"] = json!(0);
+                request["effectiveLiveReadings"] = json!(0);
+            }
+            let own = rig.request(request.clone()).await;
+            assert_eq!(own["success"], true);
+            assert_eq!(own["status"]["performanceOverride"]["value"], 5);
+            assert_eq!(
+                own["status"]["performanceOverride"]["customPerformance"],
+                expected["overrides"]["customPerformance"]
+            );
+            assert_eq!(
+                own["status"]["performanceOverride"]["gpuClockTuning"],
+                expected["overrides"]["gpuClockTuning"]
+            );
+            if operation != "getStatus" {
+                assert_eq!(own["status"]["confirmedState"]["performance"], 5);
+                assert!(own["status"]["confirmedState"]["customPerformance"].is_null());
+            }
+            let foreign = rig
+                .request_as(request, USER, "S-1-5-21-111-222-333-1002")
+                .await;
+            assert!(foreign["status"]["performanceOverride"].is_null());
+        }
+        let (mut client, server) = duplex(65536);
+        let source = rig.source.clone();
+        let publications = source.lock().await.publications();
+        let server = serve_connection(
+            Box::new(SidStream {
+                inner: test_stream(server, USER, Fault::None),
+                sid: SID.into(),
+            }),
+            source,
+            publications,
+            Rc::new(Subscriptions::new(2)),
+        );
+        let exercise = async {
+            crate::service_frame::write_payload(&mut client, &serde_json::to_vec(&json!({"operation":"subscribeStatus","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000090"})).unwrap()).await.unwrap();
+            crate::service_frame::read_payload(&mut client)
+                .await
+                .unwrap();
+            // A new metadata sample creates a material publication; identical
+            // thermal observations intentionally coalesce on this stream.
+            rig.metadata.store(1, Ordering::Release);
+            assert_eq!(fresh_observe(&rig).await["success"], true);
+            let raw = tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                crate::service_frame::read_payload(&mut client),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            let frame: Value = serde_json::from_slice(&raw).unwrap();
+            assert_eq!(
+                frame["status"]["performanceOverride"]["customPerformance"],
+                expected["overrides"]["customPerformance"]
+            );
+            assert!(frame["status"]["confirmedState"]["customPerformance"].is_null());
+            println!(
+                "NATIVE_THERMAL_EDGE_FRAME {}",
+                std::str::from_utf8(&raw).unwrap()
+            );
+            drop(client);
+        };
+        let (result, ()) = tokio::join!(server, exercise);
+        assert!(result.is_ok());
+        assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+        assert_eq!(
+            rig.files.read("manual-overrides.json").unwrap().unwrap(),
+            bytes
+        );
+        rig.stop().await;
+    }
+}
+#[tokio::test]
+async fn edge_shutdown_publishes_actual_retirement_after_one_failed_settlement() {
+    let rig = Rig::new(MemoryFiles::default());
+    rig.get().await;
+    let reached = Arc::new(AtomicBool::new(false));
+    let release = Arc::new(AtomicBool::new(false));
+    let flag = reached.clone();
+    let gate = release.clone();
+    let files = rig.files.clone();
+    {
+        let mut port = rig.port.state.lock().unwrap();
+        port.change_power = Some((2, 0));
+        port.on_mutation_retired = Some(Arc::new(move || {
+            files.fail_terminal.store(true, Ordering::Release);
+            flag.store(true, Ordering::Release);
+            while !gate.load(Ordering::Acquire) {
+                std::thread::yield_now();
+            }
+        }));
+    }
+    {
+        let request = rig.set(91, value(1, 1));
+        tokio::pin!(request);
+        let held = async {
+            while !reached.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        };
+        tokio::select! { _ = &mut request => panic!("request completed before actual retirement release"), r = tokio::time::timeout(std::time::Duration::from_secs(2), held) => r.unwrap() }
+    }
+    release.store(true, Ordering::Release);
+    assert!(rig.reader.stop().await.is_err());
+    assert!(rig.custody.retired.load(Ordering::Acquire));
+    assert!(rig.reader.confirm_drained().is_ok());
+    assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 1);
+    let pending = rig.files.read("thermal-mutation.journal.pending").unwrap();
+    assert!(pending.is_some());
+    rig.reader.stop().await.unwrap();
+    assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 1);
+    assert_eq!(
+        rig.files.read("thermal-mutation.journal.pending").unwrap(),
+        pending
+    );
+    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
 }

@@ -69,6 +69,7 @@ impl WindowsGuard {
         Ok(guard)
     }
     pub(super) fn verify_health(&self) -> io::Result<()> {
+        self.custody.verify_integrity()?;
         self.origin.lifecycle.verify_health().map_err(|_| {
             super::thermal_mutation::fatal_admission("lifecycle state lock poisoned")
         })?;

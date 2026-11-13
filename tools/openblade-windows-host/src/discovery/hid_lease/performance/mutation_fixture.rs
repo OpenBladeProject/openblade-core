@@ -17,10 +17,12 @@ pub(crate) struct State {
     pub(crate) recommended: u8,
     pub(crate) selectors: [u8; 2],
     pub(crate) fans: [u8; 2],
+    pub(crate) custom_levels: [u8; 2],
     pub(crate) retired: usize,
     pub(crate) opened: usize,
     pub(crate) power_reads: usize,
     pub(crate) change_power: Option<(usize, u8)>,
+    pub(crate) held_read: Option<Arc<AtomicBool>>,
     pub(crate) held_write: Option<(usize, Arc<AtomicBool>)>,
     pub(crate) before_write: Option<Arc<dyn Fn(usize) + Send + Sync>>,
 }
@@ -37,6 +39,7 @@ impl Fixture {
                 recommended: 15,
                 selectors: [4, 4],
                 fans: [1, 1],
+                custom_levels: [2, 2],
                 ..State::default()
             })),
             transactions: Arc::new(Transactions::new()),
@@ -167,6 +170,9 @@ impl Port for MemoryPort {
                         payload.to_vec()
                     }
                     (13, 0x82) => {
+                        if let Some(release) = &s.held_read {
+                            self.held = Some(release.clone());
+                        }
                         let index = (payload[1] - 1) as usize;
                         vec![
                             1,
@@ -179,7 +185,7 @@ impl Port for MemoryPort {
                             s.fans[index],
                         ]
                     }
-                    (13, 0x87) => vec![1, payload[1], 2],
+                    (13, 0x87) => vec![1, payload[1], s.custom_levels[(payload[1] - 1) as usize]],
                     (7, 0x8c) => {
                         s.power_reads += 1;
                         if let Some(hook) = &s.on_power {

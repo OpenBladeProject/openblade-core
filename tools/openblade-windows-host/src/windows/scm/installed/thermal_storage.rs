@@ -159,11 +159,7 @@ fn offsets(v: &Value) -> io::Result<()> {
     Ok(())
 }
 fn validate_gpu(v: &Value) -> io::Result<()> {
-    members(v, &["enabled", "offsets"])?;
-    if !v["enabled"].is_boolean() {
-        return Err(denied());
-    }
-    offsets(&v["offsets"])
+    crate::service_status::validate_gpu_tuning(v)
 }
 fn fan_control(v: &Value) -> io::Result<()> {
     members(v, &["mode", "fixedSpeedRpm", "manualCurve"])?;
@@ -215,6 +211,7 @@ struct Entry {
 struct State {
     quarantined: bool,
     configuration_failed: bool,
+    configuration_changed: bool,
     bytes: Option<Vec<u8>>,
     document: Value,
     journal: Option<Vec<u8>>,
@@ -317,6 +314,7 @@ impl Storage {
             state: Mutex::new(State {
                 quarantined: false,
                 configuration_failed: false,
+                configuration_changed: false,
                 bytes,
                 document,
                 journal,
@@ -453,6 +451,27 @@ impl Storage {
         Ok(!profiles[key]["gpuClockTuning"].is_null()
             || app.is_some_and(|a| !a["overrides"][key]["gpuClockTuning"].is_null()))
     }
+    pub(super) fn pending_reason(&self) -> io::Result<&'static str> {
+        let s = self.state.lock().map_err(|_| {
+            super::thermal_mutation::fatal_admission("Thermal storage state is poisoned.")
+        })?;
+        Ok(if s.configuration_changed {
+            "Saved configuration changed unexpectedly; storage reconciliation is required. No thermal submission is established by this change."
+        } else if s.configuration_failed {
+            "Saved configuration replacement failed; storage reconciliation is required. No thermal submission is established."
+        } else {
+            "An earlier thermal submission requires read-only reconciliation."
+        })
+    }
+    pub(super) fn quarantine_settlement(&self) -> io::Result<()> {
+        self.state
+            .lock()
+            .map_err(|_| {
+                super::thermal_mutation::fatal_admission("Thermal storage state is poisoned.")
+            })?
+            .quarantined = true;
+        Ok(())
+    }
     pub(super) fn configuration_failed(&self) -> bool {
         self.state.lock().map_or(true, |s| s.configuration_failed)
     }
@@ -460,6 +479,7 @@ impl Storage {
         let mut s = self.state.lock().map_err(|_| denied())?;
         if self.files.read(OVERRIDES)? != s.bytes {
             s.quarantined = true;
+            s.configuration_changed = true;
             return Err(denied());
         }
         if matches!(power, 0..=2) && s.temporary.as_ref().is_some_and(|(_, p)| *p != power) {
@@ -472,7 +492,10 @@ impl Storage {
         Ok(saved["performance"].as_i64().map(|n| Override {
             value: n as i32,
             lifetime: 1,
-            custom_performance: None,
+            custom_performance: saved
+                .get("customPerformance")
+                .filter(|v| !v.is_null())
+                .cloned(),
             gpu_clock_tuning: saved
                 .get("gpuClockTuning")
                 .filter(|v| !v.is_null())
@@ -511,7 +534,11 @@ impl Storage {
                 })
         });
         let mode = app
-            .and_then(|a| a["overrides"][key]["fans"].as_i64())
+            .and_then(|a| {
+                a["overrides"][key]["fans"]
+                    .as_i64()
+                    .or_else(|| a["overrides"][key]["fanControl"]["mode"].as_i64())
+            })
             .or_else(|| profiles[key]["fans"].as_i64());
         Ok(mode.is_some_and(|m| m != 0))
     }

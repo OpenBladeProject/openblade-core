@@ -14,7 +14,7 @@ use crate::service_frame::read_payload;
 mod subscription;
 pub(in crate::session_native) use subscription::fixture_initial;
 
-const FRAMES: &[u8] = include_bytes!("../../../tests/fixtures/get-status-v79.frames");
+const FRAMES: &[u8] = include_bytes!("../../../tests/fixtures/get-status-v80.frames");
 const REQUEST_ID: &str = "11111111-2222-4333-8444-555555555555";
 const PID: u32 = 42;
 
@@ -144,6 +144,7 @@ async fn accepts_managed_response_without_inventing_device_state() {
 async fn rejects_uncorrelated_failed_and_partial_snapshots() {
     let invalid_responses = [
         response_with(|frame| frame["version"] = 51.into()),
+        response_with(|frame| frame["version"] = 79.into()),
         response_with(|frame| frame["requestId"] = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".into()),
         response_with(|frame| frame["frame"] = "statusEvent".into()),
         response_with(|frame| frame["success"] = false.into()),

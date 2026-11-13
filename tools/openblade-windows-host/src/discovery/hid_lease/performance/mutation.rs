@@ -11,10 +11,16 @@ pub(crate) trait Permit: Send + Sync {
     fn authorize(&self) -> Option<ReadAdmission>;
     fn resolve(&self, power: i32, baseline: ObservedPerformance) -> io::Result<Option<Preset>>;
     fn refused(&self, _cause: Refusal) {}
-    fn retired(&self) -> io::Result<()> {
-        Ok(())
+    fn retired(&self) -> io::Result<Settlement> {
+        Ok(Settlement::Complete)
     }
     fn record(&self, progress: Progress) -> io::Result<()>;
+}
+
+/// Positive native retirement is independent from durable settlement.
+pub(crate) enum Settlement {
+    Complete,
+    Unresolved(io::Error),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

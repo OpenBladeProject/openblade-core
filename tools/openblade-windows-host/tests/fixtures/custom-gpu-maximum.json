@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 8,
+  "overrides": {
+    "performance": 5,
+    "fans": null,
+    "lighting": null,
+    "customPerformance": {
+      "cpu": 1,
+      "gpu": 2,
+      "maximumFans": true,
+      "gpuClockOffsets": null
+    },
+    "fanControl": null,
+    "gpuClockTuning": {
+      "enabled": true,
+      "offsets": {
+        "coreMegahertz": 125,
+        "memoryMegahertz": 500
+      },
+      "effectiveOffsets": {
+        "coreMegahertz": 125,
+        "memoryMegahertz": 500
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 use super::*;
 
-const REPLAY: &[u8] = include_bytes!("../../../../../tests/fixtures/observe-state-v79.frames");
+const REPLAY: &[u8] = include_bytes!("../../../../../tests/fixtures/observe-state-v80.frames");
 const ID: &str = "11111111-2222-4333-8444-555555555555";
 
 fn managed_frames() -> (&'static [u8], Value) {
@@ -77,7 +77,7 @@ async fn serve(
 fn refusal(reply: &[u8]) {
     let frame: Value = serde_json::from_slice(&reply[4..]).unwrap();
     assert_eq!(frame["frame"], "response");
-    assert_eq!(frame["version"], 79);
+    assert_eq!(frame["version"], 80);
     assert_eq!(frame["requestId"], ID);
     assert_eq!(frame["success"], false);
     assert!(frame["error"].as_str().is_some());
@@ -189,4 +189,32 @@ async fn in_memory_observe_state_rejects_bad_selectors_and_bounds_a_stalled_sour
 fn framed(frame: &Value) -> Vec<u8> {
     let payload = serde_json::to_vec(frame).unwrap();
     [(payload.len() as i32).to_le_bytes().as_slice(), &payload].concat()
+}
+
+#[tokio::test]
+async fn original_v79_wire_fixtures_are_rejected_before_dispatch() {
+    for legacy in [
+        include_bytes!("../../../../../tests/fixtures/get-status-v79.frames").as_slice(),
+        include_bytes!("../../../../../tests/fixtures/observe-state-v79.frames").as_slice(),
+        include_bytes!("../../../../../tests/fixtures/subscribe-status-v79.frames").as_slice(),
+    ] {
+        let size = u32::from_le_bytes(legacy[..4].try_into().unwrap()) as usize;
+        let old_request = &legacy[4..size + 4];
+        assert!(StatusRequest::decode(old_request).is_err());
+        let source = port(None);
+        let reads = source.reads.clone();
+        let (result, response) = serve(&legacy[..size + 4], SYSTEM, source).await;
+        assert_eq!(
+            io::Error::from(result.unwrap_err()).kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert_eq!(reads.get(), 0);
+        assert!(response.is_empty());
+        let mut current: Value = serde_json::from_slice(old_request).unwrap();
+        current["version"] = json!(80);
+        let request = StatusRequest::decode(&serde_json::to_vec(&current).unwrap()).unwrap();
+        let tail = &legacy[size + 4..];
+        let size = u32::from_le_bytes(tail[..4].try_into().unwrap()) as usize;
+        assert!(StatusResponse::verify(&tail[4..size + 4], &request).is_err());
+    }
 }

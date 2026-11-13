@@ -494,7 +494,11 @@ async fn serve_observation(
                     disconnected.map_err(Client)?;
                     Err(Client(io::ErrorKind::BrokenPipe.into()))
                 }
-                observed = observed => Ok(observed.ok().flatten()),
+                observed = observed => match observed {
+                    #[cfg(feature = "service-thermal-mutation-v1")]
+                    Err(error) if thermal_mutation::is_fatal_admission(&error) => Err(Runtime(error)),
+                    other => Ok(other.ok().flatten()),
+                },
             }
         };
         let status = timeout_at(deadline, observation)

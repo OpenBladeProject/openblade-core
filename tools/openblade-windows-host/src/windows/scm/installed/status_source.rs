@@ -476,6 +476,7 @@ impl StatusSource for GuardedStatus {
                     if let Some(status) = status {
                         let mut status = status.rebase_thermal_mutation(&publisher.borrow().active);
                         if let super::mailbox_read::MailboxSource::Reader(reader) = &mailbox {
+                            status = reader.current_policy(status)?;
                             reader.retain_mutation(&status);
                         }
                         status.set_observation_revision(

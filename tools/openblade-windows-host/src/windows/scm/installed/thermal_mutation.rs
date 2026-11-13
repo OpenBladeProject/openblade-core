@@ -8,7 +8,7 @@ use super::{
 use crate::{
     discovery::performance::{
         ObservedPerformance, ReadAdmission,
-        mutation::{Permit, Refusal},
+        mutation::{Permit, Refusal, Settlement},
     },
     loaded_origin::Origin,
     service_status::{ReadConfirmation, Snapshot},
@@ -36,6 +36,12 @@ impl std::fmt::Display for FatalAdmission {
 impl std::error::Error for FatalAdmission {}
 pub(super) fn fatal_admission(message: &'static str) -> io::Error {
     io::Error::other(FatalAdmission(message))
+}
+
+pub(super) fn is_fatal_admission(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|cause| cause.is::<FatalAdmission>())
 }
 
 pub(super) trait Fresh: Send + Sync {
@@ -221,10 +227,7 @@ impl Runtime {
         };
         let (storage, fresh) = match (self.factory)(&sid, caller.session, reader.custody()) {
             Ok(v) => v,
-            Err(e)
-                if e.get_ref()
-                    .is_some_and(|cause| cause.is::<FatalAdmission>()) =>
-            {
+            Err(e) if is_fatal_admission(&e) => {
                 return Err(e);
             }
             Err(e) => {
@@ -238,14 +241,7 @@ impl Runtime {
         };
         fresh.verify_health()?;
         if storage.pending() {
-            return Ok((
-                Outcome::blocked(if storage.configuration_failed() {
-                    "Saved configuration replacement failed; storage reconciliation is required. No thermal submission is established."
-                } else {
-                    "An earlier thermal submission requires read-only reconciliation."
-                }),
-                None,
-            ));
+            return Ok((Outcome::blocked(storage.pending_reason()?), None));
         }
         let proof = fresh.authorize();
         fresh.verify_health()?;
@@ -268,12 +264,16 @@ impl Runtime {
         let custody = reader.custody();
         reader.retain_policy(Rc::new(move |base| {
             let base = base.redact_private();
-            let Ok((store, fresh)) =
-                (runtime.factory)(&policy_sid, caller.session, custody.clone())
-            else {
-                return Ok(base);
-            };
-            if fresh.authorize().is_none() {
+            let (store, fresh) =
+                match (runtime.factory)(&policy_sid, caller.session, custody.clone()) {
+                    Ok(value) => value,
+                    Err(error) if is_fatal_admission(&error) => return Err(error),
+                    Err(_) => return Ok(base.private_policy_unavailable()),
+                };
+            fresh.verify_health()?;
+            let admitted = fresh.authorize().is_some();
+            fresh.verify_health()?;
+            if !admitted {
                 return Ok(base);
             }
             let power = base.thermal_power_source();
@@ -438,7 +438,7 @@ impl Cause {
         match self {
             Self::CurrentAdmission => "Current admission or independent readback did not complete; no successful application is reported.".into(),
             Self::Gpu => "GPU clock handling is incomplete; no thermal setter was submitted.".into(),
-            Self::ManualDeferred => "Performance applies when fans return to Automatic; manual fan intent is preserved.".into(),
+            Self::ManualDeferred => "Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.".into(),
             Self::NoEligiblePolicy => "No supported performance destination is selected by the current power and profile policy.".into(),
             Self::TransactionCapacity => "Thermal transaction ID capacity is exhausted; no setter was submitted.".into(),
             Self::PowerChanged => "The independently observed power source changed or no longer admits this destination.".into(),
@@ -502,13 +502,25 @@ impl Permit for RequestPermit {
             Refusal::PowerChanged => Cause::PowerChanged,
         });
     }
-    fn retired(&self) -> io::Result<()> {
-        // Called only after the retained Worker stop has joined actual native
-        // retirement. No caller freshness is manufactured and no setter is run.
-        if self.accepted.load(Ordering::Acquire) && self.storage.progress() == Some(0) {
-            self.record_progress(Progress::KnownNotSubmitted)?;
+    fn retired(&self) -> io::Result<Settlement> {
+        // Transport retirement is already positive. Settlement is attempted once;
+        // an uncertain append keeps the original evidence and global write fence.
+        self.fresh.verify_health()?;
+        let result = if self.accepted.load(Ordering::Acquire) && self.storage.progress() == Some(0)
+        {
+            self.record_progress(Progress::KnownNotSubmitted)
+        } else {
+            Ok(())
+        };
+        self.fresh.verify_health()?;
+        match result {
+            Ok(()) => Ok(Settlement::Complete),
+            Err(error) if is_fatal_admission(&error) => Err(error),
+            Err(error) => {
+                self.storage.quarantine_settlement()?;
+                Ok(Settlement::Unresolved(error))
+            }
         }
-        Ok(())
     }
     fn record(&self, progress: Progress) -> io::Result<()> {
         self.authorize().ok_or(io::ErrorKind::PermissionDenied)?;

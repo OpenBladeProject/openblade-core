@@ -883,24 +883,44 @@ impl PerformanceOverride {
             return Err(invalid("unsupported or invalid thermal override"));
         }
         if let Some(gpu) = &self.gpu_clock_tuning {
-            if gpu.as_object().is_none_or(|o| {
-                o.len() != 2
-                    || o.keys()
-                        .any(|k| !["enabled", "offsets"].contains(&k.as_str()))
-            }) || gpu["offsets"].as_object().is_none_or(|o| {
-                o.len() != 2
-                    || o.keys()
-                        .any(|k| !["coreMegahertz", "memoryMegahertz"].contains(&k.as_str()))
-            }) || !gpu["enabled"].is_boolean()
-                || ["coreMegahertz", "memoryMegahertz"]
-                    .iter()
-                    .any(|k| !matches!(gpu["offsets"][k].as_i64(), Some(-10000..=10000)))
-            {
-                return Err(invalid("unsupported or invalid thermal override"));
-            }
+            validate_gpu_tuning(gpu)?;
         }
         Ok(())
     }
+}
+
+// Shared by saved intent and typed requests. Managed GpuClockTuningSettings
+// emits EffectiveOffsets as a computed property (Profiles.cs); it grants no
+// extra intent and must agree with Enabled/Offsets when it is present.
+pub(crate) fn validate_gpu_tuning(gpu: &Value) -> io::Result<()> {
+    let valid_offsets = |value: &Value| {
+        value.as_object().is_some_and(|o| {
+            o.len() == 2
+                && o.keys()
+                    .all(|k| ["coreMegahertz", "memoryMegahertz"].contains(&k.as_str()))
+        }) && ["coreMegahertz", "memoryMegahertz"]
+            .iter()
+            .all(|k| matches!(value[k].as_i64(), Some(-10000..=10000)))
+    };
+    if gpu.as_object().is_none_or(|o| {
+        o.keys()
+            .any(|k| !["enabled", "offsets", "effectiveOffsets"].contains(&k.as_str()))
+    }) || !gpu["enabled"].is_boolean()
+        || !valid_offsets(&gpu["offsets"])
+    {
+        return Err(invalid("unsupported or invalid thermal override"));
+    }
+    if let Some(effective) = gpu.get("effectiveOffsets") {
+        let expected = if gpu["enabled"] == true {
+            gpu["offsets"].clone()
+        } else {
+            serde_json::json!({"coreMegahertz":0,"memoryMegahertz":0})
+        };
+        if !valid_offsets(effective) || effective != &expected {
+            return Err(invalid("inconsistent computed GPU offsets"));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(feature = "service-thermal-mutation-v1")]
@@ -986,6 +1006,11 @@ impl Snapshot {
     pub(crate) fn thermal_write_admission(mut self, applied: bool) -> Self {
         self.writes_blocked = !applied || !self.has_fresh_mailbox_read();
         self
+    }
+    pub(crate) fn private_policy_unavailable(&self) -> Self {
+        let mut value = self.redact_private();
+        value.message.push_str(" Saved private policy is unavailable; writes are blocked pending configuration reconciliation.");
+        value
     }
     pub(crate) fn thermal_power_source(&self) -> i32 {
         self.active_power_source

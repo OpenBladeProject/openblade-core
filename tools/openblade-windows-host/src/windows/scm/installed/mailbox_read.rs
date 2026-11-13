@@ -62,6 +62,10 @@ pub(super) trait ReadCustody: Send + Sync {
     fn retire(&self) -> io::Result<()>;
     fn confirm_drained(&self) -> io::Result<()>;
     #[cfg(feature = "service-thermal-mutation-v1")]
+    fn verify_integrity(&self) -> io::Result<()> {
+        Ok(())
+    }
+    #[cfg(feature = "service-thermal-mutation-v1")]
     fn activate_mutation(&self) -> Result<(), ActivationFailure> {
         Err(ActivationFailure::KnownUnpublished(deny()))
     }
@@ -488,6 +492,27 @@ impl ReadLease {
 }
 impl ReadCustody for ReadLease {
     #[cfg(feature = "service-thermal-mutation-v1")]
+    fn verify_integrity(&self) -> io::Result<()> {
+        let result = self
+            .resources
+            .lock()
+            .map_err(|_| {
+                super::thermal_mutation::fatal_admission("Thermal custody lock poisoned.")
+            })?
+            .as_ref()
+            .ok_or_else(|| {
+                super::thermal_mutation::fatal_admission(
+                    "Original thermal custody is no longer held.",
+                )
+            })?
+            ._owner
+            .verify_journal_custody();
+        if result.is_err() {
+            self.revoke();
+        }
+        result
+    }
+    #[cfg(feature = "service-thermal-mutation-v1")]
     fn journal_read(&self, pending: bool) -> io::Result<Option<Vec<u8>>> {
         self.resources
             .lock()
@@ -659,8 +684,30 @@ impl MailboxSource {
     }
 }
 
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[derive(Debug)]
+struct UnresolvedSettlement(io::Error);
+#[cfg(feature = "service-thermal-mutation-v1")]
+impl std::fmt::Display for UnresolvedSettlement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+#[cfg(feature = "service-thermal-mutation-v1")]
+impl std::error::Error for UnresolvedSettlement {}
+
 // Last getter completion owns this monotonic age; status refresh never renews it.
 const RETENTION_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+enum MutationPhase {
+    #[default]
+    Idle,
+    ReaderDrain,
+    Active,
+    Fenced,
+}
 
 #[derive(Clone)]
 pub(super) struct ReadSource {
@@ -679,6 +726,11 @@ pub(super) struct ReadSource {
     >,
     #[cfg(feature = "service-thermal-mutation-v1")]
     activated: Rc<std::cell::Cell<bool>>,
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    phase: Rc<std::cell::Cell<MutationPhase>>,
+    // Retain original request/owner proof after uncertain settlement; never retry.
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    unsettled: Rc<RefCell<Option<Arc<dyn crate::discovery::performance::mutation::Permit>>>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
     operation: Rc<tokio::sync::Mutex<()>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
@@ -717,6 +769,10 @@ impl ReadSource {
             mutation: Rc::default(),
             #[cfg(feature = "service-thermal-mutation-v1")]
             activated: Rc::default(),
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            phase: Rc::default(),
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            unsettled: Rc::default(),
             #[cfg(feature = "service-thermal-mutation-v1")]
             operation: Rc::default(),
             #[cfg(feature = "service-thermal-mutation-v1")]
@@ -775,17 +831,12 @@ impl ReadSource {
             ),
         };
         #[cfg(feature = "service-thermal-mutation-v1")]
-        let project = |base: &Snapshot| {
-            let value = project(base);
-            self.intent
-                .borrow()
-                .as_ref()
-                .map_or(Ok(value.clone()), |intent| intent(value.clone()))
-                .unwrap_or_else(|_| value.redact_private().read_revoked())
-        };
+        let project = |base: &Snapshot| self.current_policy(project(base));
+        #[cfg(not(feature = "service-thermal-mutation-v1"))]
+        let project = |base: &Snapshot| Ok::<_, io::Error>(project(base));
         let mut next = Publication {
-            active: project(&metadata.active),
-            inactive: project(&metadata.inactive),
+            active: project(&metadata.active)?,
+            inactive: project(&metadata.inactive)?,
         };
         if serde_json::to_vec(&next.active)? == serde_json::to_vec(&current.active)?
             && serde_json::to_vec(&next.inactive)? == serde_json::to_vec(&current.inactive)?
@@ -839,7 +890,7 @@ impl ReadSource {
                 return Ok(None);
             };
             #[cfg(feature = "service-thermal-mutation-v1")]
-            source.drain_mutation().await?;
+            source.drain_mutation(true).await?;
             let worker = source.worker.borrow().clone();
             let reading = match worker.observe(deadline, None).await {
                 Ok(reading) => reading,
@@ -869,9 +920,8 @@ impl ReadSource {
             *source.last.borrow_mut() = Some((observed.clone(), Instant::now()));
             source.decorate(&publisher, None)?;
             #[cfg(feature = "service-thermal-mutation-v1")]
-            if let Some(policy) = source.intent.borrow().as_ref() {
-                observed = policy(observed.clone())
-                    .unwrap_or_else(|_| observed.redact_private().read_revoked());
+            {
+                observed = source.current_policy(observed)?;
             }
             observed.set_observation_revision(publisher.borrow().active.revision());
             if !observed.has_fresh_mailbox_read() {
@@ -883,10 +933,24 @@ impl ReadSource {
     pub(super) async fn stop(&self) -> io::Result<()> {
         self.lease.revoke();
         #[cfg(feature = "service-thermal-mutation-v1")]
-        self.drain_mutation().await?;
+        let settlement = self.drain_mutation(false).await;
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        if settlement.as_ref().is_err_and(|error| {
+            !error
+                .get_ref()
+                .is_some_and(|cause| cause.is::<UnresolvedSettlement>())
+        }) {
+            return settlement;
+        }
+        // Positive callback retirement remains independently publishable when
+        // terminal bookkeeping is unresolved. Never retry the retained permit.
         let worker = self.worker.borrow().clone();
         worker.stop().await?;
-        self.lease.retire()
+        self.lease.retire()?;
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        return settlement;
+        #[cfg(not(feature = "service-thermal-mutation-v1"))]
+        Ok(())
     }
     pub(super) fn confirm_drained(&self) -> io::Result<()> {
         self.lease.confirm_drained()
@@ -1502,17 +1566,59 @@ impl ReadSource {
     pub(super) fn custody(&self) -> Arc<dyn ReadCustody> {
         self.lease.clone()
     }
-    async fn drain_mutation(&self) -> io::Result<()> {
-        let active = self.mutation.borrow().clone();
-        if let Some((worker, permit)) = active {
-            worker.stop().await?;
-            permit.retired()?;
-            self.mutation.borrow_mut().take();
-            let custody = self.lease.clone();
-            let factory = self.factories.as_ref().ok_or_else(deny)?;
-            *self.worker.borrow_mut() = (factory.read)(custody);
+    pub(super) fn current_policy(&self, value: Snapshot) -> io::Result<Snapshot> {
+        match self
+            .intent
+            .borrow()
+            .as_ref()
+            .map_or(Ok(value.clone()), |policy| policy(value.clone()))
+        {
+            Ok(value) => Ok(value),
+            Err(error) if super::thermal_mutation::is_fatal_admission(&error) => Err(error),
+            Err(_) => Ok(value.private_policy_unavailable()),
         }
-        Ok(())
+    }
+    async fn drain_mutation(&self, reconstruct: bool) -> io::Result<()> {
+        let active = self.mutation.borrow().clone();
+        let mut settlement_error = None;
+        if let Some((worker, permit)) = active {
+            worker.stop().await?; // Only positive callback/worker retirement clears active I/O.
+            self.mutation.borrow_mut().take();
+            self.phase.set(MutationPhase::ReaderDrain);
+            let settlement = self.lease.verify_integrity().and_then(|_| permit.retired());
+            match settlement {
+                Ok(crate::discovery::performance::mutation::Settlement::Complete) => {}
+                Ok(crate::discovery::performance::mutation::Settlement::Unresolved(error)) => {
+                    *self.unsettled.borrow_mut() = Some(permit);
+                    settlement_error = Some(error);
+                }
+                Err(error) => {
+                    *self.unsettled.borrow_mut() = Some(permit);
+                    self.phase.set(MutationPhase::Fenced);
+                    return Err(error);
+                }
+            }
+        }
+        if reconstruct && self.phase.get() == MutationPhase::Fenced {
+            return Err(deny());
+        }
+        if self.phase.get() == MutationPhase::ReaderDrain {
+            let reader = self.worker.borrow().clone();
+            reader.stop().await?;
+            if reconstruct {
+                if let Err(error) = self.lease.verify_integrity() {
+                    self.phase.set(MutationPhase::Fenced);
+                    return Err(error);
+                }
+                self.lease.authorize().ok_or_else(deny)?;
+                let factory = self.factories.as_ref().ok_or_else(deny)?;
+                *self.worker.borrow_mut() = (factory.read)(self.lease.clone());
+                self.phase.set(MutationPhase::Idle);
+            }
+        }
+        settlement_error.map_or(Ok(()), |error| {
+            Err(io::Error::other(UnresolvedSettlement(error)))
+        })
     }
     pub(super) async fn mutate(
         &self,
@@ -1521,33 +1627,30 @@ impl ReadSource {
     ) -> io::Result<Option<crate::discovery::performance::ObservedPerformance>> {
         let factory = self.factories.as_ref().ok_or_else(deny)?;
         let _serial = self.operation.lock().await;
-        self.drain_mutation().await?;
+        self.drain_mutation(true).await?;
+        // This phase is retained before the await. Cancellation or suspend cannot
+        // lose the proof that no owner publication was attempted.
+        self.phase.set(MutationPhase::ReaderDrain);
         let reader = self.worker.borrow().clone();
-        reader.stop().await?; // Includes actual native I/O and callback retirement.
+        reader.stop().await?;
         if permit.authorize() != self.lease.authorize() || permit.authorize().is_none() {
-            // The reader is genuinely drained and no owner publication was attempted.
-            if self.lease.authorize().is_some() {
-                *self.worker.borrow_mut() = (factory.read)(self.lease.clone());
-            }
             return Err(deny());
         }
         if !self.activated.get() {
+            self.phase.set(MutationPhase::Fenced);
             if let Err(failure) = self.lease.activate_mutation() {
-                if matches!(&failure, ActivationFailure::KnownUnpublished(_))
-                    && self.lease.authorize().is_some()
-                {
-                    *self.worker.borrow_mut() = (factory.read)(self.lease.clone());
+                if matches!(&failure, ActivationFailure::KnownUnpublished(_)) {
+                    self.phase.set(MutationPhase::ReaderDrain);
                 }
                 return Err(failure.error());
-            } // SAME held Store; Reserved then Active flush/readback.
+            }
             self.activated.set(true);
         }
         let worker = (factory.write)(permit.clone());
         *self.mutation.borrow_mut() = Some((worker.clone(), permit));
+        self.phase.set(MutationPhase::Active);
         let result = worker.observe(deadline, None).await;
-        // Dropping this future retains the worker in self.mutation. A later
-        // request/shutdown drains exactly that worker before any replacement.
-        self.drain_mutation().await?;
+        self.drain_mutation(true).await?;
         result.map(|reading| reading.map(|reading| reading.performance))
     }
 }

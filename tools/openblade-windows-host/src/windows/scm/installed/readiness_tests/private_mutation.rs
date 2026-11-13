@@ -473,3 +473,105 @@ fn private_prepared_settlement_authenticates_owner_prefix_and_reopens_terminal_h
     drop(storage);
     custody.0.lock().unwrap().retire_active().unwrap();
 }
+
+#[test]
+fn private_pending_terminal_file_preserves_intact_original_owner_custody() {
+    use openblade_domain::thermal_mutation::{Preset, Progress};
+    use sha2::{Digest, Sha256};
+    let user = PrivateRoot::open("protected-storage");
+    let machine = PrivateRoot::open("owner-journal");
+    let mut owner = machine.owner().unwrap();
+    owner.activate_injected(reservation('7')).unwrap();
+    let custody = Arc::new(JournalCustody(std::sync::Mutex::new(owner)));
+    let storage = Storage::open(
+        Box::new(CustodialFiles {
+            user: user.files().unwrap(),
+            custody: custody.clone(),
+        }),
+        &user.sid,
+    )
+    .unwrap();
+    let requested = Some(Override {
+        value: 1,
+        lifetime: 1,
+        custom_performance: None,
+        gpu_clock_tuning: None,
+    });
+    storage.save(requested.clone(), 0).unwrap();
+    let intent = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&requested).unwrap())
+    );
+    let request = "aaaaaaaa-bbbb-cccc-dddd-000000000003";
+    storage
+        .record(
+            request,
+            &"7".repeat(64),
+            Preset::Balanced,
+            &intent,
+            &requested,
+            42,
+            7,
+            Progress::Prepared,
+        )
+        .unwrap();
+    let prepared = custody
+        .0
+        .lock()
+        .unwrap()
+        .journal_read(false)
+        .unwrap()
+        .unwrap();
+    // A protected, fully formed pending file can survive an uncertain previous
+    // append. Its presence is not evidence that the retained owner was replaced.
+    let mut terminal: Value =
+        serde_json::from_slice(prepared.strip_suffix(b"\n").unwrap()).unwrap();
+    terminal["progress"] = json!(6);
+    let mut pending = prepared.clone();
+    pending.extend(serde_json::to_vec(&terminal).unwrap());
+    pending.push(b'\n');
+    std::fs::write(
+        machine.path.join("thermal-mutation.journal.pending"),
+        &pending,
+    )
+    .unwrap();
+    let error = storage
+        .record(
+            request,
+            &"7".repeat(64),
+            Preset::Balanced,
+            &intent,
+            &requested,
+            42,
+            7,
+            Progress::KnownNotSubmitted,
+        )
+        .unwrap_err();
+    assert!(!crate::installed::readiness::thermal_mutation::is_fatal_admission(&error));
+    assert!(storage.pending());
+    let owner = custody.0.lock().unwrap();
+    owner.verify_journal_custody().unwrap();
+    assert_eq!(owner.journal_read(false).unwrap().unwrap(), prepared);
+    assert_eq!(owner.journal_read(true).unwrap().unwrap(), pending);
+    drop(owner);
+    drop(storage);
+    assert!(
+        Storage::open(
+            Box::new(CustodialFiles {
+                user: user.files().unwrap(),
+                custody: custody.clone()
+            }),
+            &user.sid
+        )
+        .is_err()
+    );
+    assert_eq!(
+        std::fs::read(machine.path.join("thermal-mutation.journal")).unwrap(),
+        prepared
+    );
+    assert_eq!(
+        std::fs::read(machine.path.join("thermal-mutation.journal.pending")).unwrap(),
+        pending
+    );
+    custody.0.lock().unwrap().retire_active().unwrap();
+}

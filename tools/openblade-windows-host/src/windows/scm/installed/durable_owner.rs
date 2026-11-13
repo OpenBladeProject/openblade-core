@@ -257,7 +257,29 @@ impl Store {
         self.publish(next)
     }
     #[cfg(feature = "service-thermal-mutation-v1")]
+    pub(in crate::installed) fn verify_journal_custody(&self) -> io::Result<()> {
+        let check = || -> io::Result<()> {
+            self.check(&self.root, Policy::ROOT)?;
+            paths::check_regular_file(&self.lock)?;
+            self.check(&self.lock, Policy::Record)?;
+            if let Some(last) = &self.last {
+                let mut file =
+                    self.open_record(&format!("owner-{:020}.bin", last.sequence), false)?;
+                if bounded(&mut file)? != last.bytes() {
+                    return Err(deny());
+                }
+            }
+            Ok(())
+        };
+        check().map_err(|_| {
+            crate::installed::readiness::thermal_mutation::fatal_admission(
+                "Original protected thermal owner custody changed or cannot be authenticated.",
+            )
+        })
+    }
+    #[cfg(feature = "service-thermal-mutation-v1")]
     pub(in crate::installed) fn journal_read(&self, pending: bool) -> io::Result<Option<Vec<u8>>> {
+        self.verify_journal_custody()?;
         let name = if pending {
             "thermal-mutation.journal.pending"
         } else {
@@ -266,7 +288,7 @@ impl Store {
         let mut file = match self.open_record(name, false) {
             Ok(f) => f,
             Err(e) if paths::missing_leaf(&e) => return Ok(None),
-            Err(e) => return Err(e),
+            Err(error) => return Err(error),
         };
         if file.metadata()?.len() > 1024 * 1024 {
             return Err(deny());
@@ -274,7 +296,11 @@ impl Store {
         let mut bytes = vec![];
         file.read_to_end(&mut bytes)?;
         if !pending {
-            self.validate_journal_owners(&bytes)?;
+            self.validate_journal_owners(&bytes).map_err(|_| {
+                crate::installed::readiness::thermal_mutation::fatal_admission(
+                    "Thermal journal original owner binding changed.",
+                )
+            })?;
         }
         Ok(Some(bytes))
     }
@@ -284,8 +310,12 @@ impl Store {
         expected: Option<&[u8]>,
         bytes: &[u8],
     ) -> io::Result<()> {
-        self.check(&self.root, Policy::ROOT)?;
-        self.validate_journal_owners(bytes)?;
+        self.verify_journal_custody()?;
+        self.validate_journal_owners(bytes).map_err(|_| {
+            crate::installed::readiness::thermal_mutation::fatal_admission(
+                "Thermal settlement original owner binding is invalid.",
+            )
+        })?;
         if bytes.len() > 1024 * 1024 || self.journal_read(false)?.as_deref() != expected {
             return Err(deny());
         }
@@ -299,8 +329,13 @@ impl Store {
             FILE_CREATE,
             FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
         )?;
-        paths::check_regular_file(&file)?;
-        self.check(&file, Policy::Record)?;
+        paths::check_regular_file(&file)
+            .and_then(|_| self.check(&file, Policy::Record))
+            .map_err(|_| {
+                crate::installed::readiness::thermal_mutation::fatal_admission(
+                    "Thermal settlement staging protection is invalid.",
+                )
+            })?;
         file.write_all(bytes)?;
         file.sync_all()?;
         file.rewind()?;
@@ -350,8 +385,15 @@ impl Store {
             if create { FILE_CREATE } else { FILE_OPEN },
             FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
         )?;
-        paths::check_regular_file(&file)?;
-        self.check(&file, Policy::Record)?;
+        let protection =
+            paths::check_regular_file(&file).and_then(|_| self.check(&file, Policy::Record));
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        let protection = protection.map_err(|_| {
+            crate::installed::readiness::thermal_mutation::fatal_admission(
+                "Protected owner record identity or protection changed.",
+            )
+        });
+        protection?;
         Ok(file)
     }
     fn publish(&mut self, next: Record) -> io::Result<()> {
