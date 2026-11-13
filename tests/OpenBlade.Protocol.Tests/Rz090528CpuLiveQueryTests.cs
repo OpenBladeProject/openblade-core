@@ -42,26 +42,43 @@ public sealed class Rz090528CpuLiveQueryTests
         var sync = new FakeSynchronization();
         var wire = new ScriptedIoctl(sync) { IdleResponse = afterSubmission ? 1u : 0u, PendingPolls = afterSubmission ? 1 : 0 };
         var progress = new CpuQueryProgress();
-        using var entered = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         sync.OnDelay = () =>
         {
-            entered.Set(); Assert.True(release.Wait(TimeSpan.FromSeconds(5)));
+            entered.TrySetResult(); release.Task.GetAwaiter().GetResult();
             wire.IdleResponse = 1; sync.OnDelay = null;
         };
-        var worker = Task.Run(() => new Rz090528CpuLiveQuery(wire, sync, progress).Query(Exact));
+        var worker = Task.Factory.StartNew(() => new Rz090528CpuLiveQuery(wire, sync, progress).Query(Exact),
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        Task<string>? snapshot = null;
+        Exception? failure = null;
         string frozen;
         try
         {
-            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
-            frozen = await Task.Run(() => progress.Snapshot(freeze: true)).WaitAsync(TimeSpan.FromSeconds(2));
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            // Both sides must run independently of a busy test ThreadPool.
+            // Keep the query blocked until explicit release so a snapshot
+            // lock regression cannot pass after the fake unblocks itself.
+            snapshot = Task.Factory.StartNew(() => progress.Snapshot(freeze: true),
+                CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            frozen = await snapshot.WaitAsync(TimeSpan.FromSeconds(2));
             Assert.Contains("current mailbox " + (afterSubmission ? "ResponseWait" : "ReadinessWait"), frozen);
             Assert.Contains(afterSubmission ? "readiness zeros 0, response zeros 1" : "readiness zeros 1, response zeros 0", frozen);
             Assert.Contains("clear attempted/completed " + (afterSubmission ? "True/True" : "False/False"), frozen);
             Assert.Contains("submission attempted/completed " + (afterSubmission ? "True/True" : "False/False"), frozen);
             Assert.False(worker.IsCompleted);
         }
-        finally { release.Set(); }
-        Assert.Equal(CpuLiveQueryStatus.Observed, (await worker.WaitAsync(TimeSpan.FromSeconds(5))).Status);
+        catch (Exception error) { failure = error; throw; }
+        finally
+        {
+            release.TrySetResult();
+            Task completion = snapshot is null ? worker : Task.WhenAll(worker, snapshot);
+            try { await completion.WaitAsync(TimeSpan.FromSeconds(5)); }
+            catch (Exception cleanupError) when (failure is not null)
+            { throw new AggregateException("Frozen progress assertion and fake-worker cleanup failed.", failure, cleanupError); }
+        }
+        Assert.Equal(CpuLiveQueryStatus.Observed, (await worker).Status);
         Assert.Equal(frozen, progress.Snapshot());
     }
 

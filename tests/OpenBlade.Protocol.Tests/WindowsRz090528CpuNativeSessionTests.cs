@@ -113,8 +113,9 @@ public sealed class WindowsRz090528CpuNativeSessionTests
         var session = WindowsRz090528CpuNativeSession.ForPlatform(platform);
         using var held = session.TryRetainInstalledBackend(() => Exact);
         Assert.NotNull(held);
-        using var entered = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
-        void Pending() { entered.Set(); Assert.True(release.Wait(TimeSpan.FromSeconds(10))); }
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Pending() { entered.TrySetResult(); release.Task.GetAwaiter().GetResult(); }
         if (bucket == CpuQueryBucket.FullAdmission) { platform.BeforeHost = Pending; }
         if (bucket == CpuQueryBucket.MutexWait) { platform.BeforeWait = Pending; }
         if (bucket == CpuQueryBucket.NativeInvocation) { platform.BeforeIoctl = Pending; }
@@ -125,19 +126,32 @@ public sealed class WindowsRz090528CpuNativeSessionTests
             return true;
         });
         var progress = new CpuQueryProgress();
-        var worker = Task.Run(() => session.QueryInstalled(approval, () => Exact, progress: progress));
+        var worker = Task.Factory.StartNew(() => session.QueryInstalled(approval, () => Exact, progress: progress),
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        Task<string>? snapshot = null;
+        Exception? failure = null;
         string frozen;
         try
         {
-            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
             // Must complete while the native/guard/mutex fake remains blocked.
-            frozen = await Task.Run(() => progress.Snapshot(freeze: true)).WaitAsync(TimeSpan.FromSeconds(2));
+            snapshot = Task.Factory.StartNew(() => progress.Snapshot(freeze: true),
+                CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            frozen = await snapshot.WaitAsync(TimeSpan.FromSeconds(2));
             Assert.Contains("bucket " + bucket, frozen);
             Assert.Contains("completed IOCTLs 0", frozen);
             Assert.False(worker.IsCompleted);
         }
-        finally { release.Set(); }
-        Assert.Equal(CpuLiveQueryStatus.Observed, (await worker.WaitAsync(TimeSpan.FromSeconds(5))).Status);
+        catch (Exception error) { failure = error; throw; }
+        finally
+        {
+            release.TrySetResult();
+            Task completion = snapshot is null ? worker : Task.WhenAll(worker, snapshot);
+            try { await completion.WaitAsync(TimeSpan.FromSeconds(5)); }
+            catch (Exception cleanupError) when (failure is not null)
+            { throw new AggregateException("Frozen progress assertion and fake-worker cleanup failed.", failure, cleanupError); }
+        }
+        Assert.Equal(CpuLiveQueryStatus.Observed, (await worker).Status);
         Assert.Equal(frozen, progress.Snapshot());
         Assert.Equal(164, platform.Invocations.Count);
         Assert.Equal(new uint[] { 6 }.Concat(Enumerable.Repeat(0x5Eu, 12)), platform.Commands);
