@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Show the failing installer step and underlying error, including separate cleanup or recovery failures, instead of only a generic error code. Include Setup diagnostics in the main installer log so a single shared log contains the failure details. ([#952](https://github.com/OSSBlade/openblade-core/pull/952))
 - Fix unlit ISO and Japanese keys in keyboard lighting on Blade 16 RZ09-0581 and RZ09-0528. ([#958](https://github.com/OSSBlade/openblade-core/pull/958))
 - Explain unavailable startup and lighting controls when another Razer app is running or cannot be checked. ([#954](https://github.com/OSSBlade/openblade-core/pull/954))
@@ -23,6 +24,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Fix keyboard and logo controls blocked by Wave readback, and prevent unnecessary lighting retries on source-reviewed models. ([#947](https://github.com/OpenBladeProject/openblade-core/pull/947))
 - Keep laptop and cooling-pad fan curves responsive to hot, idle GPUs while skipping temperature reads for GPUs reported powered down. Require GPU cooling evidence before Battery Saver fan stop. ([#946](https://github.com/OpenBladeProject/openblade-core/pull/946))
 
@@ -30,6 +32,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Fix internal display brightness errors when Windows omits the change status. ([#942](https://github.com/OSSBlade/openblade-core/pull/942))
 - Allow Setup to recover from a dropped service connection during startup. ([#942](https://github.com/OSSBlade/openblade-core/pull/942))
 
@@ -37,6 +40,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Suppress the plugged-in battery discharge warning above, at, or up to five percentage points below the active charge limit. ([#935](https://github.com/OpenBladeProject/openblade-core/pull/935))
 - Fix false failure messages after changing internal display brightness. ([#939](https://github.com/OSSBlade/openblade-core/pull/939))
 
@@ -44,6 +48,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Fix laptop detection after a fresh install or upgrade by restoring the required machine-data permissions. ([#912](https://github.com/OSSBlade/openblade-core/pull/912))
 
 ## [0.58.1] - 2026-11-09
@@ -54,6 +59,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Preserve Silent, Performance, and Custom when changing between Automatic and manual fans on full adapter power on Blade 16 RZ09-0581 and RZ09-0528. Apply admitted AC performance presets directly when leaving HyperBoost. ([#907](https://github.com/OSSBlade/openblade-core/pull/907))
 
 ## [0.57.1-nightly.109] - 2026-11-08
@@ -82,6 +88,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Fix CPU temperatures stuck at 45°C. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879), [#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
 - Use Custom temperature cutoffs for Stop entry and improve fan-state diagnostics and recovery. ([#879](https://github.com/OpenBladeProject/openblade-core/pull/879))
 - Change directly between Fixed fans and host curves in an admitted preset on source-reviewed backends. ([#890](https://github.com/OpenBladeProject/openblade-core/pull/890))
@@ -105,6 +112,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Keep confirmed fixed-fan settings when reapplying the current performance preset. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
 - Preserve saved function-key and Gaming Mode preferences when saving or discarding other laptop edits. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
 - Show Blade 18's default Fn shortcuts without a paused warning and keep status checks from interrupting Razer-driver remapping. ([#880](https://github.com/OpenBladeProject/openblade-core/pull/880))
@@ -155,6 +163,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Fix a dashboard loading crash during application language changes. ([#867](https://github.com/OSSBlade/openblade-core/pull/867))
 - Make tray power sources and performance modes easier to distinguish, with clearer monochrome icons and a dedicated HyperBoost symbol. ([#858](https://github.com/OpenBladeProject/openblade-core/pull/858))
 - Preserve local-development installer logs after rollback and recognize Session Agent helpers during deployment and relaunch. ([#858](https://github.com/OpenBladeProject/openblade-core/pull/858))
@@ -163,6 +172,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Let SnapTap recover automatically from a brief loss of foreground focus while idle, after verified hook cleanup and a fresh key-release check. Preserve safety stops for held keys and uncertain input. ([#854](https://github.com/OpenBladeProject/openblade-core/pull/854))
 
 ## [0.44.0-nightly.104] - 2026-10-26
@@ -173,6 +183,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Keep keyboard driver setup visible for incomplete stacks and retain exact blocked checks and Windows Update results in diagnostics. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
 - Wait for SnapTap driver devices to appear after installation, keep canceled pre-install checks retryable, and distinguish refused driver offers from Windows Update availability problems. ([#855](https://github.com/OpenBladeProject/openblade-core/pull/855))
 
@@ -186,12 +197,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Retain redacted exception messages, stack locations, native results and complete ordinary cause chains across runtime diagnostics. Preserve driver and controller discovery context, log-writer health and export omissions, and deliver larger diagnostic archives without widening control requests. ([#850](https://github.com/OpenBladeProject/openblade-core/pull/850))
 
 ## [0.42.1-nightly.101] - 2026-10-24
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Preserve failure stages and native error details in SnapTap, Windows battery reports, Session Agent dispatch and THX diagnostics. Include SnapTap runtime failures and collection results in support exports, and keep healthy logs when another log is unreadable. ([#847](https://github.com/OpenBladeProject/openblade-core/pull/847))
 
 ## [0.42.0-nightly.100] - 2026-10-23
@@ -208,6 +221,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Align telemetry status text with CSV actions and center shared toolbar content at native display scaling. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 - Hide graph readouts, crosshairs and sample markers when the pointer leaves, without clearing pinned table values. Keep hover inspection available after telemetry range edits and preserve selection when recording starts or stops. Explain expired readings and adjusted time bounds, and retain unrelated preferences when a saved sensor is unknown. ([#841](https://github.com/OpenBladeProject/openblade-core/pull/841))
 - Keep application and display automation current after cancellation or rapid app switches, and let telemetry recording stop cleanly after a disk error. ([#845](https://github.com/OSSBlade/openblade-core/pull/845))
@@ -225,6 +239,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Avoid rebuilding hidden telemetry charts while recording continues in the background. ([#837](https://github.com/OSSBlade/openblade-core/pull/837))
 
 ## [0.41.0-nightly.98] - 2026-10-21
@@ -237,6 +252,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Preserve display ownership and uncertainty across application changes, manual controls, cancellation and restart. Require acknowledged recovery checkpoints and complete readback before resuming uncertain automation, and stop guessed refresh-rate rollback. ([#835](https://github.com/OSSBlade/openblade-core/pull/835))
 
 ## [0.40.0] - 2026-10-21
@@ -259,6 +275,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Accept the vendor-backed performance, fan and Maximum Fans acknowledgement replies on experimental Blade 18 (2023) and Blade 16 (2023), retaining independent readback and write-pause recovery. ([#826](https://github.com/OpenBladeProject/openblade-core/pull/826))
 - Stop startup-animation and other firmware controls from loading indefinitely after an unconfirmed read, and report the specific shared admission check blocking experimental writes. ([#826](https://github.com/OSSBlade/openblade-core/pull/826))
 - Include Blade 18 Fn shortcut input and execution checkpoints in exported diagnostics, preserving the existing input safety checks. ([#826](https://github.com/OSSBlade/openblade-core/pull/826))
@@ -271,12 +288,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Isolate failed battery and thermal state queries so unrelated controls stay available across Blade models. Keep optional GPU and sign-in checks from blocking state updates or Tray startup. ([#824](https://github.com/OpenBladeProject/openblade-core/pull/824))
 
 ## [0.37.1-nightly.95] - 2026-10-19
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Restore Blade 18 controls when an optional startup-lighting or keyboard-layout read fails during initialization. Preserve the actual failed query in diagnostics and include optional query failures in exported firmware diagnostics. ([#820](https://github.com/OpenBladeProject/openblade-core/pull/820))
 
 ## [0.37.0-nightly.94] - 2026-10-19
@@ -305,6 +324,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Preserve read-only status for older clients when new keyboard layouts are present, and leave external keyboard input untouched by Blade 18 Fn handling. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
 - Recheck controller admission for every lighting frame row and pause after partial frame batches, including cancellation between rows. This also protects the existing validated-model frame transports. ([#786](https://github.com/OpenBladeProject/openblade-core/pull/786))
 - Use the observed logo-lighting selector on Blade 18 (2023) for state queries, changes, and restoration. ([#786](https://github.com/OSSBlade/openblade-core/pull/786))
@@ -326,6 +346,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Resume text auto-repeat for restored SnapTap holds, and group SnapTap with the Keyboard controls without redundant normal-state labels. ([#803](https://github.com/OpenBladeProject/openblade-core/pull/803))
 - Avoid a Session Agent shutdown error when playback or microphone mute subscriptions finish after cancellation. ([#802](https://github.com/OpenBladeProject/openblade-core/pull/802))
 - Remove duplicate padding inside nested settings, match THX subcell spacing and hover states to Custom performance, hide empty application-rule spacing, and bound saved rules so service status stays available. ([#790](https://github.com/OpenBladeProject/openblade-core/pull/790))
@@ -345,6 +366,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Apply Blade 16 (2025) manual fan changes directly, and let both the 2025 and 2026 models enter HyperBoost from manual fans on either admitted cooling-pad path without resetting to Automatic first. ([#785](https://github.com/OpenBladeProject/openblade-core/pull/785))
 
 ## [0.29.0-nightly.91] - 2026-10-15
@@ -361,6 +383,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Recognize all Synapse-defined adapter wattages, including 200 W, on Blade 16 (2025 and 2026). Compare connected and recommended wattage, and label insufficient supplies as low-power adapters without assuming a connector. ([#776](https://github.com/OpenBladeProject/openblade-core/pull/776))
 
 ## [0.27.5-nightly.89] - 2026-10-15
@@ -382,6 +405,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Prevent RPM and lighting commands from overlapping on RZ09-0528. Share cancellation handling across model backends, distinguish requests that were never sent, and let controls recover after cleanup errors once pending I/O has finished. ([#762](https://github.com/OpenBladeProject/openblade-core/pull/762))
 - Keep firmware query replies in exported diagnostics after an unrecognized reading or failed model check, including adapter classification failures. Retain failure evidence after recovery for the current service run, without requiring developer tools. ([#773](https://github.com/OSSBlade/openblade-core/pull/773))
 - On RZ09-0581 with AC power, apply manual fan, performance and padless HyperBoost changes without first resetting to Balanced or Automatic, and allow those AC profile combinations. Remove the obsolete Balanced instruction. Battery Protection can be turned off without resetting the current supported charge limit first. ([#756](https://github.com/OpenBladeProject/openblade-core/pull/756))
@@ -399,6 +423,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Recognize a supported laptop when Windows reports no BIOS version or two different ones. The BIOS version is checked only where a model explicitly requires it. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
 - Show the actual failed identity check in exported diagnostics, instead of a product-name mismatch against another supported model. ([#745](https://github.com/OSSBlade/openblade-core/pull/745))
 - Keep the other controls working when the laptop reports a battery, performance or fan value OpenBlade doesn’t recognize. Only the affected controls stay unavailable, and HyperBoost shows as unknown instead of off until a later reading confirms it. The MCU firmware version is still read, and the status and exported diagnostics show the unrecognized value, including for keyboard and logo lighting. ([#752](https://github.com/OpenBladeProject/openblade-core/pull/752))
@@ -412,12 +437,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Explain why laptop controls or manual fan modes are unavailable and offer a current-state check when controls are blocked. ([#737](https://github.com/OSSBlade/openblade-core/pull/737))
 
 ## [0.25.1-nightly.83] - 2026-10-13
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Identify the exact battery or thermal query that blocks device controls in exported diagnostics. ([#735](https://github.com/OSSBlade/openblade-core/pull/735))
 
 ## [0.25.0] - 2026-10-13
@@ -428,12 +455,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Include the exact failed device check in exported diagnostics, with expected and observed identity values and HID failure details. ([#732](https://github.com/OSSBlade/openblade-core/pull/732))
 
 ## [0.24.5] - 2026-10-12
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Show GPU app cleanup for closable apps that hold a GPU context while idle. ([#726](https://github.com/OpenBladeProject/openblade-core/pull/726))
 - Show “No profile selected” in the display color profile picker when Windows reports no selected profile. ([#725](https://github.com/OpenBladeProject/openblade-core/pull/725))
 
@@ -459,6 +488,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Fix selecting a color profile on the built-in display when Windows has no active profile, and restore the previous profile settings if the change fails. ([#720](https://github.com/OSSBlade/openblade-core/pull/720))
 - Hide the apps using the NVIDIA GPU card when a successful activity scan confirms the GPU is inactive. ([#718](https://github.com/OSSBlade/openblade-core/pull/718))
 - Read published firmware versions with or without a v prefix, keeping each version tied to its updater row. ([#716](https://github.com/OpenBladeProject/openblade-core/pull/716))
@@ -486,12 +516,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Allow HyperBoost with verified Synapse Blade Blocker evidence despite known Synapse service aliases, and while the RGS updater service or verified Windows lighting helper is running; retain diagnostics and other controller checks. ([#573](https://github.com/OSSBlade/openblade-core/pull/573))
 
 ## [0.21.9] - 2026-09-23
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Keep apps launched by the local-development deployment client independent of the command runner, or report a relaunch failure when Windows prevents it. ([#567](https://github.com/OpenBladeProject/openblade-core/pull/567))
 - Recognize validated MCU 1.7.0.0 on Razer Blade 16 RZ09-0581 in the tested-firmware notice. ([#566](https://github.com/OSSBlade/openblade-core/pull/566))
 - Fix firmware checks failing on the first attempt when Razer's support page starts a new session. ([#564](https://github.com/OSSBlade/openblade-core/pull/564))
@@ -500,6 +532,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Keep the requested lighting effect visible when an apply completes before the final service status arrives. ([#549](https://github.com/OSSBlade/openblade-core/pull/549))
 - Keep intentional black primary colors when switching Breathing or Starlight between Single and Dual color modes. ([#541](https://github.com/OSSBlade/openblade-core/pull/541))
 - Preserve stored Tidal colors when disabling random colors, seed visible colors when leaving effects without an editable color, and retain intentional black between colored effects. ([#539](https://github.com/OSSBlade/openblade-core/pull/539))
@@ -515,12 +548,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Explain HyperBoost restrictions beside the performance controls and allow Chroma lighting services without relaxing checks for Synapse, updater, unknown, or unverified controllers. ([#503](https://github.com/OSSBlade/openblade-core/pull/503))
 
 ## [0.20.23] - 2026-09-15
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Turn off OpenBlade-controlled keyboard lighting on Windows suspend while preserving the separate display-off preference and eligible lighting settings for resume. ([#498](https://github.com/OSSBlade/openblade-core/pull/498))
 - Avoid classifying OpenBlade control writes as external changes during delayed resume validation, including writes that await confirmation, while continuing to compare unaffected settings. ([#498](https://github.com/OSSBlade/openblade-core/pull/498))
 - Match the Laptop performance row to other compact dashboard settings when its guidance is hidden, while retaining comfortable spacing for visible guidance and wrapped titles. ([#497](https://github.com/OSSBlade/openblade-core/pull/497))
@@ -532,6 +567,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Keep monitoring an already-running installer when durable PID binding fails, bound persisted broker state reads before allocation, and wait for a strictly verified final process inventory after relaunch without repeating installation or launches. ([#468](https://github.com/OSSBlade/openblade-core/pull/468))
 - Avoid redundant capability and fan-editor notifications after service updates. ([#469](https://github.com/OSSBlade/openblade-core/pull/469))
 - Bound preference reads, preserve future dashboard data, and recover saving from oversized files while retaining the original in an atomic backup and recording sanitized recovery diagnostics. ([#469](https://github.com/OSSBlade/openblade-core/pull/469))
@@ -553,6 +589,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Fixed false external-change warnings after uncertain battery command responses
   and missing battery or custom-performance reads. Charge limits, protection
   toggles, and temporary full charge now retain pending confirmation until fresh
@@ -590,6 +627,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Kept service status subscriptions ordered during concurrent updates so a
   newer pending snapshot cannot be replaced by an older one.
   ([#436](https://github.com/OSSBlade/openblade-core/pull/436))
@@ -642,6 +680,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Stopped a failed device read from being reported as a keyboard lighting
   change made outside OpenBlade. When a profile transition wrote a keyboard
   effect and the aggregate readback that followed failed on another port, the
@@ -673,6 +712,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Stopped the tray's memory from growing for as long as it runs. The .NET 10
   runtime records every managed object handed to native XAML in a debugger
   list that is never trimmed, and each property change delivered to a XAML
@@ -716,6 +756,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Quarantined a persistent override document whose JSON root is not an object
   instead of failing service startup. A `manual-overrides.json` file containing
   an array, `null`, a string, or a number now loads as safe defaults with
@@ -771,6 +812,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Removed the dormant Session Agent Dynamic Lighting sparse-package
   self-registration and relaunch path. OpenBlade continues delegating keyboard
   lighting to Windows without registering a competing background provider.
@@ -891,6 +933,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Released the quick-controls WinUI surface when it is dismissed instead of
   keeping it rendered off-screen, so the tray does not retain a discrete-GPU
   context after a game exits. ([#294](https://github.com/OSSBlade/openblade-core/pull/294))
@@ -1157,6 +1200,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Reduced excess vertical space in single-line Dashboard rows while preserving
   the original spacing for descriptions, editors, and titles that wrap at
   narrow widths without disrupting conditional-row animations. ([#193](https://github.com/OSSBlade/openblade-core/pull/193))
@@ -1258,6 +1302,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Fixed the quick-controls popup's blank black opening frame, raw lighting
   option text, missing fan icon, clipped controls, and truncated status labels.
   The popup now keeps its composed surface prewarmed outside the virtual
@@ -1323,6 +1368,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Folded GPU clock offsets under their tuning toggle, removed the persistent
   nested-card highlight, and placed dashboard slider values beside their
   sliders to keep the cards compact while retaining their circular thumbs. ([#57](https://github.com/OSSBlade/openblade-core/pull/57))
@@ -1370,6 +1416,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Made function-row brightness failures identify the logical key action,
   recorded sanitized and deduplicated exact-device session failures for every
   lighting open path, and added the active function-key and keyboard
@@ -1403,6 +1450,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Fixed the Tray terminating at startup when loading the new GPU tuning card's
   description style. ([#57](https://github.com/OSSBlade/openblade-core/pull/57))
 
@@ -1423,6 +1471,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Presented the installed MCU firmware consistently in Device information and
   the official firmware card while preserving the raw version for diagnostics
   and compatibility checks. ([#64](https://github.com/OSSBlade/openblade-core/pull/64))
@@ -1535,6 +1584,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Added a Launch action after successful graphical install or repair so a
   normally started upgrade does not leave the Tray and Session Agent stopped
   until the next sign-in. The launched processes inherit the installer's user
@@ -1856,6 +1906,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Open the matching settings page and scroll to its card when selecting a profile summary. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
 - Fixed shortcut action pickers that changed visually without persisting their
   new binding. Custom RZ09-0581 M1 and M2 actions now also suppress the paired
   native Page Up or Page Down edge for the full key press, while Default and
