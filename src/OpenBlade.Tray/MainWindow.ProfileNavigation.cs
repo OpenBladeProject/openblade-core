@@ -1,15 +1,14 @@
 using Microsoft.UI.Xaml;
-using OpenBlade.Contracts;
 using Button = Microsoft.UI.Xaml.Controls.Button;
 
 namespace OpenBlade.Tray;
 
 public sealed partial class MainWindow
 {
-    private static string ProfileNavigationName(string title, ProfileValuePresentation value) =>
+    private string ProfileNavigationName(string title, ProfileValuePresentation value) =>
         $"{title}. {value.AccessibilityDescription}";
 
-    private static string ProfileNavigationName(
+    private string ProfileNavigationName(
         string title,
         ProfileValuePresentation pluggedIn,
         ProfileValuePresentation usbC,
