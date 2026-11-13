@@ -761,7 +761,9 @@ async fn installed_private_projection_is_bound_to_sid_for_get_observe_and_subscr
     for operation in ["getStatus", "observeState", "subscribeStatus"] {
         let request = json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0});
         // Get/subscription DTOs reject observation-only members.
-        let request = if operation == "observeState" {
+        let request = if operation == "setPerformanceOverride" {
+            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
+        } else if operation == "observeState" {
             request
         } else {
             json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077"})
@@ -2585,4 +2587,275 @@ async fn edge_canceled_first_intent_fatal_is_sticky_for_get_observe_and_new_sid(
     );
     assert_eq!(prepared, *rig.files.first_intent_prior.lock().unwrap());
     assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+}
+
+#[tokio::test]
+async fn correction_idle_owner_loss_precedes_direct_observe_and_retains_first_fatal() {
+    let rig = Rig::new(MemoryFiles::default());
+    let files = rig.files.clone();
+    {
+        let mut port = rig.port.state.lock().unwrap();
+        port.change_power = Some((2, 0));
+        port.on_mutation_retired = Some(Arc::new(move || {
+            files.fail_terminal.store(true, Ordering::Release)
+        }));
+    }
+    assert_eq!(rig.set(91, value(1, 1)).await["result"]["status"], 2);
+    assert!(rig.reader.idle_for_tests());
+    let prepared = rig.files.read("thermal-mutation.journal").unwrap();
+    let pending = rig.files.read("thermal-mutation.journal.pending").unwrap();
+    assert!(prepared.is_some() && pending.is_some());
+    let (opened, queries) = {
+        let port = rig.port.state.lock().unwrap();
+        (port.opened, port.sent.clone())
+    };
+    rig.custody.integrity_lost.store(true, Ordering::Release);
+    // No GetStatus after loss: this is the direct outer ObserveState route.
+    for operation in [
+        "observeState",
+        "getStatus",
+        "observeState",
+        "setPerformanceOverride",
+    ] {
+        let request = if operation == "setPerformanceOverride" {
+            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
+        } else if operation == "observeState" {
+            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000097","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
+        } else {
+            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096"})
+        };
+        let (mut client, server) = duplex(65536);
+        let publications = rig.source.lock().await.publications();
+        let server = serve_connection(
+            Box::new(SidStream {
+                inner: test_stream(server, USER, Fault::None),
+                sid: SID.into(),
+            }),
+            rig.source.clone(),
+            publications,
+            Rc::new(Subscriptions::new(2)),
+        );
+        let client = async {
+            crate::service_frame::write_payload(
+                &mut client,
+                &serde_json::to_vec(&request).unwrap(),
+            )
+            .await
+            .unwrap();
+            crate::service_frame::read_payload(&mut client).await
+        };
+        let (server, reply) = tokio::join!(server, client);
+        assert!(
+            matches!(server, Err(ExchangeError::Runtime(error)) if crate::installed::readiness::thermal_mutation::is_fatal_admission(&error) && error.to_string() == "injected original owner integrity lost")
+        );
+        assert!(reply.is_err());
+        // Restoring the underlying fixture cannot erase the first typed fatal.
+        rig.custody.integrity_lost.store(false, Ordering::Release);
+    }
+    assert_eq!(rig.port.state.lock().unwrap().opened, opened);
+    assert_eq!(rig.port.state.lock().unwrap().sent, queries);
+    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+    assert_eq!(
+        rig.files.read("thermal-mutation.journal").unwrap(),
+        prepared
+    );
+    assert_eq!(
+        rig.files.read("thermal-mutation.journal.pending").unwrap(),
+        pending
+    );
+    assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 1);
+    rig.reader.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn correction_inflight_config_drift_distinguishes_stored_from_first_intent() {
+    for submitted in [false, true] {
+        let rig = Rig::new(MemoryFiles::default());
+        let before = fresh_observe(&rig).await;
+        let timestamp = rig.reader.last_completed_for_tests();
+        let retired = Arc::new(AtomicBool::new(false));
+        let release = Arc::new(AtomicBool::new(false));
+        struct Release(Arc<AtomicBool>);
+        impl Drop for Release {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+        let _release_on_failure = Release(release.clone());
+        let flag = retired.clone();
+        let gate = release.clone();
+        {
+            let mut port = rig.port.state.lock().unwrap();
+            if submitted {
+                port.fail_write = Some(1);
+            }
+            port.on_mutation_retired = Some(Arc::new(move || {
+                flag.store(true, Ordering::Release);
+                while !gate.load(Ordering::Acquire) {
+                    std::thread::yield_now();
+                }
+            }));
+        }
+        let mut desired = value(2, 1);
+        if !submitted {
+            desired["gpuClockTuning"] =
+                json!({"enabled":true,"offsets":{"coreMegahertz":10,"memoryMegahertz":20}});
+        }
+        let request = rig.set(91, desired);
+        tokio::pin!(request);
+        let held = async {
+            while !retired.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        };
+        tokio::select! { _ = &mut request => panic!("retirement must remain held"), result = tokio::time::timeout(std::time::Duration::from_secs(2), held) => result.unwrap() }
+        assert_eq!(
+            rig.files.document("manual-overrides.json")["overrides"]["performance"],
+            2
+        );
+        let mut foreign = rig.files.document("manual-overrides.json");
+        foreign["overrides"]["performance"] = json!(1);
+        rig.files.put("manual-overrides.json", foreign);
+        let foreign = rig.files.read("manual-overrides.json").unwrap();
+        let drift = rig.get().await;
+        assert!(drift["status"]["performanceOverride"].is_null());
+        assert_eq!(drift["status"]["writesBlocked"], true);
+        assert_eq!(rig.reader.last_completed_for_tests(), timestamp);
+        release.store(true, Ordering::Release);
+        let result = request.await;
+        assert_eq!(result["result"]["status"], 2);
+        let message = result["result"]["message"].as_str().unwrap();
+        if submitted {
+            assert!(message.contains("may have been submitted"));
+            let storage = Storage::open(Box::new(rig.files.clone()), SID).unwrap();
+            assert_eq!(storage.progress(), Some(1));
+            assert!(
+                rig.set(92, value(1, 1)).await["result"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("may have been submitted")
+            );
+        } else {
+            assert!(message.contains("configuration changed"));
+            assert!(
+                !message.contains("may have been submitted")
+                    && !message.contains("earlier thermal submission")
+            );
+            assert!(
+                rig.files
+                    .read("thermal-mutation.journal")
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        assert_eq!(
+            rig.port.state.lock().unwrap().writes,
+            usize::from(submitted)
+        );
+        assert_eq!(rig.files.read("manual-overrides.json").unwrap(), foreign);
+        if !submitted {
+            // Expected private-policy faults leave independent fresh public reads valid.
+            let observed = fresh_observe(&rig).await;
+            assert_eq!(observed["success"], true);
+            assert_eq!(
+                observed["status"]["confirmedState"],
+                before["status"]["confirmedState"]
+            );
+            assert!(observed["status"]["performanceOverride"].is_null());
+            let witness = rig
+                .source
+                .lock()
+                .await
+                .observe_performance(USER, Instant::now() + std::time::Duration::from_secs(2))
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(witness.has_fresh_mailbox_read());
+        }
+        rig.stop().await;
+    }
+}
+
+#[tokio::test]
+async fn correction_present_malformed_app_fans_refuse_committed_dispatch_without_writes() {
+    let original = include_bytes!("../../../../../tests/fixtures/app-fans-0-1.json");
+    for case in 0..14 {
+        let rig = Rig::new(managed_application_files(original));
+        let mut profile: Value = serde_json::from_slice(original).unwrap();
+        let policy = &mut profile["profiles"]["applicationProfiles"][0]["overrides"]["pluggedIn"];
+        match case {
+            0 => policy["fanControl"] = json!({}),
+            1 => {
+                policy["fanControl"].as_object_mut().unwrap().remove("mode");
+            }
+            2 => policy["fanControl"]["mode"] = Value::Null,
+            3 => policy["fanControl"]["mode"] = json!({}),
+            4 => policy["fanControl"]["mode"] = json!("Fixed"),
+            5 => policy["fanControl"]["mode"] = json!(99),
+            6 => policy["fanControl"]["mode"] = json!(-1),
+            7 => {
+                policy["fanControl"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("fixedSpeedRpm");
+            }
+            8 => policy["fanControl"]["manualCurve"] = Value::Null,
+            9 => policy["fanControl"]["fixedSpeedRpm"] = json!(2001),
+            10 => policy["fanControl"]["manualCurve"]["cpu"] = json!([]),
+            11 => policy["fans"] = json!({}),
+            12 => policy["fans"] = json!(99),
+            13 => policy["fans"] = json!(0),
+            _ => unreachable!(),
+        }
+        let changed = managed_application_files(&serde_json::to_vec(&profile).unwrap());
+        *rig.files.bytes.lock().unwrap() = changed.bytes.lock().unwrap().clone();
+        let retained = rig.files.bytes.lock().unwrap().clone();
+        assert!(
+            Storage::open(Box::new(rig.files.clone()), SID).is_err(),
+            "case={case}"
+        );
+        report_game(&rig).await;
+        // No paused clock advancement: the accepted report's actual 15s lease is live.
+        let result = rig.set(91, value(1, 1)).await;
+        assert_eq!(result["result"]["status"], 2, "case={case}");
+        assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+        assert!(
+            rig.files
+                .read("thermal-mutation.journal")
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(*rig.files.bytes.lock().unwrap(), retained);
+        rig.stop().await;
+    }
+}
+
+#[tokio::test]
+async fn correction_absent_null_and_fans_only_app_policy_preserve_inheritance() {
+    let original = include_bytes!("../../../../../tests/fixtures/app-fans-0-1.json");
+    for case in 0..3 {
+        let mut profile: Value = serde_json::from_slice(original).unwrap();
+        let policy = &mut profile["profiles"]["applicationProfiles"][0]["overrides"]["pluggedIn"];
+        // A configured performance override remains when both fan fields inherit.
+        policy["performance"] = json!(1);
+        policy["fanControl"] = Value::Null;
+        if case == 0 {
+            policy.as_object_mut().unwrap().remove("fanControl");
+            policy.as_object_mut().unwrap().remove("fans");
+        }
+        if case == 2 {
+            policy["fans"] = json!(1);
+        }
+        let rig = Rig::new(managed_application_files(
+            &serde_json::to_vec(&profile).unwrap(),
+        ));
+        report_game(&rig).await;
+        let result = rig.set(91, value(1, 1)).await;
+        assert_eq!(result["result"]["status"], if case == 2 { 0 } else { 1 });
+        assert_eq!(
+            rig.port.state.lock().unwrap().writes,
+            if case == 2 { 0 } else { 2 }
+        );
+        rig.stop().await;
+    }
 }

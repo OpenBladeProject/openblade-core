@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "baseRevision": "e8d409959c217ccf404f0f78b968ef14213b3c42",
+  "baseRevision": "716b812c3d1328c426c99717f6a7af1d04f23939",
   "producerMethod": "OpenBlade.Service.Tests.NativeThermalEdgeFixtureTests.WriteCurrentManagedWireAndPolicyFixtures",
   "producerSource": "tests/OpenBlade.Service.Tests/NativeThermalEdgeFixtureTests.cs",
-  "producerSourceSha256": "a05f7b41e38d6e47a3377f8730318fba4c210e3cffab788ab1fe8c23be293c99",
-  "classification": "Actual managed IPC80 codec output and explicit-path PersistentOverrideStore/ProfileSetValidator output from an offline private fixture. No installed runtime, firmware or hardware observation.",
+  "producerSourceSha256": "80d25ccd6010868925495764f2c20cc8a82a89894709b90de12e993568f5b703",
+  "classification": "Actual managed IPC80 codec output, explicit-path PersistentOverrideStore output, and three actual ProfileStore save/load application fixtures from fresh supplied private roots. No installed runtime, firmware or hardware observation.",
   "originalLegacyInputs": [
     {
       "name": "get-status-v79.frames",
@@ -26,42 +26,50 @@
     {
       "name": "get-status-v80.frames",
       "length": 6927,
-      "sha256": "ebc8e03774298550a16b9e6e013f3485537b3d41185d5a8295312f8895913d89"
+      "sha256": "ebc8e03774298550a16b9e6e013f3485537b3d41185d5a8295312f8895913d89",
+      "producer": "IpcMessageCodec"
     },
     {
       "name": "observe-state-v80.frames",
       "length": 6886,
-      "sha256": "ce60911f05accaf51d83cc9afb509e329f91a8b9c51342692686a699b8b16275"
+      "sha256": "ce60911f05accaf51d83cc9afb509e329f91a8b9c51342692686a699b8b16275",
+      "producer": "IpcMessageCodec"
     },
     {
       "name": "subscribe-status-v80.frames",
       "length": 13645,
-      "sha256": "6740b58df04dece25b67335db9cbf06524fbe1b27bfe32b1902eef9d6ded073f"
+      "sha256": "6740b58df04dece25b67335db9cbf06524fbe1b27bfe32b1902eef9d6ded073f",
+      "producer": "IpcMessageCodec"
     },
     {
       "name": "custom-basic.json",
       "length": 298,
-      "sha256": "da4fc74a31b43f3bd622598681809ade0f23a73a47cc1043adc70b7a7b0bf339"
+      "sha256": "da4fc74a31b43f3bd622598681809ade0f23a73a47cc1043adc70b7a7b0bf339",
+      "producer": "PersistentOverrideStore.SaveAsync/LoadAsync"
     },
     {
       "name": "custom-gpu-maximum.json",
       "length": 519,
-      "sha256": "32e695e9310fa6d3e178a4dcf25901342b921227da3261c3f1a7c38346e77a6a"
+      "sha256": "32e695e9310fa6d3e178a4dcf25901342b921227da3261c3f1a7c38346e77a6a",
+      "producer": "PersistentOverrideStore.SaveAsync/LoadAsync"
     },
     {
       "name": "app-fans-0-1.json",
-      "length": 3561,
-      "sha256": "0fd953bae5cefa6cf19b00f97c2fe141e95eef9554bbf44c4669c421c496c9fc"
+      "length": 7191,
+      "sha256": "334b1492a46b1457f4bba671034ba2861db469624799115d026257d6372888f8",
+      "producer": "ProfileStore.SaveAsync/LoadAsync"
     },
     {
       "name": "app-fans-0-2.json",
-      "length": 3561,
-      "sha256": "eb2df188c63f8e85117705ad082f57b57087d291aecdb4b31d35557bb16fdbbd"
+      "length": 7191,
+      "sha256": "74684315f7aa65b93f585e885cce3848a2d0cd42c42f388d2342ecd5577afdd0",
+      "producer": "ProfileStore.SaveAsync/LoadAsync"
     },
     {
       "name": "app-fans-1-0.json",
-      "length": 3561,
-      "sha256": "1f35e672240a7c429347712ceb4428c630b56ed7fa2edcc79739b34b419cb161"
+      "length": 7191,
+      "sha256": "bc843871e83944ebf275654b129d8507836d03d2bacf76b6cd77c3ec0ef24d26",
+      "producer": "ProfileStore.SaveAsync/LoadAsync"
     }
   ]
 }

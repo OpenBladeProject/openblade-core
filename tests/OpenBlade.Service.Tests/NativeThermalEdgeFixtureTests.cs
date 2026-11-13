@@ -8,7 +8,7 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class NativeThermalEdgeFixtureTests
 {
-    [Fact]
+    [NativeThermalEdgeFact]
     public async Task WriteCurrentManagedWireAndPolicyFixtures()
     {
         string root = RequiredRoot("OPENBLADE_EDGE_MANAGED_ROOT");
@@ -71,8 +71,22 @@ public sealed class NativeThermalEdgeFixtureTests
             };
             ProfileSetValidator.CreateUnverifiedSafeDefaults().Validate(profiles);
             Assert.Null(profiles.ApplicationProfiles[0].Overrides.PluggedIn!.Fans);
-            await File.WriteAllBytesAsync(Path.Combine(generated, $"app-fans-{(int)baseline}-{(int)application}.json"),
-                JsonSerializer.SerializeToUtf8Bytes(new { schemaVersion = 25, profiles }, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+            string path = Path.Combine(generated, $"app-fans-{(int)baseline}-{(int)application}.json");
+            var store = new ProfileStore(path, ProfileSetValidator.CreateUnverifiedSafeDefaults());
+            await store.SaveAsync(profiles, CancellationToken.None);
+            byte[] original = await File.ReadAllBytesAsync(path);
+            await File.WriteAllBytesAsync(Path.Combine(root, Path.GetFileName(path) + ".before-reload"), original);
+            ProfileLoadResult loaded = await store.LoadAsync(CancellationToken.None);
+            Assert.False(loaded.RecoveredFromInvalidFile);
+            Assert.Equal(ConfigurationLoadDisposition.Admitted, loaded.Disposition);
+            Assert.Equal(ConfigurationQuarantineReason.None, loaded.QuarantineReason);
+            Assert.Equal(profiles.PluggedIn, loaded.Profiles.PluggedIn);
+            ApplicationPowerProfileOverride app = Assert.Single(loaded.Profiles.ApplicationProfiles).Overrides.PluggedIn!;
+            Assert.Null(app.Fans);
+            Assert.Equal(application, app.FanControl!.Mode);
+            Assert.Equal(3700, app.FanControl.FixedSpeedRpm);
+            Assert.Equal(ManualFanCurve.Default, app.FanControl.ManualCurve);
+            Assert.Equal(original, await File.ReadAllBytesAsync(path));
         }
         var invalid = new PersistentOverrideState(null, null, null, FanControl: FanControlSettings.FromLegacy(FanMode.Fixed));
         await Assert.ThrowsAsync<InvalidDataException>(() => new PersistentOverrideStore(Path.Combine(generated, "invalid-fan.json")).SaveAsync(invalid, CancellationToken.None));
@@ -93,5 +107,16 @@ public sealed class NativeThermalEdgeFixtureTests
         BinaryPrimitives.WriteInt32LittleEndian(bytes, json.Length);
         json.CopyTo(bytes, 4);
         return new MemoryStream(bytes, writable: false);
+    }
+}
+
+internal sealed class NativeThermalEdgeFactAttribute : FactAttribute
+{
+    public NativeThermalEdgeFactAttribute()
+    {
+        if (Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_EDGE_FIXTURES") != "1")
+        {
+            Skip = "Requires explicit OPENBLADE_NATIVE_EDGE_FIXTURES=1 and private fixture inputs.";
+        }
     }
 }

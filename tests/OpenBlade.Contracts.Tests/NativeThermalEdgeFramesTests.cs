@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts.Tests;
 
 public sealed class NativeThermalEdgeFramesTests
 {
-    [Fact]
+    [NativeThermalEdgeFact]
     public async Task ActualNativeEdgeFramesPreserveSavedCustomAndCurrentPolicyThroughStrictCodec()
     {
         string path = Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_EDGE_FRAMES")
@@ -79,6 +79,17 @@ public sealed class NativeThermalEdgeFramesTests
         {
             Assert.Contains($"False:{operation}", savedVariantOperations);
             Assert.Contains($"True:{operation}", savedVariantOperations);
+        }
+    }
+}
+
+internal sealed class NativeThermalEdgeFactAttribute : FactAttribute
+{
+    public NativeThermalEdgeFactAttribute()
+    {
+        if (Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_EDGE_FIXTURES") != "1")
+        {
+            Skip = "Requires explicit OPENBLADE_NATIVE_EDGE_FIXTURES=1 and private fixture inputs.";
         }
     }
 }

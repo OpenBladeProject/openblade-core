@@ -44,13 +44,24 @@ pub(super) fn is_fatal_admission(error: &io::Error) -> bool {
         .is_some_and(|cause| cause.is::<FatalAdmission>())
 }
 
-fn verify_retained_failure(fatal: &Mutex<Option<&'static str>>) -> io::Result<()> {
+pub(super) fn verify_retained_failure(fatal: &Mutex<Option<&'static str>>) -> io::Result<()> {
     match *fatal
         .lock()
         .map_err(|_| fatal_admission("Thermal fatal evidence lock poisoned."))?
     {
         Some(message) => Err(fatal_admission(message)),
         None => Ok(()),
+    }
+}
+
+pub(super) fn remember_failure(fatal: &Mutex<Option<&'static str>>, error: &io::Error) {
+    if let Some(cause) = error
+        .get_ref()
+        .and_then(|cause| cause.downcast_ref::<FatalAdmission>())
+    {
+        if let Ok(mut retained) = fatal.lock() {
+            retained.get_or_insert(cause.0);
+        }
     }
 }
 
@@ -239,6 +250,7 @@ impl Runtime {
                 None,
             ));
         };
+        reader.custody().verify_integrity()?;
         let (storage, fresh) = match (self.factory)(&sid, caller.session, reader.custody()) {
             Ok(v) => v,
             Err(e) if is_fatal_admission(&e) => {
@@ -375,7 +387,9 @@ impl Runtime {
                 "Saved configuration replacement failed. Intent was not accepted; no thermal command was submitted. Storage reconciliation is required.",
             )
         } else if permit.storage.pending() {
-            Outcome::blocked(if permit.storage.progress() == Some(0) {
+            Outcome::blocked(if permit.storage.progress().is_none() {
+                permit.storage.pending_reason()?
+            } else if permit.storage.progress() == Some(0) {
                 "Intent stored and journal prepared; no mutation submission intent was reached. Explicit read-only reconciliation is required."
             } else {
                 "Intent stored; a thermal command may have been submitted. Read-only reconciliation is required and no mutation will be replayed."
@@ -472,14 +486,7 @@ impl Cause {
 }
 impl RequestPermit {
     fn remember_failure(&self, error: &io::Error) {
-        if let Some(fatal) = error
-            .get_ref()
-            .and_then(|cause| cause.downcast_ref::<FatalAdmission>())
-        {
-            if let Ok(mut retained) = self.fatal.lock() {
-                retained.get_or_insert(fatal.0);
-            }
-        }
+        remember_failure(&self.fatal, error);
     }
     fn verify_failure(&self) -> io::Result<()> {
         verify_retained_failure(&self.fatal)

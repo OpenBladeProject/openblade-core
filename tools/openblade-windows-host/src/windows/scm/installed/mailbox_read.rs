@@ -79,6 +79,53 @@ pub(super) trait ReadCustody: Send + Sync {
     }
 }
 
+// Every reader factory and repeated native checkpoint receives this same
+// original custody. Integrity failures survive the Option-valued read API;
+// configuration policy is deliberately not part of this admission.
+#[cfg(feature = "service-thermal-mutation-v1")]
+struct GuardedReadCustody {
+    original: Arc<dyn ReadCustody>,
+    fatal: Mutex<Option<&'static str>>,
+}
+#[cfg(feature = "service-thermal-mutation-v1")]
+impl ReadCustody for GuardedReadCustody {
+    fn verify_integrity(&self) -> io::Result<()> {
+        super::thermal_mutation::verify_retained_failure(&self.fatal)?;
+        let result = self.original.verify_integrity();
+        if let Err(error) = &result {
+            super::thermal_mutation::remember_failure(&self.fatal, error);
+        }
+        super::thermal_mutation::verify_retained_failure(&self.fatal)?;
+        result
+    }
+    fn authorize(&self) -> Option<ReadAdmission> {
+        self.verify_integrity().ok()?;
+        self.original.authorize()
+    }
+    fn revoke(&self) {
+        self.original.revoke();
+    }
+    fn retire(&self) -> io::Result<()> {
+        self.original.retire()
+    }
+    fn confirm_drained(&self) -> io::Result<()> {
+        self.original.confirm_drained()
+    }
+    fn activate_mutation(&self) -> Result<(), ActivationFailure> {
+        self.verify_integrity()
+            .map_err(ActivationFailure::KnownUnpublished)?;
+        self.original.activate_mutation()
+    }
+    fn journal_read(&self, pending: bool) -> io::Result<Option<Vec<u8>>> {
+        self.verify_integrity()?;
+        self.original.journal_read(pending)
+    }
+    fn journal_replace(&self, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        self.verify_integrity()?;
+        self.original.journal_replace(expected, bytes)
+    }
+}
+
 // Same canonical cross-language contract used before concrete read acquisition.
 fn validate_transfer(
     mapping: &[u8],
@@ -759,6 +806,11 @@ impl ReadSource {
         lease: Arc<dyn ReadCustody>,
         factory: impl FnOnce(Arc<dyn ReadCustody>) -> Worker<ReadAdmission>,
     ) -> Self {
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        let lease: Arc<dyn ReadCustody> = Arc::new(GuardedReadCustody {
+            original: lease,
+            fatal: Mutex::new(None),
+        });
         let worker = factory(lease.clone());
         Self {
             lease,
@@ -806,6 +858,8 @@ impl ReadSource {
         // Authorization loss is sticky in the custody object, independent of
         // metadata origin. Never turn its failure into a metadata endpoint error.
         let authorized = self.lease.authorize().is_some();
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        self.lease.verify_integrity()?;
         let last = self.last.borrow();
         let thermal = last.as_ref().filter(|(_, completed)| {
             now.checked_duration_since(*completed).unwrap_or_default() < RETENTION_WINDOW
@@ -848,6 +902,10 @@ impl ReadSource {
         next.inactive.set_observation_revision(revision);
         publisher.send_replace(Arc::new(next));
         Ok(())
+    }
+    #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+    pub(super) fn idle_for_tests(&self) -> bool {
+        self.phase.get() == MutationPhase::Idle
     }
     #[cfg(test)]
     pub(super) fn last_completed_for_tests(&self) -> Option<Instant> {
@@ -892,7 +950,10 @@ impl ReadSource {
             #[cfg(feature = "service-thermal-mutation-v1")]
             source.drain_mutation(true).await?;
             let worker = source.worker.borrow().clone();
-            let reading = match worker.observe(deadline, None).await {
+            let result = worker.observe(deadline, None).await;
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            source.lease.verify_integrity()?;
+            let reading = match result {
                 Ok(reading) => reading,
                 Err(_) => {
                     source.lease.revoke();
@@ -903,7 +964,10 @@ impl ReadSource {
             let Some(reading) = reading else {
                 return Ok(None);
             };
-            if source.lease.authorize() != Some(reading.admission) || Instant::now() >= deadline {
+            let admission = source.lease.authorize();
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            source.lease.verify_integrity()?;
+            if admission != Some(reading.admission) || Instant::now() >= deadline {
                 return Ok(None);
             }
             let lease = source.lease.clone();
@@ -1567,6 +1631,7 @@ impl ReadSource {
         self.lease.clone()
     }
     pub(super) fn current_policy(&self, value: Snapshot) -> io::Result<Snapshot> {
+        self.lease.verify_integrity()?;
         match self
             .intent
             .borrow()
@@ -1631,6 +1696,7 @@ impl ReadSource {
     ) -> io::Result<Option<crate::discovery::performance::ObservedPerformance>> {
         let factory = self.factories.as_ref().ok_or_else(deny)?;
         let _serial = self.operation.lock().await;
+        self.lease.verify_integrity()?;
         self.drain_mutation(true).await?;
         // This phase is retained before the await. Cancellation or suspend cannot
         // lose the proof that no owner publication was attempted.
@@ -1683,8 +1749,7 @@ impl ReadSource {
         lease: Arc<dyn ReadCustody>,
         factories: MutationFactories,
     ) -> Self {
-        let worker = (factories.read)(lease.clone());
-        let mut source = Self::compose(lease, |_| worker);
+        let mut source = Self::compose(lease, |custody| (factories.read)(custody));
         source.factories = Some(Rc::new(factories));
         source
     }

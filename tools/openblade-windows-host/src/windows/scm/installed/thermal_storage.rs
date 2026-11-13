@@ -455,13 +455,20 @@ impl Storage {
         let s = self.state.lock().map_err(|_| {
             super::thermal_mutation::fatal_admission("Thermal storage state is poisoned.")
         })?;
-        Ok(if s.configuration_changed {
-            "Saved configuration changed unexpectedly; storage reconciliation is required. No thermal submission is established by this change."
-        } else if s.configuration_failed {
-            "Saved configuration replacement failed; storage reconciliation is required. No thermal submission is established."
-        } else {
-            "An earlier thermal submission requires read-only reconciliation."
-        })
+        Ok(
+            if s.last
+                .as_ref()
+                .is_some_and(|entry| entry.progress >= 1 && !settled(entry.progress))
+            {
+                "A thermal command may have been submitted. Read-only reconciliation is required and no mutation will be replayed."
+            } else if s.configuration_changed {
+                "Saved configuration changed unexpectedly; storage reconciliation is required. No thermal submission is established by this change."
+            } else if s.configuration_failed {
+                "Saved configuration replacement failed; storage reconciliation is required. No thermal submission is established."
+            } else {
+                "An earlier thermal submission requires read-only reconciliation."
+            },
+        )
     }
     pub(super) fn quarantine_settlement(&self) -> io::Result<()> {
         self.state
@@ -693,6 +700,23 @@ fn aggregate(files: &dyn Files, same_path: fn(&str, &str) -> bool) -> io::Result
                             && !matches!(p["performance"].as_i64(), Some(0..=9)))
                 {
                     return Err(denied());
+                }
+                // Entirely absent/null optional policy inherits. A present value
+                // must satisfy the same typed fan contract as managed loading.
+                if !p["fans"].is_null() && !matches!(p["fans"].as_i64(), Some(0..=3)) {
+                    return Err(denied());
+                }
+                if !p["fanControl"].is_null() {
+                    fan_control(&p["fanControl"])?;
+                    let legacy_maximum = p["fans"].as_i64() == Some(3)
+                        && p["fanControl"]["mode"].as_i64() == Some(1)
+                        && p["fanControl"]["fixedSpeedRpm"].as_i64() == Some(5400);
+                    if !p["fans"].is_null()
+                        && p["fans"] != p["fanControl"]["mode"]
+                        && !legacy_maximum
+                    {
+                        return Err(denied());
+                    }
                 }
             }
         }
