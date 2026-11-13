@@ -1795,7 +1795,7 @@ public partial class App
             ApplyExperimentalLightingSnapshotState(window, state == "blade18-wave");
             return;
         }
-        if (state is not ("read-failure" or "battery" or "unsupported"
+        if (state is not ("read-failure" or "controller-blocked" or "battery" or "unsupported"
             or "direct-manual" or "battery-drift" or "keyboard" or "labs-lighting"
             or "one-shot-unavailable" or "one-shot-checking" or "one-shot-confirmed" or "blade18-function-row"))
         {
@@ -1812,7 +1812,8 @@ public partial class App
         bool driftedBattery = state == "battery-drift";
         bool fullPower = directManual || driftedBattery || keyboard;
         bool unsupported = state == "unsupported";
-        bool blocked = state == "read-failure" || unsupported;
+        bool controllerBlocked = state == "controller-blocked";
+        bool blocked = state == "read-failure" || controllerBlocked || unsupported;
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         if (hostFunctionRow)
         {
@@ -1825,8 +1826,10 @@ public partial class App
             };
         }
         ServiceStatusSnapshot status = new(
-            1, !unsupported, blocked, [], null, [], "Control availability snapshot",
-            unsupported
+            1, !unsupported && !controllerBlocked, blocked,
+            controllerBlocked ? ["RazerAppEngine", "razerwdl"] : [],
+            null, [], "Control availability snapshot",
+            unsupported || controllerBlocked
                 ? DeviceCapabilities.Unavailable()
                 : DeviceCapabilities.SafeTargetDefaults() with
                 {

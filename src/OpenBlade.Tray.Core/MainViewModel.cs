@@ -731,7 +731,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
             if (latestStatus?.DeviceVerified != true)
             {
-                return TrayText.Get("OpenBlade could not verify this laptop. Open Troubleshooting in About to check the detected model and connection.");
+                return HasUnverifiedControllerAdvisory
+                    ? LaptopSettingsReadUnavailableMessage
+                    : TrayText.Get("OpenBlade could not verify this laptop. Open Troubleshooting in About to check the detected model and connection.");
             }
             if (latestStatus.HyperBoostRestorePending)
             {
@@ -749,7 +751,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 return latestStatus.ConfirmedState is null
                     or { Performance: null, Fans: null, Battery: null, Lighting: null }
-                    ? TrayText.Get("OpenBlade couldn’t read the laptop’s current settings. Close Synapse if it is running, then select Check current state. If controls stay unavailable, export diagnostics.")
+                    ? LaptopSettingsReadUnavailableMessage
                     : TrayText.Get("OpenBlade cannot apply changes right now. Select Check current state. If controls stay unavailable, export diagnostics.");
             }
             return string.Empty;
@@ -1154,6 +1156,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool IsReadinessWarning => IsConnected
         && (IsFirmwareAdmissionBlocked
+            || HasUnverifiedControllerAdvisory
             || latestStatus?.DeviceVerified == true
                 && !IsCheckingLaptopConnection(latestStatus)
                 && !IsRetainedPowerSourceRecheck(latestStatus)
@@ -1162,7 +1165,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool IsReadinessError => !IsConnected
         || (!IsCheckingLaptopConnection(latestStatus)
             && latestStatus?.DeviceVerified != true
-            && !IsFirmwareAdmissionBlocked);
+            && !IsFirmwareAdmissionBlocked
+            && !HasUnverifiedControllerAdvisory);
 
     public string PerformanceSourceLabel
     {
@@ -2109,7 +2113,25 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ? TrayText.Get("Laptop not supported")
         : IsFirmwareAdmissionBlocked
         ? TrayText.Get("Incompatible firmware")
+        : HasUnverifiedControllerAdvisory
+        ? TrayText.Get("Controls unavailable")
         : TrayText.Get("Laptop not found");
+
+    // Controllers can block the first verification before HID enumeration.
+    // Their presence does not establish whether the laptop is connected.
+    private bool HasUnverifiedControllerAdvisory => latestStatus is
+    {
+        DeviceVerified: false,
+        WritesBlocked: true,
+        UnsupportedLaptop: false,
+    }
+        && (latestStatus.PotentialControllers.Count > 0
+            || !string.IsNullOrWhiteSpace(latestStatus.ControllerDetectionWarning))
+        && !IsFirmwareAdmissionBlocked
+        && !IsCheckingLaptopConnection(latestStatus);
+
+    private static string LaptopSettingsReadUnavailableMessage => TrayText.Get(
+        "OpenBlade couldn’t read the laptop’s current settings. Close Synapse if it is running, then select Check current state. If controls stay unavailable, export diagnostics.");
 
     private bool IsFirmwareAdmissionBlocked =>
         latestStatus?.FirmwareCompatibility
@@ -2408,7 +2430,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             if (latestStatus?.DeviceVerified != true)
             {
-                return IsFirmwareAdmissionBlocked
+                return HasUnverifiedControllerAdvisory
+                    ? LaptopSettingsReadUnavailableMessage
+                    : IsFirmwareAdmissionBlocked
                     ? TrayText.Get("OpenBlade found a supported laptop with incompatible firmware, so lighting controls are unavailable unless you enable the firmware override.")
                     : TrayText.Get("OpenBlade can’t find a supported laptop, so lighting controls are unavailable.");
             }

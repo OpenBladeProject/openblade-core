@@ -8,6 +8,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Show the failing installer step and underlying error, including separate cleanup or recovery failures, instead of only a generic error code. Include Setup diagnostics in the main installer log so a single shared log contains the failure details. ([#952](https://github.com/OSSBlade/openblade-core/pull/952))
+- Explain unavailable startup and lighting controls when another Razer app is running or cannot be checked. ([#954](https://github.com/OSSBlade/openblade-core/pull/954))
 
 ## [0.60.0-nightly.113] - 2026-11-12
 
