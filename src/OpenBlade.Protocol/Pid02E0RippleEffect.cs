@@ -1,3 +1,5 @@
+using OpenBlade.Contracts;
+
 namespace OpenBlade.Protocol;
 
 /// <summary>
@@ -41,7 +43,7 @@ internal sealed class Pid02E0RippleEffect : IPid02E0KeyTriggeredLightingEffect
             throw new ArgumentOutOfRangeException(nameof(slot));
         }
 
-        if (Pid02E0MatrixLayout.IsHole(slot))
+        if (!Blade16KeyboardLightingLayout.IsCanvasPulseSlot(slot))
         {
             throw new ArgumentException(
                 $"Captured layout-hole slot {slot} cannot receive a Ripple pulse.",
@@ -79,7 +81,7 @@ internal sealed class Pid02E0RippleEffect : IPid02E0KeyTriggeredLightingEffect
             int originColumn = origin % Columns;
             for (int slot = 0; slot < slots.Length; slot++)
             {
-                if (Pid02E0MatrixLayout.IsHole(slot))
+                if (!Blade16KeyboardLightingLayout.IsCanvasPulseSlot(slot))
                 {
                     continue;
                 }
@@ -94,7 +96,7 @@ internal sealed class Pid02E0RippleEffect : IPid02E0KeyTriggeredLightingEffect
             }
         }
 
-        return new Pid02E0MatrixFrame(slots);
+        return new Pid02E0MatrixFrame(slots, logicalKeyColors: true);
     }
 
     private bool HasActivePulse(TimeSpan elapsed)

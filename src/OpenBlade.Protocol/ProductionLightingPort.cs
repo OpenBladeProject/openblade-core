@@ -365,6 +365,15 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
                 ? null
                 : await QueryLogoModeCoreAsync(cancellationToken).ConfigureAwait(false);
             byte requestedRaw = LightingBrightnessProtocol.PercentToRaw(settings.Brightness);
+            // Cache immutable physical-layout metadata only for this admitted
+            // session. Read it before changing brightness or retiring a renderer.
+            if (settings.Effect != LightingEffect.Off && keyboardLayoutId is null)
+            {
+                ReadOnlyMemory<byte> layout = await ExecuteReadCoreAsync(
+                    KeyboardLayoutProtocol.CreateQuery(), cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                keyboardLayoutId = layout.Span[0];
+            }
             OwnedEffectSnapshot? previous = CaptureOwnedEffectCore();
             bool wakingFromDark = baselineRaw == 0 && requestedRaw != 0;
 
@@ -1139,12 +1148,11 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         }
     }
 
+    private byte? keyboardLayoutId;
+
     private async Task ExecuteTransitionHandshakeCoreAsync(
         CancellationToken cancellationToken)
     {
-        await ExecuteWriteCoreAsync(
-            Spec(0x00, 0x86, [0x00, 0x00, 0x00], [0x01, 0x00, 0x00]),
-            cancellationToken).ConfigureAwait(false);
         ReadOnlyMemory<byte> transitionState = await ExecuteWriteCoreAsync(
             new RazerCommandSpec(
                 DeviceModeProtocol.OperationClass,
@@ -1291,9 +1299,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
         }
 
         throw result.Failure == HidSessionFailureKind.Timeout
-            ? new TimeoutException("Lighting brightness query timed out.")
+            ? new TimeoutException($"Lighting query {command.ClassId:X2}/{command.CommandId:X2} timed out.")
             : DeviceStateContentRejection.LightingReadFailure(
-                $"Lighting brightness query failed ({result.Failure}).",
+                $"Lighting query {command.ClassId:X2}/{command.CommandId:X2} failed ({result.Failure}).",
                 command,
                 result.Diagnostic);
     }
@@ -1401,6 +1409,10 @@ internal sealed class ProductionLightingPort : IProductionLightingPort, ILightin
                 }
             }
 
+            // The source-selected physical map owns addresses; renderers retain
+            // the stable logical canvas used by IPC, imports and key pulses.
+            frame = Pid02E0RegionalFrameProjection.Project(frame, keyboardLayoutId
+                ?? throw KnownNotApplied("The keyboard layout has not been read."));
             result = await matrixWriter.WriteAsync(
                 new Pid02E0MatrixReport(AllocateMatrixTransaction(), frame)
                 {

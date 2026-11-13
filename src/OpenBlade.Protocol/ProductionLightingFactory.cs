@@ -67,7 +67,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     private static IProductionLightingPortFactory CreateWindowsCore(
         FirmwareCompatibilityPolicy? compatibilityPolicy)
     {
-        _ = ProductionLightingEvidenceSource.ReadValidatedOracle();
+        _ = Blade16KeyboardLightingLayout.CanvasHoleSlots;
         return CreateWindows(
             admitted:
                 ProductionLightingEvidenceSource
@@ -100,7 +100,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     internal static IProductionLightingPortFactory CreateWindowsForExactBuildValidation(
         IMatrixWriteTimingSink? timingSink = null)
     {
-        _ = ProductionLightingEvidenceSource.ReadValidatedOracle();
+        _ = Blade16KeyboardLightingLayout.CanvasHoleSlots;
         return CreateWindows(
             admitted: true,
             ControllerExclusivityPolicy.Strict,
