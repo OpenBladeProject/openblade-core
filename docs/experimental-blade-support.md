@@ -217,6 +217,15 @@ Battery Saver and Battery Balanced on battery power.
   after valid state readback. Enabling it requires an active charge limit; other
   Power Mode Control options must be off.
 
+Battery changes on these profiles and the seven newer limiter profiles share a
+bounded confirmation window: only GETs returning the exact pre-write raw byte
+are retried, up to nine reads 250 ms apart, without repeating the SET. A different
+value, invalid or failed read, cancellation or exhausted window pauses writes.
+The older profiles retain their required echoed SET acknowledgment; the seven
+newer profiles accept an optional returned-state byte. Independent requested-state
+readback remains required. This software tolerance does not establish firmware
+latency on every model.
+
 ## Send a useful test report
 
 The earlier five models also offer [SnapTap](snap-tap.md#supported-driver-profiles) through

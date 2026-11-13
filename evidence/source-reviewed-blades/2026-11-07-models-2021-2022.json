@@ -2175,6 +2175,6 @@
       652
     ],
     "vendorContract": "07/12 SET returns the command result; the packed-byte decoder runs only when SUCCESS has response bytes. A successful empty ACK is allowed by the helper. An echoed byte is not independent readback.",
-    "openBladeContract": "Accept zero response bytes or one optional state byte without requiring an echo; the ACK is not confirmation. Require independent fresh exact requested raw07/92 confirmation and keep enable and retained threshold separate. Retry only the exact pre-write raw value, at most nine reads with 250ms between reads. Other mismatches, invalid or failed reads, cancellation and uncertain submission pause writes without setter replay. This bounded software tolerance does not establish physical firmware latency."
+    "openBladeContract": "Accept zero response bytes or one optional state byte without requiring an echo; the ACK is not confirmation. Require independent fresh exact requested raw 07/92 confirmation and keep enable and retained threshold separate. Retry only the exact pre-write raw value, at most nine reads with 250 ms between reads. Other mismatches, invalid or failed reads, cancellation and uncertain submission pause writes without setter replay. This bounded software tolerance does not establish physical firmware latency."
   }
 }

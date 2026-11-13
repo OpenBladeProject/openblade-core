@@ -18,6 +18,8 @@ public sealed partial class SourceReviewedBladeModelTests
 
         Assert.True(policy.WritesAllowed);
         Assert.Equal((byte)0xCB, session.Battery);
+        Assert.Contains(policy.Snapshot().Observations, observation => observation.Stage == "Submission"
+            && observation.ConfirmedValue == "AckPayload=D0");
         Assert.Equal(new byte[] { 0x92, 0x12, 0x92 }, session.Commands.Select(command => command.CommandId));
     }
 
@@ -97,6 +99,7 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
         Assert.False(policy.WritesAllowed);
         Assert.Equal(8, delays);
+        Assert.Contains(policy.Snapshot().Observations, observation => observation.FailureCategory == "BatteryConfirmationWindowExpired");
         Assert.Equal(10, session.Commands.Count(command => command.CommandId == 0x92));
         Assert.Single(session.Commands, command => command.CommandId == 0x12);
         var nextSession = new Session();
@@ -207,5 +210,58 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Equal(0x12, session.Commands.Last().CommandId);
         Assert.Single(session.Commands, command => command.CommandId == 0x12);
         Assert.Single(session.Commands, command => command.CommandId == 0x92);
+    }
+
+    [Theory]
+    [InlineData(0x029F)]
+    [InlineData(0x029D)]
+    [InlineData(0x02C5)]
+    [InlineData(0x02A0)]
+    public async Task Battery_LegacyPreWriteReadbackUsesSharedBound(int product)
+    {
+        var session = new Session { IgnoreWrites = true };
+        var policy = new ExperimentalFeaturesPolicy(Model(product));
+        int delays = 0;
+        await using var port = Create(product, session, policy, confirmationDelay: (_, _) =>
+        {
+            delays++;
+            return Task.CompletedTask;
+        });
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetChargeLimitAsync(75, default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.False(policy.WritesAllowed);
+        Assert.Equal(8, delays);
+        Assert.Equal(10, session.Commands.Count(command => command.CommandId == 0x92));
+        Assert.Single(session.Commands, command => command.CommandId == 0x12);
+    }
+
+    [Theory]
+    [InlineData(0x029F)]
+    [InlineData(0x029D)]
+    [InlineData(0x02C5)]
+    [InlineData(0x02A0)]
+    [InlineData(0x02C7)]
+    public async Task Battery_StaleThenDifferentReadbackStopsWithoutAnotherDelay(int product)
+    {
+        var session = new Session { BatteryReadbacks = new([[0xD0], [0xD0], [0xC6]]) };
+        var policy = new ExperimentalFeaturesPolicy(Model(product));
+        int delays = 0;
+        await using var port = Create(product, session, policy, confirmationDelay: (_, _) =>
+        {
+            delays++;
+            return Task.CompletedTask;
+        });
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetChargeLimitAsync(75, default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.False(policy.WritesAllowed);
+        Assert.Equal(1, delays);
+        Assert.Equal(3, session.Commands.Count(command => command.CommandId == 0x92));
+        Assert.Single(session.Commands, command => command.CommandId == 0x12);
+        Assert.Contains(policy.Snapshot().Observations, observation => observation.FailureCategory == "UnexpectedBatteryReadback"
+            && observation.ConfirmedValue == "Raw=C6");
     }
 }
