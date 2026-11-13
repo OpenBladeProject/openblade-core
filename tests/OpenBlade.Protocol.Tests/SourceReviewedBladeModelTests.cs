@@ -470,9 +470,10 @@ public sealed partial class SourceReviewedBladeModelTests
     }
 
     private static ExperimentalBladePort Create(int product, Session session,
-        ExperimentalFeaturesPolicy? policy = null, Func<bool>? identity = null, Func<PowerSource>? power = null) =>
+        ExperimentalFeaturesPolicy? policy = null, Func<bool>? identity = null, Func<PowerSource>? power = null,
+        Func<TimeSpan, CancellationToken, Task>? confirmationDelay = null) =>
         new(session, new(), Model(product), policy ?? new(Model(product)), identity ?? (() => true),
-            power ?? (() => PowerSource.PluggedIn));
+            power ?? (() => PowerSource.PluggedIn), confirmationDelay ?? ((_, _) => Task.CompletedTask));
 
     private static void AssertFreshAdapterBeforeSetters(Session session)
     {
@@ -514,6 +515,8 @@ public sealed partial class SourceReviewedBladeModelTests
         internal byte[] Adapter = [0x11, 0x11];
         internal bool IgnoreWrites;
         internal bool EmptyBatteryAck;
+        internal byte[]? BatteryAck;
+        internal Queue<byte[]> BatteryReadbacks = new();
         internal bool RejectBatteryQuery;
         internal bool RejectAdapterQuery;
         internal Action<RazerCommandSpec>? BeforeSubmission;
@@ -558,12 +561,13 @@ public sealed partial class SourceReviewedBladeModelTests
                 (0x03, 0x0A) => [],
                 (0x07, 0x8C) => Adapter,
                 (0x07, 0x8F) => [Flags],
-                (0x07, 0x92) => [Battery],
+                (0x07, 0x92) => BatteryReadbacks.TryDequeue(out byte[]? readback) ? readback : [Battery],
+                (0x07, 0x12) => BatteryAck ?? arguments,
                 (0x0D, 0x82) => [1, arguments[1], Mode, Manual],
                 (0x0D, 0x87) => [1, arguments[1], arguments[1] == 1 ? Cpu : Gpu],
                 (0x0D, 0x81) => [arguments[0], arguments[1], arguments[1] == 1 ? Fan1 : Fan2],
                 (0x0D, 0x83) => DynamicFanRange,
-                (0x07, 0x12) or (0x07, 0x0F) or (0x0D, 0x02) or (0x0D, 0x07) or (0x0D, 0x01) => arguments,
+                (0x07, 0x0F) or (0x0D, 0x02) or (0x0D, 0x07) or (0x0D, 0x01) => arguments,
                 _ => throw new InvalidOperationException($"Unexpected command {command.ClassId:X2}/{command.CommandId:X2}"),
             };
             if (!IgnoreWrites)
