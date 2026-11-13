@@ -388,13 +388,7 @@ impl Runtime {
                 "Saved configuration replacement failed. Intent was not accepted; no thermal command was submitted. Storage reconciliation is required.",
             )
         } else if permit.storage.pending() {
-            Outcome::blocked(if permit.storage.progress().is_none() {
-                permit.storage.pending_reason()?
-            } else if permit.storage.progress() == Some(0) {
-                "Intent stored and journal prepared; no mutation submission intent was reached. Explicit read-only reconciliation is required."
-            } else {
-                "Intent stored; a thermal command may have been submitted. Read-only reconciliation is required and no mutation will be replayed."
-            })
+            Outcome::blocked(permit.storage.pending_reason()?)
         } else if accepted {
             Outcome {
                 status: 0,

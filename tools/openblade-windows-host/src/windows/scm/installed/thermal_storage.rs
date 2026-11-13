@@ -212,6 +212,7 @@ struct State {
     quarantined: bool,
     configuration_failed: bool,
     configuration_changed: bool,
+    preparation_failed: bool,
     bytes: Option<Vec<u8>>,
     document: Value,
     journal: Option<Vec<u8>>,
@@ -315,6 +316,7 @@ impl Storage {
                 quarantined: false,
                 configuration_failed: false,
                 configuration_changed: false,
+                preparation_failed: false,
                 bytes,
                 document,
                 journal,
@@ -461,6 +463,10 @@ impl Storage {
                 .is_some_and(|entry| entry.progress >= 1 && !settled(entry.progress))
             {
                 "A thermal command may have been submitted. Read-only reconciliation is required and no mutation will be replayed."
+            } else if s.preparation_failed {
+                "Thermal journal preparation could not be confirmed; storage reconciliation is required. The failed preparation reached no submission intent or thermal setter. Pending or published journal evidence is retained."
+            } else if s.last.as_ref().is_some_and(|entry| entry.progress == 0) {
+                "Intent stored and journal prepared; no mutation submission intent was reached. Explicit read-only reconciliation is required."
             } else if s.configuration_changed {
                 "Saved configuration changed unexpectedly; storage reconciliation is required. No thermal submission is established by this change."
             } else if s.configuration_failed {
@@ -620,6 +626,10 @@ impl Storage {
         }
         if let Err(error) = self.files.replace(JOURNAL, s.journal.as_deref(), &bytes) {
             s.quarantined = true;
+            // Only a new Prepared append establishes this local failure cause.
+            // Staging or publication may already have left durable bytes.
+            // Existing unresolved history cannot reach this append.
+            s.preparation_failed = progress == Progress::Prepared;
             return Err(error);
         }
         s.journal = Some(bytes);

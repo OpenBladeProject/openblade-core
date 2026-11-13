@@ -27,6 +27,10 @@ struct MemoryFiles {
     bytes: Arc<StdMutex<BTreeMap<String, Vec<u8>>>>,
     fail: Arc<AtomicBool>,
     fail_terminal: Arc<AtomicBool>,
+    fail_prepared: Arc<AtomicU8>,
+    prepared_attempts: Arc<AtomicUsize>,
+    submission_intent_attempts: Arc<AtomicUsize>,
+    prepared_bytes: Arc<StdMutex<Option<Vec<u8>>>>,
     fatal_terminal: Arc<AtomicBool>,
     fatal_first_intent: Arc<AtomicBool>,
     first_intent_attempts: Arc<AtomicUsize>,
@@ -73,6 +77,58 @@ impl Files for MemoryFiles {
         Ok(self.bytes.lock().unwrap().get(name).cloned())
     }
     fn replace(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        if name == "thermal-mutation.journal" {
+            let progress = bytes
+                .split(|b| *b == b'\n')
+                .filter(|line| !line.is_empty())
+                .last()
+                .map(|line| {
+                    serde_json::from_slice::<Value>(line).unwrap()["progress"]
+                        .as_u64()
+                        .unwrap()
+                });
+            if progress == Some(1) {
+                self.submission_intent_attempts
+                    .fetch_add(1, Ordering::AcqRel);
+            }
+            if progress == Some(0) {
+                self.prepared_attempts.fetch_add(1, Ordering::AcqRel);
+                let cut = self.fail_prepared.load(Ordering::Acquire);
+                if cut != 0 {
+                    let mut files = self.bytes.lock().unwrap();
+                    assert_eq!(files.get(name).map(Vec::as_slice), expected);
+                    assert!(files.contains_key("manual-overrides.json"));
+                    *self.prepared_bytes.lock().unwrap() = Some(bytes.to_vec());
+                    match cut {
+                        1 => {} // ordinary staging-open failure
+                        2 => {
+                            files.insert(
+                                "thermal-mutation.journal.pending".into(),
+                                bytes[..bytes.len() / 2].to_vec(),
+                            );
+                        }
+                        3 => {
+                            files.insert("thermal-mutation.journal.pending".into(), bytes.to_vec());
+                        }
+                        4 => {
+                            files.insert(name.into(), bytes.to_vec());
+                        } // published, final sync/readback failed
+                        5 => {
+                            return Err(
+                                crate::installed::readiness::thermal_mutation::fatal_admission(
+                                    "injected Prepared protection failure",
+                                ),
+                            );
+                        }
+                        _ => panic!("unknown Prepared I/O cut"),
+                    }
+                    return Err(io::Error::new(
+                        io::ErrorKind::StorageFull,
+                        "injected ordinary Prepared persistence failure",
+                    ));
+                }
+            }
+        }
         if name == "thermal-mutation.journal"
             && self.fatal_first_intent.load(Ordering::Acquire)
             && bytes
@@ -2668,8 +2724,34 @@ async fn correction_idle_owner_loss_precedes_direct_observe_and_retains_first_fa
 
 #[tokio::test]
 async fn correction_inflight_config_drift_distinguishes_stored_from_first_intent() {
-    for submitted in [false, true] {
+    for (prior, submitted) in [
+        (None, false),
+        (Some(5), false),
+        (Some(6), false),
+        (None, true),
+    ] {
         let rig = Rig::new(MemoryFiles::default());
+        if let Some(progress) = prior {
+            if progress == 6 {
+                rig.port.state.lock().unwrap().change_power = Some((2, 0));
+            }
+            let seeded = rig.set(90, value(1, 1)).await;
+            assert_eq!(
+                seeded["result"]["status"],
+                if progress == 5 { 1 } else { 0 }
+            );
+            assert_eq!(
+                Storage::open(Box::new(rig.files.clone()), SID)
+                    .unwrap()
+                    .progress(),
+                Some(progress)
+            );
+            let mut port = rig.port.state.lock().unwrap();
+            assert_eq!(port.opened, port.retired);
+            port.change_power = None;
+        }
+        let prior_journal = rig.files.read("thermal-mutation.journal").unwrap();
+        let prior_writes = rig.port.state.lock().unwrap().writes;
         let before = fresh_observe(&rig).await;
         let timestamp = rig.reader.last_completed_for_tests();
         let retired = Arc::new(AtomicBool::new(false));
@@ -2740,16 +2822,26 @@ async fn correction_inflight_config_drift_distinguishes_stored_from_first_intent
                 !message.contains("may have been submitted")
                     && !message.contains("earlier thermal submission")
             );
+            assert_eq!(
+                rig.files.read("thermal-mutation.journal").unwrap(),
+                prior_journal
+            );
+            let later = rig.set(92, value(1, 1)).await;
+            assert_eq!(later["result"]["status"], 2);
             assert!(
-                rig.files
-                    .read("thermal-mutation.journal")
+                later["result"]["message"]
+                    .as_str()
                     .unwrap()
-                    .is_none()
+                    .contains("configuration changed")
+            );
+            assert_eq!(
+                rig.files.read("thermal-mutation.journal").unwrap(),
+                prior_journal
             );
         }
         assert_eq!(
             rig.port.state.lock().unwrap().writes,
-            usize::from(submitted)
+            prior_writes + usize::from(submitted)
         );
         assert_eq!(rig.files.read("manual-overrides.json").unwrap(), foreign);
         if !submitted {
@@ -2987,4 +3079,146 @@ async fn correction_disconnected_first_intent_fatal_precedes_later_owner_loss() 
     let port = rig.port.state.lock().unwrap();
     assert_eq!(port.writes, 0);
     assert_eq!(port.opened, port.retired);
+}
+
+#[tokio::test]
+async fn correction_first_prepared_io_failure_retains_truthful_cause_and_all_evidence() {
+    for cut in 1..=4 {
+        let files = MemoryFiles::default();
+        files.fail_prepared.store(cut, Ordering::Release);
+        let rig = Rig::new(files);
+        let retired = Arc::new(AtomicBool::new(false));
+        let flag = retired.clone();
+        rig.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+            flag.store(true, Ordering::Release);
+        }));
+        let result = rig.set(91, value(1, 1)).await;
+        assert!(retired.load(Ordering::Acquire));
+        assert_eq!(result["result"]["status"], 2);
+        let message = result["result"]["message"].as_str().unwrap();
+        assert!(message.contains("journal preparation could not be confirmed"));
+        assert!(
+            !message.contains("earlier thermal submission")
+                && !message.contains("may have been submitted")
+        );
+        assert_eq!(
+            rig.files.document("manual-overrides.json")["overrides"]["performance"],
+            1
+        );
+        let prepared = rig.files.prepared_bytes.lock().unwrap().clone().unwrap();
+        let row: Value = serde_json::from_slice(prepared.strip_suffix(b"\n").unwrap()).unwrap();
+        assert_eq!(row["progress"], 0);
+        assert_eq!(row["request"], "aaaaaaaa-bbbb-cccc-dddd-000000000091");
+        assert_eq!(
+            rig.files.read("thermal-mutation.journal").unwrap(),
+            (cut == 4).then(|| prepared.clone())
+        );
+        let pending = match cut {
+            2 => Some(prepared[..prepared.len() / 2].to_vec()),
+            3 => Some(prepared),
+            _ => None,
+        };
+        assert_eq!(
+            rig.files.read("thermal-mutation.journal.pending").unwrap(),
+            pending
+        );
+        let retained = rig.files.bytes.lock().unwrap().clone();
+        // Public reads may recover independently; journal persistence is never retried.
+        let observed = fresh_observe(&rig).await;
+        assert_eq!(observed["success"], true);
+        assert_eq!(observed["status"]["writesBlocked"], true);
+        assert!(
+            !observed["status"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("earlier thermal submission")
+        );
+        let later = rig.set(92, value(2, 1)).await;
+        assert_eq!(later["result"]["status"], 2);
+        assert_eq!(later["result"]["message"], result["result"]["message"]);
+        assert_eq!(*rig.files.bytes.lock().unwrap(), retained);
+        assert_eq!(rig.files.prepared_attempts.load(Ordering::Acquire), 1);
+        assert_eq!(
+            rig.files.submission_intent_attempts.load(Ordering::Acquire),
+            0
+        );
+        assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 0);
+        assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+        rig.stop().await;
+        assert_eq!(*rig.files.bytes.lock().unwrap(), retained);
+        assert_eq!(rig.files.prepared_attempts.load(Ordering::Acquire), 1);
+    }
+}
+
+#[tokio::test]
+async fn correction_first_prepared_protection_failure_remains_fatal() {
+    let files = MemoryFiles::default();
+    files.fail_prepared.store(5, Ordering::Release);
+    let rig = Rig::new(files);
+    let (mut client, server) = duplex(65536);
+    let publications = rig.source.lock().await.publications();
+    let server = serve_connection(
+        Box::new(SidStream {
+            inner: test_stream(server, USER, Fault::None),
+            sid: SID.into(),
+        }),
+        rig.source.clone(),
+        publications,
+        Rc::new(Subscriptions::new(2)),
+    );
+    let client = async {
+        crate::service_frame::write_payload(
+            &mut client,
+            &serde_json::to_vec(&json!({
+                "operation":"setPerformanceOverride", "version":80,
+                "requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000091", "value":value(1,1)
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            crate::service_frame::read_payload(&mut client)
+                .await
+                .is_err()
+        );
+    };
+    let (result, ()) = tokio::join!(server, client);
+    let ExchangeError::Runtime(error) = result.unwrap_err() else {
+        panic!("typed Prepared fatal became a client error");
+    };
+    assert!(crate::installed::readiness::thermal_mutation::is_fatal_admission(&error));
+    assert!(
+        error
+            .to_string()
+            .contains("injected Prepared protection failure")
+    );
+    let later = rig
+        .source
+        .lock()
+        .await
+        .snapshot(USER, Instant::now())
+        .await
+        .err()
+        .unwrap();
+    assert!(
+        later
+            .to_string()
+            .contains("injected Prepared protection failure")
+    );
+    assert_eq!(rig.files.prepared_attempts.load(Ordering::Acquire), 1);
+    assert_eq!(
+        rig.files.submission_intent_attempts.load(Ordering::Acquire),
+        0
+    );
+    assert_eq!(rig.files.terminal_attempts.load(Ordering::Acquire), 0);
+    assert!(
+        rig.files
+            .read("thermal-mutation.journal")
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+    // A fatal fence is retained; only the actual local reader is drained.
+    let _ = rig.reader.stop().await;
 }
