@@ -87,6 +87,7 @@ public sealed partial class ProductionLightingPortTests
                 LightingEffect.AmbientAwareness,
                 LightingEffect.AudioMeter,
                 LightingEffect.Sequence,
+                LightingEffect.Fire,
             }.Order(),
             factory.Capabilities.LightingEffects.Order());
         Assert.Equal(
