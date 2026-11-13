@@ -5,15 +5,24 @@ namespace OpenBlade.Tray;
 
 public sealed partial class MainWindow
 {
-    private string ProfileNavigationName(string title, ProfileValuePresentation value) =>
-        $"{title}. {value.AccessibilityDescription}";
+    // Reuse the cell's already-bound value. Reading the view-model presentation
+    // again for accessibility would repeat complete profile formatting per row.
+    private string ProfileNavigationName(string title, object? value) =>
+        value is ProfileValuePresentation profile
+            ? $"{title}. {profile.AccessibilityDescription}" : title;
 
     private string ProfileNavigationName(
         string title,
-        ProfileValuePresentation pluggedIn,
-        ProfileValuePresentation usbC,
-        ProfileValuePresentation battery) =>
-        $"{title}. {pluggedIn.AccessibilityDescription}. {usbC.AccessibilityDescription}. {battery.AccessibilityDescription}";
+        object? pluggedIn,
+        object? usbC,
+        object? battery) =>
+        string.Join(". ", new[]
+        {
+            title,
+            (pluggedIn as ProfileValuePresentation)?.AccessibilityDescription,
+            (usbC as ProfileValuePresentation)?.AccessibilityDescription,
+            (battery as ProfileValuePresentation)?.AccessibilityDescription,
+        }.Where(value => !string.IsNullOrEmpty(value)));
 
     private void OnProfileSettingClick(object sender, RoutedEventArgs args)
     {

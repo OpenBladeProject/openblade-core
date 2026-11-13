@@ -2363,6 +2363,8 @@ public sealed class CapabilityPresentationTests
                 Assert.Equal("Button", button.Name.LocalName);
                 Assert.Equal("{StaticResource ProfileNavigationButtonStyle}", Attribute(button, "Style"));
                 Assert.False(string.IsNullOrWhiteSpace(Attribute(button, "AutomationProperties.Name")));
+                Assert.DoesNotContain("ViewModel.", Attribute(button, "AutomationProperties.Name"), StringComparison.Ordinal);
+                Assert.Contains(".Content", Attribute(button, "AutomationProperties.Name"), StringComparison.Ordinal);
                 Assert.Equal("Border", button.Elements().Single().Name.LocalName);
                 Assert.Contains(Attribute(button.Elements().Single(), "Style"),
                     new[] { "{StaticResource SettingsRowStyle}", "{StaticResource SettingsLastRowStyle}" });
