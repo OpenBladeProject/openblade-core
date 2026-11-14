@@ -10,6 +10,7 @@ internal sealed partial class WindowsRz090528CpuNativeSession
 {
     private static readonly ConditionalWeakTable<ICpuQueryWindowsPlatform, WindowsRz090528CpuNativeSession> Sessions = new();
     private readonly ICpuQueryWindowsPlatform platform;
+    internal CpuLiveCurveContract Contract => platform.Contract;
 
     private WindowsRz090528CpuNativeSession(ICpuQueryWindowsPlatform platform) => this.platform = platform;
 
@@ -54,6 +55,11 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(platform);
         ArgumentNullException.ThrowIfNull(readUsb);
+        if (request.Before.Contract != platform.Contract || request.Command.Contract != platform.Contract)
+        { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }
+        // The new model is admitted only with an independently confirmed power peer.
+        if (platform.Contract.UsesPhoenixProtocol && request.PowerPeer is null)
+        { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }
         if (request.PowerPeer is not null)
         { return ExecuteCurveWithPowerPeer(request, proof, readUsb, platform, token); }
         var latch = NativeOperations.GetValue(platform, static _ => new());
@@ -69,14 +75,14 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         try
         {
             token.ThrowIfCancellationRequested();
-            if (proof is null || !proof.Consume(request) || !ExactUsb(readUsb())) { throw new CurveAdmissionException(); }
+            if (proof is null || !proof.Consume(request) || CpuLiveCurveContract.Resolve(platform.Contract.Id, platform.Contract.Version, readUsb()) != platform.Contract) { throw new CurveAdmissionException(); }
             readScope = proof.BeginRead(request);
             adapter = new WindowsRz090528CpuQueryAdapter(platform, readUsb, wire)
             { queryCurrent = ReadCurrent, queryTransportCurrent = ReadTransportCurrent };
             lease = adapter.Acquire(TimeSpan.FromSeconds(20), token);
             if (lease is null || !ReadCurrent()) { throw new CurveAdmissionException(); }
-            var session = new Rz090528CpuMailboxSession(adapter, adapter);
-            var before = CpuLiveCurveSnapshot.TryCreate(session.Observe(token));
+            var session = new Rz090528CpuMailboxSession(adapter, adapter, contract: platform.Contract);
+            var before = CpuLiveCurveSnapshot.TryCreate(platform.Contract, session.Observe(token));
             if (!CpuLiveCurveNativeRequest.Equal(before, request.Before)) { throw new CurveAdmissionException(); }
             uint capability = session.ReadCurveCapability(token);
             if ((capability & 4) == 0 || proof.ReadFreshRange(request)?.AllowsOperation(request) != true
@@ -96,7 +102,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             failure = CpuLiveCurveNativeFailure.Transport;
             session.SubmitCurve(request.Command, token);
             readScope = proof.BeginRead(request);
-            after = CpuLiveCurveSnapshot.TryCreate(session.Observe(token));
+            after = CpuLiveCurveSnapshot.TryCreate(platform.Contract, session.Observe(token));
             token.ThrowIfCancellationRequested();
             EndRead();
             verified = CpuLiveCurveNativeRequest.Equal(after, request.After) && wire.Complete && proof.Current(request);
@@ -170,17 +176,27 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
 internal sealed class CpuCurveNativeWire(CpuLiveCurveNativeRequest request) : ICpuNativeWireAdmission
 {
     private const uint Enumerate = 0x81112F18, Read = 0x81112F24, Write = 0x81112FF8;
-    private const uint Fuse = 0x03820AB0, Response = 0x03B10A80, Argument = 0x03B10A88, Message = 0x03B10A20;
+    private const uint Response = 0x03B10A80, Argument = 0x03B10A88, Message = 0x03B10A20;
+    private readonly CpuCurveNativeProfile profile = CpuCurveNativeProfile.ForContract(request.Before.Contract);
+    private uint Fuse => profile.FuseAddress;
+    private int BeforeCoreStart => profile.IsPhoenix ? 2 : 1;
+    private int CapabilityIndex => request.Before.Contract.CoreCount + BeforeCoreStart;
+    private bool IsCapabilityIndex => commandIndex == CapabilityIndex
+        || profile.IsPhoenix && (commandIndex == 1 || commandIndex == AfterVersionIndex + 1);
+    private int SetterIndex => CapabilityIndex + 1;
+    private int AfterVersionIndex => SetterIndex + 1;
+    private int AfterCoreStart => AfterVersionIndex + BeforeCoreStart;
+    private int CommandCount => AfterCoreStart + request.Before.Contract.CoreCount;
     private uint count, selected;
     private uint? bus;
     private int commandIndex;
     private bool failed, root, node, orientation, mask, fuse, responseReady, cleared, argumentWritten, pending, acknowledged;
     private Action? finalAdmission;
     internal CpuLiveCurveNativeDisposition Disposition { get; private set; }
-    internal bool Complete => commandIndex == 28 && !pending && !failed;
+    internal bool Complete => commandIndex == CommandCount && !pending && !failed;
     internal void Arm(Action check)
     {
-        if (failed || commandIndex != 14 || pending || finalAdmission is not null)
+        if (failed || commandIndex != SetterIndex || pending || finalAdmission is not null)
         { throw new InvalidOperationException("Incomplete curve admission."); }
         finalAdmission = check;
     }
@@ -210,20 +226,20 @@ internal sealed class CpuCurveNativeWire(CpuLiveCurveNativeRequest request) : IC
             return b == 0 && d == 0x18 && f == 1 && offset is 0 or 0x140
                 || b == bus && d == 0x18 && f == 0 && offset == 0
                 || b == bus && d == 0 && f == 0 && (offset == 0 || offset == 0xC8
-                    && (selected == Fuse || selected == Response || selected == Argument && pending && acknowledged && commandIndex != 14));
+                    && (selected == Fuse || selected == Response || selected == Argument && pending && acknowledged && commandIndex != SetterIndex));
         }
         if (code != Write || input.Length != 12 || outputLength != 0 || Word(input, 8) != bus
             || !root || !node || !orientation) { return false; }
         uint index = Word(input, 0), value = Word(input, 4);
-        if (index == 0) { return value is Fuse or Response or Argument or Message; }
-        if (index != 1 || !mask || !fuse || commandIndex >= 28) { return false; }
+        if (index == 0) { return value == Fuse || value is Response or Argument or Message; }
+        if (index != 1 || !mask || !fuse || commandIndex >= CommandCount) { return false; }
         return selected switch
         {
             Response => value == 0 && responseReady && !pending,
-            Argument => cleared && !pending && commandIndex != 13 && value == ExpectedArgument(),
+            Argument => cleared && !pending && !IsCapabilityIndex && value == ExpectedArgument(),
             Message => cleared && !pending && value == ExpectedMessage()
-                && (commandIndex == 13 ? !argumentWritten : argumentWritten)
-                && (commandIndex != 14 || finalAdmission is not null && Disposition == CpuLiveCurveNativeDisposition.NotSubmitted),
+                && (IsCapabilityIndex ? !argumentWritten : argumentWritten)
+                && (commandIndex != SetterIndex || finalAdmission is not null && Disposition == CpuLiveCurveNativeDisposition.NotSubmitted),
             _ => false,
         };
     }
@@ -232,8 +248,8 @@ internal sealed class CpuCurveNativeWire(CpuLiveCurveNativeRequest request) : IC
     // actual device.Invoke. Preparation/selection never sets the sticky marker.
     internal void BeforeNativeInvoke(uint code, byte[] input)
     {
-        if (code != Write || Word(input, 0) != 1 || selected != Message || Word(input, 4) != 0x53) { return; }
-        if (failed || commandIndex != 14 || finalAdmission is null
+        if (code != Write || Word(input, 0) != 1 || selected != Message || Word(input, 4) != profile.SetterMessage) { return; }
+        if (failed || commandIndex != SetterIndex || finalAdmission is null
             || Disposition != CpuLiveCurveNativeDisposition.NotSubmitted)
         { throw new InvalidOperationException("Curve submission is not armed."); }
         finalAdmission();
@@ -248,7 +264,7 @@ internal sealed class CpuCurveNativeWire(CpuLiveCurveNativeRequest request) : IC
             uint received = Word(reply.Bytes, 24);
             if (reply.Bytes.AsSpan(0, 24).IndexOfAnyExcept((byte)0) >= 0 || received is 0 or > 65536) { return Reject(); }
             if (count == 0) { count = received; return true; }
-            if (received != count || !CpuQueryPciTopology.TryFindBus(reply.Bytes, out uint found)) { return Reject(); }
+            if (received != count || !CpuQueryPciTopology.TryFindBus(reply.Bytes, profile, out uint found)) { return Reject(); }
             bus = found;
         }
         else if (code == Read)
@@ -257,12 +273,12 @@ internal sealed class CpuCurveNativeWire(CpuLiveCurveNativeRequest request) : IC
             uint value = Word(reply.Bytes, 20), offset = Word(input, 12);
             if (offset == 0)
             {
-                if (Word(input, 4) == 0) { if (!(root = value == CpuQueryPciTopology.RootId)) { return Reject(); } }
-                else if (Word(input, 8) == 0) { if (!(node = value == CpuQueryPciTopology.NodeId)) { return Reject(); } }
-                else if (!(orientation = value == CpuQueryPciTopology.OrientationId)) { return Reject(); }
+                if (Word(input, 4) == 0) { if (!(root = value == profile.RootId)) { return Reject(); } }
+                else if (Word(input, 8) == 0) { if (!(node = value == profile.NodeId)) { return Reject(); } }
+                else if (!(orientation = value == profile.OrientationId)) { return Reject(); }
             }
-            else if (offset == 0x140) { if (!(mask = value == CpuLiveCurveSnapshot.SupportedMask)) { return Reject(); } }
-            else if (selected == Fuse) { if (!(fuse = (~(value >> 5) & 0xFFFF) == CpuLiveCurveSnapshot.SupportedMask)) { return Reject(); } }
+            else if (offset == 0x140) { if (!(mask = profile.DecodeOrientation(value) == request.Before.Contract.EnabledCoreMask)) { return Reject(); } }
+            else if (selected == Fuse) { if (!(fuse = profile.DecodeFuse(value) == request.Before.Contract.EnabledCoreMask)) { return Reject(); } }
             else if (selected == Response)
             {
                 responseReady = value == 1;
@@ -270,7 +286,7 @@ internal sealed class CpuCurveNativeWire(CpuLiveCurveNativeRequest request) : IC
                 {
                     if (value != 1) { return Reject(); }
                     acknowledged = true;
-                    if (commandIndex == 14)
+                    if (commandIndex == SetterIndex)
                     {
                         Disposition = CpuLiveCurveNativeDisposition.Acknowledged;
                         FinishCommand();
@@ -279,9 +295,9 @@ internal sealed class CpuCurveNativeWire(CpuLiveCurveNativeRequest request) : IC
             }
             else if (selected == Argument)
             {
-                if (commandIndex is 0 or 15 && value != CpuLiveCurveSnapshot.SupportedPmVersion
-                    || commandIndex is > 0 and < 13 && unchecked((short)value) != request.Before.CoreOffsets[commandIndex - 1].Offset
-                    || commandIndex == 13 && (value & 4) == 0) { return Reject(); }
+                if ((commandIndex == 0 || commandIndex == AfterVersionIndex) && !request.Before.Contract.AcceptsGeometry(request.Before.Contract.EnabledCoreMask, value, profile.PmLength(value))
+                    || commandIndex >= BeforeCoreStart && commandIndex < CapabilityIndex && unchecked((short)value) != request.Before.CoreOffsets[commandIndex - BeforeCoreStart].Offset
+                    || IsCapabilityIndex && ((value & 4) == 0 || profile.IsPhoenix && value == uint.MaxValue)) { return Reject(); }
                 FinishCommand();
             }
         }
@@ -296,14 +312,15 @@ internal sealed class CpuCurveNativeWire(CpuLiveCurveNativeRequest request) : IC
         return true;
     }
     private void FinishCommand() { pending = false; acknowledged = false; commandIndex++; }
-    private uint ExpectedMessage() => commandIndex switch { 0 or 15 => 6, 13 => 0x82, 14 => 0x53, _ => 0x5E };
+    private uint ExpectedMessage() => commandIndex == 0 || commandIndex == AfterVersionIndex ? 6u
+        : IsCapabilityIndex ? 0x82u : commandIndex == SetterIndex ? profile.SetterMessage : profile.GetterMessage;
     private uint ExpectedArgument()
     {
-        if (commandIndex is 0 or 15) { return 0; }
-        if (commandIndex == 14) { return request.Command.EncodeArgument(); }
-        int index = commandIndex < 13 ? commandIndex - 1 : commandIndex - 16;
+        if (commandIndex == 0 || commandIndex == AfterVersionIndex) { return 0; }
+        if (commandIndex == SetterIndex) { return profile.SetterArgument(request.Command); }
+        int index = commandIndex < CapabilityIndex ? commandIndex - BeforeCoreStart : commandIndex - AfterCoreStart;
         int id = request.Before.CoreOffsets[index].PhysicalCoreId;
-        return ((uint)(id / 8) << 28) | ((uint)(id % 8) << 20);
+        return profile.GetterArgument(id);
     }
     private bool Reject() { failed = true; return false; }
     private static uint Word(byte[] bytes, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset, 4));

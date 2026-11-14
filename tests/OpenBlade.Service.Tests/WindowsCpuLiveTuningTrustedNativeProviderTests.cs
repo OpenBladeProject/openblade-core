@@ -6,6 +6,47 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests(Xunit.Abstractions.ITestOutputHelper output)
 {
+    [Theory]
+    [InlineData("RZ09-0508")]
+    [InlineData("RZ09-0482")]
+    public async Task PhoenixBoundProofUsesExactInstalledStackRangeAndReadOnlyPowerPeer(string model)
+    {
+        var contract = model == "RZ09-0508" ? CpuLiveCurveContract.Rz090508 : CpuLiveCurveContract.Rz090482;
+        using var fixture = new Fixture(contract);
+        fixture.GetterAdmission = (_, token, lifetime) => new(token, lifetime, _ => fixture.Admitted,
+            continuity: _ => fixture.Admitted);
+        bool verified = false;
+        await fixture.Run(context =>
+        {
+            Assert.Same(contract, context.Contract);
+            Assert.Equal(4, context.JournalSchemaVersion);
+            var cores = Enumerable.Range(0, 8).Select(id => new CpuLiveCoreOffset(id, -1)).ToArray();
+            var before = CpuLiveCurveSnapshot.TryCreate(contract, new(0xFF, 0x004C0008, 0xAF0, cores))!;
+            Assert.True(CpuLiveCurveCommand.TryCreate(contract, 1, -3, out var command));
+            var request = new CpuLiveCurveNativeRequest(new(), command, CpuLiveCurveCommandPurpose.Forward,
+                before, new(CpuPowerTestData.PairFixture(), null));
+            using var source = fixture.Provider.CreatePreparedWriteProof(context, request, fixture.OperationToken)!;
+            Assert.True(source.Consume(request));
+            using var bound = new CpuLiveCurveNativeBackend.ContextBoundProof(request, source,
+                new(fixture.Platform, fixture.Provider), context, fixture.OperationToken);
+            Assert.True(bound.Consume(request));
+            using (var read = bound.BeginRead(request))
+            {
+                Assert.True(bound.ReadFreshRange(request)!.AllowsOperation(request));
+                Assert.True(bound.AdmitUncappedPowerPeer(request, 4));
+                Assert.False(bound.AdmitUncappedPowerPeer(request, 2));
+                Assert.False(bound.AdmitPowerPeer(request, 4, CpuLivePowerFusedCap.TryDecode(4, 7u << 28)!));
+                Assert.True(bound.CompleteRead(request));
+            }
+            Assert.True(bound.UncappedFinalCheckpointCurrent(request, 4));
+            Assert.False(bound.UncappedFinalCheckpointCurrent(request, uint.MaxValue));
+            fixture.Platform.Running = false;
+            Assert.False(bound.UncappedFinalCheckpointCurrent(request, 4));
+            verified = true;
+        });
+        Assert.True(verified);
+    }
+
     [Fact]
     public async Task BoundTransportGuardAvoidsDiscoveryButNextCommandDetectsAndRetainsDrift()
     {
@@ -880,7 +921,7 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests(Xunit.Abstrac
 
     private sealed class Fixture : IDisposable
     {
-        internal readonly Platform Platform = new();
+        internal readonly Platform Platform;
         internal readonly WindowsCpuLiveTuningTrustedNativeProvider Provider;
         private readonly ProbeBackend backend = new();
         private readonly CpuTuningController controller;
@@ -899,21 +940,26 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests(Xunit.Abstrac
         internal Action<CancellationToken>? BeforeProvider;
         internal Func<CpuTuningFeatures, CancellationToken, Func<bool>, CpuLiveGetterAdmission>? GetterAdmission;
         internal CancellationToken OperationToken;
-        internal Fixture()
+        internal Fixture(CpuLiveCurveContract? contract = null)
         {
+            contract ??= CpuLiveCurveContract.Rz090528;
+            Platform = new() { Contract = contract };
+            var source = new Source(contract);
+            Usb = source.ReadIdentity();
+            string instance = $@"USB\VID_1532&PID_{contract.ProductId:X4}\test";
             CpuTuningController? captured = null;
-            Provider = new(WindowsRz090528CpuNativeSession.ForPlatform(Platform), () => captured, new Source(), () => { UsbReads++; return Usb; },
+            Provider = new(WindowsRz090528CpuNativeSession.ForPlatform(Platform), () => captured, source, () => { UsbReads++; return Usb; },
                 _ => { BootReads++; OnBoot?.Invoke(); if (ThrowBoot) { throw new IOException("private"); } return Boot; },
                 new WindowsCpuLiveCurveRangeMetadata(_ => { MetadataOpens++; return new Metadata(this); }),
-                () => new CpuGetterUsbContinuity(() => new(Usb is null ? null : @"USB\VID_1532&PID_02C6\test", 8, 0),
-                    @"USB\VID_1532&PID_02C6\test", () => { }), () =>
+                () => new CpuGetterUsbContinuity(() => new(Usb is null ? null : instance, 8, 0),
+                    instance, () => { }, contract), () =>
                     {
                         var diagnostic = captured?.CaptureLiveObservationDiagnostic();
                         return ControllerCapture is { } capture ? capture(reason =>
                             diagnostic?.Check(false, "provider getter controller continuity: " + reason)) : () =>
                             { ControllerReads++; if (ThrowControllers) { throw new IOException("private"); } return ControllerCurrent; };
                     });
-            controller = captured = new(new Source(), curveBackend: backend,
+            controller = captured = new(source, curveBackend: backend,
                 curveStore: new CpuLiveCurveTuningTransactionTests.MemoryStore());
         }
         internal async Task Run(Action<CpuLiveCurveContext> check)
@@ -944,25 +990,33 @@ public sealed class WindowsCpuLiveTuningTrustedNativeProviderTests(Xunit.Abstrac
             CpuLiveCurveCommandPurpose purpose, CpuLiveCurveSnapshot expectedBefore, CancellationToken token) => throw new InvalidOperationException();
     }
 
-    private sealed class Source : ICpuTuningObservationSource
+    private sealed class Source(CpuLiveCurveContract? contract = null) : ICpuTuningObservationSource
     {
-        public DeviceIdentity? ReadIdentity() => new("RZ09-0528", 0x1532, 0x02C6, "Unknown");
+        public DeviceIdentity? ReadIdentity() => new((contract ?? CpuLiveCurveContract.Rz090528).ModelNumber,
+            0x1532, (contract ?? CpuLiveCurveContract.Rz090528).ProductId, "Unknown");
         public SavedCpuFirmwareReadResult ReadSaved(DeviceIdentity identity) => throw new InvalidOperationException();
         public CpuTuningBackendStatus InspectInstalled(DeviceIdentity identity, bool useInstalledBackend) => throw new InvalidOperationException();
     }
 
     internal sealed class Platform : ICpuQueryWindowsPlatform, ICpuQueryRetainableDevice, ICpuQueryMutex
     {
+        public CpuLiveCurveContract Contract { get; init; } = CpuLiveCurveContract.Rz090528;
         internal int Opens, Pins, HostReads;
         internal bool Running = true, HostValid = true;
         public HostIdentityReadResult ReadHost()
-        { HostReads++; return new(new(HostValid ? "Razer" : "Other", "Blade 16 - RZ09-0528", "RZ09-05289EN4", "Unknown"), null); }
-        public CpuQueryProcessorIdentity ReadProcessor() => new("AuthenticAMD", 0x1A, 0x24, 0);
+        { HostReads++; return new(new(HostValid ? "Razer" : "Other", Contract.ProductName, "RZ09-05289EN4", "Unknown"), null); }
+        public CpuQueryProcessorIdentity ReadProcessor() => Contract.UsesPhoenixProtocol
+            ? new("AuthenticAMD", 0x19, Contract == CpuLiveCurveContract.Rz090508 ? 0x75 : 0x74, 0)
+            : new("AuthenticAMD", 0x1A, 0x24, 0);
         public bool ControllersAbsent() => true;
         public IDisposable PinBackendFiles() { Pins++; return new Cleanup(); }
-        public InstalledCpuBackendSnapshot ReadBackend() => new(Rz090528InstalledCpuBackendInspector.ExpectedHashes.Select(pair =>
-            new CpuBackendFileMetadata(pair.Key, pair.Value, true, Rz090528InstalledCpuBackendInspector.SignerThumbprint)).ToArray(),
-            true, @"\??\" + Rz090528InstalledCpuBackendInspector.DriverPath, 1, 3, Running);
+        public InstalledCpuBackendSnapshot ReadBackend()
+        {
+            var profile = CpuInstalledBackendProfile.ForContract(Contract);
+            return new(profile.ExpectedHashes.Select(pair =>
+                new CpuBackendFileMetadata(pair.Key, pair.Value, true, profile.SignerThumbprint)).ToArray(),
+                true, @"\??\" + profile.DriverPath, 1, 3, Running);
+        }
         public ICpuQueryDevice OpenExistingDevice() { Opens++; return this; }
         public ICpuQueryDevice Duplicate() => throw new InvalidOperationException("Provider tests must not invoke the device.");
         public CpuQueryIoctlReply Invoke(uint code, byte[] input, int outputLength) => throw new InvalidOperationException();

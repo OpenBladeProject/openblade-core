@@ -82,8 +82,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         bool installed = readInstalledUsb is not null;
         CpuPmObservationProfile profile = installed ? CpuPmObservationProfile.RangeSingleSample
             : approval?.Profile ?? CpuPmObservationProfile.IdleThreeSamples;
-        if (installed ? installedApproval?.Consume(platform) != true || metadataReader is null
-            : approval?.Consume() != true || approval.Profile == CpuPmObservationProfile.RangeSingleSample && metadataReader is null)
+        if (installed ? installedApproval?.Consume(platform) != true || platform.Contract == CpuLiveCurveContract.Rz090528 && metadataReader is null
+            : platform.Contract != CpuLiveCurveContract.Rz090528 || approval?.Consume() != true || approval.Profile == CpuPmObservationProfile.RangeSingleSample && metadataReader is null)
         { return new(WindowsRz090528CpuPmObservationAdapter.Denied(profile: profile), true, true); }
         if (!installed) { ArgumentNullException.ThrowIfNull(lifetime); }
         ArgumentNullException.ThrowIfNull(platform); ArgumentNullException.ThrowIfNull(clock);
@@ -220,12 +220,13 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         {
             if (!wireRejection.HasValue) { wireRejection = reason; mailboxStatus = status; }
         }
+        public CpuLiveCurveContract Contract => platform.Contract;
         internal WindowsRz090528CpuQueryAdapter Transport { get; }
         internal PmAdapter(ICpuPmWindowsPlatform platform, ICpuPmContinuityScope continuity,
             CpuPmRunOwnedDriverLifetime lifetime, Func<CpuPmRunOwnedDriverLifetime?> readLifetime, ICpuPmObservationClock clock, CpuPmObservationProfile profile)
         {
             this.platform = platform; this.continuity = continuity; this.lifetime = lifetime; this.readLifetime = readLifetime;
-            Transport = new(this, ReadUsb, new PmNativeWire(profile, (address, reply) =>
+            Transport = new(this, ReadUsb, new PmNativeWire(platform.Contract, profile, (address, reply) =>
                 rejectedCap = new(address, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(reply.Bytes.AsSpan(20)),
                     clock.UtcNow, clock.MonotonicTimestamp, reply.Success, false), RetainWireRejection));
         }
@@ -236,7 +237,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             // The original platform key selects the existing anchor's pins and
             // exact device object. The transient PM adapter must not reopen it.
             pinned = true;
-            Transport = new(this, ReadUsb, new PmNativeWire(CpuPmObservationProfile.RangeSingleSample, (address, reply) =>
+            Transport = new(this, ReadUsb, new PmNativeWire(platform.Contract, CpuPmObservationProfile.RangeSingleSample, (address, reply) =>
                 rejectedCap = new(address, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(reply.Bytes.AsSpan(20)),
                     clock.UtcNow, clock.MonotonicTimestamp, reply.Success, false), RetainWireRejection), platform)
             {
@@ -354,7 +355,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
                 backend = new(files, service.Exists, service.ImagePath, service.Type, service.Start, service.Running);
             }
             if ((installedApproval is null ? backend.Start != 3 : !installedApproval.Lease.RegistrationMatches(backend))
-                || Rz090528InstalledCpuBackendInspector.Evaluate(backend).Availability != CpuTuningBackendAvailability.Available)
+                || Rz090528InstalledCpuBackendInspector.Evaluate(backend, CpuInstalledBackendProfile.ForContract(Contract)).Availability != CpuTuningBackendAvailability.Available)
             { installedApproval?.Lease.Dispose(); throw new IOException("PM driver state changed."); }
             // Scoped approval just checked the retained controller inventory
             // against fresh process/SCM activity. Other callers keep full discovery.
@@ -367,8 +368,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         public HostIdentityReadResult ReadHost()
         {
             _ = CheckContinuity(); var value = platform.ReadHost();
-            if (value.Failure is not null || value.Evidence is not
-                { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4" })
+            if (!CpuPmSessionIdentity.HostMatches(Contract, value))
             { throw new IOException("PM host admission denied."); }
             host = value;
             return value;
@@ -376,15 +376,15 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         public CpuQueryProcessorIdentity ReadProcessor()
         {
             processor = platform.ReadProcessor(); package = platform.ReadPackage();
-            if (processor is not { Vendor: "AuthenticAMD", Family: 0x1A, Model: 0x24, Stepping: 0 }
-                || package.MaximumExtendedLeaf < 0x80000001 || package.Package != 1)
+            if (!CpuPmSessionIdentity.ProcessorMatches(Contract, processor)
+                || !CpuPmSessionIdentity.PackageMatches(Contract, package.MaximumExtendedLeaf, package.Package))
             { throw new IOException("PM package admission denied."); }
             return processor;
         }
         private DeviceIdentity? ReadUsb()
         {
             usb = readInstalledUsb is null ? platform.ReadUsb() : readInstalledUsb();
-            if (!ExactUsb(usb)) { throw new IOException("PM USB admission denied."); }
+            if (!ExactUsb(usb, Contract)) { throw new IOException("PM USB admission denied."); }
             return usb;
         }
         public bool ControllersAbsent() => platform.ControllersAbsent();
@@ -392,7 +392,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         {
             var value = platform.ReadBackend();
             if ((installedApproval is null ? value.Start != 3 : !installedApproval.Lease.RegistrationMatches(value))
-                || Rz090528InstalledCpuBackendInspector.Evaluate(value).Availability != CpuTuningBackendAvailability.Available)
+                || Rz090528InstalledCpuBackendInspector.Evaluate(value, CpuInstalledBackendProfile.ForContract(Contract)).Availability != CpuTuningBackendAvailability.Available)
             { installedApproval?.Lease.Dispose(); throw new IOException("PM backend admission denied."); }
             // Pre-mutex inspection is preliminary only. The actual lease repeats
             // this under deny-write/delete pins before and after device opening.
@@ -429,10 +429,10 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             public void Dispose() { if (disposed) { return; } release(); disposed = true; }
         }
     }
-    private sealed class PmNativeWire(CpuPmObservationProfile profile, Action<uint, CpuQueryIoctlReply> retainRejectedCap,
+    private sealed class PmNativeWire(CpuLiveCurveContract contract, CpuPmObservationProfile profile, Action<uint, CpuQueryIoctlReply> retainRejectedCap,
         Action<CpuPmWireRejection, uint?> retainWireRejection) : ICpuNativeWireAdmission
     {
-        private readonly CpuPmObservationWireAdmission wire = new(profile);
+        private readonly CpuPmObservationWireAdmission wire = new(profile, contract);
         private uint selectedCap, selectedAddress, currentCommand;
         public bool Allows(uint code, byte[] input, int outputLength)
         {
@@ -470,7 +470,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
     }
     private sealed partial class CpuQueryWindowsPlatform : ICpuPmWindowsPlatform
     {
-        public DeviceIdentity? ReadUsb() => Rz090528CpuFreshUsbIdentity.Read();
+        public DeviceIdentity? ReadUsb() => Rz090528CpuFreshUsbIdentity.Read(Contract);
         public CpuPmProcessorPackage ReadPackage()
         {
             if (!X86Base.IsSupported) { return default; }
@@ -480,9 +480,9 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         }
         public CpuPmServiceSnapshot ReadService()
         {
-            using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + Rz090528InstalledCpuBackendInspector.ServiceName, false);
+            using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + Profile.ServiceName, false);
             if (key is null) { return new(false, null, null, null, false); }
-            using var service = new ServiceController(Rz090528InstalledCpuBackendInspector.ServiceName);
+            using var service = new ServiceController(Profile.ServiceName);
             return new(true, key.GetValue("ImagePath", null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string,
                 key.GetValue("Type") as int?, key.GetValue("Start") as int?,
                 service.ServiceType == ServiceType.KernelDriver && service.Status == ServiceControllerStatus.Running);

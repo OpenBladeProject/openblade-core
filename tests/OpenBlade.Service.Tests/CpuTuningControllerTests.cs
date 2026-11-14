@@ -8,6 +8,26 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuTuningControllerTests
 {
     [Theory]
+    [InlineData("RZ09-0508", 0x02B6)]
+    [InlineData("RZ09-0482", 0x029D)]
+    public async Task Blade14DiscoveryInspectsInstalledStackWithoutReadingSavedFirmware(string model, int productId)
+    {
+        var source = new FakeObservationSource
+        {
+            Identity = new(model, 0x1532, (ushort)productId, "fixture"),
+            Installed = new(DeviceFeatureAccess.ReadWrite, CpuTuningBackendAvailability.Available),
+        };
+        var status = await new CpuTuningController(source).ObserveAsync(true, default);
+        Assert.Equal(0, source.SavedReads);
+        Assert.Equal(1, source.Inspections);
+        Assert.Equal(source.Identity, source.InspectedIdentity);
+        Assert.Null(status.SavedConfiguration);
+        Assert.Equal(CpuTuningBackendAvailability.Unavailable, status.Firmware.Availability);
+        Assert.Equal(CpuTuningBackendAvailability.Available, status.Live.Availability);
+        Assert.False(status.Live.CanWrite);
+    }
+
+    [Theory]
     [InlineData(false, "2.02")]
     [InlineData(true, "2.02")]
     [InlineData(false, "Unknown")]

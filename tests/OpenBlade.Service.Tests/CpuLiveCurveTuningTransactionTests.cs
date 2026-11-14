@@ -6,6 +6,130 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CpuLiveCurveTuningTransactionTests
 {
+    [Fact]
+    public async Task Blade14CurveAppliesAllEightCoresAndRestoresEverySignedOriginal()
+    {
+        var store = new MemoryStore();
+        var backend = Blade14Fixture(store);
+        var original = backend.Values.ToArray();
+        var contract = CpuLiveCurveContract.Rz090508;
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store);
+
+        var applied = await transaction.ApplyAllCoreAsync(new(true, -12), default);
+        Assert.Equal(CpuLiveCurveOutcome.Verified, applied.Outcome);
+        Assert.Same(contract, applied.Observation!.Contract);
+        Assert.Equal(Enumerable.Range(0, 8), backend.Sent.Select(command => command.PhysicalCoreId));
+        Assert.All(backend.Values, core => Assert.Equal((short)-12, core.Offset));
+        var owned = store.Journal!;
+        Assert.Equal(4, owned.SchemaVersion);
+        Assert.Equal(contract.Id, owned.Context.ContractId);
+        Assert.Equal(contract.Version, owned.Context.ContractVersion);
+        Assert.Equal(original, owned.OriginalBaseline);
+        Assert.Same(contract, owned.ExpectedAt(owned.CompletedSteps).Contract);
+
+        var restored = await new CpuLiveCurveTuningTransaction(backend, store).RestoreAsync(default);
+        Assert.Equal(CpuLiveCurveOutcome.Verified, restored.Outcome);
+        Assert.Equal(original, backend.Values);
+        Assert.Equal(original.Reverse().Select(core => (core.PhysicalCoreId, core.Offset)),
+            backend.Sent.Skip(8).Select(command => (command.PhysicalCoreId, command.Offset)));
+        Assert.All(backend.Sent, command => Assert.Same(contract, command.Contract));
+        Assert.Equal(CpuLiveCurveOwnershipState.Restored, store.Journal!.State);
+    }
+
+    [Fact]
+    public async Task Blade14AmbiguousSecondCoreRetainsPendingSchemaFourAndNeverReplays()
+    {
+        var store = new MemoryStore();
+        var backend = Blade14Fixture(store);
+        var original = backend.Values.ToArray();
+        backend.OnSend = command => backend.Sent.Count == 2
+            ? Task.FromResult(CpuLiveCurveSubmission.Unknown) : backend.Apply(command);
+        var result = await new CpuLiveCurveTuningTransaction(backend, store).ApplyAllCoreAsync(new(true, -12), default);
+        Assert.Equal(CpuLiveCurveOutcome.Uncertain, result.Outcome);
+        Assert.Equal(new[] { 0, 1 }, backend.Sent.Select(command => command.PhysicalCoreId));
+        var pending = store.Journal!;
+        Assert.Equal(4, pending.SchemaVersion);
+        Assert.Equal(CpuLiveCurveOwnershipState.PossibleSubmission, pending.State);
+        Assert.Equal(1, pending.CompletedSteps);
+        Assert.Equal(original, pending.OriginalBaseline);
+
+        int reads = backend.Reads;
+        backend.Context = ContextFixture();
+        var restarted = new CpuLiveCurveTuningTransaction(backend, store);
+        Assert.Equal(CpuLiveCurveOutcome.Uncertain, (await restarted.RestoreAsync(default)).Outcome);
+        Assert.Equal(CpuLiveCurveOutcome.Uncertain, (await restarted.ApplyAllCoreAsync(new(true, -3), default)).Outcome);
+        Assert.Same(pending, store.Journal);
+        Assert.Equal(reads, backend.Reads);
+        Assert.Equal(2, backend.Sent.Count);
+    }
+
+    [Theory]
+    [InlineData("implicit-contract")]
+    [InlineData("0528-backend")]
+    [InlineData("0528-observation")]
+    [InlineData("duplicate-core")]
+    public async Task Blade14RequiresItsExplicitContractBackendAndCompletePhysicalVector(string fault)
+    {
+        var store = new MemoryStore();
+        var backend = Blade14Fixture(store);
+        if (fault == "implicit-contract") { backend.Context = backend.Context with { ContractId = null, ContractVersion = null }; }
+        if (fault == "0528-backend") { backend.Context = backend.Context with { Backend = ContextFixture().Backend }; }
+        if (fault == "0528-observation")
+        { backend.OnObserve = _ => Task.FromResult(new CpuLiveCurveBackendObservation(backend.Context, new(0xFF55, 0x005D000B, 0xD50, ValuesFixture()))); }
+        if (fault == "duplicate-core") { backend.Values[7] = new(6, -1); }
+        var result = await new CpuLiveCurveTuningTransaction(backend, store).ApplyAllCoreAsync(new(true, -12), default);
+        Assert.Equal(CpuLiveCurveBlockReason.ObservationUnavailable, result.Reason);
+        Assert.Empty(backend.Admissions);
+        Assert.Empty(backend.Sent);
+        Assert.Null(store.Journal);
+    }
+
+    internal static FakeBackend Blade14Fixture(MemoryStore store, CpuLiveCurveContract? contract = null)
+    {
+        contract ??= CpuLiveCurveContract.Rz090508;
+        short[] offsets = [short.MinValue, 15, -1, 0, 24, -82, -4, short.MaxValue];
+        var backend = new FakeBackend(store)
+        {
+            Context = new(new(contract.ModelNumber, 0x1532, contract.ProductId, "fixture"), 0xFF, 0x004C0008, 0xAF0,
+                new("78A5C1387A3BA460316E415C07A7E895175DB136D2B99D30218D421B06819FE0",
+                    "5ABC017C207EDB94CAF69DB5022FC0C95DD8B50E574669FEB788127663881664",
+                    "57B4EA67B8DDF171B0084BD201C872811BE0E78130F3B9743F040454846FC683"),
+                new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 42))
+            { ContractId = contract.Id, ContractVersion = contract.Version },
+            Values = offsets.Select((offset, id) => new CpuLiveCoreOffset(id, offset)).ToArray(),
+        };
+        backend.OnObserve = _ => Task.FromResult(new CpuLiveCurveBackendObservation(backend.Context,
+            new(0xFF, 0x004C0008, 0xAF0, backend.Values.ToArray())));
+        return backend;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExplicitLegacyContextCanResumeSameBackendWithoutRewritingOriginalOwnership(bool explicitFirst)
+    {
+        var store = new MemoryStore();
+        var backend = new FakeBackend(store);
+        var implicitContext = backend.Context;
+        var contract = CpuLiveCurveContract.Rz090528;
+        var explicitContext = implicitContext with { ContractId = contract.Id, ContractVersion = contract.Version };
+        backend.Context = explicitFirst ? explicitContext : implicitContext;
+        var transaction = new CpuLiveCurveTuningTransaction(backend, store);
+        Assert.Equal(CpuLiveCurveOutcome.Verified, (await transaction.ApplySelectiveAsync([new(0, -2)], default)).Outcome);
+        var original = store.Journal!;
+        Assert.Equal(explicitFirst ? 4 : 3, original.SchemaVersion);
+
+        backend.Context = explicitFirst ? implicitContext : explicitContext;
+        transaction = new CpuLiveCurveTuningTransaction(backend, store);
+        Assert.Equal(CpuLiveCurveOutcome.Verified, (await transaction.ApplySelectiveAsync([new(8, -3)], default)).Outcome);
+        Assert.Equal(CpuLiveCurveOutcome.Verified, (await transaction.RestoreAsync(default)).Outcome);
+        Assert.Equal(original.SchemaVersion, store.Journal!.SchemaVersion);
+        Assert.Equal(original.Context, store.Journal.Context);
+        Assert.Equal(original.TransactionId, store.Journal.TransactionId);
+        Assert.Equal(original.OriginalBaseline, backend.Values);
+        Assert.All(backend.Sent, command => Assert.Same(contract, command.Contract));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -649,6 +773,8 @@ public sealed class CpuLiveCurveTuningTransactionTests
     [InlineData("backend")]
     [InlineData("model")]
     [InlineData("unselected-core")]
+    [InlineData("unknown-contract")]
+    [InlineData("unknown-contract-version")]
     public async Task ChangedContextOrVectorBlocksRestoreAcrossRestart(string fault)
     {
         var store = new MemoryStore(); var backend = new FakeBackend(store);
@@ -661,6 +787,9 @@ public sealed class CpuLiveCurveTuningTransactionTests
         if (fault == "boot") { Assert.True(backend.Context.IsWellFormed); }
         if (fault == "backend") { backend.Context = backend.Context with { Backend = backend.Context.Backend with { DriverSha256 = "other" } }; }
         if (fault == "model") { backend.Context = backend.Context with { Identity = backend.Context.Identity with { Model = "RZ09-9999" } }; }
+        if (fault == "unknown-contract") { backend.Context = backend.Context with { ContractId = "unknown", ContractVersion = 1 }; }
+        if (fault == "unknown-contract-version")
+        { backend.Context = backend.Context with { ContractId = CpuLiveCurveContract.Rz090528.Id, ContractVersion = 99 }; }
         if (fault == "unselected-core") { backend.Values[11] = new(15, -9); }
         var transaction = new CpuLiveCurveTuningTransaction(backend, store);
         int writes = store.Writes;
@@ -838,6 +967,9 @@ public sealed class CpuLiveCurveTuningTransactionTests
         var original = store.Journal!.OriginalBaseline;
         if (fault == "boot") { backend.Context = backend.Context with { BootSequence = backend.Context.BootSequence with { Sequence = 43 } }; }
         if (fault == "context") { backend.Context = backend.Context with { Identity = backend.Context.Identity with { Model = "RZ09-9999" } }; }
+        if (fault == "unknown-contract") { backend.Context = backend.Context with { ContractId = "unknown", ContractVersion = 1 }; }
+        if (fault == "unknown-contract-version")
+        { backend.Context = backend.Context with { ContractId = CpuLiveCurveContract.Rz090528.Id, ContractVersion = 99 }; }
         if (fault == "unselected-core") { backend.Values[11] = new(15, -9); }
         Assert.Equal(CpuLiveCurveOutcome.Blocked, (await transaction.ApplySelectiveAsync([new(8, -2)], default)).Outcome);
         Assert.Equal(original, store.Journal!.OriginalBaseline); Assert.Single(backend.Sent);

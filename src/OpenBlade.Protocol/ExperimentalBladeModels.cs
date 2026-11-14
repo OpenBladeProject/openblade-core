@@ -82,6 +82,7 @@ internal static class ExperimentalBladeModels
                             ? "NotEstablishedHiddenPaletteSelector" : "ExactMcuSourceBackedWithoutPhysicalValidation",
                             [ReviewedMcuLightingSource(model), .. sources]) }
                     : []),
+                .. CpuVoltageEvidenceFor(model),
                 new("AutomaticFanHandback", "SynapseSourceBackedWithoutPhysicalValidation", sources),
                 new("FixedAndCurveFanWrites", ExperimentalBladePort.UsesDynamicExperimentalFanRange(model)
                     ? "SynapseSourceBackedPresetFixedAndAcCurvesWithFreshDynamicFanRanges" : "NotEstablishedDynamicFanRangesRequireReview", sources),
@@ -235,11 +236,18 @@ internal static class ExperimentalBladeModels
                 new(model.ProductId == 0x0255 ? "CreatorPerformanceRaw2" : "MaximumPowerPerformanceRaw2",
                     "SynapseSourceBackedWithoutPhysicalValidation", exactSources)];
         }
-        features = [.. features, .. FanStopEvidenceFor(model)];
+        features = [.. features, .. FanStopEvidenceFor(model), .. CpuVoltageEvidenceFor(model)];
         return model.AdapterPowerEvidenceSource is { } source
             ? [.. features, new("AdapterPowerClassification", "SynapseSourceBacked", [source])]
             : features;
     }
+
+    private static IEnumerable<ExperimentalFeatureEvidence> CpuVoltageEvidenceFor(ExperimentalBladeModel model) =>
+        model.ProductId is not (0x02B6 or 0x029D or 0x02C5) ? [] :
+        [new("CpuVoltageOptimizer", model.ProductId == 0x02C5
+            ? "ObservedOnlyTenCoreNativeContractNotEstablished"
+            : "SynapseSourceBackedInstalledAmdSdk212LiveReadbackWithoutPhysicalValidation",
+            ["evidence/source-reviewed-blades/2026-11-14-cpu-undervolting.md"])];
 
     private static IEnumerable<ExperimentalFeatureEvidence> DynamicFanEvidenceFor(
         ExperimentalBladeModel model, IReadOnlyList<string> sources) =>

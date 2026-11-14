@@ -395,12 +395,79 @@ public sealed class Rz090528CpuLiveQueryTests
         Assert.Equal(1, sync.Releases);
     }
 
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void HawkPointReadsAllEightCoreOrdinalsWithItsOwnFuseAndPciContract(bool blade2023)
+    {
+        var sync = new FakeSynchronization();
+        var wire = new ScriptedIoctl(sync) { Phoenix = true, Version = 0x004C0008 };
+        var contract = blade2023 ? CpuLiveCurveContract.Rz090482 : CpuLiveCurveContract.Rz090508;
+        var result = new Rz090528CpuLiveQuery(wire, sync, contract: contract)
+            .Query(new(contract.ModelNumber, 0x1532, contract.ProductId, "source-provenance"));
+        Assert.Equal(CpuLiveQueryStatus.Observed, result.Status);
+        Assert.Equal(0xFFu, result.Observation!.EnabledCoreMask);
+        Assert.Equal(0xAF0, result.Observation.PmTableLength);
+        Assert.Equal(Enumerable.Range(0, 8), result.Observation.CoreOffsets.Select(core => core.PhysicalCoreId));
+        Assert.Equal(Enumerable.Range(0, 8).Select(id => (short)(-id - 1)), result.Observation.CoreOffsets.Select(core => core.Offset));
+        Assert.Equal(new uint[] { 6, 0x82 }.Concat(Enumerable.Repeat(0xE1u, 8)), wire.Messages.Select(message => message.Command));
+        Assert.Equal(new uint[] { 0, 0 }.Concat(Enumerable.Range(0, 8).Select(id => (uint)id)), wire.Messages.Select(message => message.Argument));
+        Assert.Equal(20, wire.CommandBoundaries);
+        Assert.DoesNotContain(wire.Messages, message => message.Command is 0x53 or 0x5E);
+        Assert.Equal(1, sync.Releases);
+    }
+
+    [Fact]
+    public void HawkPointContractCannotInspectALegacyIdentity()
+    {
+        var sync = new FakeSynchronization();
+        var wire = new ScriptedIoctl(sync) { Phoenix = true, Version = 0x004C0008 };
+        Assert.Equal(CpuLiveQueryStatus.UnsupportedIdentity,
+            new Rz090528CpuLiveQuery(wire, sync, contract: CpuLiveCurveContract.Rz090508).Query(Exact).Status);
+        Assert.Empty(wire.Calls);
+    }
+
+    [Theory]
+    [InlineData(0x005D000Bu)]
+    [InlineData(0x004C0007u)]
+    public void HawkPointUnknownLayoutStopsBeforeAnyCoreRead(uint version)
+    {
+        var sync = new FakeSynchronization();
+        var wire = new ScriptedIoctl(sync) { Phoenix = true, Version = version };
+        var result = new Rz090528CpuLiveQuery(wire, sync, contract: CpuLiveCurveContract.Rz090508)
+            .Query(new("RZ09-0508", 0x1532, 0x02B6, "1.06"));
+        Assert.Equal(CpuLiveQueryStatus.UnsupportedVersion, result.Status);
+        Assert.Null(result.Observation);
+        Assert.Single(wire.Messages);
+        Assert.Equal(1, sync.Releases);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PhoenixMissingGetterCapabilityNeverSubmitsE1(bool blade2023)
+    {
+        var sync = new FakeSynchronization();
+        var wire = new ScriptedIoctl(sync) { Phoenix = true, Version = 0x004C0008, Fault = "capability" };
+        var contract = blade2023 ? CpuLiveCurveContract.Rz090482 : CpuLiveCurveContract.Rz090508;
+        var result = new Rz090528CpuLiveQuery(wire, sync, contract: contract)
+            .Query(new(contract.ModelNumber, 0x1532, contract.ProductId, "source-provenance"));
+        Assert.Equal(CpuLiveQueryStatus.Unavailable, result.Status);
+        Assert.Equal(CpuQueryStage.Capability, result.Diagnostic!.Stage);
+        Assert.Null(result.Observation);
+        Assert.Equal(new uint[] { 6, 0x82 }, wire.Messages.Select(message => message.Command));
+        Assert.DoesNotContain(wire.Messages, message => message.Command == 0xE1);
+        Assert.Equal(1, sync.Releases);
+    }
+
     private static uint U32(byte[] bytes, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset, 4));
     private static void Put(byte[] bytes, int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), value);
     private sealed record Call(uint Code, byte[] Input, int OutputLength);
 
     private sealed class ScriptedIoctl(FakeSynchronization synchronization) : IRz090528CpuQueryIoctl, ICpuMailboxCommandAdmission
     {
+        internal bool Phoenix;
         internal int CommandBoundaries, AdmittedBoundaries = int.MaxValue;
         public bool CommandBoundaryCurrent() => ++CommandBoundaries <= AdmittedBoundaries;
         public List<Call> Calls { get; } = [];
@@ -431,6 +498,14 @@ public sealed class Rz090528CpuLiveQueryTests
             if (code == 0x81112F18)
             {
                 var records = CpuQueryPciTestRecords.Create(Fault);
+                if (Phoenix)
+                {
+                    for (int i = 28; i < records.Length; i += 52)
+                    {
+                        uint id = U32(records, i + 12);
+                        Put(records, i + 12, id switch { 0x15071022 => 0x14E81022, 0x16F81022 => 0x14F01022, 0x16F91022 => 0x14F11022, _ => id });
+                    }
+                }
                 uint count = U32(records, 24);
                 var output = outputLength == 28 ? new byte[28] : records;
                 Put(output, 24, Fault switch
@@ -452,7 +527,7 @@ public sealed class Rz090528CpuLiveQueryTests
                 Assert.InRange(index, 0u, 1u);
                 if (index == 0)
                 {
-                    Assert.Contains(value, new uint[] { 0x03820AB0, 0x03B10A80, 0x03B10A88, 0x03B10A20 });
+                    Assert.Contains(value, new uint[] { Phoenix ? 0x005D528u : 0x03820AB0u, 0x03B10A80, 0x03B10A88, 0x03B10A20 });
                     selectedAddress = value;
                 }
                 else if (selectedAddress == 0x03B10A88)
@@ -466,9 +541,9 @@ public sealed class Rz090528CpuLiveQueryTests
                 else
                 {
                     Assert.Equal(0x03B10A20u, selectedAddress);
-                    Assert.Contains(value, new uint[] { 6, 0x5E });
+                    Assert.Contains(value, Phoenix ? new uint[] { 6, 0x82, 0xE1 } : new uint[] { 6, 0x5E });
                     Messages.Add((value, argument));
-                    replyValue = value == 6 ? Version : unchecked((uint)(-(int)(((argument >> 28) * 8) + ((argument >> 20) & 7)) - 1));
+                    replyValue = value == 6 ? Version : value == 0x82 ? Fault == "capability" ? 0u : 4u : unchecked((uint)(-(int)(Phoenix ? argument : ((argument >> 28) * 8) + ((argument >> 20) & 7)) - 1));
                     pending = true;
                     remainingPolls = PendingPolls;
                 }
@@ -488,9 +563,9 @@ public sealed class Rz090528CpuLiveQueryTests
                 Assert.Equal(0u, U32(input, 0));
                 Assert.Equal(0u, U32(input, 4));
                 Assert.Equal(0u, U32(input, 8));
-                if (selectedAddress == 0x03820AB0)
+                if (selectedAddress == (Phoenix ? 0x005D528u : 0x03820AB0u))
                 {
-                    data = (~(Fault == "mask-disagree" ? 0xF6BCu : 0xF6BDu) & 0xFFFF) << 5;
+                    data = (~(Phoenix ? 0xFFu : Fault == "mask-disagree" ? 0xF6BCu : 0xF6BDu) & (Phoenix ? 0xFFu : 0xFFFFu)) << (Phoenix ? 7 : 5);
                 }
                 else if (selectedAddress == 0x03B10A88)
                 {
@@ -517,12 +592,12 @@ public sealed class Rz090528CpuLiveQueryTests
                 if (U32(input, 8) == 0)
                 {
                     Assert.Equal(0u, offsetInConfig);
-                    data = Fault == "stale-node" ? 0u : 0x16F81022u;
+                    data = Fault == "stale-node" ? 0u : Phoenix ? 0x14F01022u : 0x16F81022u;
                 }
                 else
                 {
                     Assert.Equal(1u, U32(input, 8));
-                    data = offsetInConfig == 0 ? Fault == "stale-orientation" ? 0u : 0x16F91022u : Fault switch
+                    data = offsetInConfig == 0 ? Fault == "stale-orientation" ? 0u : Phoenix ? 0x14F11022u : 0x16F91022u : Phoenix ? 0xABCD00FFu : Fault switch
                     {
                         "mask-high" => 0x1F6BD,
                         "mask-count" => 0xF6BC,
@@ -535,7 +610,7 @@ public sealed class Rz090528CpuLiveQueryTests
             {
                 Assert.Equal(0u, U32(input, 0));
                 Assert.Equal(0u, offsetInConfig);
-                data = Fault is "stale-id" or "stale-root" ? 0u : 0x15071022u;
+                data = Fault is "stale-id" or "stale-root" ? 0u : Phoenix ? 0x14E81022u : 0x15071022u;
             }
             Put(response, 20, data);
             if (Fault == "header-change")

@@ -38,6 +38,7 @@ internal interface ICpuQueryRetainableDevice : ICpuQueryDevice
 }
 internal interface ICpuQueryWindowsPlatform
 {
+    CpuLiveCurveContract Contract => CpuLiveCurveContract.Rz090528;
     HostIdentityReadResult ReadHost();
     CpuQueryProcessorIdentity ReadProcessor();
     bool ControllersAbsent();
@@ -103,7 +104,7 @@ internal sealed class CpuInstalledBackendLease : IDisposable
             {
                 var current = platform.ReadBackend();
                 if (SameRegistration(baseline, current)
-                    && Rz090528InstalledCpuBackendInspector.Evaluate(current).Availability == CpuTuningBackendAvailability.Available)
+                    && Rz090528InstalledCpuBackendInspector.Evaluate(current, CpuInstalledBackendProfile.ForContract(platform.Contract)).Availability == CpuTuningBackendAvailability.Available)
                 { return current; }
             }
             catch { }
@@ -214,6 +215,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
     private readonly Func<DeviceIdentity?> readFreshUsbIdentity;
     private readonly ICpuQueryWindowsPlatform retentionPlatform;
     private readonly ICpuNativeWireAdmission wire;
+    private readonly CpuLiveCurveContract contract;
     private ICpuQueryDevice? device;
     private CpuInstalledBackendLease? retained;
     private Func<bool>? queryCurrent;
@@ -231,12 +233,13 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
     }
 
     private WindowsRz090528CpuQueryAdapter(ICpuQueryWindowsPlatform platform, Func<DeviceIdentity?> readFreshUsbIdentity)
-        : this(platform, readFreshUsbIdentity, new CpuQueryWireAdmission()) { }
+        : this(platform, readFreshUsbIdentity, new CpuQueryWireAdmission(platform.Contract)) { }
 
     private WindowsRz090528CpuQueryAdapter(ICpuQueryWindowsPlatform platform, Func<DeviceIdentity?> readFreshUsbIdentity,
         ICpuNativeWireAdmission wire, ICpuQueryWindowsPlatform? retentionPlatform = null)
     {
         this.platform = platform;
+        contract = platform.Contract;
         this.retentionPlatform = retentionPlatform ?? platform;
         this.readFreshUsbIdentity = readFreshUsbIdentity;
         this.wire = wire;
@@ -296,12 +299,12 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
             DeviceIdentity? identity;
             progress?.Boundary(CpuQueryStage.InitialUsbIdentity);
             using (progress?.Enter(CpuQueryBucket.Continuity)) { identity = readFreshUsbIdentity(); }
-            if (!ExactUsb(identity))
+            if (!ExactUsb(identity, platform.Contract))
             {
                 return new(CpuLiveQueryStatus.UnsupportedIdentity, null,
                     new(adapter.stage, CpuQueryFailureCode.AdmissionDenied));
             }
-            return new Rz090528CpuLiveQuery(adapter, adapter, progress).Query(identity!, cancellationToken);
+            return new Rz090528CpuLiveQuery(adapter, adapter, progress, platform.Contract).Query(identity!, cancellationToken);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or Win32Exception or InvalidOperationException or System.Security.SecurityException
@@ -320,8 +323,9 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
         }
     }
 
-    private static bool ExactUsb(DeviceIdentity? identity) => identity is
-    { Model: "RZ09-0528", VendorId: 0x1532, ProductId: 0x02C6 };
+    private static bool ExactUsb(DeviceIdentity? identity) => ExactUsb(identity, CpuLiveCurveContract.Rz090528);
+    private static bool ExactUsb(DeviceIdentity? identity, CpuLiveCurveContract expected) =>
+        CpuLiveCurveContract.ForIdentity(identity) == expected;
 
     private bool FreshAdmission()
     {
@@ -341,18 +345,22 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
     {
         stage = CpuQueryStage.HostIdentity;
         var host = platform.ReadHost();
-        if (host.Failure is not null || host.Evidence is not
-            { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4" }) { return false; }
+        if (host.Failure is not null || host.Evidence is not { Manufacturer: "Razer" } evidence
+            || evidence.ProductName != contract.ProductName
+            || contract == CpuLiveCurveContract.Rz090528 && evidence.Sku != "RZ09-05289EN4") { return false; }
         stage = CpuQueryStage.ProcessorIdentity;
         var cpu = platform.ReadProcessor();
-        if (cpu is not { Vendor: "AuthenticAMD", Family: 0x1A, Model: 0x24, Stepping: 0 }) { return false; }
+        if (contract == CpuLiveCurveContract.Rz090528
+            ? cpu is not { Vendor: "AuthenticAMD", Family: 0x1A, Model: 0x24, Stepping: 0 }
+            : cpu.Vendor != "AuthenticAMD" || cpu.Family != 0x19
+                || cpu.Model != (contract == CpuLiveCurveContract.Rz090508 ? 0x75 : 0x74)) { return false; }
         stage = CpuQueryStage.FreshUsbIdentity;
-        if (includeUsb && !ExactUsb(readFreshUsbIdentity())) { return false; }
+        if (includeUsb && !ExactUsb(readFreshUsbIdentity(), contract)) { return false; }
         stage = CpuQueryStage.ControllerPresence;
         if (!platform.ControllersAbsent()) { return false; }
         stage = CpuQueryStage.InstalledBackend;
         backendSnapshot = platform.ReadBackend();
-        return Rz090528InstalledCpuBackendInspector.Evaluate(backendSnapshot).Availability
+        return Rz090528InstalledCpuBackendInspector.Evaluate(backendSnapshot, CpuInstalledBackendProfile.ForContract(contract)).Availability
             == CpuTuningBackendAvailability.Available;
     }
 
@@ -479,6 +487,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
             }
             if (wire is CpuCurveNativeWire curve) { curve.BeforeNativeInvoke(code, input); }
             else if (wire is CpuPowerNativeWire power) { power.BeforeNativeInvoke(code, input); }
+            else if (wire is CpuPhoenixCurveNativeWire phoenix) { phoenix.BeforeNativeInvoke(code, input); }
             using (progress?.Enter(CpuQueryBucket.NativeInvocation))
             {
                 reply = device.Invoke(code, input, outputLength);
@@ -589,8 +598,12 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter : IRz090528CpuQuery
 // No arbitrary PCI write, SMN address, PM-cache F08, refresh, MSR or tuning setter.
 internal sealed class CpuQueryWireAdmission : ICpuNativeWireAdmission
 {
+    private readonly CpuCurveNativeProfile profile;
+    internal CpuQueryWireAdmission(CpuLiveCurveContract? contract = null) =>
+        profile = CpuCurveNativeProfile.ForContract(contract ?? CpuLiveCurveContract.Rz090528);
     private const uint Enumerate = 0x81112F18, Read = 0x81112F24, Write = 0x81112FF8;
-    private const uint Fuse = 0x03820AB0, Response = 0x03B10A80, Argument = 0x03B10A88, Message = 0x03B10A20;
+    private uint Fuse => profile.FuseAddress;
+    private const uint Response = 0x03B10A80, Argument = 0x03B10A88, Message = 0x03B10A20;
     private uint count, selected, argument;
     private uint? bus;
     private bool enumerated, failed, responseReady, cleared, argumentWritten, awaitingResult;
@@ -626,23 +639,24 @@ internal sealed class CpuQueryWireAdmission : ICpuNativeWireAdmission
             return b == 0 && d == 0x18 && f == 1 && offset is 0 or 0x140
                 || b == bus && d == 0x18 && f == 0 && offset == 0
                 || b == bus && d == 0 && f == 0 && (offset == 0
-                    || offset == 0xC8 && selected is Fuse or Response or Argument);
+                    || offset == 0xC8 && (selected == Fuse || selected is Response or Argument));
         }
         if (code != Write || input.Length != 12 || outputLength != 0 || Word(input, 8) != bus
             || !rootConfirmed || !nodeConfirmed || !orientationConfirmed) { return false; }
         uint index = Word(input, 0), value = Word(input, 4);
-        if (index == 0) { return value is Fuse or Response or Argument or Message; }
+        if (index == 0) { return value == Fuse || value is Response or Argument or Message; }
         if (index != 1) { return false; }
         return selected switch
         {
             Response => value == 0 && responseReady,
             Argument => cleared && IsCoreArgument(value),
-            Message => cleared && argumentWritten && (value == 6 && argument == 0 || value == 0x5E),
+            Message => cleared && (profile.IsPhoenix && value == 0x82 ? !argumentWritten
+                : argumentWritten && (value == 6 && argument == 0 || value == profile.GetterMessage)),
             _ => false,
         };
     }
 
-    private static bool IsCoreArgument(uint value) =>
+    private bool IsCoreArgument(uint value) => profile.IsPhoenix ? value < 8 :
         (value & 0xEF8FFFFF) == 0; // bits 28 (CCD 0..1) and 20..22 (core 0..7) only.
 
     internal bool AcceptReply(uint code, byte[] input, int outputLength, CpuQueryIoctlReply reply)
@@ -655,7 +669,7 @@ internal sealed class CpuQueryWireAdmission : ICpuNativeWireAdmission
             { failed = true; return false; }
             if (count == 0) { count = received; return true; }
             if (received != count) { failed = true; return false; }
-            if (!CpuQueryPciTopology.TryFindBus(reply.Bytes, out uint found)) { failed = true; return false; }
+            if (!CpuQueryPciTopology.TryFindBus(reply.Bytes, profile, out uint found)) { failed = true; return false; }
             enumerated = true;
             bus = found;
         }
@@ -665,9 +679,9 @@ internal sealed class CpuQueryWireAdmission : ICpuNativeWireAdmission
             if (Word(input, 12) == 0)
             {
                 uint d = Word(input, 4), f = Word(input, 8), id = Word(reply.Bytes, 20);
-                if (d == 0) { rootConfirmed = id == CpuQueryPciTopology.RootId; }
-                else if (f == 0) { nodeConfirmed = id == CpuQueryPciTopology.NodeId; }
-                else { orientationConfirmed = id == CpuQueryPciTopology.OrientationId; }
+                if (d == 0) { rootConfirmed = id == profile.RootId; }
+                else if (f == 0) { nodeConfirmed = id == profile.NodeId; }
+                else { orientationConfirmed = id == profile.OrientationId; }
                 if (!(d == 0 ? rootConfirmed : f == 0 ? nodeConfirmed : orientationConfirmed))
                 { failed = true; return false; }
             }
@@ -695,12 +709,10 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
     // obtain its raw device interface and bypass attended admission or wire checks.
     private sealed partial class CpuQueryWindowsPlatform : ICpuQueryWindowsPlatform
     {
-        public HostIdentityReadResult ReadHost()
-        {
-            var registry = new WindowsRegistryValueSource();
-            return new WindowsHostIdentitySource(registry, new RuntimeWindowsPlatformEvidenceSource(registry),
-                WindowsHostIdentitySource.Rz090528Identity).ReadExactIdentity();
-        }
+        private readonly CpuInstalledBackendBinding binding = new(CpuVoltageModelIdentity.ReadIdentity);
+        private CpuInstalledBackendProfile Profile => binding.Get();
+        public CpuLiveCurveContract Contract => Profile.Contract;
+        public HostIdentityReadResult ReadHost() => CpuVoltageModelIdentity.ReadHost(Contract);
 
         public CpuQueryProcessorIdentity ReadProcessor()
         {
@@ -719,14 +731,14 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
 
         private BackendFilePins? backendPins;
         public InstalledCpuBackendSnapshot ReadBackend() => backendPins is { } pins
-            ? new WindowsInstalledCpuBackendSnapshotSource().Read(pins.ReadMetadata())
-            : new WindowsInstalledCpuBackendSnapshotSource().Read();
-        public ICpuQueryDevice OpenExistingDevice() => new NativeDevice();
+            ? new WindowsInstalledCpuBackendSnapshotSource(Profile).Read(pins.ReadMetadata())
+            : new WindowsInstalledCpuBackendSnapshotSource(Profile).Read();
+        public ICpuQueryDevice OpenExistingDevice() => new NativeDevice(Profile.ServiceName);
         public ICpuQueryMutex CreateSharedMutex() => new SharedMutex();
         public IDisposable PinBackendFiles()
         {
             if (backendPins is not null) { throw new IOException("CPU backend files already pinned."); }
-            return backendPins = new BackendFilePins(() => backendPins = null);
+            return backendPins = new BackendFilePins(Profile, () => backendPins = null);
         }
 
         private sealed class BackendFilePins : IDisposable
@@ -734,8 +746,10 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             private readonly List<IDisposable> pins = [];
             private IReadOnlyList<CpuBackendFileMetadata>? metadata;
             private readonly Action released;
-            internal BackendFilePins(Action released)
+            private readonly CpuInstalledBackendProfile profile;
+            internal BackendFilePins(CpuInstalledBackendProfile profile, Action released)
             {
+                this.profile = profile;
                 this.released = released;
                 try
                 {
@@ -756,7 +770,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
                         if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
                         { throw new IOException("CPU backend parent is redirected."); }
                     }
-                    foreach (string path in Rz090528InstalledCpuBackendInspector.ExpectedHashes.Keys)
+                    foreach (string path in profile.ExpectedHashes.Keys)
                     {
                         // Open the file itself (never follow a reparse point), deny
                         // writes/deletion, then inspect its now-stable path. This
@@ -776,7 +790,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
                 catch { Dispose(); throw; }
             }
             internal IReadOnlyList<CpuBackendFileMetadata> ReadMetadata() =>
-                metadata ??= WindowsInstalledCpuBackendSnapshotSource.ReadFileMetadata();
+                metadata ??= WindowsInstalledCpuBackendSnapshotSource.ReadFileMetadata(profile);
             public void Dispose()
             {
                 try
@@ -815,9 +829,9 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         private sealed class NativeDevice : ICpuQueryRetainableDevice
         {
             private readonly SafeFileHandle handle;
-            internal NativeDevice()
+            internal NativeDevice(string serviceName)
             {
-                handle = CreateFileW(@"\\.\AMDRyzenMasterDriverV31", 0xC0000000, 3, 0, 3, 0, 0);
+                handle = CreateFileW(@"\\.\" + serviceName, 0xC0000000, 3, 0, 3, 0, 0);
                 if (handle.IsInvalid)
                 {
                     int error = Marshal.GetLastWin32Error();

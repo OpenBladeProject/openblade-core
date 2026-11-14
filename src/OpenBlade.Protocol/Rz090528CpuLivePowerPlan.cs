@@ -54,25 +54,28 @@ internal sealed class CpuLivePowerSnapshot
     internal const int PayloadLength = 0xD50, FastOffset = 8, SlowOffset = 16;
     private readonly CpuPmRawSnapshot source;
     private CpuLivePowerSnapshot(CpuPmRawSnapshot source, CpuLivePowerPair pair) { this.source = source; Pair = pair; }
+    internal CpuLiveCurveContract Contract => source.Contract;
     internal CpuLivePowerPair Pair { get; }
     internal DateTimeOffset CapturedUtc => source.CapturedUtc;
     internal long MonotonicTimestamp => source.MonotonicTimestamp;
     internal string PayloadSha256 => source.PayloadSha256;
     internal byte[] CopyOriginalPayload() => source.CopyPayload();
-    internal static CpuLivePowerSnapshot? TryCreate(CpuPmRawSnapshot? source)
+    // The original overload is also used by PPT mutation callers. Its scope remains 0528.
+    internal static CpuLivePowerSnapshot? TryCreate(CpuPmRawSnapshot? source) =>
+        TryCreate(CpuLiveCurveContract.Rz090528, source);
+
+    internal static CpuLivePowerSnapshot? TryCreate(CpuLiveCurveContract contract, CpuPmRawSnapshot? source)
     {
-        // CpuPmRawSnapshot's private factory already enforces the exact B
-        // version, D54 envelope and D50 payload. Revalidate through that factory
-        // so this layer cannot substitute another version/layout.
-        if (source is null || source.Validity != CpuPmRawSnapshotValidity.ValidCandidateObservation
-            || source.CapturedUtc == default || source.MonotonicTimestamp < 0
-            || !CpuPmRawSnapshot.TryCreate(SupportedVersion, new(true, source.CopyReply()),
-                source.CapturedUtc, source.MonotonicTimestamp, out var checkedSource)) { return null; }
-        byte[] bytes = checkedSource!.CopyPayload();
-        if (bytes.Length != PayloadLength
+        if (source is null || source.Contract != contract || source.Validity != CpuPmRawSnapshotValidity.ValidCandidateObservation
+            || source.CapturedUtc == default || source.MonotonicTimestamp < 0) { return null; }
+        byte[] bytes = source.CopyPayload();
+        if (!contract.AcceptsGeometry(contract.EnabledCoreMask, source.PmVersion, bytes.Length)
             || !CpuLivePowerValue.TryFromRawBits(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(FastOffset, 4)), out var fast)
             || !CpuLivePowerValue.TryFromRawBits(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(SlowOffset, 4)), out var slow)) { return null; }
-        return new(checkedSource, new(fast, slow, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0, 4))));
+        uint stapm = BinaryPrimitives.ReadUInt32LittleEndian(bytes);
+        if (CpuCurveNativeProfile.ForContract(contract).IsPhoenix && !CpuLivePowerValue.TryFromRawBits(stapm, out _))
+        { return null; }
+        return new(source, new(fast, slow, stapm));
     }
 }
 

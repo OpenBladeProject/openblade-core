@@ -75,6 +75,31 @@ public sealed class Rz090528CpuLivePowerPlanTests
         Assert.Null(CpuLivePowerSnapshot.TryCreate(Raw(unmatched)));
     }
 
+    [Fact]
+    public void PhoenixPeerRetainsExactThreeLimitsAndRejectsCrossModelOrCrossLayout()
+    {
+        var phoenix = CpuLiveCurveContract.Rz090508;
+        byte[] reply = new byte[0xAF4];
+        Put(reply, 0, 0xAF0);
+        Put(reply, 4, Bits(35000));
+        Put(reply, 12, Bits(54000));
+        Put(reply, 20, Bits(45000));
+        Assert.True(CpuPmRawSnapshot.TryCreate(phoenix, 0x004C0008, new(true, reply), DateTimeOffset.UnixEpoch, 1, out var raw));
+        var snapshot = CpuLivePowerSnapshot.TryCreate(phoenix, raw);
+        Assert.NotNull(snapshot);
+        Assert.Same(phoenix, snapshot.Contract);
+        Assert.Equal(Bits(35000), snapshot.Pair.StapmRawBits);
+        Assert.Equal(54000u, snapshot.Pair.Fast.Milliwatts);
+        Assert.Equal(45000u, snapshot.Pair.Slow.Milliwatts);
+        Assert.Null(CpuLivePowerSnapshot.TryCreate(raw));
+        Assert.Null(CpuLivePowerSnapshot.TryCreate(phoenix, Raw(Reply())));
+        Assert.False(CpuPmRawSnapshot.TryCreate(phoenix, 0x004C0009, new(true, reply), DateTimeOffset.UnixEpoch, 1, out _));
+        Assert.False(CpuPmRawSnapshot.TryCreate(phoenix, 0x004C0008, new(true, Reply()), DateTimeOffset.UnixEpoch, 1, out _));
+        Put(reply, 4, 0);
+        Assert.True(CpuPmRawSnapshot.TryCreate(phoenix, 0x004C0008, new(true, reply), DateTimeOffset.UnixEpoch, 1, out raw));
+        Assert.Null(CpuLivePowerSnapshot.TryCreate(phoenix, raw));
+    }
+
     private static uint Bits(uint milliwatts) => BitConverter.SingleToUInt32Bits((float)milliwatts * 0.001f);
     private static void Put(byte[] bytes, int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset), value);
     private static byte[] Reply()

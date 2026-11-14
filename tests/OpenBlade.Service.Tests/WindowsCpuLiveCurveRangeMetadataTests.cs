@@ -6,6 +6,59 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsCpuLiveCurveRangeMetadataTests
 {
     [Theory]
+    [InlineData("RZ09-0508", 3, true)]
+    [InlineData("RZ09-0482", 7, true)]
+    [InlineData("RZ09-0508", 2, false)]
+    [InlineData("RZ09-0482", 8, false)]
+    public void PhoenixUsesThreeMagnitudeFieldsAndReportedSteps(string model, int version, bool supported)
+    {
+        var contract = model == "RZ09-0508" ? CpuLiveCurveContract.Rz090508 : CpuLiveCurveContract.Rz090482;
+        var context = CpuLiveCurveTuningTransactionTests.Blade14Fixture(new(), contract).Context;
+        var session = new Session();
+        session.Version.Values.Clear();
+        session.Version.Values["Version"] = version;
+        session.MinMax.Values.Remove("ReturnValue");
+        session.Pack.Values.Clear();
+        session.Pack.Values["Min"] = 2;
+        session.Pack.Values["Max"] = (uint)100;
+        session.Pack.Values["Stepping"] = 3;
+        var result = Reader(session).Read(context, new Scope(context));
+        Assert.Equal(supported, result.Range is not null);
+        if (supported)
+        {
+            Assert.True(CpuLiveCurveCommand.TryCreate(contract, 1, -5, out var aligned));
+            Assert.True(CpuLiveCurveCommand.TryCreate(contract, 1, -6, out var misaligned));
+            Assert.True(result.Range!.Allows(aligned));
+            Assert.False(result.Range.Allows(misaligned));
+            Assert.Null(result.MinMax.FirmwareShadow);
+        }
+        Assert.True(result.CleanupComplete);
+        Assert.True(session.Disposed);
+    }
+
+    [Theory]
+    [InlineData("negative")]
+    [InlineData("oversized")]
+    [InlineData("zero-step")]
+    [InlineData("missing")]
+    [InlineData("false-return")]
+    [InlineData("wrong-type")]
+    public void PhoenixRejectsMalformedReportedRangeBeforeWrite(string fault)
+    {
+        var context = CpuLiveCurveTuningTransactionTests.Blade14Fixture(new()).Context;
+        var session = new Session();
+        if (fault == "negative") { session.Pack.Values["Min"] = -1; }
+        if (fault == "oversized") { session.Pack.Values["Max"] = 32769u; }
+        if (fault == "zero-step") { session.Pack.Values["Stepping"] = 0u; }
+        if (fault == "missing") { session.Pack.Values.Remove("Stepping"); }
+        if (fault == "false-return") { session.MinMax.Values["ReturnValue"] = false; }
+        if (fault == "wrong-type") { session.Pack.Values["Max"] = 20.0; }
+        var result = Reader(session).Read(context, new Scope(context));
+        Assert.Null(result.Range);
+        Assert.Equal(CpuLiveCurveRangeStatus.Incomplete, result.Status);
+    }
+
+    [Theory]
     [InlineData("2.02")]
     [InlineData("2.03")]
     [InlineData("Unknown")]
@@ -236,10 +289,10 @@ public sealed class WindowsCpuLiveCurveRangeMetadataTests
         else if (fault == "enumeration") { output.ThrowEnumeration = true; }
         else { output.Values["ReturnValue"] = fault switch { "true" => true, "false" => false, "uint" => (uint)1, _ => null }; }
     }
-    private sealed class Scope : CpuLiveCurveRangeTrustedScope
+    private sealed class Scope(CpuLiveCurveContext? expected = null) : CpuLiveCurveRangeTrustedScope
     {
         internal bool Current = true;
-        internal override bool IsCurrent(CpuLiveCurveContext exactContext) => Current && Context().MatchesHardwareContext(exactContext);
+        internal override bool IsCurrent(CpuLiveCurveContext exactContext) => Current && (expected ?? Context()).MatchesHardwareContext(exactContext);
     }
     private sealed class Session : IWindowsCpuCurveRangeSession
     {

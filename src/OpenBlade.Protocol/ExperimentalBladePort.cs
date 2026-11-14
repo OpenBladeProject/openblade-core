@@ -196,6 +196,10 @@ internal sealed partial class ExperimentalBladePort(
                 0x02C5 => KeyboardLightingLayoutIds.Rz09_0530,
                 _ => null,
             },
+            CpuVoltageOptimizer = model.ProductId is 0x02B6 or 0x029D or 0x02C5
+                ? new CpuVoltageOptimizerCapabilities(new DeviceNumericRange(-30, -1, 1),
+                    enabled && model.ProductId is 0x02B6 or 0x029D ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly)
+                { SupportsEnableDisable = true } : null,
             ObservedLightingEffects = CreateObservedExperimentalLightingEffects(model),
             ThxAudio = model.ProductId == 0x02C5
                 ? new ThxAudioCapabilities(
