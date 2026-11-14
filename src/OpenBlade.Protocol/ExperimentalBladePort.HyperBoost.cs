@@ -33,12 +33,11 @@ internal sealed partial class ExperimentalBladePort
             RequireWriteAdmission();
             PowerSource source = capturePowerSource();
             bool balancedCleanup = !enabled && baseMode == PerformancePreset.Balanced;
-            if (enabled && source is not (PowerSource.PluggedIn or PowerSource.ExternalUnknown)
-                || !enabled && !balancedCleanup && source is not (PowerSource.PluggedIn or PowerSource.ExternalUnknown)
-                || balancedCleanup && source is not (PowerSource.PluggedIn or PowerSource.ExternalUnknown or PowerSource.UsbC or PowerSource.Battery))
+            bool batteryCleanup = balancedCleanup && source == PowerSource.Battery;
+            if (!ExternalPowerReported(source) && !batteryCleanup)
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                    "HyperBoost requires full power; low-power exit restores Balanced with Automatic fans.");
+                    "HyperBoost requires confirmed external power; battery exit restores Balanced with Automatic fans.");
             }
             bool StillAdmitted() => capturePowerSource() == source
                 && (!enabled || ObserveHyperBoostCoolingPad() == (requiresCoolingPad
@@ -87,11 +86,14 @@ internal sealed partial class ExperimentalBladePort
                             "Turn off Maximum Fans in Synapse before enabling HyperBoost; OpenBlade cannot restore that option on this model.");
                     }
                     RequireMaximumFansWriteBaseline(flags);
+                    // Cleanup belongs to this HyperBoost request; it cannot inherit
+                    // ordinary Unknown-AC admission before the mode-7 command.
                     await ExchangeAsync("MaximumFans", 0x07, 0x0F, [0], true, cancellationToken,
                         variableResponse: acceptsStatusOnlyAck,
                         payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 1 : null,
                         requireEcho: !acceptsStatusOnlyAck,
-                        requireAdequateAdapter: true, writeAdmission: StillAdmitted).ConfigureAwait(false);
+                        writeAdmission: StillAdmitted,
+                        allowUnclassifiedExternal: false).ConfigureAwait(false);
                     submitted = true;
                     if (await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false) != 0)
                     {
@@ -119,7 +121,8 @@ internal sealed partial class ExperimentalBladePort
                     variableResponse: acceptsStatusOnlyAck,
                     payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 4 : null,
                     requireEcho: !acceptsStatusOnlyAck,
-                    requireAdequateAdapter: !balancedCleanup, writeAdmission: StillAdmitted).ConfigureAwait(false);
+                    writeAdmission: StillAdmitted,
+                    allowUnclassifiedExternal: false).ConfigureAwait(false);
                 submitted = true;
             }
             ProductionPerformanceFanState confirmed = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);

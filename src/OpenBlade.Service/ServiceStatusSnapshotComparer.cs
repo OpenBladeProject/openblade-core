@@ -9,6 +9,7 @@ internal static class ServiceStatusSnapshotComparer
         left.CoolingPad == right.CoolingPad
         && left.DeviceVerified == right.DeviceVerified
         && left.WritesBlocked == right.WritesBlocked
+        && left.ExternalPowerPresent == right.ExternalPowerPresent
         && left.PotentialControllers.SequenceEqual(
             right.PotentialControllers,
             StringComparer.Ordinal)
@@ -134,6 +135,8 @@ internal static class ServiceStatusSnapshotComparer
             && left.SupportsFanStop == right.SupportsFanStop
             && left.ReportsPerformanceWithManualFans == right.ReportsPerformanceWithManualFans
             && left.SupportsManualFansOnLimitedPower == right.SupportsManualFansOnLimitedPower
+            && left.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower
+                == right.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower
             && left.LightingEffects.SetEquals(right.LightingEffects)
             && left.ObservedLightingEffects.SetEquals(right.ObservedLightingEffects)
             && left.SupportedLightingRefreshRates.SetEquals(

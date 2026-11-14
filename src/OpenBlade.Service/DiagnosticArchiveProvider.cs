@@ -371,7 +371,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             metadata.SensitiveTokens,
             hyperBoostJournalDiagnostics,
             verification,
-            experimentalSupport.Detected
+            experimentalSupport.Detected || experimentalSupport.FeatureEvidence.Count > 0
                 ? new DiagnosticExperimentalSupportSnapshot(
                     metadata.CapturedAt,
                     experimentalSupport,
@@ -460,6 +460,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
         result["performance.customCombinations"] =
             capabilities.CustomPerformance?.IsWellFormed == true;
         result["fans.manualOnLimitedPower"] = capabilities.SupportsManualFansOnLimitedPower;
+        result["performance.ordinaryOnUnclassifiedExternalPower"] =
+            capabilities.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower;
         result["performance.customMaximumFans"] =
             capabilities.CustomPerformance?.SupportsMaximumFans == true;
         result["performance.cpuPowerLimit.observed"] =

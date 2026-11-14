@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -7,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 using OpenBlade.Contracts;
+using OpenBlade.ProcessArguments;
 using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
@@ -14,15 +14,15 @@ namespace OpenBlade.SessionAgent;
 /// <summary>Runs without the Session Agent's Raw Input source in a separate process.</summary>
 internal static class SnapTapInputHost
 {
-    internal const string ModeArgument = "--snap-tap-input";
+    internal const string ModeArgument = InputHelperCommandLine.InputMode;
 
     internal static bool IsRequested(IReadOnlyList<string> args) =>
-        args.Count > 0 && args[0] is ModeArgument or SnapTapDriverSupervisor.WorkerMode;
+        InputHelperCommandLine.IsRequested(args);
 
     internal static string BackendArgument(KeyboardInputBackend backend) => backend switch
     {
-        KeyboardInputBackend.WindowsHook => "windows-hook",
-        KeyboardInputBackend.RazerDriver => "razer-driver",
+        KeyboardInputBackend.WindowsHook => InputHelperCommandLine.BackendArgument(InputHelperBackend.WindowsHook),
+        KeyboardInputBackend.RazerDriver => InputHelperCommandLine.BackendArgument(InputHelperBackend.RazerDriver),
         _ => throw new ArgumentOutOfRangeException(nameof(backend)),
     };
 
@@ -31,18 +31,11 @@ internal static class SnapTapInputHost
 
     internal static string FeaturesArgument(KeyboardDriverFeatures features) => features switch
     {
-        KeyboardDriverFeatures.SnapTap => "snap-tap",
-        KeyboardDriverFeatures.FunctionRow => "function-row",
-        KeyboardDriverFeatures.SnapTap | KeyboardDriverFeatures.FunctionRow => "snap-tap-and-function-row",
+        KeyboardDriverFeatures.SnapTap => InputHelperCommandLine.FeaturesArgument(InputHelperFeatures.SnapTap),
+        KeyboardDriverFeatures.FunctionRow => InputHelperCommandLine.FeaturesArgument(InputHelperFeatures.FunctionRow),
+        KeyboardDriverFeatures.SnapTap | KeyboardDriverFeatures.FunctionRow =>
+            InputHelperCommandLine.FeaturesArgument(InputHelperFeatures.SnapTap | InputHelperFeatures.FunctionRow),
         _ => throw new ArgumentOutOfRangeException(nameof(features)),
-    };
-
-    private static KeyboardDriverFeatures ParseFeatures(string value) => value switch
-    {
-        "snap-tap" => KeyboardDriverFeatures.SnapTap,
-        "function-row" => KeyboardDriverFeatures.FunctionRow,
-        "snap-tap-and-function-row" => KeyboardDriverFeatures.SnapTap | KeyboardDriverFeatures.FunctionRow,
-        _ => KeyboardDriverFeatures.None,
     };
 
     internal static bool TryParseArguments(IReadOnlyList<string> args, out int parentId,
@@ -51,33 +44,23 @@ internal static class SnapTapInputHost
         parentId = 0;
         backend = KeyboardInputBackend.RazerDriver;
         features = KeyboardDriverFeatures.SnapTap;
-        if (!IsRequested(args) || args.Count is < 2 or > 4
-            || !int.TryParse(args[1], NumberStyles.None, CultureInfo.InvariantCulture, out parentId)
-            || parentId <= 0 || parentId == Environment.ProcessId)
+        if (!InputHelperCommandLine.TryParse(args, out InputHelperArguments parsed)
+            || parsed.ParentProcessId == Environment.ProcessId)
         {
             return false;
         }
-        if (args[0] == SnapTapDriverSupervisor.WorkerMode)
+        parentId = parsed.ParentProcessId;
+        backend = parsed.Backend == InputHelperBackend.WindowsHook
+            ? KeyboardInputBackend.WindowsHook : KeyboardInputBackend.RazerDriver;
+        features = parsed.Features switch
         {
-            if (args.Count > 3) { return false; }
-            if (args.Count == 3) { features = ParseFeatures(args[2]); }
-            return features != KeyboardDriverFeatures.None;
-        }
-        if (args.Count >= 3)
-        {
-            backend = args[2] switch
-            {
-                "windows-hook" => KeyboardInputBackend.WindowsHook,
-                "razer-driver" => KeyboardInputBackend.RazerDriver,
-                _ => KeyboardInputBackend.Unknown,
-            };
-        }
-        if (args.Count == 4)
-        {
-            if (backend != KeyboardInputBackend.RazerDriver) { return false; }
-            features = ParseFeatures(args[3]);
-        }
-        return backend != KeyboardInputBackend.Unknown && features != KeyboardDriverFeatures.None;
+            InputHelperFeatures.SnapTap => KeyboardDriverFeatures.SnapTap,
+            InputHelperFeatures.FunctionRow => KeyboardDriverFeatures.FunctionRow,
+            InputHelperFeatures.SnapTap | InputHelperFeatures.FunctionRow =>
+                KeyboardDriverFeatures.SnapTap | KeyboardDriverFeatures.FunctionRow,
+            _ => throw new InvalidOperationException("Unsupported input helper feature set."),
+        };
+        return true;
     }
 
     internal static DiagnosticFailure? InspectWindowsDriverOwnership(string directory, Func<string> readBootIdentity)

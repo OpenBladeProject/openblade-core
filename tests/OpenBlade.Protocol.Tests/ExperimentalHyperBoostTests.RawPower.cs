@@ -22,25 +22,32 @@ public sealed partial class ExperimentalThermalExpansionTests
     }
 
     [Theory]
-    [InlineData(0x029F)]
-    [InlineData(0x029D)]
-    public async Task RawExternalHyperBoost_LimitedAdapterAdmitsOnlyBalancedAutomaticExit(int product)
+    [InlineData(0x029F, false, PerformancePreset.Balanced, 0x07)]
+    [InlineData(0x029F, true, PerformancePreset.Balanced, 0x0C)]
+    [InlineData(0x029F, false, PerformancePreset.Silent, 0x07)]
+    [InlineData(0x029F, true, PerformancePreset.Silent, 0x0C)]
+    [InlineData(0x029D, false, PerformancePreset.Balanced, 0x07)]
+    [InlineData(0x029D, true, PerformancePreset.Balanced, 0x0C)]
+    [InlineData(0x029D, false, PerformancePreset.Silent, 0x07)]
+    [InlineData(0x029D, true, PerformancePreset.Silent, 0x0C)]
+    public async Task RawExternalHyperBoost_LimitedAdapterSupportsEntryAndDirectExit(
+        int product, bool padPresent, PerformancePreset destination, byte actual)
     {
-        var session = new Session { Mode = 7, AdapterPowerPayload = [0x0C, 0x11] };
-        await using var port = HyperBoostPort(session, new Pad(), pid: product, power: () => PowerSource.ExternalUnknown);
-        BladeWriteException rejected = await Assert.ThrowsAsync<BladeWriteException>(() =>
-            port.SetHyperBoostAsync(false, PerformancePreset.Silent, false, default));
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, rejected.SubmissionState);
-        Assert.Empty(session.Writes);
-        await port.SetHyperBoostAsync(false, PerformancePreset.Balanced, false, default);
-        Assert.Equal((byte)0, session.Mode);
+        byte expectedMode = destination == PerformancePreset.Silent ? (byte)5 : (byte)0;
+        var session = new Session
+        {
+            Mode = expectedMode,
+            AdapterPowerPayload = [actual, 0x11],
+            HyperBoostFirmware = [1, 5, 0, 0],
+        };
+        var pad = new Pad { State = padPresent ? CoolingPadConnectionState.PresentExact : CoolingPadConnectionState.Absent };
+        await using var port = HyperBoostPort(session, pad, pid: product, power: () => PowerSource.ExternalUnknown);
+        await port.SetHyperBoostAsync(true, destination, padPresent, default);
+        Assert.Equal((byte)7, session.Mode);
+        await port.SetHyperBoostAsync(false, destination, padPresent, default);
+        Assert.Equal(expectedMode, session.Mode);
         Assert.Equal((byte)0, session.Fan);
-        Assert.Equal(2, session.Writes.Count());
-        session.Commands.Clear();
-        BladeWriteException entry = await Assert.ThrowsAsync<BladeWriteException>(() =>
-            port.SetHyperBoostAsync(true, PerformancePreset.Balanced, true, default));
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, entry.SubmissionState);
-        Assert.Empty(session.Writes);
+        Assert.Equal(4, session.Writes.Count());
     }
 
     [Theory]

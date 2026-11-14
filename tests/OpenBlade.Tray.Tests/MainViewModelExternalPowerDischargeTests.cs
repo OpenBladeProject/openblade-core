@@ -300,7 +300,7 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
-    public async Task HyperBoostUsbCExitRefreshesCachedDischargeTooltipAndOverflow()
+    public async Task HyperBoostUsbCExitPreservesCachedDischargeTooltipAndOverflow()
     {
         var client = new FakeServiceClient();
         var dispatcher = new RecordingDispatcher();
@@ -330,12 +330,12 @@ public sealed partial class MainViewModelTests
             () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
         Assert.True(viewModel.IsExternalPowerDischarging);
         Assert.True(viewModel.CanToggleHyperBoost);
-        Assert.Equal(TrayIconState.GenericError, viewModel.TrayIconState);
-        Assert.True(viewModel.HasTrayHoverLabelOverflow);
+        Assert.Equal(TrayIconState.AcHyperBoost, viewModel.TrayIconState);
+        Assert.False(viewModel.HasTrayHoverLabelOverflow);
         string cachedTooltip = viewModel.TrayHoverLabelText;
         bool cachedOverflow = viewModel.HasTrayHoverLabelOverflow;
         long episode = viewModel.ExternalPowerDischargeEpisode;
-        Assert.NotEqual("Plugged in, battery discharging", cachedTooltip);
+        Assert.Equal("Plugged in, battery discharging", cachedTooltip);
         // Native consumers cache these values and refresh only on their own
         // property notifications, rather than reevaluating on every icon change.
         viewModel.PropertyChanged += (_, args) =>

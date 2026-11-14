@@ -16,8 +16,18 @@ function Get-NativeSha256([string]$Path) {
     try { return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-', '').ToLowerInvariant() }
     finally { $algorithm.Dispose(); $stream.Dispose() }
 }
+# Cargo releases its own lock before our artifact copy. Hold one cross-process
+# lease through build, copy and provenance so another worktree cannot replace it.
+. (Join-Path $PSScriptRoot 'NativePayload.ps1')
+$cargoCache = Get-OpenBladeSharedCargoCache -Repository $repository
+$cacheMutexName = $cargoCache.MutexName
+$cacheMutex = [Threading.Mutex]::new($false, $cacheMutexName)
+$cacheMutexHeld = $false
 Push-Location (Join-Path $repository 'rust')
 try {
+    try { $cacheMutexHeld = $cacheMutex.WaitOne([TimeSpan]::FromMinutes(10)) }
+    catch [Threading.AbandonedMutexException] { $cacheMutexHeld = $true }
+    if (-not $cacheMutexHeld) { throw 'Shared native build cache is busy.' }
     $pin = [regex]::Match((Get-Content rust-toolchain.toml -Raw), '(?m)^channel = "([0-9.]+)"$').Groups[1].Value
     if (-not $pin) { throw 'Missing exact Rust toolchain pin.' }
     $version = & rustc "+$pin" -vV
@@ -39,15 +49,22 @@ try {
         $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER = (Get-Command link.exe -ErrorAction Stop).Source
         $env:RUSTFLAGS = '-C target-feature=+crt-static'
     }
+    $sourceFingerprint = Get-OpenBladeNativeSourceFingerprint -Repository $repository
+    $inputs = @(Get-OpenBladeNativeWorkingInputs -Repository $repository)
+    $fingerprintFlag = "--cfg=openblade_source_fingerprint_$sourceFingerprint"
+    $env:RUSTFLAGS = ($env:RUSTFLAGS + ' ' + $fingerprintFlag).Trim()
     $env:CARGO_ENCODED_RUSTFLAGS = $null
     $env:CARGO_PROFILE_DEV_PANIC = 'unwind'
     $env:CARGO_PROFILE_RELEASE_PANIC = 'unwind'
-    $env:CARGO_TARGET_DIR = Join-Path $outputPath 'target'
+    $env:CARGO_TARGET_DIR = $cargoCache.TargetDirectory
     $arguments = @("+$pin", 'build', '--locked', '--offline', '-p', 'openblade-ffi', '--lib', '--target', $target)
     $profile = 'debug'
     if ($Configuration -eq 'Release') { $arguments += '--release'; $profile = 'release' }
     & cargo @arguments
     if ($LASTEXITCODE -ne 0) { throw 'Required native component build failed.' }
+    if ((Get-OpenBladeNativeSourceFingerprint -Repository $repository) -cne $sourceFingerprint -or
+        (ConvertTo-Json -InputObject @(Get-OpenBladeNativeWorkingInputs -Repository $repository) -Compress) -cne
+        (ConvertTo-Json -InputObject $inputs -Compress)) { throw 'Native inputs changed during build.' }
     $name = if ($target -like '*windows*') { 'openblade_ffi.dll' }
         elseif ($target -like '*apple*') { 'libopenblade_ffi.dylib' } else { 'libopenblade_ffi.so' }
     Copy-Item -LiteralPath (Join-Path $env:CARGO_TARGET_DIR "$target/$profile/$name") -Destination (Join-Path $outputPath $name) -Force
@@ -55,16 +72,11 @@ try {
     if ($LASTEXITCODE -ne 0 -or $revision -notmatch '^[0-9a-f]{40}$') { throw 'Cannot determine native source revision.' }
     # Development uses current working bytes, including uncommitted changes.
     # Release packaging retains its stricter committed-input provenance recipe.
-    $inputs = @()
-    foreach ($file in @(Get-ChildItem -LiteralPath (Join-Path $repository 'rust') -Recurse -File |
-        Where-Object { $_.FullName -notmatch '[/\\]target[/\\]' } | Sort-Object FullName)) {
-        $relativePath = $file.FullName.Substring($repository.TrimEnd('\', '/').Length + 1).Replace('\', '/')
-        $inputs += [ordered]@{ path = $relativePath; sha256 = Get-NativeSha256 $file.FullName }
-    }
     $manifest = [ordered]@{
         schemaVersion = 1; abiVersion = '0x00010000'; fileName = $name; target = $target
         productVersion = $ProductVersion; sourceRevision = $revision
         sha256 = Get-NativeSha256 (Join-Path $outputPath $name)
+        sourceFingerprint = $sourceFingerprint; flags = @($env:RUSTFLAGS)
         inputs = $inputs
     }
     $text = $manifest | ConvertTo-Json -Depth 8
@@ -73,4 +85,8 @@ try {
         [IO.File]::WriteAllText($manifestPath, $text, [Text.UTF8Encoding]::new($false))
     }
 }
-finally { Pop-Location }
+finally {
+    if ($cacheMutexHeld) { $cacheMutex.ReleaseMutex() }
+    $cacheMutex.Dispose()
+    Pop-Location
+}

@@ -1,0 +1,31 @@
+{
+  "run_id": "21a11838076b4e16b50fab1b8cdedcae",
+  "wrapper_version": "8.1.1",
+  "model": "claude-opus-5-5",
+  "effort": "high",
+  "base_revision": "2640b577f7620ca6632ceb9cd268be65c06765e6",
+  "head_revision": "f6502f8567fd7945ac87bee26efbe2383f720e4c",
+  "diff_sha256": "959e0741c29ba97f459614371557c004c5e89f09ca9800f98ceb07bddbe159b9",
+  "diff_bytes": 440405,
+  "diff_lines": 5940,
+  "changed_file_count": 62,
+  "claude_started": true,
+  "native_review_completed": true,
+  "review_complete": true,
+  "sandbox_cleanup_succeeded": true,
+  "tool_call_count": 46,
+  "tool_usage": {
+    "Glob": 3,
+    "Read": 26,
+    "Grep": 17
+  },
+  "input_tokens": 82,
+  "output_tokens": 43942,
+  "cache_creation_input_tokens": 190419,
+  "cache_read_input_tokens": 4835398,
+  "model_usage_cost_usd": 2.7983426,
+  "elapsed_ms": 513157,
+  "usage_note": "API-equivalent usage under Claude subscription authentication; not a claim of actual billed cost.",
+  "coverage_note": "Production diff was read. Initial whole-patch Read exceeded the 256KiB tool limit; the source ledger and remaining test diff were not read in full. Source pins and all excerpts were independently verified by Codex. Findings are individually validated; no full-patch coverage claim.",
+  "original_run_directory": "C:\\tmp\\openblade-issue-967-analysis\\ac-control-claude-review-1"
+}

@@ -92,6 +92,7 @@ try {
     for ($index = 0; $index -lt 12; $index++) {
         [IO.File]::WriteAllText((Join-Path $sourceFixture "rust/input$index.txt"), "fixture`n")
     }
+    [IO.File]::WriteAllText((Join-Path $sourceFixture '.gitattributes'), "rust/** text eol=lf`n")
     $properties = Join-Path $sourceFixture 'Directory.Build.props'
     [IO.File]::WriteAllText($properties, "<Project />`n")
     & git -C $sourceFixture init -q -b build/native-source-fixture
@@ -110,6 +111,69 @@ try {
     if ((ConvertTo-Json -InputObject $lfInputs -Compress) -cne (ConvertTo-Json -InputObject $crlfInputs -Compress)) {
         throw 'Native source identity depends on checkout line endings.'
     }
+    # A linked checkout must not allocate a per-worktree cache or mutex.
+    $linkedFixture = Join-Path $testRoot 'different-checkout-name'
+    & git -C $sourceFixture worktree add --quiet --detach $linkedFixture HEAD
+    if ($LASTEXITCODE -ne 0) { throw 'Linked cache fixture creation failed.' }
+    try {
+        $mainCache = Get-OpenBladeSharedCargoCache -Repository $sourceFixture
+        $linkedCache = Get-OpenBladeSharedCargoCache -Repository $linkedFixture
+        if ($mainCache.TargetDirectory -cne $linkedCache.TargetDirectory -or $mainCache.MutexName -cne $linkedCache.MutexName) {
+            throw 'Linked worktrees must share the Cargo output and publication mutex.'
+        }
+        if ((Split-Path -Leaf $mainCache.TargetDirectory) -cne 'source') {
+            throw 'The Cargo cache must retain the main repository name.'
+        }
+        $sourceFingerprint = Get-OpenBladeNativeSourceFingerprint -Repository $sourceFixture
+        $linkedFingerprint = Get-OpenBladeNativeSourceFingerprint -Repository $linkedFixture
+        if ($sourceFingerprint -cnotmatch '\A[0-9a-f]{64}\z' -or $sourceFingerprint -cne $linkedFingerprint) {
+            throw 'Equal working bytes in separate worktrees must share a source fingerprint.'
+        }
+        if ($env:OS -eq 'Windows_NT') {
+            # MSBuild starts Windows PowerShell from pwsh on CI, inheriting its
+            # module paths. Fingerprinting must not depend on Utility autoload.
+            $childScript = Join-Path $testRoot 'fingerprint-child.ps1'
+            $childSource = {
+                param([string]$NativePayload, [string]$Fixture, [string]$Expected)
+                $ErrorActionPreference = 'Stop'
+                function Get-FileHash { throw 'Get-FileHash is unavailable in this child shell.' }
+                . $NativePayload
+                $actual = Get-OpenBladeNativeSourceFingerprint -Repository $Fixture
+                if ($actual -cne $Expected) { throw 'Child-shell native fingerprint changed.' }
+            }
+            [IO.File]::WriteAllText($childScript, $childSource.ToString(), [Text.UTF8Encoding]::new($false))
+            $windowsPowerShell = Join-Path $env:WINDIR 'System32/WindowsPowerShell/v1.0/powershell.exe'
+            & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File $childScript `
+                -NativePayload (Join-Path $repository 'build/NativePayload.ps1') `
+                -Fixture $sourceFixture -Expected $sourceFingerprint
+            if ($LASTEXITCODE -ne 0) { throw 'Native fingerprinting failed in the constrained Windows PowerShell child.' }
+        }
+        $linkedInput = Join-Path $linkedFixture 'rust/input0.txt'
+        $originalBytes = [IO.File]::ReadAllBytes($linkedInput)
+        [IO.File]::WriteAllText($linkedInput, "different older dependency`n")
+        [IO.File]::SetLastWriteTimeUtc($linkedInput, [DateTime]::UtcNow.AddDays(-1))
+        if ((Get-OpenBladeNativeSourceFingerprint -Repository $linkedFixture) -ceq $sourceFingerprint) {
+            throw 'Older changed source bytes must invalidate shared Cargo artifacts.'
+        }
+        [IO.File]::WriteAllBytes($linkedInput, $originalBytes)
+        if ((Get-OpenBladeNativeSourceFingerprint -Repository $linkedFixture) -cne $sourceFingerprint) {
+            throw 'Restoring source bytes must restore the content fingerprint independently of timestamps.'
+        }
+        $ignoredTarget = Join-Path $linkedFixture 'rust/target/ignored'
+        New-Item -ItemType Directory -Path (Split-Path -Parent $ignoredTarget) -Force | Out-Null
+        [IO.File]::WriteAllText($ignoredTarget, 'build output')
+        if ((Get-OpenBladeNativeSourceFingerprint -Repository $linkedFixture) -cne $sourceFingerprint) {
+            throw 'Build output must not invalidate native source fingerprints.'
+        }
+        Remove-Item -LiteralPath $ignoredTarget
+        Remove-Item -LiteralPath (Split-Path -Parent $ignoredTarget)
+
+    }
+    finally {
+        & git -C $sourceFixture worktree remove $linkedFixture
+        if ($LASTEXITCODE -ne 0) { throw 'Linked cache fixture cleanup failed.' }
+    }
+
     [IO.File]::AppendAllText($properties, 'changed')
     Assert-NativeThrows { Get-OpenBladeNativeInputs -Repository $sourceFixture } '*Commit native build inputs*'
 
@@ -187,12 +251,17 @@ try {
         }
         $manifestPath = Join-Path $copy 'OpenBlade.Native.provenance.json'
         $original = [IO.File]::ReadAllBytes($manifestPath)
-        foreach ($property in @('sha256', 'unsignedSha256', 'sourceRevision', 'fileVersion', 'target', 'noticeSha256')) {
+        foreach ($property in @('sha256', 'unsignedSha256', 'sourceRevision', 'fileVersion', 'target', 'noticeSha256', 'sourceFingerprint', 'resourceSha256')) {
             $changed = [Text.Encoding]::UTF8.GetString($original) | ConvertFrom-Json
             $changed.$property = 'wrong'
             [IO.File]::WriteAllText($manifestPath, ($changed | ConvertTo-Json -Depth 8))
             Assert-NativeThrows { Assert-OpenBladeNativePayload -Payload $copy -Repository $repository -BuildIdentity $identity } '*does not match*'
         }
+        [IO.File]::WriteAllBytes($manifestPath, $original)
+        $changed = [Text.Encoding]::UTF8.GetString($original) | ConvertFrom-Json
+        $changed.flags = @($changed.flags | Where-Object { $_ -cnotlike '--cfg=openblade_resource_fingerprint_*' })
+        [IO.File]::WriteAllText($manifestPath, ($changed | ConvertTo-Json -Depth 8))
+        Assert-NativeThrows { Assert-OpenBladeNativePayload -Payload $copy -Repository $repository -BuildIdentity $identity } '*does not match*'
         [IO.File]::WriteAllBytes($manifestPath, $original)
         $changed = [Text.Encoding]::UTF8.GetString($original) | ConvertFrom-Json
         $changed.unsignedSha256 = '0' * 64

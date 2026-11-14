@@ -11018,7 +11018,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
         Assert.Equal(DeviceObservationReason.RetainedPowerSource,
             context.Runtime.GetStatus().ObservationReason);
-        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.True(context.Runtime.GetStatus().ExternalPowerPresent);
         string transientMessage = context.Runtime.GetStatus().Message;
 
         await context.Runtime.SetExternalLightingOverridePolicyAsync(
@@ -13169,6 +13170,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.DedicatedButton,
                 CancellationToken.None);
+        ControlOperationResult batteryBalanced = await context.Runtime
+            .CyclePerformanceShortcutAsync(PerformanceShortcutSource.DedicatedButton, CancellationToken.None);
+        ControlOperationResult batterySaver = await context.Runtime
+            .CyclePerformanceShortcutAsync(PerformanceShortcutSource.FunctionP, CancellationToken.None);
         ControlOperationResult wrapped = await context.Runtime
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.FunctionP,
@@ -13188,9 +13193,13 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         Assert.Equal("Fn+P selected Creator.", creator.Message);
         Assert.Equal(ControlOperationStatus.Applied, custom.Status);
         Assert.Equal("The performance button selected Custom.", custom.Message);
+        Assert.Equal(ControlOperationStatus.Applied, batteryBalanced.Status);
+        Assert.Equal(ControlOperationStatus.Applied, batterySaver.Status);
+        Assert.Equal(PerformancePreset.BatteryBalanced, context.Device.PerformanceWrites[^3]);
+        Assert.Equal(PerformancePreset.BatterySaver, context.Device.PerformanceWrites[^2]);
         Assert.Equal(ControlOperationStatus.Applied, wrapped.Status);
         Assert.Equal("Fn+P selected Balanced.", wrapped.Message);
-        Assert.Equal(8, context.Device.PerformanceSetCalls);
+        Assert.Equal(10, context.Device.PerformanceSetCalls);
         Assert.Equal(
             new PerformanceOverride(
                 PerformancePreset.Balanced,
@@ -13358,7 +13367,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task PerformanceShortcut_IsNoOpOnUsbCWhereOnlyBalancedIsAdmitted()
+    public async Task PerformanceShortcut_CyclesExactAdmittedModesOnUsbC()
     {
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -13371,14 +13380,16 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             ConfirmedBattery(80),
             usbC.Lighting);
 
+        await context.Runtime.ObserveAsync(CancellationToken.None);
         ControlOperationResult result = await context.Runtime
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.DedicatedButton,
                 CancellationToken.None);
 
-        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.Null(context.Runtime.GetStatus().PerformanceOverride);
-        Assert.Equal(0, context.Device.PerformanceSetCalls);
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(PerformancePreset.Silent, context.Runtime.GetStatus().PerformanceOverride?.Value);
+        Assert.Equal(PowerSource.UsbC, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
     }
 
     [Fact]
@@ -17273,8 +17284,6 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     }
 
     [Theory]
-    [InlineData(PowerSource.PluggedIn, PerformancePreset.BatterySaver)]
-    [InlineData(PowerSource.PluggedIn, PerformancePreset.BatteryBalanced)]
     [InlineData(PowerSource.Battery, PerformancePreset.Silent)]
     [InlineData(PowerSource.Battery, PerformancePreset.Balanced)]
     [InlineData(PowerSource.Battery, PerformancePreset.Performance)]
@@ -17979,11 +17988,20 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         ServiceStatusSnapshot unknown = context.Runtime.GetStatus();
         Assert.Equal(PowerSource.PluggedIn, unknown.ActivePowerSource);
-        Assert.True(unknown.WritesBlocked);
+        Assert.False(unknown.WritesBlocked);
+        Assert.True(unknown.ExternalPowerPresent);
+        Assert.Equal(DeviceObservationReason.RetainedPowerSource, unknown.ObservationReason);
         Assert.Contains("last confirmed power source", unknown.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(expected, unknown.LiveReadings);
         Assert.Equal(stateReads, context.Device.StateReadCalls);
         Assert.Equal(fanReads, context.Device.FanRpmReadCalls);
+        int thermalWrites = context.Device.PerformanceSetCalls;
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.SetPerformanceOverrideAsync(
+            new(PerformancePreset.Silent, OverrideLifetime.UntilPowerSourceChange), CancellationToken.None)).Status);
+        Assert.Equal(thermalWrites, context.Device.PerformanceSetCalls);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetLightingOverrideAsync(
+            new(LightingSettingsFactory.Off(), OverrideLifetime.UntilPowerSourceChange), CancellationToken.None)).Status);
+        stateReads = context.Device.StateReadCalls;
 
         context.Device.AdapterPowerState = AdapterPowerState.FullPower280W;
         await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
@@ -18050,7 +18068,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         ServiceStatusSnapshot transient = context.Runtime.GetStatus();
         Assert.Equal(PowerSource.UsbC, transient.ActivePowerSource);
-        Assert.True(transient.WritesBlocked);
+        Assert.False(transient.WritesBlocked);
+        Assert.True(transient.ExternalPowerPresent);
+        Assert.Equal(DeviceObservationReason.RetainedPowerSource, transient.ObservationReason);
         Assert.Contains("last confirmed power source", transient.Message, StringComparison.OrdinalIgnoreCase);
 
         long transientRevision = transient.Revision;
@@ -18058,6 +18078,12 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(PowerSource.UsbC, context.Runtime.GetStatus().ActivePowerSource);
         Assert.Equal(transientRevision, context.Runtime.GetStatus().Revision);
+        int thermalWrites = context.Device.PerformanceSetCalls;
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.SetPerformanceOverrideAsync(
+            new(PerformancePreset.Silent, OverrideLifetime.UntilPowerSourceChange), CancellationToken.None)).Status);
+        Assert.Equal(thermalWrites, context.Device.PerformanceSetCalls);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetLightingOverrideAsync(
+            new(LightingSettingsFactory.Off(), OverrideLifetime.UntilPowerSourceChange), CancellationToken.None)).Status);
 
         context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
         await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
@@ -22580,6 +22606,16 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 CancellationToken.None);
         }
 
+        if (destination == PowerSource.UsbC)
+        {
+            Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+            Assert.Equal(destination, context.Runtime.GetStatus().ActivePowerSource);
+            Assert.Equal(hyperBoostWritesBeforeChange, context.Device.HyperBoostSetCalls);
+            Assert.Equal(HyperBoostOwnershipJournalState.OwnedConfirmed, journal.Journal?.State);
+            Assert.False(context.Runtime.GetStatus().WritesBlocked);
+            return;
+        }
+
         DesiredDeviceState destinationIntent = context.Runtime.GetStatus().DesiredState;
         Assert.False(context.Device.ConfirmedState.HyperBoostActive);
         Assert.Equal(destination, context.Runtime.GetStatus().ActivePowerSource);
@@ -24345,7 +24381,6 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
     [Theory]
     [InlineData(PowerSource.Battery)]
-    [InlineData(PowerSource.UsbC)]
     public async Task PadlessHyperBoost_DeferredExactRestoreDoesNotCrossPowerBoundary(
         PowerSource powerSource)
     {
@@ -24406,6 +24441,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 RequiresCoolingPad: false,
                 DateTimeOffset.UtcNow)
             {
+                RestorePowerSource = powerSource,
                 RestoreIntent = new HyperBoostRestoreIntent(
                     PerformancePreset.Silent,
                     CustomPerformance: null,
@@ -28807,7 +28843,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task RecoverHyperBoostRestore_LowPowerJournalReResolvesAcDestination()
+    public async Task RecoverHyperBoostRestore_ExternalRecoveryPreservesSupportedBatteryPreset()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
         TestContext context = CreateContext(
@@ -28855,7 +28891,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(settersBeforeRecovery + 1, context.Device.TotalSetterCalls);
-        Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
+        Assert.Equal(PerformancePreset.BatterySaver, context.Device.ConfirmedState.Performance);
         Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
         Assert.Null(journal.Journal);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
@@ -29701,7 +29737,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
     [Theory]
     [InlineData(PowerSource.Battery)]
-    [InlineData(PowerSource.UsbC)]
+    [InlineData(PowerSource.ExternalUnknown)]
     public async Task RecoverHyperBoostRestore_LowPowerSourceDoesNotWrite(
         PowerSource powerSource)
     {
@@ -29720,6 +29756,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: journal);
         ConfigurePadlessHyperBoost(context);
+        if (powerSource == PowerSource.ExternalUnknown)
+        {
+            context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        }
         await context.Runtime.ObserveAsync(CancellationToken.None);
         int settersBeforeRecovery = context.Device.TotalSetterCalls;
 
@@ -30878,13 +30918,18 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         }
     }
 
-    [Fact]
-    public async Task DirectPadlessHyperBoost_AdmittedCustomAutomaticEntryDoesNotBridge()
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, false)]
+    [InlineData(PowerSource.UsbC, false)]
+    [InlineData(PowerSource.PluggedIn, true)]
+    [InlineData(PowerSource.UsbC, true)]
+    public async Task DirectPadlessHyperBoost_AdmittedCustomAutomaticEntryDoesNotBridge(
+        PowerSource source, bool requiresCoolingPad)
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
-        TestContext context = CreateContext(true,
+        TestContext context = CreateContext(true, initialPowerSource: source,
             hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(
-                CoolingPadConnectionState.Absent),
+                requiresCoolingPad ? CoolingPadConnectionState.PresentExact : CoolingPadConnectionState.Absent),
             hyperBoostOwnershipJournalStore: journal);
         ConfigurePadlessHyperBoost(context);
         context.Device.UseScopedPerformanceFanRead = true;
@@ -30918,6 +30963,13 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(performanceWrites, context.Device.PerformanceWrites.Count);
         Assert.Equal(fanWrites, context.Device.FanControlWrites.Count);
         Assert.Equal(PerformancePreset.Custom, journal.Journal?.BaseMode);
+        Assert.Equal(source, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(false, CancellationToken.None)).Status);
+        Assert.Equal(PerformancePreset.Custom, context.Device.ConfirmedState.Performance);
+        Assert.Equal(CustomPerformanceSettings.Default, context.Device.ConfirmedState.CustomPerformance);
+        Assert.Null(journal.Journal);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
     [Fact]
@@ -32129,6 +32181,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     {
         public required TestPowerState Current { get; set; }
 
+        public Exception? PowerCaptureFailure { get; set; }
         public int CaptureCount { get; private set; }
         public int BatteryPowerFlowCaptureCount { get; private set; }
         public int BatteryHealthCaptureCount { get; private set; }
@@ -32137,6 +32190,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         public PowerSource CapturePowerSource()
         {
             CaptureCount++;
+            if (PowerCaptureFailure is { } failure) { throw failure; }
             return Current.PowerSource;
         }
 
@@ -32550,6 +32604,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         IBladeDevice,
         IGpuClockOffsetManagementDevice,
         ISingleAttemptThermalDevice,
+        IOwnedBatterySaverFanStopReleaseDevice,
         IThermalExternalDriftValidationDevice,
         IDeviceStateReadDiagnostics
     {
@@ -32641,6 +32696,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         public Queue<Exception?> AdapterPowerFailures { get; } = new();
 
         public Exception? AdapterPowerFailure { get; set; }
+
+        public Func<CancellationToken, Task<AdapterPowerState>>? AdapterPowerReadOverride { get; set; }
 
         public string? McuVersion { get; set; }
 
@@ -32927,6 +32984,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         {
             TotalCalls++;
             AdapterPowerReadCalls++;
+            if (AdapterPowerReadOverride is { } readOverride)
+            {
+                return readOverride(cancellationToken);
+            }
             if (AdapterPowerFailures.TryDequeue(out Exception? scriptedFailure)
                 && scriptedFailure is not null)
             {
@@ -33318,6 +33379,21 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             FanControlSettings value,
             CancellationToken cancellationToken) =>
             SetFanControlAsync(value, cancellationToken);
+
+        public int OwnedStopReleaseCalls { get; private set; }
+        public Action? BeforeOwnedStopRelease { get; set; }
+
+        Task IOwnedBatterySaverFanStopReleaseDevice.ReleaseOwnedBatterySaverFanStopOnceAsync(
+            Func<bool> priorAuthorityAdmission, CancellationToken cancellationToken)
+        {
+            BeforeOwnedStopRelease?.Invoke();
+            if (!priorAuthorityAdmission())
+            {
+                throw new CapabilityUnavailableException("The prior Stop ownership changed.");
+            }
+            OwnedStopReleaseCalls++;
+            return SetFanControlAsync(FanControlSettings.Default, cancellationToken);
+        }
 
         public async Task<(int Fan1Rpm, int Fan2Rpm)> SetCurveFanTargetsAsync(
             PerformancePreset expectedPerformance, int fan1Rpm, int fan2Rpm,

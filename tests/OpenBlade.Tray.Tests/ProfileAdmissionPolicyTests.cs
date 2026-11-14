@@ -112,7 +112,7 @@ public sealed class ProfileAdmissionPolicyTests
     }
 
     [Fact]
-    public void PreservesBatteryThermalSettingsButNeverBypassesUsbCRestriction()
+    public void PreservesUnchangedThermalSettingsWithoutAdmittingNewRestrictedUsbCFans()
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         PowerProfile retained = profiles.Battery with
@@ -124,8 +124,33 @@ public sealed class ProfileAdmissionPolicyTests
         Assert.True(ProfileAdmissionPolicy.Supports(
             battery, battery, SupportedCapabilities()));
         ProfileSet usbC = profiles with { UsbC = retained with { Performance = PerformancePreset.Performance } };
-        Assert.False(ProfileAdmissionPolicy.Supports(
+        Assert.True(ProfileAdmissionPolicy.Supports(
             usbC, usbC, SupportedCapabilities()));
+        Assert.False(ProfileAdmissionPolicy.Supports(
+            usbC, profiles, SupportedCapabilities()));
+    }
+
+    [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.UsbC)]
+    public void ExternalPerformanceEditsRetainExactCapabilityFiltering(PowerSource source)
+    {
+        ProfileSet current = ProfileDefaults.CreateSafeDefaults();
+        PowerProfile profile = (source == PowerSource.UsbC ? current.UsbC : current.PluggedIn) with
+        {
+            Performance = PerformancePreset.Custom,
+            CustomPerformance = CustomPerformanceSettings.Default,
+            Fans = FanMode.Automatic,
+        };
+        ProfileSet draft = source == PowerSource.UsbC
+            ? current with { UsbC = profile }
+            : current with { PluggedIn = profile };
+        DeviceCapabilities capabilities = SupportedCapabilities();
+        Assert.True(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+        Assert.False(ProfileAdmissionPolicy.Supports(draft, current, capabilities with
+        {
+            PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+        }));
     }
 
     [Theory]

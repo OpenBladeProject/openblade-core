@@ -49,8 +49,7 @@ internal static class ProfileAdmissionPolicy
         && (capabilities.PerformancePresets.Contains(draft.Performance)
             || draft.Performance == current.Performance)
         && (PerformancePresetPresentation.IsAvailable(powerSource, draft.Performance)
-            || (powerSource != PowerSource.UsbC
-                && draft.Performance == current.Performance))
+            || draft.Performance == current.Performance)
         && Enum.IsDefined(draft.Fans)
         && (capabilities.FanModes.Contains(draft.Fans)
             || draft.Fans == current.Fans)

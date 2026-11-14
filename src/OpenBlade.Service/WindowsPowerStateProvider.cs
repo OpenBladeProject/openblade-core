@@ -118,8 +118,9 @@ public sealed class WindowsPowerStateProvider : IPowerStateProvider
     {
         0 => PowerSource.Battery,
         // Windows only reports that some external supply is present. It cannot
-        // determine whether it meets the laptop's recommended wattage, so hardware
-        // control remains blocked until the Blade adapter query classifies it.
+        // determine whether it meets the laptop's recommended wattage. Adapter
+        // classification remains separate from fresh presence admission for
+        // reviewed ordinary controls; advanced controls still need classification.
         1 => PowerSource.ExternalUnknown,
         _ => throw new InvalidDataException("Windows reported an unknown AC line status."),
     };

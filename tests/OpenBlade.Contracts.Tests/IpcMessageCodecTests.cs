@@ -862,7 +862,7 @@ public sealed partial class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(82, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(83, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -904,7 +904,7 @@ public sealed partial class IpcMessageCodecTests
         using MemoryStream requestBytes = new();
         await IpcMessageCodec.WriteRequestAsync(requestBytes, request, CancellationToken.None);
         JsonObject requestJson = FramedJsonObject(requestBytes);
-        Assert.Equal(82, requestJson["version"]!.GetValue<int>());
+        Assert.Equal(83, requestJson["version"]!.GetValue<int>());
         Assert.Equal(wireValue, requestJson["value"]!["value"]!.GetValue<int>());
         requestBytes.Position = 0;
         Assert.Equal(request, await IpcMessageCodec.ReadRequestAsync(requestBytes, CancellationToken.None));
@@ -1001,7 +1001,7 @@ public sealed partial class IpcMessageCodecTests
                 }),
             CancellationToken.None);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(82, json["version"]!.GetValue<int>());
+        Assert.Equal(83, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsDirectManualFanTransitions"));
@@ -1036,7 +1036,7 @@ public sealed partial class IpcMessageCodecTests
             await IpcMessageCodec.ReadServerFrameAsync(encoded, CancellationToken.None));
         Assert.True(roundTrip.Status.Capabilities!.SupportsManualFansOnLimitedPower);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(82, json["version"]!.GetValue<int>());
+        Assert.Equal(83, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsManualFansOnLimitedPower"));
@@ -1611,7 +1611,7 @@ public sealed partial class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(82, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(83, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -2315,6 +2315,7 @@ public sealed partial class IpcMessageCodecTests
     [InlineData(79)]
     [InlineData(80)]
     [InlineData(81)]
+    [InlineData(82)]
     public async Task WriteRequestAsync_RejectsPriorProtocols(int previousProtocolVersion)
     {
         using MemoryStream stream = new();
@@ -2327,7 +2328,7 @@ public sealed partial class IpcMessageCodecTests
             IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(82, exception.ExpectedVersion);
+        Assert.Equal(83, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2348,6 +2349,7 @@ public sealed partial class IpcMessageCodecTests
     [InlineData(79)]
     [InlineData(80)]
     [InlineData(81)]
+    [InlineData(82)]
     public async Task ReadRequestAsync_RejectsPriorProtocolPeers(int previousProtocolVersion)
     {
         using MemoryStream stream = FrameJson(
@@ -2358,7 +2360,7 @@ public sealed partial class IpcMessageCodecTests
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(82, exception.ExpectedVersion);
+        Assert.Equal(83, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2379,6 +2381,7 @@ public sealed partial class IpcMessageCodecTests
     [InlineData(79)]
     [InlineData(80)]
     [InlineData(81)]
+    [InlineData(82)]
     public async Task ReadServerFrameAsync_RejectsPriorProtocolPeers(int previousProtocolVersion)
     {
         Guid requestId = Guid.NewGuid();
@@ -2401,7 +2404,7 @@ public sealed partial class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(82, exception.ExpectedVersion);
+        Assert.Equal(83, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 

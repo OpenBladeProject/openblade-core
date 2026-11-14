@@ -167,9 +167,24 @@ public sealed partial class SourceReviewedBladeModelTests
     }
 
     [Theory]
+    [InlineData(PowerSource.UsbC)]
+    [InlineData(PowerSource.ExternalUnknown)]
+    public async Task Rz090301_LimitedExternalDoesNotAddDynamicManualTargets(PowerSource source)
+    {
+        var session = new Session { Adapter = [2, 17] };
+        await using var port = Create(0x0245, session, power: () => source);
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetFanTargetsAsync(4600, 4700, default));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.DoesNotContain(session.Commands, command => command.CommandId < 0x80);
+        Assert.False(port.Capabilities.SupportsManualFansOnLimitedPower);
+    }
+
+    [Theory]
     [InlineData(PowerSource.Battery)]
     [InlineData(PowerSource.UsbC)]
-    public async Task Rz090301_ManualFansRequireFullAcAtEntryAndNativeSubmission(PowerSource power)
+    [InlineData((PowerSource)999)]
+    public async Task Rz090301_ManualFansRequireExistingFullPowerAdmission(PowerSource power)
     {
         var session = new Session();
         await using (var port = Create(0x0245, session, power: () => power))

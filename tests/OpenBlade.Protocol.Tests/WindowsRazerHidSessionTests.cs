@@ -5,7 +5,7 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
 
-public sealed class WindowsRazerHidSessionTests
+public sealed partial class WindowsRazerHidSessionTests
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
@@ -75,7 +75,8 @@ public sealed class WindowsRazerHidSessionTests
         Assert.Equal(status, query.LastFailure!.ResponseStatus);
         Assert.Null(query.LastFailure.ResponsePayloadHex);
         Assert.Equal(query.LastFailure.Id, query.LastResponseFailure!.Id);
-        Assert.NotEqual(RazerCommandSessionDisposition.Healthy, actor.Disposition);
+        Assert.Equal(status is 3 or 5, result.UnclassifiedAdapterResponseAvailable);
+        Assert.Equal(status is 3 or 5, actor.Disposition == RazerCommandSessionDisposition.Healthy);
         Assert.Equal(2, io.Calls.Count);
     }
 

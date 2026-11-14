@@ -497,9 +497,9 @@ internal sealed record ServiceUserRequestOwner(ServiceClientContext Client, Func
 public sealed partial class ServiceControlRuntime : IServiceControlRuntime, IServiceUserAdmission, IDisposable
 {
     private const string UnclassifiedExternalPowerMessage =
-        "The external power adapter could not be classified; control writes are blocked.";
+        "Windows reports external power; adapter classification is unavailable. Profile automation and advanced thermal controls remain deferred.";
     private const string TransientExternalPowerMessage =
-        "Power adapter classification is temporarily unavailable; the last confirmed power source is retained and control writes are blocked.";
+        "Power adapter classification is temporarily unavailable; the last confirmed power source is retained for presentation. Explicit supported controls require fresh external-power admission; classified profile automation remains deferred.";
     private const string ConfigurationQuarantineAdvisory =
         "OpenBlade preserved an unsupported or invalid configuration. Thermal settings are read-only until the service restarts with a valid configuration.";
     private const string ConfigurationQuarantineBlockedMessage =
@@ -593,6 +593,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private bool ownsHyperBoost;
     private PerformancePreset? ownedHyperBoostBaseMode;
     private HyperBoostRestoreIntent? ownedHyperBoostRestoreIntent;
+    private bool ownedHyperBoostSourceChangePending;
+    private bool hyperBoostSourceBoundarySafetyBlock;
+    private bool hyperBoostSourceBoundaryPriorSafetyBlock;
     private Guid? ownedHyperBoostTransitionId;
     private HyperBoostOwnershipJournal? ownedHyperBoostJournal;
     private string? ownedHyperBoostJournalSha256;
@@ -1000,6 +1003,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 configuration.Preferences,
                 powerSource,
                 persistentOverrides);
+            Interlocked.Exchange(ref explicitUnclassifiedOverrideGeneration, -1);
             automation = initializedAutomation;
             Volatile.Write(
                 ref activeConfigurationDisposition,
@@ -1391,6 +1395,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 Volatile.Write(
                     ref activeConfigurationDisposition,
                     (int)context.Configuration.Disposition);
+                // A source-classification refinement may retain only this
+                // configuration owner's explicit requests, never a prior SID's.
+                Interlocked.Exchange(ref explicitUnclassifiedOverrideGeneration, -1);
                 automation = new ProfileAutomationState(
                     profiles,
                     context.Configuration.Preferences,
@@ -2100,10 +2107,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             RefreshControllerPresenceCore(token);
             // This operation never performs a firmware transition, including a
             // power-destination transition discovered while admitting the request.
-            if (powerSource != PowerSource.PluggedIn || Automation.PowerSource != powerSource)
+            if (!PowerSourcePolicy.IsExternal(powerSource) || Automation.PowerSource != powerSource)
             {
                 return new ControlOperationResult(ControlOperationStatus.Blocked,
-                    "GPU clock tuning requires a confirmed, unchanged full-power adapter connection.");
+                    "GPU clock tuning requires a confirmed, unchanged external power connection.");
             }
 
             ServiceStatusSnapshot current = GetStatus();
@@ -2184,7 +2191,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                                     desired, state => state with { GpuClockTuning = value },
                                     stillControlsSession, GpuWriteBlockReason,
                                     ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent);
-                                if (freshPower != PowerSource.PluggedIn || freshBlock is not null
+                                if (freshPower != powerSource || freshBlock is not null
                                     || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice freshDevice)
                                     || !ReferenceEquals(freshDevice, coordinator.ThermalDevice))
                                 {
@@ -2312,6 +2319,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 : "Performance override intent was stored.",
             deferHardwareApply: DeferredPerformanceIntentMessage,
             stillControlsSession: stillControlsSession,
+            clearsExplicitOverride: value is null,
             thermalComponentResolver: desired =>
             {
                 ServiceStatusSnapshot status = GetStatus();
@@ -2372,7 +2380,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     "The active Windows session changed during performance shortcut admission.");
             }
 
-            if (powerSource == PowerSource.ExternalUnknown)
+            if (powerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Performance))
             {
                 return PublishScopedUnavailable(
                     DeviceSubsystem.Performance,
@@ -2396,18 +2405,31 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
 
             ServiceStatusSnapshot current = GetStatus();
-            PerformancePreset currentPreset =
+            bool ordinaryExternal = powerSource == PowerSource.ExternalUnknown;
+            if (ordinaryExternal && (current.ConfirmedState?.Performance is null || current.ConfirmedState.Fans is null))
+            {
+                return new(ControlOperationStatus.Blocked, "The current thermal state is unavailable for ordinary performance cycling.");
+            }
+            CustomPerformanceSettings? ordinaryCustom = ordinaryExternal ? ResolveOrdinaryShortcutCustomIntent(current) : null;
+            IReadOnlySet<PerformancePreset>? selectable = current.Capabilities?.PerformancePresets;
+            if (ordinaryExternal && ordinaryCustom is null)
+            {
+                selectable = selectable?.Where(preset => preset != PerformancePreset.Custom).ToHashSet();
+            }
+            PerformancePreset currentPreset = ordinaryExternal
+                ? current.ConfirmedState!.Performance!.Value
+                :
                 current.ExternalChanges.Contains(DeviceSubsystem.Performance)
                     && current.ConfirmedState?.Performance is { } observedPreset
                     ? observedPreset
                     : Automation
                         .Resolve(current.ConfirmedState ?? UnknownConfirmedState)
                         .Performance.Value;
-            if (!PerformanceShortcutSelection.TrySelectNext(
-                powerSource,
-                current.Capabilities?.PerformancePresets,
-                currentPreset,
-                out PerformancePreset next))
+            PerformancePreset next;
+            bool selected = ordinaryExternal
+                ? PerformanceShortcutSelection.TrySelectNextOrdinary(selectable, currentPreset, out next)
+                : PerformanceShortcutSelection.TrySelectNext(powerSource, selectable, currentPreset, out next);
+            if (!selected)
             {
                 const string unavailableMessage =
                     "No alternate performance preset is available for the current power source.";
@@ -2421,14 +2443,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 next,
                 OverrideLifetime.UntilPowerSourceChange,
                 next == PerformancePreset.Custom
-                    ? Automation.Profiles.PluggedIn.CustomPerformance
-                        ?? CustomPerformanceSettings.Default
+                    ? ordinaryExternal ? ordinaryCustom
+                        : Automation.Profiles.ForPowerSource(powerSource).CustomPerformance
+                            ?? CustomPerformanceSettings.Default
                     : null)
             {
-                GpuClockTuning = current.DesiredState.GpuClockTuning,
+                GpuClockTuning = ordinaryExternal ? null : current.DesiredState.GpuClockTuning,
             };
             try
             {
+                ValidateUnclassifiedPerformanceOverride(stagedOverride);
                 ValidateThermalOverrideCombination(
                     stagedOverride,
                     Automation.FanOverride);
@@ -2607,6 +2631,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 : "Fan override intent was stored.",
             allowFanOwnershipRearm: true,
             stillControlsSession: stillControlsSession,
+            clearsExplicitOverride: value is null,
             thermalComponentResolver: desired =>
             {
                 FanControlSettings requested = desired.FanControl
@@ -2652,6 +2677,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return;
         }
 
+        if (IsUnclassifiedExternalContext && !HasFreshExternalPowerPresence)
+        {
+            if (!await operationGate.WaitAsync(0, cancellationToken).ConfigureAwait(false)) { return; }
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try { _ = CaptureControlPowerSource(); }
+                catch { ClearLastFanCurveTargets(); return; }
+            }
+            finally { operationGate.Release(); }
+        }
         ServiceStatusSnapshot snapshot = GetStatus();
         FanControlSettings settings = snapshot.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(snapshot.DesiredState.Fans.Value);
@@ -2744,6 +2780,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
 
             if (confirmedPowerSource == PowerSource.ExternalUnknown
+                    && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Fans)
                 || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
             {
                 ClearLastFanCurveTargets();
@@ -2921,6 +2958,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             normalized is null
                 ? "Lighting override was cleared."
                 : "Lighting override intent was stored.",
+            clearsExplicitOverride: normalized is null,
             afterApply: () =>
             {
                 lightingRecoveryPauseMessage = null;
@@ -2965,7 +3003,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 .ConfigureAwait(false);
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                 .ConfigureAwait(false);
-            if (powerSource == PowerSource.ExternalUnknown)
+            if (powerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
             {
                 return PublishScopedUnavailable(
                     DeviceSubsystem.Lighting,
@@ -2974,7 +3013,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     preserveCurrentAvailability: true);
             }
 
-            if (ChangePowerSourceCore(powerSource))
+            if (powerSource != PowerSource.ExternalUnknown && ChangePowerSourceCore(powerSource))
             {
                 ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
                 if (transition.StopFurtherWrites)
@@ -3076,7 +3115,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ServiceStatusSnapshot current = GetStatus();
             if (!current.DeviceVerified
                 || current.WritesBlocked
-                || !deviceProvider.TryGetVerifiedDevice(out _))
+                || !deviceProvider.TryGetVerifiedDevice(out _)
+                || !HasFreshDirectControlPowerContext())
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
@@ -3690,6 +3730,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            if (!await PreserveHyperBoostSourceBoundaryAsync(token).ConfigureAwait(false))
+            {
+                return PublishHyperBoostRestoreRecoveryResult(ControlOperationStatus.Blocked,
+                    "The observed HyperBoost source boundary must be recorded durably before restoration.",
+                    confirmed: null, restorePending: true);
+            }
             HyperBoostOwnershipJournalLoadResult load;
             try
             {
@@ -3757,14 +3803,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 || pendingWriteConfirmations.HasPending
                 || current.ControllerDetectionWarning is not null
                 || RazerThermalControllerPolicy.GetBlockingControllers(current).Count > 0
-                || powerSource != PowerSource.PluggedIn
+                || !PowerSourcePolicy.IsExternal(powerSource)
                 || current.ActivePowerSource != powerSource
                 || current.Capabilities is null
                 || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
             {
                 return PublishHyperBoostRestoreRecoveryResult(
                     ControlOperationStatus.Blocked,
-                    "The saved HyperBoost restore can be retried only on a confirmed full-power adapter after fresh exact-device, controller, and thermal safety checks pass.",
+                    "The saved HyperBoost restore can be retried only on a confirmed external power source after fresh exact-device, controller, and thermal safety checks pass.",
                     confirmed: null,
                     restorePending: true);
             }
@@ -3830,6 +3876,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     {
                         RestoreIntent = restoreIntent,
                         RecoveryBaseline = recoveryBaseline,
+                        RestoreUsesCurrentPowerDestination = transitionJournal.RestoreUsesCurrentPowerDestination,
+                        RestorePowerSource = transitionJournal.RestorePowerSource,
                         TransitionId = transitionJournal.TransitionId,
                     };
                     HyperBoostOwnershipJournalMutationResult replacement =
@@ -3866,9 +3914,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     restorePending: true);
             }
 
-            if (!IsSupportedFullPowerHyperBoostIntent(
+            if (!IsSupportedHyperBoostRestoreIntent(
                     current.Capabilities,
-                    restoreIntent))
+                    restoreIntent)
+                || powerSource != transitionJournal.RestorePowerSource
+                || transitionJournal.RestoreUsesCurrentPowerDestination)
             {
                 if (!ConfigurationIsAdmitted)
                 {
@@ -3881,24 +3931,26 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
                 if (restoreIntent.Performance is not
                     (PerformancePreset.BatterySaver
-                        or PerformancePreset.BatteryBalanced))
+                        or PerformancePreset.BatteryBalanced)
+                    && powerSource == transitionJournal.RestorePowerSource
+                    && !transitionJournal.RestoreUsesCurrentPowerDestination)
                 {
                     return PublishHyperBoostRestoreRecoveryResult(
                         ControlOperationStatus.Blocked,
-                        "The saved full-power restore intent is no longer admitted for this exact device and was preserved without a hardware write.",
+                        "The saved external-power restore intent is no longer admitted for this exact device and was preserved without a hardware write.",
                         fresh,
                         restorePending: true);
                 }
 
                 HyperBoostRestoreIntent currentDestinationIntent =
                     CreateHyperBoostRestoreIntent(ResolveAutomationDesired(fresh));
-                if (!IsSupportedFullPowerHyperBoostIntent(
+                if (!IsSupportedHyperBoostRestoreIntent(
                         current.Capabilities,
                         currentDestinationIntent))
                 {
                     return PublishHyperBoostRestoreRecoveryResult(
                         ControlOperationStatus.Blocked,
-                        "The saved restore was not retried because the current full-power destination intent is not admitted for this exact device.",
+                        "The saved restore was not retried because the current external-power destination intent is not admitted for this exact device.",
                         fresh,
                         restorePending: true);
                 }
@@ -3914,7 +3966,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     hyperBoostJournalSafetyBlock = true;
                     return PublishHyperBoostRestoreRecoveryResult(
                         ControlOperationStatus.Failed,
-                        "The saved restore was not retried because its current full-power destination could not be recorded durably.",
+                        "The saved restore was not retried because its current external-power destination could not be recorded durably.",
                         fresh,
                         restorePending: true);
                 }
@@ -3926,6 +3978,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 {
                     RestoreIntent = currentDestinationIntent,
                     RecoveryBaseline = retryBaseline,
+                    RestoreUsesCurrentPowerDestination = true,
+                    RestorePowerSource = powerSource,
                     TransitionId = transitionJournal.TransitionId,
                 };
                 HyperBoostOwnershipJournalMutationResult replacement =
@@ -3940,7 +3994,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     hyperBoostJournalSafetyBlock = true;
                     return PublishHyperBoostRestoreRecoveryResult(
                         ControlOperationStatus.Failed,
-                        "The saved restore was not retried because its current full-power destination could not be recorded durably.",
+                        "The saved restore was not retried because its current external-power destination could not be recorded durably.",
                         fresh,
                         restorePending: true);
                 }
@@ -4037,6 +4091,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     {
                         RestoreIntent = restoreIntent,
                         RecoveryBaseline = canceledBaseline,
+                        RestoreUsesCurrentPowerDestination = transitionJournal.RestoreUsesCurrentPowerDestination,
+                        RestorePowerSource = transitionJournal.RestorePowerSource,
                         TransitionId = transitionJournal.TransitionId,
                     };
                     HyperBoostOwnershipJournalMutationResult replacement =
@@ -4081,6 +4137,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     {
                         RestoreIntent = restoreIntent,
                         RecoveryBaseline = failedBaseline,
+                        RestoreUsesCurrentPowerDestination = transitionJournal.RestoreUsesCurrentPowerDestination,
+                        RestorePowerSource = transitionJournal.RestorePowerSource,
                         TransitionId = transitionJournal.TransitionId,
                     };
                     HyperBoostOwnershipJournalMutationResult replacement =
@@ -4330,7 +4388,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
             if (!current.DeviceVerified
                 || current.WritesBlocked
-                || current.ActivePowerSource == PowerSource.ExternalUnknown)
+                || EffectiveControlPowerSource(current) == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
@@ -4610,7 +4669,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 return new ControlOperationResult(ControlOperationStatus.Blocked,
                     "Experimental controls cannot be resumed in the current state.");
             }
-            PowerSource observedWindowsPower = powerStateProvider.CapturePowerSource();
+            PowerSource observedWindowsPower = CaptureControlPowerSource();
             PowerSource source = await ResolveCurrentPowerSourceAsync(token).ConfigureAwait(false);
             if (source == PowerSource.ExternalUnknown
                 || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
@@ -4619,7 +4678,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     "OpenBlade could not verify the laptop and its power source.");
             }
             bool StillAuthorized() => StillAdmitted()
-                && powerStateProvider.CapturePowerSource() == observedWindowsPower;
+                && CaptureControlPowerSource() == observedWindowsPower;
             bool uncertainLighting = pendingWriteConfirmations.Blocks(DeviceSubsystem.Lighting)
                 || pendingLightingRestore is not null;
             ConfirmedDeviceState confirmed = await deviceProvider.ResumeExperimentalWritesAsync(
@@ -4697,8 +4756,26 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
     }
 
-    public DiagnosticExperimentalSupport GetCachedExperimentalSupportDiagnostics() =>
-        deviceProvider.GetExperimentalSupportDiagnostics();
+    public DiagnosticExperimentalSupport GetCachedExperimentalSupportDiagnostics()
+    {
+        DiagnosticExperimentalSupport support = deviceProvider.GetExperimentalSupportDiagnostics();
+        ServiceStatusSnapshot current = GetStatus();
+        if (support.Detected || current.Capabilities?.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower != true
+            || RazerBladeModelCatalog.Find(current.Firmware?.ModelNumber)?.SupportBasis != BladeSupportBasis.PhysicallyValidated)
+        {
+            return support;
+        }
+        return support with
+        {
+            ModelNumber = current.Firmware?.ModelNumber,
+            FeatureEvidence =
+            [
+                new(OrdinaryThermalPowerAdmission.FeatureName,
+                    OrdinaryThermalPowerAdmission.EvidenceBasis,
+                    [OrdinaryThermalPowerAdmission.EvidenceSource]),
+            ],
+        };
+    }
 
     public async Task<ControlOperationResult> SetLightingSuppressionAsync(
         LightingSuppressionReason reason,
@@ -4755,7 +4832,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                 .ConfigureAwait(false);
             ServiceStatusSnapshot current = GetStatus();
-            if (powerSource == PowerSource.ExternalUnknown)
+            if (powerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
             {
                 return PublishScopedUnavailable(
                     DeviceSubsystem.Lighting,
@@ -4782,7 +4860,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     deferred);
             }
 
-            if (ChangePowerSourceCore(powerSource))
+            if (powerSource != PowerSource.ExternalUnknown && ChangePowerSourceCore(powerSource))
             {
                 ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
                 if (transition.StopFurtherWrites)
@@ -4863,7 +4941,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             || laptopControlExecutor.RequiresReconciliation
             || fanStopController.BlocksOrdinaryHardware
             || Volatile.Read(ref laptopRecoveryObservationActive) != 0
-            || current.ActivePowerSource == PowerSource.ExternalUnknown)
+            || EffectiveControlPowerSource(current) == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
         {
             return new ControlOperationResult(
                 ControlOperationStatus.Blocked,
@@ -4952,7 +5031,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
             || current.WritesBlocked
-            || current.ActivePowerSource == PowerSource.ExternalUnknown)
+            || EffectiveControlPowerSource(current) == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
         {
             return new ControlOperationResult(
                 ControlOperationStatus.Blocked,
@@ -5032,7 +5112,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
             || current.WritesBlocked
-            || current.ActivePowerSource == PowerSource.ExternalUnknown)
+            || EffectiveControlPowerSource(current) == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
         {
             return new ControlOperationResult(
                 ControlOperationStatus.Blocked,
@@ -5114,7 +5195,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
             || current.WritesBlocked
-            || current.ActivePowerSource == PowerSource.ExternalUnknown)
+            || EffectiveControlPowerSource(current) == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
         {
             return new ControlOperationResult(
                 ControlOperationStatus.Blocked,
@@ -5231,7 +5313,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             if (!current.DeviceVerified
                 || current.WritesBlocked
                 || current.Capabilities is null
-                || !current.Capabilities.OneShotLaptopControls.Contains(value.Control))
+                || !current.Capabilities.OneShotLaptopControls.Contains(value.Control)
+                || !HasFreshDirectControlPowerContext())
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
@@ -6403,6 +6486,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     ControlOperationStatus.Stored,
                     "HyperBoost lifecycle restoration was skipped because OpenBlade ownership changed before the write.");
             }
+            if (!await PreserveHyperBoostSourceBoundaryAsync(token).ConfigureAwait(false))
+            {
+                return new ControlOperationResult(ControlOperationStatus.Blocked,
+                    "The observed HyperBoost power-source boundary could not be recorded durably.");
+            }
             if (enabled)
             {
                 await RefreshControllerPresenceAndRelinquishLightingAsync(token)
@@ -6585,6 +6673,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 : ResolveHyperBoostExitIntent(
                     current,
                     ownedHyperBoostRestoreIntent,
+                    ownedHyperBoostJournal?.RestorePowerSource ?? PowerSource.PluggedIn,
+                    ownedHyperBoostJournal?.RestoreUsesCurrentPowerDestination == true
+                        || ownedHyperBoostSourceChangePending,
                     current.WritesBlocked
                         ? PowerSource.ExternalUnknown
                         : exitPowerSourceOverride is { } exitSource
@@ -6592,21 +6683,21 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                                 == powerSourceGeneration
                                 ? exitSource
                                 : current.ActivePowerSource);
-            if (enabled && !IsSupportedFullPowerHyperBoostIntent(
+            if (enabled && !IsSupportedHyperBoostRestoreIntent(
                     current.Capabilities!,
                     transitionIntent))
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
-                    "The current full-power performance or fan intent is not admitted for this verified device.");
+                    "The current external-power performance or fan intent is not admitted for this verified device.");
             }
 
             if (enabled
-                && current.ActivePowerSource != PowerSource.PluggedIn)
+                && !PowerSourcePolicy.IsExternal(current.ActivePowerSource))
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
-                    "HyperBoost requires an admitted full-power adapter.");
+                    "HyperBoost requires a confirmed external power source.");
             }
 
             if (enabled)
@@ -6661,6 +6752,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     && expectedExitPowerSourceGeneration == powerSourceGeneration
                         ? transitionExitSource
                         : current.ActivePowerSource;
+            if (transitionPowerSource is not (PowerSource.PluggedIn or PowerSource.UsbC or PowerSource.Battery))
+            {
+                // An unclassified lifecycle destination grants no restoration
+                // authority. Preserve the exact owned journal before any SET.
+                return new ControlOperationResult(ControlOperationStatus.Blocked,
+                    "HyperBoost restoration requires a confirmed power source; the owned recovery journal was preserved.");
+            }
             if (enabled || ownedDisableAttempt)
             {
                 preparedTransitionJournal = new HyperBoostOwnershipJournal(
@@ -6674,6 +6772,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     RestoreIntent = transitionIntent
                         ?? ownedHyperBoostRestoreIntent
                         ?? HyperBoostRestoreIntent.BalancedAutomatic,
+                    RestoreUsesCurrentPowerDestination = !enabled
+                        && (ownedHyperBoostJournal?.RestoreUsesCurrentPowerDestination == true
+                            || ownedHyperBoostSourceChangePending),
+                    RestorePowerSource = transitionPowerSource,
                     TransitionId = enabled
                         ? transitionId
                         : ownedHyperBoostTransitionId,
@@ -6966,6 +7068,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         {
                             RestoreIntent = transitionIntent!,
                             RecoveryBaseline = failedTransitionRecoveryBaseline,
+                            RestoreUsesCurrentPowerDestination = preparedTransitionJournal!.RestoreUsesCurrentPowerDestination,
+                            RestorePowerSource = preparedTransitionJournal!.RestorePowerSource,
                             TransitionId = preparedTransitionJournal!.TransitionId,
                         };
                         journalRecovered = !hyperBoostJournalSafetyBlock
@@ -6985,6 +7089,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                             timeProvider.GetUtcNow())
                         {
                             RestoreIntent = transitionIntent!,
+                            RestoreUsesCurrentPowerDestination = preparedTransitionJournal!.RestoreUsesCurrentPowerDestination,
+                            RestorePowerSource = preparedTransitionJournal!.RestorePowerSource,
                             TransitionId = preparedTransitionJournal!.TransitionId,
                         };
                         HyperBoostOwnershipJournalMutationResult ownedReplacement =
@@ -7136,6 +7242,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                             ? HyperBoostRestoreRetryTarget
                                 .CurrentPowerDestination
                             : HyperBoostRestoreRetryTarget.None,
+                        RestoreUsesCurrentPowerDestination = preparedTransitionJournal!.RestoreUsesCurrentPowerDestination,
+                        RestorePowerSource = preparedTransitionJournal!.RestorePowerSource,
                         TransitionId = preparedTransitionJournal!.TransitionId,
                     };
                     bool recoveryRecorded = !hyperBoostJournalSafetyBlock
@@ -7182,6 +7290,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     timeProvider.GetUtcNow())
                 {
                     RestoreIntent = transitionIntent!,
+                    RestoreUsesCurrentPowerDestination = preparedTransitionJournal?.RestoreUsesCurrentPowerDestination == true,
+                    RestorePowerSource = preparedTransitionJournal?.RestorePowerSource ?? PowerSource.PluggedIn,
                     TransitionId = preparedTransitionJournal?.TransitionId,
                 };
                 HyperBoostOwnershipJournalMutationResult journalFinalization =
@@ -7225,6 +7335,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
             hyperBoostOwnershipGeneration++;
             ownsHyperBoost = enabled;
+            ownedHyperBoostSourceChangePending = false;
             ownedHyperBoostBaseMode = enabled ? requestedBaseMode : null;
             ownedHyperBoostRestoreIntent = enabled ? transitionIntent : null;
             ownedHyperBoostTransitionId = enabled
@@ -7699,14 +7810,109 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 && confirmed.CustomPerformance == desired.CustomPerformance
             : desired.CustomPerformance is null);
 
+    private async Task<bool> PreserveHyperBoostSourceBoundaryAsync(CancellationToken cancellationToken)
+    {
+        if (!ownedHyperBoostSourceChangePending)
+        {
+            return true;
+        }
+        bool priorSafetyBlock = hyperBoostSourceBoundarySafetyBlock
+            ? hyperBoostSourceBoundaryPriorSafetyBlock : hyperBoostJournalSafetyBlock;
+        bool Block()
+        {
+            hyperBoostSourceBoundaryPriorSafetyBlock = priorSafetyBlock;
+            hyperBoostSourceBoundarySafetyBlock = true;
+            hyperBoostJournalSafetyBlock = true;
+            PublishIfChanged(GetStatus() with
+            {
+                WritesBlocked = true,
+                Message = "The observed HyperBoost power-source boundary could not be recorded durably.",
+            });
+            return false;
+        }
+        bool Complete()
+        {
+            ownedHyperBoostSourceChangePending = false;
+            hyperBoostSourceBoundarySafetyBlock = false;
+            hyperBoostSourceBoundaryPriorSafetyBlock = false;
+            return true;
+        }
+        HyperBoostOwnershipJournal? expectedJournal = ownedHyperBoostJournal;
+        string? expectedSha256 = ownedHyperBoostJournalSha256;
+        if (!ownsHyperBoost)
+        {
+            HyperBoostOwnershipJournalLoadResult load;
+            try
+            {
+                load = await hyperBoostOwnershipJournalStore.LoadAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                if (!hyperBoostSourceBoundarySafetyBlock)
+                {
+                    history.RecordSummary(ControlOperationStatus.Failed,
+                        $"The pending HyperBoost source boundary could not be inspected: {exception.Message}");
+                }
+                return Block();
+            }
+            if (load.Invalid)
+            {
+                return Block();
+            }
+            if (load.Journal is null)
+            {
+                hyperBoostRestorePending = false;
+                return Complete();
+            }
+            expectedJournal = load.Journal;
+            expectedSha256 = load.Sha256;
+        }
+        if (expectedJournal is null
+            || expectedJournal.State is not (HyperBoostOwnershipJournalState.OwnedConfirmed
+                or HyperBoostOwnershipJournalState.RestorePending))
+        {
+            return Block();
+        }
+        if (expectedJournal.RestoreUsesCurrentPowerDestination)
+        {
+            return Complete();
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        HyperBoostOwnershipJournal replacementJournal = expectedJournal with
+        {
+            RestoreUsesCurrentPowerDestination = true,
+        };
+        HyperBoostOwnershipJournalMutationResult replacement =
+            await TryReplaceHyperBoostOwnershipJournalAsync(expectedJournal,
+                expectedSha256, replacementJournal,
+                "The HyperBoost source boundary could not be preserved durably; control writes remain blocked.")
+                .ConfigureAwait(false);
+        hyperBoostJournalSafetyBlock |= priorSafetyBlock;
+        if (!replacement.Applied)
+        {
+            return Block();
+        }
+        if (ownsHyperBoost)
+        {
+            ownedHyperBoostJournal = replacementJournal;
+            ownedHyperBoostJournalSha256 = replacement.Sha256;
+        }
+        return Complete();
+    }
+
     private static HyperBoostRestoreIntent ResolveHyperBoostExitIntent(
         ServiceStatusSnapshot current,
         HyperBoostRestoreIntent? ownedIntent,
+        PowerSource savedPowerSource,
+        bool useCurrentPowerDestination,
         PowerSource exitPowerSource) => exitPowerSource switch
         {
-            PowerSource.PluggedIn => ownedIntent
-                ?? CreateHyperBoostRestoreIntent(current.DesiredState),
-            PowerSource.Battery or PowerSource.UsbC =>
+            PowerSource.PluggedIn or PowerSource.UsbC => exitPowerSource == savedPowerSource
+                && !useCurrentPowerDestination
+                ? ownedIntent ?? CreateHyperBoostRestoreIntent(current.DesiredState)
+                : CreateHyperBoostRestoreIntent(current.DesiredState),
+            PowerSource.Battery =>
                 CreateHyperBoostRestoreIntent(current.DesiredState),
             _ => HyperBoostRestoreIntent.BalancedAutomatic,
         };
@@ -7724,15 +7930,6 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private void RestoreRecoveredHyperBoostIntentInAutomation(
         HyperBoostRestoreIntent intent)
         => Automation.RestoreHyperBoostIntentUntilPowerSourceChange(intent);
-
-    private static bool IsSupportedFullPowerHyperBoostIntent(
-        DeviceCapabilities capabilities,
-        HyperBoostRestoreIntent intent) =>
-        intent.Performance is (PerformancePreset.Silent
-            or PerformancePreset.Balanced
-            or PerformancePreset.Performance
-            or PerformancePreset.Custom)
-        && IsSupportedHyperBoostRestoreIntent(capabilities, intent);
 
     private static bool IsSupportedHyperBoostRestoreIntent(
         DeviceCapabilities capabilities,
@@ -8423,7 +8620,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ResolveIndeterminateHyperBoostRestoreIntent(
                 powerSource,
                 savedIntent,
-                confirmed);
+                confirmed,
+                expectedJournal.RestorePowerSource,
+                expectedJournal.RestoreUsesCurrentPowerDestination);
         if (!ConfigurationIsAdmitted
             && (enabled
                 || !ownedLifecycleRestore
@@ -8459,12 +8658,18 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private HyperBoostRestoreIntent ResolveIndeterminateHyperBoostRestoreIntent(
         PowerSource powerSource,
         HyperBoostRestoreIntent savedIntent,
-        ConfirmedDeviceState confirmed) => !ConfigurationIsAdmitted
+        ConfirmedDeviceState confirmed,
+        PowerSource savedPowerSource,
+        bool useCurrentPowerDestination) => !ConfigurationIsAdmitted
             ? savedIntent
             : powerSource switch
             {
-                PowerSource.PluggedIn => savedIntent,
-                PowerSource.Battery or PowerSource.UsbC =>
+                PowerSource.PluggedIn or PowerSource.UsbC => powerSource == savedPowerSource
+                    && !useCurrentPowerDestination
+                    && !ownedHyperBoostSourceChangePending
+                    ? savedIntent
+                    : CreateHyperBoostRestoreIntent(ResolveAutomationDesired(confirmed)),
+                PowerSource.Battery =>
                     CreateHyperBoostRestoreIntent(ResolveAutomationDesired(confirmed)),
                 _ => HyperBoostRestoreIntent.BalancedAutomatic,
             };
@@ -8635,6 +8840,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 timeProvider.GetUtcNow())
             {
                 RestoreIntent = savedIntent,
+                RestoreUsesCurrentPowerDestination = expectedJournal.RestoreUsesCurrentPowerDestination,
+                RestorePowerSource = expectedJournal.RestorePowerSource,
                 TransitionId = expectedJournal.TransitionId,
             };
             HyperBoostOwnershipJournalMutationResult recovery =
@@ -8696,7 +8903,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ResolveIndeterminateHyperBoostRestoreIntent(
                 powerSource,
                 savedIntent,
-                confirmed);
+                confirmed,
+                expectedJournal.RestorePowerSource,
+                expectedJournal.RestoreUsesCurrentPowerDestination);
         PerformancePreset recoveryBaseMode = ownedHyperBoostBaseMode
             ?? PerformancePreset.Balanced;
         bool recoveryRequiresCoolingPad = ownedHyperBoostRequiresCoolingPad;
@@ -8753,10 +8962,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 RestoreRetryDisposition = retryDisposition,
                 RestoreRetryTarget = retryDisposition
                     == HyperBoostRestoreRetryDisposition.DeferredPreSubmission
-                    ? powerSource == PowerSource.PluggedIn
+                    ? PowerSourcePolicy.IsExternal(powerSource)
                         ? HyperBoostRestoreRetryTarget.ExactJournalIntent
                         : HyperBoostRestoreRetryTarget.CurrentPowerDestination
                     : HyperBoostRestoreRetryTarget.None,
+                RestoreUsesCurrentPowerDestination = expectedJournal.RestoreUsesCurrentPowerDestination
+                    || powerSource != expectedJournal.RestorePowerSource
+                    || restoreIntent != savedIntent,
+                RestorePowerSource = powerSource,
                 TransitionId = expectedJournal.TransitionId,
             };
             bool recoveryRecorded = !hyperBoostJournalSafetyBlock
@@ -8866,6 +9079,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 timeProvider.GetUtcNow())
             {
                 RestoreIntent = savedIntent,
+                RestoreUsesCurrentPowerDestination = expectedJournal.RestoreUsesCurrentPowerDestination,
+                RestorePowerSource = expectedJournal.RestorePowerSource,
                 TransitionId = expectedJournal.TransitionId,
             };
             HyperBoostOwnershipJournalMutationResult finalization =
@@ -8937,7 +9152,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ResolveIndeterminateHyperBoostRestoreIntent(
                 powerSource,
                 savedIntent,
-                confirmed);
+                confirmed,
+                expectedJournal.RestorePowerSource,
+                expectedJournal.RestoreUsesCurrentPowerDestination);
         if (transitionRunner is null)
         {
             hyperBoostJournalSafetyBlock = true;
@@ -8985,10 +9202,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             {
                 RestoreIntent = restoreIntent,
                 RecoveryBaseline = failureObservation.RecoveryBaseline,
+                RestoreUsesCurrentPowerDestination = expectedJournal.RestoreUsesCurrentPowerDestination
+                    || powerSource != expectedJournal.RestorePowerSource
+                    || restoreIntent != savedIntent,
+                RestorePowerSource = powerSource,
                 TransitionId = expectedJournal.TransitionId,
             };
             bool restoreMarkerWritten = !hyperBoostJournalSafetyBlock
-                && powerSource == PowerSource.PluggedIn
+                && PowerSourcePolicy.IsExternal(powerSource)
                 && (await TryReplaceHyperBoostOwnershipJournalAsync(
                         expectedJournal,
                         expectedJournalSha256,
@@ -9002,8 +9223,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 $"Fresh readback confirmed that HyperBoost stayed off after an indeterminate enable, but the prior performance or fan intent was not fully restored. {restoration.Message} OpenBlade did not retry the HyperBoost write; control writes remain blocked."
                 + (restoreMarkerWritten
                     ? " The exact saved intent remains pending for one explicit recovery."
-                    : powerSource is PowerSource.Battery or PowerSource.UsbC
-                        ? " The pending entry journal remains blocked until full-power AC returns, when OpenBlade can save the current destination intent without a hardware write."
+                    : powerSource == PowerSource.Battery
+                        ? " The pending entry journal remains blocked until confirmed external power returns, when OpenBlade can save the current destination intent without a hardware write."
                         : " The exact saved intent could not be recorded for recovery.");
             history.RecordSummary(ControlOperationStatus.Failed, failedMessage);
             return new IndeterminateHyperBoostReconciliation(
@@ -9044,6 +9265,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         ownsHyperBoost = false;
         ownedHyperBoostBaseMode = null;
         ownedHyperBoostRestoreIntent = null;
+        ownedHyperBoostSourceChangePending = false;
+        hyperBoostSourceBoundarySafetyBlock = false;
+        hyperBoostSourceBoundaryPriorSafetyBlock = false;
         ownedHyperBoostTransitionId = null;
         ownedHyperBoostJournal = null;
         ownedHyperBoostJournalSha256 = null;
@@ -9116,6 +9340,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             RestoreIntent = intent,
             RecoveryBaseline = failureObservation.RecoveryBaseline,
+            RestoreUsesCurrentPowerDestination = expectedJournal.RestoreUsesCurrentPowerDestination,
+            RestorePowerSource = expectedJournal.RestorePowerSource,
             TransitionId = expectedJournal.TransitionId,
         };
         bool recoveryRecorded = !hyperBoostJournalSafetyBlock
@@ -9174,6 +9400,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 timeProvider.GetUtcNow())
             {
                 RestoreIntent = expectedJournal.RestoreIntent,
+                RestoreUsesCurrentPowerDestination = expectedJournal.RestoreUsesCurrentPowerDestination,
+                RestorePowerSource = expectedJournal.RestorePowerSource,
                 TransitionId = expectedJournal.TransitionId,
             };
             HyperBoostOwnershipJournalMutationResult replacement =
@@ -9374,6 +9602,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     {
                         RestoreIntent = restoreIntent,
                         RecoveryBaseline = failureObservation.RecoveryBaseline,
+                        RestoreUsesCurrentPowerDestination = expectedJournal.RestoreUsesCurrentPowerDestination,
+                        RestorePowerSource = expectedJournal.RestorePowerSource,
                         TransitionId = expectedJournal.TransitionId,
                     };
                     bool recoveryRecorded =
@@ -9534,6 +9764,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             timeProvider.GetUtcNow())
         {
             RestoreIntent = restoreIntent,
+            RestoreUsesCurrentPowerDestination = expectedJournal.RestoreUsesCurrentPowerDestination,
+            RestorePowerSource = expectedJournal.RestorePowerSource,
             TransitionId = expectedJournal.TransitionId,
         };
         string? relinquishedSha256 = null;
@@ -9665,6 +9897,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             hyperBoostRestorePending = true;
             if (confirmed is { } matchingConfirmed
+                && powerSourceConfirmed
+                && observedPowerSource == journal.RestorePowerSource
+                && !journal.RestoreUsesCurrentPowerDestination
                 && (journal.RestoreRetryDisposition
                         != HyperBoostRestoreRetryDisposition.DeferredPreSubmission
                     || journal.RestoreRetryTarget
@@ -9733,13 +9968,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             if (ConfigurationIsAdmitted
                 && confirmed is not null
-                && Automation.PowerSource == PowerSource.PluggedIn)
+                && PowerSourcePolicy.IsExternal(Automation.PowerSource))
             {
                 HyperBoostRestoreIntent destinationIntent =
                     CreateHyperBoostRestoreIntent(ResolveAutomationDesired(confirmed));
                 ServiceStatusSnapshot current = GetStatus();
                 if (current.Capabilities is not null
-                    && IsSupportedFullPowerHyperBoostIntent(
+                    && IsSupportedHyperBoostRestoreIntent(
                         current.Capabilities,
                         destinationIntent))
                 {
@@ -9750,13 +9985,15 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         timeProvider.GetUtcNow())
                     {
                         RestoreIntent = destinationIntent,
+                        RestoreUsesCurrentPowerDestination = true,
+                        RestorePowerSource = Automation.PowerSource,
                         TransitionId = journal.TransitionId,
                     };
                     await TryReplaceHyperBoostOwnershipJournalAsync(
                             journal,
                             load.Sha256,
                             replacementJournal,
-                            "The pending HyperBoost entry could not be converted to the current full-power destination recovery.")
+                            "The pending HyperBoost entry could not be converted to the current external-power destination recovery.")
                         .ConfigureAwait(false);
                     hyperBoostJournalSafetyBlock = true;
                 }
@@ -9823,12 +10060,27 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         switch (journal.RestoreRetryTarget)
         {
             case HyperBoostRestoreRetryTarget.ExactJournalIntent:
-                if (powerSource != PowerSource.PluggedIn)
+                if (!PowerSourcePolicy.IsExternal(powerSource))
                 {
                     hyperBoostJournalSafetyBlock = true;
                     return new InactiveHyperBoostJournalRetirement(false);
                 }
-                destinationIntent = journal.RestoreIntent;
+                if (powerSource == journal.RestorePowerSource
+                    && !journal.RestoreUsesCurrentPowerDestination)
+                {
+                    destinationIntent = journal.RestoreIntent;
+                }
+                else if (ConfigurationIsAdmitted)
+                {
+                    // Crossing external source classes expires the old profile intent.
+                    // The one pre-submission retry still uses fresh destination authority.
+                    destinationIntent = CreateHyperBoostRestoreIntent(authoritativeDestination);
+                }
+                else
+                {
+                    hyperBoostJournalSafetyBlock = true;
+                    return new InactiveHyperBoostJournalRetirement(false);
+                }
                 break;
             case HyperBoostRestoreRetryTarget.CurrentPowerDestination:
                 if (!ConfigurationIsAdmitted)
@@ -9911,6 +10163,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             RecoveryBaseline = retryBaseline,
             RestoreRetryDisposition = HyperBoostRestoreRetryDisposition.None,
             RestoreRetryTarget = HyperBoostRestoreRetryTarget.None,
+            RestoreUsesCurrentPowerDestination = journal.RestoreUsesCurrentPowerDestination
+                || journal.RestoreRetryTarget == HyperBoostRestoreRetryTarget.CurrentPowerDestination
+                || powerSource != journal.RestorePowerSource,
+            RestorePowerSource = powerSource,
             TransitionId = journal.TransitionId,
         };
         HyperBoostOwnershipJournalMutationResult retryClaim =
@@ -10212,7 +10468,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                 .ConfigureAwait(false);
 
-            if (powerSource == PowerSource.ExternalUnknown)
+            if (powerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Battery))
             {
                 return PublishScopedUnavailable(
                     DeviceSubsystem.Battery,
@@ -10221,7 +10478,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     preserveCurrentAvailability: true);
             }
 
-            if (ChangePowerSourceCore(powerSource))
+            if (powerSource != PowerSource.ExternalUnknown && ChangePowerSourceCore(powerSource))
             {
                 ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token);
                 // A rejected battery-only request may still report its validation
@@ -10245,7 +10502,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 return rejected;
             }
 
-            if (enabled && !Automation.DesiredBattery.ProtectionEnabled)
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                _ = ChangePowerSourceCore(powerSource);
+            }
+            DesiredBatteryState? currentBattery = ResolveExplicitBatteryBaseline(powerSource);
+            if (currentBattery is null)
+            {
+                return new(ControlOperationStatus.Blocked,
+                    "Temporary full charge requires a complete confirmed battery baseline.");
+            }
+            if (enabled && !currentBattery.ProtectionEnabled)
             {
                 var rejected = new ControlOperationResult(
                     ControlOperationStatus.Failed,
@@ -10267,12 +10534,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 desired => desired with
                 {
                     Battery = new DesiredBatteryState(
-                        desired.Battery.ConfiguredPolicy,
-                        desired.Battery.ProtectionEnabled,
+                        currentBattery.ConfiguredPolicy,
+                        currentBattery.ProtectionEnabled,
                         enabled),
                 },
                 _ =>
                 {
+                    if (powerSource == PowerSource.ExternalUnknown)
+                    {
+                        RecordExplicitUnclassifiedOverride();
+                    }
                     if (enabled)
                     {
                         Automation.EnableTemporaryFullCharge();
@@ -10350,6 +10621,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 }
                 return;
             }
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                _ = ChangePowerSourceCore(powerSource);
+            }
             bool sourceChanged = powerSource != PowerSource.ExternalUnknown
                 && Automation.PowerSource != powerSource;
             bool canUseReadOnlyFastPath = !resumeStateValidation.ResumeStarted
@@ -10373,6 +10648,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             catch (Exception exception)
             {
                 lightingRelinquishFailure = exception;
+            }
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                _ = ChangePowerSourceCore(powerSource);
             }
             bool changed = powerSource != PowerSource.ExternalUnknown
                 && ChangePowerSourceCore(powerSource);
@@ -10671,10 +10950,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             // The unexpected exit discarded in-memory temporary overrides that may have produced the
             // journaled entry intent. Reinstate it, as the user-authorized retry does, only when the
-            // recovery actually wrote it: full AC and a confirmed state exactly matching that intent.
-            // A battery/USB-C or blocked exit writes a different intent and must not be masked.
+            // recovery actually wrote it: confirmed external power and an exact matching state.
+            // A battery or blocked exit writes a different intent and must not be masked.
             if (recoveredEntryIntent is not null
-                && Automation.PowerSource == PowerSource.PluggedIn
+                && PowerSourcePolicy.IsExternal(Automation.PowerSource)
                 && GetStatus().ConfirmedState is { HyperBoostActive: false } restored
                 && ConfirmedStateMatchesRecoveredIntent(restored, recoveredEntryIntent))
             {
@@ -11630,13 +11909,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
         // Loading the user configuration rebuilt automation. Reinstate the entry intent that
         // recovery wrote, before fan reconciliation and drift classification, under the same
-        // full-AC exact-match gate; anything else is drift the user must see. Firmware Automatic
+        // external-power exact-match gate; anything else is drift the user must see. Firmware Automatic
         // fans written by that recovery need no ongoing ownership, so they are not drift either.
         bool recoveredAutomaticFansReinstated = false;
         if (deferredRecoveredHyperBoostEntryIntent is { } recoveredEntryIntent)
         {
             deferredRecoveredHyperBoostEntryIntent = null;
-            if (confirmedPowerSource == PowerSource.PluggedIn
+            if (PowerSourcePolicy.IsExternal(confirmedPowerSource)
                 && confirmed is { HyperBoostActive: false }
                 && ConfirmedStateMatchesRecoveredIntent(confirmed, recoveredEntryIntent))
             {
@@ -11808,12 +12087,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             resumeStateValidation.DiscardExpired();
             resumeStateValidation.DiscardUnstarted();
-            if (await HandleGuardianPowerBoundaryAsync(powerStateProvider.CapturePowerSource(), cancellationToken).ConfigureAwait(false)) { return; }
+            if (await HandleGuardianPowerBoundaryAsync(CaptureControlPowerSource(), cancellationToken).ConfigureAwait(false)) { return; }
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             RefreshBatteryHealthAfterPowerSourceChangeCore();
             await RefreshControllerPresenceAndRelinquishLightingAsync(
                 cancellationToken).ConfigureAwait(false);
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                _ = ChangePowerSourceCore(powerSource);
+            }
             bool changed = powerSource != PowerSource.ExternalUnknown
                 && ChangePowerSourceCore(powerSource);
             if (unexpectedExitRecoveryDeferredForUserConfiguration)
@@ -11899,7 +12182,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 return;
             }
 
-            if (await HandleGuardianPowerBoundaryAsync(powerStateProvider.CapturePowerSource(), cancellationToken).ConfigureAwait(false)) { return; }
+            if (await HandleGuardianPowerBoundaryAsync(CaptureControlPowerSource(), cancellationToken).ConfigureAwait(false)) { return; }
 
             Interlocked.Increment(ref powerAdmissionEpoch);
             await RefreshControllerPresenceAndRelinquishLightingAsync(
@@ -11909,11 +12192,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ServiceStatusSnapshot current = GetStatus();
             if (classified == PowerSource.ExternalUnknown)
             {
+                _ = ChangePowerSourceCore(classified);
                 CloseThermalConvergenceAdmission(
                     ThermalConvergenceReason.PowerUnsettled,
                     thermalConvergenceShutdown: false);
                 PowerSource statusPowerSource = PowerSourceForStatus(classified);
-                PublishIfChanged(current with
+                retainedNonPowerWriteBlock = NonPowerClassificationWriteBlock(current);
+                PublishIfChangedWithPowerBlock(current with
                 {
                     ActivePowerSource = statusPowerSource,
                     ObservationReason = current.ObservationReason is
@@ -11922,11 +12207,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         : statusPowerSource == PowerSource.ExternalUnknown
                             ? DeviceObservationReason.None
                             : DeviceObservationReason.RetainedPowerSource,
-                    WritesBlocked = true,
+                    // Classification may add a power block, but must not
+                    // discharge another recovery/observation owner's block.
+                    WritesBlocked = NonPowerClassificationWriteBlock(current) || !IsUnclassifiedExternalContext
+                        || !HasFreshExternalPowerPresence || !current.DeviceVerified
+                        || current.ObservationReason is DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls,
                     Message = statusPowerSource == PowerSource.ExternalUnknown
                         ? UnclassifiedExternalPowerMessage
                         : TransientExternalPowerMessage,
-                });
+                }, powerOnlyWriteBlock: !retainedNonPowerWriteBlock
+                    && (!IsUnclassifiedExternalContext || !HasFreshExternalPowerPresence || !current.DeviceVerified));
                 return;
             }
 
@@ -11964,9 +12254,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     ObservationReason = current.ObservationReason == DeviceObservationReason.RetainedPowerSource
                         ? DeviceObservationReason.None
                         : current.ObservationReason,
-                    WritesBlocked = (current.ObservationReason is
-                        DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls)
-                        && current.WritesBlocked,
+                    WritesBlocked = NonPowerClassificationWriteBlock(current),
                     Message = "Power adapter classification recovered.",
                     DesiredState = ResolveAutomationDesired(
                         current.ConfirmedState ?? UnknownConfirmedState),
@@ -13036,12 +13324,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
 
         FanControlSettings automatic = FanControlSettings.FromLegacy(FanMode.Automatic);
+        Func<bool>? ownedStopReleaseAdmission = OwnsBatterySaverFanStop
+            ? CaptureOwnedBatterySaverFanStopReleaseAdmission(cancellationToken, stillControlsSession) : null;
         ControlOperationResult result = await ApplyScopedIntentAsync(
             DeviceSubsystem.Fans,
             powerSource,
-            (coordinator, _, token) => coordinator.ApplyRecoveryFanControlOutcomeAsync(
-                automatic,
-                token),
+            (coordinator, _, token) => ownedStopReleaseAdmission is not null
+                ? coordinator.ApplyOwnedBatterySaverFanStopReleaseOutcomeAsync(ownedStopReleaseAdmission, token)
+                : coordinator.ApplyRecoveryFanControlOutcomeAsync(automatic, token),
             cancellationToken,
             state => state with
             {
@@ -13520,6 +13810,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
         }
 
+        if (IsUnclassifiedExternalContext && !lifecycleRestore
+            && !(explicitLightingOwnershipActive && requested is not null && Automation.LightingOverride?.Value == requested))
+        {
+            // Startup/profile fallback is retained data, not an explicit
+            // Unknown-power action or a captured owned lifecycle restoration.
+            return true;
+        }
         cancellationToken.ThrowIfCancellationRequested();
         lightingRecoveryPauseMessage = null;
         pendingLightingRestore = null;
@@ -13546,7 +13843,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return true;
         }
 
-        if (!current.DeviceVerified || current.WritesBlocked)
+        if (!current.DeviceVerified || current.WritesBlocked
+            || EffectiveControlPowerSource(current) == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
         {
             DeferLightingRestoreUntilDeviceArrival(requested, current);
             return false;
@@ -13734,7 +14033,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         CancellationToken cancellationToken)
     {
         ValidateOverride(value, nameof(value));
-        ValidateThermalOverrideCombination(value, Automation.FanOverride);
+        ValidateUnclassifiedPerformanceOverride(value);
+        if (value is not null || !IsUnclassifiedExternalContext)
+        {
+            ValidateThermalOverrideCombination(value, Automation.FanOverride);
+        }
         PersistentOverrideState staged = persistentOverrides with
         {
             Performance = value?.Lifetime == OverrideLifetime.Persistent
@@ -13750,6 +14053,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         await PersistOverridesIfChangedAsync(staged, cancellationToken);
         Automation.SetPerformanceOverride(value);
         persistentOverrides = staged;
+        if (IsUnclassifiedExternalContext && HasFreshExternalPowerPresence)
+        {
+            RecordExplicitUnclassifiedOverride();
+        }
     }
 
     private async Task SetFanOverrideCoreAsync(
@@ -13758,12 +14065,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         CancellationToken cancellationToken)
     {
         ValidateOverride(value, nameof(value));
-        if (value is not null && !FanControlPowerPolicy.IsAvailable(Automation.PowerSource, value.Value,
+        if (value is not null && !(OrdinaryUnclassifiedOverrideIsAvailable && value.Value != FanMode.Stop)
+            && !FanControlPowerPolicy.IsAvailable(Automation.PowerSource, value.Value,
                 GetStatus().Capabilities?.SupportsManualFansOnLimitedPower == true))
         {
             throw new InvalidDataException("The selected fan mode is unavailable on this model and power source.");
         }
-        ValidateThermalOverrideCombination(Automation.PerformanceOverride, value);
+        if (value is not null || !IsUnclassifiedExternalContext)
+        {
+            ValidateThermalOverrideCombination(Automation.PerformanceOverride, value);
+        }
         PersistentOverrideState staged = persistentOverrides with
         {
             Fans = value?.Lifetime == OverrideLifetime.Persistent
@@ -13792,6 +14103,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         await PersistOverridesIfChangedAsync(staged, cancellationToken);
         Automation.SetLightingOverride(value);
         persistentOverrides = staged;
+        if (IsUnclassifiedExternalContext && HasFreshExternalPowerPresence)
+        {
+            RecordExplicitUnclassifiedOverride();
+        }
     }
 
     private LightingSettings ResolveVisibleLightingBaseline(PowerSource powerSource)
@@ -13805,7 +14120,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return remembered;
         }
 
-        LightingSettings profile = Automation.Profiles.ForPowerSource(powerSource).Lighting;
+        LightingSettings profile = powerSource == PowerSource.ExternalUnknown
+            ? GetStatus().ConfirmedState?.Lighting ?? LightingSettingsFactory.Off()
+            : Automation.Profiles.ForPowerSource(powerSource).Lighting;
         return profile.Effect != LightingEffect.Off && profile.Brightness > 0
             ? profile
             : LightingSettingsFactory.Static(
@@ -13832,7 +14149,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         Func<bool>? stillControlsSession = null,
         Func<DesiredDeviceState, IReadOnlyList<DeviceSubsystem>>?
             thermalComponentResolver = null,
-        Func<DesiredDeviceState, DesiredDeviceState>? hardwareDesiredProjection = null)
+        Func<DesiredDeviceState, DesiredDeviceState>? hardwareDesiredProjection = null,
+        bool clearsExplicitOverride = false)
     {
         EnsureInitialized();
         await operationGate.WaitAsync(token);
@@ -13886,7 +14204,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     "The active Windows session changed during control admission.");
             }
 
-            if (powerSource == PowerSource.ExternalUnknown)
+            if (powerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(subsystem))
             {
                 return PublishScopedUnavailable(
                     subsystem,
@@ -13895,7 +14214,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     preserveCurrentAvailability: true);
             }
 
-            if (ChangePowerSourceCore(powerSource))
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                _ = ChangePowerSourceCore(powerSource);
+            }
+            if (powerSource != PowerSource.ExternalUnknown && ChangePowerSourceCore(powerSource))
             {
                 ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token);
                 if (transition.StopFurtherWrites)
@@ -13912,6 +14235,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             try
             {
                 await mutation(token);
+                if (powerSource == PowerSource.ExternalUnknown)
+                {
+                    RecordExplicitUnclassifiedOverride();
+                }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -13930,6 +14257,28 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
 
             ServiceStatusSnapshot staged = GetStatus();
+            if (powerSource == PowerSource.ExternalUnknown && clearsExplicitOverride)
+            {
+                if (subsystem == DeviceSubsystem.Fans
+                    && exactFanControlOwnership.Settings?.Mode is FanMode.Fixed or FanMode.Maximum or FanMode.ManualCurve)
+                {
+                    ControlOperationResult cleanup = await RestoreOwnedAutomaticFansCoreAsync(
+                        powerSource, token, "clearing the explicit manual fan override",
+                        stillControlsSession).ConfigureAwait(false);
+                    if (cleanup.Status != ControlOperationStatus.Applied)
+                    {
+                        return cleanup;
+                    }
+                }
+                if (subsystem == DeviceSubsystem.Lighting)
+                {
+                    await RelinquishLightingOwnershipCoreAsync(GetStatus(), token).ConfigureAwait(false);
+                }
+                const string deferred = "Override cleared. Power-profile application waits for adapter classification.";
+                PublishScopedStatus(powerSource, GetStatus().ConfirmedState, staged.Capabilities,
+                    deferred, staged.DeviceVerified, staged.WritesBlocked);
+                return new(ControlOperationStatus.Stored, deferred);
+            }
             string? deferredMessage = deferHardwareApply?.Invoke(powerSource, staged);
             if (deferredMessage is not null)
             {
@@ -13993,7 +14342,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token);
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                 .ConfigureAwait(false);
-            if (powerSource == PowerSource.ExternalUnknown)
+            if (powerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Battery))
             {
                 return PublishScopedUnavailable(
                     DeviceSubsystem.Battery,
@@ -14002,7 +14352,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     preserveCurrentAvailability: true);
             }
 
-            if (ChangePowerSourceCore(powerSource))
+            if (powerSource != PowerSource.ExternalUnknown && ChangePowerSourceCore(powerSource))
             {
                 ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token);
                 if (transition.StopFurtherWrites)
@@ -14010,7 +14360,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     return transition.ToOperationResult();
                 }
             }
-            DesiredBatteryState? staged = stageIntent(Automation.DesiredBattery);
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                _ = ChangePowerSourceCore(powerSource);
+            }
+            DesiredBatteryState? currentBattery = ResolveExplicitBatteryBaseline(powerSource);
+            if (currentBattery is null)
+            {
+                return new(ControlOperationStatus.Blocked,
+                    "Battery control requires a fresh, complete confirmed battery baseline.");
+            }
+            DesiredBatteryState? staged = stageIntent(currentBattery);
             if (staged is null)
             {
                 var blocked = new ControlOperationResult(
@@ -14030,6 +14390,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 _ =>
                 {
                     Automation.CommitBatteryState(staged);
+                    if (powerSource == PowerSource.ExternalUnknown)
+                    {
+                        RecordExplicitUnclassifiedOverride();
+                    }
                     return Task.CompletedTask;
                 },
                 pendingBatteryIntentCommit: new(Automation, FullChargeOnly: false));
@@ -14116,7 +14480,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return WindowsDynamicLightingOwnsKeyboard();
         }
 
-        if (powerSource == PowerSource.ExternalUnknown)
+        if (powerSource == PowerSource.ExternalUnknown
+            && !FreshUnclassifiedExternalControlIsAdmitted(subsystem))
         {
             return PublishScopedUnavailable(
                 subsystem,
@@ -14660,7 +15025,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
 
         if (confirmedPowerSource != expectedPowerSource
-            || confirmedPowerSource == PowerSource.ExternalUnknown)
+            || confirmedPowerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Performance))
         {
             return ThermalRetryAdmission.Block(
                 "The confirmed power destination changed before the fresh-session retry.");
@@ -15276,7 +15642,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         CancellationToken cancellationToken,
         Action<bool, bool, bool> recordApplicationProgress)
     {
-        if (powerSource is not (PowerSource.Battery or PowerSource.UsbC))
+        if (powerSource != PowerSource.Battery)
         {
             return true;
         }
@@ -15479,6 +15845,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             timeProvider.GetUtcNow())
         {
             RestoreIntent = restoreIntent,
+            RestoreUsesCurrentPowerDestination = true,
+            RestorePowerSource = powerSource,
             TransitionId = ownedJournal.TransitionId,
         };
         HyperBoostOwnershipJournalMutationResult journalPreparation =
@@ -15686,6 +16054,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         Func<bool>? stillControlsSession = null,
         PendingTransitionContinuation? continuation = null)
     {
+        // Retain battery cleanup work even if its metadata preparation is temporarily unavailable.
+        if (powerSource == PowerSource.Battery && ownsHyperBoost
+            && !ownedHyperBoostPowerBoundaryExitSubmitted)
+        {
+            pendingOwnedHyperBoostPowerBoundaryExit = true;
+        }
+        if (!await PreserveHyperBoostSourceBoundaryAsync(token).ConfigureAwait(false))
+        {
+            return ServiceTransitionApplicationOutcome.Interrupted(
+                "The observed HyperBoost power-source boundary could not be recorded durably.");
+        }
         if (fanStopController.BlocksOrdinaryThermalWrites)
         {
             ControlOperationResult? release = await ReleaseFanStopCoreAsync(token, stillControlsSession).ConfigureAwait(false);
@@ -15728,7 +16107,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return ServiceTransitionApplicationOutcome.Interrupted(GetStatus().Message);
         }
 
-        if (powerSource is PowerSource.Battery or PowerSource.UsbC
+        if (powerSource == PowerSource.Battery
             && ownsHyperBoost
             && current.ActivePowerSource != powerSource
             && !ownedHyperBoostPowerBoundaryExitSubmitted)
@@ -15768,7 +16147,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ServiceTransitionApplicationOutcome.Interrupted(message,
                 new ServiceTransitionWriteProgress(boundaryWriteAttempted, boundarySubmissionPossible, boundaryConfirmedWrites));
         bool hyperBoostBoundaryWorkRequired =
-            powerSource is PowerSource.Battery or PowerSource.UsbC
+            powerSource == PowerSource.Battery
             && ownsHyperBoost
             && pendingOwnedHyperBoostPowerBoundaryExit;
         if (!await ExitOwnedHyperBoostForPowerSourceTransitionAsync(
@@ -15957,7 +16336,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         PowerSource powerSource) =>
         pendingOwnedHyperBoostPowerBoundaryExit
         && ownsHyperBoost
-        && powerSource is PowerSource.Battery or PowerSource.UsbC;
+        && powerSource == PowerSource.Battery;
 
     private async Task<ThermalFullTransitionExecution>
         ApplyDesiredTransitionWithRetryAsync(
@@ -16037,9 +16416,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             if (confirmed.HyperBoostActive != false)
             {
                 // Unknown activity is excluded exactly like active HyperBoost.
-                // Owned Battery and USB-C transitions exit HyperBoost before
+                // Owned Battery transitions exit HyperBoost before
                 // reaching this resolver. Preserve every other active session:
-                // unowned state is advisory-only, and full-power transitions do
+                // unowned state is advisory-only, and external-power transitions do
                 // not issue an implicit thermal write.
                 exclusions.Add(DeviceSubsystem.Performance);
                 exclusions.Add(DeviceSubsystem.Fans);
@@ -16497,7 +16876,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     {
         PowerSource windowsSource;
         using (cpuDiagnostic?.BeginStage("power Windows source capture"))
-        { windowsSource = powerStateProvider.CapturePowerSource(); }
+        { windowsSource = CaptureControlPowerSource(); }
         cancellationToken.ThrowIfCancellationRequested();
         if (windowsSource == PowerSource.Battery)
         {
@@ -16508,10 +16887,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         if (windowsSource != PowerSource.ExternalUnknown)
         {
             // Test doubles and future providers may already have stronger evidence.
+            Volatile.Write(ref externalClassificationUnavailable, 0);
             return windowsSource;
         }
 
         if (allowCachedExternalClassification
+            && !IsUnclassifiedExternalContext
             && Automation.PowerSource is PowerSource.PluggedIn or PowerSource.UsbC)
         {
             // Windows reports only "external power" here. Reuse the last
@@ -16574,10 +16955,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
                 if (sample != classified)
                 {
+                    // Contradictory known readings are not a completed
+                    // unavailable getter and admit no ordinary exception.
+                    Volatile.Write(ref externalClassificationUnavailable, 0);
                     RecordAdapterPowerClassificationDiagnostic(
                         AdapterPowerClassificationDiagnosticKind.ConflictingKnownReplies,
                         ControlOperationStatus.Blocked,
                         "Power adapter classification observed conflicting known read-only replies; control writes remain blocked.");
+                    PublishCompletedUnresolvedPowerClassification(cancellationToken);
                     return PowerSource.ExternalUnknown;
                 }
 
@@ -16590,6 +16975,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
             if (agreeingSamples < RequiredAgreeingAdapterPowerSamples)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                // Publish the context only after this read-only classification
+                // actually completes unavailable, never during a probe/read.
+                Volatile.Write(ref externalClassificationUnavailable, 1);
                 AdapterPowerClassificationDiagnosticKind diagnosticKind =
                     accessFailures > 0
                         ? AdapterPowerClassificationDiagnosticKind.DeviceAccessFailures
@@ -16601,6 +16990,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     diagnosticKind,
                     ControlOperationStatus.Blocked,
                     detail);
+                PublishCompletedUnresolvedPowerClassification(cancellationToken);
                 return PowerSource.ExternalUnknown;
             }
 
@@ -16618,7 +17008,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 lastAdapterPowerClassificationDiagnosticKind = null;
             }
 
-            return classified switch
+            PowerSource result = classified switch
             {
                 AdapterPowerState.FullPower280W => PowerSource.PluggedIn,
                 AdapterPowerState.FullPower330W => PowerSource.PluggedIn,
@@ -16632,6 +17022,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 AdapterPowerState.UsbCPower100W => PowerSource.UsbC,
                 _ => PowerSource.ExternalUnknown,
             };
+            // A known Battery/legacy reply contradicting Windows AC also
+            // closes the exception; it is not an unavailable getter.
+            Volatile.Write(ref externalClassificationUnavailable, 0);
+            if (result == PowerSource.ExternalUnknown)
+            {
+                PublishCompletedUnresolvedPowerClassification(cancellationToken);
+            }
+            return result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -16674,6 +17072,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         bool skipLightingHandoff = false,
         bool reconcileLaptopControls = false)
     {
+        // Journal failure closes mutation admission; read-only reconciliation must continue.
+        _ = await PreserveHyperBoostSourceBoundaryAsync(cancellationToken).ConfigureAwait(false);
         bool includeLiveReadings = requestedLiveReadings != LiveReadingSensors.None;
         bool deviceAvailable = deviceProvider.TryGetVerifiedDevice(out IBladeDevice device);
         cancellationToken.ThrowIfCancellationRequested();
@@ -17184,12 +17584,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ownedHyperBoostRequiresCoolingPad = false;
         }
         ClassifyObservedFanTopology(observation.Confirmed.Fans);
+        // Only a fresh full observation may discharge a retained non-power
+        // observation block; the periodic classifier does not own that state.
+        retainedNonPowerWriteBlock = false;
 
         string? readNote = RecordObservationReadNote(observation);
-        PublishIfChanged(current with
+        PublishIfChangedWithPowerBlock(current with
         {
             DeviceVerified = true,
-            WritesBlocked = !powerSourceConfirmed || hyperBoostJournalSafetyBlock || deferredHyperBoostRecovery,
+            WritesBlocked = !powerSourceConfirmed && !(IsUnclassifiedExternalContext && HasFreshExternalPowerPresence)
+                || hyperBoostJournalSafetyBlock || deferredHyperBoostRecovery
+                || !powerSourceConfirmed && ownsHyperBoost,
             ObservationReason = !powerSourceConfirmed && powerSource != PowerSource.ExternalUnknown
                 ? DeviceObservationReason.RetainedPowerSource
                 : DeviceObservationReason.None,
@@ -17197,7 +17602,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             Message = AppendPartialReadNote(
                 !powerSourceConfirmed
                     ? powerSource == PowerSource.ExternalUnknown
-                        ? "Verified device state observed, but the external power adapter could not be classified; control writes are blocked."
+                        ? "Verified device state observed; adapter classification is unavailable. Profile automation and advanced thermal controls remain deferred."
                         : TransientExternalPowerMessage
                     : "Verified device state observed.",
                 readNote),
@@ -17239,7 +17644,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             FirmwareCompatibility = deviceProvider.FirmwareCompatibility,
             DisplayBrightnessHidAvailability =
                 displayBrightnessHidController.GetAvailability(),
-        });
+        }, powerOnlyWriteBlock: !powerSourceConfirmed && !(IsUnclassifiedExternalContext && HasFreshExternalPowerPresence)
+            && !hyperBoostJournalSafetyBlock && !deferredHyperBoostRecovery && !ownsHyperBoost);
     }
 
     private void PublishVerifiedDeviceObservationFailure(
@@ -17408,6 +17814,19 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     private bool ChangePowerSourceCore(PowerSource powerSource)
     {
+        if (powerSource == PowerSource.ExternalUnknown)
+        {
+            long generation = Interlocked.Read(ref windowsPowerGeneration);
+            if (HasFreshExternalPowerPresence && Automation.PowerSource == PowerSource.Battery
+                && Interlocked.Read(ref consumedUnclassifiedBoundaryGeneration) != generation)
+            {
+                Automation.ExpireTransientOverridesForPowerBoundary();
+                Interlocked.Exchange(ref consumedUnclassifiedBoundaryGeneration, generation);
+                AdvanceFanDesiredRevision();
+                powerSourceGeneration++;
+            }
+            return false;
+        }
         // Any typed request can discover a new source before the power observer.
         // Apply the same waiting-policy boundary to all of those shared paths.
         PauseAutomaticFanStopForPowerIncrease(powerSource);
@@ -17418,21 +17837,43 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             // destination through fresh admission, without replaying the laptop write.
             return false;
         }
-        bool changed = Automation.ChangePowerSource(powerSource);
+        PowerSource priorPowerSource = Automation.PowerSource;
+        bool preserveOverrides = PreserveOverridesForExternalClassification(powerSource);
+        bool changed = Automation.ChangePowerSource(powerSource, preserveOverrides);
+        if (PowerSourcePolicy.IsExternal(powerSource))
+        {
+            Volatile.Write(ref lastClassifiedExternalSource, (int)powerSource);
+        }
+        if (changed && (ownsHyperBoost || hyperBoostRestorePending)
+            && priorPowerSource is PowerSource.PluggedIn or PowerSource.UsbC or PowerSource.Battery
+            && powerSource is PowerSource.PluggedIn or PowerSource.UsbC or PowerSource.Battery)
+        {
+            ownedHyperBoostSourceChangePending = true;
+        }
         // Normal fresh destination processing now owns admission, even if the
         // source reverted while recovery was pending and no transition is needed.
         Volatile.Write(ref laptopRecoveryPowerDestinationPending, 0);
         if (changed)
         {
             deferredRecoveredHyperBoostEntryIntent = null;
-            AdvanceFanDesiredRevision();
+            if (!preserveOverrides)
+            {
+                AdvanceFanDesiredRevision();
+            }
+            else
+            {
+                ClearLastFanCurveTargets();
+            }
             powerSourceGeneration++;
             pendingResumePerformanceDrift = null;
             resumePowerSourceTransitionGeneration = resumeStateValidation.ResumeStarted
                 && !pendingWriteConfirmations.HasPending
                 ? powerSourceGeneration : -1;
-            InvalidatePendingWriteConfirmations(markExternal: true);
-            explicitLightingOwnershipActive = false;
+            if (!preserveOverrides)
+            {
+                InvalidatePendingWriteConfirmations(markExternal: true);
+                explicitLightingOwnershipActive = false;
+            }
             lightingRecoveryPauseMessage = null;
             AdoptDisplayOffSuppressionForPowerSource();
         }
@@ -18060,7 +18501,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private static string? DeferredPerformanceIntentMessage(
         PowerSource powerSource,
         ServiceStatusSnapshot status) =>
-        powerSource == PowerSource.PluggedIn
+        PowerSourcePolicy.IsExternal(powerSource)
         && status.Capabilities?.ReportsPerformanceWithManualFans != true
         && DeviceSubsystemOrder.IsManualFanMode(status.ConfirmedState?.Fans)
         && DeviceSubsystemOrder.IsManualFanMode(status.DesiredState.Fans.Value)
@@ -18071,6 +18512,27 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         PerformanceOverride? performanceOverride,
         ManualOverride<FanMode>? fanOverride)
     {
+        if (IsUnclassifiedExternalContext)
+        {
+            if (!OrdinaryUnclassifiedOverrideIsAvailable)
+            {
+                throw new InvalidDataException("Ordinary thermal control is not admitted on this unclassified external context.");
+            }
+            ServiceStatusSnapshot current = GetStatus();
+            PerformancePreset performance = performanceOverride?.Value ?? current.ConfirmedState?.Performance
+                ?? throw new InvalidDataException("The current performance preset is unavailable.");
+            FanMode fans = fanOverride?.Value ?? current.ConfirmedState?.Fans
+                ?? throw new InvalidDataException("The current fan state is unavailable.");
+            ProfileSetValidator.CreateForDeviceCapabilities(current.Capabilities!)
+                .ValidatePerformanceFanCombination(performance, fans);
+            if (performance == PerformancePreset.Custom
+                && (performanceOverride?.CustomPerformance ?? current.ConfirmedState?.CustomPerformance)?.MaximumFans == true
+                && fans != FanMode.Automatic)
+            {
+                throw new InvalidDataException("Custom maximum fans requires Automatic fan mode.");
+            }
+            return;
+        }
         PowerProfile activeProfile = Automation.PowerSource switch
         {
             PowerSource.PluggedIn => Automation.Profiles.PluggedIn,
@@ -18303,6 +18765,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         string message,
         bool deviceVerified = false)
     {
+        retainedNonPowerWriteBlock = true;
         bool wasDeviceVerified = GetStatus().DeviceVerified;
         if (!deviceVerified)
         {
@@ -18616,19 +19079,27 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private DesiredDeviceState ResolveAutomationDesired(ConfirmedDeviceState confirmed,
         DeviceCapabilities? capabilities = null) =>
         Automation.Resolve(confirmed,
-            (capabilities ?? Volatile.Read(ref status)?.Capabilities)?.SupportsManualFansOnLimitedPower == true);
+            (capabilities ?? Volatile.Read(ref status)?.Capabilities)?.SupportsManualFansOnLimitedPower == true,
+            ProjectUnclassifiedIntent ? PowerSource.ExternalUnknown : null,
+            IsUnclassifiedExternalContext && HasFreshExternalPowerPresence
+                && (capabilities ?? Volatile.Read(ref status)?.Capabilities)?.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower == true,
+            IsUnclassifiedExternalContext && HasFreshExternalPowerPresence);
 
     private static bool IsUnavailableCurveIntent(DesiredDeviceState desired, DeviceCapabilities? capabilities,
-        PowerSource source) => desired.Fans.Value == FanMode.ManualCurve
+        PowerSource source, bool externalPowerPresent = false) => desired.Fans.Value == FanMode.ManualCurve
         && capabilities is not null
         && (!ManualFanCurveCapabilityPolicy.SupportsPreset(capabilities, desired.Performance.Value)
-            || !ManualFanCurveCapabilityPolicy.SupportsPowerSource(capabilities, source));
+            || !ManualFanCurveCapabilityPolicy.SupportsPowerSource(capabilities, source, externalPowerPresent));
 
     private DesiredDeviceState ResolveHardwareDesired(ConfirmedDeviceState confirmed)
     {
         DeviceCapabilities? capabilities = GetStatus().Capabilities;
-        DesiredDeviceState rawIntent = Automation.Resolve(confirmed, supportsManualFansOnLimitedPower: true);
-        bool unavailableCurveIntent = IsUnavailableCurveIntent(rawIntent, capabilities, Automation.PowerSource);
+        DesiredDeviceState rawIntent = ProjectUnclassifiedIntent
+            ? ResolveAutomationDesired(confirmed)
+            : Automation.Resolve(confirmed, supportsManualFansOnLimitedPower: true);
+        bool unavailableCurveIntent = IsUnavailableCurveIntent(rawIntent, capabilities,
+            ProjectUnclassifiedIntent ? PowerSource.ExternalUnknown : Automation.PowerSource,
+            HasFreshExternalPowerPresence);
         // Retaining unavailable curve intent grants no fallback authority. In
         // particular Custom must not turn an unowned manual observation into
         // an Automatic write, nor may low-power projection invent that request.
@@ -18649,7 +19120,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
         bool stopScope = BatterySaverFanStopRuntimePolicy.IsInScope(
             Automation.Profiles.Battery.StopFansInBatterySaver, capabilities,
-            Automation.PowerSource, desired.Performance.Value);
+            Volatile.Read(ref windowsPowerKind) == 1 ? PowerSource.Battery : PowerSource.ExternalUnknown,
+            desired.Performance.Value);
         FanMode? stopMode = batterySaverFanStopPolicy.Resolve(stopScope,
             BatterySaverFanStopThermalSampleIsCool(), OwnsBatterySaverFanStop);
         if (stopMode is { } operationalMode)
@@ -18693,7 +19165,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
         // Normalize only admitted manual controls. Unsupported retained intent
         // must not turn the user's supported performance choice into Balanced.
-        if (!unavailableCurveIntent && Automation.PowerSource == PowerSource.PluggedIn
+        if (!unavailableCurveIntent && !IsUnclassifiedExternalContext
+            && PowerSourcePolicy.IsExternal(Automation.PowerSource)
             && DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value)
             && capabilities is not null
             && capabilities.PerformancePresets.Count > 0
@@ -20172,7 +20645,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     {
         DesiredDeviceState ordinary = ResolveAutomationDesired(
             current.ConfirmedState ?? UnknownConfirmedState, current.Capabilities);
-        return current.ActivePowerSource == PowerSource.Battery
+        return Volatile.Read(ref windowsPowerKind) == 1
+            && current.ActivePowerSource == PowerSource.Battery
             && BatterySaverFanStopRuntimePolicy.IsInScope(
                 Automation.Profiles.Battery.StopFansInBatterySaver, current.Capabilities,
                 Automation.PowerSource, ordinary.Performance.Value);
@@ -20277,7 +20751,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     private async Task MaintainBatterySaverFanStopAsync(CancellationToken token)
     {
-        if (!ConfigurationIsAdmitted || lowPowerGate.IsActive || thermalConvergenceShutdown)
+        if (!ConfigurationIsAdmitted && !OwnsBatterySaverFanStop || lowPowerGate.IsActive || thermalConvergenceShutdown)
         {
             return;
         }
@@ -20289,6 +20763,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
         try
         {
+            PowerSource? freshOwnedSource = OwnsBatterySaverFanStop
+                ? await ResolveCurrentPowerSourceAsync(token).ConfigureAwait(false) : null;
             ServiceStatusSnapshot current = GetStatus();
             if (!BatterySaverFanStopInScope(current) && !OwnsBatterySaverFanStop)
             {
@@ -20296,7 +20772,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 RefreshBatterySaverFanStopReadInterest();
                 return;
             }
-            await RefreshBatterySaverFanStopThermalSampleAsync(token).ConfigureAwait(false);
+            if (BatterySaverFanStopInScope(current))
+            {
+                await RefreshBatterySaverFanStopThermalSampleAsync(token).ConfigureAwait(false);
+            }
             DesiredDeviceState desired = ResolveHardwareDesired(
                 current.ConfirmedState ?? UnknownConfirmedState);
             bool needsStop = desired.Fans.Value == FanMode.Stop
@@ -20308,7 +20787,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 && !current.ExternalChanges.Contains(DeviceSubsystem.Fans))
             {
                 await RefreshControllerPresenceAndRelinquishLightingAsync(token).ConfigureAwait(false);
-                await ApplyBatterySaverFanStopIntentAsync(current, token).ConfigureAwait(false);
+                await ApplyBatterySaverFanStopIntentAsync(current, token,
+                    releaseOwned: needsRelease, expectedPowerSource: freshOwnedSource).ConfigureAwait(false);
             }
             PublishIfChanged(GetStatus());
         }
@@ -20318,17 +20798,45 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
     }
 
+    private Func<bool> CaptureOwnedBatterySaverFanStopReleaseAdmission(
+        CancellationToken token, Func<bool>? stillControlsSession)
+    {
+        DeferredManualFanRecoveryAuthority authority = CaptureFanRecoveryAuthority(GetStatus().ActivePowerSource);
+        return () => !token.IsCancellationRequested && stillControlsSession?.Invoke() != false
+            && OwnsBatterySaverFanStop && FanRecoveryAuthorityBlockReason(authority) is null
+            && RefreshAndGetOwnedManualFanHandbackBlockReason(token) is null;
+    }
+
     private Task<ControlOperationResult> ApplyBatterySaverFanStopIntentAsync(
-        ServiceStatusSnapshot current, CancellationToken token, Func<bool>? stillControlsSession = null) =>
-        ApplyScopedIntentAsync(DeviceSubsystem.Fans, current.ActivePowerSource,
-            (coordinator, desired, cancellationToken) => coordinator.ApplyRecoveryFanControlOutcomeAsync(
-                desired.FanControl ?? FanControlSettings.FromLegacy(desired.Fans.Value), cancellationToken,
-                initialStateBlockReason: observed => desired.Fans.Value == FanMode.Stop
-                    && (observed.Performance != PerformancePreset.BatterySaver
-                        || GetStatus().ExternalChanges.Contains(DeviceSubsystem.Performance))
-                    ? "Fan stop requires independently confirmed Battery Saver performance without external thermal drift."
-                    : null), token, stillControlsSession: stillControlsSession,
-            thermalExecutionOptions: new ScopedThermalExecutionOptions([DeviceSubsystem.Fans]));
+        ServiceStatusSnapshot current, CancellationToken token, Func<bool>? stillControlsSession = null,
+        bool releaseOwned = false, PowerSource? expectedPowerSource = null)
+    {
+        Func<bool>? ownedReleaseAdmission = releaseOwned
+            ? CaptureOwnedBatterySaverFanStopReleaseAdmission(token, stillControlsSession) : null;
+        return ApplyScopedIntentAsync(DeviceSubsystem.Fans, expectedPowerSource ?? EffectiveControlPowerSource(current),
+            (coordinator, desired, cancellationToken) => releaseOwned
+                ? coordinator.ApplyOwnedBatterySaverFanStopReleaseOutcomeAsync(
+                    ownedReleaseAdmission!, cancellationToken)
+                : coordinator.ApplyRecoveryFanControlOutcomeAsync(
+                    desired.FanControl ?? FanControlSettings.FromLegacy(desired.Fans.Value), cancellationToken,
+                    initialStateBlockReason: observed => desired.Fans.Value == FanMode.Stop
+                        && (observed.Performance != PerformancePreset.BatterySaver
+                            || GetStatus().ExternalChanges.Contains(DeviceSubsystem.Performance))
+                        ? "Fan stop requires independently confirmed Battery Saver performance without external thermal drift."
+                        : null), token,
+            stageDesired: releaseOwned ? desired => desired with
+            {
+                Fans = desired.Fans with { Value = FanMode.Automatic },
+                FanControl = FanControlSettings.Default,
+            } : null,
+            stillControlsSession: stillControlsSession,
+            thermalExecutionOptions: new ScopedThermalExecutionOptions([DeviceSubsystem.Fans],
+                additionalWriteBlockReason: releaseOwned
+                    ? () => OwnsBatterySaverFanStop ? null : "The prior owned Battery Saver stop changed before Auto handback."
+                    : null,
+                authorityPurpose: releaseOwned ? ScopedThermalAuthorityPurpose.PriorAuthorityCleanup
+                    : ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent));
+    }
 
     private bool CanMaintainFanCurve(
         ServiceStatusSnapshot current,
@@ -20339,9 +20847,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         return settings.Mode == FanMode.ManualCurve
             && !fanStopController.BlocksOrdinaryThermalWrites
             && !fanStopController.HoldsAutomatic
-            && Automation.PowerSource == current.ActivePowerSource
+            && CurrentPowerContextMatchesAutomation(EffectiveControlPowerSource(current))
             && current.Capabilities is { } curveCapabilities
-            && ManualFanCurveCapabilityPolicy.SupportsPowerSource(curveCapabilities, current.ActivePowerSource)
+            && ManualFanCurveCapabilityPolicy.SupportsPowerSource(curveCapabilities, EffectiveControlPowerSource(current), HasFreshExternalPowerPresence)
             && ManualFanCurveCapabilityPolicy.SupportsPreset(curveCapabilities, current.DesiredState.Performance.Value)
             && currentSettings == settings
             && (!curveCapabilities.ReportsPerformanceWithManualFans
@@ -20388,7 +20896,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             || powerSourceGeneration != authority.PowerSourceGeneration
             || Interlocked.Read(ref sessionAdmissionEpoch)
                 != authority.SessionAdmissionEpoch
-            || current.ActivePowerSource != authority.PowerSource
+            || EffectiveControlPowerSource(current) != authority.PowerSource
             || !string.Equals(
                 Volatile.Read(ref activeUserSid),
                 authority.ActiveUserSid,
@@ -20811,17 +21319,27 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     private void PublishIfChanged(
         ServiceStatusSnapshot candidate,
-        bool retainPerformanceShortcutPreview = true)
-        => PublishStatusUpdate(previous => retainPerformanceShortcutPreview
+        bool retainPerformanceShortcutPreview = true) =>
+        PublishIfChangedWithPowerBlock(candidate, retainPerformanceShortcutPreview, null);
+
+    private void PublishIfChangedWithPowerBlock(
+        ServiceStatusSnapshot candidate,
+        bool retainPerformanceShortcutPreview = true,
+        bool? powerOnlyWriteBlock = null)
+        => PublishStatusUpdateWithPowerBlock(previous => retainPerformanceShortcutPreview
             ? candidate with
             {
                 PerformanceShortcutPreview =
                     previous.PerformanceShortcutPreview,
             }
-            : candidate);
+            : candidate, powerOnlyWriteBlock);
 
-    private void PublishStatusUpdate(
-        Func<ServiceStatusSnapshot, ServiceStatusSnapshot> update)
+    private void PublishStatusUpdate(Func<ServiceStatusSnapshot, ServiceStatusSnapshot> update) =>
+        PublishStatusUpdateWithPowerBlock(update, null);
+
+    private void PublishStatusUpdateWithPowerBlock(
+        Func<ServiceStatusSnapshot, ServiceStatusSnapshot> update,
+        bool? powerOnlyWriteBlock)
     {
         ServiceStatusSnapshot? published = null;
         bool publishToSubscribers = false;
@@ -20831,10 +21349,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             {
                 // Compare the previously published cooling status, while retaining
                 // the existing live safety overlays for every other field.
+                ExternalPowerPresent = Volatile.Read(ref status)?.ExternalPowerPresent ?? false,
                 BatterySaverFanStopStatus = Volatile.Read(ref status)?.BatterySaverFanStopStatus,
                 FanStopStatus = Volatile.Read(ref status)?.FanStopStatus ?? new(),
             };
             ServiceStatusSnapshot updated = update(previous);
+            bool retainExternalPresentation = updated.ActivePowerSource == PowerSource.ExternalUnknown
+                && previous.ActivePowerSource is PowerSource.PluggedIn or PowerSource.UsbC;
             IReadOnlyList<DeviceSubsystem> unconfirmedWrites =
                 pendingWriteConfirmations.SnapshotSubsystems();
             ServiceStatusSnapshot candidate = updated with
@@ -20845,6 +21366,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     || deviceProvider.IsExperimentalWritesPaused
                     || laptopControlExecutor.RequiresReconciliation,
                 UnconfirmedWrites = unconfirmedWrites,
+                ActivePowerSource = retainExternalPresentation ? previous.ActivePowerSource : updated.ActivePowerSource,
+                ObservationReason = retainExternalPresentation
+                    && updated.ObservationReason is not (DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls)
+                    ? DeviceObservationReason.RetainedPowerSource : updated.ObservationReason,
+                ExternalPowerPresent = HasFreshExternalPowerPresence && updated.DeviceVerified
+                    && updated.ControlAccess == SessionControlAccess.Active
+                    && updated.ObservationReason is not (DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls),
                 HyperBoostRestorePending = hyperBoostRestorePending,
                 AllowExperimentalFeatures = deviceProvider.IsExperimentalDevice,
                 ExperimentalWritesPaused = deviceProvider.IsExperimentalWritesPaused,
@@ -20861,12 +21389,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             {
                 AdvanceFanAuthorityEpoch();
             }
+            bool carriesOnlyPowerBlock = candidate.WritesBlocked && !HasExplicitNonPowerWriteBlock(candidate)
+                && (powerOnlyWriteBlock ?? (previous.Revision == Interlocked.Read(ref powerOnlyWriteBlockRevision)));
             if (Equivalent(previous, candidate))
             {
+                Interlocked.Exchange(ref powerOnlyWriteBlockRevision, carriesOnlyPowerBlock ? previous.Revision : -1);
                 return;
             }
 
             published = candidate with { Revision = previous.Revision + 1 };
+            Interlocked.Exchange(ref powerOnlyWriteBlockRevision, carriesOnlyPowerBlock ? published.Revision : -1);
             Volatile.Write(ref status, published);
             publishToSubscribers = !Equivalent(
                 previous,

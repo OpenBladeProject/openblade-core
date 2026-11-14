@@ -151,6 +151,8 @@ internal sealed partial class ExperimentalBladePort(
             enabled ? GetExperimentalChargeLimits(model) : new HashSet<int>(),
             enabled && GetExperimentalChargeLimits(model).Count > 0, enabled && model.ProductId == 0x02A0)
         {
+            SupportsOrdinaryThermalControlOnUnclassifiedExternalPower = enabled
+                && OrdinaryThermalPowerAdmission.SupportsProduct(model.ProductId),
             CustomPerformance = enabled && SupportsExperimentalCustom(model) ? CreateCustomCapabilities(model) : null,
             FanSpeedRange = enabled ? GetExperimentalFanRange(model) : null,
             FanSpeedRangesByPerformancePreset = enabled
@@ -484,8 +486,7 @@ internal sealed partial class ExperimentalBladePort(
                         variableResponse: acceptsStatusOnlyAck,
                         payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 1 : null,
                         requireEcho: !acceptsStatusOnlyAck,
-                        requireAdequateAdapter: value is not (PerformancePreset.Balanced
-                            or PerformancePreset.BatteryBalanced)).ConfigureAwait(false);
+                        allowUnclassifiedExternal: !baseline.HyperBoostActive).ConfigureAwait(false);
                     submitted = true;
                     if (await ReadMaximumFansAsync(cancellationToken).ConfigureAwait(false))
                     {
@@ -516,7 +517,8 @@ internal sealed partial class ExperimentalBladePort(
                     true, cancellationToken,
                     variableResponse: acceptsStatusOnlyAck,
                     payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 4 : null,
-                    requireEcho: !acceptsStatusOnlyAck).ConfigureAwait(false);
+                    requireEcho: !acceptsStatusOnlyAck,
+                    allowUnclassifiedExternal: !baseline.HyperBoostActive).ConfigureAwait(false);
                 submitted = true;
             }
             ProductionPerformanceFanState confirmed = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
@@ -562,12 +564,12 @@ internal sealed partial class ExperimentalBladePort(
         if (thermal)
         {
             PowerSource source = capturePowerSource();
-            if (source is not (PowerSource.ExternalUnknown or PowerSource.PluggedIn or PowerSource.UsbC))
+            if (!ExternalPowerReported(source))
             {
                 policy.Record("WriteAdmission", "Guard", "Blocked",
                     confirmed: $"PowerSource={source}", failure: "ExternalPowerNotConfirmed");
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                    $"Thermal writes require confirmed external power; the current source is {source}. Connect the factory charger and retry.");
+                    $"Thermal writes require confirmed external power; the current source is {source}. Confirm the external power source and retry.");
             }
         }
         if (fanMode is { } requestedFan)
@@ -584,18 +586,20 @@ internal sealed partial class ExperimentalBladePort(
         }
     }
 
-    private bool ExternalPowerPresent() => capturePowerSource() is
-        PowerSource.ExternalUnknown or PowerSource.PluggedIn or PowerSource.UsbC;
+    // The production callback reports Windows AC presence as ExternalUnknown.
+    // This preflight is not write admission: ExchangeAsync must independently
+    // classify a known external adapter immediately before every thermal setter.
+    private static bool ExternalPowerReported(PowerSource source) =>
+        PowerSourcePolicy.IsExternal(source) || source == PowerSource.ExternalUnknown;
+
+    private bool ExternalPowerPresent() => ExternalPowerReported(capturePowerSource());
 
     private void RequirePerformanceWriteAdmission(PerformancePreset value)
     {
         RequireWriteAdmission();
-        bool batteryMode = value is PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced;
-        bool sourceReviewedBatteryMode = value == PerformancePreset.BatteryBalanced
-            ? model.ThermalPolicy?.SupportsBalancedDc == true : model.ThermalPolicy?.SupportsBatterySaver == true;
-        if (batteryMode ? (model.ProductId != 0x02C5 && !sourceReviewedBatteryMode)
-                || capturePowerSource() != PowerSource.Battery
-            : !ExternalPowerPresent())
+        PowerSource source = capturePowerSource();
+        if (!CreatePerformancePresets(model).Contains(value)
+            || !(ExternalPowerReported(source) || PerformancePowerSourcePolicy.IsAllowed(source, value)))
         {
             throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                 "The exact experimental preset is not admitted on the current power source.");
@@ -618,8 +622,14 @@ internal sealed partial class ExperimentalBladePort(
         byte commandId,
         byte[] arguments,
         PowerSource? admittedFanSource,
-        PowerSource? admittedFanPowerClass)
+        PowerSource? admittedFanPowerClass, bool admittedUnclassifiedExternal)
     {
+        if (admittedUnclassifiedExternal)
+        {
+            return OrdinaryThermalPowerAdmission.SupportsProduct(model.ProductId)
+                && OrdinaryThermalPowerAdmission.ExternalPresence(capturePowerSource())
+                && OrdinaryThermalPowerAdmission.IsOrdinaryExperimentalSet(operation, commandClass, commandId, arguments);
+        }
         // The exact 02A0 full-charge bit changes battery policy, not thermal mode.
         // It retains general submission admission and its own shared-mask guard.
         if (IsTemporaryFullChargeSet(operation, commandClass, commandId, arguments))
@@ -656,7 +666,7 @@ internal sealed partial class ExperimentalBladePort(
             return (model.ProductId == 0x02C5
                     || arguments[2] == 3 && model.ThermalPolicy?.SupportsBatterySaver == true
                     || arguments[2] == 6 && model.ThermalPolicy?.SupportsBalancedDc == true)
-                && capturePowerSource() == PowerSource.Battery;
+                && (capturePowerSource() == PowerSource.Battery || ExternalPowerPresent());
         }
         return commandClass != 0x0D && !(commandClass == 0x07 && commandId == 0x0F)
             || ExternalPowerPresent();
@@ -700,37 +710,51 @@ internal sealed partial class ExperimentalBladePort(
         byte commandId, byte[] arguments, bool write, CancellationToken cancellationToken,
         bool variableResponse = false, Func<ReadOnlyMemory<byte>, bool>? payloadValidator = null,
         bool requireEcho = true, bool recordAcknowledgedSubmission = true,
-        bool requireAdequateAdapter = false, Func<bool>? writeAdmission = null,
-        byte? fixedTransactionId = null)
+        Func<bool>? writeAdmission = null,
+        byte? fixedTransactionId = null, bool allowUnclassifiedExternal = true,
+        bool requireFullPowerForFanCurve = false)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
+        bool admittedUnclassifiedExternal = false;
         PowerSource? admittedFanSource = null;
         PowerSource? admittedFanPowerClass = null;
-        PowerSource? admittedThermalSource = null;
+        PowerSource? admittedThermalSource = write && IsThermalSet(commandClass, commandId)
+            && !IsTemporaryFullChargeSet(operation, commandClass, commandId, arguments)
+                ? capturePowerSource() : null;
         if (write && IsThermalSet(commandClass, commandId)
             && !IsTemporaryFullChargeSet(operation, commandClass, commandId, arguments)
             && (!IsBatteryModeSet(commandClass, commandId, arguments)
-                || model.ProductId != 0x02C5 || operation != "Performance"))
+                || model.ProductId != 0x02C5 || admittedThermalSource != PowerSource.Battery
+                || operation != "Performance"))
         {
-            AdapterPowerState adapter = await ReadAdapterPowerCoreAsync(cancellationToken).ConfigureAwait(false);
+            bool ordinaryPurpose = allowUnclassifiedExternal && OrdinaryThermalPowerAdmission.SupportsProduct(model.ProductId)
+                && OrdinaryThermalPowerAdmission.IsOrdinaryExperimentalSet(operation, commandClass, commandId, arguments);
+            PowerSource querySource = capturePowerSource();
+            AdapterPowerState adapter = await ReadAdapterPowerCoreAsync(cancellationToken,
+                allowUnavailableClassification: ordinaryPurpose).ConfigureAwait(false);
             bool fanOperation = IsFanOperation(operation);
             PowerSource currentSource = capturePowerSource();
-            if (model.ThermalPolicy is not null)
+            if (admittedThermalSource != currentSource || currentSource != querySource)
             {
-                admittedThermalSource = currentSource;
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    "The power source changed during thermal write admission.");
             }
+            admittedUnclassifiedExternal = ordinaryPurpose && adapter == AdapterPowerState.Unknown
+                && OrdinaryThermalPowerAdmission.ExternalPresence(currentSource);
             PowerSource? fanPowerClass = ResolveThermalPowerClass(adapter, currentSource);
-            bool fanPowerAllowed = fanOperation && fanPowerClass is { } resolvedFanPower
-                && (!requireAdequateAdapter || HyperBoostValidationPower.IsAdmittedFullPower(adapter))
-                && FanCommandSourceIsAdmitted(resolvedFanPower, operation, arguments);
+            bool confirmedExternalPower = ExternalPowerReported(currentSource) && fanPowerClass is not null;
+            // Ordinary Unknown-AC permission is independent of a known external
+            // class. Known limited fan/curve policy remains separately bounded.
+            bool fanPowerAllowed = fanOperation && (admittedUnclassifiedExternal
+                || fanPowerClass is { } resolvedFanPower
+                    && (!requireFullPowerForFanCurve || HyperBoostValidationPower.IsAdmittedFullPower(adapter))
+                    && FanCommandSourceIsAdmitted(resolvedFanPower, operation, arguments));
             if (fanPowerAllowed)
             {
                 admittedFanSource = currentSource;
                 admittedFanPowerClass = fanPowerClass;
             }
-            bool limitedCleanupAllowed = !requireAdequateAdapter && IsLimitedAdapter(adapter)
-                && AllowsLimitedPowerSet(operation, commandClass, commandId, arguments);
             if (operation == "HyperBoostRestore" && fanPowerClass is null)
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
@@ -740,7 +764,8 @@ internal sealed partial class ExperimentalBladePort(
                 && operation == "Performance" && IsBatteryModeSet(commandClass, commandId, arguments)
                 && currentSource == PowerSource.Battery && adapter == AdapterPowerState.Battery;
             if (model.ThermalPolicy is not null && operation == "Performance"
-                && IsBatteryModeSet(commandClass, commandId, arguments) && !sourceReviewedBatteryPreset)
+                && IsBatteryModeSet(commandClass, commandId, arguments)
+                && !sourceReviewedBatteryPreset && !confirmedExternalPower)
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "Battery performance requires agreement between Windows power and the fresh firmware adapter reading.");
@@ -761,8 +786,8 @@ internal sealed partial class ExperimentalBladePort(
                 && arguments.Length == 4 && arguments[2] == 6 && arguments[3] == 0;
             if (fanOperation && !fanPowerAllowed
                 || !fanOperation
-                    && !HyperBoostValidationPower.IsAdmittedFullPower(adapter)
-                    && !limitedCleanupAllowed && !batteryHyperBoostCleanup && !sourceReviewedBatteryPreset
+                    && !admittedUnclassifiedExternal && !confirmedExternalPower
+                    && !batteryHyperBoostCleanup && !sourceReviewedBatteryPreset
                     && !sourceReviewedBatteryMaximumFansCleanup)
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
@@ -783,7 +808,7 @@ internal sealed partial class ExperimentalBladePort(
                     commandId,
                     arguments,
                     admittedFanSource,
-                    admittedFanPowerClass) : null,
+                    admittedFanPowerClass, admittedUnclassifiedExternal) : null,
         };
         LightingRecoveryWriteGate.SubmissionGuard? recoveryGuard = write
             ? recoveryWriteGate.CreateSubmissionGuard(command.SubmissionAllowed) : null;
@@ -870,7 +895,9 @@ internal sealed partial class ExperimentalBladePort(
         try
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            return await ReadAdapterPowerCoreAsync(cancellationToken).ConfigureAwait(false);
+            return await ReadAdapterPowerCoreAsync(cancellationToken,
+                allowUnavailableClassification: OrdinaryThermalPowerAdmission.SupportsProduct(model.ProductId),
+                requireCompletedUnavailableResponse: false).ConfigureAwait(false);
         }
         finally
         {
@@ -878,7 +905,8 @@ internal sealed partial class ExperimentalBladePort(
         }
     }
 
-    private async Task<AdapterPowerState> ReadAdapterPowerCoreAsync(CancellationToken cancellationToken)
+    private async Task<AdapterPowerState> ReadAdapterPowerCoreAsync(CancellationToken cancellationToken,
+        bool allowUnavailableClassification = false, bool requireCompletedUnavailableResponse = true)
     {
         // Every admitted profile pins its own enabled Synapse command path.
         // A future profile without that evidence cannot inherit the query.
@@ -899,10 +927,21 @@ internal sealed partial class ExperimentalBladePort(
         {
             RecordQuery("AdapterPower", "Failed", failure: failure.ToString());
             cancellationToken.ThrowIfCancellationRequested();
+            if (allowUnavailableClassification && result.UnclassifiedAdapterResponseAvailable
+                && session.Disposition == RazerCommandSessionDisposition.Healthy
+                && OrdinaryThermalPowerAdmission.ExternalPresence(capturePowerSource()))
+            {
+                return AdapterPowerState.Unknown;
+            }
             throw new IOException($"Experimental adapter query failed: {failure}.");
         }
         RecordQuery("AdapterPower", result.Value == AdapterPowerState.Unknown ? "UnsupportedState" : "Confirmed",
             confirmed: result.Value.ToString());
+        if (allowUnavailableClassification && requireCompletedUnavailableResponse && result.Value == AdapterPowerState.Unknown
+            && !result.UnclassifiedAdapterResponseAvailable)
+        {
+            throw new IOException("Unavailable adapter classification lacks a completed correlated reply.");
+        }
         return result.Value;
     }
 
@@ -913,10 +952,8 @@ internal sealed partial class ExperimentalBladePort(
     private static bool IsBatteryModeSet(byte commandClass, byte commandId, byte[] arguments) =>
         commandClass == 0x0D && commandId == 0x02 && arguments.Length == 4 && arguments[2] is 3 or 6;
 
-    private static bool IsLimitedAdapter(AdapterPowerState state) => state is
-        AdapterPowerState.LimitedExternal or AdapterPowerState.UsbCPower45W or AdapterPowerState.UsbCPower60W
-        or AdapterPowerState.UsbCPower65W or AdapterPowerState.UsbCPower80W or AdapterPowerState.UsbCPower90W
-        or AdapterPowerState.UsbCPower100W;
+    private static bool IsLimitedAdapter(AdapterPowerState state) =>
+        HyperBoostValidationPower.IsAdmittedLimitedExternalPower(state);
 
     private static bool IsFanOperation(string operation) =>
         operation is "Fans" or "FanTargets";
@@ -940,8 +977,6 @@ internal sealed partial class ExperimentalBladePort(
         {
             PowerSource.PluggedIn or PowerSource.ExternalUnknown or PowerSource.Battery =>
                 mode is FanMode.Automatic or FanMode.Fixed or FanMode.ManualCurve,
-            // The exact 029F/029D low-power vendor path admits Automatic
-            // handback, but does not set the separate manual fan flag.
             PowerSource.UsbC => mode == FanMode.Automatic,
             _ => false,
         };
@@ -978,13 +1013,6 @@ internal sealed partial class ExperimentalBladePort(
             _ => false,
         };
 
-    private static bool AllowsLimitedPowerSet(string operation, byte commandClass, byte commandId, byte[] arguments) =>
-        commandClass == 0x0D && commandId == 0x02 && arguments.Length == 4 && arguments[3] == 0
-            // Automatic handback preserves a freshly confirmed mode before the
-            // service selects Balanced. Do not force an intermediate preset.
-            && (operation == "Fans" || (operation is "Performance" or "HyperBoostRestore") && arguments[2] == 0)
-        || commandClass == 0x07 && commandId == 0x0F && operation == "MaximumFans"
-            && arguments.Length == 1 && arguments[0] == 0;
     private static Task Unavailable() => Task.FromException(new CapabilityUnavailableException(
         "This control has no experimental implementation for the exact model."));
 

@@ -4,6 +4,8 @@ namespace OpenBlade.Session;
 
 public readonly record struct DisplayPowerContext(PowerSource PowerSource, long Generation)
 {
+    internal bool ManualExternalPowerPresent { get; init; }
+
     public bool IsConfirmed => PowerSource is
         PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
 }
@@ -26,7 +28,9 @@ public sealed class DisplayPowerContextState : IDisplayPowerContextSource
         }
     }
 
-    public void Update(PowerSource powerSource, long generation)
+    public void Update(PowerSource powerSource, long generation) => Update(powerSource, generation, false);
+
+    internal void Update(PowerSource powerSource, long generation, bool manualExternalPowerPresent)
     {
         if (!Enum.IsDefined(powerSource))
         {
@@ -39,7 +43,10 @@ public sealed class DisplayPowerContextState : IDisplayPowerContextSource
 
         lock (sync)
         {
-            current = new DisplayPowerContext(powerSource, generation);
+            current = new DisplayPowerContext(powerSource, generation)
+            {
+                ManualExternalPowerPresent = powerSource == PowerSource.ExternalUnknown && manualExternalPowerPresent,
+            };
         }
     }
 }

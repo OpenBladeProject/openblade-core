@@ -11,6 +11,10 @@ public sealed class SessionDisplayIpcCodecTests
     public static TheoryData<SessionDisplayRequest> Requests => new()
     {
         new QueryDisplayRequest(SessionDisplayIpc.ProtocolVersion, Guid.NewGuid()),
+        new SetHdrRequest(SessionDisplayIpc.ProtocolVersion, Guid.NewGuid(), PowerSource.ExternalUnknown, true),
+        new SetRefreshRateRequest(SessionDisplayIpc.ProtocolVersion, Guid.NewGuid(), PowerSource.ExternalUnknown, "fixed-240"),
+        new SetColorProfileRequest(SessionDisplayIpc.ProtocolVersion, Guid.NewGuid(), PowerSource.ExternalUnknown, "native"),
+        new SetBrightnessRequest(SessionDisplayIpc.ProtocolVersion, Guid.NewGuid(), PowerSource.ExternalUnknown, 75),
         new SetRefreshRateRequest(
             SessionDisplayIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -94,14 +98,14 @@ public sealed class SessionDisplayIpcCodecTests
     }
 
     [Fact]
-    public async Task WriteRequest_RejectsUnconfirmedSourceAndControlCharacters()
+    public async Task WriteRequest_RejectsUnclassifiedProfileApplicationAndControlCharacters()
     {
         using var stream = new MemoryStream();
-        var unknown = new SetHdrRequest(
+        var unknown = new ApplyDisplayProfileRequest(
             SessionDisplayIpc.ProtocolVersion,
             Guid.NewGuid(),
             PowerSource.ExternalUnknown,
-            true);
+            new DisplayProfileSettings(null, true, null));
         await Assert.ThrowsAsync<InvalidDataException>(
             () => SessionDisplayIpcCodec.WriteRequestAsync(stream, unknown));
 

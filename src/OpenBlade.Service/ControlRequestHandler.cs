@@ -545,6 +545,7 @@ public sealed class ControlRequestHandler
             PerformanceShortcutPreview = null,
             ThermalConvergence = null,
             ControlAccess = access,
+            ExternalPowerPresent = false,
         };
     }
 

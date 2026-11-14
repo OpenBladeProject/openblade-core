@@ -63,6 +63,10 @@ public readonly record struct HidSessionResult<T>(
 
     internal Task? NativeRetirement { get; init; }
 
+    // Only the native session may establish a complete correlated adapter reply.
+    // Terminal rejection retains its failure and never admits the error body.
+    internal bool UnclassifiedAdapterResponseAvailable { get; init; }
+
     // Diagnostic evidence only, populated after the complete response envelope
     // has passed correlation, status and length checks for a safe state getter.
     internal string? QueryResponsePayloadHex { get; init; }

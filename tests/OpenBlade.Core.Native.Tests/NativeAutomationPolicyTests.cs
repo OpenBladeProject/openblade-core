@@ -16,6 +16,25 @@ public sealed class NativeAutomationPolicyTests
         return loaded.Policy!;
     }
 
+    [Theory]
+    [InlineData(true, false, AutomationValueOrigin.Temporary, SettingValueSource.TemporaryOverride)]
+    [InlineData(false, true, AutomationValueOrigin.Persistent, SettingValueSource.PersistentOverride)]
+    [InlineData(true, true, AutomationValueOrigin.Persistent, SettingValueSource.PersistentOverride)]
+    public void ExplicitOverrideSelectionPreservesProvenanceWithoutChangingUnknownSourcePolicy(
+        bool temporary, bool persistent, AutomationValueOrigin origin, SettingValueSource provenance)
+    {
+        using NativeAutomationPolicy policy = Load();
+        NativeAutomationResult selected = policy.SelectExplicitOverride(temporary, persistent);
+        Assert.True(selected.IsSuccess, selected.Error?.ToString());
+        Assert.Equal(origin, selected.Selection!.Value.Origin);
+        Assert.Equal(provenance, selected.Selection.Value.Source);
+        Assert.False(policy.CheckPerformanceSource(PerformancePreset.Silent, PowerSource.ExternalUnknown).IsEligible);
+        Assert.Equal(AutomationValueOrigin.Confirmed,
+            policy.SelectLighting(true, true, temporary, persistent, true, false).Selection!.Value.Origin);
+        Assert.Equal(NativeBoundaryErrorKind.InvalidArgument,
+            policy.SelectExplicitOverride(false, false).Error!.Kind);
+    }
+
     [Fact]
     public void CanonicalTokensMatchFixturesAndIndependentFrozenManagedDecisions()
     {
@@ -34,7 +53,7 @@ public sealed class NativeAutomationPolicyTests
     }
 
     [Fact]
-    public void DecodedPerformanceSourceMatchesSharedMatrixAndFrozenPredicate()
+    public void DecodedPerformanceSourceExpandsExternalPolicyAndPreservesOtherFrozenCases()
     {
         using NativeAutomationPolicy policy = Load();
         using JsonDocument fixture = JsonDocument.Parse(File.ReadAllText(
@@ -57,8 +76,11 @@ public sealed class NativeAutomationPolicyTests
             for (int index = 0; index < sources.Length; index++)
             {
                 PowerSource source = sources[index];
-                bool expected = row[1][index].GetBoolean();
-                Assert.Equal(expected, ManagedAutomationPolicyBaseline.IsPerformanceCompatibleWithSource(preset, source));
+                bool historical = row[1][index].GetBoolean();
+                Assert.Equal(historical, ManagedAutomationPolicyBaseline.IsPerformanceCompatibleWithSource(preset, source));
+                bool expected = source is PowerSource.PluggedIn or PowerSource.UsbC
+                    ? Enum.IsDefined(preset) : historical;
+                Assert.Equal(expected, PerformancePowerSourcePolicy.IsAllowed(source, preset));
                 var (eligible, error) = policy.CheckPerformanceSource(preset, source);
                 Assert.Null(error);
                 Assert.Equal(expected, eligible);

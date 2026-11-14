@@ -9,7 +9,7 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreCurrentAndRetainExactSizeLimit()
     {
-        Assert.Equal(82, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(83, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(16 * 1024 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -102,6 +102,7 @@ public sealed class ServiceMessageContractTests
         [
             "CoolingPad", "Revision", "DeviceVerified", "WritesBlocked", "PotentialControllers",
             "ControllerDetectionWarning", "ExternalChanges", "UnconfirmedWrites", "Message", "ObservationReason",
+            "ExternalPowerPresent",
             "Capabilities", "ConfirmedState", "Profiles", "DesiredState",
             "ActiveApplicationProfileId", "EffectiveLaptopBehavior",
             "ActivePowerSource", "LiveReadings",

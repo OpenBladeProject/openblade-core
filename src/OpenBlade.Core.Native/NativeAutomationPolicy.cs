@@ -132,6 +132,14 @@ public sealed unsafe class NativeAutomationPolicy : IDisposable
             FromApplication = Flag(fromApplication),
         });
 
+    // The host has already admitted these explicit candidates. This uses the
+    // existing source-free selector and never reclassifies the power source.
+    public NativeAutomationResult SelectExplicitOverride(bool hasTemporary, bool hasPersistent) =>
+        hasTemporary || hasPersistent
+            ? SelectPerformance(hasTemporary, hasPersistent, fromApplication: false)
+            : new(null, Error(NativeBoundaryErrorKind.InvalidArgument,
+                "An admitted explicit override is required."));
+
     public NativeAutomationResult SelectLighting(bool hasProfile, bool hasConfirmed,
         bool hasTemporary, bool hasPersistent, bool externalUnknown, bool fromApplication) =>
         Select(new NativeAutomationRequest
