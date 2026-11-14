@@ -34,12 +34,11 @@ impl ReleasePause {
         format!("{RELEASE_PAUSED} {reason}")
     }
     pub(super) fn compose(self, message: &str) -> String {
-        // Keep the operation/public observation independent of the future-write
-        // pause, and include an authoritative settlement cause only once.
+        // An unresolved settlement is the authoritative public reason. Keep
+        // it equal to the owned pending outcome so existing typed rendering
+        // emits it once; generic release wording must not demote that cause.
         match self {
-            Self::Reconciliation(reason) if message.contains(reason) => {
-                format!("{message} {RELEASE_PAUSED}")
-            }
+            Self::Reconciliation(reason) => reason.into(),
             _ => format!("{message} {}", self.message()).trim().to_owned(),
         }
     }

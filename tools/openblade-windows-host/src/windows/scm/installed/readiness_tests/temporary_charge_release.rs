@@ -581,7 +581,14 @@ async fn tfc_release_outcome_quarantined_cancel_keeps_reconciliation_cause_with_
         "actual pending cause replaced: {response}"
     );
     let immediate = immediate_battery_view(&r, Some(SID)).await;
-    assert!(immediate["message"].as_str().unwrap().contains(reason));
+    assert_eq!(
+        immediate["message"]
+            .as_str()
+            .unwrap()
+            .matches(reason)
+            .count(),
+        1
+    );
     assert!(
         !immediate["message"]
             .as_str()
@@ -607,7 +614,10 @@ async fn tfc_release_outcome_quarantined_cancel_keeps_reconciliation_cause_with_
     );
     r.get().await;
     let stale = immediate_battery_view(&r, Some(SID)).await;
-    assert!(stale["message"].as_str().unwrap().contains(reason));
+    assert_eq!(
+        stale["message"].as_str().unwrap().matches(reason).count(),
+        1
+    );
     assert!(
         !stale["message"]
             .as_str()
