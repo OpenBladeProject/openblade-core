@@ -62,3 +62,4 @@ tools/openblade-windows-host/tests/fixtures/app-fans-*.json -text whitespace=cr-
 
 # Preserve the exact generated temporary-charge learning bytes.
 .trail/learnings/2026-11-14-keep-native-temporary-charge-cancellation-owned-jack.md text eol=lf
+.trail/learnings/2026-11-14-keep-native-windows-fixture-provenance-and-jack.md text eol=lf

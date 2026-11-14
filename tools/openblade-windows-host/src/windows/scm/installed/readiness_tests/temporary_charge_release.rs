@@ -38,9 +38,11 @@ async fn wait_release_view(r: &Rig, paused: bool) {
                 .contains(RELEASE_PAUSED)
                 == paused
             {
-                println!(
-                    "NATIVE_THERMAL_MUTATION_RESPONSE {}",
-                    std::str::from_utf8(&bytes).unwrap()
+                emit_fixture_frame(
+                    "publisher_projection",
+                    "waitReleaseView",
+                    "statusEvent",
+                    &bytes,
                 );
                 return;
             }
@@ -422,9 +424,11 @@ async fn immediate_battery_view(r: &Rig, sid: Option<&str>) -> Value {
     let publications = r.source.lock().await.publications().unwrap();
     let snapshot = publications.borrow().active.clone().project_private(sid);
     let bytes = crate::service_status::encode_status_event(&snapshot).unwrap();
-    println!(
-        "NATIVE_THERMAL_MUTATION_RESPONSE {}",
-        std::str::from_utf8(&bytes).unwrap()
+    emit_fixture_frame(
+        "publisher_projection",
+        "immediateBatteryView",
+        "statusEvent",
+        &bytes,
     );
     serde_json::from_slice::<Value>(&bytes).unwrap()["status"].clone()
 }

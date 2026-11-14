@@ -111,19 +111,42 @@ switch ($Lane) {
                 '-p:NuGetAudit=false', '--no-restore', '-m:1', '--verbosity', 'minimal')
         }
 
-        foreach ($project in $testProjects) {
-            # This suite requires the real Rust library and two C loader fixtures.
-            if ($project -eq 'tests/OpenBlade.Core.Native.Tests/OpenBlade.Core.Native.Tests.csproj') {
-                & pwsh -NoProfile -File (Join-Path $repository 'rust/Test-NativeInterop.ps1')
-                if ($LASTEXITCODE -ne 0) {
-                    throw "Native interop tests failed with exit code $LASTEXITCODE."
+        $runSelectedTests = {
+            foreach ($project in $testProjects) {
+                # This suite requires the real Rust library and two C loader fixtures.
+                if ($project -eq 'tests/OpenBlade.Core.Native.Tests/OpenBlade.Core.Native.Tests.csproj') {
+                    & pwsh -NoProfile -File (Join-Path $repository 'rust/Test-NativeInterop.ps1')
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Native interop tests failed with exit code $LASTEXITCODE."
+                    }
+                    continue
                 }
-                continue
+                Invoke-DotNetChecked -Operation "test $project" -Arguments @(
+                    'test', $project, '--configuration', $Configuration,
+                    '-p:NuGetAudit=false', '--no-build', '--no-restore',
+                    '-m:1', '--verbosity', 'minimal')
             }
-            Invoke-DotNetChecked -Operation "test $project" -Arguments @(
-                'test', $project, '--configuration', $Configuration,
-                '-p:NuGetAudit=false', '--no-build', '--no-restore',
-                '-m:1', '--verbosity', 'minimal')
+        }
+        $fixtureConsumers = @(
+            'tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj',
+            'tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj',
+            'tests/OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj')
+        if (@($testProjects | Where-Object { $_ -in $fixtureConsumers }).Count -gt 0) {
+            . (Join-Path $repository 'build/NativeWindowsFixtures.ps1')
+            $fixtureScope = @{
+                Repository = $repository
+                Configuration = $Configuration
+                Action = $runSelectedTests
+            }
+            if (-not [string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) {
+                $fixtureScope.OutputRoot = Join-Path $env:RUNNER_TEMP 'openblade-native-fixtures'
+            }
+            # One preparation brackets the complete managed selection. The
+            # helper validates inputs before/after and restores env in finally.
+            Invoke-OpenBladeNativeFixtureScope @fixtureScope
+        }
+        else {
+            & $runSelectedTests
         }
     }
 

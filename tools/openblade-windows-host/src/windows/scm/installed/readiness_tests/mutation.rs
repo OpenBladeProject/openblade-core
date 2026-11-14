@@ -20,6 +20,25 @@ use std::{
         atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
     },
 };
+// Test-only provenance; raw stays a string to preserve encoder property order.
+fn emit_fixture_frame(emitter: &str, operation: &str, method: &str, raw: &[u8]) {
+    assert!(matches!(
+        emitter,
+        "peer_response" | "peer_subscription" | "publisher_projection" | "synthetic_projection"
+    ));
+    assert!(matches!(method, "response" | "statusEvent"));
+    assert!(!operation.is_empty());
+    println!(
+        "OPENBLADE_FIXTURE_FRAME {}",
+        json!({
+            "schemaVersion": 1,
+            "emitter": emitter,
+            "operation": operation,
+            "method": method,
+            "raw": std::str::from_utf8(raw).unwrap(),
+        })
+    );
+}
 const SID: &str = "S-1-5-21-111-222-333-1001";
 const USER: Caller = Caller {
     pid: Some(42),
@@ -650,10 +669,7 @@ impl Rig {
         // Preserve the actual encoder bytes. Re-serializing Value sorts object
         // keys and can move the managed polymorphic discriminator out of first place.
         assert!(bytes.starts_with(br#"{"frame":"response","#));
-        println!(
-            "NATIVE_THERMAL_MUTATION_RESPONSE {}",
-            std::str::from_utf8(&bytes).unwrap()
-        );
+        emit_fixture_frame("peer_response", &operation, "response", &bytes);
         println!(
             "NATIVE_THERMAL_EDGE_TRACE {} {}",
             operation,
@@ -1584,9 +1600,11 @@ async fn outer_request(tx: &mpsc::UnboundedSender<Box<dyn Stream>>, request: Val
     let bytes = crate::service_frame::read_payload(&mut client)
         .await
         .unwrap();
-    println!(
-        "NATIVE_THERMAL_MUTATION_RESPONSE {}",
-        std::str::from_utf8(&bytes).unwrap()
+    emit_fixture_frame(
+        "peer_response",
+        request["operation"].as_str().unwrap(),
+        "response",
+        &bytes,
     );
     println!(
         "NATIVE_THERMAL_EDGE_TRACE {} {}",
@@ -2291,10 +2309,7 @@ async fn edge_stored_temporary_publication_cannot_resurrect_expired_policy() {
         );
         assert_eq!(rig.reader.last_completed_for_tests(), timestamp);
         assert_eq!(rig.port.state.lock().unwrap().writes, 0);
-        println!(
-            "NATIVE_THERMAL_EDGE_AFTER_STORED {}",
-            std::str::from_utf8(&bytes).unwrap()
-        );
+        emit_fixture_frame("peer_subscription", "afterStored", "statusEvent", &bytes);
         drop(client);
     };
     let (result, ()) = tokio::join!(server, exercise);
@@ -2554,10 +2569,7 @@ async fn edge_managed_saved_custom_survives_unpublished_activation_and_private_f
                 expected["overrides"]["customPerformance"]
             );
             assert!(frame["status"]["confirmedState"]["customPerformance"].is_null());
-            println!(
-                "NATIVE_THERMAL_EDGE_FRAME {}",
-                std::str::from_utf8(&raw).unwrap()
-            );
+            emit_fixture_frame("peer_subscription", "statusEvent", "statusEvent", &raw);
             drop(client);
         };
         let (result, ()) = tokio::join!(server, exercise);
@@ -5733,9 +5745,11 @@ async fn battery_publication_active_subscription_expires_at_unaligned_battery_de
             let frame = crate::service_frame::read_payload(&mut client)
                 .await
                 .unwrap();
-            println!(
-                "NATIVE_THERMAL_MUTATION_RESPONSE {}",
-                std::str::from_utf8(&frame).unwrap()
+            emit_fixture_frame(
+                "peer_subscription",
+                "subscribeStatus",
+                "statusEvent",
+                &frame,
             );
             let frame: Value = serde_json::from_slice(&frame).unwrap();
             if frame["status"]["confirmedState"]["battery"].is_null() {
@@ -5883,10 +5897,7 @@ async fn battery_boundary_actual_direct_publication_filters_request_outcome() {
         publications.borrow().inactive.clone(),
     ] {
         let bytes = crate::service_status::encode_status_event(&view).unwrap();
-        println!(
-            "NATIVE_THERMAL_MUTATION_RESPONSE {}",
-            std::str::from_utf8(&bytes).unwrap()
-        );
+        emit_fixture_frame("publisher_projection", "publication", "statusEvent", &bytes);
         let wire: Value = serde_json::from_slice(&bytes).unwrap();
         let message = wire["status"]["message"].as_str().unwrap();
         assert!(
@@ -5967,10 +5978,7 @@ async fn battery_pending_once_direct_publication_keeps_fence_and_all_views() {
         publications.borrow().inactive.clone(),
     ] {
         let bytes = crate::service_status::encode_status_event(&view).unwrap();
-        println!(
-            "NATIVE_THERMAL_MUTATION_RESPONSE {}",
-            std::str::from_utf8(&bytes).unwrap()
-        );
+        emit_fixture_frame("publisher_projection", "publication", "statusEvent", &bytes);
         let wire: Value = serde_json::from_slice(&bytes).unwrap();
         let message = wire["status"]["message"].as_str().unwrap();
         assert_eq!(message.matches(reason).count(), 1, "{wire}");
@@ -6218,10 +6226,7 @@ async fn tfc_v1_real_service_loop_battery_event_needs_no_subscriber_and_uses_res
             publication.borrow().inactive.clone(),
         ] {
             let bytes = crate::service_status::encode_status_event(&view).unwrap();
-            println!(
-                "NATIVE_THERMAL_MUTATION_RESPONSE {}",
-                std::str::from_utf8(&bytes).unwrap()
-            );
+            emit_fixture_frame("publisher_projection", "publication", "statusEvent", &bytes);
         }
         let sent = rig.port.state.lock().unwrap().sent.clone();
         assert!(

@@ -956,6 +956,19 @@ impl BatteryUpdate {
 #[cfg(test)]
 mod observation_tests {
     use super::*;
+    // These snapshots are constructed in-process, without a peer or publisher.
+    fn emit_synthetic_fixture(raw: &[u8]) {
+        println!(
+            "OPENBLADE_FIXTURE_FRAME {}",
+            serde_json::json!({
+                "schemaVersion": 1,
+                "emitter": "synthetic_projection",
+                "operation": "syntheticProjection",
+                "method": "statusEvent",
+                "raw": std::str::from_utf8(raw).unwrap(),
+            })
+        );
+    }
     #[test]
     fn tfc_release_public_notice_preserves_private_owner_and_each_family_degradation() {
         use crate::service_status::PrivatePolicyFamily::{Battery, Thermal};
@@ -987,10 +1000,7 @@ mod observation_tests {
                 present
             );
             let bytes = crate::service_status::encode_status_event(&view).unwrap();
-            println!(
-                "NATIVE_THERMAL_MUTATION_RESPONSE {}",
-                std::str::from_utf8(&bytes).unwrap()
-            );
+            emit_synthetic_fixture(&bytes);
         }
         for remaining in [
             after.clone().private_policy_reconciling(Thermal),
@@ -1127,10 +1137,7 @@ mod observation_tests {
     }
     fn boundary_wire(snapshot: &Snapshot) -> serde_json::Value {
         let bytes = crate::service_status::encode_status_event(snapshot).unwrap();
-        println!(
-            "NATIVE_THERMAL_MUTATION_RESPONSE {}",
-            std::str::from_utf8(&bytes).unwrap()
-        );
+        emit_synthetic_fixture(&bytes);
         serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["status"].clone()
     }
     #[test]
