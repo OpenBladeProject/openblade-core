@@ -251,12 +251,17 @@ try {
         }
         $manifestPath = Join-Path $copy 'OpenBlade.Native.provenance.json'
         $original = [IO.File]::ReadAllBytes($manifestPath)
-        foreach ($property in @('sha256', 'unsignedSha256', 'sourceRevision', 'fileVersion', 'target', 'noticeSha256', 'sourceFingerprint')) {
+        foreach ($property in @('sha256', 'unsignedSha256', 'sourceRevision', 'fileVersion', 'target', 'noticeSha256', 'sourceFingerprint', 'resourceSha256')) {
             $changed = [Text.Encoding]::UTF8.GetString($original) | ConvertFrom-Json
             $changed.$property = 'wrong'
             [IO.File]::WriteAllText($manifestPath, ($changed | ConvertTo-Json -Depth 8))
             Assert-NativeThrows { Assert-OpenBladeNativePayload -Payload $copy -Repository $repository -BuildIdentity $identity } '*does not match*'
         }
+        [IO.File]::WriteAllBytes($manifestPath, $original)
+        $changed = [Text.Encoding]::UTF8.GetString($original) | ConvertFrom-Json
+        $changed.flags = @($changed.flags | Where-Object { $_ -cnotlike '--cfg=openblade_resource_fingerprint_*' })
+        [IO.File]::WriteAllText($manifestPath, ($changed | ConvertTo-Json -Depth 8))
+        Assert-NativeThrows { Assert-OpenBladeNativePayload -Payload $copy -Repository $repository -BuildIdentity $identity } '*does not match*'
         [IO.File]::WriteAllBytes($manifestPath, $original)
         $changed = [Text.Encoding]::UTF8.GetString($original) | ConvertFrom-Json
         $changed.unsignedSha256 = '0' * 64

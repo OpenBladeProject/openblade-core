@@ -185,6 +185,8 @@ function Assert-OpenBladeNativePayload {
         $manifest.staticCrt -ne $true -or $manifest.panic -cne 'unwind' -or
         $manifest.sourceFingerprint -cne $sourceFingerprint -or
         "--cfg=openblade_source_fingerprint_$sourceFingerprint" -cnotin @($manifest.flags) -or
+        $manifest.resourceSha256 -cnotmatch '\A[0-9a-f]{64}\z' -or
+        "--cfg=openblade_resource_fingerprint_$($manifest.resourceSha256)" -cnotin @($manifest.flags) -or
         $manifest.compiler[0] -notlike "rustc $pin *" -or
         ($manifest.imports -join ',') -cne ($pe.Imports -join ',') -or
         (ConvertTo-Json -InputObject @($manifest.inputs) -Compress) -cne (ConvertTo-Json -InputObject $inputs -Compress)) {
@@ -313,6 +315,11 @@ END
         [IO.File]::WriteAllText($resource, $resourceText, [Text.Encoding]::ASCII)
         & $resourceCompiler /nologo "/fo$resourceObject" $resource
         if ($LASTEXITCODE -ne 0) { throw 'Native version resource compilation failed.' }
+        # Cargo does not track the bytes behind a trailing linker-argument path.
+        # Bind this generated resource to the root crate without rebuilding its
+        # dependencies when only release identity changes.
+        $resourceHash = (Get-FileHash -LiteralPath $resourceObject -Algorithm SHA256).Hash.ToLowerInvariant()
+        $resourceFingerprintFlag = "--cfg=openblade_resource_fingerprint_$resourceHash"
         $env:CARGO_TARGET_DIR = $cargoCache.TargetDirectory
         $sourceFingerprint = Get-OpenBladeNativeSourceFingerprint -Repository $Repository
         $fingerprintFlag = "--cfg=openblade_source_fingerprint_$sourceFingerprint"
@@ -320,7 +327,7 @@ END
         $env:CARGO_ENCODED_RUSTFLAGS = $flags -join [char]31
         $env:RUSTFLAGS = $null
         $env:CARGO_INCREMENTAL = '0'
-        & cargo "+$pin" rustc --frozen --release -p openblade-ffi --lib --target x86_64-pc-windows-msvc -- -C "link-arg=$resourceObject"
+        & cargo "+$pin" rustc --frozen --release -p openblade-ffi --lib --target x86_64-pc-windows-msvc -- $resourceFingerprintFlag -C "link-arg=$resourceObject"
         if ($LASTEXITCODE -ne 0) { throw 'Native release build failed.' }
         $library = Join-Path $outputPath $script:OpenBladeNativeFileName
         Copy-Item -LiteralPath (Join-Path $env:CARGO_TARGET_DIR 'x86_64-pc-windows-msvc/release/openblade_ffi.dll') -Destination $library
@@ -353,8 +360,9 @@ Rust standard library: MIT OR Apache-2.0; notices follow (from the pinned toolch
             msvcVersion = $env:VCToolsVersion.TrimEnd('\'); windowsSdkVersion = $env:WindowsSDKVersion.TrimEnd('\')
             staticCrt = $true; panic = 'unwind'
             # Record reproducible arguments without a developer's absolute paths.
-            flags = @('-C target-feature=+crt-static', '-C link-arg=/Brepro', '--remap-path-prefix=<repository>=/openblade', '-C link-arg=<generated-version-resource>', $fingerprintFlag)
+            flags = @('-C target-feature=+crt-static', '-C link-arg=/Brepro', '--remap-path-prefix=<repository>=/openblade', '-C link-arg=<generated-version-resource>', $fingerprintFlag, $resourceFingerprintFlag)
             sourceFingerprint = $sourceFingerprint
+            resourceSha256 = $resourceHash
             inputs = $inputs; imports = $pe.Imports
             unsignedSha256 = $unsignedHash
             sha256 = $unsignedHash
