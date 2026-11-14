@@ -57,9 +57,13 @@ these 2022 controls. The signed carriers below establish reviewed provenance;
 their versions and image hashes are not static runtime allowlists. A fresh,
 independent `07/92` GET must establish a valid limiter state before each write.
 The one-byte `07/12` SET packs the enable flag in bit 7 and threshold in bits 0–6.
-A successful empty ACK or one exact requested byte is accepted, followed by
-independent readback. An ACK alone does not confirm the setting. A failed or
-uncertain operation pauses writes and reconciles read-only.
+A successful ACK may be empty or contain one returned-state byte; it need not
+echo the request. Only an independent GET of the exact requested raw value
+confirms the setting. If GET still returns the exact pre-write byte, OpenBlade
+allows up to nine reads, 250 ms apart, without repeating the SET. A different
+value, failed or invalid read, cancellation or exhausted confirmation window
+pauses writes and reconciles read-only. This is software confirmation tolerance;
+physical firmware latency has not been established on these models.
 
 | Model | Official package reviewed | Provenance and scope |
 | --- | --- | --- |

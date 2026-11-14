@@ -9,6 +9,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Offer all model-supported performance modes, including Custom and HyperBoost, on sufficient and limited external adapters. Preserve separate profiles, firmware power management and battery-drain notifications. ([#964](https://github.com/OSSBlade/openblade-core/pull/964))
 
+### Fixed
+
+- Avoid rejecting supported battery-setting replies and allow a short confirmation window on source-reviewed Blade models. ([#965](https://github.com/OSSBlade/openblade-core/pull/965))
+
 ## [0.61.1-nightly.114] - 2026-11-13
 
 ### Added
