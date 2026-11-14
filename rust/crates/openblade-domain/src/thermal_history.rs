@@ -211,6 +211,15 @@ fn rows_from(
             return Err(deny());
         }
         validate_json_members(line).map_err(|_| deny())?;
+        // Inspect optional-family shape before serde Option erases absent/null.
+        // Legacy absence remains valid; a battery payload requires fan_owner,
+        // with explicit null representing no owned fan.
+        let shape: Value = serde_json::from_slice(line).map_err(|_| deny())?;
+        if let Some(battery) = shape.get("battery") {
+            if !battery.is_object() || battery.get("fan_owner").is_none() {
+                return Err(deny());
+            }
+        }
         let entry: Entry = serde_json::from_slice(line).map_err(|_| deny())?;
         if let Some(v) = &entry.requested {
             v.validate()?;
@@ -506,9 +515,7 @@ pub fn recover(
             || cp.length != segment.len() as u64
             || cp.records != n
             || !handback_complete(&segment)?
-            || last
-                .as_ref()
-                .is_none_or(|e| !matches!(e.progress, 5 | 6 | 50 | 51))
+            || last.as_ref().is_none_or(|e| !settled(e.progress))
             || f != [
                 digest(&old),
                 digest(&new),
@@ -555,9 +562,7 @@ pub fn inspect_prefix(
             || cp.length != segment.len() as u64
             || cp.records != n
             || !handback_complete(&segment)?
-            || last
-                .as_ref()
-                .is_none_or(|e| !matches!(e.progress, 5 | 6 | 50 | 51))
+            || last.as_ref().is_none_or(|e| !settled(e.progress))
         {
             return Err(deny());
         }
@@ -651,11 +656,7 @@ pub fn reserve(
     if !handback_complete(&view.tail)? {
         return Err(capacity_refusal());
     }
-    if last
-        .as_ref()
-        .is_none_or(|e| !matches!(e.progress, 5 | 6 | 50 | 51))
-        || !handback_complete(&view.tail)?
-    {
+    if last.as_ref().is_none_or(|e| !settled(e.progress)) || !handback_complete(&view.tail)? {
         return Err(deny());
     }
     let seq = view.sequence.checked_add(1).ok_or_else(deny)?;
@@ -887,5 +888,172 @@ mod tests {
         b.files.borrow_mut().insert(ACTIVE.into(), prepared.clone());
         assert!(reserve(&b, Some(&prepared), SEGMENT, |_, _| Ok(())).is_err());
         assert_eq!(b.files.borrow().len(), 1);
+    }
+    #[test]
+    fn battery_correction_complete_rehashed_vectors_agree_for_active_and_archived_history() {
+        let v: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../tools/openblade-windows-host/tests/data/battery-history-v1.json"
+        ))
+        .unwrap();
+        for case in v["corrections"].as_array().unwrap() {
+            let raw = case["journal"].as_str().unwrap().as_bytes();
+            let valid = case["valid"].as_bool().unwrap();
+            assert_eq!(digest(raw), case["sha256"].as_str().unwrap());
+            for rolled in [false, true] {
+                let raw = if rolled {
+                    case["archivedJournal"].as_str().unwrap().as_bytes()
+                } else {
+                    raw
+                };
+                let b = Memory::default();
+                let physical = if rolled {
+                    let cp = Checkpoint {
+                        sequence: 1,
+                        previous: "0".repeat(64),
+                        segment: digest(raw),
+                        length: raw.len() as u64,
+                        records: raw.iter().filter(|&&c| c == b'\n').count() as u64,
+                    }
+                    .bytes();
+                    let empty = envelope(1, &digest(&cp), &[]);
+                    let roll = lines(
+                        "OpenBlade.ThermalRoll.v1",
+                        &[digest(raw), digest(&empty), digest(&cp), CONTRACT.into()],
+                    );
+                    for (n, bytes) in [
+                        ("segment", raw.to_vec()),
+                        ("checkpoint", cp.clone()),
+                        ("roll", roll),
+                    ] {
+                        b.files.borrow_mut().insert(name(n, 1), bytes);
+                    }
+                    empty
+                } else {
+                    raw.to_vec()
+                };
+                b.files.borrow_mut().insert(ACTIVE.into(), physical.clone());
+                let before = b.files.borrow().clone();
+                let view = active(Some(physical)).unwrap();
+                let result = inspect(&b, &view, |e, _| {
+                    assert_eq!(e.owner, "7".repeat(64));
+                    Ok(())
+                });
+                assert_eq!(result.is_ok(), valid, "{} rolled={rolled}", case["name"]);
+                assert_eq!(
+                    *b.files.borrow(),
+                    before,
+                    "rejection must not rewrite history"
+                );
+            }
+        }
+    }
+    #[test]
+    fn battery_correction_completed_terminals_roll_and_recover_without_settling_pending_or_owned_rows()
+     {
+        let v: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../tools/openblade-windows-host/tests/data/battery-history-v1.json"
+        ))
+        .unwrap();
+        let confirmed = v["standalone"].as_str().unwrap().as_bytes().to_vec();
+        let mut entry: Entry =
+            serde_json::from_slice(confirmed.split(|b| *b == b'\n').next().unwrap()).unwrap();
+        let battery = entry.battery.as_mut().unwrap();
+        battery.baseline = battery.target;
+        entry.intent = battery.hash().unwrap();
+        let mut unchanged = Vec::new();
+        for progress in [0, 63] {
+            entry.progress = progress;
+            unchanged.extend(serde_json::to_vec(&entry).unwrap());
+            unchanged.push(b'\n');
+        }
+        for raw in [&confirmed, &unchanged] {
+            assert!(handback_complete(raw).unwrap());
+            for interrupted in [false, true] {
+                let b = Memory::default();
+                b.files.borrow_mut().insert(ACTIVE.into(), raw.to_vec());
+                if interrupted {
+                    b.cut.set(6);
+                }
+                let result = reserve(&b, Some(raw), SEGMENT, |_, _| Ok(()));
+                if interrupted {
+                    assert!(result.is_err());
+                    assert_eq!(b.files.borrow().get(ACTIVE).unwrap(), raw);
+                    b.cut.set(0);
+                    let view =
+                        recover(&b, active(Some(raw.to_vec())).unwrap(), |_, _| Ok(())).unwrap();
+                    inspect(&b, &view, |_, _| Ok(())).unwrap();
+                } else {
+                    assert!(result.unwrap().is_empty());
+                    inspect(
+                        &b,
+                        &active(b.read(ACTIVE, SEGMENT + 2048).unwrap()).unwrap(),
+                        |_, _| Ok(()),
+                    )
+                    .unwrap();
+                }
+                assert_eq!(b.files.borrow().get(&name("segment", 1)).unwrap(), raw);
+                let cp = Checkpoint::parse(b.files.borrow().get(&name("checkpoint", 1)).unwrap())
+                    .unwrap();
+                assert_eq!(cp.segment, digest(raw));
+                assert_eq!(cp.length, raw.len() as u64);
+                assert_eq!(
+                    b.files.borrow().get(ACTIVE).unwrap(),
+                    &envelope(1, &digest(&cp.bytes()), &[])
+                );
+            }
+        }
+        let owned = v["interleaved"]
+            .as_str()
+            .unwrap()
+            .lines()
+            .take_while(|line| !line.contains("\"battery\":"))
+            .map(|line| format!("{line}\n"))
+            .collect::<String>()
+            .into_bytes();
+        for raw in [
+            confirmed
+                .split_inclusive(|b| *b == b'\n')
+                .take(2)
+                .flatten()
+                .copied()
+                .collect::<Vec<_>>(),
+            confirmed
+                .split_inclusive(|b| *b == b'\n')
+                .take(3)
+                .flatten()
+                .copied()
+                .collect(),
+            owned,
+        ] {
+            let b = Memory::default();
+            b.files.borrow_mut().insert(ACTIVE.into(), raw.clone());
+            assert!(reserve(&b, Some(&raw), SEGMENT, |_, _| Ok(())).is_err());
+            assert_eq!(b.files.borrow().len(), 1);
+            assert_eq!(b.files.borrow().get(ACTIVE).unwrap(), &raw);
+            let cp = Checkpoint {
+                sequence: 1,
+                previous: "0".repeat(64),
+                segment: digest(&raw),
+                length: raw.len() as u64,
+                records: raw.iter().filter(|&&c| c == b'\n').count() as u64,
+            }
+            .bytes();
+            let empty = envelope(1, &digest(&cp), &[]);
+            let intent = lines(
+                "OpenBlade.ThermalRoll.v1",
+                &[digest(&raw), digest(&empty), digest(&cp), CONTRACT.into()],
+            );
+            for (n, bytes) in [
+                ("segment", raw.clone()),
+                ("checkpoint", cp),
+                ("roll", intent),
+            ] {
+                b.files.borrow_mut().insert(name(n, 1), bytes);
+            }
+            let before = b.files.borrow().clone();
+            assert!(recover(&b, active(Some(raw)).unwrap(), |_, _| Ok(())).is_err());
+            assert!(inspect(&b, &active(Some(empty)).unwrap(), |_, _| Ok(())).is_err());
+            assert_eq!(*b.files.borrow(), before);
+        }
     }
 }

@@ -983,8 +983,21 @@ impl Snapshot {
                 state.insert("battery".into(),serde_json::json!({"protectionEnabled":raw!=0x50,"chargeLimitPercent":if raw==0x50{None}else{Some(raw&0x7f)},"temporaryFullCharge":temporary}));
             }
         }
-        self.message = message.into();
+        // Battery is one diagnostic contributor. Preserve source, fan cleanup,
+        // thermal expiry and shared uncertainty reasons from the latest snapshot.
+        if !message.is_empty() && !self.message.contains(message) {
+            if !self.message.is_empty() {
+                self.message.push(' ');
+            }
+            self.message.push_str(message);
+        }
         self.writes_blocked = true;
+        self
+    }
+    pub(crate) fn without_battery_observation(mut self) -> Self {
+        if let Some(state) = &mut self.confirmed_state {
+            state.insert("battery".into(), Value::Null);
+        }
         self
     }
     pub(crate) fn bind_private_user(mut self, sid: &str) -> Self {
@@ -1103,6 +1116,7 @@ impl Snapshot {
     }
     pub(crate) fn private_policy_unavailable(&self) -> Self {
         let mut value = self.redact_private();
+        value.message = self.message.clone();
         value.message.push_str(" Saved private policy is unavailable; writes are blocked pending configuration reconciliation.");
         value
     }

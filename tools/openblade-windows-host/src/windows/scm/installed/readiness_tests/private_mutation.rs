@@ -40,6 +40,7 @@ impl PrivateRoot {
                 || matches!(
                     leaf,
                     "protected-storage"
+                        | "battery-corrections"
                         | "owner-history"
                         | "owner-journal"
                         | "owner-journal-foreign"
@@ -972,4 +973,102 @@ fn battery_v1_protected_history_requires_original_producer_and_retains_interleav
         .unwrap(),
         released
     );
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[test]
+fn battery_correction_protected_complete_rehashed_active_and_archived_inputs() {
+    let vector: Value = serde_json::from_str(include_str!(
+        "../../../../../tests/data/battery-history-v1.json"
+    ))
+    .unwrap();
+    let machine = PrivateRoot::open("battery-corrections");
+    let mut owner = machine.owner().unwrap();
+    owner.activate_injected(reservation('7')).unwrap();
+    owner.retire_active().unwrap();
+    owner.battery_producer_fixture = Some(Arc::new(|original| {
+        if original.nonce == "7".repeat(64)
+            && original.epoch == "7".repeat(32)
+            && original.installation == "1".repeat(32)
+            && original.artifact == format!("{}-service", "3".repeat(64))
+        {
+            Ok(())
+        } else {
+            Err(io::ErrorKind::PermissionDenied.into())
+        }
+    }));
+    for case in vector["corrections"].as_array().unwrap() {
+        for rolled in [false, true] {
+            let raw = case[if rolled { "archivedJournal" } else { "journal" }]
+                .as_str()
+                .unwrap()
+                .as_bytes();
+            let journal = machine.path.join("thermal-mutation.journal");
+            let physical = if rolled {
+                let cp = crate::thermal_history::Checkpoint {
+                    sequence: 1,
+                    previous: "0".repeat(64),
+                    segment: crate::thermal_history::digest(raw),
+                    length: raw.len() as u64,
+                    records: raw.iter().filter(|&&c| c == b'\n').count() as u64,
+                }
+                .bytes();
+                let empty =
+                    crate::thermal_history::envelope(1, &crate::thermal_history::digest(&cp), &[]);
+                let roll = format!(
+                    "OpenBlade.ThermalRoll.v1\n{}\n{}\n{}\n{}\n",
+                    crate::thermal_history::digest(raw),
+                    crate::thermal_history::digest(&empty),
+                    crate::thermal_history::digest(&cp),
+                    crate::thermal_history::CONTRACT
+                )
+                .into_bytes();
+                for (name, bytes) in [
+                    ("segment", raw.to_vec()),
+                    ("checkpoint", cp),
+                    ("roll", roll),
+                ] {
+                    std::fs::write(
+                        machine
+                            .path
+                            .join(format!("thermal-history/{name}-00000000000000000001.bin")),
+                        bytes,
+                    )
+                    .unwrap();
+                }
+                empty
+            } else {
+                raw.to_vec()
+            };
+            std::fs::write(&journal, &physical).unwrap();
+            let before = std::fs::read(&journal).unwrap();
+            let result = owner.journal_read(false);
+            assert_eq!(
+                result.is_ok(),
+                case["valid"].as_bool().unwrap(),
+                "{} rolled={rolled}",
+                case["name"]
+            );
+            assert_eq!(std::fs::read(&journal).unwrap(), before);
+            if rolled {
+                assert_eq!(
+                    std::fs::read(
+                        machine
+                            .path
+                            .join("thermal-history/segment-00000000000000000001.bin")
+                    )
+                    .unwrap(),
+                    raw
+                );
+                for name in ["segment", "checkpoint", "roll"] {
+                    std::fs::remove_file(
+                        machine
+                            .path
+                            .join(format!("thermal-history/{name}-00000000000000000001.bin")),
+                    )
+                    .unwrap();
+                }
+            }
+        }
+    }
 }

@@ -463,19 +463,13 @@ impl StatusSource for GuardedStatus {
             };
             if let Some(battery) = request.battery_request() {
                 let request_id = request.header().1.to_owned();
-                let status = publisher.borrow().active.clone();
-                let (outcome, status) = runtime
-                    .apply_battery(
-                        mailbox.clone(),
-                        caller,
-                        sid,
-                        request_id,
-                        battery,
-                        deadline,
-                        status,
-                    )
+                let (outcome, update) = runtime
+                    .apply_battery(mailbox.clone(), caller, sid, request_id, battery, deadline)
                     .await?;
-                if let Some(mut status) = status {
+                if let Some(update) = update {
+                    // Only the battery/intent result is rebased after the gate.
+                    // Preserve current unrelated facts, diagnostics and witness age.
+                    let mut status = update.apply(publisher.borrow().active.clone());
                     status.set_observation_revision(
                         publisher
                             .borrow()

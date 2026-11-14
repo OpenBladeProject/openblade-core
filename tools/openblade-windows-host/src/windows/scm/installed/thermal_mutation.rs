@@ -104,6 +104,10 @@ pub(super) struct Runtime {
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     fan_pending: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     gate: Rc<tokio::sync::Mutex<()>>,
+    // Public battery history is bounded independently of request/user intent.
+    // Only independent reads update its timestamp; sibling publications cannot.
+    battery_observation: Arc<Mutex<Option<(u8, Option<bool>, Instant)>>>,
+    battery_source: Arc<std::sync::atomic::AtomicU8>,
     fatal: Arc<Mutex<Option<&'static str>>>,
     #[cfg(test)]
     pub(super) entered: Rc<std::cell::Cell<u64>>,
@@ -143,6 +147,8 @@ impl Runtime {
             fan_owner: Rc::default(),
             fan_pending: Rc::default(),
             gate: Rc::default(),
+            battery_observation: Arc::default(),
+            battery_source: Arc::new(std::sync::atomic::AtomicU8::new(3)),
             fatal: mailbox.fatal_evidence(),
             #[cfg(test)]
             entered: Rc::default(),
@@ -194,6 +200,8 @@ impl Runtime {
             fan_owner: Rc::default(),
             fan_pending: Rc::default(),
             gate: Rc::default(),
+            battery_observation: Arc::default(),
+            battery_source: Arc::new(std::sync::atomic::AtomicU8::new(3)),
             fatal: mailbox.fatal_evidence(),
             #[cfg(test)]
             entered: Rc::default(),

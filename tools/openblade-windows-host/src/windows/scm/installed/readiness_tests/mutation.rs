@@ -433,7 +433,8 @@ impl Rig {
         let port = Fixture::new();
         let custody = Custody::new(&port);
         let persisted = files.clone();
-        port.state.lock().unwrap().before_write = Some(Arc::new(move |number| {
+        let thermal_writes = AtomicUsize::new(0);
+        port.state.lock().unwrap().before_write = Some(Arc::new(move |_number| {
             // Battery overrides are memory-scoped, not manual-overrides fields.
             let journal = persisted.read("thermal-mutation.journal").unwrap().unwrap();
             let last = journal
@@ -452,7 +453,14 @@ impl Rig {
                 ));
             } else {
                 assert!(persisted.read("manual-overrides.json").unwrap().is_some());
-                assert_eq!(entry["progress"], if number % 2 == 1 { 1 } else { 3 });
+                assert_eq!(
+                    entry["progress"],
+                    if thermal_writes.fetch_add(1, Ordering::AcqRel) % 2 == 0 {
+                        1
+                    } else {
+                        3
+                    }
+                );
             }
             assert_eq!(entry["user_sid"], SID);
         }));
@@ -635,12 +643,8 @@ async fn installed_dispatcher_direct_pair_persists_before_applied_and_retains_pu
     let projected = serde_json::to_value(projected).unwrap();
     assert_eq!(projected["performanceOverride"]["value"], 1);
     assert_eq!(projected["desiredState"]["performance"]["value"], 1);
-    assert!(
-        projected["message"]
-            .as_str()
-            .unwrap()
-            .contains("Saved performance policy")
-    );
+    assert_eq!(projected["confirmedState"]["performance"], 1);
+    assert_eq!(projected["writesBlocked"], true);
     drop(source);
     assert_eq!(rig.custody.activations.load(Ordering::Acquire), 1);
     rig.stop().await;
@@ -4850,4 +4854,406 @@ async fn battery_v1_canceled_possible_submission_keeps_global_fence_and_original
     assert!(result.is_err());
     assert_eq!(r.port.state.lock().unwrap().writes, writes + 1);
     assert!(r.storage.outstanding_fan());
+}
+
+// Corrective-stage regressions: all use the actual dispatcher/Reader with memory suppliers.
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_correction_saved_limits_allow_direct_off_and_supported_replacement() {
+    for saved in [85, 90] {
+        for protection in [true, false] {
+            for replacement in [false, true] {
+                let files = MemoryFiles::default();
+                files.profiles(1);
+                let mut profile = files.document("profiles.json");
+                profile["profiles"]["batteryPolicy"]["chargeLimitPercent"] = json!(saved);
+                profile["profiles"]["pluggedIn"]["batteryProtectionEnabled"] = json!(protection);
+                files.put("profiles.json", profile);
+                let mut commit = files.document("battery-configuration.commit.json");
+                commit["profileSha256"] = json!(crate::configuration::digest_hex(
+                    &files.read("profiles.json").unwrap().unwrap()
+                ));
+                files.put("battery-configuration.commit.json", commit);
+                let r = Rig::new(files);
+                r.get().await;
+                let original = r.files.read("profiles.json").unwrap();
+                let request = if replacement {
+                    battery_request(301, "setBatteryPolicy", json!({"chargeLimitPercent":70}))
+                } else {
+                    battery_request(301, "setBatteryProtection", json!(false))
+                };
+                let result = r.request(request).await;
+                assert_eq!(
+                    result["result"]["status"], 1,
+                    "saved={saved} protection={protection} replacement={replacement}: {result}"
+                );
+                let desired = r.storage.desired_battery(0).unwrap();
+                assert_eq!(desired.limit, if replacement { 70 } else { saved });
+                assert_eq!(desired.protection, replacement && protection);
+                assert_eq!(
+                    r.port.state.lock().unwrap().battery_raw,
+                    if replacement && protection {
+                        0xc6
+                    } else {
+                        0x50
+                    }
+                );
+                assert_eq!(r.files.read("profiles.json").unwrap(), original);
+                let status = r.get().await;
+                assert_eq!(
+                    status["status"]["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"],
+                    desired.limit
+                );
+                assert_eq!(
+                    status["status"]["confirmedState"]["battery"]["chargeLimitPercent"],
+                    if desired.protection {
+                        json!(70)
+                    } else {
+                        Value::Null
+                    }
+                );
+                let writes = r.port.state.lock().unwrap().writes;
+                let rejected = r
+                    .request(battery_request(
+                        302,
+                        "setBatteryPolicy",
+                        json!({"chargeLimitPercent":saved}),
+                    ))
+                    .await;
+                assert_eq!(rejected["result"]["status"], 2);
+                assert_eq!(r.port.state.lock().unwrap().writes, writes);
+                assert_eq!(r.storage.desired_battery(0).unwrap(), desired);
+                if !replacement {
+                    assert_eq!(
+                        r.request(battery_request(303, "setBatteryProtection", json!(true)))
+                            .await["result"]["status"],
+                        2
+                    );
+                    assert_eq!(r.port.state.lock().unwrap().writes, writes);
+                }
+                r.stop().await;
+            }
+        }
+    }
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_correction_pending_history_expires_without_hiding_shared_fence() {
+    let r = fan_rig(0, 0);
+    r.get().await;
+    assert_eq!(
+        r.request(fan_request(310, Some(1), 3700)).await["result"]["status"],
+        1
+    );
+    r.port.state.lock().unwrap().battery_bad_ack = true;
+    assert_eq!(
+        r.request(battery_request(311, "setBatteryProtection", json!(false)))
+            .await["result"]["status"],
+        2
+    );
+    let reason = r.storage.pending_reason().unwrap();
+    let status = r.get().await;
+    assert!(
+        status["status"]["message"]
+            .as_str()
+            .unwrap()
+            .contains(&reason),
+        "{status}"
+    );
+    assert_eq!(
+        status["status"]["confirmedState"]["battery"]["chargeLimitPercent"],
+        80
+    );
+    assert!(r.storage.outstanding_fan());
+    let writes = r.port.state.lock().unwrap().writes;
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(6)).await;
+    let later = r.get().await;
+    assert!(
+        later["status"]["confirmedState"]["battery"].is_null(),
+        "expired battery history reintroduced: {later}"
+    );
+    assert!(
+        later["status"]["message"]
+            .as_str()
+            .unwrap()
+            .contains(&reason)
+    );
+    assert_eq!(r.port.state.lock().unwrap().writes, writes);
+    assert!(r.storage.pending());
+    assert!(r.source.lock().await.drain().await.is_err());
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_correction_recoverable_profile_failure_keeps_status_and_fatal_class() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    assert_eq!(
+        r.request(battery_request(320, "setBatteryProtection", json!(false)))
+            .await["result"]["status"],
+        1
+    );
+    r.files.put("profiles.json", json!({"schemaVersion":25}));
+    let result = r.source.lock().await.snapshot(USER, Instant::now()).await;
+    assert!(
+        result.is_ok(),
+        "recoverable aggregate failure escaped: {:?}",
+        result.err()
+    );
+    let value = serde_json::to_value(result.unwrap()).unwrap();
+    assert_eq!(
+        value["confirmedState"]["battery"]["protectionEnabled"],
+        false
+    );
+    assert_eq!(value["writesBlocked"], true);
+    r.custody.integrity_lost.store(true, Ordering::Release);
+    let error = r
+        .source
+        .lock()
+        .await
+        .snapshot(USER, Instant::now())
+        .await
+        .err()
+        .unwrap();
+    assert!(crate::installed::readiness::thermal_mutation::is_fatal_admission(&error));
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_correction_first_committed_intent_survives_final_authority_loss() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    let custody = r.custody.clone();
+    r.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+        custody.fresh_refuse.store(true, Ordering::Release)
+    }));
+    let result = r
+        .request(battery_request(
+            330,
+            "setBatteryPolicy",
+            json!({"chargeLimitPercent":70}),
+        ))
+        .await;
+    assert_eq!(result["result"]["status"], 2);
+    assert_eq!(fan_rows(&r).last().unwrap()["progress"], 62);
+    assert_eq!(r.storage.desired_battery(0).unwrap().limit, 70);
+    r.custody.fresh_refuse.store(false, Ordering::Release);
+    let status = r.get().await;
+    assert_eq!(
+        status["status"]["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"], 70,
+        "{status}"
+    );
+    assert_eq!(r.port.state.lock().unwrap().writes, 1);
+    let foreign = r.request_as(json!({"operation":"getStatus","version":80,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000331"}), USER, "S-1-5-21-111-222-333-1002").await;
+    assert_ne!(
+        foreign["status"]["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"],
+        70
+    );
+    r.port.state.lock().unwrap().on_mutation_retired = None;
+    r.stop().await;
+    let reopened = Storage::open(Box::new(r.files.clone()), SID).unwrap();
+    assert_eq!(
+        reopened.desired_battery(0).unwrap().limit,
+        80,
+        "process override must not become durable configuration"
+    );
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_correction_queued_result_preserves_latest_thermal_metadata_and_witness() {
+    use std::future::Future;
+    for expire in [false, true] {
+        let r = Rig::new(MemoryFiles::default());
+        fresh_observe(&r).await;
+        let release = Arc::new(AtomicBool::new(false));
+        r.port.state.lock().unwrap().held_write = Some((1, release.clone()));
+        let a = r.set(240, value(1, 1));
+        tokio::pin!(a);
+        let entered = async {
+            while r.port.state.lock().unwrap().writes != 1 {
+                tokio::task::yield_now().await;
+            }
+        };
+        tokio::select! {_=&mut a=>panic!("held performance finished"),v=tokio::time::timeout(Duration::from_secs(2),entered)=>v.unwrap()}
+        let request = crate::service_status::StatusRequest::decode(
+            &serde_json::to_vec(&battery_request(341, "setBatteryProtection", json!(false)))
+                .unwrap(),
+        )
+        .unwrap();
+        let mut b = r.source.lock().await.mutate(
+            USER,
+            SID.into(),
+            request,
+            Instant::now() + Duration::from_secs(30),
+        );
+        std::future::poll_fn(|cx| {
+            assert!(b.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        release.store(true, Ordering::Release);
+        assert_eq!(a.await["result"]["status"], 1);
+        if expire {
+            r.reader.expire_for_tests();
+            r.metadata.store(1, Ordering::Release);
+            tokio::time::pause();
+            tokio::time::advance(Duration::from_secs(2)).await;
+            r.source.lock().await.refresh_publications().await.unwrap();
+            tokio::time::resume();
+        }
+        let before = r
+            .source
+            .lock()
+            .await
+            .publications()
+            .unwrap()
+            .borrow()
+            .active
+            .clone();
+        let witness = r.reader.last_completed_for_tests();
+        let (outcome, published) = b.await.unwrap();
+        assert_eq!(outcome.status, 1);
+        let after = serde_json::to_value(published.unwrap()).unwrap();
+        let before = serde_json::to_value(before).unwrap();
+        assert_eq!(
+            after["confirmedState"]["performance"], before["confirmedState"]["performance"],
+            "{after}"
+        );
+        assert_eq!(after["activePowerSource"], before["activePowerSource"]);
+        if expire {
+            assert!(
+                after["confirmedState"].get("performance").is_none()
+                    || after["confirmedState"]["performance"].is_null()
+            );
+        }
+        assert_eq!(after["performanceOverride"], before["performanceOverride"]);
+        assert_eq!(
+            after["desiredState"]["performance"],
+            before["desiredState"]["performance"]
+        );
+        assert!(after["revision"].as_u64().unwrap() > before["revision"].as_u64().unwrap());
+        assert_eq!(r.reader.last_completed_for_tests(), witness);
+        assert_eq!(r.port.state.lock().unwrap().writes, 3);
+        r.stop().await;
+    }
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_correction_both_decorator_slots_preserve_fatal_and_recoverable_contract() {
+    for slot in [0, 1] {
+        for fatal in [false, true] {
+            let r = Rig::new(MemoryFiles::default());
+            r.get().await;
+            let base = r
+                .source
+                .lock()
+                .await
+                .publications()
+                .unwrap()
+                .borrow()
+                .active
+                .clone();
+            let callback: Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>> = Rc::new(move |_| {
+                if fatal {
+                    Err(
+                        crate::installed::readiness::thermal_mutation::fatal_admission(
+                            "injected decorator custody loss",
+                        ),
+                    )
+                } else {
+                    Err(io::ErrorKind::Unsupported.into())
+                }
+            });
+            if slot == 0 {
+                r.reader.retain_policy(callback);
+            } else {
+                r.reader.retain_battery_policy(callback);
+            }
+            let result = r.reader.current_policy(base);
+            if fatal {
+                assert!(
+                    crate::installed::readiness::thermal_mutation::is_fatal_admission(
+                        &result.err().unwrap()
+                    )
+                );
+            } else {
+                let result = serde_json::to_value(result.unwrap()).unwrap();
+                assert_eq!(result["writesBlocked"], true);
+                assert!(
+                    result["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("private policy is unavailable")
+                );
+            }
+            r.stop().await;
+        }
+    }
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_correction_sibling_publication_does_not_extend_battery_history() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    assert_eq!(
+        r.request(battery_request(
+            350,
+            "setBatteryPolicy",
+            json!({"chargeLimitPercent":70})
+        ))
+        .await["result"]["status"],
+        1
+    );
+    tokio::time::sleep(Duration::from_millis(4000)).await;
+    assert_eq!(r.set(245, value(1, 1)).await["result"]["status"], 1);
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    let status = r.get().await;
+    assert_eq!(status["status"]["confirmedState"]["performance"], 1);
+    assert!(
+        status["status"]["confirmedState"]["battery"].is_null(),
+        "sibling thermal timestamp extended battery history: {status}"
+    );
+    assert_eq!(
+        status["status"]["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"],
+        70
+    );
+    r.stop().await;
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_correction_preflight_refusal_preserves_original_bounded_history() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    assert_eq!(
+        r.request(battery_request(
+            360,
+            "setBatteryPolicy",
+            json!({"chargeLimitPercent":70})
+        ))
+        .await["result"]["status"],
+        1
+    );
+    r.port.exhaust();
+    assert_eq!(
+        r.request(battery_request(361, "setBatteryProtection", json!(false)))
+            .await["result"]["status"],
+        2
+    );
+    let status = r.get().await;
+    assert_eq!(
+        status["status"]["confirmedState"]["battery"]["chargeLimitPercent"], 70,
+        "{status}"
+    );
+    assert_eq!(
+        status["status"]["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"],
+        70
+    );
+    assert_eq!(r.port.state.lock().unwrap().writes, 1);
+    r.stop().await;
 }

@@ -12,10 +12,10 @@ struct BatteryPermit {
     session: u32,
     proof: ReadAdmission,
     record: Mutex<Option<BatteryRecord>>,
-    observation: Mutex<Option<(u8, Option<bool>)>>,
+    observation: Arc<Mutex<Option<(u8, Option<bool>, Instant)>>>,
     prepared: AtomicBool,
     confirmed: AtomicBool,
-    source: std::sync::atomic::AtomicU8,
+    source: Arc<std::sync::atomic::AtomicU8>,
     cause: Mutex<String>,
     fatal: Arc<Mutex<Option<&'static str>>>,
 }
@@ -42,6 +42,15 @@ impl BatteryPermit {
                 progress,
             })
             .inspect_err(|e| remember_failure(&self.fatal, e))
+    }
+    fn historical_observation(&self) -> io::Result<Option<(u8, Option<bool>)>> {
+        let observation = *self.observation.lock().map_err(|_| io::ErrorKind::Other)?;
+        Ok(observation
+            .filter(|(_, _, at)| {
+                Instant::now().saturating_duration_since(*at)
+                    < super::super::mailbox_read::RETENTION_WINDOW
+            })
+            .map(|(raw, temporary, _)| (raw, temporary)))
     }
     fn reason(&self, s: &str) {
         if let Ok(mut v) = self.cause.lock() {
@@ -99,6 +108,14 @@ impl Permit for BatteryPermit {
             self.reason("Temporary full charge is active or unknown; independent readback is required before policy changes.");
             return Ok(None);
         }
+        // A newly supplied limit must be an admitted choice even while Off;
+        // generic stored provenance is not permission for a new hardware target.
+        if matches!(&self.requested, Request::SetBatteryPolicy { value }
+            if !openblade_protocol::battery::admitted_limit(value.charge_limit_percent))
+        {
+            self.reason("The requested limit is outside exact0581 admitted values.");
+            return Ok(None);
+        }
         let desired = configured.requested(&self.requested);
         let Some(target) = desired.raw() else {
             self.reason("The configured limit is outside exact0581 admitted values.");
@@ -143,7 +160,7 @@ impl Permit for BatteryPermit {
     }
     fn observe_battery(&self, raw: u8, temporary: Option<bool>) {
         if let Ok(mut v) = self.observation.lock() {
-            *v = Some((raw, temporary));
+            *v = Some((raw, temporary, Instant::now()));
         }
     }
     fn failed(&self, e: &io::Error) {
@@ -179,8 +196,7 @@ impl Runtime {
         request: String,
         requested: Request,
         deadline: Instant,
-        status: Snapshot,
-    ) -> io::Result<(Outcome, Option<Snapshot>)> {
+    ) -> io::Result<(Outcome, Option<BatteryUpdate>)> {
         let _serial = self.gate.lock().await;
         verify_retained_failure(&self.fatal)?;
         if caller.logon != Logon::Interactive
@@ -230,13 +246,38 @@ impl Runtime {
             session: caller.session,
             proof,
             record: Mutex::new(None),
-            observation: Mutex::new(None),
+            observation: self.battery_observation.clone(),
             prepared: AtomicBool::new(false),
             confirmed: AtomicBool::new(false),
-            source: std::sync::atomic::AtomicU8::new(3),
+            source: self.battery_source.clone(),
             cause: Mutex::new("Battery operation was not confirmed; no success is claimed.".into()),
             fatal: self.fatal.clone(),
         });
+        // Register before worker submission. Retirement or caller cancellation
+        // must not discard a committed process-scoped override. This callback
+        // reads current storage under fresh read-only proof, never grants writes.
+        let retained = permit.clone();
+        let policy_sid = sid.clone();
+        reader.retain_battery_policy(Rc::new(move |base| {
+            verify_retained_failure(&retained.fatal)?;
+            retained.fresh.verify_health()?;
+            // Never inherit a battery field cached with a newer thermal witness.
+            let base = base.without_battery_observation();
+            if retained.fresh.authorize() != Some(proof) { return Ok(base); }
+            let current = base.thermal_power_source();
+            let source = if (0..=2).contains(&current) { current as u8 }
+                else { retained.source.load(Ordering::Acquire) };
+            if source > 2 { return Ok(base); }
+            let observation = retained.historical_observation()?;
+            let message = if retained.storage.pending() { retained.storage.pending_reason()? }
+                else if observation.is_some() { "Last independently read battery policy retained; no fresh battery read is confirmed. New writes require fresh admission.".into() }
+                else { "Last battery observation expired or unavailable; new writes require fresh admission.".into() };
+            let public = base.battery_projection(None, observation, &message);
+            super::super::mailbox_read::project_private_policy(public, |base| {
+                let desired = retained.storage.desired_battery(source)?;
+                Ok(base.battery_projection(Some(desired), None, "").bind_private_user(&policy_sid))
+            })
+        }));
         let result = reader.mutate(permit.clone(), deadline).await;
         verify_retained_failure(&self.fatal)?;
         permit.fresh.verify_health()?;
@@ -271,53 +312,34 @@ impl Runtime {
                     .clone(),
             )
         };
-        let observation = *permit
-            .observation
-            .lock()
-            .map_err(|_| io::ErrorKind::Other)?;
         let source = permit.source.load(Ordering::Acquire);
         let desired = if source < 3 {
             Some(permit.storage.desired_battery(source)?)
         } else {
             None
         };
-        let snapshot = status
-            .thermal_profiles(permit.storage.profiles()?)?
-            .battery_projection(desired, observation, &outcome.message)
-            .bind_private_user(&sid);
-        // Retain a second policy decorator, preserving the existing fan/performance
-        // projection and original fan cleanup provenance across battery requests.
-        let retained = permit.clone();
-        let policy_sid = sid.clone();
-        reader.retain_battery_policy(Rc::new(move |base| {
-            verify_retained_failure(&retained.fatal)?;
-            let current = base.thermal_power_source();
-            if retained.fresh.authorize() != Some(proof) {
-                return Ok(base);
-            }
-            // Unknown coarse metadata does not erase a known configured override.
-            // The retained source scopes intent only, never grants a fresh write.
-            let source = if (0..=2).contains(&current) {
-                current as u8
-            } else {
-                source
-            };
-            if source > 2 {
-                return Ok(base);
-            }
-            let desired = retained.storage.desired_battery(source)?;
-            let observation = *retained
-                .observation
-                .lock()
-                .map_err(|_| io::ErrorKind::Other)?;
-            Ok(base
-                .battery_projection(
-                    Some(desired),
-                    observation,
-                    "Last independently read battery policy; new writes require fresh admission.",
-                )
-                .bind_private_user(&policy_sid))
-        }));
-        Ok((outcome, Some(snapshot)))
+        let update = BatteryUpdate {
+            desired,
+            observation: permit.historical_observation()?,
+            message: outcome.message.clone(),
+            sid,
+        };
+        Ok((outcome, Some(update)))
+    }
+}
+
+// A battery-only delta; no pre-gate thermal snapshot or witness crosses the await.
+pub(in super::super) struct BatteryUpdate {
+    desired: Option<openblade_domain::battery_history::Desired>,
+    observation: Option<(u8, Option<bool>)>,
+    message: String,
+    sid: String,
+}
+impl BatteryUpdate {
+    pub(in super::super) fn apply(self, latest: Snapshot) -> Snapshot {
+        latest
+            .without_battery_observation()
+            .battery_projection(self.desired, self.observation, &self.message)
+            .bind_private_user(&self.sid)
     }
 }

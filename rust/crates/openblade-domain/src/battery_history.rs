@@ -37,11 +37,14 @@ pub struct Desired {
 }
 impl Desired {
     pub fn raw(self) -> Option<u8> {
-        ((50..=80).contains(&self.limit) && self.limit % 5 == 0).then_some(if self.protection {
-            self.limit | 0x80
-        } else {
-            0x50
-        })
+        // Saved policy is generic provenance; Off has its own exact command.
+        if !(50..=99).contains(&self.limit) {
+            return None;
+        }
+        if !self.protection {
+            return Some(0x50);
+        }
+        ((50..=80).contains(&self.limit) && self.limit % 5 == 0).then_some(self.limit | 0x80)
     }
     pub fn requested(self, request: &Request) -> Self {
         let mut v = self;
@@ -74,7 +77,9 @@ impl BatteryRecord {
             || self.source > 2
             || self.temporary
             || self.desired.temporary
-            || self.configured.raw().is_none()
+            || !(50..=99).contains(&self.configured.limit)
+            || matches!(&self.requested, Request::SetBatteryPolicy { value }
+                if !(50..=80).contains(&value.charge_limit_percent) || value.charge_limit_percent % 5 != 0)
             || self.desired.raw() != Some(self.target)
             || self.configured.requested(&self.requested) != self.desired
             || matches!(self.requested, Request::SetFullChargeOverride { .. })

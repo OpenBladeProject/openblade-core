@@ -394,4 +394,42 @@ public sealed class NativeThermalHistoryTests : IDisposable
         string released = vector.GetProperty("released").GetString()!;
         foreach (string bad in new[] { released.Replace("\"caller_pid\":44", "\"caller_pid\":0", StringComparison.Ordinal), released.Replace("\"progress\":62", "\"progress\":5", StringComparison.Ordinal), released.Replace("\"target\":198", "\"target\":-0", StringComparison.Ordinal) }) { Thermal(files, Bytes(bad)); Assert.ThrowsAny<Exception>(() => WindowsNativeThermalHistory.Read(files, [original])); }
     }
+    public static IEnumerable<object[]> BatteryCorrectionCases()
+    {
+        using var v = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "battery-history-v1.json")));
+        foreach (var item in v.RootElement.GetProperty("corrections").EnumerateArray())
+        {
+            foreach (bool rolled in new[] { false, true }) { yield return [item.GetProperty("name").GetString()!, item.GetProperty("valid").GetBoolean(), rolled]; }
+        }
+    }
+    [Theory]
+    [MemberData(nameof(BatteryCorrectionCases))]
+    public void BatteryCorrectionCompleteRehashedVectorsUseOriginalProof(string name, bool valid, bool rolled)
+    {
+        using var v = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "battery-history-v1.json")));
+        var item = v.RootElement.GetProperty("corrections").EnumerateArray().Single(c => c.GetProperty("name").GetString() == name);
+        byte[] raw = Bytes(item.GetProperty("journal").GetString()!);
+        Assert.Equal(item.GetProperty("sha256").GetString(), NativeCanonical.Digest(raw));
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        var record = new NativeEpochRecord(NativeEpochPhase.Retired, new string('2', 32), new string('0', 64), 1, new string('1', 32), new string('a', 64), new string('b', 32), new string('3', 64) + "-service", new string('c', 64) + "-agent", new string('0', 64), new string('d', 64));
+        byte[] active = Owner(files, record, new string('7', 64));
+        var original = new WindowsNativeTrustLifecycle.OwnerReference(record.Installation, record.Epoch, record.ServiceId, "17:1", new string('7', 64), NativeCanonical.Digest(active));
+        var producer = NativeArtifact.Inspect([.. WindowsNativeEpochTests.Image("service", nonce: '3', schema: 2, battery: true)], "service", new string('a', 40));
+        var launches = new Dictionary<string, byte[]> { { "17-1.bin", [] } };
+        if (rolled) { Roll(files, Bytes(item.GetProperty("archivedJournal").GetString()!), []); } else { Thermal(files, raw); }
+        var before = Directory.EnumerateFiles(Path.Combine(files.Root, "owner"), "*", SearchOption.AllDirectories).ToDictionary(p => p, File.ReadAllBytes);
+        if (valid)
+        {
+            var history = WindowsNativeThermalHistory.Read(files, [original]);
+            Assert.NotEmpty(history.Generation(record, producer, [original], launches));
+            using var retired = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
+            Assert.Equal(history.Commitment, retired.Thermal.Commitment);
+        }
+        else
+        {
+            Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [original]));
+            Assert.Throws<NativeRecoveryException>(() => WindowsNativeTrustLifecycle.AcquireRetiredOwner(files));
+        }
+        foreach (var pair in before) { Assert.Equal(pair.Value, File.ReadAllBytes(pair.Key)); }
+    }
 }

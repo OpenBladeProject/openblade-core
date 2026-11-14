@@ -10,7 +10,7 @@ internal static class WindowsNativeBatteryHistory
     private static void Members(JsonElement e, params string[] names) { if (e.ValueKind != JsonValueKind.Object) { throw Denied(); } var seen = new HashSet<string>(StringComparer.Ordinal); foreach (var p in e.EnumerateObject()) { if (!names.Contains(p.Name, StringComparer.Ordinal) || !seen.Add(p.Name)) { throw Denied(); } } if (seen.Count != names.Length) { throw Denied(); } }
     private static bool Raw(int v) => v == 80 || v is >= 128 and <= 255 && Limit(v & 127);
     private static bool Limit(int v) => v is >= 50 and <= 80 && v % 5 == 0;
-    private static (int Limit, bool Protection, bool Temporary) Desired(JsonElement d) { Members(d, "limit", "protection", "temporary"); var v = (Number(d.GetProperty("limit")), d.GetProperty("protection").GetBoolean(), d.GetProperty("temporary").GetBoolean()); if (!Limit(v.Item1)) { throw Denied(); } return v; }
+    private static (int Limit, bool Protection, bool Temporary) Desired(JsonElement d) { Members(d, "limit", "protection", "temporary"); var v = (Number(d.GetProperty("limit")), d.GetProperty("protection").GetBoolean(), d.GetProperty("temporary").GetBoolean()); if (v.Item1 is < 50 or > 99) { throw Denied(); } return v; }
     internal static byte[] Canonical(JsonElement b)
     {
         Members(b, "contract", "requested", "configured", "desired", "source", "baseline", "target", "temporary", "ids", "fan_owner");
@@ -20,7 +20,7 @@ internal static class WindowsNativeBatteryHistory
         if (op == "setBatteryPolicy") { Members(r, "operation", "value"); var v = r.GetProperty("value"); Members(v, "chargeLimitPercent"); int n = Number(v.GetProperty("chargeLimitPercent")); if (!Limit(n) || d != (n, c.Protection, c.Temporary)) { throw Denied(); } }
         else if (op == "setBatteryProtection") { Members(r, "operation", "enabled"); if (d != (c.Limit, r.GetProperty("enabled").GetBoolean(), c.Temporary)) { throw Denied(); } }
         else { throw Denied(); }
-        if (Number(b.GetProperty("source")) is < 0 or > 2 || !Raw(Number(b.GetProperty("baseline"))) || Number(b.GetProperty("target")) != (d.Protection ? 128 | d.Limit : 80) || d.Temporary || b.GetProperty("temporary").GetBoolean()) { throw Denied(); }
+        if (d.Protection && !Limit(d.Limit) || Number(b.GetProperty("source")) is < 0 or > 2 || !Raw(Number(b.GetProperty("baseline"))) || Number(b.GetProperty("target")) != (d.Protection ? 128 | d.Limit : 80) || d.Temporary || b.GetProperty("temporary").GetBoolean()) { throw Denied(); }
         var ids = b.GetProperty("ids"); if (ids.GetArrayLength() != 14) { throw Denied(); }
         var seen = new HashSet<int>(); foreach (var id in ids.EnumerateArray()) { int n = Number(id); if (n is < 1 or > 254 || !seen.Add(n)) { throw Denied(); } }
         var fan = b.GetProperty("fan_owner"); if (fan.ValueKind != JsonValueKind.Null && !NativeCanonical.IsHex(fan.GetString() ?? "", 64)) { throw Denied(); }

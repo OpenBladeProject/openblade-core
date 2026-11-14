@@ -848,7 +848,7 @@ impl std::fmt::Display for UnresolvedSettlement {
 impl std::error::Error for UnresolvedSettlement {}
 
 // Last getter completion owns this monotonic age; status refresh never renews it.
-const RETENTION_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
+pub(super) const RETENTION_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
 
 #[cfg(feature = "service-thermal-mutation-v1")]
 #[derive(Clone, Copy, Default, Eq, PartialEq)]
@@ -1753,20 +1753,18 @@ impl ReadSource {
     }
     pub(super) fn current_policy(&self, value: Snapshot) -> io::Result<Snapshot> {
         self.lease.verify_integrity()?;
-        match self
-            .intent
-            .borrow()
-            .as_ref()
-            .map_or(Ok(value.clone()), |policy| policy(value.clone()))
-        {
-            Ok(value) => self
-                .battery_intent
+        let value = project_private_policy(value, |base| {
+            self.intent
                 .borrow()
                 .as_ref()
-                .map_or(Ok(value.clone()), |policy| policy(value)),
-            Err(error) if super::thermal_mutation::is_fatal_admission(&error) => Err(error),
-            Err(_) => Ok(value.private_policy_unavailable()),
-        }
+                .map_or(Ok(base.clone()), |policy| policy(base))
+        })?;
+        project_private_policy(value, |base| {
+            self.battery_intent
+                .borrow()
+                .as_ref()
+                .map_or(Ok(base.clone()), |policy| policy(base))
+        })
     }
     async fn drain_mutation(&self, reconstruct: bool) -> io::Result<()> {
         let active = self.mutation.borrow().clone();
@@ -1941,4 +1939,16 @@ fn fan_v2_expected_stop_denies_ordinary_read_without_revoking_original_custody()
     live.lose_trust();
     assert!(authorize_original(&state, live.verify().map(|_| true), || Ok(()), p).is_none());
     assert_eq!(state.load(Ordering::Acquire), 1);
+}
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+pub(super) fn project_private_policy(
+    value: Snapshot,
+    policy: impl FnOnce(Snapshot) -> io::Result<Snapshot>,
+) -> io::Result<Snapshot> {
+    match policy(value.clone()) {
+        Ok(value) => Ok(value),
+        Err(error) if super::thermal_mutation::is_fatal_admission(&error) => Err(error),
+        Err(_) => Ok(value.private_policy_unavailable()),
+    }
 }
