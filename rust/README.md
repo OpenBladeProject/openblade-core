@@ -39,13 +39,16 @@ The separate developer-only `openblade-status-cli` uses the same JSON parsers
 and Tokio 1.54.1 for bounded asynchronous Windows pipe I/O and cancellation.
 Its locked OS/runtime dependencies stay in the CLI. Production libraries have
 only inward local dependencies. See [the read-only status guide](crates/openblade-status-cli/README.md).
-The workspace guard
-checks the four libraries, reviewed test targets/dependencies, MSRV and compiler
-policies independently of the caller's directory. Its regression tests use
-disposable workspace copies. Inner crates retain `no_std` and inherit
-`unsafe_code = "forbid"`. Only the FFI
-crate permits the documented pointer/export boundary, with unsafe operations
-explicitly marked and `unsafe_op_in_unsafe_fn` denied. Both dev and release
+The isolated `openblade-platform-windows` crate reads active internal display
+topology, identity and the distinct desktop and physical refresh rates from
+the current Windows desktop. It uses the locked `windows-sys` SDK bindings
+and has no production caller. Its tests script native responses.
+
+The workspace guard checks crate boundaries, reviewed targets and dependencies,
+MSRV and compiler policies. Its regression tests use disposable workspace copies.
+Inner crates retain `no_std` and inherit `unsafe_code = "forbid"`. FFI and Windows
+platform unsafe operations are limited to their documented interop boundaries,
+with `unsafe_op_in_unsafe_fn` denied. Both dev and release
 profiles retain unwind panic handling; aborts and process faults are not caught.
 
 ## Report API
@@ -94,8 +97,8 @@ coverage and a 20,000-input malformed corpus. These software checks establish
 codec parity and portability; physical validation remains separate.
 
 All 14 profile vectors run through Rust and the real native C# policy wrapper.
-Production loading and runtime selection are described below. OS adapters
-remain future work. Windows ARM64, Linux ARM64, musl and 32-bit targets are
+Production loading and runtime selection are described below. Windows ARM64,
+Linux ARM64, musl and 32-bit targets are
 unvalidated. CI publishes no artifacts and
 accepts stacked PRs. Existing Windows CI retains its conservative full-validation
 fallback for Rust changes.
