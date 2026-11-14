@@ -396,7 +396,7 @@ impl Runtime {
         reader.retain_policy(Rc::new(move |base| {
             policy_fresh.verify_health()?;
             if policy_fresh.authorize().is_none() {
-                return Ok(base.redact_private());
+                return Ok(base.without_private_policy());
             }
             let power = base.thermal_power_source();
             let app = policy_runtime
@@ -411,7 +411,7 @@ impl Runtime {
             let value = store.current_override(power)?;
             let fan_value = store.current_fan_override(power)?;
             Ok(base
-                .redact_private()
+                .without_private_policy()
                 .thermal_profiles(store.profiles()?)?
                 .thermal_intent(
                     value.as_ref(),
@@ -481,7 +481,7 @@ impl Runtime {
                 .clone()
                 .unwrap_or((3, Value::Null));
             let mut base = status_snapshot
-                .redact_private()
+                .without_private_policy()
                 .without_thermal_observation();
             let observed = result
                 .as_ref()

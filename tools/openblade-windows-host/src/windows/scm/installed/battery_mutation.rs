@@ -366,9 +366,20 @@ impl Runtime {
         } else {
             None
         };
+        let observation = permit.historical_observation()?;
+        let public_message = if permit.storage.pending() {
+            permit.storage.pending_reason()?.into()
+        } else if observation.is_some() {
+            "Independent battery policy observation retained; new writes require fresh admission."
+                .into()
+        } else {
+            "Last battery observation expired or unavailable; new writes require fresh admission."
+                .into()
+        };
         let update = BatteryUpdate {
             desired,
-            observation: permit.historical_observation()?,
+            observation,
+            public_message,
             message: outcome.message.clone(),
             sid,
         };
@@ -380,6 +391,7 @@ impl Runtime {
 pub(in super::super) struct BatteryUpdate {
     desired: Option<openblade_domain::battery_history::Desired>,
     observation: Option<(u8, Option<bool>)>,
+    public_message: String,
     message: String,
     sid: String,
 }
@@ -394,8 +406,9 @@ impl BatteryUpdate {
         };
         latest
             .without_battery_observation()
-            .battery_projection(self.desired, self.observation, &self.message)
+            .battery_projection(self.desired, self.observation, &self.public_message)
             .bind_private_user(&self.sid)
+            .battery_request_outcome(&self.sid, &self.message)
     }
 }
 
@@ -452,6 +465,7 @@ mod observation_tests {
                 temporary: false,
             }),
             observation: Some((0x50, None)),
+            public_message: "Public battery observation.".into(),
             message: "Battery confirmed.".into(),
             sid: "S-1-5-21-111-222-333-1001".into(),
         };
@@ -493,6 +507,149 @@ mod observation_tests {
                 .as_str()
                 .unwrap()
                 .contains("private policy is unavailable")
+        );
+    }
+    fn boundary_update(message: &str) -> BatteryUpdate {
+        BatteryUpdate {
+            desired: Some(openblade_domain::battery_history::Desired {
+                limit: 80,
+                protection: false,
+                temporary: false,
+            }),
+            observation: Some((0x50, None)),
+            public_message: "Public battery observation.".into(),
+            message: message.into(),
+            sid: "S-1-5-21-111-222-333-1001".into(),
+        }
+    }
+    fn boundary_base() -> Snapshot {
+        Snapshot::observed_read_only(
+            1,
+            0,
+            false,
+            false,
+            vec![],
+            None,
+            "Public source uncertainty.".into(),
+        )
+        .battery_projection(None, Some((0xd0, None)), "Public battery observation.")
+    }
+    fn boundary_wire(snapshot: &Snapshot) -> serde_json::Value {
+        let bytes = crate::service_status::encode_status_event(snapshot).unwrap();
+        println!(
+            "NATIVE_THERMAL_MUTATION_RESPONSE {}",
+            std::str::from_utf8(&bytes).unwrap()
+        );
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["status"].clone()
+    }
+    #[test]
+    fn battery_boundary_owned_outcome_is_absent_from_foreign_and_unbound_views() {
+        let sid = "S-1-5-21-111-222-333-1001";
+        let published = boundary_update("SYNTHETIC_REQUEST_OUTCOME").apply(boundary_base());
+        let owner = boundary_wire(&published.project_private(Some(sid)));
+        assert!(
+            owner["message"]
+                .as_str()
+                .unwrap()
+                .contains("SYNTHETIC_REQUEST_OUTCOME")
+        );
+        for view in [
+            published.project_private(None),
+            published.project_private(Some("S-1-5-21-111-222-333-1002")),
+            published.inactive_mutation(),
+        ] {
+            let wire = boundary_wire(&view);
+            let message = wire["message"].as_str().unwrap();
+            assert!(!message.contains("SYNTHETIC_REQUEST_OUTCOME"), "{wire}");
+            assert!(message.contains("Public source uncertainty."), "{wire}");
+            assert!(message.contains("battery"), "{wire}");
+            assert!(wire["performanceOverride"].is_null());
+            assert_eq!(wire["writesBlocked"], true);
+        }
+        let public = boundary_base().bind_private_user(sid).project_private(None);
+        assert!(
+            boundary_wire(&public)["message"]
+                .as_str()
+                .unwrap()
+                .contains("Public battery observation.")
+        );
+    }
+    #[test]
+    fn battery_boundary_later_binding_cannot_reown_or_revive_an_old_outcome() {
+        let sid = "S-1-5-21-111-222-333-1001";
+        let other = "S-1-5-21-111-222-333-1002";
+        let published = boundary_update("SYNTHETIC_REQUEST_OUTCOME").apply(boundary_base());
+        // This checks diagnostic ownership only, not simultaneous native users
+        // or a reachable unrelated-private-field disclosure.
+        for view in [
+            published.clone().bind_private_user(other),
+            published.project_private(None).bind_private_user(sid),
+            published
+                .project_private(Some(other))
+                .bind_private_user(other),
+        ] {
+            let rebound = view.bind_private_user(sid);
+            let wire = boundary_wire(&rebound);
+            assert!(
+                !wire["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("SYNTHETIC_REQUEST_OUTCOME"),
+                "{wire}"
+            );
+        }
+    }
+    #[test]
+    fn battery_boundary_storage_reconciliation_is_not_caller_denial() {
+        use crate::service_status::PrivatePolicyFamily::{Battery, Thermal};
+        for family in [Battery, Thermal] {
+            let owner = boundary_base().bind_private_user("S-1-5-21-111-222-333-1001");
+            let unavailable = owner.private_policy_unavailable(family);
+            let wire = boundary_wire(&unavailable);
+            let message = wire["message"].as_str().unwrap();
+            assert!(message.contains("configuration reconciliation"), "{wire}");
+            assert!(!message.contains("to this caller"), "{wire}");
+            assert!(message.contains("Public battery observation."), "{wire}");
+            assert_eq!(wire["writesBlocked"], true);
+            assert!(wire["performanceOverride"].is_null());
+        }
+    }
+    #[test]
+    fn battery_boundary_authoritative_owner_binding_clears_only_stale_denial() {
+        use crate::service_status::PrivatePolicyFamily::{Battery, Thermal};
+        let base = boundary_base()
+            .bind_private_user("S-1-5-21-111-222-333-1001")
+            .project_private(None)
+            .private_policy_unavailable(Thermal)
+            .private_policy_unavailable(Battery);
+        let recovered = boundary_update("Current owner outcome.").apply(base);
+        let wire = boundary_wire(&recovered);
+        let message = wire["message"].as_str().unwrap();
+        assert!(
+            message.contains("configuration reconciliation"),
+            "Thermal failure lost: {wire}"
+        );
+        assert!(message.contains("Current owner outcome."), "{wire}");
+        assert!(!message.contains("to this caller"), "{wire}");
+        let all_recovered = recovered.private_policy_reconciling(Thermal);
+        assert!(
+            !boundary_wire(&all_recovered)["message"]
+                .as_str()
+                .unwrap()
+                .contains("configuration reconciliation")
+        );
+        let foreign = all_recovered.project_private(None);
+        assert!(
+            boundary_wire(&foreign)["message"]
+                .as_str()
+                .unwrap()
+                .contains("to this caller")
+        );
+        assert!(
+            !boundary_wire(&foreign)["message"]
+                .as_str()
+                .unwrap()
+                .contains("Current owner outcome.")
         );
     }
 }

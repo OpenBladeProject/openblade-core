@@ -510,12 +510,24 @@ pub(crate) enum PrivatePolicyFamily {
     Battery,
 }
 
+#[derive(Clone)]
+struct OwnedDiagnostic {
+    sid: String,
+    message: String,
+}
+
+#[derive(Clone, Default)]
+struct BatteryDiagnostic {
+    public: String,
+    request: Option<OwnedDiagnostic>,
+}
+
 #[derive(Clone, Default)]
 struct Diagnostics {
     public: String,
     private: Option<String>,
-    battery: Option<String>,
-    redacted: bool,
+    battery: Option<BatteryDiagnostic>,
+    caller_denied: bool,
     private_unavailable: [bool; 2],
 }
 
@@ -769,7 +781,7 @@ impl Snapshot {
     fn render_message(&mut self) {
         let d = &self.diagnostics;
         let mut parts = vec![d.public.as_str()];
-        if d.redacted {
+        if d.caller_denied {
             parts.push(
                 "Public hardware observation; private configuration is unavailable to this caller.",
             );
@@ -781,7 +793,16 @@ impl Snapshot {
             parts.push("Saved private policy is unavailable; writes are blocked pending configuration reconciliation.");
         }
         if let Some(battery) = &d.battery {
-            parts.push(battery);
+            if !battery.public.is_empty() {
+                parts.push(&battery.public);
+            }
+            if let Some(request) = &battery.request {
+                if !d.caller_denied
+                    && self.private_user_sid.as_deref() == Some(request.sid.as_str())
+                {
+                    parts.push(&request.message);
+                }
+            }
         }
         self.message = parts
             .into_iter()
@@ -800,7 +821,6 @@ impl Snapshot {
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn set_private_message(&mut self, message: &str) {
         self.diagnostics.private = Some(message.into());
-        self.diagnostics.redacted = false;
         self.render_message();
     }
     pub(crate) fn has_fresh_mailbox_read(&self) -> bool {
@@ -1046,7 +1066,12 @@ impl Snapshot {
             }
         }
         if !message.is_empty() {
-            self.diagnostics.battery = Some(message.into());
+            // Public observation replaces this family, including any previous
+            // request outcome. Desired-only projection keeps current provenance.
+            self.diagnostics.battery = Some(BatteryDiagnostic {
+                public: message.into(),
+                request: None,
+            });
             self.render_message();
         }
         self.writes_blocked = true;
@@ -1058,8 +1083,34 @@ impl Snapshot {
         }
         self
     }
+    pub(crate) fn battery_request_outcome(mut self, sid: &str, message: &str) -> Self {
+        if !message.is_empty() {
+            self.diagnostics
+                .battery
+                .get_or_insert_with(BatteryDiagnostic::default)
+                .request = Some(OwnedDiagnostic {
+                sid: sid.into(),
+                message: message.into(),
+            });
+        }
+        self.render_message();
+        self
+    }
     pub(crate) fn bind_private_user(mut self, sid: &str) -> Self {
+        // An independently owned request diagnostic must never become the next
+        // private-data owner's text, or revive after a later binding back.
+        if let Some(battery) = &mut self.diagnostics.battery {
+            if battery
+                .request
+                .as_ref()
+                .is_some_and(|request| request.sid != sid)
+            {
+                battery.request = None;
+            }
+        }
         self.private_user_sid = Some(sid.to_owned());
+        self.diagnostics.caller_denied = false;
+        self.render_message();
         self
     }
     pub(crate) fn project_private(&self, sid: Option<&str>) -> Self {
@@ -1074,6 +1125,14 @@ impl Snapshot {
         }
     }
     pub(crate) fn redact_private(&self) -> Self {
+        let mut result = self.without_private_policy();
+        result.diagnostics.caller_denied = true;
+        result.render_message();
+        result
+    }
+    // Internal reconstruction is not evidence of a foreign caller. Keep an
+    // actual existing caller-denial reason until an authoritative owner binds.
+    pub(crate) fn without_private_policy(&self) -> Self {
         let mut result = self.clone();
         let public = Self::observed_read_only(
             self.revision,
@@ -1094,7 +1153,9 @@ impl Snapshot {
         result.full_charge_override = false;
         result.writes_blocked = true;
         result.diagnostics.private = None;
-        result.diagnostics.redacted = true;
+        if let Some(battery) = &mut result.diagnostics.battery {
+            battery.request = None;
+        }
         result.render_message();
         result
     }
@@ -1180,7 +1241,7 @@ impl Snapshot {
         self
     }
     pub(crate) fn private_policy_unavailable(&self, family: PrivatePolicyFamily) -> Self {
-        let mut value = self.redact_private();
+        let mut value = self.without_private_policy();
         value.diagnostics.private_unavailable[family as usize] = true;
         value.render_message();
         value
@@ -1197,8 +1258,7 @@ impl Snapshot {
     /// Commit a mutation delta against the latest public facts, synchronously.
     /// A Stored request never copies or renews another operation's read witness.
     pub(crate) fn rebase_thermal_mutation(&self, latest: &Self) -> Self {
-        let mut result = latest.redact_private();
-        result.private_user_sid = self.private_user_sid.clone();
+        let mut result = latest.without_private_policy();
         result.profiles = self.profiles.clone();
         result.performance_override = self.performance_override.clone();
         result.fan_override = self.fan_override.clone();
@@ -1216,7 +1276,6 @@ impl Snapshot {
         }
         result.desired_state.performance = self.desired_state.performance.clone();
         result.diagnostics.private = self.diagnostics.private.clone();
-        result.diagnostics.redacted = self.diagnostics.redacted;
         // Both accepted fan/performance deltas reaching this shared rebase
         // reconstructed and decoded private profiles before returning a status.
         // That resolves Thermal degradation only; Battery remains independent.
@@ -1231,6 +1290,9 @@ impl Snapshot {
             result.read_confirmation = self.read_confirmation.clone();
             result.device_verified = self.device_verified;
             result.writes_blocked = self.writes_blocked;
+        }
+        if let Some(sid) = self.private_user_sid.as_deref() {
+            result = result.bind_private_user(sid);
         }
         result
     }

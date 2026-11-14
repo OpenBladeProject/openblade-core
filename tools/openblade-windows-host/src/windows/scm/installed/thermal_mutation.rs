@@ -268,7 +268,9 @@ impl Runtime {
         verify_retained_failure(&self.fatal)?;
         // Metadata may retain a previous user's projection. New accepted intent
         // starts from the public view even when this user has no profile file.
-        let status = status.redact_private().without_thermal_observation();
+        let status = status
+            .without_private_policy()
+            .without_thermal_observation();
         if caller.logon != Logon::Interactive || caller.control_session != Some(caller.session) {
             return Ok((
                 Outcome::blocked("The active interactive Windows user is required."),
@@ -321,7 +323,7 @@ impl Runtime {
         let custody = reader.custody();
         reader.retain_policy(Rc::new(move |base| {
             verify_retained_failure(&runtime.fatal)?;
-            let base = base.redact_private();
+            let base = base.without_private_policy();
             let (store, fresh) = match runtime.capture(&policy_sid, caller.session, custody.clone())
             {
                 Ok(value) => value,

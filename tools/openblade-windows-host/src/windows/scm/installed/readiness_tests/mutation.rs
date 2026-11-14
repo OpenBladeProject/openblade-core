@@ -5752,3 +5752,85 @@ async fn battery_publication_private_recovery_replaces_only_its_current_failure(
     );
     r.stop().await;
 }
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_boundary_actual_direct_publication_filters_request_outcome() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    assert_eq!(
+        r.request(battery_request(501, "setBatteryProtection", json!(false)))
+            .await["result"]["status"],
+        1
+    );
+    let publications = r.source.lock().await.publications().unwrap();
+    let latest = publications.borrow().active.clone();
+    let owner = serde_json::to_value(latest.project_private(Some(SID))).unwrap();
+    assert!(
+        owner["message"]
+            .as_str()
+            .unwrap()
+            .contains("confirmed by independent readback")
+    );
+    for view in [
+        latest.project_private(None),
+        latest.project_private(Some("S-1-5-21-111-222-333-1002")),
+        publications.borrow().inactive.clone(),
+    ] {
+        let bytes = crate::service_status::encode_status_event(&view).unwrap();
+        println!(
+            "NATIVE_THERMAL_MUTATION_RESPONSE {}",
+            std::str::from_utf8(&bytes).unwrap()
+        );
+        let wire: Value = serde_json::from_slice(&bytes).unwrap();
+        let message = wire["status"]["message"].as_str().unwrap();
+        assert!(
+            !message.contains("confirmed by independent readback"),
+            "{wire}"
+        );
+        assert_eq!(wire["status"]["writesBlocked"], true);
+    }
+    r.stop().await;
+}
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_boundary_callback_storage_failure_keeps_public_reconciliation_and_fatal_class() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    r.reader.retain_policy(Rc::new(|base| {
+        Ok(base
+            .thermal_intent(None, None, "Private thermal text.", None)
+            .bind_private_user(SID))
+    }));
+    r.reader
+        .retain_battery_policy(Rc::new(|_| Err(io::ErrorKind::Unsupported.into())));
+    let base = Snapshot::observed_read_only(
+        1,
+        0,
+        false,
+        false,
+        vec![],
+        None,
+        "Public metadata reason.".into(),
+    )
+    .battery_projection(None, Some((0xd0, None)), "Public battery observation.");
+    let degraded = r.reader.current_policy(base).unwrap();
+    let wire = serde_json::to_value(degraded).unwrap();
+    let message = wire["message"].as_str().unwrap();
+    assert!(message.contains("configuration reconciliation"), "{wire}");
+    assert!(!message.contains("to this caller"), "{wire}");
+    assert!(message.contains("Public metadata reason."), "{wire}");
+    assert!(message.contains("Public battery observation."), "{wire}");
+    assert!(!message.contains("Private thermal text."), "{wire}");
+    assert_eq!(wire["writesBlocked"], true);
+    r.reader.retain_battery_policy(Rc::new(|_| {
+        Err(crate::installed::readiness::thermal_mutation::fatal_admission("boundary typed fatal"))
+    }));
+    let base = Snapshot::observed_read_only(1, 0, false, false, vec![], None, String::new());
+    assert!(
+        crate::installed::readiness::thermal_mutation::is_fatal_admission(
+            &r.reader.current_policy(base).err().unwrap()
+        )
+    );
+    r.stop().await;
+}
