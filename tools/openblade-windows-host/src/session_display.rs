@@ -16,12 +16,11 @@ use openblade_platform_windows::{
 };
 
 use crate::{session_brightness::ScriptedBrightness, session_windows::valid_request_id};
-use openblade_windows_host::pipe::Identity;
+use openblade_windows_host::pipe::{Connection as NamedPipeServer, Identity};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::windows::named_pipe::NamedPipeServer,
     time::timeout,
 };
 

@@ -13,11 +13,10 @@ use openblade_platform_windows::gpu_apps::{
     GpuAppInventory, MAXIMUM_APPS, QueryUnavailable,
     scripted::{self, Scenario},
 };
-use openblade_windows_host::pipe::Identity;
+use openblade_windows_host::pipe::{Connection as NamedPipeServer, Identity};
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::windows::named_pipe::NamedPipeServer,
     time::{sleep, timeout},
 };
 

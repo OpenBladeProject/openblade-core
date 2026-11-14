@@ -524,3 +524,11 @@ async fn identity_is_rechecked_after_acquisition_before_emitting_frame() {
     assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
     assert!(script.retired.load(Ordering::Acquire));
 }
+
+#[test]
+fn largest_battery_frame_includes_prefix_within_shared_owned_write_budget() {
+    assert_eq!(
+        wire::MAX_FRAME as usize + 4,
+        openblade_windows_host::pipe::MAX_WRITE_BYTES
+    );
+}

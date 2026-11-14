@@ -11,7 +11,7 @@ use std::{
 };
 
 use tokio::{
-    net::windows::named_pipe::{NamedPipeClient, NamedPipeServer, ServerOptions},
+    net::windows::named_pipe::{NamedPipeClient, ServerOptions},
     time::{sleep, timeout},
 };
 use windows_sys::Win32::{
@@ -38,6 +38,9 @@ use windows_sys::Win32::{
 
 pub use crate::windows_token::Identity;
 use crate::windows_token::{LocalAllocation, check, process_token};
+
+mod response;
+pub use response::{Connection, MAX_WRITE_BYTES};
 
 const PIPE_BUFFER_BYTES: u32 = 8192;
 
@@ -152,7 +155,7 @@ impl Endpoint {
         Ok((server, client))
     }
 
-    pub fn listen(&self) -> io::Result<NamedPipeServer> {
+    pub fn listen(&self) -> io::Result<Connection> {
         let mut attributes = self.security_attributes();
         // SAFETY: the Win32 SECURITY_ATTRIBUTES and its descriptor remain valid
         // for synchronous CreateNamedPipeW. Tokio owns a successful pipe handle.
@@ -166,10 +169,11 @@ impl Endpoint {
                     &self.path,
                     (&mut attributes as *mut SECURITY_ATTRIBUTES).cast(),
                 )
+                .map(Connection::new)
         }
     }
 
-    pub async fn next_listener(&self) -> io::Result<NamedPipeServer> {
+    pub async fn next_listener(&self) -> io::Result<Connection> {
         use std::time::Duration;
 
         timeout(Duration::from_secs(2), async {
@@ -225,7 +229,7 @@ impl Identity {
         Ok(())
     }
 
-    pub fn authorize(&self, pipe: &NamedPipeServer) -> io::Result<()> {
+    pub fn authorize(&self, pipe: &impl AsRawHandle) -> io::Result<()> {
         // Verify the connecting process session independently of the read token.
         let mut session = 0;
         // SAFETY: the pipe is connected and borrowed, with a valid output slot.
@@ -245,7 +249,7 @@ impl Identity {
     }
 }
 
-fn peer_token(pipe: &NamedPipeServer) -> io::Result<OwnedHandle> {
+fn peer_token(pipe: &impl AsRawHandle) -> io::Result<OwnedHandle> {
     let mut token: HANDLE = null_mut();
     // SAFETY: the borrowed connected pipe has just supplied bytes. Only the
     // synchronous thread-token query runs impersonated. Revert before returning,

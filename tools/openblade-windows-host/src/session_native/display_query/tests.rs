@@ -390,3 +390,284 @@ async fn refused_peer_then_valid_peer_survives_but_same_kind_origin_failure_is_f
         }
     }
 }
+
+fn admitted_large_snapshot(target_body: usize) -> Snapshot {
+    let mut state = serde_json::to_value(observation::fixture_query("available")).unwrap();
+    state["activeColorProfileId"] = Value::Null;
+    state["colorProfiles"] = json!(
+        (0..16)
+            .map(|i| json!({
+                "id":format!("profile-{i:02}.icm"),"name":"Profile","isActive":false,
+            }))
+            .collect::<Vec<_>>()
+    );
+    let initial = frame(ID, serde_json::from_value(state.clone()).unwrap()).unwrap();
+    let mut remaining = target_body.checked_sub(initial.len() - 4).unwrap();
+    for profile in state["colorProfiles"].as_array_mut().unwrap() {
+        let name = profile["name"].as_str().unwrap();
+        let add = remaining.min(4096 - name.len());
+        profile["name"] = json!(format!("{name}{}", "p".repeat(add)));
+        remaining -= add;
+    }
+    assert_eq!(remaining, 0, "fixture must fit admitted count/text bounds");
+    let snapshot: Snapshot = serde_json::from_value(state).unwrap();
+    assert!(snapshot.valid());
+    snapshot
+}
+
+#[tokio::test]
+async fn admitted_large_and_maximum_frames_use_production_dispatcher_and_decoder_corpus() {
+    for (name, body_bytes) in [
+        ("admitted-large-16384", 16384 - 4),
+        ("admitted-max-65540", MAX_FRAME as usize),
+    ] {
+        let snapshot = admitted_large_snapshot(body_bytes);
+        let expected = serde_json::to_value(&snapshot).unwrap();
+        let mut supplier = Script {
+            outcome: Some(snapshot),
+            calls: 0,
+        };
+        let (result, bytes, _) = exchange(&mut supplier, &query()).await;
+        result.unwrap();
+        assert_eq!(bytes.len(), body_bytes + 4);
+        assert_eq!(
+            i32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize,
+            body_bytes
+        );
+        let response: Value = serde_json::from_slice(&bytes[4..]).unwrap();
+        assert_eq!(response["state"]["isAvailable"], true);
+        assert_eq!(response["state"], expected);
+        capture(name, &bytes, &expected);
+    }
+}
+
+#[allow(unsafe_code)]
+fn private_pipe_endpoint() -> (openblade_windows_host::pipe::Endpoint, String) {
+    let mut id = windows_sys::core::GUID {
+        data1: 0,
+        data2: 0,
+        data3: 0,
+        data4: [0; 8],
+    };
+    // Generates only a random test identifier, without observing any supplier.
+    assert_eq!(
+        unsafe { windows_sys::Win32::System::Com::CoCreateGuid(&mut id) },
+        0
+    );
+    let tail: String = id.data4[2..].iter().map(|b| format!("{b:02x}")).collect();
+    let guid = format!(
+        "{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{tail}",
+        id.data1, id.data2, id.data3, id.data4[0], id.data4[1]
+    );
+    let name = format!(r"\\.\pipe\OpenBlade.Test.{guid}");
+    (Endpoint::new(name.clone(), 2).unwrap(), name)
+}
+
+// A separate owned thread closes an unread peer within 8s even if native
+// cancellation stalls the current-thread runtime. It is joined on every exit.
+struct UnreadPeer {
+    close: std::sync::mpsc::SyncSender<()>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+impl UnreadPeer {
+    fn open(name: &str, request: Option<Vec<u8>>) -> Self {
+        use std::{io::Write, os::windows::fs::OpenOptionsExt};
+        use windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION;
+        let name = name.to_owned();
+        let (close, closed) = std::sync::mpsc::sync_channel(1);
+        let (ready, opened) = std::sync::mpsc::sync_channel(1);
+        let worker = std::thread::spawn(move || {
+            let outcome = (|| -> io::Result<std::fs::File> {
+                let mut peer = std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .security_qos_flags(SECURITY_IDENTIFICATION)
+                    .open(name)?;
+                if let Some(request) = request {
+                    peer.write_all(&request)?;
+                }
+                Ok(peer)
+            })();
+            match outcome {
+                Ok(peer) => {
+                    let _ = ready.send(Ok(()));
+                    let _ = closed.recv_timeout(Duration::from_secs(8));
+                    drop(peer);
+                }
+                Err(error) => {
+                    let _ = ready.send(Err(error));
+                }
+            }
+        });
+        let owner = Self {
+            close,
+            worker: Some(worker),
+        };
+        opened
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap();
+        owner
+    }
+}
+impl Drop for UnreadPeer {
+    fn drop(&mut self) {
+        let _ = self.close.try_send(());
+        if let Some(worker) = self.worker.take() {
+            worker.join().unwrap();
+        }
+    }
+}
+#[tokio::test]
+async fn owned_private_pipe_unread_admitted_frame_retires_then_normal_peer_receives_full_frame() {
+    use tokio::net::windows::named_pipe::ClientOptions;
+    use windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION;
+    for body_bytes in [16384 - 4, MAX_FRAME as usize] {
+        let (endpoint, name) = private_pipe_endpoint();
+        let claim = endpoint.claim().unwrap();
+        let mut server = endpoint.listen().unwrap();
+        // The fixed name is private to this test and this client is owned here.
+        let unread = UnreadPeer::open(&name, Some(query()));
+        timeout(Duration::from_secs(2), server.connect())
+            .await
+            .unwrap()
+            .unwrap();
+        let (_signal, mut stop) = watch::channel(false);
+        let mut supplier = Script {
+            outcome: Some(admitted_large_snapshot(body_bytes)),
+            calls: 0,
+        };
+        let began = std::time::Instant::now();
+        let result = serve(
+            &mut server,
+            &mut stop,
+            &mut supplier,
+            |pipe| endpoint.identity.authorize(pipe),
+            || Ok(()),
+        )
+        .await;
+        assert!(
+            matches!(result, Err(ServeError::Connection(_))),
+            "an unread pending write must meet its deadline"
+        );
+        // Dropping the connection cancels and positively retires only its own
+        // native write before releasing the counted instance. Keep peer unread.
+        drop(server);
+        assert!(began.elapsed() < Duration::from_secs(4));
+        let mut next = endpoint.next_listener().await.unwrap();
+        let mut reader = ClientOptions::new()
+            .security_qos_flags(SECURITY_IDENTIFICATION)
+            .open(&name)
+            .unwrap();
+        reader.write_all(&query()).await.unwrap();
+        timeout(Duration::from_secs(2), next.connect())
+            .await
+            .unwrap()
+            .unwrap();
+        let snapshot = admitted_large_snapshot(body_bytes);
+        let expected = frame(
+            ID,
+            serde_json::from_value(serde_json::to_value(&snapshot).unwrap()).unwrap(),
+        )
+        .unwrap();
+        let mut supplier = Script {
+            outcome: Some(snapshot),
+            calls: 0,
+        };
+        let (closed, after_close) = tokio::sync::oneshot::channel();
+        let (sent, received) = tokio::join!(
+            async {
+                let result = serve(
+                    &mut next,
+                    &mut stop,
+                    &mut supplier,
+                    |pipe| endpoint.identity.authorize(pipe),
+                    || Ok(()),
+                )
+                .await;
+                drop(next);
+                let _ = closed.send(());
+                result
+            },
+            async {
+                let mut bytes = vec![0; expected.len()];
+                let split = bytes.len() - 4096;
+                timeout(Duration::from_secs(3), async {
+                    reader.read_exact(&mut bytes[..split]).await.unwrap();
+                    // Leave the tail unread until the server has retired its
+                    // completed write and closed. Success must preserve it.
+                    after_close.await.unwrap();
+                    reader.read_exact(&mut bytes[split..]).await.unwrap();
+                })
+                .await
+                .unwrap();
+                bytes
+            },
+        );
+        sent.unwrap();
+        assert_eq!(
+            received, expected,
+            "normal close must preserve every response byte"
+        );
+        drop(reader);
+        drop(unread);
+        drop(claim);
+        // Prove all counted server handles (including writes) retired, without
+        // relying on a no-op flush or a new protocol acknowledgement.
+        sleep(Duration::from_millis(50)).await;
+        let fresh = tokio::net::windows::named_pipe::ServerOptions::new()
+            .first_pipe_instance(true)
+            .reject_remote_clients(true)
+            .max_instances(2)
+            .create(&name)
+            .unwrap();
+        drop(fresh);
+    }
+}
+
+#[tokio::test]
+async fn owned_pending_write_cancellation_releases_slot_and_preserves_bounded_write_contract() {
+    use windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION;
+    let (endpoint, name) = private_pipe_endpoint();
+    let claim = endpoint.claim().unwrap();
+    let mut server = endpoint.listen().unwrap();
+    let peer = UnreadPeer::open(&name, None);
+    timeout(Duration::from_secs(2), server.connect())
+        .await
+        .unwrap()
+        .unwrap();
+    let body = frame(ID, admitted_large_snapshot(MAX_FRAME as usize)).unwrap();
+    let mut write = Box::pin(server.write_all(&body));
+    std::future::poll_fn(|cx| match write.as_mut().poll(cx) {
+        std::task::Poll::Pending => std::task::Poll::Ready(()),
+        std::task::Poll::Ready(result) => {
+            panic!("unread full frame unexpectedly completed: {result:?}")
+        }
+    })
+    .await;
+    // Equivalent to a Stop-selected losing write future: no write completion
+    // was reported, and the connection still owns its native storage.
+    drop(write);
+    let began = std::time::Instant::now();
+    drop(server);
+    assert!(began.elapsed() < Duration::from_secs(2));
+    let mut next = endpoint.next_listener().await.unwrap();
+    assert_eq!(
+        openblade_windows_host::pipe::MAX_WRITE_BYTES,
+        256 * 1024 + 4
+    );
+    let invalid = vec![0; openblade_windows_host::pipe::MAX_WRITE_BYTES + 1];
+    let error = next.write_all(&invalid).await.unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+    drop(next);
+    drop(peer);
+    drop(claim);
+    sleep(Duration::from_millis(50)).await;
+    let fresh = tokio::net::windows::named_pipe::ServerOptions::new()
+        .first_pipe_instance(true)
+        .reject_remote_clients(true)
+        .max_instances(2)
+        .create(&name)
+        .unwrap();
+    drop(fresh);
+}

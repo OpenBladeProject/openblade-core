@@ -11,10 +11,11 @@ use std::{
 use openblade_platform_windows::{
     display::scripted::Scenario, gpu_apps::scripted::Scenario as GpuScenario,
 };
-use openblade_windows_host::pipe::{Endpoint, Identity, stale_connection};
+use openblade_windows_host::pipe::{
+    Connection as NamedPipeServer, Endpoint, Identity, stale_connection,
+};
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
-    net::windows::named_pipe::NamedPipeServer,
     runtime::Builder,
     sync::oneshot,
 };

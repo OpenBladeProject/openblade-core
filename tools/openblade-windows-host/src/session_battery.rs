@@ -1,10 +1,9 @@
 //! Private replay of the managed battery report endpoint.
 use std::{future::pending, io, time::Duration};
 
-use openblade_windows_host::pipe::Identity;
+use openblade_windows_host::pipe::{Connection as NamedPipeServer, Identity};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
-    net::windows::named_pipe::NamedPipeServer,
     time::timeout,
 };
 

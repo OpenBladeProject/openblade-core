@@ -6,13 +6,12 @@ use std::{
 };
 
 use tokio::{
-    net::windows::named_pipe::NamedPipeServer,
     runtime::Builder,
     sync::{Semaphore, mpsc, oneshot},
     task::JoinSet,
 };
 
-use openblade_windows_host::pipe::{self, stale_connection};
+use openblade_windows_host::pipe::{self, Connection as NamedPipeServer, stale_connection};
 use windows_sys::Win32::System::Services::SERVICE_RUNNING;
 
 use crate::runtime::DurableUpdate;
