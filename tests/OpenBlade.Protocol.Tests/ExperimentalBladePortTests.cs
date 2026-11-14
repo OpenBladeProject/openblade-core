@@ -358,8 +358,8 @@ public sealed class ExperimentalBladePortTests
     public async Task Blade2025BatteryModeBaseline_CanDirectlyEnterAcPresetWhenPowerReturns()
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02C5);
-        var session = new Session([0, 1, 6, 0], [0, 2, 6, 0],
-            [1, 1, 5, 0], [1, 2, 5, 0], [0, 1, 5, 0], [0, 2, 5, 0]);
+        var session = new Session([1, 1, 6, 0], [1, 2, 6, 0],
+            [1, 1, 5, 0], [1, 2, 5, 0], [1, 1, 5, 0], [1, 2, 5, 0]);
         var policy = new ExperimentalFeaturesPolicy(model);
         await using var port = new ExperimentalBladePort(session, new(), model, policy, () => true,
             () => PowerSource.ExternalUnknown);

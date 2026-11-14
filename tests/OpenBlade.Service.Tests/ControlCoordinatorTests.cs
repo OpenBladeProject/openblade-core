@@ -1140,7 +1140,7 @@ public sealed class ControlCoordinatorTests
 
     [Theory]
     [InlineData(PerformancePreset.Custom, FanMode.Fixed)]
-    [InlineData(PerformancePreset.Silent, FanMode.ManualCurve)]
+    [InlineData(PerformancePreset.Custom, FanMode.ManualCurve)]
     public async Task PresetRangedFans_RejectUnadmittedPerformanceModePair(
         PerformancePreset performance,
         FanMode mode)
@@ -1164,6 +1164,130 @@ public sealed class ControlCoordinatorTests
             CancellationToken.None);
 
         Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.Empty(device.FanControlWrites);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Silent, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Silent, FanMode.Fixed)]
+    [InlineData(PerformancePreset.Custom, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Custom, FanMode.Fixed)]
+    public async Task PresetRangedCurveEntry_PreservesConfirmedPresetWithoutDefaultWrites(
+        PerformancePreset performance, FanMode previous)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            ReportsPerformanceWithManualFans = true,
+            SupportsDirectManualFanTransitions = false,
+            FanSpeedRange = new(2200, 3800, 100),
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2200, 3800, 100),
+                [performance] = new(3700, 5300, 100),
+            },
+        };
+        device.State = device.State with
+        {
+            Performance = performance,
+            Fans = previous,
+            HyperBoostActive = false,
+        };
+        var coordinator = new ControlCoordinator(device);
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlTransitionOutcomeAsync(
+            new(previous, 5300, ManualFanCurve.Default),
+            new(FanMode.ManualCurve, 5300, ManualFanCurve.Default),
+            performance, null, default);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.Equal([FanMode.ManualCurve], device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
+        Assert.Equal(performance, device.State.Performance);
+    }
+
+    [Theory]
+    [InlineData(0x029D, PerformancePreset.Balanced)]
+    [InlineData(0x029D, PerformancePreset.Silent)]
+    [InlineData(0x029D, PerformancePreset.Custom)]
+    [InlineData(0x029F, PerformancePreset.Balanced)]
+    [InlineData(0x029F, PerformancePreset.Silent)]
+    [InlineData(0x029F, PerformancePreset.Custom)]
+    [InlineData(0x029F, PerformancePreset.Performance)]
+    public async Task GlobalSourceCurveEntryKeepsExistingFixedPresets(int productId, PerformancePreset performance)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
+        device.Capabilities = ExperimentalBladePort.CreateCapabilities(model, enabled: true);
+        device.State = device.State with
+        {
+            Performance = performance,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        device.State = device.State with
+        {
+            CustomPerformance = performance == PerformancePreset.Custom ? CustomPerformanceSettings.Default : null,
+        };
+        var coordinator = new ControlCoordinator(device);
+        ScopedApplyOutcome curve = await coordinator.ApplyFanControlTransitionOutcomeAsync(
+            FanControlSettings.FromLegacy(FanMode.Automatic),
+            new(FanMode.ManualCurve, 5000, ManualFanCurve.Default), performance,
+            device.State.CustomPerformance, default);
+        Assert.Equal(ControlResultStatus.Applied, curve.Result.Status);
+        Assert.Empty(device.PerformanceWrites);
+        Assert.Equal(performance == PerformancePreset.Custom ? CustomPerformanceSettings.Default : null,
+            device.State.CustomPerformance);
+        Assert.Equal([FanMode.ManualCurve], device.FanControlWrites);
+        device.State = device.State with { Fans = FanMode.Automatic };
+        ScopedApplyOutcome fixedResult = await coordinator.ApplyFanControlOutcomeAsync(
+            new(FanMode.Fixed, 5000, ManualFanCurve.Default), default);
+        Assert.Equal(ControlResultStatus.Applied, fixedResult.Result.Status);
+        Assert.Equal(performance, device.State.Performance);
+    }
+
+    [Theory]
+    [InlineData(0x029D)]
+    [InlineData(0x029F)]
+    public async Task GlobalSourceCurveEntryRejectsRequestedPresetDriftBeforeAnyWrite(int productId)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = ExperimentalBladePort.CreateCapabilities(
+            ExperimentalBladeModels.All.Single(item => item.ProductId == productId), enabled: true);
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Silent,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        ScopedApplyOutcome outcome = await new ControlCoordinator(device).ApplyFanControlTransitionOutcomeAsync(
+            FanControlSettings.FromLegacy(FanMode.Automatic),
+            new(FanMode.ManualCurve, 5000, ManualFanCurve.Default),
+            PerformancePreset.Balanced, null, default);
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.False(outcome.WriteAttempted);
+        Assert.Empty(device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
+        Assert.Equal(PerformancePreset.Silent, device.State.Performance);
+    }
+
+    [Theory]
+    [InlineData(0x029D)]
+    [InlineData(0x029F)]
+    public async Task GlobalSourceCurveMaintenanceRejectsFreshUnexpectedPreset(int productId)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
+        device.Capabilities = ExperimentalBladePort.CreateCapabilities(model, enabled: true);
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Silent,
+            Fans = FanMode.Fixed,
+            HyperBoostActive = false,
+        };
+        ScopedApplyOutcome outcome = await new ControlCoordinator(device).ApplyFanTargetsOutcomeAsync(
+            PerformancePreset.Balanced, 4000, 4000, default);
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.False(outcome.WriteAttempted);
         Assert.Empty(device.FanControlWrites);
     }
 
