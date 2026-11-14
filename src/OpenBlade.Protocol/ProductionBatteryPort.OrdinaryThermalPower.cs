@@ -34,6 +34,9 @@ internal sealed partial class ProductionBatteryPort
             throw ThermalWritePowerFailure(submitted,
                 "Ordinary thermal commands require a freshly confirmed external source.");
         }
+        // Every SET needs fresh admission on classified paths too. A previous
+        // FullPower result cannot excuse a later transport fault or a Battery
+        // reply that contradicts Windows AC; neither may be replayed past.
         AdapterPowerState adapter = await QueryThermalWritePowerAsync(
             submitted, cancellationToken, allowUnclassifiedExternal: true).ConfigureAwait(false);
         ThermalWritePowerRequirement? classification = ClassifyThermalWritePower(adapter);
@@ -54,6 +57,9 @@ internal sealed partial class ProductionBatteryPort
     private bool OrdinarySourceUnchanged(PowerSource? source) =>
         source is null || capturePowerSource?.Invoke() == source;
 
+    // These physical catalogs expose modes 0/2/4/5, not Gaming/Turbo mode 1,
+    // and no Custom Maximum Fans 07/0F bit-2 action. Keep their closed payload
+    // scope distinct from the experimental backends' admitted commands.
     private static bool IsOrdinaryProductionCommand(RazerCommandDefinition command)
     {
         ReadOnlySpan<byte> p = command.Payload.AsSpan();

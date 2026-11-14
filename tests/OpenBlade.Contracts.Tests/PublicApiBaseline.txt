@@ -2423,7 +2423,9 @@ type sealed class OpenBlade.Contracts.PerformanceShortcutPreview
   property System.Int64 Generation { get; init; }
 type static class OpenBlade.Contracts.PerformanceShortcutSelection
   method static System.Boolean TrySelectNext(OpenBlade.Contracts.PowerSource powerSource, System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> admitted, OpenBlade.Contracts.PerformancePreset current, out OpenBlade.Contracts.PerformancePreset next)
+  method static System.Boolean TrySelectNextOrdinary(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> admitted, OpenBlade.Contracts.PerformancePreset current, out OpenBlade.Contracts.PerformancePreset next)
   method static System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PerformancePreset> GetCycle(OpenBlade.Contracts.PowerSource powerSource, System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> admitted)
+  method static System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PerformancePreset> GetOrdinaryCycle(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> admitted)
 type enum OpenBlade.Contracts.PerformanceShortcutSource
   field System.Int32 value__
   field const OpenBlade.Contracts.PerformanceShortcutSource DedicatedButton = 0

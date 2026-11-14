@@ -60,7 +60,8 @@ public sealed class Blade18FnActionExecutor
         if (shortcut == Blade18FnShortcut.RefreshRate)
         {
             await CycleRefreshRateAsync(
-                    status.ActivePowerSource,
+                    status.ObservationReason == DeviceObservationReason.RetainedPowerSource
+                        ? PowerSource.ExternalUnknown : status.ActivePowerSource,
                     cancellationToken)
                 .ConfigureAwait(false);
             return;
@@ -116,8 +117,9 @@ public sealed class Blade18FnActionExecutor
                 status.Firmware?.ModelNumber,
                 ModelNumber,
                 StringComparison.OrdinalIgnoreCase)
-            || status.ActivePowerSource is not (
-                PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
+            || !(status.ObservationReason != DeviceObservationReason.RetainedPowerSource
+                    && status.ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+                || status.ExternalPowerPresent))
         {
             throw new InvalidOperationException(
                 "Blade 18 Fn shortcut control is not currently available.");

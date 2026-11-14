@@ -423,7 +423,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
         CpuTuning = new CpuTuningViewModel(serviceClient,
             () => CanControlHardware && CanMutate
-                && ActivePowerSource == PowerSource.PluggedIn
+                && ActivePowerSource == PowerSource.PluggedIn && !IsPowerClassificationUnavailable
                 && !IsPerformanceOperationInProgress && !IsHyperBoostOperationInProgress
                 && !HyperBoostActive && !HasUnconfirmedWrites
                 && !HasControllerDetectionWarning && latestStatus?.PotentialControllers.Count == 0,
@@ -688,8 +688,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public bool CanRequestHardwareControl => CanControlHardware
-        || IsRetainedPowerSourceRecheck(latestStatus);
+    public bool CanRequestHardwareControl => CanControlHardware;
 
     public string UnsupportedLaptopMessage => TrayText.Get(
         "Save a short identity report, then follow the Synapse Observer guide to help add support for this laptop.");
@@ -2269,7 +2268,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public IReadOnlyList<PerformancePresetOption> AvailableActivePerformanceOptions =>
-        ActivePowerSource switch
+        ControlPowerSource switch
         {
             PowerSource.PluggedIn => AvailablePluggedInPerformanceOptions,
             PowerSource.Battery => AvailableBatteryPerformanceOptions,
@@ -2342,7 +2341,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public IReadOnlyList<FanMode> AvailableActiveFanModes =>
-        ActivePowerSource switch
+        ControlPowerSource switch
         {
             PowerSource.PluggedIn => AvailableFanModes,
             PowerSource.Battery => AvailableFanModes
@@ -2353,7 +2352,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         };
 
     public IReadOnlyList<FanModeOption> AvailableActiveFanModeOptions =>
-        ActivePowerSource switch
+        ControlPowerSource switch
         {
             PowerSource.PluggedIn => availableFanModeOptions,
             PowerSource.Battery => availableBatteryFanModeOptions,
@@ -2902,10 +2901,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && IsGpuClockTuningAvailable;
 
     public bool CanToggleGpuClockTuning =>
-        (HyperBoostActive
+        !IsPowerClassificationUnavailable
+        && (HyperBoostActive
             ? CanMutate
                 && ActivePowerSource == PowerSource.PluggedIn
-                && !IsRetainedPowerSourceRecheck(latestStatus)
                 && !IsPerformanceOperationInProgress
                 && !IsHyperBoostOperationInProgress
                 && !HasPendingHyperBoostRestore
@@ -3348,7 +3347,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanToggleHyperBoost =>
         CanMutate
         && !IsThermalStateUnknown
-        && !IsRetainedPowerSourceRecheck(latestStatus)
+        && !IsPowerClassificationUnavailable
         && IsHyperBoostWritable
         && !IsHyperBoostOperationInProgress
         && !IsPerformanceOperationInProgress
@@ -4945,7 +4944,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Capabilities: not null,
             ControlAccess: SessionControlAccess.Active,
         }
-        && (!latestStatus.WritesBlocked || IsRetainedPowerSourceRecheck(latestStatus))
+        && !latestStatus.WritesBlocked
         && !IsCheckingLaptopConnection(latestStatus);
 
     private static bool HasBlockingHyperBoostController(ServiceStatusSnapshot? status) =>
@@ -4970,17 +4969,24 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool ExternalPowerPresent => latestStatus?.ExternalPowerPresent == true;
 
-    private bool HasManualPowerContext => HasConfirmedPowerSource
-        || ActivePowerSource == PowerSource.ExternalUnknown && ExternalPowerPresent;
+    // A retained source is a presentation value, not a current adapter classification.
+    public PowerSource ControlPowerSource => IsPowerClassificationUnavailable
+        ? PowerSource.ExternalUnknown : latestStatus?.ActivePowerSource ?? ActivePowerSource;
 
-    private bool HasUnclassifiedOrdinaryThermalControl => ActivePowerSource == PowerSource.ExternalUnknown
+    private bool IsPowerClassificationUnavailable => (latestStatus?.ActivePowerSource ?? ActivePowerSource) == PowerSource.ExternalUnknown
+        || latestStatus?.ObservationReason == DeviceObservationReason.RetainedPowerSource;
+
+    private bool HasManualPowerContext => HasConfirmedPowerSource
+        || IsPowerClassificationUnavailable && ExternalPowerPresent;
+
+    private bool HasUnclassifiedOrdinaryThermalControl => IsPowerClassificationUnavailable
         && ExternalPowerPresent && CommandCapabilities.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower
         && !HyperBoostActive && !IsThermalStateUnknown;
 
     private bool HasOrdinaryThermalPowerContext => HasConfirmedPowerSource || HasUnclassifiedOrdinaryThermalControl;
 
-    private bool HasConfirmedPowerSource => ActivePowerSource is
-        PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
+    private bool HasConfirmedPowerSource => !IsPowerClassificationUnavailable
+        && ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
 
     private DeviceCapabilities CommandCapabilities =>
         IsRetainedPowerSourceRecheck(latestStatus)
@@ -5793,8 +5799,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && !checkingLaptopConnection;
         IsReadOnly = !controllable;
         CanControlHardware = controllable
-            && (status.ActivePowerSource != PowerSource.ExternalUnknown || status.ExternalPowerPresent);
-        Notify(nameof(ExternalPowerPresent));
+            && (!IsPowerClassificationUnavailable || status.ExternalPowerPresent);
+        NotifyComputed(nameof(ExternalPowerPresent), ExternalPowerPresent);
+        NotifyComputed(nameof(ControlPowerSource), ControlPowerSource);
         ConnectionStatus = status.Message;
         ControlAccessStatus = FormatControlAccessStatus(status);
         HasControllerAdvisory = status.PotentialControllers.Count > 0;

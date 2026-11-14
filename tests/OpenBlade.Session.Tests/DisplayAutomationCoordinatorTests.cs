@@ -31,6 +31,33 @@ public sealed class DisplayAutomationCoordinatorTests
         Assert.Equal(DisplayAutomationObservation.IgnoredUnconfirmed, restarted.Observe(unknown));
     }
 
+    [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task RetainedSourceDefersAutomationAndUsesUnknownManualContext(PowerSource retained)
+    {
+        var context = new DisplayPowerContextState();
+        var applier = new FakeApplier();
+        await using var coordinator = new DisplayAutomationCoordinator(context, applier);
+        var status = Status(retained, Profiles("saved")) with
+        {
+            ObservationReason = DeviceObservationReason.RetainedPowerSource,
+            ExternalPowerPresent = true,
+        };
+        Assert.Equal(DisplayAutomationObservation.IgnoredUnconfirmed, coordinator.Observe(status));
+        Assert.Null(coordinator.LastConfirmedPowerSource);
+        DisplayPowerContext admitted = context.Capture();
+        Assert.Equal(PowerSource.ExternalUnknown, admitted.PowerSource);
+        Assert.True(admitted.Generation > 0);
+        Assert.Empty(applier.Transitions);
+        coordinator.Observe(status);
+        Assert.Equal(admitted.Generation, context.Capture().Generation);
+        coordinator.Observe(status with { ExternalPowerPresent = false });
+        Assert.Equal(PowerSource.ExternalUnknown, context.Capture().PowerSource);
+        Assert.True(context.Capture().Generation > admitted.Generation);
+        Assert.Empty(applier.Transitions);
+    }
+
     [Fact]
     public async Task ApplicationEntryAndExitApplyOverrideThenRestoreCapturedBaseline()
     {

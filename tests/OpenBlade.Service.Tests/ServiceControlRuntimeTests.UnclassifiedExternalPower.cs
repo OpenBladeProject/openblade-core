@@ -264,4 +264,176 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(second.Profiles, context.Runtime.GetStatus().Profiles);
     }
 
+
+    [Theory]
+    [InlineData(FanMode.Fixed)]
+    [InlineData(FanMode.Maximum)]
+    public async Task UnclassifiedExternal_ClearOwnedManualFansHandsBackAutomaticWithoutPerformanceReset(FanMode mode)
+    {
+        TestContext context = await CreateUnclassifiedExternalContextAsync();
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            FanModes = new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed, FanMode.Maximum, FanMode.ManualCurve },
+        };
+        context.Device.FanTargetsAvailable = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var settings = new FanControlSettings(mode, mode == FanMode.Maximum ? 5400 : 3700, ManualFanCurve.Default);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetFanControlOverrideAsync(
+            new(mode, OverrideLifetime.UntilPowerSourceChange), settings, CancellationToken.None)).Status);
+        ProfileSet saved = context.Runtime.GetStatus().Profiles;
+        context.Device.PerformanceWrites.Clear();
+        int fanWrites = context.Device.FanSetCalls;
+        ControlOperationResult result = await context.Runtime.SetFanControlOverrideAsync(null, null, CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.True(context.Device.FanSetCalls > fanWrites);
+        Assert.Empty(context.Device.PerformanceWrites);
+        Assert.Null(context.Runtime.GetStatus().FanOverride);
+        Assert.Equal(saved, context.Runtime.GetStatus().Profiles);
+    }
+
+    [Fact]
+    public async Task UnclassifiedExternal_ClassifierPreservesIndependentBlockAcrossRepeatedTicks()
+    {
+        TestContext context = await CreateUnclassifiedExternalContextAsync();
+        typeof(ServiceControlRuntime).GetField("status", System.Reflection.BindingFlags.Instance
+            | System.Reflection.BindingFlags.NonPublic)!.SetValue(context.Runtime,
+                context.Runtime.GetStatus() with { WritesBlocked = true, ObservationReason = DeviceObservationReason.None });
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        int writes = context.Device.TotalSetterCalls;
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.SetLightingOverrideAsync(
+            new(LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50), OverrideLifetime.Persistent),
+            CancellationToken.None)).Status);
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task UnclassifiedExternal_PendingAndCancelledClassificationRetainsLastConfirmedPresentation()
+    {
+        TestContext context = await CreateUnclassifiedExternalContextAsync();
+        context.Device.AdapterPowerState = AdapterPowerState.FullPower280W;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        ServiceStatusSnapshot baseline = context.Runtime.GetStatus();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<AdapterPowerState>(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.Device.AdapterPowerReadOverride = token =>
+        {
+            entered.TrySetResult();
+            return release.Task.WaitAsync(token);
+        };
+        using var cancellation = new CancellationTokenSource();
+        Task refresh = context.Runtime.RefreshPowerSourceClassificationAsync(cancellation.Token);
+        await entered.Task;
+        Assert.Same(baseline, context.Runtime.GetStatus());
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => refresh);
+        Assert.Same(baseline, context.Runtime.GetStatus());
+        Assert.Equal(PowerSource.PluggedIn, context.Runtime.GetStatus().ActivePowerSource);
+        release.TrySetResult(AdapterPowerState.FullPower280W);
+    }
+
+    [Fact]
+    public async Task UnclassifiedExternal_WindowsCaptureFailureRevokesAdmissionWithoutPublishingOrWriting()
+    {
+        TestContext context = await CreateUnclassifiedExternalContextAsync();
+        context.Device.AdapterPowerState = AdapterPowerState.FullPower280W;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        ServiceStatusSnapshot before = context.Runtime.GetStatus();
+        context.Telemetry.PowerCaptureFailure = new InvalidDataException("unknown Windows AC line status");
+        int writes = context.Device.TotalSetterCalls;
+        await Assert.ThrowsAsync<InvalidDataException>(() => context.Runtime.SetLightingOverrideAsync(
+            new(LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50), OverrideLifetime.Persistent),
+            CancellationToken.None));
+        Assert.Equal(PowerSource.PluggedIn, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(DeviceObservationReason.None, context.Runtime.GetStatus().ObservationReason);
+        // A rejected observation cannot mutate the published snapshot. The
+        // cached public fact does not satisfy the next request's fresh capture.
+        Assert.Same(before, context.Runtime.GetStatus());
+        await Assert.ThrowsAsync<InvalidDataException>(() => context.Runtime.SetPerformanceOverrideAsync(
+            new(PerformancePreset.Silent, OverrideLifetime.UntilPowerSourceChange), CancellationToken.None));
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task UnclassifiedExternal_CompletedUnavailableReadRetainsKnownPresentationAndAdmitsOnlyExplicitOrdinaryIntent()
+    {
+        TestContext context = await CreateUnclassifiedExternalContextAsync();
+        context.Device.AdapterPowerState = AdapterPowerState.FullPower280W;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        DesiredDeviceState prior = context.Runtime.GetStatus().DesiredState;
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        ServiceStatusSnapshot retained = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.PluggedIn, retained.ActivePowerSource);
+        Assert.Equal(DeviceObservationReason.RetainedPowerSource, retained.ObservationReason);
+        Assert.Equal(prior, retained.DesiredState);
+        Assert.True(retained.ExternalPowerPresent);
+        Assert.False(retained.WritesBlocked);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetPerformanceOverrideAsync(
+            new(PerformancePreset.Silent, OverrideLifetime.UntilPowerSourceChange), CancellationToken.None)).Status);
+        Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
+        Assert.Equal(PowerSource.PluggedIn, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(DeviceObservationReason.RetainedPowerSource, context.Runtime.GetStatus().ObservationReason);
+    }
+
+
+    [Fact]
+    public async Task UnclassifiedExternal_PerformanceShortcutUsesAdvertisedOrdinaryCycleWithoutSelectingProfileSlot()
+    {
+        TestContext context = await CreateUnclassifiedExternalContextAsync();
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.CyclePerformanceShortcutAsync(
+            PerformanceShortcutSource.FunctionP, CancellationToken.None)).Status);
+        Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
+        Assert.Equal(SettingValueSource.TemporaryOverride, context.Runtime.GetStatus().DesiredState.Performance.Source);
+        Assert.Equal(profiles, context.Runtime.GetStatus().Profiles);
+        Assert.Equal(PowerSource.ExternalUnknown, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(0, context.Device.GpuClockSetCalls);
+    }
+
+    [Fact]
+    public async Task UnclassifiedExternal_PerformanceShortcutCustomUsesValidatedProductIntentWithoutProfileOrNativeTuning()
+    {
+        TestContext context = await CreateUnclassifiedExternalContextAsync();
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.Custom },
+            CustomPerformance = new CustomPerformanceCapabilities(new HashSet<CustomPerformanceCombination>
+            {
+                new(CustomPerformanceSettings.Default.Cpu, CustomPerformanceSettings.Default.Gpu),
+            }),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.CyclePerformanceShortcutAsync(
+            PerformanceShortcutSource.DedicatedButton, CancellationToken.None)).Status);
+        Assert.Equal(PerformancePreset.Custom, context.Device.ConfirmedState.Performance);
+        Assert.Equal(CustomPerformanceSettings.Default, context.Device.ConfirmedState.CustomPerformance);
+        Assert.Equal(SettingValueSource.TemporaryOverride, context.Runtime.GetStatus().DesiredState.Performance.Source);
+        Assert.Null(context.Runtime.GetStatus().DesiredState.GpuClockTuning);
+        Assert.Equal(0, context.Device.GpuClockSetCalls);
+    }
+
+
+    [Fact]
+    public async Task UnclassifiedExternal_CapturedOwnedLightingRestoresWithoutClassifiedProfileFallback()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        LightingSettings owned = context.Device.ConfirmedState.Lighting!;
+        context.LowPowerGate.Enter();
+        await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        context.LowPowerGate.Exit();
+        await context.Runtime.InvalidateLightingRendererForLowPowerAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        int writes = context.Device.LightingSetCalls;
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+        Assert.Equal(writes + 1, context.Device.LightingSetCalls);
+        Assert.Equal(owned, context.Device.ConfirmedState.Lighting);
+        Assert.Equal(PowerSource.PluggedIn, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(DeviceObservationReason.RetainedPowerSource, context.Runtime.GetStatus().ObservationReason);
+    }
+
 }

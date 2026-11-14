@@ -144,7 +144,7 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
         lock (sync)
         {
             PowerSource source = status.ActivePowerSource;
-            if (source == PowerSource.ExternalUnknown)
+            if (source == PowerSource.ExternalUnknown || status.ObservationReason == DeviceObservationReason.RetainedPowerSource)
             {
                 return MarkUnavailableCore(status.ExternalPowerPresent && status.DeviceVerified
                     && status.ControlAccess == SessionControlAccess.Active);

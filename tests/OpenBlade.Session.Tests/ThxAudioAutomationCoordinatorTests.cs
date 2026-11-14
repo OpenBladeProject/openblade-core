@@ -37,6 +37,26 @@ public sealed class ThxAudioAutomationCoordinatorTests
         Assert.Single(controller.Targets);
     }
 
+    [Fact]
+    public async Task RetainedSourceDoesNotSelectAClassifiedAudioProfile()
+    {
+        var controller = new Controller();
+        await using var coordinator = new ThxAudioAutomationCoordinator(controller);
+        coordinator.SetIntegrationEnabled(true);
+        var status = Status(Settings()) with
+        {
+            ObservationReason = DeviceObservationReason.RetainedPowerSource,
+            ExternalPowerPresent = true,
+        };
+        coordinator.Observe(status);
+        coordinator.ObserveForeground(new("game.exe", ThxAudioEndpoint.Speakers));
+        await coordinator.WhenIdleAsync();
+        Assert.Empty(controller.Targets);
+        coordinator.Observe(status with { ObservationReason = DeviceObservationReason.None });
+        await coordinator.WhenIdleAsync();
+        Assert.Single(controller.Targets);
+    }
+
     [Theory]
     [InlineData("RZ09-0528", ThxAudioProductIds.Rznb11)]
     [InlineData("RZ09-0530", ThxAudioProductIds.Rznb11)]

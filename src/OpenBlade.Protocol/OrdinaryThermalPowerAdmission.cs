@@ -6,6 +6,8 @@ namespace OpenBlade.Protocol;
 // of adapter-query availability. This never promotes Unknown to FullPower.
 internal static class OrdinaryThermalPowerAdmission
 {
+    internal const string FeatureName = "OrdinaryThermalControlsOnUnclassifiedExternalPower";
+    internal const string EvidenceBasis = "SynapseSourceBackedWithoutPhysicalValidation";
     internal const string EvidenceSource = "evidence/source-reviewed-blades/2026-11-14-unclassified-external-thermal.json";
 
     internal static bool SupportsProduct(ushort productId) => productId is

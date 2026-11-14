@@ -87,11 +87,14 @@ internal sealed partial class ExperimentalBladePort
                             "Turn off Maximum Fans in Synapse before enabling HyperBoost; OpenBlade cannot restore that option on this model.");
                     }
                     RequireMaximumFansWriteBaseline(flags);
+                    // Cleanup belongs to this HyperBoost request; it cannot inherit
+                    // ordinary Unknown-AC admission before the mode-7 command.
                     await ExchangeAsync("MaximumFans", 0x07, 0x0F, [0], true, cancellationToken,
                         variableResponse: acceptsStatusOnlyAck,
                         payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 1 : null,
                         requireEcho: !acceptsStatusOnlyAck,
-                        requireAdequateAdapter: true, writeAdmission: StillAdmitted).ConfigureAwait(false);
+                        requireAdequateAdapter: true, writeAdmission: StillAdmitted,
+                        allowUnclassifiedExternal: false).ConfigureAwait(false);
                     submitted = true;
                     if (await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false) != 0)
                     {
@@ -119,7 +122,8 @@ internal sealed partial class ExperimentalBladePort
                     variableResponse: acceptsStatusOnlyAck,
                     payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 4 : null,
                     requireEcho: !acceptsStatusOnlyAck,
-                    requireAdequateAdapter: !balancedCleanup, writeAdmission: StillAdmitted).ConfigureAwait(false);
+                    requireAdequateAdapter: !balancedCleanup, writeAdmission: StillAdmitted,
+                    allowUnclassifiedExternal: false).ConfigureAwait(false);
                 submitted = true;
             }
             ProductionPerformanceFanState confirmed = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);

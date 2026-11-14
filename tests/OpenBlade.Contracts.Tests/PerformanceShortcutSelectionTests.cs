@@ -5,6 +5,31 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class PerformanceShortcutSelectionTests
 {
     [Fact]
+    public void OrdinaryCycleRequiresAdvertisedPresetsWithoutClassifyingSupply()
+    {
+        var admitted = new HashSet<PerformancePreset>
+        {
+            PerformancePreset.Creator, PerformancePreset.Balanced, PerformancePreset.MaximumPower,
+            PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver,
+        };
+        Assert.Equal(new[] { PerformancePreset.Balanced, PerformancePreset.MaximumPower, PerformancePreset.Creator },
+            PerformanceShortcutSelection.GetOrdinaryCycle(admitted));
+        Assert.True(PerformanceShortcutSelection.TrySelectNextOrdinary(admitted,
+            PerformancePreset.MaximumPower, out PerformancePreset next));
+        Assert.Equal(PerformancePreset.Creator, next);
+        Assert.True(PerformanceShortcutSelection.TrySelectNextOrdinary(admitted,
+            PerformancePreset.Creator, out next));
+        Assert.Equal(PerformancePreset.Balanced, next);
+        Assert.Empty(PerformanceShortcutSelection.GetOrdinaryCycle(null));
+        Assert.Empty(PerformanceShortcutSelection.GetOrdinaryCycle(new HashSet<PerformancePreset>()));
+        Assert.False(PerformanceShortcutSelection.TrySelectNextOrdinary(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.BatterySaver },
+            PerformancePreset.Balanced, out _));
+        Assert.False(PerformanceShortcutSelection.TrySelectNext(PowerSource.ExternalUnknown, admitted,
+            PerformancePreset.Balanced, out _));
+    }
+
+    [Fact]
     public void PluggedInCycle_UsesAdmittedModesInStableOrder()
     {
         var admitted = new HashSet<PerformancePreset>

@@ -2,23 +2,25 @@ namespace OpenBlade.Contracts;
 
 public static class PerformanceShortcutSelection
 {
+    private static readonly PerformancePreset[] OrdinaryOrder =
+    [
+        PerformancePreset.Balanced,
+        PerformancePreset.Silent,
+        PerformancePreset.Performance,
+        PerformancePreset.Turbo,
+        PerformancePreset.MaximumPower,
+        PerformancePreset.Gaming,
+        PerformancePreset.Creator,
+        PerformancePreset.Custom,
+    ];
+
     public static IReadOnlyList<PerformancePreset> GetCycle(
         PowerSource powerSource,
         IReadOnlySet<PerformancePreset>? admitted)
     {
         PerformancePreset[] ordered = powerSource switch
         {
-            PowerSource.PluggedIn =>
-            [
-                PerformancePreset.Balanced,
-                PerformancePreset.Silent,
-                PerformancePreset.Performance,
-                PerformancePreset.Turbo,
-                PerformancePreset.MaximumPower,
-                PerformancePreset.Gaming,
-                PerformancePreset.Creator,
-                PerformancePreset.Custom,
-            ],
+            PowerSource.PluggedIn => OrdinaryOrder,
             PowerSource.Battery =>
             [
                 PerformancePreset.BatteryBalanced,
@@ -37,13 +39,31 @@ public static class PerformanceShortcutSelection
         return ordered.Where(admitted.Contains).ToArray();
     }
 
+    // The caller admits the physical supply and explicit action. This selector
+    // neither classifies an adapter nor selects a saved power-source profile.
+    public static IReadOnlyList<PerformancePreset> GetOrdinaryCycle(
+        IReadOnlySet<PerformancePreset>? admitted) =>
+        admitted is null || admitted.Count == 0
+            ? [] : OrdinaryOrder.Where(admitted.Contains).ToArray();
+
     public static bool TrySelectNext(
         PowerSource powerSource,
         IReadOnlySet<PerformancePreset>? admitted,
         PerformancePreset current,
+        out PerformancePreset next) =>
+        TrySelectNext(GetCycle(powerSource, admitted), current, out next);
+
+    public static bool TrySelectNextOrdinary(
+        IReadOnlySet<PerformancePreset>? admitted,
+        PerformancePreset current,
+        out PerformancePreset next) =>
+        TrySelectNext(GetOrdinaryCycle(admitted), current, out next);
+
+    private static bool TrySelectNext(
+        IReadOnlyList<PerformancePreset> cycle,
+        PerformancePreset current,
         out PerformancePreset next)
     {
-        IReadOnlyList<PerformancePreset> cycle = GetCycle(powerSource, admitted);
         if (cycle.Count < 2)
         {
             next = default;

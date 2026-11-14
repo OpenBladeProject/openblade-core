@@ -777,12 +777,20 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         status.DeviceVerified
         && !status.WritesBlocked
         && status.ControlAccess == SessionControlAccess.Active
-        && status.ActivePowerSource is
-            PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+        && (!IsPowerClassificationUnavailable(status)
+                && status.ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+            || status.ExternalPowerPresent)
         && string.Equals(
             status.Firmware?.ModelNumber,
             "RZ09-0484",
             StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPowerClassificationUnavailable(ServiceStatusSnapshot status) =>
+        status.ActivePowerSource == PowerSource.ExternalUnknown
+        || status.ObservationReason == DeviceObservationReason.RetainedPowerSource;
+
+    private static PowerSource ControlPowerSource(ServiceStatusSnapshot status) =>
+        IsPowerClassificationUnavailable(status) ? PowerSource.ExternalUnknown : status.ActivePowerSource;
 
     private static bool IsBlade18Model(ServiceStatusSnapshot status) =>
         string.Equals(
@@ -875,7 +883,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private static FunctionKeyPrimaryMode? FunctionKeyPrimaryFromActiveProfile(
         ServiceStatusSnapshot status)
     {
-        if (status.ActivePowerSource is not (
+        if (IsPowerClassificationUnavailable(status) || status.ActivePowerSource is not (
             PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
         {
             return null;
@@ -887,7 +895,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private static LaptopBehaviorProfileSettings LaptopBehaviorFromStatus(
         ServiceStatusSnapshot status)
     {
-        if (status.ActivePowerSource is not (
+        if (IsPowerClassificationUnavailable(status) || status.ActivePowerSource is not (
             PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
         {
             return LaptopBehaviorProfileSettings.Unconfigured();
@@ -1267,7 +1275,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
         && confirmed == target
         && (intent.PowerSource is null
-            || status.ActivePowerSource == intent.PowerSource);
+            || ControlPowerSource(status) == intent.PowerSource);
 
     private async Task PublishPerformanceShortcutPreviewAsync(
         long generation,
@@ -1328,15 +1336,35 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     && status.ConfirmedState?.Performance is { } observed
                         ? observed
                         : status.DesiredState.Performance.Value);
-            if (!PerformanceShortcutSelection.TrySelectNext(
-                status.ActivePowerSource,
-                status.Capabilities?.PerformancePresets,
-                current,
-                out PerformancePreset next))
+            PowerSource controlSource = ControlPowerSource(status);
+            PerformancePreset next = default;
+            bool selected;
+            if (IsPowerClassificationUnavailable(status))
+            {
+                var admitted = status.Capabilities?.PerformancePresets.ToHashSet() ?? [];
+                CustomPerformanceSettings custom = OrdinaryShortcutCustomIntent(status);
+                if (status.Capabilities?.CustomPerformance?.Supports(custom) != true
+                    || custom.MaximumFans && status.ConfirmedState?.Fans != FanMode.Automatic)
+                {
+                    admitted.Remove(PerformancePreset.Custom);
+                }
+                selected = UnclassifiedOrdinaryShortcutIsAdmitted(status)
+                    && PerformanceShortcutSelection.TrySelectNextOrdinary(admitted, current, out next);
+                if (!selected)
+                {
+                    next = default;
+                }
+            }
+            else
+            {
+                selected = PerformanceShortcutSelection.TrySelectNext(controlSource,
+                    status.Capabilities?.PerformancePresets, current, out next);
+            }
+            if (!selected)
             {
                 return new PerformanceShortcutIntent(
                     source,
-                    status.ActivePowerSource,
+                    controlSource,
                     null,
                     generation);
             }
@@ -1344,7 +1372,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             optimisticPerformancePreset = next;
             return new PerformanceShortcutIntent(
                 source,
-                status.ActivePowerSource,
+                controlSource,
                 next,
                 generation);
         }
@@ -1360,21 +1388,52 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                 ?? throw new InvalidOperationException(
                     "The current laptop state is unavailable.");
             if (intent.PowerSource is { } expectedPowerSource
-                && status.ActivePowerSource != expectedPowerSource)
+                && ControlPowerSource(status) != expectedPowerSource)
             {
                 throw new InvalidOperationException(
                     "The power source changed before the selected mode could be applied.");
             }
 
+            if (IsPowerClassificationUnavailable(status)
+                && !UnclassifiedOrdinaryShortcutIsAdmitted(status))
+            {
+                throw new InvalidOperationException("Ordinary thermal control is no longer available.");
+            }
             CustomPerformanceSettings? custom = selected == PerformancePreset.Custom
-                ? status.Profiles.PluggedIn.CustomPerformance
-                    ?? CustomPerformanceSettings.Default
+                ? IsPowerClassificationUnavailable(status)
+                    ? OrdinaryShortcutCustomIntent(status)
+                    : status.Profiles.PluggedIn.CustomPerformance ?? CustomPerformanceSettings.Default
                 : null;
+            if (IsPowerClassificationUnavailable(status) && custom is not null
+                && (status.Capabilities?.CustomPerformance?.Supports(custom) != true
+                    || custom.MaximumFans && status.ConfirmedState?.Fans != FanMode.Automatic))
+            {
+                throw new InvalidOperationException("The requested Custom levels are not admitted.");
+            }
             return new PerformanceOverride(
                 selected,
                 OverrideLifetime.UntilPowerSourceChange,
                 custom);
         }
+    }
+
+    private static bool UnclassifiedOrdinaryShortcutIsAdmitted(ServiceStatusSnapshot status) =>
+        status.DeviceVerified && !status.WritesBlocked && status.ExternalPowerPresent
+        && status.ControlAccess == SessionControlAccess.Active
+        && status.Capabilities?.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower == true
+        && !status.HyperBoostRestorePending
+        && status.ConfirmedState is { Performance: not null, Fans: not null, HyperBoostActive: false }
+        && !status.UnconfirmedWrites.Contains(DeviceSubsystem.Performance)
+        && !status.UnconfirmedWrites.Contains(DeviceSubsystem.Fans);
+
+    private static CustomPerformanceSettings OrdinaryShortcutCustomIntent(ServiceStatusSnapshot status)
+    {
+        CustomPerformanceSettings? explicitIntent = status.PerformanceOverride?.CustomPerformance;
+        CustomPerformanceSettings? confirmed = status.ConfirmedState?.CustomPerformance;
+        CustomPerformanceSettings candidate = explicitIntent
+            ?? (confirmed is not null && status.Capabilities?.CustomPerformance?.Supports(
+                confirmed with { GpuClockOffsets = null }) == true ? confirmed : CustomPerformanceSettings.Default);
+        return candidate with { GpuClockOffsets = null };
     }
 
     private bool CompletePerformanceShortcut(long generation, bool applied)

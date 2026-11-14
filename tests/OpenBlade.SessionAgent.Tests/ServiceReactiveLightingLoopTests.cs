@@ -9,6 +9,53 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed partial class ServiceReactiveLightingLoopTests
 {
     [Theory]
+    [InlineData(PowerSource.ExternalUnknown, DeviceObservationReason.None)]
+    [InlineData(PowerSource.PluggedIn, DeviceObservationReason.RetainedPowerSource)]
+    [InlineData(PowerSource.UsbC, DeviceObservationReason.RetainedPowerSource)]
+    public async Task UnclassifiedExplicitShortcutUsesOrdinaryIntentWithoutAProfileSlot(
+        PowerSource presented, DeviceObservationReason reason)
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory,
+            new ServiceReactiveLightingLoopOptions(PerformanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(10)));
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+        var initial = Status(LightingRendererOwnershipState.Static);
+        client.Publish(initial with
+        {
+            ActivePowerSource = presented,
+            ObservationReason = reason,
+            ExternalPowerPresent = true,
+            KeyboardDriverModeActive = true,
+            ConfirmedState = new(PerformancePreset.Balanced, FanMode.Automatic, null, null)
+            { HyperBoostActive = false },
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+            {
+                SupportsOrdinaryThermalControlOnUnclassifiedExternalPower = true,
+                PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.Custom },
+            },
+            Profiles = initial.Profiles with
+            {
+                PluggedIn = initial.Profiles.PluggedIn with
+                {
+                    CustomPerformance = new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+                },
+            },
+        });
+        await WaitUntilAsync(() => factory.Last?.IsDriverModeActive() == true);
+        factory.Last!.PublishPerformanceShortcut(PerformanceShortcutSource.FunctionP);
+        await WaitUntilAsync(() => client.PerformanceSelections.Count == 1);
+        PerformanceOverride request = Assert.Single(client.PerformanceSelections);
+        Assert.Equal(PerformancePreset.Custom, request.Value);
+        Assert.Equal(CustomPerformanceSettings.Default, request.CustomPerformance);
+        Assert.Null(request.GpuClockTuning);
+        Assert.Empty(client.PerformanceShortcuts);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Theory]
     [InlineData(ControlOperationStatus.Applied, false)]
     [InlineData(ControlOperationStatus.Stored, true)]
     [InlineData(ControlOperationStatus.Blocked, true)]

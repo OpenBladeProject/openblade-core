@@ -117,10 +117,13 @@ public sealed partial class ProductionBatteryPortTests
         Assert.Empty(session.Writes);
     }
 
-    [Fact]
-    public async Task PhysicalOrdinaryUnclassifiedAc_TransferFailureBetweenSelectorsStopsAfterFirstSet()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PhysicalOrdinaryAc_TransferFailureBetweenSelectorsStopsAfterFirstSet(bool classified)
     {
         var session = new OrdinaryAcSession();
+        if (classified) { session.AdapterResult = Success([0x11, 0x11]); }
         session.BeforeSubmission = command =>
         {
             if (command.CommandId == 0x8C && session.Writes.Any())
@@ -131,7 +134,7 @@ public sealed partial class ProductionBatteryPortTests
                 };
             }
         };
-        await using var port = OrdinaryAcPort(session, () => PowerSource.ExternalUnknown);
+        await using var port = OrdinaryAcPort(session, () => classified ? PowerSource.PluggedIn : PowerSource.ExternalUnknown);
         var failed = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetPerformanceAsync(PerformancePreset.Silent, default));
         Assert.Equal(WriteSubmissionState.Indeterminate, failed.SubmissionState);
         Assert.Single(session.Writes);
@@ -160,4 +163,43 @@ public sealed partial class ProductionBatteryPortTests
         await Assert.ThrowsAsync<BladeWriteException>(() => port.SetPerformanceAsync(PerformancePreset.Silent, default));
         Assert.Empty(session.Writes);
     }
+    [Fact]
+    public async Task PhysicalOrdinaryClassifiedAc_BatteryContradictionBetweenSelectorsStopsWithoutReplay()
+    {
+        var session = new OrdinaryAcSession { AdapterResult = Success([0x11, 0x11]) };
+        session.BeforeSubmission = command =>
+        {
+            if (command.CommandId == 0x8C && session.Writes.Any())
+            {
+                session.AdapterResult = Success([0, 0x11]);
+            }
+        };
+        await using var port = OrdinaryAcPort(session, () => PowerSource.PluggedIn);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetPerformanceAsync(PerformancePreset.Silent, default));
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.Single(session.Writes);
+        Assert.Equal(2, session.Commands.Count(command => command.CommandId == 0x8C));
+    }
+
+    [Fact]
+    public async Task PhysicalOrdinaryPayloadScope_DoesNotExposeExperimentalGamingTurboOrMaximumFans()
+    {
+        var session = new OrdinaryAcSession();
+        await using var port = OrdinaryAcPort(session, () => PowerSource.ExternalUnknown);
+        Assert.DoesNotContain(PerformancePreset.Gaming, port.Capabilities.PerformancePresets);
+        Assert.DoesNotContain(PerformancePreset.Turbo, port.Capabilities.PerformancePresets);
+        Assert.False(port.Capabilities.CustomPerformance!.SupportsMaximumFans);
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            port.SetPerformanceAsync(PerformancePreset.Gaming, default));
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            port.SetPerformanceAsync(PerformancePreset.Turbo, default));
+        await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Medium)
+            {
+                MaximumFans = true,
+            }, default));
+        Assert.Empty(session.Commands);
+    }
+
 }

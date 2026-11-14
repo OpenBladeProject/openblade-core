@@ -190,6 +190,19 @@ public sealed class ProfileAutomationState
         {
             return true;
         }
+        ExpireTransientOverridesForPowerBoundary();
+        if (powerSource == PowerSource.Battery && temporaryFullCharge)
+        {
+            CancelTemporaryFullCharge();
+        }
+
+        return true;
+    }
+
+    // A physical boundary can retire transient intent before its external
+    // wattage is known. Keep the classified profile slot as retained data.
+    internal void ExpireTransientOverridesForPowerBoundary()
+    {
         recoveredHyperBoostPerformance = null;
         recoveredHyperBoostFans = null;
         recoveredHyperBoostFanControl = null;
@@ -198,12 +211,6 @@ public sealed class ProfileAutomationState
         temporaryFanControl = null;
         temporaryLighting = null;
         temporaryBatteryProtectionEnabled = null;
-        if (powerSource == PowerSource.Battery && temporaryFullCharge)
-        {
-            CancelTemporaryFullCharge();
-        }
-
-        return true;
     }
 
     public bool SetApplicationContext(string? executablePath)
@@ -439,7 +446,7 @@ public sealed class ProfileAutomationState
             resolvedFans = new(FanMode.Automatic, SettingValueSource.PowerProfile);
         }
         ResolvedSetting<LightingSettings> resolvedLighting =
-            ResolveLighting(
+            ResolveLightingWithPowerContext(
                 profile,
                 confirmed,
                 applicationOverride?.Lighting is not null,
@@ -472,6 +479,11 @@ public sealed class ProfileAutomationState
     }
 
     private ResolvedSetting<LightingSettings> ResolveLighting(
+        PowerProfile profile, ConfirmedDeviceState confirmed, bool fromApplication) =>
+        ResolveLightingWithPowerContext(profile, confirmed, fromApplication, PowerSource,
+            allowUnclassifiedExternalOverrides: false);
+
+    private ResolvedSetting<LightingSettings> ResolveLightingWithPowerContext(
         PowerProfile profile,
         ConfirmedDeviceState confirmed,
         bool fromApplication, PowerSource source, bool allowUnclassifiedExternalOverrides)

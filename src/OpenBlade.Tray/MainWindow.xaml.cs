@@ -1287,14 +1287,14 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             PrimeNotificationObservation();
         }
 
-        DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
+        DisplayViewModel.ActivePowerSource = ViewModel.ControlPowerSource;
         DisplayViewModel.ExternalPowerPresent = ViewModel.CanControlHardware && ViewModel.ExternalPowerPresent;
-        ThxViewModel.LoadProfile(ViewModel.ActivePowerSource, ViewModel.ActiveSavedThxAudioProfile);
+        ThxViewModel.LoadProfile(ViewModel.ControlPowerSource, ViewModel.ActiveSavedThxAudioProfile);
         ThxViewModel.ProfilePersistenceAvailable = ViewModel.CanSaveThxAudioProfile;
         DisplayViewModel.ActiveProfileSettings = ViewModel.ActiveSavedDisplayProfile;
         DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
         DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware
-            && ViewModel.ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
+            && ViewModel.ControlPowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
         _ = RefreshDisplaySettingsAsync();
     }
 
@@ -1380,16 +1380,16 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             return;
         }
 
-        if (args.PropertyName is nameof(MainViewModel.ActivePowerSource) or nameof(MainViewModel.ExternalPowerPresent)
+        if (args.PropertyName is nameof(MainViewModel.ControlPowerSource) or nameof(MainViewModel.ExternalPowerPresent)
             or nameof(MainViewModel.CanControlHardware))
         {
-            DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
+            DisplayViewModel.ActivePowerSource = ViewModel.ControlPowerSource;
             DisplayViewModel.ExternalPowerPresent = ViewModel.CanControlHardware && ViewModel.ExternalPowerPresent;
         }
 
-        if (args.PropertyName is nameof(MainViewModel.ActivePowerSource) or nameof(MainViewModel.ActiveSavedThxAudioProfile))
+        if (args.PropertyName is nameof(MainViewModel.ControlPowerSource) or nameof(MainViewModel.ActiveSavedThxAudioProfile))
         {
-            ThxViewModel.LoadProfile(ViewModel.ActivePowerSource, ViewModel.ActiveSavedThxAudioProfile);
+            ThxViewModel.LoadProfile(ViewModel.ControlPowerSource, ViewModel.ActiveSavedThxAudioProfile);
         }
 
         if (args.PropertyName == nameof(MainViewModel.CanSaveThxAudioProfile))
@@ -1415,10 +1415,10 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
         }
 
-        if (args.PropertyName is nameof(MainViewModel.CanControlHardware) or nameof(MainViewModel.ActivePowerSource))
+        if (args.PropertyName is nameof(MainViewModel.CanControlHardware) or nameof(MainViewModel.ControlPowerSource))
         {
             DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware
-                && ViewModel.ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
+                && ViewModel.ControlPowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
         }
 
         if (args.PropertyName == nameof(MainViewModel.IsSpecialKeyBindingsEditable))

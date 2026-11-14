@@ -244,8 +244,8 @@ internal static class ExperimentalBladeModels
 
     private static IEnumerable<ExperimentalFeatureEvidence> OrdinaryThermalEvidenceFor(ExperimentalBladeModel model) =>
         OrdinaryThermalPowerAdmission.SupportsProduct(model.ProductId)
-            ? [new("OrdinaryThermalControlsOnUnclassifiedExternalPower",
-                "SynapseSourceBackedWithoutPhysicalValidation", [OrdinaryThermalPowerAdmission.EvidenceSource])]
+            ? [new(OrdinaryThermalPowerAdmission.FeatureName,
+                OrdinaryThermalPowerAdmission.EvidenceBasis, [OrdinaryThermalPowerAdmission.EvidenceSource])]
             : [];
 
     private static IEnumerable<ExperimentalFeatureEvidence> DynamicFanEvidenceFor(

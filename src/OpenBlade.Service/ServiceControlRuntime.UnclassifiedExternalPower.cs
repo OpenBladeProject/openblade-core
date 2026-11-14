@@ -12,6 +12,8 @@ public sealed partial class ServiceControlRuntime
     private long windowsPowerGeneration;
     private long externalPresenceTimestamp;
     private long explicitUnclassifiedOverrideGeneration = -1;
+    private long consumedUnclassifiedBoundaryGeneration = -1;
+    private bool retainedNonPowerWriteBlock;
 
     // Capture failures are not AC evidence. Native submission uses the same
     // fresh Windows callback, so this presentation fact grants no write itself.
@@ -41,7 +43,8 @@ public sealed partial class ServiceControlRuntime
             // A failed read is not a physical source boundary. Revoke live
             // evidence without expiring saved temporary intent or inventing ABA.
             Volatile.Write(ref externalPowerPresent, 0);
-            Volatile.Write(ref externalClassificationUnavailable, 1);
+            // No adapter result completed. Keep the last presentation and
+            // classification disposition; fresh write admission has no AC proof.
             throw;
         }
     }
@@ -60,6 +63,11 @@ public sealed partial class ServiceControlRuntime
             return false;
         }
         ServiceStatusSnapshot current = GetStatus();
+        if (current.WritesBlocked || ownsHyperBoost || hyperBoostJournalSafetyBlock || hyperBoostRestorePending
+            || pendingIndeterminateHyperBoostEntryIntent is not null || pendingIndeterminateHyperBoostExitIntent is not null)
+        {
+            return false;
+        }
         return subsystem is DeviceSubsystem.Lighting or DeviceSubsystem.Battery
             || subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans
                 && current.Capabilities?.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower == true
@@ -134,6 +142,35 @@ public sealed partial class ServiceControlRuntime
     {
         PowerSource source = CaptureControlPowerSource();
         return !IsUnclassifiedExternalContext || source is PowerSource.ExternalUnknown or PowerSource.PluggedIn or PowerSource.UsbC;
+    }
+
+    private bool HasExplicitUnclassifiedOverrideInScope =>
+        Interlocked.Read(ref explicitUnclassifiedOverrideGeneration) == Interlocked.Read(ref windowsPowerGeneration);
+
+    private bool ProjectUnclassifiedIntent => IsUnclassifiedExternalContext
+        && (Automation.PowerSource == PowerSource.ExternalUnknown || HasExplicitUnclassifiedOverrideInScope);
+
+    private PowerSource EffectiveControlPowerSource(ServiceStatusSnapshot current) =>
+        IsUnclassifiedExternalContext ? PowerSource.ExternalUnknown : current.ActivePowerSource;
+
+    private bool NonPowerClassificationWriteBlock(ServiceStatusSnapshot current) =>
+        retainedNonPowerWriteBlock
+        || current.WritesBlocked && current.ObservationReason != DeviceObservationReason.RetainedPowerSource
+        || ownsHyperBoost && (current.WritesBlocked || IsUnclassifiedExternalContext)
+        || hyperBoostJournalSafetyBlock || hyperBoostRestorePending
+        || pendingIndeterminateHyperBoostEntryIntent is not null || pendingIndeterminateHyperBoostExitIntent is not null
+        || deviceProvider.IsExperimentalWritesPaused || pendingWriteConfirmations.HasPending
+        || laptopControlExecutor.RequiresReconciliation
+        || unexpectedExitRecoveryDeferredForUserConfiguration && current.WritesBlocked;
+
+    private CustomPerformanceSettings? ResolveOrdinaryShortcutCustomIntent(ServiceStatusSnapshot current)
+    {
+        CustomPerformanceSettings settings = Automation.PerformanceOverride?.CustomPerformance
+            ?? current.ConfirmedState?.CustomPerformance ?? CustomPerformanceSettings.Default;
+        // Cycling is a new ordinary request. It never inherits advanced tuning
+        // or selects a Full/limited power-profile slot for its Custom levels.
+        settings = settings with { GpuClockOffsets = null };
+        return current.Capabilities?.CustomPerformance?.Supports(settings) == true ? settings : null;
     }
 
 }

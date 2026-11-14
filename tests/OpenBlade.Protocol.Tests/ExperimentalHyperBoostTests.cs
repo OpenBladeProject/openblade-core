@@ -283,4 +283,45 @@ public sealed partial class ExperimentalThermalExpansionTests
         internal CoolingPadConnectionState State { get; set; } = CoolingPadConnectionState.PresentExact;
         public CoolingPadConnectionState Observe() => State;
     }
+    [Theory]
+    [InlineData(0x03)]
+    [InlineData(0x05)]
+    [InlineData(0x02)]
+    public async Task HyperBoost_UnclassifiedAdapterCannotClearMaximumFansBeforeEntry(byte status)
+    {
+        HidSessionResult<ReadOnlyMemory<byte>> adapter = status == 2
+            ? new(new byte[] { 0xFF, 0xFF }, null)
+            : new(default, HidSessionFailureKind.ProtocolFailure)
+            {
+                Diagnostic = new(HidSessionFailurePhase.ProtocolValidation,
+                    HidSessionFailureKind.ProtocolFailure, 0, 90)
+                {
+                    ProtocolValidationFailure = HidProtocolValidationFailure.Status,
+                },
+                QueryResponseStatus = status,
+            };
+        adapter = adapter with { UnclassifiedAdapterResponseAvailable = true };
+        var session = new Session
+        {
+            Mode = 4,
+            Cpu = 1,
+            Gpu = 2,
+            PowerModeControlFlags = 2,
+            AdapterPowerResult = adapter,
+        };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x029F));
+        await using var port = HyperBoostPort(session, new Pad(), policy,
+            power: () => PowerSource.ExternalUnknown);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetHyperBoostAsync(true, PerformancePreset.Custom, true, default));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Empty(session.Writes);
+        Assert.Equal((byte)2, session.PowerModeControlFlags);
+        Assert.Equal((byte)4, session.Mode);
+        Assert.Equal((byte)1, session.Cpu);
+        Assert.Equal((byte)2, session.Gpu);
+        Assert.True(policy.WritesAllowed);
+        Assert.Single(session.Commands, command => command.ClassId == 7 && command.CommandId == 0x8C);
+    }
+
 }
