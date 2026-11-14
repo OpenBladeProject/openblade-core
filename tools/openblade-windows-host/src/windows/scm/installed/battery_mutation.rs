@@ -383,8 +383,8 @@ impl Runtime {
             retained.fresh.verify_health()?;
             let base = base.without_battery_observation();
             let source_warning = warning.lock().map_err(|_| io::ErrorKind::Other)?.clone();
-            let source_warning = if release_deferred.get() {
-                Some(format!("{} {}", source_warning.unwrap_or_default(), super::super::thermal_storage::RELEASE_PAUSED).trim().to_owned())
+            let source_warning = if let Some(cause) = release_deferred.get() {
+                Some(cause.compose(source_warning.as_deref().unwrap_or_default()))
             } else { source_warning };
             if retained.fresh.authorize() != Some(retained.proof) {
                 return Ok(source_warning.as_ref().map_or(base.clone(), |message| base.battery_projection(None,None,message)));
@@ -483,11 +483,11 @@ impl Runtime {
         use super::super::thermal_storage::TemporaryRelease;
         match self.release_temporary_reservation(&original) {
             Ok(TemporaryRelease::Released | TemporaryRelease::NoMatchingReservation) => {
-                self.release_presentation(&original, false)
+                self.release_presentation(&original, None)
             }
             Ok(TemporaryRelease::Deferred(reason)) => {
                 *self.temporary_owner.borrow_mut() = Some(original.clone());
-                self.release_presentation(&original, true)?;
+                self.release_presentation(&original, Some(reason.cause))?;
                 Err(reason.into_error())
             }
             Err(error) => {
@@ -499,10 +499,10 @@ impl Runtime {
     fn release_presentation(
         &self,
         original: &Arc<BatteryPermit>,
-        deferred: bool,
+        cause: Option<super::super::thermal_storage::ReleasePause>,
     ) -> io::Result<()> {
-        if self.release_deferred.replace(deferred) != deferred {
-            *self.release_notice.borrow_mut() = Some((original.clone(), deferred));
+        if self.release_deferred.replace(cause) != cause {
+            *self.release_notice.borrow_mut() = Some((original.clone(), cause));
         }
         Ok(())
     }
@@ -526,9 +526,8 @@ impl Runtime {
                 "Battery observation is unavailable; new writes require fresh admission.".into()
             }
         });
-        if deferred {
-            message.push(' ');
-            message.push_str(super::super::thermal_storage::RELEASE_PAUSED);
+        if let Some(cause) = deferred {
+            message = cause.compose(&message);
         }
         Ok(Some(BatteryUpdate {
             desired: None,
@@ -716,7 +715,11 @@ impl Runtime {
                 .as_ref()
                 .is_none_or(|p| p.joined.load(Ordering::Acquire))
         {
-            self.finish_temporary_release(original.clone())?;
+            if let Err(error) = self.finish_temporary_release(original.clone()) {
+                if !super::super::thermal_storage::is_release_deferred(&error) {
+                    return Err(error);
+                }
+            }
         }
         *self
             .battery_warning
@@ -727,7 +730,8 @@ impl Runtime {
             public_only: false,
             desired,
             observation: original.historical_observation()?,
-            public_message: message.clone(),
+            public_message: self.release_deferred.get().map_or_else(
+                || message.clone(), |cause| cause.compose(&message)),
             message,
             sid: original.sid.clone(),
         }))
@@ -846,14 +850,13 @@ impl Runtime {
             }
             permit.reason(&format!("Battery transport or settlement failed: {e}"));
         }
+        // The worker's outcome is already established. Only subsequent typed
+        // capacity-release deferral is presentation/bookkeeping, not a failure
+        // of this operation. Fatal/unclassified errors still propagate.
         if let Err(error) = self.reconcile_temporary_owner() {
-            if super::super::thermal_storage::is_release_deferred(&error) {
-                return Ok((
-                    Outcome::blocked(error.to_string()),
-                    self.take_release_notice()?,
-                ));
+            if !super::super::thermal_storage::is_release_deferred(&error) {
+                return Err(error);
             }
-            return Err(error);
         }
         // Battery uses a typed side channel; the thermal Option result is intentionally
         // empty. Check original live authority and deadline independently here.
@@ -893,7 +896,7 @@ impl Runtime {
             None
         };
         let observation = permit.historical_observation()?;
-        let public_message = if permit.storage.pending() {
+        let public_message: String = if permit.storage.pending() {
             permit.storage.pending_reason()?.into()
         } else if observation.is_some() {
             "Independent battery policy observation retained; new writes require fresh admission."
@@ -902,6 +905,8 @@ impl Runtime {
             "Last battery observation expired or unavailable; new writes require fresh admission."
                 .into()
         };
+        let public_message = self.release_deferred.get().map_or_else(
+            || public_message.clone(), |cause| cause.compose(&public_message));
         let update = BatteryUpdate {
             public_only: false,
             desired,

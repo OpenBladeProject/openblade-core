@@ -13,15 +13,60 @@ use std::{
 mod battery;
 pub(super) use battery::TemporaryRelease;
 
-pub(super) const RELEASE_PAUSED: &str = "Temporary charge journal release is deferred. New mutations are paused while a read-only check is retried; no hardware command will be replayed.";
+pub(super) const RELEASE_PAUSED: &str = "Temporary charge journal release is deferred.";
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ReleasePause {
+    Busy,
+    ReadUnavailable,
+    Reconciliation(&'static str),
+}
+impl ReleasePause {
+    pub(super) fn message(self) -> String {
+        let reason = match self {
+            Self::Busy => {
+                "New mutations are paused until active work settles; no hardware command will be replayed."
+            }
+            Self::ReadUnavailable => {
+                "New mutations are paused while a read-only check is retried; no hardware command will be replayed."
+            }
+            Self::Reconciliation(reason) => reason,
+        };
+        format!("{RELEASE_PAUSED} {reason}")
+    }
+    pub(super) fn compose(self, message: &str) -> String {
+        // Keep the operation/public observation independent of the future-write
+        // pause, and include an authoritative settlement cause only once.
+        match self {
+            Self::Reconciliation(reason) if message.contains(reason) => {
+                format!("{message} {RELEASE_PAUSED}")
+            }
+            _ => format!("{message} {}", self.message()).trim().to_owned(),
+        }
+    }
+}
 #[derive(Debug)]
-pub(super) struct ReleaseDeferred(Option<io::Error>);
+pub(super) struct ReleaseDeferred {
+    pub(super) cause: ReleasePause,
+    source: Option<io::Error>,
+}
 impl ReleaseDeferred {
     pub(super) fn busy() -> Self {
-        Self(None)
+        Self {
+            cause: ReleasePause::Busy,
+            source: None,
+        }
+    }
+    pub(super) fn reconciliation(reason: &'static str) -> Self {
+        Self {
+            cause: ReleasePause::Reconciliation(reason),
+            source: None,
+        }
     }
     pub(super) fn unreadable(error: io::Error) -> Self {
-        Self(Some(error))
+        Self {
+            cause: ReleasePause::ReadUnavailable,
+            source: Some(error),
+        }
     }
     pub(super) fn into_error(self) -> io::Error {
         io::Error::new(io::ErrorKind::WouldBlock, self)
@@ -29,12 +74,12 @@ impl ReleaseDeferred {
 }
 impl std::fmt::Display for ReleaseDeferred {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(RELEASE_PAUSED)
+        f.write_str(&self.cause.message())
     }
 }
 impl std::error::Error for ReleaseDeferred {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.0.as_ref().map(|e| e as _)
+        self.source.as_ref().map(|e| e as _)
     }
 }
 pub(super) fn is_release_deferred(error: &io::Error) -> bool {
@@ -342,6 +387,26 @@ pub(super) struct Storage {
     #[cfg(test)]
     battery_append_hook: Mutex<Option<Arc<dyn Fn(&str) + Send + Sync>>>,
 }
+fn pending_reason_locked(s: &State) -> &'static str {
+    if s.last
+        .as_ref()
+        .is_some_and(|entry| entry.progress >= 1 && !settled(entry.progress))
+    {
+        "A thermal command may have been submitted. Read-only reconciliation is required and no mutation will be replayed."
+    } else if s.intent_append_failed {
+        "Thermal submission-intent journal publication could not be confirmed. Pending or published journal evidence is retained. Read-only reconciliation is required and no mutation will be replayed."
+    } else if s.preparation_failed {
+        "Thermal journal preparation could not be confirmed; storage reconciliation is required. The failed preparation reached no submission intent or thermal setter. Pending or published journal evidence is retained."
+    } else if s.last.as_ref().is_some_and(|entry| entry.progress == 0) {
+        "Intent stored and journal prepared; no mutation submission intent was reached. Explicit read-only reconciliation is required."
+    } else if s.configuration_changed {
+        "Saved configuration changed unexpectedly; storage reconciliation is required. No thermal submission is established by this change."
+    } else if s.configuration_failed {
+        "Saved configuration replacement failed; storage reconciliation is required. No thermal submission is established."
+    } else {
+        "An earlier thermal submission requires read-only reconciliation."
+    }
+}
 impl Storage {
     #[cfg(test)]
     pub(super) fn open(files: Box<dyn Files>, user_sid: &str) -> io::Result<Arc<Self>> {
@@ -543,27 +608,9 @@ impl Storage {
         let s = self.state.lock().map_err(|_| {
             super::thermal_mutation::fatal_admission("Thermal storage state is poisoned.")
         })?;
-        Ok(
-            if s.last
-                .as_ref()
-                .is_some_and(|entry| entry.progress >= 1 && !settled(entry.progress))
-            {
-                "A thermal command may have been submitted. Read-only reconciliation is required and no mutation will be replayed."
-            } else if s.intent_append_failed {
-                "Thermal submission-intent journal publication could not be confirmed. Pending or published journal evidence is retained. Read-only reconciliation is required and no mutation will be replayed."
-            } else if s.preparation_failed {
-                "Thermal journal preparation could not be confirmed; storage reconciliation is required. The failed preparation reached no submission intent or thermal setter. Pending or published journal evidence is retained."
-            } else if s.last.as_ref().is_some_and(|entry| entry.progress == 0) {
-                "Intent stored and journal prepared; no mutation submission intent was reached. Explicit read-only reconciliation is required."
-            } else if s.configuration_changed {
-                "Saved configuration changed unexpectedly; storage reconciliation is required. No thermal submission is established by this change."
-            } else if s.configuration_failed {
-                "Saved configuration replacement failed; storage reconciliation is required. No thermal submission is established."
-            } else {
-                "An earlier thermal submission requires read-only reconciliation."
-            },
-        )
+        Ok(pending_reason_locked(&s))
     }
+
     pub(super) fn quarantine_settlement(&self) -> io::Result<()> {
         self.state
             .lock()

@@ -209,6 +209,13 @@ fn padded_history(target: usize) -> Vec<u8> {
 
 #[tokio::test]
 async fn tfc_release_actual_worker_prepared_race_keeps_origin_until_settlement_and_next_tick() {
+    prepared_race(false).await;
+}
+#[tokio::test]
+async fn tfc_release_outcome_cause_changes_publish_while_release_remains_paused() {
+    prepared_race(true).await;
+}
+async fn prepared_race(quarantine_after_read_pause: bool) {
     // Measure the unchanged encoded operation sizes so the subsequent ordinary
     // reservation/roll exercises the actual segment boundary without a matrix.
     let probe = Rig::new(MemoryFiles::default());
@@ -302,6 +309,13 @@ async fn tfc_release_actual_worker_prepared_race_keeps_origin_until_settlement_a
         // The origin tick sees independent false before the worker can append.
         // Its release hook then commits actual Prepared before the release lock.
         wait_release_view(&r, true).await;
+        let busy = immediate_battery_view(&r, Some(SID)).await;
+        assert!(
+            busy["message"]
+                .as_str()
+                .unwrap()
+                .contains("until active work settles")
+        );
         assert_eq!(r.storage.progress(), Some(0));
         assert!(r.storage.pending());
         assert!(r.runtime.release_only_for_tests());
@@ -310,11 +324,68 @@ async fn tfc_release_actual_worker_prepared_race_keeps_origin_until_settlement_a
         finish_tx.send(()).unwrap();
         let response = policy.await;
         assert_eq!(
-            response["result"]["status"], 2,
-            "hardware evidence retained while bookkeeping remains deferred: {response}"
+            response["result"]["status"], 1,
+            "confirmed settled operation must survive bookkeeping deferral: {response}"
         );
         assert_eq!(r.storage.progress(), Some(62));
         assert!(!r.storage.pending());
+        let published = immediate_battery_view(&r, Some(SID)).await;
+        assert_eq!(
+            published["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"],
+            70
+        );
+        assert_eq!(
+            published["confirmedState"]["battery"]["chargeLimitPercent"],
+            70
+        );
+        assert!(
+            published["message"]
+                .as_str()
+                .unwrap()
+                .contains("Battery operation confirmed")
+        );
+        assert!(
+            published["message"]
+                .as_str()
+                .unwrap()
+                .contains("check is retried")
+        );
+        assert!(
+            !published["message"]
+                .as_str()
+                .unwrap()
+                .contains("until active work settles")
+        );
+        if quarantine_after_read_pause {
+            // Exercise the same production quarantine boundary here solely to
+            // prove cause coalescing across three continuously paused states.
+            // The separate failed-settlement case proves real worker quarantine.
+            r.storage.quarantine_settlement().unwrap();
+            r.source.lock().await.process_power_source().await.unwrap();
+            let changed = immediate_battery_view(&r, Some(SID)).await;
+            let reason = r.storage.pending_reason().unwrap();
+            assert!(changed["message"].as_str().unwrap().contains(reason));
+            assert!(
+                !changed["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("check is retried")
+            );
+            assert_eq!(
+                changed["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"],
+                70
+            );
+            assert!(
+                changed["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Battery operation confirmed")
+            );
+            assert_eq!(r.storage.temporary_capacity_for_tests(), original);
+            assert_eq!(r.port.state.lock().unwrap().writes, 2);
+            controls.handle(windows_sys::Win32::System::Services::SERVICE_CONTROL_STOP);
+            return;
+        }
         assert_eq!(r.storage.temporary_capacity_for_tests(), original);
         assert_eq!(r.port.state.lock().unwrap().writes, 2);
         r.files.release_fault.store(0, Ordering::Release);
@@ -345,4 +416,278 @@ async fn tfc_release_actual_worker_prepared_race_keeps_origin_until_settlement_a
     .await
     .unwrap();
     result.unwrap();
+}
+
+async fn immediate_battery_view(r: &Rig, sid: Option<&str>) -> Value {
+    let publications = r.source.lock().await.publications().unwrap();
+    let snapshot = publications.borrow().active.clone().project_private(sid);
+    let bytes = crate::service_status::encode_status_event(&snapshot).unwrap();
+    println!(
+        "NATIVE_THERMAL_MUTATION_RESPONSE {}",
+        std::str::from_utf8(&bytes).unwrap()
+    );
+    serde_json::from_slice::<Value>(&bytes).unwrap()["status"].clone()
+}
+async fn policy_and_enable(r: &Rig, n: u32) {
+    r.get().await;
+    let response = r
+        .request(battery_request(
+            n,
+            "setBatteryPolicy",
+            json!({"chargeLimitPercent":70}),
+        ))
+        .await;
+    assert_eq!(response["result"]["status"], 1, "{response}");
+    enable(r, n + 1).await;
+}
+fn assert_canceled_policy(view: &Value) {
+    assert_eq!(
+        view["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"], 70,
+        "full desired update missing: {view}"
+    );
+    assert_eq!(
+        view["desiredState"]["battery"]["temporaryFullCharge"],
+        false
+    );
+    assert_eq!(view["fullChargeOverride"], false);
+    assert_eq!(view["confirmedState"]["battery"]["chargeLimitPercent"], 70);
+    assert_eq!(
+        view["confirmedState"]["battery"]["temporaryFullCharge"],
+        false
+    );
+}
+#[tokio::test]
+async fn tfc_release_outcome_explicit_cancel_keeps_settled_result_and_immediate_owned_delta() {
+    let r = Rig::new(MemoryFiles::default());
+    policy_and_enable(&r, 940).await;
+    let quota = r.storage.temporary_capacity_for_tests();
+    r.files.release_fault.store(1, Ordering::Release);
+    let response = r
+        .request(battery_request(942, "setFullChargeOverride", json!(false)))
+        .await;
+    assert_eq!(r.storage.progress(), Some(72));
+    assert!(!r.storage.pending());
+    assert_eq!(
+        response["result"]["status"], 1,
+        "settled cancel replaced by bookkeeping: {response}"
+    );
+    let owned = immediate_battery_view(&r, Some(SID)).await;
+    assert_canceled_policy(&owned);
+    assert!(
+        owned["message"]
+            .as_str()
+            .unwrap()
+            .contains("Battery operation confirmed")
+    );
+    assert!(!owned["message"].as_str().unwrap().contains(RELEASE_PAUSED));
+    let foreign = immediate_battery_view(&r, Some("S-1-5-21-111-222-333-1002")).await;
+    assert!(
+        !foreign["message"]
+            .as_str()
+            .unwrap()
+            .contains("Battery operation confirmed")
+    );
+    assert_ne!(
+        foreign["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"],
+        70
+    );
+    assert!(quota.0 > 0);
+    assert_eq!(r.storage.temporary_capacity_for_tests(), (0, None));
+    assert!(!r.runtime.release_only_for_tests());
+    let writes = r.port.state.lock().unwrap().writes;
+    assert_eq!(writes, 3);
+    // Settled explicit cancellation has already cleared its reservation. A tagged
+    // release-read fault is unreachable here; a no-op cancel needs no setter.
+    let blocked = r
+        .request(battery_request(943, "setFullChargeOverride", json!(false)))
+        .await;
+    assert_eq!(blocked["result"]["status"], 1);
+    assert_eq!(r.storage.progress(), Some(73));
+    assert_eq!(r.port.state.lock().unwrap().writes, writes);
+    r.files.release_fault.store(0, Ordering::Release);
+    r.source.lock().await.process_power_source().await.unwrap();
+    assert_eq!(r.storage.temporary_capacity_for_tests(), (0, None));
+    assert_eq!(r.port.state.lock().unwrap().writes, writes);
+    let restored = immediate_battery_view(&r, Some(SID)).await;
+    assert!(
+        !restored["message"]
+            .as_str()
+            .unwrap()
+            .contains(RELEASE_PAUSED)
+    );
+    assert!(
+        restored["message"]
+            .as_str()
+            .unwrap()
+            .contains("Battery operation confirmed")
+    );
+    r.stop().await;
+}
+#[tokio::test]
+async fn tfc_release_outcome_automatic_cancel_publishes_full_delta_before_callback_repair() {
+    let r = Rig::new(MemoryFiles::default());
+    policy_and_enable(&r, 950).await;
+    let enabled = fan_rows(&r).last().unwrap().clone();
+    let quota = r.storage.temporary_capacity_for_tests();
+    r.files.release_fault.store(1, Ordering::Release);
+    source_battery(&r);
+    r.source.lock().await.process_power_source().await.unwrap();
+    let canceled = fan_rows(&r).last().unwrap().clone();
+    assert_eq!(canceled["progress"], 72);
+    assert_eq!(canceled["tfc"]["ids"], enabled["tfc"]["cancel_ids"]);
+    assert!(!r.storage.pending());
+    let owned = immediate_battery_view(&r, Some(SID)).await;
+    assert_canceled_policy(&owned);
+    assert!(
+        owned["message"]
+            .as_str()
+            .unwrap()
+            .contains("canceled on Battery by independent readback")
+    );
+    let foreign = immediate_battery_view(&r, Some("S-1-5-21-111-222-333-1002")).await;
+    assert_ne!(
+        foreign["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"],
+        70
+    );
+    assert!(quota.0 > 0);
+    assert_eq!(r.storage.temporary_capacity_for_tests(), (0, None));
+    assert!(!r.runtime.release_only_for_tests());
+    assert_eq!(r.port.state.lock().unwrap().writes, 3);
+    // Existing authorized callback reconstructs without another explicit mutation.
+    r.get().await;
+    assert_canceled_policy(&immediate_battery_view(&r, Some(SID)).await);
+    r.files.release_fault.store(0, Ordering::Release);
+    r.source.lock().await.process_power_source().await.unwrap();
+    assert_eq!(r.storage.temporary_capacity_for_tests(), (0, None));
+    assert_eq!(r.port.state.lock().unwrap().writes, 3);
+    r.stop().await;
+}
+#[tokio::test]
+async fn tfc_release_outcome_quarantined_cancel_keeps_reconciliation_cause_with_stale_proof() {
+    let r = Rig::new(MemoryFiles::default());
+    policy_and_enable(&r, 960).await;
+    r.files.fail_battery_settled.store(true, Ordering::Release);
+    let response = r
+        .request(battery_request(962, "setFullChargeOverride", json!(false)))
+        .await;
+    assert_eq!(response["result"]["status"], 2);
+    assert!(r.storage.pending());
+    let reason = r.storage.pending_reason().unwrap();
+    assert!(
+        response["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains(reason),
+        "actual pending cause replaced: {response}"
+    );
+    let immediate = immediate_battery_view(&r, Some(SID)).await;
+    assert!(immediate["message"].as_str().unwrap().contains(reason));
+    assert!(
+        !immediate["message"]
+            .as_str()
+            .unwrap()
+            .contains("check is retried")
+    );
+    // Epoch change invalidates original proof; public cause must remain authoritative.
+    source_battery(&r);
+    r.source.lock().await.process_power_source().await.unwrap();
+    let blocked = r
+        .request(battery_request(
+            963,
+            "setBatteryPolicy",
+            json!({"chargeLimitPercent":75}),
+        ))
+        .await;
+    assert_eq!(blocked["result"]["status"], 2);
+    assert!(
+        blocked["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains(reason)
+    );
+    r.get().await;
+    let stale = immediate_battery_view(&r, Some(SID)).await;
+    assert!(stale["message"].as_str().unwrap().contains(reason));
+    assert!(
+        !stale["message"]
+            .as_str()
+            .unwrap()
+            .contains("check is retried")
+    );
+    assert_eq!(r.port.state.lock().unwrap().writes, 3);
+    assert!(r.runtime.release_only_for_tests());
+    r.stop().await;
+}
+
+#[tokio::test]
+async fn tfc_release_outcome_refused_automatic_cancel_retains_full_intent_without_invented_readback()
+ {
+    let r = Rig::new(MemoryFiles::default());
+    policy_and_enable(&r, 970).await;
+    let quota = r.storage.temporary_capacity_for_tests();
+    let enabled = fan_rows(&r).last().unwrap().clone();
+    r.files.release_fault.store(1, Ordering::Release);
+    r.custody.authentication.fetch_add(1, Ordering::AcqRel);
+    source_battery(&r);
+    r.source.lock().await.process_power_source().await.unwrap();
+    assert_eq!(fan_rows(&r).last().unwrap(), &enabled);
+    assert_eq!(r.port.state.lock().unwrap().writes, 2);
+    let owned = immediate_battery_view(&r, Some(SID)).await;
+    assert_eq!(
+        owned["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"], 70,
+        "event delta omitted: {owned}"
+    );
+    assert_eq!(
+        owned["desiredState"]["battery"]["temporaryFullCharge"],
+        false
+    );
+    assert_eq!(owned["fullChargeOverride"], false);
+    assert_eq!(
+        owned["confirmedState"]["battery"]["temporaryFullCharge"], true,
+        "intent clearing is not hardware confirmation"
+    );
+    assert!(
+        owned["message"]
+            .as_str()
+            .unwrap()
+            .contains("cancellation is paused")
+    );
+    assert!(owned["message"].as_str().unwrap().contains(RELEASE_PAUSED));
+    let foreign = immediate_battery_view(&r, Some("S-1-5-21-111-222-333-1002")).await;
+    assert_ne!(
+        foreign["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"],
+        70
+    );
+    assert_eq!(r.storage.temporary_capacity_for_tests(), quota);
+    assert!(r.runtime.release_only_for_tests());
+    r.files.release_fault.store(0, Ordering::Release);
+    r.source.lock().await.process_power_source().await.unwrap();
+    assert_eq!(r.storage.temporary_capacity_for_tests(), (0, None));
+    assert_eq!(r.port.state.lock().unwrap().writes, 2);
+    let recovered = immediate_battery_view(&r, Some(SID)).await;
+    assert_eq!(
+        recovered["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"],
+        70
+    );
+    assert_eq!(
+        recovered["desiredState"]["battery"]["temporaryFullCharge"],
+        false
+    );
+    assert!(
+        recovered["message"]
+            .as_str()
+            .unwrap()
+            .contains("cancellation is paused")
+    );
+    assert!(
+        !recovered["message"]
+            .as_str()
+            .unwrap()
+            .contains(RELEASE_PAUSED)
+    );
+    assert_eq!(
+        recovered["confirmedState"]["battery"]["temporaryFullCharge"],
+        true
+    );
+    r.stop().await;
 }

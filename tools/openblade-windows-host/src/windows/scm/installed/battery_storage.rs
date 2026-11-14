@@ -58,7 +58,12 @@ impl Storage {
         if s.temporary_capacity_origin.as_ref() != Some(origin) {
             return Ok(TemporaryRelease::NoMatchingReservation);
         }
-        if s.quarantined || s.last.as_ref().is_some_and(|e| !settled(e.progress)) {
+        if s.quarantined {
+            return Ok(TemporaryRelease::Deferred(ReleaseDeferred::reconciliation(
+                pending_reason_locked(&s),
+            )));
+        }
+        if s.last.as_ref().is_some_and(|e| !settled(e.progress)) {
             return Ok(TemporaryRelease::Deferred(ReleaseDeferred::busy()));
         }
         let read = |name| match self.files.read_release(name) {
