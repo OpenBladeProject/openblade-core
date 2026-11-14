@@ -566,8 +566,9 @@ internal sealed class CpuTuningController
         var unavailable = new CpuTuningBackendStatus(DeviceFeatureAccess.ObservedOnly, CpuTuningBackendAvailability.Unavailable);
         // Publish only the independently observed families. Raw fast/slow limits
         // do not establish effective watts or any CO values.
-        CpuLiveState? live = curve is null && power is null ? null : new(power is null ? null
-            : new(null, power.Fast.Milliwatts, power.Slow.Milliwatts),
+        CpuLivePowerLimits? limits = power is null || (power.Fast.Milliwatts is null && power.Slow.Milliwatts is null)
+            ? null : new(null, power.Fast.Milliwatts, power.Slow.Milliwatts);
+        CpuLiveState? live = curve is null && limits is null ? null : new(limits,
             curve?.CoreOffsets.Select(core => new CpuCoreCurveOptimizerValue(core.PhysicalCoreId, core.Offset)).ToArray() ?? []);
         return new(null, live, unavailable, unavailable with
         {

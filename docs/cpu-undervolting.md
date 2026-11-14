@@ -41,7 +41,9 @@ replay or guessed restoration.
 Phoenix/Hawk Point uses its own ordinal-based `E1` getter, `53` per-core setter,
 PCI identities and eight-core fuse interpretation. It checks the source-defined
 capability and fresh `5000A` magnitude range. It does not inherit the Strix
-backend's fused PPT ceiling or expose a power-limit setter.
+backend's fused PPT ceiling or expose a power-limit setter. It preserves the
+firmware's raw power readings for exact comparison without applying the older
+backend's power-write encoder to them.
 
 New model ownership uses journal schema 4 with an explicit closed contract ID
 and version. Existing schema 3 journals retain their original RZ09-0528/V31

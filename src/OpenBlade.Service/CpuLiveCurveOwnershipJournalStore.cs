@@ -185,7 +185,7 @@ internal sealed record CpuLiveCurvePostBootObservation(CpuLiveCurveContext Conte
     CpuLivePowerStoredPair PowerBefore, CpuLivePowerStoredPair PowerAfter, DateTimeOffset ObservedAtUtc)
 {
     internal bool Matches(CpuLiveCurveOwnershipJournal prior) => prior.IsPostBootReconciliationCandidate
-        && Context is { IsWellFormed: true, RuntimeLifetime.ServiceInstance: var service } && service != Guid.Empty
+        && Context is { IsWellFormed: true, Contract: { } contract, RuntimeLifetime.ServiceInstance: var service } && service != Guid.Empty
         && prior.Context.RuntimeLifetime is { ServiceInstance: var originalService } && originalService != Guid.Empty
         && service != originalService && Context.BootSequence != prior.Context.BootSequence
         && (Context with { BootSequence = prior.Context.BootSequence, RuntimeLifetime = prior.Context.RuntimeLifetime })
@@ -194,7 +194,7 @@ internal sealed record CpuLiveCurvePostBootObservation(CpuLiveCurveContext Conte
         && vector.CoreOffsets.SequenceEqual(prior.OriginalBaseline)
         && PowerContext is { IsWellFormed: true }
         && Context.MatchesHardwareContext(PowerContext.ToCurveContext())
-        && PowerBefore.Decode() is { } before && PowerAfter.Decode() == before && ObservedAtUtc != default;
+        && PowerBefore?.DecodeCurvePeer(contract) is { } before && PowerAfter?.DecodeCurvePeer(contract) == before && ObservedAtUtc != default;
 }
 
 internal sealed record CpuLiveCurvePostBootReceipt(string State, string Basis, string PreviousSha256,

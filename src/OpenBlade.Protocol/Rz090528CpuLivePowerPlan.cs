@@ -11,8 +11,8 @@ internal readonly record struct CpuLivePowerValue
     // The vendor cap is a ten-bit whole-watt field. This is a representation
     // bound, not an assertion that this machine admits the maximum.
     internal const uint MaximumMilliwatts = 1023_000;
-    private CpuLivePowerValue(uint milliwatts, uint bits) { Milliwatts = milliwatts; RawBits = bits; }
-    internal uint Milliwatts { get; }
+    private CpuLivePowerValue(uint? milliwatts, uint bits) { Milliwatts = milliwatts; RawBits = bits; }
+    internal uint? Milliwatts { get; }
     internal uint RawBits { get; }
     internal float Watts => BitConverter.UInt32BitsToSingle(RawBits);
     internal static bool TryFromMilliwatts(uint milliwatts, out CpuLivePowerValue value)
@@ -39,11 +39,36 @@ internal readonly record struct CpuLivePowerValue
             || low < MaximumMilliwatts && Bits(low + 1) == bits) { return false; }
         value = new(low, bits); return true;
     }
+    internal static bool TryFromObservedWatts(uint bits, out CpuLivePowerValue value)
+    {
+        value = default;
+        float watts = BitConverter.UInt32BitsToSingle(bits);
+        if (!float.IsFinite(watts) || watts < 0) { return false; }
+        // Phoenix CO peers compare the original IEEE words. The nullable mW
+        // projection is display-only and never reconstructs the native sample.
+        double rounded = Math.Round((double)watts * 1000, MidpointRounding.ToEven);
+        value = new(rounded <= uint.MaxValue ? (uint)rounded : null, bits);
+        return true;
+    }
+
     private static uint Bits(uint milliwatts) => BitConverter.SingleToUInt32Bits((float)milliwatts * 0.001f);
 }
 
 internal sealed record CpuLivePowerPair(CpuLivePowerValue Fast, CpuLivePowerValue Slow, uint StapmRawBits)
 {
+    internal static CpuLivePowerPair? DecodeCurvePeer(CpuLiveCurveContract contract, uint stapmBits, uint fastBits, uint slowBits)
+    {
+        float stapm = BitConverter.UInt32BitsToSingle(stapmBits);
+        if (!float.IsFinite(stapm)) { return null; }
+        if (contract.UsesPhoenixProtocol)
+        {
+            return stapm >= 0 && CpuLivePowerValue.TryFromObservedWatts(fastBits, out var fast)
+                && CpuLivePowerValue.TryFromObservedWatts(slowBits, out var slow) ? new(fast, slow, stapmBits) : null;
+        }
+        return contract == CpuLiveCurveContract.Rz090528 && CpuLivePowerValue.TryFromRawBits(fastBits, out var legacyFast)
+            && CpuLivePowerValue.TryFromRawBits(slowBits, out var legacySlow) ? new(legacyFast, legacySlow, stapmBits) : null;
+    }
+
     internal CpuLivePowerValue Get(CpuLivePowerLimit limit) => limit switch
     { CpuLivePowerLimit.Fast => Fast, CpuLivePowerLimit.Slow => Slow, _ => throw new ArgumentOutOfRangeException(nameof(limit)) };
 }
@@ -69,13 +94,10 @@ internal sealed class CpuLivePowerSnapshot
         if (source is null || source.Contract != contract || source.Validity != CpuPmRawSnapshotValidity.ValidCandidateObservation
             || source.CapturedUtc == default || source.MonotonicTimestamp < 0) { return null; }
         byte[] bytes = source.CopyPayload();
-        if (!contract.AcceptsGeometry(contract.EnabledCoreMask, source.PmVersion, bytes.Length)
-            || !CpuLivePowerValue.TryFromRawBits(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(FastOffset, 4)), out var fast)
-            || !CpuLivePowerValue.TryFromRawBits(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(SlowOffset, 4)), out var slow)) { return null; }
-        uint stapm = BinaryPrimitives.ReadUInt32LittleEndian(bytes);
-        if (CpuCurveNativeProfile.ForContract(contract).IsPhoenix && !CpuLivePowerValue.TryFromRawBits(stapm, out _))
-        { return null; }
-        return new(source, new(fast, slow, stapm));
+        if (!contract.AcceptsGeometry(contract.EnabledCoreMask, source.PmVersion, bytes.Length)) { return null; }
+        var pair = CpuLivePowerPair.DecodeCurvePeer(contract, BinaryPrimitives.ReadUInt32LittleEndian(bytes),
+            BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(FastOffset)), BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(SlowOffset)));
+        return pair is null ? null : new(source, pair);
     }
 }
 

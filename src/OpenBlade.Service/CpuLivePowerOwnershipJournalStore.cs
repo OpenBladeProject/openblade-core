@@ -30,7 +30,7 @@ internal sealed record CpuLivePowerContext(DeviceIdentity Identity, uint Enabled
 
 // Explicit public DTO fields: Protocol value properties are internal and must
 // not be serialized implicitly. Exact reconstruction rejects normalization.
-internal sealed record CpuLivePowerStoredValue(uint Milliwatts, uint RawBits)
+internal sealed record CpuLivePowerStoredValue(uint? Milliwatts, uint RawBits)
 {
     internal CpuLivePowerValue? Decode() => CpuLivePowerValue.TryFromRawBits(RawBits, out var value)
         && value.Milliwatts == Milliwatts ? value : null;
@@ -41,6 +41,13 @@ internal sealed record CpuLivePowerStoredPair(CpuLivePowerStoredValue Fast, CpuL
 {
     internal CpuLivePowerPair? Decode() => Fast?.Decode() is { } fast && Slow?.Decode() is { } slow
         && float.IsFinite(BitConverter.UInt32BitsToSingle(StapmRawBits)) ? new(fast, slow, StapmRawBits) : null;
+    internal CpuLivePowerPair? DecodeCurvePeer(CpuLiveCurveContract contract)
+    {
+        if (Fast is null || Slow is null) { return null; }
+        var pair = CpuLivePowerPair.DecodeCurvePeer(contract, StapmRawBits, Fast.RawBits, Slow.RawBits);
+        return pair is not null && pair.Fast.Milliwatts == Fast.Milliwatts && pair.Slow.Milliwatts == Slow.Milliwatts ? pair : null;
+    }
+
     internal static CpuLivePowerStoredPair From(CpuLivePowerPair pair) => new(
         CpuLivePowerStoredValue.From(pair.Fast), CpuLivePowerStoredValue.From(pair.Slow), pair.StapmRawBits);
 }
@@ -116,7 +123,7 @@ internal sealed class CpuLivePowerOwnershipJournal
         }
     }
 
-    private static bool IsForward(uint milliwatts) => milliwatts is >= 45000 and <= 95000 && milliwatts % 1000 == 0;
+    private static bool IsForward(uint? milliwatts) => milliwatts is >= 45000 and <= 95000 && milliwatts % 1000 == 0;
     internal CpuLivePowerPair ExpectedAt(int completed)
     {
         var pair = OperationBaseline.Decode() ?? throw new InvalidDataException("Invalid live PPT baseline.");

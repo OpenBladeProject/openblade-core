@@ -37,7 +37,7 @@ internal static class CpuPowerTestData
     internal static CpuLivePowerOwnershipJournal Legacy(CpuLivePowerOwnershipState state)
     {
         var original = PairFixture();
-        var target = PairFixture(90000, original.Slow.Milliwatts);
+        var target = PairFixture(90000, original.Slow.Milliwatts!.Value);
         bool restored = state == CpuLivePowerOwnershipState.Restored;
         bool completed = state == CpuLivePowerOwnershipState.OwnedVerified;
         var expected = completed ? target : original;

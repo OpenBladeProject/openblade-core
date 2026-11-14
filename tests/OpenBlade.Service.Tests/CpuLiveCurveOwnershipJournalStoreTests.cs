@@ -124,6 +124,53 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PhoenixPostBootReceiptRequiresBitIdenticalObservedPowerAndArchivesOriginal(bool blade2023)
+    {
+        var contract = blade2023 ? CpuLiveCurveContract.Rz090482 : CpuLiveCurveContract.Rz090508;
+        var backend = CpuLiveCurveTuningTransactionTests.Blade14Fixture(new(), contract);
+        var context = backend.Context with { RuntimeLifetime = new(Guid.NewGuid(), 0, 1) };
+        var snapshot = CpuLiveCurveSnapshot.TryCreate(contract,
+            new(context.EnabledCoreMask, context.PmVersion, context.PmTableLength, backend.Values))!;
+        var plan = Rz090528CpuLiveCurvePlan.CreateSelectiveFromSnapshot(snapshot, [new(0, -2)], (_, _) => true).Plan!;
+        var prior = CpuLiveCurveOwnershipJournal.Prepare(context, plan).Progress(CpuLiveCurveOwnershipState.PossibleSubmission, 0, false);
+        var store = new CpuLiveCurveOwnershipJournalStore(JournalPath);
+        var hash = (await store.TryWriteAsync(null, prior, default))!;
+        byte[] previous = await File.ReadAllBytesAsync(JournalPath);
+        var current = context with
+        {
+            RuntimeLifetime = new(Guid.NewGuid(), 0, 1),
+            BootSequence = new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 43),
+        };
+        var pair = new CpuLivePowerStoredPair(new(54000, BitConverter.SingleToUInt32Bits(54f)),
+            new(45000, BitConverter.SingleToUInt32Bits(45f)), 0);
+        var evidence = new CpuLiveCurvePostBootObservation(current, backend.Values, CpuLivePowerContext.FromCurveContext(current),
+            pair, pair, DateTimeOffset.UtcNow);
+        foreach (var changed in new[]
+        {
+            pair with { StapmRawBits = 0x80000000 },
+            pair with { Fast = pair.Fast with { RawBits = pair.Fast.RawBits + 1 } },
+            pair with { Slow = pair.Slow with { RawBits = pair.Slow.RawBits + 1 } },
+            pair with { Fast = pair.Fast with { Milliwatts = 54001 } },
+        })
+        {
+            var drift = evidence with { PowerAfter = changed };
+            Assert.False(drift.Matches(prior));
+            Assert.Null(await store.TryReconcileAfterBootAsync(hash, drift, () => Task.FromResult(true), default));
+        }
+        Assert.Equal(previous, await File.ReadAllBytesAsync(JournalPath));
+        Assert.NotNull(await store.TryReconcileAfterBootAsync(hash, evidence, () => Task.FromResult(true), default));
+        string archive = Assert.Single(Directory.GetDirectories(directory, "live-co.json.post-boot-*"));
+        Assert.Equal(previous, await File.ReadAllBytesAsync(Path.Combine(archive, "original.json")));
+        var receipt = JsonSerializer.Deserialize<CpuLiveCurvePostBootReceipt>(
+            await File.ReadAllTextAsync(Path.Combine(archive, "receipt.json")), JsonOptions)!;
+        Assert.Equal(pair, receipt.Observation.PowerBefore);
+        Assert.Equal(pair, receipt.Observation.PowerAfter);
+        Assert.True(receipt.Observation.Matches(prior));
+    }
+
+    [Theory]
     [InlineData("restoring")]
     [InlineData("owned")]
     [InlineData("restoring-start")]
