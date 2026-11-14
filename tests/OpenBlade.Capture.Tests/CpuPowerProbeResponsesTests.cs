@@ -244,16 +244,25 @@ public sealed class CpuPowerProbeResponsesTests
     {
         var responses = new CpuPowerProbeResponses();
         using var cancellation = new CancellationTokenSource();
+        // This checks owner preservation, not response expiry. Keep the owner
+        // active through the overlap assertions even when CI scheduling is slow.
         Task<int> pending = responses.QueryValueAsync(() => true,
-            "GetPowerLimitValue", "powerLimit", TimeSpan.FromSeconds(1), cancellation.Token);
-        bool overlappingGetter = false;
-        await Assert.ThrowsAsync<InvalidOperationException>(() => responses.QueryValueAsync(
-            () => overlappingGetter = true, "GetCurveOptimizerValue", "curveOptimizer",
-            TimeSpan.FromSeconds(1), CancellationToken.None));
-        Assert.False(overlappingGetter);
+            "GetPowerLimitValue", "powerLimit", Timeout.InfiniteTimeSpan, cancellation.Token);
+        try
+        {
+            bool overlappingGetter = false;
+            await Assert.ThrowsAsync<InvalidOperationException>(() => responses.QueryValueAsync(
+                () => overlappingGetter = true, "GetCurveOptimizerValue", "curveOptimizer",
+                TimeSpan.FromSeconds(1), CancellationToken.None));
+            Assert.False(overlappingGetter);
 
-        Publish(responses, Response);
-        Assert.Equal(60, await pending);
+            Publish(responses, Response);
+            Assert.Equal(60, await pending.WaitAsync(TimeSpan.FromSeconds(10)));
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+        }
     }
 
     [Theory]

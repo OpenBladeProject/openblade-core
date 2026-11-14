@@ -12,6 +12,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Finish local broker installations by recognizing supported input helpers and waiting for startup inventory to settle before opening OpenBlade. ([#966](https://github.com/OSSBlade/openblade-core/pull/966))
+- Avoid rejecting supported battery-setting replies and allow a short confirmation window on source-reviewed Blade models. ([#965](https://github.com/OSSBlade/openblade-core/pull/965))
 
 ## [0.61.1-nightly.114] - 2026-11-13
 

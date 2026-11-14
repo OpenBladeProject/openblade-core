@@ -294,8 +294,14 @@ fn external_source_eligibility_admits_all_defined_modes_through_abi() {
         for preset in -1..=10 {
             // SAFETY: outputs are valid, aligned, disjoint locals; no error output requested.
             let status = unsafe {
-                ob_v1_performance_source_eligible(OB_AUTOMATION_ABI_VERSION, preset, source,
-                    &mut eligible, &mut written, ptr::null_mut())
+                ob_v1_performance_source_eligible(
+                    OB_AUTOMATION_ABI_VERSION,
+                    preset,
+                    source,
+                    &mut eligible,
+                    &mut written,
+                    ptr::null_mut(),
+                )
             };
             assert_eq!((status, written), (0, 0));
             assert_eq!(eligible, u32::from((0..=9).contains(&preset)));
