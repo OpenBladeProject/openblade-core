@@ -6,6 +6,28 @@ namespace OpenBlade.Setup.Tests;
 
 public sealed class WindowsSetupPlatformServiceTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ServiceShutdownPaths_WaitForProcessExitBeforeCompletingOrDeleting(bool remove)
+    {
+        SetupPaths paths = UserPaths();
+        ServiceExitProcess process = new(Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe"));
+        ServiceExitControl control = new(SetupServiceState.Running);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            serviceControl: control, processOperations: new ServiceExitProcesses(process), paths: paths);
+        Task operation = remove
+            ? platform.RemoveServiceAsync(CancellationToken.None)
+            : platform.RestoreServiceInstallStateAsync(new SetupServiceInstallState(true, false), CancellationToken.None);
+        await process.WaitStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(operation.IsCompleted);
+        Assert.False(control.Deleted);
+        process.Exit.SetResult();
+        await operation;
+        Assert.Equal(remove, control.Deleted);
+        Assert.True(process.Disposed);
+    }
+
     [Fact]
     public void ServiceControlExecutable_IsPinnedToWindowsSystemDirectory()
     {
@@ -1270,6 +1292,7 @@ public sealed class WindowsSetupPlatformServiceTests
 
     private sealed class RecordingProcess(string executablePath) : ISetupProcess
     {
+        public bool TryRetainLifetime() => true;
         public string? ExecutablePath => executablePath;
         public bool Disposed { get; private set; }
         public bool WaitedForExit { get; private set; }

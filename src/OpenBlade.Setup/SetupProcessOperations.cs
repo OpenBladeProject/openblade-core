@@ -4,6 +4,9 @@ namespace OpenBlade.Setup;
 
 public interface ISetupProcess : IDisposable
 {
+    // False means the process is confirmed gone. Inspection or access failures
+    // must throw, and a successful retention lasts until Dispose.
+    bool TryRetainLifetime();
     string? ExecutablePath { get; }
     Task WaitForExitAsync(CancellationToken cancellationToken);
 }
@@ -36,6 +39,25 @@ internal sealed class WindowsSetupProcessOperations : ISetupProcessOperations
 
     private sealed class WindowsSetupProcess(Process process) : ISetupProcess
     {
+        public bool TryRetainLifetime()
+        {
+            try
+            {
+                // Enumeration defers opening a handle. Retain the OS process
+                // object before identity inspection and shutdown, preventing PID reuse.
+                _ = process.SafeHandle;
+                return !process.HasExited;
+            }
+            catch (InvalidOperationException)
+            {
+                return false; // The enumerated process already exited.
+            }
+            catch (System.ComponentModel.Win32Exception exception) when (exception.NativeErrorCode == 87)
+            {
+                return false; // ERROR_INVALID_PARAMETER: the PID no longer exists.
+            }
+        }
+
         public string? ExecutablePath => process.MainModule?.FileName;
 
         public Task WaitForExitAsync(CancellationToken cancellationToken) =>

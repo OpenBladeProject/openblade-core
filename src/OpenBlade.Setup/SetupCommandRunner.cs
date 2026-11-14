@@ -199,6 +199,7 @@ public sealed class SetupCommandRunner(
                 bool wasActivated = transaction.IsActivated;
                 if (wasActivated)
                 {
+                    int failuresBeforeShutdown = recoveryFailures.Count;
                     if (priorLifecycle?.Service is { Existed: true })
                     {
                         await RecoverAsync(() => platform.PrepareServiceForInstallAsync(recoveryToken), recoveryFailures);
@@ -210,6 +211,16 @@ public sealed class SetupCommandRunner(
 
                     await RecoverAsync(() => platform.StopTrayAsync(recoveryToken), recoveryFailures);
                     await RecoverAsync(() => platform.StopSessionAgentAsync(recoveryToken), recoveryFailures);
+                    if (recoveryFailures.Count != failuresBeforeShutdown)
+                    {
+                        // A failed stop does not establish that the active tree can
+                        // be renamed. Keep both payloads for explicit recovery and
+                        // do not restart or restore registrations against either tree.
+                        recoveryFailures.Add(new InvalidOperationException(
+                            "Setup could not confirm process shutdown during rollback; "
+                            + "the active and backup payloads were retained for recovery."));
+                        throw new AggregateException([failure, .. recoveryFailures]);
+                    }
                 }
 
                 await RecoverAsync(() => transaction.RollbackAsync(recoveryToken), recoveryFailures);

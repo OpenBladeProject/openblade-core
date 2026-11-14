@@ -7,6 +7,90 @@ public sealed class SetupCommandRunnerTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task Install_ScmStoppedBeforeProcessExit_DelaysPayloadActivation(bool bundleManaged)
+    {
+        const string install = @"C:\Fake\OpenBlade";
+        ServiceExitProcess process = new(Path.Combine(install, "OpenBlade.Service.exe"));
+        RecordingSetupPlatform platform = new()
+        {
+            ServiceExists = true,
+            Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
+            PrepareService = token => SetupServiceQuiescence.StopAsync(
+                new ServiceExitControl(SetupServiceState.Running), new ServiceExitProcesses(process),
+                install, TimeSpan.FromSeconds(5), token),
+        };
+        Task<int> installTask = new SetupCommandRunner(platform).RunAsync(
+            bundleManaged ? BundleManaged("install") : ["install"], CancellationToken.None);
+        await process.WaitStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.DoesNotContain("payload-activate", platform.Operations);
+        process.Exit.SetResult();
+        Assert.Equal(0, await installTask);
+        Assert.Contains("payload-activate", platform.Operations);
+        Assert.True(process.Disposed);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task Install_ServiceExitFailure_NeverActivatesPayload(bool bundleManaged, bool timeout)
+    {
+        const string install = @"C:\Fake\OpenBlade";
+        ServiceExitProcess process = new(Path.Combine(install, "OpenBlade.Service.exe"));
+        using CancellationTokenSource cancellation = new();
+        RecordingSetupPlatform platform = new()
+        {
+            ServiceExists = true,
+            Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
+            PrepareService = token => SetupServiceQuiescence.StopAsync(
+                new ServiceExitControl(SetupServiceState.Running), new ServiceExitProcesses(process),
+                install, timeout ? TimeSpan.FromMilliseconds(50) : TimeSpan.FromSeconds(5), token),
+        };
+        Task<int> installTask = new SetupCommandRunner(platform).RunAsync(
+            bundleManaged ? BundleManaged("install") : ["install"], cancellation.Token);
+        await process.WaitStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (timeout)
+        {
+            await Assert.ThrowsAsync<TimeoutException>(() => installTask);
+        }
+        else
+        {
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => installTask);
+        }
+        process.Exit.SetResult();
+        Assert.DoesNotContain("payload-activate", platform.Operations);
+        Assert.True(process.Disposed);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Install_RecoveryShutdownFailure_RetainsActivatedPayloadAndOriginalFailure(bool bundleManaged)
+    {
+        InvalidOperationException shutdownFailure = new("service process still alive");
+        RecordingSetupPlatform platform = new()
+        {
+            ServiceExists = true,
+            Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
+            FailurePoint = "service-health",
+            RecoveryShutdownFailure = shutdownFailure,
+        };
+        AggregateException failure = await Assert.ThrowsAsync<AggregateException>(() =>
+            new SetupCommandRunner(platform).RunAsync(
+                bundleManaged ? BundleManaged("install") : ["install"], CancellationToken.None));
+        Assert.Equal("service-health failed", failure.InnerExceptions[0].Message);
+        Assert.Contains(shutdownFailure, failure.InnerExceptions);
+        Assert.Contains(failure.InnerExceptions, item => item.Message.Contains("payloads were retained"));
+        Assert.DoesNotContain("payload-rollback", platform.Operations);
+        Assert.DoesNotContain("service-restore", platform.Operations);
+        Assert.True(platform.Transaction.IsActivated);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task PawnIoRebootRequiredCommitsAndReturns3010ThroughBothFullInstallRoutes(bool bundleManaged)
     {
         RecordingSetupPlatform platform = new() { PrerequisiteRebootRequired = true };
@@ -955,6 +1039,8 @@ public sealed class SetupCommandRunnerTests
         public bool DynamicLightingIdentityRegistered { get; init; }
         public string CurrentBuildIdentity { get; set; } = "0.1.0+current";
         public string? FailurePoint { get; set; }
+        public Func<CancellationToken, Task>? PrepareService { get; init; }
+        public Exception? RecoveryShutdownFailure { get; init; }
         public CancellationTokenSource? Cancellation { get; init; }
         public Exception? UninstallerFailure { get; init; }
         public RecordingPayloadTransaction Transaction { get; init; } = new(hadExistingInstall: false);
@@ -1045,7 +1131,13 @@ public sealed class SetupCommandRunnerTests
             {
                 CleanupTokens.Add(cancellationToken);
             }
-            return AddAsync("service-prepare", cancellationToken);
+            if (Operations.Contains("payload-activate") && RecoveryShutdownFailure is not null)
+            {
+                return Task.FromException(RecoveryShutdownFailure);
+            }
+            return PrepareService is null
+                ? AddAsync("service-prepare", cancellationToken)
+                : PrepareService(cancellationToken);
         }
 
         public Task RestoreServiceInstallStateAsync(

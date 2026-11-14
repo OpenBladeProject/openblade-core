@@ -124,6 +124,7 @@ public sealed class SetupGuardianQuiescenceGuardTests
 
     private sealed class ObservedProcess(Func<string?> executable) : ISetupProcess
     {
+        public bool TryRetainLifetime() => true;
         internal bool Disposed { get; private set; }
         internal int Waits { get; private set; }
         public string? ExecutablePath => executable();
