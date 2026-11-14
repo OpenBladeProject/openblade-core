@@ -82,8 +82,15 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         bool installed = readInstalledUsb is not null;
         CpuPmObservationProfile profile = installed ? CpuPmObservationProfile.RangeSingleSample
             : approval?.Profile ?? CpuPmObservationProfile.IdleThreeSamples;
-        if (installed ? installedApproval?.Consume(platform) != true || platform.Contract == CpuLiveCurveContract.Rz090528 && metadataReader is null
-            : platform.Contract != CpuLiveCurveContract.Rz090528 || approval?.Consume() != true || approval.Profile == CpuPmObservationProfile.RangeSingleSample && metadataReader is null)
+        // A denied approval must not resolve host identity or acquire resources.
+        if (installed ? installedApproval?.Consume(platform) != true : approval?.Consume() != true)
+        { return new(WindowsRz090528CpuPmObservationAdapter.Denied(profile: profile), true, true); }
+        CpuLiveCurveContract contract;
+        try { contract = platform.Contract; }
+        catch (CpuVoltageHostUnavailableException)
+        { return new(WindowsRz090528CpuPmObservationAdapter.Denied(profile: profile), true, true); }
+        if (installed ? contract == CpuLiveCurveContract.Rz090528 && metadataReader is null
+            : contract != CpuLiveCurveContract.Rz090528 || approval!.Profile == CpuPmObservationProfile.RangeSingleSample && metadataReader is null)
         { return new(WindowsRz090528CpuPmObservationAdapter.Denied(profile: profile), true, true); }
         if (!installed) { ArgumentNullException.ThrowIfNull(lifetime); }
         ArgumentNullException.ThrowIfNull(platform); ArgumentNullException.ThrowIfNull(clock);

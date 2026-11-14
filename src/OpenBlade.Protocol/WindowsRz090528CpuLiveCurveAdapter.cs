@@ -55,7 +55,14 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(platform);
         ArgumentNullException.ThrowIfNull(readUsb);
-        if (request.Before.Contract != platform.Contract || request.Command.Contract != platform.Contract)
+        // Denied requests are inert, including on an unsupported/unreadable host.
+        if (proof is null)
+        { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }
+        CpuLiveCurveContract platformContract;
+        try { platformContract = platform.Contract; }
+        catch (CpuVoltageHostUnavailableException)
+        { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }
+        if (request.Before.Contract != platformContract || request.Command.Contract != platformContract)
         { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }
         // The new model is admitted only with an independently confirmed power peer.
         if (platform.Contract.UsesPhoenixProtocol && request.PowerPeer is null)
