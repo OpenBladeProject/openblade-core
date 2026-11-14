@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "target": "openblade-windows-service-candidate",
   "tuples": [
     "service-battery-policy-v1",
@@ -13,9 +13,18 @@
       "tuple": "service-battery-policy-v1",
       "env": "OPENBLADE_NATIVE_THERMAL_RESPONSES",
       "cases": [
-        "installed::readiness::tests::mutation::installed_dispatcher_direct_pair_persists_before_applied_and_retains_publication",
-        "installed::readiness::tests::mutation::installed_gpu_intent_is_stored_with_explicit_incompleteness_and_no_pair",
-        "installed::readiness::tests::mutation::installed_persistence_failure_and_budget_exhaustion_submit_no_mutation"
+        {
+          "name": "installed::readiness::tests::mutation::installed_dispatcher_direct_pair_persists_before_applied_and_retains_publication",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::installed_gpu_intent_is_stored_with_explicit_incompleteness_and_no_pair",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::installed_persistence_failure_and_budget_exhaustion_submit_no_mutation",
+          "minimumRecords": 1
+        }
       ],
       "wrapper": false,
       "fact": "OpenBlade.Contracts.Tests.NativeThermalMutationResponseTests.ActualNativeMutationResponsesUseManagedV80CodecAndOutcomes"
@@ -27,8 +36,14 @@
       "tuple": "service-battery-policy-v1",
       "env": "OPENBLADE_NATIVE_BATTERY_RESPONSES",
       "cases": [
-        "installed::readiness::tests::mutation::battery_v1_direct_off_limit_and_noop_preserve_configuration_and_separate_reads",
-        "installed::readiness::tests::mutation::battery_v1_unknown_temporary_and_active_do_not_mint_authority_or_infer_false"
+        {
+          "name": "installed::readiness::tests::mutation::battery_v1_direct_off_limit_and_noop_preserve_configuration_and_separate_reads",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::battery_v1_unknown_temporary_and_active_do_not_mint_authority_or_infer_false",
+          "minimumRecords": 1
+        }
       ],
       "wrapper": false,
       "fact": "OpenBlade.Contracts.Tests.NativeThermalMutationResponseTests.ActualNativeBatteryResponsesKeepConfirmedPolicyDesiredLimitAndUnknownTemporarySeparate"
@@ -42,8 +57,14 @@
       "tuple": "service-battery-policy-v1",
       "env": "OPENBLADE_NATIVE_BATTERY_PUBLICATIONS",
       "cases": [
-        "installed::readiness::tests::mutation::battery_publication_incompatible_independent_fields_are_unavailable_without_guessing",
-        "installed::readiness::tests::mutation::battery_publication_active_subscription_expires_at_unaligned_battery_deadline"
+        {
+          "name": "installed::readiness::tests::mutation::battery_publication_incompatible_independent_fields_are_unavailable_without_guessing",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::battery_publication_active_subscription_expires_at_unaligned_battery_deadline",
+          "minimumRecords": 1
+        }
       ],
       "wrapper": false,
       "fact": "OpenBlade.Contracts.Tests.NativeThermalMutationResponseTests.ActualNativeBatteryPublicationsKeepUnavailableGroupsAndUnknownTemporaryCompatible"
@@ -58,16 +79,47 @@
       "tuple": "service-temporary-charge-v1",
       "env": "OPENBLADE_NATIVE_TFC_CORRECTION_FRAMES",
       "cases": [
-        "installed::readiness::tests::mutation::tfc_release::tfc_release_actual_loop_defers_read_and_serves_blocked_requests_then_retries_only_bookkeeping",
-        "installed::readiness::tests::mutation::tfc_release::tfc_release_actual_loop_preserves_trust_mismatch_unclassified_and_custody_failures",
-        "installed::readiness::tests::mutation::tfc_release::tfc_release_actual_worker_prepared_race_keeps_origin_until_settlement_and_next_tick",
-        "installed::readiness::tests::mutation::tfc_release::tfc_release_outcome_automatic_cancel_publishes_full_delta_before_callback_repair",
-        "installed::readiness::tests::mutation::tfc_release::tfc_release_outcome_cause_changes_publish_while_release_remains_paused",
-        "installed::readiness::tests::mutation::tfc_release::tfc_release_outcome_explicit_cancel_keeps_settled_result_and_immediate_owned_delta",
-        "installed::readiness::tests::mutation::tfc_release::tfc_release_outcome_quarantined_cancel_keeps_reconciliation_cause_with_stale_proof",
-        "installed::readiness::tests::mutation::tfc_release::tfc_release_outcome_refused_automatic_cancel_retains_full_intent_without_invented_readback",
-        "installed::readiness::thermal_mutation::battery::observation_tests::tfc_release_public_notice_preserves_private_owner_and_each_family_degradation",
-        "installed::readiness::thermal_storage::release_read_tests::tfc_release_only_exact_read_operations_tag_retryable_errors"
+        {
+          "name": "installed::readiness::tests::mutation::tfc_release::tfc_release_actual_loop_defers_read_and_serves_blocked_requests_then_retries_only_bookkeeping",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::tfc_release::tfc_release_actual_loop_preserves_trust_mismatch_unclassified_and_custody_failures",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::tfc_release::tfc_release_actual_worker_prepared_race_keeps_origin_until_settlement_and_next_tick",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::tfc_release::tfc_release_outcome_automatic_cancel_publishes_full_delta_before_callback_repair",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::tfc_release::tfc_release_outcome_cause_changes_publish_while_release_remains_paused",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::tfc_release::tfc_release_outcome_explicit_cancel_keeps_settled_result_and_immediate_owned_delta",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::tfc_release::tfc_release_outcome_quarantined_cancel_keeps_reconciliation_cause_with_stale_proof",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::tfc_release::tfc_release_outcome_refused_automatic_cancel_retains_full_intent_without_invented_readback",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::thermal_mutation::battery::observation_tests::tfc_release_public_notice_preserves_private_owner_and_each_family_degradation",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::thermal_storage::release_read_tests::tfc_release_only_exact_read_operations_tag_retryable_errors",
+          "minimumRecords": 0,
+          "zeroRecordsReason": "Pure exact-operation error-classification check; it does not encode a frame."
+        }
       ],
       "wrapper": false,
       "fact": "OpenBlade.Contracts.Tests.NativeThermalMutationResponseTests.ActualNativeTemporaryChargeCorrectionFramesKeepStrictManagedCodec"
@@ -80,13 +132,24 @@
       "tuple": "service-battery-policy-v1",
       "env": "OPENBLADE_NATIVE_EDGE_FRAMES",
       "cases": [
-        "installed::readiness::tests::mutation::edge_managed_saved_custom_survives_unpublished_activation_and_private_frames",
-        "installed::readiness::tests::mutation::edge_stored_temporary_publication_cannot_resurrect_expired_policy"
+        {
+          "name": "installed::readiness::tests::mutation::edge_managed_saved_custom_survives_unpublished_activation_and_private_frames",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::edge_stored_temporary_publication_cannot_resurrect_expired_policy",
+          "minimumRecords": 1
+        }
       ],
       "wrapper": true,
       "fact": "OpenBlade.Contracts.Tests.NativeThermalEdgeFramesTests.ActualNativeEdgeFramesPreserveSavedCustomAndCurrentPolicyThroughStrictCodec"
     }
   ],
   "producer": "OpenBlade.Service.Tests.NativeThermalEdgeFixtureTests.WriteCurrentManagedWireAndPolicyFixtures",
-  "history": "OpenBlade.Deployment.Tests.NativeThermalHistoryTests.CanonicalRustManagedVectorsAndMalformedRowsUseProductionReader"
+  "history": "OpenBlade.Deployment.Tests.NativeThermalHistoryTests.CanonicalRustManagedVectorsAndMalformedRowsUseProductionReader",
+  "managedProjects": [
+    "tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj",
+    "tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj",
+    "tests/OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj"
+  ]
 }

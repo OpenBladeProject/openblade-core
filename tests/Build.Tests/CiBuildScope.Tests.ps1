@@ -566,10 +566,26 @@ foreach ($required in @(
         "'tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj'",
         "'tests/OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj'",
         '$testProjects | Where-Object { $_ -in $fixtureConsumers }',
+        'Get-OpenBladeNativeFixturePrerequisiteProjects -Repository $repository',
         'Action = $runSelectedTests',
         'Invoke-OpenBladeNativeFixtureScope @fixtureScope',
         '& $runSelectedTests')) {
     if (-not $affectedSource.Contains($required)) { throw "Affected fixture routing is missing '$required'." }
+}
+
+# Full quality restores the solution once, which already owns every managed
+# fixture prerequisite. Affected quality must provision these independently.
+. (Join-Path $repository 'build/NativeWindowsFixtures.ps1')
+$fixturePrerequisites = @(Get-OpenBladeNativeFixturePrerequisiteProjects -Repository $repository)
+Assert-Equal 3 $fixturePrerequisites.Count 'Fixture preparation must declare its exact three managed projects.'
+[xml]$solution = Get-Content (Join-Path $repository 'OpenBlade.slnx') -Raw
+$solutionProjects = @($solution.SelectNodes('//Project') | ForEach-Object { [string]$_.Path })
+foreach ($prerequisite in $fixturePrerequisites) {
+    Assert-Contains $solutionProjects $prerequisite 'Full solution restore must include every fixture prerequisite.'
+}
+$fullRestore = [Regex]::Match($quality, '(?ms)^      - name: Restore\r?\n.*?(?=^      - name:)').Value
+if (-not $fullRestore.Contains('dotnet restore OpenBlade.slnx -p:NuGetAudit=false')) {
+    throw 'Full quality must retain its normal solution restore.'
 }
 
 # Exercise the actual affected dispatch with inert process/scope recorders.
@@ -582,13 +598,19 @@ $recordedRunner = $affectedSource.Replace(
 $dispatch = [ScriptBlock]::Create($recordedRunner)
 $script:fixtureScopeCalls = 0
 $script:recordedManagedTests = [Collections.Generic.List[string]]::new()
+$script:recordedFixtureCommands = [Collections.Generic.List[object]]::new()
 function dotnet {
+    $script:recordedFixtureCommands.Add([string[]]$args)
     if ($args[0] -eq 'test') { $script:recordedManagedTests.Add([string]$args[1]) }
     $global:LASTEXITCODE = 0
 }
 function Invoke-OpenBladeNativeFixtureScope {
     param($Repository, $Configuration, $OutputRoot, [scriptblock]$Action)
     $script:fixtureScopeCalls++
+    $restored = @($script:recordedFixtureCommands | Where-Object { $_[0] -eq 'restore' } | ForEach-Object { $_[1] })
+    foreach ($prerequisite in $fixturePrerequisites) {
+        Assert-Contains $restored $prerequisite 'Offline fixture preparation must have its packages restored before scope entry.'
+    }
     & $Action
 }
 try {
@@ -601,16 +623,27 @@ try {
               'tests/OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj'))) {
         $script:fixtureScopeCalls = 0
         $script:recordedManagedTests.Clear()
+        $script:recordedFixtureCommands.Clear()
         $recordedPlan = @{ mode = 'affected'; qualityProjects = @($selection); testProjects = @($selection) } | ConvertTo-Json -Compress
         & $dispatch -Lane Quality -PlanJson $recordedPlan
+        $restores = @($script:recordedFixtureCommands | Where-Object { $_[0] -eq 'restore' })
+        Assert-Equal 3 $restores.Count 'Contracts-only and combined plans must restore exactly the deduplicated fixture prerequisites.'
+        foreach ($restore in $restores) {
+            Assert-Equal ('restore|' + $restore[1] + '|-p:NuGetAudit=false') ($restore -join '|') 'Fixture prerequisites must use normal repository-configured restore semantics.'
+        }
+        $builds = @($script:recordedFixtureCommands | Where-Object { $_[0] -eq 'build' })
+        Assert-Equal @($selection).Count $builds.Count 'Restoring fixture dependencies must not expand selected Quality builds.'
         Assert-Equal 1 $script:fixtureScopeCalls 'Affected fixture consumers must share exactly one preparation scope.'
         Assert-Equal @($selection).Count $script:recordedManagedTests.Count 'Affected fixture scope must run every selected managed consumer.'
     }
     $script:fixtureScopeCalls = 0
+    $script:recordedFixtureCommands.Clear()
     $unrelated = 'tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj'
     $recordedPlan = @{ mode = 'affected'; qualityProjects = @($unrelated); testProjects = @($unrelated) } | ConvertTo-Json -Compress
     & $dispatch -Lane Quality -PlanJson $recordedPlan
     Assert-Equal 0 $script:fixtureScopeCalls 'Unrelated affected tests must not prepare native fixture corpora.'
+    $unrelatedRestores = @($script:recordedFixtureCommands | Where-Object { $_[0] -eq 'restore' })
+    Assert-Equal 1 $unrelatedRestores.Count 'Unrelated plans must not restore fixture prerequisite projects.'
 }
 finally {
     Remove-Item Function:dotnet

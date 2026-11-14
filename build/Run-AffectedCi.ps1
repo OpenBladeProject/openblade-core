@@ -94,9 +94,24 @@ switch ($Lane) {
             -AllowedExtension @('.csproj') `
             -AllowedPrefix @('tests/', 'build/installer/')
 
+        $fixtureConsumers = @(
+            'tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj',
+            'tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj',
+            'tests/OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj')
+        $requiresNativeFixtures = @($testProjects | Where-Object { $_ -in $fixtureConsumers }).Count -gt 0
+        $restoreProjects = @($qualityProjects)
+        if ($requiresNativeFixtures) {
+            . (Join-Path $repository 'build/NativeWindowsFixtures.ps1')
+            # The offline harness builds all three fixture variants even when
+            # only one consumer is selected. Restore that exact prerequisite
+            # closure through the normal repository-configured restore path.
+            $restoreProjects += @(Get-OpenBladeNativeFixturePrerequisiteProjects -Repository $repository)
+        }
+        $restoreProjects = @($restoreProjects | Sort-Object -Unique)
+
         # Restore the complete selected set before any custom build target can
         # consume another selected project's assets.
-        foreach ($project in $qualityProjects) {
+        foreach ($project in $restoreProjects) {
             Invoke-DotNetChecked -Operation "restore $project" -Arguments @(
                 'restore', $project, '-p:NuGetAudit=false')
         }
@@ -127,12 +142,7 @@ switch ($Lane) {
                     '-m:1', '--verbosity', 'minimal')
             }
         }
-        $fixtureConsumers = @(
-            'tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj',
-            'tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj',
-            'tests/OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj')
-        if (@($testProjects | Where-Object { $_ -in $fixtureConsumers }).Count -gt 0) {
-            . (Join-Path $repository 'build/NativeWindowsFixtures.ps1')
+        if ($requiresNativeFixtures) {
             $fixtureScope = @{
                 Repository = $repository
                 Configuration = $Configuration

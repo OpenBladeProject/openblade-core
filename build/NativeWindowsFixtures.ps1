@@ -1,5 +1,42 @@
 Set-StrictMode -Version 3.0
 
+function Get-OpenBladeNativeFixturePrerequisiteProjects {
+    param([Parameter(Mandatory)][string]$Repository)
+    $manifest = Get-Content -Raw -LiteralPath (Join-Path $Repository 'build/NativeWindowsFixtureManifest.json') | ConvertFrom-Json
+    $expected = @('tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj',
+        'tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj',
+        'tests/OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj')
+    if (@($manifest.managedProjects).Count -ne $expected.Count -or
+        (Compare-Object -ReferenceObject $expected -DifferenceObject @($manifest.managedProjects))) {
+        throw 'Unreviewed managed fixture prerequisite scope.'
+    }
+    return $expected
+}
+
+function Get-OpenBladeNativeFixtureDiskPolicy {
+    param([Parameter(Mandatory)][long]$AvailableBytes)
+    if ($AvailableBytes -lt 25GB) { return 'Stop' }
+    if ($AvailableBytes -lt 50GB) { return 'Warn' }
+    return 'Ready'
+}
+
+function Assert-OpenBladeNativeFixtureDiskSpace {
+    param([scriptblock]$ReadAvailableBytes = { ([IO.DriveInfo]::new('C:\')).AvailableFreeSpace })
+    $free = [long](& $ReadAvailableBytes)
+    $policy = Get-OpenBladeNativeFixtureDiskPolicy $free
+    if ($policy -eq 'Stop') { throw 'C: is below 25 GiB; stop before building fixtures.' }
+    if ($policy -eq 'Warn') {
+        # This is a fresh invocation: it has not created a completed build or
+        # disposable output. Existing shared-cache and temp entries are not ours
+        # to reclaim. Report that boundary, recheck C:, and follow the 25-GiB gate.
+        Write-Warning 'C: is below 50 GiB. This fresh run has no safely attributable finished outputs to reclaim; no shared cache or unrelated scratch was deleted.'
+        $free = [long](& $ReadAvailableBytes)
+        if ((Get-OpenBladeNativeFixtureDiskPolicy $free) -eq 'Stop') {
+            throw 'C: is below 25 GiB after recheck; stop before building fixtures.'
+        }
+    }
+}
+
 function Get-OpenBladeNativeFixtureEnvironmentNames {
     @('OPENBLADE_NATIVE_THERMAL_RESPONSES', 'OPENBLADE_NATIVE_BATTERY_RESPONSES',
       'OPENBLADE_NATIVE_BATTERY_PUBLICATIONS', 'OPENBLADE_NATIVE_TFC_CORRECTION_FRAMES',
@@ -59,12 +96,7 @@ function Invoke-OpenBladeNativeFixtureScope {
     if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'X64') {
         throw 'Native fixture scope requires Windows x64 PowerShell 7.'
     }
-    $free = ([IO.DriveInfo]::new('C:\')).AvailableFreeSpace
-    if ($free -lt 25GB) { throw 'C: is below 25 GiB; stop before building fixtures.' }
-    if ($free -lt 50GB) {
-        # This runner cannot safely attribute existing shared cache contents to itself.
-        throw 'C: is below 50 GiB; remove only your own completed caches before running fixtures.'
-    }
+    Assert-OpenBladeNativeFixtureDiskSpace
     $absoluteOutput = [IO.Path]::GetFullPath($OutputRoot)
     $allowedParents = @('C:\tmp', [IO.Path]::GetTempPath(), $env:RUNNER_TEMP) | Where-Object { $_ }
     if (-not @($allowedParents | Where-Object {

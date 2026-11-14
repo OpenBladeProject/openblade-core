@@ -31,6 +31,22 @@ class FixtureContracts(unittest.TestCase):
             f.write_corpus(edge, rows, True)
             self.assertEqual(json.loads(edge.read_bytes())[0]['raw'], rows[0]['raw'])
 
+    def test_missing_producer_and_legacy_emissions_fail(self):
+        legacy = b'NATIVE_THERMAL_MUTATION_RESPONSE {"frame":"response","version":80}\n'
+        for data in (b'', legacy, legacy + self.line(), self.line() + legacy):
+            with self.subTest(data=data), self.assertRaises(ValueError):
+                f.collect(data, 'intended_frame_producer', {'peer_response'})
+        pure = next(iter(f.PURE_ZERO_CHECKS))
+        self.assertEqual(f.collect(b'', pure, {'peer_response'}, minimum_records=0), [])
+        with self.assertRaises(ValueError):
+            f.collect(b'', 'intended_frame_producer', {'peer_response'}, minimum_records=0)
+        with self.assertRaisesRegex(ValueError, 'legacy'):
+            f.collect(legacy, pure, {'peer_response'}, minimum_records=0)
+        manifest = f.load_manifest(REPO)
+        declarations = [case for corpus in manifest['corpora'] for case in corpus['cases']]
+        self.assertEqual({case['name'] for case in declarations if case['minimumRecords'] == 0}, f.PURE_ZERO_CHECKS)
+        self.assertTrue(all(case['minimumRecords'] == 1 for case in declarations if case['name'] not in f.PURE_ZERO_CHECKS))
+
     def test_collector_rejects_scope_corruption_and_truncation(self):
         for data in (self.line('unknown'), self.line('publisher_projection'), self.line()[:-1],
                      b'prefix ' + self.line(), self.line(raw='{}'), self.line(raw=''),
@@ -48,7 +64,7 @@ class FixtureContracts(unittest.TestCase):
             recorded.append(f.native_build_command(REPO, features))
         for corpus in manifest['corpora']:
             for case in corpus['cases']:
-                recorded.append(f.native_test_command(Path('test.exe'), case, manifest))
+                recorded.append(f.native_test_command(Path('test.exe'), case['name'], manifest))
         self.assertEqual(len(recorded), 21)
         for command in recorded[:2]:
             self.assertIn('--offline', command)
@@ -105,6 +121,34 @@ class FixtureContracts(unittest.TestCase):
             self.assertEqual(len(receipts), 1)
             self.assertTrue((root / 'timeout.log').is_file())
 
+    def test_check_entrypoint_rejects_foreign_root_and_repository(self):
+        with tempfile.TemporaryDirectory() as d:
+            parent = Path(d)
+            expected = parent / 'expected-run'
+            foreign = parent / 'foreign-run'
+            foreign_repo = parent / 'foreign-repo'
+            for path in (expected, foreign, foreign_repo):
+                path.mkdir()
+            receipt = dict(status='PREPARED', runId=foreign.name, root=str(foreign), repository=str(REPO),
+                           source={'bound': 'source'}, inputs={})
+            for name in f.ENV_NAMES:
+                path = foreign / name
+                path.write_text('[{"frame":"response"}]')
+                receipt['inputs'][name] = dict(path=str(path), count=1, sha256=f.digest(path))
+            def check_with(value, repository, root):
+                f.write_json(root / 'receipt.json', value)
+                arguments = ['fixtures', '--repository', str(repository), '--root', str(root), '--mode', 'Check']
+                with patch.object(sys, 'argv', arguments), patch.object(sys, 'platform', 'win32'):
+                    f.main()
+            with patch.object(f, 'source_manifest', return_value=receipt['source']):
+                # Positive control: every real input file/count/hash is valid.
+                check_with(receipt, REPO, foreign)
+                with self.assertRaisesRegex(ValueError, 'root does not match caller'):
+                    check_with(receipt, REPO, expected)
+                receipt['repository'] = str(foreign_repo)
+                with self.assertRaisesRegex(ValueError, 'repository does not match caller'):
+                    check_with(receipt, REPO, foreign)
+
     def test_missing_stale_mutated_inputs_fail(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
@@ -115,19 +159,19 @@ class FixtureContracts(unittest.TestCase):
                 path.write_text('[{"frame":"response"}]')
                 receipt['inputs'][name] = dict(path=str(path), count=1, sha256=f.digest(path))
             with patch.object(f, 'source_manifest', return_value=receipt['source']):
-                f.verify_inputs(receipt)
+                f.verify_inputs(receipt, REPO, root)
                 receipt['runId'] = 'stale'
                 with self.assertRaises(ValueError):
-                    f.verify_inputs(receipt)
+                    f.verify_inputs(receipt, REPO, root)
                 receipt['runId'] = root.name
                 path.write_text('[]')
                 with self.assertRaises(ValueError):
-                    f.verify_inputs(receipt)
+                    f.verify_inputs(receipt, REPO, root)
                 path.unlink()
                 with self.assertRaises((ValueError, FileNotFoundError)):
-                    f.verify_inputs(receipt)
+                    f.verify_inputs(receipt, REPO, root)
             with self.assertRaises(ValueError):
-                f.verify_inputs({})
+                f.verify_inputs({}, REPO, root)
 
 
 if __name__ == '__main__':

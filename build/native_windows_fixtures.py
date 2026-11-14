@@ -15,6 +15,7 @@ TARGET = 'openblade-windows-service-candidate'
 TUPLES = ('service-battery-policy-v1', 'service-temporary-charge-v1')
 EMITTERS = {'peer_response', 'peer_subscription', 'publisher_projection', 'synthetic_projection'}
 PREFIX = b'OPENBLADE_FIXTURE_FRAME '
+PURE_ZERO_CHECKS = {'installed::readiness::thermal_storage::release_read_tests::tfc_release_only_exact_read_operations_tag_retryable_errors'}
 MAX_LOG = 16 * 1024 * 1024
 ENV_NAMES = ('OPENBLADE_NATIVE_THERMAL_RESPONSES', 'OPENBLADE_NATIVE_BATTERY_RESPONSES',
              'OPENBLADE_NATIVE_BATTERY_PUBLICATIONS', 'OPENBLADE_NATIVE_TFC_CORRECTION_FRAMES',
@@ -32,17 +33,27 @@ def write_json(path, value):
 
 def load_manifest(repo):
     m = json.loads((repo / 'build/NativeWindowsFixtureManifest.json').read_text(encoding='utf-8-sig'))
-    if m['schemaVersion'] != 1 or m['target'] != TARGET or tuple(m['tuples']) != TUPLES:
+    if m['schemaVersion'] != 2 or m['target'] != TARGET or tuple(m['tuples']) != TUPLES:
         raise ValueError('Unreviewed target or feature tuple')
     if {c['env'] for c in m['corpora']} != set(ENV_NAMES) or len(m['corpora']) != 5:
         raise ValueError('Required five corpus scopes differ')
+    if m['managedProjects'] != ['tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj',
+                                 'tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj',
+                                 'tests/OpenBlade.Deployment.Tests/OpenBlade.Deployment.Tests.csproj']:
+        raise ValueError('Unreviewed managed prerequisite scope')
     seen = set()
     for c in m['corpora']:
         if c['tuple'] not in TUPLES or not c['cases'] or not set(c['emitters']) <= EMITTERS:
             raise ValueError('Invalid corpus tuple/emitter scope')
         if ('TFC' in c['env']) != (c['tuple'] == TUPLES[1]):
             raise ValueError('TFC/basic tuple separation changed')
-        for case in c['cases']:
+        for declaration in c['cases']:
+            case = declaration['name']
+            minimum = declaration['minimumRecords']
+            if type(minimum) is not int or minimum != (0 if case in PURE_ZERO_CHECKS else 1):
+                raise ValueError('Unreviewed case contribution requirement')
+            if minimum == 0 and not declaration.get('zeroRecordsReason'):
+                raise ValueError('Pure zero-record check requires an explicit reason')
             if not re.fullmatch(r'installed::readiness::[a-zA-Z0-9_:]+', case) or case in seen:
                 raise ValueError('Invalid or duplicated exact test')
             seen.add(case)
@@ -90,10 +101,16 @@ def check_native_result(text):
         raise ValueError('Selected native test did not execute exactly one non-ignored passing test')
 
 
-def collect(data, case, allowed):
+def collect(data, case, allowed, minimum_records=1):
+    if type(minimum_records) is not int or minimum_records != (0 if case in PURE_ZERO_CHECKS else 1):
+        raise ValueError('Unreviewed case contribution requirement')
     records = []
     offset = 0
     for line_number, line in enumerate(data.splitlines(keepends=True), 1):
+        # Legacy frames lack emitter custody. TRACE copies corroborate an
+        # already classified delivery and never contribute another record.
+        if line.startswith(b'NATIVE_THERMAL_') and not line.startswith(b'NATIVE_THERMAL_EDGE_TRACE '):
+            raise ValueError('Unclassified legacy frame emission')
         if PREFIX in line and not line.startswith(PREFIX):
             raise ValueError('Unanchored fixture record')
         if line.startswith(PREFIX):
@@ -118,6 +135,8 @@ def collect(data, case, allowed):
                      rawSha256=hashlib.sha256(raw).hexdigest())
             records.append(e)
         offset += len(line)
+    if len(records) < minimum_records:
+        raise ValueError('Selected frame producer contributed no classified records: ' + case)
     return records
 
 
@@ -135,10 +154,15 @@ def write_corpus(path, records, wrapper):
     return {'path': str(path), 'sha256': digest(path), 'count': len(records)}
 
 
-def verify_inputs(receipt):
+def verify_inputs(receipt, expected_repository, expected_root):
     if receipt.get('status') != 'PREPARED' or not receipt.get('runId') or not receipt.get('source'):
         raise ValueError('Missing fresh prepared receipt')
     root = Path(receipt['root']).resolve(strict=True)
+    repository = Path(receipt['repository']).resolve(strict=True)
+    if root != Path(expected_root).resolve(strict=True):
+        raise ValueError('Receipt root does not match caller')
+    if repository != Path(expected_repository).resolve(strict=True):
+        raise ValueError('Receipt repository does not match caller')
     if root.name != receipt['runId']:
         raise ValueError('Stale run binding')
     for item in receipt['inputs'].values():
@@ -151,7 +175,7 @@ def verify_inputs(receipt):
             raise ValueError('Mutated corpus input')
     if set(receipt['inputs']) != set(ENV_NAMES):
         raise ValueError('Missing required corpus input')
-    if source_manifest(Path(receipt['repository'])) != receipt['source']:
+    if source_manifest(repository) != receipt['source']:
         raise ValueError('Source changed after preparation')
 
 
@@ -194,7 +218,7 @@ def native_build_command(repo, features):
 
 
 def native_test_command(binary, case, manifest):
-    if case not in {t for c in manifest['corpora'] for t in c['cases']}:
+    if case not in {t['name'] for c in manifest['corpora'] for t in c['cases']}:
         raise ValueError('Unreviewed native test')
     return [str(binary), case, '--exact', '--nocapture', '--test-threads=1', '--quiet']
 
@@ -274,8 +298,8 @@ def prepare(repo, out, mode):
         # Empty package sources ensure restores use only the installed package cache.
         nuget = out / 'offline-nuget.config'
         nuget.write_text('<configuration><packageSources><clear /></packageSources></configuration>')
-        for index, project in enumerate(('OpenBlade.Service.Tests', 'OpenBlade.Contracts.Tests', 'OpenBlade.Deployment.Tests')):
-            path = str(repo / 'tests' / project / (project + '.csproj'))
+        for index, project in enumerate(manifest['managedProjects']):
+            path = str(repo / project)
             common = ['-p:NuGetAudit=false', '-p:OpenBladeNativePackageTests=true',
                       '-p:OpenBladeNativeDevelopmentBuild=false', '-p:OpenBladeNativePayloadDirectory=' + str(payload)]
             checked_run(['dotnet', 'restore', path, '--configfile', str(nuget)] + common, repo, out, f'restore-{index}', receipts)
@@ -305,14 +329,15 @@ def prepare(repo, out, mode):
             receipt['binaries'].append(binding)
             for corpus in [c for c in manifest['corpora'] if c['tuple'] == features]:
                 records = []
-                for case in corpus['cases']:
+                for declaration in corpus['cases']:
+                    case = declaration['name']
                     label = f'native-{len(receipts):02}'
                     if digest(binary) != binding['sha256']:
                         raise ValueError('Selected native executable mutated')
                     text = checked_run(native_test_command(binary, case, manifest),
                                        repo, out, label, receipts, 90)
                     check_native_result(text)
-                    emitted = collect((out / (label + '.log')).read_bytes(), case, set(corpus['emitters']))
+                    emitted = collect((out / (label + '.log')).read_bytes(), case, set(corpus['emitters']), declaration['minimumRecords'])
                     for r in emitted:
                         r.update(runId=out.name, tuple=features, executableSha256=binding['sha256'],
                                  log=label + '.log', index=len(all_records))
@@ -322,14 +347,14 @@ def prepare(repo, out, mode):
                 os.environ[corpus['env']] = receipt['inputs'][corpus['env']]['path']
         write_json(out / 'frame-provenance.json', all_records)
         receipt['status'] = 'PREPARED'
-        verify_inputs(receipt)
+        verify_inputs(receipt, repo, out)
         for index, corpus in enumerate(manifest['corpora'], 1):
-            verify_inputs(receipt)
+            verify_inputs(receipt, repo, out)
             managed_fact(repo, out, corpus['fact'], receipts, index)
-            verify_inputs(receipt)
+            verify_inputs(receipt, repo, out)
         if mode == 'VerifySelected':
             managed_fact(repo, out, manifest['history'], receipts, 6)
-        verify_inputs(receipt)
+        verify_inputs(receipt, repo, out)
         # Standard CI tests own a separate fresh generator root.
         receipt['environment'] = {**{n: receipt['inputs'][n]['path'] for n in ENV_NAMES},
             'OPENBLADE_NATIVE_EDGE_FIXTURES': '1', 'OPENBLADE_EDGE_MANAGED_ROOT': str(out / 'edge-suite'),
@@ -354,7 +379,7 @@ def main():
         raise ValueError('Windows-only fixture runner')
     repo, out = args.repository.resolve(strict=True), args.root.resolve(strict=True)
     if args.mode == 'Check':
-        verify_inputs(json.loads((out / 'receipt.json').read_text()))
+        verify_inputs(json.loads((out / 'receipt.json').read_text()), repo, out)
     else:
         prepare(repo, out, args.mode)
 
