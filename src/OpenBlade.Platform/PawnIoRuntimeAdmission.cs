@@ -129,19 +129,43 @@ public static class PawnIoRuntimeAdmission
     {
         using RegistryKey? root = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\ROOT\PawnIO");
         string[] instances = root?.GetSubKeyNames() ?? [];
-        if (instances.Length != 1)
-        { throw new InvalidDataException("PawnIO must have one independently present Root\\PawnIO device."); }
-        cancellationToken.ThrowIfCancellationRequested();
-        using RegistryKey instance = root!.OpenSubKey(instances[0])
+        (string selected, uint devnode) = SelectPresentDevice(instances,
+            (string id, out uint node) => CM_Locate_DevNode(out node, id, 0), cancellationToken);
+        using RegistryKey instance = root!.OpenSubKey(selected)
             ?? throw new InvalidDataException("The PawnIO device registration disappeared.");
         if (!string.Equals(instance.GetValue("Service") as string, "PawnIO", StringComparison.OrdinalIgnoreCase)
             || instance.GetValue("HardwareID") is not string[] ids
             || !ids.Contains(@"Root\PawnIO", StringComparer.OrdinalIgnoreCase))
         { throw new InvalidDataException("The PawnIO device is not bound to its reviewed service and hardware ID."); }
-        uint result = CM_Locate_DevNode(out uint devnode, @"ROOT\PawnIO\" + instances[0], 0);
-        if (result != 0) { throw new InvalidDataException($"PawnIO device is not present (ConfigManager {result})."); }
-        result = CM_Get_DevNode_Status(out _, out _, devnode, 0);
+        uint result = CM_Get_DevNode_Status(out _, out _, devnode, 0);
         if (result != 0) { throw new InvalidDataException($"PawnIO device status is unavailable (ConfigManager {result})."); }
+    }
+
+    internal delegate uint DeviceNodeLocator(string instanceId, out uint devnode);
+
+    internal static (string Instance, uint Devnode) SelectPresentDevice(string[] instances,
+        DeviceNodeLocator locate, CancellationToken cancellationToken)
+    {
+        // Enum retains disconnected instances after uninstall/reinstall. Count only
+        // nodes independently located with CM_LOCATE_DEVNODE_NORMAL (never PHANTOM).
+        // Only CR_NO_SUCH_DEVNODE proves absence; other query errors remain failures.
+        List<(string Instance, uint Devnode)> present = [];
+        foreach (string instance in instances)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            uint result = locate(@"ROOT\PawnIO\" + instance, out uint devnode);
+            if (result == 0x0D) { continue; } // CR_NO_SUCH_DEVNODE
+            if (result != 0)
+            { throw new InvalidDataException($"PawnIO device presence is unavailable (ConfigManager {result})."); }
+            present.Add((instance, devnode));
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        if (present.Count != 1)
+        {
+            throw new InvalidDataException($"PawnIO must have one independently present Root\\PawnIO device "
+                + $"(present: {present.Count}; registered: {instances.Length}).");
+        }
+        return present[0];
     }
 
     [StructLayout(LayoutKind.Sequential)]

@@ -5,6 +5,81 @@ namespace OpenBlade.Platform.Tests;
 
 public sealed class PawnIoRuntimeAdmissionTests
 {
+    [Theory]
+    [InlineData("0000")]
+    [InlineData("0001")]
+    public void ReinstallSelectsOnlyPresentInstanceAndIgnoresDisconnectedRegistrations(string active)
+    {
+        List<string> queried = [];
+        uint Locate(string id, out uint node)
+        {
+            queried.Add(id);
+            node = id.EndsWith(active, StringComparison.Ordinal) ? 42u : 0u;
+            return node == 42 ? 0u : 0x0Du;
+        }
+        var selected = PawnIoRuntimeAdmission.SelectPresentDevice(["0000", "0001"], Locate, default);
+        Assert.Equal((active, 42u), selected);
+        Assert.Equal([@"ROOT\PawnIO\0000", @"ROOT\PawnIO\0001"], queried);
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 0)]
+    [InlineData(2, 0)]
+    [InlineData(2, 2)]
+    public void MissingOrMultiplePresentDevicesRemainRejected(int registered, int present)
+    {
+        int calls = 0;
+        uint Locate(string id, out uint node)
+        {
+            node = (uint)++calls;
+            return calls <= present ? 0u : 0x0Du;
+        }
+        string[] instances = Enumerable.Range(0, registered).Select(i => i.ToString("D4")).ToArray();
+        var error = Assert.Throws<InvalidDataException>(() =>
+            PawnIoRuntimeAdmission.SelectPresentDevice(instances, Locate, default));
+        Assert.Contains($"present: {present}; registered: {registered}", error.Message);
+        Assert.Equal(registered, calls);
+    }
+
+    [Theory]
+    [InlineData(0x05u)]
+    [InlineData(0x17u)]
+    [InlineData(0x33u)]
+    public void PresenceQueryErrorsCannotBeTreatedAsDisconnectedDevices(uint failure)
+    {
+        int calls = 0;
+        uint Locate(string id, out uint node)
+        {
+            node = (uint)++calls;
+            return calls == 1 ? 0u : failure;
+        }
+        var error = Assert.Throws<InvalidDataException>(() =>
+            PawnIoRuntimeAdmission.SelectPresentDevice(["0000", "0001", "0002"], Locate, default));
+        Assert.Contains($"ConfigManager {failure}", error.Message);
+        Assert.Equal(2, calls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void CanceledPresenceInspectionCannotPublishASelectedDevice(bool canceledBeforeQuery)
+    {
+        using CancellationTokenSource cancellation = new();
+        int calls = 0;
+        uint Locate(string id, out uint node)
+        {
+            calls++;
+            node = 42;
+            cancellation.Cancel();
+            return 0;
+        }
+        if (canceledBeforeQuery) { cancellation.Cancel(); }
+        Assert.Throws<OperationCanceledException>(() =>
+            PawnIoRuntimeAdmission.SelectPresentDevice(["0000"], Locate, cancellation.Token));
+        Assert.Equal(canceledBeforeQuery ? 0 : 1, calls);
+    }
+
     [Fact]
     public void ServiceConfigurationUsesDocumentedProbeAndExactBoundedReadInsteadOfOversizedRpcBuffer()
     {
