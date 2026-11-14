@@ -186,7 +186,7 @@
     "exitCode": 0
   },
   "uniqueTestsPassedAcrossVerification": 17407,
-  "note": "An earlier unbounded-parallel run hit an unchanged100ms Platform fake-reader deadline. The unchanged Platform project passed a focused rerun, and the complete final solution passed with bounded build parallelism after the final ownership fix. No test timeout or production reader code was changed.",
+  "note": "The integrated baseline predates the separately recorded legacy-curve addendum and post-review fixes. An earlier unbounded-parallel run hit an unchanged 100ms Platform fake-reader deadline; the unchanged Platform project and complete bounded baseline run passed. No test timeout or production reader code was changed. Final exact-head integration and hosted gates are recorded in PR 968.",
   "build": {
     "warnings": 0,
     "errors": 0,
@@ -199,7 +199,8 @@
     "sha256": "4c1774174faaba28f9fbcefc14d0429b7cfbea33abe76299bb58d2035d543f0a"
   },
   "noHardwareActions": true,
-  "finalRun": {
+  "baselineCommit": "a7067e89f0d55e173d5b0c092dc6f7b7c9e49283",
+  "baselineRun": {
     "exitCode": 0,
     "maxBuildParallelism": 4,
     "projects": 19,
@@ -379,5 +380,19 @@
         "assembly": "OpenBlade.Tray.Tests.dll (net10.0)"
       }
     ]
+  },
+  "addendumVerification": {
+    "sourceRecords": 5,
+    "sourceExcerpts": 12,
+    "sourceVerificationFailures": 0,
+    "protocolTestsPassed": 4719,
+    "protocolTestsFailed": 0,
+    "protocolTestsSkipped": 0,
+    "trayFocusedTestsPassed": 97,
+    "trayFocusedTestsFailed": 0,
+    "independentReview": "PASS: final owned fan-only handoff and Claude post-review admission/preservation fixes; no remaining concrete finding.",
+    "serviceTestsPassed": 3971,
+    "serviceTestsFailed": 0,
+    "serviceTestsSkipped": 0
   }
 }

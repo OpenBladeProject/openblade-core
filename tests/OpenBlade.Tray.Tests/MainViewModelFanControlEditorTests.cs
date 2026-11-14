@@ -164,6 +164,48 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.SetFanControlCommand.CanExecute(settings));
     }
 
+    [Theory]
+    [InlineData(PerformancePreset.Balanced)]
+    [InlineData(PerformancePreset.Silent)]
+    [InlineData(PerformancePreset.Custom)]
+    public async Task FanControlEditor_GlobalSourceCurveUsesExistingPresetWithoutReset(PerformancePreset performance)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        CustomPerformanceSettings? custom = performance == PerformancePreset.Custom ? CustomPerformanceSettings.Default : null;
+        status = status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                ReportsPerformanceWithManualFans = true,
+                SupportsDirectManualFanTransitions = true,
+                FanSpeedRange = new(2200, 5000, 100),
+                PerformancePresets = new HashSet<PerformancePreset>
+                {
+                    PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Custom,
+                },
+            },
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Performance = performance,
+                CustomPerformance = custom,
+            },
+            DesiredState = status.DesiredState with
+            {
+                Performance = new(performance, SettingValueSource.PowerProfile),
+                CustomPerformance = custom,
+            },
+        };
+        await PushAsync(client, dispatcher, status);
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.ManualCurve));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+        Assert.Equal(performance, viewModel.SelectedPerformance);
+        Assert.Equal(5000, viewModel.FixedFanSpeedMaximumRpm);
+    }
+
     [Fact]
     public async Task FanControlEditor_UsesPresetRangeForFixedAndManualCurve()
     {

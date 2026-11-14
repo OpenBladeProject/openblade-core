@@ -677,7 +677,7 @@ public sealed partial class MainWindow
         };
         ComboBox performance = EnumEditor(LocalizedResources.Get("Feature_fb8bc434078d", "Performance"), current.Performance,
             performanceOptions.Select(option => new ApplicationChoice<PerformancePreset>(option.Value, option.Label)));
-        ComboBox fans = EnumEditor(LocalizedResources.Get("Feature_155db46f9362", "Fans"), current.FanControl?.Mode ?? current.Fans,
+        ComboBox fans = EnumEditor(LocalizedResources.Get("Feature_155db46f9362", "Fans"), current.Fans ?? current.FanControl?.Mode,
             (source == PowerSource.UsbC ? ViewModel.AvailableUsbCFanModes : ViewModel.AvailableFanModes
                 .Where(mode => FanControlPowerPolicy.IsAvailable(source, mode)))
                 .Select(mode => new ApplicationChoice<FanMode>(mode, ApplicationFanModeLabel(mode))));
@@ -695,21 +695,38 @@ public sealed partial class MainWindow
             Value = current.FanControl?.FixedSpeedRpm ?? basis.FanControl?.FixedSpeedRpm ?? FanControlSettings.Default.FixedSpeedRpm,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
         };
+        bool updatingFanSpeedBounds = false;
+        bool fixedSpeedEdited = false;
+        bool performanceEdited = false;
         void UpdateFanSpeedBounds()
         {
-            FanSpeedRange range = GetIntentFanRange();
-            // Expand before narrowing so disjoint preset ranges never expose
-            // an invalid Minimum/Maximum pair to NumberBox coercion.
-            rpm.Minimum = Math.Min(rpm.Minimum, range.MinimumRpm);
-            rpm.Maximum = Math.Max(rpm.Maximum, range.MaximumRpm);
-            rpm.Minimum = range.MinimumRpm;
-            rpm.Maximum = range.MaximumRpm;
-            rpm.SmallChange = range.StepRpm;
-            rpm.LargeChange = range.StepRpm * 5;
-            rpm.Value = range.Quantize(double.IsFinite(rpm.Value)
-                ? (int)rpm.Value : FanControlSettings.Default.FixedSpeedRpm);
+            updatingFanSpeedBounds = true;
+            try
+            {
+                FanSpeedRange range = GetIntentFanRange();
+                // Expand before narrowing so disjoint preset ranges never expose
+                // an invalid Minimum/Maximum pair to NumberBox coercion.
+                rpm.Minimum = Math.Min(rpm.Minimum, range.MinimumRpm);
+                rpm.Maximum = Math.Max(rpm.Maximum, range.MaximumRpm);
+                rpm.Minimum = range.MinimumRpm;
+                rpm.Maximum = range.MaximumRpm;
+                rpm.SmallChange = range.StepRpm;
+                rpm.LargeChange = range.StepRpm * 5;
+                rpm.Value = range.Quantize(double.IsFinite(rpm.Value)
+                    ? (int)rpm.Value : FanControlSettings.Default.FixedSpeedRpm);
+            }
+            finally
+            {
+                updatingFanSpeedBounds = false;
+            }
         }
+        UpdateFanSpeedBounds();
+        PerformancePreset? initialPerformance = ((ApplicationChoice<PerformancePreset>)performance.SelectedItem).Value;
+        FanMode? initialFans = ((ApplicationChoice<FanMode>)fans.SelectedItem).Value;
+        double initialRpm = rpm.Value;
+        rpm.ValueChanged += (_, _) => fixedSpeedEdited |= !updatingFanSpeedBounds;
         performance.SelectionChanged += (_, _) => UpdateFanSpeedBounds();
+        performance.SelectionChanged += (_, _) => performanceEdited = true;
         ComboBox gaming = EnumEditor(LocalizedResources.Get("Feature_9c7c8919be0e", "Gaming mode"), current.GamingModeEnabled,
             new ApplicationChoice<bool>[] { new(true, LocalizedResources.Get("Feature_9cc01faad79c", "On")), new(false, LocalizedResources.Get("Feature_50accd740fa2", "Off")) });
         ComboBox hdr = EnumEditor(LocalizedResources.Get("Feature_d7c76cf63323", "HDR"), current.Display?.HdrEnabled,
@@ -778,16 +795,14 @@ public sealed partial class MainWindow
             PerformancePreset? selectedPerformance = ((ApplicationChoice<PerformancePreset>)performance.SelectedItem).Value;
             FanMode? selectedFans = ((ApplicationChoice<FanMode>)fans.SelectedItem).Value;
             string? lightingChoice = ((ApplicationTextChoice)lighting.SelectedItem).Value;
-            draft.SetSource(source, current with
+            ApplicationPowerProfileOverride thermal = ApplicationProfileThermalIntentEditor.Apply(
+                current, basis, selectedPerformance, selectedFans,
+                GetIntentFanRange().Quantize(double.IsFinite(rpm.Value) ? (int)rpm.Value : FanControlSettings.Default.FixedSpeedRpm),
+                performanceChanged: performanceEdited || selectedPerformance != initialPerformance,
+                fanModeChanged: selectedFans != initialFans,
+                fixedSpeedChanged: fixedSpeedEdited && rpm.Value != initialRpm);
+            draft.SetSource(source, thermal with
             {
-                Performance = selectedPerformance,
-                CustomPerformance = selectedPerformance == PerformancePreset.Custom
-                    ? current.CustomPerformance ?? basis.CustomPerformance : null,
-                GpuClockTuning = current.GpuClockTuning,
-                Fans = selectedFans,
-                FanControl = selectedFans is { } mode ? new(mode,
-                    GetIntentFanRange().Quantize(double.IsFinite(rpm.Value) ? (int)rpm.Value : FanControlSettings.Default.FixedSpeedRpm),
-                    current.FanControl?.ManualCurve ?? basis.FanControl?.ManualCurve ?? ManualFanCurve.Default) : null,
                 GamingModeEnabled = ((ApplicationChoice<bool>)gaming.SelectedItem).Value,
                 Lighting = lightingChoice switch
                 {

@@ -5066,6 +5066,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         return ProfileAdmissionPolicy.FanModeAvailable(ActivePowerSource, value, CommandCapabilities)
+            && (value != FanMode.ManualCurve
+                || ProfileAdmissionPolicy.ManualCurvePresetSupported(SelectedPerformance, CommandCapabilities))
             && (value is not (FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum)
                 || CommandCapabilities.GetFanSpeedRange(SelectedPerformance) is not null)
             && (value == FanMode.Automatic || SelectedPerformance != PerformancePreset.Custom || !SelectedCustomMaximumFans);

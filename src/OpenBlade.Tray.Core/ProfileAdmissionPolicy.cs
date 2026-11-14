@@ -4,7 +4,8 @@ namespace OpenBlade.Tray;
 
 /// <summary>
 /// Admits profile edits against current capabilities while preserving unchanged
-/// settings. Low-power thermal restrictions still apply to unchanged profiles.
+/// settings. New thermal intent requires current capability and power admission;
+/// retaining an unchanged saved tuple never grants execution authority.
 /// </summary>
 internal static class ProfileAdmissionPolicy
 {
@@ -54,8 +55,7 @@ internal static class ProfileAdmissionPolicy
         && (capabilities.FanModes.Contains(draft.Fans)
             || draft.Fans == current.Fans)
         && (FanModeAvailable(powerSource, draft.Fans, capabilities)
-            || (powerSource != PowerSource.UsbC
-                && draft.Fans == current.Fans))
+            || RetainsThermalIntent(draft, current))
         && (draft.Performance != PerformancePreset.Custom
             || CustomPerformanceSettings.IsWellFormed(draft.CustomPerformance))
         && (draft.Performance != PerformancePreset.Custom
@@ -64,9 +64,7 @@ internal static class ProfileAdmissionPolicy
             || draft.CustomPerformance == current.CustomPerformance
             || capabilities.CustomPerformance?.Supports(draft.CustomPerformance) == true)
         && (ThermalCombinationSupported(draft.Performance, draft.Fans, capabilities)
-            || (draft.Fans == current.Fans
-                && draft.Fans != FanMode.Maximum
-                && !capabilities.FanModes.Contains(draft.Fans)))
+            || RetainsThermalIntent(draft, current))
         && (capabilities.SupportsIndependentLightingControls
             && (draft.Lighting.IndependentControls is not null || !draft.Lighting.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0)
             ? LightingSupported(draft.Lighting, capabilities)
@@ -74,26 +72,36 @@ internal static class ProfileAdmissionPolicy
                     == (current.Lighting with { IndependentControls = null })
             : LightingSupported(draft.Lighting, capabilities) || draft.Lighting == current.Lighting);
 
+    private static bool RetainsThermalIntent(PowerProfile draft, PowerProfile current) =>
+        draft.Performance == current.Performance && draft.Fans == current.Fans
+        && draft.FanControl == current.FanControl && draft.CustomPerformance == current.CustomPerformance;
+
     private static bool ThermalCombinationSupported(
         PerformancePreset performance,
         FanMode fans,
         DeviceCapabilities capabilities) =>
         fans == FanMode.Automatic
-        || (fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
-            && capabilities.FanModes.Contains(fans)
-            && capabilities.FanSpeedRangesByPerformancePreset.Count > 0
-            && capabilities.GetFanSpeedRange(performance) is not null)
         || (capabilities.FanModes.Contains(fans)
-            && capabilities.FanSpeedRangesByPerformancePreset.Count == 0
-            && (capabilities.SupportsDirectManualFanTransitions
-                || performance is PerformancePreset.Balanced
-                    or PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced)
-            && fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum);
+            && fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
+            && (fans != FanMode.ManualCurve || ManualCurvePresetSupported(performance, capabilities))
+            && (capabilities.FanSpeedRangesByPerformancePreset.Count > 0
+                ? capabilities.GetFanSpeedRange(performance) is not null
+                : capabilities.SupportsDirectManualFanTransitions
+                    || performance is PerformancePreset.Balanced
+                        or PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced));
+
+    internal static bool ManualCurvePresetSupported(PerformancePreset performance, DeviceCapabilities capabilities) =>
+        capabilities.GetFanIntentSpeedRange(performance) is { IsWellFormed: true }
+        && capabilities.FanModes.Contains(FanMode.ManualCurve)
+        && (!capabilities.ReportsPerformanceWithManualFans
+            || capabilities.PerformancePresets.Contains(performance));
 
     internal static bool FanModeAvailable(PowerSource powerSource, FanMode fans,
         DeviceCapabilities capabilities) =>
         FanControlPowerPolicy.IsAvailable(powerSource, fans,
-            capabilities.SupportsManualFansOnLimitedPower);
+            capabilities.SupportsManualFansOnLimitedPower)
+        && (fans != FanMode.ManualCurve || !capabilities.ReportsPerformanceWithManualFans
+            || powerSource == PowerSource.PluggedIn);
 
     internal static bool LightingSupported(
         LightingSettings lighting,

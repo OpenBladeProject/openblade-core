@@ -76,6 +76,17 @@ public sealed class ExperimentalEvidenceCatalogTests
                         Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
                     });
                 }
+                else if (feature.Feature == "StaticSourceHostFanCurves")
+                {
+                    Assert.Contains(model.ProductId, new ushort[] { 0x029D, 0x029F });
+                    Assert.EndsWith("WithoutPhysicalCurveValidation", feature.Basis);
+                    Assert.Contains(ExperimentalBladeModels.MaintainedRazerCtlSource, feature.Sources);
+                    Assert.All(feature.Sources.Skip(1), source =>
+                    {
+                        Assert.StartsWith($"https://apps.razer.com/synapse/products/{model.ProductId}/mw/", source);
+                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
+                    });
+                }
                 else if (feature.Feature == "AdapterPowerClassification")
                 {
                     Assert.Equal("SynapseSourceBacked", feature.Basis);

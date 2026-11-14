@@ -28,6 +28,32 @@ public sealed class ProfileStoreTests : IDisposable
         Assert.Equal(profiles.Battery.FanControl, result.Battery.FanControl);
     }
 
+    [Theory]
+    [InlineData(PerformancePreset.Gaming)]
+    [InlineData(PerformancePreset.Creator)]
+    [InlineData(PerformancePreset.MaximumPower)]
+    public void StoredMappedCurvePresetsRoundTripWithoutCurrentCapabilityAdmission(PerformancePreset performance)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var settings = new FanControlSettings(FanMode.ManualCurve, 5500,
+            new ManualFanCurve([new(40, 2200), new(80, 5500)], [new(40, 2200), new(80, 5500)], true));
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Performance = performance, Fans = FanMode.ManualCurve, FanControl = settings },
+        };
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            FanModes = new HashSet<FanMode> { FanMode.Automatic },
+        };
+        var store = new ProfileStore(Path.Combine(storeDirectory, "retained-mapped.json"),
+            ProfileSetValidator.CreateForDeviceCapabilities(capabilities));
+        byte[] json = JsonSerializer.SerializeToUtf8Bytes(new ProfileDocument(ProfileStore.CurrentSchemaVersion, profiles),
+            ProfileStore.SerializerOptions);
+        ProfileSet loaded = store.ReadDocument(json);
+        Assert.Equal(performance, loaded.PluggedIn.Performance);
+        Assert.Equal(settings, loaded.PluggedIn.FanControl);
+    }
+
     [Fact]
     public void OperationalStopCannotBeSavedAsOrdinaryFanMode()
     {

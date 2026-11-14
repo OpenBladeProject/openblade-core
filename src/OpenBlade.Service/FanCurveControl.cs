@@ -19,6 +19,23 @@ public readonly record struct FanTargetSpeeds(
     int Fan2Rpm,
     bool FailSafe);
 
+// Independent preset readback is a backend contract, not a dynamic-range
+// marker. Scalar source ranges apply to the backend's admitted presets;
+// mapped backends require their separately reviewed per-preset ranges.
+internal static class ManualFanCurveCapabilityPolicy
+{
+    internal static bool SupportsPreset(DeviceCapabilities capabilities, PerformancePreset performance) =>
+        capabilities.GetFanIntentSpeedRange(performance) is { IsWellFormed: true }
+        && capabilities.FanModes.Contains(FanMode.ManualCurve)
+        && (!capabilities.ReportsPerformanceWithManualFans
+            || capabilities.PerformancePresets.Contains(performance));
+
+    internal static bool SupportsPowerSource(DeviceCapabilities capabilities, PowerSource source) =>
+        FanControlPowerPolicy.IsAvailable(source, FanMode.ManualCurve,
+            capabilities.SupportsManualFansOnLimitedPower)
+        && (!capabilities.ReportsPerformanceWithManualFans || source == PowerSource.PluggedIn);
+}
+
 public static class FanCurveCalculator
 {
     public static FanTargetSpeeds Calculate(

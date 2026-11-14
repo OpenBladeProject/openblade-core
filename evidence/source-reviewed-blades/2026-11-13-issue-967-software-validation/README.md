@@ -24,10 +24,18 @@ Other findings were checked and declined:
 
 Only test-fixture corrections, the disconnected preview's removal of an inaccurate limited-power flag, and the listed verified follow-ups changed after the corrected review snapshot. An independent Codex review checked the follow-ups.
 
+## Two-model completeness addendum
+
+The completeness audit found that RZ09-0482/0483 already have independent preset/manual state and target readback. Their source-supported host curves now use every already-admitted ordinary AC Fixed preset, with their distinct unchanged static bounds. No metadata command or physical-validation claim is added. The [separate addendum](../2026-11-14-legacy-curves.json) contains five complete source records and twelve independently byte-verified excerpts; the original118/311 audit remains unchanged.
+
+Claude reviewed this new frozen delta and read its exact patch. Confirmed findings led to fresh requested-preset checks on scalar curve entry, structural storage validation separated from strict changed-intent admission, actual limited-power capability checks, and supported-preset checks before range shortcuts. Application overrides are checked both explicitly and after inheritance resolution. Unchanged unavailable settings remain data; they do not authorize writes or a fallback to Balanced/Automatic. The application editor preserves exact nullable fields and legacy aliases when thermal inputs are untouched.
+
+The remaining candidates concerned duplicated or overlapping guards and possible future drift. Independent review found no reachable defect. Explicit per-feature curve admission and the shared Full-adapter setter requirement remain; the latter adds no extra adapter query. Post-review fixes received independent source review and targeted tests. The third compact diagnostic record is included in claude-metadata.json.
+
 ## Rendered controls
 
 [Creator curve at 5,500 RPM](rz09-0300-creator-5500.png) shows a disconnected RZ09-0300 fixture with the 3,900–5,500 RPM reviewed Creator envelope. Runtime assertions require both curve endpoints and editor bounds to retain 5,500. [Manual fan choices](manual-fan-controls.png) records the shared controls. Neither renderer connects to the service or hardware.
 
 ## Verification
 
-Final integrated results are recorded in verification.json. Targeted regressions cover narrowed and widened metadata, unchanged saved profiles, actual target caching, staged range changes, source changes, rejected/ambiguous submissions, legacy compatibility and editor bindings. No hardware write, installation, updater execution or sleep test was performed.
+Verification records retain the earlier integrated baseline and targeted addendum results; the PR records the final exact-head integrated run and hosted gates. Targeted regressions cover narrowed and widened metadata, unchanged saved profiles, actual target caching, staged range changes, source changes, rejected/ambiguous submissions, legacy compatibility and editor bindings. No hardware write, installation, updater execution or sleep test was performed.

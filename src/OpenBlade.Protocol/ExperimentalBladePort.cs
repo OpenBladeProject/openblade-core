@@ -143,7 +143,7 @@ internal sealed partial class ExperimentalBladePort(
     internal static DeviceCapabilities CreateCapabilities(ExperimentalBladeModel model, bool enabled) =>
         new(enabled ? CreatePerformancePresets(model) : new HashSet<PerformancePreset>(),
             enabled && GetExperimentalFanRange(model) is not null
-                ? model.ProductId == 0x02A0 || UsesDynamicExperimentalFanRange(model)
+                ? model.ProductId == 0x02A0 || UsesDynamicExperimentalFanRange(model) || SupportsStaticSourceHostCurves(model)
                     ? new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve }
                     : new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed }
                 : enabled && model.ThermalPolicy is not null ? new HashSet<FanMode> { FanMode.Automatic } : [],
@@ -718,6 +718,7 @@ internal sealed partial class ExperimentalBladePort(
             }
             PowerSource? fanPowerClass = ResolveThermalPowerClass(adapter, currentSource);
             bool fanPowerAllowed = fanOperation && fanPowerClass is { } resolvedFanPower
+                && (!requireAdequateAdapter || HyperBoostValidationPower.IsAdmittedFullPower(adapter))
                 && FanCommandSourceIsAdmitted(resolvedFanPower, operation, arguments);
             if (fanPowerAllowed)
             {
@@ -919,7 +920,7 @@ internal sealed partial class ExperimentalBladePort(
     private bool FanModeSourceIsAdmitted(PowerSource source, FanMode mode)
     {
         if (mode == FanMode.ManualCurve && source is not (PowerSource.PluggedIn or PowerSource.ExternalUnknown)
-            && model.ProductId == 0x02A0)
+            && (model.ProductId == 0x02A0 || SupportsStaticSourceHostCurves(model)))
         {
             return false;
         }

@@ -206,6 +206,18 @@ internal static class ExperimentalBladeModels
                 ["https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282025%29%20%7C%20RZ09-0530/PI4110-MCUv01.04.00.exe;SHA256=AED7039BE5CC4EC3F166A2728B0C1B90839BAE72C8A04150056654F64F20581F",
                  "Blade14KeyboardLightingLayout.json;SHA256=9356BC177DFBCB458E4C9E465D93AD7E32AF94A61ADBDF7C7E2A7319A7D3E623"])];
         }
+        if (ExperimentalBladePort.SupportsStaticSourceHostCurves(model))
+        {
+            IReadOnlyList<string> curveSources = model.ProductId == 0x029F
+                ? [MaintainedRazerCtlSource,
+                   "https://apps.razer.com/synapse/products/671/mw/6737.e123a2b3f0516116025b.js;SHA256=54D3A9BBEC83568B02342AA54FF47A94EE55A48ECA85B5D9F28D60D01A0B1A9A",
+                   "https://apps.razer.com/synapse/products/671/mw/rzDevice25.5e330aa9fdf6f29eec62.js;SHA256=41E7758114AD3605B5B3EE0E65E79AF3055124F775904902BA3285F710AF55C9"]
+                : [MaintainedRazerCtlSource,
+                   "https://apps.razer.com/synapse/products/669/mw/6737.439ff1a12463933a6346.js;SHA256=D1AC2212AED5491D3EAB69ABAFA270B963A2336E859DF6BFBF9ED9A455E3791B"];
+            features = [.. features, new("StaticSourceHostFanCurves", model.ProductId == 0x029F
+                ? "UpstreamMeasuredFloorDeclaredFixedRangeAndSoftwareHostCurveWithoutPhysicalCurveValidation"
+                : "SourceExtrapolatedFixedRangeAndSoftwareHostCurveWithoutPhysicalCurveValidation", curveSources)];
+        }
         if (model.ProductId is 0x0255 or 0x02C5)
         {
             IReadOnlyList<string> exactSources = model.ProductId == 0x0255

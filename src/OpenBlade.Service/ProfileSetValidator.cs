@@ -53,6 +53,12 @@ public sealed class ProfileValidationPolicy
 
     public IReadOnlySet<FanMode> SupportedFanModes { get; init; }
 
+    public bool ManualFanCurveRequiresFullPower { get; init; }
+
+    internal bool SupportsManualFansOnLimitedPower { get; init; } = true;
+
+    internal IReadOnlySet<PerformancePreset>? SupportedPerformancePresets { get; init; }
+
     public IReadOnlySet<LightingEffect> SupportedLightingEffects { get; }
 
     public bool SupportsIndependentLightingControls { get; init; }
@@ -137,7 +143,9 @@ public sealed class ProfileValidationPolicy
         supportedLightingEffects.UnionWith(
             lightingCapabilities.LightingEffects.Where(Enum.IsDefined));
         return new ProfileValidationPolicy(
-            safeDefaults.SupportedPerformanceFanCombinations,
+            safeDefaults.SupportedPerformanceFanCombinations.Where(pair =>
+                pair.Fans != FanMode.ManualCurve
+                || ManualFanCurveCapabilityPolicy.SupportsPreset(batteryCapabilities, pair.Performance)).ToHashSet(),
             supportedLightingEffects,
             batteryCapabilities.CustomPerformance
                 ?? new CustomPerformanceCapabilities(new HashSet<CustomPerformanceCombination>()),
@@ -150,6 +158,9 @@ public sealed class ProfileValidationPolicy
         {
             SupportsIndependentLightingControls = lightingCapabilities.SupportsIndependentLightingControls,
             SupportedFanModes = new HashSet<FanMode>(batteryCapabilities.FanModes),
+            ManualFanCurveRequiresFullPower = batteryCapabilities.ReportsPerformanceWithManualFans,
+            SupportsManualFansOnLimitedPower = batteryCapabilities.SupportsManualFansOnLimitedPower,
+            SupportedPerformancePresets = new HashSet<PerformancePreset>(batteryCapabilities.PerformancePresets),
         };
     }
 }
@@ -157,6 +168,12 @@ public sealed class ProfileValidationPolicy
 public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
 {
     private static readonly RgbColor NeutralColor = new(0, 0, 0);
+    private static readonly ProfileSetValidator StoredThermalValidator = new(new ProfileValidationPolicy(
+        (from performance in Enum.GetValues<PerformancePreset>()
+         from fans in Enum.GetValues<FanMode>()
+         where fans != FanMode.Stop
+         select new PerformanceFanCombination(performance, fans)).ToHashSet(),
+        new HashSet<LightingEffect> { LightingEffect.Off }));
     private readonly ProfileValidationPolicy validationPolicy =
         policy ?? throw new ArgumentNullException(nameof(policy));
 
@@ -181,10 +198,74 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
     public void Validate(ProfileSet profiles)
         => ValidateCore(profiles, validateCustomCapabilities: true);
 
-    // The runtime separately admits changed Custom intent against current device
-    // capabilities, while unrelated edits preserve existing unavailable intent.
+    // Persisted thermal intent is structural data, not hardware admission.
+    // Current capability and power restrictions apply when thermal intent changes
+    // or executes, so an unrelated edit never discards an older supported schema.
     internal void ValidateStoredCustomIntent(ProfileSet profiles)
         => ValidateCore(profiles, validateCustomCapabilities: false);
+
+    internal void ValidateChangedThermalIntent(ProfileSet requested, ProfileSet saved)
+    {
+        foreach (PowerSource source in new[] { PowerSource.PluggedIn, PowerSource.Battery, PowerSource.UsbC })
+        {
+            PowerProfile next = ProfileForSource(requested, source);
+            PowerProfile prior = ProfileForSource(saved, source);
+            ValidateChangedThermalProfile(next, prior, source, force: false);
+            foreach (ApplicationProfileDefinition application in requested.ApplicationProfiles)
+            {
+                ApplicationPowerProfileOverride? nextOverride = application.Overrides.ForPowerSource(source);
+                if (nextOverride is null)
+                {
+                    continue;
+                }
+                ApplicationProfileDefinition? savedApplication = saved.ApplicationProfiles
+                    .FirstOrDefault(item => item.Id == application.Id);
+                ApplicationPowerProfileOverride? priorOverride = savedApplication?.Overrides.ForPowerSource(source);
+                bool explicitThermalChanged = nextOverride.Performance != priorOverride?.Performance
+                    || nextOverride.Fans != priorOverride?.Fans
+                    || nextOverride.FanControl != priorOverride?.FanControl
+                    || nextOverride.CustomPerformance != priorOverride?.CustomPerformance;
+                PowerProfile resolved = ApplicationProfileResolution.Apply(next, nextOverride);
+                if (nextOverride.CustomPerformance is { } explicitCustom
+                    && explicitCustom != priorOverride?.CustomPerformance)
+                {
+                    ValidateCustomPerformance(resolved with { CustomPerformance = explicitCustom },
+                        "changed application", validateCapabilities: true);
+                }
+                ValidateChangedThermalProfile(
+                    resolved,
+                    priorOverride is null ? prior : ApplicationProfileResolution.Apply(prior, priorOverride),
+                    source, explicitThermalChanged);
+            }
+        }
+    }
+
+    private void ValidateChangedThermalProfile(PowerProfile requested, PowerProfile saved, PowerSource source, bool force)
+    {
+        if (!force && ThermalIntentEquals(requested, saved))
+        {
+            return;
+        }
+        ValidatePerformanceFanCombination(requested.Performance, requested.Fans, source);
+        ValidateFanControl(requested, "changed");
+        ValidateCustomPerformance(requested with
+        {
+            CustomPerformance = requested.Performance == PerformancePreset.Custom
+                || requested.CustomPerformance != saved.CustomPerformance ? requested.CustomPerformance : null,
+        }, "changed", validateCapabilities: true);
+    }
+
+    private static bool ThermalIntentEquals(PowerProfile first, PowerProfile second) =>
+        first.Performance == second.Performance && first.Fans == second.Fans
+        && first.FanControl == second.FanControl && first.CustomPerformance == second.CustomPerformance;
+
+    private static PowerProfile ProfileForSource(ProfileSet profiles, PowerSource source) => source switch
+    {
+        PowerSource.PluggedIn => profiles.PluggedIn,
+        PowerSource.Battery => profiles.Battery,
+        PowerSource.UsbC => profiles.UsbC,
+        _ => throw Invalid("The profile power source is invalid."),
+    };
 
     private void ValidateCore(ProfileSet profiles, bool validateCustomCapabilities)
     {
@@ -248,10 +329,14 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid("The fan mode is undefined.");
         }
 
-        if (DeviceSubsystemOrder.IsManualFanMode(fans)
-            && !validationPolicy.SupportedFanModes.Contains(fans))
+        if (!validationPolicy.SupportedFanModes.Contains(fans))
         {
             throw Invalid("The selected fan mode is not supported by the active device capability.");
+        }
+
+        if (validationPolicy.SupportedPerformancePresets is { } presets && !presets.Contains(performance))
+        {
+            throw Invalid("The performance preset is not supported by the active device capability.");
         }
 
         bool hasPresetManualRange = fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
@@ -272,7 +357,12 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         PowerSource source)
     {
         ValidatePerformanceSource(performance, source);
-        if (!FanControlPowerPolicy.IsAvailable(source, fans))
+        if (fans == FanMode.ManualCurve && validationPolicy.ManualFanCurveRequiresFullPower
+            && source != PowerSource.PluggedIn)
+        {
+            throw Invalid("Manual fan curves require confirmed full external power on this backend.");
+        }
+        if (!FanControlPowerPolicy.IsAvailable(source, fans, validationPolicy.SupportsManualFansOnLimitedPower))
         {
             throw Invalid("The selected fan mode is unavailable on this power source.");
         }
@@ -291,9 +381,10 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid($"The {name} profile is missing.");
         }
 
+        ProfileSetValidator thermalValidator = validateCustomCapabilities ? this : StoredThermalValidator;
         try
         {
-            ValidatePerformanceFanCombination(profile.Performance, profile.Fans, source);
+            thermalValidator.ValidatePerformanceFanCombination(profile.Performance, profile.Fans, source);
         }
         catch (InvalidDataException exception)
         {
@@ -303,7 +394,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         ValidateLighting(profile.Lighting, name, allowStoredIndependentIntent: !validateCustomCapabilities);
         ValidateCustomPerformance(profile, name, validateCustomCapabilities);
         ValidateGpuClockTuning(profile, name, source);
-        ValidateFanControl(profile, name);
+        thermalValidator.ValidateFanControl(profile, name);
         ValidateDisplay(profile.Display, name);
         ValidateLaptopBehavior(profile.LaptopBehavior, name);
         ValidateThxAudio(profile.ThxAudio, name);

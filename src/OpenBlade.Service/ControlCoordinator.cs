@@ -580,6 +580,11 @@ public sealed class ControlCoordinator
                 ? state => value.Mode == FanMode.Stop
                     ? state.Performance == PerformancePreset.BatterySaver && state.HyperBoostActive == false
                         ? null : "Fan stop requires confirmed Battery Saver with HyperBoost off."
+                    : value.Mode == FanMode.ManualCurve
+                        && admittedCapabilities?.ReportsPerformanceWithManualFans == true
+                        && (state.Performance is not { } curvePerformance
+                            || !ManualFanCurveCapabilityPolicy.SupportsPreset(admittedCapabilities, curvePerformance))
+                        ? "Manual fan curves require the freshly confirmed reviewed performance preset."
                     : admittedCapabilities?.FanSpeedRangesByPerformancePreset.Count > 0
                         ? state.Performance is { } performance
                             && admittedCapabilities.GetFanSpeedRange(performance) is { IsWellFormed: true } range
@@ -746,7 +751,7 @@ public sealed class ControlCoordinator
             matches: _ => false,
             async token =>
             {
-                if (admittedCapabilities?.FanSpeedRangesByPerformancePreset.Count > 0)
+                if (admittedCapabilities?.ReportsPerformanceWithManualFans == true)
                 {
                     appliedTargets = await device.SetCurveFanTargetsAsync(
                         expectedPerformance, fan1Rpm, fan2Rpm, token).ConfigureAwait(false);
@@ -762,9 +767,10 @@ public sealed class ControlCoordinator
             cancellationToken,
             initialStateBlockReason: state =>
             {
-                if (admittedCapabilities?.FanSpeedRangesByPerformancePreset.Count > 0)
+                if (admittedCapabilities?.ReportsPerformanceWithManualFans == true)
                 {
                     if (state.Performance != expectedPerformance
+                        || !ManualFanCurveCapabilityPolicy.SupportsPreset(admittedCapabilities, expectedPerformance)
                         || admittedCapabilities.GetFanIntentSpeedRange(expectedPerformance)
                             is not { IsWellFormed: true } intentRange
                         || !intentRange.Supports(fan1Rpm) || !intentRange.Supports(fan2Rpm)
@@ -909,14 +915,16 @@ public sealed class ControlCoordinator
                 cancellationToken).ConfigureAwait(false);
         }
 
-        // Preset-ranged backends report independent performance and manual
-        // state and use the same typed targets for Fixed and host curves.
+        // Source backends report independent performance and manual state.
+        // Scalar-range host curves require the requested preset just as mapped
+        // targets do; another supported current preset is not a confirmation.
         // Enter directly within that admitted preset, including from Automatic;
         // recheck its actual state before submission instead of writing defaults.
         FanSpeedRange? presetRange = transitionCapabilities.GetFanSpeedRange(performanceIntent);
         bool directPresetRangedEntry = requested.Mode is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
             && transitionCapabilities.ReportsPerformanceWithManualFans
-            && transitionCapabilities.FanSpeedRangesByPerformancePreset.Count > 0;
+            && (transitionCapabilities.FanSpeedRangesByPerformancePreset.Count > 0
+                || requested.Mode == FanMode.ManualCurve);
         if (directPresetRangedEntry)
         {
             if (presetRange is not { IsWellFormed: true }
@@ -3047,7 +3055,8 @@ public sealed class ControlCoordinator
         PerformancePreset performance,
         FanMode fans,
         DeviceCapabilities capabilities) =>
-        (fans == FanMode.Stop && performance == PerformancePreset.BatterySaver
+        (fans != FanMode.ManualCurve || ManualFanCurveCapabilityPolicy.SupportsPreset(capabilities, performance))
+        && ((fans == FanMode.Stop && performance == PerformancePreset.BatterySaver
             && capabilities.SupportsBatterySaverFanStop)
         || (capabilities.FanSpeedRangesByPerformancePreset.Count > 0
             && fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
@@ -3072,7 +3081,7 @@ public sealed class ControlCoordinator
         or (PerformancePreset.Balanced, FanMode.Fixed)
         or (PerformancePreset.Balanced, FanMode.ManualCurve)
         or (PerformancePreset.BatterySaver, FanMode.Automatic)
-        or (PerformancePreset.BatteryBalanced, FanMode.Automatic);
+        or (PerformancePreset.BatteryBalanced, FanMode.Automatic));
 
     private static string? PerformanceInitialStateBlockReason(
         ConfirmedDeviceState state,

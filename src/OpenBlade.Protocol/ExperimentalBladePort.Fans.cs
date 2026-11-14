@@ -4,6 +4,12 @@ namespace OpenBlade.Protocol;
 
 internal sealed partial class ExperimentalBladePort
 {
+    // Both exact upstream readers expose preset and manual flags independently.
+    // Their reviewed model-wide Fixed ranges remain unchanged. Host curves reuse
+    // those same admitted ordinary presets and commands on confirmed Full AC.
+    internal static bool SupportsStaticSourceHostCurves(ExperimentalBladeModel model) =>
+        model.ProductId is 0x029D or 0x029F;
+
     // Each dynamic envelope intersects the exact model's pinned middleware
     // and UI declarations. Fresh current-preset firmware metadata must further
     // bound every manual operation. Custom is admitted only for 709/711.
@@ -178,7 +184,8 @@ internal sealed partial class ExperimentalBladePort
             // A curve enters the current source-backed AC preset at its freshly
             // bounded maximum. The existing service curve loop owns later
             // target-only updates and never needs a new firmware command.
-            FanMode.ManualCurve when model.ProductId == 0x02A0 || UsesDynamicExperimentalFanRange(model) =>
+            FanMode.ManualCurve when model.ProductId == 0x02A0 || UsesDynamicExperimentalFanRange(model)
+                || SupportsStaticSourceHostCurves(model) =>
                 StartCurrentPresetManualCurveAsync(cancellationToken),
             _ => Unavailable(),
         };
@@ -382,12 +389,13 @@ internal sealed partial class ExperimentalBladePort
                         zone == 1 ? baselineFlag : requestedFlag,
                         baselineFlag,
                         zone == 2 ? requestedFlag : null,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken, requireLegacyCurveState: projectCurve).ConfigureAwait(false);
                     await ExchangeAsync("Fans", 0x0D, 0x02, [1, zone, mode, requestedFlag],
                         true, cancellationToken,
                         variableResponse: acceptsStatusOnlyAck,
                         payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 4 : null,
                         requireEcho: !acceptsStatusOnlyAck,
+                        requireAdequateAdapter: projectCurve,
                         writeAdmission: SourceUnchanged).ConfigureAwait(false);
                     submitted = true;
                 }
@@ -433,12 +441,14 @@ internal sealed partial class ExperimentalBladePort
                     {
                         rpm = useDynamicMaximum ? freshRange.MaximumRpm : freshRange.Quantize(requestedRpm);
                     }
-                    await RequirePresetRangedFanStateAsync(mode, 1, 1, null, cancellationToken).ConfigureAwait(false);
+                    await RequirePresetRangedFanStateAsync(mode, 1, 1, null, cancellationToken,
+                        requireLegacyCurveState: projectCurve).ConfigureAwait(false);
                     await ExchangeAsync("FanTargets", 0x0D, 0x01, [1, zone, checked((byte)(rpm / 100))],
                         true, cancellationToken,
                         variableResponse: acceptsStatusOnlyAck,
                         payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 3 : null,
                         requireEcho: !acceptsStatusOnlyAck,
+                        requireAdequateAdapter: projectCurve,
                         writeAdmission: SourceUnchanged).ConfigureAwait(false);
                     submitted = true;
                     saved = zone == 1 ? (rpm, saved.Second) : (saved.First, rpm);
@@ -478,9 +488,13 @@ internal sealed partial class ExperimentalBladePort
     }
     private async Task RequirePresetRangedFanStateAsync(
         byte mode, byte firstFlag, byte secondFlag, byte? propagatedSecondFlag,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool requireLegacyCurveState = false)
     {
-        if (GetExperimentalFanRangesByPerformancePreset(model).Count == 0)
+        // The upstream029D/029F reader also exposes independent mode/fan bytes.
+        // New AC curves preserve the confirmed raw preset and need these checks.
+        // Legacy Fixed retains its separately admitted DC0-to6 selector transition.
+        if (GetExperimentalFanRangesByPerformancePreset(model).Count == 0
+            && !(requireLegacyCurveState && SupportsStaticSourceHostCurves(model)))
         {
             return;
         }

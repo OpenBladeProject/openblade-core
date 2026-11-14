@@ -8,7 +8,7 @@ public sealed class ProfileAdmissionPolicyTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void MaximumRequiresAdvertisedModeForNewOrRetainedProfile(bool retained)
+    public void MaximumRequiresAdvertisedModeForNewIntentWhileRetainingUnchangedData(bool retained)
     {
         ProfileSet current = ProfileDefaults.CreateSafeDefaults();
         ProfileSet draft = current with
@@ -27,7 +27,60 @@ public sealed class ProfileAdmissionPolicyTests
                 [PerformancePreset.Balanced] = new(3400, 5200, 100),
             },
         };
-        Assert.False(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+        Assert.Equal(retained, ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Balanced, FanMode.ManualCurve, true)]
+    [InlineData(PerformancePreset.Silent, FanMode.ManualCurve, true)]
+    [InlineData(PerformancePreset.Custom, FanMode.ManualCurve, true)]
+    [InlineData(PerformancePreset.Custom, FanMode.Fixed, true)]
+    public void GlobalSourceCurveScopeDoesNotRestrictExistingFixedPresets(PerformancePreset performance, FanMode fans, bool expected)
+    {
+        DeviceCapabilities capabilities = SupportedCapabilities() with
+        {
+            ReportsPerformanceWithManualFans = true,
+            SupportsDirectManualFanTransitions = true,
+            FanSpeedRange = new(2200, 5000, 100),
+        };
+        ProfileSet current = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet draft = current with
+        {
+            PluggedIn = current.PluggedIn with
+            {
+                Performance = performance,
+                Fans = fans,
+                CustomPerformance = performance == PerformancePreset.Custom ? CustomPerformanceSettings.Default : null,
+            },
+        };
+        Assert.Equal(expected, ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+        Assert.False(ProfileAdmissionPolicy.FanModeAvailable(PowerSource.UsbC, FanMode.ManualCurve, capabilities));
+        Assert.True(ProfileAdmissionPolicy.FanModeAvailable(PowerSource.UsbC, FanMode.Fixed, capabilities));
+    }
+
+    [Theory]
+    [InlineData(FanMode.Fixed)]
+    [InlineData(FanMode.ManualCurve)]
+    public void RetainsUnsupportedUsbCThermalIntentOnlyForUnrelatedEdits(FanMode mode)
+    {
+        DeviceCapabilities capabilities = SupportedCapabilities() with
+        {
+            SupportsManualFansOnLimitedPower = false,
+            ReportsPerformanceWithManualFans = true,
+        };
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var settings = new FanControlSettings(mode, 3800, ManualFanCurve.Default);
+        ProfileSet saved = defaults with
+        {
+            UsbC = defaults.UsbC with { Fans = mode, FanControl = settings },
+        };
+        Assert.True(ProfileAdmissionPolicy.Supports(saved with { BatteryPolicy = BatteryPolicy.Create(75) }, saved, capabilities));
+        Assert.False(ProfileAdmissionPolicy.Supports(saved, defaults, capabilities));
+        Assert.False(ProfileAdmissionPolicy.Supports(saved with
+        {
+            UsbC = saved.UsbC with { FanControl = new(mode, 3900, ManualFanCurve.Default) },
+        }, saved, capabilities));
+        Assert.False(ProfileAdmissionPolicy.FanModeAvailable(PowerSource.UsbC, mode, capabilities));
     }
 
     [Fact]
@@ -310,7 +363,7 @@ public sealed class ProfileAdmissionPolicyTests
     }
 
     [Fact]
-    public void UnsupportedUnchangedFanIntentDoesNotBlockSupportedPerformanceEdit()
+    public void ChangingPerformanceRequiresAdmissionForTheResultingFanTuple()
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         FanControlSettings fanControl = new(
@@ -337,7 +390,7 @@ public sealed class ProfileAdmissionPolicyTests
             },
         };
 
-        Assert.True(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+        Assert.False(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
         Assert.Equal(fanControl, draft.PluggedIn.FanControl);
         Assert.Equal(current.BatteryPolicy, draft.BatteryPolicy);
     }
