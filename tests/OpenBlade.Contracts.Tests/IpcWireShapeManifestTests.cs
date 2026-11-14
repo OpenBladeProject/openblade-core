@@ -84,6 +84,8 @@ public sealed class IpcWireShapeManifestTests
             80 => "9CCDE658405F2DA4E58E6D4FF00D5B2A9F5562974BE2AF74DDE53E848B45431D",
             // Protocol 81 adds explicit keyboard-effect intent for hybrid lighting controls.
             81 => "E4913F08C67EFFEF1B442726373F4957D1A8B982375F793C9E4F015505ED503F",
+            // Protocol 82 admits 5500-RPM intent and separates observed per-preset limits.
+            82 => "D9ECA197B716E9ADE515C854380082D06DB12ED0B7BC1F3716148B8AEFA894E2",
             _ => null,
         };
 

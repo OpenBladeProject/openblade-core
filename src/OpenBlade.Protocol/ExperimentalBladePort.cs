@@ -99,6 +99,9 @@ internal sealed partial class ExperimentalBladePort(
                 case "MaximumFans":
                     session.RetainQueryFailure(0x07, 0x8F, FirmwareQueryOutcome.ContentRejected);
                     break;
+                case "FanRange":
+                    session.RetainQueryFailure(0x0D, 0x83, FirmwareQueryOutcome.ContentRejected);
+                    break;
                 case "FanTargets":
                     session.RetainQueryFailure(0x0D, 0x81, FirmwareQueryOutcome.ContentRejected);
                     break;
@@ -132,7 +135,7 @@ internal sealed partial class ExperimentalBladePort(
 
     public DeviceCapabilities Capabilities => WithConfirmedExperimentalFanRange(
         WithStartupReadAdmission(CreateCapabilities(model, policy.WritesAllowed), startupAnimationState),
-        model, policy.ConfirmedFanRange) with
+        model, policy.ConfirmedFanRanges) with
     {
         Blade18KeyboardLayoutId = blade18KeyboardLayoutId,
     };
@@ -140,7 +143,7 @@ internal sealed partial class ExperimentalBladePort(
     internal static DeviceCapabilities CreateCapabilities(ExperimentalBladeModel model, bool enabled) =>
         new(enabled ? CreatePerformancePresets(model) : new HashSet<PerformancePreset>(),
             enabled && GetExperimentalFanRange(model) is not null
-                ? model.ProductId is 0x02A0 or 0x0245
+                ? model.ProductId == 0x02A0 || UsesDynamicExperimentalFanRange(model) || SupportsStaticSourceHostCurves(model)
                     ? new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve }
                     : new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed }
                 : enabled && model.ThermalPolicy is not null ? new HashSet<FanMode> { FanMode.Automatic } : [],
@@ -153,10 +156,9 @@ internal sealed partial class ExperimentalBladePort(
             FanSpeedRangesByPerformancePreset = enabled
                 ? GetExperimentalFanRangesByPerformancePreset(model)
                 : new Dictionary<PerformancePreset, FanSpeedRange>(),
-            // Product 672 permits linked fixed targets in Balanced/Silent.
-            // Curves remain Balanced-only; preset-aware service admission handles
-            // fixed targets without enabling broader direct manual transitions.
-            SupportsDirectManualFanTransitions = enabled && model.ProductId is not (0x02A0 or 0x0245)
+            // Preset-ranged models enter manual control in the confirmed preset.
+            // Crossing presets needs separate target-range continuity admission.
+            SupportsDirectManualFanTransitions = enabled && model.ProductId != 0x02A0 && !UsesDynamicExperimentalFanRange(model)
                 && GetExperimentalFanRange(model) is not null,
             HasFanStopSourceEvidence = enabled
                 && FanStopModelContract.ForProfile(model.ModelNumber, model.ProductId, model.ProductName).Count != 0,
@@ -216,7 +218,7 @@ internal sealed partial class ExperimentalBladePort(
     // Their 07/0F helpers/public methods are at 671 chars 20394/140294 and 672 chars 52955/141017.
     // These paths accept status ACKs and parse optional payload; every relaxed caller keeps an independent GET.
     private static bool UsesSourceBackedSetAckContract(ExperimentalBladeModel model) =>
-        model.ThermalPolicy is not null || model.ProductId is 0x029F or 0x02A0;
+        model.ThermalPolicy is not null || model.ProductId is 0x029F or 0x02A0 or 0x0255 or 0x02C5;
 
     private static IReadOnlySet<PerformancePreset> CreatePerformancePresets(ExperimentalBladeModel model)
     {
@@ -271,8 +273,13 @@ internal sealed partial class ExperimentalBladePort(
         {
             presets.Add(PerformancePreset.Performance);
         }
+        if (model.ProductId == 0x0255)
+        {
+            presets.Add(PerformancePreset.Creator);
+        }
         if (model.ProductId == 0x02C5)
         {
+            presets.Add(PerformancePreset.MaximumPower);
             presets.UnionWith([PerformancePreset.BatterySaver, PerformancePreset.BatteryBalanced]);
         }
         return presets;
@@ -310,13 +317,13 @@ internal sealed partial class ExperimentalBladePort(
     private async Task<(ReadOnlyMemory<byte> First, ReadOnlyMemory<byte> Second)>
         ReadPerformanceSelectorsAsync(CancellationToken cancellationToken)
     {
-        byte profile = model.ThermalPolicy?.QueryProfile ?? 0;
+        byte profile = model.ThermalPolicy?.QueryProfile ?? (UsesDynamicExperimentalFanRange(model) ? (byte)1 : (byte)0);
         ReadOnlyMemory<byte> first = await ExchangeAsync("Performance", 0x0D, 0x82,
             [profile, 1, 0, 0], false, cancellationToken).ConfigureAwait(false);
         ReadOnlyMemory<byte> second = await ExchangeAsync("Performance", 0x0D, 0x82,
             [profile, 2, 0, 0], false, cancellationToken).ConfigureAwait(false);
         if (first.Span[1] != 1 || second.Span[1] != 2
-            || model.ThermalPolicy is not null && (first.Span[0] != profile || second.Span[0] != profile))
+            || (model.ThermalPolicy is not null || UsesDynamicExperimentalFanRange(model)) && (first.Span[0] != profile || second.Span[0] != profile))
         {
             RecordQuery("Performance", "InconsistentState", failure: "UnexpectedSelector");
             throw new IOException("Experimental performance reply did not match its requested selector.");
@@ -347,10 +354,10 @@ internal sealed partial class ExperimentalBladePort(
             0 => PerformancePreset.Balanced,
             4 when SupportsExperimentalCustom(model) => PerformancePreset.Custom,
             1 when model.ThermalPolicy?.SupportsGaming == true => PerformancePreset.Gaming,
-            2 when model.ThermalPolicy?.SupportsCreator == true => PerformancePreset.Creator,
+            2 when model.ThermalPolicy?.SupportsCreator == true || model.ProductId == 0x0255 => PerformancePreset.Creator,
             5 when model.ThermalPolicy?.SupportsSilent != false => PerformancePreset.Silent,
             1 when model.ThermalPolicy?.SupportsTurbo == true => PerformancePreset.Turbo,
-            2 when model.ThermalPolicy?.SupportsMaximumPower == true => PerformancePreset.MaximumPower,
+            2 when model.ThermalPolicy?.SupportsMaximumPower == true || model.ProductId == 0x02C5 => PerformancePreset.MaximumPower,
             3 when model.ThermalPolicy?.SupportsBatterySaver == true => PerformancePreset.BatterySaver,
             6 when model.ThermalPolicy?.SupportsBalancedDc == true => PerformancePreset.BatteryBalanced,
             3 when model.ProductId == 0x02C5 => PerformancePreset.BatterySaver,
@@ -384,7 +391,7 @@ internal sealed partial class ExperimentalBladePort(
             }
             await ReadFanTargetsAsync(
                 cancellationToken,
-                allowTransitionalFanTargets ? null : activeRange).ConfigureAwait(false);
+                allowTransitionalFanTargets ? null : activeRange, performance).ConfigureAwait(false);
         }
         // Custom without model-specific levels cannot establish a restorable
         // thermal baseline. Reject it like any other unrepresentable state.
@@ -447,7 +454,7 @@ internal sealed partial class ExperimentalBladePort(
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     model.ThermalPolicy is not null
-                        ? "Performance changes cannot preserve this model's manual targets until dynamic fan ranges are admitted. Select Automatic fans explicitly."
+                        ? "Changing presets cannot establish that both retained manual targets fit the destination's fresh range. Select Automatic fans explicitly."
                         : "Experimental performance changes require confirmed Automatic fans.");
             }
             if (baseline.Fans == FanMode.Fixed
@@ -486,9 +493,9 @@ internal sealed partial class ExperimentalBladePort(
             {
                 PerformancePreset.Balanced => 0,
                 PerformancePreset.Gaming when model.ThermalPolicy?.SupportsGaming == true => 1,
-                PerformancePreset.Creator when model.ThermalPolicy?.SupportsCreator == true => 2,
+                PerformancePreset.Creator when model.ThermalPolicy?.SupportsCreator == true || model.ProductId == 0x0255 => 2,
                 PerformancePreset.Turbo when model.ThermalPolicy?.SupportsTurbo == true => 1,
-                PerformancePreset.MaximumPower when model.ThermalPolicy?.SupportsMaximumPower == true => 2,
+                PerformancePreset.MaximumPower when model.ThermalPolicy?.SupportsMaximumPower == true || model.ProductId == 0x02C5 => 2,
                 PerformancePreset.Silent => 5,
                 PerformancePreset.Performance => model.ProductId == 0x0255 ? (byte)1 : (byte)2,
                 PerformancePreset.BatterySaver => 3,
@@ -606,7 +613,8 @@ internal sealed partial class ExperimentalBladePort(
         byte commandClass,
         byte commandId,
         byte[] arguments,
-        PowerSource? admittedFanSource)
+        PowerSource? admittedFanSource,
+        PowerSource? admittedFanPowerClass)
     {
         // The exact 02A0 full-charge bit changes battery policy, not thermal mode.
         // It retains general submission admission and its own shared-mask guard.
@@ -623,7 +631,8 @@ internal sealed partial class ExperimentalBladePort(
         {
             return admittedFanSource is { } source
                 && capturePowerSource() == source
-                && FanCommandSourceIsAdmitted(source, operation, arguments);
+                && admittedFanPowerClass is { } powerClass
+                && FanCommandSourceIsAdmitted(powerClass, operation, arguments);
         }
 
         // Balanced/Automatic is the typed HyperBoost low-power handoff. Its
@@ -693,11 +702,12 @@ internal sealed partial class ExperimentalBladePort(
         ObjectDisposedException.ThrowIf(disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
         PowerSource? admittedFanSource = null;
+        PowerSource? admittedFanPowerClass = null;
         PowerSource? admittedThermalSource = null;
         if (write && IsThermalSet(commandClass, commandId)
             && !IsTemporaryFullChargeSet(operation, commandClass, commandId, arguments)
             && (!IsBatteryModeSet(commandClass, commandId, arguments)
-                || model.ProductId != 0x02C5 || operation == "HyperBoostRestore"))
+                || model.ProductId != 0x02C5 || operation != "Performance"))
         {
             AdapterPowerState adapter = await ReadAdapterPowerCoreAsync(cancellationToken).ConfigureAwait(false);
             bool fanOperation = IsFanOperation(operation);
@@ -706,16 +716,18 @@ internal sealed partial class ExperimentalBladePort(
             {
                 admittedThermalSource = currentSource;
             }
-            bool fanPowerAllowed = fanOperation
-                && FanPowerMatchesSource(adapter, currentSource)
-                && FanCommandSourceIsAdmitted(currentSource, operation, arguments);
+            PowerSource? fanPowerClass = ResolveThermalPowerClass(adapter, currentSource);
+            bool fanPowerAllowed = fanOperation && fanPowerClass is { } resolvedFanPower
+                && (!requireAdequateAdapter || HyperBoostValidationPower.IsAdmittedFullPower(adapter))
+                && FanCommandSourceIsAdmitted(resolvedFanPower, operation, arguments);
             if (fanPowerAllowed)
             {
                 admittedFanSource = currentSource;
+                admittedFanPowerClass = fanPowerClass;
             }
             bool limitedCleanupAllowed = !requireAdequateAdapter && IsLimitedAdapter(adapter)
                 && AllowsLimitedPowerSet(operation, commandClass, commandId, arguments);
-            if (operation == "HyperBoostRestore" && !FanPowerMatchesSource(adapter, currentSource))
+            if (operation == "HyperBoostRestore" && fanPowerClass is null)
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "The HyperBoost exit adapter reading disagrees with the current power source.");
@@ -766,7 +778,8 @@ internal sealed partial class ExperimentalBladePort(
                     commandClass,
                     commandId,
                     arguments,
-                    admittedFanSource) : null,
+                    admittedFanSource,
+                    admittedFanPowerClass) : null,
         };
         LightingRecoveryWriteGate.SubmissionGuard? recoveryGuard = write
             ? recoveryWriteGate.CreateSubmissionGuard(command.SubmissionAllowed) : null;
@@ -906,16 +919,22 @@ internal sealed partial class ExperimentalBladePort(
 
     private bool FanModeSourceIsAdmitted(PowerSource source, FanMode mode)
     {
-        // Product 581's actual UI offers manual control only on AC. Keep
-        // automatic low-power cleanup available without admitting a DC target.
-        if (UsesDynamicExperimentalFanRange(model) && source != PowerSource.PluggedIn
-            && mode is FanMode.Fixed or FanMode.ManualCurve)
+        if (mode == FanMode.ManualCurve && source is not (PowerSource.PluggedIn or PowerSource.ExternalUnknown)
+            && (model.ProductId == 0x02A0 || SupportsStaticSourceHostCurves(model)))
+        {
+            return false;
+        }
+        // Exact source normally offers manual control only on AC; the reviewed
+        // 709/711 Balanced-DC paths separately admit fixed targets on battery.
+        if (UsesDynamicExperimentalFanRange(model) && source is not (PowerSource.PluggedIn or PowerSource.ExternalUnknown)
+            && (mode == FanMode.ManualCurve
+                || mode == FanMode.Fixed && !(source == PowerSource.Battery && SupportsDynamicBatteryFixedFans(model))))
         {
             return false;
         }
         return source switch
         {
-            PowerSource.PluggedIn or PowerSource.Battery =>
+            PowerSource.PluggedIn or PowerSource.ExternalUnknown or PowerSource.Battery =>
                 mode is FanMode.Automatic or FanMode.Fixed or FanMode.ManualCurve,
             // The exact 029F/029D low-power vendor path admits Automatic
             // handback, but does not set the separate manual fan flag.
@@ -929,9 +948,21 @@ internal sealed partial class ExperimentalBladePort(
         string operation,
         byte[] arguments) => (!UsesDynamicExperimentalFanRange(model)
                 || source == PowerSource.PluggedIn
+                || source == PowerSource.Battery && SupportsDynamicBatteryFixedFans(model)
+                    && (operation == "FanTargets"
+                        || operation == "Fans" && arguments.Length == 4 && arguments[2] == 6)
                 || operation == "Fans" && arguments.Length == 4 && arguments[3] == 0)
             && (source != PowerSource.UsbC
                 || operation == "Fans" && arguments.Length == 4 && arguments[3] == 0);
+
+    // Windows ACLineStatus establishes only external-power presence. Resolve
+    // that raw state separately using the successful fresh firmware reading for
+    // this SET. Keep the raw source unchanged in the native submission guard.
+    private static PowerSource? ResolveThermalPowerClass(AdapterPowerState adapter, PowerSource rawSource) =>
+        rawSource == PowerSource.ExternalUnknown
+            ? HyperBoostValidationPower.IsAdmittedFullPower(adapter) ? PowerSource.PluggedIn
+                : IsLimitedAdapter(adapter) ? PowerSource.UsbC : null
+            : FanPowerMatchesSource(adapter, rawSource) ? rawSource : null;
 
     private static bool FanPowerMatchesSource(
         AdapterPowerState adapter,

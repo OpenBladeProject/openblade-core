@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
 using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
@@ -101,7 +102,8 @@ public sealed class ProfileSetValidatorTests
             SupportsBreathingColorSelection = false,
             SupportsWaveDirectionSelection = false,
         };
-        ProfileSetValidator validator = ProfileSetValidator.CreateForDeviceCapabilities(capabilities, capabilities);
+        ProfileSetValidator validator = ProfileSetValidator.CreateForDeviceCapabilities(
+            DeviceCapabilities.SafeTargetDefaults(), capabilities);
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         foreach (LightingSettings lighting in new[]
         {
@@ -587,7 +589,7 @@ public sealed class ProfileSetValidatorTests
 
     [Theory]
     [InlineData(PerformancePreset.Custom, FanMode.Fixed)]
-    [InlineData(PerformancePreset.Silent, FanMode.ManualCurve)]
+    [InlineData(PerformancePreset.Custom, FanMode.ManualCurve)]
     public void Validate_PresetFanRangesRejectUnsupportedManualPair(
         PerformancePreset performance,
         FanMode mode)
@@ -616,6 +618,75 @@ public sealed class ProfileSetValidatorTests
             fanSpeedRangesByPerformancePreset: Blade18FanRanges()).Validate(profiles));
     }
 
+    [Theory]
+    [InlineData(PerformancePreset.Balanced, 2200, 3800)]
+    [InlineData(PerformancePreset.Silent, 3700, 5300)]
+    public void Validate_PresetFanCurveUsesItsOwnRange(
+        PerformancePreset performance, int minimum, int maximum)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var curve = new ManualFanCurve(
+            [new(40, minimum), new(90, maximum)],
+            [new(35, minimum), new(85, maximum)], true);
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = performance,
+                Fans = FanMode.ManualCurve,
+                FanControl = new(FanMode.ManualCurve, maximum, curve),
+            },
+        };
+        ProfileSetValidator validator = CreateValidator(
+            combinations: Blade18FanCombinations(),
+            fanSpeedRange: new(2200, 3800, 100),
+            fanSpeedRangesByPerformancePreset: Blade18FanRanges());
+        validator.Validate(profiles);
+        Assert.Throws<InvalidDataException>(() => validator.Validate(profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                FanControl = new(FanMode.ManualCurve, maximum,
+                    new ManualFanCurve([new(40, minimum), new(90, maximum + 100)],
+                        [new(35, minimum), new(85, maximum)], true)),
+            },
+        }));
+    }
+
+    [Theory]
+    [InlineData(FanMode.Fixed)]
+    [InlineData(FanMode.ManualCurve)]
+    public void Validate_ObservedRangeNarrowingPreservesSavedFanIntentDuringUnrelatedEdit(FanMode mode)
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            FanSpeedRange = new(2200, 5200, 100),
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2200, 5200, 100),
+            },
+            ObservedFanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2600, 5000, 100),
+            },
+        };
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var curve = new ManualFanCurve([new(40, 2200), new(80, 5200)],
+            [new(40, 2200), new(80, 5200)], true);
+        FanControlSettings settings = new(mode, 5200, curve);
+        ProfileSet saved = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Fans = mode, FanControl = settings },
+        };
+        ProfileSetValidator validator = ProfileSetValidator.CreateForDeviceCapabilities(capabilities, capabilities);
+        validator.Validate(saved);
+        ProfileSet edited = saved with { BatteryPolicy = BatteryPolicy.Create(75) };
+        validator.Validate(edited);
+        Assert.Equal(settings, edited.PluggedIn.FanControl);
+        Assert.Equal(5000, capabilities.GetFanSpeedRange(PerformancePreset.Balanced)!.MaximumRpm);
+        Assert.Equal(5200, capabilities.GetFanIntentSpeedRange(PerformancePreset.Balanced)!.MaximumRpm);
+    }
+
     [Fact]
     public void Validate_PresetFanRangesKeepBalancedManualCurve()
     {
@@ -639,8 +710,12 @@ public sealed class ProfileSetValidatorTests
             fanSpeedRangesByPerformancePreset: Blade18FanRanges()).Validate(profiles);
     }
 
-    [Fact]
-    public void Validate_AcceptsMaximumFanModeWithDeviceSpecificFixedRange()
+    [Theory]
+    [InlineData(5000, true)]
+    [InlineData(5200, true)]
+    [InlineData(5400, true)]
+    public void Validate_LegacyMaximumUsesOnlyExplicitlyAdmittedMaximumSemantics(
+        int maximum, bool accepted)
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         ProfileSet profiles = defaults with
@@ -648,7 +723,7 @@ public sealed class ProfileSetValidatorTests
             PluggedIn = defaults.PluggedIn with
             {
                 Fans = FanMode.Maximum,
-                FanControl = FanControlSettings.FromLegacy(FanMode.Maximum),
+                FanControl = new(FanMode.Fixed, FanControlSettings.MaximumSpeedRpm, ManualFanCurve.Default),
             },
         };
         ProfileSetValidator validator = CreateValidator(
@@ -659,9 +734,273 @@ public sealed class ProfileSetValidatorTests
                 new(PerformancePreset.BatterySaver, FanMode.Automatic),
                 new(PerformancePreset.BatteryBalanced, FanMode.Automatic),
             },
-            fanSpeedRange: new FanSpeedRange(2000, 5000, 100));
+            fanSpeedRange: new FanSpeedRange(2000, maximum, 100));
 
-        validator.Validate(profiles);
+        if (accepted)
+        {
+            validator.Validate(profiles);
+        }
+        else
+        {
+            Assert.Throws<InvalidDataException>(() => validator.Validate(profiles));
+        }
+    }
+
+    [Theory]
+    [InlineData(5000, false)]
+    [InlineData(5200, false)]
+    [InlineData(5000, true)]
+    [InlineData(5200, true)]
+    public void Validate_MaximumRequiresAdvertisedModeEvenWhenPresetHasManualRange(int maximum, bool legacyAlias)
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            FanModes = new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve },
+            FanSpeedRange = new(2000, maximum, 100),
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2000, maximum, 100),
+            },
+        };
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Fans = FanMode.Maximum,
+                FanControl = legacyAlias ? new(FanMode.Fixed, 5400, ManualFanCurve.Default)
+                    : FanControlSettings.FromLegacy(FanMode.Maximum),
+            },
+        };
+        InvalidDataException failure = Assert.Throws<InvalidDataException>(() =>
+            ProfileSetValidator.CreateForDeviceCapabilities(capabilities).Validate(profiles));
+        Assert.Contains("fan mode is not supported", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Validate_Real0510DoesNotAdmitTypedOrLegacyMaximum(bool legacyAlias)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02B7);
+        DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(model, enabled: true);
+        Assert.Equal(5200, capabilities.GetFanIntentSpeedRange(PerformancePreset.Balanced)!.MaximumRpm);
+        Assert.DoesNotContain(FanMode.Maximum, capabilities.FanModes);
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Fans = FanMode.Maximum,
+                FanControl = legacyAlias ? new(FanMode.Fixed, 5400, ManualFanCurve.Default)
+                    : FanControlSettings.FromLegacy(FanMode.Maximum),
+            },
+        };
+        InvalidDataException failure = Assert.Throws<InvalidDataException>(() =>
+            ProfileSetValidator.CreateForDeviceCapabilities(capabilities).Validate(profiles));
+        Assert.Contains("fan mode is not supported", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Validate_LiteralFixed5400IsStillRejectedForAdmittedMaximum5000Device()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Fans = FanMode.Fixed,
+                FanControl = new(FanMode.Fixed, 5400, ManualFanCurve.Default),
+            },
+        };
+        var capabilities = DeviceCapabilities.SafeTargetDefaults() with { FanSpeedRange = new(2000, 5000, 100) };
+        Assert.Throws<InvalidDataException>(() =>
+            ProfileSetValidator.CreateForDeviceCapabilities(capabilities).Validate(profiles));
+    }
+
+    [Theory]
+    [InlineData(0x029D)]
+    [InlineData(0x029F)]
+    public void Validate_GlobalSourceCurveUsesAdmittedFullAcPresetsWithoutChangingFixedScope(int productId)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
+        DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(model, enabled: true);
+        Assert.Empty(capabilities.FanSpeedRangesByPerformancePreset);
+        Assert.Contains(FanMode.ManualCurve, capabilities.FanModes);
+        ProfileSetValidator validator = ProfileSetValidator.CreateForDeviceCapabilities(capabilities);
+        foreach (PerformancePreset performance in capabilities.PerformancePresets.Where(value =>
+            value is PerformancePreset.Balanced or PerformancePreset.Silent or PerformancePreset.Performance or PerformancePreset.Custom))
+        {
+            validator.ValidatePerformanceFanCombination(performance, FanMode.ManualCurve, PowerSource.PluggedIn);
+            validator.ValidatePerformanceFanCombination(performance, FanMode.Fixed, PowerSource.PluggedIn);
+        }
+        Assert.Throws<InvalidDataException>(() => validator.ValidatePerformanceFanCombination(
+            PerformancePreset.Balanced, FanMode.ManualCurve, PowerSource.UsbC));
+        Assert.Throws<InvalidDataException>(() => validator.ValidatePerformanceFanCombination(
+            PerformancePreset.Balanced, FanMode.Fixed, PowerSource.UsbC));
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Custom)]
+    [InlineData(PerformancePreset.Performance)]
+    [InlineData(PerformancePreset.Gaming)]
+    [InlineData(PerformancePreset.Creator)]
+    [InlineData(PerformancePreset.MaximumPower)]
+    public void StoredThermalIntentRetainsUnavailablePresetsButStrictChangesRejectThem(PerformancePreset performance)
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            FanModes = new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed },
+            FanSpeedRange = new(2200, 5000, 100),
+        };
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var settings = new FanControlSettings(FanMode.ManualCurve, 5000,
+            new ManualFanCurve([new(40, 2200), new(80, 5000)], [new(40, 2200), new(80, 5000)], true));
+        ProfileSet saved = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = performance,
+                CustomPerformance = performance == PerformancePreset.Custom ? CustomPerformanceSettings.Default : null,
+                Fans = FanMode.ManualCurve,
+                FanControl = settings,
+            },
+        };
+        ProfileSetValidator validator = ProfileSetValidator.CreateForDeviceCapabilities(capabilities);
+        validator.ValidateStoredCustomIntent(saved);
+        ProfileSet unrelated = saved with { BatteryPolicy = BatteryPolicy.Create(75) };
+        validator.ValidateStoredCustomIntent(unrelated);
+        validator.ValidateChangedThermalIntent(unrelated, saved);
+        Assert.Equal(settings, unrelated.PluggedIn.FanControl);
+        Assert.Throws<InvalidDataException>(() => validator.ValidateChangedThermalIntent(saved, defaults));
+    }
+
+    [Fact]
+    public void MappedRangeCannotAdmitAnUnadvertisedPerformancePreset()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            ReportsPerformanceWithManualFans = true,
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Custom] = new(2200, 5000, 100),
+            },
+        };
+        ProfileSetValidator validator = ProfileSetValidator.CreateForDeviceCapabilities(capabilities);
+        Assert.Throws<InvalidDataException>(() => validator.ValidatePerformanceFanCombination(
+            PerformancePreset.Custom, FanMode.ManualCurve, PowerSource.PluggedIn));
+        Assert.Throws<InvalidDataException>(() => validator.ValidatePerformanceFanCombination(
+            PerformancePreset.Custom, FanMode.Fixed, PowerSource.PluggedIn));
+    }
+
+    [Fact]
+    public void ApplicationThermalChangesUseResolvedInheritanceAndExplicitIntentAdmission()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportsManualFansOnLimitedPower = false,
+            ReportsPerformanceWithManualFans = true,
+        };
+        ProfileSetValidator validator = ProfileSetValidator.CreateForDeviceCapabilities(capabilities);
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var settings = new FanControlSettings(FanMode.ManualCurve, 3800, ManualFanCurve.Default);
+        var application = new ApplicationProfileDefinition(Guid.NewGuid(), "Retained", @"C:\Games\retained.exe",
+            ApplicationActivationMode.Foreground, new ApplicationProfileOverrideSet
+            {
+                UsbC = new ApplicationPowerProfileOverride { Lighting = defaults.UsbC.Lighting },
+            });
+        ProfileSet saved = defaults with
+        {
+            UsbC = defaults.UsbC with { Fans = FanMode.ManualCurve, FanControl = settings },
+            ApplicationProfiles = [application],
+        };
+        ApplicationProfileDefinition lightingOnly = application with
+        {
+            Overrides = application.Overrides with
+            {
+                UsbC = application.Overrides.UsbC! with { Lighting = LightingSettingsFactory.Static(new(10, 20, 30), 40) },
+            },
+        };
+        ProfileSet draft = saved with { ApplicationProfiles = [lightingOnly] };
+        validator.ValidateChangedThermalIntent(draft, saved);
+        ApplicationProfileDefinition explicitCurve = lightingOnly with
+        {
+            Overrides = lightingOnly.Overrides with
+            {
+                UsbC = lightingOnly.Overrides.UsbC! with { Fans = FanMode.ManualCurve, FanControl = settings },
+            },
+        };
+        Assert.Throws<InvalidDataException>(() => validator.ValidateChangedThermalIntent(
+            draft with { ApplicationProfiles = [explicitCurve] }, saved));
+        ApplicationProfileDefinition explicitAutomatic = application with
+        {
+            Overrides = application.Overrides with
+            {
+                UsbC = application.Overrides.UsbC! with { Fans = FanMode.Automatic },
+            },
+        };
+        ProfileSet inherited = defaults with { ApplicationProfiles = [explicitAutomatic] };
+        Assert.Throws<InvalidDataException>(() => validator.ValidateChangedThermalIntent(inherited with
+        {
+            UsbC = defaults.UsbC with { Fans = FanMode.Fixed, FanControl = new(FanMode.Fixed, 3800, ManualFanCurve.Default) },
+        }, inherited));
+    }
+
+    [Fact]
+    public void ApplicationInheritedCurveIsRevalidatedWhenOnlyBasePresetChanges()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            ReportsPerformanceWithManualFans = true,
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2000, 5400, 100),
+            },
+        };
+        ProfileSetValidator validator = ProfileSetValidator.CreateForDeviceCapabilities(capabilities);
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var application = new ApplicationProfileDefinition(Guid.NewGuid(), "Inherited curve", @"C:/Games/inherited.exe",
+            ApplicationActivationMode.Foreground, new ApplicationProfileOverrideSet
+            {
+                PluggedIn = new ApplicationPowerProfileOverride { Fans = FanMode.ManualCurve },
+            });
+        ProfileSet saved = defaults with { ApplicationProfiles = [application] };
+        ProfileSet changed = saved with
+        {
+            PluggedIn = saved.PluggedIn with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = CustomPerformanceSettings.Default,
+            },
+        };
+        validator.ValidateChangedThermalIntent(changed with { ApplicationProfiles = [] }, defaults);
+        Assert.Throws<InvalidDataException>(() => validator.ValidateChangedThermalIntent(changed, saved));
+    }
+
+    [Fact]
+    public void NewExplicitApplicationCustomLevelsRequireAdmissionEvenBeforeSelectingCustom()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            CustomPerformance = new CustomPerformanceCapabilities(new HashSet<CustomPerformanceCombination>
+            {
+                new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+            }),
+        };
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var application = new ApplicationProfileDefinition(Guid.NewGuid(), "Future Custom", @"C:/Games/future-custom.exe",
+            ApplicationActivationMode.Foreground, new ApplicationProfileOverrideSet
+            {
+                PluggedIn = new ApplicationPowerProfileOverride
+                {
+                    CustomPerformance = new(CustomPerformanceLevel.High, CustomPerformanceLevel.High),
+                },
+            });
+        ProfileSetValidator validator = ProfileSetValidator.CreateForDeviceCapabilities(capabilities);
+        Assert.Throws<InvalidDataException>(() => validator.ValidateChangedThermalIntent(
+            defaults with { ApplicationProfiles = [application] }, defaults));
     }
 
     [Fact]

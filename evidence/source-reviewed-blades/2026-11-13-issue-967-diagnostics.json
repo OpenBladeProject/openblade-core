@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "reviewDate": "2026-11-13",
+  "issue": "https://github.com/OpenBladeProject/openblade-core/issues/967",
+  "attachmentUrl": "https://github.com/user-attachments/files/34834918/OpenBlade-diagnostics-20261114-011334Z.zip",
+  "attachmentSha256": "d8a9b1afd6ea8a2fd3411b07ec3e153e885153117d993b728bbeb79270040819",
+  "model": "RZ09-0287",
+  "usb": "1532:0234",
+  "reportedProductVersion": "0.61.1-nightly.114+97b3ea5a",
+  "biosVersionProvenance": "1.02",
+  "ecVersionProvenance": "1.00",
+  "adapterQueries": [
+    {
+      "command": "07/8C",
+      "request": "0000",
+      "observations": 30,
+      "failures": 30,
+      "failure": "ProtocolFailure",
+      "phase": "ProtocolValidation",
+      "validationFailure": "Status",
+      "nativeWin32Error": 0,
+      "transferredByteCount": 90,
+      "responseStatus": null
+    }
+  ],
+  "conclusion": "The firmware status rejects a fully transferred adapter query. The archived diagnostic did not retain the numeric response status. Failed wattage classification leaves external power unknown. Other successful typed queries establish selective failure, not a total HID outage. This audit does not claim physical recovery.",
+  "sourceProofVerification": {
+    "sourceRecordsVerified": 118,
+    "proofSegmentsVerified": 311,
+    "failures": []
+  },
+  "lightingScopeReused": "evidence/source-reviewed-blades/2026-11-13-complete-lighting-pass.json",
+  "firmwareScope": "evidence/source-reviewed-blades/2026-11-13-issue-967-firmware.json"
+}

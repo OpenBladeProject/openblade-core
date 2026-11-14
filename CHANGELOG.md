@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Expand source-reviewed fixed fan speeds and host curves with per-preset firmware limits, add full-power AC host curves in the existing fixed-fan presets on RZ09-0482/RZ09-0483, add Creator on RZ09-0328 and Maximum Power on RZ09-0530, and preserve saved fan settings when live limits change. ([#968](https://github.com/OpenBladeProject/openblade-core/pull/968))
+
 ### Fixed
 
 - Accept a valid PawnIO CPU temperature driver when uninstall/reinstall leaves disconnected device registrations. Report the present-device count when the binding remains missing or ambiguous. ([#970](https://github.com/OSSBlade/openblade-core/pull/970))

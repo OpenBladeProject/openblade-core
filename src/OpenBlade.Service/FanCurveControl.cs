@@ -19,8 +19,43 @@ public readonly record struct FanTargetSpeeds(
     int Fan2Rpm,
     bool FailSafe);
 
+// Independent preset readback is a backend contract, not a dynamic-range
+// marker. Scalar source ranges apply to the backend's admitted presets;
+// mapped backends require their separately reviewed per-preset ranges.
+internal static class ManualFanCurveCapabilityPolicy
+{
+    internal static bool SupportsPreset(DeviceCapabilities capabilities, PerformancePreset performance) =>
+        capabilities.GetFanIntentSpeedRange(performance) is { IsWellFormed: true }
+        && capabilities.FanModes.Contains(FanMode.ManualCurve)
+        && (!capabilities.ReportsPerformanceWithManualFans
+            || capabilities.PerformancePresets.Contains(performance));
+
+    internal static bool SupportsPowerSource(DeviceCapabilities capabilities, PowerSource source) =>
+        FanControlPowerPolicy.IsAvailable(source, FanMode.ManualCurve,
+            capabilities.SupportsManualFansOnLimitedPower)
+        && (!capabilities.ReportsPerformanceWithManualFans || source == PowerSource.PluggedIn);
+}
+
 public static class FanCurveCalculator
 {
+    public static FanTargetSpeeds Calculate(
+        ManualFanCurve curve,
+        FanTemperatureReadings temperatures,
+        FanSpeedRange activeRange)
+    {
+        ArgumentNullException.ThrowIfNull(activeRange);
+        if (!activeRange.IsWellFormed)
+        {
+            throw new ArgumentException("The active fan range is invalid.", nameof(activeRange));
+        }
+        FanTargetSpeeds targets = Calculate(curve, temperatures, activeRange.MaximumRpm);
+        return targets with
+        {
+            Fan1Rpm = activeRange.Quantize(targets.Fan1Rpm),
+            Fan2Rpm = activeRange.Quantize(targets.Fan2Rpm),
+        };
+    }
+
     public static FanTargetSpeeds Calculate(
         ManualFanCurve curve,
         FanTemperatureReadings temperatures,
@@ -72,14 +107,14 @@ public static class FanCurveCalculator
         {
             int hotter = Math.Max(cpu, gpu);
             return new FanTargetSpeeds(
-                curve.InterpolateCpu(hotter),
-                curve.InterpolateGpu(hotter),
+                Math.Min(curve.InterpolateCpu(hotter), maximumRpm),
+                Math.Min(curve.InterpolateGpu(hotter), maximumRpm),
                 FailSafe: false);
         }
 
         return new FanTargetSpeeds(
-            curve.InterpolateCpu(cpu),
-            curve.InterpolateGpu(gpu),
+            Math.Min(curve.InterpolateCpu(cpu), maximumRpm),
+            Math.Min(curve.InterpolateGpu(gpu), maximumRpm),
             FailSafe: false);
     }
 }

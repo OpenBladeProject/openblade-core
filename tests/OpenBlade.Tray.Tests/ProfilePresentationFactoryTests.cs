@@ -38,6 +38,16 @@ public sealed class ProfilePresentationFactoryTests : IDisposable
     }
 
     [Fact]
+    public void Create_LegacyMaximumAliasDisplaysIntentWithoutInventingFixed5400()
+    {
+        var alias = new FanControlSettings(FanMode.Fixed, 5400, ManualFanCurve.Default);
+        PowerProfile saved = CreateProfile() with { Fans = FanMode.Maximum, FanControl = alias };
+        Assert.Equal("Maximum", Create(saved).Fans.Text);
+        Assert.Same(alias, saved.FanControl);
+        Assert.Equal(FanMode.Fixed, saved.FanControl.Mode);
+    }
+
+    [Fact]
     public void Create_UsesLaptopFallbackOnlyForUnsetFirmwareFields()
     {
         var fallback = new LaptopBehaviorProfileSettings(

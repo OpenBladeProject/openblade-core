@@ -260,8 +260,8 @@ public sealed class ExperimentalAdapterPowerTests
             switch ((command.ClassId, command.CommandId))
             {
                 case (0x07, 0x8C): payload = Adapter; break;
-                case (0x0D, 0x82): payload = [0, payload[1], Mode, Fan]; break;
-                case (0x0D, 0x87): payload = [0, payload[1], 0]; break;
+                case (0x0D, 0x82): payload = [payload[0], payload[1], Mode, Fan]; break;
+                case (0x0D, 0x87): payload = [payload[0], payload[1], 0]; break;
                 case (0x0D, 0x81): payload = [0, payload[1], 25]; break;
                 case (0x07, 0x8F): payload = [PowerFlags]; break;
                 case (0x0D, 0x02): Mode = payload[2]; Fan = payload[3]; break;
