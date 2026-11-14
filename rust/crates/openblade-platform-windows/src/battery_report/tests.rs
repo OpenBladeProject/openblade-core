@@ -93,9 +93,14 @@ fn unterminated_or_unobservable_tree_cannot_yield_clean_cancellation() {
 fn cleanup_failure_preserves_valid_bytes_and_primary_start_error() {
     let xml = b"<BatteryReport/>".to_vec();
     for primary in [Ok(xml), Err(Failure::Start)] {
+        let mut recorded = None;
+        let result = finish_acquisition(primary.clone(), Err(Failure::Cleanup), |event| {
+            recorded = Some(event);
+        });
+        assert_eq!(result, primary);
         assert_eq!(
-            finish_acquisition(primary.clone(), Err(Failure::Cleanup)),
-            primary
+            recorded,
+            Some(crate::agent_diagnostics::Event::BatteryCleanup)
         );
     }
 }

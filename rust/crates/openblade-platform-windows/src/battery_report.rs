@@ -1,6 +1,5 @@
 //! Current-user, read-only Windows battery report. Call from a blocking owner thread.
 use std::{
-    io::Write,
     sync::{
         Mutex,
         atomic::{AtomicBool, Ordering},
@@ -9,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-mod custody;
+pub(crate) mod custody;
 mod process;
 
 const TIMEOUT: Duration = Duration::from_secs(15);
@@ -69,7 +68,13 @@ pub fn acquire(cancelled: &AtomicBool) -> Result<Vec<u8>, Failure> {
     let launch = check(cancelled, deadline).and_then(|()| process::Child::launch(&attempt.output));
     let child = match launch {
         Ok(child) => child,
-        Err(error) => return finish_acquisition(Err(error), attempt.clean()),
+        Err(error) => {
+            return finish_acquisition(
+                Err(error),
+                attempt.clean(),
+                crate::agent_diagnostics::record,
+            );
+        }
     };
     let result = run(&child, cancelled, deadline, RETIRE_TIMEOUT);
     if result == Err(Failure::StopUnconfirmed) {
@@ -77,7 +82,7 @@ pub fn acquire(cancelled: &AtomicBool) -> Result<Vec<u8>, Failure> {
         return Err(Failure::StopUnconfirmed);
     }
     let bytes = result.and_then(|()| attempt.read(cancelled, deadline));
-    finish_acquisition(bytes, attempt.clean()).and_then(|bytes| {
+    finish_acquisition(bytes, attempt.clean(), crate::agent_diagnostics::record).and_then(|bytes| {
         check(cancelled, deadline)?;
         Ok(bytes)
     })
@@ -88,12 +93,10 @@ pub fn acquire(cancelled: &AtomicBool) -> Result<Vec<u8>, Failure> {
 fn finish_acquisition(
     bytes: Result<Vec<u8>, Failure>,
     cleanup: Result<(), Failure>,
+    record: impl FnOnce(crate::agent_diagnostics::Event),
 ) -> Result<Vec<u8>, Failure> {
-    if let Err(error) = cleanup {
-        let _ = writeln!(
-            std::io::stderr().lock(),
-            "Windows battery report cleanup failed ({error:?})"
-        );
+    if cleanup.is_err() {
+        record(crate::agent_diagnostics::Event::BatteryCleanup);
     }
     bytes
 }

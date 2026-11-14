@@ -77,7 +77,7 @@ async fn exchange(script: &mut Script, body: &[u8]) -> (io::Result<()>, Vec<u8>,
             bytes
         },
     );
-    (result, bytes, admissions.get())
+    (result.map_err(ServeError::into_io), bytes, admissions.get())
 }
 fn capture(name: &str, frame: &[u8], expected: u8) {
     if let Some(path) = std::env::var_os("OPENBLADE_NATIVE_AGENT_BATTERY_FRAMES") {
@@ -182,16 +182,142 @@ async fn rejected_peer_or_stale_origin_never_starts_supplier() {
                 }
             },
             || {
-                Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "injected stale origin",
-                ))
+                if stale {
+                    Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "injected stale origin",
+                    ))
+                } else {
+                    Ok(())
+                }
             },
         )
         .await;
-        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        let error = result.unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(matches!(error, ServeError::Fatal(_)), stale);
         assert!(!script.started.load(Ordering::Acquire));
     }
+}
+
+#[tokio::test]
+async fn refused_connection_is_dropped_and_the_next_peer_gets_its_report() {
+    use std::collections::VecDeque;
+    let (first, mut rejected) = tokio::io::duplex(4096);
+    let (second, mut legitimate) = tokio::io::duplex(4096);
+    rejected.write_all(&request()).await.unwrap();
+    legitimate.write_all(&request()).await.unwrap();
+    let mut queue = VecDeque::from([first, second]);
+    let accepted = Cell::new(0);
+    let admissions = Cell::new(0);
+    let (tx, mut stop) = watch::channel(false);
+    let mut supplier = Script::new(Ok(
+        include_bytes!("../../session_battery/timeline.xml").to_vec()
+    ));
+    let (result, response) = tokio::join!(
+        run_connections(
+            &mut stop,
+            &mut supplier,
+            || {
+                let next = queue.pop_front();
+                if next.is_some() {
+                    accepted.set(accepted.get() + 1);
+                }
+                async move {
+                    match next {
+                        Some(pipe) => Ok(pipe),
+                        None => std::future::pending().await,
+                    }
+                }
+            },
+            |_| {
+                admissions.set(admissions.get() + 1);
+                if admissions.get() == 1 {
+                    Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "wrong peer session/LUID",
+                    ))
+                } else {
+                    Ok(())
+                }
+            },
+            || Ok(())
+        ),
+        async {
+            let mut refused = Vec::new();
+            rejected.read_to_end(&mut refused).await.unwrap();
+            assert!(refused.is_empty());
+            let body = read_frame_body(&mut legitimate, MAX_FRAME).await.unwrap();
+            tx.send(true).unwrap();
+            serde_json::from_slice::<Value>(&body).unwrap()
+        },
+    );
+    result.unwrap();
+    assert_eq!(accepted.get(), 2);
+    assert_eq!(admissions.get(), 3);
+    assert_eq!(response["status"], 0);
+    assert_eq!(response["requestId"], ID);
+    assert!(supplier.retired.load(Ordering::Acquire));
+}
+
+#[tokio::test]
+async fn stale_origin_after_read_is_fatal_and_does_not_accept_another_peer() {
+    use std::future::ready;
+    // The same I/O kinds can describe a peer or an origin failure. Classification
+    // follows the source of the failure, never a blanket ErrorKind exception.
+    for kind in [io::ErrorKind::PermissionDenied, io::ErrorKind::InvalidData] {
+        let (server, mut client) = tokio::io::duplex(4096);
+        client.write_all(&request()).await.unwrap();
+        let mut server = Some(server);
+        let accepts = Cell::new(0);
+        let verifies = Cell::new(0);
+        let peers = Cell::new(0);
+        let (_tx, mut stop) = watch::channel(false);
+        let mut supplier = Script::new(Err(Failure::Start));
+        let error = run_connections(
+            &mut stop,
+            &mut supplier,
+            || {
+                accepts.set(accepts.get() + 1);
+                ready(Ok(server.take().expect("must not accept again")))
+            },
+            |_| {
+                peers.set(peers.get() + 1);
+                Ok(())
+            },
+            || {
+                verifies.set(verifies.get() + 1);
+                if verifies.get() == 1 {
+                    Ok(())
+                } else {
+                    Err(io::Error::new(kind, "origin changed after read"))
+                }
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.kind(), kind);
+        assert_eq!(accepts.get(), 1);
+        assert_eq!(peers.get(), 0);
+        assert!(!supplier.started.load(Ordering::Acquire));
+    }
+}
+
+#[tokio::test]
+async fn listener_failure_stays_fatal_without_blanket_stale_error_tolerance() {
+    let (_tx, mut stop) = watch::channel(false);
+    let mut supplier = Script::new(Err(Failure::Start));
+    let error = run_connections::<tokio::io::DuplexStream, _>(
+        &mut stop,
+        &mut supplier,
+        || std::future::ready(Err(io::Error::other("listener custody failure"))),
+        |_| Ok(()),
+        || Ok(()),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::Other);
+    assert!(!supplier.started.load(Ordering::Acquire));
 }
 #[tokio::test(start_paused = true)]
 async fn cancellation_disconnect_extra_bytes_deadline_and_origin_loss_join_supplier_without_reply()

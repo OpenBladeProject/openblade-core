@@ -1,6 +1,7 @@
 //! Windows platform adapters for the current-user desktop.
 #![cfg(windows)]
 
+pub mod agent_diagnostics;
 pub mod application;
 pub mod battery_report;
 pub mod brightness;

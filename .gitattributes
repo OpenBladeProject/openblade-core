@@ -70,3 +70,6 @@ tools/openblade-windows-host/tests/fixtures/app-fans-*.json -text whitespace=cr-
 # Preserve the exact generated Agent battery learning bytes.
 .trail/learnings/2026-11-14-compose-native-agent-battery-v1-with-jack.md text eol=lf
 .trail/learnings/2026-11-14-qualify-native-agent-battery-report-trail-jack.md text eol=lf
+
+# Preserve the exact generated corrective learning bytes.
+.trail/learnings/2026-11-14-keep-peer-refusal-local-and-native-jack.md text eol=lf

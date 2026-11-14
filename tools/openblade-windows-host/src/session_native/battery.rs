@@ -1,6 +1,6 @@
 //! Selected installed Battery.v1 endpoint. No fixture scenarios enter this composition.
 use openblade_platform_windows::battery_report::{self, Failure};
-use openblade_windows_host::pipe::{Endpoint, stale_connection};
+use openblade_windows_host::pipe::Endpoint;
 use std::{
     future::Future,
     io,
@@ -66,40 +66,80 @@ pub(super) async fn run(
     let endpoint = Endpoint::current_user_battery()?;
     let _claim = endpoint.claim()?;
     let mut supplier = WindowsSupplier;
+    run_connections(
+        &mut stop,
+        &mut supplier,
+        || async {
+            let pipe = endpoint.next_listener().await?;
+            pipe.connect().await?;
+            Ok(pipe)
+        },
+        |pipe| endpoint.identity.authorize(pipe),
+        || origin.verify(),
+    )
+    .await
+}
+
+/// Only errors belonging to an accepted connection are contained here. Listener
+/// acquisition, installed-origin verification and supplier custody remain fatal.
+async fn run_connections<S, F>(
+    stop: &mut watch::Receiver<bool>,
+    supplier: &mut impl Supplier,
+    mut accept: impl FnMut() -> F,
+    authorize: impl Fn(&S) -> io::Result<()>,
+    verify: impl Fn() -> io::Result<()>,
+) -> io::Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+    F: Future<Output = io::Result<S>>,
+{
     loop {
         if *stop.borrow() {
             return Ok(());
         }
-        origin.verify()?;
-        let mut pipe = endpoint.next_listener().await?;
-        tokio::select! {
+        verify()?;
+        let mut pipe = tokio::select! {
             biased;
-            _ = stopped(&mut stop) => return Ok(()),
-            result = pipe.connect() => result?,
+            _ = stopped(stop) => return Ok(()),
+            result = accept() => result?,
+        };
+        match serve(&mut pipe, stop, supplier, &authorize, &verify).await {
+            Ok(()) => (),
+            Err(ServeError::Connection(error)) => drop(error),
+            Err(ServeError::Fatal(error)) => return Err(error),
         }
-        let result = serve(
-            &mut pipe,
-            &mut stop,
-            &mut supplier,
-            |pipe| {
-                origin.verify()?;
-                endpoint.identity.authorize(pipe)
-            },
-            || origin.verify(),
-        )
-        .await;
-        if let Err(error) = result {
-            if !stale_connection(&error)
-                && !matches!(
-                    error.kind(),
-                    io::ErrorKind::InvalidData
-                        | io::ErrorKind::UnexpectedEof
-                        | io::ErrorKind::TimedOut
-                        | io::ErrorKind::BrokenPipe
-                )
-            {
-                return Err(error);
-            }
+    }
+}
+
+#[derive(Debug)]
+enum ServeError {
+    Connection(io::Error),
+    Fatal(io::Error),
+}
+
+impl From<io::Error> for ServeError {
+    fn from(error: io::Error) -> Self {
+        Self::Connection(error)
+    }
+}
+
+impl From<tokio::time::error::Elapsed> for ServeError {
+    fn from(error: tokio::time::error::Elapsed) -> Self {
+        Self::Connection(error.into())
+    }
+}
+
+#[cfg(test)]
+impl ServeError {
+    fn into_io(self) -> io::Error {
+        match self {
+            Self::Connection(error) | Self::Fatal(error) => error,
+        }
+    }
+
+    fn kind(&self) -> io::ErrorKind {
+        match self {
+            Self::Connection(error) | Self::Fatal(error) => error.kind(),
         }
     }
 }
@@ -131,7 +171,7 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     supplier: &mut impl Supplier,
     authorize: impl Fn(&S) -> io::Result<()>,
     verify: impl Fn() -> io::Result<()>,
-) -> io::Result<()> {
+) -> Result<(), ServeError> {
     if *stop.borrow() {
         return Ok(());
     }
@@ -141,10 +181,11 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
         result = timeout(FRAME_TIMEOUT, read_frame_body(pipe, MAX_FRAME)) => result??,
     };
     // Read first: impersonation must use the current message token, not a cached peer.
+    verify().map_err(ServeError::Fatal)?;
     authorize(pipe)?;
     let request: Request = serde_json::from_slice(&body)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    verify()?;
+    verify().map_err(ServeError::Fatal)?;
     if *stop.borrow() {
         return Ok(());
     }
@@ -182,8 +223,13 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     };
     let result = match end {
         End::Retire => return Ok(()),
-        End::Stale(error) => return Err(error),
+        End::Stale(error) => return Err(ServeError::Fatal(error)),
         End::Complete(Err(Failure::StopUnconfirmed)) => {
+            openblade_platform_windows::agent_diagnostics::record(
+                openblade_platform_windows::agent_diagnostics::Event::BatteryRetirement(
+                    Failure::StopUnconfirmed,
+                ),
+            );
             // Preserve the endpoint lease while the platform retains the original
             // job/process/directory. No new report is admitted during uncertainty.
             // Each probe is nonblocking; Stop never reports a fictitious clean drain.
@@ -191,16 +237,21 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
                 match supplier.reconcile_retirement() {
                     Err(Failure::StopUnconfirmed) => sleep(ORIGIN_POLL).await,
                     result => {
-                        result.map_err(|_| {
-                            io::Error::other("battery report retirement cleanup failed")
+                        result.map_err(|failure| {
+                            openblade_platform_windows::agent_diagnostics::record(
+                                openblade_platform_windows::agent_diagnostics::Event::BatteryRetirement(failure),
+                            );
+                            ServeError::Fatal(io::Error::other(
+                                "battery report retirement cleanup failed",
+                            ))
                         })?;
                         break;
                     }
                 }
             }
-            return Err(io::Error::other(
+            return Err(ServeError::Fatal(io::Error::other(
                 "battery report process retirement was uncertain",
-            ));
+            )));
         }
         End::Complete(result) => result,
     };
@@ -216,7 +267,7 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     let frame = Response::from_result(&request.request_id, result).frame()?;
     // Parsing/encoding are bounded but may take time; bind the emitted frame to
     // the fresh origin and current message identity after those steps too.
-    verify()?;
+    verify().map_err(ServeError::Fatal)?;
     authorize(pipe)?;
     tokio::select! {
         biased;

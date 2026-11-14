@@ -177,7 +177,7 @@ impl Attempt {
     }
 }
 
-fn plain_identity(file: &File) -> io::Result<(u32, u32, u32)> {
+pub(crate) fn plain_identity(file: &File) -> io::Result<(u32, u32, u32)> {
     let mut info = BY_HANDLE_FILE_INFORMATION::default();
     // SAFETY: live handle, correctly sized typed output.
     if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 {
@@ -229,7 +229,7 @@ fn reopen(file: &File, access: u32, share: u32) -> io::Result<File> {
     Ok(unsafe { File::from_raw_handle(raw) })
 }
 
-fn relative(
+pub(crate) fn relative(
     parent: &File,
     name: &OsStr,
     access: u32,
@@ -284,7 +284,7 @@ fn relative(
     Ok(unsafe { File::from_raw_handle(raw) })
 }
 
-pub(super) fn pin_directories(path: &Path) -> io::Result<Vec<File>> {
+pub(crate) fn pin_directories(path: &Path) -> io::Result<Vec<File>> {
     let mut components = path.components();
     let Some(Component::Prefix(prefix)) = components.next() else {
         return Err(invalid());
@@ -352,11 +352,13 @@ pub(super) fn pin_directories(path: &Path) -> io::Result<Vec<File>> {
             return Err(invalid());
         }
         exact.push(name);
+        // These shared directories can have legitimate ADD_FILE writers. Hold
+        // a share-participating data handle and exclude deletion/rename.
         let dir = relative(
             held.last().expect("retained parent"),
             name,
             FILE_READ_DATA | FILE_READ_ATTRIBUTES,
-            FILE_SHARE_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
             FILE_OPEN,
             FILE_DIRECTORY_FILE,
             None,
@@ -377,7 +379,7 @@ fn invalid() -> io::Error {
     io::Error::other("invalid local battery report path")
 }
 
-fn local_data() -> io::Result<PathBuf> {
+pub(crate) fn local_data() -> io::Result<PathBuf> {
     let mut path = null_mut();
     // SAFETY: the known-folder API returns a task-allocated, NUL-terminated path.
     let result = unsafe {
@@ -407,7 +409,7 @@ fn os_string(text: *const u16) -> OsString {
     }
 }
 
-struct Allocation(*mut c_void);
+pub(crate) struct Allocation(*mut c_void);
 impl Drop for Allocation {
     fn drop(&mut self) {
         unsafe {
@@ -416,7 +418,7 @@ impl Drop for Allocation {
     }
 }
 
-fn private_descriptor() -> io::Result<Allocation> {
+pub(crate) fn private_descriptor() -> io::Result<Allocation> {
     let mut raw = null_mut();
     // SAFETY: open caller's process token for a typed user query only.
     if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0 {
@@ -474,6 +476,57 @@ mod tests {
     use std::{fs, time::Duration};
     fn test_root() -> PathBuf {
         std::env::temp_dir().components().collect()
+    }
+
+    #[test]
+    fn shared_ancestor_writer_coexists_in_either_order_and_pin_prevents_replacement() {
+        use windows_sys::Win32::{
+            Foundation::ERROR_SHARING_VIOLATION, Storage::FileSystem::FILE_ADD_FILE,
+        };
+
+        // Generate a single fresh test directory with collision refusal. Its
+        // ordinary sibling name is used to test rename with/without the pin.
+        let mut id = GUID::default();
+        assert!(unsafe { CoCreateGuid(&mut id) } >= 0);
+        let name = format!(
+            "OpenBlade.BatteryTest.{:08x}{:04x}{:04x}{:016x}",
+            id.data1,
+            id.data2,
+            id.data3,
+            u64::from_be_bytes(id.data4)
+        );
+        let shared = test_root().join(name);
+        let moved = test_root().join(format!(
+            "{}.moved",
+            shared.file_name().unwrap().to_string_lossy()
+        ));
+        fs::create_dir(&shared).unwrap();
+        let open_writer = || {
+            File::options()
+                .access_mode(FILE_ADD_FILE)
+                .share_mode(ALL_SHARES)
+                .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+                .open(&shared)
+                .unwrap()
+        };
+        for writer_first in [true, false] {
+            let before = writer_first.then(&open_writer);
+            let pins = pin_directories(&shared).unwrap();
+            let after = (!writer_first).then(&open_writer);
+            let child = shared.join("child");
+            fs::write(&child, b"x").unwrap();
+            fs::remove_file(child).unwrap();
+            drop((before, after));
+            for refused in [fs::rename(&shared, &moved), fs::remove_dir(&shared)] {
+                assert_eq!(
+                    refused.unwrap_err().raw_os_error(),
+                    Some(ERROR_SHARING_VIOLATION as i32)
+                );
+            }
+            drop(pins);
+        }
+        fs::rename(&shared, &moved).unwrap();
+        fs::remove_dir(&moved).unwrap();
     }
 
     #[test]
