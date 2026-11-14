@@ -176,7 +176,7 @@ public sealed partial class ServiceControlRuntime
         bool nonPowerBlock = NonPowerClassificationWriteBlock(current);
         PowerSource presentation = PowerSourceForStatus(PowerSource.ExternalUnknown);
         bool powerBlock = !IsUnclassifiedExternalContext || !HasFreshExternalPowerPresence || !current.DeviceVerified;
-        PublishIfChanged(current with
+        PublishIfChangedWithPowerBlock(current with
         {
             ActivePowerSource = presentation,
             ObservationReason = current.ObservationReason is DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls

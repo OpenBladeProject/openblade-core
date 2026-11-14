@@ -12003,7 +12003,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     thermalConvergenceShutdown: false);
                 PowerSource statusPowerSource = PowerSourceForStatus(classified);
                 retainedNonPowerWriteBlock = NonPowerClassificationWriteBlock(current);
-                PublishIfChanged(current with
+                PublishIfChangedWithPowerBlock(current with
                 {
                     ActivePowerSource = statusPowerSource,
                     ObservationReason = current.ObservationReason is
@@ -17377,7 +17377,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         retainedNonPowerWriteBlock = false;
 
         string? readNote = RecordObservationReadNote(observation);
-        PublishIfChanged(current with
+        PublishIfChangedWithPowerBlock(current with
         {
             DeviceVerified = true,
             WritesBlocked = !powerSourceConfirmed && !(IsUnclassifiedExternalContext && HasFreshExternalPowerPresence)
@@ -21082,6 +21082,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     }
 
     private void PublishIfChanged(
+        ServiceStatusSnapshot candidate,
+        bool retainPerformanceShortcutPreview = true) =>
+        PublishIfChangedWithPowerBlock(candidate, retainPerformanceShortcutPreview, null);
+
+    private void PublishIfChangedWithPowerBlock(
         ServiceStatusSnapshot candidate,
         bool retainPerformanceShortcutPreview = true,
         bool? powerOnlyWriteBlock = null)
