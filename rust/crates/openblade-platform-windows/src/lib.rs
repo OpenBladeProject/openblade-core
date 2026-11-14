@@ -2,6 +2,7 @@
 #![cfg(windows)]
 
 pub mod application;
+pub mod battery_report;
 pub mod brightness;
 pub mod color_profile;
 pub mod controller_presence;

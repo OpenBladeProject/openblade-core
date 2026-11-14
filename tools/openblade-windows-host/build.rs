@@ -88,6 +88,8 @@ fn main() {
             } else {
                 "private-service-custody-v1"
             }
+        } else if role == "agent" && has("agent-battery-report-v1") {
+            "agent-battery-report-v1"
         } else {
             "none"
         };

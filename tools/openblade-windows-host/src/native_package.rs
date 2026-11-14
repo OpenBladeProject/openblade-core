@@ -667,6 +667,10 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     let fan = has("service-fan-mutation-v2");
     let battery = has("service-battery-policy-v1");
     let temporary = has("service-temporary-charge-v1");
+    let agent_battery = has("agent-battery-report-v1");
+    if agent_battery && !has("native-agent-entry-compile-check") {
+        return Err(deny());
+    }
     if temporary && !battery {
         return Err(deny());
     }
@@ -683,7 +687,7 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         return Err(deny());
     }
     if schema == 1 {
-        return if metadata || hardware {
+        return if metadata || hardware || agent_battery {
             Err(deny())
         } else {
             Ok(())
@@ -724,6 +728,8 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         } else {
             "private-service-custody-v1"
         }
+    } else if agent_battery {
+        "agent-battery-report-v1"
     } else {
         "none"
     };

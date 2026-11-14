@@ -47,6 +47,8 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         bool fan = features.Contains("service-fan-mutation-v2", StringComparer.Ordinal);
         bool battery = features.Contains("service-battery-policy-v1", StringComparer.Ordinal);
         bool temporary = features.Contains("service-temporary-charge-v1", StringComparer.Ordinal);
+        bool agentBattery = features.Contains("agent-battery-report-v1", StringComparer.Ordinal);
+        if (agentBattery && !features.Contains("native-agent-entry-compile-check", StringComparer.Ordinal)) { throw new InvalidDataException("Agent battery report requires the native Agent entry."); }
         if (temporary && !battery) { throw new InvalidDataException("Temporary charge requires shared battery custody."); }
         if (battery && !fan) { throw new InvalidDataException("Battery mutation requires shared fan custody."); }
         if (fan && !mutation) { throw new InvalidDataException("Fan mutation requires the thermal custody contract."); }
@@ -54,7 +56,7 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         if (observation && (!hardware || metadata)) { throw new InvalidDataException("Mailbox observation requires its exclusive acquisition composition."); }
         if (schema == 1)
         {
-            if (metadata || hardware) { throw new InvalidDataException("Legacy artifacts cannot assert v2 composition."); }
+            if (metadata || hardware || agentBattery) { throw new InvalidDataException("Legacy artifacts cannot assert v2 composition."); }
             return;
         }
         string expected = "none";
@@ -68,6 +70,7 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
             { throw new InvalidDataException("Native Service requires an explicit coherent composition."); }
             expected = metadata ? "private-service-custody-v1,service-metadata-only-v1" : temporary ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1" : battery ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1" : fan ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2" : mutation ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1" : observation ? "private-service-custody-v1,service-mailbox-observation-v1" : "private-service-custody-v1";
         }
+        if (role == "agent" && agentBattery) { expected = "agent-battery-report-v1"; }
         if (capabilities != expected) { throw new InvalidDataException("Native capabilities differ from the authenticated role composition."); }
     }
 

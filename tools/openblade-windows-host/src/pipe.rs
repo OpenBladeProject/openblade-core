@@ -51,10 +51,10 @@ pub struct Endpoint {
 impl Endpoint {
     pub fn new(path: String, instances: u32) -> io::Result<Self> {
         let identity = Identity::read(&process_token()?)?;
-        // Explicit dev DACL. The managed duplex client uses generic write access,
-        // which grants the same SID the ability to create additional instances.
-        // Keep this endpoint inside the trusted same-user development boundary.
-        let sddl: Vec<u16> = format!("D:P(A;;GA;;;{})", identity.sid)
+        // Protected one-SID DACL and explicit owner match the managed session pipe.
+        // Generic write also permits this SID to create instances; caller SID,
+        // session and authentication-LUID admission remain independently required.
+        let sddl: Vec<u16> = format!("O:{0}D:P(A;;GA;;;{0})", identity.sid)
             .encode_utf16()
             .chain([0])
             .collect();
@@ -74,6 +74,34 @@ impl Endpoint {
             descriptor: LocalAllocation(descriptor),
             identity: Arc::new(identity),
         })
+    }
+
+    /// Existing managed Battery.v1 name and protected one-SID ownership policy.
+    /// No caller-supplied endpoint path or session evidence is accepted here.
+    pub fn current_user_battery() -> io::Result<Self> {
+        use sha2::{Digest, Sha256};
+        let identity = Identity::read(&process_token()?)?;
+        if identity.session == 0
+            || !identity.primary
+            || matches!(identity.sid.as_str(), "S-1-5-18" | "S-1-5-19" | "S-1-5-20")
+        {
+            return Err(denied());
+        }
+        let hash = Sha256::digest(format!("{}|{}", identity.sid, identity.session).as_bytes());
+        let hash: String = hash[..16].iter().map(|b| format!("{b:02X}")).collect();
+        let endpoint = Self::new(
+            format!(r"\\.\pipe\OpenBlade.Session.Display.v1.{hash}.Battery.v1"),
+            2,
+        )?;
+        if endpoint.identity.sid != identity.sid
+            || endpoint.identity.session != identity.session
+            || endpoint.identity.authentication.LowPart != identity.authentication.LowPart
+            || endpoint.identity.authentication.HighPart != identity.authentication.HighPart
+            || !endpoint.identity.primary
+        {
+            return Err(denied());
+        }
+        Ok(endpoint)
     }
 
     pub fn claim(&self) -> io::Result<(OwnedHandle, File)> {

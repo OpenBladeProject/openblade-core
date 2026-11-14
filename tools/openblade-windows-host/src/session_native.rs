@@ -4,6 +4,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(feature = "agent-battery-report-v1")]
+mod battery;
+#[cfg(feature = "agent-battery-report-v1")]
+mod feature_lifetime;
 #[cfg(not(test))]
 mod installed_monitor;
 #[allow(dead_code)]

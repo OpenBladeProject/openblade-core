@@ -809,3 +809,41 @@ fn observation_restart_requires_transport_drain_and_preserves_unmatched_prior_at
     check(&records, true).unwrap();
     assert!(check(&records, false).is_err());
 }
+
+#[test]
+fn selected_agent_battery_capability_is_exact_and_independent_of_service_features() {
+    let selected = "agent-battery-report-v1,native-agent-entry-compile-check";
+    assert!(capabilities(2, "agent", selected, "agent-battery-report-v1").is_ok());
+    assert!(capabilities(2, "agent", selected, "none").is_err());
+    assert!(capabilities(1, "agent", selected, "none").is_err());
+    assert!(
+        capabilities(
+            2,
+            "agent",
+            "agent-battery-report-v1",
+            "agent-battery-report-v1"
+        )
+        .is_err()
+    );
+    assert!(
+        capabilities(
+            2,
+            "agent",
+            "native-agent-entry-compile-check",
+            "agent-battery-report-v1"
+        )
+        .is_err()
+    );
+    let combined = "agent-battery-report-v1,installed-service-candidate,native-agent-entry-compile-check,service-metadata-only-v1,startup-custody-v1";
+    assert!(capabilities(2, "agent", combined, "agent-battery-report-v1").is_ok());
+    assert!(
+        capabilities(
+            2,
+            "service",
+            combined,
+            "private-service-custody-v1,service-metadata-only-v1"
+        )
+        .is_ok()
+    );
+    assert!(capabilities(2, "service", combined, "agent-battery-report-v1").is_err());
+}

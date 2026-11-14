@@ -66,3 +66,7 @@ tools/openblade-windows-host/tests/fixtures/app-fans-*.json -text whitespace=cr-
 .trail/learnings/2026-11-14-require-fixture-contributions-caller-binding-and-jack.md text eol=lf
 .trail/learnings/2026-11-14-gate-native-fixture-checks-on-supported-jack.md text eol=lf
 .trail/learnings/2026-11-14-report-python-executable-hash-failures-before-jack.md text eol=lf
+
+# Preserve the exact generated Agent battery learning bytes.
+.trail/learnings/2026-11-14-compose-native-agent-battery-v1-with-jack.md text eol=lf
+.trail/learnings/2026-11-14-qualify-native-agent-battery-report-trail-jack.md text eol=lf

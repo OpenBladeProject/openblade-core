@@ -1,4 +1,4 @@
-//! Status-only installed composition. The 17 feature endpoints remain unselected.
+//! Installed status/stop supervision with explicitly selected feature endpoints.
 #![allow(unsafe_code)]
 use super::{scm_peer::WindowsInstalledServiceAuthority, service_client};
 use crate::loaded_origin::Origin;
@@ -66,6 +66,16 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
                 }
             },
         );
-        tokio::select! { result = &mut canceled => result, result = watch => result }
+        #[cfg(not(feature = "agent-battery-report-v1"))]
+        {
+            tokio::select! { result = &mut canceled => result, result = watch => result }
+        }
+        #[cfg(feature = "agent-battery-report-v1")]
+        {
+            super::feature_lifetime::run(canceled, watch, |feature_stop| {
+                super::battery::run(origin.clone(), feature_stop)
+            })
+            .await
+        }
     })
 }

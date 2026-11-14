@@ -13,7 +13,7 @@ public sealed class WindowsNativeEpochTests
 {
     private const string Features = "installed-service-candidate,native-agent-entry-compile-check,startup-custody-v1";
 
-    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1, int schema = 1, string? capabilities = null, bool mailbox = false, string? sourceRevision = null, bool mutation = false, bool fan = false, bool battery = false, bool temporary = false)
+    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1, int schema = 1, string? capabilities = null, bool mailbox = false, string? sourceRevision = null, bool mutation = false, bool fan = false, bool battery = false, bool temporary = false, bool agentBattery = false)
     {
         byte[] bytes = new byte[0xA00];
         void U16(int n, ushort v) => BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(n), v);
@@ -27,8 +27,9 @@ public sealed class WindowsNativeEpochTests
                 : "installed-service-candidate,native-agent-entry-compile-check,service-metadata-only-v1,startup-custody-v1",
             "rustc 1.99.1 (inert test data)", "debug"];
         if (temporary) { fields[4] = "controller-admission-compile-check,firmware-performance-compile-check,installed-service-candidate,native-agent-entry-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1"; }
+        if (agentBattery) { fields[4] = "agent-battery-report-v1," + fields[4]; }
         byte[] metadata = NativeCanonical.Lines($"OpenBlade.NativeArtifact.v{schema}", schema == 1 ? fields
-            : [.. fields, capabilities ?? (role == "service" ? temporary ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1" : battery ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1" : fan ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2" : mutation ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1" : mailbox ? "private-service-custody-v1,service-mailbox-observation-v1" : "private-service-custody-v1,service-metadata-only-v1" : "none")]);
+            : [.. fields, capabilities ?? (role == "service" ? temporary ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1" : battery ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1" : fan ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2" : mutation ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1" : mailbox ? "private-service-custody-v1,service-mailbox-observation-v1" : "private-service-custody-v1,service-metadata-only-v1" : agentBattery ? "agent-battery-report-v1" : "none")]);
         int section = 0x98 + 240;
         ".obid"u8.CopyTo(bytes.AsSpan(section)); U32(section + 8, (uint)metadata.Length); U32(section + 12, 0x1000); U32(section + 16, 0x400); U32(section + 20, 0x400); U32(section + 36, 0x40000040);
         ".idata"u8.CopyTo(bytes.AsSpan(section + 40)); U32(section + 48, 0x200); U32(section + 52, 0x2000); U32(section + 56, 0x200); U32(section + 60, 0x800); U32(section + 76, 0x40000040);
@@ -66,6 +67,49 @@ public sealed class WindowsNativeEpochTests
         Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect([.. bytes], "service", new string('c', 40)));
         bytes[^1] ^= 1;
         Assert.NotEqual(artifact.Sha256, NativeArtifact.Inspect([.. bytes], "service", new string('a', 40)).Sha256);
+    }
+
+    [Fact]
+    public void BatteryReportAgentCapabilityRequiresExplicitSelectionAndExactRole()
+    {
+        string source = new('a', 40);
+        var ordinary = NativeArtifact.Inspect([.. Image("agent", schema: 2)], "agent", source);
+        Assert.Equal("none", ordinary.Capabilities);
+        var selected = NativeArtifact.Inspect([.. Image("agent", schema: 2, agentBattery: true)], "agent", source);
+        Assert.Equal("agent-battery-report-v1", selected.Capabilities);
+        Assert.False(selected.PrivateCustody);
+        Assert.False(selected.MetadataOnly);
+        Assert.False(selected.RequiresMailboxHandoff);
+        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("agent", schema: 2, capabilities: "agent-battery-report-v1")], "agent", source));
+        foreach (string forged in new[] { "none", "agent-battery-report-v1,private-service-custody-v1", "private-service-custody-v1" })
+        {
+            Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("agent", schema: 2, agentBattery: true, capabilities: forged)], "agent", source));
+        }
+        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("agent", schema: 1, agentBattery: true)], "agent", source));
+        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, agentBattery: true, capabilities: "agent-battery-report-v1")], "service", source));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CombinedBatteryReportFeaturePreservesSeparateAgentAndServiceCapabilities(bool hardware)
+    {
+        string source = new('a', 40);
+        var agent = NativeArtifact.Inspect([.. Image("agent", schema: 2, agentBattery: true, temporary: hardware)], "agent", source);
+        var service = NativeArtifact.Inspect([.. Image("service", schema: 2, agentBattery: true, temporary: hardware)], "service", source);
+        Assert.Equal(agent.Features, service.Features);
+        Assert.Equal("agent-battery-report-v1", agent.Capabilities);
+        Assert.False(agent.PrivateCustody);
+        Assert.False(agent.RequiresMailboxHandoff);
+        Assert.True(service.PrivateCustody);
+        Assert.Equal(!hardware, service.MetadataOnly);
+        Assert.Equal(hardware, service.TemporaryChargeMutation);
+        Assert.DoesNotContain("agent-battery-report-v1", service.Capabilities, StringComparison.Ordinal);
+        Assert.Equal(hardware, service.RequiresMailboxHandoff);
     }
 
     [Fact]
@@ -294,7 +338,8 @@ public sealed class WindowsNativeEpochTests
         Assert.Equal(2, a.Schema); Assert.Equal(2, b.Schema);
         Assert.True(a.PrivateCustody);
         Assert.Equal(Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_COMPOSITION") != "hardware", a.MetadataOnly);
-        Assert.Equal("none", b.Capabilities); Assert.False(b.PrivateCustody); Assert.False(b.MetadataOnly);
+        bool agentBattery = b.Features.Split(',').Contains("agent-battery-report-v1", StringComparer.Ordinal);
+        Assert.Equal(agentBattery ? "agent-battery-report-v1" : "none", b.Capabilities); Assert.False(b.PrivateCustody); Assert.False(b.MetadataOnly);
         if (Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_COMPOSITION") == "combined")
         { Assert.Equal(a.Features, b.Features); Assert.Contains("service-metadata-only-v1", b.Features); }
     }
