@@ -36,6 +36,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 .await?[1..],
         )
         .ok()?;
+        permit.observe_battery_policy(raw);
         let q = codec::temporary_query(ids[2]);
         let temporary = match a
             .battery_exchange(&q, false, &mut authorize, admission, limit)
@@ -44,7 +45,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
             Some(reply) => codec::temporary(&q, &reply[1..]).ok(),
             None => None,
         };
-        permit.observe_battery(raw, temporary);
+        if let Some(temporary) = temporary {
+            permit.observe_battery_temporary(temporary);
+        }
         let record = permit.resolve_battery(source, raw, temporary, ids).ok()??;
         record.validate().ok()?;
         a.checkpoint(&mut authorize, admission, limit).ok()?;
@@ -83,10 +86,12 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 .battery_exchange(&query, false, &mut authorize, admission, limit)
                 .await?;
             let observed = codec::policy(&query, &reply[1..]).ok()?;
+            // Every independently valid getter is observation, even a third
+            // value that cannot settle the requested target or permit replay.
+            permit.observe_battery_policy(observed);
             if observed == record.target {
                 a.checkpoint(&mut authorize, admission, limit).ok()?;
                 permit.record_battery(62).ok()?;
-                permit.observe_battery(observed, temporary);
                 a.completed = true;
                 return Some(());
             }

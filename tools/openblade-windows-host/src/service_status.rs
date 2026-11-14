@@ -502,6 +502,23 @@ pub(crate) async fn read_status_event(
 
 type FeatureRecord = Map<String, Value>;
 
+// Internal diagnostic provenance never crosses the v80 wire. Battery updates
+// replace one family; private policy text is dropped at the redaction boundary.
+#[derive(Clone, Copy)]
+pub(crate) enum PrivatePolicyFamily {
+    Thermal,
+    Battery,
+}
+
+#[derive(Clone, Default)]
+struct Diagnostics {
+    public: String,
+    private: Option<String>,
+    battery: Option<String>,
+    redacted: bool,
+    private_unavailable: [bool; 2],
+}
+
 #[derive(Deserialize, Serialize)]
 #[cfg_attr(feature = "installed-service-candidate", derive(Clone))]
 #[serde(rename_all = "camelCase")]
@@ -511,6 +528,8 @@ pub(crate) struct Snapshot {
     // Private projection authority is local evidence, never supplied by wire JSON.
     #[serde(skip)]
     private_user_sid: Option<String>,
+    #[serde(skip)]
+    diagnostics: Diagnostics,
     revision: i64,
     device_verified: bool,
     writes_blocked: bool,
@@ -665,6 +684,10 @@ impl Snapshot {
         Self {
             read_confirmation: None,
             private_user_sid: None,
+            diagnostics: Diagnostics {
+                public: message.clone(),
+                ..Diagnostics::default()
+            },
             revision,
             device_verified: false,
             writes_blocked: true,
@@ -738,9 +761,47 @@ impl Snapshot {
         self.device_verified = true; // Real opened exact host/HID validation preceded this result.
         self.writes_blocked = true;
         self.capabilities = None;
-        self.message = "Thermal settings read. Native controls remain unavailable.".into();
+        self.set_public_message("Thermal settings read. Native controls remain unavailable.");
         self.read_confirmation = Some(confirmation);
         self
+    }
+
+    fn render_message(&mut self) {
+        let d = &self.diagnostics;
+        let mut parts = vec![d.public.as_str()];
+        if d.redacted {
+            parts.push(
+                "Public hardware observation; private configuration is unavailable to this caller.",
+            );
+        }
+        if let Some(private) = &d.private {
+            parts.push(private);
+        }
+        if d.private_unavailable.into_iter().any(|failed| failed) {
+            parts.push("Saved private policy is unavailable; writes are blocked pending configuration reconciliation.");
+        }
+        if let Some(battery) = &d.battery {
+            parts.push(battery);
+        }
+        self.message = parts
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+    }
+    fn set_public_message(&mut self, message: &str) {
+        self.diagnostics.public = message.into();
+        self.render_message();
+    }
+    fn append_public_message(&mut self, message: &str) {
+        self.diagnostics.public.push_str(message);
+        self.render_message();
+    }
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    fn set_private_message(&mut self, message: &str) {
+        self.diagnostics.private = Some(message.into());
+        self.diagnostics.redacted = false;
+        self.render_message();
     }
     pub(crate) fn has_fresh_mailbox_read(&self) -> bool {
         self.read_confirmation
@@ -755,9 +816,9 @@ impl Snapshot {
         retained.writes_blocked = true;
         retained.capabilities = None;
         retained.revision = revision;
-        retained
-            .message
-            .push_str(" Last confirmed thermal settings retained; no fresh read is confirmed.");
+        retained.append_public_message(
+            " Last confirmed thermal settings retained; no fresh read is confirmed.",
+        );
         retained
     }
     #[cfg(feature = "installed-service-candidate")]
@@ -768,7 +829,7 @@ impl Snapshot {
         unavailable.writes_blocked = true;
         unavailable.capabilities = None;
         unavailable.revision = revision;
-        unavailable.message.push_str(reason);
+        unavailable.append_public_message(reason);
         unavailable
     }
 
@@ -779,8 +840,9 @@ impl Snapshot {
 
     #[cfg(feature = "installed-service-candidate")]
     pub(crate) fn read_revoked(mut self) -> Self {
-        self.message
-            .push_str(" Thermal read permission is revoked; diagnostic status remains available.");
+        self.append_public_message(
+            " Thermal read permission is revoked; diagnostic status remains available.",
+        );
         self
     }
 
@@ -983,13 +1045,9 @@ impl Snapshot {
                 state.insert("battery".into(),serde_json::json!({"protectionEnabled":raw!=0x50,"chargeLimitPercent":if raw==0x50{None}else{Some(raw&0x7f)},"temporaryFullCharge":temporary}));
             }
         }
-        // Battery is one diagnostic contributor. Preserve source, fan cleanup,
-        // thermal expiry and shared uncertainty reasons from the latest snapshot.
-        if !message.is_empty() && !self.message.contains(message) {
-            if !self.message.is_empty() {
-                self.message.push(' ');
-            }
-            self.message.push_str(message);
+        if !message.is_empty() {
+            self.diagnostics.battery = Some(message.into());
+            self.render_message();
         }
         self.writes_blocked = true;
         self
@@ -1035,9 +1093,9 @@ impl Snapshot {
         result.lighting_override = None;
         result.full_charge_override = false;
         result.writes_blocked = true;
-        result.message =
-            "Public hardware observation; private configuration is unavailable to this caller."
-                .into();
+        result.diagnostics.private = None;
+        result.diagnostics.redacted = true;
+        result.render_message();
         result
     }
     pub(crate) fn fan_intent(
@@ -1047,7 +1105,7 @@ impl Snapshot {
         power: i32,
         message: &str,
     ) -> Self {
-        self.message = message.into();
+        self.set_private_message(message);
         self.active_power_source = power;
         self.fan_override = value
             .and_then(|v| serde_json::to_value(v).ok())
@@ -1078,7 +1136,7 @@ impl Snapshot {
         message: &str,
         power: Option<i32>,
     ) -> Self {
-        self.message = message.to_owned();
+        self.set_private_message(message);
         self.performance_override = value
             .and_then(|value| serde_json::to_value(value).ok())
             .and_then(|v| v.as_object().cloned());
@@ -1114,10 +1172,17 @@ impl Snapshot {
         self.writes_blocked = !applied || !self.has_fresh_mailbox_read();
         self
     }
-    pub(crate) fn private_policy_unavailable(&self) -> Self {
+    pub(crate) fn private_policy_reconciling(mut self, family: PrivatePolicyFamily) -> Self {
+        // Clear only this attempt\'s previous degradation before invoking it.
+        // A nested recoverable error can then install its current contribution.
+        self.diagnostics.private_unavailable[family as usize] = false;
+        self.render_message();
+        self
+    }
+    pub(crate) fn private_policy_unavailable(&self, family: PrivatePolicyFamily) -> Self {
         let mut value = self.redact_private();
-        value.message = self.message.clone();
-        value.message.push_str(" Saved private policy is unavailable; writes are blocked pending configuration reconciliation.");
+        value.diagnostics.private_unavailable[family as usize] = true;
+        value.render_message();
         value
     }
     pub(crate) fn thermal_power_source(&self) -> i32 {
@@ -1150,10 +1215,18 @@ impl Snapshot {
                 .insert("fanControl".into(), v.clone());
         }
         result.desired_state.performance = self.desired_state.performance.clone();
-        result.message = self.message.clone();
+        result.diagnostics.private = self.diagnostics.private.clone();
+        result.diagnostics.redacted = self.diagnostics.redacted;
+        // Both accepted fan/performance deltas reaching this shared rebase
+        // reconstructed and decoded private profiles before returning a status.
+        // That resolves Thermal degradation only; Battery remains independent.
+        result.diagnostics.private_unavailable[PrivatePolicyFamily::Thermal as usize] = false;
+        result.render_message();
         result.read_confirmation = None;
         result.writes_blocked = true;
         if self.has_fresh_mailbox_read() {
+            result.diagnostics.public = self.diagnostics.public.clone();
+            result.render_message();
             result.confirmed_state = self.confirmed_state.clone();
             result.read_confirmation = self.read_confirmation.clone();
             result.device_verified = self.device_verified;

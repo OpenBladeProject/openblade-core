@@ -891,6 +891,8 @@ pub(super) struct ReadSource {
     intent: Rc<RefCell<Option<Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>>>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
     battery_intent: Rc<RefCell<Option<Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>>>>,
+    #[cfg(feature = "service-thermal-mutation-v1")]
+    battery_expiry: Rc<RefCell<Option<Rc<dyn Fn() -> Option<Instant>>>>>,
     last: Rc<RefCell<Option<(Snapshot, Instant)>>>,
     metadata: Rc<RefCell<Option<Arc<Publication>>>>,
 }
@@ -944,6 +946,8 @@ impl ReadSource {
             intent: Rc::default(),
             #[cfg(feature = "service-thermal-mutation-v1")]
             battery_intent: Rc::default(),
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            battery_expiry: Rc::default(),
             last: Rc::default(),
             metadata: Rc::default(),
         }
@@ -1033,11 +1037,21 @@ impl ReadSource {
         }
     }
     pub(super) fn next_refresh(&self) -> Option<Instant> {
-        self.last
+        let thermal = self
+            .last
             .borrow()
             .as_ref()
             .map(|(_, at)| *at + RETENTION_WINDOW)
-            .filter(|due| *due > Instant::now())
+            .filter(|due| *due > Instant::now());
+        #[cfg(feature = "service-thermal-mutation-v1")]
+        let battery = self
+            .battery_expiry
+            .borrow()
+            .as_ref()
+            .and_then(|expiry| expiry());
+        #[cfg(not(feature = "service-thermal-mutation-v1"))]
+        let battery: Option<Instant> = None;
+        thermal.into_iter().chain(battery).min()
     }
     pub(super) fn observe(
         &self,
@@ -1734,6 +1748,11 @@ mod tests {
 
 #[cfg(feature = "service-thermal-mutation-v1")]
 impl ReadSource {
+    pub(super) fn retain_battery_expiry(&self, expiry: Rc<dyn Fn() -> Option<Instant>>) {
+        // A single replaceable callback owns only the fixed public history.
+        // Due/expired entries are excluded by the history to avoid a spin loop.
+        *self.battery_expiry.borrow_mut() = Some(expiry);
+    }
     pub(super) fn retain_battery_policy(
         &self,
         policy: Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>,
@@ -1753,18 +1772,26 @@ impl ReadSource {
     }
     pub(super) fn current_policy(&self, value: Snapshot) -> io::Result<Snapshot> {
         self.lease.verify_integrity()?;
-        let value = project_private_policy(value, |base| {
-            self.intent
-                .borrow()
-                .as_ref()
-                .map_or(Ok(base.clone()), |policy| policy(base))
-        })?;
-        project_private_policy(value, |base| {
-            self.battery_intent
-                .borrow()
-                .as_ref()
-                .map_or(Ok(base.clone()), |policy| policy(base))
-        })
+        let value = project_private_policy(
+            value,
+            crate::service_status::PrivatePolicyFamily::Thermal,
+            |base| {
+                self.intent
+                    .borrow()
+                    .as_ref()
+                    .map_or(Ok(base.clone()), |policy| policy(base))
+            },
+        )?;
+        project_private_policy(
+            value,
+            crate::service_status::PrivatePolicyFamily::Battery,
+            |base| {
+                self.battery_intent
+                    .borrow()
+                    .as_ref()
+                    .map_or(Ok(base.clone()), |policy| policy(base))
+            },
+        )
     }
     async fn drain_mutation(&self, reconstruct: bool) -> io::Result<()> {
         let active = self.mutation.borrow().clone();
@@ -1944,11 +1971,13 @@ fn fan_v2_expected_stop_denies_ordinary_read_without_revoking_original_custody()
 #[cfg(feature = "service-thermal-mutation-v1")]
 pub(super) fn project_private_policy(
     value: Snapshot,
+    family: crate::service_status::PrivatePolicyFamily,
     policy: impl FnOnce(Snapshot) -> io::Result<Snapshot>,
 ) -> io::Result<Snapshot> {
+    let value = value.private_policy_reconciling(family);
     match policy(value.clone()) {
         Ok(value) => Ok(value),
         Err(error) if super::thermal_mutation::is_fatal_admission(&error) => Err(error),
-        Err(_) => Ok(value.private_policy_unavailable()),
+        Err(_) => Ok(value.private_policy_unavailable(family)),
     }
 }

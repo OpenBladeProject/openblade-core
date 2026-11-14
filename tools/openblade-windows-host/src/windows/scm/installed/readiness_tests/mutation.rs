@@ -427,6 +427,8 @@ struct Rig {
     reader: ReadSource,
     origin: Arc<crate::loaded_origin::lifetime::Lifetime>,
     fatal_capture: Arc<AtomicBool>,
+    #[cfg(feature = "service-battery-policy-v1")]
+    battery_clock: Rc<dyn Fn() -> Option<Instant>>,
 }
 impl Rig {
     fn new(files: MemoryFiles) -> Self {
@@ -495,6 +497,8 @@ impl Rig {
             }
             Ok((storage.clone(), fresh.clone()))
         });
+        #[cfg(feature = "service-battery-policy-v1")]
+        let battery_clock = runtime.battery_clock_for_tests();
         let entered = runtime.entered.clone();
         let metadata = Arc::new(AtomicU8::new(0));
         let origin = Arc::new(crate::loaded_origin::lifetime::Lifetime::default());
@@ -516,6 +520,8 @@ impl Rig {
             reader,
             origin,
             fatal_capture,
+            #[cfg(feature = "service-battery-policy-v1")]
+            battery_clock,
         }
     }
     async fn request(&self, request: Value) -> Value {
@@ -5255,5 +5261,494 @@ async fn battery_correction_preflight_refusal_preserves_original_bounded_history
         70
     );
     assert_eq!(r.port.state.lock().unwrap().writes, 1);
+    r.stop().await;
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_publication_replaces_contribution_for_existing_receiver() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    assert_eq!(
+        r.request(battery_request(401, "setBatteryProtection", json!(false)))
+            .await["result"]["status"],
+        1
+    );
+    r.get().await;
+    let mut receiver = r.source.lock().await.publications().unwrap();
+    receiver.borrow_and_update();
+    assert_eq!(
+        r.request(battery_request(
+            402,
+            "setBatteryPolicy",
+            json!({"chargeLimitPercent":70})
+        ))
+        .await["result"]["status"],
+        1
+    );
+    assert!(receiver.has_changed().unwrap());
+    let active = serde_json::to_value(&receiver.borrow_and_update().active).unwrap();
+    let message = active["message"].as_str().unwrap();
+    assert!(
+        message.contains("confirmed by independent readback"),
+        "{active}"
+    );
+    assert!(
+        !message.contains("Last independently read battery policy retained"),
+        "{active}"
+    );
+    assert!(
+        !message.contains("Last battery observation expired"),
+        "{active}"
+    );
+    r.stop().await;
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_publication_contribution_replaces_only_battery_reason() {
+    let base = Snapshot::observed_read_only(
+        1,
+        0,
+        false,
+        false,
+        vec![],
+        None,
+        "Unrelated source, fan cleanup and unresolved ownership reason.".into(),
+    );
+    let old = base
+        .unavailable_mailbox(1, " Thermal observation expired.")
+        .battery_projection(
+            None,
+            Some((0xd0, Some(false))),
+            "Old battery pending-only contribution.",
+        );
+    let next = old.without_battery_observation().battery_projection(
+        None,
+        Some((0xc6, Some(false))),
+        "New battery confirmation.",
+    );
+    let wire = serde_json::to_value(next).unwrap();
+    let message = wire["message"].as_str().unwrap();
+    assert!(
+        message.contains("Unrelated source, fan cleanup and unresolved ownership reason."),
+        "{wire}"
+    );
+    assert!(message.contains("Thermal observation expired."), "{wire}");
+    assert!(message.contains("New battery confirmation."), "{wire}");
+    assert!(
+        !message.contains("Old battery pending-only contribution."),
+        "{wire}"
+    );
+    assert!(wire.get("diagnostics").is_none());
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_publication_recoverable_private_boundary_keeps_public_provenance() {
+    for nested in [false, true] {
+        let r = Rig::new(MemoryFiles::default());
+        r.get().await;
+        r.reader.retain_policy(Rc::new(|base| {
+            Ok(base
+                .thermal_intent(None, None, "SYNTHETIC_PRIVATE_SENTINEL", None)
+                .bind_private_user(SID))
+        }));
+        r.reader.retain_battery_policy(Rc::new(move |base| {
+            if nested {
+                crate::installed::readiness::mailbox_read::project_private_policy(
+                    base.battery_projection(
+                        None,
+                        Some((0xd0, None)),
+                        "Public battery uncertainty.",
+                    ),
+                    crate::service_status::PrivatePolicyFamily::Battery,
+                    |_| Err(io::ErrorKind::Unsupported.into()),
+                )
+            } else {
+                Err(io::ErrorKind::Unsupported.into())
+            }
+        }));
+        let base = Snapshot::observed_read_only(
+            1,
+            0,
+            false,
+            false,
+            vec![],
+            None,
+            "Public source uncertainty.".into(),
+        );
+        let result = r.reader.current_policy(base).unwrap();
+        for sid in [None, Some(SID), Some("S-1-5-21-111-222-333-1002")] {
+            let wire = serde_json::to_value(result.project_private(sid)).unwrap();
+            let message = wire["message"].as_str().unwrap();
+            assert!(!message.contains("SYNTHETIC_PRIVATE_SENTINEL"), "{wire}");
+            assert!(message.contains("Public source uncertainty."), "{wire}");
+            assert!(message.contains("private policy is unavailable"), "{wire}");
+            if nested {
+                assert!(message.contains("Public battery uncertainty."), "{wire}");
+            }
+            assert!(wire["performanceOverride"].is_null());
+            assert_eq!(wire["writesBlocked"], true);
+        }
+        r.reader.retain_battery_policy(Rc::new(|_| {
+            Err(
+                crate::installed::readiness::thermal_mutation::fatal_admission(
+                    "typed fatal custody",
+                ),
+            )
+        }));
+        let base = Snapshot::observed_read_only(1, 0, false, false, vec![], None, String::new());
+        assert!(
+            crate::installed::readiness::thermal_mutation::is_fatal_admission(
+                &r.reader.current_policy(base).err().unwrap()
+            )
+        );
+        r.stop().await;
+    }
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_publication_valid_third_read_keeps_pending_without_replay() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    r.port.state.lock().unwrap().battery_replies.push_back(0xc1);
+    let reply = r
+        .request(battery_request(
+            403,
+            "setBatteryPolicy",
+            json!({"chargeLimitPercent":70}),
+        ))
+        .await;
+    assert_eq!(reply["result"]["status"], 2);
+    assert_eq!(r.storage.progress(), Some(61));
+    assert!(r.storage.pending());
+    let status = r.get().await;
+    assert_eq!(
+        status["status"]["confirmedState"]["battery"]["chargeLimitPercent"], 65,
+        "{status}"
+    );
+    assert_eq!(
+        status["status"]["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"],
+        80
+    );
+    assert!(
+        status["status"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("no mutation will be replayed")
+    );
+    let (writes, reads) = {
+        let p = r.port.state.lock().unwrap();
+        (p.writes, p.battery_reads)
+    };
+    assert_eq!((writes, reads), (1, 2));
+    let journal = r.files.read("thermal-mutation.journal").unwrap();
+    assert_eq!(
+        r.request(battery_request(404, "setBatteryProtection", json!(false)))
+            .await["result"]["status"],
+        2
+    );
+    assert_eq!(r.files.read("thermal-mutation.journal").unwrap(), journal);
+    let p = r.port.state.lock().unwrap();
+    assert_eq!((p.writes, p.battery_reads), (writes, reads));
+    drop(p);
+    r.stop().await;
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_publication_policy_confirmation_does_not_renew_temporary_age() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    r.port.state.lock().unwrap().battery_replies = std::iter::repeat_n(0xd0, 8).collect();
+    assert_eq!(
+        r.request(battery_request(
+            405,
+            "setBatteryPolicy",
+            json!({"chargeLimitPercent":70})
+        ))
+        .await["result"]["status"],
+        1
+    );
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_millis(3200)).await;
+    let status = r.get().await;
+    assert_eq!(
+        status["status"]["confirmedState"]["battery"]["chargeLimitPercent"], 70,
+        "{status}"
+    );
+    assert!(
+        status["status"]["confirmedState"]["battery"]["temporaryFullCharge"].is_null(),
+        "{status}"
+    );
+    assert_eq!(r.port.state.lock().unwrap().writes, 1);
+    r.stop().await;
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_publication_delayed_temporary_does_not_rejuvenate_policy() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    let temporary_started = Arc::new(StdMutex::new(None));
+    let started = temporary_started.clone();
+    r.port.state.lock().unwrap().battery_getter_hook = Some(Arc::new(move |command, _| {
+        if command == 0x8f {
+            *started.lock().unwrap() = Some(Instant::now());
+            std::thread::sleep(Duration::from_millis(600));
+        }
+    }));
+    assert_eq!(
+        r.request(battery_request(406, "setFullChargeOverride", json!(false)))
+            .await["result"]["status"],
+        2
+    );
+    tokio::time::pause();
+    assert!(
+        (r.battery_clock)().unwrap() <= temporary_started.lock().unwrap().unwrap(),
+        "policy completion must precede the independently delayed temporary getter"
+    );
+    tokio::time::advance(Duration::from_millis(4700)).await;
+    let status = r.get().await;
+    assert!(
+        status["status"]["confirmedState"]["battery"].is_null(),
+        "{status}"
+    );
+    assert_eq!(r.port.state.lock().unwrap().writes, 0);
+    r.stop().await;
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_publication_active_subscription_expires_at_unaligned_battery_deadline() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    assert_eq!(
+        r.request(battery_request(407, "setBatteryProtection", json!(false)))
+            .await["result"]["status"],
+        1
+    );
+    let completed = (r.battery_clock)().unwrap();
+    let expires = completed + crate::installed::readiness::mailbox_read::RETENTION_WINDOW;
+    let original_thermal = r.reader.last_completed_for_tests();
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_millis(100)).await;
+    assert!(
+        Instant::now() < expires - Duration::from_secs(2),
+        "subscription setup must retain a young observation"
+    );
+    let subscriptions = Rc::new(Subscriptions::new(2));
+    let (mut client, server) = duplex(65536);
+    let publications = r.source.lock().await.publications();
+    let server = serve_connection(
+        Box::new(SidStream {
+            inner: test_stream(server, USER, Fault::None),
+            sid: SID.into(),
+        }),
+        r.source.clone(),
+        publications,
+        subscriptions.clone(),
+    );
+    let (stop, stopped) = oneshot::channel::<()>();
+    let (sent, mut attempts) = mpsc::unbounded_channel();
+    let poll = async {
+        tokio::select! {
+            result=subscriptions.refresh_while_subscribed(||async{
+                let due=r.source.lock().await.refresh_publications().await?;
+                sent.send((Instant::now(),due)).unwrap();
+                Ok(due)
+            })=>panic!("refresh stopped {result:?}"),
+            _=stopped=>{}
+        }
+    };
+    let exercise = async {
+        crate::service_frame::write_payload(&mut client,&serde_json::to_vec(&json!({
+            "operation":"subscribeStatus","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000408"})).unwrap()).await.unwrap();
+        let initial = crate::service_frame::read_payload(&mut client)
+            .await
+            .unwrap();
+        let initial: Value = serde_json::from_slice(&initial).unwrap();
+        assert_eq!(
+            initial["status"]["confirmedState"]["battery"]["protectionEnabled"],
+            false
+        );
+        let (_, mut due) = attempts.recv().await.unwrap();
+        while due < expires {
+            tokio::time::advance(due - Instant::now()).await;
+            let (at, next) = attempts.recv().await.unwrap();
+            assert!(at < expires);
+            due = next;
+        }
+        // No GetStatus or manual decorate drives expiry after the initial subscription.
+        tokio::time::advance(expires - Duration::from_millis(1) - Instant::now()).await;
+        for _ in 0..16 {
+            tokio::task::yield_now().await;
+        }
+        let before = serde_json::to_value(
+            &r.source
+                .lock()
+                .await
+                .publications()
+                .unwrap()
+                .borrow()
+                .active,
+        )
+        .unwrap();
+        assert!(!before["confirmedState"]["battery"].is_null(), "{before}");
+        // Tokio timers round to a millisecond tick. Bound delivery to that
+        // timer granularity; never advance to the next two-second metadata poll.
+        let delivered = expires + Duration::from_millis(1);
+        tokio::time::advance(delivered - Instant::now()).await;
+        for _ in 0..32 {
+            tokio::task::yield_now().await;
+        }
+        let after = serde_json::to_value(
+            &r.source
+                .lock()
+                .await
+                .publications()
+                .unwrap()
+                .borrow()
+                .active,
+        )
+        .unwrap();
+        assert!(
+            after["confirmedState"]["battery"].is_null(),
+            "subscription missed battery expiry without GetStatus: {after}"
+        );
+        assert_eq!(r.reader.last_completed_for_tests(), original_thermal);
+        assert_eq!(
+            Instant::now(),
+            delivered,
+            "test must not wait for the next metadata cadence"
+        );
+        loop {
+            let frame = crate::service_frame::read_payload(&mut client)
+                .await
+                .unwrap();
+            println!(
+                "NATIVE_THERMAL_MUTATION_RESPONSE {}",
+                std::str::from_utf8(&frame).unwrap()
+            );
+            let frame: Value = serde_json::from_slice(&frame).unwrap();
+            if frame["status"]["confirmedState"]["battery"].is_null() {
+                break;
+            }
+            assert_eq!(Instant::now(), delivered);
+        }
+        assert_eq!(Instant::now(), delivered);
+        stop.send(()).unwrap();
+        drop(client);
+    };
+    let (served, (), ()) = tokio::join!(server, poll, exercise);
+    assert!(served.is_ok());
+    assert_eq!(r.port.state.lock().unwrap().writes, 1);
+    r.stop().await;
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_publication_incompatible_independent_fields_are_unavailable_without_guessing() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    r.port.state.lock().unwrap().temporary_raw = 4;
+    assert_eq!(
+        r.request(battery_request(409, "setFullChargeOverride", json!(false)))
+            .await["result"]["status"],
+        2
+    );
+    {
+        let mut port = r.port.state.lock().unwrap();
+        port.battery_raw = 0x50;
+        port.temporary_raw = 0x80; // Unknown is not independent evidence of false.
+    }
+    assert_eq!(
+        r.request(battery_request(410, "setBatteryProtection", json!(true)))
+            .await["result"]["status"],
+        2
+    );
+    let status = r.get().await;
+    assert!(
+        status["status"]["confirmedState"]["battery"].is_null(),
+        "{status}"
+    );
+    assert_eq!(r.port.state.lock().unwrap().writes, 0);
+    r.stop().await;
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_publication_private_recovery_replaces_only_its_current_failure() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    let thermal_failed = Rc::new(std::cell::Cell::new(true));
+    let battery_failed = Rc::new(std::cell::Cell::new(false));
+    let thermal = thermal_failed.clone();
+    r.reader.retain_policy(Rc::new(move |base| {
+        if thermal.get() {
+            Err(io::ErrorKind::Unsupported.into())
+        } else {
+            Ok(base
+                .thermal_intent(None, None, "Recovered thermal private policy.", None)
+                .bind_private_user(SID))
+        }
+    }));
+    let battery = battery_failed.clone();
+    r.reader.retain_battery_policy(Rc::new(move |base| {
+        if battery.get() {
+            Err(io::ErrorKind::Unsupported.into())
+        } else {
+            Ok(base
+                .battery_projection(None, Some((0xd0, None)), "Public battery observation.")
+                .bind_private_user(SID))
+        }
+    }));
+    let base = Snapshot::observed_read_only(
+        1,
+        0,
+        false,
+        false,
+        vec![],
+        None,
+        "Public source reason.".into(),
+    );
+    let degraded = r.reader.current_policy(base).unwrap();
+    assert!(
+        serde_json::to_value(&degraded).unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .contains("private policy is unavailable")
+    );
+    thermal_failed.set(false);
+    let recovered = r.reader.current_policy(degraded).unwrap();
+    let wire = serde_json::to_value(&recovered).unwrap();
+    assert!(
+        !wire["message"]
+            .as_str()
+            .unwrap()
+            .contains("private policy is unavailable"),
+        "{wire}"
+    );
+    thermal_failed.set(true);
+    battery_failed.set(true);
+    let both = r.reader.current_policy(recovered).unwrap();
+    thermal_failed.set(false);
+    let battery_only = r.reader.current_policy(both).unwrap();
+    assert!(
+        serde_json::to_value(&battery_only).unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .contains("private policy is unavailable")
+    );
+    battery_failed.set(false);
+    let recovered = r.reader.current_policy(battery_only).unwrap();
+    assert!(
+        !serde_json::to_value(recovered).unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .contains("private policy is unavailable")
+    );
     r.stop().await;
 }

@@ -5,6 +5,7 @@ use super::*;
 use std::sync::{Arc, Mutex};
 #[derive(Default)]
 pub(crate) struct State {
+    pub(crate) battery_getter_hook: Option<Arc<dyn Fn(u8, usize) + Send + Sync>>,
     pub(crate) battery_raw: u8,
     pub(crate) temporary_raw: u8,
     pub(crate) battery_reads: usize,
@@ -169,6 +170,11 @@ impl Port for MemoryPort {
                 let payload = &frame[9..9 + frame[6] as usize];
                 s.sent.push((class, command, payload.to_vec(), id));
                 s.sent_at.push(Instant::now());
+                if class == 7 && matches!(command, 0x92 | 0x8f) {
+                    if let Some(hook) = &s.battery_getter_hook {
+                        hook(command, s.battery_reads);
+                    }
+                }
                 let response = match (class, command) {
                     (13, 1 | 2) => {
                         if let Some(check) = &s.before_write {

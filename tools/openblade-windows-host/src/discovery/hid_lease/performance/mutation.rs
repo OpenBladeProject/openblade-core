@@ -30,7 +30,8 @@ pub(crate) trait Permit: Send + Sync {
     fn record_battery(&self, _progress: u8) -> io::Result<()> {
         Err(io::ErrorKind::PermissionDenied.into())
     }
-    fn observe_battery(&self, _raw: u8, _temporary: Option<bool>) {}
+    fn observe_battery_policy(&self, _raw: u8) {}
+    fn observe_battery_temporary(&self, _temporary: bool) {}
     fn is_fan(&self) -> bool {
         false
     }

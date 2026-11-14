@@ -120,6 +120,51 @@ public sealed class NativeThermalMutationResponseTests
         Assert.True(off); Assert.True(active); Assert.True(unknown); Assert.True(storedLimit);
         Assert.Contains(ControlOperationStatus.Applied, outcomes); Assert.Contains(ControlOperationStatus.Blocked, outcomes);
     }
+
+    [Fact]
+    public async Task ActualNativeBatteryPublicationsKeepUnavailableGroupsAndUnknownTemporaryCompatible()
+    {
+        string path = Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_BATTERY_PUBLICATIONS")
+            ?? throw new InvalidOperationException("Explicit actual native publication frames required.");
+        Assert.True(Path.IsPathFullyQualified(path));
+        using var document = JsonDocument.Parse(await File.ReadAllBytesAsync(path));
+        bool unavailable = false, unknownTemporary = false, eventSeen = false;
+        foreach (var element in document.RootElement.EnumerateArray())
+        {
+            using var frame = FrameJson(element.GetRawText());
+            var decoded = await IpcMessageCodec.ReadServerFrameAsync(frame, CancellationToken.None);
+            ServiceStatusSnapshot? status;
+            if (decoded is ServiceStatusEvent update)
+            {
+                Assert.Equal(80, update.Version);
+                eventSeen = true;
+                status = update.Status;
+            }
+            else
+            {
+                var response = Assert.IsType<ServiceResponse>(decoded);
+                Assert.Equal(80, response.Version);
+                Assert.True(response.Success);
+                status = response.Status;
+            }
+            if (status is null)
+            {
+                continue;
+            }
+            Assert.True(status.WritesBlocked);
+            Assert.DoesNotContain("SYNTHETIC_PRIVATE_SENTINEL", status.Message, StringComparison.Ordinal);
+            unavailable |= status.ConfirmedState?.Battery is null;
+            if (status.ConfirmedState?.Battery is { } battery)
+            {
+                Assert.False(!battery.ProtectionEnabled && battery.TemporaryFullCharge is true);
+                unknownTemporary |= battery.TemporaryFullCharge is null;
+            }
+        }
+        Assert.True(unavailable);
+        Assert.True(unknownTemporary);
+        Assert.True(eventSeen);
+    }
+
     private static MemoryStream FrameJson(string json)
     {
         byte[] bytes = Encoding.UTF8.GetBytes(json);

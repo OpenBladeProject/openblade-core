@@ -2,6 +2,47 @@
 use super::*;
 use crate::thermal_history::Entry;
 use openblade_domain::battery_history::{BatteryRecord, CONTRACT, Request};
+
+// One fixed public observation record, independent of per-user desired intent.
+// Each getter owns its completion time. This history never authorizes a write.
+#[derive(Default)]
+pub(super) struct BatteryObservation {
+    pub(super) policy: Option<(u8, Instant)>,
+    temporary: Option<(bool, Instant)>,
+}
+impl BatteryObservation {
+    fn current<T: Copy>(value: Option<(T, Instant)>, now: Instant) -> Option<T> {
+        value
+            .filter(|(_, at)| {
+                now.saturating_duration_since(*at) < super::super::mailbox_read::RETENTION_WINDOW
+            })
+            .map(|(v, _)| v)
+    }
+    fn projection(&self, now: Instant) -> Option<(u8, Option<bool>)> {
+        // v80 requires policy/protection when a battery group is present.
+        // A still-young TFC observation remains internally retained at its own age.
+        let raw = Self::current(self.policy, now)?;
+        let temporary = Self::current(self.temporary, now);
+        // The managed contract cannot represent Off + TFC true. Preserve both
+        // observations internally; expose the conflicting group as unavailable.
+        if raw == 0x50 && temporary == Some(true) {
+            return None;
+        }
+        Some((raw, temporary))
+    }
+    fn next_expiry(&self, now: Instant) -> Option<Instant> {
+        [
+            self.policy.map(|(_, at)| at),
+            self.temporary.map(|(_, at)| at),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|at| at + super::super::mailbox_read::RETENTION_WINDOW)
+        .filter(|at| *at > now)
+        .min()
+    }
+}
+
 struct BatteryPermit {
     storage: Arc<Storage>,
     fresh: Arc<dyn Fresh>,
@@ -12,7 +53,7 @@ struct BatteryPermit {
     session: u32,
     proof: ReadAdmission,
     record: Mutex<Option<BatteryRecord>>,
-    observation: Arc<Mutex<Option<(u8, Option<bool>, Instant)>>>,
+    observation: Arc<Mutex<BatteryObservation>>,
     prepared: AtomicBool,
     confirmed: AtomicBool,
     source: Arc<std::sync::atomic::AtomicU8>,
@@ -44,13 +85,8 @@ impl BatteryPermit {
             .inspect_err(|e| remember_failure(&self.fatal, e))
     }
     fn historical_observation(&self) -> io::Result<Option<(u8, Option<bool>)>> {
-        let observation = *self.observation.lock().map_err(|_| io::ErrorKind::Other)?;
-        Ok(observation
-            .filter(|(_, _, at)| {
-                Instant::now().saturating_duration_since(*at)
-                    < super::super::mailbox_read::RETENTION_WINDOW
-            })
-            .map(|(raw, temporary, _)| (raw, temporary)))
+        let observation = self.observation.lock().map_err(|_| io::ErrorKind::Other)?;
+        Ok(observation.projection(Instant::now()))
     }
     fn reason(&self, s: &str) {
         if let Ok(mut v) = self.cause.lock() {
@@ -158,9 +194,14 @@ impl Permit for BatteryPermit {
         }
         Ok(())
     }
-    fn observe_battery(&self, raw: u8, temporary: Option<bool>) {
+    fn observe_battery_policy(&self, raw: u8) {
         if let Ok(mut v) = self.observation.lock() {
-            *v = Some((raw, temporary, Instant::now()));
+            v.policy = Some((raw, Instant::now()));
+        }
+    }
+    fn observe_battery_temporary(&self, temporary: bool) {
+        if let Ok(mut v) = self.observation.lock() {
+            v.temporary = Some((temporary, Instant::now()));
         }
     }
     fn failed(&self, e: &io::Error) {
@@ -256,6 +297,13 @@ impl Runtime {
         // Register before worker submission. Retirement or caller cancellation
         // must not discard a committed process-scoped override. This callback
         // reads current storage under fresh read-only proof, never grants writes.
+        let history = self.battery_observation.clone();
+        reader.retain_battery_expiry(Rc::new(move || {
+            history
+                .lock()
+                .ok()
+                .and_then(|history| history.next_expiry(Instant::now()))
+        }));
         let retained = permit.clone();
         let policy_sid = sid.clone();
         reader.retain_battery_policy(Rc::new(move |base| {
@@ -273,7 +321,7 @@ impl Runtime {
                 else if observation.is_some() { "Last independently read battery policy retained; no fresh battery read is confirmed. New writes require fresh admission.".into() }
                 else { "Last battery observation expired or unavailable; new writes require fresh admission.".into() };
             let public = base.battery_projection(None, observation, &message);
-            super::super::mailbox_read::project_private_policy(public, |base| {
+            super::super::mailbox_read::project_private_policy(public, crate::service_status::PrivatePolicyFamily::Battery, |base| {
                 let desired = retained.storage.desired_battery(source)?;
                 Ok(base.battery_projection(Some(desired), None, "").bind_private_user(&policy_sid))
             })
@@ -337,9 +385,114 @@ pub(in super::super) struct BatteryUpdate {
 }
 impl BatteryUpdate {
     pub(in super::super) fn apply(self, latest: Snapshot) -> Snapshot {
+        // A present desired value was independently reconstructed after the
+        // worker; only this family\'s previous private degradation is resolved.
+        let latest = if self.desired.is_some() {
+            latest.private_policy_reconciling(crate::service_status::PrivatePolicyFamily::Battery)
+        } else {
+            latest
+        };
         latest
             .without_battery_observation()
             .battery_projection(self.desired, self.observation, &self.message)
             .bind_private_user(&self.sid)
+    }
+}
+
+#[cfg(test)]
+mod observation_tests {
+    use super::*;
+    #[test]
+    fn independent_fields_keep_original_age_and_exclude_expired_deadlines() {
+        let at = Instant::now();
+        let window = super::super::super::mailbox_read::RETENTION_WINDOW;
+        let mut history = BatteryObservation {
+            policy: Some((0xc6, at)),
+            temporary: Some((true, at + std::time::Duration::from_secs(1))),
+        };
+        assert_eq!(history.next_expiry(at), Some(at + window));
+        assert_eq!(history.projection(at + window), None);
+        assert_eq!(
+            history.temporary,
+            Some((true, at + std::time::Duration::from_secs(1)))
+        );
+        assert_eq!(
+            history.next_expiry(at + window),
+            Some(at + window + std::time::Duration::from_secs(1))
+        );
+        history.policy = Some((0x50, at + window));
+        assert_eq!(
+            history.projection(at + window),
+            None,
+            "Off plus independently retained true is incompatible"
+        );
+        history.policy = Some((0xc6, at + window));
+        assert_eq!(history.projection(at + window), Some((0xc6, Some(true))));
+        assert_eq!(
+            history.projection(at + window + std::time::Duration::from_secs(1)),
+            Some((0xc6, None))
+        );
+        assert_eq!(
+            history.next_expiry(at + window * 2),
+            None,
+            "expired deadlines must not spin"
+        );
+    }
+    #[test]
+    fn completed_deltas_reconcile_only_their_proven_private_family() {
+        use crate::service_status::PrivatePolicyFamily::{Battery, Thermal};
+        let base =
+            Snapshot::observed_read_only(1, 0, false, false, vec![], None, "Public source.".into())
+                .private_policy_unavailable(Thermal)
+                .private_policy_unavailable(Battery);
+        let update = BatteryUpdate {
+            desired: Some(openblade_domain::battery_history::Desired {
+                limit: 80,
+                protection: false,
+                temporary: false,
+            }),
+            observation: Some((0x50, None)),
+            message: "Battery confirmed.".into(),
+            sid: "S-1-5-21-111-222-333-1001".into(),
+        };
+        let battery = update.apply(base.clone());
+        assert!(
+            serde_json::to_value(&battery).unwrap()["message"]
+                .as_str()
+                .unwrap()
+                .contains("private policy is unavailable"),
+            "battery success cannot clear the unrelated thermal failure"
+        );
+        let recovered = battery.private_policy_reconciling(Thermal);
+        assert!(
+            !serde_json::to_value(recovered).unwrap()["message"]
+                .as_str()
+                .unwrap()
+                .contains("private policy is unavailable")
+        );
+        // Accepted fan/performance deltas have reconstructed private profiles
+        // before reaching this shared production rebase.
+        let delta = base
+            .clone()
+            .private_policy_reconciling(Battery)
+            .thermal_profiles(None)
+            .unwrap()
+            .thermal_intent(None, None, "Thermal result.", None)
+            .bind_private_user("S-1-5-21-111-222-333-1001");
+        let thermal = delta.rebase_thermal_mutation(&base);
+        assert!(
+            serde_json::to_value(&thermal).unwrap()["message"]
+                .as_str()
+                .unwrap()
+                .contains("private policy is unavailable"),
+            "thermal success cannot clear the unrelated battery failure"
+        );
+        let recovered = thermal.private_policy_reconciling(Battery);
+        assert!(
+            !serde_json::to_value(recovered).unwrap()["message"]
+                .as_str()
+                .unwrap()
+                .contains("private policy is unavailable")
+        );
     }
 }

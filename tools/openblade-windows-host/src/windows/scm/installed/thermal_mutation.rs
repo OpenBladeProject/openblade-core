@@ -106,7 +106,7 @@ pub(super) struct Runtime {
     gate: Rc<tokio::sync::Mutex<()>>,
     // Public battery history is bounded independently of request/user intent.
     // Only independent reads update its timestamp; sibling publications cannot.
-    battery_observation: Arc<Mutex<Option<(u8, Option<bool>, Instant)>>>,
+    battery_observation: Arc<Mutex<battery::BatteryObservation>>,
     battery_source: Arc<std::sync::atomic::AtomicU8>,
     fatal: Arc<Mutex<Option<&'static str>>>,
     #[cfg(test)]
@@ -326,7 +326,11 @@ impl Runtime {
             {
                 Ok(value) => value,
                 Err(error) if is_fatal_admission(&error) => return Err(error),
-                Err(_) => return Ok(base.private_policy_unavailable()),
+                Err(_) => {
+                    return Ok(base.private_policy_unavailable(
+                        crate::service_status::PrivatePolicyFamily::Thermal,
+                    ));
+                }
             };
             fresh.verify_health()?;
             let admitted = fresh.authorize().is_some();
@@ -633,5 +637,13 @@ impl RequestPermit {
                 progress,
             )
             .inspect_err(|error| self.remember_failure(error))
+    }
+}
+
+#[cfg(all(test, feature = "service-battery-policy-v1"))]
+impl Runtime {
+    pub(super) fn battery_clock_for_tests(&self) -> Rc<dyn Fn() -> Option<Instant>> {
+        let history = self.battery_observation.clone();
+        Rc::new(move || history.lock().unwrap().policy.map(|(_, at)| at))
     }
 }
