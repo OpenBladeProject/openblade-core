@@ -955,7 +955,7 @@ public sealed class SetupPayloadTransactionTests
         Assert.True(File.Exists(Path.Combine(ambiguous, "evidence.txt")));
     }
 
-    private static SortedDictionary<string, string> ReadManifest(string root)
+    internal static SortedDictionary<string, string> ReadManifest(string root)
     {
         SortedDictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase);
         if (!Directory.Exists(root))
@@ -971,7 +971,7 @@ public sealed class SetupPayloadTransactionTests
         return result;
     }
 
-    private sealed class TestTree : IDisposable
+    internal sealed class TestTree : IDisposable
     {
         private static readonly string[] RequiredFiles =
         [
