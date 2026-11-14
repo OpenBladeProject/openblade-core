@@ -76,3 +76,6 @@ tools/openblade-windows-host/tests/fixtures/app-fans-*.json -text whitespace=cr-
 
 # Preserve the exact generated causal diagnostic learning bytes.
 .trail/learnings/2026-11-14-preserve-causal-native-agent-diagnostics-with-jack.md text eol=lf
+
+# Preserve the exact generated neutral diagnostic learning bytes.
+.trail/learnings/2026-11-14-use-neutral-native-agent-failure-for-jack.md text eol=lf

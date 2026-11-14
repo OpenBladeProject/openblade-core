@@ -76,6 +76,44 @@ pub(crate) fn terminal(error: &io::Error, emit: impl FnOnce(Event)) {
             emit(cause.event);
         }
     } else {
-        emit(Event::Endpoint(error.kind(), error.raw_os_error()));
+        emit(Event::AgentFailure(error.kind(), error.raw_os_error()));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unclassified_same_kind_failure_gets_neutral_agent_label() {
+        let mut events = Vec::new();
+        for message in [
+            "wrong working directory",
+            "origin listener status words are not evidence",
+        ] {
+            let error = io::Error::new(io::ErrorKind::PermissionDenied, message);
+            terminal(&error, |event| events.push(event));
+        }
+        assert_eq!(
+            events,
+            [
+                Event::AgentFailure(io::ErrorKind::PermissionDenied, None),
+                Event::AgentFailure(io::ErrorKind::PermissionDenied, None),
+            ]
+        );
+        let mut classified_events = Vec::new();
+        for error in [
+            origin(io::Error::from_raw_os_error(5)),
+            listener(io::Error::from_raw_os_error(5)),
+        ] {
+            terminal(&error, |event| classified_events.push(event));
+        }
+        assert_eq!(
+            classified_events,
+            [
+                Event::Origin(io::ErrorKind::PermissionDenied, Some(5)),
+                Event::Listener(io::ErrorKind::PermissionDenied, Some(5)),
+            ]
+        );
     }
 }

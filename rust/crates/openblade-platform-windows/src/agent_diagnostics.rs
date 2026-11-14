@@ -35,7 +35,7 @@ pub enum Event {
     BatteryRetirement(Failure),
     Origin(io::ErrorKind, Option<i32>),
     Listener(io::ErrorKind, Option<i32>),
-    Endpoint(io::ErrorKind, Option<i32>),
+    AgentFailure(io::ErrorKind, Option<i32>),
 }
 
 // Both fixed names match the existing managed diagnostics export glob. Keep
@@ -248,7 +248,7 @@ mod tests {
         }
         store(
             &parent,
-            Event::Endpoint(io::ErrorKind::PermissionDenied, Some(5)),
+            Event::AgentFailure(io::ErrorKind::PermissionDenied, Some(5)),
             limit,
         )
         .unwrap();
@@ -258,7 +258,7 @@ mod tests {
         assert!(
             fs::read_to_string(&current)
                 .unwrap()
-                .contains("Endpoint(PermissionDenied, Some(5))")
+                .contains("AgentFailure(PermissionDenied, Some(5))")
         );
         assert!(
             fs::read_to_string(&previous)
