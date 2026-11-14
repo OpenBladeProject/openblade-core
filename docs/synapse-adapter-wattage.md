@@ -87,28 +87,61 @@ OpenBlade deliberately fails closed:
 - stable Windows battery evidence may classify the system as on battery, but it
   does not turn `00` into a vendor-defined connector value.
 
-All seven profiles use the same `AdapterPowerCommandClient` and
-`AdapterPowerProtocol` classification path. The five experimental profiles add
-only per-model source admission; they do not copy or fork the decoder. They
-perform a fresh `07/8C` query immediately before each non-battery thermal SET,
-then recheck Windows power and identity at native submission. The former Windows-only `ExperimentalExternal`
-fallback is not an admission path. Confirmed external power, whether sufficient
-or below recommendation, admits the exact model's supported performance modes,
-including Custom and HyperBoost where separately supported. Firmware remains
-responsible for adapter-dependent power limits. The [external-power performance
-policy](external-power-performance-policy.md) separates mode choice from truthful
-adapter classification. Existing model-specific fan capabilities remain in force;
-manual targets or curves on limited power are admitted on RZ09-0528 and
-RZ09-0581. Battery admits Automatic and fixed targets on those models and the
-experimental RZ09-0483 and RZ09-0482, plus Balanced fixed targets on RZ09-0484.
-Battery curves remain unavailable.
-Experimental fixed targets on limited power retain the Automatic-only gate
-because their pinned source does not establish manual entry there. Blade 18
-admits host curves in Balanced on full external power, holding the maximum
-target when CPU temperature is unavailable; the other experimental models
-expose no curve. Turning Custom Maximum Fans off remains allowed when required for
-cleanup. All setters retain fresh source checks; see the
-[fan power-source policy](fan-power-source-policy.md).
+The original seven-profile wattage audit uses the shared
+`AdapterPowerCommandClient` and `AdapterPowerProtocol` decoder. The
+[ordinary external-power source ledger](../evidence/source-reviewed-blades/2026-11-14-unclassified-external-thermal.json)
+additionally pins each of the 22 supported models' own Synapse policy and
+device parser. It verifies ordinary command authority separately from wattage
+classification.
+
+### Confirmed external-power mode selection
+
+On a confirmed sufficient or limited external source, the independently reviewed
+[external-power performance policy](external-power-performance-policy.md) offers
+the exact model's supported performance modes, including Custom and HyperBoost
+where separately admitted. Firmware remains responsible for adapter-dependent
+power limits. This does not grant fan authority: source, preset, metadata and
+ownership checks remain independent, and host curves retain their exact-model
+power-source limits. See the [fan power-source policy](fan-power-source-policy.md)
+and [source-reviewed feature table](experimental-blade-support.md).
+
+### Ordinary controls when external wattage is unavailable
+
+On all 22 exact models, Synapse's ordinary thermal setter reads Windows battery
+state independently and can issue the requested ordinary commands after its
+adapter helper cannot classify wattage. This establishes an existing command
+path; it does not establish charger type, sufficient wattage, firmware recovery,
+or physical validation of this admission.
+
+OpenBlade keeps current classification unavailable and retains the failed raw query diagnostic. Initial unclassified AC displays `Unknown`; a previously confirmed source label may be retained for presentation with `RetainedPowerSource`, which grants no advanced or profile authority.
+The separately source-reviewed
+`SupportsOrdinaryThermalControlOnUnclassifiedExternalPower` capability permits
+only existing ordinary performance, Fixed/host-curve targets, Custom CPU/GPU
+levels, and Maximum Fans where those controls are already admitted for that
+exact model. Each SET still requires fresh Windows external-power presence,
+exact host/controller/session admission, current-preset/manual-state checks,
+fresh fan metadata where applicable, native queue source locking and independent
+readback. The failure of an adapter read never supplies fan bounds or confirms
+another setting.
+
+The exception is closed to a completed, checksum-valid, transaction/class/command
+correlated `07/8C` request `0000`: terminal **raw report** status `03`
+(FAILED) or `05` (COMMAND_NOT_SUPPORTED), or a successful exact two-byte reply
+with unrecognized wattage levels. A terminal error body may be empty or bounded
+nonempty; it is never decoded as wattage. Outer USB/native result codes 3 or 5
+are transport failures and cannot establish this condition. New, Busy, Timeout,
+cancellation, uncertain native retirement, malformed framing, bad checksum or
+correlation, unknown Windows power, and Windows/firmware source disagreement
+remain blocking.
+
+Known limited-power and battery behavior remains model-specific and unchanged.
+HyperBoost, including indirect exit through another requested preset, voltage,
+CPU power limits, native overclocking and clock offsets retain their separate
+admission. See the [fan power-source policy](fan-power-source-policy.md).
+This new admission is **source-reviewed and physically untested on every model**,
+including RZ09-0528 and RZ09-0581; their existing physical evidence retains its
+original scope.
+
 
 Synapse explicitly clears Maximum Fans before leaving Custom on the applicable
 models. OpenBlade reads the complete Power Mode Control byte, requires the other

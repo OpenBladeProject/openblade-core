@@ -6,6 +6,39 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed partial class ServiceReactiveLightingLoopTests
 {
     [Fact]
+    public async Task RetainedSourceDoesNotActivateAnOldProfileGamingPolicy()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+        ServiceStatusSnapshot initial = Status(LightingRendererOwnershipState.Static);
+        client.Publish(initial with
+        {
+            ObservationReason = DeviceObservationReason.RetainedPowerSource,
+            ExternalPowerPresent = true,
+            Capabilities = initial.Capabilities! with
+            {
+                HostManagedLaptopControls = new HashSet<OneShotLaptopControl> { OneShotLaptopControl.GamingMode },
+            },
+            GamingModeEnabled = null,
+            Profiles = initial.Profiles with
+            {
+                PluggedIn = initial.Profiles.PluggedIn with
+                {
+                    LaptopBehavior = new LaptopBehaviorProfileSettings(null, null, true)
+                    { GamingModeKeyPolicy = new GamingModeKeyPolicy(true, true) },
+                },
+            },
+        });
+        await WaitUntilAsync(() => factory.Last is not null);
+        Assert.Equal(GamingModeKeyPolicy.Disabled, factory.Last!.ReadGamingModeKeyPolicy());
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
     public async Task HostGamingMode_UsesOptedInProfilePolicyAndStopsOnAdmissionLoss()
     {
         var client = new WatchClient();

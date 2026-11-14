@@ -24,6 +24,27 @@ public sealed partial class DisplaySettingsViewModelTests
         "sRGB");
 
     [Fact]
+    public async Task UnclassifiedPositiveAcAllowsDirectDisplayChangesButNeverProfileSave()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(Snapshot(Fixed60.Key, false, Native.Key));
+        await using var viewModel = CreateViewModel(adapter);
+        viewModel.ActivePowerSource = PowerSource.ExternalUnknown;
+        viewModel.ExternalPowerPresent = true;
+        viewModel.ProfilePersistenceAvailable = true;
+        await viewModel.RefreshAsync();
+        Assert.True(viewModel.CanChangeRefreshRate);
+        Assert.True(viewModel.CanChangeHdr);
+        Assert.True(viewModel.CanChangeColorProfile);
+        Assert.False(viewModel.CanSaveCurrentSettingsToProfile);
+        await viewModel.SelectRefreshRateAsync(Fixed240);
+        Assert.Equal([Fixed240.Key], adapter.RefreshRequests);
+        viewModel.ExternalPowerPresent = false;
+        Assert.False(viewModel.CanChangeRefreshRate);
+        await viewModel.SetHdrEnabledAsync(true);
+        Assert.Empty(adapter.HdrRequests);
+    }
+
+    [Fact]
     public async Task Refresh_HdrDisablesColorProfileAndExplainsWhy()
     {
         var adapter = new FakeDisplaySettingsAdapter(

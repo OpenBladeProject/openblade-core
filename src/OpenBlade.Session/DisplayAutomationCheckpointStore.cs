@@ -93,10 +93,9 @@ public sealed class DisplayAutomationCheckpointStore(string path)
                 return checkpoint is
                 {
                     SchemaVersion: RecoverySchemaVersion,
-                    LastReconciledPowerSource: PowerSource.PluggedIn
-                        or PowerSource.Battery
-                        or PowerSource.UsbC,
-                }
+                } && IsRecoverySourceAdmitted(checkpoint.LastReconciledPowerSource, checkpoint.ManualHold,
+                    checkpoint.ApplicationProfileId, checkpoint.Baseline, checkpoint.OwnedRefreshRate,
+                    checkpoint.OwnedHdr, checkpoint.OwnedColorProfile, checkpoint.OwnedBrightness)
                     ? new DisplayAutomationRecoveryState(
                         checkpoint.LastReconciledPowerSource,
                         checkpoint.ApplicationProfileId,
@@ -121,11 +120,19 @@ public sealed class DisplayAutomationCheckpointStore(string path)
         }
     }
 
+    // Unknown is a durable manual hold, never an established automation profile.
+    private static bool IsRecoverySourceAdmitted(PowerSource source, bool manualHold,
+        Guid? application, DisplayProfileSettings? baseline, bool refresh, bool hdr, bool color, bool brightness) =>
+        source is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+        || source == PowerSource.ExternalUnknown && manualHold && application is null && baseline is null
+            && !refresh && !hdr && !color && !brightness;
+
     public bool SaveRecovery(DisplayAutomationRecoveryState state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        if (state.LastReconciledPowerSource is not (
-                PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
+        if (!IsRecoverySourceAdmitted(state.LastReconciledPowerSource, state.ManualHold,
+            state.ApplicationProfileId, state.Baseline, state.OwnedRefreshRate,
+            state.OwnedHdr, state.OwnedColorProfile, state.OwnedBrightness))
         {
             return false;
         }

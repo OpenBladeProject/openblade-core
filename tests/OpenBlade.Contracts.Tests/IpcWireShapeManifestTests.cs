@@ -86,6 +86,8 @@ public sealed class IpcWireShapeManifestTests
             81 => "E4913F08C67EFFEF1B442726373F4957D1A8B982375F793C9E4F015505ED503F",
             // Protocol 82 admits 5500-RPM intent and separates observed per-preset limits.
             82 => "D9ECA197B716E9ADE515C854380082D06DB12ED0B7BC1F3716148B8AEFA894E2",
+            // Protocol 83 separates positive Windows AC presence from adapter classification.
+            83 => "C29F478A17D06E6EDD3F69F1A6EAC11FAAEA3B89186B043F7ABB95761C294EC6",
             _ => null,
         };
 

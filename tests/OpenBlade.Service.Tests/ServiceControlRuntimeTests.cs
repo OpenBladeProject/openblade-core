@@ -11018,7 +11018,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
         Assert.Equal(DeviceObservationReason.RetainedPowerSource,
             context.Runtime.GetStatus().ObservationReason);
-        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.True(context.Runtime.GetStatus().ExternalPowerPresent);
         string transientMessage = context.Runtime.GetStatus().Message;
 
         await context.Runtime.SetExternalLightingOverridePolicyAsync(
@@ -17987,11 +17988,20 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         ServiceStatusSnapshot unknown = context.Runtime.GetStatus();
         Assert.Equal(PowerSource.PluggedIn, unknown.ActivePowerSource);
-        Assert.True(unknown.WritesBlocked);
+        Assert.False(unknown.WritesBlocked);
+        Assert.True(unknown.ExternalPowerPresent);
+        Assert.Equal(DeviceObservationReason.RetainedPowerSource, unknown.ObservationReason);
         Assert.Contains("last confirmed power source", unknown.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(expected, unknown.LiveReadings);
         Assert.Equal(stateReads, context.Device.StateReadCalls);
         Assert.Equal(fanReads, context.Device.FanRpmReadCalls);
+        int thermalWrites = context.Device.PerformanceSetCalls;
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.SetPerformanceOverrideAsync(
+            new(PerformancePreset.Silent, OverrideLifetime.UntilPowerSourceChange), CancellationToken.None)).Status);
+        Assert.Equal(thermalWrites, context.Device.PerformanceSetCalls);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetLightingOverrideAsync(
+            new(LightingSettingsFactory.Off(), OverrideLifetime.UntilPowerSourceChange), CancellationToken.None)).Status);
+        stateReads = context.Device.StateReadCalls;
 
         context.Device.AdapterPowerState = AdapterPowerState.FullPower280W;
         await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
@@ -18058,7 +18068,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         ServiceStatusSnapshot transient = context.Runtime.GetStatus();
         Assert.Equal(PowerSource.UsbC, transient.ActivePowerSource);
-        Assert.True(transient.WritesBlocked);
+        Assert.False(transient.WritesBlocked);
+        Assert.True(transient.ExternalPowerPresent);
+        Assert.Equal(DeviceObservationReason.RetainedPowerSource, transient.ObservationReason);
         Assert.Contains("last confirmed power source", transient.Message, StringComparison.OrdinalIgnoreCase);
 
         long transientRevision = transient.Revision;
@@ -18066,6 +18078,12 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(PowerSource.UsbC, context.Runtime.GetStatus().ActivePowerSource);
         Assert.Equal(transientRevision, context.Runtime.GetStatus().Revision);
+        int thermalWrites = context.Device.PerformanceSetCalls;
+        Assert.Equal(ControlOperationStatus.Blocked, (await context.Runtime.SetPerformanceOverrideAsync(
+            new(PerformancePreset.Silent, OverrideLifetime.UntilPowerSourceChange), CancellationToken.None)).Status);
+        Assert.Equal(thermalWrites, context.Device.PerformanceSetCalls);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetLightingOverrideAsync(
+            new(LightingSettingsFactory.Off(), OverrideLifetime.UntilPowerSourceChange), CancellationToken.None)).Status);
 
         context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
         await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
@@ -32163,6 +32181,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     {
         public required TestPowerState Current { get; set; }
 
+        public Exception? PowerCaptureFailure { get; set; }
         public int CaptureCount { get; private set; }
         public int BatteryPowerFlowCaptureCount { get; private set; }
         public int BatteryHealthCaptureCount { get; private set; }
@@ -32171,6 +32190,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         public PowerSource CapturePowerSource()
         {
             CaptureCount++;
+            if (PowerCaptureFailure is { } failure) { throw failure; }
             return Current.PowerSource;
         }
 
@@ -32584,6 +32604,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         IBladeDevice,
         IGpuClockOffsetManagementDevice,
         ISingleAttemptThermalDevice,
+        IOwnedBatterySaverFanStopReleaseDevice,
         IThermalExternalDriftValidationDevice,
         IDeviceStateReadDiagnostics
     {
@@ -32675,6 +32696,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         public Queue<Exception?> AdapterPowerFailures { get; } = new();
 
         public Exception? AdapterPowerFailure { get; set; }
+
+        public Func<CancellationToken, Task<AdapterPowerState>>? AdapterPowerReadOverride { get; set; }
 
         public string? McuVersion { get; set; }
 
@@ -32961,6 +32984,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         {
             TotalCalls++;
             AdapterPowerReadCalls++;
+            if (AdapterPowerReadOverride is { } readOverride)
+            {
+                return readOverride(cancellationToken);
+            }
             if (AdapterPowerFailures.TryDequeue(out Exception? scriptedFailure)
                 && scriptedFailure is not null)
             {
@@ -33352,6 +33379,21 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             FanControlSettings value,
             CancellationToken cancellationToken) =>
             SetFanControlAsync(value, cancellationToken);
+
+        public int OwnedStopReleaseCalls { get; private set; }
+        public Action? BeforeOwnedStopRelease { get; set; }
+
+        Task IOwnedBatterySaverFanStopReleaseDevice.ReleaseOwnedBatterySaverFanStopOnceAsync(
+            Func<bool> priorAuthorityAdmission, CancellationToken cancellationToken)
+        {
+            BeforeOwnedStopRelease?.Invoke();
+            if (!priorAuthorityAdmission())
+            {
+                throw new CapabilityUnavailableException("The prior Stop ownership changed.");
+            }
+            OwnedStopReleaseCalls++;
+            return SetFanControlAsync(FanControlSettings.Default, cancellationToken);
+        }
 
         public async Task<(int Fan1Rpm, int Fan2Rpm)> SetCurveFanTargetsAsync(
             PerformancePreset expectedPerformance, int fan1Rpm, int fan2Rpm,

@@ -74,9 +74,14 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         bool supportsBatterySaverFanStop = false,
         Func<bool>? stopHardwareAdmission = null,
         bool hasFanStopTrialEvidence = false,
-        bool hasFanStopSourceEvidence = false)
+        bool hasFanStopSourceEvidence = false,
+        Func<PowerSource>? capturePowerSource = null,
+        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower = false)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+        this.capturePowerSource = capturePowerSource;
+        this.supportsOrdinaryThermalControlOnUnclassifiedExternalPower =
+            supportsOrdinaryThermalControlOnUnclassifiedExternalPower && capturePowerSource is not null;
         LaptopControlRecoveryIdentity = laptopControlRecoveryIdentity;
         this.hyperBoostCatalog = hyperBoostCatalog ?? DeviceCommandCatalog.Empty;
         this.readEvidence = readEvidence ?? throw new ArgumentNullException(nameof(readEvidence));
@@ -188,12 +193,16 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             this.hyperBoostBaseModes,
             this.supportsDirectManualFanTransitions,
             this.thxAudioCapabilities,
-            this.supportsBatterySaverFanStop) with
+            this.supportsBatterySaverFanStop,
+            this.supportsOrdinaryThermalControlOnUnclassifiedExternalPower) with
         {
             HasFanStopTrialEvidence = hasFanStopTrialEvidence,
             HasFanStopSourceEvidence = hasFanStopSourceEvidence,
         };
     }
+
+    private readonly Func<PowerSource>? capturePowerSource;
+    private readonly bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower;
 
     public DeviceCapabilities Capabilities { get; }
 
@@ -235,26 +244,29 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             compatibilityPolicy: null,
             allowPadlessHyperBoostLifecycleValidation: false);
 
+    internal static IProductionBatteryPortFactory CreateWindows(Func<PowerSource>? capturePowerSource) =>
+        CreateWindowsCore(null, false, capturePowerSource: capturePowerSource);
+
     internal static IProductionBatteryPortFactory
-        CreateWindowsForPadlessHyperBoostLifecycleValidation() =>
+        CreateWindowsForPadlessHyperBoostLifecycleValidation(Func<PowerSource>? capturePowerSource = null) =>
         CreateWindowsCore(
             compatibilityPolicy: null,
-            allowPadlessHyperBoostLifecycleValidation: true);
+            allowPadlessHyperBoostLifecycleValidation: true, capturePowerSource: capturePowerSource);
 
     internal static IProductionBatteryPortFactory CreateWindows(
-        FirmwareCompatibilityPolicy compatibilityPolicy)
+        FirmwareCompatibilityPolicy compatibilityPolicy, Func<PowerSource>? capturePowerSource = null)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         return CreateWindowsCore(
             compatibilityPolicy,
-            allowPadlessHyperBoostLifecycleValidation: false);
+            allowPadlessHyperBoostLifecycleValidation: false, capturePowerSource: capturePowerSource);
     }
 
     private static IProductionBatteryPortFactory CreateWindowsCore(
         FirmwareCompatibilityPolicy? compatibilityPolicy,
         bool allowPadlessHyperBoostLifecycleValidation,
         ControllerExclusivityPolicy exclusivityPolicy =
-            ControllerExclusivityPolicy.Advisory)
+            ControllerExclusivityPolicy.Advisory, Func<PowerSource>? capturePowerSource = null)
     {
         ReadOnlyMemory<byte>? fixtureBytes = ProductionFixtureSource.Read();
         if (fixtureBytes is null)
@@ -285,7 +297,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             admitGpuOverclock: true,
             allowPadlessHyperBoostLifecycleValidation,
             directManualFanTransitionEvidenceAdmitted: true,
-            exclusivityPolicy: exclusivityPolicy);
+            exclusivityPolicy: exclusivityPolicy, capturePowerSource: capturePowerSource);
     }
 
     public static IProductionBatteryPortFactory CreateWindowsReadOnly() =>
@@ -393,7 +405,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 supportsDirectManualFanTransitions,
                 thxAudioCapabilities,
                 supportsBatterySaverFanStop,
-                stopHardwareAdmission),
+                stopHardwareAdmission, capturePowerSource,
+                supportsOrdinaryThermalControlOnUnclassifiedExternalPower),
             null);
     }
 
@@ -406,7 +419,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         bool allowPadlessHyperBoostLifecycleValidation,
         bool directManualFanTransitionEvidenceAdmitted = false,
         ControllerExclusivityPolicy exclusivityPolicy =
-            ControllerExclusivityPolicy.Advisory)
+            ControllerExclusivityPolicy.Advisory, Func<PowerSource>? capturePowerSource = null)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -501,7 +514,9 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             stopHardwareAdmission: () => hardwareAccessGuard.Check().Safe
                 && IsExactModelScopedRz090581Identity(hostIdentity.ReadExactIdentity()),
             thxAudioCapabilities: thxAudioCapabilities,
-            laptopControlRecoveryIdentity: $"{TargetBladeDevice.Model}|{TargetBladeDevice.VendorId:X4}:{TargetBladeDevice.ProductId:X4}");
+            laptopControlRecoveryIdentity: $"{TargetBladeDevice.Model}|{TargetBladeDevice.VendorId:X4}:{TargetBladeDevice.ProductId:X4}",
+            capturePowerSource: capturePowerSource,
+            supportsOrdinaryThermalControlOnUnclassifiedExternalPower: IsExactModelScopedRz090581Identity(exactIdentity));
     }
 
     internal static (bool DirectManualTransitions, bool BatterySaverFanStop)

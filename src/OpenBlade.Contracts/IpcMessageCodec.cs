@@ -10,7 +10,7 @@ public static class OpenBladeIpc
 {
     // Earlier peers reject explicit hybrid keyboard-effect intent.
     // Protocol 82 admits exact-model 5500-RPM values; protocol 81 peers reject them.
-    public const int ProtocolVersion = 82;
+    public const int ProtocolVersion = 83;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -1341,6 +1341,9 @@ public static class IpcMessageCodec
                         "observationReason",
                         StringComparison.OrdinalIgnoreCase));
                 observationReason.ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "externalPowerPresent", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
                 JsonPropertyInfo allowExperimentalFeatures = typeInfo.Properties.Single(
                     property => string.Equals(
                         property.Name,
@@ -1394,6 +1397,9 @@ public static class IpcMessageCodec
                 }
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "supportsManualFansOnLimitedPower", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "supportsOrdinaryThermalControlOnUnclassifiedExternalPower", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "reportsPerformanceWithManualFans", StringComparison.OrdinalIgnoreCase))

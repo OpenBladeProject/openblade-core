@@ -640,6 +640,7 @@ public sealed partial class ExperimentalThermalExpansionTests
         internal HidProtocolValidationFailure? CustomLevelAckProtocolFailure { get; init; }
         internal byte[]? CustomLevelReadbackPayloadOverride { get; init; }
         internal byte[] AdapterPowerPayload { get; set; } = [0x11, 0x11];
+        internal HidSessionResult<ReadOnlyMemory<byte>>? AdapterPowerResult { get; set; }
         internal byte[] HyperBoostFirmware { get; init; } = [1, 5, 0, 0];
         internal bool MaximumFans
         {
@@ -689,7 +690,10 @@ public sealed partial class ExperimentalThermalExpansionTests
             switch ((command.ClassId, command.CommandId))
             {
                 case (0x00, 0x87): payload = HyperBoostFirmware; break;
-                case (0x07, 0x8C): payload = AdapterPowerPayload; break;
+                case (0x07, 0x8C):
+                    if (AdapterPowerResult is { } adapterResult) { return Task.FromResult(adapterResult); }
+                    payload = AdapterPowerPayload;
+                    break;
                 case (0x0D, 0x82):
                     payload = fanModeWriteSeen && FanModeReadbackPayloadOverride is not null
                         ? FanModeReadbackPayloadOverride

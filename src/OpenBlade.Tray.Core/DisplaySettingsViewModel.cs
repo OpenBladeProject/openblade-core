@@ -285,6 +285,16 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
 
     public bool IsBusy => Volatile.Read(ref pendingWriteCount) > 0;
 
+    private bool externalPowerPresent;
+    public bool ExternalPowerPresent
+    {
+        get => externalPowerPresent;
+        set { if (SetField(ref externalPowerPresent, value)) { NotifyControlStateChanged(); } }
+    }
+
+    private bool HasManualPowerContext => HasConfirmedPowerSource
+        || ActivePowerSource == PowerSource.ExternalUnknown && ExternalPowerPresent;
+
     public PowerSource ActivePowerSource
     {
         get => activePowerSource;
@@ -346,10 +356,10 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         : DefaultColorProfileMessage;
 
     public bool CanChangeRefreshRate =>
-        HasConfirmedPowerSource && IsAvailable && !IsBusy && RefreshRateOptions.Count > 0;
+        HasManualPowerContext && IsAvailable && !IsBusy && RefreshRateOptions.Count > 0;
 
     public bool CanChangeHdr =>
-        HasConfirmedPowerSource && IsAvailable && IsHdrSupported && !IsBusy;
+        HasManualPowerContext && IsAvailable && IsHdrSupported && !IsBusy;
 
     public byte? BrightnessPercent
     {
@@ -379,11 +389,11 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
 
     public bool IsBrightnessUnavailable => !HasBrightnessReading;
 
-    public bool CanChangeBrightness => HasConfirmedPowerSource && IsAvailable && !IsBusy
+    public bool CanChangeBrightness => HasManualPowerContext && IsAvailable && !IsBusy
         && BrightnessPercent.HasValue && SupportedBrightnessLevels.Count > 0;
 
     public bool CanChangeColorProfile =>
-        HasConfirmedPowerSource
+        HasManualPowerContext
         && IsAvailable
         && !IsHdrEnabled
         && !IsBusy
@@ -505,7 +515,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         DisplayRefreshRateOption? option,
         CancellationToken token = default)
     {
-        if (option is null || !HasConfirmedPowerSource)
+        if (option is null || !HasManualPowerContext)
         {
             return Task.CompletedTask;
         }
@@ -522,7 +532,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
 
     public Task SetHdrEnabledAsync(bool enabled, CancellationToken token = default)
     {
-        if (!HasConfirmedPowerSource)
+        if (!HasManualPowerContext)
         {
             return Task.CompletedTask;
         }
@@ -540,7 +550,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     public Task SetBrightnessAsync(byte percent, CancellationToken token = default)
     {
         ArgumentOutOfRangeException.ThrowIfGreaterThan(percent, (byte)100);
-        if (!HasConfirmedPowerSource || IsBusy)
+        if (!HasManualPowerContext || IsBusy)
         {
             return Task.CompletedTask;
         }
@@ -577,7 +587,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         DisplayColorProfileOption? option,
         CancellationToken token = default)
     {
-        if (option is null || !HasConfirmedPowerSource)
+        if (option is null || !HasManualPowerContext)
         {
             return Task.CompletedTask;
         }

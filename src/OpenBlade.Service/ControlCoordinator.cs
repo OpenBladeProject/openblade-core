@@ -558,7 +558,8 @@ public sealed class ControlCoordinator
         FanControlSettings value,
         CancellationToken cancellationToken,
         Func<bool>? writeAllowed = null,
-        Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null)
+        Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null,
+        Func<bool>? priorOwnedStopReleaseAdmission = null)
     {
         ArgumentNullException.ThrowIfNull(value);
         bool supportsDirectManualFanTransitions = false;
@@ -568,7 +569,10 @@ public sealed class ControlCoordinator
             admittedCapabilities = capabilities;
             supportsDirectManualFanTransitions =
                 capabilities.SupportsDirectManualFanTransitions;
-            return (value.Mode == FanMode.Stop
+            return (priorOwnedStopReleaseAdmission is null
+                    || value.Mode == FanMode.Automatic && capabilities.SupportsBatterySaverFanStop
+                        && device is IOwnedBatterySaverFanStopReleaseDevice)
+                && (value.Mode == FanMode.Stop
                 ? capabilities.SupportsBatterySaverFanStop
                 : capabilities.FanModes.Contains(value.Mode))
                 && (value.Mode != FanMode.Fixed
@@ -611,10 +615,15 @@ public sealed class ControlCoordinator
             IsDefined(value.Mode),
             FansSupported,
             state => FanModeMatches(state.Fans, value.Mode),
-            token => SetFanControlAsync(value, token),
+            token => priorOwnedStopReleaseAdmission is null
+                ? SetFanControlAsync(value, token)
+                : ((IOwnedBatterySaverFanStopReleaseDevice)device).ReleaseOwnedBatterySaverFanStopOnceAsync(
+                    () => priorOwnedStopReleaseAdmission() && writeAllowed?.Invoke() != false
+                        && fanWriteBlockReason?.Invoke() is null, token),
             cancellationToken,
             combinedBlockReason,
-            writeAllowed: writeAllowed,
+            writeAllowed: priorOwnedStopReleaseAdmission is null ? writeAllowed
+                : () => priorOwnedStopReleaseAdmission() && writeAllowed?.Invoke() != false,
             acceptSetterCompletionWithoutReadback:
                 value.Mode != FanMode.Stop && DeviceSubsystemOrder.IsManualFanMode(value.Mode),
             setterCompletionEvidence: DeviceSubsystemOrder.IsManualFanMode(value.Mode)
@@ -632,6 +641,20 @@ public sealed class ControlCoordinator
             writeBlockReason: fanWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss: fanWriteBlockReason is not null);
     }
+
+    internal Task<ScopedApplyOutcome> ApplyOwnedBatterySaverFanStopReleaseOutcomeAsync(
+        Func<bool> priorAuthorityAdmission, CancellationToken cancellationToken) =>
+        RunThermalStepAsync(DeviceSubsystem.Fans, ThermalTransitionStepPurpose.Requested,
+            (coordinator, token) => coordinator.ApplyFanControlOutcomeAsync(
+                FanControlSettings.Default, token,
+                // Performance may already have moved to Battery Balanced while
+                // the owned 1500-RPM targets remain. The typed port proves those
+                // targets and preserves the fresh selector during Auto handback.
+                initialStateBlockReason: observed => DeviceSubsystemOrder.IsManualFanMode(observed.Fans)
+                    && observed.Performance is PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced
+                    && observed.HyperBoostActive == false
+                    ? null : "Owned Stop release requires a freshly confirmed battery-preset manual state.",
+                priorOwnedStopReleaseAdmission: priorAuthorityAdmission), cancellationToken);
 
     internal Task<ScopedApplyOutcome> ApplyRecoveryFanControlOutcomeAsync(
         FanControlSettings value,

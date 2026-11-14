@@ -768,11 +768,21 @@ internal sealed class WindowsRazerHidSession :
                 }
             }
 
-            return new(payload.ToArray(), null) { QueryResponsePayloadHex = queryResponsePayloadHex };
+            return new(payload.ToArray(), null)
+            {
+                QueryResponsePayloadHex = queryResponsePayloadHex,
+                UnclassifiedAdapterResponseAvailable = OrdinaryThermalPowerAdmission.IsAdapterQuery(item.Command)
+                    && OrdinaryThermalPowerAdmission.HasSingleReportGeometry(getBuffer.AsSpan(1)),
+            };
         }
         catch (RazerProtocolException error)
         {
-            Poison();
+            bool completedAdapterRejection = OrdinaryThermalPowerAdmission.IsCompletedAdapterRejection(
+                item.Command, getBuffer.AsSpan(1), error.ValidationFailure, getResult.NativeRetirement);
+            if (!completedAdapterRejection)
+            {
+                Poison();
+            }
             HidSessionResult<ReadOnlyMemory<byte>> failure = DiagnosticFailure(
                 HidSessionFailureKind.ProtocolFailure,
                 HidSessionFailurePhase.ProtocolValidation,
@@ -780,6 +790,7 @@ internal sealed class WindowsRazerHidSession :
                 error.ValidationFailure, nativeRetirement: getResult.NativeRetirement) with
             {
                 QueryResponsePayloadHex = queryResponsePayloadHex,
+                UnclassifiedAdapterResponseAvailable = completedAdapterRejection,
                 // Status validation follows checksum and exact transaction/command
                 // correlation. Earlier envelope failures cannot identify a reply.
                 QueryResponseStatus = error.ValidationFailure == HidProtocolValidationFailure.Status

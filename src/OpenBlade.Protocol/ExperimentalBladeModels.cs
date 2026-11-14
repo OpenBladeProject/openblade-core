@@ -92,6 +92,7 @@ internal static class ExperimentalBladeModels
                     ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
                 new("MaximumFans", thermal.SupportsMaximumFans ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
                 new("AdapterPowerClassification", "SynapseSourceBacked", sources),
+                .. OrdinaryThermalEvidenceFor(model),
                 .. FanStopEvidenceFor(model),
                 new(ExperimentalBladePort.SupportsReviewedMcuLighting(model)
                     ? "CustomFramesAdditionalEffectsAndHyperBoost"
@@ -235,11 +236,17 @@ internal static class ExperimentalBladeModels
                 new(model.ProductId == 0x0255 ? "CreatorPerformanceRaw2" : "MaximumPowerPerformanceRaw2",
                     "SynapseSourceBackedWithoutPhysicalValidation", exactSources)];
         }
-        features = [.. features, .. FanStopEvidenceFor(model)];
+        features = [.. features, .. FanStopEvidenceFor(model), .. OrdinaryThermalEvidenceFor(model)];
         return model.AdapterPowerEvidenceSource is { } source
             ? [.. features, new("AdapterPowerClassification", "SynapseSourceBacked", [source])]
             : features;
     }
+
+    private static IEnumerable<ExperimentalFeatureEvidence> OrdinaryThermalEvidenceFor(ExperimentalBladeModel model) =>
+        OrdinaryThermalPowerAdmission.SupportsProduct(model.ProductId)
+            ? [new(OrdinaryThermalPowerAdmission.FeatureName,
+                OrdinaryThermalPowerAdmission.EvidenceBasis, [OrdinaryThermalPowerAdmission.EvidenceSource])]
+            : [];
 
     private static IEnumerable<ExperimentalFeatureEvidence> DynamicFanEvidenceFor(
         ExperimentalBladeModel model, IReadOnlyList<string> sources) =>

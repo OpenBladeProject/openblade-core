@@ -522,6 +522,8 @@ public sealed partial class SourceReviewedBladeModelTests
         internal Queue<byte[]> BatteryReadbacks = new();
         internal bool RejectBatteryQuery;
         internal bool RejectAdapterQuery;
+        internal HidSessionResult<ReadOnlyMemory<byte>>? AdapterResult;
+        internal bool AdapterResponseAvailable;
         internal Action<RazerCommandSpec>? BeforeSubmission;
         internal List<(byte ClassId, byte CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
         public void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome) =>
@@ -543,6 +545,10 @@ public sealed partial class SourceReviewedBladeModelTests
             }
             Commands.Add(command);
             Transactions.Add(assignTransactionId().TransactionId);
+            if (command.ClassId == 0x07 && command.CommandId == 0x8C && AdapterResult is { } adapterResult)
+            {
+                return Task.FromResult(adapterResult);
+            }
             if (RejectBatteryQuery && command.ClassId == 0x07 && command.CommandId == 0x92
                 || RejectAdapterQuery && command.ClassId == 0x07 && command.CommandId == 0x8C
                 || RejectDynamicFanRange && command.ClassId == 0x0D && command.CommandId == 0x83
@@ -655,7 +661,10 @@ public sealed partial class SourceReviewedBladeModelTests
             {
                 payload = [];
             }
-            return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(payload, null));
+            return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(payload, null)
+            {
+                UnclassifiedAdapterResponseAvailable = command.ClassId == 0x07 && command.CommandId == 0x8C && AdapterResponseAvailable,
+            });
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

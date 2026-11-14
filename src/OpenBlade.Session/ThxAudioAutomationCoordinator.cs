@@ -86,6 +86,7 @@ public sealed class ThxAudioAutomationCoordinator(IThxAudioAutomationController 
                 && status.PotentialControllers.Count == 0
                 && string.IsNullOrEmpty(status.ControllerDetectionWarning)
                 && IsAdmittedThxAudio(status)
+                && status.ObservationReason != DeviceObservationReason.RetainedPowerSource
                 && status.ActivePowerSource is (PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
                 ? status.Profiles.ForPowerSource(status.ActivePowerSource).ThxAudio
                 : null;

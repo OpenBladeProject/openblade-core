@@ -176,14 +176,33 @@ public sealed class ProfileAutomationState
         temporaryFullCharge = value.TemporaryFullCharge;
     }
 
-    public bool ChangePowerSource(PowerSource powerSource)
+    public bool ChangePowerSource(PowerSource powerSource, bool preserveUnclassifiedExternalOverrides = false)
     {
         if (PowerSource == powerSource)
         {
             return false;
         }
 
+        bool preserve = preserveUnclassifiedExternalOverrides
+            && powerSource is PowerSource.PluggedIn or PowerSource.UsbC;
         PowerSource = powerSource;
+        if (preserve)
+        {
+            return true;
+        }
+        ExpireTransientOverridesForPowerBoundary();
+        if (powerSource == PowerSource.Battery && temporaryFullCharge)
+        {
+            CancelTemporaryFullCharge();
+        }
+
+        return true;
+    }
+
+    // A physical boundary can retire transient intent before its external
+    // wattage is known. Keep the classified profile slot as retained data.
+    internal void ExpireTransientOverridesForPowerBoundary()
+    {
         recoveredHyperBoostPerformance = null;
         recoveredHyperBoostFans = null;
         recoveredHyperBoostFanControl = null;
@@ -192,12 +211,6 @@ public sealed class ProfileAutomationState
         temporaryFanControl = null;
         temporaryLighting = null;
         temporaryBatteryProtectionEnabled = null;
-        if (powerSource == PowerSource.Battery && temporaryFullCharge)
-        {
-            CancelTemporaryFullCharge();
-        }
-
-        return true;
     }
 
     public bool SetApplicationContext(string? executablePath)
@@ -307,10 +320,16 @@ public sealed class ProfileAutomationState
         Resolve(confirmed, supportsManualFansOnLimitedPower: true);
 
     public DesiredDeviceState Resolve(ConfirmedDeviceState confirmed,
-        bool supportsManualFansOnLimitedPower)
+        bool supportsManualFansOnLimitedPower,
+        PowerSource? observedPowerSource = null,
+        bool allowUnclassifiedExternalOrdinaryOverrides = false,
+        bool allowUnclassifiedExternalLightingOverrides = false)
     {
         ArgumentNullException.ThrowIfNull(confirmed);
-        PowerProfile baseProfile = PowerSource switch
+        PowerSource source = observedPowerSource ?? PowerSource;
+        bool ordinaryExternalOverrides = source == PowerSource.ExternalUnknown
+            && allowUnclassifiedExternalOrdinaryOverrides;
+        PowerProfile baseProfile = source switch
         {
             PowerSource.PluggedIn => profiles.PluggedIn,
             PowerSource.Battery => profiles.Battery,
@@ -318,38 +337,41 @@ public sealed class ProfileAutomationState
             PowerSource.ExternalUnknown => CreateObservedFallbackProfile(confirmed),
             _ => throw new InvalidOperationException("The active power source is undefined."),
         };
-        ApplicationPowerProfileOverride? applicationOverride = GetApplicationOverride();
+        ApplicationPowerProfileOverride? applicationOverride = source == PowerSource.ExternalUnknown
+            ? null : GetApplicationOverride();
         PowerProfile profile = ApplicationProfileResolution.Apply(
             baseProfile,
             applicationOverride);
         PerformanceOverride? activePersistentPerformance =
             persistentPerformance is { } persistent
-            && IsPerformanceCompatibleWithSource(persistent.Value, PowerSource)
+            && (IsPerformanceCompatibleWithSource(persistent.Value, source) || ordinaryExternalOverrides && IsOrdinaryExternalOverride(persistent))
                 ? persistent
                 : null;
         PerformanceOverride? activeTemporaryPerformance =
             temporaryPerformance is { } temporary
-            && IsPerformanceCompatibleWithSource(temporary.Value, PowerSource)
+            && (IsPerformanceCompatibleWithSource(temporary.Value, source) || ordinaryExternalOverrides && IsOrdinaryExternalOverride(temporary))
                 ? temporary
                 : null;
         PerformanceOverride? activeRecoveredPerformance =
             recoveredHyperBoostPerformance is { } recovered
-            && IsPerformanceCompatibleWithSource(recovered.Value, PowerSource)
+            && IsPerformanceCompatibleWithSource(recovered.Value, source)
                 ? recovered
                 : null;
         ManualOverride<FanMode>? activeRecoveredFans =
             recoveredHyperBoostFans is { } recoveredFan
-            && IsFanCompatibleWithSource(recoveredFan.Value, PowerSource, supportsManualFansOnLimitedPower)
+            && IsFanCompatibleWithSource(recoveredFan.Value, source, supportsManualFansOnLimitedPower)
                 ? recoveredFan
                 : null;
         ManualOverride<FanMode>? activeTemporaryFans =
             temporaryFans is { } temporaryFan
-            && IsFanCompatibleWithSource(temporaryFan.Value, PowerSource, supportsManualFansOnLimitedPower)
+            && (IsFanCompatibleWithSource(temporaryFan.Value, source, supportsManualFansOnLimitedPower)
+                || ordinaryExternalOverrides && temporaryFan.Value != FanMode.Stop)
                 ? temporaryFan
                 : null;
         ManualOverride<FanMode>? activePersistentFans =
             persistentFans is { } persistentFan
-            && IsFanCompatibleWithSource(persistentFan.Value, PowerSource, supportsManualFansOnLimitedPower)
+            && (IsFanCompatibleWithSource(persistentFan.Value, source, supportsManualFansOnLimitedPower)
+                || ordinaryExternalOverrides && persistentFan.Value != FanMode.Stop)
                 ? persistentFan
                 : null;
         ResolvedSetting<PerformancePreset> resolvedPerformance =
@@ -375,13 +397,13 @@ public sealed class ProfileAutomationState
                     ?? confirmed.CustomPerformance
                     ?? CustomPerformanceSettings.Default
                 : null;
-        GpuClockTuningSettings? gpuClockTuning = PowerSourcePolicy.IsExternal(PowerSource)
+        GpuClockTuningSettings? gpuClockTuning = PowerSourcePolicy.IsExternal(source)
             ? activeRecoveredPerformance?.GpuClockTuning
                 ?? activePersistentPerformance?.GpuClockTuning
                 ?? activeTemporaryPerformance?.GpuClockTuning
                 ?? profile.GpuClockTuning
             : null;
-        if (PowerSourcePolicy.IsExternal(PowerSource)
+        if (PowerSourcePolicy.IsExternal(source)
             && gpuClockTuning is null
             && resolvedPerformance.Value == PerformancePreset.Custom
             && customPerformance?.GpuClockOffsets is { } legacyOffsets)
@@ -404,8 +426,19 @@ public sealed class ProfileAutomationState
                 applicationOverride is { Fans: not null } or { FanControl: not null }
                     ? SettingValueSource.ApplicationProfile
                     : SettingValueSource.PowerProfile);
-        if (PowerSource == PowerSource.UsbC
-            && !FanControlPowerPolicy.IsAvailable(PowerSource, resolvedFans.Value,
+        if (source == PowerSource.ExternalUnknown)
+        {
+            if (resolvedPerformance.Source == SettingValueSource.PowerProfile && confirmed.Performance.HasValue)
+            {
+                resolvedPerformance = resolvedPerformance with { Source = SettingValueSource.ConfirmedFirmwareState };
+            }
+            if (resolvedFans.Source == SettingValueSource.PowerProfile && confirmed.Fans.HasValue)
+            {
+                resolvedFans = resolvedFans with { Source = SettingValueSource.ConfirmedFirmwareState };
+            }
+        }
+        if (source == PowerSource.UsbC
+            && !FanControlPowerPolicy.IsAvailable(source, resolvedFans.Value,
                 supportsManualFansOnLimitedPower))
         {
             // Retain saved manual intent for a compatible source. This exact
@@ -413,10 +446,11 @@ public sealed class ProfileAutomationState
             resolvedFans = new(FanMode.Automatic, SettingValueSource.PowerProfile);
         }
         ResolvedSetting<LightingSettings> resolvedLighting =
-            ResolveLighting(
+            ResolveLightingWithPowerContext(
                 profile,
                 confirmed,
-                applicationOverride?.Lighting is not null);
+                applicationOverride?.Lighting is not null,
+                source, allowUnclassifiedExternalLightingOverrides);
         FanControlSettings profileFanControl = profile.FanControl
             ?? FanControlSettings.FromLegacy(profile.Fans);
         FanControlSettings selectedFanControl = resolvedFans.Source switch
@@ -445,11 +479,16 @@ public sealed class ProfileAutomationState
     }
 
     private ResolvedSetting<LightingSettings> ResolveLighting(
+        PowerProfile profile, ConfirmedDeviceState confirmed, bool fromApplication) =>
+        ResolveLightingWithPowerContext(profile, confirmed, fromApplication, PowerSource,
+            allowUnclassifiedExternalOverrides: false);
+
+    private ResolvedSetting<LightingSettings> ResolveLightingWithPowerContext(
         PowerProfile profile,
         ConfirmedDeviceState confirmed,
-        bool fromApplication)
+        bool fromApplication, PowerSource source, bool allowUnclassifiedExternalOverrides)
     {
-        bool externalUnknown = PowerSource == PowerSource.ExternalUnknown;
+        bool externalUnknown = source == PowerSource.ExternalUnknown;
         // Preserve the original unknown-source branch's lazy profile access:
         // observed firmware lighting does not consume saved profile intent.
         LightingSettings? observed = externalUnknown ? confirmed.Lighting : null;
@@ -458,7 +497,11 @@ public sealed class ProfileAutomationState
             : profile.Lighting;
         observed ??= confirmed.Lighting;
         NativeAutomationSelection selection = RequireSelection(
-            ProductNativeRuntime.Automation.SelectLighting(
+            externalUnknown && allowUnclassifiedExternalOverrides
+                && (temporaryLighting is not null || persistentLighting is not null)
+                ? ProductNativeRuntime.Automation.SelectExplicitOverride(
+                    temporaryLighting is not null, persistentLighting is not null)
+                : ProductNativeRuntime.Automation.SelectLighting(
                 profileValue is not null,
                 observed is not null,
                 temporaryLighting is not null,
@@ -486,6 +529,15 @@ public sealed class ProfileAutomationState
                     ? FanControlSettings.MaximumSpeedRpm
                     : settings.FixedSpeedRpm,
                 settings.ManualCurve);
+
+    private static bool IsOrdinaryExternalOverride(PerformanceOverride value) =>
+        value.GpuClockTuning is null && value.CustomPerformance?.GpuClockOffsets is null
+        && IsOrdinaryExternalPreset(value.Value);
+
+    private static bool IsOrdinaryExternalPreset(PerformancePreset value) => value is
+        PerformancePreset.Silent or PerformancePreset.Balanced or PerformancePreset.Performance
+        or PerformancePreset.Custom or PerformancePreset.Turbo or PerformancePreset.MaximumPower
+        or PerformancePreset.Gaming or PerformancePreset.Creator;
 
     private static bool IsPerformanceCompatibleWithSource(
         PerformancePreset performance,

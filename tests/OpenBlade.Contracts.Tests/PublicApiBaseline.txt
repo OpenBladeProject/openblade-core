@@ -1107,6 +1107,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Boolean get_SupportsIndependentLightingControls()
   method System.Boolean get_SupportsKeyboardBrightness()
   method System.Boolean get_SupportsManualFansOnLimitedPower()
+  method System.Boolean get_SupportsOrdinaryThermalControlOnUnclassifiedExternalPower()
   method System.Boolean get_SupportsPlaybackMuteIndicator()
   method System.Boolean get_SupportsTemporaryFullCharge()
   method System.Boolean get_SupportsUniformLightingFrames()
@@ -1167,6 +1168,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_SupportsIndependentLightingControls(System.Boolean value)
   method System.Void set_SupportsKeyboardBrightness(System.Boolean value)
   method System.Void set_SupportsManualFansOnLimitedPower(System.Boolean value)
+  method System.Void set_SupportsOrdinaryThermalControlOnUnclassifiedExternalPower(System.Boolean value)
   method System.Void set_SupportsPlaybackMuteIndicator(System.Boolean value)
   method System.Void set_SupportsTemporaryFullCharge(System.Boolean value)
   method System.Void set_SupportsUniformLightingFrames(System.Boolean value)
@@ -1201,6 +1203,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Boolean SupportsIndependentLightingControls { get; init; }
   property System.Boolean SupportsKeyboardBrightness { get; init; }
   property System.Boolean SupportsManualFansOnLimitedPower { get; init; }
+  property System.Boolean SupportsOrdinaryThermalControlOnUnclassifiedExternalPower { get; init; }
   property System.Boolean SupportsPlaybackMuteIndicator { get; init; }
   property System.Boolean SupportsTemporaryFullCharge { get; init; }
   property System.Boolean SupportsUniformLightingFrames { get; init; }
@@ -2341,7 +2344,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 82
+  field const System.Int32 ProtocolVersion = 83
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -2422,7 +2425,9 @@ type sealed class OpenBlade.Contracts.PerformanceShortcutPreview
   property System.Int64 Generation { get; init; }
 type static class OpenBlade.Contracts.PerformanceShortcutSelection
   method static System.Boolean TrySelectNext(OpenBlade.Contracts.PowerSource powerSource, System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> admitted, OpenBlade.Contracts.PerformancePreset current, out OpenBlade.Contracts.PerformancePreset next)
+  method static System.Boolean TrySelectNextOrdinary(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> admitted, OpenBlade.Contracts.PerformancePreset current, out OpenBlade.Contracts.PerformancePreset next)
   method static System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PerformancePreset> GetCycle(OpenBlade.Contracts.PowerSource powerSource, System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> admitted)
+  method static System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PerformancePreset> GetOrdinaryCycle(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> admitted)
 type enum OpenBlade.Contracts.PerformanceShortcutSource
   field System.Int32 value__
   field const OpenBlade.Contracts.PerformanceShortcutSource DedicatedButton = 0
@@ -3070,6 +3075,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Boolean get_AlwaysOverrideExternalLightingChanges()
   method System.Boolean get_DeviceVerified()
   method System.Boolean get_ExperimentalWritesPaused()
+  method System.Boolean get_ExternalPowerPresent()
   method System.Boolean get_FullChargeOverride()
   method System.Boolean get_HyperBoostRestorePending()
   method System.Boolean get_IsExperimentalDevice()
@@ -3114,6 +3120,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_ExperimentalSupportSource(System.String value)
   method System.Void set_ExperimentalWritesPaused(System.Boolean value)
   method System.Void set_ExternalChanges(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> value)
+  method System.Void set_ExternalPowerPresent(System.Boolean value)
   method System.Void set_FanControlOverride(OpenBlade.Contracts.FanControlSettings value)
   method System.Void set_FanOverride(OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.FanMode> value)
   method System.Void set_FanStopStatus(OpenBlade.Contracts.FanStopStatus value)
@@ -3185,6 +3192,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property System.Boolean AlwaysOverrideExternalLightingChanges { get; init; }
   property System.Boolean DeviceVerified { get; init; }
   property System.Boolean ExperimentalWritesPaused { get; init; }
+  property System.Boolean ExternalPowerPresent { get; init; }
   property System.Boolean FullChargeOverride { get; init; }
   property System.Boolean HyperBoostRestorePending { get; init; }
   property System.Boolean IsExperimentalDevice { get; init; }

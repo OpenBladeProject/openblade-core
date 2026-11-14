@@ -74,6 +74,27 @@ public sealed class ServiceLightingIdlePolicyLoopTests
     }
 
     [Fact]
+    public async Task RetainedSourceDoesNotApplyAnOldProfileIdlePolicy()
+    {
+        var client = new WatchClient();
+        var delay = new ManualDelay();
+        var loop = new ServiceLightingIdlePolicyLoop(client,
+            new FakeIdleTimeSource { Current = TimeSpan.FromMinutes(6) }, delay: delay.DelayAsync);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+        client.Publish(Status(new LightingPowerPolicy(false, 5)) with
+        {
+            ObservationReason = DeviceObservationReason.RetainedPowerSource,
+            ExternalPowerPresent = true,
+        });
+        await client.Delivered.Task.WaitAsync(cancellation.Token);
+        await WaitUntilAsync(() => client.Requests.Count == 1, cancellation.Token);
+        Assert.Equal((LightingSuppressionReason.UserIdle, false), Assert.Single(client.Requests));
+        await cancellation.CancelAsync();
+        await running;
+    }
+
+    [Fact]
     public async Task SessionDisplayOffSuppressesAndDisplayOnRestores()
     {
         var client = new WatchClient();

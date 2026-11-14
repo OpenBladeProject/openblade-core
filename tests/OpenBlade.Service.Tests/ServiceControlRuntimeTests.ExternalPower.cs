@@ -222,9 +222,11 @@ public sealed partial class ServiceControlRuntimeTests
 
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ExternalPower_HyperBoostSourceAbaNeverRevivesExpiredTemporaryIntent(bool restart)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task ExternalPower_HyperBoostSourceAbaNeverRevivesExpiredTemporaryIntent(
+        bool restart, bool unavailableBeforeBoundary)
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
         TestContext context = CreateContext(true, hyperBoostOwnershipJournalStore: journal);
@@ -242,6 +244,19 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(ControlOperationStatus.Applied,
             (await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None)).Status);
         Assert.Equal(PerformancePreset.Silent, journal.Journal?.RestoreIntent.Performance);
+
+        if (unavailableBeforeBoundary)
+        {
+            int writes = context.Device.TotalSetterCalls;
+            context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+            context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+            await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+            Assert.Equal(PowerSource.PluggedIn, context.Runtime.GetStatus().ActivePowerSource);
+            Assert.Equal(DeviceObservationReason.RetainedPowerSource, context.Runtime.GetStatus().ObservationReason);
+            Assert.False(journal.Journal!.RestoreUsesCurrentPowerDestination);
+            Assert.Equal(writes, context.Device.TotalSetterCalls);
+            context.Device.AdapterPowerState = AdapterPowerState.FullPower280W;
+        }
 
         context.Telemetry.Current = CreateTelemetry(PowerSource.UsbC);
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);

@@ -1,0 +1,31 @@
+{
+  "run_id": "5f88b828fba7469abd7e38cb39d4950c",
+  "wrapper_version": "8.1.1",
+  "model": "claude-opus-5-5",
+  "effort": "high",
+  "base_revision": "f6502f8567fd7945ac87bee26efbe2383f720e4c",
+  "head_revision": "82e0964805f4e8f8c7fa825e7315377d402d4b52",
+  "diff_sha256": "983bb77be1ab5893ae360ab5f81f8e359e303078262e8f5cce6cce74e6518dc2",
+  "diff_bytes": 122323,
+  "diff_lines": 2042,
+  "changed_file_count": 33,
+  "claude_started": true,
+  "native_review_completed": true,
+  "review_complete": true,
+  "sandbox_cleanup_succeeded": true,
+  "tool_call_count": 50,
+  "tool_usage": {
+    "Glob": 3,
+    "Read": 26,
+    "Grep": 21
+  },
+  "input_tokens": 92,
+  "output_tokens": 34143,
+  "cache_creation_input_tokens": 152422,
+  "cache_read_input_tokens": 4763102,
+  "model_usage_cost_usd": 2.3979583999999994,
+  "elapsed_ms": 492719,
+  "usage_note": "API-equivalent usage under Claude subscription authentication; not a claim of actual billed cost.",
+  "coverage_note": "Correction delta122,323 bytes; exact patch appears in inspected_paths,26 Read and21 Grep calls recorded, no overflow reported. Advisory findings were independently triaged; no exhaustive repository-review claim.",
+  "original_run_directory": "C:\\tmp\\openblade-issue-967-analysis\\ac-control-claude-review-2"
+}

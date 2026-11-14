@@ -2,7 +2,7 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
-internal sealed class ProductionBatteryPort :
+internal sealed partial class ProductionBatteryPort :
     IProductionBatteryPort,
     IPadlessHyperBoostLifecycleValidationPort
 {
@@ -126,7 +126,9 @@ internal sealed class ProductionBatteryPort :
         bool supportsDirectManualFanTransitions = false,
         ThxAudioCapabilities? thxAudioCapabilities = null,
         bool supportsBatterySaverFanStop = false,
-        Func<bool>? stopHardwareAdmission = null)
+        Func<bool>? stopHardwareAdmission = null,
+        Func<PowerSource>? capturePowerSource = null,
+        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower = false)
         : this(
             session,
             session,
@@ -152,7 +154,9 @@ internal sealed class ProductionBatteryPort :
             supportsDirectManualFanTransitions,
             thxAudioCapabilities,
             supportsBatterySaverFanStop,
-            stopHardwareAdmission)
+            stopHardwareAdmission,
+            capturePowerSource,
+            supportsOrdinaryThermalControlOnUnclassifiedExternalPower)
     {
     }
 
@@ -181,7 +185,9 @@ internal sealed class ProductionBatteryPort :
         bool supportsDirectManualFanTransitions = false,
         ThxAudioCapabilities? thxAudioCapabilities = null,
         bool supportsBatterySaverFanStop = false,
-        Func<bool>? stopHardwareAdmission = null)
+        Func<bool>? stopHardwareAdmission = null,
+        Func<PowerSource>? capturePowerSource = null,
+        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower = false)
         : this(
             sharedCommandGate is null
                 ? actor.Session
@@ -209,7 +215,9 @@ internal sealed class ProductionBatteryPort :
             supportsDirectManualFanTransitions,
             thxAudioCapabilities,
             supportsBatterySaverFanStop,
-            stopHardwareAdmission)
+            stopHardwareAdmission,
+            capturePowerSource,
+            supportsOrdinaryThermalControlOnUnclassifiedExternalPower)
     {
     }
 
@@ -238,9 +246,14 @@ internal sealed class ProductionBatteryPort :
         bool supportsDirectManualFanTransitions,
         ThxAudioCapabilities? thxAudioCapabilities,
         bool supportsBatterySaverFanStop,
-        Func<bool>? stopHardwareAdmission)
+        Func<bool>? stopHardwareAdmission,
+        Func<PowerSource>? capturePowerSource,
+        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower)
     {
         this.stopHardwareAdmission = stopHardwareAdmission;
+        this.capturePowerSource = capturePowerSource;
+        this.supportsOrdinaryThermalControlOnUnclassifiedExternalPower =
+            supportsOrdinaryThermalControlOnUnclassifiedExternalPower && capturePowerSource is not null;
         this.session = session ?? throw new ArgumentNullException(nameof(session));
         this.ownedSession = ownedSession ?? throw new ArgumentNullException(nameof(ownedSession));
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
@@ -353,7 +366,7 @@ internal sealed class ProductionBatteryPort :
             hyperBoostBaseModes,
             supportsDirectManualFanTransitions,
             thxAudioCapabilities,
-            supportsBatterySaverFanStop);
+            supportsBatterySaverFanStop, this.supportsOrdinaryThermalControlOnUnclassifiedExternalPower);
     }
 
     private readonly Func<bool>? stopHardwareAdmission;
@@ -392,10 +405,12 @@ internal sealed class ProductionBatteryPort :
     }
 
     private async Task<ProductionPerformanceFanState> ClassifyBatterySaverFanStopAsync(
-        ProductionPerformanceFanState state, CancellationToken cancellationToken)
+        ProductionPerformanceFanState state, CancellationToken cancellationToken,
+        bool allowBatteryBalanced = false)
     {
         if (!Capabilities.SupportsBatterySaverFanStop
-            || state.Performance != PerformancePreset.BatterySaver
+            || (state.Performance != PerformancePreset.BatterySaver
+                && !(allowBatteryBalanced && state.Performance == PerformancePreset.BatteryBalanced))
             || state.Fans != FanMode.Maximum || state.HyperBoostActive)
         {
             return state;
@@ -544,6 +559,13 @@ internal sealed class ProductionBatteryPort :
             HidSessionResult<AdapterPowerState> result =
                 await adapterPowerCommands.QueryAsync(transactionId, cancellationToken)
                     .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (result.Failure is not null && CanUseUnclassifiedAdapterResponse(result))
+            {
+                // Raw query failure/status remains in FirmwareQueryDiagnostics.
+                // Unknown is truthful classification, never positive FullPower.
+                return AdapterPowerState.Unknown;
+            }
             if (result.Failure is not null)
             {
                 ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken,
@@ -777,7 +799,8 @@ internal sealed class ProductionBatteryPort :
                     HyperBoostRestoreSecondAction,
                 ],
                 hyperBoostExitCatalog: hyperBoostCatalog,
-                requireExternalPowerOnDirectHyperBoostExit: directHyperBoostExit && value != PerformancePreset.Balanced);
+                requireExternalPowerOnDirectHyperBoostExit: directHyperBoostExit && value != PerformancePreset.Balanced,
+                ordinaryControl: true);
     }
 
     private bool CanApplyAutomaticPerformanceFrom(
@@ -972,7 +995,7 @@ internal sealed class ProductionBatteryPort :
                 HyperBoostRestoreSecondAction,
             ],
             hyperBoostExitCatalog: hyperBoostCatalog,
-            requireExternalPowerOnDirectHyperBoostExit: directHyperBoostExit);
+            requireExternalPowerOnDirectHyperBoostExit: directHyperBoostExit, ordinaryControl: true);
     }
 
     public Task SetFanModeAsync(
@@ -1041,7 +1064,7 @@ internal sealed class ProductionBatteryPort :
                     : "Automatic fan mode could not be safely applied.",
                 applyMaximumTiming: value == FanMode.Maximum,
                 verifyFinalState: false,
-                cancellationToken);
+                cancellationToken, ordinaryControl: true);
     }
 
     public Task SetFanControlAsync(
@@ -1171,11 +1194,23 @@ internal sealed class ProductionBatteryPort :
         }
     }
 
+    public Task ReleaseOwnedBatterySaverFanStopAsync(
+        Func<bool> priorAuthorityAdmission, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(priorAuthorityAdmission);
+        return ExecuteDynamicFanCommandsAsync(
+            [CreateFanStateCommand(ThermalChannel.First, 0x03, 0),
+                CreateFanStateCommand(ThermalChannel.Second, 0x03, 0)],
+            requireAutomaticEntry: false, cancellationToken,
+            priorOwnedStopReleaseAdmission: priorAuthorityAdmission);
+    }
+
     private async Task ExecuteDynamicFanCommandsAsync(
         IReadOnlyList<RazerCommandDefinition> commands,
         bool requireAutomaticEntry,
         CancellationToken cancellationToken,
-        bool batterySaverStop = false)
+        bool batterySaverStop = false,
+        Func<bool>? priorOwnedStopReleaseAdmission = null)
     {
         if (cancellationToken.IsCancellationRequested)
         {
@@ -1210,6 +1245,14 @@ internal sealed class ProductionBatteryPort :
             {
                 throw KnownNotApplied("Battery Saver fan stop requires fresh cool, inactive-GPU battery admission.");
             }
+            bool ownedStopRelease = priorOwnedStopReleaseAdmission is not null;
+            if (ownedStopRelease && (!Capabilities.SupportsBatterySaverFanStop
+                || priorOwnedStopReleaseAdmission!() != true || stopHardwareAdmission?.Invoke() != true
+                || (await ClassifyBatterySaverFanStopAsync(current, cancellationToken, allowBatteryBalanced: true)
+                    .ConfigureAwait(false)).Fans != FanMode.Stop))
+            {
+                throw KnownNotApplied("Owned fan-stop release requires fresh prior authority and the confirmed stopped tuple.");
+            }
             bool manual = current.Fans == FanMode.Maximum;
             // A battery selector can persist after power changes. Classify the
             // fresh physical source before choosing the selector to write.
@@ -1242,17 +1285,22 @@ internal sealed class ProductionBatteryPort :
             {
                 AdapterPowerState adapter = await QueryThermalWritePowerAsync(
                     submitted: false,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken, allowUnclassifiedExternal: !batterySaverStop).ConfigureAwait(false);
                 powerRequirement = ClassifyThermalWritePower(adapter)
                     ?? throw ThermalWritePowerFailure(
                         submitted: false,
                         "Direct manual fan entry requires a confirmed admitted battery or external power state.");
+                if (powerRequirement == ThermalWritePowerRequirement.UnclassifiedExternal
+                    && batterySelectorState && !ownedStopRelease)
+                {
+                    throw KnownNotApplied("Unclassified external power does not admit selecting a battery performance preset.");
+                }
                 initialPowerAdmissionAvailable = true;
                 byte? selector = powerRequirement switch
                 {
                     _ when batterySelectorState =>
                         current.Performance == PerformancePreset.BatterySaver ? (byte)0x03 : (byte)0x06,
-                    ThermalWritePowerRequirement.FullPower or ThermalWritePowerRequirement.LimitedExternal => acPreset?.Selector,
+                    ThermalWritePowerRequirement.FullPower or ThermalWritePowerRequirement.LimitedExternal or ThermalWritePowerRequirement.UnclassifiedExternal => acPreset?.Selector,
                     _ => null,
                 };
                 if (requireAutomaticEntry && acPreset is not null
@@ -1269,9 +1317,15 @@ internal sealed class ProductionBatteryPort :
                         CreateFanStateCommand(ThermalChannel.Second, mode, fanValue),
                         .. commands.Skip(2),
                     ];
-                    if (powerRequirement is ThermalWritePowerRequirement.FullPower or ThermalWritePowerRequirement.LimitedExternal)
+                    if (ownedStopRelease || powerRequirement is ThermalWritePowerRequirement.FullPower
+                        or ThermalWritePowerRequirement.LimitedExternal or ThermalWritePowerRequirement.UnclassifiedExternal)
                     {
-                        preservedManualState = acPreset?.ManualState;
+                        // The owned-stop release only changes the captured Auto bit
+                        // on the freshly confirmed selector3/6. It never selects Balanced0.
+                        preservedManualState = ownedStopRelease
+                            ? current.Performance == PerformancePreset.BatterySaver
+                                ? ThermalModeState.BatterySaverManual : ThermalModeState.BatteryBalancedManual
+                            : acPreset?.ManualState;
                     }
                 }
             }
@@ -1366,6 +1420,17 @@ internal sealed class ProductionBatteryPort :
                     }
                     throw KnownNotApplied("Battery Saver fan-stop cooling admission is unavailable.");
                 }
+                PowerSource? ordinarySource = !batterySaverStop && !current.HyperBoostActive
+                    ? await AdmitOrdinaryThermalCommandAsync(command, submitted, allowBattery: true,
+                        cancellationToken, allowPreservedBatteryAuto: ownedStopRelease).ConfigureAwait(false) : null;
+                if (ownedStopRelease)
+                {
+                    // Preserve the current selector even if another controller changes
+                    // it between channels. The first accepted Auto bit is staged proof,
+                    // not a reason to reset a later observed preset back to the baseline.
+                    await RequireOwnedStopReleaseStageAsync(command.Payload[2], index, submitted,
+                        cancellationToken).ConfigureAwait(false);
+                }
                 bool hadPriorSubmission = submitted;
                 submitted = true;
                 HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
@@ -1378,7 +1443,10 @@ internal sealed class ProductionBatteryPort :
                     {
                         SubmissionAllowed = WithStopRestorationAdmission(batterySaverStop
                             ? BatterySaverStopSubmissionAllowed
-                            : null),
+                            : ownedStopRelease ? () => priorOwnedStopReleaseAdmission!()
+                                && stopHardwareAdmission?.Invoke() == true
+                                && OrdinarySourceUnchanged(ordinarySource)
+                            : ordinarySource.HasValue ? () => OrdinarySourceUnchanged(ordinarySource) : null),
                     },
                     AllocateTransaction,
                     exchangeTimeout,
@@ -1509,6 +1577,22 @@ internal sealed class ProductionBatteryPort :
         }
     }
 
+    private async Task RequireOwnedStopReleaseStageAsync(
+        byte selector, int completedChannels, bool submitted, CancellationToken cancellationToken)
+    {
+        foreach (ThermalChannel channel in new[] { ThermalChannel.First, ThermalChannel.Second })
+        {
+            ReadOnlyMemory<byte> state = await QueryThermalChannelAsync(channel, cancellationToken)
+                .ConfigureAwait(false);
+            byte expectedManual = (byte)((byte)channel <= completedChannels ? 0 : 1);
+            if (state.Span[2] != selector || state.Span[3] != expectedManual)
+            {
+                throw ThermalWritePowerFailure(submitted,
+                    "The current preset or staged manual flags changed during owned fan-stop release.");
+            }
+        }
+    }
+
     internal static bool IsDirectManualFanAutomaticEntryState(
         ProductionPerformanceFanState state) =>
         state.Fans == FanMode.Automatic
@@ -1538,6 +1622,7 @@ internal sealed class ProductionBatteryPort :
         Battery,
         LimitedExternal,
         FullPower,
+        UnclassifiedExternal,
     }
 
     private static bool IsLimitedExternalAdapter(AdapterPowerState adapter) =>
@@ -1546,6 +1631,11 @@ internal sealed class ProductionBatteryPort :
     private ThermalWritePowerRequirement? ClassifyThermalWritePower(
         AdapterPowerState adapter)
     {
+        if (adapter == AdapterPowerState.Unknown && supportsOrdinaryThermalControlOnUnclassifiedExternalPower
+            && capturePowerSource is not null && OrdinaryThermalPowerAdmission.ExternalPresence(capturePowerSource()))
+        {
+            return ThermalWritePowerRequirement.UnclassifiedExternal;
+        }
         if (admittedAdapterPowerStates?.Contains(adapter) != true)
         {
             return null;
@@ -1573,7 +1663,8 @@ internal sealed class ProductionBatteryPort :
     {
         AdapterPowerState adapter = await QueryThermalWritePowerAsync(
             submitted,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken, allowUnclassifiedExternal: requiredPower == ThermalWritePowerRequirement.UnclassifiedExternal)
+            .ConfigureAwait(false);
         if (ClassifyThermalWritePower(adapter) != requiredPower)
         {
             throw ThermalWritePowerFailure(
@@ -1584,7 +1675,7 @@ internal sealed class ProductionBatteryPort :
 
     private async Task<AdapterPowerState> QueryThermalWritePowerAsync(
         bool submitted,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool allowUnclassifiedExternal = false)
     {
         if (!readEvidence.SupportsAdapterPowerQuery
             || admittedAdapterPowerStates is null)
@@ -1600,6 +1691,14 @@ internal sealed class ProductionBatteryPort :
             result = await adapterPowerCommands.QueryAsync(
                 AllocateTransactionForRead(),
                 cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (allowUnclassifiedExternal && CanUseUnclassifiedAdapterResponse(result))
+            {
+                if (result.Failure is not null || result.Value == AdapterPowerState.Unknown)
+                {
+                    return AdapterPowerState.Unknown;
+                }
+            }
             if (result.Failure is not null)
             {
                 ThrowReadFailure(
@@ -1621,6 +1720,11 @@ internal sealed class ProductionBatteryPort :
                 exception);
         }
 
+        if (allowUnclassifiedExternal && result.Value == AdapterPowerState.Unknown)
+        {
+            throw ThermalWritePowerFailure(submitted,
+                "Unavailable adapter classification lacks a completed correlated response.");
+        }
         return result.Value;
     }
 
@@ -1809,7 +1913,8 @@ internal sealed class ProductionBatteryPort :
         HyperBoostBaseModeCapabilities? hyperBoostBaseModes = null,
         bool supportsDirectManualFanTransitions = false,
         ThxAudioCapabilities? thxAudioCapabilities = null,
-        bool supportsBatterySaverFanStop = false)
+        bool supportsBatterySaverFanStop = false,
+        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower = false)
     {
         var limits = new HashSet<int>();
         foreach ((int percent, string action) in ChargeLimitActions)
@@ -1946,6 +2051,7 @@ internal sealed class ProductionBatteryPort :
             HyperBoostAccess = hyperBoostAccess,
             HyperBoostWithoutCoolingPadAccess = hyperBoostWithoutCoolingPadAccess,
             HyperBoostBaseModes = hyperBoostBaseModes,
+            SupportsOrdinaryThermalControlOnUnclassifiedExternalPower = supportsOrdinaryThermalControlOnUnclassifiedExternalPower,
             SupportsDirectManualFanTransitions = supportsDirectManualFanTransitions
                 && HasDirectManualFanCommandSet(catalog),
             SupportsManualFansOnLimitedPower = supportsDirectManualFanTransitions
@@ -2170,7 +2276,8 @@ internal sealed class ProductionBatteryPort :
         DeviceCommandCatalog? hyperBoostExitCatalog = null,
         bool revalidateEligibilityPerCommand = false,
         Func<CoolingPadConnectionState>? requiredPadStatePerCommand = null,
-        bool requireExternalPowerOnDirectHyperBoostExit = false)
+        bool requireExternalPowerOnDirectHyperBoostExit = false,
+        bool ordinaryControl = false)
     {
         if (cancellationToken.IsCancellationRequested)
         {
@@ -2203,6 +2310,18 @@ internal sealed class ProductionBatteryPort :
                 currentMode,
                 cancellationToken).ConfigureAwait(false);
             bool exitedHyperBoost = current.HyperBoostActive;
+            if (ordinaryControl && exitedHyperBoost && supportsOrdinaryThermalControlOnUnclassifiedExternalPower)
+            {
+                // Ordinary admission must not unlock an indirect HyperBoost exit.
+                // Resolve this before any restoration or destination SET.
+                AdapterPowerState exitAdapter = await QueryThermalWritePowerAsync(false, cancellationToken)
+                    .ConfigureAwait(false);
+                if (ClassifyThermalWritePower(exitAdapter) is not (ThermalWritePowerRequirement.FullPower
+                    or ThermalWritePowerRequirement.LimitedExternal or ThermalWritePowerRequirement.Battery))
+                {
+                    throw ThermalWritePowerFailure(false, "HyperBoost restoration requires classified adapter power.");
+                }
+            }
             if (current.HyperBoostActive && hyperBoostExitActions is not null)
             {
                 if (hyperBoostExitCatalog is null)
@@ -2316,15 +2435,18 @@ internal sealed class ProductionBatteryPort :
                 {
                     await validateEligibility(cancellationToken).ConfigureAwait(false);
                 }
+                PowerSource? ordinarySource = ordinaryControl && !exitedHyperBoost
+                    ? await AdmitOrdinaryThermalCommandAsync(command, submitted,
+                        allowBattery: IsBatterySelectorCommand(command), cancellationToken).ConfigureAwait(false) : null;
                 bool hadPriorSubmission = submitted;
                 submitted = true;
                 HidSessionResult<ReadOnlyMemory<byte>> result =
                     await ExecuteThermalCommandAsync(command, cancellationToken,
-                        revalidateEligibilityPerCommand
-                            ? () => hyperBoostEligibility?.ObserveCoolingPad()
-                                == (requiredPadStatePerCommand?.Invoke()
-                                    ?? CoolingPadConnectionState.PresentExact)
-                            : null)
+                        () => OrdinarySourceUnchanged(ordinarySource)
+                            && (!revalidateEligibilityPerCommand
+                                || hyperBoostEligibility?.ObserveCoolingPad()
+                                    == (requiredPadStatePerCommand?.Invoke()
+                                        ?? CoolingPadConnectionState.PresentExact)))
                         .ConfigureAwait(false);
 
                 if (result.Failure is not null

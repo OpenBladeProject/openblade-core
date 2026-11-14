@@ -130,7 +130,8 @@ public sealed class ServiceLightingIdlePolicyLoop
                 case ServiceWatchUpdate.Connected connectedUpdate:
                     LightingPowerPolicy nextPolicy =
                         connectedUpdate.Status.Profiles.LightingPowerPolicyFor(
-                            connectedUpdate.Status.ActivePowerSource);
+                            connectedUpdate.Status.ObservationReason == DeviceObservationReason.RetainedPowerSource
+                                ? PowerSource.ExternalUnknown : connectedUpdate.Status.ActivePowerSource);
                     LightingPowerPolicy previousPolicy = Interlocked.Exchange(
                         ref currentPolicy,
                         nextPolicy);

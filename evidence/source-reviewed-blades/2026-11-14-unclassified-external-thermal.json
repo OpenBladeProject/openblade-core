@@ -1,0 +1,1120 @@
+{
+  "schemaVersion": 1,
+  "reviewDate": "2026-11-14",
+  "physicalValidation": "This unclassified-external admission is source-reviewed and physically untested on all 22 models, including 0528/0581. Existing physical evidence applies only to its original scope.",
+  "sourceHandling": "Official pinned sources read as inert bytes; every complete-file size/hash and UTF-8 segment verified. No vendor execution or hardware.",
+  "contract": {
+    "classification": "Unknown remains Unknown; Windows AC proves external presence, not charger connector or adequate wattage.",
+    "completedUnavailableQuery": "Only 07/8C request0000, complete90-byte report, report-ID/geometry/checksum/transaction/class/command correlation, terminal raw status03or05, deterministic native retirement. Error bodies may be empty or bounded nonempty and are never decoded.",
+    "unrecognizedValue": "A successful correlated exact two-byte reply with unknown wattage levels remains Unknown.",
+    "blocked": "New/Busy/Timeout, outer USB/native errors (including numeric3/5), cancellation, retirement uncertainty, bad framing/checksum/correlation, Windows/firmware contradiction, unknown Windows source, and ambiguous SET always stop.",
+    "purpose": "Explicit ordinary operation whitelist, including Custom levels and existing Maximum Fans. HyperBoost including indirect exit, voltage, native OC, CPU power limits and clock offsets retain separate gates.",
+    "freshWrite": "Every ordinary SET retains fresh identity/controller/session/Windows source, per-SET adapter observation, current preset/manual flags and0D83metadata where applicable, native queue source lock, independent readback and stop-on-ambiguity."
+  },
+  "sources": [
+    {
+      "id": "564-policy",
+      "url": "https://apps.razer.com/synapse/products/564/mw/6737.09466ede91c383e63db5.js",
+      "bytes": 2354613,
+      "sha256": "578C055A626C97F320A8642DDCF6D727EDEC267C02BF4BDF68D9921A7DF92A8F"
+    },
+    {
+      "id": "564-device",
+      "url": "https://apps.razer.com/synapse/products/564/mw/rzDevice25.c85377977ca9cfdbb0b0.js",
+      "bytes": 279030,
+      "sha256": "65C38CDAAFC263682BADF4695C9239DF96FA1F26091274FB4AE0E81C5ACD8C17"
+    },
+    {
+      "id": "581-policy",
+      "url": "https://apps.razer.com/synapse/products/581/mw/6737.f49b9965ecd5cf011e43.js",
+      "bytes": 2354604,
+      "sha256": "5B11C5CD3E26BBD74DAC7A98413AB31315DAFEFAD5B783DBF0CF014E6A33D017"
+    },
+    {
+      "id": "581-device",
+      "url": "https://apps.razer.com/synapse/products/581/mw/rzDevice25.f668146da6ee1d0b3b6c.js",
+      "bytes": 279028,
+      "sha256": "8459C76B984DDF5894CC7C7E00A40B76EEDE5E32D65DF2F7D6D75A541C36DAC7"
+    },
+    {
+      "id": "582-policy",
+      "url": "https://apps.razer.com/synapse/products/582/mw/6737.3d32e8efb681572a4d05.js",
+      "bytes": 2353893,
+      "sha256": "EFFE1404E33611F8B26AA248B64A7B25A1F9283217BE1CC5C85DEEC98AB10B6E"
+    },
+    {
+      "id": "582-device",
+      "url": "https://apps.razer.com/synapse/products/582/mw/rzDevice25.56d11fe9830f93920735.js",
+      "bytes": 279018,
+      "sha256": "A5F75408C2D859ACF0F3418B950989271E98DFEE5056DD17DCA6BA5557FDD4C6"
+    },
+    {
+      "id": "588-policy",
+      "url": "https://apps.razer.com/synapse/products/588/mw/6737.486962f684c3054bcd0c.js",
+      "bytes": 2353651,
+      "sha256": "62AC7270B6927323605CDF45D699EA07E48C1063FC6F5642F2FC4ABC6CDD12FA"
+    },
+    {
+      "id": "588-device",
+      "url": "https://apps.razer.com/synapse/products/588/mw/rzDevice25.c9cde47d1f5b9618158b.js",
+      "bytes": 279030,
+      "sha256": "B299E84011BB04545123498F4B17DC0F774CB2560BF21C2F2BE7B9393B416AE5"
+    },
+    {
+      "id": "595-policy",
+      "url": "https://apps.razer.com/synapse/products/595/mw/6737.6a4f810f43bf4dd7ea5d.js",
+      "bytes": 2353859,
+      "sha256": "AC6F2091BC3ABE952B1AA7D8F156F2C6859E3195112A06D15AA03BB41FA81F6A"
+    },
+    {
+      "id": "595-device",
+      "url": "https://apps.razer.com/synapse/products/595/mw/rzDevice25.1dbf16d259718708f12a.js",
+      "bytes": 279028,
+      "sha256": "ED1BEF8C07D7E5BBFEEFE235179B351B85BFAE6F1BCC3A0A131F7A99BB157E1C"
+    },
+    {
+      "id": "616-policy",
+      "url": "https://apps.razer.com/synapse/products/616/mw/2592.2faacaabe55016689a38.js",
+      "bytes": 2402137,
+      "sha256": "D7C0644CA124900DB2A57812E85CF94C0C75A75ACE11CAB903B11A81438B4B92"
+    },
+    {
+      "id": "616-device",
+      "url": "https://apps.razer.com/synapse/products/616/mw/rzDevice25.9c9299b0f9660c882e16.js",
+      "bytes": 275172,
+      "sha256": "330835150F88BC505B181EAC4828506750CD7365F9F4CB242437CF3CFC133A24"
+    },
+    {
+      "id": "624-policy",
+      "url": "https://apps.razer.com/synapse/products/624/mw/6737.6b47e5cb8059a1bdacfb.js",
+      "bytes": 2353859,
+      "sha256": "C36EFB8BD1F15DC65F8C235895EFA5F20A59D71D45BC6D22BF92D88C9C8D79F7"
+    },
+    {
+      "id": "624-device",
+      "url": "https://apps.razer.com/synapse/products/624/mw/rzDevice25.1672779ed3e58b9415ca.js",
+      "bytes": 279028,
+      "sha256": "F696504C78559A2E04E503F8CF7B069D87F1298BFB767677912CD649EEB49456"
+    },
+    {
+      "id": "630-policy",
+      "url": "https://apps.razer.com/synapse/products/630/mw/6737.71d0d0b36aad77ffb446.js",
+      "bytes": 2353865,
+      "sha256": "80A872631CBD5E16F713467DA13B9B7D76889487E22A6CE3DB854A15E1631558"
+    },
+    {
+      "id": "630-device",
+      "url": "https://apps.razer.com/synapse/products/630/mw/rzDevice25.7fc62fb8a269279f7b9e.js",
+      "bytes": 279034,
+      "sha256": "940EE59B6B034BEE82B77779323617F817D8D400F7BF526058BFD10CDC1568BA"
+    },
+    {
+      "id": "650-policy",
+      "url": "https://apps.razer.com/synapse/products/650/mw/6737.1cc98c1e1650ffce7912.js",
+      "bytes": 2353649,
+      "sha256": "8B31CFB0033A9C75F5E6E69D914A3A36BAE0A4944886B5CC6D076329434D1DF9"
+    },
+    {
+      "id": "650-device",
+      "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25.33bbbe9e1d2d72bdf1a1.js",
+      "bytes": 279028,
+      "sha256": "CEF5D482E96F2833C84998E2FE998D0A41AA7CA4483E4E69156424F76475D513"
+    },
+    {
+      "id": "651-policy",
+      "url": "https://apps.razer.com/synapse/products/651/mw/6737.003892ae34f5de0292c0.js",
+      "bytes": 2345733,
+      "sha256": "E8A2CFF2F19A59B8F425E7EC70BFF5873551479560005435E1B04B34F9CC7454"
+    },
+    {
+      "id": "651-device",
+      "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25.7ffcfe7d1ddb6103ac44.js",
+      "bytes": 277066,
+      "sha256": "A9442C86AB7D8F0549E18016324462A52A040E5578410F296BDF72884A383962"
+    },
+    {
+      "id": "652-policy",
+      "url": "https://apps.razer.com/synapse/products/652/mw/6737.4b526d5a88f50676de59.js",
+      "bytes": 2353694,
+      "sha256": "B1A181C2F4A95C1871A5AEEDC5F820DBC991A61A067CB060BAC9ABEBF04EE488"
+    },
+    {
+      "id": "652-device",
+      "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25.ceef38d32121535173d9.js",
+      "bytes": 279026,
+      "sha256": "D94B40BB4B1AEDD17C0028A625C28D00D8BC14B26361CBF25133A3CE4E5B0C67"
+    },
+    {
+      "id": "694-policy",
+      "url": "https://apps.razer.com/synapse/products/694/mw/6737.63910b6756fd6d249dc6.js",
+      "bytes": 2354604,
+      "sha256": "488D72368F0EBFB2A4DD80BE68E8C2BAB8020CBBCC65CA786757FEA79507B997"
+    },
+    {
+      "id": "694-device",
+      "url": "https://apps.razer.com/synapse/products/694/mw/rzDevice25.06135650b7453937e0e8.js",
+      "bytes": 279028,
+      "sha256": "0E5BD5C21DD610E5D889F608B2EBB1D80BFC7CA90237FBBC3A292ADBAF06EF90"
+    },
+    {
+      "id": "695-policy",
+      "url": "https://apps.razer.com/synapse/products/695/mw/6737.7ec91e479ef65c194b6c.js",
+      "bytes": 2465050,
+      "sha256": "22D359EB7EDA08A9D2F4766EB6898A875A5F009EDB666BA4CD5A0425491AD1DA"
+    },
+    {
+      "id": "695-device",
+      "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25.60bfcef58690c8bb715d.js",
+      "bytes": 277422,
+      "sha256": "2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491"
+    },
+    {
+      "id": "696-policy",
+      "url": "https://apps.razer.com/synapse/products/696/mw/6737.2463f7361e4d145671a2.js",
+      "bytes": 2344973,
+      "sha256": "4EF6AFB6402DD50CD6DE07CA96E191F475797903507C82CAE194F0AF63E32ECC"
+    },
+    {
+      "id": "696-device",
+      "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25.6339454cb5b2fe587300.js",
+      "bytes": 277032,
+      "sha256": "8780AA380D11665A2D551174D162C7278404465772219D0530A29B09E297BC81"
+    },
+    {
+      "id": "711-policy",
+      "url": "https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js",
+      "bytes": 2457106,
+      "sha256": "3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88"
+    },
+    {
+      "id": "711-device",
+      "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js",
+      "bytes": 279417,
+      "sha256": "02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9"
+    },
+    {
+      "id": "597-policy",
+      "url": "https://apps.razer.com/synapse/products/597/mw/6737.6da70458ec9e64b00f37.js",
+      "bytes": 1957293,
+      "sha256": "C6E6E76DFB61F960913E22B864A31273280547E21E1462DE3138F096D2DB56EA"
+    },
+    {
+      "id": "597-device",
+      "url": "https://apps.razer.com/synapse/products/597/mw/rzDevice25.ae57bbfa911460c03510.js",
+      "bytes": 272265,
+      "sha256": "2F41299C36E60E65D0BFCCE1E666FF67F0FC07F21F4523BED0A4E8CA5AC6043D"
+    },
+    {
+      "id": "709-policy",
+      "url": "https://apps.razer.com/synapse/products/709/mw/6737.d34a3f9a638030f35c6a.js",
+      "bytes": 2379746,
+      "sha256": "4758FB7E2D8296564FB9CE971F6DCE3D580ED5407EEF07A69E1C362A04FF28C0"
+    },
+    {
+      "id": "709-device",
+      "url": "https://apps.razer.com/synapse/products/709/mw/rzDevice25.d532642d8de7a9cfcf5d.js",
+      "bytes": 280091,
+      "sha256": "9109826D790FEB8597BBFC115231066CA66E2C480ED9769BB85F3F91188AAD0A"
+    },
+    {
+      "id": "671-policy",
+      "url": "https://apps.razer.com/synapse/products/671/mw/6737.e123a2b3f0516116025b.js",
+      "bytes": 1953339,
+      "sha256": "54D3A9BBEC83568B02342AA54FF47A94EE55A48ECA85B5D9F28D60D01A0B1A9A"
+    },
+    {
+      "id": "671-device",
+      "url": "https://apps.razer.com/synapse/products/671/mw/rzDevice25.5e330aa9fdf6f29eec62.js",
+      "bytes": 270411,
+      "sha256": "41E7758114AD3605B5B3EE0E65E79AF3055124F775904902BA3285F710AF55C9"
+    },
+    {
+      "id": "669-policy",
+      "url": "https://apps.razer.com/synapse/products/669/mw/6737.439ff1a12463933a6346.js",
+      "bytes": 1957041,
+      "sha256": "D1AC2212AED5491D3EAB69ABAFA270B963A2336E859DF6BFBF9ED9A455E3791B"
+    },
+    {
+      "id": "669-device",
+      "url": "https://apps.razer.com/synapse/products/669/mw/rzDevice25.1094c437ecd0242743f8.js",
+      "bytes": 272267,
+      "sha256": "D76F0E964537BCF19D517E67B16E9D8AC0160230FA779AFB3640DA78B6201AD3"
+    },
+    {
+      "id": "672-policy",
+      "url": "https://apps.razer.com/synapse/products/672/mw/6737.e50bb836b878190315d7.js",
+      "bytes": 1957301,
+      "sha256": "651F63DCC0EFC92B0FD7496EE70751707B5F650F20AF5C01C3255B61817C1997"
+    },
+    {
+      "id": "672-device",
+      "url": "https://apps.razer.com/synapse/products/672/mw/rzDevice25.85ce8530211c29f3c304.js",
+      "bytes": 272259,
+      "sha256": "DFB3E3612D36B20910AF02E61A17ED64A1FFD3781E09C63BAAEE7CBEFDEBCA24"
+    },
+    {
+      "id": "710-policy",
+      "url": "https://apps.razer.com/synapse/products/710/mw/6737.0a09be13ed46538a373d.js",
+      "bytes": 2379746,
+      "sha256": "9D0E95894BE265652412EA84B1B52713A825D083BA0B65C6D9B91C70F659691C"
+    },
+    {
+      "id": "710-device",
+      "url": "https://apps.razer.com/synapse/products/710/mw/rzDevice25.9e83fa81c0c26aa84ab0.js",
+      "bytes": 280091,
+      "sha256": "DB01B1525A313EF333D71C4A5C3BCA1D6B657F78983761F1E06A0433284CFF15"
+    },
+    {
+      "id": "736-policy",
+      "url": "https://apps.razer.com/synapse/products/736/mw/6737.45e4affd7675b37f3c36.js",
+      "bytes": 2379746,
+      "sha256": "CD29E8D89135EA967AB13B4607A6524087A6B1DDBF76F7C73A39C7E4C6EC404D"
+    },
+    {
+      "id": "736-device",
+      "url": "https://apps.razer.com/synapse/products/736/mw/rzDevice25.bcaf2d44cf6bcb983c6f.js",
+      "bytes": 280091,
+      "sha256": "BC7DC47E18261AB38393589D336C11F321CC431D700ED32147997144F64628CA"
+    }
+  ],
+  "proofs": [
+    {
+      "source": "564-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 863312,
+      "lengthUtf8": 1265,
+      "text": "st Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function ze(){var e,t,i,n;return x(this,void 0,void 0,(function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFir"
+    },
+    {
+      "source": "564-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 726730,
+      "lengthUtf8": 2724,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const A=yield(0,d.FI)();y.A.isLowPower=A;const u=yield p.A.isOnBatteryPower;(null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode);const h=(null===(m=null===(f=s.jf.memoryStorageCache)||void 0===f?void 0:f.compactDeviceData)||void 0===m?void 0:m.fanIdList)||[];if(i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Fe.maxFanSpeedMode,Fe.disabled)),yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}}))))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Fe.maxFanSpeedModeEnabled:Fe.disabled;yield(0,d._w)(Fe.maxFanSpeedMode,e)}if(yield c.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(A&&\"manual\"!==e&&\"smartFanCurve\"!==e)yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield c.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,O.qq)(a),yield(0,O.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=l?s.kS:n.performanceSettings.cpu;const i=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==Me?void 0:Me.bladeSeries)===k.IwP.SERIES_11;l&&i&&(t=2),yield c.setAdvFanMode(e,r.U08.CPU_Fan,t),yield c.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "564-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 115169,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===La.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "581-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 863303,
+      "lengthUtf8": 1265,
+      "text": "st Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function ze(){var e,t,i,n;return x(this,void 0,void 0,(function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFir"
+    },
+    {
+      "source": "581-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 726721,
+      "lengthUtf8": 2724,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const A=yield(0,d.FI)();y.A.isLowPower=A;const u=yield p.A.isOnBatteryPower;(null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode);const h=(null===(m=null===(f=s.jf.memoryStorageCache)||void 0===f?void 0:f.compactDeviceData)||void 0===m?void 0:m.fanIdList)||[];if(i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Fe.maxFanSpeedMode,Fe.disabled)),yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}}))))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Fe.maxFanSpeedModeEnabled:Fe.disabled;yield(0,d._w)(Fe.maxFanSpeedMode,e)}if(yield c.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(A&&\"manual\"!==e&&\"smartFanCurve\"!==e)yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield c.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,O.qq)(a),yield(0,O.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=l?s.kS:n.performanceSettings.cpu;const i=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==Me?void 0:Me.bladeSeries)===k.IwP.SERIES_11;l&&i&&(t=2),yield c.setAdvFanMode(e,r.U08.CPU_Fan,t),yield c.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "581-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 115167,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===La.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "582-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 2287115,
+      "lengthUtf8": 1265,
+      "text": "st Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function ze(){var e,t,i,n;return x(this,void 0,void 0,(function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFir"
+    },
+    {
+      "source": "582-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1821040,
+      "lengthUtf8": 2724,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const A=yield(0,d.FI)();y.A.isLowPower=A;const u=yield p.A.isOnBatteryPower;(null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode);const h=(null===(m=null===(f=s.jf.memoryStorageCache)||void 0===f?void 0:f.compactDeviceData)||void 0===m?void 0:m.fanIdList)||[];if(i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Fe.maxFanSpeedMode,Fe.disabled)),yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}}))))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Fe.maxFanSpeedModeEnabled:Fe.disabled;yield(0,d._w)(Fe.maxFanSpeedMode,e)}if(yield c.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(A&&\"manual\"!==e&&\"smartFanCurve\"!==e)yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield c.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,O.qq)(a),yield(0,O.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=l?s.kS:n.performanceSettings.cpu;const i=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==Me?void 0:Me.bladeSeries)===k.IwP.SERIES_11;l&&i&&(t=2),yield c.setAdvFanMode(e,r.U08.CPU_Fan,t),yield c.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "582-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 115280,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===La.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "588-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 2286921,
+      "lengthUtf8": 1265,
+      "text": "st Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function ze(){var e,t,i,n;return x(this,void 0,void 0,(function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFir"
+    },
+    {
+      "source": "588-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1820846,
+      "lengthUtf8": 2724,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const A=yield(0,d.FI)();y.A.isLowPower=A;const u=yield p.A.isOnBatteryPower;(null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode);const h=(null===(m=null===(f=s.jf.memoryStorageCache)||void 0===f?void 0:f.compactDeviceData)||void 0===m?void 0:m.fanIdList)||[];if(i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Fe.maxFanSpeedMode,Fe.disabled)),yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}}))))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Fe.maxFanSpeedModeEnabled:Fe.disabled;yield(0,d._w)(Fe.maxFanSpeedMode,e)}if(yield c.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(A&&\"manual\"!==e&&\"smartFanCurve\"!==e)yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield c.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,O.qq)(a),yield(0,O.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=l?s.kS:n.performanceSettings.cpu;const i=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==Me?void 0:Me.bladeSeries)===k.IwP.SERIES_11;l&&i&&(t=2),yield c.setAdvFanMode(e,r.U08.CPU_Fan,t),yield c.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "588-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 115292,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===La.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "595-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 2287120,
+      "lengthUtf8": 1265,
+      "text": "st Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function ze(){var e,t,i,n;return x(this,void 0,void 0,(function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFir"
+    },
+    {
+      "source": "595-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1821041,
+      "lengthUtf8": 2724,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const A=yield(0,d.FI)();y.A.isLowPower=A;const u=yield p.A.isOnBatteryPower;(null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode);const h=(null===(m=null===(f=s.jf.memoryStorageCache)||void 0===f?void 0:f.compactDeviceData)||void 0===m?void 0:m.fanIdList)||[];if(i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Fe.maxFanSpeedMode,Fe.disabled)),yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}}))))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Fe.maxFanSpeedModeEnabled:Fe.disabled;yield(0,d._w)(Fe.maxFanSpeedMode,e)}if(yield c.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(A&&\"manual\"!==e&&\"smartFanCurve\"!==e)yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield c.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,O.qq)(a),yield(0,O.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=l?s.kS:n.performanceSettings.cpu;const i=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==Me?void 0:Me.bladeSeries)===k.IwP.SERIES_11;l&&i&&(t=2),yield c.setAdvFanMode(e,r.U08.CPU_Fan,t),yield c.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "595-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 115290,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===La.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "616-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 2334228,
+      "lengthUtf8": 1265,
+      "text": ">x(void 0,void 0,void 0,(function*(){const e=r.razerWindow.rzDevice;let t,n,i=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),n=parseInt(r),i=0===t}catch(e){console.log(e)}return 0===t&&ze<=5?(console.warn(`${a} has been called ${ze} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${n}`),yield(0,g._v)(500*Math.pow(2,ze)),!(yield d.Z.isOnBatteryPower)&&(ze++,yield Ve())):ze>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${ze}, returning isLowPower to false`),ze=0,!1):(ze=0,t<n&&!i&&(o=!0),A.default.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${n}`),o)})),We=e=>x(void 0,void 0,void 0,(function*(){const t=r.razerWindow.rzDevice,n={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:n[e]})}catch(e){console.error(e)}}));function Ye(){var e,t,n,i;return x(this,void 0,void 0,(function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.razerWindow.rzDevice,l=r.razerWindow"
+    },
+    {
+      "source": "616-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1857886,
+      "lengthUtf8": 2745,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=i;let{performanceMode:n}=i;const c=yield(0,d.jx)();y.default.isLowPower=c;const A=yield p.Z.isOnBatteryPower;(null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&n===r.VWS.Productivity_Creator_Mode&&(n=r.VWS.Gaming_Mode);const h=(null===(m=null===(g=s.razerWindow.memoryStorageCache)||void 0===g?void 0:g.compactDeviceData)||void 0===m?void 0:m.fanIdList)||[];if(n!==r.VWS.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d.aS)(Fe.maxFanSpeedMode,Fe.disabled)),yield Promise.all(h.map((i=>Te(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.Z.getPerformanceFanModeProfile(i,n,e);if(A&&I.default.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.wX?yield u.setThermalFanMode(o,i,d.rG,a):!A&&c&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:i}),yield u.setThermalFanMode(o,i,d.wX,0)):yield u.setThermalFanMode(o,i,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:n}=v.Z.getPerformanceFanSpeedProfile(i,t);yield u.setThermalFanSpeed(e,i,n)}})))));else if(yield Promise.all(h.map((i=>Te(this,void 0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.Z.getPerformanceFanModeProfile(i,n,o);if(!A&&c&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:i}),yield u.setThermalFanMode(r,i,d.wX,0);else if(yield u.setThermalFanMode(r,i,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:n}=v.Z.getPerformanceFanSpeedProfile(i,t);yield u.setThermalFanSpeed(e,i,n)}}))))),Oe.hasMaxFanSpeedModeEnabled){const e=i.performanceSettings.maxFanSpeedModeEnabled?Fe.maxFanSpeedModeEnabled:Fe.disabled;yield(0,d.aS)(Fe.maxFanSpeedMode,e)}if(yield u.setOverClockingMode(n),n===r.VWS.Custom_Mode)if(c&&\"manual\"!==e&&\"smartFanCurve\"!==e)yield Promise.all(h.map((i=>Te(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.Z.getPerformanceFanModeProfile(i,n,e);if(yield u.setThermalFanMode(o,i,d.wX,a),\"manual\"===e){const{classId:e,thermalFanSpeed:n}=v.Z.getPerformanceFanSpeedProfile(i,t);yield u.setThermalFanSpeed(e,i,n)}})))));else if(!A)if(o)yield(0,O.vf)(a),yield(0,O.zb)();else{const{profileId:e}=v.Z.getAdvFanMode(r.kHO.CPU_Fan);let t=l?s.Lx:i.performanceSettings.cpu;const n=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==Me?void 0:Me.bladeSeries)===T.eoP.SERIES_11;l&&n&&(t=2),yield u.setAdvFanMode(e,r.kHO.CPU_Fan,t),yield u.setAdvFanModeWattage(e,r.kHO.GPU_Fan,i.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "616-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 117206,
+      "lengthUtf8": 1313,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.OB,e.error=i.Af,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.OB,e.error=i.nl,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.zv,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.OB,e.error=i.bQ,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===ka.at&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.zv,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.OB,e.error=i.ZR,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.OB,e.error=i.Bp,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.OB,e.error=i.XI,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN, retry get:${d}, i:${s}`)}}}catc"
+    },
+    {
+      "source": "624-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 2287120,
+      "lengthUtf8": 1265,
+      "text": "st Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function ze(){var e,t,i,n;return x(this,void 0,void 0,(function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFir"
+    },
+    {
+      "source": "624-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1821041,
+      "lengthUtf8": 2724,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const A=yield(0,d.FI)();y.A.isLowPower=A;const u=yield p.A.isOnBatteryPower;(null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode);const h=(null===(m=null===(f=s.jf.memoryStorageCache)||void 0===f?void 0:f.compactDeviceData)||void 0===m?void 0:m.fanIdList)||[];if(i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Fe.maxFanSpeedMode,Fe.disabled)),yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}}))))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Fe.maxFanSpeedModeEnabled:Fe.disabled;yield(0,d._w)(Fe.maxFanSpeedMode,e)}if(yield c.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(A&&\"manual\"!==e&&\"smartFanCurve\"!==e)yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield c.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,O.qq)(a),yield(0,O.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=l?s.kS:n.performanceSettings.cpu;const i=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==Me?void 0:Me.bladeSeries)===k.IwP.SERIES_11;l&&i&&(t=2),yield c.setAdvFanMode(e,r.U08.CPU_Fan,t),yield c.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "624-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 115290,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===La.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "630-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 2287126,
+      "lengthUtf8": 1265,
+      "text": "st Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function ze(){var e,t,i,n;return x(this,void 0,void 0,(function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFir"
+    },
+    {
+      "source": "630-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1821047,
+      "lengthUtf8": 2724,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const A=yield(0,d.FI)();y.A.isLowPower=A;const u=yield p.A.isOnBatteryPower;(null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode);const h=(null===(m=null===(f=s.jf.memoryStorageCache)||void 0===f?void 0:f.compactDeviceData)||void 0===m?void 0:m.fanIdList)||[];if(i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Fe.maxFanSpeedMode,Fe.disabled)),yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}}))))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Fe.maxFanSpeedModeEnabled:Fe.disabled;yield(0,d._w)(Fe.maxFanSpeedMode,e)}if(yield c.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(A&&\"manual\"!==e&&\"smartFanCurve\"!==e)yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield c.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,O.qq)(a),yield(0,O.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=l?s.kS:n.performanceSettings.cpu;const i=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==Me?void 0:Me.bladeSeries)===k.IwP.SERIES_11;l&&i&&(t=2),yield c.setAdvFanMode(e,r.U08.CPU_Fan,t),yield c.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "630-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 115296,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===La.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "650-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 2286919,
+      "lengthUtf8": 1265,
+      "text": "st Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function ze(){var e,t,i,n;return x(this,void 0,void 0,(function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFir"
+    },
+    {
+      "source": "650-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1820844,
+      "lengthUtf8": 2724,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const A=yield(0,d.FI)();y.A.isLowPower=A;const u=yield p.A.isOnBatteryPower;(null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode);const h=(null===(m=null===(f=s.jf.memoryStorageCache)||void 0===f?void 0:f.compactDeviceData)||void 0===m?void 0:m.fanIdList)||[];if(i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Fe.maxFanSpeedMode,Fe.disabled)),yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}}))))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Fe.maxFanSpeedModeEnabled:Fe.disabled;yield(0,d._w)(Fe.maxFanSpeedMode,e)}if(yield c.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(A&&\"manual\"!==e&&\"smartFanCurve\"!==e)yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield c.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,O.qq)(a),yield(0,O.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=l?s.kS:n.performanceSettings.cpu;const i=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==Me?void 0:Me.bladeSeries)===k.IwP.SERIES_11;l&&i&&(t=2),yield c.setAdvFanMode(e,r.U08.CPU_Fan,t),yield c.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "650-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 115290,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===La.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "651-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 859740,
+      "lengthUtf8": 1265,
+      "text": "nst Ve=()=>x(void 0,void 0,void 0,function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)}),Ye=e=>x(void 0,void 0,void 0,function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}});function ze(){var e,t,i,n;return x(this,void 0,void 0,function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFirmwar"
+    },
+    {
+      "source": "651-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 723720,
+      "lengthUtf8": 2712,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const A=yield(0,d.FI)();y.A.isLowPower=A;const u=yield p.A.isOnBatteryPower;(null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode);const h=(null===(m=null===(f=s.jf.memoryStorageCache)||void 0===f?void 0:f.compactDeviceData)||void 0===m?void 0:m.fanIdList)||[];if(i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Fe.maxFanSpeedMode,Fe.disabled)),yield Promise.all(h.map(n=>ke(this,void 0,void 0,function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})));else if(yield Promise.all(h.map(n=>ke(this,void 0,void 0,function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}}))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Fe.maxFanSpeedModeEnabled:Fe.disabled;yield(0,d._w)(Fe.maxFanSpeedMode,e)}if(yield c.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(A&&\"manual\"!==e&&\"smartFanCurve\"!==e)yield Promise.all(h.map(n=>ke(this,void 0,void 0,function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield c.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})));else if(!u)if(o)yield(0,O.qq)(a),yield(0,O.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=l?s.kS:n.performanceSettings.cpu;const i=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==Me?void 0:Me.bladeSeries)===k.IwP.SERIES_11;l&&i&&(t=2),yield c.setAdvFanMode(e,r.U08.CPU_Fan,t),yield c.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "651-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 114748,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===La.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "652-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 2286955,
+      "lengthUtf8": 1265,
+      "text": "st Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function ze(){var e,t,i,n;return x(this,void 0,void 0,(function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFir"
+    },
+    {
+      "source": "652-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1820876,
+      "lengthUtf8": 2724,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const A=yield(0,d.FI)();y.A.isLowPower=A;const u=yield p.A.isOnBatteryPower;(null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode);const h=(null===(m=null===(f=s.jf.memoryStorageCache)||void 0===f?void 0:f.compactDeviceData)||void 0===m?void 0:m.fanIdList)||[];if(i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Fe.maxFanSpeedMode,Fe.disabled)),yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}}))))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Fe.maxFanSpeedModeEnabled:Fe.disabled;yield(0,d._w)(Fe.maxFanSpeedMode,e)}if(yield c.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(A&&\"manual\"!==e&&\"smartFanCurve\"!==e)yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield c.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,O.qq)(a),yield(0,O.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=l?s.kS:n.performanceSettings.cpu;const i=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==Me?void 0:Me.bladeSeries)===k.IwP.SERIES_11;l&&i&&(t=2),yield c.setAdvFanMode(e,r.U08.CPU_Fan,t),yield c.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "652-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 115288,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===La.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "694-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 863303,
+      "lengthUtf8": 1265,
+      "text": "st Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function ze(){var e,t,i,n;return x(this,void 0,void 0,(function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFir"
+    },
+    {
+      "source": "694-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 726721,
+      "lengthUtf8": 2724,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const A=yield(0,d.FI)();y.A.isLowPower=A;const u=yield p.A.isOnBatteryPower;(null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode);const h=(null===(m=null===(f=s.jf.memoryStorageCache)||void 0===f?void 0:f.compactDeviceData)||void 0===m?void 0:m.fanIdList)||[];if(i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Fe.maxFanSpeedMode,Fe.disabled)),yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}}))))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Fe.maxFanSpeedModeEnabled:Fe.disabled;yield(0,d._w)(Fe.maxFanSpeedMode,e)}if(yield c.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(A&&\"manual\"!==e&&\"smartFanCurve\"!==e)yield Promise.all(h.map((n=>ke(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield c.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,O.qq)(a),yield(0,O.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=l?s.kS:n.performanceSettings.cpu;const i=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==Me?void 0:Me.bladeSeries)===k.IwP.SERIES_11;l&&i&&(t=2),yield c.setAdvFanMode(e,r.U08.CPU_Fan,t),yield c.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "694-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 115167,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===La.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "695-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 2383575,
+      "lengthUtf8": 1265,
+      "text": "nst Ye=()=>x(void 0,void 0,void 0,function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ye())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),A.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)}),Ve=e=>x(void 0,void 0,void 0,function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}});function ze(){var e,t,i,n;return x(this,void 0,void 0,function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFirmwar"
+    },
+    {
+      "source": "695-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1891811,
+      "lengthUtf8": 2712,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const l=yield(0,S.FI)();T.A.isLowPower=l;const c=yield _.A.isOnBatteryPower;(null==Ne?void 0:Ne.needSwitchCreatorToGamingMode)&&i===f.mNQ.Productivity_Creator_Mode&&(i=f.mNQ.Gaming_Mode);const p=(null===(d=null===(A=v.jf.memoryStorageCache)||void 0===A?void 0:A.compactDeviceData)||void 0===d?void 0:d.fanIdList)||[];if(i!==f.mNQ.Custom_Mode)(null==Ne?void 0:Ne.hasMaxFanSpeedModeEnabled)&&(yield(0,S._w)(Qe.maxFanSpeedMode,Qe.disabled)),yield Promise.all(p.map(n=>Me(this,void 0,void 0,function*(){const{profileId:o,fanMode:r,fanModeValue:a}=w.A.getPerformanceFanModeProfile(n,i,e);if(c&&B.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===S.KB?yield s.setThermalFanMode(o,n,S.jM,a):!c&&l&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield s.setThermalFanMode(o,n,S.KB,a)):yield s.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=w.A.getPerformanceFanSpeedProfile(n,t);yield s.setThermalFanSpeed(e,n,i)}})));else if(yield Promise.all(p.map(n=>Me(this,void 0,void 0,function*(){const o=(null==Ne?void 0:Ne.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:u}=w.A.getPerformanceFanModeProfile(n,i,o);if(!c&&l&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield s.setThermalFanMode(r,n,S.KB,0);else if(yield s.setThermalFanMode(r,n,a,u),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=w.A.getPerformanceFanSpeedProfile(n,t);yield s.setThermalFanSpeed(e,n,i)}}))),Ne.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Qe.maxFanSpeedModeEnabled:Qe.disabled;yield(0,S._w)(Qe.maxFanSpeedMode,e)}if(yield s.setOverClockingMode(i),i===f.mNQ.Custom_Mode)if(l&&\"manual\"!==e&&\"smartFanCurve\"!==e)yield Promise.all(p.map(n=>Me(this,void 0,void 0,function*(){const{profileId:o,fanMode:r,fanModeValue:a}=w.A.getPerformanceFanModeProfile(n,i,e);if(yield s.setThermalFanMode(o,n,S.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=w.A.getPerformanceFanSpeedProfile(n,t);yield s.setThermalFanSpeed(e,n,i)}})));else if(!c)if(o)yield(0,K.qq)(r),yield(0,K.k$)();else{const{profileId:e}=w.A.getAdvFanMode(f.U08.CPU_Fan);let t=a?v.kS:n.performanceSettings.cpu;const i=(null==Ne?void 0:Ne.hasAMDOverclock)&&(null==Ue?void 0:Ue.bladeSeries)===L.IwP.SERIES_11;a&&i&&(t=2),yield s.setAdvFanMode(e,f.U08.CPU_Fan,t),yield s.setAdvFanModeWattage(e,f.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "695-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 115240,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===La.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "696-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 2276736,
+      "lengthUtf8": 1265,
+      "text": "nst Ye=()=>x(void 0,void 0,void 0,function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ye())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)}),Ve=e=>x(void 0,void 0,void 0,function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}});function ze(){var e,t,i,n;return x(this,void 0,void 0,function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFirmwar"
+    },
+    {
+      "source": "696-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1813188,
+      "lengthUtf8": 2712,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const A=yield(0,d.FI)();y.A.isLowPower=A;const u=yield p.A.isOnBatteryPower;(null==ke?void 0:ke.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode);const h=(null===(m=null===(f=s.jf.memoryStorageCache)||void 0===f?void 0:f.compactDeviceData)||void 0===m?void 0:m.fanIdList)||[];if(i!==r.mNQ.Custom_Mode)(null==ke?void 0:ke.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Ne.maxFanSpeedMode,Ne.disabled)),yield Promise.all(h.map(n=>De(this,void 0,void 0,function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield c.setThermalFanMode(o,n,d.jM,a):!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield c.setThermalFanMode(o,n,d.KB,0)):yield c.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})));else if(yield Promise.all(h.map(n=>De(this,void 0,void 0,function*(){const o=(null==ke?void 0:ke.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}}))),ke.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Ne.maxFanSpeedModeEnabled:Ne.disabled;yield(0,d._w)(Ne.maxFanSpeedMode,e)}if(yield c.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(A&&\"manual\"!==e&&\"smartFanCurve\"!==e)yield Promise.all(h.map(n=>De(this,void 0,void 0,function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield c.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield c.setThermalFanSpeed(e,n,i)}})));else if(!u)if(o)yield(0,O.qq)(a),yield(0,O.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=l?s.kS:n.performanceSettings.cpu;const i=(null==ke?void 0:ke.hasAMDOverclock)&&(null==Ce?void 0:Ce.bladeSeries)===k.IwP.SERIES_11;l&&i&&(t=2),yield c.setAdvFanMode(e,r.U08.CPU_Fan,t),yield c.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "696-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 114850,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===La.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "711-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 2377554,
+      "lengthUtf8": 1265,
+      "text": "st Ye=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ye())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),A.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ve=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function ze(){var e,t,i,n;return x(this,void 0,void 0,(function*(){const o=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],a=r.jf.rzDevice,l=r.jf.rzDevice,c=null!==(e=Q.latestFir"
+    },
+    {
+      "source": "711-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1888249,
+      "lengthUtf8": 2724,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const l=yield(0,_.FI)();w.A.isLowPower=l;const c=yield D.A.isOnBatteryPower;(null==Ke?void 0:Ke.needSwitchCreatorToGamingMode)&&i===y.mNQ.Productivity_Creator_Mode&&(i=y.mNQ.Gaming_Mode);const p=(null===(d=null===(A=m.jf.memoryStorageCache)||void 0===A?void 0:A.compactDeviceData)||void 0===d?void 0:d.fanIdList)||[];if(i!==y.mNQ.Custom_Mode)(null==Ke?void 0:Ke.hasMaxFanSpeedModeEnabled)&&(yield(0,_._w)(ze.maxFanSpeedMode,ze.disabled)),yield Promise.all(p.map((n=>Ne(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=k.A.getPerformanceFanModeProfile(n,i,e);if(c&&M.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===_.KB?yield s.setThermalFanMode(o,n,_.jM,a):!c&&l&&\"manual\"!==e&&\"smartFanCurve\"!==e?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield s.setThermalFanMode(o,n,_.KB,a)):yield s.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=k.A.getPerformanceFanSpeedProfile(n,t);yield s.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(p.map((n=>Ne(this,void 0,void 0,(function*(){const o=(null==Ke?void 0:Ke.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:u}=k.A.getPerformanceFanModeProfile(n,i,o);if(!c&&l&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield s.setThermalFanMode(r,n,_.KB,0);else if(yield s.setThermalFanMode(r,n,a,u),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=k.A.getPerformanceFanSpeedProfile(n,t);yield s.setThermalFanSpeed(e,n,i)}}))))),Ke.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?ze.maxFanSpeedModeEnabled:ze.disabled;yield(0,_._w)(ze.maxFanSpeedMode,e)}if(yield s.setOverClockingMode(i),i===y.mNQ.Custom_Mode)if(l&&\"manual\"!==e&&\"smartFanCurve\"!==e)yield Promise.all(p.map((n=>Ne(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=k.A.getPerformanceFanModeProfile(n,i,e);if(yield s.setThermalFanMode(o,n,_.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=k.A.getPerformanceFanSpeedProfile(n,t);yield s.setThermalFanSpeed(e,n,i)}})))));else if(!c)if(o)yield(0,G.qq)(r),yield(0,G.k$)();else{const{profileId:e}=k.A.getAdvFanMode(y.U08.CPU_Fan);let t=a?m.kS:n.performanceSettings.cpu;const i=(null==Ke?void 0:Ke.hasAMDOverclock)&&(null==He?void 0:He.bladeSeries)===U.IwP.SERIES_11;a&&i&&(t=2),yield s.setAdvFanMode(e,y.U08.CPU_Fan,t),yield s.setAdvFanModeWattage(e,y.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "711-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 115679,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===La.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "597-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 1892916,
+      "lengthUtf8": 1265,
+      "text": "st Le=()=>H(void 0,void 0,void 0,(function*(){const e=a.jf.rzDevice;let t,i,n=!1,o=!1;const r=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&Re<=5?(console.warn(`${r} has been called ${Re} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,y.yy)(500*Math.pow(2,Re)),!(yield p.A.isOnBatteryPower)&&(Re++,yield Le())):Re>5?(console.warn(`${r} has exceeded maximum number of calls: 5, current count: ${Re}, returning isLowPower to false`),Re=0,!1):(Re=0,t<i&&!n&&(o=!0),d.A.isLowPower=o,console.log(`${r} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ne=e=>H(void 0,void 0,void 0,(function*(){const t=a.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function Pe(){var e,t,i,o;return H(this,void 0,void 0,(function*(){const r=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],s=a.jf.rzDevice,A=a.jf.rzDevice,l=null!==(e=n.DeviceInf"
+    },
+    {
+      "source": "597-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1557836,
+      "lengthUtf8": 2639,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const c=yield(0,d.FI)();y.A.isLowPower=c;const u=yield p.A.isOnBatteryPower;if((null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode),i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Re.maxFanSpeedMode,Re.disabled)),yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>Se(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield l.setThermalFanMode(o,n,d.jM,a):!u&&c?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield l.setThermalFanMode(o,n,d.KB,0)):yield l.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield l.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>Se(this,void 0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&c)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield l.setThermalFanMode(r,n,d.KB,0);else if(yield l.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield l.setThermalFanSpeed(e,n,i)}}))))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Re.maxFanSpeedModeEnabled:Re.disabled;yield(0,d._w)(Re.maxFanSpeedMode,e)}if(yield l.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(c)yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>Se(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield l.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield l.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,b.qq)(a),yield(0,b.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=A?s.kS:n.performanceSettings.cpu;const i=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==we?void 0:we.bladeSeries)===O.IwP.SERIES_11;A&&i&&(t=2),yield l.setAdvFanMode(e,r.U08.CPU_Fan,t),yield l.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "597-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 119260,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===Ia.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "709-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 2313644,
+      "lengthUtf8": 1265,
+      "text": "st Fe=()=>K(void 0,void 0,void 0,(function*(){const e=a.jf.rzDevice;let t,i,n=!1,o=!1;const r=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&Ue<=5?(console.warn(`${r} has been called ${Ue} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,y.yy)(500*Math.pow(2,Ue)),!(yield p.A.isOnBatteryPower)&&(Ue++,yield Fe())):Ue>5?(console.warn(`${r} has exceeded maximum number of calls: 5, current count: ${Ue}, returning isLowPower to false`),Ue=0,!1):(Ue=0,t<i&&!n&&(o=!0),d.A.isLowPower=o,console.log(`${r} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ge=e=>K(void 0,void 0,void 0,(function*(){const t=a.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function Ke(){var e,t,i,o;return K(this,void 0,void 0,(function*(){const r=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],s=a.jf.rzDevice,l=a.jf.rzDevice,A=null!==(e=n.DeviceInf"
+    },
+    {
+      "source": "709-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1853198,
+      "lengthUtf8": 2639,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const c=yield(0,d.FI)();y.A.isLowPower=c;const u=yield p.A.isOnBatteryPower;if((null==Me?void 0:Me.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode),i!==r.mNQ.Custom_Mode)(null==Me?void 0:Me.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Ge.maxFanSpeedMode,Ge.disabled)),yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>be(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield A.setThermalFanMode(o,n,d.jM,a):!u&&c?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield A.setThermalFanMode(o,n,d.KB,a)):yield A.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield A.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>be(this,void 0,void 0,(function*(){const o=(null==Me?void 0:Me.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&c)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield A.setThermalFanMode(r,n,d.KB,0);else if(yield A.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield A.setThermalFanSpeed(e,n,i)}}))))),Me.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Ge.maxFanSpeedModeEnabled:Ge.disabled;yield(0,d._w)(Ge.maxFanSpeedMode,e)}if(yield A.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(c)yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>be(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield A.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield A.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,w.qq)(a),yield(0,w.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=l?s.kS:n.performanceSettings.cpu;const i=(null==Me?void 0:Me.hasAMDOverclock)&&(null==Re?void 0:Re.bladeSeries)===C.IwP.SERIES_11;l&&i&&(t=2),yield A.setAdvFanMode(e,r.U08.CPU_Fan,t),yield A.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "709-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 120405,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===Ta.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "671-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 615903,
+      "lengthUtf8": 1265,
+      "text": "nst Le=()=>H(void 0,void 0,void 0,function*(){const e=a.jf.rzDevice;let t,i,n=!1,o=!1;const r=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&Re<=5?(console.warn(`${r} has been called ${Re} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,y.yy)(500*Math.pow(2,Re)),!(yield p.A.isOnBatteryPower)&&(Re++,yield Le())):Re>5?(console.warn(`${r} has exceeded maximum number of calls: 5, current count: ${Re}, returning isLowPower to false`),Re=0,!1):(Re=0,t<i&&!n&&(o=!0),d.A.isLowPower=o,console.log(`${r} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)}),Ne=e=>H(void 0,void 0,void 0,function*(){const t=a.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}});function Pe(){var e,t,i,o;return H(this,void 0,void 0,function*(){const r=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],s=a.jf.rzDevice,A=a.jf.rzDevice,l=null!==(e=n.DeviceInfo.la"
+    },
+    {
+      "source": "671-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1397533,
+      "lengthUtf8": 2627,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const c=yield(0,d.FI)();y.A.isLowPower=c;const u=yield p.A.isOnBatteryPower;if((null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode),i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Re.maxFanSpeedMode,Re.disabled)),yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map(n=>Se(this,void 0,void 0,function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield l.setThermalFanMode(o,n,d.jM,a):!u&&c?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield l.setThermalFanMode(o,n,d.KB,0)):yield l.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield l.setThermalFanSpeed(e,n,i)}})));else if(yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map(n=>Se(this,void 0,void 0,function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&c)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield l.setThermalFanMode(r,n,d.KB,0);else if(yield l.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield l.setThermalFanSpeed(e,n,i)}}))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Re.maxFanSpeedModeEnabled:Re.disabled;yield(0,d._w)(Re.maxFanSpeedMode,e)}if(yield l.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(c)yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map(n=>Se(this,void 0,void 0,function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield l.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield l.setThermalFanSpeed(e,n,i)}})));else if(!u)if(o)yield(0,b.qq)(a),yield(0,b.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=A?s.kS:n.performanceSettings.cpu;const i=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==we?void 0:we.bladeSeries)===O.IwP.SERIES_11;A&&i&&(t=2),yield l.setAdvFanMode(e,r.U08.CPU_Fan,t),yield l.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "671-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 118724,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===Ia.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "669-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 1892712,
+      "lengthUtf8": 1265,
+      "text": "st Le=()=>H(void 0,void 0,void 0,(function*(){const e=a.jf.rzDevice;let t,i,n=!1,o=!1;const r=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&Re<=5?(console.warn(`${r} has been called ${Re} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,y.yy)(500*Math.pow(2,Re)),!(yield p.A.isOnBatteryPower)&&(Re++,yield Le())):Re>5?(console.warn(`${r} has exceeded maximum number of calls: 5, current count: ${Re}, returning isLowPower to false`),Re=0,!1):(Re=0,t<i&&!n&&(o=!0),d.A.isLowPower=o,console.log(`${r} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ne=e=>H(void 0,void 0,void 0,(function*(){const t=a.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function Pe(){var e,t,i,o;return H(this,void 0,void 0,(function*(){const r=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],s=a.jf.rzDevice,A=a.jf.rzDevice,l=null!==(e=n.DeviceInf"
+    },
+    {
+      "source": "669-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1557632,
+      "lengthUtf8": 2639,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const c=yield(0,d.FI)();y.A.isLowPower=c;const u=yield p.A.isOnBatteryPower;if((null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode),i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Re.maxFanSpeedMode,Re.disabled)),yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>Se(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield l.setThermalFanMode(o,n,d.jM,a):!u&&c?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield l.setThermalFanMode(o,n,d.KB,0)):yield l.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield l.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>Se(this,void 0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&c)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield l.setThermalFanMode(r,n,d.KB,0);else if(yield l.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield l.setThermalFanSpeed(e,n,i)}}))))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Re.maxFanSpeedModeEnabled:Re.disabled;yield(0,d._w)(Re.maxFanSpeedMode,e)}if(yield l.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(c)yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>Se(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield l.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield l.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,b.qq)(a),yield(0,b.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=A?s.kS:n.performanceSettings.cpu;const i=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==we?void 0:we.bladeSeries)===O.IwP.SERIES_11;A&&i&&(t=2),yield l.setAdvFanMode(e,r.U08.CPU_Fan,t),yield l.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "669-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 119262,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===Ia.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "672-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 1892970,
+      "lengthUtf8": 1265,
+      "text": "st Le=()=>H(void 0,void 0,void 0,(function*(){const e=a.jf.rzDevice;let t,i,n=!1,o=!1;const r=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&Re<=5?(console.warn(`${r} has been called ${Re} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,y.yy)(500*Math.pow(2,Re)),!(yield p.A.isOnBatteryPower)&&(Re++,yield Le())):Re>5?(console.warn(`${r} has exceeded maximum number of calls: 5, current count: ${Re}, returning isLowPower to false`),Re=0,!1):(Re=0,t<i&&!n&&(o=!0),d.A.isLowPower=o,console.log(`${r} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ne=e=>H(void 0,void 0,void 0,(function*(){const t=a.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function Pe(){var e,t,i,o;return H(this,void 0,void 0,(function*(){const r=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],s=a.jf.rzDevice,A=a.jf.rzDevice,l=null!==(e=n.DeviceInf"
+    },
+    {
+      "source": "672-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1557890,
+      "lengthUtf8": 2639,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const c=yield(0,d.FI)();y.A.isLowPower=c;const u=yield p.A.isOnBatteryPower;if((null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode),i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Re.maxFanSpeedMode,Re.disabled)),yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>Se(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield l.setThermalFanMode(o,n,d.jM,a):!u&&c?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield l.setThermalFanMode(o,n,d.KB,0)):yield l.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield l.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>Se(this,void 0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&c)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield l.setThermalFanMode(r,n,d.KB,0);else if(yield l.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield l.setThermalFanSpeed(e,n,i)}}))))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Re.maxFanSpeedModeEnabled:Re.disabled;yield(0,d._w)(Re.maxFanSpeedMode,e)}if(yield l.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(c)yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>Se(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield l.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield l.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,b.qq)(a),yield(0,b.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=A?s.kS:n.performanceSettings.cpu;const i=(null==Oe?void 0:Oe.hasAMDOverclock)&&(null==we?void 0:we.bladeSeries)===O.IwP.SERIES_11;A&&i&&(t=2),yield l.setAdvFanMode(e,r.U08.CPU_Fan,t),yield l.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "672-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 119254,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===Ia.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "710-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 2313644,
+      "lengthUtf8": 1265,
+      "text": "st Fe=()=>K(void 0,void 0,void 0,(function*(){const e=a.jf.rzDevice;let t,i,n=!1,o=!1;const r=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&Ue<=5?(console.warn(`${r} has been called ${Ue} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,y.yy)(500*Math.pow(2,Ue)),!(yield p.A.isOnBatteryPower)&&(Ue++,yield Fe())):Ue>5?(console.warn(`${r} has exceeded maximum number of calls: 5, current count: ${Ue}, returning isLowPower to false`),Ue=0,!1):(Ue=0,t<i&&!n&&(o=!0),d.A.isLowPower=o,console.log(`${r} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ge=e=>K(void 0,void 0,void 0,(function*(){const t=a.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function Ke(){var e,t,i,o;return K(this,void 0,void 0,(function*(){const r=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],s=a.jf.rzDevice,l=a.jf.rzDevice,A=null!==(e=n.DeviceInf"
+    },
+    {
+      "source": "710-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1853198,
+      "lengthUtf8": 2639,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const c=yield(0,d.FI)();y.A.isLowPower=c;const u=yield p.A.isOnBatteryPower;if((null==Me?void 0:Me.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode),i!==r.mNQ.Custom_Mode)(null==Me?void 0:Me.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Ge.maxFanSpeedMode,Ge.disabled)),yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>be(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield A.setThermalFanMode(o,n,d.jM,a):!u&&c?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield A.setThermalFanMode(o,n,d.KB,a)):yield A.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield A.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>be(this,void 0,void 0,(function*(){const o=(null==Me?void 0:Me.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&c)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield A.setThermalFanMode(r,n,d.KB,0);else if(yield A.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield A.setThermalFanSpeed(e,n,i)}}))))),Me.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Ge.maxFanSpeedModeEnabled:Ge.disabled;yield(0,d._w)(Ge.maxFanSpeedMode,e)}if(yield A.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(c)yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>be(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield A.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield A.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,w.qq)(a),yield(0,w.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=l?s.kS:n.performanceSettings.cpu;const i=(null==Me?void 0:Me.hasAMDOverclock)&&(null==Re?void 0:Re.bladeSeries)===C.IwP.SERIES_11;l&&i&&(t=2),yield A.setAdvFanMode(e,r.U08.CPU_Fan,t),yield A.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "710-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 120405,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===Ta.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    },
+    {
+      "source": "736-policy",
+      "purpose": "Adapter helper catches unavailable classification; false is a policy result, not wattage proof",
+      "offsetUtf8": 2313644,
+      "lengthUtf8": 1265,
+      "text": "st Fe=()=>K(void 0,void 0,void 0,(function*(){const e=a.jf.rzDevice;let t,i,n=!1,o=!1;const r=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&Ue<=5?(console.warn(`${r} has been called ${Ue} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,y.yy)(500*Math.pow(2,Ue)),!(yield p.A.isOnBatteryPower)&&(Ue++,yield Fe())):Ue>5?(console.warn(`${r} has exceeded maximum number of calls: 5, current count: ${Ue}, returning isLowPower to false`),Ue=0,!1):(Ue=0,t<i&&!n&&(o=!0),d.A.isLowPower=o,console.log(`${r} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ge=e=>K(void 0,void 0,void 0,(function*(){const t=a.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,255],8:[0,0,0]};try{yield t.setChromaEffectCommon({profileId:1,regionId:11,effectId:1,flags:0,rate:1,numOfColor:1,colorArray:i[e]})}catch(e){console.error(e)}}));function Ke(){var e,t,i,o;return K(this,void 0,void 0,(function*(){const r=[\"%c[%s]\",\"color: #0f8;\",\"FIRMWARE\"],s=a.jf.rzDevice,l=a.jf.rzDevice,A=null!==(e=n.DeviceInf"
+    },
+    {
+      "source": "736-policy",
+      "purpose": "Windows battery check, ordinary preset/manual target/Custom levels/feature-gated Maximum Fans setter reachability",
+      "offsetUtf8": 1853198,
+      "lengthUtf8": 2639,
+      "text": "try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const c=yield(0,d.FI)();y.A.isLowPower=c;const u=yield p.A.isOnBatteryPower;if((null==Me?void 0:Me.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode),i!==r.mNQ.Custom_Mode)(null==Me?void 0:Me.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Ge.maxFanSpeedMode,Ge.disabled)),yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>be(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield A.setThermalFanMode(o,n,d.jM,a):!u&&c?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield A.setThermalFanMode(o,n,d.KB,a)):yield A.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield A.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>be(this,void 0,void 0,(function*(){const o=(null==Me?void 0:Me.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&c)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield A.setThermalFanMode(r,n,d.KB,0);else if(yield A.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield A.setThermalFanSpeed(e,n,i)}}))))),Me.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Ge.maxFanSpeedModeEnabled:Ge.disabled;yield(0,d._w)(Ge.maxFanSpeedMode,e)}if(yield A.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(c)yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>be(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield A.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield A.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)yield(0,w.qq)(a),yield(0,w.k$)();else{const{profileId:e}=v.A.getAdvFanMode(r.U08.CPU_Fan);let t=l?s.kS:n.performanceSettings.cpu;const i=(null==Me?void 0:Me.hasAMDOverclock)&&(null==Re?void 0:Re.bladeSeries)===C.IwP.SERIES_11;l&&i&&(t=2),yield A.setAdvFanMode(e,r.U08.CPU_Fan,t),yield A.setAdvFanModeWattage(e,r.U08.GPU_Fan,n.performanceSettings.gpu)}console.log(\"%c taskRunnerSetActivePerformanceMode SUCCESS\",\"back"
+    },
+    {
+      "source": "736-device",
+      "purpose": "Raw correlated report c[0] status 3 FAILED / 5 COMMAND_NOT_SUPPORTED, distinct outer USB status",
+      "offsetUtf8": 120405,
+      "lengthUtf8": 1530,
+      "text": "switch(e.packetSizeReturned=c[5],c[0]){case 0:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_NEW_COMMAND,d=!1,e.resendOutCommand=!0;break;case 1:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_BUSY,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_BUSY, retry get:${d}, i:${s}`);break;case 2:e.status=i.STATUS_SUCCESS,e.error=\"\",d=!1,e.resendOutCommand=!1;break;case 3:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_FAILED,d=!1,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_FAILED, retry get:${d}, i:${s}`);break;case 4:t===Ta.A&&this.ignoreSetDeviceModeTimeoutError?(d=!1,console.log(`${this.name} workaround for setDeviceMode(DriverMode)`),e.status=i.STATUS_SUCCESS,e.error=\"\",e.resendOutCommand=!1):(d=!1,e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_TIMEOUT,e.resendOutCommand=!0,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_TIMEOUT, retry get:${d}, i:${s}`));break;case 5:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMMAND_NOT_SUPPORTED, retry get:${d}, i:${s}`);break;default:e.status=i.STATUS_FAIL,e.error=i.ERROR_USB_TRANSFER_IN_COMMAND_UNKNOWN,d=!1,e.resendOutCommand=!1,console.log(`${this.name}.${r}: commandSend:${t}, commandDesc:${o}, ERROR_USB_TRANSFER_IN_COMM"
+    }
+  ],
+  "models": [
+    {
+      "model": "RZ09-0287",
+      "vendorProductId": 564,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "564-policy",
+        "564-device"
+      ],
+      "proofIndices": [
+        0,
+        1,
+        2
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Manual exempt from vendor low-power redirect; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0301",
+      "vendorProductId": 581,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "581-policy",
+        "581-device"
+      ],
+      "proofIndices": [
+        3,
+        4,
+        5
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Manual exempt from vendor low-power redirect; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0300",
+      "vendorProductId": 582,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "582-policy",
+        "582-device"
+      ],
+      "proofIndices": [
+        6,
+        7,
+        8
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Manual exempt from vendor low-power redirect; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0314",
+      "vendorProductId": 588,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "588-policy",
+        "588-device"
+      ],
+      "proofIndices": [
+        9,
+        10,
+        11
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Manual exempt from vendor low-power redirect; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0330",
+      "vendorProductId": 595,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "595-policy",
+        "595-device"
+      ],
+      "proofIndices": [
+        12,
+        13,
+        14
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Manual exempt from vendor low-power redirect; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0351",
+      "vendorProductId": 616,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "616-policy",
+        "616-device"
+      ],
+      "proofIndices": [
+        15,
+        16,
+        17
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Manual exempt from vendor low-power redirect; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0370",
+      "vendorProductId": 624,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "624-policy",
+        "624-device"
+      ],
+      "proofIndices": [
+        18,
+        19,
+        20
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Manual exempt from vendor low-power redirect; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0409",
+      "vendorProductId": 630,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "630-policy",
+        "630-device"
+      ],
+      "proofIndices": [
+        21,
+        22,
+        23
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Manual exempt from vendor low-power redirect; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0421",
+      "vendorProductId": 650,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "650-policy",
+        "650-device"
+      ],
+      "proofIndices": [
+        24,
+        25,
+        26
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Manual exempt from vendor low-power redirect; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0423",
+      "vendorProductId": 651,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "651-policy",
+        "651-device"
+      ],
+      "proofIndices": [
+        27,
+        28,
+        29
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Manual exempt from vendor low-power redirect; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0427",
+      "vendorProductId": 652,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "652-policy",
+        "652-device"
+      ],
+      "proofIndices": [
+        30,
+        31,
+        32
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Manual exempt from vendor low-power redirect; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0508",
+      "vendorProductId": 694,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "694-policy",
+        "694-device"
+      ],
+      "proofIndices": [
+        33,
+        34,
+        35
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Manual exempt from vendor low-power redirect; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0510",
+      "vendorProductId": 695,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "695-policy",
+        "695-device"
+      ],
+      "proofIndices": [
+        36,
+        37,
+        38
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Manual exempt from vendor low-power redirect; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0509",
+      "vendorProductId": 696,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "696-policy",
+        "696-device"
+      ],
+      "proofIndices": [
+        39,
+        40,
+        41
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Manual exempt from vendor low-power redirect; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0529",
+      "vendorProductId": 711,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "711-policy",
+        "711-device"
+      ],
+      "proofIndices": [
+        42,
+        43,
+        44
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Manual exempt from vendor low-power redirect; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0328",
+      "vendorProductId": 597,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "597-policy",
+        "597-device"
+      ],
+      "proofIndices": [
+        45,
+        46,
+        47
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Vendor low-power redirect also affects manual selector; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0530",
+      "vendorProductId": 709,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "709-policy",
+        "709-device"
+      ],
+      "proofIndices": [
+        48,
+        49,
+        50
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Vendor low-power redirect also affects manual selector; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0483",
+      "vendorProductId": 671,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "671-policy",
+        "671-device"
+      ],
+      "proofIndices": [
+        51,
+        52,
+        53
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Vendor low-power redirect also affects manual selector; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0482",
+      "vendorProductId": 669,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "669-policy",
+        "669-device"
+      ],
+      "proofIndices": [
+        54,
+        55,
+        56
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Vendor low-power redirect also affects manual selector; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0484",
+      "vendorProductId": 672,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": false,
+      "ordinaryControlSources": [
+        "672-policy",
+        "672-device"
+      ],
+      "proofIndices": [
+        57,
+        58,
+        59
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Vendor low-power redirect also affects manual selector; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0528",
+      "vendorProductId": 710,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": true,
+      "ordinaryControlSources": [
+        "710-policy",
+        "710-device"
+      ],
+      "proofIndices": [
+        60,
+        61,
+        62
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Vendor low-power redirect also affects manual selector; existing OpenBlade known-limited restrictions preserved"
+    },
+    {
+      "model": "RZ09-0581",
+      "vendorProductId": 736,
+      "physicalValidationOfThisAdmission": false,
+      "existingPhysicalBackend": true,
+      "ordinaryControlSources": [
+        "736-policy",
+        "736-device"
+      ],
+      "proofIndices": [
+        63,
+        64,
+        65
+      ],
+      "scope": "Only existing exact-model capabilities: ordinary AC performance, manual target/host-curve commands, Custom CPU/GPU levels and Maximum Fans where already admitted. No new firmware commands.",
+      "knownLimitedManualPolicy": "Vendor low-power redirect also affects manual selector; existing OpenBlade known-limited restrictions preserved"
+    }
+  ]
+}

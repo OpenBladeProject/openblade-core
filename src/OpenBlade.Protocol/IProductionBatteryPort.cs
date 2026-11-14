@@ -43,6 +43,10 @@ public interface IProductionBatteryPort : IAsyncDisposable
 
     void RequireBatterySaverFanStopRestorationAdmission() { }
 
+    Task ReleaseOwnedBatterySaverFanStopAsync(
+        Func<bool> priorAuthorityAdmission, CancellationToken cancellationToken) =>
+        Task.FromException(new NotSupportedException("Owned fan-stop release is not admitted by this backend."));
+
     Task<AdapterPowerState> QueryAdapterPowerStateAsync(
         CancellationToken cancellationToken);
 

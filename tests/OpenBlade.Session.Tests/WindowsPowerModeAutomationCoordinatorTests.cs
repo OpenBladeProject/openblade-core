@@ -30,6 +30,27 @@ public sealed class WindowsPowerModeAutomationCoordinatorTests
     }
 
     [Fact]
+    public async Task RetainedSourceDoesNotApplyAClassifiedWindowsAssociation()
+    {
+        var controller = new FakeController();
+        await using var coordinator = new WindowsPowerModeAutomationCoordinator(controller);
+        var status = Status(PowerSource.PluggedIn,
+            Profiles(PerformancePreset.Balanced, WindowsPowerMode.BestPerformance),
+            PerformancePreset.Balanced) with
+        {
+            ObservationReason = DeviceObservationReason.RetainedPowerSource,
+            ExternalPowerPresent = true,
+        };
+        Assert.Equal(WindowsPowerModeAutomationObservation.IgnoredUnavailable, coordinator.Observe(status));
+        await coordinator.WhenIdleAsync();
+        Assert.Empty(controller.Requests);
+        Assert.Equal(WindowsPowerModeAutomationObservation.ApplyScheduled,
+            coordinator.Observe(status with { ObservationReason = DeviceObservationReason.None }));
+        await coordinator.WhenIdleAsync();
+        Assert.Single(controller.Requests);
+    }
+
+    [Fact]
     public async Task LeaveUnchanged_DoesNotCallWindows()
     {
         var controller = new FakeController();

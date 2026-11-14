@@ -1768,9 +1768,10 @@ public partial class App
             ApplyDirectFanStopSnapshotState(window, state);
             return;
         }
-        if (state is "source-reviewed-presets" or "source-reviewed-base")
+        if (state is "source-reviewed-presets" or "source-reviewed-base" or "source-reviewed-unclassified")
         {
-            ApplySourceReviewedPresetsSnapshotState(window, legacyBase: state == "source-reviewed-base");
+            ApplySourceReviewedPresetsSnapshotState(window, legacyBase: state != "source-reviewed-presets",
+                unclassified: state == "source-reviewed-unclassified");
             return;
         }
         if (state is "experimental-custom" or "experimental-custom-usbc"
@@ -1941,7 +1942,8 @@ public partial class App
         refreshCards.Invoke(window, null);
     }
 
-    private static void ApplySourceReviewedPresetsSnapshotState(MainWindow window, bool legacyBase = false)
+    private static void ApplySourceReviewedPresetsSnapshotState(MainWindow window, bool legacyBase = false,
+        bool unclassified = false)
     {
         // Disconnected RZ09-0529 / 711 or RZ09-0300 / 582 fixture. Match the
         // reviewed production capability set; this never connects to the service.
@@ -1981,6 +1983,7 @@ public partial class App
                     [PerformancePreset.Creator] = new(3900, 5500, 100),
                 } : new Dictionary<PerformancePreset, FanSpeedRange>(),
             ReportsPerformanceWithManualFans = legacyBase,
+            SupportsOrdinaryThermalControlOnUnclassifiedExternalPower = unclassified,
             SupportsBreathingColorSelection = false,
             SupportsWaveDirectionSelection = false,
         };
@@ -2019,13 +2022,24 @@ public partial class App
             new ConfirmedDeviceState(selected, legacyBase ? FanMode.Fixed : FanMode.Automatic,
                 legacyBase ? null : new ConfirmedBatteryState(true, 80, null), null), profiles,
             new DesiredDeviceState(
-                new ResolvedSetting<PerformancePreset>(selected, SettingValueSource.PowerProfile),
-                new ResolvedSetting<FanMode>(fanControl.Mode, SettingValueSource.PowerProfile),
-                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
+                new ResolvedSetting<PerformancePreset>(selected, unclassified
+                    ? SettingValueSource.ConfirmedFirmwareState : SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(fanControl.Mode, unclassified
+                    ? SettingValueSource.TemporaryOverride : SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, unclassified
+                    ? SettingValueSource.ConfirmedFirmwareState : SettingValueSource.PowerProfile),
                 new DesiredBatteryState(profiles.BatteryPolicy, true, false))
             { FanControl = legacyBase ? fanControl : null },
-            PowerSource.PluggedIn, null, null, null, null, false)
+            unclassified ? PowerSource.ExternalUnknown : PowerSource.PluggedIn,
+            LiveReadings: null,
+            PerformanceOverride: null,
+            FanOverride: unclassified
+                ? new ManualOverride<FanMode>(fanControl.Mode, OverrideLifetime.UntilPowerSourceChange) : null,
+            LightingOverride: null,
+            FullChargeOverride: false)
         {
+            ExternalPowerPresent = unclassified,
+            FanControlOverride = unclassified ? fanControl : null,
             IsExperimentalDevice = true,
             AllowExperimentalFeatures = true,
             ExperimentalSupportSource = legacyBase ? "SynapseSourceBacked:RZ09-0300:582" : "SynapseSourceBacked:RZ09-0529:711",
