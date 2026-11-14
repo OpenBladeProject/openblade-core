@@ -9,6 +9,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Offer all model-supported performance modes, including Custom and HyperBoost, on sufficient and limited external adapters. Preserve separate profiles, firmware power management and battery-drain notifications. ([#964](https://github.com/OSSBlade/openblade-core/pull/964))
 
+### Fixed
+
+- Finish local broker installations by recognizing supported input helpers and waiting for startup inventory to settle before opening OpenBlade. ([#966](https://github.com/OSSBlade/openblade-core/pull/966))
+
 ## [0.61.1-nightly.114] - 2026-11-13
 
 ### Added
