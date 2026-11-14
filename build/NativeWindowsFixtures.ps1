@@ -18,10 +18,18 @@ function Get-OpenBladeNativeFixturePythonRuntime {
             -not (Test-Path -LiteralPath $probe.executable -PathType Leaf)) { throw 'missing executable' }
     }
     catch { throw 'Python 3.11 or newer with hashlib.file_digest is required for native fixture checks.' }
+    try {
+        $sha256 = (Get-FileHash -LiteralPath $probe.executable -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+    }
+    catch {
+        throw [InvalidOperationException]::new(
+            "Python prerequisite failed while hashing resolved executable '$($probe.executable)': $($_.Exception.Message)",
+            $_.Exception)
+    }
     return [pscustomobject]@{
         Executable = [IO.Path]::GetFullPath([string]$probe.executable)
         VersionInfo = @($probe.versionInfo)
-        Sha256 = (Get-FileHash -LiteralPath $probe.executable -Algorithm SHA256).Hash.ToLowerInvariant()
+        Sha256 = $sha256
         ProbeCommand = @($command.Source, '-I', '-S', '-c', $probeCode)
     }
 }

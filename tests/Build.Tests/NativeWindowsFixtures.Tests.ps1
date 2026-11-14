@@ -72,8 +72,31 @@ Write-Host 'Fixture disk threshold contracts passed.'
     catch { $failed = $_.Exception.Message.Contains('3.11') }
     if (-not $failed -or (Test-Path -LiteralPath $proposedRoot)) { throw 'Unsupported runtime must stop scope entry before root creation.' }
 }
+& {
+    $script:fixtureHashStopObserved = $false
+    function Get-FileHash {
+        param($LiteralPath, $Algorithm, $ErrorAction)
+        if ($ErrorAction -ne 'Stop' -or $Algorithm -ne 'SHA256' -or
+            $LiteralPath -ne $pythonRuntime.Executable) { throw 'Unexpected executable hash boundary.' }
+        $script:fixtureHashStopObserved = $true
+        throw [IO.IOException]::new('Injected executable hash I/O failure.')
+    }
+    $failed = $false
+    try { Get-OpenBladeNativeFixturePythonRuntime | Out-Null }
+    catch {
+        $failed = $_.Exception.Message.Contains('Python prerequisite failed while hashing resolved executable') -and
+            $_.Exception.Message.Contains('Injected executable hash I/O failure.') -and
+            $_.Exception.InnerException.Message.Contains('Injected executable hash I/O failure.')
+    }
+    if (-not $failed -or -not $script:fixtureHashStopObserved) { throw 'Executable hash failure must retain its prerequisite step and inner detail.' }
+    $proposedRoot = Join-Path ([IO.Path]::GetTempPath()) ('fixture-python-hash-guard-' + [Guid]::NewGuid().ToString('N'))
+    $failed = $false
+    try { Invoke-OpenBladeNativeFixtureScope -Repository $repository -OutputRoot $proposedRoot -Action { throw 'Unexpected consumer execution.' } }
+    catch { $failed = $_.Exception.Message.Contains('hashing resolved executable') -and $_.Exception.Message.Contains('Injected executable hash I/O failure.') }
+    if (-not $failed -or (Test-Path -LiteralPath $proposedRoot)) { throw 'Executable hash failure must stop scope entry before root creation.' }
+}
 if ([Version]::new([int]$pythonRuntime.VersionInfo[0], [int]$pythonRuntime.VersionInfo[1]) -lt [Version]'3.11' -or
     $pythonRuntime.Sha256 -ne (Get-FileHash -LiteralPath $pythonRuntime.Executable -Algorithm SHA256).Hash.ToLowerInvariant()) {
     throw 'Supported Python probe must bind the actual executable and version.'
 }
-Write-Host 'Python prerequisite contracts passed (missing, unsupported, supported path/hash).'
+Write-Host 'Python prerequisite contracts passed (missing, unsupported, hash I/O failure, supported path/hash).'
