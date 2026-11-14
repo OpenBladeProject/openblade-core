@@ -37,13 +37,9 @@ fn main() -> std::process::ExitCode {
     let _diagnostics = openblade_platform_windows::agent_diagnostics::register();
     #[cfg(all(windows, feature = "agent-battery-report-v1"))]
     let result = {
-        use openblade_platform_windows::agent_diagnostics::{Event, record};
         loaded_origin::Origin::acquire("agent", &NATIVE_ARTIFACT_IDENTITY)
-            .inspect_err(|err| record(Event::Origin(err.kind(), err.raw_os_error())))
-            .and_then(|origin| {
-                session_native::entry_installed(origin)
-                    .inspect_err(|err| record(Event::Endpoint(err.kind(), err.raw_os_error())))
-            })
+            .map_err(session_native::diagnostics::origin)
+            .and_then(session_native::entry_installed)
     };
     #[cfg(all(windows, not(feature = "agent-battery-report-v1")))]
     let result = loaded_origin::Origin::acquire("agent", &NATIVE_ARTIFACT_IDENTITY)
@@ -60,7 +56,10 @@ fn main() -> std::process::ExitCode {
             #[cfg(not(all(windows, feature = "agent-battery-report-v1")))]
             eprintln!("OpenBlade installed Session Agent candidate: {error}");
             #[cfg(all(windows, feature = "agent-battery-report-v1"))]
-            let _ = error; // The selected entry recorded the typed stage above.
+            session_native::diagnostics::terminal(
+                &error,
+                openblade_platform_windows::agent_diagnostics::record,
+            );
             std::process::ExitCode::FAILURE
         }
     }

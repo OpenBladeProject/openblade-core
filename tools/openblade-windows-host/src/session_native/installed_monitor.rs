@@ -15,7 +15,7 @@ use windows_sys::Win32::{
 };
 
 pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
-    origin.verify()?;
+    super::verify_origin(&origin)?;
     let digest = Sha256::digest(origin.image.to_string_lossy().to_uppercase().as_bytes());
     let hash: String = digest[..16].iter().map(|b| format!("{b:02X}")).collect();
     let name: Vec<u16> = format!("Local\\OpenBlade.SessionAgent.Shutdown.{hash}")
@@ -48,7 +48,7 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
                     WAIT_TIMEOUT => (),
                     _ => return Err(io::Error::last_os_error()),
                 }
-                origin.verify()?;
+                super::verify_origin(&origin)?;
                 tokio::time::sleep(Duration::from_millis(250)).await;
             }
         };
@@ -57,7 +57,7 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
             Some(&authority),
             std::future::pending::<()>(),
             |update| {
-                origin.verify()?;
+                super::verify_origin(&origin)?;
                 // No firmware projection is claimed by a metadata subscription.
                 match update {
                     service_client::StatusUpdate::Opened(value) => value.require_fresh(),

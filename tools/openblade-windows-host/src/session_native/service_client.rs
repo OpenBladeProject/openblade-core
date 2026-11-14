@@ -462,3 +462,18 @@ async fn connect_installed() -> io::Result<NamedPipeClient> {
 
 #[cfg(test)]
 pub(super) mod tests;
+
+#[cfg(all(test, feature = "agent-battery-report-v1"))]
+#[test]
+fn diagnostic_origin_cause_survives_actual_denied_service_conversion() {
+    use openblade_platform_windows::agent_diagnostics::Event;
+    let cause = super::origin_error(io::Error::from_raw_os_error(5));
+    let error = ServiceAuthorityError::from(cause).into_io();
+    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    let mut events = Vec::new();
+    super::diagnostics::terminal(&error, |event| events.push(event));
+    assert_eq!(
+        events,
+        [Event::Origin(io::ErrorKind::PermissionDenied, Some(5))]
+    );
+}

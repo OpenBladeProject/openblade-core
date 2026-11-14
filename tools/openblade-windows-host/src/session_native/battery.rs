@@ -24,6 +24,8 @@ mod timestamp;
 mod wire;
 #[path = "../session_battery/xml.rs"]
 mod xml;
+use super::diagnostics;
+use openblade_platform_windows::agent_diagnostics::{Event, record};
 use wire::{MAX_FRAME, Request, Response, read_frame_body};
 
 const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
@@ -62,9 +64,9 @@ pub(super) async fn run(
     origin: Arc<crate::loaded_origin::Origin>,
     mut stop: watch::Receiver<bool>,
 ) -> io::Result<()> {
-    origin.verify()?;
-    let endpoint = Endpoint::current_user_battery()?;
-    let _claim = endpoint.claim()?;
+    super::verify_origin(&origin)?;
+    let endpoint = Endpoint::current_user_battery().map_err(diagnostics::listener)?;
+    let _claim = endpoint.claim().map_err(diagnostics::listener)?;
     let mut supplier = WindowsSupplier;
     run_connections(
         &mut stop,
@@ -76,6 +78,7 @@ pub(super) async fn run(
         },
         |pipe| endpoint.identity.authorize(pipe),
         || origin.verify(),
+        record,
     )
     .await
 }
@@ -88,6 +91,7 @@ async fn run_connections<S, F>(
     mut accept: impl FnMut() -> F,
     authorize: impl Fn(&S) -> io::Result<()>,
     verify: impl Fn() -> io::Result<()>,
+    emit: impl Fn(Event),
 ) -> io::Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -97,13 +101,13 @@ where
         if *stop.borrow() {
             return Ok(());
         }
-        verify()?;
+        verify().map_err(diagnostics::origin)?;
         let mut pipe = tokio::select! {
             biased;
             _ = stopped(stop) => return Ok(()),
-            result = accept() => result?,
+            result = accept() => result.map_err(diagnostics::listener)?,
         };
-        match serve(&mut pipe, stop, supplier, &authorize, &verify).await {
+        match serve(&mut pipe, stop, supplier, &authorize, &verify, &emit).await {
             Ok(()) => (),
             Err(ServeError::Connection(error)) => drop(error),
             Err(ServeError::Fatal(error)) => return Err(error),
@@ -171,6 +175,7 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     supplier: &mut impl Supplier,
     authorize: impl Fn(&S) -> io::Result<()>,
     verify: impl Fn() -> io::Result<()>,
+    emit: impl Fn(Event),
 ) -> Result<(), ServeError> {
     if *stop.borrow() {
         return Ok(());
@@ -181,11 +186,11 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
         result = timeout(FRAME_TIMEOUT, read_frame_body(pipe, MAX_FRAME)) => result??,
     };
     // Read first: impersonation must use the current message token, not a cached peer.
-    verify().map_err(ServeError::Fatal)?;
+    verify().map_err(|error| ServeError::Fatal(diagnostics::origin(error)))?;
     authorize(pipe)?;
     let request: Request = serde_json::from_slice(&body)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    verify().map_err(ServeError::Fatal)?;
+    verify().map_err(|error| ServeError::Fatal(diagnostics::origin(error)))?;
     if *stop.borrow() {
         return Ok(());
     }
@@ -223,13 +228,9 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     };
     let result = match end {
         End::Retire => return Ok(()),
-        End::Stale(error) => return Err(ServeError::Fatal(error)),
+        End::Stale(error) => return Err(ServeError::Fatal(diagnostics::origin(error))),
         End::Complete(Err(Failure::StopUnconfirmed)) => {
-            openblade_platform_windows::agent_diagnostics::record(
-                openblade_platform_windows::agent_diagnostics::Event::BatteryRetirement(
-                    Failure::StopUnconfirmed,
-                ),
-            );
+            emit(Event::BatteryRetirement(Failure::StopUnconfirmed));
             // Preserve the endpoint lease while the platform retains the original
             // job/process/directory. No new report is admitted during uncertainty.
             // Each probe is nonblocking; Stop never reports a fictitious clean drain.
@@ -238,19 +239,20 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
                     Err(Failure::StopUnconfirmed) => sleep(ORIGIN_POLL).await,
                     result => {
                         result.map_err(|failure| {
-                            openblade_platform_windows::agent_diagnostics::record(
-                                openblade_platform_windows::agent_diagnostics::Event::BatteryRetirement(failure),
-                            );
-                            ServeError::Fatal(io::Error::other(
-                                "battery report retirement cleanup failed",
+                            let event = Event::BatteryRetirement(failure);
+                            emit(event);
+                            ServeError::Fatal(diagnostics::attempted(
+                                io::Error::other("battery report retirement cleanup failed"),
+                                event,
                             ))
                         })?;
                         break;
                     }
                 }
             }
-            return Err(ServeError::Fatal(io::Error::other(
-                "battery report process retirement was uncertain",
+            return Err(ServeError::Fatal(diagnostics::attempted(
+                io::Error::other("battery report process retirement was uncertain"),
+                Event::BatteryRetirement(Failure::StopUnconfirmed),
             )));
         }
         End::Complete(result) => result,
@@ -267,7 +269,7 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     let frame = Response::from_result(&request.request_id, result).frame()?;
     // Parsing/encoding are bounded but may take time; bind the emitted frame to
     // the fresh origin and current message identity after those steps too.
-    verify().map_err(ServeError::Fatal)?;
+    verify().map_err(|error| ServeError::Fatal(diagnostics::origin(error)))?;
     authorize(pipe)?;
     tokio::select! {
         biased;

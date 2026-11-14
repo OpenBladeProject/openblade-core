@@ -66,6 +66,7 @@ async fn exchange(script: &mut Script, body: &[u8]) -> (io::Result<()>, Vec<u8>,
                     Ok(())
                 },
                 || Ok(()),
+                |_| (),
             )
             .await;
             drop(server);
@@ -191,6 +192,7 @@ async fn rejected_peer_or_stale_origin_never_starts_supplier() {
                     Ok(())
                 }
             },
+            |_| (),
         )
         .await;
         let error = result.unwrap_err();
@@ -241,7 +243,8 @@ async fn refused_connection_is_dropped_and_the_next_peer_gets_its_report() {
                     Ok(())
                 }
             },
-            || Ok(())
+            || Ok(()),
+            |_| ()
         ),
         async {
             let mut refused = Vec::new();
@@ -293,10 +296,14 @@ async fn stale_origin_after_read_is_fatal_and_does_not_accept_another_peer() {
                     Err(io::Error::new(kind, "origin changed after read"))
                 }
             },
+            |_| (),
         )
         .await
         .unwrap_err();
         assert_eq!(error.kind(), kind);
+        let mut events = Vec::new();
+        diagnostics::terminal(&error, |event| events.push(event));
+        assert_eq!(events, [Event::Origin(kind, None)]);
         assert_eq!(accepts.get(), 1);
         assert_eq!(peers.get(), 0);
         assert!(!supplier.started.load(Ordering::Acquire));
@@ -313,11 +320,83 @@ async fn listener_failure_stays_fatal_without_blanket_stale_error_tolerance() {
         || std::future::ready(Err(io::Error::other("listener custody failure"))),
         |_| Ok(()),
         || Ok(()),
+        |_| (),
     )
     .await
     .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::Other);
+    let mut events = Vec::new();
+    diagnostics::terminal(&error, |event| events.push(event));
+    assert_eq!(events, [Event::Listener(io::ErrorKind::Other, None)]);
     assert!(!supplier.started.load(Ordering::Acquire));
+}
+
+#[tokio::test(start_paused = true)]
+async fn retired_uncertainty_has_one_causal_event_without_terminal_endpoint_duplicate() {
+    let (mut server, mut client) = tokio::io::duplex(4096);
+    client.write_all(&request()).await.unwrap();
+    let (_tx, mut stop) = watch::channel(false);
+    let mut supplier = Script::new(Err(Failure::StopUnconfirmed));
+    let events = std::cell::RefCell::new(Vec::new());
+    let failure = serve(
+        &mut server,
+        &mut stop,
+        &mut supplier,
+        |_| Ok(()),
+        || Ok(()),
+        |event| events.borrow_mut().push(event),
+    )
+    .await
+    .unwrap_err();
+    let ServeError::Fatal(error) = failure else {
+        panic!("retirement must be fatal")
+    };
+    diagnostics::terminal(&error, |event| events.borrow_mut().push(event));
+    assert_eq!(
+        *events.borrow(),
+        [Event::BatteryRetirement(Failure::StopUnconfirmed)]
+    );
+    assert_eq!(supplier.probes, 3);
+}
+
+#[tokio::test]
+async fn post_acquisition_origin_failure_keeps_its_cause_through_terminal_reporting() {
+    let (mut server, mut client) = tokio::io::duplex(4096);
+    client.write_all(&request()).await.unwrap();
+    let (_tx, mut stop) = watch::channel(false);
+    let mut supplier = Script::new(Ok(
+        include_bytes!("../../session_battery/timeline.xml").to_vec()
+    ));
+    let retired = supplier.retired.clone();
+    let events = std::cell::RefCell::new(Vec::new());
+    let failure = serve(
+        &mut server,
+        &mut stop,
+        &mut supplier,
+        |_| Ok(()),
+        || {
+            if retired.load(Ordering::Acquire) {
+                Err(io::Error::from_raw_os_error(5))
+            } else {
+                Ok(())
+            }
+        },
+        |event| events.borrow_mut().push(event),
+    )
+    .await
+    .unwrap_err();
+    let ServeError::Fatal(error) = failure else {
+        panic!("origin must be fatal")
+    };
+    diagnostics::terminal(&error, |event| events.borrow_mut().push(event));
+    assert_eq!(
+        *events.borrow(),
+        [Event::Origin(io::ErrorKind::PermissionDenied, Some(5))]
+    );
+    drop(server);
+    let mut bytes = Vec::new();
+    client.read_to_end(&mut bytes).await.unwrap();
+    assert!(bytes.is_empty());
 }
 #[tokio::test(start_paused = true)]
 async fn cancellation_disconnect_extra_bytes_deadline_and_origin_loss_join_supplier_without_reply()
@@ -346,6 +425,7 @@ async fn cancellation_disconnect_extra_bytes_deadline_and_origin_loss_join_suppl
                             Ok(())
                         }
                     },
+                    |_| (),
                 )
                 .await;
                 assert!(
@@ -401,9 +481,16 @@ async fn stop_before_request_does_not_admit_work() {
     let (mut server, _client) = tokio::io::duplex(4096);
     let (_tx, mut stop) = watch::channel(true);
     let mut script = Script::new(Err(Failure::Start));
-    serve(&mut server, &mut stop, &mut script, |_| Ok(()), || Ok(()))
-        .await
-        .unwrap();
+    serve(
+        &mut server,
+        &mut stop,
+        &mut script,
+        |_| Ok(()),
+        || Ok(()),
+        |_| (),
+    )
+    .await
+    .unwrap();
     assert!(!script.started.load(Ordering::Acquire));
 }
 #[tokio::test]
@@ -430,6 +517,7 @@ async fn identity_is_rechecked_after_acquisition_before_emitting_frame() {
             }
         },
         || Ok(()),
+        |_| (),
     )
     .await
     .unwrap_err();

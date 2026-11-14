@@ -7,6 +7,8 @@ use std::{
 #[cfg(feature = "agent-battery-report-v1")]
 mod battery;
 #[cfg(feature = "agent-battery-report-v1")]
+pub(crate) mod diagnostics;
+#[cfg(feature = "agent-battery-report-v1")]
 mod feature_lifetime;
 #[cfg(not(test))]
 mod installed_monitor;
@@ -14,6 +16,18 @@ mod installed_monitor;
 mod scm_peer;
 pub(crate) mod service_client;
 mod token;
+
+// Preserve the source of installed-origin failures across the monitor and
+// Service-authority wrappers. Default/unselected entry error behavior is unchanged.
+fn verify_origin(origin: &crate::loaded_origin::Origin) -> io::Result<()> {
+    origin.verify().map_err(origin_error)
+}
+
+fn origin_error(error: io::Error) -> io::Error {
+    #[cfg(feature = "agent-battery-report-v1")]
+    let error = diagnostics::origin(error);
+    error
+}
 #[cfg(not(test))]
 pub(crate) fn entry_installed(
     origin: std::sync::Arc<crate::loaded_origin::Origin>,

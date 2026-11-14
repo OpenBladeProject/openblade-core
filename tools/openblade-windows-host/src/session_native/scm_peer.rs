@@ -38,8 +38,8 @@ pub(super) struct WindowsInstalledServiceAuthority {
 }
 impl WindowsInstalledServiceAuthority {
     pub(super) fn from_agent(origin: Arc<Origin>) -> io::Result<Self> {
-        origin.verify()?;
-        if origin.session == 0 || !origin.committed()? {
+        super::verify_origin(&origin)?;
+        if origin.session == 0 || !origin.committed().map_err(super::origin_error)? {
             return Err(deny());
         }
         Ok(Self { origin })
@@ -66,7 +66,7 @@ impl InstalledServiceAuthority for WindowsInstalledServiceAuthority {
 }
 impl WindowsInstalledServiceAuthority {
     fn acquire(&self) -> Result<Generation, ServiceAuthorityError> {
-        self.origin.verify()?;
+        super::verify_origin(&self.origin)?;
         let mut package = native_package::read_installed_package()?;
         if package.agent_path != self.origin.image {
             return Err(ServiceAuthorityError::Denied(deny()));
@@ -100,7 +100,7 @@ impl WindowsInstalledServiceAuthority {
         if classify_service(registration.query(&command, SERVICE_AUTO_START)?, Some(pid))? != pid {
             return Err(ServiceAuthorityError::Denied(deny()));
         }
-        self.origin.verify()?;
+        super::verify_origin(&self.origin)?;
         let generation = Generation {
             origin: self.origin.clone(),
             package: RefCell::new(package),
@@ -122,7 +122,7 @@ impl InstalledServiceGeneration for Generation {
             &self.state,
             || wait(&self.process),
             || {
-                self.origin.verify()?;
+                super::verify_origin(&self.origin)?;
                 self.package.borrow_mut().require_current()?;
                 let scm = self.registration.query(&self.command, SERVICE_AUTO_START)?;
                 let availability = classify_service(scm, Some(self.pid));

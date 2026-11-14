@@ -34,6 +34,7 @@ pub enum Event {
     BatteryCleanup,
     BatteryRetirement(Failure),
     Origin(io::ErrorKind, Option<i32>),
+    Listener(io::ErrorKind, Option<i32>),
     Endpoint(io::ErrorKind, Option<i32>),
 }
 
@@ -76,10 +77,26 @@ impl Drop for Registration {
 }
 
 pub fn record(event: Event) {
-    if let Ok(logs) = LOGS.lock() {
-        if let Some(dir) = logs.as_ref() {
-            let _ = store(dir, event, LIMIT);
-        }
+    let stored = LOGS
+        .lock()
+        .ok()
+        .and_then(|logs| logs.as_ref().map(|dir| store(dir, event, LIMIT)));
+    fallback(event, stored, &mut io::stderr());
+}
+
+const MAX_FALLBACK_BYTES: usize = 512;
+
+fn fallback(event: Event, stored: Option<io::Result<()>>, stderr: &mut impl Write) {
+    if matches!(stored, Some(Ok(()))) {
+        return;
+    }
+    // This fixed representation accepts only enum variants and numbers. The
+    // persistence error itself may contain a path and is never formatted.
+    let mut buffer = [0u8; MAX_FALLBACK_BYTES];
+    let mut line = io::Cursor::new(&mut buffer[..]);
+    if writeln!(line, "OpenBlade.SessionAgent.Native {event:?}").is_ok() {
+        let count = line.position() as usize;
+        let _ = stderr.write_all(&buffer[..count]);
     }
 }
 fn ordinary_session() -> bool {
@@ -186,6 +203,29 @@ mod tests {
     use std::fs;
     use windows_sys::{Win32::System::Com::CoCreateGuid, core::GUID};
 
+    #[test]
+    fn fallback_delivers_only_the_typed_event_when_persistence_is_unavailable() {
+        let event = Event::BatteryRetirement(Failure::StopUnconfirmed);
+        let mut bytes = Vec::new();
+        fallback(event, Some(Ok(())), &mut bytes);
+        assert!(bytes.is_empty());
+
+        for outcome in [
+            None,
+            Some(Err(io::Error::other(r"C:\sensitive\report.xml"))),
+        ] {
+            bytes.clear();
+            fallback(event, outcome, &mut bytes);
+            assert_eq!(
+                bytes,
+                b"OpenBlade.SessionAgent.Native BatteryRetirement(StopUnconfirmed)\n"
+            );
+            assert!(bytes.len() <= MAX_FALLBACK_BYTES);
+        }
+        // A fixed-capacity writer with no space reports WriteZero. Failure of
+        // the last sink is best-effort and cannot replace the product outcome.
+        fallback(event, None, &mut &mut [][..]);
+    }
     #[test]
     fn typed_native_events_are_exportable_bounded_and_reject_foreign_hardlinks() {
         let mut id = GUID::default();
