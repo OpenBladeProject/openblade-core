@@ -6690,6 +6690,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     && expectedExitPowerSourceGeneration == powerSourceGeneration
                         ? transitionExitSource
                         : current.ActivePowerSource;
+            if (transitionPowerSource is not (PowerSource.PluggedIn or PowerSource.UsbC or PowerSource.Battery))
+            {
+                // An unclassified lifecycle destination grants no restoration
+                // authority. Preserve the exact owned journal before any SET.
+                return new ControlOperationResult(ControlOperationStatus.Blocked,
+                    "HyperBoost restoration requires a confirmed power source; the owned recovery journal was preserved.");
+            }
             if (enabled || ownedDisableAttempt)
             {
                 preparedTransitionJournal = new HyperBoostOwnershipJournal(
@@ -7761,6 +7768,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             });
             return false;
         }
+        bool Complete()
+        {
+            ownedHyperBoostSourceChangePending = false;
+            hyperBoostSourceBoundarySafetyBlock = false;
+            hyperBoostSourceBoundaryPriorSafetyBlock = false;
+            return true;
+        }
         HyperBoostOwnershipJournal? expectedJournal = ownedHyperBoostJournal;
         string? expectedSha256 = ownedHyperBoostJournalSha256;
         if (!ownsHyperBoost)
@@ -7773,8 +7787,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                history.RecordSummary(ControlOperationStatus.Failed,
-                    $"The pending HyperBoost source boundary could not be inspected: {exception.Message}");
+                if (!hyperBoostSourceBoundarySafetyBlock)
+                {
+                    history.RecordSummary(ControlOperationStatus.Failed,
+                        $"The pending HyperBoost source boundary could not be inspected: {exception.Message}");
+                }
                 return Block();
             }
             if (load.Invalid)
@@ -7783,9 +7800,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
             if (load.Journal is null)
             {
-                ownedHyperBoostSourceChangePending = false;
                 hyperBoostRestorePending = false;
-                return true;
+                return Complete();
             }
             expectedJournal = load.Journal;
             expectedSha256 = load.Sha256;
@@ -7798,8 +7814,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
         if (expectedJournal.RestoreUsesCurrentPowerDestination)
         {
-            ownedHyperBoostSourceChangePending = false;
-            return true;
+            return Complete();
         }
         cancellationToken.ThrowIfCancellationRequested();
         HyperBoostOwnershipJournal replacementJournal = expectedJournal with
@@ -7821,10 +7836,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ownedHyperBoostJournal = replacementJournal;
             ownedHyperBoostJournalSha256 = replacement.Sha256;
         }
-        ownedHyperBoostSourceChangePending = false;
-        hyperBoostSourceBoundarySafetyBlock = false;
-        hyperBoostSourceBoundaryPriorSafetyBlock = false;
-        return true;
+        return Complete();
     }
 
     private static HyperBoostRestoreIntent ResolveHyperBoostExitIntent(
@@ -9823,6 +9835,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             hyperBoostRestorePending = true;
             if (confirmed is { } matchingConfirmed
+                && powerSourceConfirmed
+                && observedPowerSource == journal.RestorePowerSource
+                && !journal.RestoreUsesCurrentPowerDestination
                 && (journal.RestoreRetryDisposition
                         != HyperBoostRestoreRetryDisposition.DeferredPreSubmission
                     || journal.RestoreRetryTarget

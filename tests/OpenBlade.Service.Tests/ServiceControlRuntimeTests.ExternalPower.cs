@@ -452,4 +452,102 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
+
+    [Theory]
+    [InlineData("suspend")]
+    [InlineData("shutdown")]
+    public async Task ExternalPower_UnclassifiedLifecyclePreservesOwnedJournal(string boundary)
+    {
+        var journal = new RecordingHyperBoostOwnershipJournalStore();
+        TestContext context = CreateContext(true, hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None)).Status);
+        HyperBoostOwnershipJournal? owned = journal.Journal;
+        Assert.NotNull(owned);
+        int journalWrites = journal.Writes.Count;
+        int hyperBoostWrites = context.Device.HyperBoostSetCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+
+        if (boundary == "shutdown")
+        {
+            await context.Runtime.PrepareForShutdownAsync(CancellationToken.None);
+        }
+        else
+        {
+            await context.Runtime.PrepareForLowPowerAsync(CancellationToken.None);
+        }
+
+        Assert.Equal(owned, journal.Journal);
+        Assert.True(journal.Journal?.IsWellFormed);
+        Assert.Equal(journalWrites, journal.Writes.Count);
+        Assert.Equal(hyperBoostWrites, context.Device.HyperBoostSetCalls);
+        Assert.True(context.Device.ConfirmedState.HyperBoostActive);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Balanced)]
+    [InlineData(PerformancePreset.BatteryBalanced)]
+    public async Task ExternalPower_LegacyPendingRestoreRebasesBeforeAnySetter(PerformancePreset observed)
+    {
+        string path = Path.Combine(directory, "legacy-destination-hyperboost.json");
+        var store = new HyperBoostOwnershipJournalStore(path);
+        TestContext context = CreateContext(true, hyperBoostOwnershipJournalStore: store);
+        ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        var saved = await context.Runtime.UpdateProfilesAsync(profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { Performance = PerformancePreset.Performance },
+        }, CancellationToken.None);
+        Assert.True(saved.Status == ControlOperationStatus.Stored, saved.Message);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = observed,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        var legacy = new HyperBoostOwnershipJournalDocument(7,
+            HyperBoostOwnershipJournalState.RestorePending, PerformancePreset.Balanced,
+            DateTimeOffset.UtcNow, RequiresCoolingPad: false,
+            RestorePerformance: PerformancePreset.BatteryBalanced,
+            RestoreFanControl: FanControlSettings.Default,
+            RecoveryBaseline: new HyperBoostRecoveryBaseline(observed, FanMode.Automatic, HyperBoostActive: false));
+        await File.WriteAllTextAsync(path, System.Text.Json.JsonSerializer.Serialize(legacy,
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.True(context.Runtime.GetStatus().HyperBoostRestorePending);
+        Assert.NotNull((await store.LoadAsync(CancellationToken.None)).Journal);
+        int writesBefore = context.Device.PerformanceWrites.Count;
+        bool durableBeforeWrite = false;
+        context.Device.AfterSetter = _ =>
+        {
+            if (context.Device.PerformanceWrites.Count <= writesBefore)
+            {
+                return;
+            }
+            HyperBoostOwnershipJournalLoadResult pending = store.LoadAsync(CancellationToken.None)
+                .GetAwaiter().GetResult();
+            Assert.False(pending.Invalid);
+            Assert.Equal(HyperBoostOwnershipJournalState.RestorePending, pending.Journal?.State);
+            Assert.Equal(PerformancePreset.Performance, pending.Journal?.RestoreIntent.Performance);
+            Assert.Equal(PowerSource.PluggedIn, pending.Journal?.RestorePowerSource);
+            using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            Assert.Equal(8, document.RootElement.GetProperty("schemaVersion").GetInt32());
+            durableBeforeWrite = true;
+        };
+
+        ControlOperationResult restored = await context.Runtime.RecoverHyperBoostRestoreAsync(CancellationToken.None);
+
+        Assert.True(restored.Status == ControlOperationStatus.Applied, restored.Message);
+        Assert.True(durableBeforeWrite);
+        Assert.All(context.Device.PerformanceWrites.Skip(writesBefore),
+            performance => Assert.Equal(PerformancePreset.Performance, performance));
+        Assert.Equal(PerformancePreset.Performance, context.Device.ConfirmedState.Performance);
+        Assert.Equal(PerformancePreset.Performance, context.Runtime.GetStatus().DesiredState.Performance.Value);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Null((await store.LoadAsync(CancellationToken.None)).Journal);
+    }
 }

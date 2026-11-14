@@ -315,8 +315,12 @@ internal sealed class HyperBoostOwnershipJournalStore : IHyperBoostOwnershipJour
                         RestorePowerSource = document.SchemaVersion == CurrentSchemaVersion
                             ? document.RestorePowerSource ?? (PowerSource)(-1)
                             : PowerSource.PluggedIn,
+                        // Old entry capture was full-power AC, but a pending
+                        // exit could already contain a battery/limited destination.
+                        // Its missing destination provenance must be rebound fresh.
                         RestoreUsesCurrentPowerDestination = document.SchemaVersion == CurrentSchemaVersion
-                            && document.RestoreUsesCurrentPowerDestination,
+                            ? document.RestoreUsesCurrentPowerDestination
+                            : document.State == HyperBoostOwnershipJournalState.RestorePending,
                         RecoveryBaseline = document.SchemaVersion
                             is 4 or RetryDispositionSchemaVersion
                                 or RetryTargetSchemaVersion or TransitionIdSchemaVersion or CurrentSchemaVersion

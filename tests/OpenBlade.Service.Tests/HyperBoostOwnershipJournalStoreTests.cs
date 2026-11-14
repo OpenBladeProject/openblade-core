@@ -147,6 +147,28 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
     }
 
     [Theory]
+    [InlineData(PerformancePreset.Balanced)]
+    [InlineData(PerformancePreset.BatteryBalanced)]
+    public async Task Load_SchemaSevenPendingRestoreRequiresCurrentDestination(PerformancePreset restore)
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "legacy-pending-source.json");
+        var document = new HyperBoostOwnershipJournalDocument(7,
+            HyperBoostOwnershipJournalState.RestorePending, PerformancePreset.Balanced,
+            DateTimeOffset.UtcNow, RequiresCoolingPad: false,
+            RestorePerformance: restore, RestoreFanControl: FanControlSettings.Default);
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(document,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+
+        HyperBoostOwnershipJournalLoadResult loaded = await new HyperBoostOwnershipJournalStore(path)
+            .LoadAsync(CancellationToken.None);
+
+        Assert.False(loaded.Invalid);
+        Assert.Equal(restore, loaded.Journal?.RestoreIntent.Performance);
+        Assert.True(loaded.Journal?.RestoreUsesCurrentPowerDestination);
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData(PowerSource.ExternalUnknown)]
     [InlineData((PowerSource)99)]
