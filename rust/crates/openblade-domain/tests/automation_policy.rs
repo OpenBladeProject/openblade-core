@@ -105,7 +105,7 @@ fn malformed_fixture_fails_closed() {
 }
 
 #[test]
-fn decoded_performance_source_matches_shared_matrix() {
+fn decoded_performance_source_expands_external_policy_from_frozen_matrix() {
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     struct PerformanceSourceFixture {
@@ -128,9 +128,16 @@ fn decoded_performance_source_matches_shared_matrix() {
     for (preset, expected) in fixture.cases {
         assert_eq!(expected.len(), fixture.sources.len());
         for (&source, eligible) in fixture.sources.iter().zip(expected) {
+            // Preserve the historical matrix as provenance; the intended change
+            // admits every defined preset on either confirmed external source.
+            let expected = if source == 0 || source == 2 {
+                (0..=9).contains(&preset)
+            } else {
+                eligible
+            };
             assert_eq!(
                 automation::performance_source_eligible(preset, source),
-                eligible,
+                expected,
                 "preset {preset}, source {source}"
             );
         }

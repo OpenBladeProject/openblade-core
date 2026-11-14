@@ -193,18 +193,54 @@ public sealed partial class ExperimentalThermalExpansionTests
     }
 
     [Theory]
-    [InlineData(0x029F)]
-    [InlineData(0x029D)]
-    public async Task FixedFans_RejectUsbCBeforeWriteWithoutExactManualFlagEvidence(int pid)
+    [InlineData(0x029F, PowerSource.UsbC)]
+    [InlineData(0x029D, PowerSource.UsbC)]
+    [InlineData(0x029F, PowerSource.ExternalUnknown)]
+    [InlineData(0x029D, PowerSource.ExternalUnknown)]
+    public async Task FixedFans_LimitedExternalRetainsExistingManualCapabilityBoundary(int pid, PowerSource source)
     {
         var session = new Session { AdapterPowerPayload = [0x07, 0x11] };
-        await using var port = Create(pid, session, power: () => PowerSource.UsbC);
-
-        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+        await using var port = Create(pid, session, power: () => source);
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetFanTargetsAsync(pid == 0x029F ? 2000 : 2200, 5000, CancellationToken.None));
-
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
         Assert.Empty(session.Writes);
+        if (source == PowerSource.UsbC) { Assert.Empty(session.Commands); }
+        else { Assert.Contains(session.Commands, command => command.CommandId == 0x8C); }
+    }
+
+    [Theory]
+    [InlineData(0x029F)]
+    [InlineData(0x029D)]
+    public async Task FixedFans_RawWindowsExternalPresenceUsesFreshFullPowerClassification(int pid)
+    {
+        var session = new Session { AdapterPowerPayload = [0x11, 0x11], Mode = 5 };
+        await using var port = Create(pid, session, power: () => PowerSource.ExternalUnknown);
+        await port.SetFanTargetsAsync(pid == 0x029F ? 2000 : 2200, 5000, default);
+        Assert.Equal(5, session.Mode);
+        Assert.Equal(1, session.Fan);
+        Assert.Equal(4, session.Writes.Count());
+    }
+
+    [Theory]
+    [InlineData(0x029F)]
+    [InlineData(0x02A0)]
+    public async Task LimitedExternal_PreservesAutomaticPresetAndCustomMaximumFansCapabilities(int pid)
+    {
+        var session = new Session { AdapterPowerPayload = [0x02, 0x11] };
+        await using var port = Create(pid, session, power: () => PowerSource.UsbC);
+        await port.SetPerformanceAsync(PerformancePreset.Silent, default);
+        Assert.Equal(5, session.Mode);
+        Assert.Equal(0, session.Fan);
+        await port.SetCustomPerformanceAsync(new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.High)
+        {
+            MaximumFans = true,
+        }, default);
+        Assert.Equal(4, session.Mode);
+        Assert.Equal(0, session.Fan);
+        Assert.True(session.MaximumFans);
+        Assert.False(port.Capabilities.SupportsManualFansOnLimitedPower);
+        Assert.Equal(AdapterPowerState.UsbCPower45W, await port.QueryAdapterPowerStateAsync(default));
     }
 
     [Theory]

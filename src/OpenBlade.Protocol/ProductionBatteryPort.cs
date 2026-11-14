@@ -777,7 +777,7 @@ internal sealed class ProductionBatteryPort :
                     HyperBoostRestoreSecondAction,
                 ],
                 hyperBoostExitCatalog: hyperBoostCatalog,
-                requireFullPowerOnDirectHyperBoostExit: directHyperBoostExit && value != PerformancePreset.Balanced);
+                requireExternalPowerOnDirectHyperBoostExit: directHyperBoostExit && value != PerformancePreset.Balanced);
     }
 
     private bool CanApplyAutomaticPerformanceFrom(
@@ -972,7 +972,7 @@ internal sealed class ProductionBatteryPort :
                 HyperBoostRestoreSecondAction,
             ],
             hyperBoostExitCatalog: hyperBoostCatalog,
-            requireFullPowerOnDirectHyperBoostExit: directHyperBoostExit);
+            requireExternalPowerOnDirectHyperBoostExit: directHyperBoostExit);
     }
 
     public Task SetFanModeAsync(
@@ -1226,8 +1226,8 @@ internal sealed class ProductionBatteryPort :
             bool initialPowerAdmissionAvailable = false;
             ThermalModeState? preservedManualState = null;
             // Both exact MCU/EC paths write the selector separately from manual
-            // flags. Synapse keeps that selector on full power and uses Balanced
-            // on limited power. See docs/rz09-0581-direct-control-transitions.md.
+            // flags. Preserve the selected mode on every confirmed external
+            // source; the EC continues to manage the available input power.
             (byte Selector, ThermalModeState ManualState)? acPreset = Capabilities.SupportsDirectManualFanTransitions
                 && stateCommands && (requireAutomaticEntry ? !manual : manual)
                 ? current.Performance switch
@@ -1250,9 +1250,9 @@ internal sealed class ProductionBatteryPort :
                 initialPowerAdmissionAvailable = true;
                 byte? selector = powerRequirement switch
                 {
-                    ThermalWritePowerRequirement.Battery when batterySelectorState =>
+                    _ when batterySelectorState =>
                         current.Performance == PerformancePreset.BatterySaver ? (byte)0x03 : (byte)0x06,
-                    ThermalWritePowerRequirement.FullPower => acPreset?.Selector,
+                    ThermalWritePowerRequirement.FullPower or ThermalWritePowerRequirement.LimitedExternal => acPreset?.Selector,
                     _ => null,
                 };
                 if (requireAutomaticEntry && acPreset is not null
@@ -1269,7 +1269,7 @@ internal sealed class ProductionBatteryPort :
                         CreateFanStateCommand(ThermalChannel.Second, mode, fanValue),
                         .. commands.Skip(2),
                     ];
-                    if (powerRequirement == ThermalWritePowerRequirement.FullPower)
+                    if (powerRequirement is ThermalWritePowerRequirement.FullPower or ThermalWritePowerRequirement.LimitedExternal)
                     {
                         preservedManualState = acPreset?.ManualState;
                     }
@@ -1540,6 +1540,9 @@ internal sealed class ProductionBatteryPort :
         FullPower,
     }
 
+    private static bool IsLimitedExternalAdapter(AdapterPowerState adapter) =>
+        HyperBoostValidationPower.IsAdmittedLimitedExternalPower(adapter);
+
     private ThermalWritePowerRequirement? ClassifyThermalWritePower(
         AdapterPowerState adapter)
     {
@@ -1558,15 +1561,9 @@ internal sealed class ProductionBatteryPort :
             return ThermalWritePowerRequirement.FullPower;
         }
 
-        return adapter is AdapterPowerState.LimitedExternal
-            or AdapterPowerState.UsbCPower45W
-            or AdapterPowerState.UsbCPower60W
-            or AdapterPowerState.UsbCPower65W
-            or AdapterPowerState.UsbCPower80W
-            or AdapterPowerState.UsbCPower90W
-            or AdapterPowerState.UsbCPower100W
-                ? ThermalWritePowerRequirement.LimitedExternal
-                : null;
+        return IsLimitedExternalAdapter(adapter)
+            ? ThermalWritePowerRequirement.LimitedExternal
+            : null;
     }
 
     private async Task EnsureThermalWritePowerAsync(
@@ -2173,7 +2170,7 @@ internal sealed class ProductionBatteryPort :
         DeviceCommandCatalog? hyperBoostExitCatalog = null,
         bool revalidateEligibilityPerCommand = false,
         Func<CoolingPadConnectionState>? requiredPadStatePerCommand = null,
-        bool requireFullPowerOnDirectHyperBoostExit = false)
+        bool requireExternalPowerOnDirectHyperBoostExit = false)
     {
         if (cancellationToken.IsCancellationRequested)
         {
@@ -2296,15 +2293,24 @@ internal sealed class ProductionBatteryPort :
                 await validateEligibility(cancellationToken).ConfigureAwait(false);
             }
 
+            ThermalWritePowerRequirement? directExitPowerClass = null;
             for (int index = 0; index < commands.Length; index++)
             {
                 RazerCommandDefinition command = commands[index];
                 cancellationToken.ThrowIfCancellationRequested();
-                if (exitedHyperBoost && requireFullPowerOnDirectHyperBoostExit)
+                if (exitedHyperBoost && requireExternalPowerOnDirectHyperBoostExit)
                 {
-                    await EnsureThermalWritePowerAsync(
-                        ThermalWritePowerRequirement.FullPower, submitted, cancellationToken)
-                        .ConfigureAwait(false);
+                    ThermalWritePowerRequirement? freshClass = ClassifyThermalWritePower(
+                        await QueryThermalWritePowerAsync(submitted, cancellationToken).ConfigureAwait(false));
+                    if (freshClass is not (ThermalWritePowerRequirement.FullPower or ThermalWritePowerRequirement.LimitedExternal)
+                        || directExitPowerClass is { } admittedClass && freshClass != admittedClass)
+                    {
+                        throw ThermalWritePowerFailure(submitted,
+                            "The adapter power class changed or was not confirmed during the direct HyperBoost exit.");
+                    }
+                    // Either external class is an admitted starting point, but a
+                    // class change after submission must stop without replay.
+                    directExitPowerClass = freshClass;
                 }
                 if (revalidateEligibilityPerCommand && validateEligibility is not null)
                 {
@@ -2516,12 +2522,13 @@ internal sealed class ProductionBatteryPort :
             }
         }
 
-        bool adapterEligible = HyperBoostValidationPower.IsAdmittedFullPower(adapter.Value)
+        bool adapterEligible = (HyperBoostValidationPower.IsAdmittedFullPower(adapter.Value)
+                || IsLimitedExternalAdapter(adapter.Value))
             && (admittedAdapterPowerStates?.Contains(adapter.Value) ?? padPresentEligibility);
         if (!adapterEligible)
         {
             throw KnownNotApplied(
-                "HyperBoost requires a confirmed admitted full-power adapter.");
+                "HyperBoost requires a confirmed admitted external adapter.");
         }
         return padState;
     }

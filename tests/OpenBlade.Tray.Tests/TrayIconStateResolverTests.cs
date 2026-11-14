@@ -5,9 +5,39 @@ namespace OpenBlade.Tray.Tests;
 public sealed class TrayIconStateResolverTests
 {
     [Theory]
+    [InlineData(PerformancePreset.Balanced)]
+    [InlineData(PerformancePreset.BatteryBalanced)]
+    public void UsbCBalancedPresetsShareTheSourceGlyphAndDischargeBadge(PerformancePreset preset)
+    {
+        TrayIconState state = TrayIconStateResolver.Resolve(true, true, PowerSource.UsbC, preset);
+        Assert.Equal(TrayIconState.UsbCBalanced, state);
+        Assert.Equal(Path.Combine("Tray", "usb-c-balanced-light.ico"),
+            TrayIconAssetPath.Resolve(state, useLightGlyphs: true));
+        Assert.Equal(Path.Combine("Tray", "usb-c-balanced-discharging-light.ico"),
+            TrayIconAssetPath.Resolve(state, useLightGlyphs: true, externalPowerDischarging: true));
+    }
+
+    [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.UsbC)]
+    public void EveryExternalPresetSupportsTheExistingDischargeBadge(PowerSource source)
+    {
+        foreach (PerformancePreset preset in Enum.GetValues<PerformancePreset>())
+        {
+            TrayIconState state = TrayIconStateResolver.Resolve(true, true, source, preset);
+            Assert.NotEqual(TrayIconState.GenericError, state);
+            Assert.True(TrayIconStateResolver.CanShowDischargeBadge(state));
+            Assert.NotEqual(TrayIconAssetPath.Resolve(state, true),
+                TrayIconAssetPath.Resolve(state, true, externalPowerDischarging: true));
+        }
+    }
+
+    [Theory]
     [InlineData(PowerSource.PluggedIn, PerformancePreset.Custom, false)]
     [InlineData(PowerSource.PluggedIn, PerformancePreset.Performance, true)]
     [InlineData(PowerSource.UsbC, PerformancePreset.Balanced, false)]
+    [InlineData(PowerSource.UsbC, PerformancePreset.Custom, false)]
+    [InlineData(PowerSource.UsbC, PerformancePreset.Custom, true)]
     public void ExternalPowerModesRemainTheBaseOfDischargeBadges(
         PowerSource source, PerformancePreset performance, bool hyperBoost)
     {
@@ -25,10 +55,12 @@ public sealed class TrayIconStateResolverTests
     [InlineData(PerformancePreset.MaximumPower)]
     [InlineData(PerformancePreset.Gaming)]
     [InlineData(PerformancePreset.Creator)]
-    public void ConfirmedHyperBoostOverridesItsUnderlyingAcMode(PerformancePreset performance)
+    public void ConfirmedHyperBoostOverridesItsUnderlyingExternalMode(PerformancePreset performance)
     {
         Assert.Equal(TrayIconState.AcHyperBoost,
             TrayIconStateResolver.Resolve(true, true, PowerSource.PluggedIn, performance, true));
+        Assert.Equal(TrayIconState.AcHyperBoost,
+            TrayIconStateResolver.Resolve(true, true, PowerSource.UsbC, performance, true));
         Assert.NotEqual(TrayIconState.AcHyperBoost,
             TrayIconStateResolver.Resolve(true, true, PowerSource.PluggedIn, performance, false));
     }
@@ -37,9 +69,7 @@ public sealed class TrayIconStateResolverTests
     [InlineData(false, true, PowerSource.PluggedIn, PerformancePreset.Balanced)]
     [InlineData(true, false, PowerSource.PluggedIn, PerformancePreset.Balanced)]
     [InlineData(true, true, PowerSource.ExternalUnknown, PerformancePreset.Balanced)]
-    [InlineData(true, true, PowerSource.UsbC, PerformancePreset.Balanced)]
     [InlineData(true, true, PowerSource.Battery, PerformancePreset.BatteryBalanced)]
-    [InlineData(true, true, PowerSource.PluggedIn, PerformancePreset.BatterySaver)]
     [InlineData(true, true, PowerSource.PluggedIn, null)]
     public void HyperBoostDoesNotMaskUnavailableOrInconsistentState(
         bool connected, bool verified, PowerSource source, PerformancePreset? performance)
@@ -60,6 +90,13 @@ public sealed class TrayIconStateResolverTests
             { PowerSource.PluggedIn, PerformancePreset.Creator, TrayIconState.AcPerformance },
             { PowerSource.PluggedIn, PerformancePreset.Custom, TrayIconState.AcCustom },
             { PowerSource.UsbC, PerformancePreset.Balanced, TrayIconState.UsbCBalanced },
+            { PowerSource.UsbC, PerformancePreset.Silent, TrayIconState.AcSilent },
+            { PowerSource.UsbC, PerformancePreset.Custom, TrayIconState.AcCustom },
+            { PowerSource.UsbC, PerformancePreset.Performance, TrayIconState.AcPerformance },
+            { PowerSource.UsbC, PerformancePreset.MaximumPower, TrayIconState.AcPerformance },
+            { PowerSource.UsbC, PerformancePreset.Creator, TrayIconState.AcPerformance },
+            { PowerSource.UsbC, PerformancePreset.BatteryBalanced, TrayIconState.UsbCBalanced },
+            { PowerSource.PluggedIn, PerformancePreset.BatterySaver, TrayIconState.AcSilent },
             { PowerSource.Battery, PerformancePreset.Balanced, TrayIconState.BatteryBalanced },
             { PowerSource.Battery, PerformancePreset.BatteryBalanced, TrayIconState.BatteryBalanced },
             { PowerSource.Battery, PerformancePreset.BatterySaver, TrayIconState.BatterySaver },
@@ -86,12 +123,9 @@ public sealed class TrayIconStateResolverTests
     [InlineData(true, false, PowerSource.PluggedIn, PerformancePreset.Balanced)]
     [InlineData(true, true, PowerSource.ExternalUnknown, PerformancePreset.Balanced)]
     [InlineData(true, true, PowerSource.PluggedIn, null)]
-    [InlineData(true, true, PowerSource.UsbC, PerformancePreset.Performance)]
     [InlineData(true, true, PowerSource.Battery, PerformancePreset.Performance)]
     [InlineData(true, true, PowerSource.Battery, PerformancePreset.Turbo)]
-    [InlineData(true, true, PowerSource.UsbC, PerformancePreset.MaximumPower)]
     [InlineData(true, true, PowerSource.Battery, PerformancePreset.Gaming)]
-    [InlineData(true, true, PowerSource.UsbC, PerformancePreset.Creator)]
     public void UnavailableOrInconsistentStateUsesGenericError(
         bool isConnected,
         bool deviceVerified,

@@ -92,9 +92,13 @@ All seven profiles use the same `AdapterPowerCommandClient` and
 only per-model source admission; they do not copy or fork the decoder. They
 perform a fresh `07/8C` query immediately before each non-battery thermal SET,
 then recheck Windows power and identity at native submission. The former Windows-only `ExperimentalExternal`
-fallback is not an admission path. Confirmed full power admits the profile's
-normal thermal controls. Confirmed limited power admits Balanced, returning
-fans directly to Automatic, and manual targets or curves on RZ09-0528 and
+fallback is not an admission path. Confirmed external power, whether sufficient
+or below recommendation, admits the exact model's supported performance modes,
+including Custom and HyperBoost where separately supported. Firmware remains
+responsible for adapter-dependent power limits. The [external-power performance
+policy](external-power-performance-policy.md) separates mode choice from truthful
+adapter classification. Existing model-specific fan capabilities remain in force;
+manual targets or curves on limited power are admitted on RZ09-0528 and
 RZ09-0581. Battery admits Automatic and fixed targets on those models and the
 experimental RZ09-0483 and RZ09-0482, plus Balanced fixed targets on RZ09-0484.
 Battery curves remain unavailable.

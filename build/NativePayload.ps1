@@ -5,6 +5,60 @@ $ErrorActionPreference = 'Stop'
 $script:OpenBladeNativeFileName = 'openblade_ffi.dll'
 $script:OpenBladeNativeManifestName = 'OpenBlade.Native.provenance.json'
 
+function Get-OpenBladeSharedCargoCache {
+    param([Parameter(Mandatory)][string]$Repository)
+
+    # Linked worktrees and short junction views retain the main repository name,
+    # so build steps share both the artifact directory and its publication lease.
+    $commonDirectory = & git -C $Repository rev-parse --path-format=absolute --git-common-dir
+    if ($LASTEXITCODE -ne 0 -or -not $commonDirectory) { throw 'Cannot determine shared Cargo cache identity.' }
+    $repositoryName = Split-Path -Leaf (Split-Path -Parent ([string]$commonDirectory).Trim())
+    if (-not $repositoryName) { throw 'Cannot determine shared Cargo cache repository name.' }
+    $cacheRoot = if ($env:OS -eq 'Windows_NT') { 'C:\build-cache\cargo' }
+        else { Join-Path ([IO.Path]::GetTempPath()) 'openblade-cargo-cache' }
+    $mutexPrefix = if ($env:OS -eq 'Windows_NT') { 'Global\' } else { '' }
+    [pscustomobject]@{
+        TargetDirectory = Join-Path $cacheRoot $repositoryName
+        MutexName = $mutexPrefix + 'OpenBlade.CargoCache.' + $repositoryName
+    }
+}
+
+function Get-OpenBladeNativeWorkingInputs {
+    param([Parameter(Mandatory)][string]$Repository)
+
+    $root = [IO.Path]::GetFullPath($Repository).TrimEnd('\', '/')
+    $paths = [string[]]@(Get-ChildItem -LiteralPath (Join-Path $root 'rust') -Recurse -File |
+        Where-Object { $_.FullName -notmatch '[/\\]target[/\\]' } |
+        ForEach-Object { $_.FullName.Substring($root.Length + 1).Replace('\', '/') })
+    [Array]::Sort($paths, [StringComparer]::Ordinal)
+    foreach ($path in $paths) {
+        # Windows PowerShell may inherit pwsh's PSModulePath from MSBuild;
+        # use framework hashing rather than depending on Utility autoload.
+        $algorithm = [Security.Cryptography.SHA256]::Create()
+        try {
+            $stream = [IO.File]::OpenRead((Join-Path $root $path))
+            try { $hash = ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-', '').ToLowerInvariant() }
+            finally { $stream.Dispose() }
+        }
+        finally { $algorithm.Dispose() }
+        [ordered]@{ path = $path; sha256 = $hash }
+    }
+}
+
+function Get-OpenBladeNativeSourceFingerprint {
+    param([Parameter(Mandatory)][string]$Repository)
+
+    # Cargo's shared path-dependency freshness check can accept older files from
+    # another worktree. A content-derived compiler flag invalidates every crate,
+    # including dependencies, without allocating a second target directory.
+    $inputs = @(Get-OpenBladeNativeWorkingInputs -Repository $Repository)
+    if ($inputs.Count -eq 0) { throw 'Cannot fingerprint empty native source inputs.' }
+    $canonical = ($inputs | ForEach-Object { $_.path + [char]0 + $_.sha256 }) -join "`n"
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($algorithm.ComputeHash([Text.Encoding]::UTF8.GetBytes($canonical)))).Replace('-', '').ToLowerInvariant() }
+    finally { $algorithm.Dispose() }
+}
+
 function Get-OpenBladeNativeInputs {
     param([Parameter(Mandatory)][string]$Repository)
 
@@ -119,6 +173,7 @@ function Assert-OpenBladeNativePayload {
     $head = & git -C $Repository rev-parse HEAD
     if ($LASTEXITCODE -ne 0) { throw 'Cannot verify native source revision.' }
     $inputs = @(Get-OpenBladeNativeInputs -Repository $Repository)
+    $sourceFingerprint = Get-OpenBladeNativeSourceFingerprint -Repository $Repository
     $pin = [regex]::Match((Get-Content (Join-Path $Repository 'rust/rust-toolchain.toml') -Raw), '(?m)^channel = "([0-9.]+)"$').Groups[1].Value
     if ($manifest.schemaVersion -ne 1 -or $manifest.abiVersion -ne '0x00010000' -or
         $manifest.fileName -cne $script:OpenBladeNativeFileName -or $manifest.target -cne 'x86_64-pc-windows-msvc' -or
@@ -128,6 +183,10 @@ function Assert-OpenBladeNativePayload {
         $manifest.unsignedSha256 -cnotmatch '\A[0-9a-f]{64}\z' -or
         ($ExpectedUnsignedSha256 -and $manifest.unsignedSha256 -cne $ExpectedUnsignedSha256) -or
         $manifest.staticCrt -ne $true -or $manifest.panic -cne 'unwind' -or
+        $manifest.sourceFingerprint -cne $sourceFingerprint -or
+        "--cfg=openblade_source_fingerprint_$sourceFingerprint" -cnotin @($manifest.flags) -or
+        $manifest.resourceSha256 -cnotmatch '\A[0-9a-f]{64}\z' -or
+        "--cfg=openblade_resource_fingerprint_$($manifest.resourceSha256)" -cnotin @($manifest.flags) -or
         $manifest.compiler[0] -notlike "rustc $pin *" -or
         ($manifest.imports -join ',') -cne ($pe.Imports -join ',') -or
         (ConvertTo-Json -InputObject @($manifest.inputs) -Compress) -cne (ConvertTo-Json -InputObject $inputs -Compress)) {
@@ -175,8 +234,15 @@ function Build-OpenBladeNativePayload {
     # Restore the entire process environment, including VsDevCmd's changes.
     $savedEnvironment = @{}
     foreach ($entry in [Environment]::GetEnvironmentVariables('Process').GetEnumerator()) { $savedEnvironment[$entry.Key] = $entry.Value }
+    # Keep the shared Cargo output bound to this build through copy and admission.
+    $cargoCache = Get-OpenBladeSharedCargoCache -Repository $Repository
+    $cacheMutex = [Threading.Mutex]::new($false, $cargoCache.MutexName)
+    $cacheMutexHeld = $false
     Push-Location (Join-Path $Repository 'rust')
     try {
+        try { $cacheMutexHeld = $cacheMutex.WaitOne([TimeSpan]::FromMinutes(10)) }
+        catch [Threading.AbandonedMutexException] { $cacheMutexHeld = $true }
+        if (-not $cacheMutexHeld) { throw 'Shared native build cache is busy.' }
         # Cargo config/wrappers can change source replacement and native tools.
         # Release provenance admits only the checked-in recipe and pinned tools.
         $configDirectory = [IO.DirectoryInfo](Get-Location).Path
@@ -249,12 +315,19 @@ END
         [IO.File]::WriteAllText($resource, $resourceText, [Text.Encoding]::ASCII)
         & $resourceCompiler /nologo "/fo$resourceObject" $resource
         if ($LASTEXITCODE -ne 0) { throw 'Native version resource compilation failed.' }
-        $env:CARGO_TARGET_DIR = Join-Path $nativeBuild 'target'
-        $flags = @('-C', 'target-feature=+crt-static', '-C', 'link-arg=/Brepro', "--remap-path-prefix=$Repository=/openblade")
+        # Cargo does not track the bytes behind a trailing linker-argument path.
+        # Bind this generated resource to the root crate without rebuilding its
+        # dependencies when only release identity changes.
+        $resourceHash = (Get-FileHash -LiteralPath $resourceObject -Algorithm SHA256).Hash.ToLowerInvariant()
+        $resourceFingerprintFlag = "--cfg=openblade_resource_fingerprint_$resourceHash"
+        $env:CARGO_TARGET_DIR = $cargoCache.TargetDirectory
+        $sourceFingerprint = Get-OpenBladeNativeSourceFingerprint -Repository $Repository
+        $fingerprintFlag = "--cfg=openblade_source_fingerprint_$sourceFingerprint"
+        $flags = @('-C', 'target-feature=+crt-static', '-C', 'link-arg=/Brepro', "--remap-path-prefix=$Repository=/openblade", $fingerprintFlag)
         $env:CARGO_ENCODED_RUSTFLAGS = $flags -join [char]31
         $env:RUSTFLAGS = $null
         $env:CARGO_INCREMENTAL = '0'
-        & cargo "+$pin" rustc --frozen --release -p openblade-ffi --lib --target x86_64-pc-windows-msvc -- -C "link-arg=$resourceObject"
+        & cargo "+$pin" rustc --frozen --release -p openblade-ffi --lib --target x86_64-pc-windows-msvc -- $resourceFingerprintFlag -C "link-arg=$resourceObject"
         if ($LASTEXITCODE -ne 0) { throw 'Native release build failed.' }
         $library = Join-Path $outputPath $script:OpenBladeNativeFileName
         Copy-Item -LiteralPath (Join-Path $env:CARGO_TARGET_DIR 'x86_64-pc-windows-msvc/release/openblade_ffi.dll') -Destination $library
@@ -276,7 +349,8 @@ Rust standard library: MIT OR Apache-2.0; notices follow (from the pinned toolch
         $notice += "`n`n--- OpenBlade GPL-3.0-or-later ---`n" + [IO.File]::ReadAllText((Join-Path $Repository 'LICENSE'))
         [IO.File]::WriteAllText((Join-Path $outputPath 'OpenBlade.Native.NOTICE.txt'), $notice, [Text.UTF8Encoding]::new($false))
         $after = @(Get-OpenBladeNativeInputs -Repository $Repository)
-        if ((ConvertTo-Json -InputObject $after -Compress) -cne (ConvertTo-Json -InputObject $inputs -Compress)) { throw 'Native inputs changed during build.' }
+        if ((ConvertTo-Json -InputObject $after -Compress) -cne (ConvertTo-Json -InputObject $inputs -Compress) -or
+            (Get-OpenBladeNativeSourceFingerprint -Repository $Repository) -cne $sourceFingerprint) { throw 'Native inputs changed during build.' }
         $unsignedHash = (Get-FileHash -LiteralPath $library -Algorithm SHA256).Hash.ToLowerInvariant()
         $manifest = [ordered]@{
             schemaVersion = 1; abiVersion = '0x00010000'; fileName = $script:OpenBladeNativeFileName
@@ -286,7 +360,9 @@ Rust standard library: MIT OR Apache-2.0; notices follow (from the pinned toolch
             msvcVersion = $env:VCToolsVersion.TrimEnd('\'); windowsSdkVersion = $env:WindowsSDKVersion.TrimEnd('\')
             staticCrt = $true; panic = 'unwind'
             # Record reproducible arguments without a developer's absolute paths.
-            flags = @('-C target-feature=+crt-static', '-C link-arg=/Brepro', '--remap-path-prefix=<repository>=/openblade', '-C link-arg=<generated-version-resource>')
+            flags = @('-C target-feature=+crt-static', '-C link-arg=/Brepro', '--remap-path-prefix=<repository>=/openblade', '-C link-arg=<generated-version-resource>', $fingerprintFlag, $resourceFingerprintFlag)
+            sourceFingerprint = $sourceFingerprint
+            resourceSha256 = $resourceHash
             inputs = $inputs; imports = $pe.Imports
             unsignedSha256 = $unsignedHash
             sha256 = $unsignedHash
@@ -296,6 +372,8 @@ Rust standard library: MIT OR Apache-2.0; notices follow (from the pinned toolch
         Assert-OpenBladeNativePayload -Payload $outputPath -Repository $Repository -BuildIdentity $BuildIdentity
     }
     finally {
+        if ($cacheMutexHeld) { $cacheMutex.ReleaseMutex() }
+        $cacheMutex.Dispose()
         Pop-Location
         foreach ($key in @([Environment]::GetEnvironmentVariables('Process').Keys)) {
             if (-not $savedEnvironment.ContainsKey($key)) { [Environment]::SetEnvironmentVariable($key, $null, 'Process') }
