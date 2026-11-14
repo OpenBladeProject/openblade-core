@@ -780,6 +780,11 @@ internal sealed class WindowsRazerHidSession :
                 error.ValidationFailure, nativeRetirement: getResult.NativeRetirement) with
             {
                 QueryResponsePayloadHex = queryResponsePayloadHex,
+                // Status validation follows checksum and exact transaction/command
+                // correlation. Earlier envelope failures cannot identify a reply.
+                QueryResponseStatus = error.ValidationFailure == HidProtocolValidationFailure.Status
+                    && queryDiagnostics is not null && FirmwareQueryDiagnostics.CanRecord(item.Command)
+                        ? getBuffer[1] : null,
             };
             return rejectedPayloadHex is null
                 ? failure

@@ -19,11 +19,27 @@ public sealed class FanControlSettingsTests
         Assert.Equal(5000, range.Quantize(5400));
     }
 
+    [Fact]
+    public void SourceReviewed5500RpmValuesRetainStandardAndLegacyMaximumBounds()
+    {
+        var range = new FanSpeedRange(4300, 5500, 100);
+        Assert.True(range.IsWellFormed);
+        Assert.True(range.Supports(5500));
+        Assert.False(FanSpeedRange.Standard.Supports(5500));
+        Assert.Equal(5400, FanSpeedRange.Standard.MaximumRpm);
+        Assert.Equal(5400, FanControlSettings.FromLegacy(FanMode.Maximum).FixedSpeedRpm);
+        Assert.Equal(5500, new FanControlSettings(FanMode.Fixed, 5500, ManualFanCurve.Default).FixedSpeedRpm);
+        var points = new[] { new FanCurvePoint(40, 4300), new FanCurvePoint(90, 5500) };
+        var curve = new ManualFanCurve(points, points, true);
+        Assert.Equal(5500, curve.InterpolateCpu(89));
+        Assert.False((range with { MaximumRpm = 5600 }).IsWellFormed);
+    }
+
     [Theory]
     [InlineData(1999)]
     [InlineData(2050)]
-    [InlineData(5500)]
-    public void FixedSpeedRejectsValuesOutsideCapturedRangeOrStep(int rpm)
+    [InlineData(5600)]
+    public void FixedSpeedRejectsValuesOutsideRepresentableRangeOrStep(int rpm)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new FanControlSettings(
             FanMode.Fixed,

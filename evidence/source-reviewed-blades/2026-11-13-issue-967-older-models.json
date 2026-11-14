@@ -1,0 +1,2123 @@
+{
+  "schemaVersion": 1,
+  "reviewDate": "2026-11-13",
+  "baseRevision": "345b45af418ad8b74c6e28151acea2b387ca138e",
+  "status": "DONE source audit; implementation and independent review remain",
+  "sourceHandling": "Official pinned sources read as inert data; every downloaded hash verified; no vendor execution or hardware commands",
+  "lightingReuse": "evidence/source-reviewed-blades/2026-11-13-complete-lighting-pass.json",
+  "conclusions": [
+    "564 main explicitly enables adapter feature; failed07/8C does not confirm FullPower or firmware recovery.",
+    "581/588 omit adapter feature flag but thermal runner still calls shared adapter helper. Flag absence does not establish unused command.",
+    "Synapse adapter helper catches errors and returns lowPower=false; this is unsafe as positive FullPower admission.",
+    "All11 independently declare0D/81 target read and0D/01 target write with class1 and RPM/100; source-backed bounded fixed fan implementation is available on admitted non-Custom AC presets.",
+    "Vendor range-discovery loop writes each automatic preset then reads metadata; no source establishes Auto flag as a firmware prerequisite for0D/83. Read current metadata and verify selector/flags continuity.",
+    "Custom ranges are declarations only: no exact main enables customModeSupportsMoreThanAuto, shared setter defaults toAuto, and UI renders CPU/GPU branch.",
+    "Intersect fresh well-formed metadata with exact static envelope; never infer fixed maximum from default profile target or UI-MW disagreement.",
+    "No physical validation performed; failure/recovery tests and independent review required before shipping."
+  ],
+  "models": [
+    {
+      "model": "RZ09-0287",
+      "vendorProductId": 564,
+      "adapterFeatureExplicitlyEnabled": true,
+      "sharedAdapterGetterAndThermalCallerPresent": true,
+      "customManualFeatureExplicitlyEnabled": false,
+      "manualRangeCandidates": [
+        {
+          "mode": "i.mNQ.Balanced_Mode",
+          "minimumRpm": 3400.0,
+          "maximumRpm": 5200.0,
+          "defaultRpmSourceOnly": 4100.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.cd82ad6254565b1185d9.js",
+          "offsetUtf8": 25883,
+          "text": "minFanSpeedValue:3400,maxFanSpeedValue:5200,defaultFanSpeedValue:4100"
+        },
+        {
+          "mode": "i.mNQ.Custom_Mode",
+          "minimumRpm": 4000.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4600.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": false,
+          "source": "main.cd82ad6254565b1185d9.js",
+          "offsetUtf8": 26692,
+          "text": "minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600"
+        }
+      ],
+      "independentTargetGetter": "0D/81 size3 class1, response classId/thermalId/targetUnits100RPM, distinct from0D/88 currentRPM",
+      "dynamicRange": "0D/83 class0 size12; min=B6*100/default=D8*100/max=F10*100; intersect current exact preset static envelope",
+      "powerScope": "Exact UI fixed fan branch requires AC; Windows power alone does not confirm sufficient wattage",
+      "proofs": [
+        {
+          "source": "main.cd82ad6254565b1185d9.js",
+          "offsetUtf8": 46209,
+          "text": "aiting\",isChromaDevice:!0,hasCustomPerformance:!0,hasAdapterWattageLevel:!0,hasGPUmode:!0},installData:null,updateData:null,lightingEffects:{canSyncQuickEffect:"
+        },
+        {
+          "source": "main.cd82ad6254565b1185d9.js",
+          "offsetUtf8": 75489,
+          "text": "hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0}}),a.A.useFeature(\"rzDeviceType\",\"rzDevice25LedMatrixBlade\"),a.A.injectToDe"
+        },
+        {
+          "source": "main.cd82ad6254565b1185d9.js",
+          "offsetUtf8": 131850,
+          "text": "):this.isRzAppEngine?window.keyboardlayout:void 0}get isOnBatteryPower(){return this.isElectron?this.callElectronAction({action:\"isOnBatteryPower\"}):\"function\"==typeof window.isOnBatteryPower?window.isOnBatteryPower():(console.warn(`${this.name}.isOnBatteryPower not supported`),!1)}get isScreenLocked(){return this.isElectron?this.callElectronAction({action:\"IsScreenLocked\"}):\"function\"==typeof win"
+        },
+        {
+          "source": "6737.09466ede91c383e63db5.js",
+          "offsetUtf8": 1502321,
+          "text": "const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},51147"
+        },
+        {
+          "source": "6737.09466ede91c383e63db5.js",
+          "offsetUtf8": 198453,
+          "text": "const{profileId:t,fanMode:r,fanModeValue:a}=Wi.A.getPerformanceFanModeProfile(n,o.mode,\"auto\");yield e.setThermalFanMode(t,n,r,a).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)})),i=yield e.getThermalFanInformation(0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"getThermalFanInformation\",e)}))}void 0!==i&&(o.minFanSpeedValue=100*i.jsonData.B,o.defaultFanSpeedValue=100*i.jsonData.D,o.maxFanSpeedValue=100*i.jsonData.F,0!==o.minFanSpeedValue&&0!==o.defaultFanSpeedValue&&0!==o.maxFanSpeedValue&&n.push({mode:o.mode,min:o.minFanSpeedValue,default:o.defaultFanSpeedValue,max:o.maxFanSpeedValue}))}ct.A.fanValues=n})),Po=()=>Vn(void 0,void 0,"
+        },
+        {
+          "source": "6737.09466ede91c383e63db5.js",
+          "offsetUtf8": 863298,
+          "text": ");let je=0;const Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,"
+        },
+        {
+          "source": "6737.09466ede91c383e63db5.js",
+          "offsetUtf8": 727914,
+          "text": "0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yie"
+        },
+        {
+          "source": "rzDevice25.c85377977ca9cfdbb0b0.js",
+          "offsetUtf8": 2091,
+          "text": "e.data[0]+1)}),e})),u=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],thermalFanSpeed:t.data[2]})},l=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Ny[1],commandId:i.Ny[2],commandDesc:i.JK});const r=new Uint8Array(i.Ny[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.Ny,i.JK,r);ret"
+        },
+        {
+          "source": "rzDevice25.c85377977ca9cfdbb0b0.js",
+          "offsetUtf8": 277391,
+          "text": ">$,yz:()=>h});const o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),S=\"Set The"
+        },
+        {
+          "source": "rzDevice25.c85377977ca9cfdbb0b0.js",
+          "offsetUtf8": 4269,
+          "text": "sonData={classId:t.data[0],GPU:a.Jz(t.data[1],t.data[2]),VRAM:a.Jz(t.data[3],t.data[4]),A:t.data[5],B:t.data[6],C:t.data[7],D:t.data[8],E:t.data[9],F:t.data[10],G:t.data[11],thermalSampling:a.Jz(t.data[1],t.data[2]),hysteresis:t.data[3],fanUpdate:a.Jz(t.data[4],t.data[5]),fanMaxDelta:a.Jz(t.data[6],t.data[7])})})(r),r})),A=(t,n,e,r,c,u=-1)=>s(void "
+        },
+        {
+          "source": "ui-main.c6dfa6fe.js",
+          "offsetUtf8": 6213401,
+          "text": "PUPowerLimit:D,showPerformanceMsg:L,powerStatus:p,supportFixedFanSpeed:P=!0,hyperboost:M,unsupportedCpuBoostOption:m,isMaxCpuSupported:U,isMaxGpuSupported:h,isGpuOptimizeEnabled:G,disableCPUHightWhenG"
+        },
+        {
+          "source": "ui-main.c6dfa6fe.js",
+          "offsetUtf8": 6222970,
+          "text": "}),(0,i_.jsx)(Ps.A,{min:O?O.gpu.min:0,max:O?O.gpu.max:2,step:1,noTip:!0,midTag:Ke.E_p,active:_,value:X,changeValue:Re})]})]})}):b!==Be.ZCP&&b!==Be.TxO?!y&&P&&(()=>{const e=V===Be.XuP.manual,{minVal:E,maxVal:a,defaultValue:t}=Oe(b);return(0,"
+        },
+        {
+          "source": "ui-main.c6dfa6fe.js",
+          "offsetUtf8": 6225129,
+          "text": "253, 89, 17, 1)\"})}),(0,i_.jsx)(Ps.A,{min:E,max:a,step:100,minTag:\"\",maxTag:\"\",value:$,active:e&&i,changeValue:Te}),(0,i_.jsx)(\"div\",{className:e?\"on\":\"\",children:(0,i_.jsx)(Gs,{d:"
+        }
+      ],
+      "sources": [
+        {
+          "product": 564,
+          "file": "6737.09466ede91c383e63db5.js",
+          "url": "https://apps.razer.com/synapse/products/564/mw/6737.09466ede91c383e63db5.js",
+          "bytes": 2354613,
+          "sha256": "578C055A626C97F320A8642DDCF6D727EDEC267C02BF4BDF68D9921A7DF92A8F"
+        },
+        {
+          "product": 564,
+          "file": "main.cd82ad6254565b1185d9.js",
+          "url": "https://apps.razer.com/synapse/products/564/mw/main.cd82ad6254565b1185d9.js",
+          "bytes": 164734,
+          "sha256": "E8E61CE165B2E724DE80C9FB2F8AA2D6F3D3CF8B89AF0D1F1866C5624A3FD48C"
+        },
+        {
+          "product": 564,
+          "file": "rzDevice25.c85377977ca9cfdbb0b0.js",
+          "url": "https://apps.razer.com/synapse/products/564/mw/rzDevice25.c85377977ca9cfdbb0b0.js",
+          "bytes": 279030,
+          "sha256": "65C38CDAAFC263682BADF4695C9239DF96FA1F26091274FB4AE0E81C5ACD8C17"
+        },
+        {
+          "product": 564,
+          "file": "rzDevice25LedMatrixBlade.cf43cdc9a0705593c034.js",
+          "url": "https://apps.razer.com/synapse/products/564/mw/rzDevice25LedMatrixBlade.cf43cdc9a0705593c034.js",
+          "bytes": 13101,
+          "sha256": "EEF7D6D017DA455DCDB3A283F157256B7BE3FE033BCC589647E24C67BB58217A"
+        },
+        {
+          "product": 564,
+          "file": "rzDevice25LedMatrixBladeWattage.bdfb6f4b5e494723f800.js",
+          "url": "https://apps.razer.com/synapse/products/564/mw/rzDevice25LedMatrixBladeWattage.bdfb6f4b5e494723f800.js",
+          "bytes": 2925,
+          "sha256": "A53E30762A36B2E253DF86E33574A39AD138EE9B912E355BB9312E1DE59BEA5F"
+        },
+        {
+          "product": 564,
+          "file": "ui-main.c6dfa6fe.js",
+          "url": "https://apps.razer.com/synapse/products/564/ui/static/js/main.c6dfa6fe.js",
+          "bytes": 6439376,
+          "sha256": "1E832E271629A0B9924BD0E47D9C9B6C71ACA2AEEA49301B8E804AB31A1CD3C3"
+        }
+      ],
+      "uiPresetRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3700.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4500.0,
+          "source": "ui-main.c6dfa6fe.js",
+          "offsetUtf8": 5310959,
+          "text": "minFanSpeedValue:3700,maxFanSpeedValue:5300,defaultFanSpeedValue:4500"
+        }
+      ],
+      "conservativeStaticRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3700.0,
+          "maximumRpm": 5200.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0301",
+      "vendorProductId": 581,
+      "adapterFeatureExplicitlyEnabled": false,
+      "sharedAdapterGetterAndThermalCallerPresent": true,
+      "customManualFeatureExplicitlyEnabled": false,
+      "manualRangeCandidates": [
+        {
+          "mode": "r.mNQ.Balanced_Mode",
+          "minimumRpm": 3700.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4500.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.450b813b36b314f7abf0.js",
+          "offsetUtf8": 26060,
+          "text": "minFanSpeedValue:3700,maxFanSpeedValue:5300,defaultFanSpeedValue:4500"
+        },
+        {
+          "mode": "r.mNQ.Custom_Mode",
+          "minimumRpm": 4000.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4600.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": false,
+          "source": "main.450b813b36b314f7abf0.js",
+          "offsetUtf8": 26869,
+          "text": "minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600"
+        }
+      ],
+      "independentTargetGetter": "0D/81 size3 class1, response classId/thermalId/targetUnits100RPM, distinct from0D/88 currentRPM",
+      "dynamicRange": "0D/83 class0 size12; min=B6*100/default=D8*100/max=F10*100; intersect current exact preset static envelope",
+      "powerScope": "Exact UI fixed fan branch requires AC; Windows power alone does not confirm sufficient wattage",
+      "proofs": [
+        {
+          "source": "main.450b813b36b314f7abf0.js",
+          "offsetUtf8": 80437,
+          "text": "hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0}}),a.A.useFeature(\"rzDeviceType\",\"rzDevice25LedMatrixBladeWattage\"),a.A.use"
+        },
+        {
+          "source": "main.450b813b36b314f7abf0.js",
+          "offsetUtf8": 137022,
+          "text": "):this.isRzAppEngine?window.keyboardlayout:void 0}get isOnBatteryPower(){return this.isElectron?this.callElectronAction({action:\"isOnBatteryPower\"}):\"function\"==typeof window.isOnBatteryPower?window.isOnBatteryPower():(console.warn(`${this.name}.isOnBatteryPower not supported`),!1)}get isScreenLocked(){return this.isElectron?this.callElectronAction({action:\"IsScreenLocked\"}):\"function\"==typeof win"
+        },
+        {
+          "source": "6737.f49b9965ecd5cf011e43.js",
+          "offsetUtf8": 1502312,
+          "text": "const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},51147"
+        },
+        {
+          "source": "6737.f49b9965ecd5cf011e43.js",
+          "offsetUtf8": 198444,
+          "text": "const{profileId:t,fanMode:r,fanModeValue:a}=Wi.A.getPerformanceFanModeProfile(n,o.mode,\"auto\");yield e.setThermalFanMode(t,n,r,a).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)})),i=yield e.getThermalFanInformation(0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"getThermalFanInformation\",e)}))}void 0!==i&&(o.minFanSpeedValue=100*i.jsonData.B,o.defaultFanSpeedValue=100*i.jsonData.D,o.maxFanSpeedValue=100*i.jsonData.F,0!==o.minFanSpeedValue&&0!==o.defaultFanSpeedValue&&0!==o.maxFanSpeedValue&&n.push({mode:o.mode,min:o.minFanSpeedValue,default:o.defaultFanSpeedValue,max:o.maxFanSpeedValue}))}ct.A.fanValues=n})),Po=()=>Vn(void 0,void 0,"
+        },
+        {
+          "source": "6737.f49b9965ecd5cf011e43.js",
+          "offsetUtf8": 863289,
+          "text": ");let je=0;const Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,"
+        },
+        {
+          "source": "6737.f49b9965ecd5cf011e43.js",
+          "offsetUtf8": 727905,
+          "text": "0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yie"
+        },
+        {
+          "source": "rzDevice25.f668146da6ee1d0b3b6c.js",
+          "offsetUtf8": 2089,
+          "text": "e.data[0]+1)}),e})),u=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],thermalFanSpeed:t.data[2]})},l=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Ny[1],commandId:i.Ny[2],commandDesc:i.JK});const r=new Uint8Array(i.Ny[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.Ny,i.JK,r);ret"
+        },
+        {
+          "source": "rzDevice25.f668146da6ee1d0b3b6c.js",
+          "offsetUtf8": 277389,
+          "text": ">$,yz:()=>h});const o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),S=\"Set The"
+        },
+        {
+          "source": "rzDevice25.f668146da6ee1d0b3b6c.js",
+          "offsetUtf8": 4267,
+          "text": "sonData={classId:t.data[0],GPU:a.Jz(t.data[1],t.data[2]),VRAM:a.Jz(t.data[3],t.data[4]),A:t.data[5],B:t.data[6],C:t.data[7],D:t.data[8],E:t.data[9],F:t.data[10],G:t.data[11],thermalSampling:a.Jz(t.data[1],t.data[2]),hysteresis:t.data[3],fanUpdate:a.Jz(t.data[4],t.data[5]),fanMaxDelta:a.Jz(t.data[6],t.data[7])})})(r),r})),A=(t,n,e,r,c,u=-1)=>s(void "
+        },
+        {
+          "source": "ui-main.98cf2efe.js",
+          "offsetUtf8": 6103952,
+          "text": "PUPowerLimit:D,showPerformanceMsg:L,powerStatus:p,supportFixedFanSpeed:P=!0,hyperboost:M,unsupportedCpuBoostOption:m,isMaxCpuSupported:U,isMaxGpuSupported:h,isGpuOptimizeEnabled:G,disableCPUHightWhenG"
+        },
+        {
+          "source": "ui-main.98cf2efe.js",
+          "offsetUtf8": 6113521,
+          "text": "}),(0,bt.jsx)(ss.A,{min:O?O.gpu.min:0,max:O?O.gpu.max:2,step:1,noTip:!0,midTag:Ke.E_p,active:_,value:X,changeValue:Re})]})]})}):b!==Be.ZCP&&b!==Be.TxO?!y&&P&&(()=>{const e=V===Be.XuP.manual,{minVal:E,maxVal:a,defaultValue:t}=Oe(b);return(0,"
+        },
+        {
+          "source": "ui-main.98cf2efe.js",
+          "offsetUtf8": 6115680,
+          "text": "253, 89, 17, 1)\"})}),(0,bt.jsx)(ss.A,{min:E,max:a,step:100,minTag:\"\",maxTag:\"\",value:$,active:e&&i,changeValue:Te}),(0,bt.jsx)(\"div\",{className:e?\"on\":\"\",children:(0,bt.jsx)(As,{d:"
+        }
+      ],
+      "sources": [
+        {
+          "product": 581,
+          "file": "6737.f49b9965ecd5cf011e43.js",
+          "url": "https://apps.razer.com/synapse/products/581/mw/6737.f49b9965ecd5cf011e43.js",
+          "bytes": 2354604,
+          "sha256": "5B11C5CD3E26BBD74DAC7A98413AB31315DAFEFAD5B783DBF0CF014E6A33D017"
+        },
+        {
+          "product": 581,
+          "file": "main.450b813b36b314f7abf0.js",
+          "url": "https://apps.razer.com/synapse/products/581/mw/main.450b813b36b314f7abf0.js",
+          "bytes": 165547,
+          "sha256": "F7A863CF5E95D94539ABD3F4C29076E1710901B5D02624EFDC0275265C651D7A"
+        },
+        {
+          "product": 581,
+          "file": "rzDevice25.f668146da6ee1d0b3b6c.js",
+          "url": "https://apps.razer.com/synapse/products/581/mw/rzDevice25.f668146da6ee1d0b3b6c.js",
+          "bytes": 279028,
+          "sha256": "8459C76B984DDF5894CC7C7E00A40B76EEDE5E32D65DF2F7D6D75A541C36DAC7"
+        },
+        {
+          "product": 581,
+          "file": "rzDevice25LedMatrixBlade.211294bf38840fcb516b.js",
+          "url": "https://apps.razer.com/synapse/products/581/mw/rzDevice25LedMatrixBlade.211294bf38840fcb516b.js",
+          "bytes": 13099,
+          "sha256": "7F25B39B209807B8582E30717B90129AAB0B3B20B01DE5B0465C2819D4FD99DF"
+        },
+        {
+          "product": 581,
+          "file": "rzDevice25LedMatrixBladeWattage.09358e38f5994093ae20.js",
+          "url": "https://apps.razer.com/synapse/products/581/mw/rzDevice25LedMatrixBladeWattage.09358e38f5994093ae20.js",
+          "bytes": 2923,
+          "sha256": "EB94694DBB49AE38AD1837AC926D3D78515F9F501B249B68FE48C200250036F5"
+        },
+        {
+          "product": 581,
+          "file": "ui-main.98cf2efe.js",
+          "url": "https://apps.razer.com/synapse/products/581/ui/static/js/main.98cf2efe.js",
+          "bytes": 6338321,
+          "sha256": "C29CE6F4E66E5658B9B7FC4443AE27057EFA4C06DF3A96F6C0E70B79E712DB85"
+        }
+      ],
+      "uiPresetRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3700.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4500.0,
+          "source": "ui-main.98cf2efe.js",
+          "offsetUtf8": 4762824,
+          "text": "minFanSpeedValue:3700,maxFanSpeedValue:5300,defaultFanSpeedValue:4500"
+        },
+        {
+          "mode": "Custom_Mode",
+          "minimumRpm": 4000.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4600.0,
+          "source": "ui-main.98cf2efe.js",
+          "offsetUtf8": 4763652,
+          "text": "minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600"
+        }
+      ],
+      "conservativeStaticRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3700.0,
+          "maximumRpm": 5300.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0300",
+      "vendorProductId": 582,
+      "adapterFeatureExplicitlyEnabled": true,
+      "sharedAdapterGetterAndThermalCallerPresent": true,
+      "customManualFeatureExplicitlyEnabled": false,
+      "manualRangeCandidates": [
+        {
+          "mode": "r.mNQ.Balanced_Mode",
+          "minimumRpm": 3500.0,
+          "maximumRpm": 5500.0,
+          "defaultRpmSourceOnly": 4200.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.c9ac81170313d8740ddc.js",
+          "offsetUtf8": 145170,
+          "text": "minFanSpeedValue:3500,maxFanSpeedValue:5500,defaultFanSpeedValue:4200"
+        },
+        {
+          "mode": "r.mNQ.Productivity_Creator_Mode",
+          "minimumRpm": 3900.0,
+          "maximumRpm": 5500.0,
+          "defaultRpmSourceOnly": 4500.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.c9ac81170313d8740ddc.js",
+          "offsetUtf8": 145886,
+          "text": "minFanSpeedValue:3900,maxFanSpeedValue:5500,defaultFanSpeedValue:4500"
+        },
+        {
+          "mode": "r.mNQ.Gaming_Mode",
+          "minimumRpm": 3900.0,
+          "maximumRpm": 5500.0,
+          "defaultRpmSourceOnly": 4500.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.c9ac81170313d8740ddc.js",
+          "offsetUtf8": 146799,
+          "text": "minFanSpeedValue:3900,maxFanSpeedValue:5500,defaultFanSpeedValue:4500"
+        }
+      ],
+      "independentTargetGetter": "0D/81 size3 class1, response classId/thermalId/targetUnits100RPM, distinct from0D/88 currentRPM",
+      "dynamicRange": "0D/83 class0 size12; min=B6*100/default=D8*100/max=F10*100; intersect current exact preset static envelope",
+      "powerScope": "Exact UI fixed fan branch requires AC; Windows power alone does not confirm sufficient wattage",
+      "proofs": [
+        {
+          "source": "main.c9ac81170313d8740ddc.js",
+          "offsetUtf8": 158456,
+          "text": "ce:!0,hasColorProfiles:!0,hasCustomPerformance:!0,hasAdapterWattageLevel:!0,hasGPUmode:!0},installData:null,updateData:null,lightingEffects:{canSyncQuickEffect:"
+        },
+        {
+          "source": "main.c9ac81170313d8740ddc.js",
+          "offsetUtf8": 155880,
+          "text": "hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0}};var p;const f=window.localStorage.setItem.bind(window.localStorage);let A"
+        },
+        {
+          "source": "main.c9ac81170313d8740ddc.js",
+          "offsetUtf8": 104717,
+          "text": "):this.isRzAppEngine?window.keyboardlayout:void 0}get isOnBatteryPower(){return this.isElectron?this.callElectronAction({action:\"isOnBatteryPower\"}):\"function\"==typeof window.isOnBatteryPower?window.isOnBatteryPower():(console.warn(`${this.name}.isOnBatteryPower not supported`),!1)}get isScreenLocked(){return this.isElectron?this.callElectronAction({action:\"IsScreenLocked\"}):\"function\"==typeof win"
+        },
+        {
+          "source": "6737.3d32e8efb681572a4d05.js",
+          "offsetUtf8": 2265750,
+          "text": "const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},25434"
+        },
+        {
+          "source": "6737.3d32e8efb681572a4d05.js",
+          "offsetUtf8": 1208397,
+          "text": "const{profileId:t,fanMode:r,fanModeValue:a}=Wi.A.getPerformanceFanModeProfile(n,o.mode,\"auto\");yield e.setThermalFanMode(t,n,r,a).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)})),i=yield e.getThermalFanInformation(0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"getThermalFanInformation\",e)}))}void 0!==i&&(o.minFanSpeedValue=100*i.jsonData.B,o.defaultFanSpeedValue=100*i.jsonData.D,o.maxFanSpeedValue=100*i.jsonData.F,0!==o.minFanSpeedValue&&0!==o.defaultFanSpeedValue&&0!==o.maxFanSpeedValue&&n.push({mode:o.mode,min:o.minFanSpeedValue,default:o.defaultFanSpeedValue,max:o.maxFanSpeedValue}))}ct.A.fanValues=n})),Po=()=>Vn(void 0,void 0,"
+        },
+        {
+          "source": "6737.3d32e8efb681572a4d05.js",
+          "offsetUtf8": 2287101,
+          "text": ");let je=0;const Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,"
+        },
+        {
+          "source": "6737.3d32e8efb681572a4d05.js",
+          "offsetUtf8": 1822224,
+          "text": "0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yie"
+        },
+        {
+          "source": "rzDevice25.56d11fe9830f93920735.js",
+          "offsetUtf8": 55067,
+          "text": "e.data[0]+1)}),e})),u=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],thermalFanSpeed:t.data[2]})},l=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Ny[1],commandId:i.Ny[2],commandDesc:i.JK});const r=new Uint8Array(i.Ny[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.Ny,i.JK,r);ret"
+        },
+        {
+          "source": "rzDevice25.56d11fe9830f93920735.js",
+          "offsetUtf8": 65491,
+          "text": ">$,yz:()=>h});const o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),S=\"Set The"
+        },
+        {
+          "source": "rzDevice25.56d11fe9830f93920735.js",
+          "offsetUtf8": 57245,
+          "text": "sonData={classId:t.data[0],GPU:a.Jz(t.data[1],t.data[2]),VRAM:a.Jz(t.data[3],t.data[4]),A:t.data[5],B:t.data[6],C:t.data[7],D:t.data[8],E:t.data[9],F:t.data[10],G:t.data[11],thermalSampling:a.Jz(t.data[1],t.data[2]),hysteresis:t.data[3],fanUpdate:a.Jz(t.data[4],t.data[5]),fanMaxDelta:a.Jz(t.data[6],t.data[7])})})(r),r})),A=(t,n,e,r,c,u=-1)=>s(void "
+        },
+        {
+          "source": "ui-main.6ce6c0b6.js",
+          "offsetUtf8": 6115279,
+          "text": "PUPowerLimit:D,showPerformanceMsg:L,powerStatus:p,supportFixedFanSpeed:P=!0,hyperboost:M,unsupportedCpuBoostOption:m,isMaxCpuSupported:U,isMaxGpuSupported:h,isGpuOptimizeEnabled:G,disableCPUHightWhenG"
+        },
+        {
+          "source": "ui-main.6ce6c0b6.js",
+          "offsetUtf8": 6124848,
+          "text": "}),(0,Xt.jsx)(ms.A,{min:O?O.gpu.min:0,max:O?O.gpu.max:2,step:1,noTip:!0,midTag:Ke.E_p,active:_,value:X,changeValue:Re})]})]})}):b!==Be.ZCP&&b!==Be.TxO?!y&&P&&(()=>{const e=V===Be.XuP.manual,{minVal:E,maxVal:a,defaultValue:t}=Oe(b);return(0,"
+        },
+        {
+          "source": "ui-main.6ce6c0b6.js",
+          "offsetUtf8": 6127007,
+          "text": "253, 89, 17, 1)\"})}),(0,Xt.jsx)(ms.A,{min:E,max:a,step:100,minTag:\"\",maxTag:\"\",value:$,active:e&&i,changeValue:Te}),(0,Xt.jsx)(\"div\",{className:e?\"on\":\"\",children:(0,Xt.jsx)(gs,{d:"
+        }
+      ],
+      "sources": [
+        {
+          "product": 582,
+          "file": "6737.3d32e8efb681572a4d05.js",
+          "url": "https://apps.razer.com/synapse/products/582/mw/6737.3d32e8efb681572a4d05.js",
+          "bytes": 2353893,
+          "sha256": "EFFE1404E33611F8B26AA248B64A7B25A1F9283217BE1CC5C85DEEC98AB10B6E"
+        },
+        {
+          "product": 582,
+          "file": "main.c9ac81170313d8740ddc.js",
+          "url": "https://apps.razer.com/synapse/products/582/mw/main.c9ac81170313d8740ddc.js",
+          "bytes": 165685,
+          "sha256": "EAEE32B144B086165E43FC97446378D22919FB19360826028A0434B03D7190C4"
+        },
+        {
+          "product": 582,
+          "file": "rzDevice25.56d11fe9830f93920735.js",
+          "url": "https://apps.razer.com/synapse/products/582/mw/rzDevice25.56d11fe9830f93920735.js",
+          "bytes": 279018,
+          "sha256": "A5F75408C2D859ACF0F3418B950989271E98DFEE5056DD17DCA6BA5557FDD4C6"
+        },
+        {
+          "product": 582,
+          "file": "rzDevice25LedMatrixBlade.a4db46356fdb831037e2.js",
+          "url": "https://apps.razer.com/synapse/products/582/mw/rzDevice25LedMatrixBlade.a4db46356fdb831037e2.js",
+          "bytes": 13089,
+          "sha256": "B43A923BCF590E180CBF7E1F8143CD9F3E4F96FE1045E690E924D3CE7D13EB9C"
+        },
+        {
+          "product": 582,
+          "file": "rzDevice25LedMatrixBlade2.709215c15d725163d77a.js",
+          "url": "https://apps.razer.com/synapse/products/582/mw/rzDevice25LedMatrixBlade2.709215c15d725163d77a.js",
+          "bytes": 20243,
+          "sha256": "D30AADAFD0AEE11420441EEB432909B58F11FAD29E6CFB4D21CE21984528D6ED"
+        },
+        {
+          "product": 582,
+          "file": "rzDevice25LedMatrixBladeWattage.45c847b37f79a031cbaf.js",
+          "url": "https://apps.razer.com/synapse/products/582/mw/rzDevice25LedMatrixBladeWattage.45c847b37f79a031cbaf.js",
+          "bytes": 2913,
+          "sha256": "71D91DFF87CB617384535C5DEC4643A2CC551C3CDE63EE691A29D7282FF96AB2"
+        },
+        {
+          "product": 582,
+          "file": "ui-main.6ce6c0b6.js",
+          "url": "https://apps.razer.com/synapse/products/582/ui/static/js/main.6ce6c0b6.js",
+          "bytes": 6339022,
+          "sha256": "B4BEB1A616F01AE0F9DD29741B6AE6A66ED794CD2E109C92E57D9BBF232FDF1F"
+        }
+      ],
+      "uiPresetRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3500.0,
+          "maximumRpm": 5500.0,
+          "defaultRpmSourceOnly": 4200.0,
+          "source": "ui-main.6ce6c0b6.js",
+          "offsetUtf8": 4762563,
+          "text": "minFanSpeedValue:3500,maxFanSpeedValue:5500,defaultFanSpeedValue:4200"
+        },
+        {
+          "mode": "Productivity_Creator_Mode",
+          "minimumRpm": 3900.0,
+          "maximumRpm": 5500.0,
+          "defaultRpmSourceOnly": 4500.0,
+          "source": "ui-main.6ce6c0b6.js",
+          "offsetUtf8": 4763279,
+          "text": "minFanSpeedValue:3900,maxFanSpeedValue:5500,defaultFanSpeedValue:4500"
+        },
+        {
+          "mode": "Gaming_Mode",
+          "minimumRpm": 3900.0,
+          "maximumRpm": 5500.0,
+          "defaultRpmSourceOnly": 4500.0,
+          "source": "ui-main.6ce6c0b6.js",
+          "offsetUtf8": 4764192,
+          "text": "minFanSpeedValue:3900,maxFanSpeedValue:5500,defaultFanSpeedValue:4500"
+        }
+      ],
+      "conservativeStaticRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3500.0,
+          "maximumRpm": 5500.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        },
+        {
+          "mode": "Productivity_Creator_Mode",
+          "minimumRpm": 3900.0,
+          "maximumRpm": 5500.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        },
+        {
+          "mode": "Gaming_Mode",
+          "minimumRpm": 3900.0,
+          "maximumRpm": 5500.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0314",
+      "vendorProductId": 588,
+      "adapterFeatureExplicitlyEnabled": false,
+      "sharedAdapterGetterAndThermalCallerPresent": true,
+      "customManualFeatureExplicitlyEnabled": false,
+      "manualRangeCandidates": [
+        {
+          "mode": "i.mNQ.Balanced_Mode",
+          "minimumRpm": 3400.0,
+          "maximumRpm": 5200.0,
+          "defaultRpmSourceOnly": 4100.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.aef91a9c8a23c54b3711.js",
+          "offsetUtf8": 143276,
+          "text": "minFanSpeedValue:3400,maxFanSpeedValue:5200,defaultFanSpeedValue:4100"
+        },
+        {
+          "mode": "i.mNQ.Custom_Mode",
+          "minimumRpm": 4000.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4600.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": false,
+          "source": "main.aef91a9c8a23c54b3711.js",
+          "offsetUtf8": 144085,
+          "text": "minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600"
+        }
+      ],
+      "independentTargetGetter": "0D/81 size3 class1, response classId/thermalId/targetUnits100RPM, distinct from0D/88 currentRPM",
+      "dynamicRange": "0D/83 class0 size12; min=B6*100/default=D8*100/max=F10*100; intersect current exact preset static envelope",
+      "powerScope": "Exact UI fixed fan branch requires AC; Windows power alone does not confirm sufficient wattage",
+      "proofs": [
+        {
+          "source": "main.aef91a9c8a23c54b3711.js",
+          "offsetUtf8": 150543,
+          "text": "hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0}}),a.A.useFeature(\"rzDeviceType\",\"rzDevice25LedMatrixBladeWattage\"),a.A.inj"
+        },
+        {
+          "source": "main.aef91a9c8a23c54b3711.js",
+          "offsetUtf8": 102903,
+          "text": "):this.isRzAppEngine?window.keyboardlayout:void 0}get isOnBatteryPower(){return this.isElectron?this.callElectronAction({action:\"isOnBatteryPower\"}):\"function\"==typeof window.isOnBatteryPower?window.isOnBatteryPower():(console.warn(`${this.name}.isOnBatteryPower not supported`),!1)}get isScreenLocked(){return this.isElectron?this.callElectronAction({action:\"IsScreenLocked\"}):\"function\"==typeof win"
+        },
+        {
+          "source": "6737.486962f684c3054bcd0c.js",
+          "offsetUtf8": 2265556,
+          "text": "const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},25434"
+        },
+        {
+          "source": "6737.486962f684c3054bcd0c.js",
+          "offsetUtf8": 1208203,
+          "text": "const{profileId:t,fanMode:r,fanModeValue:a}=Wi.A.getPerformanceFanModeProfile(n,o.mode,\"auto\");yield e.setThermalFanMode(t,n,r,a).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)})),i=yield e.getThermalFanInformation(0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"getThermalFanInformation\",e)}))}void 0!==i&&(o.minFanSpeedValue=100*i.jsonData.B,o.defaultFanSpeedValue=100*i.jsonData.D,o.maxFanSpeedValue=100*i.jsonData.F,0!==o.minFanSpeedValue&&0!==o.defaultFanSpeedValue&&0!==o.maxFanSpeedValue&&n.push({mode:o.mode,min:o.minFanSpeedValue,default:o.defaultFanSpeedValue,max:o.maxFanSpeedValue}))}ct.A.fanValues=n})),Po=()=>Vn(void 0,void 0,"
+        },
+        {
+          "source": "6737.486962f684c3054bcd0c.js",
+          "offsetUtf8": 2286907,
+          "text": ");let je=0;const Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,"
+        },
+        {
+          "source": "6737.486962f684c3054bcd0c.js",
+          "offsetUtf8": 1822030,
+          "text": "0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yie"
+        },
+        {
+          "source": "rzDevice25.c9cde47d1f5b9618158b.js",
+          "offsetUtf8": 55079,
+          "text": "e.data[0]+1)}),e})),u=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],thermalFanSpeed:t.data[2]})},l=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Ny[1],commandId:i.Ny[2],commandDesc:i.JK});const r=new Uint8Array(i.Ny[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.Ny,i.JK,r);ret"
+        },
+        {
+          "source": "rzDevice25.c9cde47d1f5b9618158b.js",
+          "offsetUtf8": 65503,
+          "text": ">$,yz:()=>h});const o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),S=\"Set The"
+        },
+        {
+          "source": "rzDevice25.c9cde47d1f5b9618158b.js",
+          "offsetUtf8": 57257,
+          "text": "sonData={classId:t.data[0],GPU:a.Jz(t.data[1],t.data[2]),VRAM:a.Jz(t.data[3],t.data[4]),A:t.data[5],B:t.data[6],C:t.data[7],D:t.data[8],E:t.data[9],F:t.data[10],G:t.data[11],thermalSampling:a.Jz(t.data[1],t.data[2]),hysteresis:t.data[3],fanUpdate:a.Jz(t.data[4],t.data[5]),fanMaxDelta:a.Jz(t.data[6],t.data[7])})})(r),r})),A=(t,n,e,r,c,u=-1)=>s(void "
+        },
+        {
+          "source": "ui-main.5ff20197.js",
+          "offsetUtf8": 6146509,
+          "text": "PUPowerLimit:D,showPerformanceMsg:L,powerStatus:p,supportFixedFanSpeed:P=!0,hyperboost:M,unsupportedCpuBoostOption:m,isMaxCpuSupported:U,isMaxGpuSupported:h,isGpuOptimizeEnabled:G,disableCPUHightWhenG"
+        },
+        {
+          "source": "ui-main.5ff20197.js",
+          "offsetUtf8": 6156078,
+          "text": "}),(0,n_.jsx)(Ms.A,{min:O?O.gpu.min:0,max:O?O.gpu.max:2,step:1,noTip:!0,midTag:we.E_p,active:_,value:X,changeValue:Re})]})]})}):b!==ye.ZCP&&b!==ye.TxO?!y&&P&&(()=>{const e=V===ye.XuP.manual,{minVal:E,maxVal:a,defaultValue:t}=Oe(b);return(0,"
+        },
+        {
+          "source": "ui-main.5ff20197.js",
+          "offsetUtf8": 6158237,
+          "text": "253, 89, 17, 1)\"})}),(0,n_.jsx)(Ms.A,{min:E,max:a,step:100,minTag:\"\",maxTag:\"\",value:$,active:e&&i,changeValue:Te}),(0,n_.jsx)(\"div\",{className:e?\"on\":\"\",children:(0,n_.jsx)(Hs,{d:"
+        }
+      ],
+      "sources": [
+        {
+          "product": 588,
+          "file": "6737.486962f684c3054bcd0c.js",
+          "url": "https://apps.razer.com/synapse/products/588/mw/6737.486962f684c3054bcd0c.js",
+          "bytes": 2353651,
+          "sha256": "62AC7270B6927323605CDF45D699EA07E48C1063FC6F5642F2FC4ABC6CDD12FA"
+        },
+        {
+          "product": 588,
+          "file": "main.aef91a9c8a23c54b3711.js",
+          "url": "https://apps.razer.com/synapse/products/588/mw/main.aef91a9c8a23c54b3711.js",
+          "bytes": 162529,
+          "sha256": "58C8699616E125BE2F8F4FFFD490FFCD632F30EC171898229BA76275701558ED"
+        },
+        {
+          "product": 588,
+          "file": "rzDevice25.c9cde47d1f5b9618158b.js",
+          "url": "https://apps.razer.com/synapse/products/588/mw/rzDevice25.c9cde47d1f5b9618158b.js",
+          "bytes": 279030,
+          "sha256": "B299E84011BB04545123498F4B17DC0F774CB2560BF21C2F2BE7B9393B416AE5"
+        },
+        {
+          "product": 588,
+          "file": "rzDevice25LedMatrixBlade.a3ca67aee2e5d66c4d8a.js",
+          "url": "https://apps.razer.com/synapse/products/588/mw/rzDevice25LedMatrixBlade.a3ca67aee2e5d66c4d8a.js",
+          "bytes": 13101,
+          "sha256": "009DA3FDDF6D567F09F5DFFF330FF88F9BC56F11844D72557C3D6DD89C0F5DC2"
+        },
+        {
+          "product": 588,
+          "file": "rzDevice25LedMatrixBladeWattage.6400257deb0580f370f5.js",
+          "url": "https://apps.razer.com/synapse/products/588/mw/rzDevice25LedMatrixBladeWattage.6400257deb0580f370f5.js",
+          "bytes": 2925,
+          "sha256": "A0F2E3A06ABE8BFBABE561F5808BDA5B175857E8C38D8E0460B74D149BF0D330"
+        },
+        {
+          "product": 588,
+          "file": "ui-main.5ff20197.js",
+          "url": "https://apps.razer.com/synapse/products/588/ui/static/js/main.5ff20197.js",
+          "bytes": 6376629,
+          "sha256": "2FA82D9AC334FF3453E73676CEDBA0532093C90BDE0B0F9030EE57A47CC707A0"
+        }
+      ],
+      "uiPresetRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3700.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4500.0,
+          "source": "ui-main.5ff20197.js",
+          "offsetUtf8": 4787714,
+          "text": "minFanSpeedValue:3700,maxFanSpeedValue:5300,defaultFanSpeedValue:4500"
+        }
+      ],
+      "conservativeStaticRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3700.0,
+          "maximumRpm": 5200.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0330",
+      "vendorProductId": 595,
+      "adapterFeatureExplicitlyEnabled": true,
+      "sharedAdapterGetterAndThermalCallerPresent": true,
+      "customManualFeatureExplicitlyEnabled": false,
+      "manualRangeCandidates": [
+        {
+          "mode": "r.mNQ.Balanced_Mode",
+          "minimumRpm": 3700.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4500.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.11dfb9173b8a1c795ffd.js",
+          "offsetUtf8": 143601,
+          "text": "minFanSpeedValue:3700,maxFanSpeedValue:5300,defaultFanSpeedValue:4500"
+        },
+        {
+          "mode": "r.mNQ.Custom_Mode",
+          "minimumRpm": 4000.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4600.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": false,
+          "source": "main.11dfb9173b8a1c795ffd.js",
+          "offsetUtf8": 144410,
+          "text": "minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600"
+        }
+      ],
+      "independentTargetGetter": "0D/81 size3 class1, response classId/thermalId/targetUnits100RPM, distinct from0D/88 currentRPM",
+      "dynamicRange": "0D/83 class0 size12; min=B6*100/default=D8*100/max=F10*100; intersect current exact preset static envelope",
+      "powerScope": "Exact UI fixed fan branch requires AC; Windows power alone does not confirm sufficient wattage",
+      "proofs": [
+        {
+          "source": "main.11dfb9173b8a1c795ffd.js",
+          "offsetUtf8": 155881,
+          "text": "ce:!0,hasColorProfiles:!0,hasCustomPerformance:!0,hasAdapterWattageLevel:!0,hasGPUmode:!0},installData:null,updateData:null,lightingEffects:{canSyncQuickEffect:"
+        },
+        {
+          "source": "main.11dfb9173b8a1c795ffd.js",
+          "offsetUtf8": 154005,
+          "text": "hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0}};var p,f,A,T,S;r.sentry.dsn&&i.init({dsn:r.sentry.dsn.js,integrations:[new"
+        },
+        {
+          "source": "main.11dfb9173b8a1c795ffd.js",
+          "offsetUtf8": 102909,
+          "text": "):this.isRzAppEngine?window.keyboardlayout:void 0}get isOnBatteryPower(){return this.isElectron?this.callElectronAction({action:\"isOnBatteryPower\"}):\"function\"==typeof window.isOnBatteryPower?window.isOnBatteryPower():(console.warn(`${this.name}.isOnBatteryPower not supported`),!1)}get isScreenLocked(){return this.isElectron?this.callElectronAction({action:\"IsScreenLocked\"}):\"function\"==typeof win"
+        },
+        {
+          "source": "6737.6a4f810f43bf4dd7ea5d.js",
+          "offsetUtf8": 2265755,
+          "text": "const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},25434"
+        },
+        {
+          "source": "6737.6a4f810f43bf4dd7ea5d.js",
+          "offsetUtf8": 1208396,
+          "text": "const{profileId:t,fanMode:r,fanModeValue:a}=Wi.A.getPerformanceFanModeProfile(n,o.mode,\"auto\");yield e.setThermalFanMode(t,n,r,a).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)})),i=yield e.getThermalFanInformation(0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"getThermalFanInformation\",e)}))}void 0!==i&&(o.minFanSpeedValue=100*i.jsonData.B,o.defaultFanSpeedValue=100*i.jsonData.D,o.maxFanSpeedValue=100*i.jsonData.F,0!==o.minFanSpeedValue&&0!==o.defaultFanSpeedValue&&0!==o.maxFanSpeedValue&&n.push({mode:o.mode,min:o.minFanSpeedValue,default:o.defaultFanSpeedValue,max:o.maxFanSpeedValue}))}ct.A.fanValues=n})),Po=()=>Vn(void 0,void 0,"
+        },
+        {
+          "source": "6737.6a4f810f43bf4dd7ea5d.js",
+          "offsetUtf8": 2287106,
+          "text": ");let je=0;const Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,"
+        },
+        {
+          "source": "6737.6a4f810f43bf4dd7ea5d.js",
+          "offsetUtf8": 1822225,
+          "text": "0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yie"
+        },
+        {
+          "source": "rzDevice25.1dbf16d259718708f12a.js",
+          "offsetUtf8": 55077,
+          "text": "e.data[0]+1)}),e})),u=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],thermalFanSpeed:t.data[2]})},l=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Ny[1],commandId:i.Ny[2],commandDesc:i.JK});const r=new Uint8Array(i.Ny[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.Ny,i.JK,r);ret"
+        },
+        {
+          "source": "rzDevice25.1dbf16d259718708f12a.js",
+          "offsetUtf8": 65501,
+          "text": ">$,yz:()=>h});const o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),S=\"Set The"
+        },
+        {
+          "source": "rzDevice25.1dbf16d259718708f12a.js",
+          "offsetUtf8": 57255,
+          "text": "sonData={classId:t.data[0],GPU:a.Jz(t.data[1],t.data[2]),VRAM:a.Jz(t.data[3],t.data[4]),A:t.data[5],B:t.data[6],C:t.data[7],D:t.data[8],E:t.data[9],F:t.data[10],G:t.data[11],thermalSampling:a.Jz(t.data[1],t.data[2]),hysteresis:t.data[3],fanUpdate:a.Jz(t.data[4],t.data[5]),fanMaxDelta:a.Jz(t.data[6],t.data[7])})})(r),r})),A=(t,n,e,r,c,u=-1)=>s(void "
+        },
+        {
+          "source": "ui-main.cb0bb66b.js",
+          "offsetUtf8": 6211391,
+          "text": "PUPowerLimit:D,showPerformanceMsg:L,powerStatus:p,supportFixedFanSpeed:P=!0,hyperboost:M,unsupportedCpuBoostOption:m,isMaxCpuSupported:U,isMaxGpuSupported:h,isGpuOptimizeEnabled:G,disableCPUHightWhenG"
+        },
+        {
+          "source": "ui-main.cb0bb66b.js",
+          "offsetUtf8": 6220960,
+          "text": "}),(0,qt.jsx)(is.A,{min:O?O.gpu.min:0,max:O?O.gpu.max:2,step:1,noTip:!0,midTag:we.E_p,active:_,value:X,changeValue:Re})]})]})}):b!==ye.ZCP&&b!==ye.TxO?!y&&P&&(()=>{const e=V===ye.XuP.manual,{minVal:E,maxVal:a,defaultValue:t}=Oe(b);return(0,"
+        },
+        {
+          "source": "ui-main.cb0bb66b.js",
+          "offsetUtf8": 6223119,
+          "text": "253, 89, 17, 1)\"})}),(0,qt.jsx)(is.A,{min:E,max:a,step:100,minTag:\"\",maxTag:\"\",value:$,active:e&&i,changeValue:Te}),(0,qt.jsx)(\"div\",{className:e?\"on\":\"\",children:(0,qt.jsx)(Ts,{d:"
+        }
+      ],
+      "sources": [
+        {
+          "product": 595,
+          "file": "6737.6a4f810f43bf4dd7ea5d.js",
+          "url": "https://apps.razer.com/synapse/products/595/mw/6737.6a4f810f43bf4dd7ea5d.js",
+          "bytes": 2353859,
+          "sha256": "AC6F2091BC3ABE952B1AA7D8F156F2C6859E3195112A06D15AA03BB41FA81F6A"
+        },
+        {
+          "product": 595,
+          "file": "main.11dfb9173b8a1c795ffd.js",
+          "url": "https://apps.razer.com/synapse/products/595/mw/main.11dfb9173b8a1c795ffd.js",
+          "bytes": 163132,
+          "sha256": "95A5CB17A346AC87CBF033E734EC18955E8B42BBFD572B666AAED36FBB3342D1"
+        },
+        {
+          "product": 595,
+          "file": "rzDevice25.1dbf16d259718708f12a.js",
+          "url": "https://apps.razer.com/synapse/products/595/mw/rzDevice25.1dbf16d259718708f12a.js",
+          "bytes": 279028,
+          "sha256": "ED1BEF8C07D7E5BBFEEFE235179B351B85BFAE6F1BCC3A0A131F7A99BB157E1C"
+        },
+        {
+          "product": 595,
+          "file": "rzDevice25LedMatrixBlade.79a5d89deb2d7a89f414.js",
+          "url": "https://apps.razer.com/synapse/products/595/mw/rzDevice25LedMatrixBlade.79a5d89deb2d7a89f414.js",
+          "bytes": 13099,
+          "sha256": "5DABD32211A6FD805ADF1FD5DA0921CDA6D269A43A6A2B4E1CB4EA803BD92A8E"
+        },
+        {
+          "product": 595,
+          "file": "rzDevice25LedMatrixBlade2.13f940ff6f0153299efb.js",
+          "url": "https://apps.razer.com/synapse/products/595/mw/rzDevice25LedMatrixBlade2.13f940ff6f0153299efb.js",
+          "bytes": 20253,
+          "sha256": "111EA398E8E1B7EFAE455979A1A532CD353CEF109B2FAA50E1A36D525F979D3B"
+        },
+        {
+          "product": 595,
+          "file": "rzDevice25LedMatrixBladeWattage.372543c0af163eb3248d.js",
+          "url": "https://apps.razer.com/synapse/products/595/mw/rzDevice25LedMatrixBladeWattage.372543c0af163eb3248d.js",
+          "bytes": 2923,
+          "sha256": "E2212888DAC1E9026061079E38464221F38E72A17B71EE059902C6065851FE3F"
+        },
+        {
+          "product": 595,
+          "file": "ui-main.cb0bb66b.js",
+          "url": "https://apps.razer.com/synapse/products/595/ui/static/js/main.cb0bb66b.js",
+          "bytes": 6450371,
+          "sha256": "F18BBCF3BB5A24FEC8272213DE8AA93E55FFA8E9952F90F5556C3DE62E79EE08"
+        }
+      ],
+      "uiPresetRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3700.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4500.0,
+          "source": "ui-main.cb0bb66b.js",
+          "offsetUtf8": 5560710,
+          "text": "minFanSpeedValue:3700,maxFanSpeedValue:5300,defaultFanSpeedValue:4500"
+        },
+        {
+          "mode": "Custom_Mode",
+          "minimumRpm": 4000.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4600.0,
+          "source": "ui-main.cb0bb66b.js",
+          "offsetUtf8": 5561519,
+          "text": "minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600"
+        }
+      ],
+      "conservativeStaticRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3700.0,
+          "maximumRpm": 5300.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0351",
+      "vendorProductId": 616,
+      "adapterFeatureExplicitlyEnabled": true,
+      "sharedAdapterGetterAndThermalCallerPresent": true,
+      "customManualFeatureExplicitlyEnabled": false,
+      "manualRangeCandidates": [
+        {
+          "mode": "i.VWS.Balanced_Mode",
+          "minimumRpm": 3600.0,
+          "maximumRpm": 5200.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.f9ef043eaf3feceba719.js",
+          "offsetUtf8": 132078,
+          "text": "minFanSpeedValue:3600,maxFanSpeedValue:5200,defaultFanSpeedValue:4300"
+        },
+        {
+          "mode": "i.VWS.Productivity_Creator_Mode",
+          "minimumRpm": 3600.0,
+          "maximumRpm": 5200.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.f9ef043eaf3feceba719.js",
+          "offsetUtf8": 132794,
+          "text": "minFanSpeedValue:3600,maxFanSpeedValue:5200,defaultFanSpeedValue:4300"
+        },
+        {
+          "mode": "i.VWS.Gaming_Mode",
+          "minimumRpm": 3600.0,
+          "maximumRpm": 5200.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.f9ef043eaf3feceba719.js",
+          "offsetUtf8": 133707,
+          "text": "minFanSpeedValue:3600,maxFanSpeedValue:5200,defaultFanSpeedValue:4300"
+        }
+      ],
+      "independentTargetGetter": "0D/81 size3 class1, response classId/thermalId/targetUnits100RPM, distinct from0D/88 currentRPM",
+      "dynamicRange": "0D/83 class0 size12; min=B6*100/default=D8*100/max=F10*100; intersect current exact preset static envelope",
+      "powerScope": "Exact UI fixed fan branch requires AC; Windows power alone does not confirm sufficient wattage",
+      "proofs": [
+        {
+          "source": "main.f9ef043eaf3feceba719.js",
+          "offsetUtf8": 144277,
+          "text": "ce:!0,hasColorProfiles:!0,hasCustomPerformance:!0,hasAdapterWattageLevel:!0},installData:null,updateData:null,lightingEffects:{canSyncQuickEffect:!1},validDevic"
+        },
+        {
+          "source": "main.f9ef043eaf3feceba719.js",
+          "offsetUtf8": 142312,
+          "text": "hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0}};var S,A,T,h,O;o.sentry.dsn&&i.init(Object.assign(Object.assign({},o.sentr"
+        },
+        {
+          "source": "main.f9ef043eaf3feceba719.js",
+          "offsetUtf8": 91512,
+          "text": "):this.isRzAppEngine?window.keyboardlayout:void 0}get isOnBatteryPower(){return this.isElectron?this.callElectronAction({action:\"isOnBatteryPower\"}):\"function\"==typeof window.isOnBatteryPower?window.isOnBatteryPower():(console.warn(`${this.name}.isOnBatteryPower not supported`),!1)}get isScreenLocked(){return this.isElectron?this.callElectronAction({action:\"IsScreenLocked\"}):\"function\"==typeof win"
+        },
+        {
+          "source": "2592.2faacaabe55016689a38.js",
+          "offsetUtf8": 2311737,
+          "text": "const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,n,r=1){return{profileId:r,thermalId:e,fanMode:(0,i.l7)(t),fanModeValue:o[n]}}static getPerformanceFanSpeedProfile(e,t,n=1){return{classId:n,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},55300"
+        },
+        {
+          "source": "2592.2faacaabe55016689a38.js",
+          "offsetUtf8": 1234517,
+          "text": "const{profileId:t,fanMode:r,fanModeValue:a}=bn.Z.getPerformanceFanModeProfile(i,o.mode,\"auto\");yield e.setThermalFanMode(t,i,r,a).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)})),n=yield e.getThermalFanInformation(0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"getThermalFanInformation\",e)}))}void 0!==n&&(o.minFanSpeedValue=100*n.jsonData.B,o.defaultFanSpeedValue=100*n.jsonData.D,o.maxFanSpeedValue=100*n.jsonData.F,0!==o.minFanSpeedValue&&0!==o.defaultFanSpeedValue&&0!==o.maxFanSpeedValue&&i.push({mode:o.mode,min:o.minFanSpeedValue,default:o.defaultFanSpeedValue,max:o.maxFanSpeedValue}))}Ke.default.fanValues=i})),uo=()=>Ii(void 0,v"
+        },
+        {
+          "source": "2592.2faacaabe55016689a38.js",
+          "offsetUtf8": 2334214,
+          "text": "0;const Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.razerWindow.rzDevice;let t,n,i=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),n=parseInt(r),i=0===t}catch(e){console.log(e)}return 0===t&&ze<=5?(console.warn(`${a} has been called ${ze} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${n}`),yield(0,g._v)(500*Math.pow(2,ze)),!(yield d.Z.isOnBatteryPower)&&(ze++,yield Ve())):ze>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${ze}, returning isLowPower to false`),ze=0,!1):(ze=0,t<n&&!i&&(o=!0),A.default.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${n}`),o)})),We=e=>x(void 0,void 0,void 0,(function*(){const t=r.razerWindow.rzDevice,n={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,2"
+        },
+        {
+          "source": "2592.2faacaabe55016689a38.js",
+          "offsetUtf8": 1859091,
+          "text": "0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.Z.getPerformanceFanModeProfile(i,n,o);if(!A&&c&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:i}),yield u.setThermalFanMode(r,i,d.wX,0);else if(yield u.setThermalFanMode(r,i,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:n}=v.Z.getPerformanceFanSpeedProfile(i,t);yie"
+        },
+        {
+          "source": "rzDevice25.9c9299b0f9660c882e16.js",
+          "offsetUtf8": 58111,
+          "text": "ata.slice(1,e.data[0]+1)}),e})),u=t=>{t.status===o.zv&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],thermalFanSpeed:t.data[2]})},m=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.$1({error:o.y9,commandClass:i.WL[1],commandId:i.WL[2],commandDesc:i.Tk});const r=new Uint8Array(i.WL[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.WL,i.Tk,r);return u(a),a})),l=(t,n,e,"
+        },
+        {
+          "source": "rzDevice25.9c9299b0f9660c882e16.js",
+          "offsetUtf8": 68671,
+          "text": "){return K}});const o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),m=\"Get Thermal Fan Mode\",l=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),f=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),h=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),y=\"Set The"
+        },
+        {
+          "source": "rzDevice25.9c9299b0f9660c882e16.js",
+          "offsetUtf8": 60154,
+          "text": "sonData={classId:t.data[0],GPU:a.U1(t.data[1],t.data[2]),VRAM:a.U1(t.data[3],t.data[4]),A:t.data[5],B:t.data[6],C:t.data[7],D:t.data[8],E:t.data[9],F:t.data[10],G:t.data[11],thermalSampling:a.U1(t.data[1],t.data[2]),hysteresis:t.data[3],fanUpdate:a.U1(t.data[4],t.data[5]),fanMaxDelta:a.U1(t.data[6],t.data[7])})})(r),r})),w=(t,n,e,r,c,u=-1)=>s(void "
+        },
+        {
+          "source": "ui-main.700be592.js",
+          "offsetUtf8": 6266185,
+          "text": "PUPowerLimit:D,showPerformanceMsg:L,powerStatus:p,supportFixedFanSpeed:P=!0,hyperboost:M,unsupportedCpuBoostOption:m,isMaxCpuSupported:U,isMaxGpuSupported:h,isGpuOptimizeEnabled:G,disableCPUHightWhenG"
+        },
+        {
+          "source": "ui-main.700be592.js",
+          "offsetUtf8": 6275754,
+          "text": "}),(0,Zt.jsx)(hs.A,{min:O?O.gpu.min:0,max:O?O.gpu.max:2,step:1,noTip:!0,midTag:Ke.E_p,active:_,value:X,changeValue:Re})]})]})}):b!==Be.ZCP&&b!==Be.TxO?!y&&P&&(()=>{const e=V===Be.XuP.manual,{minVal:E,maxVal:a,defaultValue:t}=Oe(b);return(0,"
+        },
+        {
+          "source": "ui-main.700be592.js",
+          "offsetUtf8": 6277913,
+          "text": "253, 89, 17, 1)\"})}),(0,Zt.jsx)(hs.A,{min:E,max:a,step:100,minTag:\"\",maxTag:\"\",value:$,active:e&&i,changeValue:re}),(0,Zt.jsx)(\"div\",{className:e?\"on\":\"\",children:(0,Zt.jsx)(vs,{d:"
+        }
+      ],
+      "sources": [
+        {
+          "product": 616,
+          "file": "main.f9ef043eaf3feceba719.js",
+          "url": "https://apps.razer.com/synapse/products/616/mw/main.f9ef043eaf3feceba719.js",
+          "bytes": 151705,
+          "sha256": "ABC074EB488E0848E4751D8417D6B3EF3BA02FAC06C9C98ED32B5E1E1350B2C7"
+        },
+        {
+          "product": 616,
+          "file": "rzDevice25.9c9299b0f9660c882e16.js",
+          "url": "https://apps.razer.com/synapse/products/616/mw/rzDevice25.9c9299b0f9660c882e16.js",
+          "bytes": 275172,
+          "sha256": "330835150F88BC505B181EAC4828506750CD7365F9F4CB242437CF3CFC133A24"
+        },
+        {
+          "product": 616,
+          "file": "rzDevice25LedMatrixBlade.4495de9ea9ea03b9e8de.js",
+          "url": "https://apps.razer.com/synapse/products/616/mw/rzDevice25LedMatrixBlade.4495de9ea9ea03b9e8de.js",
+          "bytes": 12999,
+          "sha256": "3B48422C14BDC098904459710AF66336429EC4350623C197A6994CCC4433D4C9"
+        },
+        {
+          "product": 616,
+          "file": "rzDevice25LedMatrixBlade2.ba468ff0b270aa7af92b.js",
+          "url": "https://apps.razer.com/synapse/products/616/mw/rzDevice25LedMatrixBlade2.ba468ff0b270aa7af92b.js",
+          "bytes": 20153,
+          "sha256": "781ED0BD930A338102C5E93797905D6F1BF832597FAE0A7E894F561EB1D7D892"
+        },
+        {
+          "product": 616,
+          "file": "rzDevice25LedMatrixBladeWattage.f57ee707817ebfa7e2d8.js",
+          "url": "https://apps.razer.com/synapse/products/616/mw/rzDevice25LedMatrixBladeWattage.f57ee707817ebfa7e2d8.js",
+          "bytes": 2774,
+          "sha256": "51BC8EF2FEFDA5FE8263E26F175F20B25BF0703CF0EEA8E9DE0D7B8AB1959426"
+        },
+        {
+          "product": 616,
+          "file": "2592.2faacaabe55016689a38.js",
+          "url": "https://apps.razer.com/synapse/products/616/mw/2592.2faacaabe55016689a38.js",
+          "bytes": 2402137,
+          "sha256": "D7C0644CA124900DB2A57812E85CF94C0C75A75ACE11CAB903B11A81438B4B92"
+        },
+        {
+          "product": 616,
+          "file": "ui-main.700be592.js",
+          "url": "https://apps.razer.com/synapse/products/616/ui/static/js/main.700be592.js",
+          "bytes": 6486443,
+          "sha256": "A802348F6BA596483A820A90D583C3680903C74AEB1CCB559174CBEB47C0E2F2"
+        }
+      ],
+      "uiPresetRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3600.0,
+          "maximumRpm": 5200.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "source": "ui-main.700be592.js",
+          "offsetUtf8": 5603672,
+          "text": "minFanSpeedValue:3600,maxFanSpeedValue:5200,defaultFanSpeedValue:4300"
+        },
+        {
+          "mode": "Productivity_Creator_Mode",
+          "minimumRpm": 3600.0,
+          "maximumRpm": 5200.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "source": "ui-main.700be592.js",
+          "offsetUtf8": 5604388,
+          "text": "minFanSpeedValue:3600,maxFanSpeedValue:5200,defaultFanSpeedValue:4300"
+        },
+        {
+          "mode": "Gaming_Mode",
+          "minimumRpm": 3600.0,
+          "maximumRpm": 5200.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "source": "ui-main.700be592.js",
+          "offsetUtf8": 5605301,
+          "text": "minFanSpeedValue:3600,maxFanSpeedValue:5200,defaultFanSpeedValue:4300"
+        }
+      ],
+      "conservativeStaticRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3600.0,
+          "maximumRpm": 5200.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        },
+        {
+          "mode": "Productivity_Creator_Mode",
+          "minimumRpm": 3600.0,
+          "maximumRpm": 5200.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        },
+        {
+          "mode": "Gaming_Mode",
+          "minimumRpm": 3600.0,
+          "maximumRpm": 5200.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0370",
+      "vendorProductId": 624,
+      "adapterFeatureExplicitlyEnabled": true,
+      "sharedAdapterGetterAndThermalCallerPresent": true,
+      "customManualFeatureExplicitlyEnabled": false,
+      "manualRangeCandidates": [
+        {
+          "mode": "i.mNQ.Balanced_Mode",
+          "minimumRpm": 3300.0,
+          "maximumRpm": 5400.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.c661207b6abe5eb319cb.js",
+          "offsetUtf8": 143296,
+          "text": "minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedValue:4300"
+        },
+        {
+          "mode": "i.mNQ.Custom_Mode",
+          "minimumRpm": 3300.0,
+          "maximumRpm": 5400.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": false,
+          "source": "main.c661207b6abe5eb319cb.js",
+          "offsetUtf8": 144105,
+          "text": "minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedValue:4300"
+        }
+      ],
+      "independentTargetGetter": "0D/81 size3 class1, response classId/thermalId/targetUnits100RPM, distinct from0D/88 currentRPM",
+      "dynamicRange": "0D/83 class0 size12; min=B6*100/default=D8*100/max=F10*100; intersect current exact preset static envelope",
+      "powerScope": "Exact UI fixed fan branch requires AC; Windows power alone does not confirm sufficient wattage",
+      "proofs": [
+        {
+          "source": "main.c661207b6abe5eb319cb.js",
+          "offsetUtf8": 155647,
+          "text": "s:\"waiting\",isChromaDevice:!0,hasColorProfiles:!0,hasAdapterWattageLevel:!0,hasGPUmode:!0},installData:null,updateData:null,validDevices:[],lightingEffects:{can"
+        },
+        {
+          "source": "main.c661207b6abe5eb319cb.js",
+          "offsetUtf8": 150983,
+          "text": "hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0}}),a.A.useFeature(\"rzDeviceType\",\"rzDevice25LedMatrixBladeWattage\"),a.A.inj"
+        },
+        {
+          "source": "main.c661207b6abe5eb319cb.js",
+          "offsetUtf8": 102909,
+          "text": "):this.isRzAppEngine?window.keyboardlayout:void 0}get isOnBatteryPower(){return this.isElectron?this.callElectronAction({action:\"isOnBatteryPower\"}):\"function\"==typeof window.isOnBatteryPower?window.isOnBatteryPower():(console.warn(`${this.name}.isOnBatteryPower not supported`),!1)}get isScreenLocked(){return this.isElectron?this.callElectronAction({action:\"IsScreenLocked\"}):\"function\"==typeof win"
+        },
+        {
+          "source": "6737.6b47e5cb8059a1bdacfb.js",
+          "offsetUtf8": 2265755,
+          "text": "const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},25434"
+        },
+        {
+          "source": "6737.6b47e5cb8059a1bdacfb.js",
+          "offsetUtf8": 1208396,
+          "text": "const{profileId:t,fanMode:r,fanModeValue:a}=Wi.A.getPerformanceFanModeProfile(n,o.mode,\"auto\");yield e.setThermalFanMode(t,n,r,a).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)})),i=yield e.getThermalFanInformation(0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"getThermalFanInformation\",e)}))}void 0!==i&&(o.minFanSpeedValue=100*i.jsonData.B,o.defaultFanSpeedValue=100*i.jsonData.D,o.maxFanSpeedValue=100*i.jsonData.F,0!==o.minFanSpeedValue&&0!==o.defaultFanSpeedValue&&0!==o.maxFanSpeedValue&&n.push({mode:o.mode,min:o.minFanSpeedValue,default:o.defaultFanSpeedValue,max:o.maxFanSpeedValue}))}ct.A.fanValues=n})),Po=()=>Vn(void 0,void 0,"
+        },
+        {
+          "source": "6737.6b47e5cb8059a1bdacfb.js",
+          "offsetUtf8": 2287106,
+          "text": ");let je=0;const Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,"
+        },
+        {
+          "source": "6737.6b47e5cb8059a1bdacfb.js",
+          "offsetUtf8": 1822225,
+          "text": "0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yie"
+        },
+        {
+          "source": "rzDevice25.1672779ed3e58b9415ca.js",
+          "offsetUtf8": 55077,
+          "text": "e.data[0]+1)}),e})),u=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],thermalFanSpeed:t.data[2]})},l=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Ny[1],commandId:i.Ny[2],commandDesc:i.JK});const r=new Uint8Array(i.Ny[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.Ny,i.JK,r);ret"
+        },
+        {
+          "source": "rzDevice25.1672779ed3e58b9415ca.js",
+          "offsetUtf8": 65501,
+          "text": ">$,yz:()=>h});const o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),S=\"Set The"
+        },
+        {
+          "source": "rzDevice25.1672779ed3e58b9415ca.js",
+          "offsetUtf8": 57255,
+          "text": "sonData={classId:t.data[0],GPU:a.Jz(t.data[1],t.data[2]),VRAM:a.Jz(t.data[3],t.data[4]),A:t.data[5],B:t.data[6],C:t.data[7],D:t.data[8],E:t.data[9],F:t.data[10],G:t.data[11],thermalSampling:a.Jz(t.data[1],t.data[2]),hysteresis:t.data[3],fanUpdate:a.Jz(t.data[4],t.data[5]),fanMaxDelta:a.Jz(t.data[6],t.data[7])})})(r),r})),A=(t,n,e,r,c,u=-1)=>s(void "
+        },
+        {
+          "source": "ui-main.2709843a.js",
+          "offsetUtf8": 6193903,
+          "text": "PUPowerLimit:D,showPerformanceMsg:L,powerStatus:p,supportFixedFanSpeed:P=!0,hyperboost:M,unsupportedCpuBoostOption:m,isMaxCpuSupported:U,isMaxGpuSupported:h,isGpuOptimizeEnabled:G,disableCPUHightWhenG"
+        },
+        {
+          "source": "ui-main.2709843a.js",
+          "offsetUtf8": 6203472,
+          "text": "}),(0,n_.jsx)(Ms.A,{min:O?O.gpu.min:0,max:O?O.gpu.max:2,step:1,noTip:!0,midTag:we.E_p,active:_,value:X,changeValue:Re})]})]})}):b!==ye.ZCP&&b!==ye.TxO?!y&&P&&(()=>{const e=V===ye.XuP.manual,{minVal:E,maxVal:t,defaultValue:a}=Oe(b);return(0,"
+        },
+        {
+          "source": "ui-main.2709843a.js",
+          "offsetUtf8": 6205631,
+          "text": "253, 89, 17, 1)\"})}),(0,n_.jsx)(Ms.A,{min:E,max:t,step:100,minTag:\"\",maxTag:\"\",value:$,active:e&&i,changeValue:Te}),(0,n_.jsx)(\"div\",{className:e?\"on\":\"\",children:(0,n_.jsx)(Hs,{d:"
+        }
+      ],
+      "sources": [
+        {
+          "product": 624,
+          "file": "6737.6b47e5cb8059a1bdacfb.js",
+          "url": "https://apps.razer.com/synapse/products/624/mw/6737.6b47e5cb8059a1bdacfb.js",
+          "bytes": 2353859,
+          "sha256": "C36EFB8BD1F15DC65F8C235895EFA5F20A59D71D45BC6D22BF92D88C9C8D79F7"
+        },
+        {
+          "product": 624,
+          "file": "main.c661207b6abe5eb319cb.js",
+          "url": "https://apps.razer.com/synapse/products/624/mw/main.c661207b6abe5eb319cb.js",
+          "bytes": 162842,
+          "sha256": "50DFF3488639F22BD3890596A047378D14CB52334A49EDDCEDDAFC7EAF0669C2"
+        },
+        {
+          "product": 624,
+          "file": "rzDevice25.1672779ed3e58b9415ca.js",
+          "url": "https://apps.razer.com/synapse/products/624/mw/rzDevice25.1672779ed3e58b9415ca.js",
+          "bytes": 279028,
+          "sha256": "F696504C78559A2E04E503F8CF7B069D87F1298BFB767677912CD649EEB49456"
+        },
+        {
+          "product": 624,
+          "file": "rzDevice25LedMatrixBlade.c61a8d4fcda5f10441ea.js",
+          "url": "https://apps.razer.com/synapse/products/624/mw/rzDevice25LedMatrixBlade.c61a8d4fcda5f10441ea.js",
+          "bytes": 13099,
+          "sha256": "9293920B3D6B4065F4539972C8A69E87FF3C79354309F6BA214FA4D8BD430CAF"
+        },
+        {
+          "product": 624,
+          "file": "rzDevice25LedMatrixBlade2.58b0677575a642f3900f.js",
+          "url": "https://apps.razer.com/synapse/products/624/mw/rzDevice25LedMatrixBlade2.58b0677575a642f3900f.js",
+          "bytes": 20253,
+          "sha256": "1D0A0B7FDB95DE34A8D14BB9F3E8C20B3D84E9F68A5D8470BEA5FA8621CEE958"
+        },
+        {
+          "product": 624,
+          "file": "rzDevice25LedMatrixBladeWattage.42a7744269064ea241c2.js",
+          "url": "https://apps.razer.com/synapse/products/624/mw/rzDevice25LedMatrixBladeWattage.42a7744269064ea241c2.js",
+          "bytes": 2923,
+          "sha256": "A83F5FE396DABF9D5FB1AA1DAF77CC65E0927BE2D23EDDD4CC3A19633AC002F5"
+        },
+        {
+          "product": 624,
+          "file": "ui-main.2709843a.js",
+          "url": "https://apps.razer.com/synapse/products/624/ui/static/js/main.2709843a.js",
+          "bytes": 6418878,
+          "sha256": "48359BAFE13C56156017A81A72E82CEDB3F44BAD5A52BB921D4FBE96E1F1A1FE"
+        }
+      ],
+      "uiPresetRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3300.0,
+          "maximumRpm": 5400.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "source": "ui-main.2709843a.js",
+          "offsetUtf8": 5071774,
+          "text": "minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedValue:4300"
+        },
+        {
+          "mode": "Custom_Mode",
+          "minimumRpm": 3300.0,
+          "maximumRpm": 5400.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "source": "ui-main.2709843a.js",
+          "offsetUtf8": 5072583,
+          "text": "minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedValue:4300"
+        }
+      ],
+      "conservativeStaticRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3300.0,
+          "maximumRpm": 5400.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0409",
+      "vendorProductId": 630,
+      "adapterFeatureExplicitlyEnabled": true,
+      "sharedAdapterGetterAndThermalCallerPresent": true,
+      "customManualFeatureExplicitlyEnabled": false,
+      "manualRangeCandidates": [
+        {
+          "mode": "r.mNQ.Balanced_Mode",
+          "minimumRpm": 3400.0,
+          "maximumRpm": 5200.0,
+          "defaultRpmSourceOnly": 4100.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.6098ef0f83a9cd1c24a9.js",
+          "offsetUtf8": 144808,
+          "text": "minFanSpeedValue:3400,maxFanSpeedValue:5200,defaultFanSpeedValue:4100"
+        },
+        {
+          "mode": "r.mNQ.Custom_Mode",
+          "minimumRpm": 4000.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4600.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": false,
+          "source": "main.6098ef0f83a9cd1c24a9.js",
+          "offsetUtf8": 145617,
+          "text": "minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600"
+        }
+      ],
+      "independentTargetGetter": "0D/81 size3 class1, response classId/thermalId/targetUnits100RPM, distinct from0D/88 currentRPM",
+      "dynamicRange": "0D/83 class0 size12; min=B6*100/default=D8*100/max=F10*100; intersect current exact preset static envelope",
+      "powerScope": "Exact UI fixed fan branch requires AC; Windows power alone does not confirm sufficient wattage",
+      "proofs": [
+        {
+          "source": "main.6098ef0f83a9cd1c24a9.js",
+          "offsetUtf8": 155634,
+          "text": "ce:!0,hasColorProfiles:!0,hasCustomPerformance:!0,hasAdapterWattageLevel:!0,hasGPUmode:!0},installData:null,updateData:null,lightingEffects:{canSyncQuickEffect:"
+        },
+        {
+          "source": "main.6098ef0f83a9cd1c24a9.js",
+          "offsetUtf8": 150800,
+          "text": "hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0}}),a.A.useFeature(\"rzDeviceType\",\"rzDevice25LedMatrixBladeWattage\"),a.A.inj"
+        },
+        {
+          "source": "main.6098ef0f83a9cd1c24a9.js",
+          "offsetUtf8": 102909,
+          "text": "):this.isRzAppEngine?window.keyboardlayout:void 0}get isOnBatteryPower(){return this.isElectron?this.callElectronAction({action:\"isOnBatteryPower\"}):\"function\"==typeof window.isOnBatteryPower?window.isOnBatteryPower():(console.warn(`${this.name}.isOnBatteryPower not supported`),!1)}get isScreenLocked(){return this.isElectron?this.callElectronAction({action:\"IsScreenLocked\"}):\"function\"==typeof win"
+        },
+        {
+          "source": "6737.71d0d0b36aad77ffb446.js",
+          "offsetUtf8": 2265761,
+          "text": "const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},25434"
+        },
+        {
+          "source": "6737.71d0d0b36aad77ffb446.js",
+          "offsetUtf8": 1208402,
+          "text": "const{profileId:t,fanMode:r,fanModeValue:a}=Wi.A.getPerformanceFanModeProfile(n,o.mode,\"auto\");yield e.setThermalFanMode(t,n,r,a).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)})),i=yield e.getThermalFanInformation(0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"getThermalFanInformation\",e)}))}void 0!==i&&(o.minFanSpeedValue=100*i.jsonData.B,o.defaultFanSpeedValue=100*i.jsonData.D,o.maxFanSpeedValue=100*i.jsonData.F,0!==o.minFanSpeedValue&&0!==o.defaultFanSpeedValue&&0!==o.maxFanSpeedValue&&n.push({mode:o.mode,min:o.minFanSpeedValue,default:o.defaultFanSpeedValue,max:o.maxFanSpeedValue}))}ct.A.fanValues=n})),Po=()=>Vn(void 0,void 0,"
+        },
+        {
+          "source": "6737.71d0d0b36aad77ffb446.js",
+          "offsetUtf8": 2287112,
+          "text": ");let je=0;const Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,"
+        },
+        {
+          "source": "6737.71d0d0b36aad77ffb446.js",
+          "offsetUtf8": 1822231,
+          "text": "0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yie"
+        },
+        {
+          "source": "rzDevice25.7fc62fb8a269279f7b9e.js",
+          "offsetUtf8": 55083,
+          "text": "e.data[0]+1)}),e})),u=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],thermalFanSpeed:t.data[2]})},l=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Ny[1],commandId:i.Ny[2],commandDesc:i.JK});const r=new Uint8Array(i.Ny[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.Ny,i.JK,r);ret"
+        },
+        {
+          "source": "rzDevice25.7fc62fb8a269279f7b9e.js",
+          "offsetUtf8": 65507,
+          "text": ">$,yz:()=>h});const o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),S=\"Set The"
+        },
+        {
+          "source": "rzDevice25.7fc62fb8a269279f7b9e.js",
+          "offsetUtf8": 57261,
+          "text": "sonData={classId:t.data[0],GPU:a.Jz(t.data[1],t.data[2]),VRAM:a.Jz(t.data[3],t.data[4]),A:t.data[5],B:t.data[6],C:t.data[7],D:t.data[8],E:t.data[9],F:t.data[10],G:t.data[11],thermalSampling:a.Jz(t.data[1],t.data[2]),hysteresis:t.data[3],fanUpdate:a.Jz(t.data[4],t.data[5]),fanMaxDelta:a.Jz(t.data[6],t.data[7])})})(r),r})),A=(t,n,e,r,c,u=-1)=>s(void "
+        },
+        {
+          "source": "ui-main.64a01e0e.js",
+          "offsetUtf8": 6347050,
+          "text": "PUPowerLimit:D,showPerformanceMsg:L,powerStatus:p,supportFixedFanSpeed:P=!0,hyperboost:M,unsupportedCpuBoostOption:m,isMaxCpuSupported:U,isMaxGpuSupported:h,isGpuOptimizeEnabled:H,disableCPUHightWhenG"
+        },
+        {
+          "source": "ui-main.64a01e0e.js",
+          "offsetUtf8": 6356619,
+          "text": "}),(0,$a.jsx)(ss.A,{min:O?O.gpu.min:0,max:O?O.gpu.max:2,step:1,noTip:!0,midTag:ze.E_p,active:_,value:X,changeValue:Re})]})]})}):b!==ye.ZCP&&b!==ye.TxO?!y&&P&&(()=>{const e=V===ye.XuP.manual,{minVal:E,maxVal:t,defaultValue:a}=Oe(b);return(0,"
+        },
+        {
+          "source": "ui-main.64a01e0e.js",
+          "offsetUtf8": 6358778,
+          "text": "253, 89, 17, 1)\"})}),(0,$a.jsx)(ss.A,{min:E,max:t,step:100,minTag:\"\",maxTag:\"\",value:$,active:e&&i,changeValue:re}),(0,$a.jsx)(\"div\",{className:e?\"on\":\"\",children:(0,$a.jsx)(As,{d:"
+        }
+      ],
+      "sources": [
+        {
+          "product": 630,
+          "file": "6737.71d0d0b36aad77ffb446.js",
+          "url": "https://apps.razer.com/synapse/products/630/mw/6737.71d0d0b36aad77ffb446.js",
+          "bytes": 2353865,
+          "sha256": "80A872631CBD5E16F713467DA13B9B7D76889487E22A6CE3DB854A15E1631558"
+        },
+        {
+          "product": 630,
+          "file": "main.6098ef0f83a9cd1c24a9.js",
+          "url": "https://apps.razer.com/synapse/products/630/mw/main.6098ef0f83a9cd1c24a9.js",
+          "bytes": 162936,
+          "sha256": "57D83A4D3928BE973205AF873268D65662A1833452165EA8199F816D27BAB51B"
+        },
+        {
+          "product": 630,
+          "file": "rzDevice25.7fc62fb8a269279f7b9e.js",
+          "url": "https://apps.razer.com/synapse/products/630/mw/rzDevice25.7fc62fb8a269279f7b9e.js",
+          "bytes": 279034,
+          "sha256": "940EE59B6B034BEE82B77779323617F817D8D400F7BF526058BFD10CDC1568BA"
+        },
+        {
+          "product": 630,
+          "file": "rzDevice25LedMatrixBlade.5258f7f0a1f14ad07643.js",
+          "url": "https://apps.razer.com/synapse/products/630/mw/rzDevice25LedMatrixBlade.5258f7f0a1f14ad07643.js",
+          "bytes": 13105,
+          "sha256": "494AD54804E7DBFB10CA6D405EB4A307B6DDF614BC5013C01280135E4CAA972F"
+        },
+        {
+          "product": 630,
+          "file": "rzDevice25LedMatrixBladeWattage.cb42c79fefbfdc6d1216.js",
+          "url": "https://apps.razer.com/synapse/products/630/mw/rzDevice25LedMatrixBladeWattage.cb42c79fefbfdc6d1216.js",
+          "bytes": 2929,
+          "sha256": "E75F29F664214B9F08295F22CBDB2B75614E0D0240B0D0044E18DE2ED1621325"
+        },
+        {
+          "product": 630,
+          "file": "ui-main.64a01e0e.js",
+          "url": "https://apps.razer.com/synapse/products/630/ui/static/js/main.64a01e0e.js",
+          "bytes": 6586793,
+          "sha256": "1C5A6D450F5E544FE8855FFF92D95BC3ABCE2697574CC58D37AA76817D9F95E5"
+        }
+      ],
+      "uiPresetRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3400.0,
+          "maximumRpm": 5200.0,
+          "defaultRpmSourceOnly": 4100.0,
+          "source": "ui-main.64a01e0e.js",
+          "offsetUtf8": 5696922,
+          "text": "minFanSpeedValue:3400,maxFanSpeedValue:5200,defaultFanSpeedValue:4100"
+        },
+        {
+          "mode": "Custom_Mode",
+          "minimumRpm": 4000.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4600.0,
+          "source": "ui-main.64a01e0e.js",
+          "offsetUtf8": 5697731,
+          "text": "minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600"
+        }
+      ],
+      "conservativeStaticRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3400.0,
+          "maximumRpm": 5200.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0421",
+      "vendorProductId": 650,
+      "adapterFeatureExplicitlyEnabled": true,
+      "sharedAdapterGetterAndThermalCallerPresent": true,
+      "customManualFeatureExplicitlyEnabled": false,
+      "manualRangeCandidates": [
+        {
+          "mode": "r.mNQ.Balanced_Mode",
+          "minimumRpm": 3400.0,
+          "maximumRpm": 5200.0,
+          "defaultRpmSourceOnly": 4100.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.3650e97f35689328d442.js",
+          "offsetUtf8": 146384,
+          "text": "minFanSpeedValue:3400,maxFanSpeedValue:5200,defaultFanSpeedValue:4100"
+        },
+        {
+          "mode": "r.mNQ.Silent_Mode",
+          "minimumRpm": 3400.0,
+          "maximumRpm": 5200.0,
+          "defaultRpmSourceOnly": 4100.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.3650e97f35689328d442.js",
+          "offsetUtf8": 147705,
+          "text": "minFanSpeedValue:3400,maxFanSpeedValue:5200,defaultFanSpeedValue:4100"
+        },
+        {
+          "mode": "r.mNQ.Custom_Mode",
+          "minimumRpm": 4000.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4600.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": false,
+          "source": "main.3650e97f35689328d442.js",
+          "offsetUtf8": 148514,
+          "text": "minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600"
+        }
+      ],
+      "independentTargetGetter": "0D/81 size3 class1, response classId/thermalId/targetUnits100RPM, distinct from0D/88 currentRPM",
+      "dynamicRange": "0D/83 class0 size12; min=B6*100/default=D8*100/max=F10*100; intersect current exact preset static envelope",
+      "powerScope": "Exact UI fixed fan branch requires AC; Windows power alone does not confirm sufficient wattage",
+      "proofs": [
+        {
+          "source": "main.3650e97f35689328d442.js",
+          "offsetUtf8": 159567,
+          "text": "ce:!0,hasColorProfiles:!0,hasCustomPerformance:!0,hasAdapterWattageLevel:!0,hasGPUmode:!0,hasSystemTrackpad:!0},installData:null,updateData:null,lightingEffects"
+        },
+        {
+          "source": "main.3650e97f35689328d442.js",
+          "offsetUtf8": 157524,
+          "text": "hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0,hasBatteryOptimizer:!0}};var p,f,A,S,T;r.sentry.dsn&&i.init(Object.assign(O"
+        },
+        {
+          "source": "main.3650e97f35689328d442.js",
+          "offsetUtf8": 103011,
+          "text": "):this.isRzAppEngine?window.keyboardlayout:void 0}get isOnBatteryPower(){return this.isElectron?this.callElectronAction({action:\"isOnBatteryPower\"}):\"function\"==typeof window.isOnBatteryPower?window.isOnBatteryPower():(console.warn(`${this.name}.isOnBatteryPower not supported`),!1)}get isScreenLocked(){return this.isElectron?this.callElectronAction({action:\"IsScreenLocked\"}):\"function\"==typeof win"
+        },
+        {
+          "source": "6737.1cc98c1e1650ffce7912.js",
+          "offsetUtf8": 2265554,
+          "text": "const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},25434"
+        },
+        {
+          "source": "6737.1cc98c1e1650ffce7912.js",
+          "offsetUtf8": 1208201,
+          "text": "const{profileId:t,fanMode:r,fanModeValue:a}=Wi.A.getPerformanceFanModeProfile(n,o.mode,\"auto\");yield e.setThermalFanMode(t,n,r,a).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)})),i=yield e.getThermalFanInformation(0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"getThermalFanInformation\",e)}))}void 0!==i&&(o.minFanSpeedValue=100*i.jsonData.B,o.defaultFanSpeedValue=100*i.jsonData.D,o.maxFanSpeedValue=100*i.jsonData.F,0!==o.minFanSpeedValue&&0!==o.defaultFanSpeedValue&&0!==o.maxFanSpeedValue&&n.push({mode:o.mode,min:o.minFanSpeedValue,default:o.defaultFanSpeedValue,max:o.maxFanSpeedValue}))}ct.A.fanValues=n})),Po=()=>Vn(void 0,void 0,"
+        },
+        {
+          "source": "6737.1cc98c1e1650ffce7912.js",
+          "offsetUtf8": 2286905,
+          "text": ");let je=0;const Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,"
+        },
+        {
+          "source": "6737.1cc98c1e1650ffce7912.js",
+          "offsetUtf8": 1822028,
+          "text": "0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yie"
+        },
+        {
+          "source": "rzDevice25.33bbbe9e1d2d72bdf1a1.js",
+          "offsetUtf8": 55077,
+          "text": "e.data[0]+1)}),e})),u=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],thermalFanSpeed:t.data[2]})},l=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Ny[1],commandId:i.Ny[2],commandDesc:i.JK});const r=new Uint8Array(i.Ny[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.Ny,i.JK,r);ret"
+        },
+        {
+          "source": "rzDevice25.33bbbe9e1d2d72bdf1a1.js",
+          "offsetUtf8": 65501,
+          "text": ">$,yz:()=>h});const o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),S=\"Set The"
+        },
+        {
+          "source": "rzDevice25.33bbbe9e1d2d72bdf1a1.js",
+          "offsetUtf8": 57255,
+          "text": "sonData={classId:t.data[0],GPU:a.Jz(t.data[1],t.data[2]),VRAM:a.Jz(t.data[3],t.data[4]),A:t.data[5],B:t.data[6],C:t.data[7],D:t.data[8],E:t.data[9],F:t.data[10],G:t.data[11],thermalSampling:a.Jz(t.data[1],t.data[2]),hysteresis:t.data[3],fanUpdate:a.Jz(t.data[4],t.data[5]),fanMaxDelta:a.Jz(t.data[6],t.data[7])})})(r),r})),A=(t,n,e,r,c,u=-1)=>s(void "
+        },
+        {
+          "source": "ui-main.90e358d5.js",
+          "offsetUtf8": 6356690,
+          "text": "PUPowerLimit:D,showPerformanceMsg:L,powerStatus:p,supportFixedFanSpeed:P=!0,hyperboost:M,unsupportedCpuBoostOption:m,isMaxCpuSupported:U,isMaxGpuSupported:h,isGpuOptimizeEnabled:H,disableCPUHightWhenG"
+        },
+        {
+          "source": "ui-main.90e358d5.js",
+          "offsetUtf8": 6366259,
+          "text": "}),(0,o_.jsx)(ms.A,{min:O?O.gpu.min:0,max:O?O.gpu.max:2,step:1,noTip:!0,midTag:Xe.E_p,active:_,value:X,changeValue:Re})]})]})}):b!==Ve.ZCP&&b!==Ve.TxO?!y&&P&&(()=>{const e=V===Ve.XuP.manual,{minVal:E,maxVal:t,defaultValue:a}=Oe(b);return(0,"
+        },
+        {
+          "source": "ui-main.90e358d5.js",
+          "offsetUtf8": 6368418,
+          "text": "253, 89, 17, 1)\"})}),(0,o_.jsx)(ms.A,{min:E,max:t,step:100,minTag:\"\",maxTag:\"\",value:$,active:e&&i,changeValue:re}),(0,o_.jsx)(\"div\",{className:e?\"on\":\"\",children:(0,o_.jsx)(gs,{d:"
+        }
+      ],
+      "sources": [
+        {
+          "product": 650,
+          "file": "6737.1cc98c1e1650ffce7912.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/6737.1cc98c1e1650ffce7912.js",
+          "bytes": 2353649,
+          "sha256": "8B31CFB0033A9C75F5E6E69D914A3A36BAE0A4944886B5CC6D076329434D1DF9"
+        },
+        {
+          "product": 650,
+          "file": "main.3650e97f35689328d442.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/main.3650e97f35689328d442.js",
+          "bytes": 166899,
+          "sha256": "270D5D4E4AF9674D2219EFBE609294DC46E1BAF4E08A14AF32306D4495CB5A98"
+        },
+        {
+          "product": 650,
+          "file": "rzDevice25.33bbbe9e1d2d72bdf1a1.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25.33bbbe9e1d2d72bdf1a1.js",
+          "bytes": 279028,
+          "sha256": "CEF5D482E96F2833C84998E2FE998D0A41AA7CA4483E4E69156424F76475D513"
+        },
+        {
+          "product": 650,
+          "file": "rzDevice25LedMatrixBlade.a041b7342ce44c78ec3b.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrixBlade.a041b7342ce44c78ec3b.js",
+          "bytes": 13099,
+          "sha256": "F0E34A36BC2A09A953835DE05F83C545CF18B11F139C86D0A0055942F8FBEA32"
+        },
+        {
+          "product": 650,
+          "file": "rzDevice25LedMatrixBlade2.71032c5b3b3df82a387d.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrixBlade2.71032c5b3b3df82a387d.js",
+          "bytes": 20253,
+          "sha256": "E19A44993E93CAC2E79FB0FF9242CCC735A8283344CCDFA57E8E42180B29601E"
+        },
+        {
+          "product": 650,
+          "file": "rzDevice25LedMatrixBladeWattage.a715fa3adc2631c080dc.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrixBladeWattage.a715fa3adc2631c080dc.js",
+          "bytes": 2923,
+          "sha256": "70687428706956400D3CB5227E35BB03EFFB13D75E70429E06A94A7369202306"
+        },
+        {
+          "product": 650,
+          "file": "ui-main.90e358d5.js",
+          "url": "https://apps.razer.com/synapse/products/650/ui/static/js/main.90e358d5.js",
+          "bytes": 6591004,
+          "sha256": "06C52972C023B65B11DDF1C379671526E96C68B46105FC3EDCC714F0EF4944B0"
+        }
+      ],
+      "uiPresetRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3400.0,
+          "maximumRpm": 5200.0,
+          "defaultRpmSourceOnly": 4100.0,
+          "source": "ui-main.90e358d5.js",
+          "offsetUtf8": 5694123,
+          "text": "minFanSpeedValue:3400,maxFanSpeedValue:5200,defaultFanSpeedValue:4100"
+        },
+        {
+          "mode": "Silent_Mode",
+          "minimumRpm": 3400.0,
+          "maximumRpm": 5200.0,
+          "defaultRpmSourceOnly": 4100.0,
+          "source": "ui-main.90e358d5.js",
+          "offsetUtf8": 5695444,
+          "text": "minFanSpeedValue:3400,maxFanSpeedValue:5200,defaultFanSpeedValue:4100"
+        },
+        {
+          "mode": "Custom_Mode",
+          "minimumRpm": 4000.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4600.0,
+          "source": "ui-main.90e358d5.js",
+          "offsetUtf8": 5696253,
+          "text": "minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600"
+        }
+      ],
+      "conservativeStaticRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3400.0,
+          "maximumRpm": 5200.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        },
+        {
+          "mode": "Silent_Mode",
+          "minimumRpm": 3400.0,
+          "maximumRpm": 5200.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0423",
+      "vendorProductId": 651,
+      "adapterFeatureExplicitlyEnabled": true,
+      "sharedAdapterGetterAndThermalCallerPresent": true,
+      "customManualFeatureExplicitlyEnabled": false,
+      "manualRangeCandidates": [
+        {
+          "mode": "n.mNQ.Balanced_Mode",
+          "minimumRpm": 2200.0,
+          "maximumRpm": 3800.0,
+          "defaultRpmSourceOnly": 3000.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.8378c0c79039a3f2ba23.js",
+          "offsetUtf8": 26406,
+          "text": "minFanSpeedValue:2200,maxFanSpeedValue:3800,defaultFanSpeedValue:3e3"
+        },
+        {
+          "mode": "n.mNQ.Silent_Mode",
+          "minimumRpm": 2200.0,
+          "maximumRpm": 3800.0,
+          "defaultRpmSourceOnly": 3000.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.8378c0c79039a3f2ba23.js",
+          "offsetUtf8": 27726,
+          "text": "minFanSpeedValue:2200,maxFanSpeedValue:3800,defaultFanSpeedValue:3e3"
+        },
+        {
+          "mode": "n.mNQ.Custom_Mode",
+          "minimumRpm": 4000.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4600.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": false,
+          "source": "main.8378c0c79039a3f2ba23.js",
+          "offsetUtf8": 28534,
+          "text": "minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600"
+        }
+      ],
+      "independentTargetGetter": "0D/81 size3 class1, response classId/thermalId/targetUnits100RPM, distinct from0D/88 currentRPM",
+      "dynamicRange": "0D/83 class0 size12; min=B6*100/default=D8*100/max=F10*100; intersect current exact preset static envelope",
+      "powerScope": "Exact UI fixed fan branch requires AC; Windows power alone does not confirm sufficient wattage",
+      "proofs": [
+        {
+          "source": "main.8378c0c79039a3f2ba23.js",
+          "offsetUtf8": 48593,
+          "text": "ce:!0,hasColorProfiles:!0,hasCustomPerformance:!0,hasAdapterWattageLevel:!0,hasGPUmode:!0,hasSystemTrackpad:!0},installData:null,updateData:null,lightingEffects"
+        },
+        {
+          "source": "main.8378c0c79039a3f2ba23.js",
+          "offsetUtf8": 82167,
+          "text": "hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0,defaultACPerformanceMode:4,defaultCustomMode:{cpu:1,gpu:2},notification:{hasCustomFooter:!0}},power:{hasSystemPower:!0,hasBatteryOptimi"
+        },
+        {
+          "source": "main.8378c0c79039a3f2ba23.js",
+          "offsetUtf8": 135783,
+          "text": "):this.isRzAppEngine?window.keyboardlayout:void 0}get isOnBatteryPower(){return this.isElectron?this.callElectronAction({action:\"isOnBatteryPower\"}):\"function\"==typeof window.isOnBatteryPower?window.isOnBatteryPower():(console.warn(`${this.name}.isOnBatteryPower not supported`),!1)}get isScreenLocked(){return this.isElectron?this.callElectronAction({action:\"IsScreenLocked\"}):\"function\"==typeof win"
+        },
+        {
+          "source": "6737.003892ae34f5de0292c0.js",
+          "offsetUtf8": 1496365,
+          "text": "const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},51147"
+        },
+        {
+          "source": "6737.003892ae34f5de0292c0.js",
+          "offsetUtf8": 196989,
+          "text": "){const{profileId:t,fanMode:r,fanModeValue:a}=Wi.A.getPerformanceFanModeProfile(n,o.mode,\"auto\");yield e.setThermalFanMode(t,n,r,a).catch(e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)}),i=yield e.getThermalFanInformation(0).catch(e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"getThermalFanInformation\",e)})}void 0!==i&&(o.minFanSpeedValue=100*i.jsonData.B,o.defaultFanSpeedValue=100*i.jsonData.D,o.maxFanSpeedValue=100*i.jsonData.F,0!==o.minFanSpeedValue&&0!==o.defaultFanSpeedValue&&0!==o.maxFanSpeedValue&&n.push({mode:o.mode,min:o.minFanSpeedValue,default:o.defaultFanSpeedValue,max:o.maxFanSpeedValue}))}ct.A.fanValues=n}),Po=()=>Vn(void 0,void 0,voi"
+        },
+        {
+          "source": "6737.003892ae34f5de0292c0.js",
+          "offsetUtf8": 859726,
+          "text": "});let je=0;const Ve=()=>x(void 0,void 0,void 0,function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)}),Ye=e=>x(void 0,void 0,void 0,function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,25"
+        },
+        {
+          "source": "6737.003892ae34f5de0292c0.js",
+          "offsetUtf8": 724898,
+          "text": " 0,void 0,function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yie"
+        },
+        {
+          "source": "rzDevice25.7ffcfe7d1ddb6103ac44.js",
+          "offsetUtf8": 2079,
+          "text": ",e.data[0]+1)}),e}),u=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],thermalFanSpeed:t.data[2]})},l=(t,n,e)=>s(void 0,void 0,void 0,function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Ny[1],commandId:i.Ny[2],commandDesc:i.JK});const r=new Uint8Array(i.Ny[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.Ny,i.JK,r);retu"
+        },
+        {
+          "source": "rzDevice25.7ffcfe7d1ddb6103ac44.js",
+          "offsetUtf8": 275427,
+          "text": ">$,yz:()=>h});const o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),S=\"Set The"
+        },
+        {
+          "source": "rzDevice25.7ffcfe7d1ddb6103ac44.js",
+          "offsetUtf8": 4248,
+          "text": "sonData={classId:t.data[0],GPU:a.Jz(t.data[1],t.data[2]),VRAM:a.Jz(t.data[3],t.data[4]),A:t.data[5],B:t.data[6],C:t.data[7],D:t.data[8],E:t.data[9],F:t.data[10],G:t.data[11],thermalSampling:a.Jz(t.data[1],t.data[2]),hysteresis:t.data[3],fanUpdate:a.Jz(t.data[4],t.data[5]),fanMaxDelta:a.Jz(t.data[6],t.data[7])})})(r),r}),A=(t,n,e,r,c,u=-1)=>s(void 0"
+        },
+        {
+          "source": "ui-main.8fce5f78.js",
+          "offsetUtf8": 6357898,
+          "text": "PUPowerLimit:D,showPerformanceMsg:L,powerStatus:p,supportFixedFanSpeed:P=!0,hyperboost:M,unsupportedCpuBoostOption:m,isMaxCpuSupported:U,isMaxGpuSupported:h,isGpuOptimizeEnabled:H,disableCPUHightWhenG"
+        },
+        {
+          "source": "ui-main.8fce5f78.js",
+          "offsetUtf8": 6367467,
+          "text": "}),(0,o_.jsx)(ms.A,{min:O?O.gpu.min:0,max:O?O.gpu.max:2,step:1,noTip:!0,midTag:Ya.E_p,active:_,value:X,changeValue:Re})]})]})}):b!==je.ZCP&&b!==je.TxO?!y&&P&&(()=>{const e=V===je.XuP.manual,{minVal:E,maxVal:t,defaultValue:a}=Oe(b);return(0,"
+        },
+        {
+          "source": "ui-main.8fce5f78.js",
+          "offsetUtf8": 6369626,
+          "text": "253, 89, 17, 1)\"})}),(0,o_.jsx)(ms.A,{min:E,max:t,step:100,minTag:\"\",maxTag:\"\",value:$,active:e&&i,changeValue:re}),(0,o_.jsx)(\"div\",{className:e?\"on\":\"\",children:(0,o_.jsx)(gs,{d:"
+        }
+      ],
+      "sources": [
+        {
+          "product": 651,
+          "file": "6737.003892ae34f5de0292c0.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/6737.003892ae34f5de0292c0.js",
+          "bytes": 2345733,
+          "sha256": "E8A2CFF2F19A59B8F425E7EC70BFF5873551479560005435E1B04B34F9CC7454"
+        },
+        {
+          "product": 651,
+          "file": "main.8378c0c79039a3f2ba23.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/main.8378c0c79039a3f2ba23.js",
+          "bytes": 168748,
+          "sha256": "F227CBA8959DFEE0B898077D4CC77651066B7BFFF8CAA20910E9B3946E026AC4"
+        },
+        {
+          "product": 651,
+          "file": "rzDevice25.7ffcfe7d1ddb6103ac44.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25.7ffcfe7d1ddb6103ac44.js",
+          "bytes": 277066,
+          "sha256": "A9442C86AB7D8F0549E18016324462A52A040E5578410F296BDF72884A383962"
+        },
+        {
+          "product": 651,
+          "file": "rzDevice25LedMatrixBlade.3d7a6466eb25ba2e5f2d.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrixBlade.3d7a6466eb25ba2e5f2d.js",
+          "bytes": 13032,
+          "sha256": "66A45A45F7B471426FE41875D2C84E7F0EFD62CCB1066CF3657949B02A163C27"
+        },
+        {
+          "product": 651,
+          "file": "rzDevice25LedMatrixBlade2.82d68898207246f09200.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrixBlade2.82d68898207246f09200.js",
+          "bytes": 20144,
+          "sha256": "C92ED2B6966AEEEE991819C291A5E054F9EC04B72D8202C1435A76DBC8219945"
+        },
+        {
+          "product": 651,
+          "file": "rzDevice25LedMatrixBladeWattage.d708c5b081c8f56a50b6.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrixBladeWattage.d708c5b081c8f56a50b6.js",
+          "bytes": 2915,
+          "sha256": "204DB11C43D4ECFC33EC476A770AC246FB19085A001140582A08831CBE77689D"
+        },
+        {
+          "product": 651,
+          "file": "ui-main.8fce5f78.js",
+          "url": "https://apps.razer.com/synapse/products/651/ui/static/js/main.8fce5f78.js",
+          "bytes": 6589571,
+          "sha256": "FF4ACE62F536DAD8E14A674177638FAC74ED462C74FECC7A42D66B2F3616C254"
+        }
+      ],
+      "uiPresetRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 2200.0,
+          "maximumRpm": 3800.0,
+          "defaultRpmSourceOnly": 3000.0,
+          "source": "ui-main.8fce5f78.js",
+          "offsetUtf8": 5693823,
+          "text": "minFanSpeedValue:2200,maxFanSpeedValue:3800,defaultFanSpeedValue:3e3"
+        },
+        {
+          "mode": "Silent_Mode",
+          "minimumRpm": 2200.0,
+          "maximumRpm": 3800.0,
+          "defaultRpmSourceOnly": 3000.0,
+          "source": "ui-main.8fce5f78.js",
+          "offsetUtf8": 5695143,
+          "text": "minFanSpeedValue:2200,maxFanSpeedValue:3800,defaultFanSpeedValue:3e3"
+        },
+        {
+          "mode": "Custom_Mode",
+          "minimumRpm": 4000.0,
+          "maximumRpm": 5300.0,
+          "defaultRpmSourceOnly": 4600.0,
+          "source": "ui-main.8fce5f78.js",
+          "offsetUtf8": 5695951,
+          "text": "minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600"
+        }
+      ],
+      "conservativeStaticRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 2200.0,
+          "maximumRpm": 3800.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        },
+        {
+          "mode": "Silent_Mode",
+          "minimumRpm": 2200.0,
+          "maximumRpm": 3800.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0427",
+      "vendorProductId": 652,
+      "adapterFeatureExplicitlyEnabled": true,
+      "sharedAdapterGetterAndThermalCallerPresent": true,
+      "customManualFeatureExplicitlyEnabled": false,
+      "manualRangeCandidates": [
+        {
+          "mode": "i.mNQ.Balanced_Mode",
+          "minimumRpm": 3300.0,
+          "maximumRpm": 5400.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.825dec01b9aefa0b84ac.js",
+          "offsetUtf8": 143508,
+          "text": "minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedValue:4300"
+        },
+        {
+          "mode": "i.mNQ.Silent_Mode",
+          "minimumRpm": 3300.0,
+          "maximumRpm": 5400.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": true,
+          "source": "main.825dec01b9aefa0b84ac.js",
+          "offsetUtf8": 144829,
+          "text": "minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedValue:4300"
+        },
+        {
+          "mode": "i.mNQ.Custom_Mode",
+          "minimumRpm": 3300.0,
+          "maximumRpm": 5400.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "stepRpm": 100,
+          "manualAdmissionCandidate": false,
+          "source": "main.825dec01b9aefa0b84ac.js",
+          "offsetUtf8": 145638,
+          "text": "minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedValue:4300"
+        }
+      ],
+      "independentTargetGetter": "0D/81 size3 class1, response classId/thermalId/targetUnits100RPM, distinct from0D/88 currentRPM",
+      "dynamicRange": "0D/83 class0 size12; min=B6*100/default=D8*100/max=F10*100; intersect current exact preset static envelope",
+      "powerScope": "Exact UI fixed fan branch requires AC; Windows power alone does not confirm sufficient wattage",
+      "proofs": [
+        {
+          "source": "main.825dec01b9aefa0b84ac.js",
+          "offsetUtf8": 158622,
+          "text": "ofiles:[],setupStatus:\"waiting\",isChromaDevice:!0,hasAdapterWattageLevel:!0,hasGPUmode:!0,hasSystemTrackpad:!0},installData:null,updateData:null,validDevices:[]"
+        },
+        {
+          "source": "main.825dec01b9aefa0b84ac.js",
+          "offsetUtf8": 156522,
+          "text": "hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0,hasCpuBoostEnabled:!0},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0,hasBatteryOptimizer:!0}};var p,f,A,S,T;r.sentry.dsn&&"
+        },
+        {
+          "source": "main.825dec01b9aefa0b84ac.js",
+          "offsetUtf8": 102985,
+          "text": "):this.isRzAppEngine?window.keyboardlayout:void 0}get isOnBatteryPower(){return this.isElectron?this.callElectronAction({action:\"isOnBatteryPower\"}):\"function\"==typeof window.isOnBatteryPower?window.isOnBatteryPower():(console.warn(`${this.name}.isOnBatteryPower not supported`),!1)}get isScreenLocked(){return this.isElectron?this.callElectronAction({action:\"IsScreenLocked\"}):\"function\"==typeof win"
+        },
+        {
+          "source": "6737.4b526d5a88f50676de59.js",
+          "offsetUtf8": 2265590,
+          "text": "const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},25434"
+        },
+        {
+          "source": "6737.4b526d5a88f50676de59.js",
+          "offsetUtf8": 1208253,
+          "text": "const{profileId:t,fanMode:r,fanModeValue:a}=Wi.A.getPerformanceFanModeProfile(n,o.mode,\"auto\");yield e.setThermalFanMode(t,n,r,a).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)})),i=yield e.getThermalFanInformation(0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"getThermalFanInformation\",e)}))}void 0!==i&&(o.minFanSpeedValue=100*i.jsonData.B,o.defaultFanSpeedValue=100*i.jsonData.D,o.maxFanSpeedValue=100*i.jsonData.F,0!==o.minFanSpeedValue&&0!==o.defaultFanSpeedValue&&0!==o.maxFanSpeedValue&&n.push({mode:o.mode,min:o.minFanSpeedValue,default:o.defaultFanSpeedValue,max:o.maxFanSpeedValue}))}ct.A.fanValues=n})),Po=()=>Vn(void 0,void 0,"
+        },
+        {
+          "source": "6737.4b526d5a88f50676de59.js",
+          "offsetUtf8": 2286941,
+          "text": ");let je=0;const Ve=()=>x(void 0,void 0,void 0,(function*(){const e=r.jf.rzDevice;let t,i,n=!1,o=!1;const a=\"getAdapterWattageLevel\";try{const{jsonData:{adapterWattageLevelEnum:o,recommendedAdapterWattageLevelEnum:r}}=yield e.getAdapterWattageLevel();t=parseInt(o),i=parseInt(r),n=0===t}catch(e){console.log(e)}return 0===t&&je<=5?(console.warn(`${a} has been called ${je} times with adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),yield(0,f.yy)(500*Math.pow(2,je)),!(yield d.A.isOnBatteryPower)&&(je++,yield Ve())):je>5?(console.warn(`${a} has exceeded maximum number of calls: 5, current count: ${je}, returning isLowPower to false`),je=0,!1):(je=0,t<i&&!n&&(o=!0),u.A.isLowPower=o,console.log(`${a} adapterWattageLevel: ${t} , recommendedAdapterWattageLevel: ${i}`),o)})),Ye=e=>x(void 0,void 0,void 0,(function*(){const t=r.jf.rzDevice,i={1:[255,0,0],2:[0,255,0],3:[0,0,255],4:[255,255,0],5:[255,0,255],6:[0,255,255],7:[255,255,"
+        },
+        {
+          "source": "6737.4b526d5a88f50676de59.js",
+          "offsetUtf8": 1822060,
+          "text": "0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&A&&\"manual\"!==e&&\"smartFanCurve\"!==e)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield c.setThermalFanMode(r,n,d.KB,0);else if(yield c.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yie"
+        },
+        {
+          "source": "rzDevice25.ceef38d32121535173d9.js",
+          "offsetUtf8": 55075,
+          "text": "e.data[0]+1)}),e})),u=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],thermalFanSpeed:t.data[2]})},l=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Ny[1],commandId:i.Ny[2],commandDesc:i.JK});const r=new Uint8Array(i.Ny[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.Ny,i.JK,r);ret"
+        },
+        {
+          "source": "rzDevice25.ceef38d32121535173d9.js",
+          "offsetUtf8": 65499,
+          "text": ">$,yz:()=>h});const o=new Uint8Array([80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),h=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),f=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),S=\"Set The"
+        },
+        {
+          "source": "rzDevice25.ceef38d32121535173d9.js",
+          "offsetUtf8": 57253,
+          "text": "sonData={classId:t.data[0],GPU:a.Jz(t.data[1],t.data[2]),VRAM:a.Jz(t.data[3],t.data[4]),A:t.data[5],B:t.data[6],C:t.data[7],D:t.data[8],E:t.data[9],F:t.data[10],G:t.data[11],thermalSampling:a.Jz(t.data[1],t.data[2]),hysteresis:t.data[3],fanUpdate:a.Jz(t.data[4],t.data[5]),fanMaxDelta:a.Jz(t.data[6],t.data[7])})})(r),r})),A=(t,n,e,r,c,u=-1)=>s(void "
+        },
+        {
+          "source": "ui-main.ca1e43bb.js",
+          "offsetUtf8": 6282831,
+          "text": "PUPowerLimit:D,showPerformanceMsg:L,powerStatus:p,supportFixedFanSpeed:P=!0,hyperboost:M,unsupportedCpuBoostOption:m,isMaxCpuSupported:U,isMaxGpuSupported:h,isGpuOptimizeEnabled:G,disableCPUHightWhenG"
+        },
+        {
+          "source": "ui-main.ca1e43bb.js",
+          "offsetUtf8": 6292400,
+          "text": "}),(0,s_.jsx)(Us.A,{min:O?O.gpu.min:0,max:O?O.gpu.max:2,step:1,noTip:!0,midTag:je.E_p,active:_,value:X,changeValue:Re})]})]})}):b!==Ve.ZCP&&b!==Ve.TxO?!y&&P&&(()=>{const e=V===Ve.XuP.manual,{minVal:E,maxVal:t,defaultValue:a}=Oe(b);return(0,"
+        },
+        {
+          "source": "ui-main.ca1e43bb.js",
+          "offsetUtf8": 6294559,
+          "text": "253, 89, 17, 1)\"})}),(0,s_.jsx)(Us.A,{min:E,max:t,step:100,minTag:\"\",maxTag:\"\",value:$,active:e&&i,changeValue:Te}),(0,s_.jsx)(\"div\",{className:e?\"on\":\"\",children:(0,s_.jsx)(fs,{d:"
+        }
+      ],
+      "sources": [
+        {
+          "product": 652,
+          "file": "6737.4b526d5a88f50676de59.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/6737.4b526d5a88f50676de59.js",
+          "bytes": 2353694,
+          "sha256": "B1A181C2F4A95C1871A5AEEDC5F820DBC991A61A067CB060BAC9ABEBF04EE488"
+        },
+        {
+          "product": 652,
+          "file": "main.825dec01b9aefa0b84ac.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/main.825dec01b9aefa0b84ac.js",
+          "bytes": 165986,
+          "sha256": "77AD6A8F51278C2950D07AAB3CA4E98EC67001527067F4118F50AF00954EABA1"
+        },
+        {
+          "product": 652,
+          "file": "rzDevice25.ceef38d32121535173d9.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25.ceef38d32121535173d9.js",
+          "bytes": 279026,
+          "sha256": "D94B40BB4B1AEDD17C0028A625C28D00D8BC14B26361CBF25133A3CE4E5B0C67"
+        },
+        {
+          "product": 652,
+          "file": "rzDevice25LedMatrixBlade.af4e2a8f0926c1f15907.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrixBlade.af4e2a8f0926c1f15907.js",
+          "bytes": 13097,
+          "sha256": "DD844382088CD971CD0D831D06221F9F05230083503271BC52C1C5BD9F5BE626"
+        },
+        {
+          "product": 652,
+          "file": "rzDevice25LedMatrixBlade2.032e7086bcdb3c4d6e9d.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrixBlade2.032e7086bcdb3c4d6e9d.js",
+          "bytes": 20251,
+          "sha256": "96F6D3F024A5217FDCF7C6604D3EDC324CA1C7D0D0DBCF390851CD3B2AC45CC2"
+        },
+        {
+          "product": 652,
+          "file": "rzDevice25LedMatrixBladeWattage.2c379fa5a66007f7b183.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrixBladeWattage.2c379fa5a66007f7b183.js",
+          "bytes": 2921,
+          "sha256": "9B07B08CEFCAE9288DCF37BBD65D28B4DEBFCB92F14FE7BC08172F1BD7634447"
+        },
+        {
+          "product": 652,
+          "file": "ui-main.ca1e43bb.js",
+          "url": "https://apps.razer.com/synapse/products/652/ui/static/js/main.ca1e43bb.js",
+          "bytes": 6517701,
+          "sha256": "9C640FF7F3359DFB8F8D7AA005DB01336F5C05A4EFB25C219550BA6D05A6C407"
+        }
+      ],
+      "uiPresetRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3300.0,
+          "maximumRpm": 5400.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "source": "ui-main.ca1e43bb.js",
+          "offsetUtf8": 5617717,
+          "text": "minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedValue:4300"
+        },
+        {
+          "mode": "Silent_Mode",
+          "minimumRpm": 3300.0,
+          "maximumRpm": 5400.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "source": "ui-main.ca1e43bb.js",
+          "offsetUtf8": 5619038,
+          "text": "minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedValue:4300"
+        },
+        {
+          "mode": "Custom_Mode",
+          "minimumRpm": 3300.0,
+          "maximumRpm": 5400.0,
+          "defaultRpmSourceOnly": 4300.0,
+          "source": "ui-main.ca1e43bb.js",
+          "offsetUtf8": 5619847,
+          "text": "minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedValue:4300"
+        }
+      ],
+      "conservativeStaticRanges": [
+        {
+          "mode": "Balanced_Mode",
+          "minimumRpm": 3300.0,
+          "maximumRpm": 5400.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        },
+        {
+          "mode": "Silent_Mode",
+          "minimumRpm": 3300.0,
+          "maximumRpm": 5400.0,
+          "stepRpm": 100,
+          "requiresFreshCurrentModeMetadataIntersection": true,
+          "scope": "AC only"
+        }
+      ]
+    }
+  ],
+  "uiMwReconciliation": "Exact UI/MW declared envelopes compared for all11. Product564/588 Balanced corrected to3700..5200 intersection; all other admitted non-Custom ranges match."
+}

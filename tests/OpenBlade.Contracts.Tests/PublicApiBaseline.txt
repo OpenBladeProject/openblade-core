@@ -1086,6 +1086,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method OpenBlade.Contracts.CpuVoltageOptimizerCapabilities get_CpuVoltageOptimizer()
   method OpenBlade.Contracts.CustomPerformanceCapabilities get_CustomPerformance()
   method OpenBlade.Contracts.DeviceCapabilities <Clone>$()
+  method OpenBlade.Contracts.FanSpeedRange GetFanIntentSpeedRange(OpenBlade.Contracts.PerformancePreset performance)
   method OpenBlade.Contracts.FanSpeedRange GetFanSpeedRange(OpenBlade.Contracts.PerformancePreset performance)
   method OpenBlade.Contracts.FanSpeedRange get_FanSpeedRange()
   method OpenBlade.Contracts.GpuOverclockCapabilities get_GpuOverclock()
@@ -1111,6 +1112,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Boolean get_SupportsUniformLightingFrames()
   method System.Boolean get_SupportsWaveDirectionSelection()
   method System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> get_FanSpeedRangesByPerformancePreset()
+  method System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> get_ObservedFanSpeedRangesByPerformancePreset()
   method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PowerSourceBehaviorObservation> get_ObservedPowerSourceBehaviors()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.BreathingColorMode> get_SupportedBreathingColorModes()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> get_FanModes()
@@ -1148,6 +1150,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_LampArrayLightingAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
   method System.Void set_LightingEffects(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> value)
   method System.Void set_LogoLightingModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LogoLightingMode> value)
+  method System.Void set_ObservedFanSpeedRangesByPerformancePreset(System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> value)
   method System.Void set_ObservedLightingEffects(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> value)
   method System.Void set_ObservedPowerSourceBehaviors(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PowerSourceBehaviorObservation> value)
   method System.Void set_OneShotLaptopControls(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> value)
@@ -1203,6 +1206,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Boolean SupportsUniformLightingFrames { get; init; }
   property System.Boolean SupportsWaveDirectionSelection { get; init; }
   property System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> FanSpeedRangesByPerformancePreset { get; init; }
+  property System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> ObservedFanSpeedRangesByPerformancePreset { get; init; }
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PowerSourceBehaviorObservation> ObservedPowerSourceBehaviors { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.BreathingColorMode> SupportedBreathingColorModes { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes { get; init; }
@@ -1499,6 +1503,7 @@ type sealed class OpenBlade.Contracts.FanControlSettings
   interface System.IEquatable<OpenBlade.Contracts.FanControlSettings>
   ctor (OpenBlade.Contracts.FanMode mode, System.Int32 fixedSpeedRpm, OpenBlade.Contracts.ManualFanCurve manualCurve)
   field const System.Int32 MaximumSpeedRpm = 5400
+  field const System.Int32 MaximumSupportedSpeedRpm = 5500
   field const System.Int32 MinimumSpeedRpm = 2000
   field const System.Int32 SpeedStepRpm = 100
   method OpenBlade.Contracts.FanControlSettings <Clone>$()
@@ -2336,7 +2341,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 81
+  field const System.Int32 ProtocolVersion = 82
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion

@@ -1788,6 +1788,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     batteryProtectionDefault: null);
                 validator.ValidateStoredCustomIntent(profiles);
                 DeviceCapabilities? editCapabilities = GetStatus().Capabilities;
+                ProfileSetValidator thermalEditValidator = editCapabilities is null
+                    ? validator : ProfileSetValidator.CreateForDeviceCapabilities(editCapabilities);
+                thermalEditValidator.ValidateChangedThermalIntent(profiles, Automation.Profiles);
                 if (profiles.Battery.StopFansInBatterySaver
                     && !Automation.Profiles.Battery.StopFansInBatterySaver
                     && editCapabilities?.SupportsBatterySaverFanStop != true)
@@ -2658,16 +2661,32 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         if (!CanMaintainFanCurve(snapshot, settings))
         {
             ClearLastFanCurveTargets();
+            if (NeedsUnavailableOwnedFanHandback(snapshot))
+            {
+                await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await HandBackUnavailableOwnedFansCoreAsync(Automation.PowerSource, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                finally
+                {
+                    operationGate.Release();
+                }
+            }
             return;
         }
 
         FanTemperatureReadings temperatures =
             await fanTemperatureSource.ReadForFanCurveAsync(cancellationToken);
+        // Compare original curve intent with confirmed actual output. A target
+        // clipped by temporary metadata must revisit typed range admission so
+        // a later increase can take effect without rewriting the stored curve.
         FanTargetSpeeds targets = FanCurveCalculator.Calculate(
             settings.ManualCurve,
             temperatures,
-            snapshot.Capabilities?.FanSpeedRange?.MaximumRpm
-                ?? FanControlSettings.MaximumSpeedRpm);
+            snapshot.Capabilities?.GetFanIntentSpeedRange(snapshot.DesiredState.Performance.Value)
+                ?? FanSpeedRange.Standard);
         if (lastCurveFan1Rpm == targets.Fan1Rpm
             && lastCurveFan2Rpm == targets.Fan2Rpm)
         {
@@ -2734,6 +2753,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 return;
             }
 
+            // Bind original intent to the current destination after waiting
+            // for the gate. The backend projects effective output only.
+            targets = FanCurveCalculator.Calculate(
+                settings.ManualCurve,
+                temperatures,
+                current.Capabilities?.GetFanIntentSpeedRange(current.DesiredState.Performance.Value)
+                    ?? FanSpeedRange.Standard);
             var authority = new ManualFanCurveAuthority(
                 settings,
                 current.DesiredState,
@@ -2768,6 +2794,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                             ThermalTransitionStepPurpose.ManualCurveTarget,
                             (coordinator, stepToken) =>
                                 coordinator.ApplyFanTargetsOutcomeAsync(
+                                    authority.Desired.Performance.Value,
                                     targets.Fan1Rpm,
                                     targets.Fan2Rpm,
                                     stepToken),
@@ -2787,8 +2814,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         return;
                     }
                     OwnExactFanIntent(settings);
-                    lastCurveFan1Rpm = targets.Fan1Rpm;
-                    lastCurveFan2Rpm = targets.Fan2Rpm;
+                    lastCurveFan1Rpm = outcome.AppliedCurveTargets?.Fan1Rpm ?? targets.Fan1Rpm;
+                    lastCurveFan2Rpm = outcome.AppliedCurveTargets?.Fan2Rpm ?? targets.Fan2Rpm;
                     if (targets.FailSafe)
                     {
                         string message = temperatures.CpuCelsius is null
@@ -13126,11 +13153,51 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
     }
 
-    private async Task<ControlOperationResult> RestoreAutomaticFansForShutdownCoreAsync(
-        CancellationToken cancellationToken, string boundary = "shutdown",
-        Func<bool>? lowPowerFanCleanupAdmission = null)
+    private bool NeedsUnavailableOwnedFanHandback(ServiceStatusSnapshot current,
+        bool releasePowerUnavailableManual = false) =>
+        exactFanControlOwnership is
+        {
+            Disposition: ExactFanControlOwnershipDisposition.OwnedExactIntent,
+            Settings: { } owned,
+            AuthorityEpoch: var epoch,
+        }
+        && epoch == fanAuthorityEpoch
+        && (owned.Mode == FanMode.ManualCurve
+            || releasePowerUnavailableManual && owned.Mode is FanMode.Fixed or FanMode.Maximum
+                && !FanControlPowerPolicy.IsAvailable(Automation.PowerSource, owned.Mode,
+                    current.Capabilities?.SupportsManualFansOnLimitedPower == true))
+        && IsUnavailableCurveIntent(Automation.Resolve(current.ConfirmedState ?? UnknownConfirmedState,
+            supportsManualFansOnLimitedPower: true), current.Capabilities, Automation.PowerSource);
+
+    // A retired owned loop must hand its last target to firmware. This is prior
+    // write authority, not permission to execute the retained unavailable tuple.
+    private async Task<ControlOperationResult?> HandBackUnavailableOwnedFansCoreAsync(
+        PowerSource powerSource, CancellationToken cancellationToken,
+        Func<bool>? stillControlsSession = null, Action<ScopedApplyOutcome>? observeOutcome = null,
+        bool releasePowerUnavailableManual = false)
     {
-        if (ShutdownFanHandbackBlockReason(requireControllerClear: false) is { } initialBlock)
+        if (!NeedsUnavailableOwnedFanHandback(GetStatus(), releasePowerUnavailableManual))
+        {
+            return null;
+        }
+        return await RestoreOwnedAutomaticFansCoreAsync(powerSource, cancellationToken,
+            "retiring unavailable curve intent", stillControlsSession,
+            observeOutcome: observeOutcome).ConfigureAwait(false);
+    }
+
+    private Task<ControlOperationResult> RestoreAutomaticFansForShutdownCoreAsync(
+        CancellationToken cancellationToken, string boundary = "shutdown",
+        Func<bool>? lowPowerFanCleanupAdmission = null) =>
+        RestoreOwnedAutomaticFansCoreAsync(GetStatus().ActivePowerSource, cancellationToken, boundary,
+            lowPowerFanCleanupAdmission: lowPowerFanCleanupAdmission);
+
+    private async Task<ControlOperationResult> RestoreOwnedAutomaticFansCoreAsync(
+        PowerSource powerSource, CancellationToken cancellationToken, string boundary,
+        Func<bool>? stillControlsSession = null,
+        Func<bool>? lowPowerFanCleanupAdmission = null,
+        Action<ScopedApplyOutcome>? observeOutcome = null)
+    {
+        if (OwnedManualFanHandbackBlockReason(requireControllerClear: false) is { } initialBlock)
         {
             history.RecordSummary(ControlOperationStatus.Stored, initialBlock);
             return new ControlOperationResult(ControlOperationStatus.Stored, initialBlock);
@@ -13141,17 +13208,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             $"Attempting to restore firmware-managed Automatic fan control before {boundary}.");
         await RefreshControllerPresenceAndRelinquishLightingAsync(
             cancellationToken).ConfigureAwait(false);
-        if (ShutdownFanHandbackBlockReason(requireControllerClear: true) is { } refreshedBlock)
+        if (OwnedManualFanHandbackBlockReason(requireControllerClear: true) is { } refreshedBlock)
         {
             history.RecordSummary(ControlOperationStatus.Stored, refreshedBlock);
             return new ControlOperationResult(ControlOperationStatus.Stored, refreshedBlock);
         }
 
-        ServiceStatusSnapshot current = GetStatus();
         FanControlSettings automatic = FanControlSettings.FromLegacy(FanMode.Automatic);
         ControlOperationResult result = await ApplyScopedIntentAsync(
             DeviceSubsystem.Fans,
-            current.ActivePowerSource,
+            powerSource,
             (coordinator, _, token) => coordinator.ApplyRecoveryFanControlOutcomeAsync(
                 automatic,
                 token),
@@ -13161,13 +13227,15 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 Fans = state.Fans with { Value = FanMode.Automatic },
                 FanControl = automatic,
             },
+            stillControlsSession: stillControlsSession,
             thermalExecutionOptions: new ScopedThermalExecutionOptions(
                 [DeviceSubsystem.Fans],
                 ScopedThermalFreshSessionRetryPolicy.BlockDuringBoundedCleanup,
-                () => RefreshAndGetShutdownFanHandbackBlockReason(
+                () => RefreshAndGetOwnedManualFanHandbackBlockReason(
                     cancellationToken),
                 ScopedThermalAuthorityPurpose.PriorAuthorityCleanup,
-                lowPowerFanCleanupAdmission)).ConfigureAwait(false);
+                lowPowerFanCleanupAdmission),
+            observeScopedOutcome: (outcome, _, _) => observeOutcome?.Invoke(outcome)).ConfigureAwait(false);
         if (result.Status == ControlOperationStatus.Applied)
         {
             lastCurveFan1Rpm = null;
@@ -13184,7 +13252,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         };
     }
 
-    private string? RefreshAndGetShutdownFanHandbackBlockReason(
+    private string? RefreshAndGetOwnedManualFanHandbackBlockReason(
         CancellationToken cancellationToken)
     {
         try
@@ -13200,10 +13268,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return "Manual fan control was left unchanged because other Razer software could not be checked.";
         }
 
-        return ShutdownFanHandbackBlockReason(requireControllerClear: true);
+        return OwnedManualFanHandbackBlockReason(requireControllerClear: true);
     }
 
-    private string? ShutdownFanHandbackBlockReason(bool requireControllerClear)
+    private string? OwnedManualFanHandbackBlockReason(bool requireControllerClear)
     {
         ServiceStatusSnapshot current = GetStatus();
         if (current.ExternalChanges.Contains(DeviceSubsystem.Fans))
@@ -15946,6 +16014,23 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return InterruptedAfterBoundary("The active Windows session changed before the destination profile could be applied.");
         }
 
+        ControlOperationResult? curveHandback = await HandBackUnavailableOwnedFansCoreAsync(
+            powerSource, token, stillControlsSession, outcome =>
+            {
+                boundaryWriteAttempted |= outcome.WriteAttempted;
+                boundarySubmissionPossible |= outcome.WriteAttempted
+                    && outcome.WriteSubmissionState != WriteSubmissionState.KnownNotApplied;
+                boundaryConfirmedWrites |= outcome.WriteAttempted && outcome.ReadbackMatched;
+            }, releasePowerUnavailableManual: true).ConfigureAwait(false);
+        if (curveHandback is not null)
+        {
+            if (curveHandback.Status != ControlOperationStatus.Applied)
+            {
+                return InterruptedAfterBoundary(curveHandback.Message);
+            }
+            current = GetStatus();
+            cachedConfirmed = current.ConfirmedState;
+        }
         await RefreshBatterySaverFanStopThermalSampleAsync(token).ConfigureAwait(false);
         DesiredDeviceState desired = ResolveHardwareDesired(
             cachedConfirmed ?? UnknownConfirmedState);
@@ -18734,11 +18819,35 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         Automation.Resolve(confirmed,
             (capabilities ?? Volatile.Read(ref status)?.Capabilities)?.SupportsManualFansOnLimitedPower == true);
 
+    private static bool IsUnavailableCurveIntent(DesiredDeviceState desired, DeviceCapabilities? capabilities,
+        PowerSource source) => desired.Fans.Value == FanMode.ManualCurve
+        && capabilities is not null
+        && (!ManualFanCurveCapabilityPolicy.SupportsPreset(capabilities, desired.Performance.Value)
+            || !ManualFanCurveCapabilityPolicy.SupportsPowerSource(capabilities, source));
+
     private DesiredDeviceState ResolveHardwareDesired(ConfirmedDeviceState confirmed)
     {
-        DesiredDeviceState desired = ResolveExperimentalFanHardwareDesired(
-            ResolveAutomationDesired(confirmed), confirmed);
         DeviceCapabilities? capabilities = GetStatus().Capabilities;
+        DesiredDeviceState rawIntent = Automation.Resolve(confirmed, supportsManualFansOnLimitedPower: true);
+        bool unavailableCurveIntent = IsUnavailableCurveIntent(rawIntent, capabilities, Automation.PowerSource);
+        // Retaining unavailable curve intent grants no fallback authority. In
+        // particular Custom must not turn an unowned manual observation into
+        // an Automatic write, nor may low-power projection invent that request.
+        DesiredDeviceState desired = unavailableCurveIntent ? rawIntent : ResolveExperimentalFanHardwareDesired(
+            ResolveAutomationDesired(confirmed), confirmed);
+        if (desired.Fans.Value == FanMode.Maximum
+            && desired.FanControl is { Mode: FanMode.Fixed, FixedSpeedRpm: FanControlSettings.MaximumSpeedRpm } legacyMaximum
+            && capabilities?.FanModes.Contains(FanMode.Maximum) == true
+            && capabilities.GetFanIntentSpeedRange(desired.Performance.Value) is { IsWellFormed: true } maximumRange)
+        {
+            // Preserve saved JSON and normalize only the effective legacy alias.
+            // Typed Maximum selects this backend's reviewed maximum (5000 on
+            // 0528); it must not be resubmitted as literal Fixed 5400.
+            desired = desired with
+            {
+                FanControl = new FanControlSettings(FanMode.Maximum, maximumRange.MaximumRpm, legacyMaximum.ManualCurve),
+            };
+        }
         bool stopScope = BatterySaverFanStopRuntimePolicy.IsInScope(
             Automation.Profiles.Battery.StopFansInBatterySaver, capabilities,
             Automation.PowerSource, desired.Performance.Value);
@@ -18757,7 +18866,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         // target. During a performance override, keep saved manual-fan intent but
         // reach the necessary Automatic fan state directly. Profiles reject the
         // conflicting permanent combination before persistence.
-        if (desired.Performance.Value == PerformancePreset.Custom
+        if (!unavailableCurveIntent && desired.Performance.Value == PerformancePreset.Custom
             && desired.CustomPerformance?.MaximumFans == true)
         {
             desired = desired with
@@ -18766,7 +18875,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 FanControl = FanControlSettings.Default,
             };
         }
-        else if (capabilities is not null
+        else if (!unavailableCurveIntent && capabilities is not null
             && DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value)
             && ControlCoordinator.RequiresAutomaticFansForCustom(
                 desired,
@@ -18785,14 +18894,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
         // Normalize only admitted manual controls. Unsupported retained intent
         // must not turn the user's supported performance choice into Balanced.
-        if (PowerSourcePolicy.IsExternal(Automation.PowerSource)
+        if (!unavailableCurveIntent && PowerSourcePolicy.IsExternal(Automation.PowerSource)
             && DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value)
             && capabilities is not null
             && capabilities.PerformancePresets.Count > 0
             && capabilities.FanModes.Count > 0
             && capabilities.FanModes.Contains(desired.Fans.Value)
             && !capabilities.SupportsDirectManualFanTransitions
-            && !ControlCoordinator.SupportsPresetRangedFixedFans(
+            && !ControlCoordinator.SupportsPresetRangedManualFans(
                 desired,
                 capabilities))
         {
@@ -20432,9 +20541,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             && !fanStopController.BlocksOrdinaryThermalWrites
             && !fanStopController.HoldsAutomatic
             && Automation.PowerSource == current.ActivePowerSource
-            && FanControlPowerPolicy.IsAvailable(current.ActivePowerSource, settings.Mode,
-                current.Capabilities?.SupportsManualFansOnLimitedPower == true)
+            && current.Capabilities is { } curveCapabilities
+            && ManualFanCurveCapabilityPolicy.SupportsPowerSource(curveCapabilities, current.ActivePowerSource)
+            && ManualFanCurveCapabilityPolicy.SupportsPreset(curveCapabilities, current.DesiredState.Performance.Value)
             && currentSettings == settings
+            && (!curveCapabilities.ReportsPerformanceWithManualFans
+                || current.ConfirmedState?.Performance == current.DesiredState.Performance.Value
+                    && current.Capabilities?.GetFanSpeedRange(current.DesiredState.Performance.Value)
+                        is { IsWellFormed: true })
             && current.ConfirmedState?.HyperBoostActive == false
             && current.ConfirmedState?.Fans is { } confirmedFans
             && DeviceSubsystemOrder.IsManualFanMode(confirmedFans)
@@ -20520,8 +20634,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         FanTargetSpeeds freshTargets = FanCurveCalculator.Calculate(
             authority.Settings.ManualCurve,
             temperatures,
-            current.Capabilities?.FanSpeedRange?.MaximumRpm
-                ?? FanControlSettings.MaximumSpeedRpm);
+            current.Capabilities?.GetFanIntentSpeedRange(authority.Desired.Performance.Value)
+                ?? FanSpeedRange.Standard);
         if (freshTargets != authority.Targets)
         {
             return ThermalRetryAdmission.Block(

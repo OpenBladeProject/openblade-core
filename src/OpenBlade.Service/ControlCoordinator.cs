@@ -19,7 +19,8 @@ internal sealed record ScopedApplyOutcome(
     DesiredDeviceState? EffectiveDesired = null,
     WriteSubmissionState? WriteSubmissionState = null,
     BladeWriteFailurePhase? WriteFailurePhase = null,
-    BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All);
+    BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All,
+    (int Fan1Rpm, int Fan2Rpm)? AppliedCurveTargets = null);
 
 internal sealed record FullTransitionApplyOutcome(
     SubsystemApplyResults Results,
@@ -235,7 +236,7 @@ public sealed class ControlCoordinator
 
         ConfirmedDeviceState? initial = null;
         bool restorePresetRangedFans = false;
-        if (SupportsPresetRangedFixedFans(desired, capabilities))
+        if (SupportsPresetRangedManualFans(desired, capabilities))
         {
             try
             {
@@ -402,7 +403,7 @@ public sealed class ControlCoordinator
         DeviceCapabilities capabilities,
         ConfirmedDeviceState? confirmed) =>
         UsesAutomaticCustomFanPolicy(capabilities)
-        && SupportsPresetRangedFixedFans(desired, capabilities)
+        && SupportsPresetRangedManualFans(desired, capabilities)
         && confirmed is
         {
             Performance: PerformancePreset.Custom,
@@ -416,13 +417,15 @@ public sealed class ControlCoordinator
         && capabilities.FanSpeedRangesByPerformancePreset.Count > 0
         && capabilities.GetFanSpeedRange(PerformancePreset.Custom) is null;
 
-    internal static bool SupportsPresetRangedFixedFans(
+    internal static bool SupportsPresetRangedManualFans(
         DesiredDeviceState desired,
         DeviceCapabilities capabilities) =>
-        desired.Fans.Value == FanMode.Fixed
-        && capabilities.GetFanSpeedRange(desired.Performance.Value)?.Supports(
-            (desired.FanControl ?? FanControlSettings.FromLegacy(FanMode.Fixed))
-                .FixedSpeedRpm) == true;
+        capabilities.GetFanIntentSpeedRange(desired.Performance.Value) is { IsWellFormed: true } range
+        && (desired.Fans.Value == FanMode.Fixed
+                && range.Supports((desired.FanControl ?? FanControlSettings.FromLegacy(FanMode.Fixed))
+                    .FixedSpeedRpm)
+            || capabilities.FanSpeedRangesByPerformancePreset.Count > 0
+                && desired.Fans.Value is FanMode.ManualCurve or FanMode.Maximum);
 
     private async Task<ScopedApplyOutcome> ApplyPerformanceOutcomeAsync(
         PerformancePreset value,
@@ -577,14 +580,18 @@ public sealed class ControlCoordinator
                 ? state => value.Mode == FanMode.Stop
                     ? state.Performance == PerformancePreset.BatterySaver && state.HyperBoostActive == false
                         ? null : "Fan stop requires confirmed Battery Saver with HyperBoost off."
-                    : value.Mode == FanMode.Fixed
-                        && state.Performance is { } performance
-                        && admittedCapabilities?.FanSpeedRangesByPerformancePreset.Count > 0
-                        ? admittedCapabilities.GetFanSpeedRange(performance)
-                                ?.Supports(value.FixedSpeedRpm) == true
+                    : value.Mode == FanMode.ManualCurve
+                        && admittedCapabilities?.ReportsPerformanceWithManualFans == true
+                        && (state.Performance is not { } curvePerformance
+                            || !ManualFanCurveCapabilityPolicy.SupportsPreset(admittedCapabilities, curvePerformance))
+                        ? "Manual fan curves require the freshly confirmed reviewed performance preset."
+                    : admittedCapabilities?.FanSpeedRangesByPerformancePreset.Count > 0
+                        ? state.Performance is { } performance
+                            && admittedCapabilities.GetFanSpeedRange(performance) is { IsWellFormed: true } range
+                            && (value.Mode != FanMode.Fixed || range.Supports(value.FixedSpeedRpm))
                             && IsConfirmedDirectManualFanWriteBaseline(state)
                                 ? null
-                                : "Fixed fan control requires a supported speed for the refreshed, confirmed performance preset with HyperBoost off."
+                                : "Manual fan control requires a supported range for the refreshed, confirmed performance preset with HyperBoost off."
                     : (supportsDirectManualFanTransitions
                         ? IsConfirmedDirectManualFanWriteBaseline(state)
                         : IsConfirmedManualFanWriteBaseline(state))
@@ -722,25 +729,69 @@ public sealed class ControlCoordinator
 
     // Generic manual readback cannot identify exact target RPMs after a
     // possible submission, so this path never authorizes an exact replay.
-    internal Task<ScopedApplyOutcome> ApplyFanTargetsOutcomeAsync(
+    internal async Task<ScopedApplyOutcome> ApplyFanTargetsOutcomeAsync(
+        PerformancePreset expectedPerformance,
         int fan1Rpm,
         int fan2Rpm,
-        CancellationToken cancellationToken) => ApplyScopedAsync(
+        CancellationToken cancellationToken)
+    {
+        DeviceCapabilities? admittedCapabilities = null;
+        (int Fan1Rpm, int Fan2Rpm)? appliedTargets = null;
+        ScopedApplyOutcome outcome = await ApplyScopedAsync(
             DeviceSubsystem.Fans,
             "Fans",
-            valid: fan1Rpm > 0 && fan2Rpm > 0,
-            capabilities => capabilities.FanModes.Contains(FanMode.ManualCurve)
-                && capabilities.FanSpeedRange?.Supports(fan1Rpm) == true
-                && capabilities.FanSpeedRange.Supports(fan2Rpm),
+            valid: Enum.IsDefined(expectedPerformance) && fan1Rpm > 0 && fan2Rpm > 0,
+            capabilities =>
+            {
+                admittedCapabilities = capabilities;
+                return capabilities.FanModes.Contains(FanMode.ManualCurve)
+                    && capabilities.SupportsFanSpeedInAnyPerformancePreset(fan1Rpm)
+                    && capabilities.SupportsFanSpeedInAnyPerformancePreset(fan2Rpm);
+            },
             matches: _ => false,
-            token => SetFanTargetsOnceAsync(fan1Rpm, fan2Rpm, token),
+            async token =>
+            {
+                if (admittedCapabilities?.ReportsPerformanceWithManualFans == true)
+                {
+                    appliedTargets = await device.SetCurveFanTargetsAsync(
+                        expectedPerformance, fan1Rpm, fan2Rpm, token).ConfigureAwait(false);
+                }
+                else
+                {
+                    // Preserve the existing single-attempt path for validated
+                    // backends whose manual readback has no preset identity.
+                    await SetFanTargetsOnceAsync(fan1Rpm, fan2Rpm, token).ConfigureAwait(false);
+                    appliedTargets = (fan1Rpm, fan2Rpm);
+                }
+            },
             cancellationToken,
             initialStateBlockReason: state =>
-                state.HyperBoostActive == true
+            {
+                if (admittedCapabilities?.ReportsPerformanceWithManualFans == true)
+                {
+                    if (state.Performance != expectedPerformance
+                        || !ManualFanCurveCapabilityPolicy.SupportsPreset(admittedCapabilities, expectedPerformance)
+                        || admittedCapabilities.GetFanIntentSpeedRange(expectedPerformance)
+                            is not { IsWellFormed: true } intentRange
+                        || !intentRange.Supports(fan1Rpm) || !intentRange.Supports(fan2Rpm)
+                        || admittedCapabilities.GetFanSpeedRange(expectedPerformance)
+                            is not { IsWellFormed: true }
+                        || state.HyperBoostActive != false
+                        || !DeviceSubsystemOrder.IsManualFanMode(state.Fans))
+                    {
+                        return "Manual fan-curve targets require the freshly confirmed expected preset and manual fan state with HyperBoost off.";
+                    }
+                    // Forward original curve intent. The backend projects it
+                    // against fresh per-write metadata; using this cached range
+                    // as the request would hide a later increase in the limit.
+                    return null;
+                }
+                return state.HyperBoostActive == true
                     ? "Manual fan-curve maintenance is blocked while fresh readback reports HyperBoost active."
                     : DeviceSubsystemOrder.IsManualFanMode(state.Fans)
                         ? null
-                        : "Manual fan-curve maintenance requires the confirmed fan state to remain manual.",
+                        : "Manual fan-curve maintenance requires the confirmed fan state to remain manual.";
+            },
             acceptSetterCompletionWithoutReadback: true,
             setterCompletionEvidence: state =>
                 DeviceSubsystemOrder.IsManualFanMode(state.Fans)
@@ -749,7 +800,9 @@ public sealed class ControlCoordinator
             resolveIndeterminateWriteByReadback: false,
             reconcileUnconfirmableIndeterminateWrite: true,
             writeBlockReason: fanWriteBlockReason,
-            returnBlockedOnWriteAuthorityLoss: fanWriteBlockReason is not null);
+            returnBlockedOnWriteAuthorityLoss: fanWriteBlockReason is not null).ConfigureAwait(false);
+        return outcome with { AppliedCurveTargets = appliedTargets };
+    }
 
     internal async Task<ScopedApplyOutcome> ApplyFanControlTransitionOutcomeAsync(
         FanControlSettings previous,
@@ -862,20 +915,21 @@ public sealed class ControlCoordinator
                 cancellationToken).ConfigureAwait(false);
         }
 
-        // Preset-ranged backends report the independent performance and manual
-        // flag, and use the same typed targets for Fixed and host curves. A
-        // subtype change within their admitted preset needs no Automatic or
-        // Balanced write. Recheck the actual preset in the requested step;
-        // unknown state must block rather than select the historical bridge.
+        // Source backends report independent performance and manual state.
+        // Scalar-range host curves require the requested preset just as mapped
+        // targets do; another supported current preset is not a confirmation.
+        // Enter directly within that admitted preset, including from Automatic;
+        // recheck its actual state before submission instead of writing defaults.
         FanSpeedRange? presetRange = transitionCapabilities.GetFanSpeedRange(performanceIntent);
-        bool directPresetRangedSubtype = previousManual && requestedManual
+        bool directPresetRangedEntry = requested.Mode is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
             && transitionCapabilities.ReportsPerformanceWithManualFans
-            && transitionCapabilities.FanSpeedRangesByPerformancePreset.Count > 0;
-        if (directPresetRangedSubtype)
+            && (transitionCapabilities.FanSpeedRangesByPerformancePreset.Count > 0
+                || requested.Mode == FanMode.ManualCurve);
+        if (directPresetRangedEntry)
         {
             if (presetRange is not { IsWellFormed: true }
                 || !(requested.Mode == FanMode.Fixed && presetRange.Supports(requested.FixedSpeedRpm)
-                    || requested.Mode == FanMode.ManualCurve && performanceIntent == PerformancePreset.Balanced))
+                    || requested.Mode is FanMode.ManualCurve or FanMode.Maximum))
             {
                 return new ScopedApplyOutcome(
                     Unsupported("Fans"), null, WriteAttempted: false, ReadbackMatched: false,
@@ -887,7 +941,7 @@ public sealed class ControlCoordinator
                 initialStateBlockReason: state => state.Performance == performanceIntent
                     && IsConfirmedDirectManualFanWriteBaseline(state)
                         ? null
-                        : "Manual subtype changes require the freshly confirmed admitted performance preset and fan state.")
+                        : "Manual fan entry requires the freshly confirmed admitted performance preset and fan state.")
                 .ConfigureAwait(false);
             RecordWriteAttempt(writeAttempted, DeviceSubsystem.Fans, direct);
             return direct;
@@ -3001,11 +3055,14 @@ public sealed class ControlCoordinator
         PerformancePreset performance,
         FanMode fans,
         DeviceCapabilities capabilities) =>
-        (fans == FanMode.Stop && performance == PerformancePreset.BatterySaver
+        (fans != FanMode.ManualCurve || ManualFanCurveCapabilityPolicy.SupportsPreset(capabilities, performance))
+        && ((fans == FanMode.Stop && performance == PerformancePreset.BatterySaver
             && capabilities.SupportsBatterySaverFanStop)
         || (capabilities.FanSpeedRangesByPerformancePreset.Count > 0
-            && fans == FanMode.Fixed
-            && capabilities.GetFanSpeedRange(performance) is not null)
+            && fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
+            && capabilities.GetFanSpeedRange(performance) is { IsWellFormed: true }
+            && (performance is not (PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced)
+                || fans is FanMode.Fixed or FanMode.Maximum))
         || (capabilities.SupportsDirectManualFanTransitions
             && IsAutomaticPerformancePreset(performance)
             && DeviceSubsystemOrder.IsManualFanMode(fans)
@@ -3024,7 +3081,7 @@ public sealed class ControlCoordinator
         or (PerformancePreset.Balanced, FanMode.Fixed)
         or (PerformancePreset.Balanced, FanMode.ManualCurve)
         or (PerformancePreset.BatterySaver, FanMode.Automatic)
-        or (PerformancePreset.BatteryBalanced, FanMode.Automatic);
+        or (PerformancePreset.BatteryBalanced, FanMode.Automatic));
 
     private static string? PerformanceInitialStateBlockReason(
         ConfirmedDeviceState state,

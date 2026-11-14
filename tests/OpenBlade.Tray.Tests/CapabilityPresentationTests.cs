@@ -508,6 +508,12 @@ public sealed class CapabilityPresentationTests
             .ToArray();
         Assert.Equal(2, curveSliders.Length);
         Assert.All(curveSliders, slider => Assert.Equal("120", Attribute(slider, "MinWidth")));
+        Assert.All(curveSliders, slider =>
+        {
+            Assert.Equal("{x:Bind MinimumRpm, Mode=OneTime}", Attribute(slider, "Minimum"));
+            Assert.Equal("{x:Bind MaximumRpm, Mode=OneTime}", Attribute(slider, "Maximum"));
+            Assert.Equal("{x:Bind StepRpm, Mode=OneTime}", Attribute(slider, "StepFrequency"));
+        });
         XElement[] curveLists = curveSliders
             .Select(slider => slider.Ancestors().First(element =>
                 element.Name.LocalName == "ItemsControl"))
@@ -3987,6 +3993,19 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(basedOn, Attribute(style, "BasedOn"));
     }
 
+    [Fact]
+    public void ApplicationFanEditor_UsesSelectedPresetIntentBoundsAndQuantization()
+    {
+        string source = ReadTraySource("MainWindow.Applications.cs");
+        Assert.Contains("ViewModel.Capabilities.GetFanIntentSpeedRange(", source, StringComparison.Ordinal);
+        Assert.Contains("performance.SelectedItem).Value ?? basis.Performance", source, StringComparison.Ordinal);
+        Assert.Contains("Maximum = initialFanRange.MaximumRpm", source, StringComparison.Ordinal);
+        Assert.Contains("Minimum = initialFanRange.MinimumRpm", source, StringComparison.Ordinal);
+        Assert.Contains("SmallChange = initialFanRange.StepRpm", source, StringComparison.Ordinal);
+        Assert.Contains("performance.SelectionChanged += (_, _) => UpdateFanSpeedBounds()", source, StringComparison.Ordinal);
+        Assert.Contains("GetIntentFanRange().Quantize(", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Maximum = FanControlSettings.MaximumSpeedRpm", source, StringComparison.Ordinal);
+    }
     private static string ReadTraySource(
         string fileName,
         [CallerFilePath] string testPath = "") =>

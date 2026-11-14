@@ -189,15 +189,19 @@ public sealed partial class ServiceControlRuntimeTests
                     : HyperBoostRestoreRetryTarget.None,
             },
         };
+        var pendingRestore = journal.Journal;
+        journal.Journal = null;
         TestContext context = CreateContext(true, initialPowerSource: PowerSource.UsbC,
             hyperBoostOwnershipJournalStore: journal);
         ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        journal.Journal = pendingRestore;
         ProfileSet profiles = context.Runtime.GetStatus().Profiles;
-        Assert.Equal(ControlOperationStatus.Stored,
-            (await context.Runtime.UpdateProfilesAsync(profiles with
-            {
-                UsbC = profiles.UsbC with { Performance = PerformancePreset.Performance },
-            }, CancellationToken.None)).Status);
+        var update = await context.Runtime.UpdateProfilesAsync(profiles with
+        {
+            UsbC = profiles.UsbC with { Performance = PerformancePreset.Performance },
+        }, CancellationToken.None);
+        Assert.True(update.Status == ControlOperationStatus.Stored, System.Text.Json.JsonSerializer.Serialize(update));
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
         if (deferred)
@@ -289,8 +293,12 @@ public sealed partial class ServiceControlRuntimeTests
                     null, null, FanControlSettings.Default),
             },
         };
+        var pendingRestore = journal.Journal;
+        journal.Journal = null;
         TestContext context = CreateContext(true, hyperBoostOwnershipJournalStore: journal);
         ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        journal.Journal = pendingRestore;
         ProfileSet profiles = context.Runtime.GetStatus().Profiles;
         Assert.Equal(ControlOperationStatus.Stored,
             (await context.Runtime.UpdateProfilesAsync(profiles with
@@ -410,8 +418,12 @@ public sealed partial class ServiceControlRuntimeTests
                     null, null, FanControlSettings.Default),
             },
         };
+        var pendingRestore = journal.Journal;
+        journal.Journal = null;
         TestContext context = CreateContext(true, hyperBoostOwnershipJournalStore: journal);
         ConfigurePadlessHyperBoost(context);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        journal.Journal = pendingRestore;
         ProfileSet profiles = context.Runtime.GetStatus().Profiles;
         Assert.Equal(ControlOperationStatus.Stored,
             (await context.Runtime.UpdateProfilesAsync(profiles with

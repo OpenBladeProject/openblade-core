@@ -2541,6 +2541,64 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task TypedCurveTargetsPropagateExpectedPresetAndConfirmedAppliedTuple()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Silent },
+            new HashSet<FanMode> { FanMode.ManualCurve }) with
+        {
+            FanSpeedRange = new(2200, 5200, 100),
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Silent] = new(3700, 5300, 100),
+            },
+        };
+        var port = new FakeProductionPort(capabilities, BatteryValidationSetting.Limit80, temporary: null)
+        {
+            CurveAppliedTargets = (5000, 4900),
+        };
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        var applied = await device.SetCurveFanTargetsAsync(PerformancePreset.Silent, 5300, 5200, default);
+        Assert.Equal((5000, 4900), applied);
+        Assert.Equal(PerformancePreset.Silent, port.LastCurveExpectedPerformance);
+        Assert.Equal(5300, port.LastFan1TargetRpm);
+        Assert.Equal(5200, port.LastFan2TargetRpm);
+        Assert.Equal(1, factory.OpenCount);
+    }
+
+    [Fact]
+    public async Task TypedCurveTargetsRetainPreSubmissionFailureWithoutFreshSessionRetry()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.ManualCurve }) with
+        {
+            FanSpeedRange = new(2200, 5200, 100),
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2200, 5200, 100),
+            },
+        };
+        BladeWriteException firstFailure = ThermalPreWriteReadFailure();
+        var firstPort = new FakeProductionPort(capabilities, BatteryValidationSetting.Limit80, temporary: null)
+        {
+            WriteFailure = firstFailure,
+        };
+        var secondPort = new FakeProductionPort(capabilities, BatteryValidationSetting.Limit80, temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(factory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetCurveFanTargetsAsync(PerformancePreset.Balanced, 3200, 3300, default));
+        Assert.Same(firstFailure, error);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetFanTargetsCount);
+        Assert.Equal(0, secondPort.SetFanTargetsCount);
+    }
+
+    [Fact]
     public async Task SingleAttemptFanTargetsRetainsPreSubmissionFailureWithoutRetry()
     {
         DeviceCapabilities capabilities = ThermalCapabilities(
@@ -3546,6 +3604,8 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
         public bool SupportsRz090581CapabilityDiagnosticsQuery =>
             rz090581CapabilityDiagnostics is not null;
         public BladeWriteException? WriteFailure { get; set; }
+        public (int Fan1Rpm, int Fan2Rpm)? CurveAppliedTargets { get; init; }
+        public PerformancePreset? LastCurveExpectedPerformance { get; private set; }
         public Exception? ProtectionFailure { get; init; }
         public Exception? TemporaryFailure { get; init; }
         public Exception? PerformanceFanFailure { get; init; }
@@ -3716,6 +3776,15 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
         {
             LastFanControl = value;
             return SetFanModeAsync(value.Mode, cancellationToken);
+        }
+
+        public async Task<(int Fan1Rpm, int Fan2Rpm)> SetCurveFanTargetsAsync(
+            PerformancePreset expectedPerformance, int fan1Rpm, int fan2Rpm,
+            CancellationToken cancellationToken)
+        {
+            LastCurveExpectedPerformance = expectedPerformance;
+            await SetFanTargetsAsync(fan1Rpm, fan2Rpm, cancellationToken);
+            return CurveAppliedTargets ?? (fan1Rpm, fan2Rpm);
         }
 
         public Task SetFanTargetsAsync(

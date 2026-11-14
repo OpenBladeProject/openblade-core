@@ -66,4 +66,8 @@ public readonly record struct HidSessionResult<T>(
     // Diagnostic evidence only, populated after the complete response envelope
     // has passed correlation, status and length checks for a safe state getter.
     internal string? QueryResponsePayloadHex { get; init; }
+
+    // Diagnostic-only status from a complete, checksum-valid, correlated reply.
+    // A rejected status never admits its payload or changes the failure outcome.
+    internal byte? QueryResponseStatus { get; init; }
 }

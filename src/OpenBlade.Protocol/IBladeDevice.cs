@@ -95,6 +95,17 @@ public interface IBladeDevice
         int fan2Rpm,
         CancellationToken cancellationToken);
 
+    /// <summary>Applies a curve sample once and returns the independently confirmed targets.</summary>
+    async Task<(int Fan1Rpm, int Fan2Rpm)> SetCurveFanTargetsAsync(
+        PerformancePreset expectedPerformance,
+        int fan1Rpm,
+        int fan2Rpm,
+        CancellationToken cancellationToken)
+    {
+        await SetFanTargetsAsync(fan1Rpm, fan2Rpm, cancellationToken).ConfigureAwait(false);
+        return (fan1Rpm, fan2Rpm);
+    }
+
     Task SetChargeLimitAsync(BatteryPolicy value, CancellationToken cancellationToken);
 
     Task SetBatteryProtectionOffAsync(CancellationToken cancellationToken);

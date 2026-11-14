@@ -143,6 +143,54 @@ public sealed partial class IpcMessageCodecTests
         Assert.False(projected["capabilities"]!.AsObject().ContainsKey("fanSpeedRangesByPerformancePreset"));
     }
 
+    [Fact]
+    public async Task SourceReviewed5500RpmCapabilitiesRoundTripWithCurrentPeers()
+    {
+        var range = new FanSpeedRange(4300, 5500, 100);
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+            {
+                FanSpeedRange = range,
+                FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+                {
+                    [PerformancePreset.Balanced] = range,
+                },
+            },
+        };
+        DeviceCapabilities decoded = (await RoundTripStatusAsync(status)).Capabilities!;
+        Assert.True(decoded.GetFanSpeedRange(PerformancePreset.Balanced)!.Supports(5500));
+        Assert.False(DeviceCapabilities.SafeTargetDefaults().SupportsFanSpeedInAnyPerformancePreset(5500));
+    }
+
+    [Fact]
+    public async Task ObservedFanRangesPreserveIntentAndRejectWidenedMetadata()
+    {
+        var intent = new FanSpeedRange(4300, 5500, 100);
+        var observed = new FanSpeedRange(4400, 5000, 100);
+        ServiceStatusSnapshot baseline = CreateStatus();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            FanSpeedRange = intent,
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            { [PerformancePreset.Balanced] = intent },
+            ObservedFanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            { [PerformancePreset.Balanced] = observed },
+        };
+        DeviceCapabilities decoded = (await RoundTripStatusAsync(baseline with { Capabilities = capabilities })).Capabilities!;
+        Assert.Equal(intent, decoded.GetFanIntentSpeedRange(PerformancePreset.Balanced));
+        Assert.Equal(observed, decoded.GetFanSpeedRange(PerformancePreset.Balanced));
+        Assert.True(decoded.SupportsFanSpeedInAnyPerformancePreset(5500));
+        await AssertStatusWriteRejectedAsync(baseline with
+        {
+            Capabilities = capabilities with
+            {
+                ObservedFanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+                { [PerformancePreset.Balanced] = new(4200, 5500, 100) },
+            },
+        });
+    }
+
     [Theory]
     [InlineData(PerformancePreset.Balanced, 5401)]
     [InlineData(PerformancePreset.Silent, 4000)]
@@ -814,7 +862,7 @@ public sealed partial class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(81, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(82, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -856,7 +904,7 @@ public sealed partial class IpcMessageCodecTests
         using MemoryStream requestBytes = new();
         await IpcMessageCodec.WriteRequestAsync(requestBytes, request, CancellationToken.None);
         JsonObject requestJson = FramedJsonObject(requestBytes);
-        Assert.Equal(81, requestJson["version"]!.GetValue<int>());
+        Assert.Equal(82, requestJson["version"]!.GetValue<int>());
         Assert.Equal(wireValue, requestJson["value"]!["value"]!.GetValue<int>());
         requestBytes.Position = 0;
         Assert.Equal(request, await IpcMessageCodec.ReadRequestAsync(requestBytes, CancellationToken.None));
@@ -953,7 +1001,7 @@ public sealed partial class IpcMessageCodecTests
                 }),
             CancellationToken.None);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(81, json["version"]!.GetValue<int>());
+        Assert.Equal(82, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsDirectManualFanTransitions"));
@@ -988,7 +1036,7 @@ public sealed partial class IpcMessageCodecTests
             await IpcMessageCodec.ReadServerFrameAsync(encoded, CancellationToken.None));
         Assert.True(roundTrip.Status.Capabilities!.SupportsManualFansOnLimitedPower);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(81, json["version"]!.GetValue<int>());
+        Assert.Equal(82, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsManualFansOnLimitedPower"));
@@ -1563,7 +1611,7 @@ public sealed partial class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(81, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(82, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -2266,6 +2314,7 @@ public sealed partial class IpcMessageCodecTests
     [InlineData(78)]
     [InlineData(79)]
     [InlineData(80)]
+    [InlineData(81)]
     public async Task WriteRequestAsync_RejectsPriorProtocols(int previousProtocolVersion)
     {
         using MemoryStream stream = new();
@@ -2278,7 +2327,7 @@ public sealed partial class IpcMessageCodecTests
             IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(81, exception.ExpectedVersion);
+        Assert.Equal(82, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2298,6 +2347,7 @@ public sealed partial class IpcMessageCodecTests
     [InlineData(78)]
     [InlineData(79)]
     [InlineData(80)]
+    [InlineData(81)]
     public async Task ReadRequestAsync_RejectsPriorProtocolPeers(int previousProtocolVersion)
     {
         using MemoryStream stream = FrameJson(
@@ -2308,7 +2358,7 @@ public sealed partial class IpcMessageCodecTests
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(81, exception.ExpectedVersion);
+        Assert.Equal(82, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2328,6 +2378,7 @@ public sealed partial class IpcMessageCodecTests
     [InlineData(78)]
     [InlineData(79)]
     [InlineData(80)]
+    [InlineData(81)]
     public async Task ReadServerFrameAsync_RejectsPriorProtocolPeers(int previousProtocolVersion)
     {
         Guid requestId = Guid.NewGuid();
@@ -2350,7 +2401,7 @@ public sealed partial class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(81, exception.ExpectedVersion);
+        Assert.Equal(82, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 

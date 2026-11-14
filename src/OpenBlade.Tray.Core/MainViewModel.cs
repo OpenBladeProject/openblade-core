@@ -2508,7 +2508,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(CanEditFanControl));
             Notify(nameof(CanChangeFanMode));
             NotifyFanControlEditorChanges(
-                fanControlEditor.Load(CurrentFanControlSettings, ActiveFanSpeedRange));
+                fanControlEditor.Load(CurrentFanControlSettings, FanControlEditorSpeedRange));
             Notify(nameof(FixedFanSpeedMinimumRpm));
             Notify(nameof(FixedFanSpeedMaximumRpm));
             Notify(nameof(FixedFanSpeedStepRpm));
@@ -2740,14 +2740,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         get => fanControlEditor.FixedSpeedRpm;
         set => NotifyFanControlEditorChanges(
-            fanControlEditor.SetFixedSpeed(value, ActiveFanSpeedRange));
+            fanControlEditor.SetFixedSpeed(value, FanControlEditorSpeedRange));
     }
 
-    public int FixedFanSpeedMinimumRpm => ActiveFanSpeedRange.MinimumRpm;
+    public int FixedFanSpeedMinimumRpm => FanControlEditorSpeedRange.MinimumRpm;
 
-    public int FixedFanSpeedMaximumRpm => ActiveFanSpeedRange.MaximumRpm;
+    public int FixedFanSpeedMaximumRpm => FanControlEditorSpeedRange.MaximumRpm;
 
-    public int FixedFanSpeedStepRpm => ActiveFanSpeedRange.StepRpm;
+    public int FixedFanSpeedStepRpm => FanControlEditorSpeedRange.StepRpm;
+
+    private FanSpeedRange FanControlEditorSpeedRange =>
+        Capabilities.GetFanIntentSpeedRange(SelectedPerformance) is { IsWellFormed: true } range
+            ? range
+            : FanSpeedRange.Standard;
 
     private FanSpeedRange ActiveFanSpeedRange =>
         Capabilities.GetFanSpeedRange(SelectedPerformance) is { IsWellFormed: true } range
@@ -3021,7 +3026,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public void UpdateFanCurvePoint(FanCurveEditorPoint point, int speedRpm) =>
         NotifyFanControlEditorChanges(
-            fanControlEditor.UpdatePoint(point, speedRpm, ActiveFanSpeedRange));
+            fanControlEditor.UpdatePoint(point, speedRpm, FanControlEditorSpeedRange));
 
     public LightingSettings SelectedLighting
     {
@@ -3197,7 +3202,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             observation = observation with { Capabilities = value };
             Notify(nameof(Capabilities));
             RefreshCustomPerformanceOptions();
-            if (fanControlEditor.SetFixedSpeed(FixedFanSpeedRpm, ActiveFanSpeedRange)
+            if (fanControlEditor.SetFixedSpeed(FixedFanSpeedRpm, FanControlEditorSpeedRange)
                 != FanControlEditorChanges.None)
             {
                 Notify(nameof(FixedFanSpeedRpm));
@@ -5061,11 +5066,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         return ProfileAdmissionPolicy.FanModeAvailable(ActivePowerSource, value, CommandCapabilities)
-            && (value is not (FanMode.Fixed or FanMode.Maximum)
-                || CommandCapabilities.GetFanSpeedRange(SelectedPerformance) is not null)
             && (value != FanMode.ManualCurve
-                || CommandCapabilities.FanSpeedRangesByPerformancePreset.Count == 0
-                || SelectedPerformance == PerformancePreset.Balanced)
+                || ProfileAdmissionPolicy.ManualCurvePresetSupported(SelectedPerformance, CommandCapabilities))
+            && (value is not (FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum)
+                || CommandCapabilities.GetFanSpeedRange(SelectedPerformance) is not null)
             && (value == FanMode.Automatic || SelectedPerformance != PerformancePreset.Custom || !SelectedCustomMaximumFans);
     }
 
@@ -9747,7 +9751,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     private void LoadFanControlEditor(FanControlSettings value) =>
-        NotifyFanControlEditorChanges(fanControlEditor.Load(value, ActiveFanSpeedRange));
+        NotifyFanControlEditorChanges(fanControlEditor.Load(value, FanControlEditorSpeedRange));
 
     private void NotifyFanControlEditorChanges(FanControlEditorChanges changes)
     {

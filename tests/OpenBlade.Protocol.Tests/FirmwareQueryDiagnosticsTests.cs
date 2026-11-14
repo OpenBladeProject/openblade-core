@@ -122,6 +122,29 @@ public sealed class FirmwareQueryDiagnosticsTests
     }
 
     [Fact]
+    public void StatusEvidence_SurvivesLaterFailureWithoutAResponse()
+    {
+        var recorder = new FirmwareQueryDiagnostics();
+        RazerCommandSpec command = Command(0x07, 0x8C, "0000");
+        recorder.Record(command, new(default, HidSessionFailureKind.ProtocolFailure)
+        {
+            QueryResponseStatus = 5,
+            Diagnostic = new(HidSessionFailurePhase.ProtocolValidation, HidSessionFailureKind.ProtocolFailure, 0, 90)
+            {
+                ProtocolValidationFailure = HidProtocolValidationFailure.Status,
+            },
+        }, Timestamp);
+        recorder.Record(command, new(default, HidSessionFailureKind.Timeout), Timestamp.AddSeconds(1));
+
+        FirmwareQueryDiagnostic entry = Assert.Single(recorder.Snapshot());
+        Assert.Null(entry.Latest.ResponseStatus);
+        Assert.Equal((byte)5, entry.FirstFailure!.ResponseStatus);
+        Assert.Equal((byte)5, entry.LastResponseFailure!.ResponseStatus);
+        Assert.Null(entry.LastResponseFailure.ResponsePayloadHex);
+        Assert.Contains("\"ResponseStatus\":5", System.Text.Json.JsonSerializer.Serialize(recorder.Snapshot()));
+    }
+
+    [Fact]
     public void Rejection_CorrelatesOlderObservationWithoutReplacingNewerReplyOrDoubleCounting()
     {
         var recorder = new FirmwareQueryDiagnostics();
@@ -209,6 +232,46 @@ public sealed class FirmwareQueryDiagnosticsTests
         Assert.Equal(100, entry.FailureCount);
         Assert.Equal(1, entry.FirstFailure!.Id);
         Assert.Equal(100, entry.LastFailure!.Id);
+    }
+
+    [Fact]
+    public void DynamicFanRange_RecordsOnlyFixedTwelveZeroGetterShape()
+    {
+        RazerCommandSpec query = new(0x0D, 0x83, new byte[12], 12);
+        Assert.True(FirmwareQueryDiagnostics.CanRecord(query));
+        Assert.False(FirmwareQueryDiagnostics.CanRecord(query with { ExpectedPayloadLength = 11 }));
+        Assert.False(FirmwareQueryDiagnostics.CanRecord(query with { Arguments = new byte[11], ExpectedPayloadLength = 11 }));
+        Assert.False(FirmwareQueryDiagnostics.CanRecord(query with { Arguments = new byte[13], ExpectedPayloadLength = 13 }));
+        Assert.False(FirmwareQueryDiagnostics.CanRecord(query with { CommandId = 0x03 }));
+        Assert.False(FirmwareQueryDiagnostics.CanRecord(query with
+        {
+            AllowVariableResponseLength = true,
+            PayloadValidator = static payload => payload.Length == 12,
+        }));
+        for (int index = 0; index < 12; index++)
+        {
+            byte[] changed = new byte[12];
+            changed[index] = 1;
+            Assert.False(FirmwareQueryDiagnostics.CanRecord(query with { Arguments = changed }));
+        }
+    }
+
+    [Fact]
+    public void DynamicFanRange_ContentRejectionRetainsStatusAndPayloadAfterLaterTransportFailure()
+    {
+        var recorder = new FirmwareQueryDiagnostics();
+        RazerCommandSpec query = new(0x0D, 0x83, new byte[12], 12);
+        const string payload = "00000000000032002D003500";
+        FirmwareQueryObservation observation = recorder.Record(query,
+            Success(payload) with { QueryResponseStatus = 0x02 }, Timestamp)!;
+        recorder.RecordRejection(observation, FirmwareQueryOutcome.ContentRejected);
+        recorder.Record(query, new(default, HidSessionFailureKind.Timeout), Timestamp.AddSeconds(1));
+        FirmwareQueryDiagnostic result = Assert.Single(recorder.Snapshot());
+        Assert.Equal("0D/83", result.Command);
+        Assert.Equal(2, result.FailureCount);
+        Assert.Equal(FirmwareQueryOutcome.ContentRejected, result.LastResponseFailure!.Outcome);
+        Assert.Equal((byte)0x02, result.LastResponseFailure.ResponseStatus);
+        Assert.Equal(payload, result.LastResponseFailure.ResponsePayloadHex);
     }
 
     private static RazerCommandSpec Command(int commandClass, int commandId, string request)

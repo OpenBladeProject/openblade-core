@@ -7,14 +7,16 @@ controller, write, and readback gates.
 
 ## Policy supported by the vendor source
 
+Host curves are OpenBlade software control over already admitted typed targets;
+a generic vendor helper alone does not establish an exact model's capability.
 Within an exact model's existing fan capabilities, the source supports this
 power policy:
 
 | Power source | Automatic | Fixed target | Smart curve | Maximum Fans |
 | --- | --- | --- | --- | --- |
-| Full external power | Yes | Yes | Production backends; Blade 18 in Balanced | Only where separately admitted |
+| Full external power | Yes | Yes where separately admitted | Production backends and the exact source-reviewed presets in the [fan review](source-reviewed-thermal-967.md) | Only where separately admitted |
 | Confirmed limited external power, including classified USB-C | Yes | Production backends only | Production backends only | Only where separately admitted |
-| Battery | Yes | Yes where fixed targets are admitted | No | No separate Maximum Fans switch |
+| Battery | Yes | Only the exact models and battery presets listed below and in the fan review | No | No separate Maximum Fans switch |
 
 `FanMode.Maximum` is OpenBlade's legacy name for the validated backend's fixed
 maximum-RPM target. It follows the Fixed column. The distinct experimental
@@ -35,12 +37,13 @@ send a literal Automatic flag (`0`) before the speed command. Their
 silently enter manual mode. Experimental USB-C fixed control therefore remains
 blocked until separate exact-model evidence establishes that sequence.
 
-On battery, the shared path changes only a resolved Balanced AC selector to
+For the production RZ09-0528/RZ09-0581 battery paths, the shared policy changes
+only a resolved Balanced AC selector to
 Balanced DC and preserves the same fan flag; every other selector is sent
 unchanged. When the requested fan type is `manual`, it then calls
 `setThermalFanSpeed`.
 
-That makes both battery fixed forms source-backed:
+That makes both battery fixed forms source-backed on those two production profiles:
 
 | Battery profile | Automatic | Fixed target |
 | --- | --- | --- |
@@ -57,43 +60,52 @@ not establish another model's physical behavior or Battery Balanced operation.
 The developer Battery Saver trial retained a requested 1,500 RPM target and
 later measured zero RPM, but its short 2,000 RPM preparation had no held control
 or reversal. That association does not establish a causal or reliable fan-stop
-command. A literal-zero target was not tested in Battery Saver. Production
-fan-stop admission is withheld on RZ09-0581 and all other models; the retained
-prototype preference is dormant and its switch is hidden. Ordinary fixed-target
-ranges and direct manual transitions remain unchanged. See the
+command. A literal-zero target was not tested in Battery Saver. These observations
+alone establish no fan-stop command or production admission. Current fan-stop
+controls follow their separate reviewed contracts and model limits; see
+[model and EC coverage](fan-stop-model-coverage.md) and the
 [corrected evidence assessment](battery-saver-low-fan-validation.md#withheld-production-capability).
+Ordinary fixed-target ranges and direct manual transitions retain their own admission.
 
 Smart curves are external-power-only. The vendor policy stores and reads smart
 curve state under `performance.plugged` and starts its temperature monitor only
 while `isOnBatteryPower` is false. Its battery settings contain Battery Saver,
-Battery Balanced, and `manualFanSpeed`, but no battery curve. OpenBlade also
-exposes an experimental host curve on Blade 18 in Balanced,
-using the existing Windows CPU-temperature reader. It holds the admitted
-3,800 RPM maximum when that reading is unavailable; variable behavior remains
-physically unverified. The other experimental models expose no curve.
+Battery Balanced, and `manualFanSpeed`, but no battery curve. OpenBlade admits
+host curves on the exact full-power AC presets in the
+[complete fan review](source-reviewed-thermal-967.md). This includes all already
+admitted ordinary AC Fixed presets on RZ09-0482/RZ09-0483, excluding HyperBoost,
+and Balanced/Silent curves on RZ09-0484. Missing CPU
+temperature holds the current preset's admitted maximum. Source-reviewed curves
+have software failure/recovery evidence; their physical behavior is not inferred
+from another model's tests. No source-reviewed curve is admitted on battery or
+limited external power.
 
 ## Exact model scope
 
 Shared vendor policy is evidence only after OpenBlade's exact model has admitted
-the underlying fan command. The resulting scope is:
+the underlying fan command. The table below details the seven original profiles;
+all 22 profiles' current preset and range coverage is in the
+[complete fan review](source-reviewed-thermal-967.md).
 
 | Exact Windows product | USB identity | Synapse product | USB-C / limited external | Battery | Basis and exception |
 | --- | --- | --- | --- | --- | --- |
 | `Blade 16 - RZ09-0581` | `1532:02E0` | `736` | Automatic, fixed, smart curve | Automatic, fixed in Saver or Balanced | Production fan backend already admits automatic, fixed, and curve. The preserved observer run physically covered AC fixed only. |
 | `Blade 16 - RZ09-0528` | `1532:02C6` | `710` | Automatic, fixed, smart curve | Automatic, fixed in Saver or Balanced | Production fan backend admits automatic, fixed, and curve. An older Synapse UI observation showed fixed unavailable on battery and USB-C, so fresh physical validation remains required before treating the newer source behavior as physically confirmed. |
-| `Blade 16 - RZ09-0483` | `1532:029F` | `671` | Automatic only | Automatic, fixed, 2,000-5,000 RPM | Experimental exact-model fixed control is upstream owner-tested. The battery path preserves the manual flag. The limited-external vendor path clears it before sending speed, so USB-C fixed remains blocked. Curves are unavailable. |
-| `Blade 14 - RZ09-0482` | `1532:029D` | `669` | Automatic only | Automatic, fixed, 2,200-5,000 RPM | Experimental exact-model fixed control is source-backed extrapolation. The battery path preserves the manual flag. The limited-external vendor path clears it before sending speed, so USB-C fixed remains blocked. Curves are unavailable. |
-| `Blade 14 - RZ09-0530` | `1532:02C5` | `709` | No adjustable fan control admitted | No adjustable fan control admitted | Battery performance modes are admitted, but there is no exact-model fixed-target evidence. |
-| `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | `597` | No fan control admitted | No fan control admitted | No exact-model fan evidence. |
-| `Blade 18 - RZ09-0484` | `1532:02A0` | `672` | Automatic only | Automatic, shared fixed target in Balanced, 2,200-3,800 RPM | Exact Balanced setters and a rising fan-1 RPM stream are observed. The pinned class-1 stored-target getter is source-backed and must succeed before writes. The earlier ignored-RPM report concerned HyperBoost. Silent also admits linked 3,700-5,300 RPM targets on full external power. Balanced host curves preserve separate target requests and hold 3,800 RPM without temperature data; variable curves and physical RPM independence remain unverified. Custom and Performance manual fans remain unavailable. See [Observer evidence](blade18-observer-evidence.md#follow-up-bundle-2026-10-17). |
+| `Blade 16 - RZ09-0483` | `1532:029F` | `671` | Automatic only | Automatic, fixed, 2,000–5,000 RPM | Existing Fixed scope is unchanged. Balanced/Silent/Performance/Custom host curves use 2,000–5,000 RPM on confirmed full-power AC only; the lower bound is measured by the upstream owner, not an OpenBlade curve validation. Limited-power Fixed and curves remain blocked. |
+| `Blade 14 - RZ09-0482` | `1532:029D` | `669` | Automatic only | Automatic, fixed, 2,200–5,000 RPM | Existing Fixed scope is unchanged. Balanced/Silent/Custom host curves use the separately source-extrapolated 2,200–5,000 RPM range on confirmed full-power AC only; the floor is not physically validated. Limited-power Fixed and curves remain blocked. |
+| `Blade 14 - RZ09-0530` | `1532:02C5` | `709` | Automatic only | Automatic; fixed in Battery Balanced, 3,400–5,200 RPM with fresh metadata | Full-power AC admits fixed targets and host curves in its reviewed Balanced, Silent, Maximum Power and Custom ranges. Battery Saver remains Automatic. See the complete fan review. |
+| `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | `597` | Automatic only | Automatic only | Fixed targets and host curves require confirmed full-power AC and the reviewed Balanced, Performance (Gaming) or Creator range, intersected with fresh metadata. Existing upstream Silent/Custom controls do not establish a manual range there. |
+| `Blade 18 - RZ09-0484` | `1532:02A0` | `672` | Automatic only | Automatic, shared fixed target in Balanced, 2,200-3,800 RPM | Exact Balanced setters and a rising fan-1 RPM stream are observed. The pinned class-1 stored-target getter is source-backed and must succeed before writes. The earlier ignored-RPM report concerned HyperBoost. Silent also admits linked 3,700-5,300 RPM targets on full external power. Balanced/Silent host curves preserve separate target requests and hold the active preset maximum without temperature data; variable curves and physical RPM independence remain unverified. Custom and Performance manual fans remain unavailable. See [Observer evidence](blade18-observer-evidence.md#follow-up-bundle-2026-10-17). |
 
-The experimental policy admits Fixed on battery for RZ09-0483 and
-RZ09-0482, plus Balanced-only shared fixed targets on RZ09-0484. Blade 18 also
-admits Balanced curves on full external power; the other experimental models
-keep curves unavailable. Confirmed limited external power admits
-Automatic handback only for those models because their exact vendor bundles do
-not preserve the manual flag there. The normal exact-device, power, ownership,
-write, and recovery gates still apply.
+The source-reviewed policy retains battery Fixed on RZ09-0483/RZ09-0482 and
+Balanced-only linked fixed targets on RZ09-0484. RZ09-0530/RZ09-0529 additionally
+admit fixed targets in Battery Balanced with fresh metadata. The other dynamic
+profiles do not gain battery manual targets. Source-reviewed curves require
+confirmed full-power AC and an admitted curve preset. RZ09-0482/RZ09-0483 reuse
+their ordinary AC Fixed preset scope, excluding HyperBoost; no Balanced reset or
+Automatic bridge is required. The two validated production backends retain their separate
+limited-power curve capability. Exact-device, power, ownership, per-write and
+readback gates remain required throughout.
 
 ## Pinned vendor bytes
 
@@ -136,22 +148,19 @@ any of the corresponding firmware selector/flag pairs.
 
 ## Checked-in source references
 
-- `src/OpenBlade.Protocol/ExperimentalBladeModels.cs` lines 25-59 record the
-  per-model fan evidence; lines 62-80 map the five experimental exact models
-  to their official Synapse products.
-- `src/OpenBlade.Protocol/ExperimentalBladePort.Fans.cs` limits adjustable
-  fixed targets to PID `029F`, `029D`, and `02A0`. Blade 18 uses preset-specific
-  Balanced/Silent ranges and admits host curves only in Balanced.
-- `src/OpenBlade.Protocol/ExperimentalBladePort.cs` derives fan capabilities
-  and power admission from the exact model's range and source policy.
-- `src/OpenBlade.Protocol/BatteryValidationFactory.cs` lines 574-580 list the
-  RZ09-0528 production fan modes. Lines 610-625 preserve the older UI
-  observations as read-only evidence rather than writable capability.
-- `docs/rz09-0528-support-implementation-log-archive.md` lines 901-913 record
-  that older battery/USB-C UI observation and its validation boundary.
-- `docs/experimental-blade-support.md` lines 11-17 and 28-36 record the
-  experimental control matrix, fixed ranges, curve limitation, and separate
-  Maximum Fans behavior.
+- `src/OpenBlade.Protocol/ExperimentalBladeModels.cs` retains per-feature source
+  evidence and each exact model's Synapse product linkage.
+- `src/OpenBlade.Protocol/ExperimentalBladePort.Fans.cs` defines fixed ranges,
+  separate static host-curve admission and typed target/readback behavior.
+- `src/OpenBlade.Protocol/ExperimentalBladePort.DynamicFanRange.cs` intersects
+  reviewed intent with fresh current-preset metadata on the 17 dynamic profiles.
+- `src/OpenBlade.Service/FanCurveControl.cs` and `ServiceControlRuntime.cs` bound
+  host maintenance to its admitted preset, power source and exact owned intent.
+- [The complete fan review](source-reviewed-thermal-967.md) records current
+  ranges and limitations. Its separate legacy-curve addendum pins the existing
+  671/669 helpers and upstream range provenance without changing historical ledgers.
+- `docs/rz09-0528-support-implementation-log-archive.md` retains the older
+  battery/USB-C UI observation and its physical-validation boundary.
 
 ## Component compatibility
 

@@ -169,7 +169,7 @@ public sealed partial class ExperimentalThermalExpansionTests
     }
 
     [Theory]
-    [InlineData(7, 17)]
+    [InlineData(0, 17)]
     [InlineData(16, 17)]
     public async Task HyperBoost_ContradictoryOrUnknownAdapterCannotEnter(byte actual, byte recommended)
     {
@@ -312,7 +312,7 @@ public sealed partial class ExperimentalThermalExpansionTests
     private static ExperimentalBladePort HyperBoostPort(Session session, Pad pad,
         ExperimentalFeaturesPolicy? policy = null, Func<PowerSource>? power = null, int pid = 0x029F) =>
         new(session, new(), Model(pid), policy ?? new(Model(pid)), () => true,
-            power ?? (() => PowerSource.PluggedIn), coolingPadDiscovery: pad);
+            power ?? (() => PowerSource.ExternalUnknown), coolingPadDiscovery: pad);
 
     private sealed class Pad : ICoolingPadDiscoverySource
     {
