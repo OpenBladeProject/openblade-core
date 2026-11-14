@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.63.2-nightly.115] - 2026-11-14
+
 ### Added
 
 - Offer all model-supported performance modes, including Custom and HyperBoost, on sufficient and limited external adapters. Preserve separate profiles, firmware power management and battery-drain notifications. ([#964](https://github.com/OSSBlade/openblade-core/pull/964))
@@ -2429,7 +2431,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.61.1-nightly.114...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.63.2-nightly.115...HEAD
+[0.63.2-nightly.115]: https://github.com/OSSBlade/openblade-core/compare/v0.61.1-nightly.114...v0.63.2-nightly.115
 [0.61.1-nightly.114]: https://github.com/OSSBlade/openblade-core/compare/v0.60.0-nightly.113...v0.61.1-nightly.114
 [0.60.0-nightly.113]: https://github.com/OSSBlade/openblade-core/compare/v0.58.7-nightly.112...v0.60.0-nightly.113
 [0.58.7-nightly.112]: https://github.com/OSSBlade/openblade-core/compare/v0.58.5-nightly.111...v0.58.7-nightly.112
