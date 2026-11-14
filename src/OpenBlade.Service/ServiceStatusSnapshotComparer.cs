@@ -123,6 +123,11 @@ internal static class ServiceStatusSnapshotComparer
                     entry.Key,
                     out FanSpeedRange? rightRange)
                 && entry.Value == rightRange)
+            && left.ObservedFanSpeedRangesByPerformancePreset.Count
+                == right.ObservedFanSpeedRangesByPerformancePreset.Count
+            && left.ObservedFanSpeedRangesByPerformancePreset.All(entry =>
+                right.ObservedFanSpeedRangesByPerformancePreset.TryGetValue(entry.Key, out FanSpeedRange? observed)
+                && entry.Value == observed)
             && left.SupportsBatterySaverFanStop == right.SupportsBatterySaverFanStop
             && left.HasFanStopTrialEvidence == right.HasFanStopTrialEvidence
             && left.HasFanStopSourceEvidence == right.HasFanStopSourceEvidence

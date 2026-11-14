@@ -116,7 +116,98 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
-    public async Task FanControlEditor_UsesPresetRangeAndKeepsCurveBalancedOnly()
+    public async Task FanControlEditor_ObservedNarrowingRetainsSavedIntentAndKeepsWritesStrict()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        var curve = new ManualFanCurve([new(40, 2200), new(80, 5200)],
+            [new(40, 2200), new(80, 5200)], true);
+        var settings = new FanControlSettings(FanMode.Fixed, 5200, curve);
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        status = status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                FanSpeedRange = new(2200, 5200, 100),
+                FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+                {
+                    [PerformancePreset.Balanced] = new(2200, 5200, 100),
+                },
+            },
+            ConfirmedState = status.ConfirmedState! with { Fans = FanMode.Fixed },
+            DesiredState = status.DesiredState with
+            {
+                Fans = new(FanMode.Fixed, SettingValueSource.PowerProfile),
+                FanControl = settings,
+            },
+        };
+        await PushAsync(client, dispatcher, status);
+        Assert.Equal(settings, viewModel.CurrentFanControlSettings);
+        Assert.True(viewModel.SetFanControlCommand.CanExecute(settings));
+        await PushAsync(client, dispatcher, status with
+        {
+            Revision = status.Revision + 1,
+            Capabilities = status.Capabilities! with
+            {
+                ObservedFanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+                {
+                    [PerformancePreset.Balanced] = new(2600, 5000, 100),
+                },
+            },
+        });
+        Assert.Equal(settings, viewModel.CurrentFanControlSettings);
+        Assert.Equal(5200, viewModel.FixedFanSpeedRpm);
+        Assert.Equal(5200, viewModel.CpuFanCurveEditorPoints[^1].SpeedRpm);
+        Assert.Equal(5200, viewModel.FixedFanSpeedMaximumRpm);
+        Assert.False(viewModel.SetFanControlCommand.CanExecute(settings));
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Balanced)]
+    [InlineData(PerformancePreset.Silent)]
+    [InlineData(PerformancePreset.Custom)]
+    public async Task FanControlEditor_GlobalSourceCurveUsesExistingPresetWithoutReset(PerformancePreset performance)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        CustomPerformanceSettings? custom = performance == PerformancePreset.Custom ? CustomPerformanceSettings.Default : null;
+        status = status with
+        {
+            Capabilities = status.Capabilities! with
+            {
+                ReportsPerformanceWithManualFans = true,
+                SupportsDirectManualFanTransitions = true,
+                FanSpeedRange = new(2200, 5000, 100),
+                PerformancePresets = new HashSet<PerformancePreset>
+                {
+                    PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Custom,
+                },
+            },
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Performance = performance,
+                CustomPerformance = custom,
+            },
+            DesiredState = status.DesiredState with
+            {
+                Performance = new(performance, SettingValueSource.PowerProfile),
+                CustomPerformance = custom,
+            },
+        };
+        await PushAsync(client, dispatcher, status);
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.ManualCurve));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+        Assert.Equal(performance, viewModel.SelectedPerformance);
+        Assert.Equal(5000, viewModel.FixedFanSpeedMaximumRpm);
+    }
+
+    [Fact]
+    public async Task FanControlEditor_UsesPresetRangeForFixedAndManualCurve()
     {
         var client = new FakeServiceClient();
         var dispatcher = new RecordingDispatcher();
@@ -152,7 +243,7 @@ public sealed partial class MainViewModelTests
         Assert.Equal(5300, viewModel.FixedFanSpeedMaximumRpm);
         Assert.True(viewModel.SetFanControlCommand.CanExecute(
             new FanControlSettings(FanMode.Fixed, 5300, ManualFanCurve.Default)));
-        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.ManualCurve));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.ManualCurve));
 
         await PushAsync(client, dispatcher, status with
         {
@@ -170,6 +261,7 @@ public sealed partial class MainViewModelTests
         });
 
         Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.ManualCurve));
 
         await PushAsync(client, dispatcher, status with
         {
@@ -366,8 +458,14 @@ public sealed partial class MainViewModelTests
         });
         Assert.True(viewModel.IsFanControlOperationInProgress);
         Assert.Equal(requested, viewModel.CurrentFanControlSettings);
-        Assert.Same(requestedCpu, viewModel.CpuFanCurveEditorPoints);
-        Assert.Same(requestedGpu, viewModel.GpuFanCurveEditorPoints);
+        Assert.NotSame(requestedCpu, viewModel.CpuFanCurveEditorPoints);
+        Assert.NotSame(requestedGpu, viewModel.GpuFanCurveEditorPoints);
+        Assert.All(viewModel.CpuFanCurveEditorPoints.Concat(viewModel.GpuFanCurveEditorPoints), point =>
+        {
+            Assert.Equal(2000, point.MinimumRpm);
+            Assert.Equal(5000, point.MaximumRpm);
+            Assert.Equal(100, point.StepRpm);
+        });
 
         client.CompleteMutation();
         await apply;

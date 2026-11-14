@@ -46,7 +46,36 @@ public sealed class WindowsRazerHidSessionTests
         Assert.Equal(HidSessionFailurePhase.ProtocolValidation, query.LastFailure.Phase);
         Assert.Equal(HidProtocolValidationFailure.Status, query.LastFailure.ProtocolValidationFailure);
         Assert.Null(query.LastFailure.ResponsePayloadHex);
+        Assert.Equal((byte)0x05, query.LastFailure.ResponseStatus);
+        Assert.Equal(query.LastFailure.Id, query.LastResponseFailure!.Id);
         Assert.Contains(query.Command, System.Text.Json.JsonSerializer.Serialize(diagnostics.Snapshot()));
+        Assert.Equal(2, io.Calls.Count);
+    }
+
+    [Theory]
+    [InlineData(0x00)]
+    [InlineData(0x01)]
+    [InlineData(0x03)]
+    [InlineData(0x04)]
+    [InlineData(0x05)]
+    public async Task QueryEvidence_RetainsAdapterStatusWithoutAcceptingOrRetryingTheReply(byte status)
+    {
+        var diagnostics = new FirmwareQueryDiagnostics();
+        byte[] reply = Response(1, 0x07, 0x8C, [0x11, 0x11]);
+        reply[1] = status;
+        var io = new ScriptedIo(SetSuccess(), GetResult(reply));
+        await using WindowsRazerHidSession actor = CreateActor(io, queryDiagnostics: diagnostics);
+        var client = new AdapterPowerCommandClient(actor, Timeout);
+
+        var result = await client.QueryAsync(1, default);
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
+        Assert.Equal(HidProtocolValidationFailure.Status, result.Diagnostic?.ProtocolValidationFailure);
+        FirmwareQueryDiagnostic query = Assert.Single(diagnostics.Snapshot());
+        Assert.Equal(status, query.LastFailure!.ResponseStatus);
+        Assert.Null(query.LastFailure.ResponsePayloadHex);
+        Assert.Equal(query.LastFailure.Id, query.LastResponseFailure!.Id);
+        Assert.NotEqual(RazerCommandSessionDisposition.Healthy, actor.Disposition);
         Assert.Equal(2, io.Calls.Count);
     }
 
@@ -103,6 +132,7 @@ public sealed class WindowsRazerHidSessionTests
 
         FirmwareQueryDiagnostic query = Assert.Single(diagnostics.Snapshot());
         Assert.Null(query.LastFailure!.ResponsePayloadHex);
+        Assert.Null(query.LastFailure.ResponseStatus);
         Assert.Equal(HidProtocolValidationFailure.TransactionMismatch,
             query.LastFailure.ProtocolValidationFailure);
         Assert.Equal(2, io.Calls.Count);

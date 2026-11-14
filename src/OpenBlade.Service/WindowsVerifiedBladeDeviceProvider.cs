@@ -2278,6 +2278,28 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 isManualEntryContinuation: false,
                 cancellationToken);
 
+        public async Task<(int Fan1Rpm, int Fan2Rpm)> SetCurveFanTargetsAsync(
+            PerformancePreset expectedPerformance,
+            int fan1Rpm,
+            int fan2Rpm,
+            CancellationToken cancellationToken)
+        {
+            DeviceCapabilities capabilities = batteryFactory.Capabilities;
+            if (!capabilities.FanModes.Contains(FanMode.ManualCurve)
+                || capabilities.GetFanIntentSpeedRange(expectedPerformance) is not { } range
+                || !range.Supports(fan1Rpm) || !range.Supports(fan2Rpm))
+            {
+                await RejectProductionWrite("Manual curve targets are not admitted.").ConfigureAwait(false);
+            }
+            (int Fan1Rpm, int Fan2Rpm) applied = default;
+            await ExecuteProductionWriteAsync(async port =>
+            {
+                applied = await port.SetCurveFanTargetsAsync(
+                    expectedPerformance, fan1Rpm, fan2Rpm, cancellationToken).ConfigureAwait(false);
+            }, cancellationToken, allowFreshSessionRetry: false).ConfigureAwait(false);
+            return applied;
+        }
+
         Task ISingleAttemptThermalDevice.SetFanTargetsOnceAsync(
             int fan1Rpm,
             int fan2Rpm,

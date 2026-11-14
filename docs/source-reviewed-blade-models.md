@@ -1,5 +1,7 @@
 # Source-reviewed additional Blade models
 
+The later [performance and fan review](source-reviewed-thermal-967.md) expands manual fan admission and adds exact presets. Fan exclusions below describe the original admission.
+
 The later [lighting review](source-reviewed-lighting.md) adds bounded lighting controls to these profiles. Lighting exclusions below describe the original admission.
 
 OpenBlade officially supports the additional exact-model profiles below using reviewed

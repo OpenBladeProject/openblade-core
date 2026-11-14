@@ -10,19 +10,22 @@ public sealed partial class SourceReviewedBladeModelTests
         var policy = new ExperimentalFeaturesPolicy(Model(0x0245));
         var session = new Session { DynamicFanRange = [0, 0, 0, 0, 0, 0, 40, 0, 45, 0, 50, 0] };
         await using var port = Create(0x0245, session, policy);
-        Assert.Equal(5300, port.Capabilities.FanSpeedRange!.MaximumRpm);
+        Assert.Equal(5300, port.Capabilities.GetFanSpeedRange(PerformancePreset.Balanced)!.MaximumRpm);
 
         await port.SetFanModeAsync(FanMode.ManualCurve, default);
-        FanSpeedRange range = Assert.IsType<FanSpeedRange>(port.Capabilities.FanSpeedRange);
+        FanSpeedRange range = Assert.IsType<FanSpeedRange>(port.Capabilities.GetFanSpeedRange(PerformancePreset.Balanced));
         Assert.Equal(new FanSpeedRange(4000, 5000, 100), range);
-        Assert.Equal(range, port.Capabilities.FanSpeedRangesByPerformancePreset[PerformancePreset.Balanced]);
+        Assert.Equal(range, port.Capabilities.ObservedFanSpeedRangesByPerformancePreset[PerformancePreset.Balanced]);
+        Assert.Equal(new FanSpeedRange(3700, 5300, 100), port.Capabilities.FanSpeedRange);
+        Assert.Equal(new FanSpeedRange(3700, 5300, 100),
+            port.Capabilities.FanSpeedRangesByPerformancePreset[PerformancePreset.Balanced]);
         // The service's missing-temperature curve fallback consumes this maximum,
         // not the original source envelope. Its next target update must succeed.
         await port.SetFanTargetsAsync(range.MaximumRpm, range.MaximumRpm, default);
         Assert.Equal((50, 50), ((int)session.Fan1, (int)session.Fan2));
 
         await using var reopened = Create(0x0245, new Session(), policy);
-        Assert.Equal(range, reopened.Capabilities.FanSpeedRange);
+        Assert.Equal(range, reopened.Capabilities.GetFanSpeedRange(PerformancePreset.Balanced));
         Assert.Equal(5300, ExperimentalBladePort.CreateCapabilities(Model(0x0245), true).FanSpeedRange!.MaximumRpm);
         policy.RequireRecovery(ExperimentalRecoveryScope.ThermalOnly);
         Assert.Null(port.Capabilities.FanSpeedRange);
@@ -96,7 +99,7 @@ public sealed partial class SourceReviewedBladeModelTests
     }
 
     [Fact]
-    public async Task Rz090301_RangeChangeAfterManualEntryPausesWithoutTargetOrReplay()
+    public async Task Rz090301_MetadataFailureAfterFirstModeFlagStopsSecondFlagAndTargetsWithoutReplay()
     {
         var session = new Session();
         int metadataQueries = 0;
@@ -112,7 +115,7 @@ public sealed partial class SourceReviewedBladeModelTests
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetFanTargetsAsync(4500, 4500, default));
         Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
         Assert.False(policy.WritesAllowed);
-        Assert.Equal(2, session.Commands.Count(command => command.CommandId == 0x02));
+        Assert.Single(session.Commands, command => command.CommandId == 0x02);
         Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x01);
         int before = session.Commands.Count;
         await Assert.ThrowsAsync<BladeWriteException>(() => port.SetFanModeAsync(FanMode.Automatic, default));
@@ -236,10 +239,10 @@ public sealed partial class SourceReviewedBladeModelTests
         bool changed = false;
         session.BeforeSubmission = command =>
         {
-            // Drift after both baseline target pairs, at the next paired state
+            // Drift after the baseline target pair, at the next paired state
             // confirmation. Metadata remains valid and overlaps the request.
             if (!changed && command.ClassId == 0x0D && command.CommandId == 0x82
-                && session.Commands.Count(item => item.ClassId == 0x0D && item.CommandId == 0x81) >= 4
+                && session.Commands.Count(item => item.ClassId == 0x0D && item.CommandId == 0x81) >= 2
                 && !session.Commands.Any(item => item.CommandId == 0x01))
             {
                 changed = true;

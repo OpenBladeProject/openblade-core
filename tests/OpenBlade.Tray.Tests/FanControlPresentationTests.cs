@@ -36,4 +36,21 @@ public sealed class FanControlPresentationTests
         Assert.Contains(nameof(FanCurveEditorPoint.SpeedRpm), changed);
         Assert.Contains(nameof(FanCurveEditorPoint.SpeedLabel), changed);
     }
+    [Theory]
+    [InlineData(4300, 5500, 5500)]
+    [InlineData(3700, 5300, 5300)]
+    public void CurvePoint_UsesReviewedIntentBoundsForSliderAndSavedValue(
+        int minimum, int maximum, int expected)
+    {
+        var range = new FanSpeedRange(minimum, maximum, 100);
+        var point = new FanCurveEditorPoint(new FanCurvePoint(90, maximum), range);
+
+        point.SpeedRpm = 5500;
+
+        Assert.Equal(minimum, point.MinimumRpm);
+        Assert.Equal(maximum, point.MaximumRpm);
+        Assert.Equal(100, point.StepRpm);
+        Assert.Equal(expected, point.SpeedRpm);
+        Assert.Equal(expected, point.ToValue().SpeedRpm);
+    }
 }

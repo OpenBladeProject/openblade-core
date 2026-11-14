@@ -97,7 +97,7 @@ internal sealed class FanControlEditorState
         // Republish the edited side even if clamping leaves its value unchanged:
         // the slider must reflect the accepted value after a user edit.
         FanCurveEditorPoint[] updated = source
-            .Select(value => new FanCurveEditorPoint(value.ToValue()))
+            .Select(value => new FanCurveEditorPoint(value.ToValue(), range))
             .ToArray();
         if (ReferenceEquals(source, CpuPoints))
         {
@@ -114,7 +114,7 @@ internal sealed class FanControlEditorState
         FanSpeedRange range) => points
             .Select(point => new FanCurveEditorPoint(new FanCurvePoint(
                 point.TemperatureCelsius,
-                range.Quantize(point.SpeedRpm))))
+                range.Quantize(point.SpeedRpm)), range))
             .ToArray();
 
     private static bool PointsMatch(
@@ -129,7 +129,10 @@ internal sealed class FanControlEditorState
 
         for (int index = 0; index < current.Count; index++)
         {
-            if (current[index].TemperatureCelsius != incoming[index].TemperatureCelsius
+            if (current[index].MinimumRpm != range.MinimumRpm
+                || current[index].MaximumRpm != range.MaximumRpm
+                || current[index].StepRpm != range.StepRpm
+                || current[index].TemperatureCelsius != incoming[index].TemperatureCelsius
                 || current[index].SpeedRpm != range.Quantize(incoming[index].SpeedRpm))
             {
                 return false;

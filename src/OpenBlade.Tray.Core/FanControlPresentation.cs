@@ -12,9 +12,11 @@ public sealed record FanModeOption(FanMode Value, string Label)
 public sealed class FanCurveEditorPoint : INotifyPropertyChanged
 {
     private int speedRpm;
+    private readonly FanSpeedRange speedRange;
 
-    public FanCurveEditorPoint(FanCurvePoint value)
+    public FanCurveEditorPoint(FanCurvePoint value, FanSpeedRange? range = null)
     {
+        speedRange = range is { IsWellFormed: true } ? range : FanSpeedRange.Standard;
         TemperatureCelsius = value.TemperatureCelsius;
         speedRpm = value.SpeedRpm;
     }
@@ -23,6 +25,12 @@ public sealed class FanCurveEditorPoint : INotifyPropertyChanged
 
     public int TemperatureCelsius { get; }
 
+    public int MinimumRpm => speedRange.MinimumRpm;
+
+    public int MaximumRpm => speedRange.MaximumRpm;
+
+    public int StepRpm => speedRange.StepRpm;
+
     public string TemperatureLabel => TrayText.Format("{0}°C", TemperatureCelsius);
 
     public int SpeedRpm
@@ -30,7 +38,7 @@ public sealed class FanCurveEditorPoint : INotifyPropertyChanged
         get => speedRpm;
         set
         {
-            int normalized = FanControlSettings.QuantizeSpeed(value);
+            int normalized = speedRange.Quantize(value);
             if (speedRpm == normalized)
             {
                 return;

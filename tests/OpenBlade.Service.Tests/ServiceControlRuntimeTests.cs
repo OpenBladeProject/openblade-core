@@ -1933,6 +1933,157 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task OwnedPersistentSourceCurveHandsBackOnUsbCWithoutChangingSavedJsonOrPerformance()
+    {
+        DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(
+            ExperimentalBladeModels.All.Single(item => item.ProductId == 0x029F), enabled: true);
+        string overridePath = Path.Combine(directory, "owned-curve-power-overrides.json");
+        TestContext context = CreateContext(providerAvailable: true, persistentOverridePath: overridePath,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities));
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(default);
+        var settings = new FanControlSettings(FanMode.ManualCurve, 5000,
+            new ManualFanCurve([new(40, 3800), new(80, 3800)], [new(40, 3800), new(80, 3800)], true));
+        ControlOperationResult entry = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(FanMode.ManualCurve, OverrideLifetime.Persistent), settings, default);
+        Assert.True(entry.Status == ControlOperationStatus.Applied, entry.Message);
+        Assert.Equal(ExactFanControlOwnershipDisposition.OwnedExactIntent, context.Runtime.FanControlOwnershipDisposition);
+        string savedJson = await File.ReadAllTextAsync(overridePath);
+        context.Device.FanWrites.Clear();
+        context.Device.PerformanceWrites.Clear();
+        context.Telemetry.Current = CreateTelemetry(PowerSource.UsbC);
+        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+        await context.Runtime.HandlePowerSourceChangedAsync(default);
+        await context.Runtime.MaintainFanCurveAsync(default);
+        Assert.Equal([FanMode.Automatic], context.Device.FanWrites);
+        Assert.Empty(context.Device.PerformanceWrites);
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Equal(ExactFanControlOwnershipDisposition.Unowned, context.Runtime.FanControlOwnershipDisposition);
+        Assert.Equal(FanMode.ManualCurve, context.Runtime.GetStatus().FanOverride!.Value);
+        Assert.Equal(settings, context.Runtime.GetStatus().FanControlOverride!);
+        Assert.Equal(savedJson, await File.ReadAllTextAsync(overridePath));
+    }
+
+    [Fact]
+    public async Task OwnedFixedFansHandBackWhenUsbCSelectsRetainedUnavailableCurve()
+    {
+        DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(
+            ExperimentalBladeModels.All.Single(item => item.ProductId == 0x029F), enabled: true);
+        TestContext context = CreateContext(providerAvailable: true, initialize: false,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities));
+        BatteryConfiguration configuration = await context.Store.LoadAsync(default);
+        ProfileSet defaults = configuration.Profiles;
+        var curve = new FanControlSettings(FanMode.ManualCurve, 5000,
+            new ManualFanCurve([new(40, 3800), new(80, 3800)], [new(40, 3800), new(80, 3800)], true));
+        ProfileSet saved = defaults with
+        {
+            UsbC = defaults.UsbC with { Fans = FanMode.ManualCurve, FanControl = curve },
+        };
+        await context.Store.SaveProfilesAsync(saved, default);
+        context.Runtime.Initialize(await context.Store.LoadAsync(default), PowerSource.PluggedIn, PersistentOverrideState.Empty);
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(default);
+        ControlOperationResult entry = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(FanMode.Fixed, OverrideLifetime.UntilPowerSourceChange),
+            new(FanMode.Fixed, 3800, ManualFanCurve.Default), default);
+        Assert.True(entry.Status == ControlOperationStatus.Applied, entry.Message);
+        Assert.Equal(ExactFanControlOwnershipDisposition.OwnedExactIntent, context.Runtime.FanControlOwnershipDisposition);
+        string path = Path.Combine(directory, "profiles.json");
+        string json = await File.ReadAllTextAsync(path);
+        context.Device.FanWrites.Clear();
+        context.Device.PerformanceWrites.Clear();
+        context.Telemetry.Current = CreateTelemetry(PowerSource.UsbC);
+        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+        await context.Runtime.HandlePowerSourceChangedAsync(default);
+        Assert.Equal([FanMode.Automatic], context.Device.FanWrites);
+        Assert.Empty(context.Device.PerformanceWrites);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Equal(ExactFanControlOwnershipDisposition.Unowned, context.Runtime.FanControlOwnershipDisposition);
+        Assert.Equal(curve, context.Runtime.GetStatus().Profiles.UsbC.FanControl);
+        Assert.Equal(json, await File.ReadAllTextAsync(path));
+    }
+
+    [Fact]
+    public async Task OwnedApplicationCurveHandsBackWhenFallingBackToRetainedUnavailableCustomCurve()
+    {
+        DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(
+            ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0), enabled: true);
+        TestContext context = CreateContext(providerAvailable: true, initialize: false,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities));
+        BatteryConfiguration configuration = await context.Store.LoadAsync(default);
+        ProfileSet defaults = configuration.Profiles;
+        int maximum = capabilities.GetFanIntentSpeedRange(PerformancePreset.Balanced)!.MaximumRpm;
+        var settings = new FanControlSettings(FanMode.ManualCurve, maximum,
+            new ManualFanCurve([new(40, maximum), new(80, maximum)], [new(40, maximum), new(80, maximum)], true));
+        var application = new ApplicationProfileDefinition(Guid.NewGuid(), "Owned balanced curve", ApplicationProfileDefinition.NormalizeExecutablePath(@"C:/Games/owned-curve.exe"),
+            ApplicationActivationMode.Foreground, new ApplicationProfileOverrideSet
+            {
+                PluggedIn = new ApplicationPowerProfileOverride
+                {
+                    Performance = PerformancePreset.Balanced,
+                    Fans = FanMode.ManualCurve,
+                    FanControl = settings,
+                },
+            });
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = CustomPerformanceSettings.Default,
+                Fans = FanMode.ManualCurve,
+                FanControl = settings,
+            },
+            ApplicationProfiles = [application],
+        };
+        await context.Store.SaveProfilesAsync(profiles, default);
+        context.Runtime.Initialize(await context.Store.LoadAsync(default), PowerSource.PluggedIn, PersistentOverrideState.Empty);
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(default);
+        string profilePath = Path.Combine(directory, "profiles.json");
+        string savedJson = await File.ReadAllTextAsync(profilePath);
+        Guid instance = Guid.NewGuid();
+        ControlOperationResult activated = await context.Runtime.ReportApplicationContextAsync(new(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
+            instance, 1, application.ExecutablePath), static () => true, default);
+        // Activation respects the first external observation. The explicit user
+        // reapply below must perform the fan write before the loop can own it.
+        ControlOperationResult reapplied = await context.Runtime.ReapplyChangedSettingsAsync(default);
+        Assert.True(context.Runtime.FanControlOwnershipDisposition == ExactFanControlOwnershipDisposition.OwnedExactIntent,
+            $"Activation: {activated.Message} Reapply: {reapplied.Message}");
+        context.Device.FanWrites.Clear();
+        context.Device.PerformanceWrites.Clear();
+        await context.Runtime.ReportApplicationContextAsync(new(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
+            instance, 2, null), static () => true, default);
+        await context.Runtime.MaintainFanCurveAsync(default);
+        Assert.Equal([FanMode.Automatic], context.Device.FanWrites);
+        Assert.Empty(context.Device.PerformanceWrites);
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Equal(ExactFanControlOwnershipDisposition.Unowned, context.Runtime.FanControlOwnershipDisposition);
+        Assert.Equal(settings, context.Runtime.GetStatus().Profiles.PluggedIn.FanControl);
+        Assert.Equal(savedJson, await File.ReadAllTextAsync(profilePath));
+    }
+
+    [Fact]
     public async Task ExperimentalFixedOverride_OnUsbCUsesAutomaticAndRetainsSavedIntent()
     {
         TestContext context = CreateWritableContext();
@@ -2003,6 +2154,184 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             Assert.NotEmpty(context.Device.FanTargets);
             Assert.True(temperatures.ReadCount > 0);
         }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(85)]
+    public async Task MaintainFanCurve_SilentUsesEffectiveRangeAndPreservesSavedIntent(int? cpuTemperature)
+    {
+        var temperatures = new FixedFanTemperatureSource(new FanTemperatureReadings(cpuTemperature, 80));
+        TestContext context = CreateContext(providerAvailable: true, fanTemperatureSource: temperatures);
+        context.Device.Capabilities = ManualFanCurveCapabilities() with
+        {
+            FanSpeedRange = new(2200, 3800, 100),
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2200, 3800, 100),
+                [PerformancePreset.Silent] = new(3700, 5300, 100),
+            },
+            ObservedFanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Silent] = new(4000, 5000, 100),
+            },
+            ReportsPerformanceWithManualFans = true,
+            SupportsDirectManualFanTransitions = false,
+        };
+        context.Device.FanTargetsAvailable = true;
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(default);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(PerformancePreset.Silent, OverrideLifetime.UntilPowerSourceChange),
+                default)).Status);
+        context.Device.PerformanceWrites.Clear();
+        context.Device.FanWrites.Clear();
+        var curve = new ManualFanCurve([new(40, 3700), new(90, 5300)],
+            [new(35, 3700), new(85, 5300)], true);
+        var settings = new FanControlSettings(FanMode.ManualCurve, 5300, curve);
+        ControlOperationResult applied = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(FanMode.ManualCurve, OverrideLifetime.UntilPowerSourceChange),
+            settings, default);
+        Assert.True(applied.Status == ControlOperationStatus.Applied, applied.Message);
+        Assert.Equal(PerformancePreset.Silent,
+            context.Runtime.GetStatus().DesiredState.Performance.Value);
+        Assert.Equal(settings, context.Runtime.GetStatus().DesiredState.FanControl);
+        context.Device.FanTargets.Clear();
+
+        await context.Runtime.MaintainFanCurveAsync(default);
+
+        FanTargetSpeeds target = Assert.Single(context.Device.FanTargets);
+        Assert.Equal(5000, target.Fan1Rpm);
+        Assert.Equal(5000, target.Fan2Rpm);
+        Assert.Equal(5300, context.Runtime.GetStatus().DesiredState.FanControl!.ManualCurve.Cpu[^1].SpeedRpm);
+        Assert.Equal(PerformancePreset.Silent, context.Runtime.GetStatus().ConfirmedState!.Performance);
+        Assert.Empty(context.Device.PerformanceWrites);
+        Assert.DoesNotContain(FanMode.Automatic, context.Device.FanWrites);
+    }
+
+    [Fact]
+    public async Task LegacyMaximum5000ProfilePreservesSavedAliasAndAppliesTypedMaximum()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            FanSpeedRange = new(2000, 5000, 100),
+        };
+        TestContext context = CreateContext(providerAvailable: true, initialPowerSource: PowerSource.Battery,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities));
+        context.Device.Capabilities = capabilities;
+        context.Device.AdapterPowerState = AdapterPowerState.Battery;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.BatterySaver,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(default);
+        var alias = new FanControlSettings(FanMode.Fixed, 5400, ManualFanCurve.Default);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles!;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { Fans = FanMode.Maximum, FanControl = alias },
+        };
+        string savedAliasJson = JsonSerializer.Serialize(alias);
+        await context.Runtime.UpdateProfilesAsync(profiles, default);
+        context.Device.FanControlWrites.Clear();
+        context.Device.AdapterPowerState = AdapterPowerState.FullPower280W;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.HandlePowerSourceChangedAsync(default);
+
+        ServiceStatusSnapshot current = context.Runtime.GetStatus();
+        Assert.Equal(FanMode.Maximum, current.DesiredState.Fans.Value);
+        Assert.Equal(FanMode.Maximum, current.DesiredState.FanControl!.Mode);
+        Assert.Contains(context.Device.FanControlWrites, value => value.Mode == FanMode.Maximum);
+        Assert.DoesNotContain(context.Device.FanControlWrites,
+            value => value.Mode == FanMode.Fixed && value.FixedSpeedRpm == 5400);
+        BatteryConfiguration saved = await context.Store.LoadAsync(default);
+        Assert.Equal(FanMode.Maximum, saved.Profiles.PluggedIn.Fans);
+        Assert.Equal(savedAliasJson, JsonSerializer.Serialize(saved.Profiles.PluggedIn.FanControl));
+        Assert.Equal(5000, capabilities.GetFanIntentSpeedRange(PerformancePreset.Balanced)!.MaximumRpm);
+    }
+
+    [Theory]
+    [InlineData(0x029D, PerformancePreset.Balanced)]
+    [InlineData(0x029D, PerformancePreset.Silent)]
+    [InlineData(0x029D, PerformancePreset.Custom)]
+    [InlineData(0x029F, PerformancePreset.Balanced)]
+    [InlineData(0x029F, PerformancePreset.Silent)]
+    [InlineData(0x029F, PerformancePreset.Performance)]
+    [InlineData(0x029F, PerformancePreset.Custom)]
+    public async Task MaintainFanCurve_GlobalSourceBackendUsesExpectedPresetTypedPath(int productId, PerformancePreset performance)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
+        DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(model, enabled: true);
+        var temperatures = new FixedFanTemperatureSource(new FanTemperatureReadings(65, 60));
+        TestContext context = CreateContext(providerAvailable: true, fanTemperatureSource: temperatures,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities));
+        context.Device.Capabilities = capabilities;
+        context.Device.FanTargetsAvailable = true;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(default);
+        CustomPerformanceSettings? custom = performance == PerformancePreset.Custom ? CustomPerformanceSettings.Default : null;
+        ControlOperationResult preset = await context.Runtime.SetPerformanceConfigurationOverrideAsync(
+            new PerformanceOverride(performance, OverrideLifetime.UntilPowerSourceChange, custom), default);
+        Assert.True(preset.Status == ControlOperationStatus.Applied, preset.Message);
+        context.Device.PerformanceWrites.Clear();
+        context.Device.FanWrites.Clear();
+        FanSpeedRange range = capabilities.GetFanIntentSpeedRange(performance)!;
+        var curve = new ManualFanCurve([new(40, range.MinimumRpm), new(80, range.MaximumRpm)],
+            [new(40, range.MinimumRpm), new(80, range.MaximumRpm)], true);
+        var settings = new FanControlSettings(FanMode.ManualCurve, 5000, curve);
+        ControlOperationResult entry = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(FanMode.ManualCurve, OverrideLifetime.UntilPowerSourceChange), settings, default);
+        Assert.True(entry.Status == ControlOperationStatus.Applied, entry.Message);
+        context.Device.FanTargets.Clear();
+        int calls = context.Device.TypedCurveTargetCalls;
+        await context.Runtime.MaintainFanCurveAsync(default);
+        Assert.Equal(calls + 1, context.Device.TypedCurveTargetCalls);
+        Assert.Equal(performance, context.Device.LastCurveExpectedPerformance);
+        Assert.Equal(custom, context.Device.ConfirmedState.CustomPerformance);
+        Assert.Equal(performance, context.Runtime.GetStatus().DesiredState.Performance.Value);
+        Assert.Empty(context.Device.PerformanceWrites);
+        Assert.DoesNotContain(FanMode.Automatic, context.Device.FanWrites);
+        Assert.Single(context.Device.FanTargets);
+        Assert.Equal(settings, context.Runtime.GetStatus().DesiredState.FanControl);
+        Assert.Empty(capabilities.FanSpeedRangesByPerformancePreset);
+    }
+
+    [Fact]
+    public async Task MaintainFanCurve_CachesBackendAppliedTargetsSoLaterRangeGrowthIsNotMissed()
+    {
+        (TestContext context, _, _) = await CreateOwnedManualFanCurveContextAsync();
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2000, 5400, 100),
+            },
+            ReportsPerformanceWithManualFans = true,
+        };
+        await context.Runtime.ObserveAsync(default);
+        int applications = 0;
+        context.Device.CurveTargetProjection = (first, second) => ++applications == 1
+            ? (first - 100, second - 100) : (first, second);
+        context.Device.FanTargets.Clear();
+        await context.Runtime.MaintainFanCurveAsync(default);
+        FanTargetSpeeds firstApplied = Assert.Single(context.Device.FanTargets);
+        await context.Runtime.MaintainFanCurveAsync(default);
+        Assert.Equal(2, context.Device.FanTargets.Count);
+        Assert.Equal(firstApplied.Fan1Rpm + 100, context.Device.FanTargets[1].Fan1Rpm);
+        Assert.Equal(firstApplied.Fan2Rpm + 100, context.Device.FanTargets[1].Fan2Rpm);
     }
 
     [Fact]
@@ -6129,6 +6458,92 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ControlOperationStatus.Failed, changed.Status);
         Assert.Equal(savedCustom, context.Runtime.GetStatus().Profiles.PluggedIn.CustomPerformance);
         Assert.Equal(setters, context.Device.TotalSetterCalls);
+    }
+
+    [Theory]
+    [InlineData(0x029D)]
+    [InlineData(0x029F)]
+    public async Task StoredUsbCCurveLoadsAndAllowsUnrelatedSaveButRejectsNewManualIntent(int productId)
+    {
+        DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(
+            ExperimentalBladeModels.All.Single(item => item.ProductId == productId), enabled: true);
+        TestContext context = CreateContext(providerAvailable: true, initialize: false,
+            initialPowerSource: PowerSource.UsbC,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities));
+        ProfileSet defaults = (await context.Store.LoadAsync(default)).Profiles;
+        var settings = new FanControlSettings(FanMode.ManualCurve, 5000,
+            new ManualFanCurve([new(40, 2200), new(80, 5000)], [new(40, 2200), new(80, 5000)], true));
+        ProfileSet saved = defaults with
+        {
+            UsbC = defaults.UsbC with { Fans = FanMode.ManualCurve, FanControl = settings },
+        };
+        await context.Store.SaveProfilesAsync(saved, default);
+        BatteryConfiguration loaded = await context.Store.LoadAsync(default);
+        context.Runtime.Initialize(loaded, PowerSource.UsbC, PersistentOverrideState.Empty);
+        context.Device.Capabilities = capabilities;
+        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+        await context.Runtime.ObserveAsync(default);
+        int setters = context.Device.TotalSetterCalls;
+        string savedJson = JsonSerializer.Serialize(settings);
+        ControlOperationResult unrelated = await context.Runtime.UpdateProfilesAsync(
+            saved with { BatteryPolicy = BatteryPolicy.Create(75) }, default);
+        Assert.Equal(ControlOperationStatus.Stored, unrelated.Status);
+        Assert.Equal(savedJson, JsonSerializer.Serialize((await context.Store.LoadAsync(default)).Profiles.UsbC.FanControl));
+        ControlOperationResult changed = await context.Runtime.UpdateProfilesAsync(saved with
+        {
+            UsbC = saved.UsbC with { Fans = FanMode.Fixed, FanControl = new(FanMode.Fixed, 3800, ManualFanCurve.Default) },
+        }, default);
+        Assert.Equal(ControlOperationStatus.Failed, changed.Status);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
+        Assert.Equal(settings, context.Runtime.GetStatus().Profiles.UsbC.FanControl);
+    }
+
+    [Fact]
+    public async Task UnavailableStoredCustomCurveNeverCreatesFallbackAuthorityFromUnownedManualObservation()
+    {
+        DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(
+            ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0), enabled: true);
+        TestContext context = CreateContext(providerAvailable: true, initialize: false,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities));
+        ProfileSet defaults = (await context.Store.LoadAsync(default)).Profiles;
+        var settings = new FanControlSettings(FanMode.ManualCurve, 3800,
+            new ManualFanCurve([new(40, 3800), new(80, 3800)], [new(40, 3800), new(80, 3800)], true));
+        ProfileSet saved = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = CustomPerformanceSettings.Default,
+                Fans = FanMode.ManualCurve,
+                FanControl = settings,
+            },
+        };
+        await context.Store.SaveProfilesAsync(saved, default);
+        context.Runtime.Initialize(await context.Store.LoadAsync(default), PowerSource.PluggedIn, PersistentOverrideState.Empty);
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Silent,
+            CustomPerformance = null,
+            Fans = FanMode.Fixed,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(default);
+        context.Device.PerformanceWrites.Clear();
+        context.Device.FanWrites.Clear();
+        await context.Runtime.ReconcileStartupProfileAsync(default);
+        await context.Runtime.MaintainFanCurveAsync(default);
+        Assert.Empty(context.Device.PerformanceWrites);
+        Assert.Empty(context.Device.FanWrites);
+        Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+        Assert.Equal(ExactFanControlOwnershipDisposition.ManualTopologyOnly, context.Runtime.FanControlOwnershipDisposition);
+        ControlOperationResult unrelated = await context.Runtime.UpdateProfilesAsync(
+            saved with { BatteryPolicy = BatteryPolicy.Create(75) }, default);
+        Assert.Equal(ControlOperationStatus.Stored, unrelated.Status);
+        Assert.Equal(settings, (await context.Store.LoadAsync(default)).Profiles.PluggedIn.FanControl);
+        Assert.Empty(context.Device.PerformanceWrites);
+        Assert.Empty(context.Device.FanWrites);
     }
 
     [Fact]
@@ -15005,6 +15420,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 return Task.CompletedTask;
             },
             initialPowerSource: PowerSource.Battery);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int preparedCapabilityReads = context.Device.CapabilitiesReadCalls;
+        int preparedStateReads = context.Device.StateReadCalls;
+        int preparedAdmissions = context.Provider.TryGetCount;
         ProfileSet profiles = context.Runtime.GetStatus().Profiles;
         profiles = profiles with
         {
@@ -15029,9 +15448,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
 
         Assert.Equal([TimeSpan.FromSeconds(5)], delays);
-        Assert.Equal(1, context.Device.CapabilitiesReadCalls);
-        Assert.Equal(2, context.Device.StateReadCalls);
-        Assert.Equal(2, context.Provider.TryGetCount);
+        Assert.Equal(preparedCapabilityReads + 1, context.Device.CapabilitiesReadCalls);
+        Assert.Equal(preparedStateReads + 2, context.Device.StateReadCalls);
+        Assert.Equal(preparedAdmissions + 2, context.Provider.TryGetCount);
         Assert.Equal(1, context.Device.PerformanceSetCalls);
         Assert.Equal(2, context.Device.FanSetCalls);
         Assert.InRange(context.Device.BatterySetCalls, 0, 1);
@@ -15053,6 +15472,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             },
             initialPowerSource: PowerSource.Battery);
         contextAtDelay = context;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int preparedStateReads = context.Device.StateReadCalls;
         ProfileSet profiles = context.Runtime.GetStatus().Profiles;
         profiles = profiles with
         {
@@ -15083,7 +15504,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(0, retryDevice.PerformanceSetCalls);
         Assert.Equal(1, retryDevice.FanSetCalls);
         Assert.Equal(1, retryDevice.BatterySetCalls);
-        Assert.Equal(1, context.Device.StateReadCalls);
+        Assert.Equal(preparedStateReads + 1, context.Device.StateReadCalls);
         Assert.Equal(1, retryDevice.StateReadCalls);
         Assert.Equal(ProtectionOff(), retryDevice.ConfirmedState.Battery);
     }
@@ -15099,6 +15520,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 return Task.CompletedTask;
             },
             initialPowerSource: PowerSource.Battery);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
         ProfileSet profiles = context.Runtime.GetStatus().Profiles;
         profiles = profiles with
         {
@@ -15176,6 +15598,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             FanMode.Fixed,
             3200,
             ManualFanCurve.Default);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int preparedAdmissions = context.Provider.TryGetCount;
         ProfileSet profiles = context.Runtime.GetStatus().Profiles;
         profiles = profiles with
         {
@@ -15209,7 +15633,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         Assert.Equal([FanMode.Fixed], context.Device.FanWrites);
         Assert.Single(context.Device.FanTargets);
         Assert.Equal(2, context.Device.FanSetCalls);
-        Assert.Equal(2, context.Provider.TryGetCount);
+        Assert.Equal(preparedAdmissions + 2, context.Provider.TryGetCount);
     }
 
     [Fact]
@@ -15228,6 +15652,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             FanMode.Fixed,
             3200,
             ManualFanCurve.Default);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int preparedAdmissions = context.Provider.TryGetCount;
         ProfileSet profiles = context.Runtime.GetStatus().Profiles;
         profiles = profiles with
         {
@@ -15262,7 +15688,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         Assert.Equal([FanMode.Fixed], context.Device.FanWrites);
         Assert.Empty(context.Device.FanTargets);
         Assert.Equal(1, context.Device.FanSetCalls);
-        Assert.Equal(2, context.Provider.TryGetCount);
+        Assert.Equal(preparedAdmissions + 2, context.Provider.TryGetCount);
         Assert.Contains(
             DeviceSubsystem.Fans,
             context.Runtime.GetStatus().UnconfirmedWrites);
@@ -15279,6 +15705,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 return Task.CompletedTask;
             },
             initialPowerSource: PowerSource.Battery);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int preparedStateReads = context.Device.StateReadCalls;
         ProfileSet profiles = context.Runtime.GetStatus().Profiles;
         profiles = profiles with
         {
@@ -15307,7 +15735,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(0, context.Device.FanSetCalls);
         Assert.Equal(0, context.Device.BatterySetCalls);
         Assert.Equal(0, context.Device.LightingSetCalls);
-        Assert.Equal(2, context.Device.StateReadCalls);
+        Assert.Equal(preparedStateReads + 2, context.Device.StateReadCalls);
     }
 
     [Fact]
@@ -15575,6 +16003,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     {
         TestContext context = CreateWritableContext(
             initialPowerSource: PowerSource.Battery);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
         ProfileSet profiles = context.Runtime.GetStatus().Profiles;
         profiles = profiles with
         {
@@ -17504,6 +17933,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             providerAvailable: true,
             initialPowerSource: PowerSource.ExternalUnknown);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+        context.Device.ConfirmedState = new(PerformancePreset.Balanced, FanMode.Automatic,
+            ConfirmedBattery(80), context.Runtime.GetStatus().Profiles.UsbC.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
         ProfileSet profiles = context.Runtime.GetStatus().Profiles with
         {
             PluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn with
@@ -20069,6 +20502,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         {
             await context.Runtime.ActivateUserAsync(activeUser, CancellationToken.None);
         }
+        await context.Runtime.ObserveAsync(CancellationToken.None);
         PowerProfile destination = (destinationPowerSource == PowerSource.Battery
             ? context.Runtime.GetStatus().Profiles.Battery
             : context.Runtime.GetStatus().Profiles.PluggedIn) with
@@ -20277,30 +20711,26 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         TestContext context = CreateContext(
             providerAvailable: true,
             initialPowerSource: initialSource,
-            timeProvider: timeProvider);
+            timeProvider: timeProvider,
+            initialize: false);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             ChargeLimits = new HashSet<int> { 80 },
             SupportsBatteryProtectionOff = true,
             SupportsTemporaryFullCharge = true,
         };
-        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
-        profiles = profiles with
+        BatteryConfiguration configuration = await context.Store.LoadAsync(CancellationToken.None);
+        ProfileSet profiles = configuration.Profiles with
         {
-            Battery = profiles.Battery with
-            {
-                Performance = batteryPerformance,
-            },
+            Battery = configuration.Profiles.Battery with { Performance = batteryPerformance },
         };
-        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        await context.Store.SaveProfilesAsync(profiles, CancellationToken.None);
+        context.Runtime.Initialize(await context.Store.LoadAsync(CancellationToken.None),
+            initialSource, PersistentOverrideState.Empty);
         PowerProfile active = initialSource == PowerSource.PluggedIn
-            ? profiles.PluggedIn
-            : profiles.Battery;
+            ? profiles.PluggedIn : profiles.Battery;
         context.Device.ConfirmedState = new ConfirmedDeviceState(
-            initialPerformance,
-            active.Fans,
-            ConfirmedBattery(80),
-            active.Lighting);
+            initialPerformance, active.Fans, ConfirmedBattery(80), active.Lighting);
         await context.Runtime.ObserveAsync(CancellationToken.None);
         Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
         return context;
@@ -32192,6 +32622,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         public List<FanControlSettings> FanControlWrites { get; } = [];
 
         public bool FanTargetsAvailable { get; set; }
+        public Func<int, int, (int Fan1Rpm, int Fan2Rpm)>? CurveTargetProjection { get; set; }
+        public int TypedCurveTargetCalls { get; private set; }
+        public PerformancePreset? LastCurveExpectedPerformance { get; private set; }
 
         public List<FanTargetSpeeds> FanTargets { get; } = [];
 
@@ -32918,6 +33351,25 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             FanControlSettings value,
             CancellationToken cancellationToken) =>
             SetFanControlAsync(value, cancellationToken);
+
+        public async Task<(int Fan1Rpm, int Fan2Rpm)> SetCurveFanTargetsAsync(
+            PerformancePreset expectedPerformance, int fan1Rpm, int fan2Rpm,
+            CancellationToken cancellationToken)
+        {
+            TypedCurveTargetCalls++;
+            LastCurveExpectedPerformance = expectedPerformance;
+            if (Capabilities.ReportsPerformanceWithManualFans
+                && ConfirmedState.Performance != expectedPerformance)
+            {
+                throw new CapabilityUnavailableException("The expected curve preset changed.");
+            }
+            FanSpeedRange range = Capabilities.GetFanSpeedRange(expectedPerformance)
+                ?? FanSpeedRange.Standard;
+            (int Fan1Rpm, int Fan2Rpm) effective = CurveTargetProjection?.Invoke(fan1Rpm, fan2Rpm)
+                ?? (range.Quantize(fan1Rpm), range.Quantize(fan2Rpm));
+            await SetFanTargetsAsync(effective.Fan1Rpm, effective.Fan2Rpm, cancellationToken);
+            return effective;
+        }
 
         public Task SetFanTargetsAsync(
             int fan1Rpm,

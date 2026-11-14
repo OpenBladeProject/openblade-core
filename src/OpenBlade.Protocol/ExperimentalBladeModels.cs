@@ -63,8 +63,7 @@ internal static class ExperimentalBladeModels
                     "SynapseSourceBackedWithoutPhysicalValidation", sources),
                 .. (model.ProductId == 0x0245
                     ? new ExperimentalFeatureEvidence[] { new("CustomGpuWattageLevels0To2",
-                        "SynapseSourceBackedWithoutPhysicalValidation", sources),
-                        new("ManualFanEnvelope3700To5300Step100", "SourceDerivedOuterEnvelopeRequiresFreshFirmwareIntersection", sources) }
+                        "SynapseSourceBackedWithoutPhysicalValidation", sources) }
                     : []),
                 .. (ExperimentalBladePort.SupportsIndependentLighting(model)
                     ? new ExperimentalFeatureEvidence[] { new(model.ProductId is 0x0246 or 0x0268 or 0x028A
@@ -84,10 +83,11 @@ internal static class ExperimentalBladeModels
                             [ReviewedMcuLightingSource(model), .. sources]) }
                     : []),
                 new("AutomaticFanHandback", "SynapseSourceBackedWithoutPhysicalValidation", sources),
-                new("FixedAndCurveFanWrites", model.ProductId == 0x0245
-                    ? "SynapseSourceBackedBalancedOnlyWithFreshDynamicRange" : "NotEstablishedDynamicFanRangesRequireReview", sources),
-                new("ManualBaselinePerformanceChanges", model.ProductId == 0x0245
-                    ? "BalancedOnlyCustomRequiresAutomatic" : "BlockedUntilFanTargetPreservationIsAdmitted", sources),
+                new("FixedAndCurveFanWrites", ExperimentalBladePort.UsesDynamicExperimentalFanRange(model)
+                    ? "SynapseSourceBackedPresetFixedAndAcCurvesWithFreshDynamicFanRanges" : "NotEstablishedDynamicFanRangesRequireReview", sources),
+                .. DynamicFanEvidenceFor(model, sources),
+                new("ManualBaselinePerformanceChanges", ExperimentalBladePort.UsesDynamicExperimentalFanRange(model)
+                    ? "PresetChangesRequireFreshDestinationRangeContinuity" : "BlockedUntilFanTargetPreservationIsAdmitted", sources),
                 new("ChargeLimits50To80Step5AndOff", model.SupportsBatteryProtection
                     ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
                 new("MaximumFans", thermal.SupportsMaximumFans ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
@@ -206,11 +206,50 @@ internal static class ExperimentalBladeModels
                 ["https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282025%29%20%7C%20RZ09-0530/PI4110-MCUv01.04.00.exe;SHA256=AED7039BE5CC4EC3F166A2728B0C1B90839BAE72C8A04150056654F64F20581F",
                  "Blade14KeyboardLightingLayout.json;SHA256=9356BC177DFBCB458E4C9E465D93AD7E32AF94A61ADBDF7C7E2A7319A7D3E623"])];
         }
+        if (ExperimentalBladePort.SupportsStaticSourceHostCurves(model))
+        {
+            IReadOnlyList<string> curveSources = model.ProductId == 0x029F
+                ? [MaintainedRazerCtlSource,
+                   "https://apps.razer.com/synapse/products/671/mw/6737.e123a2b3f0516116025b.js;SHA256=54D3A9BBEC83568B02342AA54FF47A94EE55A48ECA85B5D9F28D60D01A0B1A9A",
+                   "https://apps.razer.com/synapse/products/671/mw/rzDevice25.5e330aa9fdf6f29eec62.js;SHA256=41E7758114AD3605B5B3EE0E65E79AF3055124F775904902BA3285F710AF55C9"]
+                : [MaintainedRazerCtlSource,
+                   "https://apps.razer.com/synapse/products/669/mw/6737.439ff1a12463933a6346.js;SHA256=D1AC2212AED5491D3EAB69ABAFA270B963A2336E859DF6BFBF9ED9A455E3791B"];
+            features = [.. features, new("StaticSourceHostFanCurves", model.ProductId == 0x029F
+                ? "UpstreamMeasuredFloorDeclaredFixedRangeAndSoftwareHostCurveWithoutPhysicalCurveValidation"
+                : "SourceExtrapolatedFixedRangeAndSoftwareHostCurveWithoutPhysicalCurveValidation", curveSources)];
+        }
+        if (model.ProductId is 0x0255 or 0x02C5)
+        {
+            IReadOnlyList<string> exactSources = model.ProductId == 0x0255
+                ? ["https://apps.razer.com/synapse/products/597/mw/main.a1e24f33c1759c4315e3.js;SHA256=A864DC2BE2D35BC3703B81476C1659CAAA4D2C144C89616D9D5D0EE398F030FB",
+                   "https://apps.razer.com/synapse/products/597/mw/rzDevice25.ae57bbfa911460c03510.js;SHA256=2F41299C36E60E65D0BFCCE1E666FF67F0FC07F21F4523BED0A4E8CA5AC6043D",
+                   "https://apps.razer.com/synapse/products/597/mw/6737.6da70458ec9e64b00f37.js;SHA256=C6E6E76DFB61F960913E22B864A31273280547E21E1462DE3138F096D2DB56EA",
+                   "https://apps.razer.com/synapse/products/597/ui/static/js/main.8d820ba2.js;SHA256=ECE69EE8F422A9D919D280C9B4793B2823D5FC7D821AC9DD82519128BA48EAC1"]
+                : ["https://apps.razer.com/synapse/products/709/mw/main.bb0dd1873a58a987c63a.js;SHA256=CC8E0EFD2B37F1ED5AF6C8CC8C3AB1327B9502927DC05F20EE7465486AB006F1",
+                   "https://apps.razer.com/synapse/products/709/mw/rzDevice25.d532642d8de7a9cfcf5d.js;SHA256=9109826D790FEB8597BBFC115231066CA66E2C480ED9769BB85F3F91188AAD0A",
+                   "https://apps.razer.com/synapse/products/709/mw/6737.d34a3f9a638030f35c6a.js;SHA256=4758FB7E2D8296564FB9CE971F6DCE3D580ED5407EEF07A69E1C362A04FF28C0",
+                   "https://apps.razer.com/synapse/products/709/ui/static/js/main.fd91712e.js;SHA256=338D8F51C9A1179D3B2436F77FD44B3D393C3CC987D0EC73928E1F636BF3A9B7",
+                   "https://apps.razer.com/synapse/products/709/ui/static/js/2915.4e513855.chunk.js;SHA256=6D6106090CDC8D26F527F0265C07DBB4035EC57FBD0BDC41F0EDB1A205ADCEB2"];
+            features = [.. features, .. DynamicFanEvidenceFor(model, exactSources),
+                new("FixedAndCurveFanWrites", "SynapseSourceBackedPresetFixedAndAcCurvesWithFreshDynamicFanRanges", exactSources),
+                new(model.ProductId == 0x0255 ? "CreatorPerformanceRaw2" : "MaximumPowerPerformanceRaw2",
+                    "SynapseSourceBackedWithoutPhysicalValidation", exactSources)];
+        }
         features = [.. features, .. FanStopEvidenceFor(model)];
         return model.AdapterPowerEvidenceSource is { } source
             ? [.. features, new("AdapterPowerClassification", "SynapseSourceBacked", [source])]
             : features;
     }
+
+    private static IEnumerable<ExperimentalFeatureEvidence> DynamicFanEvidenceFor(
+        ExperimentalBladeModel model, IReadOnlyList<string> sources) =>
+        !ExperimentalBladePort.UsesDynamicExperimentalFanRange(model) ? []
+            : ExperimentalBladePort.GetExperimentalFanRangesByPerformancePreset(model).Select(pair =>
+                new ExperimentalFeatureEvidence(
+                    $"ManualFanRange{pair.Key}{pair.Value.MinimumRpm}To{pair.Value.MaximumRpm}Step{pair.Value.StepRpm}",
+                    pair.Key == PerformancePreset.BatteryBalanced
+                        ? "SynapseSourceBackedFixedOnlyWithFreshDynamicRangeAndBatteryAgreement"
+                        : "SynapseSourceBackedFixedAndHostCurveWithFreshDynamicRangeWithoutPhysicalValidation", sources));
 
     private static IReadOnlyList<ExperimentalFeatureEvidence> FanStopEvidenceFor(ExperimentalBladeModel model)
     {
@@ -508,14 +547,16 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
     private long uniformFrameSuccessCount;
     private LinkedListNode<ExperimentalControlObservation>? animationFrameSuccess;
     private long animationFrameSuccessCount;
-    private FanSpeedRange? confirmedFanRange;
+    private System.Collections.Immutable.ImmutableDictionary<PerformancePreset, FanSpeedRange> confirmedFanRanges =
+        System.Collections.Immutable.ImmutableDictionary<PerformancePreset, FanSpeedRange>.Empty;
     private int recoveryRequired;
     private ExperimentalRecoveryScope recoveryScope = ExperimentalRecoveryScope.All;
 
     // Observed capability metadata only; never a saved fan target or write admission.
-    internal FanSpeedRange? ConfirmedFanRange => Volatile.Read(ref confirmedFanRange);
+    internal IReadOnlyDictionary<PerformancePreset, FanSpeedRange> ConfirmedFanRanges => Volatile.Read(ref confirmedFanRanges);
 
-    internal void ConfirmFanRange(FanSpeedRange range) => Volatile.Write(ref confirmedFanRange, range);
+    internal void ConfirmFanRange(PerformancePreset preset, FanSpeedRange range) =>
+        System.Collections.Immutable.ImmutableInterlocked.AddOrUpdate(ref confirmedFanRanges, preset, range, (_, _) => range);
 
     internal bool IsPaused => Volatile.Read(ref recoveryRequired) != 0;
 
