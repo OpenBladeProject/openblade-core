@@ -444,7 +444,7 @@ impl StatusSource for GuardedStatus {
         Box::pin(async move {
             #[cfg(feature = "service-temporary-charge-v1")]
             if let (Some(runtime), Some(epoch)) = (&self.mutation, self.origin.power_epoch()) {
-                if runtime.temporary_event_needed(epoch) {
+                if runtime.temporary_event_needed(epoch)? {
                     self.origin.verify()?;
                     let evidence = self.inner.refresh().await?;
                     if let Some(evidence) = evidence {

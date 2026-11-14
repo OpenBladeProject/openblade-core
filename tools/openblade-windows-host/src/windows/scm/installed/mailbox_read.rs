@@ -887,6 +887,8 @@ pub(super) struct ReadSource {
     unsettled: Rc<RefCell<Option<Arc<dyn crate::discovery::performance::mutation::Permit>>>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
     operation: Rc<tokio::sync::Mutex<()>>,
+    #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+    registration_pause: Rc<std::cell::Cell<u8>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
     intent: Rc<RefCell<Option<Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>>>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
@@ -897,6 +899,10 @@ pub(super) struct ReadSource {
     metadata: Rc<RefCell<Option<Arc<Publication>>>>,
 }
 impl ReadSource {
+    #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+    pub(super) fn registration_pause_for_tests(&self) -> Rc<std::cell::Cell<u8>> {
+        self.registration_pause.clone()
+    }
     pub(super) fn acquire(origin: Arc<Origin>) -> io::Result<Self> {
         let lease = ReadLease::acquire(origin)?;
         let source = Self::compose(lease, |custody| {
@@ -942,6 +948,8 @@ impl ReadSource {
             unsettled: Rc::default(),
             #[cfg(feature = "service-thermal-mutation-v1")]
             operation: Rc::default(),
+            #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+            registration_pause: Rc::default(),
             #[cfg(feature = "service-thermal-mutation-v1")]
             intent: Rc::default(),
             #[cfg(feature = "service-thermal-mutation-v1")]
@@ -1883,6 +1891,13 @@ impl ReadSource {
     ) -> io::Result<Option<crate::discovery::performance::ObservedPerformance>> {
         let factory = self.factories.as_ref().ok_or_else(deny)?;
         let _serial = self.operation.lock().await;
+        #[cfg(test)]
+        if self.registration_pause.get() != 0 {
+            self.registration_pause.set(2);
+            while self.registration_pause.get() != 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            }
+        }
         self.lease.verify_integrity()?;
         self.drain_mutation(true).await?;
         // This phase is retained before the await. Cancellation or suspend cannot

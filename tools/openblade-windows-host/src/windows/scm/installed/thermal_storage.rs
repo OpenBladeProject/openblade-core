@@ -234,6 +234,7 @@ struct State {
     battery_protection: Option<(bool, u8)>,
     battery_temporary: Option<bool>,
     temporary_capacity: usize,
+    temporary_capacity_origin: Option<openblade_domain::temporary_charge_history::Origin>,
 }
 pub(super) struct Storage {
     same_path: fn(&str, &str) -> bool,
@@ -293,6 +294,7 @@ impl Storage {
                 battery_protection: None,
                 battery_temporary: None,
                 temporary_capacity: 0,
+                temporary_capacity_origin: None,
             }),
         }))
     }

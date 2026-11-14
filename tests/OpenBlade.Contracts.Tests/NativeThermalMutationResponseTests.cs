@@ -165,6 +165,41 @@ public sealed class NativeThermalMutationResponseTests
         Assert.True(eventSeen);
     }
 
+    [Fact]
+    public async Task ActualNativeTemporaryChargeCorrectionFramesKeepStrictManagedCodec()
+    {
+        string path = Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_TFC_CORRECTION_FRAMES")
+            ?? throw new InvalidOperationException("Explicit actual correction frames required.");
+        Assert.True(Path.IsPathFullyQualified(path));
+        using var document = JsonDocument.Parse(await File.ReadAllBytesAsync(path));
+        Assert.NotEmpty(document.RootElement.EnumerateArray());
+        foreach (var element in document.RootElement.EnumerateArray())
+        {
+            using var frame = FrameJson(element.GetRawText());
+            var decoded = await IpcMessageCodec.ReadServerFrameAsync(frame, CancellationToken.None);
+            ServiceStatusSnapshot? status;
+            if (decoded is ServiceStatusEvent update)
+            {
+                Assert.Equal(80, update.Version);
+                status = update.Status;
+            }
+            else
+            {
+                var response = Assert.IsType<ServiceResponse>(decoded);
+                Assert.Equal(80, response.Version);
+                if (!response.Success)
+                {
+                    Assert.NotNull(response.Error);
+                }
+                status = response.Status;
+            }
+            if (status?.ConfirmedState?.Battery is { } battery)
+            {
+                Assert.False(!battery.ProtectionEnabled && battery.TemporaryFullCharge is true);
+            }
+        }
+    }
+
     private static MemoryStream FrameJson(string json)
     {
         byte[] bytes = Encoding.UTF8.GetBytes(json);

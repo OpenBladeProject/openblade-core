@@ -63,10 +63,22 @@ pub(super) struct BatteryPermit {
     prepared: AtomicBool,
     confirmed: AtomicBool,
     joined: AtomicBool,
+    registered: AtomicBool,
+    abandoned: AtomicBool,
     positive_at: Mutex<Option<Instant>>,
     source: Arc<std::sync::atomic::AtomicU8>,
     cause: Mutex<String>,
     fatal: Arc<Mutex<Option<&'static str>>>,
+}
+// Only a definitively never-registered request can be retired by future drop.
+// Registered workers retain their real join/submission evidence in ReadSource.
+struct BatteryAwaitGuard(Arc<BatteryPermit>);
+impl Drop for BatteryAwaitGuard {
+    fn drop(&mut self) {
+        if !self.0.registered.load(Ordering::Acquire) {
+            self.0.joined.store(true, Ordering::Release);
+        }
+    }
 }
 impl BatteryPermit {
     fn write(&self, progress: u8) -> io::Result<()> {
@@ -109,6 +121,9 @@ impl BatteryPermit {
     }
 }
 impl Permit for BatteryPermit {
+    fn mutation_registered(&self) {
+        self.registered.store(true, Ordering::Release);
+    }
     fn temporary_target(&self) -> Option<bool> {
         if !cfg!(feature = "service-temporary-charge-v1") {
             return None;
@@ -387,24 +402,36 @@ impl Runtime {
 
     // Called only after the actual shared worker joins. A vanished pipe future
     // cannot discard the worker's independently confirmed process intent.
-    pub(super) fn reconcile_temporary_owner(&self) {
+    pub(super) fn reconcile_temporary_owner(&self) -> io::Result<()> {
         // Desired memory may clear on Battery before its event worker runs.
-        // Only a newer independent false observation ends the old obligation.
+        // A newer independent false ends the positive obligation. A consumed
+        // automatic attempt may retain release-only bookkeeping after I/O error.
         let ended = self.temporary_owner.borrow().as_ref().is_some_and(|p| {
+            if p.storage.pending() {
+                return false;
+            }
             let at = p.positive_at.lock().ok().and_then(|at| *at);
-            self.battery_observation.lock().is_ok_and(|o| {
-                o.temporary
-                    .is_some_and(|(value, observed)| !value && at.is_some_and(|at| observed >= at))
-            })
+            p.abandoned.load(Ordering::Acquire)
+                || self.battery_observation.lock().is_ok_and(|o| {
+                    o.temporary.is_some_and(|(value, observed)| {
+                        !value && at.is_some_and(|at| observed >= at)
+                    })
+                })
         });
         if ended {
-            self.temporary_owner.borrow_mut().take();
+            let old = self.temporary_owner.borrow_mut().take();
+            if let Some(old) = old {
+                if let Err(error) = self.release_temporary_reservation(&old) {
+                    *self.temporary_owner.borrow_mut() = Some(old);
+                    return Err(error);
+                }
+            }
         }
         let pending = self.temporary_pending.borrow_mut().take();
         if let Some(p) = pending {
             if !p.joined.load(Ordering::Acquire) {
                 *self.temporary_pending.borrow_mut() = Some(p);
-                return;
+                return Ok(());
             }
             if p.confirmed.load(Ordering::Acquire) && !p.storage.pending() {
                 *self.temporary_owner.borrow_mut() = Some(p);
@@ -412,16 +439,48 @@ impl Runtime {
                 *self.temporary_pending.borrow_mut() = Some(p);
             }
         }
+        Ok(())
     }
-    pub(in super::super) fn temporary_event_needed(&self, epoch: u64) -> bool {
-        let owner = self
+    fn release_temporary_reservation(&self, original: &BatteryPermit) -> io::Result<()> {
+        // A live/deferred operation must keep its reservation. Storage also
+        // independently requires exact origin identity and settled durable bytes.
+        if !original.joined.load(Ordering::Acquire)
+            || self
+                .temporary_pending
+                .borrow()
+                .iter()
+                .chain(self.temporary_owner.borrow().iter())
+                .any(|p| {
+                    p.request == original.request && Arc::ptr_eq(&p.storage, &original.storage)
+                })
+        {
+            return Ok(());
+        }
+        if let Some(record) = original
+            .tfc
+            .lock()
+            .map_err(|_| io::ErrorKind::Other)?
+            .as_ref()
+        {
+            original.storage.release_temporary_capacity(
+                &openblade_domain::temporary_charge_history::Origin {
+                    request: original.request.clone(),
+                    intent: record.hash()?,
+                },
+            )?;
+        }
+        Ok(())
+    }
+    pub(in super::super) fn temporary_event_needed(&self, epoch: u64) -> io::Result<bool> {
+        self.reconcile_temporary_owner()?;
+        // A current-epoch prospective request cannot hide an older confirmed
+        // obligation. Selection is deferred until the real Reader has drained.
+        Ok(self
             .temporary_pending
             .borrow()
-            .clone()
-            .or_else(|| self.temporary_owner.borrow().clone());
-        owner.is_some_and(|p| {
-            p.proof.lifecycle != epoch && self.temporary_event.get() != Some(epoch)
-        })
+            .iter()
+            .chain(self.temporary_owner.borrow().iter())
+            .any(|p| p.proof.lifecycle != epoch && self.temporary_event.get() != Some(epoch)))
     }
     pub(in super::super) fn temporary_event_observed(&self, epoch: u64) {
         self.temporary_event.set(Some(epoch));
@@ -432,6 +491,25 @@ impl Runtime {
             .iter()
             .chain(self.temporary_owner.borrow().iter())
             .any(|p| p.sid != sid || p.session != session)
+    }
+    pub(super) fn temporary_cancel_recovery(
+        &self,
+        sid: &str,
+        custody: &Arc<dyn ReadCustody>,
+    ) -> Option<Arc<Storage>> {
+        if self.temporary_pending.borrow().is_some() {
+            return None;
+        }
+        self.temporary_owner
+            .borrow()
+            .as_ref()
+            .filter(|p| {
+                p.sid == sid
+                    && p.joined.load(Ordering::Acquire)
+                    && !p.storage.pending()
+                    && Arc::ptr_eq(&p.custody, custody)
+            })
+            .map(|p| p.storage.clone())
     }
     pub(in super::super) async fn battery_source_event(
         &self,
@@ -444,17 +522,30 @@ impl Runtime {
             return Ok(None);
         };
         reader.drain_active().await?;
-        self.reconcile_temporary_owner();
-        let pending = self.temporary_pending.borrow_mut().take();
-        let owner = self.temporary_owner.borrow_mut().take();
-        let Some(original) = pending.or(owner) else {
+        self.reconcile_temporary_owner()?;
+        let unresolved = self.temporary_pending.borrow().clone();
+        // Do not consume either reference or fall back to A after a possibly
+        // submitted B. Its actual worker/storage fence remains authoritative.
+        let original = unresolved
+            .clone()
+            .or_else(|| self.temporary_owner.borrow_mut().take());
+        let Some(original) = original else {
             return Ok(None);
         };
         // Genuine current Battery evidence always ends desired intent, even if
         // configuration admission fails. The obligation is claimed once.
         original.storage.clear_battery_temporary();
+        if unresolved.is_none() {
+            // Consumed once even if later bookkeeping fails. Retaining this
+            // identity may retry only settled capacity release, never a setter.
+            original.abandoned.store(true, Ordering::Release);
+        }
         let mut message = "Temporary charge intent cleared on Battery; cancellation is paused because original authority or independent confirmation is unavailable.".to_owned();
-        if !original.storage.pending() && original.confirmed.load(Ordering::Acquire) {
+        let mut attempted = None;
+        if unresolved.is_none()
+            && !original.storage.pending()
+            && original.confirmed.load(Ordering::Acquire)
+        {
             let record = original
                 .tfc
                 .lock()
@@ -499,18 +590,23 @@ impl Runtime {
                                     prepared: AtomicBool::new(false),
                                     confirmed: AtomicBool::new(false),
                                     joined: AtomicBool::new(false),
+                                    registered: AtomicBool::new(false),
+                                    abandoned: AtomicBool::new(false),
                                     positive_at: Mutex::new(None),
                                     source: self.battery_source.clone(),
                                     cause: Mutex::new(message.clone()),
                                     fatal: self.fatal.clone(),
                                 });
                                 self.retain_battery_view(&reader, permit.clone());
+                                let awaiting = BatteryAwaitGuard(permit.clone());
                                 let result = reader
                                     .mutate(
                                         permit.clone(),
                                         Instant::now() + std::time::Duration::from_secs(4),
                                     )
                                     .await;
+                                drop(awaiting);
+                                attempted = Some(permit.clone());
                                 verify_retained_failure(&self.fatal)?;
                                 if let Err(e) = result {
                                     if is_fatal_admission(&e) {
@@ -531,6 +627,16 @@ impl Runtime {
         }
         if original.storage.pending() {
             message = original.storage.pending_reason()?.into();
+        }
+        if unresolved.is_none()
+            && attempted
+                .as_ref()
+                .is_none_or(|p| p.joined.load(Ordering::Acquire))
+        {
+            if let Err(error) = self.release_temporary_reservation(&original) {
+                *self.temporary_owner.borrow_mut() = Some(original);
+                return Err(error);
+            }
         }
         *self
             .battery_warning
@@ -573,9 +679,16 @@ impl Runtime {
             ));
         };
         reader.drain_active().await?;
-        self.reconcile_temporary_owner();
+        self.reconcile_temporary_owner()?;
         reader.custody().verify_integrity()?;
-        let (storage, fresh) = match self.capture(&sid, caller.session, reader.custody()) {
+        let captured = if cfg!(feature = "service-temporary-charge-v1")
+            && matches!(requested, Request::SetFullChargeOverride { enabled: false })
+        {
+            self.capture_temporary_cancel(&sid, caller.session, reader.custody())
+        } else {
+            self.capture(&sid, caller.session, reader.custody())
+        };
+        let (storage, fresh) = match captured {
             Ok(v) => v,
             Err(e) if is_fatal_admission(&e) => return Err(e),
             Err(e) => {
@@ -616,6 +729,8 @@ impl Runtime {
             prepared: AtomicBool::new(false),
             confirmed: AtomicBool::new(false),
             joined: AtomicBool::new(false),
+            registered: AtomicBool::new(false),
+            abandoned: AtomicBool::new(false),
             positive_at: Mutex::new(None),
             source: self.battery_source.clone(),
             cause: Mutex::new("Battery operation was not confirmed; no success is claimed.".into()),
@@ -631,8 +746,10 @@ impl Runtime {
             // Register prospectively; the worker may commit after caller disconnect.
             *self.temporary_pending.borrow_mut() = Some(permit.clone());
         }
+        let awaiting = BatteryAwaitGuard(permit.clone());
         let result = reader.mutate(permit.clone(), deadline).await;
-        self.reconcile_temporary_owner();
+        drop(awaiting);
+        self.reconcile_temporary_owner()?;
         verify_retained_failure(&self.fatal)?;
         permit.fresh.verify_health()?;
         if let Err(e) = &result {

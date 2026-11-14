@@ -1,6 +1,8 @@
 //! Prelisted fake-I/O installed dispatcher tests. Every root, SID, authority,
 //! metadata sample and native port is injected before a default resolver exists.
 use super::*;
+#[path = "temporary_charge_corrections.rs"]
+mod tfc_corrections;
 use crate::discovery::performance::{ReadAdmission, mutation_fixture::Fixture};
 use crate::installed::readiness::{
     mailbox_read::{MailboxSource, MutationFactories, ReadCustody, ReadSource},
@@ -29,6 +31,8 @@ struct MemoryFiles {
     capacity_refuse: Arc<AtomicBool>,
     last_reservation: Arc<AtomicUsize>,
     reserve_uncertain: Arc<AtomicBool>,
+    roll_settled: Arc<AtomicBool>,
+    fail_quota_read: Arc<AtomicBool>,
     fail_terminal: Arc<AtomicBool>,
     fail_prepared: Arc<AtomicU8>,
     fail_first_intent: Arc<AtomicU8>,
@@ -86,6 +90,20 @@ impl Files for MemoryFiles {
         if self.capacity_refuse.load(Ordering::Acquire) {
             return Err(crate::thermal_history::capacity_refusal());
         }
+        if self.roll_settled.load(Ordering::Acquire)
+            && needed <= crate::thermal_history::SEGMENT
+            && expected.is_some_and(|b| b.len() + needed > crate::thermal_history::SEGMENT)
+            && crate::thermal_history::handback_complete(expected.unwrap())?
+        {
+            let mut files = self.bytes.lock().unwrap();
+            assert_eq!(
+                files.get("thermal-mutation.journal").map(Vec::as_slice),
+                expected
+            );
+            let old = files.remove("thermal-mutation.journal").unwrap();
+            assert!(files.insert("retained-segment".into(), old).is_none());
+            return Ok(None);
+        }
         if self.capacity_refuse.load(Ordering::Acquire)
             || needed > crate::thermal_history::SEGMENT
             || expected
@@ -102,6 +120,11 @@ impl Files for MemoryFiles {
         Ok(expected.map(<[u8]>::to_vec))
     }
     fn read(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
+        if name == "thermal-mutation.journal.pending"
+            && self.fail_quota_read.load(Ordering::Acquire)
+        {
+            return Err(io::Error::other("injected quota read failure"));
+        }
         Ok(self.bytes.lock().unwrap().get(name).cloned())
     }
     fn replace(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
@@ -245,6 +268,9 @@ impl Files for MemoryFiles {
     }
 }
 struct Custody {
+    current_session: AtomicUsize,
+    current_console: AtomicBool,
+    scoped_fresh: AtomicBool,
     generation: AtomicU8,
     authentication: AtomicUsize,
     live: AtomicBool,
@@ -262,6 +288,9 @@ struct Custody {
 impl Custody {
     fn new(port: &Fixture) -> Arc<Self> {
         Arc::new(Self {
+            current_session: AtomicUsize::new(7),
+            current_console: AtomicBool::new(true),
+            scoped_fresh: AtomicBool::new(false),
             generation: AtomicU8::new(7),
             authentication: AtomicUsize::new(1),
             port: port.state.clone(),
@@ -424,6 +453,7 @@ impl StatusOrigin for Origin {
     }
 }
 struct Rig {
+    runtime: Runtime,
     factory_calls: Arc<AtomicUsize>,
     storage: Arc<Storage>,
     source: Rc<Mutex<Box<dyn StatusSource>>>,
@@ -502,10 +532,18 @@ impl Rig {
                     ),
                 );
             }
-            if sid != SID || session != 7 {
+            if sid != SID || session as usize != fresh.current_session.load(Ordering::Acquire) {
                 return Err(io::ErrorKind::PermissionDenied.into());
             }
-            Ok((storage.clone(), fresh.clone()))
+            let proof: Arc<dyn Fresh> = if fresh.scoped_fresh.load(Ordering::Acquire) {
+                if !fresh.current_console.load(Ordering::Acquire) {
+                    return Err(io::ErrorKind::PermissionDenied.into());
+                }
+                Arc::new(tfc_corrections::CapturedFresh::new(fresh.clone(), session)?)
+            } else {
+                fresh.clone()
+            };
+            Ok((storage.clone(), proof))
         });
         #[cfg(feature = "service-battery-policy-v1")]
         let battery_clock = runtime.battery_clock_for_tests();
@@ -515,10 +553,11 @@ impl Rig {
         let source = injected_mutation_source(
             Arc::new(Origin(origin.clone(), custody.clone())),
             mailbox,
-            runtime,
+            runtime.clone(),
             metadata.clone(),
         );
         Self {
+            runtime,
             factory_calls,
             storage: retained_storage,
             source: Rc::new(Mutex::new(source)),

@@ -32,6 +32,42 @@ fn cancellation_capacity(entry: &Entry) -> io::Result<usize> {
     Ok((serde_json::to_vec(&row)?.len() + 1) * 4)
 }
 impl Storage {
+    #[cfg(test)]
+    pub(in super::super) fn temporary_capacity_for_tests(
+        &self,
+    ) -> (
+        usize,
+        Option<openblade_domain::temporary_charge_history::Origin>,
+    ) {
+        let s = self.state.lock().unwrap();
+        (s.temporary_capacity, s.temporary_capacity_origin.clone())
+    }
+    pub(in super::super) fn release_temporary_capacity(
+        &self,
+        origin: &openblade_domain::temporary_charge_history::Origin,
+    ) -> io::Result<()> {
+        let mut s = self.state.lock().map_err(|_| {
+            super::super::thermal_mutation::fatal_admission("Thermal storage state is poisoned.")
+        })?;
+        if s.temporary_capacity_origin.as_ref() != Some(origin)
+            || s.quarantined
+            || s.last.as_ref().is_some_and(|e| !settled(e.progress))
+        {
+            return Ok(());
+        }
+        if self
+            .files
+            .read("thermal-mutation.journal.pending")?
+            .is_some()
+            || self.files.read(JOURNAL)? != s.journal
+        {
+            return Err(denied());
+        }
+        // Bookkeeping only: no history/IDs/fan reservation is rewritten.
+        s.temporary_capacity = 0;
+        s.temporary_capacity_origin = None;
+        Ok(())
+    }
     pub(in super::super) fn temporary_desired(&self) -> bool {
         self.state
             .lock()
@@ -211,10 +247,26 @@ impl Storage {
         }
         s.journal = Some(bytes);
         if entry.progress == 0 && entry.tfc.as_ref().is_some_and(|t| t.origin.is_some()) {
-            s.temporary_capacity = 0;
+            if s.temporary_capacity_origin.as_ref()
+                == entry.tfc.as_ref().and_then(|t| t.origin.as_ref())
+            {
+                s.temporary_capacity = 0;
+                s.temporary_capacity_origin = None;
+            }
         }
         if matches!(entry.progress, 72 | 73) {
             s.temporary_capacity = cancellation_capacity(&entry)?;
+            s.temporary_capacity_origin = entry
+                .tfc
+                .as_ref()
+                .filter(|t| t.desired.temporary)
+                .map(|t| {
+                    Ok::<_, io::Error>(openblade_domain::temporary_charge_history::Origin {
+                        request: entry.request.clone(),
+                        intent: t.hash()?,
+                    })
+                })
+                .transpose()?;
         }
         s.last = Some(entry);
         Ok(())

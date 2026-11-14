@@ -259,7 +259,26 @@ impl Runtime {
         session: u32,
         custody: Arc<dyn ReadCustody>,
     ) -> io::Result<(Arc<Storage>, Arc<dyn Fresh>)> {
-        self.reconcile_temporary_owner();
+        self.capture_scoped(sid, session, custody, false)
+    }
+    // Only explicit typed TFC false can select fresh same-SID recovery. This
+    // never renews the old automatic proof or bypasses the shared fan fence.
+    pub(super) fn capture_temporary_cancel(
+        &self,
+        sid: &str,
+        session: u32,
+        custody: Arc<dyn ReadCustody>,
+    ) -> io::Result<(Arc<Storage>, Arc<dyn Fresh>)> {
+        self.capture_scoped(sid, session, custody, true)
+    }
+    fn capture_scoped(
+        &self,
+        sid: &str,
+        session: u32,
+        custody: Arc<dyn ReadCustody>,
+        explicit_cancel: bool,
+    ) -> io::Result<(Arc<Storage>, Arc<dyn Fresh>)> {
+        self.reconcile_temporary_owner()?;
         let pending = self.fan_pending.borrow().clone();
         let owner = self.fan_owner.borrow().clone();
         if pending.iter().chain(owner.iter()).any(|p| {
@@ -270,10 +289,20 @@ impl Runtime {
         }) {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
-        if self.temporary_cross_user(sid, session) {
+        let recovery = explicit_cancel
+            .then(|| self.temporary_cancel_recovery(sid, &custody))
+            .flatten();
+        if self.temporary_cross_user(sid, session) && recovery.is_none() {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
-        (self.factory)(sid, session, custody)
+        let captured = (self.factory)(sid, session, custody)?;
+        if recovery
+            .as_ref()
+            .is_some_and(|storage| !Arc::ptr_eq(storage, &captured.0))
+        {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
+        Ok(captured)
     }
 
     pub(in super::super) async fn apply_fan(
