@@ -38,8 +38,8 @@ public static class PawnIoRuntimeAdmission
                     using RegistryKey? uninstall = Registry.LocalMachine.OpenSubKey(
                         @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO");
                     using RegistryKey? devices = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\ROOT\PawnIO");
-                    if (uninstall is not null || devices is not null)
-                    { throw new InvalidOperationException("PawnIO registration exists without its kernel service. Preserve it for repair."); }
+                    VerifyNoInstallation(uninstall is not null, devices?.GetSubKeyNames() ?? [],
+                        (string id, out uint node) => CM_Locate_DevNode(out node, id, 0), cancellationToken);
                     return null;
                 }
                 throw new Win32Exception(error);
@@ -129,21 +129,53 @@ public static class PawnIoRuntimeAdmission
     {
         using RegistryKey? root = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\ROOT\PawnIO");
         string[] instances = root?.GetSubKeyNames() ?? [];
-        (string selected, uint devnode) = SelectPresentDevice(instances,
-            (string id, out uint node) => CM_Locate_DevNode(out node, id, 0), cancellationToken);
-        using RegistryKey instance = root!.OpenSubKey(selected)
-            ?? throw new InvalidDataException("The PawnIO device registration disappeared.");
-        if (!string.Equals(instance.GetValue("Service") as string, "PawnIO", StringComparison.OrdinalIgnoreCase)
-            || instance.GetValue("HardwareID") is not string[] ids
-            || !ids.Contains(@"Root\PawnIO", StringComparer.OrdinalIgnoreCase))
-        { throw new InvalidDataException("The PawnIO device is not bound to its reviewed service and hardware ID."); }
-        uint result = CM_Get_DevNode_Status(out _, out _, devnode, 0);
+        InspectDevice(instances, (string id, out uint node) => CM_Locate_DevNode(out node, id, 0),
+            selected =>
+            {
+                using RegistryKey instance = root!.OpenSubKey(selected)
+                    ?? throw new InvalidDataException("The PawnIO device registration disappeared.");
+                if (!string.Equals(instance.GetValue("Service") as string, "PawnIO", StringComparison.OrdinalIgnoreCase)
+                    || instance.GetValue("HardwareID") is not string[] ids
+                    || !ids.Contains(@"Root\PawnIO", StringComparer.OrdinalIgnoreCase))
+                { throw new InvalidDataException("The PawnIO device is not bound to its reviewed service and hardware ID."); }
+            }, node => CM_Get_DevNode_Status(out _, out _, node, 0), cancellationToken);
+    }
+
+    internal static void InspectDevice(string[] instances, DeviceNodeLocator locate,
+        Action<string> validateBinding, Func<uint, uint> queryStatus, CancellationToken cancellationToken)
+    {
+        (string selected, uint devnode) = SelectPresentDevice(instances, locate, cancellationToken);
+        validateBinding(selected);
+        cancellationToken.ThrowIfCancellationRequested();
+        uint result = queryStatus(devnode);
         if (result != 0) { throw new InvalidDataException($"PawnIO device status is unavailable (ConfigManager {result})."); }
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    internal static void VerifyNoInstallation(bool uninstallRegistrationExists, string[] instances,
+        DeviceNodeLocator locate, CancellationToken cancellationToken)
+    {
+        // A disconnected Enum residue alone does not establish a partial install.
+        // Keep actual registration/present-device evidence blocking replacement.
+        if (uninstallRegistrationExists || LocatePresentDevices(instances, locate, cancellationToken).Count != 0)
+        { throw new InvalidOperationException("PawnIO registration exists without its kernel service. Preserve it for repair."); }
     }
 
     internal delegate uint DeviceNodeLocator(string instanceId, out uint devnode);
 
     internal static (string Instance, uint Devnode) SelectPresentDevice(string[] instances,
+        DeviceNodeLocator locate, CancellationToken cancellationToken)
+    {
+        var present = LocatePresentDevices(instances, locate, cancellationToken);
+        if (present.Count != 1)
+        {
+            throw new InvalidDataException($"PawnIO must have one independently present Root\\PawnIO device "
+                + $"(present: {present.Count}; registered: {instances.Length}).");
+        }
+        return present[0];
+    }
+
+    private static List<(string Instance, uint Devnode)> LocatePresentDevices(string[] instances,
         DeviceNodeLocator locate, CancellationToken cancellationToken)
     {
         // Enum retains disconnected instances after uninstall/reinstall. Count only
@@ -160,12 +192,7 @@ public static class PawnIoRuntimeAdmission
             present.Add((instance, devnode));
         }
         cancellationToken.ThrowIfCancellationRequested();
-        if (present.Count != 1)
-        {
-            throw new InvalidDataException($"PawnIO must have one independently present Root\\PawnIO device "
-                + $"(present: {present.Count}; registered: {instances.Length}).");
-        }
-        return present[0];
+        return present;
     }
 
     [StructLayout(LayoutKind.Sequential)]

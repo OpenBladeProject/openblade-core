@@ -80,6 +80,82 @@ public sealed class PawnIoRuntimeAdmissionTests
         Assert.Equal(canceledBeforeQuery ? 0 : 1, calls);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void ServiceAbsentWithOnlyDisconnectedResiduePermitsFreshInstallation(int registered)
+    {
+        int calls = 0;
+        uint Locate(string id, out uint node) { calls++; node = 0; return 0x0D; }
+        string[] instances = Enumerable.Range(0, registered).Select(i => i.ToString("D4")).ToArray();
+        PawnIoRuntimeAdmission.VerifyNoInstallation(false, instances, Locate, default);
+        Assert.Equal(registered, calls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ServiceAbsentStillPreservesRealPartialInstallEvidence(bool uninstallRegistration)
+    {
+        int calls = 0;
+        uint Locate(string id, out uint node) { calls++; node = 42; return 0; }
+        Assert.Throws<InvalidOperationException>(() =>
+            PawnIoRuntimeAdmission.VerifyNoInstallation(uninstallRegistration, ["0000"], Locate, default));
+        Assert.Equal(uninstallRegistration ? 0 : 1, calls);
+    }
+
+    [Fact]
+    public void ServiceAbsentCannotTurnFailedPresenceQueryIntoPermissionToInstall()
+    {
+        uint Locate(string id, out uint node) { node = 0; return 0x33; }
+        Assert.Throws<InvalidDataException>(() =>
+            PawnIoRuntimeAdmission.VerifyNoInstallation(false, ["0000"], Locate, default));
+    }
+
+    [Fact]
+    public void InspectionValidatesSelectedLiveBindingAndQueriesThatSameDevnode()
+    {
+        List<string> steps = [];
+        uint Locate(string id, out uint node)
+        {
+            node = id.EndsWith("0001", StringComparison.Ordinal) ? 42u : 0u;
+            return node == 42 ? 0u : 0x0Du;
+        }
+        PawnIoRuntimeAdmission.InspectDevice(["0000", "0001"], Locate,
+            selected => { Assert.Equal("0001", selected); steps.Add("binding"); },
+            node => { Assert.Equal(42u, node); steps.Add("status"); return 0; }, default);
+        Assert.Equal(["binding", "status"], steps);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void SelectedBindingOrStatusFailureStopsWithoutTryingAnotherInstance(bool bindingFails)
+    {
+        int bindings = 0, statuses = 0;
+        uint Locate(string id, out uint node) { node = 42; return 0; }
+        var error = Assert.Throws<InvalidDataException>(() =>
+            PawnIoRuntimeAdmission.InspectDevice(["0001"], Locate,
+                _ => { bindings++; if (bindingFails) { throw new InvalidDataException("untrusted-binding"); } },
+                _ => { statuses++; return 0x33; }, default));
+        Assert.Equal(1, bindings);
+        Assert.Equal(bindingFails ? 0 : 1, statuses);
+        Assert.Contains(bindingFails ? "untrusted-binding" : "ConfigManager 51", error.Message);
+    }
+
+    [Fact]
+    public void CancellationAfterBindingCheckStopsBeforeDeviceStatusRead()
+    {
+        using CancellationTokenSource cancellation = new();
+        int statuses = 0;
+        uint Locate(string id, out uint node) { node = 42; return 0; }
+        Assert.Throws<OperationCanceledException>(() =>
+            PawnIoRuntimeAdmission.InspectDevice(["0001"], Locate, _ => cancellation.Cancel(),
+                _ => { statuses++; return 0; }, cancellation.Token));
+        Assert.Equal(0, statuses);
+    }
+
     [Fact]
     public void ServiceConfigurationUsesDocumentedProbeAndExactBoundedReadInsteadOfOversizedRpcBuffer()
     {
