@@ -3,6 +3,12 @@
 //! a temporary override into restart-persistent profiles or manual overrides.
 use super::*;
 use openblade_domain::battery_history::Desired;
+#[derive(Debug)]
+pub(in super::super) enum TemporaryRelease {
+    Released,
+    NoMatchingReservation,
+    Deferred(ReleaseDeferred),
+}
 fn cancellation_capacity(entry: &Entry) -> io::Result<usize> {
     let Some(t) = entry.tfc.as_ref().filter(|t| t.cancel_ids.is_some()) else {
         return Ok(0);
@@ -45,28 +51,37 @@ impl Storage {
     pub(in super::super) fn release_temporary_capacity(
         &self,
         origin: &openblade_domain::temporary_charge_history::Origin,
-    ) -> io::Result<()> {
+    ) -> io::Result<TemporaryRelease> {
         let mut s = self.state.lock().map_err(|_| {
             super::super::thermal_mutation::fatal_admission("Thermal storage state is poisoned.")
         })?;
-        if s.temporary_capacity_origin.as_ref() != Some(origin)
-            || s.quarantined
-            || s.last.as_ref().is_some_and(|e| !settled(e.progress))
-        {
-            return Ok(());
+        if s.temporary_capacity_origin.as_ref() != Some(origin) {
+            return Ok(TemporaryRelease::NoMatchingReservation);
         }
-        if self
-            .files
-            .read("thermal-mutation.journal.pending")?
-            .is_some()
-            || self.files.read(JOURNAL)? != s.journal
-        {
+        if s.quarantined || s.last.as_ref().is_some_and(|e| !settled(e.progress)) {
+            return Ok(TemporaryRelease::Deferred(ReleaseDeferred::busy()));
+        }
+        let read = |name| match self.files.read_release(name) {
+            Ok(bytes) => Ok(Ok(bytes)),
+            Err(e) if is_release_read_unavailable(&e) => Ok(Err(ReleaseDeferred::unreadable(e))),
+            Err(e) => Err(e),
+        };
+        match read("thermal-mutation.journal.pending")? {
+            Ok(None) => {}
+            Ok(Some(_)) => return Err(denied()),
+            Err(reason) => return Ok(TemporaryRelease::Deferred(reason)),
+        }
+        let journal = match read(JOURNAL)? {
+            Ok(bytes) => bytes,
+            Err(reason) => return Ok(TemporaryRelease::Deferred(reason)),
+        };
+        if journal != s.journal {
             return Err(denied());
         }
         // Bookkeeping only: no history/IDs/fan reservation is rewritten.
         s.temporary_capacity = 0;
         s.temporary_capacity_origin = None;
-        Ok(())
+        Ok(TemporaryRelease::Released)
     }
     pub(in super::super) fn temporary_desired(&self) -> bool {
         self.state
@@ -161,6 +176,12 @@ impl Storage {
     }
     pub(in super::super) fn record_battery(&self, mut entry: Entry) -> io::Result<()> {
         entry.user_sid = self.user_sid.clone();
+        #[cfg(test)]
+        if entry.battery.is_some() && entry.progress == 0 {
+            if let Some(hook) = self.battery_append_hook.lock().unwrap().clone() {
+                hook("before-prepared");
+            }
+        }
         let mut s = self.state.lock().map_err(|_| denied())?;
         if s.quarantined {
             return Err(denied());
@@ -268,7 +289,25 @@ impl Storage {
                 })
                 .transpose()?;
         }
+        #[cfg(test)]
+        let policy_prepared = entry.battery.is_some() && entry.progress == 0;
         s.last = Some(entry);
+        #[cfg(test)]
+        {
+            drop(s);
+            if policy_prepared {
+                if let Some(hook) = self.battery_append_hook.lock().unwrap().clone() {
+                    hook("prepared");
+                }
+            }
+        }
         Ok(())
+    }
+    #[cfg(test)]
+    pub(in super::super) fn battery_append_hook_for_tests(
+        &self,
+        hook: Arc<dyn Fn(&str) + Send + Sync>,
+    ) {
+        *self.battery_append_hook.lock().unwrap() = Some(hook);
     }
 }

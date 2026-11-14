@@ -364,6 +364,13 @@ pub(super) struct CustodialFiles {
     pub(super) custody: Arc<dyn ReadCustody>,
 }
 impl Files for CustodialFiles {
+    fn read_release(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
+        match name {
+            "thermal-mutation.journal" => self.custody.journal_read_release(false),
+            "thermal-mutation.journal.pending" => self.custody.journal_read_release(true),
+            _ => Err(deny()),
+        }
+    }
     fn replace_retired(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
         if name != "thermal-mutation.journal" {
             return Err(deny());

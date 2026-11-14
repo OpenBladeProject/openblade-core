@@ -130,6 +130,9 @@ impl crate::installed::readiness::mailbox_read::ReadCustody for JournalCustody {
     fn journal_read(&self, pending: bool) -> io::Result<Option<Vec<u8>>> {
         self.0.lock().unwrap().journal_read(pending)
     }
+    fn journal_read_release(&self, pending: bool) -> io::Result<Option<Vec<u8>>> {
+        self.0.lock().unwrap().journal_read_release(pending)
+    }
     fn journal_reserve(
         &self,
         expected: Option<&[u8]>,
@@ -1046,7 +1049,7 @@ fn battery_correction_protected_complete_rehashed_active_and_archived_inputs() {
             };
             std::fs::write(&journal, &physical).unwrap();
             let before = std::fs::read(&journal).unwrap();
-            let result = owner.journal_read(false);
+            let result = owner.journal_read_release(false);
             assert_eq!(
                 result.is_ok(),
                 case["valid"].as_bool().unwrap(),
@@ -1119,9 +1122,23 @@ fn tfc_v1_protected_original_producer_is_checked_for_each_required_family() {
         }
     }));
     owner.journal_replace(None, raw).unwrap();
-    assert_eq!(owner.journal_read(false).unwrap().unwrap(), raw);
+    assert_eq!(owner.journal_read_release(false).unwrap().unwrap(), raw);
+    // A release read cannot repair/publish metadata. Staging and malformed
+    // evidence remain byte-identical while the release-only path fails closed.
+    let staging = machine.path.join(crate::thermal_history::STAGING);
+    std::fs::write(&staging, b"retained staging evidence").unwrap();
+    assert!(owner.journal_read_release(false).is_err());
+    assert_eq!(
+        std::fs::read(&staging).unwrap(),
+        b"retained staging evidence"
+    );
+    assert_eq!(
+        std::fs::read(machine.path.join(crate::thermal_history::ACTIVE)).unwrap(),
+        raw
+    );
+    std::fs::remove_file(&staging).unwrap();
     owner.battery_producer_fixture = Some(basic);
-    assert!(owner.journal_read(false).is_err());
+    assert!(owner.journal_read_release(false).is_err());
     assert_eq!(
         std::fs::read(machine.path.join("thermal-mutation.journal")).unwrap(),
         raw

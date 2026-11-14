@@ -377,11 +377,15 @@ impl Runtime {
                 .and_then(|h| h.next_expiry(Instant::now()))
         }));
         let warning = self.battery_warning.clone();
+        let release_deferred = self.release_deferred.clone();
         reader.retain_battery_policy(Rc::new(move |base| {
             verify_retained_failure(&retained.fatal)?;
             retained.fresh.verify_health()?;
             let base = base.without_battery_observation();
             let source_warning = warning.lock().map_err(|_| io::ErrorKind::Other)?.clone();
+            let source_warning = if release_deferred.get() {
+                Some(format!("{} {}", source_warning.unwrap_or_default(), super::super::thermal_storage::RELEASE_PAUSED).trim().to_owned())
+            } else { source_warning };
             if retained.fresh.authorize() != Some(retained.proof) {
                 return Ok(source_warning.as_ref().map_or(base.clone(), |message| base.battery_projection(None,None,message)));
             }
@@ -407,9 +411,6 @@ impl Runtime {
         // A newer independent false ends the positive obligation. A consumed
         // automatic attempt may retain release-only bookkeeping after I/O error.
         let ended = self.temporary_owner.borrow().as_ref().is_some_and(|p| {
-            if p.storage.pending() {
-                return false;
-            }
             let at = p.positive_at.lock().ok().and_then(|at| *at);
             p.abandoned.load(Ordering::Acquire)
                 || self.battery_observation.lock().is_ok_and(|o| {
@@ -421,10 +422,8 @@ impl Runtime {
         if ended {
             let old = self.temporary_owner.borrow_mut().take();
             if let Some(old) = old {
-                if let Err(error) = self.release_temporary_reservation(&old) {
-                    *self.temporary_owner.borrow_mut() = Some(old);
-                    return Err(error);
-                }
+                old.abandoned.store(true, Ordering::Release);
+                self.finish_temporary_release(old)?;
             }
         }
         let pending = self.temporary_pending.borrow_mut().take();
@@ -441,7 +440,10 @@ impl Runtime {
         }
         Ok(())
     }
-    fn release_temporary_reservation(&self, original: &BatteryPermit) -> io::Result<()> {
+    fn release_temporary_reservation(
+        &self,
+        original: &BatteryPermit,
+    ) -> io::Result<super::super::thermal_storage::TemporaryRelease> {
         // A live/deferred operation must keep its reservation. Storage also
         // independently requires exact origin identity and settled durable bytes.
         if !original.joined.load(Ordering::Acquire)
@@ -454,22 +456,99 @@ impl Runtime {
                     p.request == original.request && Arc::ptr_eq(&p.storage, &original.storage)
                 })
         {
-            return Ok(());
+            return Ok(super::super::thermal_storage::TemporaryRelease::Deferred(
+                super::super::thermal_storage::ReleaseDeferred::busy(),
+            ));
         }
-        if let Some(record) = original
+        let record = original
             .tfc
             .lock()
             .map_err(|_| io::ErrorKind::Other)?
-            .as_ref()
-        {
-            original.storage.release_temporary_capacity(
-                &openblade_domain::temporary_charge_history::Origin {
-                    request: original.request.clone(),
-                    intent: record.hash()?,
-                },
-            )?;
+            .clone()
+            .ok_or_else(|| {
+                fatal_admission("Confirmed temporary-charge origin lost its typed record.")
+            })?;
+        #[cfg(test)]
+        if let Some(hook) = self.release_hook.borrow().clone() {
+            hook();
+        }
+        original.storage.release_temporary_capacity(
+            &openblade_domain::temporary_charge_history::Origin {
+                request: original.request.clone(),
+                intent: record.hash()?,
+            },
+        )
+    }
+    fn finish_temporary_release(&self, original: Arc<BatteryPermit>) -> io::Result<()> {
+        use super::super::thermal_storage::TemporaryRelease;
+        match self.release_temporary_reservation(&original) {
+            Ok(TemporaryRelease::Released | TemporaryRelease::NoMatchingReservation) => {
+                self.release_presentation(&original, false)
+            }
+            Ok(TemporaryRelease::Deferred(reason)) => {
+                *self.temporary_owner.borrow_mut() = Some(original.clone());
+                self.release_presentation(&original, true)?;
+                Err(reason.into_error())
+            }
+            Err(error) => {
+                *self.temporary_owner.borrow_mut() = Some(original);
+                Err(error)
+            }
+        }
+    }
+    fn release_presentation(
+        &self,
+        original: &Arc<BatteryPermit>,
+        deferred: bool,
+    ) -> io::Result<()> {
+        if self.release_deferred.replace(deferred) != deferred {
+            *self.release_notice.borrow_mut() = Some((original.clone(), deferred));
         }
         Ok(())
+    }
+    pub(in super::super) fn take_release_notice(&self) -> io::Result<Option<BatteryUpdate>> {
+        let Some((original, deferred)) = self.release_notice.borrow_mut().take() else {
+            return Ok(None);
+        };
+        // Resolve observation age and diagnostics at publication, not at the
+        // earlier release check. This public delta never rebinds private state.
+        let observation = original.historical_observation()?;
+        let warning = self
+            .battery_warning
+            .lock()
+            .map_err(|_| fatal_admission("Battery warning state is poisoned."))?
+            .clone();
+        let mut message = warning.unwrap_or_else(|| {
+            if observation.is_some() {
+                "Independent battery observation retained; new writes require fresh admission."
+                    .into()
+            } else {
+                "Battery observation is unavailable; new writes require fresh admission.".into()
+            }
+        });
+        if deferred {
+            message.push(' ');
+            message.push_str(super::super::thermal_storage::RELEASE_PAUSED);
+        }
+        Ok(Some(BatteryUpdate {
+            desired: None,
+            observation,
+            public_message: message.clone(),
+            message,
+            sid: original.sid.clone(),
+            public_only: true,
+        }))
+    }
+    #[cfg(test)]
+    pub(in super::super) fn release_hook_for_tests(&self, hook: Rc<dyn Fn()>) {
+        *self.release_hook.borrow_mut() = Some(hook);
+    }
+    #[cfg(test)]
+    pub(in super::super) fn release_only_for_tests(&self) -> bool {
+        self.temporary_owner
+            .borrow()
+            .as_ref()
+            .is_some_and(|p| p.abandoned.load(Ordering::Acquire))
     }
     pub(in super::super) fn temporary_event_needed(&self, epoch: u64) -> io::Result<bool> {
         self.reconcile_temporary_owner()?;
@@ -628,15 +707,16 @@ impl Runtime {
         if original.storage.pending() {
             message = original.storage.pending_reason()?.into();
         }
+        *self
+            .battery_warning
+            .lock()
+            .map_err(|_| io::ErrorKind::Other)? = Some(message.clone());
         if unresolved.is_none()
             && attempted
                 .as_ref()
                 .is_none_or(|p| p.joined.load(Ordering::Acquire))
         {
-            if let Err(error) = self.release_temporary_reservation(&original) {
-                *self.temporary_owner.borrow_mut() = Some(original);
-                return Err(error);
-            }
+            self.finish_temporary_release(original.clone())?;
         }
         *self
             .battery_warning
@@ -644,6 +724,7 @@ impl Runtime {
             .map_err(|_| io::ErrorKind::Other)? = Some(message.clone());
         let desired = original.storage.desired_battery(1).ok();
         Ok(Some(BatteryUpdate {
+            public_only: false,
             desired,
             observation: original.historical_observation()?,
             public_message: message.clone(),
@@ -679,7 +760,15 @@ impl Runtime {
             ));
         };
         reader.drain_active().await?;
-        self.reconcile_temporary_owner()?;
+        if let Err(error) = self.reconcile_temporary_owner() {
+            if super::super::thermal_storage::is_release_deferred(&error) {
+                return Ok((
+                    Outcome::blocked(error.to_string()),
+                    self.take_release_notice()?,
+                ));
+            }
+            return Err(error);
+        }
         reader.custody().verify_integrity()?;
         let captured = if cfg!(feature = "service-temporary-charge-v1")
             && matches!(requested, Request::SetFullChargeOverride { enabled: false })
@@ -749,7 +838,6 @@ impl Runtime {
         let awaiting = BatteryAwaitGuard(permit.clone());
         let result = reader.mutate(permit.clone(), deadline).await;
         drop(awaiting);
-        self.reconcile_temporary_owner()?;
         verify_retained_failure(&self.fatal)?;
         permit.fresh.verify_health()?;
         if let Err(e) = &result {
@@ -757,6 +845,15 @@ impl Runtime {
                 return Err(io::Error::other(e.to_string()));
             }
             permit.reason(&format!("Battery transport or settlement failed: {e}"));
+        }
+        if let Err(error) = self.reconcile_temporary_owner() {
+            if super::super::thermal_storage::is_release_deferred(&error) {
+                return Ok((
+                    Outcome::blocked(error.to_string()),
+                    self.take_release_notice()?,
+                ));
+            }
+            return Err(error);
         }
         // Battery uses a typed side channel; the thermal Option result is intentionally
         // empty. Check original live authority and deadline independently here.
@@ -806,6 +903,7 @@ impl Runtime {
                 .into()
         };
         let update = BatteryUpdate {
+            public_only: false,
             desired,
             observation,
             public_message,
@@ -818,6 +916,7 @@ impl Runtime {
 
 // A battery-only delta; no pre-gate thermal snapshot or witness crosses the await.
 pub(in super::super) struct BatteryUpdate {
+    public_only: bool,
     desired: Option<openblade_domain::battery_history::Desired>,
     observation: Option<(u8, Option<bool>)>,
     public_message: String,
@@ -826,6 +925,11 @@ pub(in super::super) struct BatteryUpdate {
 }
 impl BatteryUpdate {
     pub(in super::super) fn apply(self, latest: Snapshot) -> Snapshot {
+        if self.public_only {
+            return latest
+                .without_battery_observation()
+                .battery_public_projection(self.observation, &self.public_message);
+        }
         // A present desired value was independently reconstructed after the
         // worker; only this family\'s previous private degradation is resolved.
         let latest = if self.desired.is_some() {
@@ -833,9 +937,12 @@ impl BatteryUpdate {
         } else {
             latest
         };
-        latest
-            .without_battery_observation()
-            .battery_projection(self.desired, self.observation, &self.public_message)
+        let public = latest.without_battery_observation().battery_projection(
+            self.desired,
+            self.observation,
+            &self.public_message,
+        );
+        public
             .bind_private_user(&self.sid)
             .battery_request_outcome(&self.sid, &self.message)
     }
@@ -844,6 +951,54 @@ impl BatteryUpdate {
 #[cfg(test)]
 mod observation_tests {
     use super::*;
+    #[test]
+    fn tfc_release_public_notice_preserves_private_owner_and_each_family_degradation() {
+        use crate::service_status::PrivatePolicyFamily::{Battery, Thermal};
+        let old = "S-1-5-21-111-222-333-1001";
+        let current = "S-1-5-21-111-222-333-1002";
+        let base =
+            Snapshot::observed_read_only(1, 0, false, false, vec![], None, "Public source.".into())
+                .private_policy_unavailable(Thermal)
+                .private_policy_unavailable(Battery)
+                .bind_private_user(current)
+                .battery_request_outcome(current, "CURRENT_USER_PRIVATE_SENTINEL");
+        let update = BatteryUpdate {
+            public_only: true,
+            desired: None,
+            observation: None,
+            public_message: super::super::super::thermal_storage::RELEASE_PAUSED.into(),
+            message: String::new(),
+            sid: old.into(),
+        };
+        let after = update.apply(base);
+        for (sid, present) in [(Some(current), true), (Some(old), false), (None, false)] {
+            let view = after.project_private(sid);
+            let value = serde_json::to_value(&view).unwrap();
+            assert_eq!(
+                value["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("CURRENT_USER_PRIVATE_SENTINEL"),
+                present
+            );
+            let bytes = crate::service_status::encode_status_event(&view).unwrap();
+            println!(
+                "NATIVE_THERMAL_MUTATION_RESPONSE {}",
+                std::str::from_utf8(&bytes).unwrap()
+            );
+        }
+        for remaining in [
+            after.clone().private_policy_reconciling(Thermal),
+            after.clone().private_policy_reconciling(Battery),
+        ] {
+            assert!(
+                serde_json::to_value(remaining).unwrap()["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("private policy is unavailable")
+            );
+        }
+    }
     #[test]
     fn independent_fields_keep_original_age_and_exclude_expired_deadlines() {
         let at = Instant::now();
@@ -888,6 +1043,7 @@ mod observation_tests {
                 .private_policy_unavailable(Thermal)
                 .private_policy_unavailable(Battery);
         let update = BatteryUpdate {
+            public_only: false,
             desired: Some(openblade_domain::battery_history::Desired {
                 limit: 80,
                 protection: false,
@@ -940,6 +1096,7 @@ mod observation_tests {
     }
     fn boundary_update(message: &str) -> BatteryUpdate {
         BatteryUpdate {
+            public_only: false,
             desired: Some(openblade_domain::battery_history::Desired {
                 limit: 80,
                 protection: false,

@@ -3,6 +3,9 @@
 use super::*;
 #[path = "temporary_charge_corrections.rs"]
 mod tfc_corrections;
+#[cfg(feature = "service-temporary-charge-v1")]
+#[path = "temporary_charge_release.rs"]
+mod tfc_release;
 use crate::discovery::performance::{ReadAdmission, mutation_fixture::Fixture};
 use crate::installed::readiness::{
     mailbox_read::{MailboxSource, MutationFactories, ReadCustody, ReadSource},
@@ -33,6 +36,9 @@ struct MemoryFiles {
     reserve_uncertain: Arc<AtomicBool>,
     roll_settled: Arc<AtomicBool>,
     fail_quota_read: Arc<AtomicBool>,
+    release_fault: Arc<AtomicU8>,
+    release_reads: Arc<AtomicUsize>,
+    release_read_notify: Arc<tokio::sync::Notify>,
     fail_terminal: Arc<AtomicBool>,
     fail_prepared: Arc<AtomicU8>,
     fail_first_intent: Arc<AtomicU8>,
@@ -82,6 +88,35 @@ impl MemoryFiles {
     }
 }
 impl Files for MemoryFiles {
+    fn read_release(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
+        if name == "thermal-mutation.journal.pending" {
+            self.release_reads.fetch_add(1, Ordering::AcqRel);
+            self.release_read_notify.notify_one();
+            match self.release_fault.load(Ordering::Acquire) {
+                1 => {
+                    return Err(
+                        crate::installed::readiness::thermal_storage::release_open_error(
+                            io::Error::from_raw_os_error(32),
+                        ),
+                    );
+                }
+                2 => {
+                    return Err(
+                        crate::installed::readiness::thermal_mutation::fatal_admission(
+                            "injected protected release trust failure",
+                        ),
+                    );
+                }
+                4 => return Err(io::Error::other("unclassified release read")),
+                5 => return Err(io::Error::from_raw_os_error(32)),
+                _ => {}
+            }
+        }
+        if name == "thermal-mutation.journal" && self.release_fault.load(Ordering::Acquire) == 3 {
+            return Ok(Some(b"mismatched journal".to_vec()));
+        }
+        self.read(name)
+    }
     fn reserve(&self, expected: Option<&[u8]>, needed: usize) -> io::Result<Option<Vec<u8>>> {
         self.last_reservation.store(needed, Ordering::Release);
         if self.reserve_uncertain.load(Ordering::Acquire) {
@@ -1539,12 +1574,19 @@ async fn outer_request(tx: &mpsc::UnboundedSender<Box<dyn Stream>>, request: Val
     crate::service_frame::write_payload(&mut client, &serde_json::to_vec(&request).unwrap())
         .await
         .unwrap();
-    serde_json::from_slice(
-        &crate::service_frame::read_payload(&mut client)
-            .await
-            .unwrap(),
-    )
-    .unwrap()
+    let bytes = crate::service_frame::read_payload(&mut client)
+        .await
+        .unwrap();
+    println!(
+        "NATIVE_THERMAL_MUTATION_RESPONSE {}",
+        std::str::from_utf8(&bytes).unwrap()
+    );
+    println!(
+        "NATIVE_THERMAL_EDGE_TRACE {} {}",
+        request["operation"].as_str().unwrap(),
+        std::str::from_utf8(&bytes).unwrap()
+    );
+    serde_json::from_slice(&bytes).unwrap()
 }
 #[tokio::test]
 async fn correction_outer_lifecycle_and_transient_admission_keep_service_running_until_stop() {

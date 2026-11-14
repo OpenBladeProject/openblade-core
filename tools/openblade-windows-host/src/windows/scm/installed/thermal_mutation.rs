@@ -67,6 +67,7 @@ pub(super) fn remember_failure(fatal: &Mutex<Option<&'static str>>, error: &io::
 
 #[path = "battery_mutation.rs"]
 mod battery;
+pub(super) use battery::BatteryUpdate;
 #[path = "fan_mutation.rs"]
 mod fan;
 pub(super) trait Fresh: Send + Sync {
@@ -110,6 +111,10 @@ pub(super) struct Runtime {
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     temporary_pending: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
+    release_deferred: Rc<std::cell::Cell<bool>>,
+    release_notice: Rc<RefCell<Option<(Arc<battery::BatteryPermit>, bool)>>>,
+    #[cfg(test)]
+    release_hook: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
     temporary_event: Rc<std::cell::Cell<Option<u64>>>,
     fan_pending: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     gate: Rc<tokio::sync::Mutex<()>>,
@@ -157,6 +162,10 @@ impl Runtime {
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
+            release_deferred: Rc::default(),
+            release_notice: Rc::default(),
+            #[cfg(test)]
+            release_hook: Rc::default(),
             temporary_event: Rc::default(),
             fan_pending: Rc::default(),
             gate: Rc::default(),
@@ -214,6 +223,10 @@ impl Runtime {
             fan_owner: Rc::default(),
             temporary_owner: Rc::default(),
             temporary_pending: Rc::default(),
+            release_deferred: Rc::default(),
+            release_notice: Rc::default(),
+            #[cfg(test)]
+            release_hook: Rc::default(),
             temporary_event: Rc::default(),
             fan_pending: Rc::default(),
             gate: Rc::default(),

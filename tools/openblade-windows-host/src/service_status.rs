@@ -1095,6 +1095,25 @@ impl Snapshot {
         }
         self
     }
+    pub(crate) fn battery_public_projection(
+        self,
+        observation: Option<(u8, Option<bool>)>,
+        message: &str,
+    ) -> Self {
+        // Bookkeeping changes only the public contribution. Preserve the exact
+        // current private diagnostic and its SID rather than re-owning it.
+        let request = self
+            .diagnostics
+            .battery
+            .as_ref()
+            .and_then(|d| d.request.clone());
+        let mut projected = self.battery_projection(None, observation, message);
+        if let Some(diagnostic) = &mut projected.diagnostics.battery {
+            diagnostic.request = request;
+        }
+        projected.render_message();
+        projected
+    }
     pub(crate) fn battery_request_outcome(mut self, sid: &str, message: &str) -> Self {
         if !message.is_empty() {
             self.diagnostics

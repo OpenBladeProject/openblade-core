@@ -439,12 +439,45 @@ struct GuardedStatus {
     #[cfg(feature = "service-mailbox-observation-v1")]
     mailbox: super::mailbox_read::MailboxSource,
 }
+impl GuardedStatus {
+    #[cfg(feature = "service-temporary-charge-v1")]
+    fn publish_battery_update(
+        &self,
+        update: super::thermal_mutation::BatteryUpdate,
+    ) -> io::Result<()> {
+        if let Some(publisher) = &self.inner.publisher {
+            let mut status = update.apply(publisher.borrow().active.clone());
+            status.set_observation_revision(
+                publisher
+                    .borrow()
+                    .active
+                    .revision()
+                    .checked_add(1)
+                    .ok_or_else(|| invalid("status revision exhausted"))?,
+            );
+            publisher.send_replace(Arc::new(Publication {
+                inactive: status.inactive_mutation(),
+                active: status,
+            }));
+        }
+        Ok(())
+    }
+}
 impl StatusSource for GuardedStatus {
     fn process_power_source(&mut self) -> Pending<'_, ()> {
         Box::pin(async move {
             #[cfg(feature = "service-temporary-charge-v1")]
             if let (Some(runtime), Some(epoch)) = (&self.mutation, self.origin.power_epoch()) {
-                if runtime.temporary_event_needed(epoch)? {
+                let needed = match runtime.temporary_event_needed(epoch) {
+                    Ok(needed) => needed,
+                    Err(error) if super::thermal_storage::is_release_deferred(&error) => false,
+                    Err(error) => return Err(error),
+                };
+                if let Some(update) = runtime.take_release_notice()? {
+                    self.origin.verify()?;
+                    self.publish_battery_update(update)?;
+                }
+                if needed {
                     self.origin.verify()?;
                     let evidence = self.inner.refresh().await?;
                     if let Some(evidence) = evidence {
@@ -457,26 +490,23 @@ impl StatusSource for GuardedStatus {
                         }
                         self.inner.publish(Some(evidence))?;
                         if battery {
-                            if let Some(update) = runtime
+                            let update = match runtime
                                 .battery_source_event(self.mailbox.clone(), epoch)
-                                .await?
+                                .await
                             {
-                                if let Some(publisher) = &self.inner.publisher {
-                                    let mut status =
-                                        update.apply(publisher.borrow().active.clone());
-                                    status.set_observation_revision(
-                                        publisher
-                                            .borrow()
-                                            .active
-                                            .revision()
-                                            .checked_add(1)
-                                            .ok_or_else(|| invalid("status revision exhausted"))?,
-                                    );
-                                    publisher.send_replace(Arc::new(Publication {
-                                        inactive: status.inactive_mutation(),
-                                        active: status,
-                                    }));
+                                Ok(update) => update,
+                                Err(error)
+                                    if super::thermal_storage::is_release_deferred(&error) =>
+                                {
+                                    None
                                 }
+                                Err(error) => return Err(error),
+                            };
+                            if let Some(update) = update {
+                                self.publish_battery_update(update)?;
+                            }
+                            if let Some(update) = runtime.take_release_notice()? {
+                                self.publish_battery_update(update)?;
                             }
                         }
                     }

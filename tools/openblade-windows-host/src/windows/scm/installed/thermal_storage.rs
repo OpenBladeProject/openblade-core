@@ -11,10 +11,108 @@ use std::{
 
 #[path = "battery_storage.rs"]
 mod battery;
+pub(super) use battery::TemporaryRelease;
+
+pub(super) const RELEASE_PAUSED: &str = "Temporary charge journal release is deferred. New mutations are paused while a read-only check is retried; no hardware command will be replayed.";
+#[derive(Debug)]
+pub(super) struct ReleaseDeferred(Option<io::Error>);
+impl ReleaseDeferred {
+    pub(super) fn busy() -> Self {
+        Self(None)
+    }
+    pub(super) fn unreadable(error: io::Error) -> Self {
+        Self(Some(error))
+    }
+    pub(super) fn into_error(self) -> io::Error {
+        io::Error::new(io::ErrorKind::WouldBlock, self)
+    }
+}
+impl std::fmt::Display for ReleaseDeferred {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(RELEASE_PAUSED)
+    }
+}
+impl std::error::Error for ReleaseDeferred {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.0.as_ref().map(|e| e as _)
+    }
+}
+pub(super) fn is_release_deferred(error: &io::Error) -> bool {
+    error.get_ref().is_some_and(|e| e.is::<ReleaseDeferred>())
+}
+// Created only at the raw open/read operations in the release-only adapter.
+// Trust, custody, parsing, metadata and aggregate I/O errors are never tagged.
+#[derive(Debug)]
+struct ReleaseReadUnavailable(io::Error);
+impl std::fmt::Display for ReleaseReadUnavailable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+impl std::error::Error for ReleaseReadUnavailable {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+pub(super) fn release_open_error(error: io::Error) -> io::Error {
+    if error.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32)
+    {
+        io::Error::new(io::ErrorKind::WouldBlock, ReleaseReadUnavailable(error))
+    } else {
+        error
+    }
+}
+pub(super) fn release_bytes_error(error: io::Error) -> io::Error {
+    if error.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_LOCK_VIOLATION as i32) {
+        io::Error::new(io::ErrorKind::WouldBlock, ReleaseReadUnavailable(error))
+    } else {
+        error
+    }
+}
+fn is_release_read_unavailable(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|e| e.is::<ReleaseReadUnavailable>())
+}
+#[cfg(test)]
+mod release_read_tests {
+    use super::*;
+    #[test]
+    fn tfc_release_only_exact_read_operations_tag_retryable_errors() {
+        for code in [2, 5, 32, 33, 995, 1117] {
+            let open = release_open_error(io::Error::from_raw_os_error(code));
+            let read = release_bytes_error(io::Error::from_raw_os_error(code));
+            assert_eq!(is_release_read_unavailable(&open), code == 32);
+            assert_eq!(is_release_read_unavailable(&read), code == 33);
+            assert!(
+                !is_release_read_unavailable(&io::Error::from_raw_os_error(code)),
+                "aggregate errors are never tagged by number"
+            );
+        }
+        let tagged = release_open_error(io::Error::from_raw_os_error(32));
+        assert_eq!(
+            tagged
+                .get_ref()
+                .unwrap()
+                .downcast_ref::<ReleaseReadUnavailable>()
+                .unwrap()
+                .0
+                .raw_os_error(),
+            Some(32)
+        );
+        assert!(is_release_deferred(
+            &ReleaseDeferred::unreadable(tagged).into_error()
+        ));
+        assert!(!is_release_deferred(&io::Error::other("unclassified")));
+    }
+}
 const OVERRIDES: &str = "manual-overrides.json";
 const JOURNAL: &str = "thermal-mutation.journal";
 pub(super) trait Files: Send + Sync {
     fn read(&self, name: &str) -> io::Result<Option<Vec<u8>>>;
+    fn read_release(&self, _name: &str) -> io::Result<Option<Vec<u8>>> {
+        Err(denied())
+    }
     fn reserve(&self, expected: Option<&[u8]>, needed: usize) -> io::Result<Option<Vec<u8>>> {
         if needed > crate::thermal_history::SEGMENT
             || expected
@@ -241,6 +339,8 @@ pub(super) struct Storage {
     user_sid: String,
     files: Box<dyn Files>,
     state: Mutex<State>,
+    #[cfg(test)]
+    battery_append_hook: Mutex<Option<Arc<dyn Fn(&str) + Send + Sync>>>,
 }
 impl Storage {
     #[cfg(test)]
@@ -275,6 +375,8 @@ impl Storage {
         let last =
             crate::thermal_history::rows(journal.as_deref().unwrap_or_default(), |_, _| Ok(()))?.1;
         Ok(Arc::new(Self {
+            #[cfg(test)]
+            battery_append_hook: Mutex::new(None),
             same_path,
             user_sid: user_sid.into(),
             files,
