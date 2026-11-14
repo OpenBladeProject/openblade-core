@@ -1,0 +1,675 @@
+{
+  "schema_version": 1,
+  "source_revision_for_baseline": "82e0964805f4e8f8c7fa825e7315377d402d4b52",
+  "final_source_revision": "8ee7b199f9bde64431985e98e14b2a914059a32f",
+  "source_verification": {
+    "models": 22,
+    "whole_file_pins": 44,
+    "byte_excerpts": 66,
+    "failures": 0
+  },
+  "combined_build": {
+    "warnings": 0,
+    "errors": 0,
+    "duration": "00:02:50.37"
+  },
+  "baseline_integration_note": "17 completed projects passed14742tests with0failures/skips. Windows PowerShell ErrorActionStop aborted on Tray live-language-smoke stderr; the final UI count and second failure details were not retained. Prior fullTray had one proven timeout and unchanged isolated pass. No complete local-solution green claim.",
+  "diagnostic_basis": {
+    "issue": 967,
+    "model": "RZ09-0287",
+    "hid": "1532:0234",
+    "adapter_query_failures": 30,
+    "numeric_reply_status_and_body_retained": false,
+    "connector_or_physical_cause_established": false,
+    "archive_sha256": "d8a9b1afd6ea8a2fd3411b07ec3e153e885153117d993b728bbeb79270040819"
+  },
+  "build_policy": {
+    "native_development_build": false,
+    "nuget_audit": false,
+    "cargo_target_dir": "C:\\build-cache\\cargo\\openblade-core"
+  },
+  "records": [
+    {
+      "log": "ordinary-ac-protocol-post-claude-full.log",
+      "bytes": 384,
+      "sha256": "1879a7597ff28c2bbe290e556e18187bd4427fa96c5bfdafadc889711e4a80f6",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 4880,
+          "skipped": 0,
+          "total": 4880,
+          "duration": "44 s",
+          "assembly": "OpenBlade.Protocol.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-contracts-post-review.log",
+      "bytes": 723,
+      "sha256": "b470cc9fe3fd63105349863e83093eefa489ab631d596f6db64b8070d19f413d",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 843,
+          "skipped": 0,
+          "total": 843,
+          "duration": "10 s",
+          "assembly": "OpenBlade.Contracts.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-session-retained-final.log",
+      "bytes": 1057,
+      "sha256": "06f8bbe9b6be91489cc004d66a99f7197c0d73aba70791d675e42c6e9fb16b23",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 143,
+          "skipped": 0,
+          "total": 143,
+          "duration": "477 ms",
+          "assembly": "OpenBlade.Session.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-sessionagent-retained-final.log",
+      "bytes": 1644,
+      "sha256": "b18343cf4fca0199d2fa94c3ae1229953776285f36bef8af8276588f5ec06a72",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 1381,
+          "skipped": 0,
+          "total": 1381,
+          "duration": "8 s",
+          "assembly": "OpenBlade.SessionAgent.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-tray-retained-final.log",
+      "bytes": 7161,
+      "sha256": "27c7d732f8cf130f772edb6f67b80f812b8a9e11c2fe93936d2428ed542fa820",
+      "completed_assemblies": [
+        {
+          "result": "Failed!",
+          "failed": 1,
+          "passed": 2991,
+          "skipped": 0,
+          "total": 2992,
+          "duration": "4 m 16 s",
+          "assembly": "OpenBlade.Tray.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-tray-language-isolated-final.log",
+      "bytes": 371,
+      "sha256": "32234fba3b0508c9cf24d1b89bf0424fe0339b212756350ca7e578f9434196f8",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 1,
+          "skipped": 0,
+          "total": 1,
+          "duration": "8 s",
+          "assembly": "OpenBlade.Tray.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-service-review-final-focused.log",
+      "bytes": 1572,
+      "sha256": "089ea5acc363c6125e7d0789d65d43857dba1b99e08535031a605fec9a6e5000",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 379,
+          "skipped": 0,
+          "total": 379,
+          "duration": "28 s",
+          "assembly": "OpenBlade.Service.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-service-review-final-full.log",
+      "bytes": 1572,
+      "sha256": "bd8e57209a934d8405e9da2d81d77e347946c981a73b1576339d0c1cad3fa7a4",
+      "completed_assemblies": [
+        {
+          "result": "Failed!",
+          "failed": 1,
+          "passed": 3993,
+          "skipped": 0,
+          "total": 3994,
+          "duration": "2 m 32 s",
+          "assembly": "OpenBlade.Service.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-service-review-malformed-isolated.log",
+      "bytes": 383,
+      "sha256": "467128d26eda9033702cd03d5d06931af7037412791e5a49fdaf3ddc0d3f36ba",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 5,
+          "skipped": 0,
+          "total": 5,
+          "duration": "462 ms",
+          "assembly": "OpenBlade.Service.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-service-review-pipe-class.log",
+      "bytes": 383,
+      "sha256": "3be350d83e64342a137154e1f95ca150d985f714e64231c87feb1568950979d0",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 32,
+          "skipped": 0,
+          "total": 32,
+          "duration": "811 ms",
+          "assembly": "OpenBlade.Service.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-native-tests-configured.log",
+      "bytes": 810,
+      "sha256": "c6f435e00762ce303b6f7fa9d0654d2367408b5c0d8bb02ae728b8767bf0278e",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 136,
+          "skipped": 0,
+          "total": 136,
+          "duration": "1 s",
+          "assembly": "OpenBlade.Core.Native.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-final-combined-tests.log",
+      "bytes": 14040,
+      "sha256": "7dfc1a1e14034739b331318fdc23569d0451937ea9abfdcb58fe8acb5b48f516",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 3,
+          "skipped": 0,
+          "total": 3,
+          "duration": "8 s",
+          "assembly": "OpenBlade.Architecture.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 1902,
+          "skipped": 0,
+          "total": 1902,
+          "duration": "3 m 45 s",
+          "assembly": "OpenBlade.Capture.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 843,
+          "skipped": 0,
+          "total": 843,
+          "duration": "1 s",
+          "assembly": "OpenBlade.Contracts.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 14,
+          "skipped": 0,
+          "total": 14,
+          "duration": "161 ms",
+          "assembly": "OpenBlade.CpuTemperature.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 40,
+          "skipped": 0,
+          "total": 40,
+          "duration": "457 ms",
+          "assembly": "OpenBlade.Deployment.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 207,
+          "skipped": 0,
+          "total": 207,
+          "duration": "5 s",
+          "assembly": "OpenBlade.DeploymentBroker.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 210,
+          "skipped": 0,
+          "total": 210,
+          "duration": "4 s",
+          "assembly": "OpenBlade.DeploymentClient.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 53,
+          "skipped": 0,
+          "total": 53,
+          "duration": "848 ms",
+          "assembly": "OpenBlade.DevelopmentDeployment.Setup.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 100,
+          "skipped": 0,
+          "total": 100,
+          "duration": "356 ms",
+          "assembly": "OpenBlade.Display.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 313,
+          "skipped": 0,
+          "total": 313,
+          "duration": "2 m 27 s",
+          "assembly": "OpenBlade.FirmwareSmoke.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 14,
+          "skipped": 0,
+          "total": 14,
+          "duration": "482 ms",
+          "assembly": "OpenBlade.LocalDevDeployment.Tool.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 185,
+          "skipped": 0,
+          "total": 185,
+          "duration": "3 s",
+          "assembly": "OpenBlade.Platform.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 4880,
+          "skipped": 0,
+          "total": 4880,
+          "duration": "27 s",
+          "assembly": "OpenBlade.Protocol.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 3994,
+          "skipped": 0,
+          "total": 3994,
+          "duration": "2 m 14 s",
+          "assembly": "OpenBlade.Service.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 143,
+          "skipped": 0,
+          "total": 143,
+          "duration": "545 ms",
+          "assembly": "OpenBlade.Session.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 1381,
+          "skipped": 0,
+          "total": 1381,
+          "duration": "5 s",
+          "assembly": "OpenBlade.SessionAgent.Tests.dll"
+        },
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 460,
+          "skipped": 0,
+          "total": 460,
+          "duration": "17 s",
+          "assembly": "OpenBlade.Setup.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ordinary-ac-protocol-merge-focused.log",
+      "bytes": 1067,
+      "sha256": "e6baefc706b34dfdc11a96bde8836941c9864d5f0cb71e824cda71b089f4775b",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 1490,
+          "skipped": 0,
+          "total": 1490,
+          "duration": "9 s",
+          "assembly": "OpenBlade.Protocol.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ordinary-ac-protocol-merge-full.log",
+      "bytes": 384,
+      "sha256": "357beb69b530fd77489492f95f19f1663d3023e1305497676704c052d13a0989",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 4972,
+          "skipped": 0,
+          "total": 4972,
+          "duration": "22 s",
+          "assembly": "OpenBlade.Protocol.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-service-review2-hooks-focused.log",
+      "bytes": 1572,
+      "sha256": "ce8f46084d280f54146ed750c26849fb4e54e61a28d68e64cc0c1e106bd79b70",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 415,
+          "skipped": 0,
+          "total": 415,
+          "duration": "56 s",
+          "assembly": "OpenBlade.Service.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-service-review2-final-full.log",
+      "bytes": 385,
+      "sha256": "084e58a785d705981dbd0f4e8c3368f2ce71d3dd4ccbdf820c38955e3483a0b9",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 4003,
+          "skipped": 0,
+          "total": 4003,
+          "duration": "2 m 20 s",
+          "assembly": "OpenBlade.Service.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-service-merged-focused.log",
+      "bytes": 2386,
+      "sha256": "4a56a9cd103e960a7c679cd1d2c33d0469135a1c05187415cffb258ddb52a061",
+      "completed_assemblies": [
+        {
+          "result": "Failed!",
+          "failed": 1,
+          "passed": 589,
+          "skipped": 0,
+          "total": 590,
+          "duration": "34 s",
+          "assembly": "OpenBlade.Service.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-service-merged-focused-final.log",
+      "bytes": 1572,
+      "sha256": "605d81ce824853947ac48072a6fb7c36bcadd033d73f120a261fa6f34ccc5d8d",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 590,
+          "skipped": 0,
+          "total": 590,
+          "duration": "31 s",
+          "assembly": "OpenBlade.Service.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-service-merged-full.log",
+      "bytes": 385,
+      "sha256": "c2ccde9dd2e5c589c3d5cb296aed475233a7b703d3f69748a2f893c355ea8a4a",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 4055,
+          "skipped": 0,
+          "total": 4055,
+          "duration": "3 m 13 s",
+          "assembly": "OpenBlade.Service.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-merged-contracts.log",
+      "bytes": 722,
+      "sha256": "e2eb332cd14297ccba28980ab72cbe297ada8d1e09bc85d52d14e47c6577c7b6",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 845,
+          "skipped": 0,
+          "total": 845,
+          "duration": "1 s",
+          "assembly": "OpenBlade.Contracts.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-merged-native.log",
+      "bytes": 905,
+      "sha256": "a92419f82a62d57493629c26d9ab3a956c7b733fcc996c2cd31c17c73f9684f7",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 136,
+          "skipped": 0,
+          "total": 136,
+          "duration": "204 ms",
+          "assembly": "OpenBlade.Core.Native.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-ui-0631-targeted-final.log",
+      "bytes": 3432,
+      "sha256": "cab5f46b63671ae260abaaa16fa2ee4e2f743e78e898f034aa052e3d6b42a03a",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 770,
+          "skipped": 0,
+          "total": 770,
+          "duration": "21 s",
+          "assembly": "OpenBlade.Tray.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-ui-0631-render-final.log",
+      "bytes": 17,
+      "sha256": "974f06de17c3d2942a7101a555fc1e1f4f5597766de51f2bed11bb03e2161c84",
+      "completed_assemblies": []
+    },
+    {
+      "log": "ac-sessionagent-0631-usbc-custom-final.log",
+      "bytes": 1644,
+      "sha256": "9d434032f4ea23e29e429379d60a47c21da70657c8831f1edb5ae6da708e6520",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 1382,
+          "skipped": 0,
+          "total": 1382,
+          "duration": "5 s",
+          "assembly": "OpenBlade.SessionAgent.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-native-final-interop.log",
+      "bytes": 387,
+      "sha256": "3b74be9a34a2dcb77250b146f1ee0347a96e466605ca5f409f805a3369b06bb4",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 136,
+          "skipped": 0,
+          "total": 136,
+          "duration": "256 ms",
+          "assembly": "OpenBlade.Core.Native.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-final-format-verify.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "completed_assemblies": []
+    }
+  ],
+  "hardware_actions_performed": false,
+  "post_review_independent_review": "PASS on bounded production/test correction diff; no edits or execution",
+  "review_corrections": {
+    "confirmed": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "narrowed_claims": {
+      "2": "Stale presence blocks curve updates; handback not generally reachable.",
+      "8": "Public cleanup bypass confirmed; cited lifecycle-only caller does not reach early deferral."
+    },
+    "declined": [
+      9,
+      10
+    ],
+    "new_service_regression_cases": 9,
+    "focused_service_passed": 358,
+    "focused_service_failed": 0,
+    "focused_service_skipped": 0
+  },
+  "pre_integration_revision": "11237952ac8179b61cb94899bf4d889834ada5de",
+  "merged_main_revision": "b7363c623f2bd5a5721d916f72c7937a32d47abc",
+  "version_impact": {
+    "kind": "patch",
+    "base": "0.63.0",
+    "head": "0.63.1"
+  },
+  "native_integration": {
+    "source_bound_build": true,
+    "canonical_shared_cache": "C:\\build-cache\\cargo\\openblade-core",
+    "new_target_tree": false,
+    "toolchain_copied": false,
+    "interop_passed": 136,
+    "contracts_passed": 845,
+    "linker_informational_warnings": 1,
+    "final_library_sha256": "848d495455098ebf47bf567c3a5914bb0006e0fd25efc356a18a45800f47b520",
+    "final_source_revision": "8ee7b199f9bde64431985e98e14b2a914059a32f",
+    "source_fingerprint": "fc991114432a77f918f7bcb38bd79c035b26b2e89a6a3f908059b25e31aa76f1",
+    "final_interop_rerun_passed": 136,
+    "bytes_changed_during_provenance_refresh": true,
+    "previous_hash": "4635BCBA49006DF003131866FE569FECF317A4EBFFFE0E627AD66F56E20B4700"
+  },
+  "integration_results": {
+    "protocol_focused": {
+      "passed": 1490,
+      "failed": 0,
+      "skipped": 0
+    },
+    "protocol_full": {
+      "passed": 4972,
+      "failed": 0,
+      "skipped": 0
+    },
+    "service_focused": {
+      "passed": 590,
+      "failed": 0,
+      "skipped": 0
+    },
+    "service_full": {
+      "passed": 4055,
+      "failed": 0,
+      "skipped": 0
+    },
+    "contracts": {
+      "passed": 845,
+      "failed": 0,
+      "skipped": 0
+    },
+    "native_interop": {
+      "passed": 136,
+      "failed": 0,
+      "skipped": 0
+    },
+    "independent_protocol_review": "PASS",
+    "independent_service_bridge_review": "PASS",
+    "ui_targeted": {
+      "passed": 770,
+      "failed": 0,
+      "skipped": 0
+    },
+    "hosted_exact_head": "Required; final status and logs recorded in the PR before merge.",
+    "session_agent_full": {
+      "passed": 1382,
+      "failed": 0,
+      "skipped": 0
+    },
+    "whitespace_verification": "PASS on all changed C# source files; no changes required after formatting."
+  },
+  "render": {
+    "source_revision": "a8d9d37a48140c4c8a53869e5592348f67489177",
+    "product_version": "0.63.1+a8d9d37a48140c4c8a53869e5592348f67489177",
+    "width": 1104,
+    "height": 811,
+    "sha256": "d34a142b24830f453cf490d79d3a8771df7dfb45c847985e19b1048536d987bc",
+    "basis": "Disconnected fixture; no service or hardware. Later SessionAgent-only source correction does not affect this surface."
+  }
+}
