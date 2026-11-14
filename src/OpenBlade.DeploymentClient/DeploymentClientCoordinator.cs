@@ -34,8 +34,8 @@ internal sealed class DeploymentClientCoordinator(
     ICpuVoltageHostStatusVerifier? cpuVoltageHost = null)
 {
     private static readonly TimeSpan SessionAgentSurvivalWindow = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan FinalInventoryTimeout = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan FinalInventoryPollInterval = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan StartupInventoryTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan StartupInventoryPollInterval = TimeSpan.FromMilliseconds(100);
     private const string ExactRollbackCode = "install-rolled-back";
     private readonly TimeProvider timeProvider = timeProvider ?? TimeProvider.System;
     private readonly Func<TimeSpan, CancellationToken, Task> delay = delay ?? Task.Delay;
@@ -311,10 +311,16 @@ internal sealed class DeploymentClientCoordinator(
             InstalledProcessLaunchPlan.SessionAgent(paths));
         if (sessionAgent is null
             || !await sessionAgent.RemainsAliveAsync(SessionAgentSurvivalWindow)
-                .ConfigureAwait(false)
-            || !inventory.Inspect(paths).HasOnlySessionAgent)
+                .ConfigureAwait(false))
         {
             return Fail("session-agent-relaunch-failed");
+        }
+
+        string? agentFailure = await WaitForStartupInventoryAsync(
+            paths, sessionAgent, tray: null, cancellationToken).ConfigureAwait(false);
+        if (agentFailure is not null)
+        {
+            return Fail(agentFailure);
         }
 
         if (shape == InstalledProcessShape.SessionAgentOnly)
@@ -337,63 +343,66 @@ internal sealed class DeploymentClientCoordinator(
             return Fail("tray-relaunch-failed");
         }
 
-        string? failure = await WaitForFinalInventoryAsync(
+        string? failure = await WaitForStartupInventoryAsync(
             paths, sessionAgent, tray, cancellationToken).ConfigureAwait(false);
         return failure is null || Fail(failure);
     }
 
-    private async Task<string?> WaitForFinalInventoryAsync(
+    private async Task<string?> WaitForStartupInventoryAsync(
         InstalledPayloadPaths paths,
         ILaunchedDeploymentProcess sessionAgent,
-        ILaunchedDeploymentProcess tray,
+        ILaunchedDeploymentProcess? tray,
         CancellationToken cancellationToken)
     {
         long started = timeProvider.GetTimestamp();
+        string timeout = tray is null ? "session-agent-inventory-timeout" : "final-inventory-timeout";
         bool previousInventoryExact = false;
-        while (timeProvider.GetElapsedTime(started) < FinalInventoryTimeout)
+        while (timeProvider.GetElapsedTime(started) < StartupInventoryTimeout)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            string? failure = GetFinalInventoryAdmissionFailure(sessionAgent, tray);
+            string? failure = GetRelaunchAdmissionFailure(sessionAgent, tray);
             if (failure is not null)
             {
                 return failure;
             }
 
-            // Tray startup can briefly create a duplicate Session Agent. Only
-            // observations are retried; no launch or broker request is repeated.
-            bool inventoryExact = inventory.Inspect(paths).HasExactFinalState;
+            // Helper startup can change the census before Tray is launched;
+            // Tray can also briefly create a duplicate Agent. Retry observations
+            // only, retaining the original child and one fixed phase deadline.
+            InstalledProcessInventory observed = inventory.Inspect(paths);
+            bool inventoryExact = tray is null ? observed.HasOnlySessionAgent : observed.HasExactFinalState;
             cancellationToken.ThrowIfCancellationRequested();
-            failure = GetFinalInventoryAdmissionFailure(sessionAgent, tray);
+            failure = GetRelaunchAdmissionFailure(sessionAgent, tray);
             if (failure is not null)
             {
                 return failure;
             }
-            if (timeProvider.GetElapsedTime(started) >= FinalInventoryTimeout)
+            if (timeProvider.GetElapsedTime(started) >= StartupInventoryTimeout)
             {
-                return "final-inventory-timeout";
+                return timeout;
             }
 
-            if (inventoryExact && previousInventoryExact)
+            if (inventoryExact && (tray is null || previousInventoryExact))
             {
                 return null;
             }
             previousInventoryExact = inventoryExact;
 
-            TimeSpan remaining = FinalInventoryTimeout - timeProvider.GetElapsedTime(started);
+            TimeSpan remaining = StartupInventoryTimeout - timeProvider.GetElapsedTime(started);
             if (remaining <= TimeSpan.Zero)
             {
-                return "final-inventory-timeout";
+                return timeout;
             }
             await delay(
-                remaining < FinalInventoryPollInterval ? remaining : FinalInventoryPollInterval,
+                remaining < StartupInventoryPollInterval ? remaining : StartupInventoryPollInterval,
                 cancellationToken).ConfigureAwait(false);
         }
-        return "final-inventory-timeout";
+        return timeout;
     }
 
-    private string? GetFinalInventoryAdmissionFailure(
+    private string? GetRelaunchAdmissionFailure(
         ILaunchedDeploymentProcess sessionAgent,
-        ILaunchedDeploymentProcess tray)
+        ILaunchedDeploymentProcess? tray)
     {
         if (!HasRequiredContext())
         {
@@ -403,7 +412,7 @@ internal sealed class DeploymentClientCoordinator(
         {
             return "session-agent-relaunch-failed";
         }
-        return tray.HasExited ? "tray-relaunch-failed" : null;
+        return tray?.HasExited == true ? "tray-relaunch-failed" : null;
     }
 
     private bool HasRequiredContext() =>

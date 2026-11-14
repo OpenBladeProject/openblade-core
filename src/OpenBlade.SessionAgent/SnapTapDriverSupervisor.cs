@@ -10,7 +10,7 @@ namespace OpenBlade.SessionAgent;
 /// <summary>Owns worker lifetime without sharing its subscribed driver file object.</summary>
 internal static class SnapTapDriverSupervisor
 {
-    internal const string WorkerMode = "--snap-tap-driver-worker";
+    internal const string WorkerMode = OpenBlade.ProcessArguments.InputHelperCommandLine.WorkerMode;
     internal static string HeartbeatName(int parent) => $"Local\\OpenBlade.SnapTap.Heartbeat.{parent}";
     internal static string StartGateName(int parent) => $"Local\\OpenBlade.SnapTap.Start.{parent}";
 

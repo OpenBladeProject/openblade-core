@@ -4,6 +4,7 @@
     <TargetFramework>net10.0-windows</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\OpenBlade.SessionAgent\InputHelperCommandLine.cs" Link="Shared\InputHelperCommandLine.cs" />
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
     <ProjectReference Include="..\OpenBlade.Deployment\OpenBlade.Deployment.csproj" />
   </ItemGroup>
