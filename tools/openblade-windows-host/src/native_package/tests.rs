@@ -847,3 +847,42 @@ fn selected_agent_battery_capability_is_exact_and_independent_of_service_feature
     );
     assert!(capabilities(2, "service", combined, "agent-battery-report-v1").is_err());
 }
+
+#[test]
+fn selected_partial_display_query_capability_is_exact_and_composes_with_battery() {
+    let selected = "agent-display-query-v1,native-agent-entry-compile-check";
+    let display = "session-display-query-partial-v1";
+    assert!(capabilities(2, "agent", selected, display).is_ok());
+    assert!(capabilities(1, "agent", selected, display).is_err());
+    assert!(capabilities(2, "agent", "agent-display-query-v1", display).is_err());
+    assert!(capabilities(2, "agent", "native-agent-entry-compile-check", display).is_err());
+    for forged in [
+        "none",
+        "agent-display-query-v1",
+        "session-display-v1",
+        "session-display-query-partial-v1,session-display-query-partial-v1",
+    ] {
+        assert!(capabilities(2, "agent", selected, forged).is_err());
+    }
+    let combined = "agent-battery-report-v1,agent-display-query-v1,installed-service-candidate,native-agent-entry-compile-check,service-metadata-only-v1,startup-custody-v1";
+    let both = "agent-battery-report-v1,session-display-query-partial-v1";
+    assert!(capabilities(2, "agent", combined, both).is_ok());
+    for forged in [
+        display,
+        "agent-battery-report-v1",
+        "session-display-query-partial-v1,agent-battery-report-v1",
+        "agent-battery-report-v1,session-display-query-partial-v1,session-display-query-partial-v1",
+    ] {
+        assert!(capabilities(2, "agent", combined, forged).is_err());
+    }
+    assert!(
+        capabilities(
+            2,
+            "service",
+            combined,
+            "private-service-custody-v1,service-metadata-only-v1"
+        )
+        .is_ok()
+    );
+    assert!(capabilities(2, "service", combined, both).is_err());
+}

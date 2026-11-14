@@ -15,6 +15,7 @@ name = "openblade-windows-discovery"
 path = "src/discover.rs"
 
 [features]
+agent-display-query-v1 = ["native-agent-entry-compile-check"]
 agent-battery-report-v1 = ["native-agent-entry-compile-check"]
 native-agent-entry-compile-check = ["windows-sys/Win32_System_RemoteDesktop"]
 cpu-worker-fixture = []

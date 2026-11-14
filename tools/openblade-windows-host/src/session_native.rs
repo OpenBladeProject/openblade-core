@@ -6,9 +6,17 @@ use std::{
 
 #[cfg(feature = "agent-battery-report-v1")]
 mod battery;
-#[cfg(feature = "agent-battery-report-v1")]
+#[cfg(any(
+    feature = "agent-battery-report-v1",
+    feature = "agent-display-query-v1"
+))]
 pub(crate) mod diagnostics;
-#[cfg(feature = "agent-battery-report-v1")]
+#[cfg(feature = "agent-display-query-v1")]
+mod display_query;
+#[cfg(any(
+    feature = "agent-battery-report-v1",
+    feature = "agent-display-query-v1"
+))]
 mod feature_lifetime;
 #[cfg(not(test))]
 mod installed_monitor;
@@ -24,7 +32,10 @@ fn verify_origin(origin: &crate::loaded_origin::Origin) -> io::Result<()> {
 }
 
 fn origin_error(error: io::Error) -> io::Error {
-    #[cfg(feature = "agent-battery-report-v1")]
+    #[cfg(any(
+        feature = "agent-battery-report-v1",
+        feature = "agent-display-query-v1"
+    ))]
     let error = diagnostics::origin(error);
     error
 }

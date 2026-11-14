@@ -79,6 +79,15 @@ impl Endpoint {
     /// Existing managed Battery.v1 name and protected one-SID ownership policy.
     /// No caller-supplied endpoint path or session evidence is accepted here.
     pub fn current_user_battery() -> io::Result<Self> {
+        Self::current_user_session(".Battery.v1")
+    }
+
+    /// Fixed managed Display.v1 endpoint, query-only in the selected Agent.
+    pub fn current_user_display() -> io::Result<Self> {
+        Self::current_user_session("")
+    }
+
+    fn current_user_session(suffix: &'static str) -> io::Result<Self> {
         use sha2::{Digest, Sha256};
         let identity = Identity::read(&process_token()?)?;
         if identity.session == 0
@@ -90,7 +99,7 @@ impl Endpoint {
         let hash = Sha256::digest(format!("{}|{}", identity.sid, identity.session).as_bytes());
         let hash: String = hash[..16].iter().map(|b| format!("{b:02X}")).collect();
         let endpoint = Self::new(
-            format!(r"\\.\pipe\OpenBlade.Session.Display.v1.{hash}.Battery.v1"),
+            format!(r"\\.\pipe\OpenBlade.Session.Display.v1.{hash}{suffix}"),
             2,
         )?;
         if endpoint.identity.sid != identity.sid

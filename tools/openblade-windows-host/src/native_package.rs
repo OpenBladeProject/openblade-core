@@ -668,7 +668,8 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     let battery = has("service-battery-policy-v1");
     let temporary = has("service-temporary-charge-v1");
     let agent_battery = has("agent-battery-report-v1");
-    if agent_battery && !has("native-agent-entry-compile-check") {
+    let agent_display = has("agent-display-query-v1");
+    if (agent_battery || agent_display) && !has("native-agent-entry-compile-check") {
         return Err(deny());
     }
     if temporary && !battery {
@@ -687,7 +688,7 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         return Err(deny());
     }
     if schema == 1 {
-        return if metadata || hardware || agent_battery {
+        return if metadata || hardware || agent_battery || agent_display {
             Err(deny())
         } else {
             Ok(())
@@ -728,8 +729,12 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         } else {
             "private-service-custody-v1"
         }
+    } else if agent_battery && agent_display {
+        "agent-battery-report-v1,session-display-query-partial-v1"
     } else if agent_battery {
         "agent-battery-report-v1"
+    } else if agent_display {
+        "session-display-query-partial-v1"
     } else {
         "none"
     };

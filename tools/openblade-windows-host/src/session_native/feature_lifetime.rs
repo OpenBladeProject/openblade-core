@@ -24,6 +24,47 @@ pub(super) async fn run<Fut: Future<Output = io::Result<()>>>(
     result
 }
 
+/// The pair shares a stop signal, but each future must positively finish. A
+/// feature error also stops its sibling; join! is deliberately used on drain
+/// so one failed drain cannot drop the other feature's in-flight blocking work.
+#[cfg(any(
+    test,
+    all(
+        feature = "agent-battery-report-v1",
+        feature = "agent-display-query-v1"
+    )
+))]
+pub(super) async fn run_pair<Left, Right>(
+    stop: impl Future<Output = io::Result<()>>,
+    status: impl Future<Output = io::Result<()>>,
+    left: impl FnOnce(watch::Receiver<bool>) -> Left,
+    right: impl FnOnce(watch::Receiver<bool>) -> Right,
+) -> io::Result<()>
+where
+    Left: Future<Output = io::Result<()>>,
+    Right: Future<Output = io::Result<()>>,
+{
+    let (signal, receiver) = watch::channel(false);
+    let left = left(receiver.clone());
+    let right = right(receiver);
+    tokio::pin!(stop, status, left, right);
+    let (result, finished) = tokio::select! {
+        result = &mut stop => (result, 0),
+        result = &mut status => (result, 0),
+        result = &mut left => (result, 1),
+        result = &mut right => (result, 2),
+    };
+    let _ = signal.send(true);
+    let drain = match finished {
+        1 => right.await,
+        2 => left.await,
+        _ => {
+            let (left, right) = tokio::join!(left, right);
+            left.and(right)
+        }
+    };
+    result.and(drain)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -72,5 +113,149 @@ mod tests {
         })
         .await;
         assert!(result.is_err());
+    }
+    #[tokio::test]
+    async fn both_active_features_receive_stop_and_keep_custody_until_both_reads_join() {
+        use std::sync::{
+            Arc, Condvar, Mutex,
+            atomic::{AtomicBool, Ordering},
+        };
+        for failed_status in [false, true] {
+            let started = [
+                Arc::new(AtomicBool::new(false)),
+                Arc::new(AtomicBool::new(false)),
+            ];
+            let canceled = [
+                Arc::new(AtomicBool::new(false)),
+                Arc::new(AtomicBool::new(false)),
+            ];
+            let done = [
+                Arc::new(AtomicBool::new(false)),
+                Arc::new(AtomicBool::new(false)),
+            ];
+            let gates = [
+                Arc::new((Mutex::new(false), Condvar::new())),
+                Arc::new((Mutex::new(false), Condvar::new())),
+            ];
+            let owned = Cell::new(true);
+            let trigger = Arc::new(AtomicBool::new(false));
+            let monitor = |fail| {
+                let trigger = trigger.clone();
+                async move {
+                    while !trigger.load(Ordering::Acquire) {
+                        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+                    }
+                    if fail {
+                        Err(io::Error::other("injected origin status loss"))
+                    } else {
+                        Ok(())
+                    }
+                }
+            };
+            let feature = |index: usize, mut stop: watch::Receiver<bool>| {
+                let started = started[index].clone();
+                let canceled = canceled[index].clone();
+                let done = done[index].clone();
+                let gate = gates[index].clone();
+                async move {
+                    let work = tokio::task::spawn_blocking(move || {
+                        started.store(true, Ordering::Release);
+                        let (lock, signal) = &*gate;
+                        let mut permit = lock.lock().unwrap();
+                        while !*permit {
+                            permit = signal.wait(permit).unwrap();
+                        }
+                        done.store(true, Ordering::Release);
+                    });
+                    while !*stop.borrow_and_update() {
+                        stop.changed().await.unwrap();
+                    }
+                    canceled.store(true, Ordering::Release);
+                    work.await.unwrap();
+                    // Even a failed first drain must not abandon its sibling.
+                    if index == 0 {
+                        Err(io::Error::other("injected failed drain"))
+                    } else {
+                        Ok(())
+                    }
+                }
+            };
+            let (result, ()) = tokio::join!(
+                async {
+                    let result = if failed_status {
+                        run_pair(
+                            pending(),
+                            monitor(true),
+                            |s| feature(0, s),
+                            |s| feature(1, s),
+                        )
+                        .await
+                    } else {
+                        run_pair(
+                            monitor(false),
+                            pending(),
+                            |s| feature(0, s),
+                            |s| feature(1, s),
+                        )
+                        .await
+                    };
+                    owned.set(false);
+                    result
+                },
+                async {
+                    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                        while !started.iter().all(|s| s.load(Ordering::Acquire)) {
+                            tokio::task::yield_now().await;
+                        }
+                        trigger.store(true, Ordering::Release);
+                        while !canceled.iter().all(|s| s.load(Ordering::Acquire)) {
+                            tokio::task::yield_now().await;
+                        }
+                        assert!(owned.get());
+                        let release = |i: usize| {
+                            let (lock, signal) = &*gates[i];
+                            *lock.lock().unwrap() = true;
+                            signal.notify_all();
+                        };
+                        release(0);
+                        while !done[0].load(Ordering::Acquire) {
+                            tokio::task::yield_now().await;
+                        }
+                        tokio::task::yield_now().await;
+                        assert!(owned.get());
+                        assert!(!done[1].load(Ordering::Acquire));
+                        release(1);
+                    })
+                    .await
+                    .unwrap();
+                },
+            );
+            assert!(result.is_err());
+            assert!(done.iter().all(|d| d.load(Ordering::Acquire)));
+            assert!(!owned.get());
+        }
+    }
+
+    #[tokio::test]
+    async fn one_feature_failure_signals_and_joins_the_other() {
+        let joined = Cell::new(false);
+        let result = run_pair(
+            pending(),
+            pending(),
+            |_stop| async { Err(io::Error::other("left failed")) },
+            |mut stop| {
+                let joined = &joined;
+                async move {
+                    while !*stop.borrow_and_update() {
+                        stop.changed().await.unwrap();
+                    }
+                    joined.set(true);
+                    Ok(())
+                }
+            },
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(joined.get());
     }
 }
