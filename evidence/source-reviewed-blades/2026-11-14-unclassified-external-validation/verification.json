@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source_revision_for_baseline": "82e0964805f4e8f8c7fa825e7315377d402d4b52",
-  "final_source_revision": "8ee7b199f9bde64431985e98e14b2a914059a32f",
+  "final_source_revision": "52a28bfa4123eab8c8c8a15e3c745b718def3872",
   "source_verification": {
     "models": 22,
     "whole_file_pins": 44,
@@ -568,6 +568,54 @@
       "bytes": 0,
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "completed_assemblies": []
+    },
+    {
+      "log": "ac-0632-OpenBlade.SessionAgent.Tests.log",
+      "bytes": 1644,
+      "sha256": "94e80ebfc8ac13ca714028c1514317d6ee0a88f199ecb1a042303d69d431e79f",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 1382,
+          "skipped": 0,
+          "total": 1382,
+          "duration": "7 s",
+          "assembly": "OpenBlade.SessionAgent.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-0632-OpenBlade.DeploymentClient.Tests.log",
+      "bytes": 1136,
+      "sha256": "2e363b5d9ded1ef0d91056cc2d30288bf3ba270e6898a3040ea178a4beb31ed2",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 238,
+          "skipped": 0,
+          "total": 238,
+          "duration": "6 s",
+          "assembly": "OpenBlade.DeploymentClient.Tests.dll"
+        }
+      ]
+    },
+    {
+      "log": "ac-0632-OpenBlade.Core.Native.Tests.log",
+      "bytes": 905,
+      "sha256": "1d8d3d5955e29ba32b22ae033810ad3da3bceb3d51c6106ab3e2a49a0e4ff52b",
+      "completed_assemblies": [
+        {
+          "result": "Passed!",
+          "failed": 0,
+          "passed": 136,
+          "skipped": 0,
+          "total": 136,
+          "duration": "153 ms",
+          "assembly": "OpenBlade.Core.Native.Tests.dll"
+        }
+      ]
     }
   ],
   "hardware_actions_performed": false,
@@ -600,8 +648,9 @@
   "merged_main_revision": "b7363c623f2bd5a5721d916f72c7937a32d47abc",
   "version_impact": {
     "kind": "patch",
-    "base": "0.63.0",
-    "head": "0.63.1"
+    "base": "0.63.1",
+    "head": "0.63.2",
+    "local_policy": "PASS"
   },
   "native_integration": {
     "source_bound_build": true,
@@ -612,11 +661,12 @@
     "contracts_passed": 845,
     "linker_informational_warnings": 1,
     "final_library_sha256": "848d495455098ebf47bf567c3a5914bb0006e0fd25efc356a18a45800f47b520",
-    "final_source_revision": "8ee7b199f9bde64431985e98e14b2a914059a32f",
+    "final_source_revision": "491fdff869bd180e870d33fc80accc3890818ba8",
     "source_fingerprint": "fc991114432a77f918f7bcb38bd79c035b26b2e89a6a3f908059b25e31aa76f1",
     "final_interop_rerun_passed": 136,
     "bytes_changed_during_provenance_refresh": true,
-    "previous_hash": "4635BCBA49006DF003131866FE569FECF317A4EBFFFE0E627AD66F56E20B4700"
+    "previous_hash": "4635BCBA49006DF003131866FE569FECF317A4EBFFFE0E627AD66F56E20B4700",
+    "product_version": "0.63.2"
   },
   "integration_results": {
     "protocol_focused": {
@@ -662,7 +712,22 @@
       "failed": 0,
       "skipped": 0
     },
-    "whitespace_verification": "PASS on all changed C# source files; no changes required after formatting."
+    "whitespace_verification": "PASS on all changed C# source files; no changes required after formatting.",
+    "broker_deployment_client": {
+      "passed": 238,
+      "failed": 0,
+      "skipped": 0
+    },
+    "session_agent_0632": {
+      "passed": 1382,
+      "failed": 0,
+      "skipped": 0
+    },
+    "native_interop_0632": {
+      "passed": 136,
+      "failed": 0,
+      "skipped": 0
+    }
   },
   "render": {
     "source_revision": "a8d9d37a48140c4c8a53869e5592348f67489177",
@@ -670,6 +735,7 @@
     "width": 1104,
     "height": 811,
     "sha256": "d34a142b24830f453cf490d79d3a8771df7dfb45c847985e19b1048536d987bc",
-    "basis": "Disconnected fixture; no service or hardware. Later SessionAgent-only source correction does not affect this surface."
-  }
+    "basis": "Disconnected fixture; no service or hardware. Later shortcut/broker/version changes do not affect this surface."
+  },
+  "broker_integration_revision": "447701e42a5279776aa346ed0b2573066bdc9f30"
 }
