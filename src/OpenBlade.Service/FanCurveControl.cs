@@ -30,10 +30,13 @@ internal static class ManualFanCurveCapabilityPolicy
         && (!capabilities.ReportsPerformanceWithManualFans
             || capabilities.PerformancePresets.Contains(performance));
 
-    internal static bool SupportsPowerSource(DeviceCapabilities capabilities, PowerSource source) =>
-        FanControlPowerPolicy.IsAvailable(source, FanMode.ManualCurve,
-            capabilities.SupportsManualFansOnLimitedPower)
-        && (!capabilities.ReportsPerformanceWithManualFans || source == PowerSource.PluggedIn);
+    internal static bool SupportsPowerSource(DeviceCapabilities capabilities, PowerSource source,
+        bool externalPowerPresent = false) =>
+        source == PowerSource.ExternalUnknown
+            ? externalPowerPresent && capabilities.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower
+            : FanControlPowerPolicy.IsAvailable(source, FanMode.ManualCurve,
+                capabilities.SupportsManualFansOnLimitedPower)
+                && (!capabilities.ReportsPerformanceWithManualFans || source == PowerSource.PluggedIn);
 }
 
 public static class FanCurveCalculator

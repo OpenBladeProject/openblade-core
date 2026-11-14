@@ -3,7 +3,7 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
 
-public sealed class ProductionBatteryPortTests
+public sealed partial class ProductionBatteryPortTests
 {
     [Fact]
     public void HyperBoostCommandSet_RequiresEveryWritableRestorationWithoutInventingBalancedAliases()
@@ -3227,7 +3227,9 @@ public sealed class ProductionBatteryPortTests
         IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null,
         CustomPerformanceCapabilities? customPerformanceCapabilities = null,
         bool supportsDirectManualFanTransitions = false,
-        bool supportsBatterySaverFanStop = false) => new(
+        bool supportsBatterySaverFanStop = false,
+        Func<PowerSource>? capturePowerSource = null,
+        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower = false) => new(
             session,
             catalog,
             evidence ?? NoTemporaryReadEvidence(),
@@ -3239,7 +3241,9 @@ public sealed class ProductionBatteryPortTests
             customPerformanceCapabilities,
             supportsDirectManualFanTransitions: supportsDirectManualFanTransitions,
             supportsBatterySaverFanStop: supportsBatterySaverFanStop,
-            stopHardwareAdmission: () => true);
+            stopHardwareAdmission: () => true,
+            capturePowerSource: capturePowerSource,
+            supportsOrdinaryThermalControlOnUnclassifiedExternalPower: supportsOrdinaryThermalControlOnUnclassifiedExternalPower);
 
     private static DeviceCommandCatalog Catalog(params CapturedCommandFixture[] fixtures) =>
         DeviceCommandCatalog.Create(CapturedFixtureFile.TargetDevice, fixtures);

@@ -479,7 +479,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             parameter => parameter is LightingSettings value
                 && !IsLightingOperationInProgress
                 && CanMutate
-                && HasConfirmedPowerSource
+                && HasManualPowerContext
                 && CanSubmitLightingDraft(value));
         SetChargeLimitCommand = CreateCommand(
             SetChargeLimitAsync,
@@ -1556,7 +1556,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanReapplyChangedSettings => (HasExternalChanges
         || ThermalConvergenceExplicitReapplyRequired)
         && !HasUnconfirmedWrites
-        && CanControlHardware
+        && CanControlHardware && HasConfirmedPowerSource
         && (HasReapplicableExternalChanges || ThermalConvergenceExplicitReapplyRequired)
         && !IsReapplyChangedSettingsOperationInProgress;
 
@@ -2274,7 +2274,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             PowerSource.PluggedIn => AvailablePluggedInPerformanceOptions,
             PowerSource.Battery => AvailableBatteryPerformanceOptions,
             PowerSource.UsbC => AvailableUsbCPerformanceOptions,
-            PowerSource.ExternalUnknown => [],
+            PowerSource.ExternalUnknown => HasUnclassifiedOrdinaryThermalControl
+                ? PerformancePresetPresentation.CreateOrdinaryManualOptions(CommandCapabilities.PerformancePresets) : [],
             _ => [],
         };
 
@@ -2347,7 +2348,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             PowerSource.Battery => AvailableFanModes
                 .Where(mode => FanControlPowerPolicy.IsAvailable(PowerSource.Battery, mode)).ToArray(),
             PowerSource.UsbC => AvailableUsbCFanModes,
-            PowerSource.ExternalUnknown => [],
+            PowerSource.ExternalUnknown => HasUnclassifiedOrdinaryThermalControl ? AvailableFanModes : [],
             _ => [],
         };
 
@@ -2357,7 +2358,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             PowerSource.PluggedIn => availableFanModeOptions,
             PowerSource.Battery => availableBatteryFanModeOptions,
             PowerSource.UsbC => availableUsbCFanModeOptions,
-            PowerSource.ExternalUnknown => [],
+            PowerSource.ExternalUnknown => HasUnclassifiedOrdinaryThermalControl ? availableFanModeOptions : [],
             _ => [],
         };
 
@@ -2848,7 +2849,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
     public bool CanEditFanControl =>
-        !FanStopOwnsControl &&
+        HasOrdinaryThermalPowerContext && !FanStopOwnsControl &&
         !(IsBatterySaverFanStopVisible && BatterySaverFanStopRequested) &&
         CanRequestHardwareControl
         && !IsFanControlOperationInProgress
@@ -2882,7 +2883,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                         : string.Empty;
 
     public bool CanEditPerformance =>
-        CanRequestHardwareControl
+        HasOrdinaryThermalPowerContext && CanRequestHardwareControl
         && !IsPerformanceOperationInProgress
         && !HyperBoostActive
         && !IsThermalStateUnknown;
@@ -3059,7 +3060,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             DeviceCapabilities capabilities = CommandCapabilities;
             if (IsChargeLimitOperationInProgress
                 || !CanMutate
-                || !HasConfirmedPowerSource
+                || !HasManualPowerContext
                 || latestStatus?.ConfirmedState?.Battery is not { } confirmed
                 || confirmed.TemporaryFullCharge is true
                 || confirmed.TemporaryFullCharge is null && capabilities.SupportsTemporaryFullCharge)
@@ -4957,6 +4958,27 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && option.Policy != thermalConvergence?.Policy
         && CanChangeThermalControlPolicy;
 
+    private bool CanPresentUnclassifiedExternalPower(ServiceStatusSnapshot? status) =>
+        status is
+        {
+            ExternalPowerPresent: true, DeviceVerified: true, WritesBlocked: false,
+            ControlAccess: SessionControlAccess.Active, HyperBoostRestorePending: false
+        }
+        && !IsCheckingLaptopConnection(status) && !IsThermalStateUnknown
+        && status.UnconfirmedWrites.Count == 0 && status.PotentialControllers.Count == 0
+        && status.ControllerDetectionWarning is null;
+
+    public bool ExternalPowerPresent => latestStatus?.ExternalPowerPresent == true;
+
+    private bool HasManualPowerContext => HasConfirmedPowerSource
+        || ActivePowerSource == PowerSource.ExternalUnknown && ExternalPowerPresent;
+
+    private bool HasUnclassifiedOrdinaryThermalControl => ActivePowerSource == PowerSource.ExternalUnknown
+        && ExternalPowerPresent && CommandCapabilities.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower
+        && !HyperBoostActive && !IsThermalStateUnknown;
+
+    private bool HasOrdinaryThermalPowerContext => HasConfirmedPowerSource || HasUnclassifiedOrdinaryThermalControl;
+
     private bool HasConfirmedPowerSource => ActivePowerSource is
         PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
 
@@ -4972,9 +4994,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && !HyperBoostActive
         && !IsThermalStateUnknown
         && CanMutate
-        && HasConfirmedPowerSource
+        && HasOrdinaryThermalPowerContext
         && CommandCapabilities.PerformancePresets.Contains(value)
-        && PerformancePresetPresentation.IsAvailable(ActivePowerSource, value);
+        && (HasUnclassifiedOrdinaryThermalControl
+            ? PerformancePresetPresentation.IsOrdinaryPreset(value)
+            : PerformancePresetPresentation.IsAvailable(ActivePowerSource, value));
 
     private bool CanSetCustomPerformance(object? parameter) =>
         parameter is CustomPerformanceSettings value
@@ -4986,7 +5010,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && !HyperBoostActive
         && !IsThermalStateUnknown
         && CanMutate
-        && HasConfirmedPowerSource;
+        && HasOrdinaryThermalPowerContext
+        && (!HasUnclassifiedOrdinaryThermalControl || value.GpuClockOffsets is null);
 
     private bool SupportsCustomPerformance(
         CustomPerformanceLevel cpu,
@@ -5059,13 +5084,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             || (IsBatterySaverFanStopVisible && BatterySaverFanStopRequested)
             || HyperBoostActive
             || !CanMutate
-            || !HasConfirmedPowerSource
+            || !HasOrdinaryThermalPowerContext
             || !CommandCapabilities.FanModes.Contains(value))
         {
             return false;
         }
 
-        return ProfileAdmissionPolicy.FanModeAvailable(ActivePowerSource, value, CommandCapabilities)
+        return (HasUnclassifiedOrdinaryThermalControl
+                ? value is FanMode.Automatic or FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
+                : ProfileAdmissionPolicy.FanModeAvailable(ActivePowerSource, value, CommandCapabilities))
             && (value != FanMode.ManualCurve
                 || ProfileAdmissionPolicy.ManualCurvePresetSupported(SelectedPerformance, CommandCapabilities))
             && (value is not (FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum)
@@ -5139,7 +5166,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ServiceStatusSnapshot? status = latestStatus;
         if (IsFullChargeOperationInProgress
             || !CanMutate
-            || !HasConfirmedPowerSource
+            || !HasManualPowerContext
             || !ProfileAdmissionPolicy.HasBatteryCapability(capabilities)
             || !capabilities.SupportsTemporaryFullCharge
             || status?.ConfirmedState?.Battery is not
@@ -5157,7 +5184,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ? requested
             : !temporaryFullCharge;
         return enable != temporaryFullCharge
-            && (!enable || ActivePowerSource is PowerSource.PluggedIn or PowerSource.UsbC);
+            && (!enable || ActivePowerSource is PowerSource.PluggedIn or PowerSource.UsbC
+                || ActivePowerSource == PowerSource.ExternalUnknown && ExternalPowerPresent);
     }
 
     private bool CanToggleBatteryProtection(object? parameter)
@@ -5167,7 +5195,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (parameter is not null
             || IsBatteryProtectionOperationInProgress
             || !CanMutate
-            || !HasConfirmedPowerSource
+            || !HasManualPowerContext
             || !ProfileAdmissionPolicy.HasBatteryCapability(capabilities)
             || status?.ConfirmedState?.Battery is not { } confirmed
             || confirmed.TemporaryFullCharge is true
@@ -5719,7 +5747,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             status.DeviceVerified,
             status.ActivePowerSource,
             SelectedPerformance,
-            HyperBoostActive);
+            HyperBoostActive, externalPowerPresent: CanPresentUnclassifiedExternalPower(status));
         ApplyLiveReadings(status);
         PerformanceOverride = status.PerformanceOverride;
         FanOverride = status.FanOverride;
@@ -5765,7 +5793,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && !checkingLaptopConnection;
         IsReadOnly = !controllable;
         CanControlHardware = controllable
-            && status.ActivePowerSource != PowerSource.ExternalUnknown;
+            && (status.ActivePowerSource != PowerSource.ExternalUnknown || status.ExternalPowerPresent);
+        Notify(nameof(ExternalPowerPresent));
         ConnectionStatus = status.Message;
         ControlAccessStatus = FormatControlAccessStatus(status);
         HasControllerAdvisory = status.PotentialControllers.Count > 0;
@@ -6133,14 +6162,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void RefreshLaptopPerformanceOptions()
     {
-        IReadOnlyList<PerformancePresetOption> presets = ActivePowerSource switch
-        {
-            PowerSource.PluggedIn => AvailablePluggedInPerformanceOptions,
-            PowerSource.Battery => AvailableBatteryPerformanceOptions,
-            PowerSource.UsbC => AvailableUsbCPerformanceOptions,
-            PowerSource.ExternalUnknown => [],
-            _ => [],
-        };
+        IReadOnlyList<PerformancePresetOption> presets = AvailableActivePerformanceOptions;
         bool includeHyperBoost = IsHyperBoostVisible
             && (HyperBoostActive
                 || IsHyperBoostOperationInProgress
@@ -6421,7 +6443,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ServiceStatusSnapshot? status = latestStatus;
         if (IsChargeLimitOperationInProgress
             || !CanMutate
-            || !HasConfirmedPowerSource
+            || !HasManualPowerContext
             || status?.ConfirmedState?.Battery is not { } confirmed
             || confirmed.TemporaryFullCharge is true
             || confirmed.TemporaryFullCharge is null && capabilities.SupportsTemporaryFullCharge)
@@ -6483,9 +6505,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 requested,
                 OverrideLifetime.UntilPowerSourceChange,
                 requested == PerformancePreset.Custom
-                    ? GetActiveProfileCustomPerformance()
+                    ? HasUnclassifiedOrdinaryThermalControl ? CurrentCustomPerformanceSettings : GetActiveProfileCustomPerformance()
                     : null,
-                GetActiveProfileGpuClockTuning()),
+                HasUnclassifiedOrdinaryThermalControl ? null : GetActiveProfileGpuClockTuning()),
             token);
     }
 
@@ -6497,7 +6519,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 PerformancePreset.Custom,
                 OverrideLifetime.UntilPowerSourceChange,
                 requested,
-                GetActiveProfileGpuClockTuning()),
+                HasUnclassifiedOrdinaryThermalControl ? null : GetActiveProfileGpuClockTuning()),
             token);
     }
 
@@ -6628,7 +6650,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                             latestStatus?.DeviceVerified is true,
                             ActivePowerSource,
                             SelectedPerformance,
-                            HyperBoostActive);
+                            HyperBoostActive, externalPowerPresent: CanPresentUnclassifiedExternalPower(latestStatus));
                     }
                 });
         }
@@ -7684,7 +7706,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : profileEditorsDirty && TryGetSupportedProfileDraft(parameter, out _));
 
     private bool CanSaveActiveProfileDraft(ProfileDraftGroup group) =>
-        CanMutate
+        CanMutate && HasConfirmedPowerSource
         && (group != ProfileDraftGroup.Lighting || CanControlLighting)
         && (HasActiveProfileDraftFor(group)
             && activeProfileDraft.Source == ActivePowerSource

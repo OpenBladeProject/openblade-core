@@ -22,11 +22,11 @@ public static class TrayIconStateResolver
         bool deviceVerified,
         PowerSource powerSource,
         PerformancePreset? effectivePerformance,
-        bool hyperBoostActive = false)
+        bool hyperBoostActive = false, bool externalPowerPresent = false)
     {
         if (!isConnected
             || !deviceVerified
-            || powerSource == PowerSource.ExternalUnknown
+            || powerSource == PowerSource.ExternalUnknown && !externalPowerPresent
             || effectivePerformance is null)
         {
             return TrayIconState.GenericError;
@@ -49,15 +49,15 @@ public static class TrayIconStateResolver
 
         return (powerSource, effectivePerformance.Value) switch
         {
-            (PowerSource.PluggedIn, PerformancePreset.Balanced) =>
+            (PowerSource.PluggedIn or PowerSource.ExternalUnknown, PerformancePreset.Balanced) =>
                 TrayIconState.AcBalanced,
-            (PowerSource.PluggedIn, PerformancePreset.Silent) =>
+            (PowerSource.PluggedIn or PowerSource.ExternalUnknown, PerformancePreset.Silent) =>
                 TrayIconState.AcSilent,
-            (PowerSource.PluggedIn, PerformancePreset.Performance
+            (PowerSource.PluggedIn or PowerSource.ExternalUnknown, PerformancePreset.Performance
                 or PerformancePreset.Turbo or PerformancePreset.MaximumPower
                 or PerformancePreset.Gaming or PerformancePreset.Creator) =>
                 TrayIconState.AcPerformance,
-            (PowerSource.PluggedIn, PerformancePreset.Custom) =>
+            (PowerSource.PluggedIn or PowerSource.ExternalUnknown, PerformancePreset.Custom) =>
                 TrayIconState.AcCustom,
             (PowerSource.UsbC, PerformancePreset.Balanced) =>
                 TrayIconState.UsbCBalanced,

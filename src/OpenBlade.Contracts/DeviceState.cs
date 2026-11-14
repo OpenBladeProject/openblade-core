@@ -241,6 +241,11 @@ public sealed record DeviceCapabilities(
     /// Omitted capabilities retain Automatic-only admission on that source.</summary>
     public bool SupportsManualFansOnLimitedPower { get; init; }
 
+    /// <summary>Exact-model source admits ordinary thermal commands on fresh
+    /// Windows external presence when adapter wattage cannot be classified.
+    /// This does not admit HyperBoost, voltage, native overclocking, or FullPower.</summary>
+    public bool SupportsOrdinaryThermalControlOnUnclassifiedExternalPower { get; init; }
+
     public bool SupportsKeyboardBrightness { get; init; }
 
     // Independent fields have their own typed path and do not imply that an

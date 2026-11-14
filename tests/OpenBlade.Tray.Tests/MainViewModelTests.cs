@@ -9,6 +9,105 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed partial class MainViewModelTests
 {
+    [Theory]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, false)]
+    [InlineData(null, true, false)]
+    public async Task UnclassifiedOrdinaryControlsCannotImplicitlyExitHyperBoost(
+        bool? active, bool supportsHyperBoost, bool available)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportsOrdinaryThermalControlOnUnclassifiedExternalPower = true,
+            HyperBoostAccess = supportsHyperBoost ? DeviceFeatureAccess.ReadWrite : null,
+        };
+        ServiceStatusSnapshot ready = CreateStatus(true, false, capabilities: capabilities) with
+        {
+            ActivePowerSource = PowerSource.ExternalUnknown,
+            ExternalPowerPresent = true,
+            ConfirmedState = new(PerformancePreset.Balanced, FanMode.Automatic, null, null)
+            { HyperBoostActive = active },
+            Message = $"Unclassified HB={active};cap={supportsHyperBoost}",
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, ready);
+        Assert.Equal(available, viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
+        Assert.Equal(available, viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+        Assert.Equal(available, viewModel.AvailableActivePerformanceOptions.Count > 0);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task DirectBatteryControlsUsePositiveAcPresenceWithoutChoosingProfileSlot(bool presence)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot ready = CreateStatus(true, false) with
+        {
+            ActivePowerSource = PowerSource.ExternalUnknown,
+            ExternalPowerPresent = presence,
+            ConfirmedState = new(PerformancePreset.Balanced, FanMode.Automatic,
+                new ConfirmedBatteryState(true, 80, false), null)
+            { HyperBoostActive = false },
+            Message = $"Direct battery unclassified presence={presence}",
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, ready);
+        Assert.Equal(presence, viewModel.CanAdjustChargeLimit);
+        Assert.Equal(presence, viewModel.SetChargeLimitCommand.CanExecute(80));
+        Assert.Equal(presence, viewModel.ToggleBatteryProtectionCommand.CanExecute(null));
+        Assert.Equal(presence, viewModel.ToggleFullChargeCommand.CanExecute(true));
+        Assert.False(viewModel.SaveLaptopProfileDraftCommand.CanExecute(null));
+        Assert.Equal(PowerSource.ExternalUnknown, viewModel.ActivePowerSource);
+    }
+
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    public async Task UnclassifiedExternalControlsUsePositivePresenceAndReviewedOrdinaryCapability(
+        bool presence, bool ordinaryCapability, bool thermalAvailable)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportsOrdinaryThermalControlOnUnclassifiedExternalPower = ordinaryCapability,
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
+        };
+        ServiceStatusSnapshot ready = CreateStatus(true, false, capabilities: capabilities) with
+        {
+            ActivePowerSource = PowerSource.ExternalUnknown,
+            ExternalPowerPresent = presence,
+            ConfirmedState = new(PerformancePreset.Balanced, FanMode.Automatic, null,
+                ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting)
+            { HyperBoostActive = false },
+            ExternalChanges = [DeviceSubsystem.Performance],
+            Message = $"Unclassified presence={presence};ordinary={ordinaryCapability}",
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, ready);
+        Assert.Equal(PowerSource.ExternalUnknown, viewModel.ActivePowerSource);
+        Assert.Equal("External power (unclassified)", viewModel.ActivePowerSourceLabel);
+        Assert.Equal(thermalAvailable, viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
+        Assert.Equal(thermalAvailable, viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+        Assert.Equal(presence, viewModel.SetLightingCommand.CanExecute(ready.Profiles.PluggedIn.Lighting));
+        Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.False(viewModel.CanToggleGpuClockTuning);
+        Assert.False(viewModel.CanEditWindowsPowerMode);
+        Assert.False(viewModel.CanReapplyChangedSettings);
+        Assert.False(viewModel.SaveLaptopProfileDraftCommand.CanExecute(null));
+        Assert.Equal(thermalAvailable, viewModel.AvailableActivePerformanceOptions.Count > 0);
+    }
+
     [Fact]
     public async Task CompactProfileComparison_PutsTheActiveProfileFirstAndStillAllowsReviewingOthers()
     {

@@ -75,6 +75,15 @@ public static class PerformancePresetPresentation
         _ => false,
     };
 
+    internal static bool IsOrdinaryPreset(PerformancePreset value) => value is
+        PerformancePreset.Balanced or PerformancePreset.Silent or PerformancePreset.Performance
+        or PerformancePreset.Turbo or PerformancePreset.MaximumPower or PerformancePreset.Gaming
+        or PerformancePreset.Creator or PerformancePreset.Custom;
+
+    internal static IReadOnlyList<PerformancePresetOption> CreateOrdinaryManualOptions(
+        IReadOnlySet<PerformancePreset> admitted) => PluggedInOrder.Where(admitted.Contains)
+            .Select(value => new PerformancePresetOption(value, Label(value))).ToArray();
+
     public static IReadOnlyList<PerformancePresetOption> CreateOptions(
         PowerSource source,
         IReadOnlySet<PerformancePreset> admitted)

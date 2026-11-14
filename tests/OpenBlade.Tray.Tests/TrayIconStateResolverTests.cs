@@ -5,6 +5,25 @@ namespace OpenBlade.Tray.Tests;
 public sealed class TrayIconStateResolverTests
 {
     [Theory]
+    [InlineData(PerformancePreset.Balanced, TrayIconState.AcBalanced)]
+    [InlineData(PerformancePreset.Silent, TrayIconState.AcSilent)]
+    [InlineData(PerformancePreset.Performance, TrayIconState.AcPerformance)]
+    [InlineData(PerformancePreset.Custom, TrayIconState.AcCustom)]
+    public void PositiveAcPresenceRemovesOnlyTheUnclassifiedSourceError(
+        PerformancePreset performance, TrayIconState expected)
+    {
+        Assert.Equal(expected, TrayIconStateResolver.Resolve(true, true,
+            PowerSource.ExternalUnknown, performance, externalPowerPresent: true));
+        Assert.Equal(TrayIconState.GenericError, TrayIconStateResolver.Resolve(true, true,
+            PowerSource.ExternalUnknown, performance));
+        Assert.Equal(TrayIconState.GenericError, TrayIconStateResolver.Resolve(false, true,
+            PowerSource.ExternalUnknown, performance, externalPowerPresent: true));
+        Assert.Equal(TrayIconState.GenericError, TrayIconStateResolver.Resolve(true, false,
+            PowerSource.ExternalUnknown, performance, externalPowerPresent: true));
+        Assert.Equal("External power (unclassified)", PowerSourcePresentation.Label(PowerSource.ExternalUnknown));
+    }
+
+    [Theory]
     [InlineData(PowerSource.PluggedIn, PerformancePreset.Custom, false)]
     [InlineData(PowerSource.PluggedIn, PerformancePreset.Performance, true)]
     [InlineData(PowerSource.UsbC, PerformancePreset.Balanced, false)]

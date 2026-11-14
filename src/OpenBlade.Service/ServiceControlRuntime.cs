@@ -497,9 +497,9 @@ internal sealed record ServiceUserRequestOwner(ServiceClientContext Client, Func
 public sealed partial class ServiceControlRuntime : IServiceControlRuntime, IServiceUserAdmission, IDisposable
 {
     private const string UnclassifiedExternalPowerMessage =
-        "The external power adapter could not be classified; control writes are blocked.";
+        "Windows reports external power; adapter classification is unavailable. Profile automation and advanced thermal controls remain deferred.";
     private const string TransientExternalPowerMessage =
-        "Power adapter classification is temporarily unavailable; the last confirmed power source is retained and control writes are blocked.";
+        "Power adapter classification is temporarily unavailable. Explicit supported controls require fresh external-power admission; classified profile automation remains deferred.";
     private const string ConfigurationQuarantineAdvisory =
         "OpenBlade preserved an unsupported or invalid configuration. Thermal settings are read-only until the service restarts with a valid configuration.";
     private const string ConfigurationQuarantineBlockedMessage =
@@ -1000,6 +1000,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 configuration.Preferences,
                 powerSource,
                 persistentOverrides);
+            Interlocked.Exchange(ref explicitUnclassifiedOverrideGeneration, -1);
             automation = initializedAutomation;
             Volatile.Write(
                 ref activeConfigurationDisposition,
@@ -1064,6 +1065,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 WritesBlocked = current.WritesBlocked || paused || laptopPending,
             };
         }
+        bool presence = HasFreshExternalPowerPresence && current.DeviceVerified
+            && current.ControlAccess == SessionControlAccess.Active
+            && current.ObservationReason is not (DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls);
+        current = current with
+        {
+            ExternalPowerPresent = presence,
+            ActivePowerSource = IsUnclassifiedExternalContext ? PowerSource.ExternalUnknown : current.ActivePowerSource,
+        };
         return ApplyConfigurationQuarantineAdvisory(ProjectFanStopStatus(ProjectBatterySaverFanStopStatus(current)));
     }
 
@@ -1391,6 +1400,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 Volatile.Write(
                     ref activeConfigurationDisposition,
                     (int)context.Configuration.Disposition);
+                // A source-classification refinement may retain only this
+                // configuration owner's explicit requests, never a prior SID's.
+                Interlocked.Exchange(ref explicitUnclassifiedOverrideGeneration, -1);
                 automation = new ProfileAutomationState(
                     profiles,
                     context.Configuration.Preferences,
@@ -2312,6 +2324,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 : "Performance override intent was stored.",
             deferHardwareApply: DeferredPerformanceIntentMessage,
             stillControlsSession: stillControlsSession,
+            clearsExplicitOverride: value is null,
             thermalComponentResolver: desired =>
             {
                 ServiceStatusSnapshot status = GetStatus();
@@ -2607,6 +2620,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 : "Fan override intent was stored.",
             allowFanOwnershipRearm: true,
             stillControlsSession: stillControlsSession,
+            clearsExplicitOverride: value is null,
             thermalComponentResolver: desired =>
             {
                 FanControlSettings requested = desired.FanControl
@@ -2744,6 +2758,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
 
             if (confirmedPowerSource == PowerSource.ExternalUnknown
+                    && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Fans)
                 || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
             {
                 ClearLastFanCurveTargets();
@@ -2921,6 +2936,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             normalized is null
                 ? "Lighting override was cleared."
                 : "Lighting override intent was stored.",
+            clearsExplicitOverride: normalized is null,
             afterApply: () =>
             {
                 lightingRecoveryPauseMessage = null;
@@ -2965,7 +2981,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 .ConfigureAwait(false);
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                 .ConfigureAwait(false);
-            if (powerSource == PowerSource.ExternalUnknown)
+            if (powerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
             {
                 return PublishScopedUnavailable(
                     DeviceSubsystem.Lighting,
@@ -2974,7 +2991,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     preserveCurrentAvailability: true);
             }
 
-            if (ChangePowerSourceCore(powerSource))
+            if (powerSource != PowerSource.ExternalUnknown && ChangePowerSourceCore(powerSource))
             {
                 ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
                 if (transition.StopFurtherWrites)
@@ -3076,7 +3093,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ServiceStatusSnapshot current = GetStatus();
             if (!current.DeviceVerified
                 || current.WritesBlocked
-                || !deviceProvider.TryGetVerifiedDevice(out _))
+                || !deviceProvider.TryGetVerifiedDevice(out _)
+                || !HasFreshDirectControlPowerContext())
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
@@ -4330,7 +4348,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
             if (!current.DeviceVerified
                 || current.WritesBlocked
-                || current.ActivePowerSource == PowerSource.ExternalUnknown)
+                || current.ActivePowerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
@@ -4610,7 +4629,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 return new ControlOperationResult(ControlOperationStatus.Blocked,
                     "Experimental controls cannot be resumed in the current state.");
             }
-            PowerSource observedWindowsPower = powerStateProvider.CapturePowerSource();
+            PowerSource observedWindowsPower = CaptureControlPowerSource();
             PowerSource source = await ResolveCurrentPowerSourceAsync(token).ConfigureAwait(false);
             if (source == PowerSource.ExternalUnknown
                 || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
@@ -4619,7 +4638,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     "OpenBlade could not verify the laptop and its power source.");
             }
             bool StillAuthorized() => StillAdmitted()
-                && powerStateProvider.CapturePowerSource() == observedWindowsPower;
+                && CaptureControlPowerSource() == observedWindowsPower;
             bool uncertainLighting = pendingWriteConfirmations.Blocks(DeviceSubsystem.Lighting)
                 || pendingLightingRestore is not null;
             ConfirmedDeviceState confirmed = await deviceProvider.ResumeExperimentalWritesAsync(
@@ -4697,8 +4716,26 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
     }
 
-    public DiagnosticExperimentalSupport GetCachedExperimentalSupportDiagnostics() =>
-        deviceProvider.GetExperimentalSupportDiagnostics();
+    public DiagnosticExperimentalSupport GetCachedExperimentalSupportDiagnostics()
+    {
+        DiagnosticExperimentalSupport support = deviceProvider.GetExperimentalSupportDiagnostics();
+        ServiceStatusSnapshot current = GetStatus();
+        if (support.Detected || current.Capabilities?.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower != true
+            || RazerBladeModelCatalog.Find(current.Firmware?.ModelNumber)?.SupportBasis != BladeSupportBasis.PhysicallyValidated)
+        {
+            return support;
+        }
+        return support with
+        {
+            ModelNumber = current.Firmware?.ModelNumber,
+            FeatureEvidence =
+            [
+                new("OrdinaryThermalControlsOnUnclassifiedExternalPower",
+                    "SynapseSourceBackedWithoutPhysicalValidation",
+                    ["evidence/source-reviewed-blades/2026-11-14-unclassified-external-thermal.json"]),
+            ],
+        };
+    }
 
     public async Task<ControlOperationResult> SetLightingSuppressionAsync(
         LightingSuppressionReason reason,
@@ -4755,7 +4792,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                 .ConfigureAwait(false);
             ServiceStatusSnapshot current = GetStatus();
-            if (powerSource == PowerSource.ExternalUnknown)
+            if (powerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
             {
                 return PublishScopedUnavailable(
                     DeviceSubsystem.Lighting,
@@ -4782,7 +4820,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     deferred);
             }
 
-            if (ChangePowerSourceCore(powerSource))
+            if (powerSource != PowerSource.ExternalUnknown && ChangePowerSourceCore(powerSource))
             {
                 ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
                 if (transition.StopFurtherWrites)
@@ -4863,7 +4901,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             || laptopControlExecutor.RequiresReconciliation
             || fanStopController.BlocksOrdinaryHardware
             || Volatile.Read(ref laptopRecoveryObservationActive) != 0
-            || current.ActivePowerSource == PowerSource.ExternalUnknown)
+            || current.ActivePowerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
         {
             return new ControlOperationResult(
                 ControlOperationStatus.Blocked,
@@ -4952,7 +4991,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
             || current.WritesBlocked
-            || current.ActivePowerSource == PowerSource.ExternalUnknown)
+            || current.ActivePowerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
         {
             return new ControlOperationResult(
                 ControlOperationStatus.Blocked,
@@ -5032,7 +5072,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
             || current.WritesBlocked
-            || current.ActivePowerSource == PowerSource.ExternalUnknown)
+            || current.ActivePowerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
         {
             return new ControlOperationResult(
                 ControlOperationStatus.Blocked,
@@ -5114,7 +5155,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
             || current.WritesBlocked
-            || current.ActivePowerSource == PowerSource.ExternalUnknown)
+            || current.ActivePowerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
         {
             return new ControlOperationResult(
                 ControlOperationStatus.Blocked,
@@ -5231,7 +5273,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             if (!current.DeviceVerified
                 || current.WritesBlocked
                 || current.Capabilities is null
-                || !current.Capabilities.OneShotLaptopControls.Contains(value.Control))
+                || !current.Capabilities.OneShotLaptopControls.Contains(value.Control)
+                || !HasFreshDirectControlPowerContext())
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
@@ -10212,7 +10255,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                 .ConfigureAwait(false);
 
-            if (powerSource == PowerSource.ExternalUnknown)
+            if (powerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Battery))
             {
                 return PublishScopedUnavailable(
                     DeviceSubsystem.Battery,
@@ -10221,7 +10265,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     preserveCurrentAvailability: true);
             }
 
-            if (ChangePowerSourceCore(powerSource))
+            if (powerSource != PowerSource.ExternalUnknown && ChangePowerSourceCore(powerSource))
             {
                 ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token);
                 // A rejected battery-only request may still report its validation
@@ -10245,7 +10289,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 return rejected;
             }
 
-            if (enabled && !Automation.DesiredBattery.ProtectionEnabled)
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                _ = ChangePowerSourceCore(powerSource);
+            }
+            DesiredBatteryState? currentBattery = ResolveExplicitBatteryBaseline(powerSource);
+            if (currentBattery is null)
+            {
+                return new(ControlOperationStatus.Blocked,
+                    "Temporary full charge requires a complete confirmed battery baseline.");
+            }
+            if (enabled && !currentBattery.ProtectionEnabled)
             {
                 var rejected = new ControlOperationResult(
                     ControlOperationStatus.Failed,
@@ -10267,12 +10321,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 desired => desired with
                 {
                     Battery = new DesiredBatteryState(
-                        desired.Battery.ConfiguredPolicy,
-                        desired.Battery.ProtectionEnabled,
+                        currentBattery.ConfiguredPolicy,
+                        currentBattery.ProtectionEnabled,
                         enabled),
                 },
                 _ =>
                 {
+                    if (powerSource == PowerSource.ExternalUnknown)
+                    {
+                        RecordExplicitUnclassifiedOverride();
+                    }
                     if (enabled)
                     {
                         Automation.EnableTemporaryFullCharge();
@@ -10350,6 +10408,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 }
                 return;
             }
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                _ = ChangePowerSourceCore(powerSource);
+            }
             bool sourceChanged = powerSource != PowerSource.ExternalUnknown
                 && Automation.PowerSource != powerSource;
             bool canUseReadOnlyFastPath = !resumeStateValidation.ResumeStarted
@@ -10373,6 +10435,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             catch (Exception exception)
             {
                 lightingRelinquishFailure = exception;
+            }
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                _ = ChangePowerSourceCore(powerSource);
             }
             bool changed = powerSource != PowerSource.ExternalUnknown
                 && ChangePowerSourceCore(powerSource);
@@ -11808,12 +11874,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             resumeStateValidation.DiscardExpired();
             resumeStateValidation.DiscardUnstarted();
-            if (await HandleGuardianPowerBoundaryAsync(powerStateProvider.CapturePowerSource(), cancellationToken).ConfigureAwait(false)) { return; }
+            if (await HandleGuardianPowerBoundaryAsync(CaptureControlPowerSource(), cancellationToken).ConfigureAwait(false)) { return; }
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             RefreshBatteryHealthAfterPowerSourceChangeCore();
             await RefreshControllerPresenceAndRelinquishLightingAsync(
                 cancellationToken).ConfigureAwait(false);
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                _ = ChangePowerSourceCore(powerSource);
+            }
             bool changed = powerSource != PowerSource.ExternalUnknown
                 && ChangePowerSourceCore(powerSource);
             if (unexpectedExitRecoveryDeferredForUserConfiguration)
@@ -11899,7 +11969,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 return;
             }
 
-            if (await HandleGuardianPowerBoundaryAsync(powerStateProvider.CapturePowerSource(), cancellationToken).ConfigureAwait(false)) { return; }
+            if (await HandleGuardianPowerBoundaryAsync(CaptureControlPowerSource(), cancellationToken).ConfigureAwait(false)) { return; }
 
             Interlocked.Increment(ref powerAdmissionEpoch);
             await RefreshControllerPresenceAndRelinquishLightingAsync(
@@ -11909,6 +11979,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ServiceStatusSnapshot current = GetStatus();
             if (classified == PowerSource.ExternalUnknown)
             {
+                _ = ChangePowerSourceCore(classified);
                 CloseThermalConvergenceAdmission(
                     ThermalConvergenceReason.PowerUnsettled,
                     thermalConvergenceShutdown: false);
@@ -11922,7 +11993,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         : statusPowerSource == PowerSource.ExternalUnknown
                             ? DeviceObservationReason.None
                             : DeviceObservationReason.RetainedPowerSource,
-                    WritesBlocked = true,
+                    WritesBlocked = !HasFreshExternalPowerPresence || !current.DeviceVerified
+                        || current.ObservationReason is DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls,
                     Message = statusPowerSource == PowerSource.ExternalUnknown
                         ? UnclassifiedExternalPowerMessage
                         : TransientExternalPowerMessage,
@@ -13546,7 +13618,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return true;
         }
 
-        if (!current.DeviceVerified || current.WritesBlocked)
+        if (!current.DeviceVerified || current.WritesBlocked
+            || current.ActivePowerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Lighting))
         {
             DeferLightingRestoreUntilDeviceArrival(requested, current);
             return false;
@@ -13734,7 +13808,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         CancellationToken cancellationToken)
     {
         ValidateOverride(value, nameof(value));
-        ValidateThermalOverrideCombination(value, Automation.FanOverride);
+        ValidateUnclassifiedPerformanceOverride(value);
+        if (value is not null || !IsUnclassifiedExternalContext)
+        {
+            ValidateThermalOverrideCombination(value, Automation.FanOverride);
+        }
         PersistentOverrideState staged = persistentOverrides with
         {
             Performance = value?.Lifetime == OverrideLifetime.Persistent
@@ -13758,12 +13836,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         CancellationToken cancellationToken)
     {
         ValidateOverride(value, nameof(value));
-        if (value is not null && !FanControlPowerPolicy.IsAvailable(Automation.PowerSource, value.Value,
+        if (value is not null && !(OrdinaryUnclassifiedOverrideIsAvailable && value.Value != FanMode.Stop)
+            && !FanControlPowerPolicy.IsAvailable(Automation.PowerSource, value.Value,
                 GetStatus().Capabilities?.SupportsManualFansOnLimitedPower == true))
         {
             throw new InvalidDataException("The selected fan mode is unavailable on this model and power source.");
         }
-        ValidateThermalOverrideCombination(Automation.PerformanceOverride, value);
+        if (value is not null || !IsUnclassifiedExternalContext)
+        {
+            ValidateThermalOverrideCombination(Automation.PerformanceOverride, value);
+        }
         PersistentOverrideState staged = persistentOverrides with
         {
             Fans = value?.Lifetime == OverrideLifetime.Persistent
@@ -13792,6 +13874,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         await PersistOverridesIfChangedAsync(staged, cancellationToken);
         Automation.SetLightingOverride(value);
         persistentOverrides = staged;
+        if (IsUnclassifiedExternalContext && HasFreshExternalPowerPresence)
+        {
+            RecordExplicitUnclassifiedOverride();
+        }
     }
 
     private LightingSettings ResolveVisibleLightingBaseline(PowerSource powerSource)
@@ -13805,7 +13891,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return remembered;
         }
 
-        LightingSettings profile = Automation.Profiles.ForPowerSource(powerSource).Lighting;
+        LightingSettings profile = powerSource == PowerSource.ExternalUnknown
+            ? GetStatus().ConfirmedState?.Lighting ?? LightingSettingsFactory.Off()
+            : Automation.Profiles.ForPowerSource(powerSource).Lighting;
         return profile.Effect != LightingEffect.Off && profile.Brightness > 0
             ? profile
             : LightingSettingsFactory.Static(
@@ -13832,7 +13920,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         Func<bool>? stillControlsSession = null,
         Func<DesiredDeviceState, IReadOnlyList<DeviceSubsystem>>?
             thermalComponentResolver = null,
-        Func<DesiredDeviceState, DesiredDeviceState>? hardwareDesiredProjection = null)
+        Func<DesiredDeviceState, DesiredDeviceState>? hardwareDesiredProjection = null,
+        bool clearsExplicitOverride = false)
     {
         EnsureInitialized();
         await operationGate.WaitAsync(token);
@@ -13886,7 +13975,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     "The active Windows session changed during control admission.");
             }
 
-            if (powerSource == PowerSource.ExternalUnknown)
+            if (powerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(subsystem))
             {
                 return PublishScopedUnavailable(
                     subsystem,
@@ -13895,7 +13985,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     preserveCurrentAvailability: true);
             }
 
-            if (ChangePowerSourceCore(powerSource))
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                _ = ChangePowerSourceCore(powerSource);
+            }
+            if (powerSource != PowerSource.ExternalUnknown && ChangePowerSourceCore(powerSource))
             {
                 ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token);
                 if (transition.StopFurtherWrites)
@@ -13912,6 +14006,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             try
             {
                 await mutation(token);
+                if (powerSource == PowerSource.ExternalUnknown)
+                {
+                    RecordExplicitUnclassifiedOverride();
+                }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -13930,6 +14028,28 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
 
             ServiceStatusSnapshot staged = GetStatus();
+            if (powerSource == PowerSource.ExternalUnknown && clearsExplicitOverride)
+            {
+                if (subsystem == DeviceSubsystem.Fans
+                    && exactFanControlOwnership.Settings?.Mode == FanMode.ManualCurve)
+                {
+                    ControlOperationResult cleanup = await RestoreOwnedAutomaticFansCoreAsync(
+                        powerSource, token, "clearing the explicit curve override",
+                        stillControlsSession).ConfigureAwait(false);
+                    if (cleanup.Status != ControlOperationStatus.Applied)
+                    {
+                        return cleanup;
+                    }
+                }
+                if (subsystem == DeviceSubsystem.Lighting)
+                {
+                    await RelinquishLightingOwnershipCoreAsync(GetStatus(), token).ConfigureAwait(false);
+                }
+                const string deferred = "Override cleared. Power-profile application waits for adapter classification.";
+                PublishScopedStatus(powerSource, GetStatus().ConfirmedState, staged.Capabilities,
+                    deferred, staged.DeviceVerified, staged.WritesBlocked);
+                return new(ControlOperationStatus.Stored, deferred);
+            }
             string? deferredMessage = deferHardwareApply?.Invoke(powerSource, staged);
             if (deferredMessage is not null)
             {
@@ -13993,7 +14113,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token);
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                 .ConfigureAwait(false);
-            if (powerSource == PowerSource.ExternalUnknown)
+            if (powerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Battery))
             {
                 return PublishScopedUnavailable(
                     DeviceSubsystem.Battery,
@@ -14002,7 +14123,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     preserveCurrentAvailability: true);
             }
 
-            if (ChangePowerSourceCore(powerSource))
+            if (powerSource != PowerSource.ExternalUnknown && ChangePowerSourceCore(powerSource))
             {
                 ServiceTransitionApplicationOutcome transition = await ApplyFullTransitionAsync(powerSource, token);
                 if (transition.StopFurtherWrites)
@@ -14010,7 +14131,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     return transition.ToOperationResult();
                 }
             }
-            DesiredBatteryState? staged = stageIntent(Automation.DesiredBattery);
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                _ = ChangePowerSourceCore(powerSource);
+            }
+            DesiredBatteryState? currentBattery = ResolveExplicitBatteryBaseline(powerSource);
+            if (currentBattery is null)
+            {
+                return new(ControlOperationStatus.Blocked,
+                    "Battery control requires a fresh, complete confirmed battery baseline.");
+            }
+            DesiredBatteryState? staged = stageIntent(currentBattery);
             if (staged is null)
             {
                 var blocked = new ControlOperationResult(
@@ -14030,6 +14161,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 _ =>
                 {
                     Automation.CommitBatteryState(staged);
+                    if (powerSource == PowerSource.ExternalUnknown)
+                    {
+                        RecordExplicitUnclassifiedOverride();
+                    }
                     return Task.CompletedTask;
                 },
                 pendingBatteryIntentCommit: new(Automation, FullChargeOnly: false));
@@ -14116,7 +14251,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return WindowsDynamicLightingOwnsKeyboard();
         }
 
-        if (powerSource == PowerSource.ExternalUnknown)
+        if (powerSource == PowerSource.ExternalUnknown
+            && !FreshUnclassifiedExternalControlIsAdmitted(subsystem))
         {
             return PublishScopedUnavailable(
                 subsystem,
@@ -14660,7 +14796,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
 
         if (confirmedPowerSource != expectedPowerSource
-            || confirmedPowerSource == PowerSource.ExternalUnknown)
+            || confirmedPowerSource == PowerSource.ExternalUnknown
+                && !FreshUnclassifiedExternalControlIsAdmitted(DeviceSubsystem.Performance))
         {
             return ThermalRetryAdmission.Block(
                 "The confirmed power destination changed before the fresh-session retry.");
@@ -16497,7 +16634,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     {
         PowerSource windowsSource;
         using (cpuDiagnostic?.BeginStage("power Windows source capture"))
-        { windowsSource = powerStateProvider.CapturePowerSource(); }
+        { windowsSource = CaptureControlPowerSource(); }
         cancellationToken.ThrowIfCancellationRequested();
         if (windowsSource == PowerSource.Battery)
         {
@@ -16508,10 +16645,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         if (windowsSource != PowerSource.ExternalUnknown)
         {
             // Test doubles and future providers may already have stronger evidence.
+            Volatile.Write(ref externalClassificationUnavailable, 0);
             return windowsSource;
         }
 
         if (allowCachedExternalClassification
+            && !IsUnclassifiedExternalContext
             && Automation.PowerSource is PowerSource.PluggedIn or PowerSource.UsbC)
         {
             // Windows reports only "external power" here. Reuse the last
@@ -16521,6 +16660,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return Automation.PowerSource;
         }
 
+        Volatile.Write(ref externalClassificationUnavailable, 1);
         try
         {
             IBladeDevice device;
@@ -16618,7 +16758,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 lastAdapterPowerClassificationDiagnosticKind = null;
             }
 
-            return classified switch
+            PowerSource result = classified switch
             {
                 AdapterPowerState.FullPower280W => PowerSource.PluggedIn,
                 AdapterPowerState.FullPower330W => PowerSource.PluggedIn,
@@ -16632,6 +16772,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 AdapterPowerState.UsbCPower100W => PowerSource.UsbC,
                 _ => PowerSource.ExternalUnknown,
             };
+            if (result is PowerSource.PluggedIn or PowerSource.UsbC)
+            {
+                Volatile.Write(ref externalClassificationUnavailable, 0);
+            }
+            return result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -17189,7 +17334,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         PublishIfChanged(current with
         {
             DeviceVerified = true,
-            WritesBlocked = !powerSourceConfirmed || hyperBoostJournalSafetyBlock || deferredHyperBoostRecovery,
+            WritesBlocked = !powerSourceConfirmed && !HasFreshExternalPowerPresence
+                || hyperBoostJournalSafetyBlock || deferredHyperBoostRecovery,
             ObservationReason = !powerSourceConfirmed && powerSource != PowerSource.ExternalUnknown
                 ? DeviceObservationReason.RetainedPowerSource
                 : DeviceObservationReason.None,
@@ -17197,7 +17343,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             Message = AppendPartialReadNote(
                 !powerSourceConfirmed
                     ? powerSource == PowerSource.ExternalUnknown
-                        ? "Verified device state observed, but the external power adapter could not be classified; control writes are blocked."
+                        ? "Verified device state observed; adapter classification is unavailable. Profile automation and advanced thermal controls remain deferred."
                         : TransientExternalPowerMessage
                     : "Verified device state observed.",
                 readNote),
@@ -17408,6 +17554,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     private bool ChangePowerSourceCore(PowerSource powerSource)
     {
+        if (powerSource == PowerSource.ExternalUnknown
+            && (!HasFreshExternalPowerPresence || Automation.PowerSource != PowerSource.Battery))
+        {
+            return false;
+        }
         // Any typed request can discover a new source before the power observer.
         // Apply the same waiting-policy boundary to all of those shared paths.
         PauseAutomaticFanStopForPowerIncrease(powerSource);
@@ -17418,21 +17569,36 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             // destination through fresh admission, without replaying the laptop write.
             return false;
         }
-        bool changed = Automation.ChangePowerSource(powerSource);
+        bool preserveOverrides = PreserveOverridesForExternalClassification(powerSource);
+        bool changed = Automation.ChangePowerSource(powerSource, preserveOverrides);
+        if (powerSource is PowerSource.PluggedIn or PowerSource.UsbC)
+        {
+            Volatile.Write(ref lastClassifiedExternalSource, (int)powerSource);
+        }
         // Normal fresh destination processing now owns admission, even if the
         // source reverted while recovery was pending and no transition is needed.
         Volatile.Write(ref laptopRecoveryPowerDestinationPending, 0);
         if (changed)
         {
             deferredRecoveredHyperBoostEntryIntent = null;
-            AdvanceFanDesiredRevision();
+            if (!preserveOverrides)
+            {
+                AdvanceFanDesiredRevision();
+            }
+            else
+            {
+                ClearLastFanCurveTargets();
+            }
             powerSourceGeneration++;
             pendingResumePerformanceDrift = null;
             resumePowerSourceTransitionGeneration = resumeStateValidation.ResumeStarted
                 && !pendingWriteConfirmations.HasPending
                 ? powerSourceGeneration : -1;
-            InvalidatePendingWriteConfirmations(markExternal: true);
-            explicitLightingOwnershipActive = false;
+            if (!preserveOverrides)
+            {
+                InvalidatePendingWriteConfirmations(markExternal: true);
+                explicitLightingOwnershipActive = false;
+            }
             lightingRecoveryPauseMessage = null;
             AdoptDisplayOffSuppressionForPowerSource();
         }
@@ -18071,6 +18237,27 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         PerformanceOverride? performanceOverride,
         ManualOverride<FanMode>? fanOverride)
     {
+        if (IsUnclassifiedExternalContext)
+        {
+            if (!OrdinaryUnclassifiedOverrideIsAvailable)
+            {
+                throw new InvalidDataException("Ordinary thermal control is not admitted on this unclassified external context.");
+            }
+            ServiceStatusSnapshot current = GetStatus();
+            PerformancePreset performance = performanceOverride?.Value ?? current.ConfirmedState?.Performance
+                ?? throw new InvalidDataException("The current performance preset is unavailable.");
+            FanMode fans = fanOverride?.Value ?? current.ConfirmedState?.Fans
+                ?? throw new InvalidDataException("The current fan state is unavailable.");
+            ProfileSetValidator.CreateForDeviceCapabilities(current.Capabilities!)
+                .ValidatePerformanceFanCombination(performance, fans);
+            if (performance == PerformancePreset.Custom
+                && (performanceOverride?.CustomPerformance ?? current.ConfirmedState?.CustomPerformance)?.MaximumFans == true
+                && fans != FanMode.Automatic)
+            {
+                throw new InvalidDataException("Custom maximum fans requires Automatic fan mode.");
+            }
+            return;
+        }
         PowerProfile activeProfile = Automation.PowerSource switch
         {
             PowerSource.PluggedIn => Automation.Profiles.PluggedIn,
@@ -18616,19 +18803,27 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private DesiredDeviceState ResolveAutomationDesired(ConfirmedDeviceState confirmed,
         DeviceCapabilities? capabilities = null) =>
         Automation.Resolve(confirmed,
-            (capabilities ?? Volatile.Read(ref status)?.Capabilities)?.SupportsManualFansOnLimitedPower == true);
+            (capabilities ?? Volatile.Read(ref status)?.Capabilities)?.SupportsManualFansOnLimitedPower == true,
+            IsUnclassifiedExternalContext ? PowerSource.ExternalUnknown : null,
+            IsUnclassifiedExternalContext && HasFreshExternalPowerPresence
+                && (capabilities ?? Volatile.Read(ref status)?.Capabilities)?.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower == true,
+            IsUnclassifiedExternalContext && HasFreshExternalPowerPresence);
 
     private static bool IsUnavailableCurveIntent(DesiredDeviceState desired, DeviceCapabilities? capabilities,
-        PowerSource source) => desired.Fans.Value == FanMode.ManualCurve
+        PowerSource source, bool externalPowerPresent = false) => desired.Fans.Value == FanMode.ManualCurve
         && capabilities is not null
         && (!ManualFanCurveCapabilityPolicy.SupportsPreset(capabilities, desired.Performance.Value)
-            || !ManualFanCurveCapabilityPolicy.SupportsPowerSource(capabilities, source));
+            || !ManualFanCurveCapabilityPolicy.SupportsPowerSource(capabilities, source, externalPowerPresent));
 
     private DesiredDeviceState ResolveHardwareDesired(ConfirmedDeviceState confirmed)
     {
         DeviceCapabilities? capabilities = GetStatus().Capabilities;
-        DesiredDeviceState rawIntent = Automation.Resolve(confirmed, supportsManualFansOnLimitedPower: true);
-        bool unavailableCurveIntent = IsUnavailableCurveIntent(rawIntent, capabilities, Automation.PowerSource);
+        DesiredDeviceState rawIntent = IsUnclassifiedExternalContext
+            ? ResolveAutomationDesired(confirmed)
+            : Automation.Resolve(confirmed, supportsManualFansOnLimitedPower: true);
+        bool unavailableCurveIntent = IsUnavailableCurveIntent(rawIntent, capabilities,
+            IsUnclassifiedExternalContext ? PowerSource.ExternalUnknown : Automation.PowerSource,
+            HasFreshExternalPowerPresence);
         // Retaining unavailable curve intent grants no fallback authority. In
         // particular Custom must not turn an unowned manual observation into
         // an Automatic write, nor may low-power projection invent that request.
@@ -18693,7 +18888,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
         // Normalize only admitted manual controls. Unsupported retained intent
         // must not turn the user's supported performance choice into Balanced.
-        if (!unavailableCurveIntent && Automation.PowerSource == PowerSource.PluggedIn
+        if (!unavailableCurveIntent && !IsUnclassifiedExternalContext && Automation.PowerSource == PowerSource.PluggedIn
             && DeviceSubsystemOrder.IsManualFanMode(desired.Fans.Value)
             && capabilities is not null
             && capabilities.PerformancePresets.Count > 0
@@ -20339,9 +20534,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         return settings.Mode == FanMode.ManualCurve
             && !fanStopController.BlocksOrdinaryThermalWrites
             && !fanStopController.HoldsAutomatic
-            && Automation.PowerSource == current.ActivePowerSource
+            && CurrentPowerContextMatchesAutomation(current.ActivePowerSource)
             && current.Capabilities is { } curveCapabilities
-            && ManualFanCurveCapabilityPolicy.SupportsPowerSource(curveCapabilities, current.ActivePowerSource)
+            && ManualFanCurveCapabilityPolicy.SupportsPowerSource(curveCapabilities, current.ActivePowerSource, current.ExternalPowerPresent)
             && ManualFanCurveCapabilityPolicy.SupportsPreset(curveCapabilities, current.DesiredState.Performance.Value)
             && currentSettings == settings
             && (!curveCapabilities.ReportsPerformanceWithManualFans
@@ -20845,6 +21040,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     || deviceProvider.IsExperimentalWritesPaused
                     || laptopControlExecutor.RequiresReconciliation,
                 UnconfirmedWrites = unconfirmedWrites,
+                ExternalPowerPresent = HasFreshExternalPowerPresence && updated.DeviceVerified
+                    && updated.ControlAccess == SessionControlAccess.Active
+                    && updated.ObservationReason is not (DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls),
+                ActivePowerSource = IsUnclassifiedExternalContext ? PowerSource.ExternalUnknown : updated.ActivePowerSource,
                 HyperBoostRestorePending = hyperBoostRestorePending,
                 AllowExperimentalFeatures = deviceProvider.IsExperimentalDevice,
                 ExperimentalWritesPaused = deviceProvider.IsExperimentalWritesPaused,

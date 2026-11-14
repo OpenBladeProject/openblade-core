@@ -6,6 +6,28 @@ namespace OpenBlade.Session.Tests;
 public sealed class DisplayAutomationCheckpointStoreTests
 {
     [Fact]
+    public void UnclassifiedRecoveryPersistsOnlyManualHoldWithoutInventingProfileOrOwnership()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"openblade-display-{Guid.NewGuid():N}.json");
+        try
+        {
+            var store = new DisplayAutomationCheckpointStore(path);
+            var hold = new DisplayAutomationRecoveryState(PowerSource.ExternalUnknown, null, null,
+                false, false, false, false, true, true, false, true, false, false);
+            Assert.True(store.SaveRecovery(hold));
+            Assert.Equal(hold, store.LoadRecovery());
+            Assert.Null(store.Load());
+            Assert.False(store.SaveRecovery(hold with { ManualHold = false }));
+            Assert.False(store.SaveRecovery(hold with { OwnedHdr = true }));
+            Assert.False(store.SaveRecovery(hold with { Baseline = new(null, true, null) }));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void SaveAndLoad_RoundTripsConfirmedSourceAtomically()
     {
         string root = Path.Combine(Path.GetTempPath(), $"openblade-display-{Guid.NewGuid():N}");

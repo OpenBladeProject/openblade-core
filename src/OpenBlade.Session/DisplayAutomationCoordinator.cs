@@ -66,8 +66,9 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(lastReconciledPowerSource));
         }
 
-        lastConfirmedPowerSource = recoveryState?.LastReconciledPowerSource
-            ?? lastReconciledPowerSource;
+        lastConfirmedPowerSource = recoveryState?.LastReconciledPowerSource is
+            PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+                ? recoveryState.LastReconciledPowerSource : lastReconciledPowerSource;
         this.recordReconciledPowerSource = recordReconciledPowerSource;
         this.retryDelay = retryDelay ?? Task.Delay;
         this.recordRecoveryState = recordRecoveryState;
@@ -145,7 +146,8 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
             PowerSource source = status.ActivePowerSource;
             if (source == PowerSource.ExternalUnknown)
             {
-                return MarkUnavailableCore();
+                return MarkUnavailableCore(status.ExternalPowerPresent && status.DeviceVerified
+                    && status.ControlAccess == SessionControlAccess.Active);
             }
             if (source is not (
                 PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
@@ -174,7 +176,7 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
                     LatchDurabilityFailure();
                     return DisplayAutomationObservation.BaselineEstablished;
                 }
-                if (target.ApplicationProfileId.HasValue && !automaticWritesPaused)
+                if (target.ApplicationProfileId.HasValue && !automaticWritesPaused && !manualHold)
                 {
                     ScheduleTransition(target, initialGeneration);
                     return DisplayAutomationObservation.TransitionScheduled;
@@ -270,8 +272,7 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
             applicationBaseline = null;
             applicationOwned = default;
             checkpointApplicationProfileId = null;
-            if (lastConfirmedPowerSource is not { } source
-                || !TryRecordRecoveryState(source))
+            if (!TryRecordRecoveryState(lastConfirmedPowerSource ?? PowerSource.ExternalUnknown))
             {
                 manualOperationPending = false;
                 manualOperationInheritedPause = false;
@@ -325,8 +326,7 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
             }
             manualOperationInheritedPause = false;
             manualOperationInheritedFields = default;
-            if (lastConfirmedPowerSource is { } source
-                && !TryRecordRecoveryState(source))
+            if (!TryRecordRecoveryState(lastConfirmedPowerSource ?? PowerSource.ExternalUnknown))
             {
                 uncertainFields = affectedFields;
                 LatchDurabilityFailure();
@@ -699,11 +699,13 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
 
     private long NextGeneration() => checked(++generation);
 
-    private DisplayAutomationObservation MarkUnavailableCore()
+    private DisplayAutomationObservation MarkUnavailableCore(bool manualExternalPowerPresent = false)
     {
-        if (powerContext.Capture().PowerSource != PowerSource.ExternalUnknown)
+        DisplayPowerContext current = powerContext.Capture();
+        if (current.PowerSource != PowerSource.ExternalUnknown
+            || current.ManualExternalPowerPresent != manualExternalPowerPresent)
         {
-            powerContext.Update(PowerSource.ExternalUnknown, NextGeneration());
+            powerContext.Update(PowerSource.ExternalUnknown, NextGeneration(), manualExternalPowerPresent);
             CancelActiveTransition();
             if (automaticWriteInFlight)
             {

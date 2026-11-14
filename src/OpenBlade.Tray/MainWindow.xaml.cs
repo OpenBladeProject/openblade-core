@@ -1288,11 +1288,13 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         }
 
         DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
+        DisplayViewModel.ExternalPowerPresent = ViewModel.CanControlHardware && ViewModel.ExternalPowerPresent;
         ThxViewModel.LoadProfile(ViewModel.ActivePowerSource, ViewModel.ActiveSavedThxAudioProfile);
         ThxViewModel.ProfilePersistenceAvailable = ViewModel.CanSaveThxAudioProfile;
         DisplayViewModel.ActiveProfileSettings = ViewModel.ActiveSavedDisplayProfile;
         DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
-        DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
+        DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware
+            && ViewModel.ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
         _ = RefreshDisplaySettingsAsync();
     }
 
@@ -1378,9 +1380,11 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             return;
         }
 
-        if (args.PropertyName == nameof(MainViewModel.ActivePowerSource))
+        if (args.PropertyName is nameof(MainViewModel.ActivePowerSource) or nameof(MainViewModel.ExternalPowerPresent)
+            or nameof(MainViewModel.CanControlHardware))
         {
             DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
+            DisplayViewModel.ExternalPowerPresent = ViewModel.CanControlHardware && ViewModel.ExternalPowerPresent;
         }
 
         if (args.PropertyName is nameof(MainViewModel.ActivePowerSource) or nameof(MainViewModel.ActiveSavedThxAudioProfile))
@@ -1411,9 +1415,10 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
         }
 
-        if (args.PropertyName == nameof(MainViewModel.CanControlHardware))
+        if (args.PropertyName is nameof(MainViewModel.CanControlHardware) or nameof(MainViewModel.ActivePowerSource))
         {
-            DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
+            DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware
+                && ViewModel.ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
         }
 
         if (args.PropertyName == nameof(MainViewModel.IsSpecialKeyBindingsEditable))

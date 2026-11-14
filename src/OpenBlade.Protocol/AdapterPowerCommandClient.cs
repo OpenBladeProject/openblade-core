@@ -42,6 +42,7 @@ internal sealed class AdapterPowerCommandClient
             {
                 Diagnostic = response.Diagnostic,
                 NativeRetirement = response.NativeRetirement,
+                UnclassifiedAdapterResponseAvailable = response.UnclassifiedAdapterResponseAvailable,
             };
         }
 
@@ -55,7 +56,7 @@ internal sealed class AdapterPowerCommandClient
         return AdapterPowerProtocol.TryDecodeQuery(
             response.Value.Span,
             out AdapterPowerState state)
-            ? new(state, null)
+            ? new(state, null) { UnclassifiedAdapterResponseAvailable = response.UnclassifiedAdapterResponseAvailable }
             : new(AdapterPowerState.Unknown, HidSessionFailureKind.ProtocolFailure)
             {
                 Diagnostic = new HidSessionFailureDiagnostic(

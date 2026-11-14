@@ -121,10 +121,11 @@ internal static class ServiceComposition
             ExperimentalBladeFactory.CreateForCurrentHost(
                 () => provider.GetRequiredService<IPowerStateProvider>().CapturePowerSource()) ?? CreateProductionBatteryFactory(
                 PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent().Enabled,
-                BatteryValidationFactory
-                    .CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation,
+                () => BatteryValidationFactory.CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation(
+                    () => provider.GetRequiredService<IPowerStateProvider>().CapturePowerSource()),
                 () => BatteryValidationFactory.CreateWindowsProductionBatteryForService(
-                    provider.GetRequiredService<FirmwareCompatibilityPolicy>()),
+                    provider.GetRequiredService<FirmwareCompatibilityPolicy>(),
+                    () => provider.GetRequiredService<IPowerStateProvider>().CapturePowerSource()),
                 () => ProductionBatteryFactory.CreateWindowsReadOnly(
                     provider.GetRequiredService<FirmwareCompatibilityPolicy>())));
         services.AddSingleton<IProductionLightingPortFactory>(provider =>
@@ -168,9 +169,10 @@ internal static class ServiceComposition
     internal static IProductionBatteryPortFactory CreateProductionBatteryFactory() =>
         CreateProductionBatteryFactory(
             PadlessHyperBoostLifecycleValidationBuildIdentity.ReadCurrent().Enabled
-                ? BatteryValidationFactory
-                    .CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation
-                : BatteryValidationFactory.CreateWindowsProductionBatteryForService,
+                ? () => BatteryValidationFactory.CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation(
+                    WindowsPowerStateProvider.CaptureWindowsPowerSource)
+                : () => BatteryValidationFactory.CreateWindowsProductionBatteryForService(
+                    WindowsPowerStateProvider.CaptureWindowsPowerSource),
             ProductionBatteryFactory.CreateWindowsReadOnly);
 
     internal static IProductionBatteryPortFactory CreateProductionBatteryFactory(
@@ -179,7 +181,7 @@ internal static class ServiceComposition
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         return CreateProductionBatteryFactory(
             () => BatteryValidationFactory.CreateWindowsProductionBatteryForService(
-                compatibilityPolicy),
+                compatibilityPolicy, WindowsPowerStateProvider.CaptureWindowsPowerSource),
             () => ProductionBatteryFactory.CreateWindowsReadOnly(
                 compatibilityPolicy));
     }

@@ -129,12 +129,12 @@ public static class SessionDisplayIpcCodec
         {
             QueryDisplayRequest => true,
             SetRefreshRateRequest value =>
-                IsConfirmed(value.ExpectedPowerSource) && ValidKey(value.RefreshRateKey),
-            SetHdrRequest value => IsConfirmed(value.ExpectedPowerSource),
+                IsManualSource(value.ExpectedPowerSource) && ValidKey(value.RefreshRateKey),
+            SetHdrRequest value => IsManualSource(value.ExpectedPowerSource),
             SetColorProfileRequest value =>
-                IsConfirmed(value.ExpectedPowerSource) && ValidKey(value.ColorProfileKey),
+                IsManualSource(value.ExpectedPowerSource) && ValidKey(value.ColorProfileKey),
             SetBrightnessRequest value =>
-                IsConfirmed(value.ExpectedPowerSource) && value.Percent <= 100,
+                IsManualSource(value.ExpectedPowerSource) && value.Percent <= 100,
             ApplyDisplayProfileRequest value =>
                 IsConfirmed(value.ExpectedPowerSource) && ValidSettings(value.Settings),
             _ => false,
@@ -216,6 +216,9 @@ public static class SessionDisplayIpcCodec
         && value.Length <= MaximumKeyLength
         && string.Equals(value, value.Trim(), StringComparison.Ordinal)
         && !value.Any(char.IsControl);
+
+    private static bool IsManualSource(PowerSource source) =>
+        IsConfirmed(source) || source == PowerSource.ExternalUnknown;
 
     private static bool IsConfirmed(PowerSource source) => source is
         PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;

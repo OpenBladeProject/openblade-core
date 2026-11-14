@@ -464,6 +464,54 @@ public sealed class ProfileAutomationStateTests
         Assert.False(state.DesiredBattery.TemporaryFullCharge);
     }
 
+    [Fact]
+    public void UnclassifiedExternal_ExplicitChoicesUseOriginalProvenanceAndNoApplicationPowerSlot()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var application = new ApplicationProfileDefinition(Guid.NewGuid(), "App", @"C:\Games\game.exe",
+            ApplicationActivationMode.Foreground, new ApplicationProfileOverrideSet
+            {
+                PluggedIn = new ApplicationPowerProfileOverride { Performance = PerformancePreset.Custom },
+            });
+        // An active known-power application must not choose a slot while adapter power is unknown.
+        var state = new ProfileAutomationState(defaults with { ApplicationProfiles = [application] },
+            new BatteryAutomationPreferences(), PowerSource.PluggedIn);
+        state.SetApplicationContext(@"C:\Games\game.exe");
+        state.SetPerformanceOverride(new ManualOverride<PerformancePreset>(PerformancePreset.Silent,
+            OverrideLifetime.UntilPowerSourceChange));
+        LightingSettings lighting = LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50);
+        state.SetLightingOverride(new(lighting, OverrideLifetime.Persistent));
+        var observed = new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic,
+            null, LightingSettingsFactory.Off());
+
+        DesiredDeviceState desired = state.Resolve(observed, true, PowerSource.ExternalUnknown,
+            allowUnclassifiedExternalOrdinaryOverrides: true,
+            allowUnclassifiedExternalLightingOverrides: true);
+
+        Assert.Equal(PerformancePreset.Silent, desired.Performance.Value);
+        Assert.Equal(SettingValueSource.TemporaryOverride, desired.Performance.Source);
+        Assert.Equal(lighting, desired.Lighting.Value);
+        Assert.Equal(SettingValueSource.PersistentOverride, desired.Lighting.Source);
+        state.SetPerformanceOverride((PerformanceOverride?)null);
+        DesiredDeviceState cleared = state.Resolve(observed, true, PowerSource.ExternalUnknown, true, true);
+        Assert.Equal(PerformancePreset.Balanced, cleared.Performance.Value);
+        Assert.Equal(SettingValueSource.ConfirmedFirmwareState, cleared.Performance.Source);
+        Assert.Equal(SettingValueSource.ConfirmedFirmwareState, cleared.Fans.Source);
+        Assert.Null(cleared.CustomPerformance);
+    }
+
+    [Fact]
+    public void UnclassifiedExternal_RefinementPreservesTemporaryChoicesOnlyWhenCallerProvesSameScope()
+    {
+        ProfileAutomationState state = CreateState(PowerSource.ExternalUnknown);
+        state.SetPerformanceOverride(new ManualOverride<PerformancePreset>(PerformancePreset.Silent,
+            OverrideLifetime.UntilPowerSourceChange));
+        Assert.True(state.ChangePowerSource(PowerSource.PluggedIn, preserveUnclassifiedExternalOverrides: true));
+        Assert.NotNull(state.PerformanceOverride);
+        Assert.True(state.ChangePowerSource(PowerSource.UsbC));
+        Assert.Null(state.PerformanceOverride);
+    }
+
     private static ProfileAutomationState CreateState(PowerSource powerSource) => new(
         ProfileDefaults.CreateSafeDefaults(),
         new BatteryAutomationPreferences(),

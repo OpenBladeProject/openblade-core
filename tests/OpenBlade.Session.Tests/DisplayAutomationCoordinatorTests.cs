@@ -7,6 +7,31 @@ namespace OpenBlade.Session.Tests;
 public sealed class DisplayAutomationCoordinatorTests
 {
     [Fact]
+    public async Task UnclassifiedManualCheckpointNeverEstablishesAnAutomationSource()
+    {
+        var context = new DisplayPowerContextState();
+        var applier = new FakeApplier();
+        DisplayAutomationRecoveryState? checkpoint = null;
+        await using var coordinator = new DisplayAutomationCoordinator(context, applier,
+            recordRecoveryState: value => { checkpoint = value; return true; });
+        ServiceStatusSnapshot unknown = Status(PowerSource.ExternalUnknown, Profiles("saved")) with
+        {
+            ExternalPowerPresent = true,
+        };
+        Assert.Equal(DisplayAutomationObservation.IgnoredUnconfirmed, coordinator.Observe(unknown));
+        Assert.True(coordinator.BeginManualOperation(new(null, true, null)));
+        Assert.NotNull(checkpoint);
+        Assert.Equal(PowerSource.ExternalUnknown, checkpoint.LastReconciledPowerSource);
+        Assert.True(checkpoint.ManualHold);
+        Assert.Null(checkpoint.ApplicationProfileId);
+        Assert.Null(checkpoint.Baseline);
+        Assert.Empty(applier.Transitions);
+        await using var restarted = new DisplayAutomationCoordinator(new(), new FakeApplier(),
+            recoveryState: checkpoint);
+        Assert.Equal(DisplayAutomationObservation.IgnoredUnconfirmed, restarted.Observe(unknown));
+    }
+
+    [Fact]
     public async Task ApplicationEntryAndExitApplyOverrideThenRestoreCapturedBaseline()
     {
         var context = new DisplayPowerContextState();

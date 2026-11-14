@@ -12,6 +12,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Accept a valid PawnIO CPU temperature driver when uninstall/reinstall leaves disconnected device registrations. Report the present-device count when the binding remains missing or ambiguous. ([#970](https://github.com/OSSBlade/openblade-core/pull/970))
+- Keep source-supported ordinary controls available when Windows confirms external power but adapter wattage cannot be read, without guessing charger type or changing the reported power classification. ([#967](https://github.com/OpenBladeProject/openblade-core/issues/967))
 - Avoid rejecting supported battery-setting replies and allow a short confirmation window on source-reviewed Blade models. ([#965](https://github.com/OSSBlade/openblade-core/pull/965))
 
 ## [0.61.1-nightly.114] - 2026-11-13

@@ -17,7 +17,13 @@ public sealed class ExperimentalEvidenceCatalogTests
             Assert.All(snapshot.FeatureEvidence, feature =>
             {
                 Assert.NotEmpty(feature.Sources);
-                if (feature.Feature == "FanStopAndGuardianAuto")
+                if (feature.Feature == "OrdinaryThermalControlsOnUnclassifiedExternalPower")
+                {
+                    Assert.True(OrdinaryThermalPowerAdmission.SupportsProduct(model.ProductId));
+                    Assert.Equal("SynapseSourceBackedWithoutPhysicalValidation", feature.Basis);
+                    Assert.Equal(OrdinaryThermalPowerAdmission.EvidenceSource, Assert.Single(feature.Sources));
+                }
+                else if (feature.Feature == "FanStopAndGuardianAuto")
                 {
                     Assert.Equal("FirmwareSourceBackedWithoutPhysicalValidation", feature.Basis);
                     FanStopModelContract[] contracts = FanStopModelContract.All.Where(contract =>

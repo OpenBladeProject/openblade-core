@@ -16,6 +16,25 @@ public sealed class NativeAutomationPolicyTests
         return loaded.Policy!;
     }
 
+    [Theory]
+    [InlineData(true, false, AutomationValueOrigin.Temporary, SettingValueSource.TemporaryOverride)]
+    [InlineData(false, true, AutomationValueOrigin.Persistent, SettingValueSource.PersistentOverride)]
+    [InlineData(true, true, AutomationValueOrigin.Persistent, SettingValueSource.PersistentOverride)]
+    public void ExplicitOverrideSelectionPreservesProvenanceWithoutChangingUnknownSourcePolicy(
+        bool temporary, bool persistent, AutomationValueOrigin origin, SettingValueSource provenance)
+    {
+        using NativeAutomationPolicy policy = Load();
+        NativeAutomationResult selected = policy.SelectExplicitOverride(temporary, persistent);
+        Assert.True(selected.IsSuccess, selected.Error?.ToString());
+        Assert.Equal(origin, selected.Selection!.Value.Origin);
+        Assert.Equal(provenance, selected.Selection.Value.Source);
+        Assert.False(policy.CheckPerformanceSource(PerformancePreset.Silent, PowerSource.ExternalUnknown).IsEligible);
+        Assert.Equal(AutomationValueOrigin.Confirmed,
+            policy.SelectLighting(true, true, temporary, persistent, true, false).Selection!.Value.Origin);
+        Assert.Equal(NativeBoundaryErrorKind.InvalidArgument,
+            policy.SelectExplicitOverride(false, false).Error!.Kind);
+    }
+
     [Fact]
     public void CanonicalTokensMatchFixturesAndIndependentFrozenManagedDecisions()
     {
