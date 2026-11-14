@@ -5834,3 +5834,93 @@ async fn battery_boundary_callback_storage_failure_keeps_public_reconciliation_a
     );
     r.stop().await;
 }
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn battery_pending_once_direct_publication_keeps_fence_and_all_views() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    r.port.state.lock().unwrap().battery_replies.push_back(0xc1);
+    let reply = r
+        .request(battery_request(
+            601,
+            "setBatteryPolicy",
+            json!({"chargeLimitPercent":70}),
+        ))
+        .await;
+    assert_eq!(reply["result"]["status"], 2);
+    assert_eq!(r.storage.progress(), Some(61));
+    assert!(r.storage.pending());
+    let reason = r.storage.pending_reason().unwrap();
+    let publications = r.source.lock().await.publications().unwrap();
+    // Inspect the direct mutation publication before any GetStatus decoration.
+    let active = publications.borrow().active.clone();
+    for view in [
+        active.project_private(Some(SID)),
+        active.project_private(None),
+        active.project_private(Some("S-1-5-21-111-222-333-1002")),
+        publications.borrow().inactive.clone(),
+    ] {
+        let bytes = crate::service_status::encode_status_event(&view).unwrap();
+        println!(
+            "NATIVE_THERMAL_MUTATION_RESPONSE {}",
+            std::str::from_utf8(&bytes).unwrap()
+        );
+        let wire: Value = serde_json::from_slice(&bytes).unwrap();
+        let message = wire["status"]["message"].as_str().unwrap();
+        assert_eq!(message.matches(reason).count(), 1, "{wire}");
+        assert!(
+            message.contains("Matched Razer Blade"),
+            "Unrelated source reason lost: {wire}"
+        );
+        assert_eq!(wire["status"]["writesBlocked"], true);
+    }
+    assert_eq!(r.port.state.lock().unwrap().writes, 1);
+    assert_eq!(r.port.state.lock().unwrap().battery_reads, 2);
+    assert!(r.storage.pending());
+    r.stop().await;
+}
+
+#[cfg(feature = "service-battery-policy-v1")]
+#[test]
+fn battery_pending_once_exact_equality_is_local_after_ownership() {
+    let reason = "A thermal command may have been submitted. Read-only reconciliation is required and no mutation will be replayed.";
+    // An intentionally identical unrelated source contribution must survive.
+    let base = Snapshot::observed_read_only(1, 0, false, false, vec![], None, reason.into())
+        .battery_projection(None, None, reason)
+        .bind_private_user(SID);
+    let same = base.clone().battery_request_outcome(SID, reason);
+    let wire = serde_json::to_value(&same).unwrap();
+    assert_eq!(
+        wire["message"].as_str().unwrap().matches(reason).count(),
+        2,
+        "{wire}"
+    );
+    let distinct = base
+        .clone()
+        .battery_request_outcome(SID, "Distinct owner-only outcome.");
+    let owner = serde_json::to_value(distinct.project_private(Some(SID))).unwrap();
+    assert!(
+        owner["message"]
+            .as_str()
+            .unwrap()
+            .contains("Distinct owner-only outcome.")
+    );
+    for view in [
+        distinct.project_private(None),
+        distinct.project_private(Some("S-1-5-21-111-222-333-1002")),
+    ] {
+        let wire = serde_json::to_value(view).unwrap();
+        let message = wire["message"].as_str().unwrap();
+        assert_eq!(message.matches(reason).count(), 2, "{wire}");
+        assert!(!message.contains("Distinct owner-only outcome."), "{wire}");
+    }
+    // Whole-string equality only: even a whitespace difference remains distinct.
+    let different = base.battery_request_outcome(SID, &format!("{reason} "));
+    let wire = serde_json::to_value(different).unwrap();
+    assert_eq!(
+        wire["message"].as_str().unwrap().matches(reason).count(),
+        3,
+        "{wire}"
+    );
+}

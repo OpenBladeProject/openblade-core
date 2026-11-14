@@ -800,7 +800,11 @@ impl Snapshot {
                 if !d.caller_denied
                     && self.private_user_sid.as_deref() == Some(request.sid.as_str())
                 {
-                    parts.push(&request.message);
+                    // Ownership is checked first. Only the two already-classified
+                    // battery contributions share this exact duplicate suppression.
+                    if request.message != battery.public {
+                        parts.push(&request.message);
+                    }
                 }
             }
         }
