@@ -129,6 +129,25 @@ try {
         if ($sourceFingerprint -cnotmatch '\A[0-9a-f]{64}\z' -or $sourceFingerprint -cne $linkedFingerprint) {
             throw 'Equal working bytes in separate worktrees must share a source fingerprint.'
         }
+        if ($env:OS -eq 'Windows_NT') {
+            # MSBuild starts Windows PowerShell from pwsh on CI, inheriting its
+            # module paths. Fingerprinting must not depend on Utility autoload.
+            $childScript = Join-Path $testRoot 'fingerprint-child.ps1'
+            $childSource = {
+                param([string]$NativePayload, [string]$Fixture, [string]$Expected)
+                $ErrorActionPreference = 'Stop'
+                function Get-FileHash { throw 'Get-FileHash is unavailable in this child shell.' }
+                . $NativePayload
+                $actual = Get-OpenBladeNativeSourceFingerprint -Repository $Fixture
+                if ($actual -cne $Expected) { throw 'Child-shell native fingerprint changed.' }
+            }
+            [IO.File]::WriteAllText($childScript, $childSource.ToString(), [Text.UTF8Encoding]::new($false))
+            $windowsPowerShell = Join-Path $env:WINDIR 'System32/WindowsPowerShell/v1.0/powershell.exe'
+            & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File $childScript `
+                -NativePayload (Join-Path $repository 'build/NativePayload.ps1') `
+                -Fixture $sourceFixture -Expected $sourceFingerprint
+            if ($LASTEXITCODE -ne 0) { throw 'Native fingerprinting failed in the constrained Windows PowerShell child.' }
+        }
         $linkedInput = Join-Path $linkedFixture 'rust/input0.txt'
         $originalBytes = [IO.File]::ReadAllBytes($linkedInput)
         [IO.File]::WriteAllText($linkedInput, "different older dependency`n")

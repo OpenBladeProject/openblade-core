@@ -32,7 +32,16 @@ function Get-OpenBladeNativeWorkingInputs {
         ForEach-Object { $_.FullName.Substring($root.Length + 1).Replace('\', '/') })
     [Array]::Sort($paths, [StringComparer]::Ordinal)
     foreach ($path in $paths) {
-        [ordered]@{ path = $path; sha256 = (Get-FileHash -LiteralPath (Join-Path $root $path) -Algorithm SHA256).Hash.ToLowerInvariant() }
+        # Windows PowerShell may inherit pwsh's PSModulePath from MSBuild;
+        # use framework hashing rather than depending on Utility autoload.
+        $algorithm = [Security.Cryptography.SHA256]::Create()
+        try {
+            $stream = [IO.File]::OpenRead((Join-Path $root $path))
+            try { $hash = ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-', '').ToLowerInvariant() }
+            finally { $stream.Dispose() }
+        }
+        finally { $algorithm.Dispose() }
+        [ordered]@{ path = $path; sha256 = $hash }
     }
 }
 
