@@ -28,6 +28,8 @@ mod battery;
 mod fan;
 #[cfg(feature = "service-thermal-mutation-v1")]
 pub(crate) mod mutation;
+#[cfg(feature = "service-thermal-mutation-v1")]
+mod temporary_charge;
 #[cfg(any(test, feature = "firmware-performance-compile-check"))]
 mod worker;
 #[cfg(all(windows, feature = "service-hardware-compile-check"))]

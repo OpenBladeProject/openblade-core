@@ -175,7 +175,8 @@ impl Store {
                 ),
             );
         }
-        if entry.battery.is_some()
+        if entry.tfc.is_some()
+            || entry.battery.is_some()
             || entry
                 .fan
                 .as_ref()
@@ -184,7 +185,10 @@ impl Store {
             let original = self.active_records.get(&entry.owner).ok_or_else(deny)?;
             #[cfg(test)]
             if self.verifier.is_some() {
-                return self.battery_producer_fixture.as_ref().ok_or_else(deny)?(original);
+                return self.battery_producer_fixture.as_ref().ok_or_else(deny)?(
+                    original,
+                    entry.tfc.is_some(),
+                );
             }
             let mut cache = self.battery_producers.lock().map_err(|_| deny())?;
             if !cache.contains_key(&original.epoch) {
@@ -195,6 +199,12 @@ impl Store {
                     &original.artifact,
                 )?;
                 cache.insert(original.epoch.clone(), proof);
+            }
+            if entry.tfc.is_some() {
+                cache
+                    .get(&original.epoch)
+                    .ok_or_else(deny)?
+                    .verify_temporary()?;
             }
             cache.get(&original.epoch).ok_or_else(deny)?.verify(
                 &original.installation,

@@ -15,6 +15,22 @@ pub(crate) trait Permit: Send + Sync {
     fn result_admitted(&self, expected: ReadAdmission) -> bool {
         self.authorize() == Some(expected)
     }
+    fn temporary_target(&self) -> Option<bool> {
+        None
+    }
+    fn temporary_reserved_ids(&self) -> Option<[u8; 8]> {
+        None
+    }
+    fn resolve_temporary_charge(
+        &self,
+        _source: u8,
+        _flags: u8,
+        _policy: Option<u8>,
+        _ids: [u8; 8],
+        _cancel_ids: Option<[u8; 8]>,
+    ) -> io::Result<Option<openblade_domain::temporary_charge_history::TemporaryChargeRecord>> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
     fn is_battery(&self) -> bool {
         false
     }
@@ -85,6 +101,10 @@ impl<P: Port> Reader<P, ReadAdmission> {
         permit: &dyn Permit,
         limit: Limit<'_>,
     ) -> Option<ObservedPerformance> {
+        if let Some(enabled) = permit.temporary_target() {
+            self.apply_temporary_charge(permit, enabled, limit).await;
+            return None;
+        }
         if permit.is_battery() {
             self.apply_battery(permit, limit).await;
             // Battery results travel through their typed permit, never a fabricated thermal value.

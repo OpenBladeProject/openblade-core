@@ -664,7 +664,11 @@ fn shared_v2_capabilities_preserve_combined_agent_features_and_reject_forgery() 
             let f = lines(&record, "OpenBlade.NativeArtifactRecord.v2", 11).unwrap();
             assert_eq!(record, encode("OpenBlade.NativeArtifactRecord.v2", &f));
             if role == "agent" {
-                assert!(f[4].contains("service-metadata-only-v1"));
+                if case["name"] == "temporary-combined-agent" {
+                    assert!(f[4].contains("service-temporary-charge-v1"));
+                } else {
+                    assert!(f[4].contains("service-metadata-only-v1"));
+                }
                 assert_eq!(f[10], "none");
             }
             let mut tampered = f.clone();

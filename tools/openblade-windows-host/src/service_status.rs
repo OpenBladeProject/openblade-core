@@ -1044,7 +1044,11 @@ impl Snapshot {
         observation: Option<(u8, Option<bool>)>,
         message: &str,
     ) -> Self {
-        if let Some(d) = desired {
+        // The existing IPC80 DesiredBatteryState cannot represent Off + TFC.
+        // Keep that private intent internally and publish the established
+        // unavailable projection; never turn it into firmware-confirmed false.
+        let incompatible = desired.is_some_and(|d| d.temporary && !d.protection);
+        if let Some(d) = desired.filter(|_| !incompatible) {
             self.desired_state
                 .battery
                 .configured_policy
@@ -1079,7 +1083,11 @@ impl Snapshot {
             self.render_message();
         }
         self.writes_blocked = true;
-        self
+        if incompatible {
+            self.private_policy_unavailable(PrivatePolicyFamily::Battery)
+        } else {
+            self
+        }
     }
     pub(crate) fn without_battery_observation(mut self) -> Self {
         if let Some(state) = &mut self.confirmed_state {

@@ -1,4 +1,4 @@
-//! Exact RZ09-0581 policy and separate temporary-full-charge GET codecs.
+//! Exact RZ09-0581 policy and full Power Mode Control codecs.
 //! BatteryValidationProtocol/TemporaryFullChargeProtocol and pinned 0581 fixture.
 //! Captured BIOS is provenance, never a production admission gate.
 use crate::RazerReport;
@@ -33,14 +33,25 @@ pub fn policy(query: &RazerReport, reply: &[u8]) -> Result<u8, ProtocolValidatio
         Err(ProtocolValidationFailure::PayloadValidator)
     }
 }
-pub fn temporary(query: &RazerReport, reply: &[u8]) -> Result<bool, ProtocolValidationFailure> {
+pub fn power_flags(query: &RazerReport, reply: &[u8]) -> Result<u8, ProtocolValidationFailure> {
     let p = query.validate_response(reply, Some(1))?;
     let raw = p.as_slice()[0];
     if raw & !0x0f == 0 {
-        Ok(raw & 4 != 0)
+        Ok(raw)
     } else {
         Err(ProtocolValidationFailure::PayloadValidator)
     }
+}
+pub fn temporary(query: &RazerReport, reply: &[u8]) -> Result<bool, ProtocolValidationFailure> {
+    power_flags(query, reply).map(|raw| raw & 4 != 0)
+}
+/// SET replaces the whole byte. This typed writer admits only TFC, never a merge.
+pub fn temporary_setter(id: u8, enabled: bool) -> RazerReport {
+    RazerReport::create(id, 7, 0x0f, &[if enabled { 4 } else { 0 }])
+        .expect("fixed temporary setter")
+}
+pub fn temporary_write_admitted(flags: u8) -> bool {
+    flags & !4 == 0
 }
 pub fn acknowledge(
     command: &RazerReport,

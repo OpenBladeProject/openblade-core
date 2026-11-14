@@ -8,6 +8,11 @@ pub(crate) struct State {
     pub(crate) battery_getter_hook: Option<Arc<dyn Fn(u8, usize) + Send + Sync>>,
     pub(crate) battery_raw: u8,
     pub(crate) temporary_raw: u8,
+    pub(crate) temporary_reads: usize,
+    pub(crate) temporary_replies: std::collections::VecDeque<u8>,
+    pub(crate) temporary_bad_ack: bool,
+    pub(crate) temporary_fail_read: bool,
+    pub(crate) temporary_bad_read: bool,
     pub(crate) battery_reads: usize,
     pub(crate) battery_replies: std::collections::VecDeque<u8>,
     pub(crate) battery_bad_ack: bool,
@@ -229,7 +234,33 @@ impl Port for MemoryPort {
                             s.battery_raw
                         }]
                     }
-                    (7, 0x8f) => vec![s.temporary_raw],
+                    (7, 0x8f) => {
+                        s.temporary_reads += 1;
+                        self.reply_timeout = s.temporary_fail_read;
+                        vec![s.temporary_replies.pop_front().unwrap_or(s.temporary_raw)]
+                    }
+                    (7, 0x0f) => {
+                        if let Some(check) = &s.before_write {
+                            check(s.writes + 1);
+                        }
+                        assert_eq!(payload.len(), 1);
+                        assert!(matches!(payload[0], 0 | 4));
+                        s.writes += 1;
+                        s.temporary_raw = payload[0];
+                        if let Some((n, release)) = &s.held_write {
+                            if *n == s.writes {
+                                self.held = Some(release.clone());
+                            }
+                        }
+                        if s.fail_write == Some(s.writes) {
+                            return Err(io::ErrorKind::Other.into());
+                        }
+                        vec![if s.temporary_bad_ack {
+                            payload[0] ^ 1
+                        } else {
+                            payload[0]
+                        }]
+                    }
                     (7, 0x12) => {
                         if let Some(check) = &s.before_write {
                             check(s.writes + 1);
@@ -282,6 +313,9 @@ impl Port for MemoryPort {
                     }
                 }
                 if class == 7 && command == 0x92 && s.battery_reads > 1 && s.battery_bad_read {
+                    reply[0] = 1;
+                }
+                if class == 7 && command == 0x8f && s.temporary_bad_read {
                     reply[0] = 1;
                 }
                 self.reply = Some(reply);

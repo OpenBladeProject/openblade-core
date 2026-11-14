@@ -394,6 +394,9 @@ fn compose_guarded_status(
 }
 
 pub(super) trait StatusOrigin: Send + Sync {
+    fn power_epoch(&self) -> Option<u64> {
+        None
+    }
     fn verify(&self) -> io::Result<()>;
     fn revoke(&self);
     fn normal_stop(&self) {
@@ -406,6 +409,9 @@ pub(super) trait StatusOrigin: Send + Sync {
     fn confirm_transport_drain(&self) -> io::Result<()>;
 }
 impl StatusOrigin for crate::loaded_origin::Origin {
+    fn power_epoch(&self) -> Option<u64> {
+        self.lifecycle.active()
+    }
     fn normal_stop(&self) {
         self.revoke_for_stop()
     }
@@ -434,6 +440,53 @@ struct GuardedStatus {
     mailbox: super::mailbox_read::MailboxSource,
 }
 impl StatusSource for GuardedStatus {
+    fn process_power_source(&mut self) -> Pending<'_, ()> {
+        Box::pin(async move {
+            #[cfg(feature = "service-temporary-charge-v1")]
+            if let (Some(runtime), Some(epoch)) = (&self.mutation, self.origin.power_epoch()) {
+                if runtime.temporary_event_needed(epoch) {
+                    self.origin.verify()?;
+                    let evidence = self.inner.refresh().await?;
+                    if let Some(evidence) = evidence {
+                        let battery = evidence.power == Power::Battery;
+                        let known_source = evidence.power != Power::Unknown;
+                        // The SCM ingress already advanced the fence. Coalesce
+                        // hints by epoch; metadata never authorizes a HID write.
+                        if known_source {
+                            runtime.temporary_event_observed(epoch);
+                        }
+                        self.inner.publish(Some(evidence))?;
+                        if battery {
+                            if let Some(update) = runtime
+                                .battery_source_event(self.mailbox.clone(), epoch)
+                                .await?
+                            {
+                                if let Some(publisher) = &self.inner.publisher {
+                                    let mut status =
+                                        update.apply(publisher.borrow().active.clone());
+                                    status.set_observation_revision(
+                                        publisher
+                                            .borrow()
+                                            .active
+                                            .revision()
+                                            .checked_add(1)
+                                            .ok_or_else(|| invalid("status revision exhausted"))?,
+                                    );
+                                    publisher.send_replace(Arc::new(Publication {
+                                        inactive: status.inactive_mutation(),
+                                        active: status,
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                    self.origin.verify()?;
+                }
+            }
+            Ok(())
+        })
+    }
+
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn mutate(
         &mut self,
@@ -806,10 +859,10 @@ pub(super) fn injected_mutation_source(
                     hid: HidMetadata::Candidate,
                 }
             },
-            power: if metadata.load(std::sync::atomic::Ordering::Acquire) == 1 {
-                Power::Battery
-            } else {
-                Power::ExternalUnknown
+            power: match metadata.load(std::sync::atomic::Ordering::Acquire) {
+                1 => Power::Battery,
+                4 => Power::Unknown,
+                _ => Power::ExternalUnknown,
             },
             controllers: vec![],
             controller_warning: None,

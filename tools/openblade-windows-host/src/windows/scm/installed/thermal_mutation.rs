@@ -70,6 +70,9 @@ mod battery;
 #[path = "fan_mutation.rs"]
 mod fan;
 pub(super) trait Fresh: Send + Sync {
+    fn on_battery(&self) -> Option<bool> {
+        None
+    }
     fn authentication(&self) -> Option<(u32, i32)> {
         None
     }
@@ -82,6 +85,9 @@ pub(super) trait Fresh: Send + Sync {
     fn authorize(&self) -> Option<ReadAdmission>;
 }
 impl Fresh for WindowsGuard {
+    fn on_battery(&self) -> Option<bool> {
+        self.on_battery()
+    }
     fn authentication(&self) -> Option<(u32, i32)> {
         Some(self.authentication())
     }
@@ -102,12 +108,16 @@ pub(super) struct Runtime {
     factory: Rc<Factory>,
     application: Rc<RefCell<Option<Application>>>,
     fan_owner: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
+    temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
+    temporary_pending: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
+    temporary_event: Rc<std::cell::Cell<Option<u64>>>,
     fan_pending: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     gate: Rc<tokio::sync::Mutex<()>>,
     // Public battery history is bounded independently of request/user intent.
     // Only independent reads update its timestamp; sibling publications cannot.
     battery_observation: Arc<Mutex<battery::BatteryObservation>>,
     battery_source: Arc<std::sync::atomic::AtomicU8>,
+    battery_warning: Arc<Mutex<Option<String>>>,
     fatal: Arc<Mutex<Option<&'static str>>>,
     #[cfg(test)]
     pub(super) entered: Rc<std::cell::Cell<u64>>,
@@ -145,10 +155,14 @@ impl Runtime {
             factory: Rc::new(factory),
             application: Rc::default(),
             fan_owner: Rc::default(),
+            temporary_owner: Rc::default(),
+            temporary_pending: Rc::default(),
+            temporary_event: Rc::default(),
             fan_pending: Rc::default(),
             gate: Rc::default(),
             battery_observation: Arc::default(),
             battery_source: Arc::new(std::sync::atomic::AtomicU8::new(3)),
+            battery_warning: Arc::default(),
             fatal: mailbox.fatal_evidence(),
             #[cfg(test)]
             entered: Rc::default(),
@@ -198,10 +212,14 @@ impl Runtime {
             }),
             application: Rc::default(),
             fan_owner: Rc::default(),
+            temporary_owner: Rc::default(),
+            temporary_pending: Rc::default(),
+            temporary_event: Rc::default(),
             fan_pending: Rc::default(),
             gate: Rc::default(),
             battery_observation: Arc::default(),
             battery_source: Arc::new(std::sync::atomic::AtomicU8::new(3)),
+            battery_warning: Arc::default(),
             fatal: mailbox.fatal_evidence(),
             #[cfg(test)]
             entered: Rc::default(),

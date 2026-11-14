@@ -43,34 +43,48 @@ impl BatteryObservation {
     }
 }
 
-struct BatteryPermit {
+pub(super) struct BatteryPermit {
+    tfc: Mutex<Option<openblade_domain::temporary_charge_history::TemporaryChargeRecord>>,
+    reserved_ids: Option<[u8; 8]>,
+    origin: Option<openblade_domain::temporary_charge_history::Origin>,
+    authentication: Option<(u32, i32)>,
+    custody: Arc<dyn ReadCustody>,
+    pub(super) sid: String,
     storage: Arc<Storage>,
     fresh: Arc<dyn Fresh>,
     request: String,
     requested: Request,
     owner: String,
     caller_pid: u32,
-    session: u32,
+    pub(super) session: u32,
     proof: ReadAdmission,
     record: Mutex<Option<BatteryRecord>>,
     observation: Arc<Mutex<BatteryObservation>>,
     prepared: AtomicBool,
     confirmed: AtomicBool,
+    joined: AtomicBool,
+    positive_at: Mutex<Option<Instant>>,
     source: Arc<std::sync::atomic::AtomicU8>,
     cause: Mutex<String>,
     fatal: Arc<Mutex<Option<&'static str>>>,
 }
 impl BatteryPermit {
     fn write(&self, progress: u8) -> io::Result<()> {
+        let tfc = self.tfc.lock().map_err(|_| io::ErrorKind::Other)?.clone();
         let record = self
             .record
             .lock()
             .map_err(|_| io::ErrorKind::Other)?
-            .clone()
-            .ok_or(io::ErrorKind::PermissionDenied)?;
+            .clone();
+        let intent = match (&record, &tfc) {
+            (Some(r), None) => r.hash()?,
+            (None, Some(r)) => r.hash()?,
+            _ => return Err(io::ErrorKind::PermissionDenied.into()),
+        };
         self.storage
             .record_battery(Entry {
-                battery: Some(record.clone()),
+                tfc,
+                battery: record,
                 fan: None,
                 request: self.request.clone(),
                 owner: self.owner.clone(),
@@ -79,7 +93,7 @@ impl BatteryPermit {
                 session: self.session,
                 requested: None,
                 destination: 0,
-                intent: record.hash()?,
+                intent,
                 progress,
             })
             .inspect_err(|e| remember_failure(&self.fatal, e))
@@ -95,6 +109,62 @@ impl BatteryPermit {
     }
 }
 impl Permit for BatteryPermit {
+    fn temporary_target(&self) -> Option<bool> {
+        if !cfg!(feature = "service-temporary-charge-v1") {
+            return None;
+        }
+        match self.requested {
+            Request::SetFullChargeOverride { enabled } => Some(enabled),
+            _ => None,
+        }
+    }
+    fn temporary_reserved_ids(&self) -> Option<[u8; 8]> {
+        self.reserved_ids
+    }
+    fn resolve_temporary_charge(
+        &self,
+        source: u8,
+        flags: u8,
+        policy: Option<u8>,
+        ids: [u8; 8],
+        cancel_ids: Option<[u8; 8]>,
+    ) -> io::Result<Option<openblade_domain::temporary_charge_history::TemporaryChargeRecord>> {
+        use openblade_domain::temporary_charge_history::{CONTRACT, TemporaryChargeRecord};
+        self.authorize().ok_or(io::ErrorKind::PermissionDenied)?;
+        self.source.store(source, Ordering::Release);
+        let configured = self.storage.desired_battery(source)?;
+        let Request::SetFullChargeOverride { enabled } = self.requested else {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        };
+        if flags & !4 != 0
+            || enabled
+                && (source == 1
+                    || !configured.protection
+                    || !policy
+                        .is_some_and(|p| p != 0x50 && openblade_protocol::battery::valid_policy(p)))
+            || self.origin.is_some() && source != 1
+        {
+            self.reason("Temporary charge admission or the complete Power Mode Control guard refused the request; no setter was submitted.");
+            return Ok(None);
+        }
+        let record = TemporaryChargeRecord {
+            contract: CONTRACT.into(),
+            requested: self.requested.clone(),
+            configured,
+            desired: configured.requested(&self.requested),
+            source,
+            baseline: flags,
+            target: if enabled { 4 } else { 0 },
+            policy,
+            ids,
+            cancel_ids,
+            origin: self.origin.clone(),
+            fan_owner: self.storage.retained_fan_binding()?,
+        };
+        record.validate()?;
+        *self.tfc.lock().map_err(|_| io::ErrorKind::Other)? = Some(record.clone());
+        Ok(Some(record))
+    }
     fn is_battery(&self) -> bool {
         true
     }
@@ -113,6 +183,26 @@ impl Permit for BatteryPermit {
             if self.storage.desired_battery(record.source).ok()? != expected {
                 return None;
             }
+        }
+        if let Some(record) = self.tfc.lock().ok()?.as_ref() {
+            let current = self.storage.desired_battery(record.source).ok()?;
+            if current.limit != record.configured.limit
+                || current.protection != record.configured.protection
+            {
+                return None;
+            }
+        }
+        if self.origin.is_some() && self.fresh.on_battery() != Some(true) {
+            return None;
+        }
+        if cfg!(feature = "service-temporary-charge-v1")
+            && matches!(
+                self.requested,
+                Request::SetFullChargeOverride { enabled: true }
+            )
+            && self.fresh.on_battery() != Some(false)
+        {
+            return None;
         }
         let p = self.fresh.authorize();
         (p == Some(self.proof)).then_some(self.proof)
@@ -179,16 +269,24 @@ impl Permit for BatteryPermit {
         if progress == 0 {
             self.prepared.store(true, Ordering::Release);
         }
-        if matches!(progress, 62 | 63) {
-            let record = self
+        if matches!(progress, 62 | 63 | 72 | 73) {
+            let basic = self
                 .record
                 .lock()
                 .map_err(|_| io::ErrorKind::Other)?
-                .clone()
-                .ok_or(io::ErrorKind::PermissionDenied)?;
-            if let Err(e) = self.storage.commit_battery(record.source, record.desired) {
+                .clone();
+            let tfc = self.tfc.lock().map_err(|_| io::ErrorKind::Other)?.clone();
+            let (source, desired) = match (basic, tfc) {
+                (Some(r), None) => (r.source, r.desired),
+                (None, Some(r)) => (r.source, r.desired),
+                _ => return Err(io::ErrorKind::PermissionDenied.into()),
+            };
+            if let Err(e) = self.storage.commit_battery(source, desired) {
                 self.storage.quarantine_settlement()?;
                 return Err(e);
+            }
+            if matches!(progress, 72 | 73) && desired.temporary {
+                *self.positive_at.lock().map_err(|_| io::ErrorKind::Other)? = Some(Instant::now());
             }
             self.confirmed.store(true, Ordering::Release);
         }
@@ -200,6 +298,9 @@ impl Permit for BatteryPermit {
         }
     }
     fn observe_battery_temporary(&self, temporary: bool) {
+        if !temporary {
+            self.storage.clear_battery_temporary();
+        }
         if let Ok(mut v) = self.observation.lock() {
             v.temporary = Some((temporary, Instant::now()));
         }
@@ -217,6 +318,7 @@ impl Permit for BatteryPermit {
         });
     }
     fn retired(&self) -> io::Result<Settlement> {
+        self.joined.store(true, Ordering::Release);
         verify_retained_failure(&self.fatal)?;
         self.fresh.verify_health()?;
         if self.prepared.load(Ordering::Acquire) && self.storage.progress() == Some(0) {
@@ -228,7 +330,222 @@ impl Permit for BatteryPermit {
         Ok(Settlement::Complete)
     }
 }
+fn source_request_id(creator: &str, epoch: u64) -> String {
+    // Domain-separated service event identity; creator PID/request remain
+    // original provenance, never fabricated as a new authenticated pipe caller.
+    let h = format!(
+        "{:x}",
+        Sha256::digest(
+            format!("OpenBlade.TemporaryChargeSource.v1\n{creator}\n{epoch}\n").as_bytes()
+        )
+    );
+    format!(
+        "{}-{}-{}-{}-{}",
+        &h[..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..32]
+    )
+}
 impl Runtime {
+    fn retain_battery_view(
+        &self,
+        reader: &super::super::mailbox_read::ReadSource,
+        retained: Arc<BatteryPermit>,
+    ) {
+        let history = self.battery_observation.clone();
+        reader.retain_battery_expiry(Rc::new(move || {
+            history
+                .lock()
+                .ok()
+                .and_then(|h| h.next_expiry(Instant::now()))
+        }));
+        let warning = self.battery_warning.clone();
+        reader.retain_battery_policy(Rc::new(move |base| {
+            verify_retained_failure(&retained.fatal)?;
+            retained.fresh.verify_health()?;
+            let base = base.without_battery_observation();
+            let source_warning = warning.lock().map_err(|_| io::ErrorKind::Other)?.clone();
+            if retained.fresh.authorize() != Some(retained.proof) {
+                return Ok(source_warning.as_ref().map_or(base.clone(), |message| base.battery_projection(None,None,message)));
+            }
+            let current = base.thermal_power_source();
+            let source = if (0..=2).contains(&current) { current as u8 } else { retained.source.load(Ordering::Acquire) };
+            if source > 2 { return Ok(base); }
+            let observation = retained.historical_observation()?;
+            let message = if retained.storage.pending() { retained.storage.pending_reason()?.into() }
+                else if let Some(message) = source_warning { message }
+                else if observation.is_some() { "Last independently read battery policy retained; no fresh battery read is confirmed. New writes require fresh admission.".into() }
+                else { "Last battery observation expired or unavailable; new writes require fresh admission.".into() };
+            let public = base.battery_projection(None,observation,&message);
+            super::super::mailbox_read::project_private_policy(public,crate::service_status::PrivatePolicyFamily::Battery, |base| {
+                Ok(base.battery_projection(Some(retained.storage.desired_battery(source)?),None,"").bind_private_user(&retained.sid))
+            })
+        }));
+    }
+
+    // Called only after the actual shared worker joins. A vanished pipe future
+    // cannot discard the worker's independently confirmed process intent.
+    pub(super) fn reconcile_temporary_owner(&self) {
+        // Desired memory may clear on Battery before its event worker runs.
+        // Only a newer independent false observation ends the old obligation.
+        let ended = self.temporary_owner.borrow().as_ref().is_some_and(|p| {
+            let at = p.positive_at.lock().ok().and_then(|at| *at);
+            self.battery_observation.lock().is_ok_and(|o| {
+                o.temporary
+                    .is_some_and(|(value, observed)| !value && at.is_some_and(|at| observed >= at))
+            })
+        });
+        if ended {
+            self.temporary_owner.borrow_mut().take();
+        }
+        let pending = self.temporary_pending.borrow_mut().take();
+        if let Some(p) = pending {
+            if !p.joined.load(Ordering::Acquire) {
+                *self.temporary_pending.borrow_mut() = Some(p);
+                return;
+            }
+            if p.confirmed.load(Ordering::Acquire) && !p.storage.pending() {
+                *self.temporary_owner.borrow_mut() = Some(p);
+            } else if p.storage.pending() {
+                *self.temporary_pending.borrow_mut() = Some(p);
+            }
+        }
+    }
+    pub(in super::super) fn temporary_event_needed(&self, epoch: u64) -> bool {
+        let owner = self
+            .temporary_pending
+            .borrow()
+            .clone()
+            .or_else(|| self.temporary_owner.borrow().clone());
+        owner.is_some_and(|p| {
+            p.proof.lifecycle != epoch && self.temporary_event.get() != Some(epoch)
+        })
+    }
+    pub(in super::super) fn temporary_event_observed(&self, epoch: u64) {
+        self.temporary_event.set(Some(epoch));
+    }
+    pub(super) fn temporary_cross_user(&self, sid: &str, session: u32) -> bool {
+        self.temporary_pending
+            .borrow()
+            .iter()
+            .chain(self.temporary_owner.borrow().iter())
+            .any(|p| p.sid != sid || p.session != session)
+    }
+    pub(in super::super) async fn battery_source_event(
+        &self,
+        mailbox: MailboxSource,
+        epoch: u64,
+    ) -> io::Result<Option<BatteryUpdate>> {
+        let _serial = self.gate.lock().await;
+        verify_retained_failure(&self.fatal)?;
+        let MailboxSource::Reader(reader) = mailbox else {
+            return Ok(None);
+        };
+        reader.drain_active().await?;
+        self.reconcile_temporary_owner();
+        let pending = self.temporary_pending.borrow_mut().take();
+        let owner = self.temporary_owner.borrow_mut().take();
+        let Some(original) = pending.or(owner) else {
+            return Ok(None);
+        };
+        // Genuine current Battery evidence always ends desired intent, even if
+        // configuration admission fails. The obligation is claimed once.
+        original.storage.clear_battery_temporary();
+        let mut message = "Temporary charge intent cleared on Battery; cancellation is paused because original authority or independent confirmation is unavailable.".to_owned();
+        if !original.storage.pending() && original.confirmed.load(Ordering::Acquire) {
+            let record = original
+                .tfc
+                .lock()
+                .map_err(|_| io::ErrorKind::Other)?
+                .clone();
+            if let Some(record) = record.filter(|r| r.desired.temporary) {
+                let captured = self.capture(&original.sid, original.session, reader.custody());
+                match captured {
+                    Err(e) if is_fatal_admission(&e) => return Err(e),
+                    Ok((storage, fresh)) => {
+                        fresh.verify_health()?;
+                        if let Some(proof) = fresh.authorize().filter(|p| {
+                            p.lifecycle == epoch && p.generation == original.proof.generation
+                        }) {
+                            if Arc::ptr_eq(&storage, &original.storage)
+                                && Arc::ptr_eq(&original.custody, &reader.custody())
+                                && original.authentication.is_some()
+                                && fresh.authentication() == original.authentication
+                            {
+                                let permit = Arc::new(BatteryPermit {
+                                    tfc: Mutex::new(None),
+                                    reserved_ids: record.cancel_ids,
+                                    origin: Some(
+                                        openblade_domain::temporary_charge_history::Origin {
+                                            request: original.request.clone(),
+                                            intent: record.hash()?,
+                                        },
+                                    ),
+                                    authentication: original.authentication,
+                                    custody: original.custody.clone(),
+                                    sid: original.sid.clone(),
+                                    storage,
+                                    fresh,
+                                    request: source_request_id(&original.request, epoch),
+                                    requested: Request::SetFullChargeOverride { enabled: false },
+                                    owner: original.owner.clone(),
+                                    caller_pid: original.caller_pid,
+                                    session: original.session,
+                                    proof,
+                                    record: Mutex::new(None),
+                                    observation: self.battery_observation.clone(),
+                                    prepared: AtomicBool::new(false),
+                                    confirmed: AtomicBool::new(false),
+                                    joined: AtomicBool::new(false),
+                                    positive_at: Mutex::new(None),
+                                    source: self.battery_source.clone(),
+                                    cause: Mutex::new(message.clone()),
+                                    fatal: self.fatal.clone(),
+                                });
+                                self.retain_battery_view(&reader, permit.clone());
+                                let result = reader
+                                    .mutate(
+                                        permit.clone(),
+                                        Instant::now() + std::time::Duration::from_secs(4),
+                                    )
+                                    .await;
+                                verify_retained_failure(&self.fatal)?;
+                                if let Err(e) = result {
+                                    if is_fatal_admission(&e) {
+                                        return Err(e);
+                                    }
+                                }
+                                if permit.confirmed.load(Ordering::Acquire)
+                                    && !permit.storage.pending()
+                                {
+                                    message = "Temporary full charge canceled on Battery by independent readback; configured charge policy is retained.".into();
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if original.storage.pending() {
+            message = original.storage.pending_reason()?.into();
+        }
+        *self
+            .battery_warning
+            .lock()
+            .map_err(|_| io::ErrorKind::Other)? = Some(message.clone());
+        let desired = original.storage.desired_battery(1).ok();
+        Ok(Some(BatteryUpdate {
+            desired,
+            observation: original.historical_observation()?,
+            public_message: message.clone(),
+            message,
+            sid: original.sid.clone(),
+        }))
+    }
+
     pub(in super::super) async fn apply_battery(
         &self,
         mailbox: MailboxSource,
@@ -256,6 +573,7 @@ impl Runtime {
             ));
         };
         reader.drain_active().await?;
+        self.reconcile_temporary_owner();
         reader.custody().verify_integrity()?;
         let (storage, fresh) = match self.capture(&sid, caller.session, reader.custody()) {
             Ok(v) => v,
@@ -277,7 +595,14 @@ impl Runtime {
                 None,
             ));
         };
+        let authentication = fresh.authentication();
         let permit = Arc::new(BatteryPermit {
+            tfc: Mutex::new(None),
+            reserved_ids: None,
+            origin: None,
+            authentication,
+            custody: reader.custody().clone(),
+            sid: sid.clone(),
             storage,
             fresh,
             request,
@@ -290,43 +615,24 @@ impl Runtime {
             observation: self.battery_observation.clone(),
             prepared: AtomicBool::new(false),
             confirmed: AtomicBool::new(false),
+            joined: AtomicBool::new(false),
+            positive_at: Mutex::new(None),
             source: self.battery_source.clone(),
             cause: Mutex::new("Battery operation was not confirmed; no success is claimed.".into()),
             fatal: self.fatal.clone(),
         });
-        // Register before worker submission. Retirement or caller cancellation
-        // must not discard a committed process-scoped override. This callback
-        // reads current storage under fresh read-only proof, never grants writes.
-        let history = self.battery_observation.clone();
-        reader.retain_battery_expiry(Rc::new(move || {
-            history
-                .lock()
-                .ok()
-                .and_then(|history| history.next_expiry(Instant::now()))
-        }));
-        let retained = permit.clone();
-        let policy_sid = sid.clone();
-        reader.retain_battery_policy(Rc::new(move |base| {
-            verify_retained_failure(&retained.fatal)?;
-            retained.fresh.verify_health()?;
-            // Never inherit a battery field cached with a newer thermal witness.
-            let base = base.without_battery_observation();
-            if retained.fresh.authorize() != Some(proof) { return Ok(base); }
-            let current = base.thermal_power_source();
-            let source = if (0..=2).contains(&current) { current as u8 }
-                else { retained.source.load(Ordering::Acquire) };
-            if source > 2 { return Ok(base); }
-            let observation = retained.historical_observation()?;
-            let message = if retained.storage.pending() { retained.storage.pending_reason()? }
-                else if observation.is_some() { "Last independently read battery policy retained; no fresh battery read is confirmed. New writes require fresh admission.".into() }
-                else { "Last battery observation expired or unavailable; new writes require fresh admission.".into() };
-            let public = base.battery_projection(None, observation, &message);
-            super::super::mailbox_read::project_private_policy(public, crate::service_status::PrivatePolicyFamily::Battery, |base| {
-                let desired = retained.storage.desired_battery(source)?;
-                Ok(base.battery_projection(Some(desired), None, "").bind_private_user(&policy_sid))
-            })
-        }));
+        self.retain_battery_view(&reader, permit.clone());
+        if cfg!(feature = "service-temporary-charge-v1")
+            && matches!(
+                permit.requested,
+                Request::SetFullChargeOverride { enabled: true }
+            )
+        {
+            // Register prospectively; the worker may commit after caller disconnect.
+            *self.temporary_pending.borrow_mut() = Some(permit.clone());
+        }
         let result = reader.mutate(permit.clone(), deadline).await;
+        self.reconcile_temporary_owner();
         verify_retained_failure(&self.fatal)?;
         permit.fresh.verify_health()?;
         if let Err(e) = &result {
@@ -347,10 +653,16 @@ impl Runtime {
         }
         let confirmed =
             result.is_ok() && permit.confirmed.load(Ordering::Acquire) && !permit.storage.pending();
+        if confirmed {
+            *self
+                .battery_warning
+                .lock()
+                .map_err(|_| io::ErrorKind::Other)? = None;
+        }
         let outcome = if permit.storage.pending() {
             Outcome::blocked(permit.storage.pending_reason()?)
         } else if confirmed {
-            Outcome{status:1,message:"Battery policy confirmed by independent readback; saved limit is retained when protection is Off.".into()}
+            Outcome{status:1,message:"Battery operation confirmed by independent readback; saved charge policy is retained.".into()}
         } else {
             Outcome::blocked(
                 permit

@@ -96,12 +96,14 @@ internal sealed class WindowsNativeThermalHistory
     private Row? ownedFan;
     private readonly HashSet<string> batteryGenerations = new(StringComparer.Ordinal);
     private readonly HashSet<string> fanGenerations = new(StringComparer.Ordinal);
-    private sealed record Row(string Request, string Owner, string Sid, uint Pid, uint Session, int Destination, string Intent, byte Progress, string? Fan, string? Battery);
+    private readonly HashSet<string> temporaryGenerations = new(StringComparer.Ordinal);
+    private sealed record Row(string Request, string Owner, string Sid, uint Pid, uint Session, int Destination, string Intent, byte Progress, string? Fan, string? Battery, string? Temporary);
     // Each segment ends positively settled; chronology cannot be split by rolling.
     private ulong Rows(byte[] bytes, IReadOnlyList<WindowsNativeTrustLifecycle.OwnerReference> owners, bool requireSettled)
     {
         if (bytes.Length > SegmentBytes || bytes.Length != 0 && bytes[^1] != 10) { throw Denied(); }
         Row? last = frontier;
+        Row? temporaryOwner = null;
         ulong count = 0;
         int position = 0;
         while (position < bytes.Length)
@@ -111,55 +113,70 @@ internal sealed class WindowsNativeThermalHistory
             byte[] raw = bytes[position..(position + length)]; position += length;
             using var document = JsonDocument.Parse(raw);
             JsonElement e = document.RootElement;
-            Members(e, ["request", "owner", "user_sid", "caller_pid", "session", "requested", "destination", "intent", "progress", "fan", "battery"]);
+            Members(e, ["request", "owner", "user_sid", "caller_pid", "session", "requested", "destination", "intent", "progress", "fan", "battery", "tfc"]);
             string Text(string key) => e.GetProperty(key).GetString() ?? throw Denied();
             byte[]? fan = e.TryGetProperty("fan", out var f) ? WindowsNativeFanHistory.Canonical(f) : null;
             byte[]? battery = e.TryGetProperty("battery", out var b) ? WindowsNativeBatteryHistory.Canonical(b) : null;
-            var row = new Row(Text("request"), Text("owner"), Text("user_sid"), e.GetProperty("caller_pid").GetUInt32(), e.GetProperty("session").GetUInt32(), e.GetProperty("destination").GetInt32(), Text("intent"), e.GetProperty("progress").GetByte(), fan is null ? null : Encoding.UTF8.GetString(fan), battery is null ? null : Encoding.UTF8.GetString(battery));
+            byte[]? temporary = e.TryGetProperty("tfc", out var t) ? WindowsNativeTemporaryChargeHistory.Canonical(t) : null;
+            if (temporary is not null && (e.TryGetProperty("fan", out _) || e.TryGetProperty("battery", out _))) { throw Denied(); }
+            var row = new Row(Text("request"), Text("owner"), Text("user_sid"), e.GetProperty("caller_pid").GetUInt32(), e.GetProperty("session").GetUInt32(), e.GetProperty("destination").GetInt32(), Text("intent"), e.GetProperty("progress").GetByte(), fan is null ? null : Encoding.UTF8.GetString(fan), battery is null ? null : Encoding.UTF8.GetString(battery), temporary is null ? null : Encoding.UTF8.GetString(temporary));
             if (!Guid.TryParseExact(row.Request, "D", out var request) || request == Guid.Empty || !NativeCanonical.IsHex(row.Owner, 64) || !NativeCanonical.IsHex(row.Intent, 64)
                 || !row.Sid.StartsWith("S-1-5-21-", StringComparison.Ordinal) || row.Sid.Any(c => !char.IsAsciiDigit(c) && c is not ('S' or '-'))
-                || row.Pid == 0 || row.Session == 0 || (battery is not null ? fan is not null || row.Destination != 0 || !WindowsNativeBatteryHistory.ValidProgress(row.Progress) : fan is null ? row.Destination is not (1 or 2) || row.Progress > 6 : row.Destination != 0 || !WindowsNativeFanHistory.ValidProgress(f, row.Progress))) { throw Denied(); }
+                || row.Pid == 0 || row.Session == 0 || (temporary is not null ? fan is not null || battery is not null || row.Destination != 0 || !WindowsNativeTemporaryChargeHistory.ValidProgress(row.Progress) : battery is not null ? fan is not null || row.Destination != 0 || !WindowsNativeBatteryHistory.ValidProgress(row.Progress) : fan is null ? row.Destination is not (1 or 2) || row.Progress > 6 : row.Destination != 0 || !WindowsNativeFanHistory.ValidProgress(f, row.Progress))) { throw Denied(); }
             JsonElement requested = e.TryGetProperty("requested", out var v) ? v : default;
-            if ((fan is not null || battery is not null) && requested.ValueKind != JsonValueKind.Null || NativeCanonical.Digest(battery ?? fan ?? Intent(requested)) != row.Intent) { throw Denied(); }
-            bool coupled = false;
-            if (battery is not null)
+            if ((fan is not null || battery is not null || temporary is not null) && requested.ValueKind != JsonValueKind.Null || NativeCanonical.Digest(temporary ?? battery ?? fan ?? Intent(requested)) != row.Intent) { throw Denied(); }
+            if (temporary is not null && t.GetProperty("origin").ValueKind != JsonValueKind.Null)
             {
+                var origin = t.GetProperty("origin");
+                if (temporaryOwner is null || origin.GetProperty("request").GetString() != temporaryOwner.Request || origin.GetProperty("intent").GetString() != temporaryOwner.Intent
+                    || row.Owner != temporaryOwner.Owner || row.Sid != temporaryOwner.Sid || row.Pid != temporaryOwner.Pid || row.Session != temporaryOwner.Session) { throw Denied(); }
+                using var enabled = JsonDocument.Parse(temporaryOwner.Temporary ?? throw Denied());
+                if (!enabled.RootElement.GetProperty("cancel_ids").EnumerateArray().Select(v => v.GetByte()).SequenceEqual(t.GetProperty("ids").EnumerateArray().Select(v => v.GetByte()))) { throw Denied(); }
+            }
+            bool coupled = false;
+            if (battery is not null || temporary is not null)
+            {
+                var family = temporary is not null ? t : b;
                 string? expected = null;
                 if (ownedFan is not null)
                 {
                     using var ownerDoc = JsonDocument.Parse(ownedFan.Fan ?? throw Denied()); var ownerFan = ownerDoc.RootElement;
                     coupled = ownerFan.GetProperty("contract").GetString() == WindowsNativeFanHistory.CoexistenceContract;
                     expected = NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.BatteryFanOwner.v1", ownedFan.Request, ownedFan.Owner, ownedFan.Sid, ownedFan.Pid.ToString(CultureInfo.InvariantCulture), ownedFan.Session.ToString(CultureInfo.InvariantCulture), NativeCanonical.Digest(WindowsNativeFanHistory.Canonical(ownerFan))));
-                    var ids = b.GetProperty("ids").EnumerateArray().Select(v => v.GetByte()).ToHashSet();
+                    var ids = family.GetProperty("ids").EnumerateArray().Select(v => v.GetByte()).ToHashSet();
+                    if (temporary is not null && t.GetProperty("cancel_ids").ValueKind != JsonValueKind.Null) { ids.UnionWith(t.GetProperty("cancel_ids").EnumerateArray().Select(v => v.GetByte())); }
                     foreach (string k in new[] { "preflight", "ids", "cleanup" }) { foreach (var pair in ownerFan.GetProperty(k).EnumerateArray()) { foreach (var id in pair.EnumerateArray()) { if (ids.Contains(id.GetByte())) { throw Denied(); } } } }
                 }
-                if (b.GetProperty("fan_owner").GetString() != expected) { throw Denied(); }
+                if (family.GetProperty("fan_owner").GetString() != expected) { throw Denied(); }
             }
             if (ownedFan is not null && (row.Owner != ownedFan.Owner || row.Sid != ownedFan.Sid || row.Session != ownedFan.Session || fan is null && !coupled)) { throw Denied(); }
             bool resumedRelease = row.Progress is 31 or 51 && ownedFan is not null && ownedFan with { Progress = row.Progress } == row;
             if (last is not null && last.Request == row.Request)
             {
-                if (last with { Progress = row.Progress } != row || !(battery is not null ? WindowsNativeBatteryHistory.Follows(b, last.Progress, row.Progress) : fan is null ? last.Progress < 5 && row.Progress == last.Progress + 1 || last.Progress == 0 && row.Progress == 6 : WindowsNativeFanHistory.Follows(f, last.Progress, row.Progress))) { throw Denied(); }
+                if (last with { Progress = row.Progress } != row || !(temporary is not null ? WindowsNativeTemporaryChargeHistory.Follows(t, last.Progress, row.Progress) : battery is not null ? WindowsNativeBatteryHistory.Follows(b, last.Progress, row.Progress) : fan is null ? last.Progress < 5 && row.Progress == last.Progress + 1 || last.Progress == 0 && row.Progress == 6 : WindowsNativeFanHistory.Follows(f, last.Progress, row.Progress))) { throw Denied(); }
             }
-            else if (last is not null && last.Progress is not (5 or 6 or 30 or 50 or 51 or 62 or 63) || !resumedRelease && (row.Progress != 0 || last?.Progress == 30 && (fan is null && !coupled || row.Owner != last.Owner || row.Sid != last.Sid || row.Session != last.Session))) { throw Denied(); }
+            else if (last is not null && last.Progress is not (5 or 6 or 30 or 50 or 51 or 62 or 63 or 72 or 73) || !resumedRelease && (row.Progress != 0 || last?.Progress == 30 && (fan is null && !coupled || row.Owner != last.Owner || row.Sid != last.Sid || row.Session != last.Session))) { throw Denied(); }
             if (fan is not null) { if (row.Progress == 30) { ownedFan = row; } else if (row.Progress is 50 or 51) { ownedFan = null; } }
             var matches = owners.Where(o => o.Nonce == row.Owner).ToArray();
             if (matches.Length != 1) { throw Denied(); }
             var original = matches[0];
             string key = original.Epoch;
+            if (temporary is not null) { temporaryGenerations.Add(key); }
             if (fan is not null) { fanGenerations.Add(key); }
             if (battery is not null || fan is not null && f.GetProperty("contract").GetString() == WindowsNativeFanHistory.CoexistenceContract) { batteryGenerations.Add(key); }
             string prior = generations.GetValueOrDefault(key) ?? Empty(original.Installation, original.Epoch, original.Service);
             generations[key] = NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.ThermalGenerationRow.v1", prior, NativeCanonical.Digest(raw), original.Active));
+            if (temporary is not null && row.Progress is 72 or 73) { temporaryOwner = t.GetProperty("desired").GetProperty("temporary").GetBoolean() ? row : null; }
             last = row; count = checked(count + 1);
         }
-        if (requireSettled && (ownedFan is not null || last is not null && last.Progress is not (5 or 6 or 50 or 51 or 62 or 63))) { throw Denied(); }
+        if (requireSettled && (ownedFan is not null || last is not null && last.Progress is not (5 or 6 or 50 or 51 or 62 or 63 or 72 or 73))) { throw Denied(); }
         frontier = last;
         return count;
     }
     internal static string Empty(string installation, string epoch, string service) => NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.ThermalGeneration.v1", installation, epoch, service));
     internal string Generation(NativeEpochRecord record, NativeArtifact service, IReadOnlyList<WindowsNativeTrustLifecycle.OwnerReference> owners, IReadOnlyDictionary<string, byte[]> launches)
     {
+        if (temporaryGenerations.Contains(record.Epoch) && !service.TemporaryChargeMutation) { throw Denied(); }
         if (batteryGenerations.Contains(record.Epoch) && !service.BatteryMutation) { throw Denied(); }
         if (fanGenerations.Contains(record.Epoch) && !service.FanMutation) { throw Denied(); }
         if (service.Id != record.ServiceId) { throw Denied(); }

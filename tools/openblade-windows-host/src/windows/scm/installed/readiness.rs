@@ -141,6 +141,9 @@ type Mutation = Pin<
     Box<dyn Future<Output = io::Result<(thermal_mutation::Outcome, Option<Snapshot>)>> + 'static>,
 >;
 trait StatusSource {
+    fn process_power_source(&mut self) -> Pending<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
     #[cfg(feature = "service-thermal-mutation-v1")]
     fn mutate(&mut self, _: Caller, _: String, _: StatusRequest, _: Instant) -> Mutation {
         Box::pin(async {
@@ -318,9 +321,9 @@ impl Ports {
             let mut interval = tokio::time::interval(Duration::from_millis(500));
             loop {
                 interval.tick().await;
-                if let Err(error) = self.source.lock().await.verify_origin() {
-                    return Err::<(), _>(error);
-                }
+                let mut source = self.source.lock().await;
+                source.verify_origin()?;
+                source.process_power_source().await?;
             }
         };
         tokio::pin!(origin_check);

@@ -103,7 +103,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
     }
 }
 impl<P: Port> Attempt<'_, P, ReadAdmission> {
-    async fn battery_exchange(
+    pub(super) async fn battery_exchange(
         &mut self,
         q: &RazerReport,
         write: bool,

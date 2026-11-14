@@ -432,4 +432,36 @@ public sealed class NativeThermalHistoryTests : IDisposable
         }
         foreach (var pair in before) { Assert.Equal(pair.Value, File.ReadAllBytes(pair.Key)); }
     }
+
+    [Fact]
+    public void TemporaryChargeV1RehashedHistoriesRequireOwnProducerAndPreserveOriginalCreator()
+    {
+        using var v = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "temporary-charge-history-v1.json")));
+        var vector = v.RootElement;
+        Assert.Equal(vector.GetProperty("canonical").GetString(), Encoding.UTF8.GetString(WindowsNativeTemporaryChargeHistory.Canonical(vector.GetProperty("tfc"))));
+        Assert.Equal(vector.GetProperty("intent").GetString(), NativeCanonical.Digest(WindowsNativeTemporaryChargeHistory.Canonical(vector.GetProperty("tfc"))));
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        var original = new WindowsNativeTrustLifecycle.OwnerReference(new string('1', 32), new string('2', 32), new string('3', 64) + "-service", "17:1", new string('7', 64), new string('8', 64));
+        var epoch = new NativeEpochRecord(NativeEpochPhase.Retired, original.Epoch, new string('0', 64), 1, original.Installation, new string('a', 64), new string('b', 32), original.Service, new string('c', 64) + "-agent", new string('0', 64), new string('d', 64));
+        var old = NativeArtifact.Inspect([.. WindowsNativeEpochTests.Image("service", nonce: '3', schema: 2, battery: true)], "service", new string('a', 40));
+        var producer = NativeArtifact.Inspect([.. WindowsNativeEpochTests.Image("service", nonce: '3', schema: 2, temporary: true)], "service", new string('a', 40));
+        Assert.Equal("service-temporary-charge-v1", producer.StartupPolicy);
+        var agent = NativeArtifact.Inspect([.. WindowsNativeEpochTests.Image("agent", nonce: '3', schema: 2, temporary: true)], "agent", new string('a', 40));
+        Assert.False(agent.TemporaryChargeMutation); Assert.Equal("none", agent.Capabilities);
+        var launches = new Dictionary<string, byte[]> { { "17-1.bin", [] } };
+        foreach (var item in vector.GetProperty("cases").EnumerateArray())
+        {
+            byte[] raw = Bytes(item.GetProperty("journal").GetString()!); Thermal(files, raw);
+            if (item.GetProperty("valid").GetBoolean())
+            {
+                var history = WindowsNativeThermalHistory.Read(files, [original]);
+                Assert.Throws<IOException>(() => history.Generation(epoch, old, [original], launches));
+                Assert.NotEmpty(history.Generation(epoch, producer, [original], launches));
+                // Re-check after the compatible proof: no cached broadening.
+                Assert.Throws<IOException>(() => history.Generation(epoch, old, [original], launches));
+            }
+            else { Assert.ThrowsAny<Exception>(() => WindowsNativeThermalHistory.Read(files, [original])); }
+            Assert.Equal(raw, File.ReadAllBytes(Path.Combine(files.Root, "owner", "thermal-mutation.journal")));
+        }
+    }
 }

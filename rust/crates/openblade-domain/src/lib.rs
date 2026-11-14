@@ -12,6 +12,8 @@ pub mod battery_history;
 #[cfg(feature = "thermal-history")]
 pub mod fan_history;
 pub mod fan_recipe;
+#[cfg(feature = "thermal-history")]
+pub mod temporary_charge_history;
 pub mod thermal_mutation;
 pub mod thermal_observation;
 

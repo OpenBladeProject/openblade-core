@@ -23,7 +23,7 @@ fn hex(s: &str, n: usize) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
-fn is_guid(s: &str) -> bool {
+pub(crate) fn is_guid(s: &str) -> bool {
     s.len() == 36
         && s.bytes().enumerate().all(|(i, b)| {
             if matches!(i, 8 | 13 | 18 | 23) {
@@ -161,6 +161,8 @@ pub const STAGING: &str = "thermal-mutation.journal.rollover";
 #[serde(deny_unknown_fields)]
 pub struct Entry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tfc: Option<crate::temporary_charge_history::TemporaryChargeRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub battery: Option<crate::battery_history::BatteryRecord>,
     pub request: String,
     pub owner: String,
@@ -205,6 +207,7 @@ fn rows_from(
         return Err(deny());
     }
     let mut owned = last.as_ref().filter(|e| e.progress == 30).cloned();
+    let mut temporary_owner: Option<Entry> = None;
     let mut count = 0u64;
     for line in bytes.split_inclusive(|b| *b == b'\n') {
         if line.len() < 2 || line.len() > ROW {
@@ -220,7 +223,23 @@ fn rows_from(
                 return Err(deny());
             }
         }
+        if let Some(tfc) = shape.get("tfc") {
+            if !tfc.is_object()
+                || shape.get("fan").is_some()
+                || shape.get("battery").is_some()
+                || shape.get("requested") != Some(&Value::Null)
+                || ["policy", "cancel_ids", "origin", "fan_owner"]
+                    .iter()
+                    .any(|k| tfc.get(k).is_none())
+            {
+                return Err(deny());
+            }
+        }
         let entry: Entry = serde_json::from_slice(line).map_err(|_| deny())?;
+        if let Some(tfc) = &entry.tfc {
+            crate::fan_history::validate_numbers(&shape["tfc"])?;
+            tfc.validate()?;
+        }
         if let Some(v) = &entry.requested {
             v.validate()?;
         }
@@ -244,7 +263,14 @@ fn rows_from(
                 .all(|b| b.is_ascii_digit() || b"S-".contains(&b))
             || entry.caller_pid == 0
             || entry.session == 0
-            || if let Some(b) = &entry.battery {
+            || if let Some(t) = &entry.tfc {
+                entry.battery.is_some()
+                    || entry.fan.is_some()
+                    || entry.requested.is_some()
+                    || entry.destination != 0
+                    || !t.valid_progress(entry.progress)
+                    || t.hash()? != entry.intent
+            } else if let Some(b) = &entry.battery {
                 entry.fan.is_some()
                     || entry.requested.is_some()
                     || entry.destination != 0
@@ -268,7 +294,7 @@ fn rows_from(
                 || entry.user_sid != owner.user_sid
                 || entry.session != owner.session
                 || entry.fan.is_none()
-                    && !(entry.battery.is_some()
+                    && !((entry.battery.is_some() || entry.tfc.is_some())
                         && owner
                             .fan
                             .as_ref()
@@ -293,6 +319,39 @@ fn rows_from(
                 }
             }
         }
+        if let Some(t) = &entry.tfc {
+            if let Some(origin) = &t.origin {
+                let original = temporary_owner.as_ref().ok_or_else(deny)?;
+                let enabled = original.tfc.as_ref().ok_or_else(deny)?;
+                if origin.request != original.request
+                    || origin.intent != original.intent
+                    || entry.owner != original.owner
+                    || entry.user_sid != original.user_sid
+                    || entry.caller_pid != original.caller_pid
+                    || entry.session != original.session
+                    || enabled.cancel_ids != Some(t.ids)
+                {
+                    return Err(deny());
+                }
+            }
+            if t.fan_owner != owned.as_ref().map(battery_fan_binding).transpose()? {
+                return Err(deny());
+            }
+            if let Some(f) = owned.as_ref().and_then(|o| o.fan.as_ref()) {
+                if f.preflight
+                    .iter()
+                    .chain(f.ids.iter())
+                    .chain(f.cleanup.iter())
+                    .flatten()
+                    .any(|id| {
+                        t.ids.contains(id)
+                            || t.cancel_ids.as_ref().is_some_and(|ids| ids.contains(id))
+                    })
+                {
+                    return Err(deny());
+                }
+            }
+        }
         let resumed_release = matches!(entry.progress, 31 | 51)
             && owned.as_ref().is_some_and(|owner| {
                 let mut resumed = owner.clone();
@@ -307,12 +366,18 @@ fn rows_from(
                     || p.session != entry.session
                     || p.destination != entry.destination
                     || p.intent != entry.intent
+                    || p.tfc != entry.tfc
                     || p.battery != entry.battery
                     || p.fan != entry.fan
                     || !entry.fan.as_ref().map_or_else(
                         || {
                             entry.battery.as_ref().map_or_else(
-                                || progress_follows(p.progress, entry.progress),
+                                || {
+                                    entry.tfc.as_ref().map_or_else(
+                                        || progress_follows(p.progress, entry.progress),
+                                        |t| t.follows(p.progress, entry.progress),
+                                    )
+                                },
                                 |b| b.follows(p.progress, entry.progress),
                             )
                         },
@@ -326,7 +391,7 @@ fn rows_from(
                     && (entry.progress != 0
                         || p.progress == 30
                             && (entry.fan.is_none()
-                                && !(entry.battery.is_some()
+                                && !((entry.battery.is_some() || entry.tfc.is_some())
                                     && p.fan.as_ref().is_some_and(|f| {
                                         f.contract == crate::fan_history::CONTRACT
                                     }))
@@ -344,6 +409,11 @@ fn rows_from(
                 owned = Some(entry.clone());
             } else if matches!(entry.progress, 50 | 51) {
                 owned = None;
+            }
+        }
+        if let Some(t) = &entry.tfc {
+            if matches!(entry.progress, 72 | 73) {
+                temporary_owner = t.desired.temporary.then(|| entry.clone());
             }
         }
         visit(&entry, line)?;

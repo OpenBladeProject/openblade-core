@@ -44,7 +44,7 @@ pub(in crate::installed) struct Store {
         Mutex<std::collections::BTreeMap<String, crate::native_package::HistoricalBatteryProducer>>,
     #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
     pub(in crate::installed) battery_producer_fixture:
-        Option<Arc<dyn Fn(&Record) -> io::Result<()> + Send + Sync>>,
+        Option<Arc<dyn Fn(&Record, bool) -> io::Result<()> + Send + Sync>>,
     #[cfg(test)]
     verifier: Option<Arc<dyn Fn(&File) -> io::Result<()> + Send + Sync>>,
     #[cfg(test)]

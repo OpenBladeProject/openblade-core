@@ -44,6 +44,18 @@ pub(super) struct WindowsGuard {
         Mutex<openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission>,
 }
 impl WindowsGuard {
+    pub(super) fn on_battery(&self) -> Option<bool> {
+        let mut status = SYSTEM_POWER_STATUS::default();
+        // Same documented Windows ACLineStatus mapping as lifecycle Observation.
+        if unsafe { GetSystemPowerStatus(&mut status) } == 0 {
+            return None;
+        }
+        match status.ACLineStatus {
+            0 => Some(true),
+            1 => Some(false),
+            _ => None,
+        }
+    }
     pub(super) fn capture(
         origin: Arc<Origin>,
         custody: Arc<dyn ReadCustody>,

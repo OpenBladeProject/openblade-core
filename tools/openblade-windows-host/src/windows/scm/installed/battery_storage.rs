@@ -3,7 +3,45 @@
 //! a temporary override into restart-persistent profiles or manual overrides.
 use super::*;
 use openblade_domain::battery_history::Desired;
+fn cancellation_capacity(entry: &Entry) -> io::Result<usize> {
+    let Some(t) = entry.tfc.as_ref().filter(|t| t.cancel_ids.is_some()) else {
+        return Ok(0);
+    };
+    let mut cancel = t.clone();
+    cancel.requested =
+        openblade_domain::battery_history::Request::SetFullChargeOverride { enabled: false };
+    cancel.configured.temporary = false;
+    cancel.desired.temporary = false;
+    // Bound future source-profile booleans and a newly acquired fan binding.
+    cancel.configured.protection = false;
+    cancel.desired.protection = false;
+    cancel.fan_owner = Some("0".repeat(64));
+    cancel.source = 1;
+    cancel.baseline = 4;
+    cancel.target = 0;
+    cancel.policy = None;
+    cancel.ids = t.cancel_ids.ok_or_else(denied)?;
+    cancel.cancel_ids = None;
+    cancel.origin = Some(openblade_domain::temporary_charge_history::Origin {
+        request: entry.request.clone(),
+        intent: t.hash()?,
+    });
+    let mut row = entry.clone();
+    row.tfc = Some(cancel);
+    row.progress = 72;
+    Ok((serde_json::to_vec(&row)?.len() + 1) * 4)
+}
 impl Storage {
+    pub(in super::super) fn temporary_desired(&self) -> bool {
+        self.state
+            .lock()
+            .is_ok_and(|s| s.battery_temporary == Some(true))
+    }
+    pub(in super::super) fn clear_battery_temporary(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.battery_temporary = None;
+        }
+    }
     pub(in super::super) fn desired_battery(&self, source: u8) -> io::Result<Desired> {
         let doc = aggregate(self.files.as_ref(), self.same_path)?;
         let profiles = doc.as_ref().map(|v| &v["profiles"]);
@@ -91,7 +129,11 @@ impl Storage {
         if s.quarantined {
             return Err(denied());
         }
-        entry.battery.as_ref().ok_or_else(denied)?.validate()?;
+        match (&entry.battery, &entry.tfc) {
+            (Some(r), None) => r.validate()?,
+            (None, Some(r)) => r.validate()?,
+            _ => return Err(denied()),
+        }
         if entry.progress == 6
             && (s.last.as_ref().is_none_or(|e| e.progress != 0)
                 || self
@@ -107,7 +149,7 @@ impl Storage {
                 return Err(denied());
             }
             let mut largest = entry.clone();
-            largest.progress = 62;
+            largest.progress = if largest.tfc.is_some() { 72 } else { 62 };
             let row = serde_json::to_vec(&largest)?.len() + 1;
             // Preserve exact original fan handback rows as well as its transaction IDs.
             let mut retained = 0usize;
@@ -123,7 +165,25 @@ impl Storage {
                 }
                 Ok(())
             })?;
-            match self.files.reserve(s.journal.as_deref(), row * 4 + retained) {
+            let needed = row * 4
+                + cancellation_capacity(&entry)?
+                + if entry.tfc.as_ref().is_some_and(|t| t.origin.is_some()) {
+                    0
+                } else {
+                    s.temporary_capacity
+                }
+                + retained;
+            if s.temporary_capacity > 0
+                && s.journal
+                    .as_deref()
+                    .unwrap_or_default()
+                    .len()
+                    .checked_add(needed)
+                    .is_none_or(|n| n > crate::thermal_history::SEGMENT)
+            {
+                return Err(crate::thermal_history::capacity_refusal());
+            }
+            match self.files.reserve(s.journal.as_deref(), needed) {
                 Ok(v) => s.journal = v,
                 Err(e) if crate::thermal_history::known_capacity_refusal(&e) => return Err(e),
                 Err(e) => {
@@ -146,10 +206,16 @@ impl Storage {
         if let Err(e) = result {
             s.quarantined = true;
             s.preparation_failed = entry.progress == 0;
-            s.intent_append_failed = entry.progress == 60;
+            s.intent_append_failed = matches!(entry.progress, 60 | 70);
             return Err(e);
         }
         s.journal = Some(bytes);
+        if entry.progress == 0 && entry.tfc.as_ref().is_some_and(|t| t.origin.is_some()) {
+            s.temporary_capacity = 0;
+        }
+        if matches!(entry.progress, 72 | 73) {
+            s.temporary_capacity = cancellation_capacity(&entry)?;
+        }
         s.last = Some(entry);
         Ok(())
     }

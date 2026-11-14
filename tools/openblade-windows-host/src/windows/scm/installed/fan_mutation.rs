@@ -52,6 +52,7 @@ impl FanPermit {
             .clone()
             .ok_or(io::ErrorKind::PermissionDenied)?;
         let entry = Entry {
+            tfc: None,
             battery: None,
             request: self.request.clone(),
             owner: self.owner.clone(),
@@ -258,6 +259,7 @@ impl Runtime {
         session: u32,
         custody: Arc<dyn ReadCustody>,
     ) -> io::Result<(Arc<Storage>, Arc<dyn Fresh>)> {
+        self.reconcile_temporary_owner();
         let pending = self.fan_pending.borrow().clone();
         let owner = self.fan_owner.borrow().clone();
         if pending.iter().chain(owner.iter()).any(|p| {
@@ -266,6 +268,9 @@ impl Runtime {
                 || p.storage.outstanding_fan())
                 && (p.sid != sid || p.session != session)
         }) {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
+        if self.temporary_cross_user(sid, session) {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
         (self.factory)(sid, session, custody)

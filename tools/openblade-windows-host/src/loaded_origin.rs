@@ -177,7 +177,9 @@ impl Origin {
             8,
         )?;
         if fields[7]
-            != if cfg!(feature = "service-battery-policy-v1") {
+            != if cfg!(feature = "service-temporary-charge-v1") {
+                "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1"
+            } else if cfg!(feature = "service-battery-policy-v1") {
                 "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1"
             } else if cfg!(feature = "service-fan-mutation-v2") {
                 "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2"

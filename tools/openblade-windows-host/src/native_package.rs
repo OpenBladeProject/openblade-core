@@ -666,6 +666,10 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     let mutation = has("service-thermal-mutation-v1");
     let fan = has("service-fan-mutation-v2");
     let battery = has("service-battery-policy-v1");
+    let temporary = has("service-temporary-charge-v1");
+    if temporary && !battery {
+        return Err(deny());
+    }
     if battery && !fan {
         return Err(deny());
     }
@@ -707,6 +711,8 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         }
         if metadata {
             "private-service-custody-v1,service-metadata-only-v1"
+        } else if temporary {
+            "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1"
         } else if battery {
             "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1"
         } else if fan {
@@ -755,6 +761,10 @@ fn startup_policy(identity: &[u8]) -> io::Result<&'static str> {
         Ok(
             if f[7] == "private-service-custody-v1,service-metadata-only-v1" {
                 "service-metadata-only-v1"
+            } else if f[7]
+                == "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1"
+            {
+                "service-temporary-charge-v1"
             } else if f[7]
                 == "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1"
             {
@@ -1187,6 +1197,7 @@ impl InstalledPackage {
                     | "service-thermal-mutation-v1"
                     | "service-fan-mutation-v2"
                     | "service-battery-policy-v1"
+                    | "service-temporary-charge-v1"
             ),
         )?;
         create_attempt_record(&attempts, &format!("launch-{pid}-{created}.bin"), &bytes)?;
@@ -1200,6 +1211,7 @@ impl InstalledPackage {
                 | "service-thermal-mutation-v1"
                 | "service-fan-mutation-v2"
                 | "service-battery-policy-v1"
+                | "service-temporary-charge-v1"
         ) {
             return Err(deny());
         }
@@ -1220,6 +1232,7 @@ impl InstalledPackage {
                     | "service-thermal-mutation-v1"
                     | "service-fan-mutation-v2"
                     | "service-battery-policy-v1"
+                    | "service-temporary-charge-v1"
             )
         {
             return Err(deny());
@@ -1245,6 +1258,7 @@ impl InstalledPackage {
                 | "service-thermal-mutation-v1"
                 | "service-fan-mutation-v2"
                 | "service-battery-policy-v1"
+                | "service-temporary-charge-v1"
         ) {
             return Err(deny());
         }
@@ -1638,10 +1652,14 @@ pub(crate) struct HistoricalBatteryProducer {
     installation: String,
     epoch: String,
     artifact: String,
+    temporary: bool,
     _held: Vec<File>,
 }
 #[cfg(feature = "service-thermal-mutation-v1")]
 impl HistoricalBatteryProducer {
+    pub(crate) fn verify_temporary(&self) -> io::Result<()> {
+        if self.temporary { Ok(()) } else { Err(deny()) }
+    }
     pub(crate) fn verify(&self, installation: &str, epoch: &str, artifact: &str) -> io::Result<()> {
         if installation != self.installation || epoch != self.epoch || artifact != self.artifact {
             return Err(deny());
@@ -1725,8 +1743,12 @@ pub(crate) fn historical_battery_producer(
     let app = paths::open_directory(&generation, OsStr::new("app"))?;
     paths::verify_security(&app, Policy::Directory { extra_rights: 0 })?;
     let service = retain_bytes(&app, "OpenBlade.Service.exe", 64 * 1024 * 1024, &mut held)?;
+    let policy = startup_policy(compiled_record(&service)?)?;
     if inspect_artifact(&decode64(f[8])?, &service, "service", &release)? != artifact
-        || startup_policy(compiled_record(&service)?)? != "service-battery-policy-v1"
+        || !matches!(
+            policy,
+            "service-battery-policy-v1" | "service-temporary-charge-v1"
+        )
     {
         return Err(deny());
     }
@@ -1738,6 +1760,7 @@ pub(crate) fn historical_battery_producer(
         installation: installation.to_owned(),
         epoch: epoch.to_owned(),
         artifact: artifact.to_owned(),
+        temporary: policy == "service-temporary-charge-v1",
         _held: held,
     })
 }

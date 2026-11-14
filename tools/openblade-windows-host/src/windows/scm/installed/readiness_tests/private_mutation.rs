@@ -610,6 +610,7 @@ fn history_growth_real_storage_reserves_before_prepared_across_original_owners()
         let mut transaction = vec![];
         for progress in [0, 6] {
             let e = Entry {
+                tfc: None,
                 battery: None,
                 fan: None,
                 request: format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),
@@ -923,17 +924,19 @@ fn battery_v1_protected_history_requires_original_producer_and_retains_interleav
     let machine = PrivateRoot::open("owner-journal");
     let mut owner = machine.owner().unwrap();
     owner.activate_injected(reservation('7')).unwrap();
-    let admitted: Arc<dyn Fn(&Record) -> io::Result<()> + Send + Sync> = Arc::new(|original| {
-        if original.nonce == "7".repeat(64)
-            && original.epoch == "7".repeat(32)
-            && original.installation == "1".repeat(32)
-            && original.artifact == format!("{}-service", "3".repeat(64))
-        {
-            Ok(())
-        } else {
-            Err(io::ErrorKind::PermissionDenied.into())
-        }
-    });
+    let admitted: Arc<dyn Fn(&Record, bool) -> io::Result<()> + Send + Sync> =
+        Arc::new(|original, temporary| {
+            if !temporary
+                && original.nonce == "7".repeat(64)
+                && original.epoch == "7".repeat(32)
+                && original.installation == "1".repeat(32)
+                && original.artifact == format!("{}-service", "3".repeat(64))
+            {
+                Ok(())
+            } else {
+                Err(io::ErrorKind::PermissionDenied.into())
+            }
+        });
     let mixed = vector["interleaved"].as_str().unwrap().as_bytes();
     let released = vector["released"].as_str().unwrap().as_bytes();
     // Injected Store denies missing supplier before any real path/package resolver.
@@ -950,7 +953,7 @@ fn battery_v1_protected_history_requires_original_producer_and_retains_interleav
     drop(owner);
     let mut owner = machine.owner().unwrap();
     owner.battery_producer_fixture =
-        Some(Arc::new(|_| Err(io::ErrorKind::PermissionDenied.into())));
+        Some(Arc::new(|_, _| Err(io::ErrorKind::PermissionDenied.into())));
     assert!(owner.journal_read(false).is_err());
     assert_eq!(
         std::fs::read(machine.path.join("thermal-mutation.journal")).unwrap(),
@@ -986,8 +989,9 @@ fn battery_correction_protected_complete_rehashed_active_and_archived_inputs() {
     let mut owner = machine.owner().unwrap();
     owner.activate_injected(reservation('7')).unwrap();
     owner.retire_active().unwrap();
-    owner.battery_producer_fixture = Some(Arc::new(|original| {
-        if original.nonce == "7".repeat(64)
+    owner.battery_producer_fixture = Some(Arc::new(|original, temporary| {
+        if !temporary
+            && original.nonce == "7".repeat(64)
             && original.epoch == "7".repeat(32)
             && original.installation == "1".repeat(32)
             && original.artifact == format!("{}-service", "3".repeat(64))
@@ -1071,4 +1075,55 @@ fn battery_correction_protected_complete_rehashed_active_and_archived_inputs() {
             }
         }
     }
+}
+
+#[cfg(feature = "service-temporary-charge-v1")]
+#[test]
+fn tfc_v1_protected_original_producer_is_checked_for_each_required_family() {
+    let vector: Value = serde_json::from_str(include_str!(
+        "../../../../../tests/data/temporary-charge-history-v1.json"
+    ))
+    .unwrap();
+    let raw = vector["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "enable")
+        .unwrap()["journal"]
+        .as_str()
+        .unwrap()
+        .as_bytes();
+    let machine = PrivateRoot::open("owner-journal");
+    let mut owner = machine.owner().unwrap();
+    owner.activate_injected(reservation('7')).unwrap();
+    let basic: Arc<dyn Fn(&Record, bool) -> io::Result<()> + Send + Sync> =
+        Arc::new(|original, temporary| {
+            if !temporary && original.nonce == "7".repeat(64) {
+                Ok(())
+            } else {
+                Err(io::ErrorKind::PermissionDenied.into())
+            }
+        });
+    owner.battery_producer_fixture = Some(basic.clone());
+    assert!(owner.journal_replace(None, raw).is_err());
+    assert!(!machine.path.join("thermal-mutation.journal").exists());
+    owner.battery_producer_fixture = Some(Arc::new(|original, _| {
+        if original.nonce == "7".repeat(64)
+            && original.epoch == "7".repeat(32)
+            && original.installation == "1".repeat(32)
+            && original.artifact == format!("{}-service", "3".repeat(64))
+        {
+            Ok(())
+        } else {
+            Err(io::ErrorKind::PermissionDenied.into())
+        }
+    }));
+    owner.journal_replace(None, raw).unwrap();
+    assert_eq!(owner.journal_read(false).unwrap().unwrap(), raw);
+    owner.battery_producer_fixture = Some(basic);
+    assert!(owner.journal_read(false).is_err());
+    assert_eq!(
+        std::fs::read(machine.path.join("thermal-mutation.journal")).unwrap(),
+        raw
+    );
 }

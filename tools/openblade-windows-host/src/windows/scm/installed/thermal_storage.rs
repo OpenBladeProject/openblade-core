@@ -233,6 +233,7 @@ struct State {
     battery_limit: Option<u8>,
     battery_protection: Option<(bool, u8)>,
     battery_temporary: Option<bool>,
+    temporary_capacity: usize,
 }
 pub(super) struct Storage {
     same_path: fn(&str, &str) -> bool,
@@ -291,6 +292,7 @@ impl Storage {
                 battery_limit: None,
                 battery_protection: None,
                 battery_temporary: None,
+                temporary_capacity: 0,
             }),
         }))
     }
@@ -697,7 +699,23 @@ impl Storage {
                 .checked_mul(rows)
                 .and_then(|n| n.checked_add(retained))
                 .ok_or_else(denied)?;
-            match self.files.reserve(s.journal.as_deref(), needed) {
+            if s.temporary_capacity > 0
+                && s.journal
+                    .as_deref()
+                    .unwrap_or_default()
+                    .len()
+                    .checked_add(needed)
+                    .and_then(|n| n.checked_add(s.temporary_capacity))
+                    .is_none_or(|n| n > crate::thermal_history::SEGMENT)
+            {
+                return Err(crate::thermal_history::capacity_refusal());
+            }
+            match self.files.reserve(
+                s.journal.as_deref(),
+                needed
+                    .checked_add(s.temporary_capacity)
+                    .ok_or_else(denied)?,
+            ) {
                 Ok(j) => s.journal = j,
                 Err(e) if crate::thermal_history::known_capacity_refusal(&e) => return Err(e),
                 Err(e) => {
@@ -825,6 +843,7 @@ impl Storage {
             return Err(denied());
         }
         let entry = Entry {
+            tfc: None,
             battery: None,
             fan: None,
             request: request.into(),
@@ -847,7 +866,22 @@ impl Storage {
             if row > crate::thermal_history::ROW {
                 return Err(denied());
             }
-            let needed = row.checked_mul(6).ok_or_else(denied)?;
+            let needed = row
+                .checked_mul(6)
+                .and_then(|n| n.checked_add(s.temporary_capacity))
+                .ok_or_else(denied)?;
+            // A live process-scoped TFC origin and its reserved cancellation
+            // must stay together. Performance cannot spend or roll this quota.
+            if s.temporary_capacity > 0
+                && s.journal
+                    .as_deref()
+                    .unwrap_or_default()
+                    .len()
+                    .checked_add(needed)
+                    .is_none_or(|n| n > crate::thermal_history::SEGMENT)
+            {
+                return Err(crate::thermal_history::capacity_refusal());
+            }
             match self.files.reserve(s.journal.as_deref(), needed) {
                 Ok(journal) => s.journal = journal,
                 Err(error) if crate::thermal_history::known_capacity_refusal(&error) => {

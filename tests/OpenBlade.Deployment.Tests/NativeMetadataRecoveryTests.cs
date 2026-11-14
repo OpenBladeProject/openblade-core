@@ -25,7 +25,8 @@ public sealed class NativeMetadataRecoveryTests
             Assert.Equal(2, artifact.Schema);
             if (role == "agent")
             {
-                Assert.Contains("service-metadata-only-v1", artifact.Features);
+                Assert.Contains(item.GetProperty("name").GetString() == "temporary-combined-agent" ? "service-temporary-charge-v1" : "service-metadata-only-v1", artifact.Features);
+                Assert.False(artifact.TemporaryChargeMutation);
                 Assert.Equal("none", artifact.Capabilities);
                 Assert.False(artifact.MetadataOnly);
                 Assert.False(artifact.PrivateCustody);

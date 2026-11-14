@@ -27,6 +27,7 @@ struct MemoryFiles {
     bytes: Arc<StdMutex<BTreeMap<String, Vec<u8>>>>,
     fail: Arc<AtomicBool>,
     capacity_refuse: Arc<AtomicBool>,
+    last_reservation: Arc<AtomicUsize>,
     reserve_uncertain: Arc<AtomicBool>,
     fail_terminal: Arc<AtomicBool>,
     fail_prepared: Arc<AtomicU8>,
@@ -78,6 +79,7 @@ impl MemoryFiles {
 }
 impl Files for MemoryFiles {
     fn reserve(&self, expected: Option<&[u8]>, needed: usize) -> io::Result<Option<Vec<u8>>> {
+        self.last_reservation.store(needed, Ordering::Release);
         if self.reserve_uncertain.load(Ordering::Acquire) {
             return Err(io::Error::other("injected uncertain reservation I/O"));
         }
@@ -369,6 +371,9 @@ impl ReadCustody for Custody {
     }
 }
 impl Fresh for Custody {
+    fn on_battery(&self) -> Option<bool> {
+        Some(self.port.lock().unwrap().actual == 0)
+    }
     fn authentication(&self) -> Option<(u32, i32)> {
         Some((self.authentication.load(Ordering::Acquire) as u32, 0))
     }
@@ -397,8 +402,11 @@ impl Fresh for Custody {
         ReadCustody::authorize(self)
     }
 }
-struct Origin(Arc<crate::loaded_origin::lifetime::Lifetime>);
+struct Origin(Arc<crate::loaded_origin::lifetime::Lifetime>, Arc<Custody>);
 impl StatusOrigin for Origin {
+    fn power_epoch(&self) -> Option<u64> {
+        self.1.lifecycle.active()
+    }
     fn admit_owned_stop(&self) -> io::Result<()> {
         self.0.verify_owned_stop()
     }
@@ -445,7 +453,9 @@ impl Rig {
                 .last()
                 .unwrap();
             let entry: Value = serde_json::from_slice(last).unwrap();
-            if entry.get("battery").is_some() {
+            if entry.get("tfc").is_some() {
+                assert_eq!(entry["progress"], 70);
+            } else if entry.get("battery").is_some() {
                 assert_eq!(entry["progress"], 60);
             } else if entry.get("fan").is_some() {
                 assert!(persisted.read("manual-overrides.json").unwrap().is_some());
@@ -503,7 +513,7 @@ impl Rig {
         let metadata = Arc::new(AtomicU8::new(0));
         let origin = Arc::new(crate::loaded_origin::lifetime::Lifetime::default());
         let source = injected_mutation_source(
-            Arc::new(Origin(origin.clone())),
+            Arc::new(Origin(origin.clone(), custody.clone())),
             mailbox,
             runtime,
             metadata.clone(),
@@ -4562,14 +4572,21 @@ async fn battery_v1_unknown_temporary_and_active_do_not_mint_authority_or_infer_
         let result = r
             .request(battery_request(2, "setFullChargeOverride", json!(false)))
             .await;
-        assert_eq!(result["result"]["status"], 2);
-        assert!(
-            result["result"]["message"]
-                .as_str()
-                .unwrap()
-                .contains("integration is pending")
-        );
-        assert_eq!(r.port.state.lock().unwrap().writes, 0);
+        if cfg!(feature = "service-temporary-charge-v1") && raw == 4 {
+            assert_eq!(result["result"]["status"], 1, "{result}");
+            assert_eq!(r.port.state.lock().unwrap().writes, 1);
+        } else {
+            assert_eq!(result["result"]["status"], 2, "{result}");
+            if !cfg!(feature = "service-temporary-charge-v1") {
+                assert!(
+                    result["result"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains("integration is pending")
+                );
+            }
+            assert_eq!(r.port.state.lock().unwrap().writes, 0);
+        }
         r.stop().await;
     }
 }
@@ -5923,4 +5940,495 @@ fn battery_pending_once_exact_equality_is_local_after_ownership() {
         3,
         "{wire}"
     );
+}
+
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn tfc_v1_actual_dispatch_enable_cancel_noop_and_private_process_intent() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    let before = r.files.read("profiles.json").unwrap();
+    for (n, enabled, writes) in [
+        (701, true, 1),
+        (702, true, 1),
+        (703, false, 2),
+        (704, false, 2),
+    ] {
+        let response = r
+            .request(battery_request(n, "setFullChargeOverride", json!(enabled)))
+            .await;
+        assert_eq!(response["result"]["status"], 1, "{response}");
+        assert_eq!(r.port.state.lock().unwrap().writes, writes);
+        assert_eq!(r.storage.desired_battery(0).unwrap().temporary, enabled);
+    }
+    let s = r.port.state.lock().unwrap();
+    assert_eq!(
+        s.sent
+            .iter()
+            .filter(|x| x.0 == 7 && x.1 == 0x0f)
+            .map(|x| x.2.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![4], vec![0]]
+    );
+    assert!(!s.sent.iter().any(|x| x.0 == 7 && x.1 == 0x12));
+    drop(s);
+    assert_eq!(r.files.read("profiles.json").unwrap(), before);
+    assert!(r.files.read("manual-overrides.json").unwrap().is_none());
+    let restarted = Storage::open(Box::new(r.files.clone()), SID).unwrap();
+    assert!(!restarted.desired_battery(0).unwrap().temporary);
+    r.stop().await;
+}
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn tfc_v1_cancel_ignores_off_or_unknown_policy_on_battery_and_external() {
+    for (policy, actual) in [(0x50, 0), (0x7f, 15), (0x7f, 0)] {
+        let r = Rig::new(MemoryFiles::default());
+        r.get().await;
+        {
+            let mut s = r.port.state.lock().unwrap();
+            s.battery_raw = policy;
+            s.temporary_raw = 4;
+            s.actual = actual;
+        }
+        let response = r
+            .request(battery_request(710, "setFullChargeOverride", json!(false)))
+            .await;
+        assert_eq!(response["result"]["status"], 1, "{response}");
+        let s = r.port.state.lock().unwrap();
+        assert_eq!(s.writes, 1);
+        assert_eq!(s.temporary_raw, 0);
+        assert!(
+            !s.sent
+                .iter()
+                .any(|x| x.0 == 7 && matches!(x.1, 0x92 | 0x12))
+        );
+        drop(s);
+        if policy == 0x7f {
+            assert!(response["status"]["confirmedState"]["battery"].is_null());
+        }
+        r.stop().await;
+    }
+}
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn tfc_v1_full_byte_guard_unknown_flags_and_noop_budget_are_fail_closed() {
+    for flags in [1, 2, 8, 16, 128] {
+        let r = Rig::new(MemoryFiles::default());
+        r.get().await;
+        r.port.state.lock().unwrap().temporary_raw = flags;
+        let response = r
+            .request(battery_request(720, "setFullChargeOverride", json!(true)))
+            .await;
+        assert_eq!(response["result"]["status"], 2, "{response}");
+        assert_eq!(r.port.state.lock().unwrap().writes, 0);
+        r.stop().await;
+    }
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    r.port.reserve_for_tests(120);
+    let response = r
+        .request(battery_request(721, "setFullChargeOverride", json!(true)))
+        .await;
+    assert_eq!(response["result"]["status"], 2, "{response}");
+    assert_eq!(r.port.state.lock().unwrap().writes, 0);
+    assert!(fan_rows(&r).is_empty());
+    r.stop().await;
+}
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn tfc_v1_possible_submission_and_independent_mismatch_pause_without_replay() {
+    for fault in 0..5 {
+        let r = Rig::new(MemoryFiles::default());
+        r.get().await;
+        {
+            let mut s = r.port.state.lock().unwrap();
+            match fault {
+                0 => s.temporary_bad_ack = true,
+                1 => s.temporary_replies.extend([0, 0, 1]),
+                2 => s.temporary_replies.extend([0, 0, 0]),
+                3 => s.fail_write = Some(1),
+                _ => {
+                    let state = r.port.state.clone();
+                    s.battery_getter_hook = Some(Arc::new(move |command, _| {
+                        let _ = &state;
+                        let _ = command;
+                    }));
+                    s.temporary_replies.extend([0, 0, 16]);
+                }
+            }
+        }
+        let response = r
+            .request(battery_request(730, "setFullChargeOverride", json!(true)))
+            .await;
+        assert_eq!(response["result"]["status"], 2, "{response}");
+        assert_eq!(r.port.state.lock().unwrap().writes, 1);
+        assert!(r.storage.pending());
+        let retry = r
+            .request(battery_request(731, "setFullChargeOverride", json!(false)))
+            .await;
+        assert_eq!(retry["result"]["status"], 2, "{retry}");
+        assert_eq!(r.port.state.lock().unwrap().writes, 1);
+        r.stop().await;
+    }
+}
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn tfc_v1_real_service_loop_battery_event_needs_no_subscriber_and_uses_reserved_ids() {
+    let rig = Rig::new(MemoryFiles::default());
+    let events: Events = Rc::default();
+    let controls = Controls::new();
+    let (mut ports, tx) = ports(Fault::None, &events);
+    ports.source = rig.source.clone();
+    let (running, ready) = oneshot::channel();
+    let service = lifecycle(&controls, Ok(ports), &events, move || {
+        running.send(()).unwrap();
+    });
+    let exercise = async {
+        ready.await.unwrap();
+        let response = outer_request(
+            &tx,
+            battery_request(740, "setFullChargeOverride", json!(true)),
+        )
+        .await;
+        assert_eq!(response["result"]["status"], 1, "{response}");
+        let enable = fan_rows(&rig).last().unwrap().clone();
+        let ids = enable["tfc"]["cancel_ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_u64().unwrap() as u8)
+            .collect::<Vec<_>>();
+        rig.port.exhaust();
+        rig.port.state.lock().unwrap().actual = 0;
+        rig.metadata.store(1, Ordering::Release);
+        crate::scm_host::installed_ingress(
+            &rig.custody.lifecycle,
+            windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+            10,
+            || rig.origin.stop(),
+        );
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if rig.port.state.lock().unwrap().writes == 2 && !rig.storage.pending() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!rig.storage.desired_battery(1).unwrap().temporary);
+        let rows = fan_rows(&rig);
+        let cancel = rows.last().unwrap();
+        assert_eq!(cancel["progress"], 72);
+        assert_eq!(cancel["tfc"]["origin"]["request"], enable["request"]);
+        assert_eq!(cancel["caller_pid"], enable["caller_pid"]);
+        let publication = rig.source.lock().await.publications().unwrap();
+        for view in [
+            publication.borrow().active.project_private(None),
+            publication.borrow().active.project_private(Some(SID)),
+            publication.borrow().inactive.clone(),
+        ] {
+            let bytes = crate::service_status::encode_status_event(&view).unwrap();
+            println!(
+                "NATIVE_THERMAL_MUTATION_RESPONSE {}",
+                std::str::from_utf8(&bytes).unwrap()
+            );
+        }
+        let sent = rig.port.state.lock().unwrap().sent.clone();
+        assert!(
+            sent.iter()
+                .filter(|x| ids.contains(&x.3))
+                .any(|x| x.1 == 0x0f && x.2 == vec![0])
+        );
+        crate::scm_host::installed_ingress(
+            &rig.custody.lifecycle,
+            windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+            10,
+            || rig.origin.stop(),
+        );
+        tokio::time::sleep(Duration::from_millis(550)).await;
+        assert_eq!(rig.port.state.lock().unwrap().writes, 2);
+        controls.handle(windows_sys::Win32::System::Services::SERVICE_CONTROL_STOP);
+    };
+    let (result, ()) = tokio::join!(service, exercise);
+    result.unwrap();
+}
+
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn tfc_v1_battery_event_lost_logon_or_controller_clears_intent_and_pauses_once() {
+    for lose_logon in [true, false] {
+        let r = Rig::new(MemoryFiles::default());
+        r.get().await;
+        let response = r
+            .request(battery_request(750, "setFullChargeOverride", json!(true)))
+            .await;
+        assert_eq!(response["result"]["status"], 1, "{response}");
+        r.port.state.lock().unwrap().actual = 0;
+        r.metadata.store(1, Ordering::Release);
+        if lose_logon {
+            r.custody.authentication.store(2, Ordering::Release);
+        } else {
+            r.custody.fresh_refuse.store(true, Ordering::Release);
+        }
+        r.custody.lifecycle.ingress(
+            windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+            10,
+        );
+        r.source.lock().await.process_power_source().await.unwrap();
+        assert!(!r.storage.temporary_desired());
+        assert_eq!(r.port.state.lock().unwrap().writes, 1);
+        r.custody.lifecycle.ingress(
+            windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+            10,
+        );
+        r.source.lock().await.process_power_source().await.unwrap();
+        assert_eq!(r.port.state.lock().unwrap().writes, 1);
+        let status = r.get().await;
+        assert!(
+            status["status"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("cancellation is paused"),
+            "{status}"
+        );
+        r.stop().await;
+    }
+}
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn tfc_v1_original_fan_creator_and_complete_reserved_release_survive_tfc() {
+    let r = fan_rig(2, 0);
+    fresh_observe(&r).await;
+    let response = r.request(fan_request(760, Some(1), 3900)).await;
+    assert_eq!(response["result"]["status"], 1, "{response}");
+    let owner = fan_rows(&r).last().unwrap().clone();
+    let response = r
+        .request(battery_request(761, "setFullChargeOverride", json!(true)))
+        .await;
+    assert_eq!(response["result"]["status"], 1, "{response}");
+    let response = r
+        .request(battery_request(762, "setFullChargeOverride", json!(false)))
+        .await;
+    assert_eq!(response["result"]["status"], 1, "{response}");
+    r.stop().await;
+    let rows = fan_rows(&r);
+    let release = rows.last().unwrap();
+    assert!(matches!(release["progress"].as_u64(), Some(50 | 51)));
+    assert_eq!(release["request"], owner["request"]);
+    assert_eq!(release["caller_pid"], owner["caller_pid"]);
+    assert_eq!(release["fan"], owner["fan"]);
+}
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn tfc_v1_canceled_possible_submission_keeps_global_fence_and_never_source_replays() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    let release = Arc::new(AtomicBool::new(false));
+    r.port.state.lock().unwrap().held_write = Some((1, release.clone()));
+    let mut request =
+        Box::pin(r.request(battery_request(770, "setFullChargeOverride", json!(true))));
+    tokio::select! { _=&mut request=>panic!("held setter unexpectedly completed"), _=async {loop {if r.port.state.lock().unwrap().writes==1 {break;}tokio::time::sleep(Duration::from_millis(5)).await;}}=>{} }
+    drop(request);
+    release.store(true, Ordering::Release);
+    r.reader.drain_active().await.unwrap();
+    assert!(r.storage.pending());
+    assert_eq!(r.port.state.lock().unwrap().writes, 1);
+    r.port.state.lock().unwrap().actual = 0;
+    r.metadata.store(1, Ordering::Release);
+    r.custody.lifecycle.ingress(
+        windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+        10,
+    );
+    r.source.lock().await.process_power_source().await.unwrap();
+    assert!(!r.storage.temporary_desired());
+    assert_eq!(r.port.state.lock().unwrap().writes, 1);
+    assert!(r.storage.pending());
+    r.stop().await;
+}
+
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn tfc_v1_basic_request_before_source_tick_cannot_discard_cancellation_owner() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    assert_eq!(
+        r.request(battery_request(780, "setFullChargeOverride", json!(true)))
+            .await["result"]["status"],
+        1
+    );
+    r.port.state.lock().unwrap().actual = 0;
+    r.metadata.store(1, Ordering::Release);
+    r.custody.lifecycle.ingress(
+        windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+        10,
+    );
+    let response = r
+        .request(battery_request(781, "setBatteryProtection", json!(false)))
+        .await;
+    assert_eq!(response["result"]["status"], 2, "{response}");
+    assert!(!r.storage.temporary_desired());
+    assert_eq!(r.port.state.lock().unwrap().temporary_raw, 4);
+    r.source.lock().await.process_power_source().await.unwrap();
+    assert_eq!(r.port.state.lock().unwrap().temporary_raw, 0);
+    assert_eq!(r.port.state.lock().unwrap().writes, 2);
+    assert!(!r.storage.pending());
+    r.stop().await;
+}
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn tfc_v1_unknown_source_recovers_to_battery_in_the_same_event_epoch() {
+    let r = Rig::new(MemoryFiles::default());
+    r.get().await;
+    assert_eq!(
+        r.request(battery_request(790, "setFullChargeOverride", json!(true)))
+            .await["result"]["status"],
+        1
+    );
+    r.port.state.lock().unwrap().actual = 0;
+    r.metadata.store(4, Ordering::Release);
+    r.custody.lifecycle.ingress(
+        windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+        10,
+    );
+    r.source.lock().await.process_power_source().await.unwrap();
+    assert_eq!(r.port.state.lock().unwrap().writes, 1);
+    assert!(r.storage.temporary_desired());
+    r.metadata.store(1, Ordering::Release);
+    r.source.lock().await.process_power_source().await.unwrap();
+    assert_eq!(r.port.state.lock().unwrap().writes, 2);
+    assert_eq!(r.port.state.lock().unwrap().temporary_raw, 0);
+    r.stop().await;
+}
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn tfc_v1_near_capacity_performance_refuses_before_spending_reserved_source_cancel() {
+    let probe = Rig::new(MemoryFiles::default());
+    probe.get().await;
+    assert_eq!(
+        probe
+            .request(battery_request(800, "setFullChargeOverride", json!(true)))
+            .await["result"]["status"],
+        1
+    );
+    let enable = probe
+        .files
+        .read("thermal-mutation.journal")
+        .unwrap()
+        .unwrap()
+        .len();
+    let cancellation = probe.files.last_reservation.load(Ordering::Acquire) - (enable + 1);
+    probe.stop().await;
+    let performance = Rig::new(MemoryFiles::default());
+    performance.get().await;
+    performance.set(1, value(1, 1)).await;
+    let performance_budget = performance.files.last_reservation.load(Ordering::Acquire);
+    assert!(performance_budget > 0);
+    performance.stop().await;
+    let target = crate::thermal_history::SEGMENT - (enable + cancellation + performance_budget - 1);
+    let mut journal = Vec::new();
+    let mut number = 100000;
+    while journal.len() + 900 < target {
+        for progress in [0, 6] {
+            let row = json!({"request":format!("aaaaaaaa-bbbb-cccc-dddd-{number:012}"),"owner":"7".repeat(64),"user_sid":SID,"caller_pid":44,"session":7,"requested":null,"destination":1,"intent":format!("{:x}",<sha2::Sha256 as sha2::Digest>::digest(b"null")),"progress":progress});
+            journal.extend(serde_json::to_vec(&row).unwrap());
+            journal.push(b'\n');
+        }
+        number += 1;
+    }
+    let padding = target - journal.len();
+    journal.splice(
+        journal.len() - 1..journal.len() - 1,
+        std::iter::repeat_n(b' ', padding),
+    );
+    assert_eq!(journal.len(), target);
+    let files = MemoryFiles::default();
+    files
+        .bytes
+        .lock()
+        .unwrap()
+        .insert("thermal-mutation.journal".into(), journal);
+    let r = Rig::new(files);
+    r.get().await;
+    let response = r
+        .request(battery_request(801, "setFullChargeOverride", json!(true)))
+        .await;
+    assert_eq!(response["result"]["status"], 1, "{response}");
+    let response = r.set(2, value(1, 1)).await;
+    assert_ne!(response["result"]["status"], 1, "{response}");
+    assert_eq!(r.port.state.lock().unwrap().writes, 1);
+    r.port.state.lock().unwrap().actual = 0;
+    r.metadata.store(1, Ordering::Release);
+    r.custody.lifecycle.ingress(
+        windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+        10,
+    );
+    r.source.lock().await.process_power_source().await.unwrap();
+    assert_eq!(r.port.state.lock().unwrap().writes, 2);
+    assert_eq!(r.port.state.lock().unwrap().temporary_raw, 0);
+    assert!(!r.storage.pending());
+    r.stop().await;
+}
+
+#[cfg(feature = "service-temporary-charge-v1")]
+#[tokio::test]
+async fn tfc_v1_unrepresentable_private_intent_keeps_evidence_and_both_actual_paths_compatible() {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let r = Rig::new(files);
+    r.get().await;
+    assert_eq!(
+        r.request(battery_request(820, "setFullChargeOverride", json!(true)))
+            .await["result"]["status"],
+        1
+    );
+    let mut profiles = r.files.document("profiles.json");
+    profiles["profiles"]["pluggedIn"]["batteryProtectionEnabled"] = json!(false);
+    r.files.put("profiles.json", profiles);
+    let profile =
+        crate::configuration::digest_hex(&r.files.read("profiles.json").unwrap().unwrap());
+    let preferences = crate::configuration::digest_hex(
+        &r.files.read("battery-preferences.json").unwrap().unwrap(),
+    );
+    r.files.put(
+        "battery-configuration.commit.json",
+        json!({"schemaVersion":25,"profileSha256":profile,"preferencesSha256":preferences}),
+    );
+    let refresh = r.get().await;
+    assert!(
+        refresh["status"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Saved private policy is unavailable"),
+        "{refresh}"
+    );
+    assert!(refresh["status"]["confirmedState"]["battery"]["temporaryFullCharge"] == true);
+    assert!(r.storage.desired_battery(0).unwrap().temporary);
+    assert!(!r.storage.desired_battery(0).unwrap().protection);
+    let refused = r
+        .request(battery_request(821, "setBatteryProtection", json!(false)))
+        .await;
+    assert_eq!(refused["result"]["status"], 2, "{refused}");
+    let refresh = r.get().await;
+    assert!(
+        refresh["status"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Saved private policy is unavailable"),
+        "{refresh}"
+    );
+    assert!(r.storage.temporary_desired());
+    assert_eq!(r.port.state.lock().unwrap().writes, 1);
+    let cancel = r
+        .request(battery_request(822, "setFullChargeOverride", json!(false)))
+        .await;
+    assert_eq!(cancel["result"]["status"], 1, "{cancel}");
+    assert_eq!(r.port.state.lock().unwrap().writes, 2);
+    assert!(!r.storage.temporary_desired());
+    assert_eq!(
+        r.files.document("profiles.json")["profiles"]["pluggedIn"]["batteryProtectionEnabled"],
+        false
+    );
+    r.stop().await;
 }
