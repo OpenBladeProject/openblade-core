@@ -1402,7 +1402,8 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             CustomPerformanceSettings? custom = selected == PerformancePreset.Custom
                 ? IsPowerClassificationUnavailable(status)
                     ? OrdinaryShortcutCustomIntent(status)
-                    : status.Profiles.PluggedIn.CustomPerformance ?? CustomPerformanceSettings.Default
+                    : status.Profiles.ForPowerSource(status.ActivePowerSource).CustomPerformance
+                        ?? CustomPerformanceSettings.Default
                 : null;
             if (IsPowerClassificationUnavailable(status) && custom is not null
                 && (status.Capabilities?.CustomPerformance?.Supports(custom) != true

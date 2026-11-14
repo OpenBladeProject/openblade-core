@@ -55,6 +55,48 @@ public sealed partial class ServiceReactiveLightingLoopTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
     }
 
+    [Fact]
+    public async Task KnownUsbCCustomShortcutUsesItsOwnProfileLevels()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory,
+            new ServiceReactiveLightingLoopOptions(PerformanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(10)));
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+        var initial = Status(LightingRendererOwnershipState.Static);
+        var full = new CustomPerformanceSettings(CustomPerformanceLevel.High, CustomPerformanceLevel.High);
+        var usbC = new CustomPerformanceSettings(CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium);
+        ProfileSet profiles = initial.Profiles with
+        {
+            PluggedIn = initial.Profiles.PluggedIn with { CustomPerformance = full },
+            UsbC = initial.Profiles.UsbC with { CustomPerformance = usbC },
+        };
+        client.Publish(initial with
+        {
+            ActivePowerSource = PowerSource.UsbC,
+            KeyboardDriverModeActive = true,
+            ConfirmedState = new(PerformancePreset.Balanced, FanMode.Automatic, null, null)
+            { HyperBoostActive = false },
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+            {
+                PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.Custom },
+            },
+            Profiles = profiles,
+        });
+        await WaitUntilAsync(() => factory.Last?.IsDriverModeActive() == true);
+        factory.Last!.PublishPerformanceShortcut(PerformanceShortcutSource.FunctionP);
+        await WaitUntilAsync(() => client.PerformanceSelections.Count == 1);
+        PerformanceOverride request = Assert.Single(client.PerformanceSelections);
+        Assert.Equal(PerformancePreset.Custom, request.Value);
+        Assert.Equal(usbC, request.CustomPerformance);
+        Assert.NotEqual(full, request.CustomPerformance);
+        Assert.Equal(full, profiles.PluggedIn.CustomPerformance);
+        Assert.Empty(client.PerformanceShortcuts);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
     [Theory]
     [InlineData(ControlOperationStatus.Applied, false)]
     [InlineData(ControlOperationStatus.Stored, true)]
