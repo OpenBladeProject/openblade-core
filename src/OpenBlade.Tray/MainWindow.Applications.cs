@@ -681,16 +681,35 @@ public sealed partial class MainWindow
             (source == PowerSource.UsbC ? ViewModel.AvailableUsbCFanModes : ViewModel.AvailableFanModes
                 .Where(mode => FanControlPowerPolicy.IsAvailable(source, mode)))
                 .Select(mode => new ApplicationChoice<FanMode>(mode, ApplicationFanModeLabel(mode))));
+        FanSpeedRange GetIntentFanRange() => ViewModel.Capabilities.GetFanIntentSpeedRange(
+            ((ApplicationChoice<PerformancePreset>)performance.SelectedItem).Value ?? basis.Performance)
+            is { IsWellFormed: true } range ? range : FanSpeedRange.Standard;
+        FanSpeedRange initialFanRange = GetIntentFanRange();
         var rpm = new NumberBox
         {
             Header = LocalizedResources.Get("Feature_19ad9b4c6b5c", "Fixed fan speed (RPM)"),
-            Minimum = FanControlSettings.MinimumSpeedRpm,
-            Maximum = FanControlSettings.MaximumSpeedRpm,
-            SmallChange = 100,
-            LargeChange = 500,
+            Minimum = initialFanRange.MinimumRpm,
+            Maximum = initialFanRange.MaximumRpm,
+            SmallChange = initialFanRange.StepRpm,
+            LargeChange = initialFanRange.StepRpm * 5,
             Value = current.FanControl?.FixedSpeedRpm ?? basis.FanControl?.FixedSpeedRpm ?? FanControlSettings.Default.FixedSpeedRpm,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
         };
+        void UpdateFanSpeedBounds()
+        {
+            FanSpeedRange range = GetIntentFanRange();
+            // Expand before narrowing so disjoint preset ranges never expose
+            // an invalid Minimum/Maximum pair to NumberBox coercion.
+            rpm.Minimum = Math.Min(rpm.Minimum, range.MinimumRpm);
+            rpm.Maximum = Math.Max(rpm.Maximum, range.MaximumRpm);
+            rpm.Minimum = range.MinimumRpm;
+            rpm.Maximum = range.MaximumRpm;
+            rpm.SmallChange = range.StepRpm;
+            rpm.LargeChange = range.StepRpm * 5;
+            rpm.Value = range.Quantize(double.IsFinite(rpm.Value)
+                ? (int)rpm.Value : FanControlSettings.Default.FixedSpeedRpm);
+        }
+        performance.SelectionChanged += (_, _) => UpdateFanSpeedBounds();
         ComboBox gaming = EnumEditor(LocalizedResources.Get("Feature_9c7c8919be0e", "Gaming mode"), current.GamingModeEnabled,
             new ApplicationChoice<bool>[] { new(true, LocalizedResources.Get("Feature_9cc01faad79c", "On")), new(false, LocalizedResources.Get("Feature_50accd740fa2", "Off")) });
         ComboBox hdr = EnumEditor(LocalizedResources.Get("Feature_d7c76cf63323", "HDR"), current.Display?.HdrEnabled,
@@ -767,7 +786,7 @@ public sealed partial class MainWindow
                 GpuClockTuning = current.GpuClockTuning,
                 Fans = selectedFans,
                 FanControl = selectedFans is { } mode ? new(mode,
-                    FanControlSettings.QuantizeSpeed(double.IsFinite(rpm.Value) ? (int)rpm.Value : 3700),
+                    GetIntentFanRange().Quantize(double.IsFinite(rpm.Value) ? (int)rpm.Value : FanControlSettings.Default.FixedSpeedRpm),
                     current.FanControl?.ManualCurve ?? basis.FanControl?.ManualCurve ?? ManualFanCurve.Default) : null,
                 GamingModeEnabled = ((ApplicationChoice<bool>)gaming.SelectedItem).Value,
                 Lighting = lightingChoice switch

@@ -1960,13 +1960,24 @@ public partial class App
                 PerformancePreset.MaximumPower, PerformancePreset.Custom,
                 PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver,
             },
-            new HashSet<FanMode> { FanMode.Automatic },
+            legacyBase ? new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve }
+                : new HashSet<FanMode> { FanMode.Automatic },
             new HashSet<LightingEffect>(),
             legacyBase ? new HashSet<int>() : Enumerable.Range(10, 7).Select(value => value * 5).Append(100).ToHashSet(),
             SupportsBatteryProtectionOff: !legacyBase,
             SupportsTemporaryFullCharge: false)
         {
             CustomPerformance = legacyBase ? null : new(combinations) { SupportsMaximumFans = false },
+            FanSpeedRange = legacyBase ? new FanSpeedRange(3500, 5500, 100) : null,
+            FanSpeedRangesByPerformancePreset = legacyBase
+                ? new Dictionary<PerformancePreset, FanSpeedRange>
+                {
+                    [PerformancePreset.Balanced] = new(3500, 5500, 100),
+                    [PerformancePreset.Gaming] = new(3900, 5500, 100),
+                    [PerformancePreset.Creator] = new(3900, 5500, 100),
+                } : new Dictionary<PerformancePreset, FanSpeedRange>(),
+            ReportsPerformanceWithManualFans = legacyBase,
+            SupportsManualFansOnLimitedPower = legacyBase,
             SupportsBreathingColorSelection = false,
             SupportsWaveDirectionSelection = false,
         };
@@ -1975,10 +1986,21 @@ public partial class App
             ? [PerformancePreset.Balanced, PerformancePreset.Gaming, PerformancePreset.Creator]
             : [PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Turbo,
                 PerformancePreset.MaximumPower, PerformancePreset.Custom];
+        FanControlSettings fanControl = legacyBase
+            ? new(FanMode.ManualCurve, 5500, new ManualFanCurve(
+                [new(40, 3900), new(50, 3900), new(60, 4200), new(70, 4600), new(80, 5000), new(90, 5500)],
+                [new(40, 3900), new(50, 3900), new(60, 4300), new(70, 4700), new(80, 5100), new(90, 5500)],
+                true))
+            : FanControlSettings.Default;
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         profiles = profiles with
         {
-            PluggedIn = profiles.PluggedIn with { Performance = selected },
+            PluggedIn = profiles.PluggedIn with
+            {
+                Performance = selected,
+                Fans = fanControl.Mode,
+                FanControl = legacyBase ? fanControl : profiles.PluggedIn.FanControl,
+            },
             WindowsPowerModes = profiles.WindowsPowerModes with
             {
                 Turbo = WindowsPowerMode.BestPerformance,
@@ -1990,13 +2012,14 @@ public partial class App
         var status = new ServiceStatusSnapshot(
             1, true, false, [], null, [],
             legacyBase ? "Source-reviewed RZ09-0300 preset preview" : "Source-reviewed RZ09-0529 preset preview", capabilities,
-            new ConfirmedDeviceState(selected, FanMode.Automatic,
+            new ConfirmedDeviceState(selected, legacyBase ? FanMode.Fixed : FanMode.Automatic,
                 legacyBase ? null : new ConfirmedBatteryState(true, 80, null), null), profiles,
             new DesiredDeviceState(
                 new ResolvedSetting<PerformancePreset>(selected, SettingValueSource.PowerProfile),
-                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(fanControl.Mode, SettingValueSource.PowerProfile),
                 new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
-                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false))
+            { FanControl = legacyBase ? fanControl : null },
             PowerSource.PluggedIn, null, null, null, null, false)
         {
             IsExperimentalDevice = true,
@@ -2011,6 +2034,14 @@ public partial class App
                 expected))
         {
             throw new InvalidOperationException("The source-reviewed preset preview is incomplete.");
+        }
+        if (legacyBase && (window.ViewModel.SelectedFanMode != FanMode.ManualCurve
+            || window.ViewModel.FixedFanSpeedMinimumRpm != 3900
+            || window.ViewModel.FixedFanSpeedMaximumRpm != 5500
+            || window.ViewModel.CpuFanCurveEditorPoints[^1].SpeedRpm != 5500
+            || window.ViewModel.GpuFanCurveEditorPoints[^1].SpeedRpm != 5500))
+        {
+            throw new InvalidOperationException("The source-reviewed Creator curve preview lost its reviewed 5500-RPM intent.");
         }
     }
 

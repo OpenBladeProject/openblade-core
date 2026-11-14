@@ -78,10 +78,11 @@ internal static class ProfileAdmissionPolicy
         FanMode fans,
         DeviceCapabilities capabilities) =>
         fans == FanMode.Automatic
-        || (fans == FanMode.Fixed
+        || (fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
             && capabilities.FanSpeedRangesByPerformancePreset.Count > 0
             && capabilities.GetFanSpeedRange(performance) is not null)
-        || ((capabilities.SupportsDirectManualFanTransitions
+        || (capabilities.FanSpeedRangesByPerformancePreset.Count == 0
+            && (capabilities.SupportsDirectManualFanTransitions
                 || performance is PerformancePreset.Balanced
                     or PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced)
             && fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum);

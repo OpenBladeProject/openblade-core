@@ -82,6 +82,19 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal(model.AdapterPowerEvidenceSource, Assert.Single(feature.Sources));
                     Assert.StartsWith("https://apps.razer.com/synapse/products/", model.AdapterPowerEvidenceSource);
                 }
+                else if (model.ProductId is 0x0255 or 0x02C5
+                    && feature.Basis.StartsWith("SynapseSource", StringComparison.Ordinal))
+                {
+                    Assert.Equal("Supported", snapshot.SupportStatus);
+                    Assert.Equal("Pending", snapshot.PhysicalValidation);
+                    Assert.True(feature.Feature.StartsWith("ManualFanRange", StringComparison.Ordinal)
+                        || feature.Feature is "FixedAndCurveFanWrites" or "CreatorPerformanceRaw2" or "MaximumPowerPerformanceRaw2");
+                    Assert.All(feature.Sources, source =>
+                    {
+                        Assert.StartsWith($"https://apps.razer.com/synapse/products/{model.ProductId}/", source);
+                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
+                    });
+                }
                 else if (feature.Feature is "HyperBoost" or "PadlessHyperBoost")
                 {
                     bool blade14 = model.ProductId == 0x029D;

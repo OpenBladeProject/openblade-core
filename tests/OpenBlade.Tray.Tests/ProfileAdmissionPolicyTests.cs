@@ -112,7 +112,8 @@ public sealed class ProfileAdmissionPolicyTests
     [Theory]
     [InlineData(PerformancePreset.Silent, FanMode.Fixed, true)]
     [InlineData(PerformancePreset.Custom, FanMode.Fixed, false)]
-    [InlineData(PerformancePreset.Silent, FanMode.ManualCurve, false)]
+    [InlineData(PerformancePreset.Silent, FanMode.ManualCurve, true)]
+    [InlineData(PerformancePreset.Custom, FanMode.ManualCurve, false)]
     [InlineData(PerformancePreset.Balanced, FanMode.ManualCurve, true)]
     public void PresetFanRangesAdmitOnlySourceBackedPairs(
         PerformancePreset performance,
@@ -144,6 +145,57 @@ public sealed class ProfileAdmissionPolicyTests
         Assert.Equal(
             expected,
             ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Balanced, FanMode.Fixed)]
+    [InlineData(PerformancePreset.Balanced, FanMode.ManualCurve)]
+    [InlineData(PerformancePreset.BatterySaver, FanMode.Fixed)]
+    [InlineData(PerformancePreset.BatteryBalanced, FanMode.Fixed)]
+    public void PresetRangeMapDoesNotFallBackForAnAbsentPreset(
+        PerformancePreset performance, FanMode fans)
+    {
+        ProfileSet current = ProfileDefaults.CreateSafeDefaults();
+        bool battery = performance is PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced;
+        PowerProfile edited = (battery ? current.Battery : current.PluggedIn) with
+        {
+            Performance = performance,
+            Fans = fans,
+        };
+        ProfileSet draft = battery ? current with { Battery = edited } : current with { PluggedIn = edited };
+        DeviceCapabilities capabilities = SupportedCapabilities() with
+        {
+            SupportsDirectManualFanTransitions = true,
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Silent] = new(3700, 5300, 100),
+            },
+        };
+        Assert.False(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+    }
+
+    [Theory]
+    [InlineData(FanMode.Fixed, true)]
+    [InlineData(FanMode.ManualCurve, false)]
+    public void BatteryPresetRangeDoesNotAdmitHostCurves(FanMode fans, bool expected)
+    {
+        ProfileSet current = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet draft = current with
+        {
+            Battery = current.Battery with
+            {
+                Performance = PerformancePreset.BatteryBalanced,
+                Fans = fans,
+            },
+        };
+        DeviceCapabilities capabilities = SupportedCapabilities() with
+        {
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.BatteryBalanced] = new(2200, 3800, 100),
+            },
+        };
+        Assert.Equal(expected, ProfileAdmissionPolicy.Supports(draft, current, capabilities));
     }
 
     [Theory]

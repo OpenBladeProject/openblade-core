@@ -587,7 +587,7 @@ public sealed class ProfileSetValidatorTests
 
     [Theory]
     [InlineData(PerformancePreset.Custom, FanMode.Fixed)]
-    [InlineData(PerformancePreset.Silent, FanMode.ManualCurve)]
+    [InlineData(PerformancePreset.Custom, FanMode.ManualCurve)]
     public void Validate_PresetFanRangesRejectUnsupportedManualPair(
         PerformancePreset performance,
         FanMode mode)
@@ -616,6 +616,75 @@ public sealed class ProfileSetValidatorTests
             fanSpeedRangesByPerformancePreset: Blade18FanRanges()).Validate(profiles));
     }
 
+    [Theory]
+    [InlineData(PerformancePreset.Balanced, 2200, 3800)]
+    [InlineData(PerformancePreset.Silent, 3700, 5300)]
+    public void Validate_PresetFanCurveUsesItsOwnRange(
+        PerformancePreset performance, int minimum, int maximum)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var curve = new ManualFanCurve(
+            [new(40, minimum), new(90, maximum)],
+            [new(35, minimum), new(85, maximum)], true);
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = performance,
+                Fans = FanMode.ManualCurve,
+                FanControl = new(FanMode.ManualCurve, maximum, curve),
+            },
+        };
+        ProfileSetValidator validator = CreateValidator(
+            combinations: Blade18FanCombinations(),
+            fanSpeedRange: new(2200, 3800, 100),
+            fanSpeedRangesByPerformancePreset: Blade18FanRanges());
+        validator.Validate(profiles);
+        Assert.Throws<InvalidDataException>(() => validator.Validate(profiles with
+        {
+            PluggedIn = profiles.PluggedIn with
+            {
+                FanControl = new(FanMode.ManualCurve, maximum,
+                    new ManualFanCurve([new(40, minimum), new(90, maximum + 100)],
+                        [new(35, minimum), new(85, maximum)], true)),
+            },
+        }));
+    }
+
+    [Theory]
+    [InlineData(FanMode.Fixed)]
+    [InlineData(FanMode.ManualCurve)]
+    public void Validate_ObservedRangeNarrowingPreservesSavedFanIntentDuringUnrelatedEdit(FanMode mode)
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            FanSpeedRange = new(2200, 5200, 100),
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2200, 5200, 100),
+            },
+            ObservedFanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2600, 5000, 100),
+            },
+        };
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var curve = new ManualFanCurve([new(40, 2200), new(80, 5200)],
+            [new(40, 2200), new(80, 5200)], true);
+        FanControlSettings settings = new(mode, 5200, curve);
+        ProfileSet saved = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Fans = mode, FanControl = settings },
+        };
+        ProfileSetValidator validator = ProfileSetValidator.CreateForDeviceCapabilities(capabilities, capabilities);
+        validator.Validate(saved);
+        ProfileSet edited = saved with { BatteryPolicy = BatteryPolicy.Create(75) };
+        validator.Validate(edited);
+        Assert.Equal(settings, edited.PluggedIn.FanControl);
+        Assert.Equal(5000, capabilities.GetFanSpeedRange(PerformancePreset.Balanced)!.MaximumRpm);
+        Assert.Equal(5200, capabilities.GetFanIntentSpeedRange(PerformancePreset.Balanced)!.MaximumRpm);
+    }
+
     [Fact]
     public void Validate_PresetFanRangesKeepBalancedManualCurve()
     {
@@ -639,8 +708,12 @@ public sealed class ProfileSetValidatorTests
             fanSpeedRangesByPerformancePreset: Blade18FanRanges()).Validate(profiles);
     }
 
-    [Fact]
-    public void Validate_AcceptsMaximumFanModeWithDeviceSpecificFixedRange()
+    [Theory]
+    [InlineData(5000, false)]
+    [InlineData(5200, false)]
+    [InlineData(5400, true)]
+    public void Validate_LegacyMaximumRequiresItsActualTargetInsideTheDeviceRange(
+        int maximum, bool accepted)
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         ProfileSet profiles = defaults with
@@ -648,7 +721,7 @@ public sealed class ProfileSetValidatorTests
             PluggedIn = defaults.PluggedIn with
             {
                 Fans = FanMode.Maximum,
-                FanControl = FanControlSettings.FromLegacy(FanMode.Maximum),
+                FanControl = new(FanMode.Fixed, FanControlSettings.MaximumSpeedRpm, ManualFanCurve.Default),
             },
         };
         ProfileSetValidator validator = CreateValidator(
@@ -659,9 +732,16 @@ public sealed class ProfileSetValidatorTests
                 new(PerformancePreset.BatterySaver, FanMode.Automatic),
                 new(PerformancePreset.BatteryBalanced, FanMode.Automatic),
             },
-            fanSpeedRange: new FanSpeedRange(2000, 5000, 100));
+            fanSpeedRange: new FanSpeedRange(2000, maximum, 100));
 
-        validator.Validate(profiles);
+        if (accepted)
+        {
+            validator.Validate(profiles);
+        }
+        else
+        {
+            Assert.Throws<InvalidDataException>(() => validator.Validate(profiles));
+        }
     }
 
     [Fact]

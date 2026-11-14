@@ -2660,11 +2660,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
         FanTemperatureReadings temperatures =
             await fanTemperatureSource.ReadForFanCurveAsync(cancellationToken);
+        // Compare original curve intent with confirmed actual output. A target
+        // clipped by temporary metadata must revisit typed range admission so
+        // a later increase can take effect without rewriting the stored curve.
         FanTargetSpeeds targets = FanCurveCalculator.Calculate(
             settings.ManualCurve,
             temperatures,
-            snapshot.Capabilities?.FanSpeedRange?.MaximumRpm
-                ?? FanControlSettings.MaximumSpeedRpm);
+            snapshot.Capabilities?.GetFanIntentSpeedRange(snapshot.DesiredState.Performance.Value)
+                ?? FanSpeedRange.Standard);
         if (lastCurveFan1Rpm == targets.Fan1Rpm
             && lastCurveFan2Rpm == targets.Fan2Rpm)
         {
@@ -2731,6 +2734,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 return;
             }
 
+            // Bind original intent to the current destination after waiting
+            // for the gate. The backend projects effective output only.
+            targets = FanCurveCalculator.Calculate(
+                settings.ManualCurve,
+                temperatures,
+                current.Capabilities?.GetFanIntentSpeedRange(current.DesiredState.Performance.Value)
+                    ?? FanSpeedRange.Standard);
             var authority = new ManualFanCurveAuthority(
                 settings,
                 current.DesiredState,
@@ -2765,6 +2775,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                             ThermalTransitionStepPurpose.ManualCurveTarget,
                             (coordinator, stepToken) =>
                                 coordinator.ApplyFanTargetsOutcomeAsync(
+                                    authority.Desired.Performance.Value,
                                     targets.Fan1Rpm,
                                     targets.Fan2Rpm,
                                     stepToken),
@@ -2784,8 +2795,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         return;
                     }
                     OwnExactFanIntent(settings);
-                    lastCurveFan1Rpm = targets.Fan1Rpm;
-                    lastCurveFan2Rpm = targets.Fan2Rpm;
+                    lastCurveFan1Rpm = outcome.AppliedCurveTargets?.Fan1Rpm ?? targets.Fan1Rpm;
+                    lastCurveFan2Rpm = outcome.AppliedCurveTargets?.Fan2Rpm ?? targets.Fan2Rpm;
                     if (targets.FailSafe)
                     {
                         string message = temperatures.CpuCelsius is null
@@ -18591,7 +18602,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             && capabilities.FanModes.Count > 0
             && capabilities.FanModes.Contains(desired.Fans.Value)
             && !capabilities.SupportsDirectManualFanTransitions
-            && !ControlCoordinator.SupportsPresetRangedFixedFans(
+            && !ControlCoordinator.SupportsPresetRangedManualFans(
                 desired,
                 capabilities))
         {
@@ -20234,6 +20245,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             && FanControlPowerPolicy.IsAvailable(current.ActivePowerSource, settings.Mode,
                 current.Capabilities?.SupportsManualFansOnLimitedPower == true)
             && currentSettings == settings
+            && (current.Capabilities?.FanSpeedRangesByPerformancePreset.Count is not > 0
+                || current.ConfirmedState?.Performance == current.DesiredState.Performance.Value
+                    && current.Capabilities?.GetFanSpeedRange(current.DesiredState.Performance.Value)
+                        is { IsWellFormed: true })
             && current.ConfirmedState?.HyperBoostActive == false
             && current.ConfirmedState?.Fans is { } confirmedFans
             && DeviceSubsystemOrder.IsManualFanMode(confirmedFans)
@@ -20319,8 +20334,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         FanTargetSpeeds freshTargets = FanCurveCalculator.Calculate(
             authority.Settings.ManualCurve,
             temperatures,
-            current.Capabilities?.FanSpeedRange?.MaximumRpm
-                ?? FanControlSettings.MaximumSpeedRpm);
+            current.Capabilities?.GetFanIntentSpeedRange(authority.Desired.Performance.Value)
+                ?? FanSpeedRange.Standard);
         if (freshTargets != authority.Targets)
         {
             return ThermalRetryAdmission.Block(

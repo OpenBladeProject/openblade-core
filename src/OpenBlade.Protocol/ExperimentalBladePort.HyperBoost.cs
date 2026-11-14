@@ -33,9 +33,9 @@ internal sealed partial class ExperimentalBladePort
             RequireWriteAdmission();
             PowerSource source = capturePowerSource();
             bool balancedCleanup = !enabled && baseMode == PerformancePreset.Balanced;
-            if (enabled && source != PowerSource.PluggedIn
-                || !enabled && !balancedCleanup && source != PowerSource.PluggedIn
-                || balancedCleanup && source is not (PowerSource.PluggedIn or PowerSource.UsbC or PowerSource.Battery))
+            if (enabled && source is not (PowerSource.PluggedIn or PowerSource.ExternalUnknown)
+                || !enabled && !balancedCleanup && source is not (PowerSource.PluggedIn or PowerSource.ExternalUnknown)
+                || balancedCleanup && source is not (PowerSource.PluggedIn or PowerSource.ExternalUnknown or PowerSource.UsbC or PowerSource.Battery))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     "HyperBoost requires full power; low-power exit restores Balanced with Automatic fans.");

@@ -24,6 +24,22 @@ public sealed class FanCurveCalculatorTests
         Assert.Contains("state=recovered status=0 statusHex=0x00000000", warnings[2], StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(40, 2600)]
+    [InlineData(80, 5000)]
+    [InlineData(90, 5000)]
+    public void ActiveRangeProjectsEffectiveTargetsWithoutChangingSavedCurve(int temperature, int expected)
+    {
+        var curve = new ManualFanCurve([new(40, 2200), new(80, 5200)],
+            [new(40, 2200), new(80, 5200)], true);
+        FanTargetSpeeds targets = FanCurveCalculator.Calculate(curve,
+            new FanTemperatureReadings(temperature, temperature), new FanSpeedRange(2600, 5000, 100));
+        Assert.Equal(expected, targets.Fan1Rpm);
+        Assert.Equal(expected, targets.Fan2Rpm);
+        Assert.Equal(5200, curve.Cpu[^1].SpeedRpm);
+        Assert.Equal(2200, curve.Cpu[0].SpeedRpm);
+    }
+
     [Fact]
     public void SeparateCurvesUseTheirOwnSensors()
     {

@@ -8,8 +8,8 @@ public sealed partial class ExperimentalThermalExpansionTests
     [Theory]
     [InlineData(0x029F, true, true, true)]
     [InlineData(0x029D, false, false, true)]
-    [InlineData(0x02C5, false, false, false)]
-    [InlineData(0x0255, false, false, false)]
+    [InlineData(0x02C5, false, false, true)]
+    [InlineData(0x0255, false, false, true)]
     [InlineData(0x02A0, true, true, true)]
     public void Capabilities_AdmitOnlyExactModelCommands(int pid, bool boost, bool maximum, bool fixedFans)
     {
@@ -22,7 +22,7 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.Equal(fixedFans, caps.FanModes.Contains(FanMode.Fixed));
         Assert.Equal(fixedFans, caps.ReportsPerformanceWithManualFans);
         Assert.False(caps.SupportsManualFansOnLimitedPower);
-        Assert.Equal(pid == 0x02A0, caps.FanModes.Contains(FanMode.ManualCurve));
+        Assert.Equal(pid is 0x02A0 or 0x0255 or 0x02C5, caps.FanModes.Contains(FanMode.ManualCurve));
         Assert.False(ExperimentalBladePort.CreateCapabilities(Model(pid), false).PerformancePresets.Any());
         Assert.False(ExperimentalBladePort.CreateCapabilities(Model(pid), false).ReportsPerformanceWithManualFans);
     }
@@ -657,12 +657,12 @@ public sealed partial class ExperimentalThermalExpansionTests
                 case (0x0D, 0x82):
                     payload = fanModeWriteSeen && FanModeReadbackPayloadOverride is not null
                         ? FanModeReadbackPayloadOverride
-                        : [0, payload[1], Mode, Fan];
+                        : [payload[0], payload[1], Mode, Fan];
                     break;
                 case (0x0D, 0x87):
                     payload = customLevelWriteSeen && CustomLevelReadbackPayloadOverride is not null
                         ? CustomLevelReadbackPayloadOverride
-                        : [0, payload[1], payload[1] == 1 ? Cpu : Gpu];
+                        : [payload[0], payload[1], payload[1] == 1 ? Cpu : Gpu];
                     break;
                 case (0x0D, 0x81):
                     payload = fanTargetWriteSeen && FanTargetReadbackPayloadOverride is not null

@@ -2005,6 +2005,90 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData(85)]
+    public async Task MaintainFanCurve_SilentUsesEffectiveRangeAndPreservesSavedIntent(int? cpuTemperature)
+    {
+        var temperatures = new FixedFanTemperatureSource(new FanTemperatureReadings(cpuTemperature, 80));
+        TestContext context = CreateContext(providerAvailable: true, fanTemperatureSource: temperatures);
+        context.Device.Capabilities = ManualFanCurveCapabilities() with
+        {
+            FanSpeedRange = new(2200, 3800, 100),
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2200, 3800, 100),
+                [PerformancePreset.Silent] = new(3700, 5300, 100),
+            },
+            ObservedFanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Silent] = new(4000, 5000, 100),
+            },
+            ReportsPerformanceWithManualFans = true,
+            SupportsDirectManualFanTransitions = false,
+        };
+        context.Device.FanTargetsAvailable = true;
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(default);
+        Assert.Equal(ControlOperationStatus.Applied,
+            (await context.Runtime.SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(PerformancePreset.Silent, OverrideLifetime.UntilPowerSourceChange),
+                default)).Status);
+        context.Device.PerformanceWrites.Clear();
+        context.Device.FanWrites.Clear();
+        var curve = new ManualFanCurve([new(40, 3700), new(90, 5300)],
+            [new(35, 3700), new(85, 5300)], true);
+        var settings = new FanControlSettings(FanMode.ManualCurve, 5300, curve);
+        ControlOperationResult applied = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(FanMode.ManualCurve, OverrideLifetime.UntilPowerSourceChange),
+            settings, default);
+        Assert.True(applied.Status == ControlOperationStatus.Applied, applied.Message);
+        Assert.Equal(PerformancePreset.Silent,
+            context.Runtime.GetStatus().DesiredState.Performance.Value);
+        Assert.Equal(settings, context.Runtime.GetStatus().DesiredState.FanControl);
+        context.Device.FanTargets.Clear();
+
+        await context.Runtime.MaintainFanCurveAsync(default);
+
+        FanTargetSpeeds target = Assert.Single(context.Device.FanTargets);
+        Assert.Equal(5000, target.Fan1Rpm);
+        Assert.Equal(5000, target.Fan2Rpm);
+        Assert.Equal(5300, context.Runtime.GetStatus().DesiredState.FanControl!.ManualCurve.Cpu[^1].SpeedRpm);
+        Assert.Equal(PerformancePreset.Silent, context.Runtime.GetStatus().ConfirmedState!.Performance);
+        Assert.Empty(context.Device.PerformanceWrites);
+        Assert.DoesNotContain(FanMode.Automatic, context.Device.FanWrites);
+    }
+
+    [Fact]
+    public async Task MaintainFanCurve_CachesBackendAppliedTargetsSoLaterRangeGrowthIsNotMissed()
+    {
+        (TestContext context, _, _) = await CreateOwnedManualFanCurveContextAsync();
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2000, 5400, 100),
+            },
+            ReportsPerformanceWithManualFans = true,
+        };
+        await context.Runtime.ObserveAsync(default);
+        int applications = 0;
+        context.Device.CurveTargetProjection = (first, second) => ++applications == 1
+            ? (first - 100, second - 100) : (first, second);
+        context.Device.FanTargets.Clear();
+        await context.Runtime.MaintainFanCurveAsync(default);
+        FanTargetSpeeds firstApplied = Assert.Single(context.Device.FanTargets);
+        await context.Runtime.MaintainFanCurveAsync(default);
+        Assert.Equal(2, context.Device.FanTargets.Count);
+        Assert.Equal(firstApplied.Fan1Rpm + 100, context.Device.FanTargets[1].Fan1Rpm);
+        Assert.Equal(firstApplied.Fan2Rpm + 100, context.Device.FanTargets[1].Fan2Rpm);
+    }
+
     [Fact]
     public async Task MaintainFanCurve_FirstObservedGenericManualStateDoesNotOwnTargets()
     {
@@ -32159,6 +32243,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         public List<FanControlSettings> FanControlWrites { get; } = [];
 
         public bool FanTargetsAvailable { get; set; }
+        public Func<int, int, (int Fan1Rpm, int Fan2Rpm)>? CurveTargetProjection { get; set; }
 
         public List<FanTargetSpeeds> FanTargets { get; } = [];
 
@@ -32885,6 +32970,23 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             FanControlSettings value,
             CancellationToken cancellationToken) =>
             SetFanControlAsync(value, cancellationToken);
+
+        public async Task<(int Fan1Rpm, int Fan2Rpm)> SetCurveFanTargetsAsync(
+            PerformancePreset expectedPerformance, int fan1Rpm, int fan2Rpm,
+            CancellationToken cancellationToken)
+        {
+            if (Capabilities.FanSpeedRangesByPerformancePreset.Count > 0
+                && ConfirmedState.Performance != expectedPerformance)
+            {
+                throw new CapabilityUnavailableException("The expected curve preset changed.");
+            }
+            FanSpeedRange range = Capabilities.GetFanSpeedRange(expectedPerformance)
+                ?? FanSpeedRange.Standard;
+            (int Fan1Rpm, int Fan2Rpm) effective = CurveTargetProjection?.Invoke(fan1Rpm, fan2Rpm)
+                ?? (range.Quantize(fan1Rpm), range.Quantize(fan2Rpm));
+            await SetFanTargetsAsync(effective.Fan1Rpm, effective.Fan2Rpm, cancellationToken);
+            return effective;
+        }
 
         public Task SetFanTargetsAsync(
             int fan1Rpm,

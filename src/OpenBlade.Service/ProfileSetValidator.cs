@@ -244,7 +244,11 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid("The fan mode is undefined.");
         }
 
-        if (!validationPolicy.SupportedPerformanceFanCombinations.Contains(
+        bool hasPresetManualRange = fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
+            && validationPolicy.FanSpeedRangesByPerformancePreset.Count > 0
+            && validationPolicy.GetFanSpeedRange(performance) is { IsWellFormed: true };
+        if (!hasPresetManualRange
+            && !validationPolicy.SupportedPerformanceFanCombinations.Contains(
                 new PerformanceFanCombination(performance, fans)))
         {
             throw Invalid(
@@ -420,17 +424,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid($"The {name} fan settings do not match the selected fan mode.");
         }
 
-        if (validationPolicy.FanSpeedRangesByPerformancePreset.Count > 0
-            && settings.Mode == FanMode.ManualCurve
-            && profile.Performance != PerformancePreset.Balanced)
-        {
-            throw Invalid(
-                $"The {name} performance preset does not support a manual fan curve.");
-        }
-
-        FanSpeedRange? selectedRange = settings.Mode == FanMode.ManualCurve
-            ? validationPolicy.FanSpeedRange
-            : validationPolicy.GetFanSpeedRange(profile.Performance);
+        FanSpeedRange? selectedRange = validationPolicy.GetFanSpeedRange(profile.Performance);
         if (selectedRange is not { } range)
         {
             if (validationPolicy.FanSpeedRangesByPerformancePreset.Count > 0
@@ -444,7 +438,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
 
         bool supported = settings.Mode switch
         {
-            FanMode.Fixed => legacyMaximum || range.Supports(settings.FixedSpeedRpm),
+            FanMode.Fixed => range.Supports(settings.FixedSpeedRpm),
             FanMode.ManualCurve => settings.ManualCurve.Cpu
                     .Concat(settings.ManualCurve.Gpu)
                     .All(point => range.Supports(point.SpeedRpm)),

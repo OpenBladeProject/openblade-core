@@ -30,8 +30,8 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Equal(product == 0x02C7, capabilities.PerformancePresets.Contains(PerformancePreset.MaximumPower));
         Assert.Equal(product == 0x02C7, capabilities.PerformancePresets.Contains(PerformancePreset.BatterySaver));
         Assert.DoesNotContain(PerformancePreset.Performance, capabilities.PerformancePresets);
-        Assert.Equal(new[] { FanMode.Automatic }, capabilities.FanModes);
-        Assert.Null(capabilities.FanSpeedRange);
+        Assert.Equal(new[] { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve }.Order(), capabilities.FanModes.Order());
+        Assert.NotNull(capabilities.FanSpeedRange);
         Assert.Equal(product == 0x02B7, capabilities.HasFanStopSourceEvidence);
         Assert.False(capabilities.HasFanStopTrialEvidence);
         Assert.False(capabilities.SupportsFanStop); // The live guardian projects fresh availability.
@@ -319,12 +319,12 @@ public sealed partial class SourceReviewedBladeModelTests
         await using var port = Create(product, session);
         BladeWriteException preset = await Assert.ThrowsAsync<BladeWriteException>(
             () => port.SetPerformanceAsync(PerformancePreset.Turbo, default));
-        Assert.Contains("dynamic fan ranges", preset.Message);
+        Assert.Contains("fresh range", preset.Message);
         Assert.Equal(WriteSubmissionState.KnownNotApplied, preset.SubmissionState);
         await Assert.ThrowsAsync<BladeWriteException>(
             () => port.SetCustomPerformanceAsync(new(CustomPerformanceLevel.High, CustomPerformanceLevel.High), default));
         Assert.DoesNotContain(session.Commands, command => command.CommandId < 0x80);
-        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanTargetsAsync(4500, 4500, default));
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanTargetsAsync(1000, 1000, default));
     }
 
     [Theory]
@@ -492,6 +492,8 @@ public sealed partial class SourceReviewedBladeModelTests
     {
         internal byte Mode;
         internal byte Manual;
+        internal byte SecondManual;
+        internal bool IndependentFanModeFlags;
         internal byte Cpu;
         internal byte Gpu;
         internal byte Flags;
@@ -500,6 +502,7 @@ public sealed partial class SourceReviewedBladeModelTests
         internal byte LogoEffect;
         internal byte[] McuLighting = [0, 5, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         internal bool EchoLightingAck;
+        internal bool EchoThermalAck;
         internal byte SavedBrightness = 128;
         internal bool McuCustomOverlay;
         internal bool McuStaticEqualityShortcut;
@@ -520,6 +523,9 @@ public sealed partial class SourceReviewedBladeModelTests
         internal bool RejectBatteryQuery;
         internal bool RejectAdapterQuery;
         internal Action<RazerCommandSpec>? BeforeSubmission;
+        internal List<(byte ClassId, byte CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
+        public void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome) =>
+            RetainedQueryFailures.Add((classId, commandId, outcome));
         internal List<RazerCommandSpec> Commands { get; } = [];
         internal List<int> Transactions { get; } = [];
         public RazerCommandSessionDisposition Disposition => disposition;
@@ -563,7 +569,7 @@ public sealed partial class SourceReviewedBladeModelTests
                 (0x07, 0x8F) => [Flags],
                 (0x07, 0x92) => BatteryReadbacks.TryDequeue(out byte[]? readback) ? readback : [Battery],
                 (0x07, 0x12) => BatteryAck ?? arguments,
-                (0x0D, 0x82) => [1, arguments[1], Mode, Manual],
+                (0x0D, 0x82) => [1, arguments[1], Mode, IndependentFanModeFlags && arguments[1] == 2 ? SecondManual : Manual],
                 (0x0D, 0x87) => [1, arguments[1], arguments[1] == 1 ? Cpu : Gpu],
                 (0x0D, 0x81) => [arguments[0], arguments[1], arguments[1] == 1 ? Fan1 : Fan2],
                 (0x0D, 0x83) => DynamicFanRange,
@@ -622,7 +628,11 @@ public sealed partial class SourceReviewedBladeModelTests
                         break;
                     case (0x07, 0x12): Battery = arguments[0]; break;
                     case (0x07, 0x0F): Flags = arguments[0]; break;
-                    case (0x0D, 0x02): Mode = arguments[2]; Manual = arguments[3]; break;
+                    case (0x0D, 0x02):
+                        Mode = arguments[2];
+                        if (IndependentFanModeFlags && arguments[1] == 2) { SecondManual = arguments[3]; }
+                        else { Manual = arguments[3]; }
+                        break;
                     case (0x0D, 0x01):
                         if (arguments[1] == 1) { Fan1 = arguments[2]; }
                         else { Fan2 = arguments[2]; }
@@ -640,7 +650,7 @@ public sealed partial class SourceReviewedBladeModelTests
                 }
             }
             // Exact Synapse thermal helpers accept successful status-only ACKs.
-            if (command.ClassId == 0x0D && command.CommandId < 0x80
+            if (!EchoThermalAck && command.ClassId == 0x0D && command.CommandId < 0x80
                 || EmptyBatteryAck && command.ClassId == 0x07 && command.CommandId == 0x12)
             {
                 payload = [];

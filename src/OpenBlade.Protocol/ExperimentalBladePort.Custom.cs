@@ -34,16 +34,16 @@ internal sealed partial class ExperimentalBladePort
         CancellationToken cancellationToken, bool includeMaximumFans = true)
     {
         // Product 672 defaults Custom GETs to profile 1; the exact CPU request
-        // is retained in the 2026-10-16 Observer fixture. Other profiles keep
-        // their separately admitted upstream query shape; this does not prove 0 fails.
-        byte profile = model.ThermalPolicy?.QueryProfile ?? (model.ProductId == 0x02A0 ? (byte)1 : (byte)0);
+        // is retained in the 2026-10-16 Observer fixture. Dynamic-source models
+        // independently pin profile 1; upstream-only profiles retain their shape.
+        byte profile = model.ThermalPolicy?.QueryProfile ?? (model.ProductId == 0x02A0 || UsesDynamicExperimentalFanRange(model) ? (byte)1 : (byte)0);
         ReadOnlyMemory<byte> cpu = await ExchangeAsync("CustomPerformance", 0x0D, 0x87,
             [profile, 1, 0], false, cancellationToken).ConfigureAwait(false);
         ReadOnlyMemory<byte> gpu = await ExchangeAsync("CustomPerformance", 0x0D, 0x87,
             [profile, 2, 0], false, cancellationToken).ConfigureAwait(false);
         string reported = $"CpuSelector={cpu.Span[1]};CpuLevel={cpu.Span[2]};GpuSelector={gpu.Span[1]};GpuLevel={gpu.Span[2]}";
         if (cpu.Span[1] != 1 || gpu.Span[1] != 2
-            || model.ThermalPolicy is not null && (cpu.Span[0] != profile || gpu.Span[0] != profile))
+            || (model.ThermalPolicy is not null || UsesDynamicExperimentalFanRange(model)) && (cpu.Span[0] != profile || gpu.Span[0] != profile))
         {
             RecordQuery("CustomPerformance", "InconsistentState", reported, "ClusterSelector");
             throw new IOException("Experimental custom performance readback returned an unexpected cluster selector.");
@@ -81,17 +81,20 @@ internal sealed partial class ExperimentalBladePort
             RequireWriteAdmission(thermal: true);
             ProductionPerformanceFanState baseline = await ReadPerformanceAsync(cancellationToken).ConfigureAwait(false);
             // 029F/029D admit fixed targets through Custom entry (sqmagellan
-            // 9c66e705/librazer/src/command.rs). Preset-ranged backends do not
-            // admit Custom/manual, so that destination requires Automatic.
+            // 9c66e705/librazer/src/command.rs). A preset-ranged transition needs
+            // destination-range continuity; same-Custom edits preserve targets.
             if (baseline.HyperBoostActive || baseline.Fans != FanMode.Automatic
-                    && (GetExperimentalFanRange(model) is null || GetExperimentalFanRangesByPerformancePreset(model).Count > 0)
+                    && (GetExperimentalFanRange(model) is null
+                        || GetExperimentalFanRangesByPerformancePreset(model).Count > 0
+                            && baseline.Performance != PerformancePreset.Custom)
                 || baseline.Performance is not (PerformancePreset.Balanced or PerformancePreset.Silent
                     or PerformancePreset.Performance or PerformancePreset.Custom
-                    or PerformancePreset.Turbo or PerformancePreset.MaximumPower))
+                    or PerformancePreset.Turbo or PerformancePreset.MaximumPower
+                    or PerformancePreset.Gaming or PerformancePreset.Creator))
             {
                 throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                     GetExperimentalFanRangesByPerformancePreset(model).Count > 0 && baseline.Fans != FanMode.Automatic
-                        ? "This exact model admits Custom only with Automatic fans. Select Automatic fans explicitly."
+                        ? "Entering Custom cannot establish that both retained manual targets fit its fresh range. Select Automatic fans explicitly."
                         : model.ThermalPolicy is not null && baseline.Fans != FanMode.Automatic
                         ? "Custom changes cannot preserve this model's manual targets until dynamic fan ranges are admitted. Select Automatic fans explicitly."
                         : "Experimental custom performance requires an ordinary AC preset and a model-supported fan baseline.");
@@ -177,6 +180,15 @@ internal sealed partial class ExperimentalBladePort
                     throw new IOException("The intermediate custom combination is not admitted for this model.");
                 }
                 RequireWriteAdmission(thermal: true);
+                if (baselineTargets is { } savedTargets && UsesDynamicExperimentalFanRange(model))
+                {
+                    if (await ReadFanTargetsAsync(cancellationToken,
+                        expectedPerformance: PerformancePreset.Custom).ConfigureAwait(false) != savedTargets)
+                    {
+                        throw new IOException("Manual fan targets changed before the Custom level update.");
+                    }
+                    await RequirePresetRangedFanStateAsync(4, 1, 1, null, cancellationToken).ConfigureAwait(false);
+                }
                 await ExchangeAsync("CustomPerformance", 0x0D, 0x07, [1, cluster, (byte)level],
                     true, cancellationToken,
                     variableResponse: acceptsStatusOnlyAck,

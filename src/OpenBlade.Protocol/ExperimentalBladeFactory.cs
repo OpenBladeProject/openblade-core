@@ -40,7 +40,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
     public DeviceCapabilities Capabilities => ExperimentalBladePort.WithConfirmedExperimentalFanRange(
         ExperimentalBladePort.WithStartupReadAdmission(
             ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed), startupAnimationState),
-        model, policy.ConfirmedFanRange);
+        model, policy.ConfirmedFanRanges);
 
     public DeviceCapabilities PotentialCapabilities => ExperimentalBladePort.CreateCapabilities(model, true);
 
