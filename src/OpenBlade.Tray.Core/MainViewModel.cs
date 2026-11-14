@@ -1126,7 +1126,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string ActivePerformanceLabel => IsConnected
         ? HyperBoostActive
             ? TrayText.Get("HyperBoost")
-            : PerformancePresetPresentation.Label(SelectedPerformance)
+            : PerformancePresetPresentation.Label(SelectedPerformance, ActivePowerSource)
         : UnavailableLabel;
 
     public string ActiveFanModeLabel => IsConnected
@@ -1356,9 +1356,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             ControlAccess: SessionControlAccess.Active,
             DeviceVerified: true,
-            ActivePowerSource: PowerSource.PluggedIn,
             ControllerDetectionWarning: null,
         }
+        && PowerSourcePolicy.IsExternal(latestStatus.ActivePowerSource)
         && !HasBlockingHyperBoostController(latestStatus)
         && !IsHyperBoostRestoreRecoveryInProgress;
 
@@ -2318,10 +2318,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         SelectedWindowsPowerModeOption.Value is null
             ? TrayText.Format(
                 "Leaves the Windows setting unchanged whenever {0} is selected.",
-                PerformancePresetPresentation.Label(SelectedPerformance))
+                PerformancePresetPresentation.Label(SelectedPerformance, ActivePowerSource))
             : TrayText.Format(
                 "Used whenever {0} is selected. {1}",
-                PerformancePresetPresentation.Label(SelectedPerformance),
+                PerformancePresetPresentation.Label(SelectedPerformance, ActivePowerSource),
                 SelectedWindowsPowerModeOption.Description);
 
     public bool CanEditWindowsPowerMode =>
@@ -2522,7 +2522,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool IsPerformanceSelected => SelectedPerformance == PerformancePreset.Performance;
 
     public bool IsCustomPerformanceVisible =>
-        ActivePowerSource == PowerSource.PluggedIn
+        PowerSourcePolicy.IsExternal(ActivePowerSource)
         && SelectedPerformance == PerformancePreset.Custom
         && AvailablePerformancePresets.Contains(PerformancePreset.Custom);
 
@@ -2570,7 +2570,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public bool IsGpuClockTuningVisible =>
-        ActivePowerSource == PowerSource.PluggedIn
+        PowerSourcePolicy.IsExternal(ActivePowerSource)
         && (AvailablePerformancePresets.Contains(PerformancePreset.Custom)
             || Capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite });
 
@@ -2903,7 +2903,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         !IsPowerClassificationUnavailable
         && (HyperBoostActive
             ? CanMutate
-                && ActivePowerSource == PowerSource.PluggedIn
+                && PowerSourcePolicy.IsExternal(ActivePowerSource)
                 && !IsPerformanceOperationInProgress
                 && !IsHyperBoostOperationInProgress
                 && !HasPendingHyperBoostRestore
@@ -3353,9 +3353,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && !HasControllerDetectionWarning
         && !HasBlockingHyperBoostController(latestStatus)
         && (HyperBoostActive
-            || ActivePowerSource == PowerSource.PluggedIn
+            || PowerSourcePolicy.IsExternal(ActivePowerSource)
                 && PerformancePresetPresentation.IsAvailable(
-                    PowerSource.PluggedIn,
+                    ActivePowerSource,
                     SelectedPerformance)
                 && Capabilities.PerformancePresets.Contains(SelectedPerformance)
                 && Capabilities.FanModes.Contains(SelectedFanMode)
@@ -3376,7 +3376,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 || CanToggleHyperBoost
                 || IsHyperBoostOperationInProgress
                 || IsPerformanceOperationInProgress
-                || latestStatus?.ActivePowerSource is PowerSource.Battery or PowerSource.UsbC)
+                || latestStatus?.ActivePowerSource is PowerSource.Battery)
             {
                 return string.Empty;
             }
@@ -5546,9 +5546,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    private void ApplyStatus(
+    private void ApplyStatus(ServiceStatusSnapshot status, bool trayOnly = false) =>
+        ApplyStatusWithPresentation(status, trayOnly, forcePresentation: false);
+
+    private void ApplyStatusWithPresentation(
         ServiceStatusSnapshot status,
-        bool trayOnly = false)
+        bool trayOnly,
+        bool forcePresentation)
     {
         if (trayOnly && TryApplyTrayLiveReadingsOnly(status))
         {
@@ -5560,7 +5564,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool presentationApplied;
         try
         {
-            presentationApplied = ApplyStatusCore(status);
+            presentationApplied = ApplyStatusCore(status, forcePresentation);
         }
         finally
         {
@@ -5582,7 +5586,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    private bool ApplyStatusCore(ServiceStatusSnapshot status)
+    private bool ApplyStatusCore(ServiceStatusSnapshot status, bool forcePresentation = false)
     {
         if (status.Revision < latestAcceptedRevision)
         {
@@ -5598,6 +5602,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         CoolingPad.ApplyStatus(status.CoolingPad, status.ControlAccess == SessionControlAccess.Active);
         NotifyComputed(nameof(ActiveApplicationProfileName), ActiveApplicationProfileName);
         if (IsConnected
+            && !forcePresentation
             && previousStatus is not null
             && !performanceHoldReleased
             && !fanControlHoldReleased
@@ -5717,7 +5722,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 { Performance: PerformancePreset.Custom, CustomPerformance: { } observed }
                 ? observed
                 : status.DesiredState.CustomPerformance
-                    ?? status.Profiles.PluggedIn.CustomPerformance
+                    ?? (status.ActivePowerSource == PowerSource.UsbC
+                        ? status.Profiles.UsbC.CustomPerformance
+                        : status.Profiles.PluggedIn.CustomPerformance)
                     ?? CustomPerformanceSettings.Default;
         SelectedCustomCpuLevel = customPerformance.Cpu;
         SelectedCustomGpuLevel = customPerformance.Gpu;
@@ -5726,7 +5733,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ?? status.DesiredState.GpuClockTuning;
         PerformancePreset gpuTuningPerformance = pendingPerformance?.Requested.Value
             ?? status.DesiredState.Performance.Value;
-        if (status.ActivePowerSource == PowerSource.PluggedIn
+        if (PowerSourcePolicy.IsExternal(status.ActivePowerSource)
             && gpuTuningPerformance == PerformancePreset.Custom
             && gpuClockTuning is null
             && customPerformance.GpuClockOffsets is { } legacyOffsets)
@@ -7225,7 +7232,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             await ClearOverrideAsync(
                 TrayText.Get("Fragment.Performance", "performance"),
-                cancellationToken => serviceClient.SetPerformanceOverrideAsync(null, cancellationToken),
+                ClearPerformanceOverrideAsync,
                 hardwareNotApplied,
                 token).ConfigureAwait(false);
         }
@@ -7960,6 +7967,40 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    private async Task<ControlOperationResult> ClearPerformanceOverrideAsync(CancellationToken token)
+    {
+        PendingPerformanceHold? supersededHold = pendingPerformance;
+        long revisionBeforeClear = latestAcceptedRevision;
+        PowerSource sourceBeforeClear = ActivePowerSource;
+        ControlOperationResult result = await serviceClient.SetPerformanceOverrideAsync(null, token);
+        if (result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored)
+        {
+            await dispatcher.InvokeAsync(() =>
+            {
+                if (!ReferenceEquals(pendingPerformance, supersededHold))
+                {
+                    return;
+                }
+                // An accepted clear supersedes the old optimistic edit, even
+                // when the watch stream coalesced its override echo.
+                pendingPerformance = null;
+                if (supersededHold is not null
+                    && latestStatus is { PerformanceOverride: null } observed
+                    && observed.Revision > revisionBeforeClear
+                    && observed.ActivePowerSource == sourceBeforeClear
+                    && observed.ConfirmedState is { Performance: { } performance } confirmed
+                    && (performance != PerformancePreset.Custom || confirmed.CustomPerformance is not null))
+                {
+                    // The final observation may precede the clear response.
+                    // Re-present that actual readback, bypassing the metadata
+                    // shortcut; never substitute the saved profile or baseline.
+                    ApplyStatusWithPresentation(observed, trayOnly: false, forcePresentation: true);
+                }
+            }, token);
+        }
+        return result;
+    }
+
     private async Task<bool> ClearActiveProfileHardwareOverridesAsync(
         CancellationToken token,
         ProfileDraftGroup? group = null,
@@ -7970,9 +8011,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && (force || activeProfileDraft.Performance is not null))
         {
             restored &= await RunOperationAsync(
-                cancellationToken => serviceClient.SetPerformanceOverrideAsync(
-                    null,
-                    cancellationToken),
+                ClearPerformanceOverrideAsync,
                 token);
         }
         if ((group is null or ProfileDraftGroup.Thermal or ProfileDraftGroup.Laptop)
@@ -8374,14 +8413,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     };
 
     private CustomPerformanceSettings GetActiveProfileCustomPerformance() =>
-        ActivePowerSource is PowerSource.PluggedIn
-            ? GetPresentedProfile(PowerSource.PluggedIn).CustomPerformance
+        PowerSourcePolicy.IsExternal(ActivePowerSource)
+            ? GetPresentedProfile(ActivePowerSource).CustomPerformance
                 ?? CustomPerformanceSettings.Default
             : CustomPerformanceSettings.Default;
 
     private GpuClockTuningSettings? GetActiveProfileGpuClockTuning()
     {
-        if (ActivePowerSource is not PowerSource.PluggedIn)
+        if (!PowerSourcePolicy.IsExternal(ActivePowerSource))
         {
             return null;
         }
@@ -8431,6 +8470,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Profiles.UsbC with
         {
             Performance = UsbCPerformanceEditor,
+            CustomPerformance = Profiles.UsbC.CustomPerformance
+                ?? (UsbCPerformanceEditor == PerformancePreset.Custom
+                    ? CustomPerformanceSettings.Default
+                    : null),
             Fans = UsbCFanModeEditor,
             Lighting = UsbCLightingEditor,
         },

@@ -393,7 +393,7 @@ public sealed partial class SourceReviewedBladeModelTests
 
     [Theory]
     [MemberData(nameof(Products))]
-    public async Task LostIdentityAndLimitedAdapter_BlockBeforeSubmission(int product)
+    public async Task LostIdentityAndContradictoryBatteryAdapter_BlockBeforeSubmission(int product)
     {
         var session = new Session { Mode = 0 };
         await using (var port = Create(product, session, identity: () => false))
@@ -668,5 +668,33 @@ public sealed partial class SourceReviewedBladeModelTests
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+    [Theory]
+    [MemberData(nameof(Products))]
+    public async Task LimitedExternal_TurboAndCustomKeepRequestedModesAndFreshAdapterChecks(int product)
+    {
+        var session = new Session { Adapter = [2, 17] };
+        await using var port = Create(product, session, power: () => PowerSource.UsbC);
+        await port.SetPerformanceAsync(PerformancePreset.Turbo, default);
+        Assert.Equal((byte)1, session.Mode);
+        await port.SetCustomPerformanceAsync(new(CustomPerformanceLevel.High, CustomPerformanceLevel.High), default);
+        Assert.Equal((byte)4, session.Mode);
+        Assert.Equal((byte)2, session.Cpu);
+        Assert.Equal((byte)2, session.Gpu);
+        AssertFreshAdapterBeforeSetters(session);
+        Assert.Equal(AdapterPowerState.UsbCPower45W, await port.QueryAdapterPowerStateAsync(default));
+    }
+
+    [Theory]
+    [MemberData(nameof(Products))]
+    [MemberData(nameof(EarlyBatteryProducts))]
+    public async Task LimitedExternal_AdmitsModelSupportedBatteryBalanced(int product)
+    {
+        var session = new Session { Adapter = [7, 17] };
+        await using var port = Create(product, session, power: () => PowerSource.UsbC);
+        await port.SetPerformanceAsync(PerformancePreset.BatteryBalanced, default);
+        Assert.Equal((byte)6, session.Mode);
+        Assert.Equal(PerformancePreset.BatteryBalanced, (await port.QueryPerformanceFanStateAsync(default)).Performance);
+        AssertFreshAdapterBeforeSetters(session);
     }
 }

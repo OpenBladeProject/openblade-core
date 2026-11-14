@@ -92,7 +92,7 @@ public sealed class ExperimentalAdapterPowerTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task AdapterBecomesLimitedOrUnknownBetweenSelectors_StopsWithoutReplay(bool unknown)
+    public async Task AdapterDisagreesWithKnownSourceOrBecomesUnknownBetweenSelectors_StopsWithoutReplay(bool unknown)
     {
         var session = new Session();
         session.AfterSet = () => session.Adapter = unknown ? [0xFF, 0xFF] : [0x0C, 0x11];
@@ -136,7 +136,7 @@ public sealed class ExperimentalAdapterPowerTests
     public async Task LimitedPower_LeavingCustomClearsMaximumFansBeforeBalanced(int pid)
     {
         var session = new Session { Adapter = [0x0C, 0x11], Mode = 4, PowerFlags = 2 };
-        await using var port = Create(session, Model(pid));
+        await using var port = Create(session, Model(pid), power: () => PowerSource.UsbC);
         await port.SetPerformanceAsync(PerformancePreset.Balanced, default);
         Assert.Equal(new byte[] { 0x0F, 0x02, 0x02 }, session.Writes.Select(item => item.CommandId));
         Assert.Equal(0, session.PowerFlags);
@@ -148,7 +148,7 @@ public sealed class ExperimentalAdapterPowerTests
     public async Task MaximumFansCleanup_WithOtherSharedBitsDoesNotWrite()
     {
         var session = new Session { Adapter = [0x0C, 0x11], Mode = 4, PowerFlags = 3 };
-        await using var port = Create(session, Model(0x029F));
+        await using var port = Create(session, Model(0x029F), power: () => PowerSource.UsbC);
         BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetPerformanceAsync(PerformancePreset.Balanced, default));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
@@ -161,16 +161,16 @@ public sealed class ExperimentalAdapterPowerTests
     [InlineData(0x029F, PerformancePreset.Performance)]
     [InlineData(0x02A0, PerformancePreset.Silent)]
     [InlineData(0x02A0, PerformancePreset.Performance)]
-    public async Task LimitedPower_UnsupportedDestinationCannotStartMaximumFansCleanup(int pid, PerformancePreset target)
+    public async Task LimitedPower_AdmittedDestinationClearsMaximumFansAndSelectsRequestedMode(int pid, PerformancePreset target)
     {
         var session = new Session { Adapter = [0x0C, 0x11], Mode = 4, PowerFlags = 2 };
         var policy = new ExperimentalFeaturesPolicy(Model(pid));
-        await using var port = Create(session, Model(pid), policy);
-        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
-            port.SetPerformanceAsync(target, default));
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
-        Assert.Empty(session.Writes);
-        Assert.Equal(2, session.PowerFlags);
+        await using var port = Create(session, Model(pid), policy, () => PowerSource.UsbC);
+        await port.SetPerformanceAsync(target, default);
+        Assert.Equal(target == PerformancePreset.Silent ? 5 : 2, session.Mode);
+        Assert.Equal(0, session.PowerFlags);
+        Assert.Equal(3, session.Writes.Count());
+        AssertFreshQueryBeforeEverySet(session);
         Assert.True(policy.WritesAllowed);
     }
 
@@ -194,17 +194,76 @@ public sealed class ExperimentalAdapterPowerTests
         Assert.Equal(count, session.Commands.Count);
     }
 
-    [Fact]
-    public async Task LimitedExternal_IsNotA2025BatteryMode()
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, "1111", PerformancePreset.BatterySaver, 3)]
+    [InlineData(PowerSource.UsbC, "0C11", PerformancePreset.BatterySaver, 3)]
+    [InlineData(PowerSource.UsbC, "0211", PerformancePreset.BatteryBalanced, 6)]
+    [InlineData(PowerSource.UsbC, "0711", PerformancePreset.BatteryBalanced, 6)]
+    public async Task ExternalPower_AdmitsModelSupportedBatteryPresets(
+        PowerSource source, string adapter, PerformancePreset preset, byte mode)
     {
-        var session = new Session { Adapter = [0x0C, 0x11], Mode = 6 };
-        await using var port = Create(session, Model(0x02C5));
-        await Assert.ThrowsAsync<BladeWriteException>(() =>
-            port.SetPerformanceAsync(PerformancePreset.BatteryBalanced, default));
-        Assert.Empty(session.Commands);
-        await port.SetPerformanceAsync(PerformancePreset.Balanced, default);
-        Assert.Equal(0, session.Mode);
+        var session = new Session { Adapter = Convert.FromHexString(adapter) };
+        await using var port = Create(session, Model(0x02C5), power: () => source);
+        await port.SetPerformanceAsync(preset, default);
+        Assert.Equal(mode, session.Mode);
+        Assert.Equal(2, session.Writes.Count());
         AssertFreshQueryBeforeEverySet(session);
+    }
+
+    [Theory]
+    [InlineData("0211")]
+    [InlineData("0311")]
+    [InlineData("0411")]
+    [InlineData("0511")]
+    [InlineData("0611")]
+    [InlineData("0711")]
+    [InlineData("0C11")]
+    public async Task EveryKnownLimitedAdapter_AdmitsSilentWithoutChangingItsClassification(string adapter)
+    {
+        var session = new Session { Adapter = Convert.FromHexString(adapter) };
+        await using var port = Create(session, power: () => PowerSource.UsbC);
+        AdapterPowerState before = await port.QueryAdapterPowerStateAsync(default);
+        await port.SetPerformanceAsync(PerformancePreset.Silent, default);
+        Assert.Equal(5, session.Mode);
+        Assert.Equal(before, await port.QueryAdapterPowerStateAsync(default));
+        AssertFreshQueryBeforeEverySet(session);
+    }
+
+    [Theory]
+    [InlineData((PowerSource)999)]
+    [InlineData(PowerSource.Battery)]
+    public async Task UnconfirmedExternalSource_BlocksAcPresetBeforeAnyTraffic(PowerSource source)
+    {
+        var session = new Session();
+        await using var port = Create(session, power: () => source);
+        await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetPerformanceAsync(PerformancePreset.Silent, default));
+        Assert.Empty(session.Commands);
+    }
+
+    [Theory]
+    [InlineData("1111")]
+    [InlineData("0211")]
+    [InlineData("0C11")]
+    public async Task RawWindowsExternalPresence_RequiresFreshAdapterClassificationBeforeEverySetter(string adapter)
+    {
+        var session = new Session { Adapter = Convert.FromHexString(adapter) };
+        await using var port = Create(session, power: () => PowerSource.ExternalUnknown);
+        await port.SetPerformanceAsync(PerformancePreset.Silent, default);
+        Assert.Equal(5, session.Mode);
+        AssertFreshQueryBeforeEverySet(session);
+    }
+
+    [Theory]
+    [InlineData("FFFF")]
+    [InlineData("0011")]
+    public async Task RawWindowsExternalPresence_CannotAdmitUnknownOrBatteryAdapter(string adapter)
+    {
+        var session = new Session { Adapter = Convert.FromHexString(adapter) };
+        await using var port = Create(session, power: () => PowerSource.ExternalUnknown);
+        await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetPerformanceAsync(PerformancePreset.Silent, default));
+        Assert.Empty(session.Writes);
     }
 
     private static void AssertFreshQueryBeforeEverySet(Session session)
@@ -227,7 +286,7 @@ public sealed class ExperimentalAdapterPowerTests
         ExperimentalFeaturesPolicy? policy = null,
         Func<PowerSource>? power = null) =>
         new(session, new(), model ?? Model(0x029D), policy ?? new(model ?? Model(0x029D)),
-            () => true, power ?? (() => PowerSource.ExternalUnknown));
+            () => true, power ?? (() => PowerSource.PluggedIn));
 
     private sealed class Session : IRazerCommandSession
     {

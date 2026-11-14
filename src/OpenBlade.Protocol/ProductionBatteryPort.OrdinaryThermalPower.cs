@@ -17,19 +17,20 @@ internal sealed partial class ProductionBatteryPort
 
     private async Task<PowerSource?> AdmitOrdinaryThermalCommandAsync(
         RazerCommandDefinition command, bool submitted, bool allowBattery,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool allowPreservedBatteryAuto = false)
     {
         if (!supportsOrdinaryThermalControlOnUnclassifiedExternalPower)
         {
             return null;
         }
         PowerSource source = capturePowerSource!();
-        if (allowBattery && source == PowerSource.Battery)
+        if (allowBattery && !allowPreservedBatteryAuto && source == PowerSource.Battery)
         {
             return null;
         }
-        if (!IsOrdinaryProductionCommand(command) || source is not
-            (PowerSource.ExternalUnknown or PowerSource.PluggedIn or PowerSource.UsbC))
+        if ((!IsOrdinaryProductionCommand(command) && !IsBatterySelectorCommand(command)) || source is not
+            (PowerSource.ExternalUnknown or PowerSource.PluggedIn or PowerSource.UsbC)
+                && !(allowPreservedBatteryAuto && source == PowerSource.Battery))
         {
             throw ThermalWritePowerFailure(submitted,
                 "Ordinary thermal commands require a freshly confirmed external source.");
@@ -41,7 +42,12 @@ internal sealed partial class ProductionBatteryPort
             submitted, cancellationToken, allowUnclassifiedExternal: true).ConfigureAwait(false);
         ThermalWritePowerRequirement? classification = ClassifyThermalWritePower(adapter);
         bool agrees = adapter == AdapterPowerState.Unknown
-            ? OrdinaryThermalPowerAdmission.ExternalPresence(source)
+            ? (IsOrdinaryProductionCommand(command)
+                || allowPreservedBatteryAuto && IsBatterySelectorCommand(command)
+                    && command.Payload[2] is 3 or 6 && command.Payload[3] == 0)
+                && OrdinaryThermalPowerAdmission.ExternalPresence(source)
+            : allowPreservedBatteryAuto && classification == ThermalWritePowerRequirement.Battery
+                ? source == PowerSource.Battery
             : classification == ThermalWritePowerRequirement.FullPower
                 ? source is PowerSource.ExternalUnknown or PowerSource.PluggedIn
                 : classification == ThermalWritePowerRequirement.LimitedExternal
@@ -52,6 +58,14 @@ internal sealed partial class ProductionBatteryPort
                 "The fresh adapter reading and Windows external source do not agree.");
         }
         return source;
+    }
+
+    private static bool IsBatterySelectorCommand(RazerCommandDefinition command)
+    {
+        ReadOnlySpan<byte> p = command.Payload.AsSpan();
+        return command.CommandClass == 0x0D && command.CommandId == 0x02
+            && p.Length == 4 && p[0] == 1 && p[1] is 1 or 2
+            && p[2] is 3 or 6 && p[3] <= 1;
     }
 
     private bool OrdinarySourceUnchanged(PowerSource? source) =>

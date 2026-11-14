@@ -14,13 +14,16 @@ public static class PerformanceShortcutSelection
         PerformancePreset.Custom,
     ];
 
+    private static readonly PerformancePreset[] ExternalOrder =
+        [.. OrdinaryOrder, PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver];
+
     public static IReadOnlyList<PerformancePreset> GetCycle(
         PowerSource powerSource,
         IReadOnlySet<PerformancePreset>? admitted)
     {
         PerformancePreset[] ordered = powerSource switch
         {
-            PowerSource.PluggedIn => OrdinaryOrder,
+            PowerSource.PluggedIn or PowerSource.UsbC => ExternalOrder,
             PowerSource.Battery =>
             [
                 PerformancePreset.BatteryBalanced,
@@ -33,7 +36,9 @@ public static class PerformanceShortcutSelection
             // Unverified/default capabilities retain the established cycle.
             return ordered.Where(preset => preset is not
                 (PerformancePreset.Turbo or PerformancePreset.MaximumPower
-                    or PerformancePreset.Gaming or PerformancePreset.Creator)).ToArray();
+                    or PerformancePreset.Gaming or PerformancePreset.Creator)
+                && (powerSource == PowerSource.Battery || preset is not
+                    (PerformancePreset.BatteryBalanced or PerformancePreset.BatterySaver))).ToArray();
         }
 
         return ordered.Where(admitted.Contains).ToArray();

@@ -116,9 +116,18 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.Equal(source == PowerSource.Battery ? 6 : 0, session.Mode);
         Assert.Equal(0, session.Fan);
         Assert.Equal(2, session.Writes.Count());
-        await Assert.ThrowsAsync<BladeWriteException>(() =>
-            port.SetHyperBoostAsync(true, PerformancePreset.Balanced, true, CancellationToken.None));
-        Assert.Equal(2, session.Writes.Count());
+        if (source == PowerSource.Battery)
+        {
+            await Assert.ThrowsAsync<BladeWriteException>(() =>
+                port.SetHyperBoostAsync(true, PerformancePreset.Balanced, true, CancellationToken.None));
+            Assert.Equal(2, session.Writes.Count());
+        }
+        else
+        {
+            await port.SetHyperBoostAsync(true, PerformancePreset.Balanced, true, CancellationToken.None);
+            Assert.Equal(7, session.Mode);
+            Assert.Equal(4, session.Writes.Count());
+        }
     }
 
     [Fact]
@@ -160,9 +169,9 @@ public sealed partial class ExperimentalThermalExpansionTests
     }
 
     [Theory]
-    [InlineData(7, 17)]
+    [InlineData(0, 17)]
     [InlineData(16, 17)]
-    public async Task HyperBoost_InsufficientOrUnknownAdapterCannotEnter(byte actual, byte recommended)
+    public async Task HyperBoost_ContradictoryOrUnknownAdapterCannotEnter(byte actual, byte recommended)
     {
         var session = new Session { Mode = 2, AdapterPowerPayload = [actual, recommended] };
         await using var port = HyperBoostPort(session, new Pad());
@@ -271,6 +280,33 @@ public sealed partial class ExperimentalThermalExpansionTests
         await using var port = Create(0x029F, session, power: () => source);
         await Assert.ThrowsAsync<RazerProtocolException>(() => port.QueryPerformanceFanStateAsync(CancellationToken.None));
         Assert.Empty(session.Writes);
+    }
+
+    [Theory]
+    [InlineData(0x029F, false)]
+    [InlineData(0x029F, true)]
+    [InlineData(0x029D, false)]
+    [InlineData(0x029D, true)]
+    public async Task LimitedExternal_CustomAndHyperBoostRoundTripRetainsNativePowerChecks(int pid, bool requiresPad)
+    {
+        var session = new Session { AdapterPowerPayload = [2, 17], HyperBoostFirmware = [1, 5, 0, 0] };
+        var pad = new Pad { State = requiresPad ? CoolingPadConnectionState.PresentExact : CoolingPadConnectionState.Absent };
+        await using var port = HyperBoostPort(session, pad, power: () => PowerSource.UsbC, pid: pid);
+        await port.SetCustomPerformanceAsync(new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Medium), default);
+        Assert.Equal(4, session.Mode);
+        await port.SetHyperBoostAsync(true, PerformancePreset.Custom, requiresPad, default);
+        Assert.Equal(7, session.Mode);
+        await port.SetHyperBoostAsync(false, PerformancePreset.Custom, requiresPad, default);
+        Assert.Equal(4, session.Mode);
+        Assert.Equal(AdapterPowerState.UsbCPower45W, await port.QueryAdapterPowerStateAsync(default));
+        for (int i = 0; i < session.Commands.Count; i++)
+        {
+            if (session.Commands[i].CommandId < 0x80)
+            {
+                Assert.True(i > 0);
+                Assert.Equal((0x07, 0x8C), (session.Commands[i - 1].ClassId, session.Commands[i - 1].CommandId));
+            }
+        }
     }
 
     private static ExperimentalBladePort HyperBoostPort(Session session, Pad pad,

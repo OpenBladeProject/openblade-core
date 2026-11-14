@@ -53,7 +53,7 @@ public sealed class NativeAutomationPolicyTests
     }
 
     [Fact]
-    public void DecodedPerformanceSourceMatchesSharedMatrixAndFrozenPredicate()
+    public void DecodedPerformanceSourceExpandsExternalPolicyAndPreservesOtherFrozenCases()
     {
         using NativeAutomationPolicy policy = Load();
         using JsonDocument fixture = JsonDocument.Parse(File.ReadAllText(
@@ -76,8 +76,11 @@ public sealed class NativeAutomationPolicyTests
             for (int index = 0; index < sources.Length; index++)
             {
                 PowerSource source = sources[index];
-                bool expected = row[1][index].GetBoolean();
-                Assert.Equal(expected, ManagedAutomationPolicyBaseline.IsPerformanceCompatibleWithSource(preset, source));
+                bool historical = row[1][index].GetBoolean();
+                Assert.Equal(historical, ManagedAutomationPolicyBaseline.IsPerformanceCompatibleWithSource(preset, source));
+                bool expected = source is PowerSource.PluggedIn or PowerSource.UsbC
+                    ? Enum.IsDefined(preset) : historical;
+                Assert.Equal(expected, PerformancePowerSourcePolicy.IsAllowed(source, preset));
                 var (eligible, error) = policy.CheckPerformanceSource(preset, source);
                 Assert.Null(error);
                 Assert.Equal(expected, eligible);

@@ -94,6 +94,17 @@ additionally pins each of the 22 supported models' own Synapse policy and
 device parser. It verifies ordinary command authority separately from wattage
 classification.
 
+### Confirmed external-power mode selection
+
+On a confirmed sufficient or limited external source, the independently reviewed
+[external-power performance policy](external-power-performance-policy.md) offers
+the exact model's supported performance modes, including Custom and HyperBoost
+where separately admitted. Firmware remains responsible for adapter-dependent
+power limits. This does not grant fan authority: source, preset, metadata and
+ownership checks remain independent, and host curves retain their exact-model
+power-source limits. See the [fan power-source policy](fan-power-source-policy.md)
+and [source-reviewed feature table](experimental-blade-support.md).
+
 ### Ordinary controls when external wattage is unavailable
 
 On all 22 exact models, Synapse's ordinary thermal setter reads Windows battery
@@ -130,6 +141,7 @@ admission. See the [fan power-source policy](fan-power-source-policy.md).
 This new admission is **source-reviewed and physically untested on every model**,
 including RZ09-0528 and RZ09-0581; their existing physical evidence retains its
 original scope.
+
 
 Synapse explicitly clears Maximum Fans before leaving Custom on the applicable
 models. OpenBlade reads the complete Power Mode Control byte, requires the other

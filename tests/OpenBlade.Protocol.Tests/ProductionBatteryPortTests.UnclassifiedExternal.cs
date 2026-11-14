@@ -8,7 +8,14 @@ public sealed partial class ProductionBatteryPortTests
     private sealed class OrdinaryAcSession : IRazerCommandSession
     {
         internal byte Mode;
-        internal byte Manual;
+        private byte manual;
+        private byte? firstManual;
+        private byte? secondManual;
+        internal byte Manual
+        {
+            get => manual;
+            set { manual = value; firstManual = null; secondManual = null; }
+        }
         internal byte Cpu;
         internal byte Gpu;
         internal byte First = 40;
@@ -35,7 +42,7 @@ public sealed partial class ProductionBatteryPortTests
             {
                 return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.IdentityBlocked)
                 {
-                    Diagnostic = new(HidSessionFailurePhase.Guard, HidSessionFailureKind.IdentityBlocked, null, null),
+                    Diagnostic = new(HidSessionFailurePhase.SharedGateAdmission, HidSessionFailureKind.IdentityBlocked, null, null),
                 });
             }
             assign();
@@ -44,13 +51,18 @@ public sealed partial class ProductionBatteryPortTests
             if (command.ClassId == 7 && command.CommandId == 0x8C) { return Task.FromResult(AdapterResult); }
             byte[] reply = (command.ClassId, command.CommandId) switch
             {
-                (13, 0x82) => [p[0], p[1], Mode, Manual],
+                (13, 0x82) => [p[0], p[1], Mode, (p[1] == 1 ? firstManual : secondManual) ?? Manual],
                 (13, 0x87) => [p[0], p[1], p[1] == 1 ? Cpu : Gpu],
                 (13, 0x81) => [p[0], p[1], p[1] == 1 ? First : Second],
                 (13, 0x02) or (13, 0x07) or (13, 0x01) => p,
                 _ => throw new InvalidOperationException($"{command.ClassId:X2}/{command.CommandId:X2}"),
             };
-            if (command.CommandId == 0x02) { Mode = p[2]; Manual = p[3]; }
+            if (command.CommandId == 0x02)
+            {
+                Mode = p[2];
+                if (p[1] == 1) { firstManual = p[3]; } else { secondManual = p[3]; }
+                if (firstManual == secondManual) { manual = p[3]; }
+            }
             if (command.CommandId == 0x07) { if (p[1] == 1) { Cpu = p[2]; } else { Gpu = p[2]; } }
             if (command.CommandId == 0x01) { if (p[1] == 1) { First = p[2]; } else { Second = p[2]; } }
             return Task.FromResult(Success(reply));
@@ -62,6 +74,10 @@ public sealed partial class ProductionBatteryPortTests
     {
         var catalog = Catalog([
             .. MaximumCapabilityFixtures(), .. CustomPerformanceFixtures(),
+            Fixture(ProductionBatteryPort.PerformanceBatterySaverFirstAction, 13, 2, [1, 1, 3, 0]),
+            Fixture(ProductionBatteryPort.PerformanceBatterySaverSecondAction, 13, 2, [1, 2, 3, 0]),
+            Fixture(ProductionBatteryPort.PerformanceBatteryBalancedFirstAction, 13, 2, [1, 1, 6, 0]),
+            Fixture(ProductionBatteryPort.PerformanceBatteryBalancedSecondAction, 13, 2, [1, 2, 6, 0]),
             Fixture(ProductionBatteryPort.PerformanceSilentFirstAction, 13, 2, [1, 1, 5, 0]),
             Fixture(ProductionBatteryPort.PerformanceSilentSecondAction, 13, 2, [1, 2, 5, 0]),
             Fixture(ProductionBatteryPort.PerformanceBoostFirstAction, 13, 2, [1, 1, 2, 0]),
@@ -70,6 +86,7 @@ public sealed partial class ProductionBatteryPortTests
         return CreatePort(session, catalog, AcceptedAdapterPowerReadEvidence(), new(minimum, maximum, 100),
             new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve, FanMode.Maximum },
             AdapterPowerProtocol.SynapseAdapterStates, supportsDirectManualFanTransitions: true,
+            supportsBatterySaverFanStop: true,
             capturePowerSource: source, supportsOrdinaryThermalControlOnUnclassifiedExternalPower: true);
     }
 
@@ -202,4 +219,175 @@ public sealed partial class ProductionBatteryPortTests
         Assert.Empty(session.Commands);
     }
 
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(6)]
+    public async Task PhysicalUnknownAc_DoesNotSelectBatteryPresetsOrReleaseThemWithoutOwnedPurpose(byte mode)
+    {
+        var session = new OrdinaryAcSession();
+        await using var port = OrdinaryAcPort(session, () => PowerSource.ExternalUnknown);
+        PerformancePreset preset = mode == 3 ? PerformancePreset.BatterySaver : PerformancePreset.BatteryBalanced;
+        await Assert.ThrowsAsync<BladeWriteException>(() => port.SetPerformanceAsync(preset, default));
+        Assert.Empty(session.Writes);
+
+        session.Mode = mode;
+        session.Manual = 1;
+        await Assert.ThrowsAsync<BladeWriteException>(() => port.SetFanModeAsync(FanMode.Automatic, default));
+        Assert.Empty(session.Writes);
+    }
+
+    [Theory]
+    [InlineData(3, false)]
+    [InlineData(3, true)]
+    [InlineData(6, false)]
+    [InlineData(6, true)]
+    public async Task PhysicalKnownExternal_BatteryPresetSelectionAndManualHandoffRetainCapturedSelector(byte mode, bool limited)
+    {
+        var session = new OrdinaryAcSession { AdapterResult = Success([limited ? (byte)7 : (byte)0x11, 0x11]) };
+        await using var port = OrdinaryAcPort(session, () => PowerSource.ExternalUnknown);
+        await port.SetPerformanceAsync(mode == 3 ? PerformancePreset.BatterySaver : PerformancePreset.BatteryBalanced, default);
+        Assert.Equal(mode, session.Mode);
+        session.Manual = 1;
+        await port.SetFanModeAsync(FanMode.Automatic, default);
+        Assert.Equal(mode, session.Mode);
+        Assert.Equal((byte)0, session.Manual);
+        Assert.All(session.Writes, command => Assert.Equal(mode, command.Arguments.Span[2]));
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(6)]
+    public async Task OwnedStopUnknownAcRelease_ChangesOnlyAutoBitAndConfirmsPreservedPerformance(byte mode)
+    {
+        var session = new OrdinaryAcSession { Mode = mode, Manual = 1, First = 15, Second = 15 };
+        await using var port = OrdinaryAcPort(session, () => PowerSource.ExternalUnknown);
+        await port.ReleaseOwnedBatterySaverFanStopAsync(() => true, default);
+        Assert.Equal(2, session.Writes.Count());
+        Assert.All(session.Writes, command =>
+        {
+            Assert.Equal((byte)0x02, command.CommandId);
+            Assert.Equal(new byte[] { 1, command.Arguments.Span[1], mode, 0 }, command.Arguments.ToArray());
+        });
+        Assert.Equal(mode, session.Mode);
+        Assert.Equal((byte)0, session.Manual);
+        Assert.Equal(new byte[] { 0x82, 0x82 }, session.Commands.TakeLast(2).Select(x => x.CommandId));
+        Assert.Equal((byte)15, session.First);
+        Assert.Equal((byte)15, session.Second);
+    }
+
+    [Theory]
+    [InlineData(false, 15, 0)]
+    [InlineData(true, 16, 0)]
+    [InlineData(true, 15, 1)]
+    public async Task OwnedStopUnknownAcRelease_RequiresExactStoppedTupleAndLiveAuthority(
+        bool initiallyOwned, byte target, int revokeAfterWrites)
+    {
+        bool owned = initiallyOwned;
+        var session = new OrdinaryAcSession { Mode = 3, Manual = 1, First = target, Second = target };
+        session.BeforeSubmission = command =>
+        {
+            if (command.CommandId < 0x80 && revokeAfterWrites > 0 && session.Writes.Count() >= revokeAfterWrites)
+            {
+                owned = false;
+            }
+        };
+        await using var port = OrdinaryAcPort(session, () => PowerSource.ExternalUnknown);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.ReleaseOwnedBatterySaverFanStopAsync(() => owned, default));
+        Assert.Equal(revokeAfterWrites == 1 ? WriteSubmissionState.Indeterminate : WriteSubmissionState.KnownNotApplied,
+            failure.SubmissionState);
+        Assert.Equal(revokeAfterWrites, session.Writes.Count());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task OwnedStopUnknownAcRelease_QueuedWindowsSourceChangeStopsWithoutReset(int permittedWrites)
+    {
+        PowerSource source = PowerSource.ExternalUnknown;
+        var session = new OrdinaryAcSession { Mode = 3, Manual = 1, First = 15, Second = 15 };
+        session.BeforeSubmission = command =>
+        {
+            if (command.CommandId < 0x80 && session.Writes.Count() >= permittedWrites)
+            {
+                source = PowerSource.Battery;
+            }
+        };
+        await using var port = OrdinaryAcPort(session, () => source);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.ReleaseOwnedBatterySaverFanStopAsync(() => true, default));
+        Assert.Equal(permittedWrites == 0 ? WriteSubmissionState.KnownNotApplied : WriteSubmissionState.Indeterminate,
+            failure.SubmissionState);
+        Assert.Equal(permittedWrites, session.Writes.Count());
+        Assert.Equal((byte)3, session.Mode);
+    }
+
+    [Theory]
+    [InlineData("0011", PowerSource.Battery, 3)]
+    [InlineData("1111", PowerSource.ExternalUnknown, 3)]
+    [InlineData("0711", PowerSource.ExternalUnknown, 3)]
+    [InlineData("0011", PowerSource.Battery, 6)]
+    [InlineData("1111", PowerSource.ExternalUnknown, 6)]
+    [InlineData("0711", PowerSource.ExternalUnknown, 6)]
+    public async Task OwnedStopRelease_RetainsKnownBatteryAndExternalCleanup(string adapterHex, PowerSource source, byte mode)
+    {
+        var session = new OrdinaryAcSession
+        {
+            Mode = mode,
+            Manual = 1,
+            First = 15,
+            Second = 15,
+            AdapterResult = Success(Convert.FromHexString(adapterHex)),
+        };
+        await using var port = OrdinaryAcPort(session, () => source);
+        await port.ReleaseOwnedBatterySaverFanStopAsync(() => true, default);
+        Assert.Equal(2, session.Writes.Count());
+        Assert.Equal(mode, session.Mode);
+        Assert.Equal((byte)0, session.Manual);
+        Assert.Equal(new byte[] { 0x82, 0x82 }, session.Commands.TakeLast(2).Select(x => x.CommandId));
+    }
+
+    [Theory]
+    [InlineData(3, 2, 0)]
+    [InlineData(3, 6, 0)]
+    [InlineData(6, 2, 0)]
+    [InlineData(6, 3, 0)]
+    [InlineData(3, 2, 1)]
+    [InlineData(3, 6, 1)]
+    [InlineData(6, 2, 1)]
+    [InlineData(6, 3, 1)]
+    [InlineData(3, 3, 1)]
+    public async Task OwnedStopRelease_FreshStagedStatePreventsRestoringAStaleSelector(
+        byte initialMode, byte changedMode, int completedWrites)
+    {
+        var session = new OrdinaryAcSession { Mode = initialMode, Manual = 1, First = 15, Second = 15 };
+        bool drifted = false;
+        session.BeforeSubmission = command =>
+        {
+            if (!drifted && command.CommandId == 0x82 && session.Writes.Count() == completedWrites
+                && session.Commands.Count(previous => previous.CommandId == 0x82) >= 2)
+            {
+                session.Mode = changedMode;
+                session.Manual = 1;
+                drifted = true;
+            }
+        };
+        await using var port = OrdinaryAcPort(session, () => PowerSource.ExternalUnknown);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.ReleaseOwnedBatterySaverFanStopAsync(() => true, default));
+        Assert.True(drifted);
+        Assert.Equal(completedWrites == 0 ? WriteSubmissionState.KnownNotApplied : WriteSubmissionState.Indeterminate,
+            failure.SubmissionState);
+        Assert.Equal(completedWrites, session.Writes.Count());
+        Assert.Equal(changedMode, session.Mode);
+        Assert.All(session.Writes, command => Assert.Equal(initialMode, command.Arguments.Span[2]));
+        if (completedWrites > 0)
+        {
+            int count = session.Commands.Count;
+            await Assert.ThrowsAsync<BladeWriteException>(() =>
+                port.ReleaseOwnedBatterySaverFanStopAsync(() => true, default));
+            Assert.Equal(count, session.Commands.Count);
+        }
+    }
 }

@@ -135,5 +135,7 @@ int main(void)
         &eligible, &written, &error) != 0 || eligible != 1 || written != 0) return 24;
     if (ob_v1_performance_source_eligible(OB_AUTOMATION_ABI_VERSION, -1, 0,
         &eligible, &written, NULL) != 0 || eligible != 0 || written != 0) return 25;
+    if (ob_v1_performance_source_eligible(OB_AUTOMATION_ABI_VERSION, 5, 2,
+        &eligible, &written, &error) != 0 || eligible != 1 || written != 0) return 26;
     return 0;
 }

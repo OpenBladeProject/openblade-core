@@ -85,11 +85,47 @@ public sealed partial class ServiceControlRuntimeTests
         context.Device.AdapterPowerState = AdapterPowerState.Unknown;
         await context.Runtime.MaintainFanCurveAsync(default);
         Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+        Assert.Equal(PerformancePreset.BatterySaver, context.Device.ConfirmedState.Performance);
+        Assert.Equal(1, context.Device.OwnedStopReleaseCalls);
         Assert.Equal(performanceWrites, context.Device.PerformanceSetCalls);
         Assert.Equal(samples, temperatures.FanStopReads);
         Assert.Equal(saved, context.Runtime.GetStatus().Profiles);
         Assert.True(saved.Battery.StopFansInBatterySaver);
         Assert.False(context.Runtime.GetStatus().BatterySaverFanStopStatus!.Applied);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnclassifiedExternal_OwnedStopReleaseRechecksOwnershipAndPowerEpochBeforeSubmission(bool powerBoundary)
+    {
+        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true, GpuPoweredDown: true));
+        TestContext context = await CreateBatterySaverFanStopContextAsync(temperatures);
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            SupportsOrdinaryThermalControlOnUnclassifiedExternalPower = true,
+        };
+        await context.Runtime.ObserveAsync(default);
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetBatterySaverFanStopAsync(true, default)).Status);
+        int writes = context.Device.TotalSetterCalls;
+        ProfileSet saved = context.Runtime.GetStatus().Profiles;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        context.Device.BeforeOwnedStopRelease = () =>
+        {
+            string field = powerBoundary ? "powerAdmissionEpoch" : "fanAuthorityEpoch";
+            var info = typeof(ServiceControlRuntime).GetField(field,
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            info.SetValue(context.Runtime, (long)info.GetValue(context.Runtime)! + 1);
+        };
+
+        await context.Runtime.MaintainFanCurveAsync(default);
+
+        Assert.Equal(0, context.Device.OwnedStopReleaseCalls);
+        Assert.Equal(writes, context.Device.TotalSetterCalls);
+        Assert.Equal(PerformancePreset.BatterySaver, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Stop, context.Device.ConfirmedState.Fans);
+        Assert.Equal(saved, context.Runtime.GetStatus().Profiles);
     }
 
     [Fact]

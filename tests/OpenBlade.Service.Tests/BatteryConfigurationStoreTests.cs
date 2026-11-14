@@ -1294,6 +1294,29 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task ExternalPower_DefaultAndCustomUsbCProfilesRoundTripAsExactAggregate()
+    {
+        Paths paths = CreatePaths();
+        BatteryConfigurationStore store = CreateStore(paths);
+        BatteryConfiguration initial = await store.LoadAsync(CancellationToken.None);
+        Assert.Null(initial.Profiles.UsbC.CustomPerformance);
+        await store.SaveConfigurationAsync(initial.Profiles, initial.Preferences, CancellationToken.None);
+        Assert.Equal(initial.Profiles, (await store.LoadAsync(CancellationToken.None)).Profiles);
+
+        ProfileSet custom = initial.Profiles with
+        {
+            UsbC = initial.Profiles.UsbC with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = CustomPerformanceSettings.Default,
+                GpuClockTuning = GpuClockTuningSettings.Disabled,
+            },
+        };
+        await store.SaveConfigurationAsync(custom, initial.Preferences, CancellationToken.None);
+        Assert.Equal(custom, (await store.LoadAsync(CancellationToken.None)).Profiles);
+    }
+
+    [Fact]
     public async Task SaveConfigurationAsync_CommitsProfilesAndPreferenceAsOneVerifiedAggregate()
     {
         Paths paths = CreatePaths();

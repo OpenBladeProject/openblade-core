@@ -395,7 +395,7 @@ internal sealed partial class ExperimentalBladePort
                         variableResponse: acceptsStatusOnlyAck,
                         payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 4 : null,
                         requireEcho: !acceptsStatusOnlyAck,
-                        requireAdequateAdapter: projectCurve,
+                        requireFullPowerForFanCurve: projectCurve,
                         writeAdmission: SourceUnchanged).ConfigureAwait(false);
                     submitted = true;
                 }
@@ -448,7 +448,7 @@ internal sealed partial class ExperimentalBladePort
                         variableResponse: acceptsStatusOnlyAck,
                         payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 3 : null,
                         requireEcho: !acceptsStatusOnlyAck,
-                        requireAdequateAdapter: projectCurve,
+                        requireFullPowerForFanCurve: projectCurve,
                         writeAdmission: SourceUnchanged).ConfigureAwait(false);
                     submitted = true;
                     saved = zone == 1 ? (rpm, saved.Second) : (saved.First, rpm);

@@ -7,10 +7,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Offer all model-supported performance modes, including Custom and HyperBoost, on sufficient and limited external adapters. Preserve separate profiles, firmware power management and battery-drain notifications. ([#964](https://github.com/OSSBlade/openblade-core/pull/964))
 - Expand source-reviewed fixed fan speeds and host curves with per-preset firmware limits, add full-power AC host curves in the existing fixed-fan presets on RZ09-0482/RZ09-0483, add Creator on RZ09-0328 and Maximum Power on RZ09-0530, and preserve saved fan settings when live limits change. ([#968](https://github.com/OpenBladeProject/openblade-core/pull/968))
 
 ### Fixed
 
+- Keep HyperBoost recovery bound to the confirmed power source after an upgrade, and prevent shared native build caches from reusing stale code or release metadata. ([#964](https://github.com/OSSBlade/openblade-core/pull/964))
 - Accept a valid PawnIO CPU temperature driver when uninstall/reinstall leaves disconnected device registrations. Report the present-device count when the binding remains missing or ambiguous. ([#970](https://github.com/OSSBlade/openblade-core/pull/970))
 - Keep source-supported ordinary controls available when Windows confirms external power but adapter wattage cannot be read, without guessing charger type or changing the reported power classification. ([#967](https://github.com/OpenBladeProject/openblade-core/issues/967))
 - Avoid rejecting supported battery-setting replies and allow a short confirmation window on source-reviewed Blade models. ([#965](https://github.com/OSSBlade/openblade-core/pull/965))

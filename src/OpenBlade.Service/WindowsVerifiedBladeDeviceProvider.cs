@@ -446,6 +446,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         IDeviceStateReadDiagnostics,
         IGpuClockOffsetManagementDevice,
         ISingleAttemptThermalDevice,
+        IOwnedBatterySaverFanStopReleaseDevice,
         IPadlessHyperBoostLifecycleValidationDevice,
         IThermalExternalDriftValidationDevice,
         IDisposable
@@ -2225,6 +2226,18 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 allowFreshSessionRetry: false,
                 allowSecondManualEntryContinuation: false,
                 cancellationToken);
+
+        Task IOwnedBatterySaverFanStopReleaseDevice.ReleaseOwnedBatterySaverFanStopOnceAsync(
+            Func<bool> priorAuthorityAdmission,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(priorAuthorityAdmission);
+            return batteryFactory.Capabilities.SupportsBatterySaverFanStop
+                ? ExecuteProductionWriteAsync(
+                    port => port.ReleaseOwnedBatterySaverFanStopAsync(priorAuthorityAdmission, cancellationToken),
+                    cancellationToken, allowFreshSessionRetry: false)
+                : RejectProductionWrite("Owned Battery Saver fan-stop release is not admitted.");
+        }
 
         private Task SetFanControlCoreAsync(
             FanControlSettings value,
