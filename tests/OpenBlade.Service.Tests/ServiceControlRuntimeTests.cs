@@ -24423,6 +24423,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 RequiresCoolingPad: false,
                 DateTimeOffset.UtcNow)
             {
+                RestorePowerSource = powerSource,
                 RestoreIntent = new HyperBoostRestoreIntent(
                     PerformancePreset.Silent,
                     CustomPerformance: null,

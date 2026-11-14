@@ -1540,11 +1540,8 @@ internal sealed class ProductionBatteryPort :
         FullPower,
     }
 
-    private static bool IsLimitedExternalAdapter(AdapterPowerState adapter) => adapter is
-        AdapterPowerState.LimitedExternal or AdapterPowerState.UsbCPower45W
-        or AdapterPowerState.UsbCPower60W or AdapterPowerState.UsbCPower65W
-        or AdapterPowerState.UsbCPower80W or AdapterPowerState.UsbCPower90W
-        or AdapterPowerState.UsbCPower100W;
+    private static bool IsLimitedExternalAdapter(AdapterPowerState adapter) =>
+        HyperBoostValidationPower.IsAdmittedLimitedExternalPower(adapter);
 
     private ThermalWritePowerRequirement? ClassifyThermalWritePower(
         AdapterPowerState adapter)

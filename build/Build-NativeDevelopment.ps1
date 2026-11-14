@@ -49,6 +49,10 @@ try {
         $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER = (Get-Command link.exe -ErrorAction Stop).Source
         $env:RUSTFLAGS = '-C target-feature=+crt-static'
     }
+    $sourceFingerprint = Get-OpenBladeNativeSourceFingerprint -Repository $repository
+    $inputs = @(Get-OpenBladeNativeWorkingInputs -Repository $repository)
+    $fingerprintFlag = "--cfg=openblade_source_fingerprint_$sourceFingerprint"
+    $env:RUSTFLAGS = ($env:RUSTFLAGS + ' ' + $fingerprintFlag).Trim()
     $env:CARGO_ENCODED_RUSTFLAGS = $null
     $env:CARGO_PROFILE_DEV_PANIC = 'unwind'
     $env:CARGO_PROFILE_RELEASE_PANIC = 'unwind'
@@ -58,6 +62,9 @@ try {
     if ($Configuration -eq 'Release') { $arguments += '--release'; $profile = 'release' }
     & cargo @arguments
     if ($LASTEXITCODE -ne 0) { throw 'Required native component build failed.' }
+    if ((Get-OpenBladeNativeSourceFingerprint -Repository $repository) -cne $sourceFingerprint -or
+        (ConvertTo-Json -InputObject @(Get-OpenBladeNativeWorkingInputs -Repository $repository) -Compress) -cne
+        (ConvertTo-Json -InputObject $inputs -Compress)) { throw 'Native inputs changed during build.' }
     $name = if ($target -like '*windows*') { 'openblade_ffi.dll' }
         elseif ($target -like '*apple*') { 'libopenblade_ffi.dylib' } else { 'libopenblade_ffi.so' }
     Copy-Item -LiteralPath (Join-Path $env:CARGO_TARGET_DIR "$target/$profile/$name") -Destination (Join-Path $outputPath $name) -Force
@@ -65,16 +72,11 @@ try {
     if ($LASTEXITCODE -ne 0 -or $revision -notmatch '^[0-9a-f]{40}$') { throw 'Cannot determine native source revision.' }
     # Development uses current working bytes, including uncommitted changes.
     # Release packaging retains its stricter committed-input provenance recipe.
-    $inputs = @()
-    foreach ($file in @(Get-ChildItem -LiteralPath (Join-Path $repository 'rust') -Recurse -File |
-        Where-Object { $_.FullName -notmatch '[/\\]target[/\\]' } | Sort-Object FullName)) {
-        $relativePath = $file.FullName.Substring($repository.TrimEnd('\', '/').Length + 1).Replace('\', '/')
-        $inputs += [ordered]@{ path = $relativePath; sha256 = Get-NativeSha256 $file.FullName }
-    }
     $manifest = [ordered]@{
         schemaVersion = 1; abiVersion = '0x00010000'; fileName = $name; target = $target
         productVersion = $ProductVersion; sourceRevision = $revision
         sha256 = Get-NativeSha256 (Join-Path $outputPath $name)
+        sourceFingerprint = $sourceFingerprint; flags = @($env:RUSTFLAGS)
         inputs = $inputs
     }
     $text = $manifest | ConvertTo-Json -Depth 8

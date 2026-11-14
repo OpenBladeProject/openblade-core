@@ -92,6 +92,7 @@ try {
     for ($index = 0; $index -lt 12; $index++) {
         [IO.File]::WriteAllText((Join-Path $sourceFixture "rust/input$index.txt"), "fixture`n")
     }
+    [IO.File]::WriteAllText((Join-Path $sourceFixture '.gitattributes'), "rust/** text eol=lf`n")
     $properties = Join-Path $sourceFixture 'Directory.Build.props'
     [IO.File]::WriteAllText($properties, "<Project />`n")
     & git -C $sourceFixture init -q -b build/native-source-fixture
@@ -123,6 +124,31 @@ try {
         if ((Split-Path -Leaf $mainCache.TargetDirectory) -cne 'source') {
             throw 'The Cargo cache must retain the main repository name.'
         }
+        $sourceFingerprint = Get-OpenBladeNativeSourceFingerprint -Repository $sourceFixture
+        $linkedFingerprint = Get-OpenBladeNativeSourceFingerprint -Repository $linkedFixture
+        if ($sourceFingerprint -cnotmatch '\A[0-9a-f]{64}\z' -or $sourceFingerprint -cne $linkedFingerprint) {
+            throw 'Equal working bytes in separate worktrees must share a source fingerprint.'
+        }
+        $linkedInput = Join-Path $linkedFixture 'rust/input0.txt'
+        $originalBytes = [IO.File]::ReadAllBytes($linkedInput)
+        [IO.File]::WriteAllText($linkedInput, "different older dependency`n")
+        [IO.File]::SetLastWriteTimeUtc($linkedInput, [DateTime]::UtcNow.AddDays(-1))
+        if ((Get-OpenBladeNativeSourceFingerprint -Repository $linkedFixture) -ceq $sourceFingerprint) {
+            throw 'Older changed source bytes must invalidate shared Cargo artifacts.'
+        }
+        [IO.File]::WriteAllBytes($linkedInput, $originalBytes)
+        if ((Get-OpenBladeNativeSourceFingerprint -Repository $linkedFixture) -cne $sourceFingerprint) {
+            throw 'Restoring source bytes must restore the content fingerprint independently of timestamps.'
+        }
+        $ignoredTarget = Join-Path $linkedFixture 'rust/target/ignored'
+        New-Item -ItemType Directory -Path (Split-Path -Parent $ignoredTarget) -Force | Out-Null
+        [IO.File]::WriteAllText($ignoredTarget, 'build output')
+        if ((Get-OpenBladeNativeSourceFingerprint -Repository $linkedFixture) -cne $sourceFingerprint) {
+            throw 'Build output must not invalidate native source fingerprints.'
+        }
+        Remove-Item -LiteralPath $ignoredTarget
+        Remove-Item -LiteralPath (Split-Path -Parent $ignoredTarget)
+
     }
     finally {
         & git -C $sourceFixture worktree remove $linkedFixture
@@ -206,7 +232,7 @@ try {
         }
         $manifestPath = Join-Path $copy 'OpenBlade.Native.provenance.json'
         $original = [IO.File]::ReadAllBytes($manifestPath)
-        foreach ($property in @('sha256', 'unsignedSha256', 'sourceRevision', 'fileVersion', 'target', 'noticeSha256')) {
+        foreach ($property in @('sha256', 'unsignedSha256', 'sourceRevision', 'fileVersion', 'target', 'noticeSha256', 'sourceFingerprint')) {
             $changed = [Text.Encoding]::UTF8.GetString($original) | ConvertFrom-Json
             $changed.$property = 'wrong'
             [IO.File]::WriteAllText($manifestPath, ($changed | ConvertTo-Json -Depth 8))

@@ -589,8 +589,9 @@ internal sealed partial class ExperimentalBladePort(
     private void RequirePerformanceWriteAdmission(PerformancePreset value)
     {
         RequireWriteAdmission();
+        PowerSource source = capturePowerSource();
         if (!CreatePerformancePresets(model).Contains(value)
-            || !(ExternalPowerPresent() || PerformancePowerSourcePolicy.IsAllowed(capturePowerSource(), value)))
+            || !(ExternalPowerReported(source) || PerformancePowerSourcePolicy.IsAllowed(source, value)))
         {
             throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
                 "The exact experimental preset is not admitted on the current power source.");
@@ -919,10 +920,8 @@ internal sealed partial class ExperimentalBladePort(
     private static bool IsBatteryModeSet(byte commandClass, byte commandId, byte[] arguments) =>
         commandClass == 0x0D && commandId == 0x02 && arguments.Length == 4 && arguments[2] is 3 or 6;
 
-    private static bool IsLimitedAdapter(AdapterPowerState state) => state is
-        AdapterPowerState.LimitedExternal or AdapterPowerState.UsbCPower45W or AdapterPowerState.UsbCPower60W
-        or AdapterPowerState.UsbCPower65W or AdapterPowerState.UsbCPower80W or AdapterPowerState.UsbCPower90W
-        or AdapterPowerState.UsbCPower100W;
+    private static bool IsLimitedAdapter(AdapterPowerState state) =>
+        HyperBoostValidationPower.IsAdmittedLimitedExternalPower(state);
 
     private static bool IsFanOperation(string operation) =>
         operation is "Fans" or "FanTargets";
@@ -978,7 +977,6 @@ internal sealed partial class ExperimentalBladePort(
         {
             PowerSource.PluggedIn => HyperBoostValidationPower.IsAdmittedFullPower(adapter),
             PowerSource.UsbC => IsLimitedAdapter(adapter),
-            PowerSource.ExternalUnknown => HyperBoostValidationPower.IsAdmittedFullPower(adapter) || IsLimitedAdapter(adapter),
             PowerSource.Battery => adapter == AdapterPowerState.Battery,
             _ => false,
         };
