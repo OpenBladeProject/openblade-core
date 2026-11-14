@@ -531,6 +531,42 @@ foreach ($requiredBuildContract in @(
 }
 
 $quality = [Regex]::Match($build, '(?ms)^  quality-and-tests:\r?\n.*?(?=^  build-contracts:)').Value
+# Both jobs execute PowerShell fixture wrappers that resolve Python from PATH.
+# Provision the same supported minor before either full or affected invocation.
+function Assert-FixturePythonProvisioning {
+    param([string]$JobText, [string[]]$Invocation)
+    $setups = [Regex]::Matches($JobText, '(?ms)^      - name: Set up fixture Python\r?\n.*?(?=^      - name:|\z)')
+    if ($setups.Count -ne 1) { throw 'Each fixture job must provision Python exactly once.' }
+    $setup = $setups[0]
+    foreach ($required in @('uses: actions/setup-python@v7', "python-version: '3.12'", 'architecture: x64')) {
+        if (-not $setup.Value.Contains($required)) { throw "Fixture Python setup is missing '$required'." }
+    }
+    if ($setup.Value -match '(?m)^        if:') { throw 'Python setup must cover full and affected execution.' }
+    foreach ($command in $Invocation) {
+        $position = $JobText.IndexOf($command, [StringComparison]::Ordinal)
+        if ($position -lt 0 -or $position -le $setup.Index) {
+            throw "Supported Python must be provisioned before '$command'."
+        }
+    }
+}
+$contractJob = [Regex]::Match($build, '(?ms)^  build-contracts:\r?\n.*?(?=^  component-publish:)').Value
+Assert-FixturePythonProvisioning -JobText $quality -Invocation @(
+    'Invoke-OpenBladeNativeFixtureScope',
+    '.\build\Run-AffectedCi.ps1')
+Assert-FixturePythonProvisioning -JobText $contractJob -Invocation @(
+    'ForEach-Object { & $_.FullName }',
+    '.\build\Run-AffectedCi.ps1')
+foreach ($invalidJob in @(
+        ('Invoke-OpenBladeNativeFixtureScope' + [Environment]::NewLine + $quality),
+        $quality.Replace('uses: actions/setup-python@v7', 'uses: removed-python-setup'),
+        $quality.Replace("python-version: '3.12'", "python-version: '3.10'"),
+        $quality.Replace('      - name: Set up fixture Python', '      - name: Removed fixture Python'))) {
+    $rejected = $false
+    try { Assert-FixturePythonProvisioning -JobText $invalidJob -Invocation @('Invoke-OpenBladeNativeFixtureScope') }
+    catch { $rejected = $true }
+    Assert-Equal $true $rejected 'Missing or unsupported Python provisioning must fail the CI contract.'
+}
+
 $fullTest = [Regex]::Match($quality, '(?ms)^      - name: Test\r?\n.*?(?=^      - name:)').Value
 foreach ($required in @(
         "if: inputs.validation-mode == 'full'",

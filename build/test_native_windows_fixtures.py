@@ -18,6 +18,21 @@ class FixtureContracts(unittest.TestCase):
         return f.PREFIX + json.dumps(dict(schemaVersion=1, emitter=emitter, operation='getStatus',
                                            method='response', raw=raw)).encode() + b'\n'
 
+    def test_python_floor_precedes_fixture_path_and_prepare_work(self):
+        for version in ((3, 10, 99), (3, 9, 0)):
+            with self.subTest(version=version), patch.object(sys, 'version_info', version), \
+                    patch.object(f, 'source_manifest') as sources, patch.object(f, 'prepare') as prepare, \
+                    self.assertRaisesRegex(RuntimeError, 'Python 3.11'):
+                f.main()
+            sources.assert_not_called()
+            prepare.assert_not_called()
+        with patch.object(f.hashlib, 'file_digest', None), self.assertRaisesRegex(RuntimeError, 'file_digest'):
+            f.main()
+        supported = f.require_supported_python()
+        self.assertGreaterEqual(tuple(supported['versionInfo']), (3, 11))
+        self.assertEqual(supported['executable'], sys.executable)
+        self.assertTrue(supported['fileDigest'])
+
     def test_preserves_exact_payload_and_ignores_trace_copy(self):
         data = self.line() + b'NATIVE_THERMAL_EDGE_TRACE getStatus {}\n'
         rows = f.collect(data, 'test', {'peer_response'})

@@ -1,5 +1,31 @@
 Set-StrictMode -Version 3.0
 
+function Get-OpenBladeNativeFixturePythonRuntime {
+    try { $command = Get-Command python -CommandType Application -ErrorAction Stop | Select-Object -First 1 }
+    catch { throw 'Python 3.11 or newer is required for native fixture checks; no Python executable was found.' }
+    # Keep double quotes out of the probe so Windows PowerShell 5.1 passes
+    # the complete Python expression intact through native argument handling.
+    $probeCode = "import hashlib,json,sys; print(json.dumps(dict(versionInfo=list(sys.version_info[:3]),executable=sys.executable,fileDigest=callable(getattr(hashlib,'file_digest',None)))))"
+    $output = & $command.Source -I -S -c $probeCode
+    if ($LASTEXITCODE -ne 0) { throw 'Python 3.11 or newer is required; the runtime probe failed.' }
+    try {
+        $probe = ($output -join [Environment]::NewLine) | ConvertFrom-Json
+        $version = [Version]::new([int]$probe.versionInfo[0], [int]$probe.versionInfo[1], [int]$probe.versionInfo[2])
+        if ($version -lt [Version]'3.11' -or $probe.fileDigest -ne $true) {
+            throw 'unsupported runtime'
+        }
+        if (-not [IO.Path]::IsPathRooted([string]$probe.executable) -or
+            -not (Test-Path -LiteralPath $probe.executable -PathType Leaf)) { throw 'missing executable' }
+    }
+    catch { throw 'Python 3.11 or newer with hashlib.file_digest is required for native fixture checks.' }
+    return [pscustomobject]@{
+        Executable = [IO.Path]::GetFullPath([string]$probe.executable)
+        VersionInfo = @($probe.versionInfo)
+        Sha256 = (Get-FileHash -LiteralPath $probe.executable -Algorithm SHA256).Hash.ToLowerInvariant()
+        ProbeCommand = @($command.Source, '-I', '-S', '-c', $probeCode)
+    }
+}
+
 function Get-OpenBladeNativeFixturePrerequisiteProjects {
     param([Parameter(Mandatory)][string]$Repository)
     $manifest = Get-Content -Raw -LiteralPath (Join-Path $Repository 'build/NativeWindowsFixtureManifest.json') | ConvertFrom-Json
@@ -93,6 +119,7 @@ function Invoke-OpenBladeNativeFixtureScope {
         [scriptblock]$Action = {}
     )
     $ErrorActionPreference = 'Stop'
+    $pythonRuntime = Get-OpenBladeNativeFixturePythonRuntime
     if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'X64') {
         throw 'Native fixture scope requires Windows x64 PowerShell 7.'
     }
@@ -118,9 +145,10 @@ function Invoke-OpenBladeNativeFixtureScope {
     if (Test-Path -LiteralPath $run) { throw 'Fixture run root already exists.' }
     [IO.Directory]::CreateDirectory($run) | Out-Null
     $driver = Join-Path $Repository 'build/native_windows_fixtures.py'
-    $python = (Get-Command python -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+    $python = $pythonRuntime.Executable
     $lock = $null
     try {
+        $pythonRuntime | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $run 'python-runtime.json') -Encoding utf8
         # Test setup boundary only. Exactly one current-process identity query;
         # neither this SID nor injected peers establish real IPC authentication.
         $identity = [Security.Principal.WindowsIdentity]::GetCurrent()

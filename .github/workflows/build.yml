@@ -140,6 +140,12 @@ jobs:
           persist-credentials: false
           submodules: false
 
+      - name: Set up fixture Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          architecture: x64
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
         with:
@@ -275,6 +281,12 @@ jobs:
         with:
           persist-credentials: false
           submodules: false
+
+      - name: Set up fixture Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          architecture: x64
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5

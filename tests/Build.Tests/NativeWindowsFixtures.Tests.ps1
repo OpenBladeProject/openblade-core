@@ -2,11 +2,12 @@
 param()
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$python = (Get-Command python -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+. (Join-Path $repository 'build/NativeWindowsFixtures.ps1')
+$pythonRuntime = Get-OpenBladeNativeFixturePythonRuntime
+$python = $pythonRuntime.Executable
 & $python -B (Join-Path $repository 'build/test_native_windows_fixtures.py')
 if ($LASTEXITCODE -ne 0) { throw "Native Windows fixture harness contracts failed: $LASTEXITCODE" }
 
-. (Join-Path $repository 'build/NativeWindowsFixtures.ps1')
 foreach ($case in @(
     @{ Bytes = 24GB; Policy = 'Stop'; Reads = 1 },
     @{ Bytes = 25GB; Policy = 'Warn'; Reads = 2 },
@@ -39,3 +40,40 @@ try {
 catch { $threw = $true }
 if (-not $threw -or $script:fixtureDiskReadCount -ne 2) { throw 'Disk recheck must stop below 25 GiB.' }
 Write-Host 'Fixture disk threshold contracts passed.'
+
+# These command shims only probe the runtime guard; they never invoke fixture
+# setup, identity, builds or an unsupported real interpreter.
+& {
+    function Get-Command { throw 'missing runtime' }
+    $failed = $false
+    try { Get-OpenBladeNativeFixturePythonRuntime | Out-Null }
+    catch { $failed = $_.Exception.Message.Contains('3.11') -and $_.Exception.Message.Contains('found') }
+    if (-not $failed) { throw 'Missing Python must fail the prerequisite guard.' }
+    $proposedRoot = Join-Path ([IO.Path]::GetTempPath()) ('fixture-python-guard-' + [Guid]::NewGuid().ToString('N'))
+    $failed = $false
+    try { Invoke-OpenBladeNativeFixtureScope -Repository $repository -OutputRoot $proposedRoot -Action { throw 'Unexpected consumer execution.' } }
+    catch { $failed = $_.Exception.Message.Contains('3.11') }
+    if (-not $failed -or (Test-Path -LiteralPath $proposedRoot)) { throw 'Missing runtime must stop scope entry before root creation.' }
+}
+& {
+    function Get-Command { return [pscustomobject]@{ Source = 'Invoke-UnsupportedFixturePythonProbe' } }
+    function Invoke-UnsupportedFixturePythonProbe {
+        if (($args[0..2] -join '|') -ne '-I|-S|-c') { throw 'Unexpected runtime probe command.' }
+        $global:LASTEXITCODE = 0
+        return '{"versionInfo":[3,10,99],"executable":"unused.exe","fileDigest":false}'
+    }
+    $failed = $false
+    try { Get-OpenBladeNativeFixturePythonRuntime | Out-Null }
+    catch { $failed = $_.Exception.Message.Contains('3.11') }
+    if (-not $failed) { throw 'Unsupported Python must fail the prerequisite guard.' }
+    $proposedRoot = Join-Path ([IO.Path]::GetTempPath()) ('fixture-python-guard-' + [Guid]::NewGuid().ToString('N'))
+    $failed = $false
+    try { Invoke-OpenBladeNativeFixtureScope -Repository $repository -OutputRoot $proposedRoot -Action { throw 'Unexpected consumer execution.' } }
+    catch { $failed = $_.Exception.Message.Contains('3.11') }
+    if (-not $failed -or (Test-Path -LiteralPath $proposedRoot)) { throw 'Unsupported runtime must stop scope entry before root creation.' }
+}
+if ([Version]::new([int]$pythonRuntime.VersionInfo[0], [int]$pythonRuntime.VersionInfo[1]) -lt [Version]'3.11' -or
+    $pythonRuntime.Sha256 -ne (Get-FileHash -LiteralPath $pythonRuntime.Executable -Algorithm SHA256).Hash.ToLowerInvariant()) {
+    throw 'Supported Python probe must bind the actual executable and version.'
+}
+Write-Host 'Python prerequisite contracts passed (missing, unsupported, supported path/hash).'

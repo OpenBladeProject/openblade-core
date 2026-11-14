@@ -22,6 +22,12 @@ ENV_NAMES = ('OPENBLADE_NATIVE_THERMAL_RESPONSES', 'OPENBLADE_NATIVE_BATTERY_RES
              'OPENBLADE_NATIVE_EDGE_FRAMES')
 
 
+def require_supported_python():
+    if sys.version_info < (3, 11) or not callable(getattr(hashlib, 'file_digest', None)):
+        raise RuntimeError('Python 3.11 or newer with hashlib.file_digest is required for native fixture checks')
+    return {'executable': sys.executable, 'versionInfo': list(sys.version_info[:3]), 'fileDigest': True}
+
+
 def digest(path):
     with Path(path).open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
@@ -260,7 +266,7 @@ def prepare_managed_dependency(repo, out, configuration, receipts):
 def prepare(repo, out, mode):
     manifest = load_manifest(repo)
     receipts = []
-    receipt = {'schemaVersion': 1, 'mode': mode, 'status': 'FAILED', 'runId': out.name, 'root': str(out), 'repository': str(repo),
+    receipt = {'pythonRuntime': require_supported_python(), 'schemaVersion': 1, 'mode': mode, 'status': 'FAILED', 'runId': out.name, 'root': str(out), 'repository': str(repo),
                'source': source_manifest(repo), 'commands': receipts, 'inputs': {}, 'binaries': [],
                'boundary': 'Test-only current-process SID lookup and protected own-SID NTFS fixtures; injected peers, no real peer authentication or product roles.'}
     try:
@@ -370,6 +376,8 @@ def prepare(repo, out, mode):
 
 
 def main():
+    # Validate before resolving fixture paths or preparing any roots/builds.
+    require_supported_python()
     parser = argparse.ArgumentParser()
     parser.add_argument('--repository', type=Path, required=True)
     parser.add_argument('--root', type=Path, required=True)
