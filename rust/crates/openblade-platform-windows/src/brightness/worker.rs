@@ -45,6 +45,7 @@ type ApplyResult = Result<BrightnessOutcome, BrightnessFailure>;
 
 enum Operation {
     Read(Option<BrightnessTarget>, SyncSender<ReadResult>),
+    Query(BrightnessQueryTarget, SyncSender<ReadResult>),
     Apply(
         BrightnessRequest,
         Option<BrightnessTarget>,
@@ -94,10 +95,11 @@ impl Drop for ReplyGuard<'_> {
 /// Read and pre-submission waits have a two-second budget. A submitted write
 /// gets separate completion and readback windows. A caller can time out while
 /// native connection, initiation, or cleanup is still running on the worker.
-/// Dropping the sender ends the worker once its outstanding native call returns.
-/// Dropping or timing out is not a native cancellation or a recovery procedure.
+/// Shutdown (including Drop) closes admission and joins native cleanup. The host
+/// must retire the worker on a blocking thread when a provider may still be busy.
 pub struct WindowsBrightnessWorker {
-    requests: SyncSender<Request>,
+    requests: Option<SyncSender<Request>>,
+    thread: Option<std::thread::JoinHandle<()>>,
     pending: Option<Arc<AtomicBool>>,
     submission_unresolved: bool,
 }
@@ -122,7 +124,7 @@ impl WindowsBrightnessWorker {
         native: impl FnOnce() -> N + Send + 'static,
     ) -> io::Result<Self> {
         let (requests, receiver) = mpsc::sync_channel::<Request>(1);
-        std::thread::Builder::new()
+        let thread = std::thread::Builder::new()
             .name("openblade-brightness".into())
             .spawn(move || {
                 let mut brightness = WmiBrightness::new(native());
@@ -140,6 +142,11 @@ impl WindowsBrightnessWorker {
                             drop(completion);
                             let _ = reply.send(result);
                         }
+                        Operation::Query(target, reply) => {
+                            let result = brightness.query(&target, &budget);
+                            drop(completion);
+                            let _ = reply.send(result);
+                        }
                         Operation::Apply(intent, target, reply) => {
                             let result =
                                 brightness.apply_with_budget(intent, target.as_ref(), &budget);
@@ -150,10 +157,40 @@ impl WindowsBrightnessWorker {
                 }
             })?;
         Ok(Self {
-            requests,
+            requests: Some(requests),
+            thread: Some(thread),
             pending: None,
             submission_unresolved: false,
         })
+    }
+
+    /// Wait for the native owner to release its COM objects and exit its apartment.
+    pub fn shutdown(mut self) -> io::Result<()> {
+        self.join()
+    }
+
+    fn join(&mut self) -> io::Result<()> {
+        // A live caller exclusively borrows self. Any abandoned request already
+        // had its admission canceled by ReplyGuard before shutdown can begin.
+        drop(self.requests.take());
+        if let Some(thread) = self.thread.take() {
+            thread
+                .join()
+                .map_err(|_| io::Error::other("brightness worker panicked"))?;
+        }
+        Ok(())
+    }
+
+    /// Observe an exact display for a query. Never resolves a pending write.
+    pub fn read_query_target(
+        &mut self,
+        target: BrightnessQueryTarget,
+        cancelled: impl Fn() -> bool,
+    ) -> ReadResult {
+        self.execute(CALL_LIMIT, &cancelled, |reply| {
+            Operation::Query(target, reply)
+        })
+        .map_err(|(failure, _)| BrightnessError::Native(failure))?
     }
 
     pub fn read(&mut self, cancelled: impl Fn() -> bool) -> ReadResult {
@@ -236,6 +273,8 @@ impl WindowsBrightnessWorker {
         let finished = Arc::new(AtomicBool::new(false));
         let (reply, receiver) = mpsc::sync_channel(1);
         self.requests
+            .as_ref()
+            .expect("worker owns the request sender")
             .try_send(Request {
                 operation: operation(reply),
                 admission_deadline: start + CALL_LIMIT,
@@ -268,6 +307,12 @@ impl WindowsBrightnessWorker {
             }
             Err(failure) => Err((failure, reply_guard.abandon())),
         }
+    }
+}
+
+impl Drop for WindowsBrightnessWorker {
+    fn drop(&mut self) {
+        let _ = self.join();
     }
 }
 

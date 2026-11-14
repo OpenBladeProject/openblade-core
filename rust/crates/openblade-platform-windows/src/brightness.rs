@@ -11,6 +11,7 @@ mod tests;
 mod windows;
 mod worker;
 
+pub use windows::{ProcessSecurityApartment, initialize_process_security, process_security_status};
 use worker::RequestGate;
 pub use worker::WindowsBrightnessWorker;
 
@@ -20,6 +21,61 @@ pub struct BrightnessTarget(Panel);
 impl BrightnessTarget {
     pub fn from_display(display: &ActiveInternalDisplay) -> Result<Self, BrightnessError> {
         Panel::from_display(display).map(Self)
+    }
+}
+
+/// CCD identity admitted for observation only. It cannot be supplied to a setter.
+pub struct BrightnessQueryTarget {
+    source: EndpointId,
+    target: EndpointId,
+    path: String,
+    instance_prefix: String,
+}
+
+impl BrightnessQueryTarget {
+    pub fn from_display(display: &ActiveInternalDisplay) -> Result<Self, BrightnessError> {
+        let path = display
+            .monitor_name
+            .as_ref()
+            .ok()
+            .and_then(|name| name.device_path.as_ref())
+            .and_then(|path| path.to_str())
+            .ok_or(BrightnessError::PanelUnavailable)?;
+        let mut parts = path.strip_prefix(r"\\?\").unwrap_or(path).split('#');
+        let (Some(kind), Some(model), Some(instance)) = (parts.next(), parts.next(), parts.next())
+        else {
+            return Err(BrightnessError::PanelUnavailable);
+        };
+        if !kind.eq_ignore_ascii_case("DISPLAY") || path.encode_utf16().count() > 512 {
+            return Err(BrightnessError::PanelUnavailable);
+        }
+        Ok(Self {
+            source: display.source,
+            target: display.target,
+            path: path.to_owned(),
+            instance_prefix: format!("{kind}\\{model}\\{instance}"),
+        })
+    }
+
+    fn matches(&self, name: &str) -> bool {
+        if name.encode_utf16().count() > 512 {
+            return false;
+        }
+        // WindowsDisplayBrightness.MatchesMonitor removes the last underscore
+        // suffix only when it parses as a signed 32-bit integer.
+        let bare = match name.rsplit_once('_') {
+            Some((prefix, suffix))
+                if !prefix.is_empty()
+                    && suffix
+                        .trim_matches(|c: char| matches!(c, ' ' | '\t'..='\r'))
+                        .parse::<i32>()
+                        .is_ok() =>
+            {
+                prefix
+            }
+            _ => name,
+        };
+        windows::ordinal_equal(&self.instance_prefix, bare)
     }
 }
 
@@ -189,6 +245,17 @@ pub trait WmiBrightnessNative {
         budget: &CallBudget<'_>,
         row_limit: usize,
     ) -> Result<Vec<ReadingRow>, NativeFailure>;
+
+    /// Query-only projection of active readings. Native WMI uses the same three
+    /// selected properties as WindowsDisplayBrightness.Query. The stricter
+    /// schema and identity checks for write admission live in active_readings.
+    fn query_readings(
+        &mut self,
+        budget: &CallBudget<'_>,
+        row_limit: usize,
+    ) -> Result<Vec<ReadingRow>, NativeFailure> {
+        self.active_readings(budget, row_limit)
+    }
 
     /// Decode the active Root\WMI WmiMonitorBrightnessMethods query. Keep
     /// the native object path opaque and avoid interpolating instance strings.
@@ -436,14 +503,73 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         Ok((panel, Reading::decode(row)?))
     }
 
+    fn query(
+        &mut self,
+        expected: &BrightnessQueryTarget,
+        budget: &CallBudget<'_>,
+    ) -> Result<BrightnessSnapshot, BrightnessError> {
+        self.verify_query_target(expected, budget)?;
+        let rows = checked(budget, |budget| {
+            self.native
+                .query_readings(budget, MAX_ROWS)
+                .map_err(BrightnessError::Native)
+        })?;
+        self.verify_query_target(expected, budget)?;
+        if rows.len() > MAX_ROWS {
+            return Err(BrightnessError::Native(NativeFailure::InvalidData));
+        }
+        let mut readings = rows
+            .into_iter()
+            .filter(|row| {
+                row.instance
+                    .as_deref()
+                    .is_some_and(|name| expected.matches(name))
+            })
+            .filter_map(|row| Reading::decode(row).ok());
+        let reading = readings.next().ok_or(BrightnessError::ReadingUnavailable)?;
+        if readings.next().is_some() {
+            return Err(BrightnessError::AmbiguousReading);
+        }
+        Ok(reading.snapshot)
+    }
+
+    fn verify_query_target(
+        &mut self,
+        expected: &BrightnessQueryTarget,
+        budget: &CallBudget<'_>,
+    ) -> Result<(), BrightnessError> {
+        let InternalDisplayTopology::Single(display) = self.topology(budget)? else {
+            return Err(BrightnessError::PanelChanged);
+        };
+        if display.source != expected.source
+            || display.target != expected.target
+            || !display
+                .monitor_name
+                .as_ref()
+                .ok()
+                .and_then(|name| name.device_path.as_ref())
+                .and_then(|p| p.to_str())
+                .is_some_and(|path| windows::ordinal_equal(path, &expected.path))
+        {
+            return Err(BrightnessError::PanelChanged);
+        }
+        Ok(())
+    }
+
     fn panel(&mut self, budget: &CallBudget<'_>) -> Result<Panel, BrightnessError> {
-        let topology = checked(budget, |budget| {
+        Panel::from_topology(self.topology(budget)?)
+    }
+
+    fn topology(
+        &mut self,
+        budget: &CallBudget<'_>,
+    ) -> Result<InternalDisplayTopology, BrightnessError> {
+        checked(budget, |budget| {
             self.native.topology(budget).map_err(|error| match error {
                 TopologyFailure::Display(error) => BrightnessError::Topology(error),
                 TopologyFailure::Native(error) => BrightnessError::Native(error),
             })
-        })?;
-        Panel::from_topology(topology)
+        })
     }
 }
 

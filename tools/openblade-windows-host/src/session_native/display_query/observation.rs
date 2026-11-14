@@ -1,5 +1,9 @@
 //! Read-only Display v2 query for the current-user desktop.
 use openblade_platform_windows::{
+    brightness::{
+        BrightnessError, BrightnessQueryTarget, BrightnessSnapshot, WindowsBrightnessWorker,
+        process_security_status,
+    },
     color_profile::{ColorProfileSnapshot, HdrState, ProfileReadError, query_color_profiles},
     display::{
         ActiveInternalDisplay, DisplayReadError, InternalDisplayRefresh, InternalDisplayTopology,
@@ -114,12 +118,26 @@ impl Snapshot {
                 .color_profiles
                 .iter()
                 .all(|p| valid_key(&p.id) && valid_name(&p.name))
-            && self.brightness_percent.is_none()
-            && self.supported_brightness_levels.is_empty()
+            && self.brightness_percent.is_none_or(|percent| percent <= 100)
+            && self.supported_brightness_levels.len() <= 101
+            && self
+                .supported_brightness_levels
+                .iter()
+                .all(|level| *level <= 100)
+            && self
+                .supported_brightness_levels
+                .windows(2)
+                .all(|pair| pair[0] < pair[1])
+            && (self.brightness_percent.is_some() == !self.supported_brightness_levels.is_empty())
     }
 }
 
 trait DisplayReads {
+    fn brightness(
+        &mut self,
+        panel: &ActiveInternalDisplay,
+        canceled: &AtomicBool,
+    ) -> io::Result<Result<BrightnessSnapshot, BrightnessError>>;
     fn refresh(&mut self) -> Result<InternalDisplayRefresh, DisplayReadError>;
     fn topology(&mut self) -> Result<InternalDisplayTopology, DisplayReadError>;
     fn profiles(
@@ -132,6 +150,26 @@ trait DisplayReads {
 struct WindowsDisplayReads;
 
 impl DisplayReads for WindowsDisplayReads {
+    fn brightness(
+        &mut self,
+        panel: &ActiveInternalDisplay,
+        canceled: &AtomicBool,
+    ) -> io::Result<Result<BrightnessSnapshot, BrightnessError>> {
+        let target = match BrightnessQueryTarget::from_display(panel) {
+            Ok(target) => target,
+            Err(error) => return Ok(Err(error)),
+        };
+        if let Err(error) = process_security_status() {
+            return Ok(Err(BrightnessError::Native(error)));
+        }
+        match WindowsBrightnessWorker::start() {
+            Ok(worker) => owned_brightness(worker, target, canceled),
+            Err(_) => Ok(Err(BrightnessError::Native(
+                openblade_platform_windows::brightness::NativeFailure::WorkerDisconnected,
+            ))),
+        }
+    }
+
     fn refresh(&mut self) -> Result<InternalDisplayRefresh, DisplayReadError> {
         read_internal_display_refresh()
     }
@@ -147,6 +185,19 @@ impl DisplayReads for WindowsDisplayReads {
     ) -> Result<ColorProfileSnapshot, ProfileReadError> {
         query_color_profiles(panel, hdr)
     }
+}
+
+// Called only on the owned blocking supplier. A timed-out reply is not COM
+// retirement: shutdown closes admission, cancels pending work, and joins the
+// actual worker including proxy/apartment destruction before returning.
+pub(super) fn owned_brightness(
+    mut worker: WindowsBrightnessWorker,
+    target: BrightnessQueryTarget,
+    canceled: &AtomicBool,
+) -> io::Result<Result<BrightnessSnapshot, BrightnessError>> {
+    let result = worker.read_query_target(target, || canceled.load(Ordering::Acquire));
+    worker.shutdown()?;
+    Ok(result)
 }
 
 pub(super) fn query(canceled: &AtomicBool) -> io::Result<Snapshot> {
@@ -228,6 +279,11 @@ fn observe(reads: &mut impl DisplayReads, canceled: &AtomicBool) -> io::Result<S
             "Windows could not read the internal display color profiles.",
         ));
     };
+    let brightness = reads.brightness(&before, canceled)?;
+    check_cancellation(canceled)?;
+    if matches!(brightness, Err(BrightnessError::PanelChanged)) {
+        return Ok(Snapshot::unavailable(CHANGED));
+    }
     let after = reads.topology();
     check_cancellation(canceled)?;
     // WCS reads are separate OS calls. Discard results if the bracketing
@@ -235,10 +291,15 @@ fn observe(reads: &mut impl DisplayReads, canceled: &AtomicBool) -> io::Result<S
     if !matches!(after, Ok(InternalDisplayTopology::Single(after)) if after == before) {
         return Ok(Snapshot::unavailable(CHANGED));
     }
-    Ok(project(*refresh, profiles).unwrap_or_else(|| Snapshot::unavailable(OUT_OF_BOUNDS)))
+    Ok(project(*refresh, profiles, brightness.ok())
+        .unwrap_or_else(|| Snapshot::unavailable(OUT_OF_BOUNDS)))
 }
 
-fn project(refresh: RefreshSnapshot, profiles: ColorProfileSnapshot) -> Option<Snapshot> {
+fn project(
+    refresh: RefreshSnapshot,
+    profiles: ColorProfileSnapshot,
+    brightness: Option<BrightnessSnapshot>,
+) -> Option<Snapshot> {
     if refresh.refresh_options.len() > MAX_OPTIONS || profiles.profiles.len() > MAX_OPTIONS {
         return None;
     }
@@ -298,8 +359,10 @@ fn project(refresh: RefreshSnapshot, profiles: ColorProfileSnapshot) -> Option<S
         color_profiles,
         message: refresh.message.map(str::to_owned),
         bits_per_color_channel: hdr.bits_per_color_channel,
-        brightness_percent: None,
-        supported_brightness_levels: Vec::new(),
+        brightness_percent: brightness.as_ref().map(|reading| reading.percent),
+        supported_brightness_levels: brightness
+            .map(|reading| reading.supported_levels)
+            .unwrap_or_default(),
     };
     snapshot.valid().then_some(snapshot)
 }

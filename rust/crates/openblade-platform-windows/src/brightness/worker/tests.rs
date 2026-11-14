@@ -1,5 +1,109 @@
 use super::*;
 
+struct HeldNative {
+    entered: SyncSender<()>,
+    release: Receiver<()>,
+    dropping: SyncSender<()>,
+    finish_drop: Receiver<()>,
+}
+
+impl WmiBrightnessNative for HeldNative {
+    type Method = ();
+
+    fn topology(&mut self, _: &CallBudget<'_>) -> Result<InternalDisplayTopology, TopologyFailure> {
+        self.entered.send(()).unwrap();
+        self.release.recv_timeout(Duration::from_secs(5)).unwrap();
+        Ok(InternalDisplayTopology::NoInternalDisplay)
+    }
+
+    fn active_readings(
+        &mut self,
+        _: &CallBudget<'_>,
+        _: usize,
+    ) -> Result<Vec<ReadingRow>, NativeFailure> {
+        unreachable!()
+    }
+
+    fn active_methods(
+        &mut self,
+        _: &CallBudget<'_>,
+        _: usize,
+    ) -> Result<Vec<MethodRow<()>>, NativeFailure> {
+        unreachable!()
+    }
+
+    fn set_brightness(
+        &mut self,
+        _: (),
+        _: u8,
+        _: &mut Submission<'_>,
+    ) -> Result<Acknowledgement, NativeFailure> {
+        unreachable!()
+    }
+}
+
+impl Drop for HeldNative {
+    fn drop(&mut self) {
+        self.dropping.send(()).unwrap();
+        self.finish_drop
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
+    }
+}
+
+#[test]
+fn cancelled_request_stays_busy_and_shutdown_joins_through_native_drop() {
+    for explicit_shutdown in [true, false] {
+        let (entered, observing) = mpsc::sync_channel(1);
+        let (release, wait_for_release) = mpsc::sync_channel(1);
+        let (dropping, observing_drop) = mpsc::sync_channel(1);
+        let (finish_drop, wait_for_drop) = mpsc::sync_channel(1);
+        let mut worker = WindowsBrightnessWorker::spawn(move || HeldNative {
+            entered,
+            release: wait_for_release,
+            dropping,
+            finish_drop: wait_for_drop,
+        })
+        .unwrap();
+        let target = BrightnessQueryTarget::from_display(
+            &ActiveInternalDisplay::brightness_fixture(r"DISPLAY#Panel#ID#{guid}", 2),
+        )
+        .unwrap();
+        let first = std::cell::Cell::new(true);
+        assert_eq!(
+            worker.read_query_target(target, || {
+                if first.replace(false) {
+                    return false;
+                }
+                observing.recv_timeout(Duration::from_secs(5)).unwrap();
+                true
+            }),
+            Err(BrightnessError::Native(NativeFailure::Cancelled))
+        );
+        assert_eq!(
+            worker.read(|| false),
+            Err(BrightnessError::Native(NativeFailure::WorkerBusy))
+        );
+        let finished_request = Arc::clone(worker.pending.as_ref().unwrap());
+        let (joined, observing_join) = mpsc::sync_channel(1);
+        let owner = std::thread::spawn(move || {
+            if explicit_shutdown {
+                worker.shutdown().unwrap();
+            } else {
+                drop(worker);
+            }
+            joined.send(()).unwrap();
+        });
+        release.send(()).unwrap();
+        observing_drop.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(finished_request.load(SeqCst));
+        assert_eq!(observing_join.try_recv(), Err(mpsc::TryRecvError::Empty));
+        finish_drop.send(()).unwrap();
+        observing_join.recv_timeout(Duration::from_secs(5)).unwrap();
+        owner.join().unwrap();
+    }
+}
+
 #[test]
 fn links_native_worker_without_starting_it() {
     std::hint::black_box(
@@ -49,7 +153,8 @@ fn timeout_after_start_blocks_writes_while_worker_is_live_and_after_it_drains() 
         request.finished.store(true, SeqCst);
     });
     let mut worker = WindowsBrightnessWorker {
-        requests,
+        requests: Some(requests),
+        thread: Some(thread),
         pending: None,
         submission_unresolved: false,
     };
@@ -78,7 +183,7 @@ fn timeout_after_start_blocks_writes_while_worker_is_live_and_after_it_drains() 
         Err(BrightnessError::Native(NativeFailure::WorkerBusy))
     );
     release.send(()).unwrap();
-    thread.join().unwrap();
+    worker.join().unwrap();
     assert_eq!(
         worker
             .apply(BrightnessRequest::StepUp, || false)
@@ -96,14 +201,15 @@ fn disconnected_reply_retains_possible_submission() {
         request.gate.begin().unwrap();
     });
     let mut worker = WindowsBrightnessWorker {
-        requests,
+        requests: Some(requests),
+        thread: Some(thread),
         pending: None,
         submission_unresolved: false,
     };
     let result = worker.execute(CALL_LIMIT, &|| false, |reply| {
         Operation::Apply(BrightnessRequest::StepDown, None, reply)
     });
-    thread.join().unwrap();
+    worker.join().unwrap();
     assert_eq!(result, Err((NativeFailure::WorkerDisconnected, true)));
     assert!(worker.submission_unresolved);
 }
@@ -121,7 +227,8 @@ fn pre_submit_cancellation_keeps_stalled_worker_busy_without_a_write_pause() {
         request.finished.store(true, SeqCst);
     });
     let mut worker = WindowsBrightnessWorker {
-        requests,
+        requests: Some(requests),
+        thread: Some(thread),
         pending: None,
         submission_unresolved: false,
     };
@@ -149,5 +256,5 @@ fn pre_submit_cancellation_keeps_stalled_worker_busy_without_a_write_pause() {
     );
     assert!(!worker.submission_unresolved);
     release.send(()).unwrap();
-    thread.join().unwrap();
+    worker.shutdown().unwrap();
 }

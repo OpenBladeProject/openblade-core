@@ -1,5 +1,6 @@
 //! Selected installed, read-only Display.v2 query. The real supplier performs
-//! CCD/refresh/HDR/WCS reads only; WMI brightness and all mutations are deferred.
+//! coherent CCD/refresh/HDR/WCS and targeted, owned WMI brightness reads.
+//! All mutations remain outside this endpoint.
 use super::diagnostics;
 use openblade_windows_host::pipe::Endpoint;
 use serde::Deserialize;

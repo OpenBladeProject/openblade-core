@@ -102,6 +102,22 @@ fn scalar_decoders_do_not_coerce_types_or_noncanonical_booleans() {
     ));
 }
 
+#[test]
+fn process_security_caches_success_and_unknown_prior_policy() {
+    use windows_sys::Win32::Foundation::RPC_E_TOO_LATE;
+    for status in [S_OK, RPC_E_TOO_LATE] {
+        let policy = std::sync::OnceLock::new();
+        let expected = ok(status);
+        assert_eq!(initialize_policy(&policy, || ok(status)), expected);
+        assert_eq!(
+            initialize_policy(&policy, || panic!(
+                "duplicate process policy initialization"
+            )),
+            expected
+        );
+    }
+}
+
 fn array_value(lower: i32, bytes: &[u8]) -> Value {
     let mut value = Value::default();
     // SAFETY: standalone Automation allocation, never connected to COM/WMI.

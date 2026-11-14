@@ -11,6 +11,7 @@ struct Fixture<'a> {
     case: &'a str,
     cancel_after_profiles: Option<&'a AtomicBool>,
     topology_reads: usize,
+    brightness_reads: usize,
     profile_reads: Vec<HdrState>,
 }
 
@@ -20,6 +21,7 @@ impl<'a> Fixture<'a> {
             case,
             cancel_after_profiles: None,
             topology_reads: 0,
+            brightness_reads: 0,
             profile_reads: Vec::new(),
         }
     }
@@ -45,6 +47,21 @@ impl<'a> Fixture<'a> {
 }
 
 impl DisplayReads for Fixture<'_> {
+    fn brightness(
+        &mut self,
+        panel: &ActiveInternalDisplay,
+        canceled: &AtomicBool,
+    ) -> io::Result<Result<BrightnessSnapshot, BrightnessError>> {
+        self.brightness_reads += 1;
+        if !self.case.starts_with("brightness-") {
+            return Ok(Err(BrightnessError::ReadingUnavailable));
+        }
+        let target = BrightnessQueryTarget::from_display(panel).unwrap();
+        let native = QueryWmi::new(self.case, panel);
+        let worker = WindowsBrightnessWorker::start_scripted(move || native)?;
+        owned_brightness(worker, target, canceled)
+    }
+
     fn refresh(&mut self) -> Result<InternalDisplayRefresh, DisplayReadError> {
         match self.case {
             "no-panel" => return Ok(InternalDisplayRefresh::NoInternalDisplay),
@@ -251,4 +268,188 @@ fn canceled_between_suppliers_skips_the_next_read() {
     let err = observe(&mut fixture, &canceled).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::Interrupted);
     assert_eq!(fixture.topology_reads, 1);
+    assert_eq!(fixture.brightness_reads, 0);
+}
+
+// The real query worker and read policy run against injected CCD/WMI data.
+// A mutation attempt fails immediately rather than being simulated as success.
+use openblade_platform_windows::brightness::{
+    Acknowledgement, CallBudget, MethodRow, NativeFailure, ReadingRow, Submission, TopologyFailure,
+    WmiBrightnessNative,
+};
+
+struct QueryWmi {
+    case: String,
+    rows: Option<Vec<ReadingRow>>,
+    failure: bool,
+    changed: bool,
+    topology_reads: usize,
+}
+impl QueryWmi {
+    fn new(case: &str, panel: &ActiveInternalDisplay) -> Self {
+        let path = panel
+            .monitor_name
+            .as_ref()
+            .unwrap()
+            .device_path
+            .as_ref()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let instance = path
+            .strip_prefix(r"\\?\")
+            .unwrap_or(path)
+            .split('#')
+            .take(3)
+            .collect::<Vec<_>>()
+            .join(r"\");
+        let row = |percent, levels, foreign: bool| ReadingRow {
+            instance: Some(if foreign {
+                String::from(r"DISPLAY\FOREIGN\1_0")
+            } else {
+                format!("{instance}_0")
+            }),
+            percent,
+            levels,
+            data_failure: None,
+        };
+        let percent = if case == "brightness-zero" { 0 } else { 100 };
+        let levels = if case == "brightness-all101" {
+            (0..=100).rev().chain([50, 255]).collect()
+        } else {
+            vec![100, 0, 50, 50, 255]
+        };
+        let rows = match case {
+            "brightness-missing" => vec![],
+            "brightness-foreign" => vec![row(Some(50), Some(vec![0, 50, 100]), true)],
+            "brightness-malformed" => vec![row(None, Some(vec![0, 100]), false)],
+            "brightness-invalid-percent" => vec![row(Some(101), Some(vec![0, 100]), false)],
+            "brightness-empty-levels" => vec![row(Some(50), Some(vec![255]), false)],
+            "brightness-ambiguous" => vec![
+                row(Some(10), Some(vec![0, 100]), false),
+                row(Some(90), Some(vec![0, 100]), false),
+            ],
+            "brightness-valid-and-malformed" => vec![
+                row(None, None, false),
+                row(Some(100), Some(vec![0, 100]), false),
+            ],
+            _ => vec![row(Some(percent), Some(levels), false)],
+        };
+        Self {
+            case: case.into(),
+            rows: Some(rows),
+            failure: case == "brightness-wmi-failure",
+            changed: case == "brightness-target-changed",
+            topology_reads: 0,
+        }
+    }
+}
+impl WmiBrightnessNative for QueryWmi {
+    type Method = ();
+    fn topology(
+        &mut self,
+        budget: &CallBudget<'_>,
+    ) -> Result<InternalDisplayTopology, TopologyFailure> {
+        budget.remaining().map_err(TopologyFailure::Native)?;
+        self.topology_reads += 1;
+        let InternalDisplayTopology::Single(mut panel) =
+            Fixture::new(&self.case).topology().unwrap()
+        else {
+            panic!("panel")
+        };
+        if self.changed && self.topology_reads == 2 {
+            panel.target.id += 1;
+        }
+        Ok(InternalDisplayTopology::Single(panel))
+    }
+    fn active_readings(
+        &mut self,
+        budget: &CallBudget<'_>,
+        _limit: usize,
+    ) -> Result<Vec<ReadingRow>, NativeFailure> {
+        budget.remaining()?;
+        if self.failure {
+            Err(NativeFailure::Status(0x80041003_u32 as i32))
+        } else {
+            Ok(self.rows.take().unwrap())
+        }
+    }
+    fn active_methods(
+        &mut self,
+        _: &CallBudget<'_>,
+        _: usize,
+    ) -> Result<Vec<MethodRow<()>>, NativeFailure> {
+        panic!("query reached mutation method enumeration")
+    }
+    fn set_brightness(
+        &mut self,
+        _: (),
+        _: u8,
+        _: &mut Submission<'_>,
+    ) -> Result<Acknowledgement, NativeFailure> {
+        panic!("query reached setter")
+    }
+}
+
+#[test]
+fn owned_targeted_brightness_projects_boundaries_and_all_levels() {
+    for (case, percent, levels) in [
+        ("brightness-zero", 0, vec![0, 50, 100]),
+        ("brightness-hundred", 100, vec![0, 50, 100]),
+        ("brightness-all101", 100, (0..=100).collect()),
+        ("brightness-valid-and-malformed", 100, vec![0, 100]),
+    ] {
+        let snapshot = fixture_query(case);
+        assert!(snapshot.valid() && snapshot.is_available, "{case}");
+        assert_eq!(snapshot.brightness_percent, Some(percent), "{case}");
+        assert_eq!(snapshot.supported_brightness_levels, levels, "{case}");
+        assert_eq!(
+            snapshot.active_color_profile_id.as_deref(),
+            Some("Synthetic.icm")
+        );
+    }
+}
+#[test]
+fn failed_wmi_retains_other_fields_but_target_replacement_discards_snapshot() {
+    for case in [
+        "brightness-missing",
+        "brightness-foreign",
+        "brightness-malformed",
+        "brightness-invalid-percent",
+        "brightness-empty-levels",
+        "brightness-ambiguous",
+        "brightness-wmi-failure",
+    ] {
+        let snapshot = fixture_query(case);
+        assert!(snapshot.valid() && snapshot.is_available, "{case}");
+        assert_eq!((snapshot.width, snapshot.height), (2560, 1600));
+        assert_eq!(snapshot.current_refresh_key.as_deref(), Some("fixed-240"));
+        assert!(snapshot.hdr_supported && snapshot.color_profiles_enabled);
+        assert_eq!(
+            snapshot.active_color_profile_id.as_deref(),
+            Some("Synthetic.icm")
+        );
+        assert_eq!(snapshot.brightness_percent, None, "{case}");
+        assert!(snapshot.supported_brightness_levels.is_empty(), "{case}");
+    }
+    let snapshot = fixture_query("brightness-target-changed");
+    assert!(!snapshot.is_available);
+    assert_eq!(snapshot.message.as_deref(), Some(CHANGED));
+}
+#[test]
+fn snapshot_rejects_unpaired_out_of_range_or_unnormalized_brightness() {
+    let mut snapshot = fixture_query("brightness-zero");
+    snapshot.brightness_percent = Some(101);
+    assert!(!snapshot.valid());
+    snapshot.brightness_percent = Some(0);
+    snapshot.supported_brightness_levels = vec![0, 0, 100];
+    assert!(!snapshot.valid());
+    snapshot.supported_brightness_levels = vec![100, 0];
+    assert!(!snapshot.valid());
+    snapshot.supported_brightness_levels = vec![0, 101];
+    assert!(!snapshot.valid());
+    snapshot.supported_brightness_levels.clear();
+    assert!(!snapshot.valid());
+    snapshot.brightness_percent = None;
+    assert!(snapshot.valid());
 }

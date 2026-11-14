@@ -2,6 +2,32 @@ use super::*;
 use std::cell::Cell;
 use std::collections::VecDeque;
 
+#[test]
+fn malformed_query_properties_skip_later_reads_and_provider_errors_survive() {
+    let row = decode_query_row(
+        Err(NativeFailure::InvalidData),
+        || panic!("unreachable percent"),
+        || panic!("unreachable levels"),
+    )
+    .unwrap();
+    assert!(row.instance.is_none());
+    for percent in [None, Some(101)] {
+        let row = decode_query_row(
+            Ok(Some("panel".into())),
+            || Ok(percent),
+            || panic!("unreachable levels"),
+        )
+        .unwrap();
+        assert!(row.levels.is_none());
+    }
+    let result = decode_query_row(
+        Ok(Some("panel".into())),
+        || Ok(Some(0)),
+        || Err(NativeFailure::Status(-1)),
+    );
+    assert!(matches!(result, Err(NativeFailure::Status(-1))));
+}
+
 fn remaining() -> Result<Duration, NativeFailure> {
     Ok(Duration::from_millis(60))
 }

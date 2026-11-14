@@ -79,3 +79,5 @@ tools/openblade-windows-host/tests/fixtures/app-fans-*.json -text whitespace=cr-
 
 # Preserve the exact generated neutral diagnostic learning bytes.
 .trail/learnings/2026-11-14-use-neutral-native-agent-failure-for-jack.md text eol=lf
+.trail/learnings/2026-11-14-own-targeted-agent-brightness-reads-through-jack.md text eol=lf
+.trail/learnings/2026-11-14-scope-native-brightness-trail-matches-to-jack.md text eol=lf

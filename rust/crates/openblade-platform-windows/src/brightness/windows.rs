@@ -10,9 +10,13 @@ use windows_sys::w;
 
 mod native;
 
+pub(super) use native::ordinal_equal;
 use native::{Connection, Object};
+pub use native::{ProcessSecurityApartment, initialize_process_security, process_security_status};
 
 const READINGS: &str = "SELECT Active, InstanceName, CurrentBrightness, Level, Levels FROM WmiMonitorBrightness WHERE Active = TRUE";
+const QUERY_READINGS: &str =
+    "SELECT InstanceName, CurrentBrightness, Level FROM WmiMonitorBrightness WHERE Active = TRUE";
 const METHODS: &str =
     "SELECT Active, InstanceName FROM WmiMonitorBrightnessMethods WHERE Active = TRUE";
 const READING_CLASS: &str = "WmiMonitorBrightness";
@@ -85,6 +89,20 @@ impl WmiBrightnessNative for WindowsWmi {
         })
     }
 
+    fn query_readings(
+        &mut self,
+        budget: &CallBudget<'_>,
+        row_limit: usize,
+    ) -> Result<Vec<ReadingRow>, NativeFailure> {
+        let remaining = || budget.remaining();
+        remaining()?;
+        self.with_connection(|connection| {
+            remaining()?;
+            let mut enumeration = connection.query(QUERY_READINGS)?;
+            collect(&remaining, row_limit, |ms| enumeration.next(ms), query_row)
+        })
+    }
+
     fn active_methods(
         &mut self,
         budget: &CallBudget<'_>,
@@ -140,6 +158,47 @@ fn disconnected(status: i32) -> bool {
             | SERVER_UNAVAILABLE
             | WBEM_E_TRANSPORT_FAILURE
     )
+}
+
+fn query_row(row: Object) -> Result<ReadingRow, NativeFailure> {
+    decode_query_row(
+        row.text(w!("InstanceName"), MAX_INSTANCE),
+        || row.byte(w!("CurrentBrightness")),
+        || row.bytes(w!("Level"), MAX_LEVEL_ENTRIES),
+    )
+}
+
+fn decode_query_row(
+    instance: Result<Option<String>, NativeFailure>,
+    percent: impl FnOnce() -> Result<Option<u8>, NativeFailure>,
+    levels: impl FnOnce() -> Result<Option<Vec<u8>>, NativeFailure>,
+) -> Result<ReadingRow, NativeFailure> {
+    // The fixed WQL class and Active predicate select these observations.
+    // The managed reader consumes only the typed values. Keep provider errors
+    // distinct from an individual row with missing or wrongly typed data.
+    fn property<T>(value: Result<Option<T>, NativeFailure>) -> Result<Option<T>, NativeFailure> {
+        match value {
+            Err(NativeFailure::InvalidData | NativeFailure::MissingData) => Ok(None),
+            other => other,
+        }
+    }
+    let instance = property(instance)?;
+    let percent = if instance.is_some() {
+        property(percent())?
+    } else {
+        None
+    };
+    let levels = if matches!(percent, Some(0..=100)) {
+        property(levels())?
+    } else {
+        None
+    };
+    Ok(ReadingRow {
+        instance,
+        percent,
+        levels,
+        data_failure: None,
+    })
 }
 
 fn reading_row(row: Object) -> Result<ReadingRow, NativeFailure> {

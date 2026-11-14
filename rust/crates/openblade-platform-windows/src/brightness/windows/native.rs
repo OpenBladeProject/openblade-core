@@ -19,11 +19,12 @@ use windows_sys::{
         Foundation::{
             E_OUTOFMEMORY, S_FALSE, S_OK, SysAllocStringLen, SysFreeString, SysStringLen,
         },
+        Globalization::{CSTR_EQUAL, CompareStringOrdinal},
         System::{
             Com::{
                 CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
-                CoSetProxyBlanket, CoUninitialize, EOAC_NONE, RPC_C_AUTHN_LEVEL_CALL,
-                RPC_C_IMP_LEVEL_IMPERSONATE,
+                CoInitializeSecurity, CoSetProxyBlanket, CoUninitialize, EOAC_NONE,
+                RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE,
             },
             Ole::{
                 SafeArrayGetDim, SafeArrayGetElement, SafeArrayGetElemsize, SafeArrayGetLBound,
@@ -103,6 +104,74 @@ fn ok(status: i32) -> Result<(), NativeFailure> {
     }
 }
 
+pub(in crate::brightness) fn ordinal_equal(left: &str, right: &str) -> bool {
+    if left.is_ascii() && right.is_ascii() {
+        return left.eq_ignore_ascii_case(right);
+    }
+    let left: Vec<_> = left.encode_utf16().collect();
+    let right: Vec<_> = right.encode_utf16().collect();
+    let (Ok(left_len), Ok(right_len)) = (i32::try_from(left.len()), i32::try_from(right.len()))
+    else {
+        return false;
+    };
+    // SAFETY: both slices remain live and their explicit lengths fit i32.
+    unsafe {
+        CompareStringOrdinal(left.as_ptr(), left_len, right.as_ptr(), right_len, 1) == CSTR_EQUAL
+    }
+}
+
+static POLICY: std::sync::OnceLock<Result<(), NativeFailure>> = std::sync::OnceLock::new();
+
+/// Owns the entry thread's MTA reference until all installed Agent features drain.
+#[must_use]
+pub struct ProcessSecurityApartment {
+    _apartment: Rc<Apartment>,
+}
+
+/// Called by the installed Agent owner before its feature workers start. Keep
+/// the first outcome, including RPC_E_TOO_LATE for an unknown prior policy.
+pub fn initialize_process_security() -> Result<ProcessSecurityApartment, NativeFailure> {
+    let apartment = Apartment::initialize();
+    initialize_policy(&POLICY, || {
+        apartment.as_ref().map_err(|&failure| failure)?;
+        // SAFETY: outbound-only client with zero incoming authentication
+        // services, no server security descriptor, and no custom credentials.
+        // Impersonation is requested only on the worker's own WMI proxies.
+        ok(unsafe {
+            CoInitializeSecurity(
+                null_mut(),
+                0,
+                null(),
+                null(),
+                RPC_C_AUTHN_LEVEL_CALL,
+                windows_sys::Win32::System::Com::RPC_C_IMP_LEVEL_IDENTIFY,
+                null(),
+                EOAC_NONE as u32,
+                null(),
+            )
+        })
+    })?;
+    Ok(ProcessSecurityApartment {
+        _apartment: apartment?,
+    })
+}
+
+/// Workers may read the host's established outcome. Only the entry thread
+/// can initialize the policy before the first COM consumer starts.
+pub fn process_security_status() -> Result<(), NativeFailure> {
+    POLICY
+        .get()
+        .copied()
+        .unwrap_or(Err(NativeFailure::MissingData))
+}
+
+fn initialize_policy(
+    policy: &std::sync::OnceLock<Result<(), NativeFailure>>,
+    initialize: impl FnOnce() -> Result<(), NativeFailure>,
+) -> Result<(), NativeFailure> {
+    *policy.get_or_init(initialize)
+}
+
 // Rc keeps every dependent object in the originating apartment and makes all
 // wrappers !Send + !Sync. The final Release precedes the final CoUninitialize.
 struct Apartment {
@@ -110,7 +179,7 @@ struct Apartment {
 }
 impl Apartment {
     fn initialize() -> Result<Rc<Self>, NativeFailure> {
-        // SAFETY: executed on the dedicated worker; no caller-owned memory.
+        // SAFETY: the caller owns this thread-local MTA reference and balances it on Drop.
         let status = unsafe { CoInitializeEx(null(), COINIT_MULTITHREADED as u32) };
         if status != S_OK && status != S_FALSE {
             return Err(NativeFailure::Status(status));

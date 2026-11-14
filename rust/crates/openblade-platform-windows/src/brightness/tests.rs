@@ -166,6 +166,72 @@ fn snapshot(percent: u8, supported_levels: &[u8]) -> BrightnessSnapshot {
     }
 }
 
+fn query_fixture(
+    rows: Vec<ReadingRow>,
+    last_target: u32,
+) -> Result<BrightnessSnapshot, BrightnessError> {
+    let expected =
+        BrightnessQueryTarget::from_display(&ActiveInternalDisplay::brightness_fixture(PATH, 2))
+            .unwrap();
+    let mut adapter = WmiBrightness::new(Script::new([
+        topology(PATH, 2),
+        Call::Read(Ok(rows)),
+        topology(PATH, last_target),
+    ]));
+    adapter.query(&expected, &budget(&|| false))
+}
+
+#[test]
+fn query_counts_only_valid_matching_rows_and_preserves_full_percent_range() {
+    let levels: Vec<_> = (0..=100).collect();
+    let input: Vec<_> = levels.iter().rev().copied().chain([100, 0, 255]).collect();
+    for percent in [0, 100] {
+        let mut missing = row(INSTANCE, 10, &[10]);
+        missing.instance = None;
+        let rows = vec![
+            missing,
+            row(EXTERNAL, 50, &[50]),
+            row(SIBLING, 8, &[200, 250]),
+            row(INSTANCE, 101, &[100]),
+            row(INSTANCE, percent, &input),
+        ];
+        assert_eq!(query_fixture(rows, 2), Ok(snapshot(percent, &levels)));
+    }
+    assert_eq!(
+        query_fixture(vec![row(EXTERNAL, 50, &[50]), row(INSTANCE, 9, &[255])], 2),
+        Err(BrightnessError::ReadingUnavailable)
+    );
+    assert_eq!(
+        query_fixture(vec![row(INSTANCE, 0, &[0]), row(SIBLING, 0, &[0])], 2),
+        Err(BrightnessError::AmbiguousReading)
+    );
+    assert_eq!(
+        query_fixture(vec![row(INSTANCE, 50, &[50])], 3),
+        Err(BrightnessError::PanelChanged)
+    );
+    assert_eq!(
+        query_fixture((0..65).map(|_| row(INSTANCE, 10, &[10])).collect(), 2),
+        Err(BrightnessError::Native(NativeFailure::InvalidData))
+    );
+}
+
+#[test]
+fn query_monitor_matches_unicode_and_only_strips_an_int32_suffix() {
+    let panel = ActiveInternalDisplay::brightness_fixture(r"\\?\DISPLAY#Écran#ID_A#{guid}", 2);
+    assert!(BrightnessTarget::from_display(&panel).is_err());
+    let target = BrightnessQueryTarget::from_display(&panel).unwrap();
+    for suffix in ["", "_0", "_-2147483648", "_+2147483647", "_  +12\t"] {
+        assert!(target.matches(&format!(r"display\écran\id_a{suffix}")));
+    }
+    for suffix in ["_2147483648", "_-2147483649", "_", "_0xf", "_1_2", "_１２"] {
+        assert!(!target.matches(&format!(r"display\écran\id_a{suffix}")));
+    }
+    let numeric_id = ActiveInternalDisplay::brightness_fixture(r"DISPLAY#Panel#ID_1", 2);
+    let target = BrightnessQueryTarget::from_display(&numeric_id).unwrap();
+    assert!(!target.matches(r"DISPLAY\Panel\ID_1"));
+    assert!(target.matches(r"DISPLAY\Panel\ID_1_0"));
+}
+
 #[test]
 fn malformed_reading_values_matter_only_after_identity_selection() {
     let invalid = |instance: &str, failure| ReadingRow {

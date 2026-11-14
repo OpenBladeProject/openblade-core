@@ -41,8 +41,11 @@ foreach (string line in await File.ReadAllLinesAsync(corpus.FullName))
     Require(response.Version == SessionDisplayIpc.ProtocolVersion && response.RequestId == requestId
         && response.Status == SessionDisplayOperationStatus.Succeeded && response.Error is null,
         "Response envelope mismatch: " + name);
-    Require(response.State.BrightnessPercent is null && response.State.SupportedBrightnessLevels.Count == 0,
-        "Partial display query must not claim brightness: " + name);
+    byte? percent = response.State.BrightnessPercent;
+    IReadOnlyList<byte> levels = response.State.SupportedBrightnessLevels;
+    Require(percent is null ? levels.Count == 0 : percent <= 100 && levels.Count is > 0 and <= 101
+        && levels.All(static level => level <= 100) && levels.SequenceEqual(levels.Distinct().Order()),
+        "Brightness observation is not optional, bounded and normalized: " + name);
     JsonNode? expected = JsonNode.Parse(expectedState.GetRawText());
     JsonNode? actual = JsonSerializer.SerializeToNode(response.State, options);
     Require(JsonNode.DeepEquals(expected, actual), "Complete snapshot mismatch: " + name);
@@ -57,7 +60,7 @@ foreach (string line in await File.ReadAllLinesAsync(corpus.FullName))
     Console.WriteLine("PASS " + name);
 }
 Require(seen.Count > 0, "Corpus must contain query frames.");
-Console.WriteLine($"PASS actual native partial Display query dispatcher frames match managed codec ({seen.Count} cases).");
+Console.WriteLine($"PASS actual native Display query dispatcher frames match managed codec ({seen.Count} cases).");
 
 static void Require(bool condition, string message)
 {

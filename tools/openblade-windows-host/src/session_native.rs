@@ -58,6 +58,10 @@ pub(crate) fn entry_installed(
     {
         return Err(denied("unexpected native Agent token or working directory"));
     }
+    // This standalone Agent owns process-wide COM security before any selected
+    // supplier starts. Cache failures too; only brightness becomes unavailable.
+    #[cfg(feature = "agent-display-query-v1")]
+    let _com_security = openblade_platform_windows::brightness::initialize_process_security();
     installed_monitor::run(origin)
 }
 
