@@ -12,6 +12,7 @@ struct Fixture<'a> {
     cancel_after_profiles: Option<&'a AtomicBool>,
     topology_reads: usize,
     brightness_reads: usize,
+    brightness_owner: Option<SharedBrightness>,
     profile_reads: Vec<HdrState>,
 }
 
@@ -22,6 +23,7 @@ impl<'a> Fixture<'a> {
             cancel_after_profiles: None,
             topology_reads: 0,
             brightness_reads: 0,
+            brightness_owner: None,
             profile_reads: Vec::new(),
         }
     }
@@ -53,13 +55,20 @@ impl DisplayReads for Fixture<'_> {
         canceled: &AtomicBool,
     ) -> io::Result<Result<BrightnessSnapshot, BrightnessError>> {
         self.brightness_reads += 1;
+        if let Some(owner) = &self.brightness_owner {
+            let target = BrightnessQueryTarget::from_display(panel).unwrap();
+            return owner.lock().unwrap().read(target, canceled);
+        }
         if !self.case.starts_with("brightness-") {
             return Ok(Err(BrightnessError::ReadingUnavailable));
         }
         let target = BrightnessQueryTarget::from_display(panel).unwrap();
         let native = QueryWmi::new(self.case, panel);
         let worker = WindowsBrightnessWorker::start_scripted(move || native)?;
-        owned_brightness(worker, target, canceled)
+        let mut owner = BrightnessOwner::with_worker(worker);
+        let result = owner.read(target, canceled);
+        owner.shutdown()?;
+        result
     }
 
     fn refresh(&mut self) -> Result<InternalDisplayRefresh, DisplayReadError> {
@@ -146,6 +155,15 @@ impl DisplayReads for Fixture<'_> {
 
 pub(in super::super) fn fixture_query(case: &str) -> Snapshot {
     observe(&mut Fixture::new(case), &AtomicBool::new(false)).unwrap()
+}
+
+pub(in super::super) fn fixture_query_owned(
+    owner: SharedBrightness,
+    canceled: &AtomicBool,
+) -> io::Result<Snapshot> {
+    let mut reads = Fixture::new("available");
+    reads.brightness_owner = Some(owner);
+    observe(&mut reads, canceled)
 }
 
 #[test]

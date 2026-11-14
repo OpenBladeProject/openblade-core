@@ -66,16 +66,26 @@ fn invalid(error: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> io::Er
 
 trait Supplier {
     fn acquire(&mut self, canceled: Arc<AtomicBool>) -> impl Future<Output = io::Result<Snapshot>>;
+    async fn drain(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
-struct WindowsSupplier;
+#[derive(Default)]
+struct WindowsSupplier {
+    brightness: observation::SharedBrightness,
+}
 impl Supplier for WindowsSupplier {
     async fn acquire(&mut self, canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
         if canceled.load(Ordering::Acquire) {
             return Err(io::ErrorKind::Interrupted.into());
         }
-        tokio::task::spawn_blocking(move || observation::query(&canceled))
+        let brightness = self.brightness.clone();
+        tokio::task::spawn_blocking(move || observation::query(&canceled, brightness))
             .await
             .map_err(|_| io::Error::other("display read worker failed"))?
+    }
+    async fn drain(&mut self) -> io::Result<()> {
+        observation::drain_brightness(self.brightness.clone()).await
     }
 }
 struct Cancellation(Arc<AtomicBool>);
@@ -94,7 +104,7 @@ pub(super) async fn run(
     let _claim = endpoint.claim().map_err(diagnostics::listener)?;
     run_connections(
         &mut stop,
-        &mut WindowsSupplier,
+        &mut WindowsSupplier::default(),
         || async {
             let pipe = endpoint.next_listener().await?;
             pipe.connect().await?;
@@ -140,6 +150,25 @@ async fn origin_invalid(verify: &impl Fn() -> io::Result<()>) -> io::Error {
     }
 }
 async fn run_connections<S, F>(
+    stop: &mut watch::Receiver<bool>,
+    supplier: &mut impl Supplier,
+    accept: impl FnMut() -> F,
+    authorize: impl Fn(&S) -> io::Result<()>,
+    verify: impl Fn() -> io::Result<()>,
+) -> io::Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+    F: Future<Output = io::Result<S>>,
+{
+    let result = serve_connections(stop, supplier, accept, authorize, verify).await;
+    // Every loop exit (Stop, Origin, listener, supplier failure) closes and joins
+    // persistent WMI ownership while the caller still holds its claim/Origin.
+    // Preserve the causal operation error if retirement also reports failure.
+    let drained = supplier.drain().await;
+    result.and(drained)
+}
+
+async fn serve_connections<S, F>(
     stop: &mut watch::Receiver<bool>,
     supplier: &mut impl Supplier,
     mut accept: impl FnMut() -> F,

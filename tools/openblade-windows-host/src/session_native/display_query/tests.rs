@@ -1,4 +1,6 @@
 use super::*;
+#[path = "brightness_lifetime_tests.rs"]
+mod brightness_lifetime;
 use serde_json::{Value, json};
 use std::{
     cell::Cell,
@@ -199,79 +201,6 @@ struct Blocker {
     canceled: Arc<AtomicBool>,
     done: Arc<AtomicBool>,
     gate: Arc<(Mutex<bool>, Condvar)>,
-    cleanup_started: Arc<AtomicBool>,
-    cleanup_gate: Arc<(Mutex<bool>, Condvar)>,
-}
-
-// This boundary stands in for a synchronous WMI call and its proxy/apartment
-// destructor independently. Production queue, reply and shutdown ownership run.
-struct HeldWmi {
-    started: Arc<AtomicBool>,
-    gate: Arc<(Mutex<bool>, Condvar)>,
-    cleanup_started: Arc<AtomicBool>,
-    cleanup_gate: Arc<(Mutex<bool>, Condvar)>,
-}
-impl openblade_platform_windows::brightness::WmiBrightnessNative for HeldWmi {
-    type Method = ();
-    fn topology(
-        &mut self,
-        _: &openblade_platform_windows::brightness::CallBudget<'_>,
-    ) -> Result<
-        openblade_platform_windows::display::InternalDisplayTopology,
-        openblade_platform_windows::brightness::TopologyFailure,
-    > {
-        use openblade_platform_windows::display::scripted::{RefreshTiming, Scenario};
-        Ok(Scenario::Available
-            .topology_with_hdr(false, RefreshTiming::default(), false)
-            .unwrap())
-    }
-    fn active_readings(
-        &mut self,
-        _: &openblade_platform_windows::brightness::CallBudget<'_>,
-        _: usize,
-    ) -> Result<
-        Vec<openblade_platform_windows::brightness::ReadingRow>,
-        openblade_platform_windows::brightness::NativeFailure,
-    > {
-        self.started.store(true, Ordering::Release);
-        let (lock, event) = &*self.gate;
-        let mut released = lock.lock().unwrap();
-        while !*released {
-            released = event.wait(released).unwrap();
-        }
-        Ok(Vec::new())
-    }
-    fn active_methods(
-        &mut self,
-        _: &openblade_platform_windows::brightness::CallBudget<'_>,
-        _: usize,
-    ) -> Result<
-        Vec<openblade_platform_windows::brightness::MethodRow<()>>,
-        openblade_platform_windows::brightness::NativeFailure,
-    > {
-        panic!("query cannot enumerate setters")
-    }
-    fn set_brightness(
-        &mut self,
-        _: (),
-        _: u8,
-        _: &mut openblade_platform_windows::brightness::Submission<'_>,
-    ) -> Result<
-        openblade_platform_windows::brightness::Acknowledgement,
-        openblade_platform_windows::brightness::NativeFailure,
-    > {
-        panic!("query cannot write")
-    }
-}
-impl Drop for HeldWmi {
-    fn drop(&mut self) {
-        self.cleanup_started.store(true, Ordering::Release);
-        let (lock, event) = &*self.cleanup_gate;
-        let mut released = lock.lock().unwrap();
-        while !*released {
-            released = event.wait(released).unwrap();
-        }
-    }
 }
 impl Blocker {
     fn new() -> Self {
@@ -280,8 +209,6 @@ impl Blocker {
             canceled: Arc::default(),
             done: Arc::default(),
             gate: Arc::new((Mutex::new(false), Condvar::new())),
-            cleanup_started: Arc::default(),
-            cleanup_gate: Arc::new((Mutex::new(false), Condvar::new())),
         }
     }
 }
@@ -290,32 +217,13 @@ impl Supplier for Blocker {
         let started = self.started.clone();
         let done = self.done.clone();
         let gate = self.gate.clone();
-        let cleanup_started = self.cleanup_started.clone();
-        let cleanup_gate = self.cleanup_gate.clone();
-        let native_canceled = canceled.clone();
         let work = tokio::task::spawn_blocking(move || {
-            use openblade_platform_windows::{
-                brightness::{BrightnessQueryTarget, WindowsBrightnessWorker},
-                display::{
-                    InternalDisplayTopology,
-                    scripted::{RefreshTiming, Scenario},
-                },
-            };
-            let InternalDisplayTopology::Single(panel) = Scenario::Available
-                .topology_with_hdr(false, RefreshTiming::default(), false)
-                .unwrap()
-            else {
-                panic!("panel")
-            };
-            let target = BrightnessQueryTarget::from_display(&panel).unwrap();
-            let worker = WindowsBrightnessWorker::start_scripted(move || HeldWmi {
-                started,
-                gate,
-                cleanup_started,
-                cleanup_gate,
-            })
-            .unwrap();
-            let _ = observation::owned_brightness(worker, target, &native_canceled)?;
+            started.store(true, Ordering::Release);
+            let (lock, event) = &*gate;
+            let mut released = lock.lock().unwrap();
+            while !*released {
+                released = event.wait(released).unwrap();
+            }
             done.store(true, Ordering::Release);
             Ok(Snapshot::unavailable("Injected blocking read completed."))
         });
@@ -352,8 +260,6 @@ async fn stop_disconnect_deadline_and_origin_loss_retain_owner_until_blocking_re
         let canceled = supplier.canceled.clone();
         let done = supplier.done.clone();
         let gate = supplier.gate.clone();
-        let cleanup_started = supplier.cleanup_started.clone();
-        let cleanup_gate = supplier.cleanup_gate.clone();
         let (mut server, mut client) = tokio::io::duplex(8192);
         client.write_all(&query()).await.unwrap();
         let (signal, mut stop) = watch::channel(false);
@@ -403,10 +309,6 @@ async fn stop_disconnect_deadline_and_origin_loss_retain_owner_until_blocking_re
                 assert!(owned.get());
                 assert!(!done.load(Ordering::Acquire));
                 release(&gate);
-                wait_flag(&cleanup_started).await;
-                assert!(owned.get(), "owner escaped before WMI/COM cleanup");
-                assert!(!done.load(Ordering::Acquire));
-                release(&cleanup_gate);
             },
         );
         assert!(done.load(Ordering::Acquire));
@@ -420,13 +322,11 @@ async fn stop_disconnect_deadline_and_origin_loss_retain_owner_until_blocking_re
 }
 
 #[tokio::test]
-async fn composed_stop_and_origin_loss_join_actual_brightness_cleanup_and_sibling() {
+async fn composed_stop_and_origin_loss_join_blocking_supplier_and_sibling() {
     for origin_loss in [false, true] {
         let mut supplier = Blocker::new();
         let started = supplier.started.clone();
         let gate = supplier.gate.clone();
-        let cleanup_started = supplier.cleanup_started.clone();
-        let cleanup_gate = supplier.cleanup_gate.clone();
         let done = supplier.done.clone();
         let canceled = supplier.canceled.clone();
         let owned = Cell::new(true);
@@ -473,10 +373,6 @@ async fn composed_stop_and_origin_loss_join_actual_brightness_cleanup_and_siblin
                 assert!(owned.get() && sibling_done.get());
                 assert!(!done.load(Ordering::Acquire));
                 release(&gate);
-                wait_flag(&cleanup_started).await;
-                assert!(owned.get());
-                assert!(!done.load(Ordering::Acquire));
-                release(&cleanup_gate);
             },
         );
         assert_eq!(result.is_err(), origin_loss);

@@ -13,7 +13,10 @@ use openblade_platform_windows::{
 use serde::{Deserialize, Serialize};
 use std::{
     io,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -147,7 +150,89 @@ trait DisplayReads {
     ) -> Result<ColorProfileSnapshot, ProfileReadError>;
 }
 
-struct WindowsDisplayReads;
+pub(super) type SharedBrightness = Arc<Mutex<BrightnessOwner>>;
+
+/// The feature owns one native thread/COM connection across requests. Reply
+/// failure is independent of retirement: pending native work stays on this
+/// same owner and makes subsequent brightness reads busy, never replacements.
+#[derive(Default)]
+pub(super) struct BrightnessOwner {
+    worker: Option<WindowsBrightnessWorker>,
+    closed: bool,
+}
+
+impl BrightnessOwner {
+    pub(super) fn read(
+        &mut self,
+        target: BrightnessQueryTarget,
+        canceled: &AtomicBool,
+    ) -> io::Result<Result<BrightnessSnapshot, BrightnessError>> {
+        if self.closed {
+            return Err(io::Error::other("brightness owner is closed"));
+        }
+        if self.worker.is_none() {
+            if let Err(error) = process_security_status() {
+                return Ok(Err(BrightnessError::Native(error)));
+            }
+            self.worker =
+                match WindowsBrightnessWorker::start() {
+                    Ok(worker) => Some(worker),
+                    Err(_) => return Ok(Err(BrightnessError::Native(
+                        openblade_platform_windows::brightness::NativeFailure::WorkerDisconnected,
+                    ))),
+                };
+        }
+        let result = self
+            .worker
+            .as_mut()
+            .expect("owned worker")
+            .read_query_target(target, || canceled.load(Ordering::Acquire));
+        // An existing worker's lost reply indicates thread failure, unlike an
+        // ordinary WMI/COM error. Stop the feature and positively join it rather
+        // than hide a panic as permanent partial availability or replace it.
+        if matches!(
+            result,
+            Err(BrightnessError::Native(
+                openblade_platform_windows::brightness::NativeFailure::WorkerDisconnected,
+            ))
+        ) {
+            return Err(io::Error::other("brightness worker disconnected"));
+        }
+        Ok(result)
+    }
+
+    pub(super) fn shutdown(&mut self) -> io::Result<()> {
+        self.closed = true;
+        match self.worker.take() {
+            Some(worker) => worker.shutdown(),
+            None => Ok(()),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_worker(worker: WindowsBrightnessWorker) -> Self {
+        Self {
+            worker: Some(worker),
+            closed: false,
+        }
+    }
+}
+
+pub(super) async fn drain_brightness(owner: SharedBrightness) -> io::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        // A poisoned presentation-side lock must not skip the owned join.
+        owner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .shutdown()
+    })
+    .await
+    .map_err(|_| io::Error::other("brightness owner drain failed"))?
+}
+
+struct WindowsDisplayReads {
+    brightness: SharedBrightness,
+}
 
 impl DisplayReads for WindowsDisplayReads {
     fn brightness(
@@ -159,15 +244,10 @@ impl DisplayReads for WindowsDisplayReads {
             Ok(target) => target,
             Err(error) => return Ok(Err(error)),
         };
-        if let Err(error) = process_security_status() {
-            return Ok(Err(BrightnessError::Native(error)));
-        }
-        match WindowsBrightnessWorker::start() {
-            Ok(worker) => owned_brightness(worker, target, canceled),
-            Err(_) => Ok(Err(BrightnessError::Native(
-                openblade_platform_windows::brightness::NativeFailure::WorkerDisconnected,
-            ))),
-        }
+        self.brightness
+            .lock()
+            .map_err(|_| io::Error::other("brightness owner state failed"))?
+            .read(target, canceled)
     }
 
     fn refresh(&mut self) -> Result<InternalDisplayRefresh, DisplayReadError> {
@@ -187,21 +267,8 @@ impl DisplayReads for WindowsDisplayReads {
     }
 }
 
-// Called only on the owned blocking supplier. A timed-out reply is not COM
-// retirement: shutdown closes admission, cancels pending work, and joins the
-// actual worker including proxy/apartment destruction before returning.
-pub(super) fn owned_brightness(
-    mut worker: WindowsBrightnessWorker,
-    target: BrightnessQueryTarget,
-    canceled: &AtomicBool,
-) -> io::Result<Result<BrightnessSnapshot, BrightnessError>> {
-    let result = worker.read_query_target(target, || canceled.load(Ordering::Acquire));
-    worker.shutdown()?;
-    Ok(result)
-}
-
-pub(super) fn query(canceled: &AtomicBool) -> io::Result<Snapshot> {
-    observe(&mut WindowsDisplayReads, canceled)
+pub(super) fn query(canceled: &AtomicBool, brightness: SharedBrightness) -> io::Result<Snapshot> {
+    observe(&mut WindowsDisplayReads { brightness }, canceled)
 }
 
 fn check_cancellation(canceled: &AtomicBool) -> io::Result<()> {
@@ -371,4 +438,4 @@ fn project(
 #[path = "observation_tests.rs"]
 mod tests;
 #[cfg(test)]
-pub(super) use tests::fixture_query;
+pub(super) use tests::{fixture_query, fixture_query_owned};
