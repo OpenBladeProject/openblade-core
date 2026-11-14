@@ -14,6 +14,7 @@ public sealed partial class ServiceControlRuntime
     private long explicitUnclassifiedOverrideGeneration = -1;
     private long consumedUnclassifiedBoundaryGeneration = -1;
     private bool retainedNonPowerWriteBlock;
+    private long powerOnlyWriteBlockRevision = -1;
 
     // Capture failures are not AC evidence. Native submission uses the same
     // fresh Windows callback, so this presentation fact grants no write itself.
@@ -153,9 +154,9 @@ public sealed partial class ServiceControlRuntime
     private PowerSource EffectiveControlPowerSource(ServiceStatusSnapshot current) =>
         IsUnclassifiedExternalContext ? PowerSource.ExternalUnknown : current.ActivePowerSource;
 
-    private bool NonPowerClassificationWriteBlock(ServiceStatusSnapshot current) =>
+    private bool HasExplicitNonPowerWriteBlock(ServiceStatusSnapshot current) =>
         retainedNonPowerWriteBlock
-        || current.WritesBlocked && current.ObservationReason != DeviceObservationReason.RetainedPowerSource
+        || current.WritesBlocked && current.ObservationReason is DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls
         || ownsHyperBoost && (current.WritesBlocked || IsUnclassifiedExternalContext)
         || hyperBoostJournalSafetyBlock || hyperBoostRestorePending
         || pendingIndeterminateHyperBoostEntryIntent is not null || pendingIndeterminateHyperBoostExitIntent is not null
@@ -163,14 +164,53 @@ public sealed partial class ServiceControlRuntime
         || laptopControlExecutor.RequiresReconciliation
         || unexpectedExitRecoveryDeferredForUserConfiguration && current.WritesBlocked;
 
+    private bool NonPowerClassificationWriteBlock(ServiceStatusSnapshot current) =>
+        HasExplicitNonPowerWriteBlock(current)
+        || current.WritesBlocked && current.ObservationReason != DeviceObservationReason.RetainedPowerSource
+            && current.Revision != Interlocked.Read(ref powerOnlyWriteBlockRevision);
+
+    private void PublishCompletedUnresolvedPowerClassification(CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        ServiceStatusSnapshot current = GetStatus();
+        bool nonPowerBlock = NonPowerClassificationWriteBlock(current);
+        PowerSource presentation = PowerSourceForStatus(PowerSource.ExternalUnknown);
+        bool powerBlock = !IsUnclassifiedExternalContext || !HasFreshExternalPowerPresence || !current.DeviceVerified;
+        PublishIfChanged(current with
+        {
+            ActivePowerSource = presentation,
+            ObservationReason = current.ObservationReason is DeviceObservationReason.CheckingConnection or DeviceObservationReason.RefreshingControls
+                ? current.ObservationReason
+                : presentation == PowerSource.ExternalUnknown ? DeviceObservationReason.None : DeviceObservationReason.RetainedPowerSource,
+            WritesBlocked = nonPowerBlock || powerBlock,
+            Message = nonPowerBlock ? current.Message
+                : presentation == PowerSource.ExternalUnknown ? UnclassifiedExternalPowerMessage : TransientExternalPowerMessage,
+        }, powerOnlyWriteBlock: powerBlock && !nonPowerBlock);
+    }
+
     private CustomPerformanceSettings? ResolveOrdinaryShortcutCustomIntent(ServiceStatusSnapshot current)
     {
-        CustomPerformanceSettings settings = Automation.PerformanceOverride?.CustomPerformance
-            ?? current.ConfirmedState?.CustomPerformance ?? CustomPerformanceSettings.Default;
-        // Cycling is a new ordinary request. It never inherits advanced tuning
-        // or selects a Full/limited power-profile slot for its Custom levels.
-        settings = settings with { GpuClockOffsets = null };
-        return current.Capabilities?.CustomPerformance?.Supports(settings) == true ? settings : null;
+        CustomPerformanceSettings? explicitIntent = Automation.PerformanceOverride?.CustomPerformance;
+        CustomPerformanceSettings? confirmed = current.ConfirmedState?.CustomPerformance;
+        CustomPerformanceSettings settings;
+        if (explicitIntent is not null)
+        {
+            settings = explicitIntent with { GpuClockOffsets = null };
+        }
+        else if (confirmed is not null
+            && current.Capabilities?.CustomPerformance?.Supports(confirmed with { GpuClockOffsets = null }) == true)
+        {
+            settings = confirmed with { GpuClockOffsets = null };
+        }
+        else
+        {
+            settings = CustomPerformanceSettings.Default;
+        }
+        // A shortcut requests an ordinary tuple, never advanced tuning or a
+        // power-profile slot. Explicit unsupported intent remains rejected.
+        return current.Capabilities?.CustomPerformance?.Supports(settings) == true
+            && (!settings.MaximumFans || current.ConfirmedState?.Fans == FanMode.Automatic)
+                ? settings : null;
     }
 
 }

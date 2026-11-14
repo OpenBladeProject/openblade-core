@@ -1149,14 +1149,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 ? UnavailableLaptopReason
                 : ActivePowerSource == PowerSource.ExternalUnknown
                     ? PowerSourcePresentation.Label(ActivePowerSource)
-                    : CanControlHardware || IsRetainedPowerSourceRecheck(latestStatus)
+                    : CanControlHardware
                         ? TrayText.Get("Ready")
                         : TrayText.Get("Controls unavailable");
 
     public bool IsReadinessReady => IsConnected
         && latestStatus?.DeviceVerified == true
         && !IsCheckingLaptopConnection(latestStatus)
-        && (CanControlHardware || IsRetainedPowerSourceRecheck(latestStatus));
+        && CanControlHardware;
 
     public bool IsReadinessChecking => IsConnected
         && IsCheckingLaptopConnection(latestStatus);
@@ -1166,7 +1166,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             || HasUnverifiedControllerAdvisory
             || latestStatus?.DeviceVerified == true
                 && !IsCheckingLaptopConnection(latestStatus)
-                && !IsRetainedPowerSourceRecheck(latestStatus)
                 && !CanControlHardware);
 
     public bool IsReadinessError => !IsConnected
@@ -9250,11 +9249,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (status.ActivePowerSource == PowerSource.ExternalUnknown)
         {
             return PowerSourcePresentation.Label(status.ActivePowerSource);
-        }
-
-        if (IsRetainedPowerSourceRecheck(status))
-        {
-            return TrayText.Get("Ready");
         }
 
         return status.WritesBlocked

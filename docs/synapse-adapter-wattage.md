@@ -102,7 +102,7 @@ adapter helper cannot classify wattage. This establishes an existing command
 path; it does not establish charger type, sufficient wattage, firmware recovery,
 or physical validation of this admission.
 
-OpenBlade retains `Unknown` classification and the failed raw query diagnostic.
+OpenBlade keeps current classification unavailable and retains the failed raw query diagnostic. Initial unclassified AC displays `Unknown`; a previously confirmed source label may be retained for presentation with `RetainedPowerSource`, which grants no advanced or profile authority.
 The separately source-reviewed
 `SupportsOrdinaryThermalControlOnUnclassifiedExternalPower` capability permits
 only existing ordinary performance, Fixed/host-curve targets, Custom CPU/GPU

@@ -2675,8 +2675,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
         if (IsUnclassifiedExternalContext && !HasFreshExternalPowerPresence)
         {
-            try { _ = CaptureControlPowerSource(); }
-            catch { ClearLastFanCurveTargets(); return; }
+            if (!await operationGate.WaitAsync(0, cancellationToken).ConfigureAwait(false)) { return; }
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try { _ = CaptureControlPowerSource(); }
+                catch { ClearLastFanCurveTargets(); return; }
+            }
+            finally { operationGate.Release(); }
         }
         ServiceStatusSnapshot snapshot = GetStatus();
         FanControlSettings settings = snapshot.DesiredState.FanControl
@@ -12014,7 +12020,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     Message = statusPowerSource == PowerSource.ExternalUnknown
                         ? UnclassifiedExternalPowerMessage
                         : TransientExternalPowerMessage,
-                });
+                }, powerOnlyWriteBlock: !retainedNonPowerWriteBlock
+                    && (!IsUnclassifiedExternalContext || !HasFreshExternalPowerPresence || !current.DeviceVerified));
                 return;
             }
 
@@ -13536,13 +13543,6 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         ServiceStatusSnapshot current = GetStatus();
         LightingSettings? requested = pendingLightingRestore;
         bool lifecycleRestore = pendingLightingRestoreFromLifecycle;
-        if (IsUnclassifiedExternalContext && !lifecycleRestore
-            && !(explicitLightingOwnershipActive && requested is not null && Automation.LightingOverride?.Value == requested))
-        {
-            // Startup/profile fallback is retained data, not an explicit
-            // Unknown-power action or a captured owned lifecycle restoration.
-            return true;
-        }
         if (requested is null
             && preferences.AlwaysOverrideExternalLightingChanges
             && current.ExternalChanges.Contains(DeviceSubsystem.Lighting))
@@ -13613,6 +13613,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
         }
 
+        if (IsUnclassifiedExternalContext && !lifecycleRestore
+            && !(explicitLightingOwnershipActive && requested is not null && Automation.LightingOverride?.Value == requested))
+        {
+            // Startup/profile fallback is retained data, not an explicit
+            // Unknown-power action or a captured owned lifecycle restoration.
+            return true;
+        }
         cancellationToken.ThrowIfCancellationRequested();
         lightingRecoveryPauseMessage = null;
         pendingLightingRestore = null;
@@ -16745,6 +16752,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         AdapterPowerClassificationDiagnosticKind.ConflictingKnownReplies,
                         ControlOperationStatus.Blocked,
                         "Power adapter classification observed conflicting known read-only replies; control writes remain blocked.");
+                    PublishCompletedUnresolvedPowerClassification(cancellationToken);
                     return PowerSource.ExternalUnknown;
                 }
 
@@ -16772,6 +16780,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     diagnosticKind,
                     ControlOperationStatus.Blocked,
                     detail);
+                PublishCompletedUnresolvedPowerClassification(cancellationToken);
                 return PowerSource.ExternalUnknown;
             }
 
@@ -16806,6 +16815,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             // A known Battery/legacy reply contradicting Windows AC also
             // closes the exception; it is not an unavailable getter.
             Volatile.Write(ref externalClassificationUnavailable, 0);
+            if (result == PowerSource.ExternalUnknown)
+            {
+                PublishCompletedUnresolvedPowerClassification(cancellationToken);
+            }
             return result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -17419,7 +17432,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             FirmwareCompatibility = deviceProvider.FirmwareCompatibility,
             DisplayBrightnessHidAvailability =
                 displayBrightnessHidController.GetAvailability(),
-        });
+        }, powerOnlyWriteBlock: !powerSourceConfirmed && !(IsUnclassifiedExternalContext && HasFreshExternalPowerPresence)
+            && !hyperBoostJournalSafetyBlock && !deferredHyperBoostRecovery && !ownsHyperBoost);
     }
 
     private void PublishVerifiedDeviceObservationFailure(
@@ -18532,6 +18546,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         string message,
         bool deviceVerified = false)
     {
+        retainedNonPowerWriteBlock = true;
         bool wasDeviceVerified = GetStatus().DeviceVerified;
         if (!deviceVerified)
         {
@@ -18886,7 +18901,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
         bool stopScope = BatterySaverFanStopRuntimePolicy.IsInScope(
             Automation.Profiles.Battery.StopFansInBatterySaver, capabilities,
-            Automation.PowerSource, desired.Performance.Value);
+            Volatile.Read(ref windowsPowerKind) == 1 ? PowerSource.Battery : PowerSource.ExternalUnknown,
+            desired.Performance.Value);
         FanMode? stopMode = batterySaverFanStopPolicy.Resolve(stopScope,
             BatterySaverFanStopThermalSampleIsCool(), OwnsBatterySaverFanStop);
         if (stopMode is { } operationalMode)
@@ -20409,7 +20425,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     {
         DesiredDeviceState ordinary = ResolveAutomationDesired(
             current.ConfirmedState ?? UnknownConfirmedState, current.Capabilities);
-        return current.ActivePowerSource == PowerSource.Battery
+        return Volatile.Read(ref windowsPowerKind) == 1
+            && current.ActivePowerSource == PowerSource.Battery
             && BatterySaverFanStopRuntimePolicy.IsInScope(
                 Automation.Profiles.Battery.StopFansInBatterySaver, current.Capabilities,
                 Automation.PowerSource, ordinary.Performance.Value);
@@ -20514,7 +20531,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     private async Task MaintainBatterySaverFanStopAsync(CancellationToken token)
     {
-        if (!ConfigurationIsAdmitted || lowPowerGate.IsActive || thermalConvergenceShutdown)
+        if (!ConfigurationIsAdmitted && !OwnsBatterySaverFanStop || lowPowerGate.IsActive || thermalConvergenceShutdown)
         {
             return;
         }
@@ -20526,6 +20543,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
         try
         {
+            PowerSource? freshOwnedSource = OwnsBatterySaverFanStop
+                ? await ResolveCurrentPowerSourceAsync(token).ConfigureAwait(false) : null;
             ServiceStatusSnapshot current = GetStatus();
             if (!BatterySaverFanStopInScope(current) && !OwnsBatterySaverFanStop)
             {
@@ -20533,7 +20552,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 RefreshBatterySaverFanStopReadInterest();
                 return;
             }
-            await RefreshBatterySaverFanStopThermalSampleAsync(token).ConfigureAwait(false);
+            if (BatterySaverFanStopInScope(current))
+            {
+                await RefreshBatterySaverFanStopThermalSampleAsync(token).ConfigureAwait(false);
+            }
             DesiredDeviceState desired = ResolveHardwareDesired(
                 current.ConfirmedState ?? UnknownConfirmedState);
             bool needsStop = desired.Fans.Value == FanMode.Stop
@@ -20545,7 +20567,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 && !current.ExternalChanges.Contains(DeviceSubsystem.Fans))
             {
                 await RefreshControllerPresenceAndRelinquishLightingAsync(token).ConfigureAwait(false);
-                await ApplyBatterySaverFanStopIntentAsync(current, token).ConfigureAwait(false);
+                await ApplyBatterySaverFanStopIntentAsync(current, token,
+                    releaseOwned: needsRelease, expectedPowerSource: freshOwnedSource).ConfigureAwait(false);
             }
             PublishIfChanged(GetStatus());
         }
@@ -20556,16 +20579,28 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     }
 
     private Task<ControlOperationResult> ApplyBatterySaverFanStopIntentAsync(
-        ServiceStatusSnapshot current, CancellationToken token, Func<bool>? stillControlsSession = null) =>
-        ApplyScopedIntentAsync(DeviceSubsystem.Fans, current.ActivePowerSource,
+        ServiceStatusSnapshot current, CancellationToken token, Func<bool>? stillControlsSession = null,
+        bool releaseOwned = false, PowerSource? expectedPowerSource = null) =>
+        ApplyScopedIntentAsync(DeviceSubsystem.Fans, expectedPowerSource ?? EffectiveControlPowerSource(current),
             (coordinator, desired, cancellationToken) => coordinator.ApplyRecoveryFanControlOutcomeAsync(
                 desired.FanControl ?? FanControlSettings.FromLegacy(desired.Fans.Value), cancellationToken,
                 initialStateBlockReason: observed => desired.Fans.Value == FanMode.Stop
                     && (observed.Performance != PerformancePreset.BatterySaver
                         || GetStatus().ExternalChanges.Contains(DeviceSubsystem.Performance))
                     ? "Fan stop requires independently confirmed Battery Saver performance without external thermal drift."
-                    : null), token, stillControlsSession: stillControlsSession,
-            thermalExecutionOptions: new ScopedThermalExecutionOptions([DeviceSubsystem.Fans]));
+                    : null), token,
+            stageDesired: releaseOwned ? desired => desired with
+            {
+                Fans = desired.Fans with { Value = FanMode.Automatic },
+                FanControl = FanControlSettings.Default,
+            } : null,
+            stillControlsSession: stillControlsSession,
+            thermalExecutionOptions: new ScopedThermalExecutionOptions([DeviceSubsystem.Fans],
+                additionalWriteBlockReason: releaseOwned
+                    ? () => OwnsBatterySaverFanStop ? null : "The prior owned Battery Saver stop changed before Auto handback."
+                    : null,
+                authorityPurpose: releaseOwned ? ScopedThermalAuthorityPurpose.PriorAuthorityCleanup
+                    : ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent));
 
     private bool CanMaintainFanCurve(
         ServiceStatusSnapshot current,
@@ -20578,7 +20613,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             && !fanStopController.HoldsAutomatic
             && CurrentPowerContextMatchesAutomation(EffectiveControlPowerSource(current))
             && current.Capabilities is { } curveCapabilities
-            && ManualFanCurveCapabilityPolicy.SupportsPowerSource(curveCapabilities, EffectiveControlPowerSource(current), current.ExternalPowerPresent)
+            && ManualFanCurveCapabilityPolicy.SupportsPowerSource(curveCapabilities, EffectiveControlPowerSource(current), HasFreshExternalPowerPresence)
             && ManualFanCurveCapabilityPolicy.SupportsPreset(curveCapabilities, current.DesiredState.Performance.Value)
             && currentSettings == settings
             && (!curveCapabilities.ReportsPerformanceWithManualFans
@@ -21048,17 +21083,22 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     private void PublishIfChanged(
         ServiceStatusSnapshot candidate,
-        bool retainPerformanceShortcutPreview = true)
-        => PublishStatusUpdate(previous => retainPerformanceShortcutPreview
+        bool retainPerformanceShortcutPreview = true,
+        bool? powerOnlyWriteBlock = null)
+        => PublishStatusUpdateWithPowerBlock(previous => retainPerformanceShortcutPreview
             ? candidate with
             {
                 PerformanceShortcutPreview =
                     previous.PerformanceShortcutPreview,
             }
-            : candidate);
+            : candidate, powerOnlyWriteBlock);
 
-    private void PublishStatusUpdate(
-        Func<ServiceStatusSnapshot, ServiceStatusSnapshot> update)
+    private void PublishStatusUpdate(Func<ServiceStatusSnapshot, ServiceStatusSnapshot> update) =>
+        PublishStatusUpdateWithPowerBlock(update, null);
+
+    private void PublishStatusUpdateWithPowerBlock(
+        Func<ServiceStatusSnapshot, ServiceStatusSnapshot> update,
+        bool? powerOnlyWriteBlock)
     {
         ServiceStatusSnapshot? published = null;
         bool publishToSubscribers = false;
@@ -21108,12 +21148,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             {
                 AdvanceFanAuthorityEpoch();
             }
+            bool carriesOnlyPowerBlock = candidate.WritesBlocked && !HasExplicitNonPowerWriteBlock(candidate)
+                && (powerOnlyWriteBlock ?? (previous.Revision == Interlocked.Read(ref powerOnlyWriteBlockRevision)));
             if (Equivalent(previous, candidate))
             {
+                Interlocked.Exchange(ref powerOnlyWriteBlockRevision, carriesOnlyPowerBlock ? previous.Revision : -1);
                 return;
             }
 
             published = candidate with { Revision = previous.Revision + 1 };
+            Interlocked.Exchange(ref powerOnlyWriteBlockRevision, carriesOnlyPowerBlock ? published.Revision : -1);
             Volatile.Write(ref status, published);
             publishToSubscribers = !Equivalent(
                 previous,

@@ -8146,11 +8146,12 @@ public sealed partial class MainViewModelTests
             Message = "Power adapter classification is temporarily unavailable; the last confirmed power source is retained and control writes are blocked.",
         });
         await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
-        Assert.Equal("Ready", viewModel.ControlAccessStatus);
-        Assert.Equal("Ready", viewModel.ProfileStateLabel);
-        Assert.True(viewModel.IsReadinessReady);
-        Assert.False(viewModel.IsReadinessWarning);
+        Assert.Equal("Controls unavailable", viewModel.ControlAccessStatus);
+        Assert.Equal("Controls unavailable", viewModel.ProfileStateLabel);
+        Assert.False(viewModel.IsReadinessReady);
+        Assert.True(viewModel.IsReadinessWarning);
         Assert.False(viewModel.CanControlHardware);
+        Assert.True(viewModel.HasHardwareControlUnavailableMessage);
         Assert.Equal("Low-power adapter", viewModel.TroubleshootingPowerSourceStatus);
 
         client.Publish(CreateStatus(verified: true, blocked: false) with
@@ -8421,9 +8422,14 @@ public sealed partial class MainViewModelTests
             Capabilities = DeviceCapabilities.Unavailable(),
         });
         await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls
-            && viewModel.IsReadinessReady && !viewModel.CanControlHardware);
+            && viewModel.IsReadinessWarning && !viewModel.CanControlHardware);
 
         Assert.False(viewModel.CanRequestHardwareControl);
+        Assert.False(viewModel.IsReadinessReady);
+        Assert.True(viewModel.IsReadinessWarning);
+        Assert.Equal("Controls unavailable", viewModel.ControlAccessStatus);
+        Assert.Equal("Controls unavailable", viewModel.ProfileStateLabel);
+        Assert.True(viewModel.HasHardwareControlUnavailableMessage);
         Assert.True(viewModel.IsPerformanceVisible);
         Assert.True(viewModel.IsFanControlVisible);
         Assert.NotEmpty(viewModel.AvailablePerformancePresets);
