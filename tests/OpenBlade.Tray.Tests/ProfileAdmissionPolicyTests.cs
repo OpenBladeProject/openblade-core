@@ -5,6 +5,31 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class ProfileAdmissionPolicyTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MaximumRequiresAdvertisedModeForNewOrRetainedProfile(bool retained)
+    {
+        ProfileSet current = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet draft = current with
+        {
+            PluggedIn = current.PluggedIn with { Fans = FanMode.Maximum },
+        };
+        if (retained)
+        {
+            current = draft;
+        }
+        DeviceCapabilities capabilities = SupportedCapabilities() with
+        {
+            FanModes = new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve },
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(3400, 5200, 100),
+            },
+        };
+        Assert.False(ProfileAdmissionPolicy.Supports(draft, current, capabilities));
+    }
+
     [Fact]
     public void RequiresConfirmedCapabilities()
     {

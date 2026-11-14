@@ -322,14 +322,17 @@ internal sealed partial class ExperimentalBladePort
             bool readTargets = targets.HasValue;
             (int First, int Second) saved = !readTargets ? default : await ReadFanTargetsAsync(
                 cancellationToken,
-                targets.HasValue && (baseline.Fans == FanMode.Fixed || UsesDynamicExperimentalFanRange(model))
+                targets.HasValue && baseline.Fans == FanMode.Fixed
                     ? curveUpdate ? sourceEnvelope : activeRange
                     : null, baseline.Performance, readDynamicRange: false).ConfigureAwait(false);
             policy.Record("Fans", "Baseline", "Confirmed", requested: targets?.ToString() ?? "Automatic",
                 confirmed: !readTargets ? $"{baseline.Performance}/{baseline.Fans};Targets=NotQueried"
                     : $"{baseline.Performance}/{baseline.Fans};Fan1TargetRpm={saved.First};Fan2TargetRpm={saved.Second}");
+            // Matching manual state is observation, not proof of service ownership.
+            // Explicit manual actions must submit their admitted targets. Only
+            // already-owned typed curve maintenance may complete without a SET.
             if (targets is null && baseline.Fans == FanMode.Automatic
-                || targets == saved && baseline.Fans == FanMode.Fixed)
+                || curveUpdate && targets == saved && baseline.Fans == FanMode.Fixed)
             {
                 return saved;
             }
@@ -442,9 +445,10 @@ internal sealed partial class ExperimentalBladePort
                     // After the first zone write, the untouched zone can still
                     // hold the prior preset's target. Tuple equality proves the
                     // expected staged state until both writes are complete.
-                    FanSpeedRange? readbackRange = UsesDynamicExperimentalFanRange(model)
-                        ? projectCurve ? sourceEnvelope : freshRange : null;
-                    if (await ReadFanTargetsAsync(cancellationToken, readbackRange, baseline.Performance,
+                    // The untouched target can belong to another reviewed preset
+                    // after an Automatic transition. Its exact saved value remains
+                    // independently confirmed; only new SETs use the fresh range.
+                    if (await ReadFanTargetsAsync(cancellationToken, expectedPerformance: baseline.Performance,
                         readDynamicRange: false).ConfigureAwait(false) != saved)
                     {
                         throw new IOException("Independent fan-target readback did not confirm both zones.");

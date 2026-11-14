@@ -2065,6 +2065,49 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task LegacyMaximum5000ProfilePreservesSavedAliasAndAppliesTypedMaximum()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            FanSpeedRange = new(2000, 5000, 100),
+        };
+        TestContext context = CreateContext(providerAvailable: true, initialPowerSource: PowerSource.Battery,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities));
+        context.Device.Capabilities = capabilities;
+        context.Device.AdapterPowerState = AdapterPowerState.Battery;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.BatterySaver,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(default);
+        var alias = new FanControlSettings(FanMode.Fixed, 5400, ManualFanCurve.Default);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles!;
+        profiles = profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { Fans = FanMode.Maximum, FanControl = alias },
+        };
+        string savedAliasJson = JsonSerializer.Serialize(alias);
+        await context.Runtime.UpdateProfilesAsync(profiles, default);
+        context.Device.FanControlWrites.Clear();
+        context.Device.AdapterPowerState = AdapterPowerState.FullPower280W;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.HandlePowerSourceChangedAsync(default);
+
+        ServiceStatusSnapshot current = context.Runtime.GetStatus();
+        Assert.Equal(FanMode.Maximum, current.DesiredState.Fans.Value);
+        Assert.Equal(FanMode.Maximum, current.DesiredState.FanControl!.Mode);
+        Assert.Contains(context.Device.FanControlWrites, value => value.Mode == FanMode.Maximum);
+        Assert.DoesNotContain(context.Device.FanControlWrites,
+            value => value.Mode == FanMode.Fixed && value.FixedSpeedRpm == 5400);
+        BatteryConfiguration saved = await context.Store.LoadAsync(default);
+        Assert.Equal(FanMode.Maximum, saved.Profiles.PluggedIn.Fans);
+        Assert.Equal(savedAliasJson, JsonSerializer.Serialize(saved.Profiles.PluggedIn.FanControl));
+        Assert.Equal(5000, capabilities.GetFanIntentSpeedRange(PerformancePreset.Balanced)!.MaximumRpm);
+    }
+
+    [Fact]
     public async Task MaintainFanCurve_CachesBackendAppliedTargetsSoLaterRangeGrowthIsNotMissed()
     {
         (TestContext context, _, _) = await CreateOwnedManualFanCurveContextAsync();

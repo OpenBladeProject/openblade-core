@@ -65,6 +65,7 @@ internal static class ProfileAdmissionPolicy
             || capabilities.CustomPerformance?.Supports(draft.CustomPerformance) == true)
         && (ThermalCombinationSupported(draft.Performance, draft.Fans, capabilities)
             || (draft.Fans == current.Fans
+                && draft.Fans != FanMode.Maximum
                 && !capabilities.FanModes.Contains(draft.Fans)))
         && (capabilities.SupportsIndependentLightingControls
             && (draft.Lighting.IndependentControls is not null || !draft.Lighting.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0)
@@ -79,9 +80,11 @@ internal static class ProfileAdmissionPolicy
         DeviceCapabilities capabilities) =>
         fans == FanMode.Automatic
         || (fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
+            && capabilities.FanModes.Contains(fans)
             && capabilities.FanSpeedRangesByPerformancePreset.Count > 0
             && capabilities.GetFanSpeedRange(performance) is not null)
-        || (capabilities.FanSpeedRangesByPerformancePreset.Count == 0
+        || (capabilities.FanModes.Contains(fans)
+            && capabilities.FanSpeedRangesByPerformancePreset.Count == 0
             && (capabilities.SupportsDirectManualFanTransitions
                 || performance is PerformancePreset.Balanced
                     or PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced)

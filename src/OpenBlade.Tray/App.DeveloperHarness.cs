@@ -1977,7 +1977,6 @@ public partial class App
                     [PerformancePreset.Creator] = new(3900, 5500, 100),
                 } : new Dictionary<PerformancePreset, FanSpeedRange>(),
             ReportsPerformanceWithManualFans = legacyBase,
-            SupportsManualFansOnLimitedPower = legacyBase,
             SupportsBreathingColorSelection = false,
             SupportsWaveDirectionSelection = false,
         };

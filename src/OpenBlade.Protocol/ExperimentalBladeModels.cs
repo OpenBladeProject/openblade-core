@@ -63,8 +63,7 @@ internal static class ExperimentalBladeModels
                     "SynapseSourceBackedWithoutPhysicalValidation", sources),
                 .. (model.ProductId == 0x0245
                     ? new ExperimentalFeatureEvidence[] { new("CustomGpuWattageLevels0To2",
-                        "SynapseSourceBackedWithoutPhysicalValidation", sources),
-                        new("ManualFanEnvelope3700To5300Step100", "SourceDerivedOuterEnvelopeRequiresFreshFirmwareIntersection", sources) }
+                        "SynapseSourceBackedWithoutPhysicalValidation", sources) }
                     : []),
                 .. (ExperimentalBladePort.SupportsIndependentLighting(model)
                     ? new ExperimentalFeatureEvidence[] { new(model.ProductId is 0x0246 or 0x0268 or 0x028A

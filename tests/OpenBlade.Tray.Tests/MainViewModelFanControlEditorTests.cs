@@ -416,8 +416,14 @@ public sealed partial class MainViewModelTests
         });
         Assert.True(viewModel.IsFanControlOperationInProgress);
         Assert.Equal(requested, viewModel.CurrentFanControlSettings);
-        Assert.Same(requestedCpu, viewModel.CpuFanCurveEditorPoints);
-        Assert.Same(requestedGpu, viewModel.GpuFanCurveEditorPoints);
+        Assert.NotSame(requestedCpu, viewModel.CpuFanCurveEditorPoints);
+        Assert.NotSame(requestedGpu, viewModel.GpuFanCurveEditorPoints);
+        Assert.All(viewModel.CpuFanCurveEditorPoints.Concat(viewModel.GpuFanCurveEditorPoints), point =>
+        {
+            Assert.Equal(2000, point.MinimumRpm);
+            Assert.Equal(5000, point.MaximumRpm);
+            Assert.Equal(100, point.StepRpm);
+        });
 
         client.CompleteMutation();
         await apply;

@@ -24,6 +24,7 @@ public sealed class ProfileValidationPolicy
         ArgumentNullException.ThrowIfNull(supportedLightingEffects);
         SupportedPerformanceFanCombinations =
             new HashSet<PerformanceFanCombination>(supportedPerformanceFanCombinations);
+        SupportedFanModes = SupportedPerformanceFanCombinations.Select(pair => pair.Fans).ToHashSet();
         SupportedLightingEffects = new HashSet<LightingEffect>(supportedLightingEffects);
         CustomPerformance = customPerformance is null
             ? null
@@ -49,6 +50,8 @@ public sealed class ProfileValidationPolicy
     }
 
     public IReadOnlySet<PerformanceFanCombination> SupportedPerformanceFanCombinations { get; }
+
+    public IReadOnlySet<FanMode> SupportedFanModes { get; init; }
 
     public IReadOnlySet<LightingEffect> SupportedLightingEffects { get; }
 
@@ -146,6 +149,7 @@ public sealed class ProfileValidationPolicy
             batteryCapabilities.FanSpeedRangesByPerformancePreset)
         {
             SupportsIndependentLightingControls = lightingCapabilities.SupportsIndependentLightingControls,
+            SupportedFanModes = new HashSet<FanMode>(batteryCapabilities.FanModes),
         };
     }
 }
@@ -242,6 +246,12 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         if (!Enum.IsDefined(fans))
         {
             throw Invalid("The fan mode is undefined.");
+        }
+
+        if (DeviceSubsystemOrder.IsManualFanMode(fans)
+            && !validationPolicy.SupportedFanModes.Contains(fans))
+        {
+            throw Invalid("The selected fan mode is not supported by the active device capability.");
         }
 
         bool hasPresetManualRange = fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
@@ -438,7 +448,12 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
 
         bool supported = settings.Mode switch
         {
-            FanMode.Fixed => range.Supports(settings.FixedSpeedRpm),
+            // A legacy Maximum alias is semantic intent only when Maximum is
+            // explicitly admitted. The typed backend selects its reviewed max;
+            // 5400 is the legacy marker, never a guessed fixed target.
+            FanMode.Fixed => legacyMaximum && validationPolicy.SupportedFanModes.Contains(FanMode.Maximum)
+                || range.Supports(settings.FixedSpeedRpm),
+            FanMode.Maximum => validationPolicy.SupportedFanModes.Contains(FanMode.Maximum),
             FanMode.ManualCurve => settings.ManualCurve.Cpu
                     .Concat(settings.ManualCurve.Gpu)
                     .All(point => range.Supports(point.SpeedRpm)),

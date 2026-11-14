@@ -1,4 +1,5 @@
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
 using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
@@ -709,10 +710,10 @@ public sealed class ProfileSetValidatorTests
     }
 
     [Theory]
-    [InlineData(5000, false)]
-    [InlineData(5200, false)]
+    [InlineData(5000, true)]
+    [InlineData(5200, true)]
     [InlineData(5400, true)]
-    public void Validate_LegacyMaximumRequiresItsActualTargetInsideTheDeviceRange(
+    public void Validate_LegacyMaximumUsesOnlyExplicitlyAdmittedMaximumSemantics(
         int maximum, bool accepted)
     {
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
@@ -742,6 +743,78 @@ public sealed class ProfileSetValidatorTests
         {
             Assert.Throws<InvalidDataException>(() => validator.Validate(profiles));
         }
+    }
+
+    [Theory]
+    [InlineData(5000, false)]
+    [InlineData(5200, false)]
+    [InlineData(5000, true)]
+    [InlineData(5200, true)]
+    public void Validate_MaximumRequiresAdvertisedModeEvenWhenPresetHasManualRange(int maximum, bool legacyAlias)
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            FanModes = new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve },
+            FanSpeedRange = new(2000, maximum, 100),
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2000, maximum, 100),
+            },
+        };
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Fans = FanMode.Maximum,
+                FanControl = legacyAlias ? new(FanMode.Fixed, 5400, ManualFanCurve.Default)
+                    : FanControlSettings.FromLegacy(FanMode.Maximum),
+            },
+        };
+        InvalidDataException failure = Assert.Throws<InvalidDataException>(() =>
+            ProfileSetValidator.CreateForDeviceCapabilities(capabilities).Validate(profiles));
+        Assert.Contains("fan mode is not supported", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Validate_Real0510DoesNotAdmitTypedOrLegacyMaximum(bool legacyAlias)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02B7);
+        DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(model, enabled: true);
+        Assert.Equal(5200, capabilities.GetFanIntentSpeedRange(PerformancePreset.Balanced)!.MaximumRpm);
+        Assert.DoesNotContain(FanMode.Maximum, capabilities.FanModes);
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Fans = FanMode.Maximum,
+                FanControl = legacyAlias ? new(FanMode.Fixed, 5400, ManualFanCurve.Default)
+                    : FanControlSettings.FromLegacy(FanMode.Maximum),
+            },
+        };
+        InvalidDataException failure = Assert.Throws<InvalidDataException>(() =>
+            ProfileSetValidator.CreateForDeviceCapabilities(capabilities).Validate(profiles));
+        Assert.Contains("fan mode is not supported", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Validate_LiteralFixed5400IsStillRejectedForAdmittedMaximum5000Device()
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet profiles = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Fans = FanMode.Fixed,
+                FanControl = new(FanMode.Fixed, 5400, ManualFanCurve.Default),
+            },
+        };
+        var capabilities = DeviceCapabilities.SafeTargetDefaults() with { FanSpeedRange = new(2000, 5000, 100) };
+        Assert.Throws<InvalidDataException>(() =>
+            ProfileSetValidator.CreateForDeviceCapabilities(capabilities).Validate(profiles));
     }
 
     [Fact]

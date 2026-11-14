@@ -506,4 +506,106 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.False(policy.WritesAllowed);
     }
 
+    [Theory]
+    [InlineData(0x02C5, false)]
+    [InlineData(0x02C5, true)]
+    [InlineData(0x02C7, false)]
+    [InlineData(0x02C7, true)]
+    public async Task DynamicFanAutomaticRetainedTargets_EnterSilentDirectlyFromBalancedFixedWithoutGuessingUntouchedZone(
+        int product, bool curve)
+    {
+        var session = new Session();
+        int silentStart = int.MaxValue;
+        bool retainedSecondObserved = false;
+        session.BeforeSubmission = command =>
+        {
+            if (command.CommandId == 0x83)
+            {
+                session.DynamicFanRange = session.Mode == 5 ? FanMetadata(3400, 3800) : FanMetadata(3400, 5200);
+            }
+            if (command.CommandId == 0x81 && command.Arguments.Span[1] == 2
+                && session.Commands.Skip(silentStart).Count(item => item.CommandId == 0x01) == 1)
+            {
+                Assert.Equal((byte)52, session.Fan2);
+                retainedSecondObserved = true;
+            }
+        };
+        await using var port = Create(product, session, power: () => PowerSource.ExternalUnknown);
+        await port.SetFanTargetsAsync(5200, 5200, default);
+        await port.SetFanModeAsync(FanMode.Automatic, default);
+        Assert.Equal((52, 52), ((int)session.Fan1, (int)session.Fan2));
+        await port.SetPerformanceAsync(PerformancePreset.Silent, default);
+        silentStart = session.Commands.Count;
+        if (curve) { await port.SetFanModeAsync(FanMode.ManualCurve, default); }
+        else { await port.SetFanTargetsAsync(3600, 3600, default); }
+        Assert.True(retainedSecondObserved);
+        Assert.Equal((byte)5, session.Mode);
+        Assert.Equal((byte)1, session.Manual);
+        Assert.Equal(curve ? (38, 38) : (36, 36), ((int)session.Fan1, (int)session.Fan2));
+        Assert.All(session.Commands.Skip(silentStart).Where(command => command.CommandId == 0x01),
+            command => Assert.InRange(command.Arguments.Span[2], (byte)34, (byte)38));
+        Assert.All(session.Commands.Skip(silentStart).Where(command => command.CommandId == 0x02),
+            command => Assert.Equal((byte)5, command.Arguments.Span[2]));
+    }
+
+    [Theory]
+    [InlineData((byte)0, (byte)70)]
+    [InlineData((byte)1, (byte)52)]
+    public async Task DynamicFanRetainedTargets_RejectUnknownModelTargetsAndKeepManualBaselineAdmission(byte manual, byte retained)
+    {
+        var session = new Session
+        {
+            Mode = 5,
+            Manual = manual,
+            Fan1 = retained,
+            Fan2 = retained,
+            DynamicFanRange = FanMetadata(3400, 3800),
+        };
+        await using var port = Create(0x02C5, session);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetFanTargetsAsync(3600, 3600, default));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.DoesNotContain(session.Commands, command => command.CommandId < 0x80);
+    }
+
+    [Fact]
+    public void DynamicFanEvidence_UsesOneExactPresetEnvelopeEntryWithoutObsoleteDuplicate()
+    {
+        IReadOnlyList<ExperimentalFeatureEvidence> evidence = ExperimentalBladeModels.FeatureEvidenceFor(Model(0x0245));
+        Assert.DoesNotContain(evidence, item => item.Feature == "ManualFanEnvelope3700To5300Step100");
+        Assert.Single(evidence, item => item.Feature == "ManualFanRangeBalanced3700To5300Step100");
+    }
+
+    [Theory]
+    [InlineData(0x0245, (byte)0, 3700, 5300)]
+    [InlineData(0x02C5, (byte)0, 3400, 5200)]
+    [InlineData(0x02A0, (byte)5, 3700, 5300)]
+    public async Task ExplicitManualFanEntry_MatchingFixedAndCurveTargetsStillSubmitWhileOwnedMaintenanceMayNoOp(
+        int product, byte mode, int minimum, int maximum)
+    {
+        var session = new Session
+        {
+            Mode = mode,
+            Manual = 1,
+            Fan1 = checked((byte)(maximum / 100)),
+            Fan2 = checked((byte)(maximum / 100)),
+            DynamicFanRange = FanMetadata(minimum, maximum),
+        };
+        await using var port = Create(product, session, power: () => PowerSource.ExternalUnknown);
+        await port.SetFanControlAsync(new FanControlSettings(FanMode.Fixed, maximum, ManualFanCurve.Default), default);
+        Assert.Equal(2, session.Commands.Count(command => command.CommandId == 0x01));
+        Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x02);
+        AssertFreshAdapterBeforeSetters(session);
+        session.Commands.Clear();
+        await port.SetFanModeAsync(FanMode.ManualCurve, default);
+        Assert.Equal(2, session.Commands.Count(command => command.CommandId == 0x01));
+        Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x02);
+        AssertFreshAdapterBeforeSetters(session);
+        session.Commands.Clear();
+        PerformancePreset expected = mode == 5 ? PerformancePreset.Silent : PerformancePreset.Balanced;
+        Assert.Equal((maximum, maximum), await port.SetCurveFanTargetsAsync(expected, maximum, maximum, default));
+        Assert.DoesNotContain(session.Commands, command => command.CommandId < 0x80);
+        Assert.Equal(mode, session.Mode);
+        Assert.Equal((byte)1, session.Manual);
+    }
+
 }

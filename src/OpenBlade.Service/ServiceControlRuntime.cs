@@ -18549,6 +18549,19 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         DesiredDeviceState desired = ResolveExperimentalFanHardwareDesired(
             ResolveAutomationDesired(confirmed), confirmed);
         DeviceCapabilities? capabilities = GetStatus().Capabilities;
+        if (desired.Fans.Value == FanMode.Maximum
+            && desired.FanControl is { Mode: FanMode.Fixed, FixedSpeedRpm: FanControlSettings.MaximumSpeedRpm } legacyMaximum
+            && capabilities?.FanModes.Contains(FanMode.Maximum) == true
+            && capabilities.GetFanIntentSpeedRange(desired.Performance.Value) is { IsWellFormed: true } maximumRange)
+        {
+            // Preserve saved JSON and normalize only the effective legacy alias.
+            // Typed Maximum selects this backend's reviewed maximum (5000 on
+            // 0528); it must not be resubmitted as literal Fixed 5400.
+            desired = desired with
+            {
+                FanControl = new FanControlSettings(FanMode.Maximum, maximumRange.MaximumRpm, legacyMaximum.ManualCurve),
+            };
+        }
         bool stopScope = BatterySaverFanStopRuntimePolicy.IsInScope(
             Automation.Profiles.Battery.StopFansInBatterySaver, capabilities,
             Automation.PowerSource, desired.Performance.Value);
