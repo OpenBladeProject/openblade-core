@@ -406,27 +406,67 @@ public sealed class Rz090528CpuPmObservationTests
         Assert.Throws<ArgumentException>(() => new CpuLivePowerRangeDValues(0x50001, 0, 1, []));
     }
 
-    private static CpuPmObservationWireAdmission Discover(bool confirm = true, bool cap = true, CpuPmObservationProfile profile = CpuPmObservationProfile.IdleThreeSamples)
+    [Theory]
+    [InlineData("RZ09-0508", 0x75)]
+    [InlineData("RZ09-0482", 0x74)]
+    public void PhoenixCurvePeerReadsOnlyItsCapabilityAndOneVersionedPowerTable(string model, int processorModel)
     {
-        var guard = new CpuPmObservationWireAdmission(profile);
+        var contract = CpuLiveCurveContract.All.Single(entry => entry.ModelNumber == model);
+        Assert.True(CpuPmSessionIdentity.ProcessorMatches(contract, new("AuthenticAMD", 0x19, processorModel, 1)));
+        Assert.False(CpuPmSessionIdentity.ProcessorMatches(contract, new("AuthenticAMD", 0x19, processorModel ^ 1, 1)));
+        var guard = Discover(profile: CpuPmObservationProfile.RangeSingleSample, contract: contract);
+        Transaction(guard, 0x82, 0, 4);
+        Transaction(guard, 6, 0, 0x004C0008);
+        Transaction(guard, 0x65, 3, 0);
+        byte[] reply = new byte[0xAF4];
+        BinaryPrimitives.WriteUInt32LittleEndian(reply, 0xAF0);
+        Exchange(guard, CpuPmObservationWireAdmission.Copy, Words(0xAF0), 0xAF4, reply);
+        Transaction(guard, 6, 0, 0x004C0008);
+        Assert.Equal(1, guard.CopiesInvoked);
+        PrepareTransaction(guard, 0);
+        Select(guard, Message);
+        Assert.False(guard.Allows(Write, Words(1, 6, 0), 0));
+    }
+
+    [Fact]
+    public void PhoenixRefusesStrixCapRegisterAndMissingCurveCapability()
+    {
+        var guard = Discover(profile: CpuPmObservationProfile.RangeSingleSample, contract: CpuLiveCurveContract.Rz090508);
+        Assert.False(guard.Allows(Write, Words(0, CpuLivePowerFusedCap.RegisterA0F, 0), 0));
+        guard = Discover(profile: CpuPmObservationProfile.RangeSingleSample, contract: CpuLiveCurveContract.Rz090508);
+        BeginTransaction(guard, 0x82, 0);
+        Poll(guard, 1);
+        Select(guard, Argument);
+        byte[] request = Pci(0, 0, 0xC8);
+        Assert.True(guard.Allows(Read, request, 24));
+        Assert.False(guard.AcceptReply(Read, request, 24, new(true, ReadReply(request, 2))));
+        Assert.True(guard.IsPoisoned);
+    }
+
+    private static CpuPmObservationWireAdmission Discover(bool confirm = true, bool cap = true, CpuPmObservationProfile profile = CpuPmObservationProfile.IdleThreeSamples,
+        CpuLiveCurveContract? contract = null)
+    {
+        contract ??= CpuLiveCurveContract.Rz090528;
+        var native = CpuCurveNativeProfile.ForContract(contract);
+        var guard = new CpuPmObservationWireAdmission(profile, contract);
         byte[] count = new byte[28];
         BinaryPrimitives.WriteUInt32LittleEndian(count.AsSpan(24), 3);
         Exchange(guard, Enumerate, new byte[28], 28, count);
         byte[] input = new byte[28 + 3 * 52];
         BinaryPrimitives.WriteUInt32LittleEndian(input.AsSpan(24), 3);
         byte[] records = (byte[])input.Clone();
-        uint[][] nodes = [[0, 0, 0, CpuQueryPciTopology.RootId], [0, 0x18, 0, CpuQueryPciTopology.NodeId], [0, 0x18, 1, CpuQueryPciTopology.OrientationId]];
+        uint[][] nodes = [[0, 0, 0, native.RootId], [0, 0x18, 0, native.NodeId], [0, 0x18, 1, native.OrientationId]];
         for (int i = 0; i < nodes.Length; i++) { Words(nodes[i]).CopyTo(records, 28 + i * 52); }
         Exchange(guard, Enumerate, input, input.Length, records);
         if (confirm)
         {
-            ReadWord(guard, Pci(0, 0, 0), CpuQueryPciTopology.RootId);
-            ReadWord(guard, Pci(0x18, 0, 0), CpuQueryPciTopology.NodeId);
-            ReadWord(guard, Pci(0x18, 1, 0), CpuQueryPciTopology.OrientationId);
-            ReadWord(guard, Pci(0x18, 1, 0x140), 0xFF55);
-            Select(guard, 0x03820AB0);
-            ReadWord(guard, Pci(0, 0, 0xC8), ~0xFF55u << 5);
-            if (cap)
+            ReadWord(guard, Pci(0, 0, 0), native.RootId);
+            ReadWord(guard, Pci(0x18, 0, 0), native.NodeId);
+            ReadWord(guard, Pci(0x18, 1, 0), native.OrientationId);
+            ReadWord(guard, Pci(0x18, 1, 0x140), native.IsPhoenix ? 0x123400FFu : 0xFF55u);
+            Select(guard, native.FuseAddress);
+            ReadWord(guard, Pci(0, 0, 0xC8), ~contract.EnabledCoreMask << native.FuseShift);
+            if (cap && !native.IsPhoenix)
             {
                 Select(guard, CpuLivePowerFusedCap.RegisterA0F); ReadWord(guard, Pci(0, 0, 0xC8), 5);
                 Select(guard, CpuLivePowerFusedCap.RegisterA0B); ReadWord(guard, Pci(0, 0, 0xC8), 0xF0000000);

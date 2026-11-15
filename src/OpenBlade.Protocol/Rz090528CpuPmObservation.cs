@@ -7,16 +7,21 @@ internal enum CpuPmWireRejection { PendingRequestMismatch, PciReadEchoMismatch, 
 
 // Separate admission capability: never attach this guard to the 06/5E query path.
 // Its caller must establish the exact attended identity and a single mutex lease.
-internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile profile = CpuPmObservationProfile.IdleThreeSamples)
+internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile profile = CpuPmObservationProfile.IdleThreeSamples,
+    CpuLiveCurveContract? selectedContract = null)
 {
-    private int CapOperations => profile == CpuPmObservationProfile.RangeSingleSample ? 8 : 4;
+    private readonly CpuLiveCurveContract contract = selectedContract ?? CpuLiveCurveContract.Rz090528;
+    private readonly CpuCurveNativeProfile native = CpuCurveNativeProfile.ForContract(selectedContract ?? CpuLiveCurveContract.Rz090528);
+    private uint observedVersion;
+    private int CopyLength => native.PmLength(observedVersion);
+    private int CapOperations => native.IsPhoenix ? 0 : profile == CpuPmObservationProfile.RangeSingleSample ? 8 : 4;
     private int MaximumCopies => profile == CpuPmObservationProfile.RangeSingleSample ? 1 : 3;
     private bool capabilityConfirmed, firmwareConfirmed;
     internal const uint ExpectedFirmwareVersion = 0x0B5D1600;
     internal const uint Copy = 0x81112F08, Version = 0x005D000B;
     internal const int PayloadLength = 0xD50, ReplyLength = PayloadLength + 4;
     private const uint Enumerate = 0x81112F18, Read = 0x81112F24, Write = 0x81112FF8;
-    private const uint Fuse = 0x03820AB0, Response = 0x03B10A80, Argument = 0x03B10A88, Message = 0x03B10A20;
+    private const uint Response = 0x03B10A80, Argument = 0x03B10A88, Message = 0x03B10A20;
     private uint count, selected, argument, command;
     private uint? bus;
     private bool enumerated, failed, root, node, orientation, ready, cleared, argumentWritten;
@@ -57,6 +62,7 @@ internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile prof
 
     private bool AllowsCore(uint code, byte[] input, int outputLength)
     {
+        if (native.IsPhoenix && profile != CpuPmObservationProfile.RangeSingleSample) { return false; }
         if (code == Enumerate)
         {
             if (enumerated || input.Length < 28 || outputLength != input.Length
@@ -83,7 +89,7 @@ internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile prof
         if (code == Copy)
         {
             return root && node && orientation && versionConfirmed && copyPermit && copies < MaximumCopies
-                && input.Length == 4 && Word(input, 0) == PayloadLength && outputLength == ReplyLength;
+                && input.Length == 4 && Word(input, 0) == CopyLength && outputLength == CopyLength + 4;
         }
         if (code == Read)
         {
@@ -97,21 +103,21 @@ internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile prof
             if (!root || !node || !orientation) { return false; }
             if (b == 0 && d == 0x18 && f == 1 && offset == 0x140) { return command == 0 && !orientationMaskConfirmed; }
             return b == bus && d == 0 && f == 0 && offset == 0xC8
-                && (selected == Fuse && command == 0 && orientationMaskConfirmed && !fuseMaskConfirmed || selected == Response && capProgress == CapOperations && ++polls <= 1000
+                && (selected == native.FuseAddress && command == 0 && orientationMaskConfirmed && !fuseMaskConfirmed || selected == Response && fuseMaskConfirmed && capProgress == CapOperations && ++polls <= 1000
                     || selected == Argument && command != 0 && ready);
         }
         if (code != Write || input.Length != 12 || outputLength != 0 || Word(input, 8) != bus
             || !root || !node || !orientation) { return false; }
         uint index = Word(input, 0), value = Word(input, 4);
-        if (index == 0) { return value == Fuse ? orientationMaskConfirmed && !fuseMaskConfirmed : capProgress == CapOperations && value is Response or Argument or Message; }
+        if (index == 0) { return value == native.FuseAddress ? orientationMaskConfirmed && !fuseMaskConfirmed : fuseMaskConfirmed && capProgress == CapOperations && value is Response or Argument or Message; }
         if (index != 1) { return false; }
         return selected switch
         {
             Response => value == 0 && ready && command == 0 && !copyPermit,
             Argument => cleared && !argumentWritten && value is 0 or 3,
             Message => cleared && argumentWritten && command == 0
-                && (value == 2 && argument == 0 && profile == CpuPmObservationProfile.RangeSingleSample && !firmwareConfirmed && copies == 0 && !capabilityConfirmed
-                    || value == 0x82 && argument == 0 && profile == CpuPmObservationProfile.RangeSingleSample && firmwareConfirmed && !capabilityConfirmed && copies == 0 && !versionConfirmed
+                && (value == 2 && !native.IsPhoenix && argument == 0 && profile == CpuPmObservationProfile.RangeSingleSample && !firmwareConfirmed && copies == 0 && !capabilityConfirmed
+                    || value == 0x82 && argument == 0 && profile == CpuPmObservationProfile.RangeSingleSample && (native.IsPhoenix || firmwareConfirmed) && !capabilityConfirmed && copies == 0 && !versionConfirmed
                     || value == 6 && argument == 0 && !copyPermit && (profile == CpuPmObservationProfile.IdleThreeSamples || capabilityConfirmed && !versionConfirmed && (copies == 0 || postVersionRequired))
                     || value == 0x65 && argument == 3 && versionConfirmed && copies < MaximumCopies && !copyPermit),
             _ => false,
@@ -128,7 +134,7 @@ internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile prof
         pending = null;
         if (code == Copy)
         {
-            if (Word(reply.Bytes, 0) != PayloadLength) { Abort(); return false; }
+            if (Word(reply.Bytes, 0) != CopyLength) { Abort(); return false; }
         }
         else if (code == Enumerate)
         {
@@ -136,7 +142,7 @@ internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile prof
             if (reply.Bytes.AsSpan(0, 24).IndexOfAnyExcept((byte)0) >= 0 || received == 0 || received > 65536)
             { Abort(); return false; }
             if (count == 0) { count = received; return true; }
-            if (received != count || !CpuQueryPciTopology.TryFindBus(reply.Bytes, out uint found))
+            if (received != count || !CpuQueryPciTopology.TryFindBus(reply.Bytes, native, out uint found))
             { Abort(); return false; }
             enumerated = true;
             bus = found;
@@ -154,20 +160,20 @@ internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile prof
             }
             else if (Word(input, 12) == 0x140)
             {
-                if (value != 0xFF55) { Abort(); return false; }
+                if (native.DecodeOrientation(value) != contract.EnabledCoreMask) { Abort(); return false; }
                 orientationMaskConfirmed = true;
             }
-            else if (Word(input, 12) == 0xC8 && selected == Fuse)
+            else if (Word(input, 12) == 0xC8 && selected == native.FuseAddress)
             {
-                if ((~(value >> 5) & 0xFFFF) != 0xFF55) { Abort(); return false; }
+                if (native.DecodeFuse(value) != contract.EnabledCoreMask) { Abort(); return false; }
                 fuseMaskConfirmed = true;
             }
             else if (Word(input, 12) == 0)
             {
                 uint d = Word(input, 4), f = Word(input, 8);
-                if (d == 0) { root = value == CpuQueryPciTopology.RootId; }
-                else if (f == 0) { node = value == CpuQueryPciTopology.NodeId; }
-                else { orientation = value == CpuQueryPciTopology.OrientationId; }
+                if (d == 0) { root = value == native.RootId; }
+                else if (f == 0) { node = value == native.NodeId; }
+                else { orientation = value == native.OrientationId; }
                 if (!(d == 0 ? root : f == 0 ? node : orientation)) { Abort(); return false; }
             }
             else if (Word(input, 12) == 0xC8 && selected == Response)
@@ -184,12 +190,18 @@ internal sealed class CpuPmObservationWireAdmission(CpuPmObservationProfile prof
                 }
                 else if (command == 6)
                 {
-                    if (value != Version) { Abort(); return false; }
+                    if (!contract.AcceptsGeometry(contract.EnabledCoreMask, value, native.PmLength(value))
+                        || postVersionRequired && value != observedVersion) { Abort(); return false; }
+                    observedVersion = value;
                     versionConfirmed = !postVersionRequired;
                     postVersionRequired = false;
                 }
                 else if (command == 0x65) { copyPermit = true; }
-                else if (command == 0x82) { capabilityConfirmed = true; }
+                else if (command == 0x82)
+                {
+                    if (native.IsPhoenix && (value == uint.MaxValue || (value & 4) == 0)) { Abort(); return false; }
+                    capabilityConfirmed = true;
+                }
                 command = 0;
                 cleared = argumentWritten = false;
                 polls = 0;
@@ -229,8 +241,10 @@ internal sealed class CpuPmRawSnapshot
     private readonly byte[] reply;
     private readonly byte[] payload;
     private readonly CpuPmCandidateWord[] candidates;
-    private CpuPmRawSnapshot(byte[] bytes, DateTimeOffset capturedUtc, long monotonicTimestamp)
+    private CpuPmRawSnapshot(CpuLiveCurveContract contract, uint version, byte[] bytes, DateTimeOffset capturedUtc, long monotonicTimestamp)
     {
+        Contract = contract;
+        PmVersion = version;
         reply = (byte[])bytes.Clone();
         payload = reply.AsSpan(4).ToArray();
         CapturedUtc = capturedUtc;
@@ -248,6 +262,8 @@ internal sealed class CpuPmRawSnapshot
             : candidates.Any(word => !float.IsFinite(word.Value)) ? CpuPmRawSnapshotValidity.NonfiniteCandidates
             : CpuPmRawSnapshotValidity.ValidCandidateObservation;
     }
+    internal CpuLiveCurveContract Contract { get; }
+    internal uint PmVersion { get; }
     internal DateTimeOffset CapturedUtc { get; }
     internal long MonotonicTimestamp { get; }
     internal string ReplySha256 { get; }
@@ -257,14 +273,18 @@ internal sealed class CpuPmRawSnapshot
     internal byte[] CopyPayload() => (byte[])payload.Clone();
     internal CpuPmCandidateWord[] CopyCandidates() => (CpuPmCandidateWord[])candidates.Clone();
     internal static bool TryCreate(uint version, CpuQueryIoctlReply reply, DateTimeOffset capturedUtc,
-        long monotonicTimestamp, out CpuPmRawSnapshot? snapshot)
+        long monotonicTimestamp, out CpuPmRawSnapshot? snapshot) =>
+        TryCreate(CpuLiveCurveContract.Rz090528, version, reply, capturedUtc, monotonicTimestamp, out snapshot);
+
+    internal static bool TryCreate(CpuLiveCurveContract contract, uint version, CpuQueryIoctlReply reply,
+        DateTimeOffset capturedUtc, long monotonicTimestamp, out CpuPmRawSnapshot? snapshot)
     {
         snapshot = null;
-        if (version != CpuPmObservationWireAdmission.Version || !reply.Success
-            || reply.Bytes.Length != CpuPmObservationWireAdmission.ReplyLength
-            || BinaryPrimitives.ReadUInt32LittleEndian(reply.Bytes) != CpuPmObservationWireAdmission.PayloadLength)
+        int length = reply.Bytes.Length - sizeof(uint);
+        if (!reply.Success || !contract.AcceptsGeometry(contract.EnabledCoreMask, version, length)
+            || BinaryPrimitives.ReadUInt32LittleEndian(reply.Bytes) != length)
         { return false; }
-        snapshot = new CpuPmRawSnapshot(reply.Bytes, capturedUtc, monotonicTimestamp);
+        snapshot = new CpuPmRawSnapshot(contract, version, reply.Bytes, capturedUtc, monotonicTimestamp);
         return true;
     }
 }

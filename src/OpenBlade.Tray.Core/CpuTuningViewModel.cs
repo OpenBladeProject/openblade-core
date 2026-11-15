@@ -68,7 +68,7 @@ public sealed class CpuTuningViewModel : INotifyPropertyChanged, IAsyncDisposabl
             : capabilities!.CpuVoltageOptimizer!.SupportsEnableDisable);
     public bool CanRestore => CanEdit && CurveAdmitted() && status?.RestorePending == true
         && status.LiveRecovery is { IsWellFormed: true, State: CpuTuningRecoveryState.RestoreReady, Features: CpuTuningFeatures.CurveOptimizer };
-    public bool CanRefresh => IsVisible && connected() && !busy;
+    public bool CanRefresh => IsVisible && connected() && !busy && (capabilities?.CpuVoltageOptimizer?.Access is DeviceFeatureAccess.ReadWrite or DeviceFeatureAccess.ReadOnly || BackendAvailable());
     public string ApplyLabel => TrayText.Get("Apply now");
     public string OperationMessage => operationMessage;
     public bool ShowAvailabilitySummary => !(BackendReadWriteAvailable && CurveAdmitted() && OptimizerConfirmed())

@@ -77,11 +77,12 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
     {
         using var getter = provider.BeginGetter(token);
         var context = provider.ReadFreshContext(token);
-        if (context is not { IsWellFormed: true }) { return Reject("power observation context"); }
+        if (context is not { IsWellFormed: true, Contract: { } contract } || contract != session.Contract) { return Reject("power observation context"); }
         var installed = provider.CreateInstalledObservationApproval(context, token);
-        var reader = provider.CreateObservationMetadata(context, token);
-        if (installed is null || reader is null || !MatchesFresh(context, token)) { return Reject("power observation metadata/context"); }
-        if (recovery is not null && !recovery.Matches(context, getter, installed, reader, token))
+        bool phoenix = contract.UsesPhoenixProtocol;
+        var reader = phoenix ? null : provider.CreateObservationMetadata(context, token);
+        if (installed is null || !phoenix && reader is null || !MatchesFresh(context, token)) { return Reject("power observation metadata/context"); }
+        if (recovery is not null && (phoenix || !recovery.Matches(context, getter, installed, reader, token)))
         { return Reject("power observation recovery anchor"); }
         CpuLivePowerNativeObservationResult observed;
         timing?.MoveTo(recovery is null ? CpuPowerObservationPhase.FirstNative : CpuPowerObservationPhase.ReplacementNative);
@@ -90,7 +91,7 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
         // Do not renew this getter or reuse its poisoned wire. A ticket only
         // escapes after final admission, scope disposal, coordinator terminal
         // cleanup and the caller's existing bounded/runtime checks.
-        if (recovery is null && getter is not null && observed.WorkerTerminal && observed.CleanupComplete && !observed.Batch.Complete
+        if (!phoenix && recovery is null && reader is not null && getter is not null && observed.WorkerTerminal && observed.CleanupComplete && !observed.Batch.Complete
             && observed.Batch.Profile == CpuPmObservationProfile.RangeSingleSample
             && observed.Batch.FirmwareVersion == CpuPmObservationWireAdmission.ExpectedFirmwareVersion
             && observed.Batch.Diagnostic is
@@ -125,10 +126,9 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
         token.ThrowIfCancellationRequested();
         var batch = observed.Batch; var samples = batch.CopySamples();
         if (!batch.Complete || batch.Profile != CpuPmObservationProfile.RangeSingleSample || samples.Length != 1
-            || CpuLivePowerSnapshot.TryCreate(samples[0].Snapshot) is null || batch.FusedCap?.Candidate is not { } cap
-            || batch.RangeObservation is not
+            || CpuLivePowerSnapshot.TryCreate(contract, samples[0].Snapshot) is null || batch.RangeObservation is not
             {
-                MetadataComplete: true, Capability:
+                Capability:
                 {
                     Command: 0x82, Argument: 0,
                     InvocationEntered: true, ResponseAcknowledged: true, ReturnedWordTransportSucceeded: true,
@@ -137,11 +137,24 @@ internal sealed class CpuLivePowerNativeBackend : ICpuLivePowerBackend
             }
             || CpuLivePowerCapability.TryDecode(rawCapability) is not { } capability) { return Reject("power observation batch shape"); }
         if (!MatchesFresh(context, token)) { state.Invalidate(); return Reject("power observation post-batch context"); }
-        var range = provider.AdmitRequestedStateAndRange(context, batch, token);
-        token.ThrowIfCancellationRequested();
-        if (!MatchesFresh(context, token)) { state.Invalidate(); return Reject("power observation post-range context"); }
-        if (range is not { Selector: 0x50001, StepMilliwatts: 1 } || range.MinimumMilliwatts > range.MaximumMilliwatts
-            || range.MaximumMilliwatts > CpuLivePowerValue.MaximumMilliwatts) { return Reject("power observation trusted range"); }
+        CpuLivePowerTrustedRange? range = null;
+        var cap = batch.FusedCap?.Candidate;
+        if (phoenix)
+        {
+            // This read-only peer is admitted by its full PM image and capability 82.
+            // V22 has no reviewed PPT write range or fused-cap register recipe.
+            if ((rawCapability & 4) == 0 || batch.FusedCap is not null || batch.FirmwareVersion is not null
+                || batch.RangeObservation is not { A0F: null, A0B: null, A13: null, A90: null, QueryVersion: null, DValues: null, MinMax: null }) { return Reject("power observation Phoenix peer"); }
+        }
+        else
+        {
+            if (cap is null || !batch.RangeObservation.MetadataComplete) { return Reject("power observation batch shape"); }
+            range = provider.AdmitRequestedStateAndRange(context, batch, token);
+            token.ThrowIfCancellationRequested();
+            if (!MatchesFresh(context, token)) { state.Invalidate(); return Reject("power observation post-range context"); }
+            if (range is not { Selector: 0x50001, StepMilliwatts: 1 } || range.MinimumMilliwatts > range.MaximumMilliwatts
+                || range.MaximumMilliwatts > CpuLivePowerValue.MaximumMilliwatts) { return Reject("power observation trusted range"); }
+        }
         timing?.MoveTo(CpuPowerObservationPhase.CompleteGetter);
         if (!provider.CompleteGetter(context, token)) { state.Invalidate(); return Reject("power observation final context"); }
         return new(context, samples[0].Snapshot, cap, capability, range);

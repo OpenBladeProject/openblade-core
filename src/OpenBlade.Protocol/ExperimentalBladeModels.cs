@@ -82,6 +82,7 @@ internal static class ExperimentalBladeModels
                             ? "NotEstablishedHiddenPaletteSelector" : "ExactMcuSourceBackedWithoutPhysicalValidation",
                             [ReviewedMcuLightingSource(model), .. sources]) }
                     : []),
+                .. CpuVoltageEvidenceFor(model),
                 new("AutomaticFanHandback", "SynapseSourceBackedWithoutPhysicalValidation", sources),
                 new("FixedAndCurveFanWrites", ExperimentalBladePort.UsesDynamicExperimentalFanRange(model)
                     ? "SynapseSourceBackedPresetFixedAndAcCurvesWithFreshDynamicFanRanges" : "NotEstablishedDynamicFanRangesRequireReview", sources),
@@ -236,11 +237,32 @@ internal static class ExperimentalBladeModels
                 new(model.ProductId == 0x0255 ? "CreatorPerformanceRaw2" : "MaximumPowerPerformanceRaw2",
                     "SynapseSourceBackedWithoutPhysicalValidation", exactSources)];
         }
-        features = [.. features, .. FanStopEvidenceFor(model), .. OrdinaryThermalEvidenceFor(model)];
+        features = [.. features, .. FanStopEvidenceFor(model), .. OrdinaryThermalEvidenceFor(model), .. CpuVoltageEvidenceFor(model)];
         return model.AdapterPowerEvidenceSource is { } source
             ? [.. features, new("AdapterPowerClassification", "SynapseSourceBacked", [source])]
             : features;
     }
+
+    private static IEnumerable<ExperimentalFeatureEvidence> CpuVoltageEvidenceFor(ExperimentalBladeModel model) =>
+        model.ProductId is not (0x02B6 or 0x029D or 0x02C5) ? [] :
+        [new("CpuVoltageOptimizer", model.ProductId == 0x02C5
+            ? "ObservedOnlyTenCoreNativeContractNotEstablished"
+            : "SynapseSourceBackedInstalledAmdSdk212LiveReadbackWithoutPhysicalValidation",
+            CpuVoltageSourcesFor(model.ProductId))];
+
+    private static IReadOnlyList<string> CpuVoltageSourcesFor(ushort product) => product switch
+    {
+        0x02B6 => [
+            "https://apps.razer.com/synapse/products/694/ui/static/js/main.415cc878.js;SHA256=C22750AAD6E54EE86E04B3D7F7D7DA520636293C209734358FC26A744D84F6B1",
+            "https://app-assets.razer.com/files/synapse/devices/common/blades/RazerAMDOverClockSetup-v1.0.1.0.exe;SHA256=FB8F7A50D349F2CC05743628E47AF67A6A0391E67CAA548CA3A545279FA6169E"],
+        0x029D => [
+            "https://apps.razer.com/synapse/products/669/ui/static/js/main.bb65de57.js;SHA256=604B380FF60909D350407B2B431B64A9C74C742CBC2ACACC24D4985CB9F413C7",
+            "https://app-assets.razer.com/files/synapse/devices/common/blades/RazerAMDOverClockSetup-v1.0.1.0.exe;SHA256=FB8F7A50D349F2CC05743628E47AF67A6A0391E67CAA548CA3A545279FA6169E"],
+        0x02C5 => [
+            "https://apps.razer.com/synapse/products/709/ui/static/js/main.fd91712e.js;SHA256=338D8F51C9A1179D3B2436F77FD44B3D393C3CC987D0EC73928E1F636BF3A9B7",
+            "https://apps.razer.com/synapse/products/709/mw/manifest.json;SHA256=BFA2BFAB7A93356E834044CF096DCD5A548756A0AFEF2A47EF6224E65B625830"],
+        _ => [],
+    };
 
     private static IEnumerable<ExperimentalFeatureEvidence> OrdinaryThermalEvidenceFor(ExperimentalBladeModel model) =>
         OrdinaryThermalPowerAdmission.SupportsProduct(model.ProductId)

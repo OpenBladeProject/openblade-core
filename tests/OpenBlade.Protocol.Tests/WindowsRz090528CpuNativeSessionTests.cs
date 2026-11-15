@@ -190,6 +190,8 @@ public sealed class WindowsRz090528CpuNativeSessionTests
             WindowsRz090528CpuQueryAdapter.QueryForAttendedValidation(null, () => throw new InvalidOperationException()).Status);
         Assert.False(WindowsRz090528CpuPmObservationAdapter.ObserveForAttendedValidation(null,
             () => throw new InvalidOperationException()).Complete);
+        Assert.False(session.ObservePowerInstalled(null, () => throw new InvalidOperationException(), null).Batch.Complete);
+        Assert.False(session.ObservePower(null, () => throw new InvalidOperationException(), null).Batch.Complete);
         Assert.Same(session, WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession());
     }
 

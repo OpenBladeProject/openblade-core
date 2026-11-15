@@ -1,5 +1,7 @@
 # RZ09-0528 CPU Voltage Optimizer
 
+See [CPU undervolting](cpu-undervolting.md) for the shared transaction and journal contracts and separately admitted Blade 14 backends.
+
 The optimizer changes the running CPU's all-core Curve Optimizer offset on the
 Razer Blade 16 RZ09-0528 (`1532:02C6`). On uses the remembered integer from
 −30 to −1; Off requests zero and preserves that negative editor value. These

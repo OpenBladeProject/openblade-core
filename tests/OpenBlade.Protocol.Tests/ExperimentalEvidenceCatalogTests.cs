@@ -72,6 +72,21 @@ public sealed class ExperimentalEvidenceCatalogTests
                         $"https://apps.razer.com/synapse/products/{model.ProductId}/", source));
                     Assert.Equal("Pending", snapshot.PhysicalValidation);
                 }
+                else if (feature.Feature == "CpuVoltageOptimizer")
+                {
+                    Assert.Contains(model.ProductId, new ushort[] { 0x02B6, 0x029D, 0x02C5 });
+                    Assert.Equal(model.ProductId == 0x02C5 ? "ObservedOnlyTenCoreNativeContractNotEstablished"
+                        : "SynapseSourceBackedInstalledAmdSdk212LiveReadbackWithoutPhysicalValidation", feature.Basis);
+                    Assert.Equal("Pending", snapshot.PhysicalValidation);
+                    Assert.Equal(2, feature.Sources.Count);
+                    Assert.StartsWith($"https://apps.razer.com/synapse/products/{model.ProductId}/ui/", feature.Sources[0]);
+                    Assert.All(feature.Sources, source => Assert.Matches(@";SHA256=[0-9A-F]{64}$", source));
+                    if (model.ProductId != 0x02C5)
+                    {
+                        Assert.Equal("https://app-assets.razer.com/files/synapse/devices/common/blades/RazerAMDOverClockSetup-v1.0.1.0.exe;SHA256=FB8F7A50D349F2CC05743628E47AF67A6A0391E67CAA548CA3A545279FA6169E", feature.Sources[1]);
+                    }
+                    else { Assert.StartsWith("https://apps.razer.com/synapse/products/709/mw/", feature.Sources[1]); }
+                }
                 else if (model.ThermalPolicy is not null)
                 {
                     Assert.Equal("Supported", snapshot.SupportStatus);

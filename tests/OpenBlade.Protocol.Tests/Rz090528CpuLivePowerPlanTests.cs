@@ -75,6 +75,65 @@ public sealed class Rz090528CpuLivePowerPlanTests
         Assert.Null(CpuLivePowerSnapshot.TryCreate(Raw(unmatched)));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PhoenixPeerRetainsExactThreeLimitsAndRejectsCrossModelOrCrossLayout(bool blade2023)
+    {
+        var phoenix = blade2023 ? CpuLiveCurveContract.Rz090482 : CpuLiveCurveContract.Rz090508;
+        uint fastBits = BitConverter.SingleToUInt32Bits(54f), slowBits = BitConverter.SingleToUInt32Bits(45f);
+        byte[] reply = new byte[0xAF4];
+        Put(reply, 0, 0xAF0);
+        Put(reply, 12, fastBits);
+        Put(reply, 20, slowBits);
+        Assert.True(CpuPmRawSnapshot.TryCreate(phoenix, 0x004C0008, new(true, reply), DateTimeOffset.UnixEpoch, 1, out var raw));
+        var snapshot = CpuLivePowerSnapshot.TryCreate(phoenix, raw);
+        Assert.NotNull(snapshot);
+        Assert.Same(phoenix, snapshot.Contract);
+        var pair = snapshot.Pair;
+        Assert.Equal(0u, pair.StapmRawBits);
+        Assert.Equal(fastBits, pair.Fast.RawBits);
+        Assert.Equal(slowBits, pair.Slow.RawBits);
+        Assert.Equal(54000u, pair.Fast.Milliwatts);
+        Assert.Equal(45000u, pair.Slow.Milliwatts);
+        Assert.Null(CpuLivePowerSnapshot.TryCreate(raw));
+        Assert.Null(CpuLivePowerSnapshot.TryCreate(phoenix, Raw(Reply())));
+        Assert.False(CpuPmRawSnapshot.TryCreate(phoenix, 0x004C0009, new(true, reply), DateTimeOffset.UnixEpoch, 1, out _));
+        Assert.False(CpuPmRawSnapshot.TryCreate(phoenix, 0x004C0008, new(true, Reply()), DateTimeOffset.UnixEpoch, 1, out _));
+
+        foreach (var changed in new[]
+        {
+            CpuLivePowerPair.DecodeCurvePeer(phoenix, 0x80000000, fastBits, slowBits),
+            CpuLivePowerPair.DecodeCurvePeer(phoenix, 0, fastBits + 1, slowBits),
+            CpuLivePowerPair.DecodeCurvePeer(phoenix, 0, fastBits, slowBits + 1),
+        })
+        {
+            Assert.NotNull(changed);
+            Assert.Equal(pair.Fast.Milliwatts, changed.Fast.Milliwatts);
+            Assert.Equal(pair.Slow.Milliwatts, changed.Slow.Milliwatts);
+            Assert.NotEqual(pair, changed);
+        }
+        Assert.Null(CpuLivePowerPair.DecodeCurvePeer(CpuLiveCurveContract.Rz090528, 0, fastBits, slowBits));
+    }
+
+    [Fact]
+    public void PhoenixPeerPreservesFiniteWattsBeyondDisplayRangeAndRejectsMalformedReadings()
+    {
+        var contract = CpuLiveCurveContract.Rz090508;
+        uint large = BitConverter.SingleToUInt32Bits(float.MaxValue), sixty = BitConverter.SingleToUInt32Bits(60f);
+        var pair = CpuLivePowerPair.DecodeCurvePeer(contract, 0, large, sixty);
+        Assert.NotNull(pair);
+        Assert.Equal(large, pair.Fast.RawBits);
+        Assert.Null(pair.Fast.Milliwatts);
+        Assert.Equal(60000u, pair.Slow.Milliwatts);
+        foreach (uint malformed in new[] { 0xBF800000u, 0x7FC00000u, 0x7F800000u })
+        {
+            Assert.Null(CpuLivePowerPair.DecodeCurvePeer(contract, malformed, sixty, sixty));
+            Assert.Null(CpuLivePowerPair.DecodeCurvePeer(contract, 0, malformed, sixty));
+            Assert.Null(CpuLivePowerPair.DecodeCurvePeer(contract, 0, sixty, malformed));
+        }
+    }
+
     private static uint Bits(uint milliwatts) => BitConverter.SingleToUInt32Bits((float)milliwatts * 0.001f);
     private static void Put(byte[] bytes, int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset), value);
     private static byte[] Reply()
