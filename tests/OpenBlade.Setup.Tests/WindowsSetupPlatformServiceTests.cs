@@ -1059,6 +1059,12 @@ public sealed class WindowsSetupPlatformServiceTests
         public Task<SetupServiceState?> GetStateAsync(string serviceName, CancellationToken cancellationToken) =>
             Task.FromResult(State ?? (Exists ? SetupServiceState.Running : null));
 
+        public async Task<SetupServiceStatus?> GetStatusAsync(string serviceName, CancellationToken cancellationToken)
+        {
+            SetupServiceState? state = await GetStateAsync(serviceName, cancellationToken);
+            return state is null ? null : new(state.Value, state == SetupServiceState.Running ? 123 : null);
+        }
+
         public Task RunAsync(
             IReadOnlyList<string> arguments,
             IReadOnlyCollection<int> toleratedExitCodes,
@@ -1274,6 +1280,7 @@ public sealed class WindowsSetupPlatformServiceTests
 
     private sealed class RecordingProcessOperations(params ISetupProcess[] processes) : ISetupProcessOperations
     {
+        public ISetupProcess GetProcessById(int processId) => Assert.Single(processes, process => process.Id == processId);
         public List<string> Operations { get; } = [];
         public bool SignalResult { get; init; } = true;
 
@@ -1292,6 +1299,7 @@ public sealed class WindowsSetupPlatformServiceTests
 
     private sealed class RecordingProcess(string executablePath) : ISetupProcess
     {
+        public int Id => 123;
         public bool TryRetainLifetime() => true;
         public string? ExecutablePath => executablePath;
         public bool Disposed { get; private set; }

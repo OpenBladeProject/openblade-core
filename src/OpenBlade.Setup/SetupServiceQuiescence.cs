@@ -13,7 +13,7 @@ internal static class SetupServiceQuiescence
         cancellationToken.ThrowIfCancellationRequested();
         using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(timeout);
-        IReadOnlyList<ISetupProcess> processes = processOperations.GetProcessesByName("OpenBlade.Service");
+        List<ISetupProcess> processes = [.. processOperations.GetProcessesByName("OpenBlade.Service")];
         try
         {
             string installedService = Path.GetFullPath(Path.Combine(installDirectory, "OpenBlade.Service.exe"));
@@ -37,7 +37,7 @@ internal static class SetupServiceQuiescence
                 {
                     continue; // Exit raced identity inspection of the retained object.
                 }
-                if (path is null)
+                if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
                 {
                     if (!process.TryRetainLifetime())
                     {
@@ -45,7 +45,7 @@ internal static class SetupServiceQuiescence
                     }
                     throw new InvalidOperationException("Cannot establish the service process executable identity; setup stopped before shutdown.");
                 }
-                if (string.Equals(Path.GetFullPath(path), installedService, StringComparison.OrdinalIgnoreCase))
+                if (TrayProcessIdentity.IsExactInstalledExecutable(path, installedService))
                 {
                     installedProcesses.Add(process);
                 }
@@ -53,10 +53,35 @@ internal static class SetupServiceQuiescence
 
             // Capture and retain identity BEFORE stop: SCM STOPPED can precede
             // process termination and release of the installed executable tree.
-            SetupServiceState? state = await serviceControl.GetStateAsync(OpenBlade.Contracts.OpenBladeWindowsService.Name, deadline.Token)
+            SetupServiceStatus? status = await serviceControl.GetStatusAsync(OpenBlade.Contracts.OpenBladeWindowsService.Name, deadline.Token)
                 .WaitAsync(deadline.Token);
-            if (state == SetupServiceState.Running)
+            if (status?.State == SetupServiceState.Running)
             {
+                if (status.ProcessId is not > 0)
+                {
+                    throw new InvalidOperationException("Cannot establish the running service process identity; setup stopped before shutdown.");
+                }
+                ISetupProcess? serviceProcess = processes.FirstOrDefault(process => process.Id == status.ProcessId.Value);
+                if (serviceProcess is null)
+                {
+                    // The service may have started after name enumeration. SCM's
+                    // PID must be bound before stop even if that list was empty.
+                    serviceProcess = processOperations.GetProcessById(status.ProcessId.Value);
+                    processes.Add(serviceProcess);
+                }
+                if (serviceProcess.Id != status.ProcessId.Value || !serviceProcess.TryRetainLifetime()
+                    || !TrayProcessIdentity.IsExactInstalledExecutable(serviceProcess.ExecutablePath, installedService))
+                {
+                    throw new InvalidOperationException("The running service executable identity could not be confirmed; setup stopped before shutdown.");
+                }
+                if (!installedProcesses.Contains(serviceProcess)) { installedProcesses.Add(serviceProcess); }
+
+                SetupServiceStatus? current = await serviceControl.GetStatusAsync(OpenBlade.Contracts.OpenBladeWindowsService.Name, deadline.Token)
+                    .WaitAsync(deadline.Token);
+                if (current != status || !serviceProcess.TryRetainLifetime())
+                {
+                    throw new InvalidOperationException("The service process identity changed before shutdown; setup retained the installed files.");
+                }
                 await serviceControl.RunAsync(["stop", OpenBlade.Contracts.OpenBladeWindowsService.Name], [1060, 1062], deadline.Token)
                     .WaitAsync(deadline.Token);
                 await serviceControl.WaitForStateAsync(OpenBlade.Contracts.OpenBladeWindowsService.Name,
@@ -72,7 +97,7 @@ internal static class SetupServiceQuiescence
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
         {
-            throw new TimeoutException($"The installed OpenBlade service process did not exit within {timeout}; setup retained the installed files.", exception);
+            throw new TimeoutException($"Setup could not confirm service process exit within {timeout}; setup retained the installed files.", exception);
         }
         finally
         {

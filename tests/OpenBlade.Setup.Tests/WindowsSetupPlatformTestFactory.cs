@@ -33,7 +33,7 @@ internal static class WindowsSetupPlatformTestFactory
                 SidWriter: sidWriter,
                 HealthProbe: healthProbe,
                 FileOperations: fileOperations,
-                ProcessOperations: processOperations ?? new EmptyProcessOperations(),
+                ProcessOperations: processOperations ?? new EmptyProcessOperations(paths ?? SetupPaths.CreateDefault()),
                 Paths: paths,
                 PayloadDirectory: payloadDirectory,
                 PayloadFileSystem: payloadFileSystem,
@@ -51,8 +51,14 @@ internal static class WindowsSetupPlatformTestFactory
                 // own guard with controlled paths and process observations.
                 GuardianQuiescenceGuard: guardianQuiescenceGuard ?? AcceptingGuardianQuiescenceGuard.Instance));
 
-    private sealed class EmptyProcessOperations : ISetupProcessOperations
+    private sealed class EmptyProcessOperations(SetupPaths paths) : ISetupProcessOperations
     {
+        public ISetupProcess GetProcessById(int processId)
+        {
+            ServiceExitProcess process = new(Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe")) { Id = processId };
+            process.Exit.SetResult();
+            return process;
+        }
         public IReadOnlyList<ISetupProcess> GetProcessesByName(string processName) => [];
         public bool TrySignalEvent(string eventName) => throw new NotSupportedException();
     }

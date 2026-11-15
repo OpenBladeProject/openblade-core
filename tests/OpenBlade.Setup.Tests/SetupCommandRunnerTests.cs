@@ -76,6 +76,8 @@ public sealed class SetupCommandRunnerTests
             Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
             FailurePoint = "service-health",
             RecoveryShutdownFailure = shutdownFailure,
+            UninstallRegistrationExisted = true,
+            UninstallShortcutExisted = true,
         };
         AggregateException failure = await Assert.ThrowsAsync<AggregateException>(() =>
             new SetupCommandRunner(platform).RunAsync(
@@ -83,9 +85,101 @@ public sealed class SetupCommandRunnerTests
         Assert.Equal("service-health failed", failure.InnerExceptions[0].Message);
         Assert.Contains(shutdownFailure, failure.InnerExceptions);
         Assert.Contains(failure.InnerExceptions, item => item.Message.Contains("payloads were retained"));
+        string details = Assert.Single(failure.InnerExceptions,
+            item => item.Message.Contains("Recovery details:")).Message;
+        SetupPayloadRecoveryDetails recovery = platform.Transaction.RecoveryDetails;
+        Assert.Contains(recovery.ActiveDirectory, details);
+        Assert.Contains(recovery.StagingDirectory, details);
+        Assert.Contains(recovery.BackupDirectory, details);
+        Assert.Contains(recovery.FailedDirectory, details);
+        Assert.Contains("state=Active", details);
+        Assert.Contains("explicit repair is required", details);
+        Assert.DoesNotContain("uninstall-registration-install", platform.Operations);
+        Assert.DoesNotContain("uninstall-shortcut-install", platform.Operations);
+        Assert.DoesNotContain("bundle-ownership-restore", platform.Operations);
         Assert.DoesNotContain("payload-rollback", platform.Operations);
         Assert.DoesNotContain("service-restore", platform.Operations);
         Assert.True(platform.Transaction.IsActivated);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Install_FreshRecoveryDeletionFailure_DoesNotPreventPayloadRollback(bool bundleManaged)
+    {
+        InvalidOperationException deletionFailure = new("service registration remains marked for deletion");
+        RecordingSetupPlatform platform = new()
+        {
+            FailurePoint = "service-health",
+            RecoveryRemovalFailure = deletionFailure,
+        };
+
+        AggregateException failure = await Assert.ThrowsAsync<AggregateException>(() =>
+            new SetupCommandRunner(platform).RunAsync(
+                bundleManaged ? BundleManaged("install") : ["install"], CancellationToken.None));
+
+        Assert.Equal("service-health failed", failure.InnerExceptions[0].Message);
+        Assert.Contains(deletionFailure, failure.InnerExceptions);
+        Assert.Equal(2, platform.Operations.Count(operation => operation == "service-prepare"));
+        Assert.True(platform.Operations.IndexOf("payload-rollback")
+            < platform.Operations.IndexOf("service-remove"));
+        Assert.False(platform.Transaction.IsActivated);
+        Assert.DoesNotContain("payload-commit", platform.Operations);
+        Assert.DoesNotContain("service-restore", platform.Operations);
+    }
+
+    [Theory]
+    [InlineData(false, "Active")]
+    [InlineData(true, "Active")]
+    [InlineData(false, "RestoreFailed")]
+    [InlineData(true, "RestoreFailed")]
+    public async Task Install_UnresolvedPayloadRollback_DoesNotRestoreOldLifecycle(
+        bool bundleManaged, string recoveryState)
+    {
+        IOException rollbackFailure = new("previous payload could not be restored");
+        RecordingSetupPlatform platform = new()
+        {
+            ServiceExists = true,
+            UninstallRegistrationExisted = true,
+            UninstallShortcutExisted = true,
+            FailurePoint = "service-health",
+            Transaction = new RecordingPayloadTransaction(
+                hadExistingInstall: true, rollbackFailure: rollbackFailure,
+                retainedRecoveryState: recoveryState),
+        };
+        AggregateException failure = await Assert.ThrowsAsync<AggregateException>(() =>
+            new SetupCommandRunner(platform).RunAsync(
+                bundleManaged ? BundleManaged("install") : ["install"], CancellationToken.None));
+        Assert.Equal("service-health failed", failure.InnerExceptions[0].Message);
+        Assert.Contains(rollbackFailure, failure.InnerExceptions);
+        Assert.Contains(failure.InnerExceptions, item => item.Message.Contains($"state={recoveryState}"));
+        Assert.True(platform.Transaction.IsActivated);
+        Assert.DoesNotContain("service-restore", platform.Operations);
+        Assert.DoesNotContain("agent-startup-restore:Shortcut", platform.Operations);
+        Assert.DoesNotContain("tray-startup-restore:Shortcut", platform.Operations);
+        Assert.DoesNotContain("uninstall-registration-install", platform.Operations);
+        Assert.DoesNotContain("uninstall-shortcut-install", platform.Operations);
+        Assert.DoesNotContain("bundle-ownership-restore", platform.Operations);
+    }
+
+    [Fact]
+    public async Task Install_RestoredPayloadCleanupFailure_StillRestoresPriorLifecycle()
+    {
+        IOException cleanupFailure = new("obsolete failed payload could not be deleted");
+        RecordingSetupPlatform platform = new()
+        {
+            ServiceExists = true,
+            FailurePoint = "service-health",
+            Transaction = new RecordingPayloadTransaction(
+                hadExistingInstall: true, rollbackFailure: cleanupFailure),
+        };
+        AggregateException failure = await Assert.ThrowsAsync<AggregateException>(() =>
+            new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
+        Assert.Contains(cleanupFailure, failure.InnerExceptions);
+        Assert.False(platform.Transaction.IsActivated);
+        Assert.Contains("service-restore", platform.Operations);
+        Assert.DoesNotContain(failure.InnerExceptions,
+            item => item.Message.Contains("explicit repair is required"));
     }
 
     [Theory]
@@ -465,8 +559,8 @@ public sealed class SetupCommandRunnerTests
             [
                 "tray-startup-remove", "agent-startup-remove", "start-menu-remove",
                 "uninstall-shortcut-remove", "uninstall-registration-remove",
-                "dynamic-lighting-remove", "service-remove", "tray-stop",
-                "session-agent-stop", "payload-rollback", "agent-startup-restore:None",
+                "dynamic-lighting-remove", "service-prepare", "tray-stop",
+                "session-agent-stop", "payload-rollback", "service-remove", "agent-startup-restore:None",
                 "tray-startup-restore:None",
             ]);
         Assert.DoesNotContain("tray-startup-install", platform.Operations);
@@ -1041,6 +1135,7 @@ public sealed class SetupCommandRunnerTests
         public string? FailurePoint { get; set; }
         public Func<CancellationToken, Task>? PrepareService { get; init; }
         public Exception? RecoveryShutdownFailure { get; init; }
+        public Exception? RecoveryRemovalFailure { get; init; }
         public CancellationTokenSource? Cancellation { get; init; }
         public Exception? UninstallerFailure { get; init; }
         public RecordingPayloadTransaction Transaction { get; init; } = new(hadExistingInstall: false);
@@ -1254,6 +1349,12 @@ public sealed class SetupCommandRunnerTests
             AddAsync("dynamic-lighting-remove", cancellationToken);
         public Task RemoveServiceAsync(CancellationToken cancellationToken)
         {
+            if (RecoveryRemovalFailure is not null)
+            {
+                Operations.Add("service-remove");
+                CleanupTokens.Add(cancellationToken);
+                return Task.FromException(RecoveryRemovalFailure);
+            }
             serviceRegistered = false;
             serviceRunning = false;
             return AddAsync("service-remove", cancellationToken);
@@ -1298,12 +1399,18 @@ public sealed class SetupCommandRunnerTests
         Exception? rollbackFailure = null,
         string? commitWarning = null,
         Exception? disposeCleanupFailure = null,
-        CancellationTokenSource? cancelOnCommit = null) : ISetupPayloadTransaction
+        CancellationTokenSource? cancelOnCommit = null,
+        string? retainedRecoveryState = null) : ISetupPayloadTransaction
     {
         public List<string> Operations { private get; set; } = [];
         public bool HadExistingInstall => hadExistingInstall;
         public string StagedPayloadDirectory => @"C:\Fake\OpenBlade.installing.00000000000000000000000000000000";
         public bool IsActivated { get; private set; }
+        public SetupPayloadRecoveryDetails RecoveryDetails => new(
+            @"C:\Fake\OpenBlade", StagedPayloadDirectory,
+            @"C:\Fake\OpenBlade.rollback.00000000000000000000000000000000",
+            @"C:\Fake\OpenBlade.failed.00000000000000000000000000000000",
+            IsActivated ? retainedRecoveryState ?? "Active" : "Staged");
         public string? CommitWarning => commitWarning;
         public bool DisposeCleanupFailureObserved { get; private set; }
 
@@ -1330,7 +1437,7 @@ public sealed class SetupCommandRunnerTests
         public Task RollbackAsync(CancellationToken cancellationToken)
         {
             Operations.Add("payload-rollback");
-            IsActivated = false;
+            IsActivated = rollbackFailure is not null && retainedRecoveryState is not null;
             return rollbackFailure is null ? Task.CompletedTask : Task.FromException(rollbackFailure);
         }
 

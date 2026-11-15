@@ -111,6 +111,7 @@ public sealed class SetupGuardianQuiescenceGuardTests
 
     private sealed class Processes(IReadOnlyList<ISetupProcess> observations) : ISetupProcessOperations
     {
+        public ISetupProcess GetProcessById(int processId) => throw new NotSupportedException();
         internal int Enumerations { get; private set; }
         internal int Signals { get; private set; }
         public IReadOnlyList<ISetupProcess> GetProcessesByName(string processName)
@@ -124,6 +125,7 @@ public sealed class SetupGuardianQuiescenceGuardTests
 
     private sealed class ObservedProcess(Func<string?> executable) : ISetupProcess
     {
+        public int Id => 123;
         public bool TryRetainLifetime() => true;
         internal bool Disposed { get; private set; }
         internal int Waits { get; private set; }

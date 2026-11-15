@@ -6,6 +6,86 @@ public sealed class SetupServiceQuiescenceTests
 {
     private const string Install = @"C:\Fake\OpenBlade";
 
+    [Fact]
+    public async Task Stop_ScmProcessAppearsAfterEnumeration_IsPinnedAndAwaited()
+    {
+        ServiceExitProcess process = new(Path.Combine(Install, "OpenBlade.Service.exe"));
+        ServiceExitProcesses processes = new()
+        {
+            OpenProcess = id => { Assert.Equal(process.Id, id); return process; },
+        };
+        ServiceExitControl control = new(SetupServiceState.Running)
+        {
+            OnStop = () => Assert.True(process.Retained),
+        };
+        Task stop = SetupServiceQuiescence.StopAsync(control, processes, Install, TimeSpan.FromSeconds(5), CancellationToken.None);
+        await process.WaitStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(stop.IsCompleted);
+        Assert.Equal(1, processes.Opens);
+        Assert.Equal(2, control.StatusQueries);
+        process.Exit.SetResult();
+        await stop;
+        Assert.True(process.Disposed);
+    }
+
+    [Theory]
+    [InlineData("pid")]
+    [InlineData("stopped")]
+    [InlineData("absent")]
+    public async Task Stop_ScmIdentityChangesBeforeStop_FailsWithoutMutation(string change)
+    {
+        ServiceExitProcess process = new(Path.Combine(Install, "OpenBlade.Service.exe"));
+        ServiceExitProcesses processes = new(process);
+        ServiceExitControl control = new(SetupServiceState.Running)
+        {
+            ObserveStatus = query => query == 1 ? new(SetupServiceState.Running, process.Id)
+                : change == "pid" ? new(SetupServiceState.Running, process.Id + 1)
+                : change == "stopped" ? new(SetupServiceState.Stopped, null) : null,
+        };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => SetupServiceQuiescence.StopAsync(
+            control, processes, Install, TimeSpan.FromSeconds(5), CancellationToken.None));
+        Assert.Equal(0, control.Stops);
+        Assert.Equal(0, processes.Opens); // Reuse the already pinned object.
+        Assert.False(process.WaitStarted.Task.IsCompleted);
+        Assert.True(process.Disposed);
+    }
+
+    [Theory]
+    [InlineData("foreign")]
+    [InlineData("unknown")]
+    [InlineData("gone")]
+    [InlineData("wrong-pid")]
+    public async Task Stop_ScmCandidateCannotBeBoundToInstalledImage_FailsBeforeStop(string identity)
+    {
+        ServiceExitProcess process = new(identity == "foreign" ? @"C:\Foreign\OpenBlade.Service.exe"
+            : identity == "unknown" ? "" : Path.Combine(Install, "OpenBlade.Service.exe"))
+        {
+            AlreadyExited = identity == "gone",
+            Id = identity == "wrong-pid" ? 456 : 123,
+        };
+        ServiceExitProcesses processes = new() { OpenProcess = _ => process };
+        ServiceExitControl control = new(SetupServiceState.Running);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => SetupServiceQuiescence.StopAsync(
+            control, processes, Install, TimeSpan.FromSeconds(5), CancellationToken.None));
+        Assert.Equal(0, control.Stops);
+        Assert.True(process.Disposed);
+        Assert.False(process.WaitStarted.Task.IsCompleted);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task Stop_RunningWithoutValidScmPid_FailsBeforeStop(int? processId)
+    {
+        ServiceExitControl control = new(SetupServiceState.Running) { ProcessId = processId };
+        ServiceExitProcesses processes = new();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => SetupServiceQuiescence.StopAsync(
+            control, processes, Install, TimeSpan.FromSeconds(5), CancellationToken.None));
+        Assert.Equal(0, control.Stops);
+        Assert.Equal(0, processes.Opens);
+    }
+
     [Theory]
     [InlineData(SetupServiceState.Running)]
     [InlineData(SetupServiceState.Stopped)]
@@ -25,6 +105,7 @@ public sealed class SetupServiceQuiescenceTests
 
         Assert.False(stop.IsCompleted);
         Assert.True(process.Retained);
+        Assert.Equal(0, processes.Opens);
         Assert.False(process.Disposed);
         Assert.Equal(state == SetupServiceState.Running ? 1 : 0, control.Stops);
         Assert.Equal(state == SetupServiceState.Running ? 1 : 0, control.StoppedWaits);
@@ -39,7 +120,7 @@ public sealed class SetupServiceQuiescenceTests
     public async Task Stop_DeadlineOrCancellation_DoesNotReturnSuccess_AndDisposesCandidates(bool cancel)
     {
         ServiceExitProcess installed = new(Path.Combine(Install, "OpenBlade.Service.exe"));
-        ServiceExitProcess foreign = new(@"C:\Foreign\OpenBlade.Service.exe");
+        ServiceExitProcess foreign = new(@"C:\Foreign\OpenBlade.Service.exe") { Id = 124 };
         using CancellationTokenSource cancellation = new();
         Task stop = SetupServiceQuiescence.StopAsync(new ServiceExitControl(SetupServiceState.Running),
             new ServiceExitProcesses(installed, foreign), Install,
@@ -73,7 +154,7 @@ public sealed class SetupServiceQuiescenceTests
             IdentityFailure = stage == "identity" ? failure : null,
             WaitFailure = stage == "wait" ? failure : null,
         };
-        ServiceExitProcess other = new(@"C:\Foreign\OpenBlade.Service.exe");
+        ServiceExitProcess other = new(@"C:\Foreign\OpenBlade.Service.exe") { Id = 124 };
         ServiceExitControl control = new(SetupServiceState.Running);
         Exception observed = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             SetupServiceQuiescence.StopAsync(control, new ServiceExitProcesses(installed, other),
@@ -128,6 +209,7 @@ public sealed class SetupServiceQuiescenceTests
 
 internal sealed class ServiceExitProcess(string executablePath) : ISetupProcess
 {
+    public int Id { get; init; } = 123;
     internal TaskCompletionSource Exit { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal TaskCompletionSource WaitStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal bool Retained { get; private set; }
@@ -171,6 +253,13 @@ internal sealed class ServiceExitProcess(string executablePath) : ISetupProcess
 
 internal sealed class ServiceExitProcesses(params ISetupProcess[] processes) : ISetupProcessOperations
 {
+    internal Func<int, ISetupProcess>? OpenProcess { get; init; }
+    internal int Opens { get; private set; }
+    public ISetupProcess GetProcessById(int processId)
+    {
+        Opens++;
+        return OpenProcess is null ? Assert.Single(processes, process => process.Id == processId) : OpenProcess(processId);
+    }
     public IReadOnlyList<ISetupProcess> GetProcessesByName(string processName)
     {
         Assert.Equal("OpenBlade.Service", processName);
@@ -181,6 +270,15 @@ internal sealed class ServiceExitProcesses(params ISetupProcess[] processes) : I
 
 internal sealed class ServiceExitControl(SetupServiceState? state) : ISetupServiceControl
 {
+    internal int? ProcessId { get; init; } = 123;
+    internal Func<int, SetupServiceStatus?>? ObserveStatus { get; init; }
+    internal int StatusQueries { get; private set; }
+    public Task<SetupServiceStatus?> GetStatusAsync(string serviceName, CancellationToken cancellationToken)
+    {
+        int query = ++StatusQueries;
+        return Task.FromResult(ObserveStatus is not null ? ObserveStatus(query)
+            : state is null ? null : new SetupServiceStatus(state.Value, state == SetupServiceState.Running ? ProcessId : null));
+    }
     internal Action? OnStop { get; init; }
     internal int Stops { get; private set; }
     internal int StoppedWaits { get; private set; }
