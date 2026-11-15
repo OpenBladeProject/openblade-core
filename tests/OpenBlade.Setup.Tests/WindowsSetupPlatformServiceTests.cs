@@ -4,6 +4,8 @@ using OpenBlade.Setup;
 
 namespace OpenBlade.Setup.Tests;
 
+// This class captures process-wide Trace output; other collections must not emit into its log.
+[Collection(nameof(SetupDiagnosticTraceCollection))]
 public sealed class WindowsSetupPlatformServiceTests
 {
     [Theory]
@@ -1314,3 +1316,6 @@ public sealed class WindowsSetupPlatformServiceTests
         public void Dispose() => Disposed = true;
     }
 }
+
+[CollectionDefinition(nameof(SetupDiagnosticTraceCollection), DisableParallelization = true)]
+public sealed class SetupDiagnosticTraceCollection;
