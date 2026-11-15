@@ -25,6 +25,7 @@ internal interface IWindowsCpuCurveRangeSession : IDisposable
 {
     IWindowsCpuCurveRangeObject? QueryVersion(Action checkpoint);
     IWindowsCpuCurveRangeObject? GetCurveMinMax(Action checkpoint);
+    IWindowsCpuCurveRangeObject? GetCurveMinMax(CpuLiveCurveContract contract, Action checkpoint) => GetCurveMinMax(checkpoint);
 }
 internal interface IWindowsCpuCurveRangeObject : IDisposable
 {
@@ -63,18 +64,19 @@ internal sealed class WindowsCpuLiveCurveRangeMetadata
         try
         {
             Check();
+            var contract = context!.Contract!;
             var session = open(Check); resources.Add(session); Check();
             var output = session.QueryVersion(Check);
             if (output is not null) { resources.Add(output); }
             Check();
-            bool validVersion = output is not null && DecodeVersion(output, Check, ref version);
+            bool validVersion = output is not null && DecodeVersion(output, contract.UsesPhoenixProtocol, Check, ref version);
             if (validVersion)
             {
                 Check();
-                output = session.GetCurveMinMax(Check);
+                output = session.GetCurveMinMax(contract, Check);
                 if (output is not null) { resources.Add(output); }
                 Check();
-                if (output is not null) { range = DecodeMinMax(output, Check, ref minMax); }
+                if (output is not null) { range = DecodeMinMax(output, contract.UsesPhoenixProtocol, Check, ref minMax); }
                 Check();
             }
             status = range is null ? CpuLiveCurveRangeStatus.Incomplete : CpuLiveCurveRangeStatus.Complete;
@@ -97,25 +99,33 @@ internal sealed class WindowsCpuLiveCurveRangeMetadata
         return new(status == CpuLiveCurveRangeStatus.Complete && cleanup ? range : null, status, cleanup, version, minMax);
     }
 
-    private static bool DecodeVersion(IWindowsCpuCurveRangeObject output, Action check, ref CpuLiveCurveRangeRaw raw)
+    private static bool DecodeVersion(IWindowsCpuCurveRangeObject output, bool phoenix, Action check, ref CpuLiveCurveRangeRaw raw)
     {
-        var fields = Fields(output, ["version", "ReturnValue"], check, ref raw);
+        var fields = Fields(output, ["version", "ReturnValue"], check, ref raw, phoenix);
         // Exact hardware and trusted scope are checked at every boundary. Only a complete
         // successful enumeration can establish the pinned COM compatibility.
-        return fields is not null && fields.TryGetValue("version", out var value) && value is uint word && word == 7
+        return fields is not null && (phoenix ? raw.Version is >= 3 and <= 7 : raw.Version == 7)
             && AcceptedAcknowledgement(raw);
     }
     private static bool AcceptedAcknowledgement(CpuLiveCurveRangeRaw raw) =>
         raw.ReturnState == CpuLiveCurveRangeReturnState.Absent
         || raw is { ReturnState: CpuLiveCurveRangeReturnState.Boolean, ReturnValue: true };
-    private static CpuLiveCurveTrustedRange? DecodeMinMax(IWindowsCpuCurveRangeObject output, Action check,
+    private static CpuLiveCurveTrustedRange? DecodeMinMax(IWindowsCpuCurveRangeObject output, bool phoenix, Action check,
         ref CpuLiveCurveRangeRaw raw)
     {
-        var header = Fields(output, ["ReturnValue", "pack"], check, ref raw);
+        var header = Fields(output, ["ReturnValue", "pack"], check, ref raw, phoenix);
         if (header is null || !header.TryGetValue("pack", out var embedded) || embedded is not IWindowsCpuCurveRangeObject pack)
         { return null; }
         // Native output owns embedded objects. Fakes model the same ownership.
-        var fields = Fields(pack, ["Current", "Min", "Max", "Stepping", "Value"], check, ref raw);
+        var fields = Fields(pack, ["Current", "Min", "Max", "Stepping", "Value"], check, ref raw, phoenix);
+        if (phoenix)
+        {
+            // SDK 2.12 reads only Min, Max and Stepping from the pack returned for ID 5000A.
+            if (fields is null || !AcceptedAcknowledgement(raw) || raw.MinimumMagnitude is not uint minimum
+                || raw.MaximumMagnitude is not uint maximum || minimum > maximum || maximum > 32768
+                || raw.Step is not (> 0 and <= int.MaxValue)) { return null; }
+            return new(0x5000A, (int)minimum, (int)maximum, (int)raw.Step.Value, true);
+        }
         if (fields is null || fields.Count != 5 || !AcceptedAcknowledgement(raw)
             || raw.FirmwareShadow is not uint shadow || raw.MinimumMagnitude is not uint min || raw.MaximumMagnitude is not uint max
             || raw.Step != 1 || raw.Selector != 0x5000A || min > max || max > 50)
@@ -127,33 +137,36 @@ internal sealed class WindowsCpuLiveCurveRangeMetadata
         return new(0x5000A, (int)min, (int)max, 1, true);
     }
     private static Dictionary<string, object?>? Fields(IWindowsCpuCurveRangeObject output, string[] allowed,
-        Action check, ref CpuLiveCurveRangeRaw raw)
+        Action check, ref CpuLiveCurveRangeRaw raw, bool phoenix = false)
     {
+        var comparer = phoenix ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         var names = new List<string>();
         check();
         foreach (string name in output.Names)
         {
             check();
-            if (names.Count >= allowed.Length || !allowed.Contains(name, StringComparer.Ordinal)
-                || names.Contains(name, StringComparer.Ordinal)) { return null; }
+            if (names.Count >= allowed.Length || !allowed.Contains(name, comparer) || names.Contains(name, comparer)) { return null; }
             names.Add(name);
         }
         check();
-        if (allowed.Contains("ReturnValue") && !names.Contains("ReturnValue"))
+        if (allowed.Contains("ReturnValue") && !names.Contains("ReturnValue", comparer))
         { raw = raw with { ReturnState = CpuLiveCurveRangeReturnState.Absent }; }
-        var fields = new Dictionary<string, object?>(StringComparer.Ordinal);
-        foreach (string name in names)
+        var fields = new Dictionary<string, object?>(comparer);
+        foreach (string reportedName in names)
         {
             check();
+            string name = Array.Find(allowed, candidate => comparer.Equals(reportedName, candidate))!;
+            if (phoenix && name is ("Current" or "Value")) { continue; }
             object? value;
-            try { value = output.Get(name); }
+            try { value = output.Get(reportedName); }
             catch
             {
                 if (name == "ReturnValue") { raw = raw with { ReturnState = CpuLiveCurveRangeReturnState.Unreadable }; }
                 throw;
             }
             fields.Add(name, value);
-            uint? word = value is uint number ? number : null;
+            uint? word = value is uint number ? number
+                : phoenix && value is int signed && signed >= 0 ? (uint)signed : null;
             raw = name switch
             {
                 "version" => raw with { Version = word },
@@ -246,11 +259,14 @@ internal sealed class WindowsCpuLiveCurveRangeMetadata
             var output = instance.InvokeMethod("QueryVersion", null, new InvokeMethodOptions { Timeout = TimeSpan.FromSeconds(10) });
             return output is null ? null : new NativeObject(output, checkpoint);
         }
-        public IWindowsCpuCurveRangeObject? GetCurveMinMax(Action checkpoint)
+        public IWindowsCpuCurveRangeObject? GetCurveMinMax(Action checkpoint) =>
+            GetCurveMinMax(CpuLiveCurveContract.Rz090528, checkpoint);
+
+        public IWindowsCpuCurveRangeObject? GetCurveMinMax(CpuLiveCurveContract contract, Action checkpoint)
         {
             checkpoint();
             var input = instance.GetMethodParameters("GetMinMaxSteppingValues"); resources.Add(input); checkpoint();
-            input["ID"] = (uint)0x5000A; checkpoint();
+            input["ID"] = contract.UsesPhoenixProtocol ? (object)(int)0x5000A : (uint)0x5000A; checkpoint();
             var output = instance.InvokeMethod("GetMinMaxSteppingValues", input,
                 new InvokeMethodOptions { Timeout = TimeSpan.FromSeconds(10) });
             return output is null ? null : new NativeObject(output, checkpoint);

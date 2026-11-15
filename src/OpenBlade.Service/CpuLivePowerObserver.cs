@@ -121,7 +121,10 @@ internal sealed class CpuLivePowerObserver(ICpuLivePowerBackend backend, ICpuLiv
 
     private static bool Valid(CpuLivePowerBackendObservation? observed, out CpuLivePowerPair? pair)
     {
-        pair = CpuLivePowerSnapshot.TryCreate(observed?.Observation)?.Pair;
-        return observed?.Context is { IsWellFormed: true } && pair is not null;
+        pair = null;
+        if (observed?.Context is not { IsWellFormed: true, Contract: { } contract } context
+            || observed.Observation is not { } raw || context.PmVersion != raw.PmVersion) { return false; }
+        pair = CpuLivePowerSnapshot.TryCreate(contract, raw)?.Pair;
+        return pair is not null;
     }
 }

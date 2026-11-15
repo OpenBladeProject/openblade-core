@@ -79,7 +79,8 @@ public sealed partial class ServiceControlRuntime
             if (!diagnostic.Check(stillControlsSession(), "runtime controlling session")
                 || !diagnostic.Check(!lowPowerGate.IsActive, "runtime active power lifecycle")
                 || !diagnostic.Check(current.DeviceVerified, "runtime verified device status")
-                || !diagnostic.Check(current.Capabilities?.CpuPowerLimit is not null, "runtime supported CPU capability")
+                || !diagnostic.Check(current.Capabilities?.CpuPowerLimit is not null || current.Capabilities?.CpuVoltageOptimizer is not null,
+                    "runtime supported CPU capability")
                 || !diagnostic.Check(deviceProvider.TryGetRecentlyVerifiedReadOnlyDevice(out _), "runtime recently verified device"))
             {
                 return Finish(new(ControlOperationStatus.Blocked,

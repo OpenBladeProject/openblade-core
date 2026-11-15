@@ -12,36 +12,40 @@ internal sealed class CpuLiveCurveSnapshot
     internal const int CoreCount = 12;
 
     private readonly IReadOnlyList<CpuLiveCoreOffset> cores;
-    private CpuLiveCurveSnapshot(CpuLiveCoreOffset[] values) => cores = Array.AsReadOnly(values);
+    private CpuLiveCurveSnapshot(CpuLiveCurveContract contract, CpuLiveCoreOffset[] values)
+    { Contract = contract; cores = Array.AsReadOnly(values); }
+    internal CpuLiveCurveContract Contract { get; }
     internal IReadOnlyList<CpuLiveCoreOffset> CoreOffsets => cores;
 
-    internal static CpuLiveCurveSnapshot? TryCreate(Rz090528CpuLiveObservation? observation)
+    internal static CpuLiveCurveSnapshot? TryCreate(Rz090528CpuLiveObservation? observation) =>
+        TryCreate(CpuLiveCurveContract.Rz090528, observation);
+
+    internal static CpuLiveCurveSnapshot? TryCreate(CpuLiveCurveContract contract, Rz090528CpuLiveObservation? observation)
     {
-        if (observation is not
-            { EnabledCoreMask: SupportedMask, PmVersion: SupportedPmVersion, PmTableLength: SupportedPmLength, CoreOffsets.Count: CoreCount })
+        if (observation?.CoreOffsets is null || observation.CoreOffsets.Count != contract.CoreCount
+            || !contract.AcceptsGeometry(observation.EnabledCoreMask, observation.PmVersion, observation.PmTableLength))
         { return null; }
-        var copy = new CpuLiveCoreOffset[CoreCount];
+        var copy = new CpuLiveCoreOffset[contract.CoreCount];
         uint seen = 0;
         for (int i = 0; i < copy.Length; i++)
         {
             var core = observation.CoreOffsets[i];
-            if (core is null || !IsEnabled(core.PhysicalCoreId)
+            if (core is null || !contract.IsEnabled(core.PhysicalCoreId)
                 || (seen & (1u << core.PhysicalCoreId)) != 0) { return null; }
             seen |= 1u << core.PhysicalCoreId;
             copy[i] = new(core.PhysicalCoreId, core.Offset);
         }
-        if (seen != SupportedMask) { return null; }
+        if (seen != contract.EnabledCoreMask) { return null; }
         Array.Sort(copy, (left, right) => left.PhysicalCoreId.CompareTo(right.PhysicalCoreId));
-        return new(copy);
+        return new(contract, copy);
     }
 
-    internal static bool IsEnabled(int physicalCoreId) => physicalCoreId is >= 0 and < 16
-        && (SupportedMask & (1u << physicalCoreId)) != 0;
+    internal static bool IsEnabled(int physicalCoreId) => CpuLiveCurveContract.Rz090528.IsEnabled(physicalCoreId);
 
     internal CpuLiveCurveSnapshot WithOffset(CpuLiveCurveCommand command)
     {
-        // Commands can only contain an enabled ID and a signed16 value.
-        return new(cores.Select(core => new CpuLiveCoreOffset(core.PhysicalCoreId,
+        if (command.Contract != Contract) { throw new ArgumentException("Curve command belongs to a different contract.", nameof(command)); }
+        return new(Contract, cores.Select(core => new CpuLiveCoreOffset(core.PhysicalCoreId,
             core.PhysicalCoreId == command.PhysicalCoreId ? command.Offset : core.Offset)).ToArray());
     }
 }
@@ -49,8 +53,9 @@ internal sealed class CpuLiveCurveSnapshot
 internal readonly record struct CpuLiveCurveCommand
 {
     internal const uint Message = 0x53;
-    private CpuLiveCurveCommand(int physicalCoreId, short offset)
-    { PhysicalCoreId = physicalCoreId; Offset = offset; }
+    private CpuLiveCurveCommand(CpuLiveCurveContract contract, int physicalCoreId, short offset)
+    { Contract = contract; PhysicalCoreId = physicalCoreId; Offset = offset; }
+    internal CpuLiveCurveContract? Contract { get; }
     internal int PhysicalCoreId { get; }
     internal short Offset { get; }
 
@@ -60,14 +65,24 @@ internal readonly record struct CpuLiveCurveCommand
         out CpuLiveCurveCommand command)
     {
         command = default;
-        if (enabledMask != CpuLiveCurveSnapshot.SupportedMask || !CpuLiveCurveSnapshot.IsEnabled(physicalCoreId)
-            || offset is < short.MinValue or > short.MaxValue) { return false; }
-        command = new(physicalCoreId, (short)offset);
+        return enabledMask == CpuLiveCurveSnapshot.SupportedMask
+            && TryCreate(CpuLiveCurveContract.Rz090528, physicalCoreId, offset, out command);
+    }
+
+    internal static bool TryCreate(CpuLiveCurveContract contract, int physicalCoreId, int offset,
+        out CpuLiveCurveCommand command)
+    {
+        command = default;
+        if (!contract.IsEnabled(physicalCoreId) || offset is < short.MinValue or > short.MaxValue) { return false; }
+        command = new(contract, physicalCoreId, (short)offset);
         return true;
     }
 
-    internal uint EncodeArgument() => ((uint)(PhysicalCoreId / 8) << 28)
-        | ((uint)(PhysicalCoreId % 8) << 20) | unchecked((ushort)Offset);
+    internal uint EncodeArgument()
+    {
+        if (Contract != CpuLiveCurveContract.Rz090528) { throw new ArgumentException("Invalid RZ09-0528 curve command."); }
+        return ((uint)(PhysicalCoreId / 8) << 28) | ((uint)(PhysicalCoreId % 8) << 20) | unchecked((ushort)Offset);
+    }
 
     internal static bool TryDecode(uint message, uint argument, uint enabledMask,
         out CpuLiveCurveCommand command)
@@ -118,9 +133,16 @@ internal sealed class Rz090528CpuLiveCurvePlan
     {
         var baseline = CpuLiveCurveSnapshot.TryCreate(observation);
         if (baseline is null) { return new(CpuLiveCurvePlanStatus.InvalidBaseline, null, null); }
+        return CreateSelectiveFromSnapshot(baseline, targets, admit);
+    }
+
+    internal static CpuLiveCurvePlanResult CreateSelectiveFromSnapshot(CpuLiveCurveSnapshot baseline,
+        IReadOnlyList<CpuLiveCurveTarget>? targets,
+        Func<CpuLiveCurveCommand, CpuLiveCurveCommandPurpose, bool>? admit)
+    {
         int count = targets?.Count ?? 0;
         if (count == 0) { return new(CpuLiveCurvePlanStatus.Unchanged, baseline, null); }
-        if (count is < 0 or > CpuLiveCurveSnapshot.CoreCount) { return new(CpuLiveCurvePlanStatus.InvalidTarget, baseline, null); }
+        if (count < 0 || count > baseline.Contract.CoreCount) { return new(CpuLiveCurvePlanStatus.InvalidTarget, baseline, null); }
         // Freeze caller-owned collections before invoking admission callbacks.
         var copy = new CpuLiveCurveTarget[count];
         for (int i = 0; i < copy.Length; i++) { copy[i] = targets![i]; }
@@ -133,20 +155,20 @@ internal sealed class Rz090528CpuLiveCurvePlan
         uint seen = 0;
         foreach (var target in targets)
         {
-            if (target is null || !CpuLiveCurveSnapshot.IsEnabled(target.PhysicalCoreId)
+            if (target is null || !baseline.Contract.IsEnabled(target.PhysicalCoreId)
                 || target.Offset is < -30 or > 0 || (seen & (1u << target.PhysicalCoreId)) != 0)
             { return new(CpuLiveCurvePlanStatus.InvalidTarget, baseline, null); }
             seen |= 1u << target.PhysicalCoreId;
         }
 
-        var steps = new List<CpuLiveCurveStep>(CpuLiveCurveSnapshot.CoreCount);
+        var steps = new List<CpuLiveCurveStep>(baseline.Contract.CoreCount);
         var current = baseline;
         foreach (var target in targets.OrderBy(target => target.PhysicalCoreId))
         {
             short previous = current.CoreOffsets.Single(core => core.PhysicalCoreId == target.PhysicalCoreId).Offset;
             if (previous == target.Offset) { continue; }
-            _ = CpuLiveCurveCommand.TryCreate(target.PhysicalCoreId, target.Offset, CpuLiveCurveSnapshot.SupportedMask, out var forward);
-            _ = CpuLiveCurveCommand.TryCreate(target.PhysicalCoreId, previous, CpuLiveCurveSnapshot.SupportedMask, out var reverse);
+            _ = CpuLiveCurveCommand.TryCreate(baseline.Contract, target.PhysicalCoreId, target.Offset, out var forward);
+            _ = CpuLiveCurveCommand.TryCreate(baseline.Contract, target.PhysicalCoreId, previous, out var reverse);
             var after = current.WithOffset(forward);
             steps.Add(new(forward, reverse, current, after));
             current = after;

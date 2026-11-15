@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Numerics;
 
 namespace OpenBlade.Protocol;
 
@@ -13,7 +12,7 @@ internal enum CpuQueryStage
     Approval, InitialUsbIdentity, MutexCreate, MutexWait, BackendFilePins,
     HostIdentity, ProcessorIdentity, FreshUsbIdentity, ControllerPresence,
     InstalledBackend, DeviceOpen, PciCount, PciRecords, PciIdentity,
-    CoreMask, FuseMask, PmVersion, CoreOffset, Cleanup,
+    CoreMask, FuseMask, PmVersion, CoreOffset, Cleanup, Capability,
 }
 internal enum CpuQueryFailureCode
 {
@@ -77,7 +76,10 @@ internal static class CpuQueryPciTopology
 {
     internal const uint RootId = 0x15071022, NodeId = 0x16F81022, OrientationId = 0x16F91022;
 
-    internal static bool TryFindBus(byte[] records, out uint bus)
+    internal static bool TryFindBus(byte[] records, out uint bus) =>
+        TryFindBus(records, CpuCurveNativeProfile.ForContract(CpuLiveCurveContract.Rz090528), out bus);
+
+    internal static bool TryFindBus(byte[] records, CpuCurveNativeProfile profile, out uint bus)
     {
         bus = 0;
         if (records.Length < 28 || (records.Length - 28) % 52 != 0
@@ -91,17 +93,17 @@ internal static class CpuQueryPciTopology
             uint b = Word(records, offset), d = Word(records, offset + 4), f = Word(records, offset + 8);
             if (b > 255 || d > 31 || f > 7 || !seen.Add((b << 8) | (d << 3) | f)) { return false; }
             uint id = Word(records, offset + 12);
-            if (id == RootId)
+            if (id == profile.RootId)
             {
                 if (root || b != 0 || d != 0 || f != 0) { return false; }
                 root = true;
             }
-            else if (id == NodeId)
+            else if (id == profile.NodeId)
             {
                 if (node || b != 0 || d != 0x18 || f != 0) { return false; }
                 node = true;
             }
-            else if (id == OrientationId)
+            else if (id == profile.OrientationId)
             {
                 if (orientation || b != 0 || d != 0x18 || f != 1) { return false; }
                 orientation = true;
@@ -122,12 +124,14 @@ internal static class CpuQueryPciTopology
 /// Saved configuration and PPT limits are deliberately absent from the result.
 /// </summary>
 internal sealed class Rz090528CpuLiveQuery(
-    IRz090528CpuQueryIoctl ioctl, IRz090528CpuQuerySynchronization synchronization, CpuQueryProgress? progress = null)
+    IRz090528CpuQueryIoctl ioctl, IRz090528CpuQuerySynchronization synchronization, CpuQueryProgress? progress = null,
+    CpuLiveCurveContract? contract = null)
 {
+    private readonly CpuLiveCurveContract contract = contract ?? CpuLiveCurveContract.Rz090528;
     internal Rz090528CpuLiveQueryResult Query(DeviceIdentity identity,
         CancellationToken cancellationToken = default)
     {
-        if (identity.Model != "RZ09-0528" || identity.VendorId != 0x1532 || identity.ProductId != 0x02C6)
+        if (CpuLiveCurveContract.Resolve(contract.Id, contract.Version, identity) != contract)
         {
             return new(CpuLiveQueryStatus.UnsupportedIdentity, null,
                 new(CpuQueryStage.InitialUsbIdentity, CpuQueryFailureCode.AdmissionDenied));
@@ -141,7 +145,7 @@ internal sealed class Rz090528CpuLiveQuery(
                 new(CpuQueryStage.MutexWait, CpuQueryFailureCode.Timeout));
         }
 
-        var session = new Rz090528CpuMailboxSession(ioctl, synchronization, progress, allowPriorTerminalResponse: true);
+        var session = new Rz090528CpuMailboxSession(ioctl, synchronization, progress, allowPriorTerminalResponse: true, contract);
         try { return new(CpuLiveQueryStatus.Observed, session.Observe(cancellationToken)); }
         catch (Rz090528CpuMailboxSession.QueryFailure failure)
         {
@@ -161,8 +165,9 @@ internal sealed class Rz090528CpuLiveQuery(
 // The raw PCI/SMN/mailbox helpers remain private.
 internal sealed class Rz090528CpuMailboxSession(
     IRz090528CpuQueryIoctl ioctl, IRz090528CpuQuerySynchronization synchronization, CpuQueryProgress? progress = null,
-    bool allowPriorTerminalResponse = false)
+    bool allowPriorTerminalResponse = false, CpuLiveCurveContract? contract = null)
 {
+    private readonly CpuCurveNativeProfile profile = CpuCurveNativeProfile.ForContract(contract ?? CpuLiveCurveContract.Rz090528);
     private const uint EnumeratePci = 0x81112F18;
     private const uint ReadPci = 0x81112F24;
     private const uint WriteSmnRegister = 0x81112FF8;
@@ -179,48 +184,50 @@ internal sealed class Rz090528CpuMailboxSession(
     {
         bus ??= DiscoverBus(cancellationToken);
         stage = CpuQueryStage.PciIdentity;
-        if (ReadPciWord(bus.Value, 0, 0, 0, cancellationToken) != CpuQueryPciTopology.RootId
-            || ReadPciWord(bus.Value, 0x18, 0, 0, cancellationToken) != CpuQueryPciTopology.NodeId)
+        if (ReadPciWord(bus.Value, 0, 0, 0, cancellationToken) != profile.RootId
+            || ReadPciWord(bus.Value, 0x18, 0, 0, cancellationToken) != profile.NodeId)
         {
             throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
         }
         // The exact SDK obtains orientation from this BDF. Confirm its identity
         // independently, then compare the orientation to the separate fuse mask.
-        if (ReadPciWord(0, 0x18, 1, 0, cancellationToken) != CpuQueryPciTopology.OrientationId)
+        if (ReadPciWord(0, 0x18, 1, 0, cancellationToken) != profile.OrientationId)
         {
             throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
         }
 
         stage = CpuQueryStage.CoreMask;
-        var mask = ReadPciWord(0, 0x18, 1, 0x140, cancellationToken);
+        var mask = profile.DecodeOrientation(ReadPciWord(0, 0x18, 1, 0x140, cancellationToken));
         stage = CpuQueryStage.FuseMask;
-        var fusedMask = ~(ReadSmn(bus.Value, 0x03820AB0, cancellationToken) >> 5) & 0xFFFF;
-        if ((mask & 0xFFFF0000) != 0 || BitOperations.PopCount(mask) != 12 || mask != fusedMask)
+        var fusedMask = profile.DecodeFuse(ReadSmn(bus.Value, profile.FuseAddress, cancellationToken));
+        if (!profile.AcceptsObservedMask(mask) || mask != fusedMask)
         {
             throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
         }
 
         stage = CpuQueryStage.PmVersion;
         var version = QueryMailbox(bus.Value, QueryCommand.PmVersion, 0, cancellationToken);
-        var length = version switch
+        int length = profile.PmLength(version);
+        if (length == 0) { throw new QueryFailure(CpuLiveQueryStatus.UnsupportedVersion); }
+        if (profile.IsPhoenix)
         {
-            0x005D0008 => 0xD54,
-            0x005D0009 => 0xD58,
-            0x005D000A => 0xD60,
-            0x005D000B => 0xD50,
-            0x005D000C => 0xD68,
-            _ => throw new QueryFailure(CpuLiveQueryStatus.UnsupportedVersion),
-        };
+            // V22 GetCurveOptimizerStatus checks capability82 bit2 before E1.
+            // A query approval never substitutes for this fresh firmware gate.
+            stage = CpuQueryStage.Capability;
+            uint capability = ReadCurveCapability(cancellationToken);
+            if (capability == uint.MaxValue || (capability & 4) == 0)
+            { throw new QueryFailure(CpuLiveQueryStatus.Unavailable, CpuQueryFailureCode.AdmissionDenied); }
+        }
         stage = CpuQueryStage.CoreOffset;
-        var offsets = new List<CpuLiveCoreOffset>(12);
-        for (var physicalId = 0; physicalId < 16; physicalId++)
+        var offsets = new List<CpuLiveCoreOffset>(profile.CoreCount);
+        for (var physicalId = 0; physicalId < (profile.IsPhoenix ? 8 : 16); physicalId++)
         {
             if ((mask & (1u << physicalId)) == 0)
             {
                 continue;
             }
 
-            var argument = (uint)(((physicalId / 8) << 8) | (physicalId % 8)) << 20;
+            var argument = profile.GetterArgument(physicalId);
             var value = QueryMailbox(bus.Value, QueryCommand.CoreOffset, argument, cancellationToken);
             offsets.Add(new(physicalId, unchecked((short)(value & 0xFFFF))));
         }
@@ -246,7 +253,7 @@ internal sealed class Rz090528CpuMailboxSession(
             throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
         }
 
-        return CpuQueryPciTopology.TryFindBus(records, out uint bus)
+        return CpuQueryPciTopology.TryFindBus(records, profile, out uint bus)
             ? bus : throw new QueryFailure(CpuLiveQueryStatus.InvalidData);
     }
 
@@ -284,7 +291,7 @@ internal sealed class Rz090528CpuMailboxSession(
         QueryMailbox(bus ?? throw new InvalidOperationException("Discovery required."), QueryCommand.Capability, 0, token);
 
     internal void SubmitCurve(CpuLiveCurveCommand command, CancellationToken token) =>
-        QueryMailbox(bus ?? throw new InvalidOperationException("Discovery required."), QueryCommand.SetCoreOffset, command.EncodeArgument(), token);
+        QueryMailbox(bus ?? throw new InvalidOperationException("Discovery required."), QueryCommand.SetCoreOffset, profile.SetterArgument(command), token);
     private enum QueryCommand : uint { PmVersion = 0x06, CoreOffset = 0x5E, Capability = 0x82, SetCoreOffset = 0x53 }
 
     private uint QueryMailbox(uint bus, QueryCommand command, uint argument,
@@ -327,7 +334,7 @@ internal sealed class Rz090528CpuMailboxSession(
         // Vendor capability82 has no input argument; preserve that exact shape.
         if (command != QueryCommand.Capability) { WriteSmn(bus, ArgumentAddress, argument, cancellationToken); }
         progress?.MailboxPhase(CpuQueryMailboxPhase.Submission);
-        WriteSmn(bus, MessageAddress, (uint)command, cancellationToken);
+        WriteSmn(bus, MessageAddress, command == QueryCommand.CoreOffset ? profile.GetterMessage : (uint)command, cancellationToken);
         progress?.MailboxTransportCompleted(submission: true);
         progress?.MailboxPhase(CpuQueryMailboxPhase.ResponseWait);
         // Select once; all subsequent data reads are protected by the same lease.

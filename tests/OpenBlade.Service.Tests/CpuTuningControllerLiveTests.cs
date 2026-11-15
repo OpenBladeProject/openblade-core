@@ -7,6 +7,43 @@ namespace OpenBlade.Service.Tests;
 public sealed class CpuTuningControllerLiveTests
 {
     [Theory]
+    [InlineData("RZ09-0508")]
+    [InlineData("RZ09-0482")]
+    public async Task Blade14CurveApplyAndRestoreKeepPowerPeerReadOnly(string model)
+    {
+        var contract = model == "RZ09-0508" ? CpuLiveCurveContract.Rz090508 : CpuLiveCurveContract.Rz090482;
+        var store = new CpuLiveCurveTuningTransactionTests.MemoryStore();
+        var powerStore = new CpuPowerTestData.MemoryStore();
+        var curve = CpuLiveCurveTuningTransactionTests.Blade14Fixture(store, contract);
+        curve.Values = Enumerable.Range(0, 8).Select(id => new CpuLiveCoreOffset(id, (short)-id)).ToArray();
+        var original = curve.Values.ToArray();
+        var power = new CpuPowerTestData.FakeBackend { Context = CpuLivePowerContext.FromCurveContext(curve.Context) };
+        power.ObserveResult = _ => Task.FromResult(new CpuLivePowerBackendObservation(power.Context,
+            CpuPowerTestData.Raw(power.Pair, contract), null, CpuLivePowerCapability.TryDecode(4), null));
+        curve.CheckPeer = peer => peer.Original is null && peer.Expected == power.Pair;
+        var controller = new CpuTuningController(new UnusedSource(), curveBackend: curve, curveStore: store,
+            powerBackend: power, powerStore: powerStore);
+        static bool Admit(CpuTuningFeatures features) => !features.HasFlag(CpuTuningFeatures.PowerLimit);
+
+        var applied = await controller.MutateLiveAsync(new(null, new(true, -12)), false, Admit, default);
+        Assert.Equal(ControlOperationStatus.Stored, applied.Status);
+        Assert.Equal(8, applied.CpuTuning!.LiveState!.CoreValues.Count);
+        var restored = await controller.MutateLiveAsync(null, true, Admit, default);
+        Assert.Equal(ControlOperationStatus.Stored, restored.Status);
+        Assert.Equal(original, curve.Values);
+        Assert.Equal(16, curve.Peers.Count);
+        Assert.Null(powerStore.Journal);
+        Assert.Equal(4, store.Journal!.SchemaVersion);
+
+        var historical = CpuPowerTestData.Legacy(CpuLivePowerOwnershipState.OwnedVerified);
+        powerStore.Journal = historical;
+        Assert.Equal(ControlOperationStatus.Blocked,
+            (await controller.MutateLiveAsync(new(null, new(true, -10)), false, Admit, default)).Status);
+        Assert.Equal(16, curve.Sent.Count);
+        Assert.Same(historical, powerStore.Journal);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task RuntimeWrapperCarriesExactReadbackAcrossApplyAndRestoreWithoutSkippingPeerChecks(bool receipt)

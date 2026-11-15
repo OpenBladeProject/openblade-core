@@ -11,6 +11,8 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         CpuLiveCurveWriteProof? proof, Func<DeviceIdentity?> readUsb, ICpuQueryWindowsPlatform platform,
         CancellationToken token)
     {
+        if (platform.Contract.UsesPhoenixProtocol)
+        { return ExecutePhoenixCurveWithPowerPeer(request, proof, readUsb, platform, token); }
         var operation = NativeOperations.GetValue(platform, static _ => new());
         if (Interlocked.CompareExchange(ref operation.Active, 1, 0) != 0)
         { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }
@@ -130,6 +132,132 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
             if (wire is not { Capability: uint capability, Cap: { } cap }
                 || (capability & 4) == 0
                 || !proof!.AdmitPowerPeer(request, capability, cap)) { throw new CpuPowerAdmissionException(); }
+            Check();
+        }
+    }
+
+    // Phoenix uses its exact CO capability/range gates; complete PPT peers remain read-only.
+    private static CpuLiveCurveNativeResult ExecutePhoenixCurveWithPowerPeer(CpuLiveCurveNativeRequest request,
+        CpuLiveCurveWriteProof? proof, Func<DeviceIdentity?> readUsb, ICpuQueryWindowsPlatform platform,
+        CancellationToken token)
+    {
+        var operation = NativeOperations.GetValue(platform, static _ => new());
+        if (Interlocked.CompareExchange(ref operation.Active, 1, 0) != 0)
+        { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }
+        IDisposable? lease = null;
+        IDisposable? readScope = null;
+        WindowsRz090528CpuQueryAdapter? adapter = null;
+        CpuPhoenixCurveNativeWire? wire = null;
+        bool cleanup = true, verified = false;
+        var failure = CpuLiveCurveNativeFailure.AdmissionDenied;
+        long started = Stopwatch.GetTimestamp();
+        try
+        {
+            token.ThrowIfCancellationRequested();
+            if (proof is null || !proof.Consume(request) || CpuLiveCurveContract.Resolve(platform.Contract.Id, platform.Contract.Version, readUsb()) != platform.Contract || !ExactPlatform())
+            { throw new CpuPowerAdmissionException(); }
+            readScope = proof.BeginRead(request);
+            wire = new(request, CheckTransport, CheckPeer, BeforeSetter, BeginReadback, Check);
+            adapter = new(platform, readUsb, wire);
+            lease = adapter.Acquire(TimeSpan.FromSeconds(20), token);
+            if (lease is null || !ExactPlatform()) { throw new CpuPowerAdmissionException(); }
+            Check();
+            failure = CpuLiveCurveNativeFailure.Transport;
+            wire.Run(adapter, token);
+            EndRead();
+            CheckFinal();
+            verified = wire.Complete && CpuLiveCurveNativeRequest.Equal(wire.CurveAfter, request.After)
+                && wire.After?.Pair == request.PowerPeer!.Expected;
+            failure = verified ? CpuLiveCurveNativeFailure.None : CpuLiveCurveNativeFailure.ReadbackDrift;
+        }
+        catch (CpuPowerAdmissionException) { failure = CpuLiveCurveNativeFailure.AdmissionDenied; }
+        catch (OperationCanceledException) { failure = CpuLiveCurveNativeFailure.Cancelled; }
+        catch (Exception) { failure = CpuLiveCurveNativeFailure.Transport; }
+        finally
+        {
+            wire?.Abort();
+            try { readScope?.Dispose(); }
+            catch { cleanup = false; }
+            try { lease?.Dispose(); }
+            catch { cleanup = false; }
+            finally
+            {
+                cleanup &= adapter?.cleanupFailed != true;
+                if (!cleanup) { verified = false; failure = CpuLiveCurveNativeFailure.Cleanup; }
+                else { Volatile.Write(ref operation.Active, 0); }
+            }
+        }
+        return new(wire?.Disposition ?? CpuLiveCurveNativeDisposition.NotSubmitted,
+            true, cleanup, verified, wire?.CurveAfter, failure);
+
+        void Check()
+        {
+            token.ThrowIfCancellationRequested();
+            if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(90)
+                || (readScope is null ? proof?.Current(request) : proof?.ReadCurrent(request)) != true)
+            { throw new CpuPowerAdmissionException(); }
+        }
+        void CheckTransport()
+        {
+            token.ThrowIfCancellationRequested();
+            if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(90)
+                || (readScope is null ? proof?.Current(request) : proof?.ReadTransportCurrent(request)) != true)
+            { throw new CpuPowerAdmissionException(); }
+        }
+        void EndRead()
+        {
+            if (readScope is null) { return; }
+            try
+            {
+                if (proof?.CompleteRead(request) != true) { throw new CpuPowerAdmissionException(); }
+            }
+            finally
+            {
+                try { readScope.Dispose(); }
+                catch { cleanup = false; throw; }
+                finally { readScope = null; }
+            }
+        }
+        void BeforeSetter()
+        {
+            EndRead();
+            // The read proof is gone before all original fresh setter checks.
+            CheckFinal();
+            if (proof?.SubmissionCurrent(request) != true) { throw new CpuPowerAdmissionException(); }
+        }
+        void BeginReadback() => readScope = proof!.BeginRead(request);
+        bool ExactPlatform() => platform.Contract.UsesPhoenixProtocol;
+        void CheckRange()
+        {
+            Check();
+            if (proof!.ReadFreshRange(request)?.AllowsOperation(request) != true)
+            { throw new CpuPowerAdmissionException(); }
+            Check();
+        }
+        void CheckFinal()
+        {
+            if (proof?.SupportsFinalCheckpoint == true)
+            {
+                token.ThrowIfCancellationRequested();
+                if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(90)
+                    || adapter?.FreshAdmission() != true || !ExactPlatform()
+                    || wire is not { Capability: uint capability } || (capability & 4) == 0
+                    || !proof.UncappedFinalCheckpointCurrent(request, capability)) { throw new CpuPowerAdmissionException(); }
+                token.ThrowIfCancellationRequested();
+                if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(90)) { throw new CpuPowerAdmissionException(); }
+                return;
+            }
+            Check();
+            if (adapter?.FreshAdmission() != true || !ExactPlatform()) { throw new CpuPowerAdmissionException(); }
+            CheckPeer();
+            Check();
+        }
+        void CheckPeer()
+        {
+            CheckRange();
+            if (wire is not { Capability: uint capability }
+                || (capability & 4) == 0
+                || !proof!.AdmitUncappedPowerPeer(request, capability)) { throw new CpuPowerAdmissionException(); }
             Check();
         }
     }

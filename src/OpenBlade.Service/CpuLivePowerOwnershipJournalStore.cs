@@ -11,19 +11,26 @@ internal sealed record CpuLivePowerContext(DeviceIdentity Identity, uint Enabled
     uint PmVersion, int PmTableLength, CpuLiveCurveBackendIdentity Backend, CpuLiveCurveBootSequence BootSequence)
 {
     public CpuLiveRuntimeLifetime? RuntimeLifetime { get; init; }
-    // Ignore only BIOS provenance; every other context field retains record equality.
-    internal bool MatchesHardwareContext(CpuLivePowerContext? other) => other is not null
-        && CpuHardwareIdentity.Same(Identity, other.Identity) && (this with { Identity = other.Identity }) == other;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ContractId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ContractVersion { get; init; }
 
-    internal bool IsWellFormed => CpuSavedTuningPlan.IsExactIdentity(Identity)
-        && EnabledCoreMask == CpuLiveCurveSnapshot.SupportedMask
-        && PmVersion == CpuLivePowerSnapshot.SupportedVersion && PmTableLength == CpuLivePowerSnapshot.PayloadLength
-        && Backend is { IsPinned: true } && BootSequence is { IsWellFormed: true };
+    internal CpuLiveCurveContext ToCurveContext() =>
+        new(Identity, EnabledCoreMask, PmVersion, PmTableLength, Backend, BootSequence)
+        { RuntimeLifetime = RuntimeLifetime, ContractId = ContractId, ContractVersion = ContractVersion };
+    internal static CpuLivePowerContext FromCurveContext(CpuLiveCurveContext curve) =>
+        new(curve.Identity, curve.EnabledCoreMask, curve.PmVersion, curve.PmTableLength, curve.Backend, curve.BootSequence)
+        { RuntimeLifetime = curve.RuntimeLifetime, ContractId = curve.ContractId, ContractVersion = curve.ContractVersion };
+    internal CpuLiveCurveContract? Contract => CpuLiveCurveContract.Resolve(ContractId, ContractVersion, Identity);
+    internal bool MatchesHardwareContext(CpuLivePowerContext? other) => other is not null
+        && ToCurveContext().MatchesHardwareContext(other.ToCurveContext());
+    internal bool IsWellFormed => ToCurveContext().IsWellFormed;
 }
 
 // Explicit public DTO fields: Protocol value properties are internal and must
 // not be serialized implicitly. Exact reconstruction rejects normalization.
-internal sealed record CpuLivePowerStoredValue(uint Milliwatts, uint RawBits)
+internal sealed record CpuLivePowerStoredValue(uint? Milliwatts, uint RawBits)
 {
     internal CpuLivePowerValue? Decode() => CpuLivePowerValue.TryFromRawBits(RawBits, out var value)
         && value.Milliwatts == Milliwatts ? value : null;
@@ -34,6 +41,13 @@ internal sealed record CpuLivePowerStoredPair(CpuLivePowerStoredValue Fast, CpuL
 {
     internal CpuLivePowerPair? Decode() => Fast?.Decode() is { } fast && Slow?.Decode() is { } slow
         && float.IsFinite(BitConverter.UInt32BitsToSingle(StapmRawBits)) ? new(fast, slow, StapmRawBits) : null;
+    internal CpuLivePowerPair? DecodeCurvePeer(CpuLiveCurveContract contract)
+    {
+        if (Fast is null || Slow is null) { return null; }
+        var pair = CpuLivePowerPair.DecodeCurvePeer(contract, StapmRawBits, Fast.RawBits, Slow.RawBits);
+        return pair is not null && pair.Fast.Milliwatts == Fast.Milliwatts && pair.Slow.Milliwatts == Slow.Milliwatts ? pair : null;
+    }
+
     internal static CpuLivePowerStoredPair From(CpuLivePowerPair pair) => new(
         CpuLivePowerStoredValue.From(pair.Fast), CpuLivePowerStoredValue.From(pair.Slow), pair.StapmRawBits);
 }
@@ -73,7 +87,8 @@ internal sealed class CpuLivePowerOwnershipJournal
     {
         get
         {
-            if (SchemaVersion != 1 || TransactionId == Guid.Empty || Context is not { IsWellFormed: true }
+            if (SchemaVersion != 1 || TransactionId == Guid.Empty || Context is not { IsWellFormed: true, ContractId: null, ContractVersion: null }
+                || Context.Contract != CpuLiveCurveContract.Rz090528
                 || UpdatedAtUtc == default || !Enum.IsDefined(State) || !stepsPresent || Steps.Count > 2
                 || CompletedSteps < 0 || CompletedSteps > Steps.Count
                 || OriginalBaseline?.Decode() is not { } original || OperationBaseline?.Decode() is not { } baseline
@@ -108,7 +123,7 @@ internal sealed class CpuLivePowerOwnershipJournal
         }
     }
 
-    private static bool IsForward(uint milliwatts) => milliwatts is >= 45000 and <= 95000 && milliwatts % 1000 == 0;
+    private static bool IsForward(uint? milliwatts) => milliwatts is >= 45000 and <= 95000 && milliwatts % 1000 == 0;
     internal CpuLivePowerPair ExpectedAt(int completed)
     {
         var pair = OperationBaseline.Decode() ?? throw new InvalidDataException("Invalid live PPT baseline.");
@@ -161,7 +176,10 @@ internal sealed class CpuLivePowerOwnershipJournalStore(string path) : ICpuLiveP
         using var document = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = 16 });
         if (!UniqueKeys(document.RootElement)) { return null; }
         var journal = JsonSerializer.Deserialize<CpuLivePowerOwnershipJournal>(bytes, Options);
-        return journal is { IsWellFormed: true } ? journal : null;
+        if (journal is not { IsWellFormed: true }) { return null; }
+        // Schema 1 never contained a contract discriminator.
+        var context = document.RootElement.GetProperty("context");
+        return context.TryGetProperty("contractId", out _) || context.TryGetProperty("contractVersion", out _) ? null : journal;
     }
 
     private static bool UniqueKeys(JsonElement element)

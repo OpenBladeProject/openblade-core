@@ -71,7 +71,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         ICpuQueryWindowsPlatform platform, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(readFreshUsbIdentity);
-        if (metadataReader is null || platform is not ICpuPmWindowsPlatform pm)
+        if (approval is null || platform is not ICpuPmWindowsPlatform pm)
         { return new(WindowsRz090528CpuPmObservationAdapter.Denied(profile: CpuPmObservationProfile.RangeSingleSample), true, true); }
         return ObservePmScope(null, null!, pm, new PmClock(), token, metadataReader,
             installedApproval: approval, readInstalledUsb: readFreshUsbIdentity);

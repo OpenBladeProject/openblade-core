@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
 
@@ -6,6 +7,61 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class CpuLiveCurveNativeBackendTests
 {
+    [Theory]
+    [InlineData("RZ09-0508")]
+    [InlineData("RZ09-0482")]
+    public async Task InitiallyUnavailableHostCanRetryOnTheSameNativeWorker(string model)
+    {
+        var contract = model == "RZ09-0508" ? CpuLiveCurveContract.Rz090508 : CpuLiveCurveContract.Rz090482;
+        var exact = new DeviceIdentity(model, 0x1532, contract.ProductId, "fixture");
+        var source = new BindingSource();
+        DeviceIdentity? bindingIdentity = null;
+        int bindingReads = 0, usbReads = 0;
+        var platform = new Platform
+        {
+            RetainDevice = true,
+            Binding = new(() => { bindingReads++; return bindingIdentity; }),
+        };
+        var session = WindowsRz090528CpuNativeSession.ForPlatform(platform);
+        CpuTuningController? controller = null;
+        using var provider = new WindowsCpuLiveTuningTrustedNativeProvider(session, () => controller, source,
+            () => { usbReads++; return exact; }, _ => new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 42),
+            new WindowsCpuLiveCurveRangeMetadata(_ => throw new InvalidOperationException("Observation must not open WMI.")));
+        var backend = new CpuLiveCurveNativeBackend(session, provider);
+        controller = new(source, curveBackend: backend, curveStore: new CpuLiveCurveTuningTransactionTests.MemoryStore());
+
+        var unknownHost = await controller.ObserveLiveAsync(_ => true, default);
+        Assert.Null(unknownHost.LiveState);
+        Assert.Equal(0, bindingReads);
+        Assert.Equal(0, usbReads);
+        Assert.False(backend.Status.ScopeInvalid);
+
+        source.Identity = exact;
+        var unknownBinding = await controller.ObserveLiveAsync(_ => true, default);
+        Assert.Null(unknownBinding.LiveState);
+        Assert.Equal(1, bindingReads);
+        Assert.Equal(0, usbReads);
+        Assert.Equal(0, platform.Opens);
+        Assert.False(backend.Status.ScopeInvalid);
+
+        bindingIdentity = exact;
+        var recovered = await controller.ObserveLiveAsync(_ => true, default);
+        Assert.Equal(Enumerable.Range(0, 8).Select(id => -(id + 1)),
+            recovered.LiveState!.CoreValues.Select(core => core.Value));
+        Assert.Equal(2, bindingReads);
+        Assert.Equal(8, platform.CoreReads);
+        Assert.Equal(0, platform.Setters);
+        Assert.False(backend.Status.ScopeInvalid);
+    }
+
+    private sealed class BindingSource : ICpuTuningObservationSource
+    {
+        internal DeviceIdentity? Identity;
+        public DeviceIdentity? ReadIdentity() => Identity;
+        public SavedCpuFirmwareReadResult ReadSaved(DeviceIdentity identity) => throw new InvalidOperationException();
+        public CpuTuningBackendStatus InspectInstalled(DeviceIdentity identity, bool useInstalledBackend) => throw new InvalidOperationException();
+    }
+
     [Theory]
     [InlineData("success")]
     [InlineData("cleanup")]
@@ -645,6 +701,8 @@ public sealed class CpuLiveCurveNativeBackendTests
 
     private sealed class Platform : ICpuQueryWindowsPlatform, ICpuQueryDevice, ICpuQueryMutex
     {
+        internal CpuInstalledBackendBinding? Binding { get; init; }
+        public CpuLiveCurveContract Contract => Binding?.Get().Contract ?? CpuLiveCurveContract.Rz090528;
         internal readonly SortedDictionary<int, short> Values = new(Snapshot().CoreOffsets.ToDictionary(core => core.PhysicalCoreId, core => core.Offset));
         internal readonly List<List<int>> LeaseThreads = [];
         internal int Opens, MutexCreates, Setters, CoreReads;
@@ -656,17 +714,23 @@ public sealed class CpuLiveCurveNativeBackendTests
         internal Action<int>? OnCoreRead;
         private uint selected, argument, replyValue, lastCommand;
         private bool capabilityRead;
-        public HostIdentityReadResult ReadHost() => new(new("Razer", Fault == "acquire-cleanup-cancel" ? "other" : "Blade 16 - RZ09-0528", "RZ09-05289EN4", "2.02"), null);
-        public CpuQueryProcessorIdentity ReadProcessor() => new("AuthenticAMD", 0x1A, 0x24, 0);
+        public HostIdentityReadResult ReadHost() => new(new("Razer", Fault == "acquire-cleanup-cancel" ? "other" : Contract.ProductName, "RZ09-05289EN4", "2.02"), null);
+        public CpuQueryProcessorIdentity ReadProcessor() => Contract.UsesPhoenixProtocol
+            ? new("AuthenticAMD", 0x19, Contract == CpuLiveCurveContract.Rz090508 ? 0x75 : 0x74, 0)
+            : new("AuthenticAMD", 0x1A, 0x24, 0);
         public bool ControllersAbsent() => true;
         public IDisposable PinBackendFiles()
         {
             Pinned = true;
             return new Cleanup(() => { Pinned = false; if (Fault == "acquire-cleanup-cancel") { throw new OperationCanceledException(); } });
         }
-        public InstalledCpuBackendSnapshot ReadBackend() => new(Rz090528InstalledCpuBackendInspector.ExpectedHashes.Select(pair =>
-            new CpuBackendFileMetadata(pair.Key, pair.Value, true, Rz090528InstalledCpuBackendInspector.SignerThumbprint)).ToArray(),
-            true, @"\??\" + Rz090528InstalledCpuBackendInspector.DriverPath, 1, 3, true);
+        public InstalledCpuBackendSnapshot ReadBackend()
+        {
+            var profile = CpuInstalledBackendProfile.ForContract(Contract);
+            return new(profile.ExpectedHashes.Select(pair =>
+                new CpuBackendFileMetadata(pair.Key, pair.Value, true, profile.SignerThumbprint)).ToArray(),
+                true, @"\??\" + profile.DriverPath, 1, 3, true);
+        }
         public ICpuQueryDevice OpenExistingDevice() { Assert.True(Held); Assert.True(Pinned); Opens++; capabilityRead = false; lastCommand = 0; return RetainDevice ? new RetainedDevice(this) : this; }
         private sealed class RetainedDevice(Platform owner) : ICpuQueryRetainableDevice
         {
@@ -682,25 +746,26 @@ public sealed class CpuLiveCurveNativeBackendTests
         public CpuQueryIoctlReply Invoke(uint code, byte[] input, int outputLength)
         {
             Assert.True(Held); Assert.True(Pinned); LeaseThreads[^1].Add(Environment.CurrentManagedThreadId);
+            var profile = CpuCurveNativeProfile.ForContract(Contract);
             var output = new byte[outputLength];
             if (code == 0x81112F18)
             {
                 Put(output, 24, 3);
                 if (outputLength > 28)
                 {
-                    Put(output, 40, 0x15071022);
-                    Put(output, 84, 0x18); Put(output, 92, 0x16F81022);
-                    Put(output, 136, 0x18); Put(output, 140, 1); Put(output, 144, 0x16F91022);
+                    Put(output, 40, profile.RootId);
+                    Put(output, 84, 0x18); Put(output, 92, profile.NodeId);
+                    Put(output, 136, 0x18); Put(output, 140, 1); Put(output, 144, profile.OrientationId);
                 }
             }
             else if (code == 0x81112F24)
             {
                 input.CopyTo(output, 0);
                 uint offset = Word(input, 12);
-                uint value = offset == 0 ? Word(input, 4) == 0 ? 0x15071022u : Word(input, 8) == 0 ? 0x16F81022u : 0x16F91022u
-                    : offset == 0x140 ? 0xFF55u : selected switch
+                uint value = offset == 0 ? Word(input, 4) == 0 ? profile.RootId : Word(input, 8) == 0 ? profile.NodeId : profile.OrientationId
+                    : offset == 0x140 ? Contract.EnabledCoreMask : selected switch
                     {
-                        0x03820AB0 => (~0xFF55u & 0xFFFF) << 5,
+                        var fuse when fuse == profile.FuseAddress => (~Contract.EnabledCoreMask & profile.MaskBits) << profile.FuseShift,
                         0x03B10A80 => MailboxError != 0 && (ErrorAfterSubmission ? lastCommand != 0 : lastCommand == 0) ? MailboxError : 1,
                         0x03B10A88 => replyValue,
                         _ => throw new InvalidOperationException(),
@@ -709,7 +774,7 @@ public sealed class CpuLiveCurveNativeBackendTests
                 if (offset == 0xC8 && selected == 0x03B10A88)
                 {
                     if (lastCommand == 0x82) { capabilityRead = true; }
-                    if (lastCommand == 0x5E) { OnCoreRead?.Invoke(++CoreReads); }
+                    if (lastCommand == profile.GetterMessage) { CoreReads++; OnCoreRead?.Invoke(CoreReads); }
                 }
                 Put(output, 20, value);
             }
@@ -736,9 +801,10 @@ public sealed class CpuLiveCurveNativeBackendTests
                     }
                     replyValue = value switch
                     {
-                        6 => 0x005D000B,
+                        6 => Contract.ExpectedPmTable.Version,
                         0x82 => 0xE6,
                         0x5E => unchecked((ushort)(Fault == "before" && Setters == 0 ? -50 : Values[id])),
+                        0xE1 when profile.IsPhoenix && capabilityRead => unchecked((ushort)(-(int)argument - 1)),
                         0x53 => 0,
                         _ => throw new InvalidOperationException(),
                     };
