@@ -19,6 +19,41 @@ function Set-FixtureInteger([byte[]]$Bytes, [int]$Offset, [uint32]$Value) {
     [BitConverter]::GetBytes($Value).CopyTo($Bytes, $Offset)
 }
 
+# Metadata-only fixtures; no repository copy or additional target directory.
+foreach ($cacheCase in @(
+    @{ Origin = 'https://github.com/OpenBladeProject/openblade-core.git'; Exit = 0; Expected = 'openblade-core' },
+    @{ Origin = 'git@github.com:OpenBladeProject/openblade-core.git'; Exit = 0; Expected = 'openblade-core' },
+    @{ Origin = 'https://github.com/owner/another-repo.git/'; Exit = 0; Expected = 'another-repo' },
+    @{ Origin = $null; Exit = 1; Expected = 'HistoricalCheckout' }
+)) {
+    & {
+        param($Case)
+        function git {
+            if ($args -contains '--git-common-dir') {
+                $global:LASTEXITCODE = 0
+                return (Join-Path ([IO.Path]::GetTempPath()) 'HistoricalCheckout/.git')
+            }
+            $global:LASTEXITCODE = $Case.Exit
+            return $Case.Origin
+        }
+        $cache = Get-OpenBladeSharedCargoCache -Repository $repository
+        if ((Split-Path -Leaf $cache.TargetDirectory) -cne $Case.Expected -or
+            -not $cache.MutexName.EndsWith('.' + $Case.Expected, [StringComparison]::Ordinal)) {
+            throw 'Shared Cargo cache identity follows the checkout name instead of the origin.'
+        }
+    } $cacheCase
+}
+& {
+    function git {
+        if ($args -contains '--git-common-dir') {
+            $global:LASTEXITCODE = 0
+            return (Join-Path ([IO.Path]::GetTempPath()) 'HistoricalCheckout/.git')
+        }
+        $global:LASTEXITCODE = 128
+    }
+    Assert-NativeThrows { Get-OpenBladeSharedCargoCache -Repository $repository } '*Cannot read the repository identity*'
+}
+
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('OpenBlade.NativePayload.Tests.' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 try {

@@ -13,6 +13,16 @@ function Get-OpenBladeSharedCargoCache {
     $commonDirectory = & git -C $Repository rev-parse --path-format=absolute --git-common-dir
     if ($LASTEXITCODE -ne 0 -or -not $commonDirectory) { throw 'Cannot determine shared Cargo cache identity.' }
     $repositoryName = Split-Path -Leaf (Split-Path -Parent ([string]$commonDirectory).Trim())
+    # Checkout names can be historical or task-specific. The origin repository
+    # name keeps linked worktrees in the same canonical build cache.
+    $origin = & git -C $Repository config --get remote.origin.url
+    if ($LASTEXITCODE -eq 0 -and $origin) {
+        $repositoryName = (([string]$origin).Trim().TrimEnd('/', '\') -split '[/\\:]')[-1] -replace '(?i)\.git$', ''
+        if ($repositoryName -notmatch '^[A-Za-z0-9._-]+$' -or $repositoryName -in @('.', '..')) {
+            throw 'Cannot determine a safe repository name for the shared Cargo cache.'
+        }
+    }
+    elseif ($LASTEXITCODE -ne 1) { throw 'Cannot read the repository identity for the shared Cargo cache.' }
     if (-not $repositoryName) { throw 'Cannot determine shared Cargo cache repository name.' }
     $cacheRoot = if ($env:OS -eq 'Windows_NT') { 'C:\build-cache\cargo' }
         else { Join-Path ([IO.Path]::GetTempPath()) 'openblade-cargo-cache' }
