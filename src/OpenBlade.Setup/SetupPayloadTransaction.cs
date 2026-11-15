@@ -136,6 +136,9 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 
     public string? CommitWarning { get; private set; }
 
+    public SetupPayloadRecoveryDetails RecoveryDetails => new(
+        paths.InstallDirectory, stagingDirectory, backupDirectory, failedDirectory, state.ToString());
+
     public static async Task<ISetupPayloadTransaction> StageAsync(
         SetupPaths paths,
         string payloadDirectory,

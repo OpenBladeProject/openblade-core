@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace OpenBlade.Setup;
 
 public enum SetupServiceState
@@ -6,10 +8,13 @@ public enum SetupServiceState
     Running,
 }
 
+public sealed record SetupServiceStatus(SetupServiceState State, int? ProcessId);
+
 public interface ISetupServiceControl
 {
     Task<bool> ExistsAsync(string serviceName, CancellationToken cancellationToken);
     Task<SetupServiceState?> GetStateAsync(string serviceName, CancellationToken cancellationToken);
+    Task<SetupServiceStatus?> GetStatusAsync(string serviceName, CancellationToken cancellationToken);
     Task RunAsync(
         IReadOnlyList<string> arguments,
         IReadOnlyCollection<int> toleratedExitCodes,
@@ -83,6 +88,55 @@ internal sealed class ScSetupServiceControl : ISetupServiceControl
 
         throw new InvalidOperationException(
             $"Service '{serviceName}' is in a transitional state; retry setup after it settles.");
+    }
+
+    public async Task<SetupServiceStatus?> GetStatusAsync(
+        string serviceName,
+        CancellationToken cancellationToken)
+    {
+        ScProcessResult result = await runProcess(["queryex", serviceName], cancellationToken);
+        if (result.ExitCode == ServiceDoesNotExist) { return null; }
+        if (result.ExitCode != 0) { throw CreateFailure(result); }
+
+        // Read the numeric fields, not a state-name substring. Missing,
+        // duplicated or malformed fields do not establish a process identity.
+        int state = ReadNumericField(result.Output, "STATE");
+        int processId = ReadNumericField(result.Output, "PID");
+        return state switch
+        {
+            1 when processId == 0 => new(SetupServiceState.Stopped, null),
+            4 when processId > 0 => new(SetupServiceState.Running, processId),
+            1 or 4 => throw new InvalidOperationException($"Service '{serviceName}' has an invalid process identity; setup stopped before shutdown."),
+            _ => throw new InvalidOperationException($"Service '{serviceName}' is in a transitional state; retry setup after it settles."),
+        };
+    }
+
+    private static int ReadNumericField(string output, string field)
+    {
+        int? value = null;
+        foreach (string line in output.Split('\n'))
+        {
+            int separator = line.IndexOf(':');
+            if (separator < 0 || !line.AsSpan(0, separator).Trim().Equals(field, StringComparison.Ordinal))
+            {
+                continue;
+            }
+            ReadOnlySpan<char> remainder = line.AsSpan(separator + 1).Trim();
+            int end = 0;
+            while (end < remainder.Length && char.IsAsciiDigit(remainder[end])) { end++; }
+            if (value.HasValue || end == 0 || (end < remainder.Length && !char.IsWhiteSpace(remainder[end]))
+                || !int.TryParse(remainder[..end], NumberStyles.None, CultureInfo.InvariantCulture, out int parsed))
+            {
+                throw new InvalidOperationException($"Service Control returned an invalid {field} field; setup stopped before shutdown.");
+            }
+            // STATE has a descriptive suffix; PID must contain only its number.
+            if (field == "PID" && !remainder[end..].Trim().IsEmpty)
+            {
+                throw new InvalidOperationException("Service Control returned an invalid PID field; setup stopped before shutdown.");
+            }
+            value = parsed;
+        }
+        return value ?? throw new InvalidOperationException($"Service Control did not return {field}; setup stopped before shutdown.");
     }
 
     public async Task RunAsync(

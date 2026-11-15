@@ -8,9 +8,22 @@ public interface ISetupPayloadTransaction : IAsyncDisposable
     bool HadExistingInstall { get; }
     bool IsActivated { get; }
     string? CommitWarning { get; }
+    SetupPayloadRecoveryDetails? RecoveryDetails => null;
     Task ActivateAsync(CancellationToken cancellationToken);
     Task CommitAsync(CancellationToken cancellationToken);
     Task RollbackAsync(CancellationToken cancellationToken);
+}
+
+public sealed record SetupPayloadRecoveryDetails(
+    string ActiveDirectory,
+    string StagingDirectory,
+    string BackupDirectory,
+    string FailedDirectory,
+    string State)
+{
+    public override string ToString() =>
+        $"state={State}; active='{ActiveDirectory}'; staging='{StagingDirectory}'; " +
+        $"backup='{BackupDirectory}'; failed='{FailedDirectory}'";
 }
 
 public sealed record SetupServiceInstallState(bool Existed, bool WasRunning);
@@ -199,20 +212,34 @@ public sealed class SetupCommandRunner(
                 bool wasActivated = transaction.IsActivated;
                 if (wasActivated)
                 {
-                    if (priorLifecycle?.Service is { Existed: true })
-                    {
-                        await RecoverAsync(() => platform.PrepareServiceForInstallAsync(recoveryToken), recoveryFailures);
-                    }
-                    else
-                    {
-                        await RecoverAsync(() => platform.RemoveServiceAsync(recoveryToken), recoveryFailures);
-                    }
+                    int failuresBeforeShutdown = recoveryFailures.Count;
+                    // Establish process quiescence independently of registration
+                    // deletion, which can fail even after the service has exited.
+                    await RecoverAsync(() => platform.PrepareServiceForInstallAsync(recoveryToken), recoveryFailures);
 
                     await RecoverAsync(() => platform.StopTrayAsync(recoveryToken), recoveryFailures);
                     await RecoverAsync(() => platform.StopSessionAgentAsync(recoveryToken), recoveryFailures);
+                    if (recoveryFailures.Count != failuresBeforeShutdown)
+                    {
+                        // A failed stop does not establish that the active tree can
+                        // be renamed. Keep both payloads for explicit recovery and
+                        // do not restart or restore registrations against either tree.
+                        recoveryFailures.Add(CreateRepairRequiredFailure(transaction,
+                            "Setup could not confirm process shutdown during rollback"));
+                        throw new AggregateException([failure, .. recoveryFailures]);
+                    }
                 }
 
                 await RecoverAsync(() => transaction.RollbackAsync(recoveryToken), recoveryFailures);
+                if (transaction.IsActivated)
+                {
+                    // Failed restoration may leave the failed new payload active
+                    // or no active tree at all. Old lifecycle metadata is not valid
+                    // until the transaction confirms that its old tree is restored.
+                    recoveryFailures.Add(CreateRepairRequiredFailure(transaction,
+                        "Setup could not restore the previous payload during rollback"));
+                    throw new AggregateException([failure, .. recoveryFailures]);
+                }
 
                 if (mutationStarted)
                 {
@@ -229,7 +256,7 @@ public sealed class SetupCommandRunner(
                             () => platform.RestoreServiceInstallStateAsync(priorService, recoveryToken),
                             recoveryFailures);
                     }
-                    else if (!wasActivated)
+                    else
                     {
                         await RecoverAsync(() => platform.RemoveServiceAsync(recoveryToken), recoveryFailures);
                     }
@@ -399,6 +426,13 @@ public sealed class SetupCommandRunner(
 
         return 0;
     }
+
+    private static InvalidOperationException CreateRepairRequiredFailure(
+        ISetupPayloadTransaction transaction,
+        string reason) =>
+        new($"{reason}; available payloads were retained for recovery. "
+            + "Service startup and lifecycle registrations were not restored; explicit repair is required. "
+            + $"Recovery details: {transaction.RecoveryDetails?.ToString() ?? "unavailable"}.");
 
     private static async Task RecoverAsync(Func<Task> recovery, List<Exception> failures)
     {
