@@ -162,7 +162,7 @@ internal sealed class CpuPhoenixCurveNativeWire : ICpuNativeWireAdmission
             if (!CpuPmRawSnapshot.TryCreate(contract, 0x004C0008u, new(true, bytes),
                 DateTimeOffset.UtcNow, Stopwatch.GetTimestamp(), out var raw)) { return false; }
             copied = CpuLivePowerSnapshot.TryCreate(contract, raw);
-            return copied is not null && copied.Pair == curveRequest.PowerPeer!.Expected;
+            return copied is not null && (!before || copied.Pair == curveRequest.PowerPeer!.Expected);
         }, CommandStart: true, CommandEnd: true));
         // F08 can alter hidden mailbox/index state; always explicitly reselect.
         Mailbox(6, 0, value =>

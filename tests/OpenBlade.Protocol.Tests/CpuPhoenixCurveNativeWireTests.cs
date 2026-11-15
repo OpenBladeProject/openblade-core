@@ -38,15 +38,17 @@ public sealed class CpuPhoenixCurveNativeWireTests
     }
 
     [Theory]
-    [InlineData("capability", false)]
-    [InlineData("before-peer", false)]
-    [InlineData("capability-after", true)]
-    [InlineData("after-peer", true)]
-    [InlineData("native-false", true)]
-    [InlineData("curve-drift", true)]
-    public void FailureStopsTheExactSequenceWithoutAnotherSetter(string fault, bool submitted)
+    [InlineData("capability", false, false)]
+    [InlineData("before-peer", false, false)]
+    [InlineData("before-peer", false, true)]
+    [InlineData("capability-after", true, false)]
+    [InlineData("after-peer", true, false)]
+    [InlineData("after-peer", true, true)]
+    [InlineData("native-false", true, false)]
+    [InlineData("curve-drift", true, false)]
+    public void FailureStopsTheExactSequenceWithoutAnotherSetter(string fault, bool submitted, bool blade2023)
     {
-        var platform = new Platform { Fault = fault };
+        var platform = new Platform { Fault = fault, Contract = blade2023 ? CpuLiveCurveContract.Rz090482 : CpuLiveCurveContract.Rz090508 };
         var request = Request(platform);
         var result = Run(platform, request, new Proof(request));
         Assert.False(result.Verified);
@@ -54,6 +56,32 @@ public sealed class CpuPhoenixCurveNativeWireTests
         Assert.Equal(submitted, result.Disposition != CpuLiveCurveNativeDisposition.NotSubmitted);
         if (fault == "capability") { Assert.DoesNotContain(0xE1u, platform.Commands); }
         if (fault == "capability-after") { Assert.Equal(8, platform.Commands.Count(command => command == 0xE1)); }
+        if (fault == "after-peer")
+        {
+            Assert.Equal(CpuLiveCurveNativeFailure.ReadbackDrift, result.Failure);
+            Assert.Equal(CpuLiveCurveNativeDisposition.Acknowledged, result.Disposition);
+            Assert.NotNull(result.After);
+            Assert.Equal(platform.Offsets, result.After.CoreOffsets.Select(core => core.Offset));
+            Assert.Equal(2, platform.Copies);
+        }
+        Assert.True(result.CleanupComplete);
+        Assert.False(platform.Held);
+        Assert.False(platform.Pinned);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PositiveOriginalCannotBeOverwrittenWhenItsRestorationIsOutsideTheVendorRange(bool blade2023)
+    {
+        var platform = new Platform { Contract = blade2023 ? CpuLiveCurveContract.Rz090482 : CpuLiveCurveContract.Rz090508 };
+        platform.Offsets[3] = 3;
+        var request = Request(platform);
+        var result = Run(platform, request, new Proof(request));
+        Assert.False(result.Verified);
+        Assert.Equal(CpuLiveCurveNativeDisposition.NotSubmitted, result.Disposition);
+        Assert.Equal(0, platform.Setters);
+        Assert.Equal((short)3, platform.Offsets[3]);
         Assert.True(result.CleanupComplete);
         Assert.False(platform.Held);
         Assert.False(platform.Pinned);

@@ -96,7 +96,7 @@ internal sealed class Rz090528InstalledCpuBackendInspector
                 && file.SignatureValid
                 && string.Equals(file.SignerThumbprint, profile.SignerThumbprint, StringComparison.OrdinalIgnoreCase)) != 1)
             || snapshot.ServiceType != 1
-            || !string.Equals(snapshot.ImagePath, @"\??\" + DriverPath, StringComparison.OrdinalIgnoreCase))
+            || !string.Equals(snapshot.ImagePath, @"\??\" + profile.DriverPath, StringComparison.OrdinalIgnoreCase))
         {
             return Status(CpuTuningBackendAvailability.Failed);
         }

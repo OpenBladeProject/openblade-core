@@ -64,11 +64,12 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }
         if (request.Before.Contract != platformContract || request.Command.Contract != platformContract)
         { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }
-        // The new model is admitted only with an independently confirmed power peer.
-        if (platform.Contract.UsesPhoenixProtocol && request.PowerPeer is null)
-        { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }
         if (request.PowerPeer is not null)
         { return ExecuteCurveWithPowerPeer(request, proof, readUsb, platform, token); }
+        // Only the reviewed V31 codec permits this path without a power peer.
+        // Phoenix requires the independently confirmed peer and its combined wire.
+        if (platformContract != CpuLiveCurveContract.Rz090528)
+        { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }
         var latch = NativeOperations.GetValue(platform, static _ => new());
         if (Interlocked.CompareExchange(ref latch.Active, 1, 0) != 0)
         { return new(CpuLiveCurveNativeDisposition.NotSubmitted, true, true, false, null, CpuLiveCurveNativeFailure.AdmissionDenied); }
@@ -82,7 +83,7 @@ internal sealed partial class WindowsRz090528CpuQueryAdapter
         try
         {
             token.ThrowIfCancellationRequested();
-            if (proof is null || !proof.Consume(request) || CpuLiveCurveContract.Resolve(platform.Contract.Id, platform.Contract.Version, readUsb()) != platform.Contract) { throw new CurveAdmissionException(); }
+            if (!proof.Consume(request) || CpuLiveCurveContract.Resolve(platform.Contract.Id, platform.Contract.Version, readUsb()) != platform.Contract) { throw new CurveAdmissionException(); }
             readScope = proof.BeginRead(request);
             adapter = new WindowsRz090528CpuQueryAdapter(platform, readUsb, wire)
             { queryCurrent = ReadCurrent, queryTransportCurrent = ReadTransportCurrent };
@@ -184,16 +185,12 @@ internal sealed class CpuCurveNativeWire(CpuLiveCurveNativeRequest request) : IC
 {
     private const uint Enumerate = 0x81112F18, Read = 0x81112F24, Write = 0x81112FF8;
     private const uint Response = 0x03B10A80, Argument = 0x03B10A88, Message = 0x03B10A20;
-    private readonly CpuCurveNativeProfile profile = CpuCurveNativeProfile.ForContract(request.Before.Contract);
+    // The caller admits this codec only for RZ09-0528/V31 without a power peer.
+    private readonly CpuCurveNativeProfile profile = CpuCurveNativeProfile.ForContract(CpuLiveCurveContract.Rz090528);
     private uint Fuse => profile.FuseAddress;
-    private int BeforeCoreStart => profile.IsPhoenix ? 2 : 1;
-    private int CapabilityIndex => request.Before.Contract.CoreCount + BeforeCoreStart;
-    private bool IsCapabilityIndex => commandIndex == CapabilityIndex
-        || profile.IsPhoenix && (commandIndex == 1 || commandIndex == AfterVersionIndex + 1);
-    private int SetterIndex => CapabilityIndex + 1;
-    private int AfterVersionIndex => SetterIndex + 1;
-    private int AfterCoreStart => AfterVersionIndex + BeforeCoreStart;
-    private int CommandCount => AfterCoreStart + request.Before.Contract.CoreCount;
+    private const int BeforeCoreStart = 1, CapabilityIndex = 13, SetterIndex = 14,
+        AfterVersionIndex = 15, AfterCoreStart = 16, CommandCount = 28;
+    private bool IsCapabilityIndex => commandIndex == CapabilityIndex;
     private uint count, selected;
     private uint? bus;
     private int commandIndex;
@@ -304,7 +301,7 @@ internal sealed class CpuCurveNativeWire(CpuLiveCurveNativeRequest request) : IC
             {
                 if ((commandIndex == 0 || commandIndex == AfterVersionIndex) && !request.Before.Contract.AcceptsGeometry(request.Before.Contract.EnabledCoreMask, value, profile.PmLength(value))
                     || commandIndex >= BeforeCoreStart && commandIndex < CapabilityIndex && unchecked((short)value) != request.Before.CoreOffsets[commandIndex - BeforeCoreStart].Offset
-                    || IsCapabilityIndex && ((value & 4) == 0 || profile.IsPhoenix && value == uint.MaxValue)) { return Reject(); }
+                    || IsCapabilityIndex && (value & 4) == 0) { return Reject(); }
                 FinishCommand();
             }
         }
