@@ -167,4 +167,13 @@ public sealed class WindowsRazerDriverApiDiscoveryTests
         Assert.Throws<InvalidDataException>(() =>
             WindowsRazerDriverApiDiscovery.ResolveServiceImage(image, @"C:\Windows", "RzDev_02e0"));
     }
+
+    [Theory]
+    [InlineData(@"%SystemRoot%\C:\Windows\System32\drivers\RzDev_02e0.sys")]
+    [InlineData(@"\SystemRoot\C:\Windows\System32\drivers\RzDev_02e0.sys")]
+    [InlineData(@"%SystemRoot%\\System32\drivers\RzDev_02e0.sys")]
+    [InlineData(@"\SystemRoot\\System32\drivers\RzDev_02e0.sys")]
+    public void SystemRootAliasCannotOverrideTheWindowsDirectory(string image) =>
+        Assert.Throws<InvalidDataException>(() =>
+            WindowsRazerDriverApiDiscovery.ResolveServiceImage(image, @"C:\Windows", "RzDev_02e0"));
 }

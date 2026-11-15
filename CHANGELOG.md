@@ -11,7 +11,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Include the registered PawnIO driver path and package checks in installer logs so prerequisite failures can be diagnosed without extra commands. ([#975](https://github.com/OSSBlade/openblade-core/pull/975))
+- Avoid rejecting a valid PawnIO CPU temperature driver because Windows reports its path differently. Include the registered path and package checks in installer logs. ([#975](https://github.com/OSSBlade/openblade-core/pull/975))
 
 ## [0.63.2-nightly.115] - 2026-11-14
 

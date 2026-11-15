@@ -144,9 +144,16 @@ public static class PawnIoRuntimeAdmission
     {
         TraceObservation("DriverPathInput", $"ImagePath={imagePath}; WindowsDirectory={windows}");
         string path = imagePath;
+        // QueryServiceConfigW paths use the kernel aliases recognized by Microsoft's
+        // driver-service resolver (PropertyHelper.cpp, 7895dd22785ddba5e973662ed942be3b3452b89d).
+        // Resolve the literal SystemRoot token using the Windows-provided directory,
+        // never arbitrary process environment variables. Keep package checks below.
         if (path.StartsWith(@"\SystemRoot\", StringComparison.OrdinalIgnoreCase))
-        { path = Path.Combine(windows, path[12..]); }
+        { path = ResolveSystemRootPath(path[12..], windows); }
+        else if (path.StartsWith(@"%SystemRoot%\", StringComparison.OrdinalIgnoreCase))
+        { path = ResolveSystemRootPath(path[13..], windows); }
         else if (path.StartsWith(@"\??\", StringComparison.Ordinal)) { path = path[4..]; }
+        else if (path.StartsWith(@"\DosDevices\", StringComparison.OrdinalIgnoreCase)) { path = path[12..]; }
         string root = Path.Combine(windows, "System32", "DriverStore", "FileRepository") + Path.DirectorySeparatorChar;
         TraceObservation("DriverPathValidation", $"CandidatePath={path}; ExpectedRoot={root}; ExpectedFile=PawnIO.sys; ExpectedPackage=pawnio.inf_amd64_*");
         if (!Path.IsPathFullyQualified(path) || !string.Equals(Path.GetFullPath(path), path, StringComparison.OrdinalIgnoreCase)
@@ -158,6 +165,15 @@ public static class PawnIoRuntimeAdmission
             || !Path.GetFileName(package).StartsWith("pawnio.inf_amd64_", StringComparison.OrdinalIgnoreCase))
         { throw new InvalidDataException("PawnIO has an unexpected driver package identity."); }
         return path;
+    }
+
+    private static string ResolveSystemRootPath(string suffix, string windows)
+    {
+        // Path.Combine otherwise discards windows when a malformed alias supplies
+        // another absolute or root-relative path after the SystemRoot prefix.
+        if (Path.IsPathRooted(suffix))
+        { throw new InvalidDataException("PawnIO has an ambiguous SystemRoot driver path."); }
+        return Path.Combine(windows, suffix);
     }
 
     private static void InspectDevice(CancellationToken cancellationToken)

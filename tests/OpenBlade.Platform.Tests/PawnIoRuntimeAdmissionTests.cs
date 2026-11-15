@@ -223,10 +223,27 @@ public sealed class PawnIoRuntimeAdmissionTests
     [Theory]
     [InlineData(@"\SystemRoot\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
     [InlineData(@"\??\C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"%SystemRoot%\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"\DosDevices\C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
     [InlineData(@"C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
     public void OnlyCanonicalExpectedDriverStorePackagePathIsAdmitted(string path) =>
         Assert.Equal(@"C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys",
             PawnIoRuntimeAdmission.NormalizeDriverPath(path, @"C:\Windows"));
+
+    [Theory]
+    [InlineData(@"%sYsTeMrOoT%\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"\dOsDeViCeS\D:\Windows Server\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    public void KnownAliasesResolveAgainstTheTrustedWindowsDirectory(string path) =>
+        Assert.Equal(@"D:\Windows Server\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys",
+            PawnIoRuntimeAdmission.NormalizeDriverPath(path, @"D:\Windows Server"));
+
+    [Theory]
+    [InlineData(@"%SystemRoot%\C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"\SystemRoot\C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"%SystemRoot%\\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"\SystemRoot\\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    public void SystemRootAliasCannotOverrideTheWindowsDirectory(string path) =>
+        Assert.Throws<InvalidDataException>(() => PawnIoRuntimeAdmission.NormalizeDriverPath(path, @"C:\Windows"));
 
     [Theory]
     [InlineData(@"C:\Users\User\PawnIO.sys")]
@@ -236,6 +253,25 @@ public sealed class PawnIoRuntimeAdmissionTests
     [InlineData(@"C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\nested\PawnIO.sys")]
     [InlineData(@"C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\..\PawnIO.sys")]
     public void ArbitraryOrAmbiguousBindingPathsAreRejected(string path) =>
+        Assert.Throws<InvalidDataException>(() => PawnIoRuntimeAdmission.NormalizeDriverPath(path, @"C:\Windows"));
+
+    [Theory]
+    [InlineData(@"%SystemRoot%\System32\drivers\PawnIO.sys")]
+    [InlineData(@"\DosDevices\C:\Windows\System32\drivers\PawnIO.sys")]
+    [InlineData(@"%SystemRoot%\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\..\PawnIO.sys")]
+    [InlineData(@"%SystemRoot%\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\nested\PawnIO.sys")]
+    [InlineData(@"\DosDevices\C:\Windows\System32\DriverStore\FileRepository\other.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"\DosDevices\C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\Other.sys")]
+    [InlineData(@"\DosDevices\%SystemRoot%\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"\??\%SystemRoot%\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"%SystemDrive%\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"%windir%\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"C:Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"""C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys""")]
+    [InlineData(@"C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys -argument")]
+    [InlineData(@"\\?\GLOBALROOT\SystemRoot\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    public void AliasResolutionCannotAdmitOtherPackagesOrAmbiguousPaths(string path) =>
         Assert.Throws<InvalidDataException>(() => PawnIoRuntimeAdmission.NormalizeDriverPath(path, @"C:\Windows"));
 
     [Theory]

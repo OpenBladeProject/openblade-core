@@ -173,7 +173,7 @@ public static class WindowsRazerDriverApiDiscovery
         string path = value.Trim();
         if (path.StartsWith(@"\SystemRoot\", StringComparison.OrdinalIgnoreCase))
         {
-            path = Path.Combine(windows, path[12..]);
+            path = ResolveSystemRootServiceImage(path[12..], windows);
         }
         else if (path.StartsWith(@"System32\", StringComparison.OrdinalIgnoreCase))
         {
@@ -181,7 +181,7 @@ public static class WindowsRazerDriverApiDiscovery
         }
         else if (path.StartsWith(@"%SystemRoot%\", StringComparison.OrdinalIgnoreCase))
         {
-            path = Path.Combine(windows, path[13..]);
+            path = ResolveSystemRootServiceImage(path[13..], windows);
         }
         path = Path.GetFullPath(path);
         RequireUnder(path, Path.Combine(windows, "System32", "drivers"));
@@ -190,6 +190,15 @@ public static class WindowsRazerDriverApiDiscovery
             throw Reject("ServiceImageNameMismatch", "The service image is not the selected Razer API driver.");
         }
         return path;
+    }
+
+    private static string ResolveSystemRootServiceImage(string suffix, string windows)
+    {
+        // A SystemRoot suffix must not replace the Windows directory in Path.Combine.
+        // Preserve this discovery boundary's typed rejection reason.
+        if (Path.IsPathRooted(suffix))
+        { throw Reject("ServiceImagePathAmbiguous", "The driver service image has an ambiguous SystemRoot path."); }
+        return Path.Combine(windows, suffix);
     }
 
     // Parse only the installed x64 model's explicit service declaration. Unsupported INF
