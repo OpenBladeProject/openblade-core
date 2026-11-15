@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Platform;
 
@@ -24,10 +25,12 @@ public static class PawnIoRuntimeAdmission
     public static PawnIoInstallation? Inspect(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        TraceObservation("OpenServiceManager", "Access=Connect; inspection is read-only.");
         nint manager = OpenSCManager(null, null, 1);
         if (manager == 0) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
         try
         {
+            TraceObservation("OpenService", "Service=PawnIO; Access=QueryConfig|QueryStatus.");
             nint service = OpenService(manager, "PawnIO", 1 | 4); // QUERY_CONFIG | QUERY_STATUS
             if (service == 0)
             {
@@ -38,7 +41,9 @@ public static class PawnIoRuntimeAdmission
                     using RegistryKey? uninstall = Registry.LocalMachine.OpenSubKey(
                         @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO");
                     using RegistryKey? devices = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\ROOT\PawnIO");
-                    VerifyNoInstallation(uninstall is not null, devices?.GetSubKeyNames() ?? [],
+                    string[] instances = devices?.GetSubKeyNames() ?? [];
+                    TraceObservation("ServiceAbsent", $"UninstallRegistration={uninstall is not null}; RegisteredDevices={instances.Length}.");
+                    VerifyNoInstallation(uninstall is not null, instances,
                         (string id, out uint node) => CM_Locate_DevNode(out node, id, 0), cancellationToken);
                     return null;
                 }
@@ -46,24 +51,30 @@ public static class PawnIoRuntimeAdmission
             }
             try
             {
+                TraceObservation("QueryServiceConfiguration", "Service=PawnIO.");
                 nint buffer = ReadServiceConfigurationBuffer(
                     (nint target, int size, out int needed) => QueryServiceConfig(service, target, size, out needed));
                 try
                 {
                     ServiceConfig config = Marshal.PtrToStructure<ServiceConfig>(buffer);
+                    string imagePath = Marshal.PtrToStringUni(config.BinaryPath) ?? string.Empty;
+                    TraceObservation("ServiceConfiguration", $"ServiceType={config.ServiceType}; StartType={config.StartType}; ErrorControl={config.ErrorControl}; ImagePath={imagePath}");
                     if (config.ServiceType != 1 || config.StartType != 3)
                     { throw new InvalidDataException("PawnIO is not the expected demand-start kernel service."); }
-                    string driver = NormalizeDriverPath(Marshal.PtrToStringUni(config.BinaryPath) ?? string.Empty,
+                    string driver = NormalizeDriverPath(imagePath,
                         Environment.GetFolderPath(Environment.SpecialFolder.Windows));
+                    TraceObservation("ReadDriverVersion", $"DriverPath={driver}");
                     FileVersionInfo info = FileVersionInfo.GetVersionInfo(driver);
                     Version version = new(info.FileMajorPart, info.FileMinorPart, info.FileBuildPart, info.FilePrivatePart);
                     // Version is provenance. The reviewed API/module handshake and a
                     // complete temperature read establish runtime compatibility; the
                     // bundled installer's version is not a runtime build allowlist.
                     string catalog = Path.Combine(Path.GetDirectoryName(driver)!, "PawnIO.cat");
+                    TraceObservation("VerifyCatalog", $"DriverPath={driver}; CatalogPath={catalog}; FileVersion={version}");
                     string identity = WindowsDriverApiTrust.VerifyCatalogMembers(catalog, [driver],
                         [WindowsDriverApiTrust.MicrosoftHardwareCompatibilityPublisher], cancellationToken);
                     InspectDevice(cancellationToken);
+                    TraceObservation("QueryServiceStatus", "Service=PawnIO; signed catalog and device binding verified.");
                     if (!QueryServiceStatus(service, out ServiceStatus status))
                     { throw new Win32Exception(Marshal.GetLastWin32Error()); }
                     // The official 2.1 INF has the same root binding but its driver
@@ -71,6 +82,7 @@ public static class PawnIoRuntimeAdmission
                     // actual kernel service to be running, without treating an old
                     // devnode's DN_STARTED flag as an API compatibility selector.
                     bool started = status.CurrentState == 4;
+                    TraceObservation("Admitted", $"FileVersion={version}; ServiceState={status.CurrentState}; Started={started}; CatalogIdentity={identity}");
                     return new(version, started, identity);
                 }
                 finally { Marshal.FreeHGlobal(buffer); }
@@ -78,6 +90,27 @@ public static class PawnIoRuntimeAdmission
             finally { CloseServiceHandle(service); }
         }
         finally { CloseServiceHandle(manager); }
+    }
+
+    // Setup bridges Trace into its package log, which Burn retains on failure.
+    // Keep observations beside their checks so rejected values survive rollback;
+    // diagnostic sinks must not change admission, cancellation or native errors.
+    internal static void TraceObservation(string stage, string context)
+    {
+        int nativeError = Marshal.GetLastPInvokeError();
+        try
+        {
+            string sanitized = DiagnosticText.Redact(context).Replace("\r", "\\r").Replace("\n", "\\n");
+            const int maximum = 4096;
+            if (sanitized.Length > maximum)
+            { sanitized = sanitized[..maximum] + " [truncated]"; }
+            Trace.TraceInformation("PawnIO admission: {0}; {1}", stage, sanitized);
+        }
+        catch
+        {
+            // Best effort only, including an unavailable or throwing Trace listener.
+        }
+        finally { Marshal.SetLastPInvokeError(nativeError); }
     }
 
     internal delegate bool ServiceConfigurationQuery(nint buffer, int size, out int needed);
@@ -109,11 +142,13 @@ public static class PawnIoRuntimeAdmission
 
     internal static string NormalizeDriverPath(string imagePath, string windows)
     {
+        TraceObservation("DriverPathInput", $"ImagePath={imagePath}; WindowsDirectory={windows}");
         string path = imagePath;
         if (path.StartsWith(@"\SystemRoot\", StringComparison.OrdinalIgnoreCase))
         { path = Path.Combine(windows, path[12..]); }
         else if (path.StartsWith(@"\??\", StringComparison.Ordinal)) { path = path[4..]; }
         string root = Path.Combine(windows, "System32", "DriverStore", "FileRepository") + Path.DirectorySeparatorChar;
+        TraceObservation("DriverPathValidation", $"CandidatePath={path}; ExpectedRoot={root}; ExpectedFile=PawnIO.sys; ExpectedPackage=pawnio.inf_amd64_*");
         if (!Path.IsPathFullyQualified(path) || !string.Equals(Path.GetFullPath(path), path, StringComparison.OrdinalIgnoreCase)
             || !path.StartsWith(root, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(Path.GetFileName(path), "PawnIO.sys", StringComparison.OrdinalIgnoreCase))
@@ -167,11 +202,13 @@ public static class PawnIoRuntimeAdmission
         DeviceNodeLocator locate, CancellationToken cancellationToken)
     {
         var present = LocatePresentDevices(instances, locate, cancellationToken);
+        TraceObservation("DevicePresence", $"Present={present.Count}; Registered={instances.Length}");
         if (present.Count != 1)
         {
             throw new InvalidDataException($"PawnIO must have one independently present Root\\PawnIO device "
                 + $"(present: {present.Count}; registered: {instances.Length}).");
         }
+        TraceObservation("DeviceBinding", $"Instance=ROOT\\PawnIO\\{present[0].Instance}; Devnode={present[0].Devnode}");
         return present[0];
     }
 
