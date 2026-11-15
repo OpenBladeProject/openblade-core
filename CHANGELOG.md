@@ -9,6 +9,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Add source-reviewed CPU Voltage Optimizer support for Blade 14 (2024, 8945HS) and Blade 14 (2023, 7940HS), with complete per-core readback and restoration. Share live voltage planning and recovery with Blade 16 (2025). ([#973](https://github.com/OpenBladeProject/openblade-core/pull/973))
 
+### Fixed
+
+- Wait for the installed service process to exit before replacing or removing OpenBlade files, including broker installs, and retain actionable recovery paths if shutdown or restoration cannot be confirmed. ([#974](https://github.com/OpenBladeProject/openblade-core/pull/974))
+
+
 ## [0.63.2-nightly.115] - 2026-11-14
 
 ### Added
