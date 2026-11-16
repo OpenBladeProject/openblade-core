@@ -27,6 +27,12 @@
     {
       "url": "https://apps.razer.com/synapse/lighting-engine/static/js/main.501f0f6f.js",
       "sha256": "E9FA1F45B7507C6C0DE9DB72253E80D17F97C92F909A1B557AD6C47249965522"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/razerofficial/HTML5ChromaSDK/ec61d7a1924a6facc0e136a84a00b8b87f7ce4ba/ChromaSDKImpl.js",
+      "bytes": 219014,
+      "sha256": "7CCFE6C0A2E3F9468E81824969539ED574CEC08D2F1EC2926EFE4A2272DAAC3A",
+      "scope": "Generic Chroma animation source coordinates only; target slots remain the exact KI8110 reviewed scan-code mapping. Left/Down/Right are 050F/0510/0511, numpad starts in column18, Space is0507, RightCtrl is050E, Enter is030E."
     }
   ],
   "keyboardTransport": {
@@ -41,7 +47,166 @@
     "activationArguments": [0, 5, 8],
     "selectionReadback": "0F/82 [0,5,0,0,0,0,0,0,0,0,0,0] returns [0,5,8,0,0,0,0,0,0,0,0,0]",
     "pixelsReadable": false,
-    "excluded": "Legacy 03/0A [5,0] activates both LED5 and LED38; transport row6 belongs to LED38 and must not be sent by keyboard rendering."
+    "excluded": "Transport row6 belongs to LED38 and is not part of the six keyboard rows."
+  },
+  "vaporChamberFrame": {
+    "transportRow": 6,
+    "logicalCanvasRow": 0,
+    "columns": 18,
+    "rowCommand": "03/0B",
+    "rowArguments": "FF,6,0,17,RGB*18",
+    "vendorFramePath": "Selected Product 711 engine iterates every eventData.numRow, sends each row, then selects the CustomFrame effect.",
+    "vendorSource": "https://apps.razer.com/synapse/lighting-engine/static/js/3061.282c86b2.chunk.js",
+    "knownCombinedSelector": "03/0A [5,0] activates LED5 and LED38.",
+    "stateReadback": "Enabled boolean plus newly identified 0F/82 [0,38,...] built-in effect parameters; custom-frame RGB pixels remain unreadable. The complete restoration contract is under review.",
+    "openBladeMutationAdmitted": false,
+    "blocker": "The durable renderer baseline/restoration path confirms keyboard effect parameters and brightness but does not capture or restore the prior LED38 frame/effect.",
+    "physicalValidation": "Pending"
+  },
+  "rgbAddressingReview": {
+    "selectedBlade2Module": {
+      "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrixBlade2.d678cb5b99e6382aebe0.js",
+      "sha256": "62356152B59E6D172AF8D07677534EBA0BF9DBFEBA973AFE51BEC8437D031FD8",
+      "productSpecificOperations": [
+        "setBrightness(profileId, regionId, brightness)",
+        "getVcLedState()",
+        "setVcLedState(profileId, enabled)",
+        "setVcLedStateInSleep(mode, duration)"
+      ],
+      "vcBrightnessRegion": 38
+    },
+    "genericMiddlewareBase": {
+      "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js",
+      "sha256": "02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9",
+      "genericOperations": ["getLedRGB", "setLedRGB", "getLedBrightness", "setLedBrightness"],
+      "exactProductCallsites": "Not found in checked Product 711 UI bundles; generic methods do not establish Product 711 LED IDs or semantics."
+    },
+    "checkedProductUiBundles": [
+      {
+        "url": "https://apps.razer.com/synapse/products/711/ui/static/js/main.a649ed49.js",
+        "sha256": "4B42EF4995470865B7D02587B85724247B886BDF2376EB6A78DA38BB9B6CBF99"
+      },
+      {
+        "url": "https://apps.razer.com/synapse/products/711/ui/static/js/9742.aa50375b.chunk.js",
+        "sha256": "06C467C6C5C76345D271390D5D7D5163E23DEAEA5C89858793F9E95BA9F409D9"
+      },
+      {
+        "url": "https://apps.razer.com/synapse/products/711/ui/static/js/trans-en.ff66e286.chunk.js",
+        "sha256": "20C9D7536009DD1B2F99B76D4CA4F4CD8EE3B16CF36F3AF5DBEE643998FF7FCD"
+      },
+      {
+        "url": "https://apps.razer.com/synapse/products/711/ui/static/js/9742.aa50375b.chunk.js",
+        "sha256": "06C467C6C5C76345D271390D5D7D5163E23DEAEA5C89858793F9E95BA9F409D9",
+        "finding": "Vapor Chamber UI contains the enable/sleep component and brightness integration; no RGB getter/setter callsite or LED address."
+      },
+      {
+        "url": "https://apps.razer.com/synapse/products/711/ui/static/js/8158.e5c5b4cd.chunk.js",
+        "sha256": "E997A2994B5DEBFE5B2014FC30DAB38E430AA60FAC9869FBC3F27EBA28AE7617",
+        "finding": "Touchpad UI reads trackpadStatus and opens Windows touchpad settings; no RGB getter/setter callsite or LED address."
+      }
+    ],
+    "completeWebpackChunkSweep": {
+      "entrypoint": "https://apps.razer.com/synapse/products/711/ui/static/js/main.a649ed49.js",
+      "entrypointSha256": "4B42EF4995470865B7D02587B85724247B886BDF2376EB6A78DA38BB9B6CBF99",
+      "mappedChunks": 88,
+      "http200Chunks": 88,
+      "searchedFor": ["getLedRGB", "setLedRGB", "getLedBrightness", "setLedBrightness", "VaporChamber", "touchpad", "regionId:38"],
+      "result": "No getLedRGB/setLedRGB callsites or per-LED VC/touchpad address mapping in the Product 711 UI chunk set. The touchpad-status and VC settings hits are described in the pinned chunks above."
+    },
+    "middlewareCallsiteReview": {
+      "scope": "Pinned Product 711 middleware main, shared feature chunk, generic Razer device base, matrix base, Blade/Blade2 classes, and BladeWattage class.",
+      "sources": [
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js",
+          "sha256": "C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js",
+          "sha256": "3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js",
+          "sha256": "02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrix.69e3b36effe3a85ab0de.js",
+          "sha256": "65C1FD97AD41460B8AFE33B08C0F8051D990CAF15DCF40D23930583DBC85664F"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrixBlade.1ac7639291bd0bca2295.js",
+          "sha256": "CFD5529379EDE7C7EE0AA9C82A2726840DBB5B0B718C45024D8B7AD7486B7B85"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrixBlade2.d678cb5b99e6382aebe0.js",
+          "sha256": "62356152B59E6D172AF8D07677534EBA0BF9DBFEBA973AFE51BEC8437D031FD8"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrixBladeWattage.eb36277c35277a49ce09.js",
+          "sha256": "D48002486906EFA165DBC5219F37D810658010EDB5C7B9E61D945EE36A361E97"
+        }
+      ],
+      "findings": {
+        "genericLedRgbApi": "The base class accepts caller-supplied profile and LED IDs; it provides no Product 711-specific ID map.",
+        "sharedSetLedRgbCallsites": "Shared task handlers call setLedRGB for generic knob indicators and volume/mute dials. No touchpad or VC per-LED caller is present in the reviewed Product 711 chain.",
+        "vcCallsites": "The product-specific class reads/writes VC state at profile/region 0/38 and brightness at region 38; no RGB getter/setter is used.",
+        "touchpadCallsites": "The class exposes a touchpad multi-function status action, not a lighting/RGB action. Product UI uses trackpad status and opens Windows settings.",
+        "conclusion": "The shared RGB methods and unrelated knob/dial callers do not establish an exact VC or touchpad RGB contract."
+      }
+    },
+    "touchpadRgbAddressing": "Not established; reviewed MCU commands address only the touchpad status indicator boolean.",
+    "independentPixelReadbackAndRestore": "Not established for Vapor Chamber or touchpad RGB.",
+    "firmwareReadbackReview": {
+      "source": "2026-11-13-modern-mcu-lighting.json, RZ09-0529 KI8110 section",
+      "imageSha256": "C0EBB3B40D3AC763A50D7301457D73F1A84A3E2C951730454D848B13CA3F3578",
+      "class03Handler": "Offset 0x896C, reviewed as brightness/logo fields; independent brightness GET is command 03/83.",
+      "class0fHandler": "Offset 0x9400, effect GET returns built-in effect parameters for LED5, LED4 and LED38 (decimal38/hex26). Instructions94F2-9516 explicitly accept region38 and choose its record through65B4. Custom-frame mode does not return RGB pixels.",
+      "frameSetter": "Command 03/0B is a write-only row transport; no matching exact-model frame getter is established.",
+      "conclusion": "The expanded exact-image review establishes a region38 effect getter previously missed by the module/callsite review. It also identifies 0F/03 LED38 row0 column0..17 writes into the separate VC buffer. Mutation remains disabled pending complete setter/renderer side-effect and restoration review; neither a touchpad RGB map nor pixel readback is established."
+    },
+    "independentUpstreamReview": {
+      "project": "OpenRazer",
+      "commit": "463c351a159db7611f4796c7dd318224a21821bc",
+      "pullRequest": "https://github.com/openrazer/openrazer/pull/2551",
+      "device": "1532:02C7, Razer Blade 18 (2025)",
+      "declaredKeyboardMatrix": "6x19",
+      "exposedLightingOperations": [
+        "keyboard built-in effects",
+        "keyboard custom-frame row writes",
+        "keyboard matrix brightness",
+        "logo state"
+      ],
+      "zoneRgbOperations": "No Vapor Chamber or touchpad RGB interface is added by this upstream support commit.",
+      "limitation": "This independent driver implementation corroborates the keyboard matrix scope; its omission does not prove that no undocumented zone command exists and it supplies no zone read/restore contract."
+    },
+    "ecTouchpadFirmwareReview": {
+      "carrierUrl": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0529/KI8110-ECv0106.exe",
+      "carrierSha256": "922F1AE0B9C8BCAC3563D9CB884C34E31128F5B51AC8FE75E48C0FCDAC30933D",
+      "carrierBytes": 651520,
+      "catalogExtraction": {
+        "payload": "KI8110_EC_0106.bin",
+        "payloadSha256": "1CEE6E614BFB086946F691CBC551863D6F697495159D23EDE505DF49FA47752D",
+        "payloadBytes": 262144
+      },
+      "publishedRz090529FirmwareComponents": ["BIOS", "EC", "MCU"],
+      "separateTouchpadFirmwarePayload": "Not listed in the reviewed RZ09-0529 firmware catalog; the extracted EC image may still contain undocumented touchpad-related logic.",
+      "staticAnalysisProgress": {
+        "payloadAvailable": true,
+        "payloadSha256Verified": true,
+        "signature": "ITE8320EC-V01.06",
+        "instructionSet": "Andes NDS32, mixed 16/32-bit instructions fetched big-endian. Reset 48002800 at0 decodes as j0x5000; startup46100F02/58108041 constructs r1=0x00F02041. This does not identify a lighting register or establish a complete memory map.",
+        "isaDefinitions": [
+          "https://gnu.googlesource.com/binutils-gdb/+/f0d6ada6cb2647173a0aa13220d987178fc3f64d/opcodes/nds32-dis.c",
+          "https://github.com/NationalSecurityAgency/ghidra/blob/91fd2f52d1c0dc4aad9f5e26848c39c797c57ebc/Ghidra/Processors/NDS32/data/languages/nds32.sinc"
+        ],
+        "ecUsbIdentity": "1532:F003 Razer EC, distinct from keyboard1532:02C7; descriptor0x2A874, selector0x7434.",
+        "hostDispatch": "0x12994 rejects class0F at0x129F6; inspected classes02/03/04/0A are no-ops. Do not transfer keyboard MCU LED38 commands to the EC endpoint.",
+        "indicatorBranch": "0x6F54-0x6F66 consumes a one-byte HID output report, saves it at0x813B6 and logs keyboard indicators. This does not establish a touchpad RGB path.",
+        "nextRequirement": "Identify an exact-model touchpad RGB selector/controller or bridge before reviewing further EC transactions. Inspected dispatch and peripheral wrappers do not establish that identity."
+      },
+      "ecImageCommandReview": "Bounded NDS32 host-dispatch and indicator-handler disassembly completed. No touchpad RGB addressing or read/restore contract was established; this is not a proof of absence.",
+      "mutationAdmitted": false
+    },
+    "openBladeRgbMutationAdmitted": false
   },
   "restoration": {
     "baseline": "Complete independently read Off/Static/Breathing/Wave parameters plus exact raw bank0 brightness, durably saved before possible writes.",

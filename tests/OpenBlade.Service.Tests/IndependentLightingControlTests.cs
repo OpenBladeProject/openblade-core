@@ -6,6 +6,59 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class IndependentLightingControlTests
 {
+    [Fact]
+    public async Task ExplicitKeyboardEffectAndIndependentFieldsApplyAndConfirmBoth()
+    {
+        BatteryTestDevice device = CreateDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            LightingEffects = new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Spectrum },
+            SupportsVaporChamberLighting = true,
+        };
+        LightingSettings request = LightingSettingsFactory.SpectrumCycling(80) with
+        {
+            ControlsKeyboardEffect = true,
+            IndependentControls = new(65, null, VaporChamberLightingEnabled: true),
+        };
+
+        ScopedApplyOutcome outcome = await new ControlCoordinator(device).ApplyLightingOutcomeAsync(request, default);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.True(outcome.ReadbackMatched);
+        Assert.Equal(request with { IndependentControls = null }, Assert.Single(device.LightingWrites));
+        Assert.Equal(request.IndependentControls, Assert.Single(device.IndependentLightingWrites));
+        Assert.Equal(request.Effect, outcome.Readback!.Lighting!.Effect);
+        Assert.Equal<byte?>(65, outcome.Readback.IndependentLighting!.Brightness);
+        Assert.True(outcome.Readback.IndependentLighting.VaporChamberLightingEnabled);
+    }
+
+    [Fact]
+    public async Task IndependentFieldFailureAfterEffectReconcilesWithoutReplayingEitherWrite()
+    {
+        BatteryTestDevice device = CreateDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            LightingEffects = new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Spectrum },
+            SupportsVaporChamberLighting = true,
+        };
+        device.IndependentLightingWriteFailure = new IOException("independent setter failed");
+        LightingSettings request = LightingSettingsFactory.SpectrumCycling(80) with
+        {
+            ControlsKeyboardEffect = true,
+            IndependentControls = new(65, null, VaporChamberLightingEnabled: true),
+        };
+
+        ScopedApplyOutcome outcome = await new ControlCoordinator(device).ApplyLightingOutcomeAsync(request, default);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.True(outcome.WriteAttempted);
+        Assert.False(outcome.ReadbackMatched);
+        Assert.Single(device.LightingWrites);
+        Assert.Single(device.IndependentLightingWrites);
+        Assert.Equal(request.Effect, device.State.Lighting!.Effect);
+        Assert.Null(device.State.IndependentLighting!.VaporChamberLightingEnabled);
+    }
+
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, false)]
@@ -111,13 +164,20 @@ public sealed class IndependentLightingControlTests
         {
             PluggedIn = profiles.PluggedIn with { Lighting = unsupported },
         }));
-        validator.Validate(profiles with
+        Assert.Throws<InvalidDataException>(() => validator.Validate(profiles with
         {
             PluggedIn = profiles.PluggedIn with { Lighting = unsupported with { IndependentControls = new(42, null) } },
-        });
+        }));
         validator.Validate(profiles with
         {
-            PluggedIn = profiles.PluggedIn with { Lighting = LightingSettingsFactory.SpectrumCycling(70) with { ControlsKeyboardEffect = true } },
+            PluggedIn = profiles.PluggedIn with
+            {
+                Lighting = LightingSettingsFactory.SpectrumCycling(70) with
+                {
+                    ControlsKeyboardEffect = true,
+                    IndependentControls = new(42, null),
+                },
+            },
         });
     }
 

@@ -5809,6 +5809,173 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         }
     }
 
+    private async void OnEditKeyboardKeyColors(object sender, RoutedEventArgs args)
+    {
+        if (!ViewModel.CanControlLighting || !ViewModel.SupportsRz090529KeyColorEditor)
+        {
+            return;
+        }
+
+        try
+        {
+            var editor = new KeyboardKeyColorEditor(ViewModel.LightingDraft);
+            var keyButtons = new Dictionary<int, Microsoft.UI.Xaml.Controls.Button>();
+            int selectedSlot = -1;
+            bool updatingPicker = false;
+            var colorPicker = new ColorPicker
+            {
+                IsAlphaEnabled = false,
+                IsEnabled = false,
+                Color = ToWindowsColor(LightingSettingsFactory.DefaultVisibleColor),
+                HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
+            };
+            var selectedKey = new TextBlock
+            {
+                Text = LocalizedResources.Get(
+                    "MainWindow_KeyColorEditor_SelectKey",
+                    "Select a key to change its color."),
+                Style = (Style)Resources["SecondaryTextStyle"],
+                TextWrapping = TextWrapping.Wrap,
+            };
+            var keyboard = new Grid
+            {
+                ColumnSpacing = 2,
+                RowSpacing = 3,
+            };
+            for (int column = 0; column < Rz090529KeyboardLightingLayout.Columns; column++)
+            {
+                keyboard.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MinWidth = 44 });
+            }
+            for (int row = 0; row < Rz090529KeyboardLightingLayout.Rows; row++)
+            {
+                keyboard.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            }
+
+            for (int slot = 0; slot < Rz090529KeyboardLightingLayout.SlotCount; slot++)
+            {
+                if (!Rz090529KeyboardLightingLayout.IsKeySlot(slot))
+                {
+                    continue;
+                }
+
+                int keySlot = slot;
+                string label = KeyboardKeyColorEditor.GetKeyLabel(keySlot);
+                var keyButton = new Microsoft.UI.Xaml.Controls.Button
+                {
+                    Style = AppTypography.RequireStyle("AppToolbarButtonStyle"),
+                    MinWidth = 44,
+                    MinHeight = 40,
+                    Padding = new Thickness(1),
+                    Content = label,
+                };
+                SetKeyButtonColor(keyButton, ToWindowsColor(editor.Colors[slot]));
+                AutomationProperties.SetName(keyButton, label);
+                ToolTipService.SetToolTip(keyButton, label);
+                keyButton.Click += (_, _) =>
+                {
+                    selectedSlot = keySlot;
+                    selectedKey.Text = LocalizedResources.Format(
+                        "MainWindow_KeyColorEditor_SelectedKey",
+                        "Selected key: {0}",
+                        label);
+                    updatingPicker = true;
+                    colorPicker.Color = ToWindowsColor(editor.Colors[keySlot]);
+                    updatingPicker = false;
+                    colorPicker.IsEnabled = true;
+                };
+                Grid.SetRow(keyButton, slot / Rz090529KeyboardLightingLayout.Columns);
+                Grid.SetColumn(keyButton, slot % Rz090529KeyboardLightingLayout.Columns);
+                keyboard.Children.Add(keyButton);
+                keyButtons.Add(slot, keyButton);
+            }
+
+            colorPicker.ColorChanged += (_, change) =>
+            {
+                if (selectedSlot < 0 || updatingPicker)
+                {
+                    return;
+                }
+
+                RgbColor color = new(change.NewColor.R, change.NewColor.G, change.NewColor.B);
+                editor.SetKeyColor(selectedSlot, color);
+                SetKeyButtonColor(keyButtons[selectedSlot], change.NewColor);
+            };
+
+            var content = new StackPanel { Spacing = 12 };
+            content.Children.Add(selectedKey);
+            content.Children.Add(colorPicker);
+            content.Children.Add(new ScrollViewer
+            {
+                Content = keyboard,
+                HorizontalScrollMode = ScrollMode.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollMode = ScrollMode.Disabled,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                MaxWidth = 670,
+            });
+
+            var dialog = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = LocalizedResources.Get(
+                    "MainWindow_KeyColorEditor_Title",
+                    "Edit keyboard key colors"),
+                Content = content,
+                PrimaryButtonText = LocalizedResources.Get(
+                    "MainWindow_KeyColorEditor_Apply",
+                    "Apply colors"),
+                CloseButtonText = LocalizedResources.Get("Common_Cancel", "Cancel"),
+                DefaultButton = ContentDialogButton.Primary,
+            };
+            if (await ShowContentDialogAsync(dialog) != ContentDialogResult.Primary)
+            {
+                return;
+            }
+
+            if (!editor.HasChanges)
+            {
+                return;
+            }
+
+            var preset = new KeyboardLightingPreset(
+                Name: LocalizedResources.Get("MainWindow_KeyColorEditor_PresetName", "Custom key colors"),
+                Author: "OpenBlade",
+                Description: null,
+                Revision: 1,
+                Lighting: editor.BuildLightingSettings());
+            if (!ViewModel.TryImportKeyboardLighting(preset))
+            {
+                throw new InvalidOperationException(LocalizedResources.Get(
+                    "MainWindow_LightingImport_ControlUnavailable",
+                    "Lighting control became unavailable before the preset could be imported."));
+            }
+        }
+        catch (Exception exception)
+        {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "EditKeyboardKeyColors",
+                exception);
+            await ShowMessageDialogAsync(
+                LocalizedResources.Get(
+                    "MainWindow_KeyColorEditor_FailedTitle",
+                    "Keyboard colors could not be applied"),
+                LocalizedResources.Format("Common_ErrorWithDetails", "{0}", exception.Message));
+        }
+    }
+
+    private static Windows.UI.Color ToWindowsColor(RgbColor color) =>
+        Windows.UI.Color.FromArgb(255, color.Red, color.Green, color.Blue);
+
+    private static void SetKeyButtonColor(Microsoft.UI.Xaml.Controls.Button button, Windows.UI.Color color)
+    {
+        button.Background = new SolidColorBrush(color);
+        int luminance = (color.R * 299 + color.G * 587 + color.B * 114) / 1000;
+        button.Foreground = new SolidColorBrush(luminance >= 140
+            ? Windows.UI.Color.FromArgb(255, 0, 0, 0)
+            : Windows.UI.Color.FromArgb(255, 255, 255, 255));
+    }
+
     private async void OnImportKeyboardLighting(object sender, RoutedEventArgs args)
     {
         if (!ViewModel.CanControlLighting)

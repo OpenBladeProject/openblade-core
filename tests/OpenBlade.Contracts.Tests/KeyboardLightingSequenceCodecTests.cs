@@ -6,6 +6,66 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class KeyboardLightingSequenceCodecTests
 {
     [Fact]
+    public void MaterializedSequenceValidation_UsesTheExplicitLayoutWithoutChangingLegacyDefault()
+    {
+        var colors = new RgbColor[Rz090529KeyboardLightingLayout.SlotCount];
+        colors[113] = new(10, 20, 30);
+        string encoded = KeyboardLightingSequenceCodec.Encode(
+            [new(100, colors)], KeyboardLightingLayoutIds.Rz09_0529);
+        KeyboardLightingSequence decoded = KeyboardLightingSequenceCodec.Decode(
+            encoded, KeyboardLightingLayoutIds.Rz09_0529);
+
+        Assert.True(decoded.IsWellFormed(KeyboardLightingLayoutIds.Rz09_0529));
+        Assert.True(KeyboardLightingSequenceCodec.IsWellFormed(decoded, KeyboardLightingLayoutIds.Rz09_0529));
+        Assert.False(decoded.IsWellFormed());
+        Assert.False(decoded.IsWellFormed(KeyboardLightingLayoutIds.Rz09_0581));
+        Assert.False(decoded.IsWellFormed("unknown"));
+        Assert.False(KeyboardLightingSequenceCodec.IsWellFormed(
+            (KeyboardLightingSequence?)null, KeyboardLightingLayoutIds.Rz09_0529));
+
+        colors[0] = new(1, 2, 3);
+        Assert.False(new KeyboardLightingSequence([new(100, colors)])
+            .IsWellFormed(KeyboardLightingLayoutIds.Rz09_0529));
+    }
+
+    [Fact]
+    public void Rz090529Layout_RoundTripsPerKeyColorsAcrossIts114TransportSlots()
+    {
+        var colors = new RgbColor[Rz090529KeyboardLightingLayout.SlotCount];
+        colors[1] = new RgbColor(12, 34, 56);
+        colors[113] = new RgbColor(78, 90, 123);
+        var frame = new KeyboardLightingSequenceFrame(100, colors);
+
+        string encoded = KeyboardLightingSequenceCodec.Encode(
+            [frame], KeyboardLightingLayoutIds.Rz09_0529);
+        KeyboardLightingSequence decoded = KeyboardLightingSequenceCodec.Decode(
+            encoded, KeyboardLightingLayoutIds.Rz09_0529);
+
+        Assert.Equal(Rz090529KeyboardLightingLayout.SlotCount,
+            Assert.Single(decoded.Frames).Slots.Count);
+        Assert.Equal(colors, decoded.Frames[0].Slots);
+        Assert.True(LightingSettingsValidation.IsWellFormed(
+            LightingSettingsFactory.Sequence(
+                KeyboardLightingLayoutIds.Rz09_0529, encoded, loop: true, brightness: 80)));
+    }
+
+    [Fact]
+    public void Rz090529Layout_RejectsAuxiliaryAndUnmappedSlotsInKeyboardSequences()
+    {
+        var colors = new RgbColor[Rz090529KeyboardLightingLayout.SlotCount];
+        colors[0] = new RgbColor(1, 2, 3);
+        Assert.Throws<InvalidDataException>(() => KeyboardLightingSequenceCodec.Encode(
+            [new KeyboardLightingSequenceFrame(100, colors)],
+            KeyboardLightingLayoutIds.Rz09_0529));
+
+        colors[0] = default;
+        colors[1] = new RgbColor(1, 2, 3);
+        Assert.Throws<InvalidDataException>(() => KeyboardLightingSequenceCodec.Encode(
+            [new KeyboardLightingSequenceFrame(100, colors[..102])],
+            KeyboardLightingLayoutIds.Rz09_0529));
+    }
+
+    [Fact]
     public void Blade18Layout_RoundTripsKeysThatAreHolesInTheBlade16Layout()
     {
         int blade18Key = Enumerable.Range(0, Blade18KeyboardLightingLayout.SlotCount)
@@ -20,6 +80,8 @@ public sealed class KeyboardLightingSequenceCodecTests
             encoded, KeyboardLightingLayoutIds.Rz09_0484);
 
         Assert.Equal(colors, Assert.Single(decoded.Frames).Slots);
+        Assert.True(decoded.IsWellFormed(KeyboardLightingLayoutIds.Rz09_0484));
+        Assert.False(decoded.IsWellFormed());
         Assert.Throws<InvalidDataException>(() => KeyboardLightingSequenceCodec.Encode([frame]));
         Assert.Throws<InvalidDataException>(() => KeyboardLightingSequenceCodec.Decode(encoded));
     }

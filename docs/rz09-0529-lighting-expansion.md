@@ -1,7 +1,8 @@
 # RZ09-0529 lighting expansion review
 
 Reviewed 2026-11-13 against exact Synapse product 711 (`1532:02C7`). This
-follow-up establishes keyboard-only software rendering and independent VC/status
+follow-up documents per-key keyboard animation imports, keyboard-only OpenBlade
+rendering, the vendor's full-frame Vapor Chamber path, and independent VC/status
 controls. Physical validation is pending. Other source-reviewed controls are listed in
 [lighting coverage](source-reviewed-lighting.md).
 
@@ -23,17 +24,31 @@ in-bounds transport addresses and no keyboard scan-code binding that points to
 multiple logical positions within that layout.
 
 The MCU resolves the apparent geometry discrepancy: rows 0–5 are the 6-by-19
-keyboard; row 6 belongs to LED38, the auxiliary VC region. Keyboard effects send
-only rows 0–5, with 61-byte `03/0B` payloads. `FF` is the payload frame ID, not
-the report transaction ID. Legacy `03/0A [5,0]` activates both regions and is
-not used by this backend. The independently reviewed `0F/02 [0,5,8]` activates
-only the keyboard; `0F/82` independently confirms mode 8, not pixel colors.
+keyboard; row 6 belongs to LED38, the auxiliary VC region. The selected Synapse
+frame engine sends every transport row in its frame and then selects its custom
+frame effect. Its selected engine method loops through `eventData.numRow`; the
+manifest declares a 7-by-19 device transport and 8-by-18 logical effect canvas.
+The VC transport row follows logical effect row 0. OpenBlade currently sends
+only keyboard rows 0–5 with 61-byte `03/0B` payloads. `FF` is the payload frame
+ID, not the report transaction ID. The reviewed `03/0A [5,0]` selector activates
+both LED5 and LED38, while `0F/02 [0,5,8]` selects keyboard-only custom-frame
+mode.
+
+OpenBlade does not yet send the VC row. The `03/80 [0,38,0]` getter confirms
+only the enabled boolean. Expanded MCU disassembly identifies a separate
+`0F/82 [0,38,...]` getter for built-in VC effect parameters, but not custom pixels.
+The current durable renderer baseline and restore path confirm keyboard MCU effect
+parameters and brightness only. Until an exact-model restoration path covers
+VC state, sending row 6 and selecting both regions could leave an unknown VC
+effect behind, so VC frame mutation remains unavailable. Physical validation
+is also pending.
 
 OpenBlade renders Spectrum, Fire, Wheel, Starlight, Tidal, Reactive and Ripple
-in software. Ambient Awareness and Audio Meter use the same keyboard-only
-transport for current-user samples. Off, Static, Breathing and Wave retain the
-typed MCU implementation. Imported sequences are not part of this expansion:
-their existing codec has a different fixed canvas.
+in software on the keyboard. Ambient Awareness and Audio Meter use the same
+keyboard-only transport for current-user samples. Off, Static, Breathing and
+Wave retain the typed MCU implementation. Imported sequences use the same
+keyboard-only renderer with the exact RZ09-0529 114-slot sequence layout; they
+do not include auxiliary row 6.
 
 The input map keeps 94 ordinary keyboard scan bindings common to all nine
 layouts. It excludes vendor `dkm` identifiers, auxiliary-row inputs and regional
@@ -41,6 +56,13 @@ Enter/backslash/Alt disagreements. Spatial Ripple additionally needs a common
 logical position; two transport slots have conflicting regional positions and
 do not become guessed Ripple origins. Reactive can still illuminate a known
 transport slot without a spatial coordinate.
+
+The Lighting page includes a built-in per-key color editor. It uses the reviewed
+RZ09-0529 keyboard slots, starts with one color, and lets users select a key and
+change its color. Razer Chroma keyboard animation imports also use the common
+scan-code map. Unmapped source cells are omitted with an import warning; editor
+and imported frames remain keyboard-only and use the existing durable renderer
+restoration path.
 
 Before host entry, the service saves a complete independently read built-in
 baseline and exact raw active brightness to a protected, atomic journal. Unknown
@@ -55,8 +77,10 @@ provenance. See the [command and descriptor proof](../evidence/source-reviewed-b
 
 The selected product configuration enables `hasVCLed` and the
 `functionLighting.config.touchpadStatus` indicator. These are separate features.
-The selected vendor UI calls the former **Vapor Chamber Lighting**. This does
-not independently identify the owner-reported Under-glass label or establish a
+The selected vendor UI calls the former **Vapor Chamber Lighting**. Synapse's
+frame engine includes LED38 in full-matrix frames, but OpenBlade does not yet
+admit those writes because it cannot restore the prior VC effect. This does not
+independently identify the owner-reported Under-glass label or establish a
 Touchpad RGB zone.
 
 The touchpad indicator follows Windows touchpad enabled status. Its typed
@@ -72,12 +96,42 @@ The selected Blade2 backend provides these VC operations:
 | Set enabled | `03/00` | `[profile, 38, enabled]` |
 | Set sleep policy | `03/21` | `[0, 38, mode, duration]` |
 
+The exact Product 711 Blade2 module also provides VC brightness through region
+38. It does not expose a VC per-LED RGB read or restore operation. The generic
+Product 711 middleware base contains LED RGB helper methods, but the selected
+Blade2 module and checked Product 711 UI bundles do not use them for the VC or
+touchpad. Those generic methods do not establish this model's LED addresses,
+RGB semantics, or independent readback, so they are not an admitted control
+contract. A sweep of all 88 JavaScript chunks listed by the pinned Product 711
+UI entrypoint found no `getLedRGB`/`setLedRGB` callsites or per-LED address map.
+The touchpad UI chunk only reads `trackpadStatus` and opens Windows touchpad
+settings. The exact middleware chain uses the generic RGB setters for unrelated
+knob indicators and volume/mute dials; its VC methods only read or set VC state
+and region-38 brightness, and its touchpad method changes multifunction status.
+Hashes and the review scope are recorded in the
+[source evidence](../evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json).
+Independent OpenRazer support for `1532:02C7` likewise declares a 6-by-19
+keyboard matrix and keyboard effect/frame operations, but no VC or touchpad RGB
+interface ([upstream change](https://github.com/openrazer/openrazer/pull/2551)).
+This corroborates the keyboard scope; it does not rule out undocumented commands
+or provide a zone read/restore contract.
+
+The reviewed RZ09-0529 firmware catalog lists BIOS, EC and keyboard MCU packages,
+with no separate touchpad firmware payload. The pinned EC 1.06 carrier contains
+an EC image whose reset and startup instructions identify Andes NDS32 code.
+Its inspected USB descriptor identifies a separate `1532:F003` EC endpoint;
+that endpoint rejects class `0F`, so the keyboard MCU's VC commands cannot be
+transferred to it. The bounded EC review did not identify a touchpad RGB path.
+VC and touchpad RGB remain unavailable until exact addressing and
+independent restoration semantics are established.
+
 The selected enabled-setting task passes selector 1 while the getter uses 0.
 Targeted MCU review of `8A08–8A5C` and `8AD8–8ADC` establishes that both access
 the same inverted global flag at `0x1000017A`, without persistence or a bank
 copy. OpenBlade reads the baseline and independently confirms each changed
-enabled value. The VC UI offers enabled state and sleep behavior, not independent
-RGB or effect selection.
+enabled value. OpenBlade's current VC controls offer enabled state, not sleep,
+RGB or effect selection. Synapse's full-frame behavior is separate from this
+independent enabled flag.
 
 The Fn+V task supplies an enabled-only operation: `setVcLedState(1, enabled)`.
 There is no source-backed requirement to also write the sleep policy for that

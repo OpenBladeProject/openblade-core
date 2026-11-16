@@ -45,16 +45,37 @@ internal static class WriteConfirmationPolicy
                         ? PendingConfirmationResult.Match
                         : PendingConfirmationResult.Mismatch),
             DeviceSubsystem.Battery => MatchPendingBattery(pending, confirmed.Battery),
-            DeviceSubsystem.Lighting when pending.Target.Lighting.Value.IndependentControls is { } fields =>
-                MatchIndependentLighting(fields, confirmed),
-            DeviceSubsystem.Lighting => confirmed.Lighting is null
-                ? PendingConfirmationResult.Unavailable
-                : (confirmed.Lighting with { ControlsKeyboardEffect = false })
-                    == (pending.Target.Lighting.Value with { ControlsKeyboardEffect = false })
-                    ? PendingConfirmationResult.Match
-                    : PendingConfirmationResult.Mismatch,
+            DeviceSubsystem.Lighting => MatchPendingLighting(pending.Target.Lighting.Value, confirmed),
             _ => PendingConfirmationResult.Unavailable,
         };
+
+    private static PendingConfirmationResult MatchPendingLighting(
+        LightingSettings requested,
+        ConfirmedDeviceState confirmed)
+    {
+        PendingConfirmationResult independent = requested.IndependentControls is { } fields
+            ? MatchIndependentLighting(fields, confirmed)
+            : PendingConfirmationResult.Match;
+        if (!requested.ControlsKeyboardEffect && requested.IndependentControls is not null)
+        {
+            return independent;
+        }
+        if (confirmed.Lighting is null)
+        {
+            return PendingConfirmationResult.Unavailable;
+        }
+        PendingConfirmationResult keyboard = (confirmed.Lighting with { ControlsKeyboardEffect = false })
+            == (requested with { IndependentControls = null, ControlsKeyboardEffect = false })
+                ? PendingConfirmationResult.Match
+                : PendingConfirmationResult.Mismatch;
+        if (keyboard == PendingConfirmationResult.Mismatch || independent == PendingConfirmationResult.Mismatch)
+        {
+            return PendingConfirmationResult.Mismatch;
+        }
+        return keyboard == PendingConfirmationResult.Match && independent == PendingConfirmationResult.Match
+            ? PendingConfirmationResult.Match
+            : PendingConfirmationResult.Unavailable;
+    }
 
     private static PendingConfirmationResult MatchIndependentLighting(
         IndependentLightingSettings requested, ConfirmedDeviceState confirmed)

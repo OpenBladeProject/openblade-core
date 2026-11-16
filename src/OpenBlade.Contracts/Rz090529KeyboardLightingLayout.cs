@@ -98,6 +98,28 @@ public static class Rz090529KeyboardLightingLayout
         Inputs.TryGetValue((scanCode, extended), out slot);
 
     /// <summary>
+    /// Returns one common input name for an addressable key. Some keypad
+    /// positions have multiple input aliases; they share the same lighting slot.
+    /// </summary>
+    public static bool TryGetRepresentativeScanCode(
+        int slot, out ushort scanCode, out bool extended)
+    {
+        foreach (KeyValuePair<(ushort ScanCode, bool Extended), byte> input in Inputs)
+        {
+            if (input.Value == slot)
+            {
+                scanCode = input.Key.ScanCode;
+                extended = input.Key.Extended;
+                return true;
+            }
+        }
+
+        scanCode = 0;
+        extended = false;
+        return false;
+    }
+
+    /// <summary>
     /// Returns common logical canvas coordinates, not transport coordinates.
     /// Shared transport slots with conflicting regional positions return false.
     /// </summary>

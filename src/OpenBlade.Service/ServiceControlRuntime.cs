@@ -21649,7 +21649,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     private static bool UsesIndependentLightingIntent(DeviceCapabilities? capabilities, LightingSettings lighting) =>
         capabilities?.SupportsIndependentLightingControls == true
-        && (lighting.IndependentControls is not null || !lighting.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0);
+        && (!lighting.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0);
 
     private async Task PersistLastKnownLightingAsync(
         LightingSettings lighting,

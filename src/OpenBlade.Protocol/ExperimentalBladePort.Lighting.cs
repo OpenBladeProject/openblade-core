@@ -92,8 +92,10 @@ internal sealed partial class ExperimentalBladePort
         }
         if (model.ProductId == 0x02C7)
         {
-            // Spectrum is rendered by OpenBlade, not the unreadable MCU palette.
-            effects.UnionWith([LightingEffect.Spectrum, LightingEffect.Reactive, LightingEffect.Ripple]);
+            // Per-key sequences use the exact 114-slot keyboard canvas and
+            // remain keyboard-only; Spectrum stays on the admitted software renderer.
+            effects.UnionWith([LightingEffect.Spectrum, LightingEffect.Reactive,
+                LightingEffect.Ripple, LightingEffect.Sequence]);
         }
         if (model.ProductId == 0x02C5)
         {
@@ -1045,7 +1047,8 @@ internal sealed partial class ExperimentalBladePort
                     && settings.Parameters is WaveLightingParameters,
             LightingEffect.Sequence => settings.Parameters is SequenceLightingParameters sequence
                 && (model.ProductId == 0x02A0 && sequence.LayoutId == KeyboardLightingLayoutIds.Rz09_0484
-                    || model.ProductId == 0x02C5 && sequence.LayoutId == KeyboardLightingLayoutIds.Rz09_0530),
+                    || model.ProductId == 0x02C5 && sequence.LayoutId == KeyboardLightingLayoutIds.Rz09_0530
+                    || model.ProductId == 0x02C7 && sequence.LayoutId == KeyboardLightingLayoutIds.Rz09_0529),
             LightingEffect.Static => settings.Parameters is StaticLightingParameters,
             LightingEffect.AmbientAwareness => settings.Parameters is
                 AmbientAwarenessLightingParameters,

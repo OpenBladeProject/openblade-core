@@ -2025,6 +2025,7 @@ type sealed class OpenBlade.Contracts.KeyboardLightingSequence
   ctor (System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.KeyboardLightingSequenceFrame> Frames)
   method OpenBlade.Contracts.KeyboardLightingSequence <Clone>$()
   method System.Boolean IsWellFormed()
+  method System.Boolean IsWellFormed(System.String layoutId)
   method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.KeyboardLightingSequenceFrame> get_Frames()
   method System.Void Deconstruct(out System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.KeyboardLightingSequenceFrame> Frames)
   method System.Void set_Frames(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.KeyboardLightingSequenceFrame> value)
@@ -2044,6 +2045,7 @@ type static class OpenBlade.Contracts.KeyboardLightingSequenceCodec
   method static OpenBlade.Contracts.KeyboardLightingSequence Decode(System.String timelineBase64)
   method static OpenBlade.Contracts.KeyboardLightingSequence Decode(System.String timelineBase64, System.String layoutId)
   method static System.Boolean IsWellFormed(OpenBlade.Contracts.KeyboardLightingSequence sequence)
+  method static System.Boolean IsWellFormed(OpenBlade.Contracts.KeyboardLightingSequence sequence, System.String layoutId)
   method static System.Boolean IsWellFormed(System.String timelineBase64)
   method static System.String Encode(System.Collections.Generic.IEnumerable<OpenBlade.Contracts.KeyboardLightingSequenceFrame> frames)
   method static System.String Encode(System.Collections.Generic.IEnumerable<OpenBlade.Contracts.KeyboardLightingSequenceFrame> frames, System.String layoutId)
@@ -2941,6 +2943,7 @@ type static class OpenBlade.Contracts.Rz090529KeyboardLightingLayout
   field const System.Int32 SlotCount = 114
   method static System.Boolean IsKeySlot(System.Int32 slot)
   method static System.Boolean TryGetKeyPosition(System.Int32 slot, out System.Double x, out System.Double y)
+  method static System.Boolean TryGetRepresentativeScanCode(System.Int32 slot, out System.UInt16 scanCode, out System.Boolean extended)
   method static System.Boolean TryMapScanCode(System.UInt16 scanCode, System.Boolean extended, out System.Byte slot)
 type sealed class OpenBlade.Contracts.Rz090581CapabilityDiagnostics
   interface System.IEquatable<OpenBlade.Contracts.Rz090581CapabilityDiagnostics>

@@ -32,9 +32,10 @@ internal sealed class ExperimentalGridLightingEffect
         columns = rz090529 ? Rz090529KeyboardLightingLayout.Columns : 16;
         if (settings.Parameters is SequenceLightingParameters playback)
         {
-            if (playback.LayoutId != KeyboardLightingLayoutIds.Rz09_0530)
+            if (playback.LayoutId is not (KeyboardLightingLayoutIds.Rz09_0530
+                or KeyboardLightingLayoutIds.Rz09_0529))
             {
-                throw new ArgumentException("The sequence must target this Blade 14 layout.", nameof(settings));
+                throw new ArgumentException("The sequence must target this model's reviewed keyboard layout.", nameof(settings));
             }
             KeyboardLightingSequence decoded = KeyboardLightingSequenceCodec.Decode(
                 playback.TimelineBase64, playback.LayoutId);
@@ -62,7 +63,10 @@ internal sealed class ExperimentalGridLightingEffect
             || !rz090529 && settings!.Parameters is
                 BreathingLightingParameters { ColorMode: BreathingColorMode.Single or BreathingColorMode.Dual }
                 or WaveLightingParameters { Direction: LightingDirection.Leftward }
-                or SequenceLightingParameters { LayoutId: KeyboardLightingLayoutIds.Rz09_0530 }
+            || settings!.Parameters is SequenceLightingParameters sequence
+                && (rz090529
+                    ? sequence.LayoutId == KeyboardLightingLayoutIds.Rz09_0529
+                    : sequence.LayoutId == KeyboardLightingLayoutIds.Rz09_0530)
             || settings!.Parameters is FireLightingParameters or WheelLightingParameters
                 or StarlightLightingParameters or TidalLightingParameters
                 or ReactiveLightingParameters or RippleLightingParameters);

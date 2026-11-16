@@ -78,6 +78,7 @@ internal sealed class LightingEditorState
     private ReactiveLightingDuration lightingReactiveDurationEditor =
         ReactiveLightingDuration.Medium;
     private SequenceLightingParameters? importedSequenceParameters;
+    private IndependentLightingSettings? independentControls;
     private bool lightingRandomColorsEditor;
     private LightingDirection lightingDirectionEditor = LightingDirection.Rightward;
     private LightingRotationDirection lightingRotationDirectionEditor =
@@ -399,6 +400,7 @@ internal sealed class LightingEditorState
         LightingSettings value,
         bool startUnconfirmedEffectAtDefaultBrightness = false)
     {
+        independentControls = value.IndependentControls;
         if (value.Parameters is SequenceLightingParameters sequence)
         {
             importedSequenceParameters = sequence;
@@ -640,7 +642,7 @@ internal sealed class LightingEditorState
                     brightness),
             _ => new LightingSettings(Effect, default, brightness),
         };
-        return keyboard with { LogoMode = LogoMode };
+        return keyboard with { LogoMode = LogoMode, IndependentControls = independentControls };
     }
 
     private void SeedVisibleLightingDefaults(

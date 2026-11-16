@@ -61,6 +61,7 @@ public sealed partial class ServiceControlRuntime
                 {
                     Value = desired.Lighting.Value with
                     {
+                        ControlsKeyboardEffect = false,
                         IndependentControls = SuppressIndependentBrightness(value.Value, lightingSuppressions.Count > 0),
                     },
                 },

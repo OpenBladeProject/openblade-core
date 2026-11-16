@@ -147,7 +147,9 @@ public static partial class RazerChromaFileAdapter
         var projected = new List<KeyboardLightingSequenceFrame>(sourceFrames.Count);
         foreach (SourceFrame source in sourceFrames)
         {
-            var slots = new RgbColor[AmbientLightingFrame.SlotCount];
+            var slots = new RgbColor[keyboardLayoutId == KeyboardLightingLayoutIds.Rz09_0529
+                ? Rz090529KeyboardLightingLayout.SlotCount
+                : AmbientLightingFrame.SlotCount];
             for (int cell = 0; cell < source.Colors.Length; cell++)
             {
                 uint color = source.Colors[cell];
@@ -204,12 +206,16 @@ public static partial class RazerChromaFileAdapter
         {
             return CreateBlade18Projection(blade18Region);
         }
+        if (layoutId == KeyboardLightingLayoutIds.Rz09_0529)
+        {
+            return CreateRz090529Projection();
+        }
         if (layoutId is not (
             KeyboardLightingLayoutIds.Rz09_0581 or
             KeyboardLightingLayoutIds.Rz09_0528))
         {
             throw new InvalidDataException(
-                "Per-key .chroma animations require an admitted RZ09-0581 or RZ09-0528 keyboard layout.");
+                "Per-key .chroma animations require an admitted keyboard layout.");
         }
 
         var map = new Dictionary<int, byte>();
@@ -273,6 +279,91 @@ public static partial class RazerChromaFileAdapter
             Add(2, 17, 50);
         }
 
+        return map;
+    }
+
+    private static IReadOnlyDictionary<int, byte> CreateRz090529Projection()
+    {
+        // Generic Razer Chroma's named-key canvas is 22x6 (HTML5ChromaSDK
+        // ec61d7a1924a6facc0e136a84a00b8b87f7ce4ba/ChromaSDKImpl.js). Map source
+        // scan-code identities through the exact RZ09-0529 common input map;
+        // unmatched regional or non-key cells remain omitted and are reported.
+        var map = new Dictionary<int, byte>();
+        void Add(int row, int column, ushort scanCode, bool extended = false)
+        {
+            if (Rz090529KeyboardLightingLayout.TryMapScanCode(scanCode, extended, out byte slot))
+            {
+                map.Add(row * 22 + column, slot);
+            }
+        }
+
+        Add(0, 1, 0x01);
+        for (int index = 0; index < 10; index++)
+        {
+            Add(0, 3 + index, (ushort)(0x3B + index));
+        }
+        Add(0, 13, 0x57);
+        Add(0, 14, 0x58);
+        Add(1, 1, 0x29);
+        for (int index = 0; index < 10; index++)
+        {
+            Add(1, 2 + index, (ushort)(0x02 + index));
+        }
+        Add(1, 12, 0x0C);
+        Add(1, 13, 0x0D);
+        Add(1, 14, 0x0E);
+        Add(2, 1, 0x0F);
+        for (int index = 0; index < 10; index++)
+        {
+            Add(2, 2 + index, (ushort)(0x10 + index));
+        }
+        Add(2, 12, 0x1A);
+        Add(2, 13, 0x1B);
+        Add(3, 14, 0x1C);
+        Add(3, 1, 0x3A);
+        for (int index = 0; index < 9; index++)
+        {
+            Add(3, 2 + index, (ushort)(0x1E + index));
+        }
+        Add(3, 11, 0x27);
+        Add(3, 12, 0x28);
+        Add(2, 14, 0x2B);
+        Add(4, 1, 0x2A);
+        for (int index = 0; index < 7; index++)
+        {
+            Add(4, 3 + index, (ushort)(0x2C + index));
+        }
+        Add(4, 10, 0x33);
+        Add(4, 11, 0x34);
+        Add(4, 12, 0x35);
+        Add(4, 14, 0x36);
+        Add(5, 1, 0x1D);
+        Add(5, 2, 0x5B, extended: true);
+        Add(5, 3, 0x38);
+        Add(5, 7, 0x39);
+        Add(5, 11, 0x38, extended: true);
+        Add(5, 14, 0x1D, extended: true);
+        Add(4, 16, 0x48, extended: true);
+        Add(5, 15, 0x4B, extended: true);
+        Add(5, 16, 0x50, extended: true);
+        Add(5, 17, 0x4D, extended: true);
+        Add(1, 18, 0x45);
+        Add(1, 19, 0x35, extended: true);
+        Add(1, 20, 0x37);
+        Add(1, 21, 0x4A);
+        Add(2, 18, 0x47);
+        Add(2, 19, 0x48);
+        Add(2, 20, 0x49);
+        Add(2, 21, 0x4E);
+        Add(3, 18, 0x4B);
+        Add(3, 19, 0x4C);
+        Add(3, 20, 0x4D);
+        Add(4, 18, 0x4F);
+        Add(4, 19, 0x50);
+        Add(4, 20, 0x51);
+        Add(4, 21, 0x1C, extended: true);
+        Add(5, 19, 0x52);
+        Add(5, 20, 0x53);
         return map;
     }
 

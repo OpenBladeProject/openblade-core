@@ -42,7 +42,7 @@ public sealed partial class SourceReviewedBladeModelTests
         else
         {
             LightingEffect[] effects = product == 0x02C7
-                ? Enum.GetValues<LightingEffect>().Where(effect => effect != LightingEffect.Sequence).ToArray()
+                ? Enum.GetValues<LightingEffect>()
                 : product == 0x02B7
                 ? [LightingEffect.Off, LightingEffect.Breathing, LightingEffect.Wave]
                 : [LightingEffect.Off, LightingEffect.Static, LightingEffect.Breathing, LightingEffect.Wave];

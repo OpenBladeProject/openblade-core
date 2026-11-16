@@ -111,6 +111,71 @@ public sealed class RazerChromaFileAdapterTests
     }
 
     [Fact]
+    public void Deserialize_ProjectsPerKeyAnimationThroughTheRz090529CommonScanCodeMap()
+    {
+        uint[] frame = CreateUniformFrame(6, 22, 0);
+        frame[(2 * 22) + 2] = GreenColorRef; // Q
+        frame[(3 * 22) + 14] = GreenColorRef; // Enter
+        frame[(4 * 22) + 18] = GreenColorRef; // Numpad 1
+        frame[(4 * 22) + 21] = GreenColorRef; // Numpad Enter
+
+        KeyboardLightingPreset preset = RazerChromaFileAdapter.Deserialize(
+            CreateAnimation(device: 0, frame),
+            keyboardLayoutId: KeyboardLightingLayoutIds.Rz09_0529);
+
+        var parameters = Assert.IsType<SequenceLightingParameters>(preset.Lighting.Parameters);
+        Assert.Equal(KeyboardLightingLayoutIds.Rz09_0529, parameters.LayoutId);
+        KeyboardLightingSequence timeline = KeyboardLightingSequenceCodec.Decode(
+            parameters.TimelineBase64, KeyboardLightingLayoutIds.Rz09_0529);
+        Assert.Equal(Rz090529KeyboardLightingLayout.SlotCount,
+            Assert.Single(timeline.Frames).Slots.Count);
+        Assert.Equal(new RgbColor(0x47, 0xE1, 0x0C), timeline.Frames[0].Slots[40]);
+        Assert.Equal(default, timeline.Frames[0].Slots[69]); // Regional Enter is intentionally unmapped.
+        Assert.Equal(new RgbColor(0x47, 0xE1, 0x0C), timeline.Frames[0].Slots[92]);
+        Assert.Equal(new RgbColor(0x47, 0xE1, 0x0C), timeline.Frames[0].Slots[113]);
+        Assert.Contains("visual parity", preset.ImportWarning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(5, 15, 0x4B, true)] // Left
+    [InlineData(5, 16, 0x50, true)] // Down
+    [InlineData(5, 17, 0x4D, true)] // Right
+    [InlineData(5, 7, 0x39, false)] // Space
+    [InlineData(1, 18, 0x45, false)] // Num Lock
+    [InlineData(1, 19, 0x35, true)] // Numpad Divide
+    [InlineData(5, 19, 0x52, false)] // Numpad 0
+    [InlineData(5, 20, 0x53, false)] // Numpad Decimal
+    public void Deserialize_Rz090529UsesOfficialChromaNamedKeyCoordinates(
+        int row, int column, ushort scanCode, bool extended)
+    {
+        uint[] frame = CreateUniformFrame(6, 22, 0);
+        frame[row * 22 + column] = GreenColorRef;
+        KeyboardLightingPreset preset = RazerChromaFileAdapter.Deserialize(
+            CreateAnimation(device: 0, frame), keyboardLayoutId: KeyboardLightingLayoutIds.Rz09_0529);
+        var parameters = Assert.IsType<SequenceLightingParameters>(preset.Lighting.Parameters);
+        KeyboardLightingSequence timeline = KeyboardLightingSequenceCodec.Decode(
+            parameters.TimelineBase64, KeyboardLightingLayoutIds.Rz09_0529);
+        Assert.True(Rz090529KeyboardLightingLayout.TryMapScanCode(scanCode, extended, out byte slot));
+        Assert.Equal(new RgbColor(0x47, 0xE1, 0x0C), Assert.Single(timeline.Frames).Slots[slot]);
+        Assert.Single(timeline.Frames[0].Slots, color => color != default);
+    }
+
+    [Fact]
+    public void Deserialize_Rz090529DoesNotInventAnUnmappedRightControlKey()
+    {
+        uint[] frame = CreateUniformFrame(6, 22, 0);
+        frame[5 * 22 + 14] = GreenColorRef; // Official Chroma Right Ctrl.
+        KeyboardLightingPreset preset = RazerChromaFileAdapter.Deserialize(
+            CreateAnimation(device: 0, frame), keyboardLayoutId: KeyboardLightingLayoutIds.Rz09_0529);
+        var parameters = Assert.IsType<SequenceLightingParameters>(preset.Lighting.Parameters);
+        KeyboardLightingSequence timeline = KeyboardLightingSequenceCodec.Decode(
+            parameters.TimelineBase64, KeyboardLightingLayoutIds.Rz09_0529);
+        Assert.False(Rz090529KeyboardLightingLayout.TryMapScanCode(0x1D, true, out _));
+        Assert.All(Assert.Single(timeline.Frames).Slots, color => Assert.Equal(default, color));
+        Assert.False(string.IsNullOrWhiteSpace(preset.ImportWarning));
+    }
+
+    [Fact]
     public void Deserialize_RejectsPerKeyExtendedCanvasWithoutAnAdmittedProjection()
     {
         uint[] frame = CreateUniformFrame(8, 24, 0);

@@ -557,9 +557,19 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid($"The {name} lighting effect is undefined.");
         }
 
+        if (lighting.IndependentControls is { } independent
+            && (!independent.IsWellFormed
+                || !allowStoredIndependentIntent
+                    && (!validationPolicy.SupportsIndependentLightingControls
+                        || independent.VaporChamberLightingEnabled.HasValue && !validationPolicy.SupportsVaporChamberLighting
+                        || independent.TouchpadStatusIndicatorEnabled.HasValue && !validationPolicy.SupportsTouchpadStatusIndicator)))
+        {
+            throw Invalid($"The {name} independent lighting settings are invalid or unavailable.");
+        }
+
         if (validationPolicy.SupportsIndependentLightingControls
-                && (lighting.IndependentControls is not null || !lighting.ControlsKeyboardEffect || validationPolicy.SupportedLightingEffects.Count == 0)
-            || allowStoredIndependentIntent && lighting.IndependentControls is not null)
+                && (!lighting.ControlsKeyboardEffect || validationPolicy.SupportedLightingEffects.Count == 0)
+            || allowStoredIndependentIntent && lighting.IndependentControls is not null && !lighting.ControlsKeyboardEffect)
         {
             // Preserve the well-formed saved effect as unmanaged intent. This
             // capability applies only the independently opted-in nullable fields.
@@ -567,15 +577,10 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             {
                 throw Invalid($"The {name} independent lighting settings are invalid.");
             }
-            if (!allowStoredIndependentIntent
-                && (lighting.IndependentControls?.VaporChamberLightingEnabled is not null && !validationPolicy.SupportsVaporChamberLighting
-                    || lighting.IndependentControls?.TouchpadStatusIndicatorEnabled is not null && !validationPolicy.SupportsTouchpadStatusIndicator))
-            {
-                throw Invalid($"The {name} independent lighting indicators are unavailable.");
-            }
             return;
         }
-        if (lighting.IndependentControls is not null)
+        if (lighting.IndependentControls is not null && !validationPolicy.SupportsIndependentLightingControls
+            && !allowStoredIndependentIntent)
         {
             throw Invalid($"The {name} independent lighting controls are unavailable.");
         }

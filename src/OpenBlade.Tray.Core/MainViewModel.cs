@@ -2415,6 +2415,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && HasLightingCapability
         && (UsesIndependentLightingControls || !UseWindowsDynamicLighting);
 
+    public bool SupportsRz090529KeyColorEditor =>
+        Capabilities.KeyboardLightingLayoutId == KeyboardLightingLayoutIds.Rz09_0529;
+
     public bool IsLightingControlUnavailable =>
         !CanControlLighting && !IsCheckingLaptopConnection(latestStatus);
 
@@ -3229,6 +3232,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsSpecialKeyBindingsEditable));
             Notify(nameof(IsWindowsDynamicLightingAvailable));
             Notify(nameof(CanControlLighting));
+            Notify(nameof(SupportsRz090529KeyColorEditor));
             Notify(nameof(ShowObservedOnlyLightingEffects));
             Notify(nameof(ObservedOnlyLightingEffectsText));
             Notify(nameof(ShowObservedTouchpadLighting));
@@ -6344,6 +6348,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ArgumentNullException.ThrowIfNull(preset);
         return CanControlLighting
             && LightingSettingsValidation.IsWellFormed(preset.Lighting)
+            && ProfileAdmissionPolicy.LightingSupported(preset.Lighting with
+            {
+                ControlsKeyboardEffect = Capabilities.SupportsIndependentLightingControls || preset.Lighting.ControlsKeyboardEffect,
+            }, CommandCapabilities)
             && preset.Lighting.LogoMode is null
             && Capabilities.LightingEffects.Contains(preset.Lighting.Effect)
             && (preset.Lighting.Parameters is not SequenceLightingParameters sequence
@@ -6366,6 +6374,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LoadLightingEditor(preset.Lighting with
         {
             LogoMode = LogoLightingModeEditor,
+            IndependentControls = MergeIndependentLighting(LightingDraft.IndependentControls, preset.Lighting.IndependentControls),
             ControlsKeyboardEffect = Capabilities.SupportsIndependentLightingControls || preset.Lighting.ControlsKeyboardEffect,
         });
         lightingEditor.SetDirty(true);
@@ -6944,7 +6953,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private async Task SetLightingAsync(object? parameter, CancellationToken token)
     {
         LightingSettings requested = (LightingSettings)parameter!;
-        if (requested.IndependentControls is not null)
+        if (requested.IndependentControls is not null
+            && (!requested.ControlsKeyboardEffect
+                || UsesIndependentLightingControls && requested == IndependentLightingDraft))
         {
             await SetIndependentLightingAsync(requested, token);
             return;
@@ -8317,7 +8328,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         InvalidatePendingLightingHold();
         controlsKeyboardEffect = value.ControlsKeyboardEffect;
         independentLightingEditorActive = Capabilities.SupportsIndependentLightingControls
-            && (value.IndependentControls is not null || !value.ControlsKeyboardEffect || Capabilities.LightingEffects.Count == 0);
+            && (!value.ControlsKeyboardEffect || Capabilities.LightingEffects.Count == 0);
         if (UsesIndependentLightingControls)
         {
             LoadIndependentLightingEditor(value, value.IndependentControls
@@ -8326,7 +8337,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         EnsureImportedSequenceOption(value);
+        independentLightingDelta = null;
         lightingEditor.Load(value, startUnconfirmedEffectAtDefaultBrightness);
+        NotifyIndependentLightingPresentation();
         NotifyLightingParameterPresentation();
         NotifyComputed(nameof(SelectedLightingEffectOption), SelectedLightingEffectOption);
         NotifyComputed(nameof(SelectedLogoLightingModeOption), SelectedLogoLightingModeOption);

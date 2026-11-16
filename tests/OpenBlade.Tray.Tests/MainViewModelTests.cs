@@ -6549,6 +6549,190 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.IsLightingApplyPending);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ImportKeyboardLighting_FullEffectSubmitsAndRetainsIndependentDesiredFields(bool perKeySequence)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportsIndependentLightingControls = true,
+            SupportsKeyboardBrightness = true,
+            SupportsVaporChamberLighting = true,
+            SupportsTouchpadStatusIndicator = true,
+            KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0529,
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off, LightingEffect.Static, LightingEffect.Sequence,
+            },
+        };
+        var fields = new IndependentLightingSettings(Brightness: 66,
+            VaporChamberLightingEnabled: true, TouchpadStatusIndicatorEnabled: false);
+        LightingSettings baseline = LightingSettingsFactory.Static(new(10, 20, 30), 66) with
+        {
+            IndependentControls = fields,
+            ControlsKeyboardEffect = true,
+        };
+        ServiceStatusSnapshot status = CreateStatus(true, false, capabilities: capabilities);
+        status = status with
+        {
+            Profiles = status.Profiles with
+            {
+                PluggedIn = status.Profiles.PluggedIn with { Lighting = baseline },
+            },
+            DesiredState = status.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(baseline, SettingValueSource.PowerProfile),
+            },
+            ConfirmedState = status.ConfirmedState! with { IndependentLighting = fields },
+        };
+        client.Publish(status);
+        await WaitUntilAsync(() => viewModel.CanControlLighting && viewModel.UsesIndependentLightingControls);
+        viewModel.VaporChamberLightingEnabledEditor = false;
+        var queuedFieldEdit = new LightingCommitRequest(viewModel.LightingDraft, null)
+        {
+            EditorGeneration = viewModel.LightingCommitGeneration,
+        };
+        Assert.True(viewModel.SetLightingCommand.CanExecute(viewModel.LightingDraft));
+        LightingSettings imported;
+        if (perKeySequence)
+        {
+            var editor = new KeyboardKeyColorEditor(viewModel.LightingDraft);
+            editor.SetKeyColor(40, new(40, 50, 60));
+            imported = editor.BuildLightingSettings();
+        }
+        else
+        {
+            // Ordinary file imports carry only keyboard intent. They must retain
+            // the same pending fields as a preset built by the key editor.
+            imported = LightingSettingsFactory.Static(new(40, 50, 60), 66);
+        }
+        Assert.True(viewModel.TryImportKeyboardLighting(new("Imported colors", "User", null, 1, imported)));
+
+        Assert.False(viewModel.UsesIndependentLightingControls);
+        Assert.False(viewModel.IsLightingCommitCurrent(queuedFieldEdit));
+        Assert.True(viewModel.IsLightingApplyPending);
+        LightingSettings draft = viewModel.LightingDraft;
+        Assert.True(draft.ControlsKeyboardEffect);
+        Assert.Equal(imported.Parameters, draft.Parameters);
+        Assert.Equal(fields with { VaporChamberLightingEnabled = false }, draft.IndependentControls);
+        Assert.True(viewModel.IsLightingCommitCurrent(new LightingCommitRequest(draft, null)));
+        Assert.True(viewModel.SetLightingCommand.CanExecute(draft));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand).ExecuteAsync(draft);
+
+        Assert.Equal(draft, client.LightingOverride?.Value);
+        Assert.Equal(0, client.IndependentLightingMutationCalls);
+        Assert.False(viewModel.IsLightingApplyPending);
+        if (perKeySequence)
+        {
+            var parameters = Assert.IsType<SequenceLightingParameters>(client.LightingOverride!.Value.Parameters);
+            Assert.Equal(new RgbColor(40, 50, 60), Assert.Single(KeyboardLightingSequenceCodec.Decode(
+                parameters.TimelineBase64, parameters.LayoutId).Frames).Slots[40]);
+        }
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLightingProfileDraftCommand).ExecuteAsync(null);
+        Assert.Equal(draft, client.LastProfiles?.PluggedIn.Lighting);
+    }
+
+    [Fact]
+    public async Task FullEffectWithIndependentFields_DoesNotBypassEffectLayoutOrZoneAdmission()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(true, false, capabilities: DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportsIndependentLightingControls = true,
+            SupportsKeyboardBrightness = true,
+            SupportsVaporChamberLighting = false,
+            LightingEffects = new HashSet<LightingEffect> { LightingEffect.Static, LightingEffect.Sequence },
+            KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0529,
+        }));
+        await WaitUntilAsync(() => viewModel.CanControlLighting);
+        LightingSettings unsupportedEffect = LightingSettingsFactory.Fire(60) with
+        {
+            ControlsKeyboardEffect = true,
+            IndependentControls = new(Brightness: 60),
+        };
+        Assert.False(viewModel.SetLightingCommand.CanExecute(unsupportedEffect));
+        Assert.False(viewModel.CanImportKeyboardLighting(new("Unsupported effect", null, null, 1, unsupportedEffect)));
+        LightingSettings unsupportedZone = LightingSettingsFactory.Static(new(1, 2, 3), 60) with
+        {
+            ControlsKeyboardEffect = true,
+            IndependentControls = new(VaporChamberLightingEnabled: true),
+        };
+        Assert.False(viewModel.SetLightingCommand.CanExecute(unsupportedZone));
+        Assert.False(viewModel.CanImportKeyboardLighting(new("Unsupported zone", null, null, 1, unsupportedZone)));
+        string timeline = KeyboardLightingSequenceCodec.Encode([new(100, new RgbColor[AmbientLightingFrame.SlotCount])]);
+        LightingSettings wrongLayout = LightingSettingsFactory.Sequence(
+            KeyboardLightingLayoutIds.Rz09_0581, timeline, true, 60) with
+        {
+            ControlsKeyboardEffect = true,
+            IndependentControls = new(Brightness: 60),
+        };
+        Assert.False(viewModel.SetLightingCommand.CanExecute(wrongLayout));
+        Assert.False(viewModel.CanImportKeyboardLighting(new("Wrong layout", null, null, 1, wrongLayout)));
+        Assert.Equal(0, client.MutationCalls);
+    }
+
+    [Fact]
+    public async Task IndependentZoneEdit_WithSavedFullEffectAuthorityStillSubmitsOnlyTheFieldDelta()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(true, false, capabilities: DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportsIndependentLightingControls = true,
+            SupportsKeyboardBrightness = true,
+            SupportsVaporChamberLighting = true,
+            LightingEffects = new HashSet<LightingEffect> { LightingEffect.Static },
+        });
+        LightingSettings baseline = LightingSettingsFactory.Static(new(1, 2, 3), 66) with
+        {
+            ControlsKeyboardEffect = true,
+        };
+        client.Publish(status with
+        {
+            DesiredState = status.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(baseline, SettingValueSource.PowerProfile),
+            },
+            ConfirmedState = status.ConfirmedState! with
+            {
+                IndependentLighting = new(Brightness: 66, VaporChamberLightingEnabled: true),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.CanControlLighting && viewModel.CanEditVaporChamberLighting);
+        viewModel.VaporChamberLightingEnabledEditor = false;
+        LightingSettings draft = viewModel.LightingDraft;
+        Assert.True(draft.ControlsKeyboardEffect);
+        Assert.True(viewModel.UsesIndependentLightingControls);
+        Assert.True(viewModel.SetLightingCommand.CanExecute(draft));
+        Assert.False(viewModel.SetLightingCommand.CanExecute(draft with
+        {
+            IndependentControls = null,
+            ControlsKeyboardEffect = false,
+        }));
+        Assert.False(viewModel.SetLightingCommand.CanExecute(draft with
+        {
+            Color = new(9, 8, 7),
+            Parameters = new StaticLightingParameters(new(9, 8, 7)),
+            ControlsKeyboardEffect = false,
+        }));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand).ExecuteAsync(draft);
+
+        Assert.Equal(1, client.IndependentLightingMutationCalls);
+        Assert.Equal(new IndependentLightingSettings(VaporChamberLightingEnabled: false),
+            client.IndependentLightingOverride?.Value);
+        Assert.Null(client.LightingOverride);
+    }
+
     [Fact]
     public async Task ImportKeyboardLighting_RejectsAnEffectUnavailableOnTheLaptop()
     {
@@ -11817,6 +12001,8 @@ public sealed partial class MainViewModelTests
         public ManualOverride<FanMode>? FanOverride { get; private set; }
         public FanControlSettings? LastFanControlSettings { get; private set; }
         public ManualOverride<LightingSettings>? LightingOverride { get; private set; }
+        public int IndependentLightingMutationCalls { get; private set; }
+        public ManualOverride<IndependentLightingSettings>? IndependentLightingOverride { get; private set; }
         public bool? ExternalLightingOverridePolicy { get; private set; }
         public ThermalControlPolicy? ThermalControlPolicyRequest { get; private set; }
         public int ThermalDisclosureAcknowledgementCalls { get; private set; }
@@ -12059,6 +12245,15 @@ public sealed partial class MainViewModelTests
             MutationOperations.Add(value is null
                 ? "lighting:<clear>"
                 : $"lighting:{value.Value.Effect}");
+            return MutateAsync(token);
+        }
+
+        public Task<ControlOperationResult> SetIndependentLightingOverrideAsync(
+            ManualOverride<IndependentLightingSettings>? value,
+            CancellationToken token)
+        {
+            IndependentLightingMutationCalls++;
+            IndependentLightingOverride = value;
             return MutateAsync(token);
         }
 

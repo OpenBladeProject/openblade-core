@@ -24,11 +24,12 @@ public sealed partial class MainViewModel
         || Capabilities.LightingEffects.Count > 0;
     public bool ShowLightingEffectLabControls => IsKeyboardEffectSelectionVisible;
     public long LightingCommitGeneration => UsesIndependentLightingControls ? independentLightingCommitGeneration : 0;
-    public bool IsLightingCommitCurrent(LightingCommitRequest request) => request.Lighting?.IndependentControls is null
-        ? !UsesIndependentLightingControls
-        : UsesIndependentLightingControls && independentLightingDelta is not null
+    public bool IsLightingCommitCurrent(LightingCommitRequest request) => UsesIndependentLightingControls
+        ? independentLightingDelta is not null
             && request.EditorGeneration == independentLightingCommitGeneration
-            && request.Lighting == IndependentLightingDraft;
+            && request.Lighting == IndependentLightingDraft
+        : request.Lighting?.IndependentControls is null
+            || request.Lighting.ControlsKeyboardEffect && request.Lighting == LightingDraft;
     public string LogoLightingPlaceholderText => "—";
     public int LightingBrightnessMinimum => UsesIndependentLightingControls ? 0 : 1;
     public bool HasLightingBrightnessValue => !UsesIndependentLightingControls || independentBrightness.HasValue;
@@ -133,14 +134,27 @@ public sealed partial class MainViewModel
             update.VaporChamberLightingEnabled ?? baseline?.VaporChamberLightingEnabled,
             update.TouchpadStatusIndicatorEnabled ?? baseline?.TouchpadStatusIndicatorEnabled);
 
-    private bool CanSubmitLightingDraft(LightingSettings value) =>
-        ProfileAdmissionPolicy.LightingSupported(value, CommandCapabilities)
-        && (value.IndependentControls is null
-            ? !UsesIndependentLightingControls || value.ControlsKeyboardEffect && Capabilities.SupportsIndependentLightingControls
-            : UsesIndependentLightingControls && independentLightingDelta is not null && value == IndependentLightingDraft
+    private bool CanSubmitLightingDraft(LightingSettings value)
+    {
+        if (UsesIndependentLightingControls && value.IndependentControls is not null
+            && value == IndependentLightingDraft)
+        {
+            // A field edit retains the wrapper's saved effect authority, but may
+            // submit only the independently admitted delta, never change effect.
+            return independentLightingDelta is not null
+                && ProfileAdmissionPolicy.LightingSupported(value with { ControlsKeyboardEffect = false }, CommandCapabilities)
                 && value.IndependentControls is { IsWellFormed: true }
                 && (value with { IndependentControls = null })
-                    == ((independentLightingWrapper ?? SelectedLighting) with { IndependentControls = null }));
+                    == ((independentLightingWrapper ?? SelectedLighting) with { IndependentControls = null });
+        }
+
+        return ProfileAdmissionPolicy.LightingSupported(value, CommandCapabilities)
+            && (!Capabilities.SupportsIndependentLightingControls || value.ControlsKeyboardEffect)
+            && (value.IndependentControls is null
+                || value.ControlsKeyboardEffect && !UsesIndependentLightingControls && value == LightingDraft)
+            && (!UsesIndependentLightingControls
+                || value.ControlsKeyboardEffect && Capabilities.SupportsIndependentLightingControls);
+    }
 
     private bool PrepareFullLightingEffect(LightingEffect effect)
     {
@@ -179,8 +193,7 @@ public sealed partial class MainViewModel
         && (status.Capabilities.LightingEffects.Count == 0
             || independentLightingDelta is not null
             || !lightingEditor.IsDirty && !IsLightingOperationInProgress && pendingLighting is null
-                && ((status.LightingOverride?.Value ?? status.DesiredState.Lighting.Value) is
-    { IndependentControls: not null } or { ControlsKeyboardEffect: false }
+                && (!(status.LightingOverride?.Value ?? status.DesiredState.Lighting.Value).ControlsKeyboardEffect
                     || status.ConfirmedState?.Lighting is null));
 
     private void SetIndependentBrightness(int value)

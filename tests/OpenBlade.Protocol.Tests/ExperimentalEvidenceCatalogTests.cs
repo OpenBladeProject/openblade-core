@@ -103,6 +103,15 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal($"Rz090529KeyboardLightingLayout.json;SHA256={Convert.ToHexString(SHA256.HashData(map))}",
                         Assert.Single(feature.Sources));
                 }
+                else if (feature.Feature == "KeyboardPerKeyColorSequences")
+                {
+                    Assert.Equal((ushort)0x02C7, model.ProductId);
+                    Assert.Equal("ExactModelLayoutAndFrameSourceBackedWithoutPhysicalValidation", feature.Basis);
+                    Assert.Equal("evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json",
+                        feature.Sources[0]);
+                    Assert.Contains("Rz090529KeyboardLightingLayout.json;SHA256=71B8324BFA5EECA880701B032F159A4357A09046C718565236DA73DE7A095613",
+                        feature.Sources);
+                }
                 else if (feature.Feature == "VaporChamberEnabledAndTouchpadStatusIndicator")
                 {
                     Assert.Equal((ushort)0x02C7, model.ProductId);

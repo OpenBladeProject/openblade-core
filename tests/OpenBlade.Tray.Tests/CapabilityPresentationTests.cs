@@ -29,6 +29,38 @@ public sealed class CapabilityPresentationTests
     ];
 
     [Fact]
+    public void MainWindow_Rz090529KeyColorEditorIsModelGatedAndUsesTheReviewedSlotGrid()
+    {
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        XElement card = NamedElement(document, "Border", "EditKeyboardKeyColorsCard");
+        XElement button = NamedElement(document, "Button", "EditKeyboardKeyColorsButton");
+
+        Assert.Equal(
+            "{x:Bind SupportsRz090529KeyColorEditor, Mode=OneWay}",
+            Attribute(card, "Visibility"));
+        Assert.Equal(
+            "{x:Bind CanControlLighting, Mode=OneWay}",
+            Attribute(button, "IsEnabled"));
+        Assert.Equal(
+            "{StaticResource SettingsGroupStyle}",
+            Attribute(card, "Style"));
+        string window = ReadTraySource("MainWindow.xaml.cs");
+        Assert.Contains("private async void OnEditKeyboardKeyColors", window, StringComparison.Ordinal);
+        Assert.Contains("Rz090529KeyboardLightingLayout.IsKeySlot(slot)", window, StringComparison.Ordinal);
+        Assert.Contains("new KeyboardKeyColorEditor(ViewModel.LightingDraft)", window, StringComparison.Ordinal);
+        Assert.Contains("editor.BuildLightingSettings()", window, StringComparison.Ordinal);
+        string handler = window[window.IndexOf("private async void OnEditKeyboardKeyColors", StringComparison.Ordinal)..window.IndexOf("private static Windows.UI.Color ToWindowsColor", StringComparison.Ordinal)];
+        Assert.Contains("int keySlot = slot;", handler, StringComparison.Ordinal);
+        string click = handler[handler.IndexOf("keyButton.Click +=", StringComparison.Ordinal)..handler.IndexOf("Grid.SetRow(keyButton", StringComparison.Ordinal)];
+        Assert.Contains("selectedSlot = keySlot;", click, StringComparison.Ordinal);
+        Assert.Contains("editor.Colors[keySlot]", click, StringComparison.Ordinal);
+        Assert.DoesNotContain("editor.Colors[slot]", click, StringComparison.Ordinal);
+        Assert.Contains("if (selectedSlot < 0 || updatingPicker)", handler, StringComparison.Ordinal);
+        Assert.Contains("if (!editor.HasChanges)", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("Choose a color, then select a key", handler, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MainWindow_HyperBoostUsesCapabilityGatedLaptopPerformanceChoice()
     {
         XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
@@ -4010,7 +4042,8 @@ public sealed class CapabilityPresentationTests
             Assert.Contains(input.Ancestors(), ancestor =>
                 ancestor.Name.LocalName == "ContentControl"
                 && Attribute(ancestor, "IsEnabled") == "{x:Bind CanRequestHardwareControl, Mode=OneWay}");
-            if (Attribute(input, "Name") is "ImportKeyboardLightingPresetButton" or "LightingRefreshRateToggle")
+            if (Attribute(input, "Name") is "ImportKeyboardLightingPresetButton"
+                or "EditKeyboardKeyColorsButton" or "LightingRefreshRateToggle")
             {
                 // Keep guide destinations visible while the individual capability gates disable them.
                 Assert.DoesNotContain(input.Ancestors(), ancestor =>

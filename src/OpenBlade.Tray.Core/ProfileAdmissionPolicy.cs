@@ -65,7 +65,7 @@ internal static class ProfileAdmissionPolicy
         && (ThermalCombinationSupported(draft.Performance, draft.Fans, capabilities)
             || RetainsThermalIntent(draft, current))
         && (capabilities.SupportsIndependentLightingControls
-            && (draft.Lighting.IndependentControls is not null || !draft.Lighting.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0)
+            && (!draft.Lighting.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0)
             ? LightingSupported(draft.Lighting, capabilities)
                 && (draft.Lighting with { IndependentControls = null })
                     == (current.Lighting with { IndependentControls = null })
@@ -106,19 +106,26 @@ internal static class ProfileAdmissionPolicy
         LightingSettings lighting,
         DeviceCapabilities capabilities)
     {
-        if (capabilities.SupportsIndependentLightingControls
-            && (lighting.IndependentControls is not null || !lighting.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0))
+        if (lighting.IndependentControls is { } independent
+            && (!capabilities.SupportsIndependentLightingControls
+                || !independent.IsWellFormed
+                || independent.Brightness is not null && !capabilities.SupportsKeyboardBrightness
+                || independent.VaporChamberLightingEnabled is not null && !capabilities.SupportsVaporChamberLighting
+                || independent.TouchpadStatusIndicatorEnabled is not null && !capabilities.SupportsTouchpadStatusIndicator
+                || independent.LogoMode is { } mode && !capabilities.LogoLightingModes.Contains(mode)))
         {
-            return LightingSettingsValidation.IsWellFormed(lighting)
-                && (lighting.IndependentControls is null || lighting.IndependentControls.IsWellFormed)
-                && (lighting.IndependentControls?.VaporChamberLightingEnabled is null || capabilities.SupportsVaporChamberLighting)
-                && (lighting.IndependentControls?.TouchpadStatusIndicatorEnabled is null || capabilities.SupportsTouchpadStatusIndicator)
-                && (lighting.IndependentControls?.LogoMode is not { } logo
-                    || capabilities.LogoLightingModes.Contains(logo));
+            return false;
         }
-        if (lighting.IndependentControls is not null
-            || !Enum.IsDefined(lighting.Effect)
+        if (capabilities.SupportsIndependentLightingControls && !lighting.ControlsKeyboardEffect)
+        {
+            // Field-only intent may retain a well-formed unsupported effect;
+            // full-effect authority below must pass the actual effect admission.
+            return LightingSettingsValidation.IsWellFormed(lighting);
+        }
+        if (!Enum.IsDefined(lighting.Effect)
             || !capabilities.LightingEffects.Contains(lighting.Effect)
+            || lighting.Parameters is SequenceLightingParameters sequence
+                && sequence.LayoutId != capabilities.KeyboardLightingLayoutId
             || !LightingSettingsValidation.IsWellFormed(lighting))
         {
             return false;

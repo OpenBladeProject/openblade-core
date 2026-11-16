@@ -18,7 +18,7 @@
   "proofs": [
     {
       "path": "2026-11-13-rz09-0529-keyboard-frames.json",
-      "sha256": "98498751502ab0ce8e20c428e6f0ae6e6380fb58d59e779ae1d6426d723326f0"
+      "sha256": "cd2eff74fd8f225fcd13747c9ae5ef411d24db26708346b3124927d1af9f845a"
     },
     {
       "path": "2026-11-13-mcu-color-wave-review.json",
@@ -769,7 +769,8 @@
         "Tidal",
         "Breathing",
         "Wave",
-        "Static"
+        "Static",
+        "Sequence"
       ],
       "breathingColorModes": [
         "Random",

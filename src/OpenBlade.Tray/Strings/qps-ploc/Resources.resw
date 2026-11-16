@@ -3130,4 +3130,37 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_VaporChamberLightingControlText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Vápór chámbér líghtíng ~~~~~~~ !!]</value>
   </data>
+  <data name="MainWindow_ButtonEditKeyboardKeyColors.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Édít kéýbóárd kéý cólórs ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_ButtonEditKeyboardKeyColors.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>[!! Édít kéýbóárd kéý cólórs ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseAColorForEachKeyboardKey.Text" xml:space="preserve">
+    <value>[!! Chóósé á cólór fór éách kéý ón thís láptóp. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockEditKeyboardKeyColors.Text" xml:space="preserve">
+    <value>[!! Édít kéýbóárd kéý cólórs ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_Apply" xml:space="preserve">
+    <value>[!! Ápplý cólórs ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_FailedTitle" xml:space="preserve">
+    <value>[!! Kéýbóárd cólórs cóúld nót bé ápplíéd ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_Instructions" xml:space="preserve">
+    <value>[!! Chóósé á cólór, thén séléct á kéý. Séléct ánóthér kéý tó gívé ít á dífférént cólór. ~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_PresetName" xml:space="preserve">
+    <value>[!! Cústóm kéý cólórs ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_SelectKey" xml:space="preserve">
+    <value>[!! Séléct á kéý tó chángé íts cólór. ~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_SelectedKey" xml:space="preserve">
+    <value>[!! Séléctéd kéý: {0} ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_Title" xml:space="preserve">
+    <value>[!! Édít kéýbóárd kéý cólórs ~~~~~~~~ !!]</value>
+  </data>
 </root>

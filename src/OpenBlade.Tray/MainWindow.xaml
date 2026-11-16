@@ -2197,6 +2197,49 @@
                         </Border>
                         <StackPanel x:Name="LightingLabControls" Visibility="Collapsed">
                         <!-- The Lighting page reveals these guide targets; dashboard copies keep them hidden. -->
+                        <Border x:Name="EditKeyboardKeyColorsCard"
+                                Style="{StaticResource SettingsGroupStyle}"
+                                Margin="0,10,0,0"
+                                Visibility="{x:Bind SupportsRz090529KeyColorEditor, Mode=OneWay}">
+                            <Border Style="{StaticResource SettingsLastRowStyle}"
+                                    Padding="0">
+                                <Button x:Name="EditKeyboardKeyColorsButton"
+                                        Style="{StaticResource IconActionButtonStyle}"
+                                        CornerRadius="8"
+                                        IsEnabled="{x:Bind CanControlLighting, Mode=OneWay}"
+                                        Click="OnEditKeyboardKeyColors"
+                                        AutomationProperties.Name="{CustomResource MainWindow_ButtonEditKeyboardKeyColors.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                        ToolTipService.ToolTip="{CustomResource MainWindow_ButtonEditKeyboardKeyColors.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3">
+                                            <Grid ColumnSpacing="6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <FontIcon Style="{StaticResource LabsFeatureIconStyle}" />
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{CustomResource MainWindow_TextBlockEditKeyboardKeyColors.Text}"
+                                                           Style="{StaticResource CardTitleStyle}"
+                                                           TextWrapping="Wrap" />
+                                            </Grid>
+                                            <TextBlock Text="{CustomResource MainWindow_TextBlockChooseAColorForEachKeyboardKey.Text}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <FontIcon Grid.Column="1"
+                                                  Glyph="&#xE70F;"
+                                                  VerticalAlignment="Center"
+                                                  AutomationProperties.AccessibilityView="Raw"
+                                                  Style="{StaticResource CardActionIconStyle}" />
+                                    </Grid>
+                                </Button>
+                            </Border>
+                        </Border>
                         <Border x:Name="ImportKeyboardLightingPresetCard"
                                 Style="{StaticResource SettingsGroupStyle}"
                                 Margin="0,10,0,0"

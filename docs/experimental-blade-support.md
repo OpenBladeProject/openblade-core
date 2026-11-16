@@ -28,7 +28,7 @@ installed; PawnIO supplies CPU temperatures only.
 | RZ09-0423, RZ09-0427 | Brightness; keyboard Off, Static, Breathing, Spectrum and Wave; logo controls |
 | RZ09-0510 | Brightness; keyboard Off, Breathing and Wave; logo controls |
 | RZ09-0509 | Brightness; keyboard Off, Static, Breathing and Wave; logo controls |
-| RZ09-0529 | All twelve Synapse-listed keyboard effects, Off, brightness and logo; vapor chamber enabled and touchpad-status indicator ([details](rz09-0529-lighting-expansion.md)) |
+| RZ09-0529 | All twelve Synapse-listed keyboard effects; per-key editor and animation import; Off, brightness and logo; vapor chamber enabled and touchpad-status indicator ([details](rz09-0529-lighting-expansion.md)) |
 
 The seven MCU-backed additions support random, single-color and dual-color
 Breathing, and both Wave directions. RZ09-0301 also retains independent

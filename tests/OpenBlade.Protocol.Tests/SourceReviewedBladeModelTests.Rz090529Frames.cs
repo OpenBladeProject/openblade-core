@@ -11,8 +11,7 @@ public sealed partial class SourceReviewedBladeModelTests
         DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(Model(0x02C7), true);
         Assert.True(capabilities.SupportsUniformLightingFrames);
         Assert.Equal(KeyboardLightingLayoutIds.Rz09_0529, capabilities.KeyboardLightingLayoutId);
-        Assert.True(capabilities.LightingEffects.SetEquals(Enum.GetValues<LightingEffect>()
-            .Where(effect => effect != LightingEffect.Sequence)));
+        Assert.True(capabilities.LightingEffects.SetEquals(Enum.GetValues<LightingEffect>()));
         Assert.True(capabilities.ObservedLightingEffects.SetEquals(Enum.GetValues<LightingEffect>()
             .Where(effect => effect is not (LightingEffect.Sequence or LightingEffect.Off))));
         DeviceCapabilities paused = ExperimentalBladePort.CreateCapabilities(Model(0x02C7), false);
@@ -150,6 +149,37 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
         Assert.DoesNotContain(session.Commands, command => command.ClassId == 3 && command.CommandId == 3
             && command.Arguments.Span[0] != 0);
+    }
+
+    [Fact]
+    public async Task Rz090529_SequenceFrameCanAssignColorsToIndividualKeyboardKeys()
+    {
+        var slots = new RgbColor[Rz090529KeyboardLightingLayout.SlotCount];
+        slots[1] = new RgbColor(12, 34, 56);
+        slots[113] = new RgbColor(78, 90, 123);
+        string timeline = KeyboardLightingSequenceCodec.Encode(
+            [new KeyboardLightingSequenceFrame(100, slots)],
+            KeyboardLightingLayoutIds.Rz09_0529);
+        LightingSettings settings = LightingSettingsFactory.Sequence(
+            KeyboardLightingLayoutIds.Rz09_0529, timeline, loop: true, brightness: 80);
+        var session = new Session
+        {
+            Brightness = 129,
+            McuLighting = [0, 5, 1, 0, 0, 1, 11, 22, 33, 0, 0, 0],
+        };
+        await using var port = CreateRz090529Frames(session);
+
+        await port.SetLightingAsync(settings, default);
+
+        Assert.Equal(6, session.Commands.Count(command =>
+            command.ClassId == 3 && command.CommandId == 0x0B));
+        RazerCommandSpec bottomRow = Assert.Single(session.Commands, command =>
+            command.ClassId == 3 && command.CommandId == 0x0B
+            && command.Arguments.Span[1] == 5);
+        Assert.Equal(new byte[] { 78, 90, 123 }, bottomRow.Arguments.Span.Slice(4 + 18 * 3, 3).ToArray());
+        await port.RelinquishRendererAsync(default);
+        Assert.Equal(new byte[] { 0, 5, 1, 0, 0, 1, 11, 22, 33, 0, 0, 0 }, session.McuLighting);
+        Assert.Equal(129, session.Brightness);
     }
 
     [Theory]

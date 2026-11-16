@@ -19,6 +19,10 @@ internal sealed class BatteryTestDevice : IBladeDevice
     public List<string> BatterySetterCalls { get; } = [];
     public bool AutoConfirmWrites { get; set; } = true;
     public List<IndependentLightingSettings> IndependentLightingWrites { get; } = [];
+
+    public List<LightingSettings> LightingWrites { get; } = [];
+
+    public Exception? IndependentLightingWriteFailure { get; set; }
     public int? ReadStateFailureOnCall { get; set; }
     public Exception? BatteryWriteFailure { get; set; }
     public Action<DeviceSubsystem>? AfterSetter { get; set; }
@@ -116,12 +120,30 @@ internal sealed class BatteryTestDevice : IBladeDevice
 
     public Task SetLightingAsync(
         LightingSettings value,
-        CancellationToken cancellationToken) => throw new NotSupportedException();
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        LightingWrites.Add(value);
+        if (AutoConfirmWrites)
+        {
+            State = State with
+            {
+                Lighting = value with { IndependentControls = null },
+                LogoLighting = value.LogoMode ?? State.LogoLighting,
+            };
+        }
+        AfterSetter?.Invoke(DeviceSubsystem.Lighting);
+        return Task.CompletedTask;
+    }
 
     public Task SetIndependentLightingAsync(IndependentLightingSettings value, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         IndependentLightingWrites.Add(value);
+        if (IndependentLightingWriteFailure is not null)
+        {
+            throw IndependentLightingWriteFailure;
+        }
         if (AutoConfirmWrites)
         {
             State = State with
