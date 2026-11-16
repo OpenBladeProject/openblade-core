@@ -19,6 +19,62 @@ function Set-FixtureInteger([byte[]]$Bytes, [int]$Offset, [uint32]$Value) {
     [BitConverter]::GetBytes($Value).CopyTo($Bytes, $Offset)
 }
 
+# Metadata-only fixtures; no repository copy or additional target directory.
+function Invoke-NativeCacheFixture([hashtable]$Case) {
+    $previousExit = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+    $previousValue = if ($null -ne $previousExit) { $previousExit.Value } else { $null }
+    try {
+        function git {
+            if ($args -contains '--git-common-dir') {
+                $global:LASTEXITCODE = 0
+                return (Join-Path ([IO.Path]::GetTempPath()) 'HistoricalCheckout/.git')
+            }
+            $global:LASTEXITCODE = $Case.Exit
+            return $Case.Origin
+        }
+        return Get-OpenBladeSharedCargoCache -Repository $repository
+    }
+    finally {
+        if ($null -ne $previousExit) {
+            Set-Variable -Name LASTEXITCODE -Scope Global -Value $previousValue
+        }
+        else { Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue }
+    }
+}
+foreach ($cacheCase in @(
+    @{ Origin = 'https://github.com/OpenBladeProject/openblade-core.git'; Exit = 0; Expected = 'openblade-core' },
+    @{ Origin = 'https://github.com/OpenBladeProject/OpenBlade-Core.GIT'; Exit = 0; Expected = 'OpenBlade-Core' },
+    @{ Origin = 'git@github.com:OpenBladeProject/openblade-core.git'; Exit = 0; Expected = 'openblade-core' },
+    @{ Origin = 'https://github.com/owner/another-repo.git/'; Exit = 0; Expected = 'another-repo' },
+    @{ Origin = 'C:\source\openblade-core\.git'; Exit = 0; Expected = 'openblade-core' },
+    @{ Origin = 'file:///C:/source/openblade-core/.git'; Exit = 0; Expected = 'openblade-core' },
+    @{ Origin = 'C:\source\repo with spaces\.git'; Exit = 0; Expected = 'repo with spaces' },
+    @{ Origin = 'https://host/owner/repo.git?transport=example'; Exit = 0; Expected = 'repo' },
+    @{ Origin = $null; Exit = 1; Expected = 'HistoricalCheckout' }
+)) {
+    $cache = Invoke-NativeCacheFixture $cacheCase
+    $expectedName = if ($env:OS -eq 'Windows_NT') { $cacheCase.Expected.ToLowerInvariant() } else { $cacheCase.Expected }
+    if ((Split-Path -Leaf $cache.TargetDirectory) -cne $expectedName -or
+        -not $cache.MutexName.EndsWith('.' + $expectedName, [StringComparison]::Ordinal)) {
+        throw 'Shared Cargo cache directory and mutex must use the same canonical repository identity.'
+    }
+}
+foreach ($unsafeOrigin in @('https://host/owner/..git', 'https://host/owner/...git', 'https://host/owner/repo%00name.git')) {
+    Assert-NativeThrows { Invoke-NativeCacheFixture @{ Origin = $unsafeOrigin; Exit = 0 } } '*safe repository name*'
+}
+Assert-NativeThrows { Invoke-NativeCacheFixture @{ Origin = $null; Exit = 128 } } '*Cannot read the repository identity*'
+$beforeFixture = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+$beforeFixtureValue = if ($null -ne $beforeFixture) { $beforeFixture.Value } else { $null }
+try {
+    $global:LASTEXITCODE = 73
+    Assert-NativeThrows { Invoke-NativeCacheFixture @{ Origin = $null; Exit = 128 } } '*Cannot read the repository identity*'
+    if ($global:LASTEXITCODE -ne 73) { throw 'The failing Git fixture leaked its process exit code.' }
+}
+finally {
+    if ($null -ne $beforeFixture) { Set-Variable -Name LASTEXITCODE -Scope Global -Value $beforeFixtureValue }
+    else { Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue }
+}
+
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('OpenBlade.NativePayload.Tests.' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 try {

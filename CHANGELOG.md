@@ -11,8 +11,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Avoid rejecting a valid PawnIO CPU temperature driver because Windows reports its path differently. Include the registered path and package checks in installer logs. ([#975](https://github.com/OSSBlade/openblade-core/pull/975))
 - Wait for the installed service process to exit before replacing or removing OpenBlade files, including broker installs, and retain actionable recovery paths if shutdown or restoration cannot be confirmed. ([#974](https://github.com/OpenBladeProject/openblade-core/pull/974))
-
 
 ## [0.63.2-nightly.115] - 2026-11-14
 

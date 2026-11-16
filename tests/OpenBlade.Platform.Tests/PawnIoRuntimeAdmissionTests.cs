@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace OpenBlade.Platform.Tests;
@@ -222,10 +223,27 @@ public sealed class PawnIoRuntimeAdmissionTests
     [Theory]
     [InlineData(@"\SystemRoot\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
     [InlineData(@"\??\C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"%SystemRoot%\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"\DosDevices\C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
     [InlineData(@"C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
     public void OnlyCanonicalExpectedDriverStorePackagePathIsAdmitted(string path) =>
         Assert.Equal(@"C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys",
             PawnIoRuntimeAdmission.NormalizeDriverPath(path, @"C:\Windows"));
+
+    [Theory]
+    [InlineData(@"%sYsTeMrOoT%\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"\dOsDeViCeS\D:\Windows Server\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    public void KnownAliasesResolveAgainstTheTrustedWindowsDirectory(string path) =>
+        Assert.Equal(@"D:\Windows Server\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys",
+            PawnIoRuntimeAdmission.NormalizeDriverPath(path, @"D:\Windows Server"));
+
+    [Theory]
+    [InlineData(@"%SystemRoot%\C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"\SystemRoot\C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"%SystemRoot%\\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"\SystemRoot\\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    public void SystemRootAliasCannotOverrideTheWindowsDirectory(string path) =>
+        Assert.Throws<InvalidDataException>(() => PawnIoRuntimeAdmission.NormalizeDriverPath(path, @"C:\Windows"));
 
     [Theory]
     [InlineData(@"C:\Users\User\PawnIO.sys")]
@@ -236,4 +254,104 @@ public sealed class PawnIoRuntimeAdmissionTests
     [InlineData(@"C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\..\PawnIO.sys")]
     public void ArbitraryOrAmbiguousBindingPathsAreRejected(string path) =>
         Assert.Throws<InvalidDataException>(() => PawnIoRuntimeAdmission.NormalizeDriverPath(path, @"C:\Windows"));
+
+    [Theory]
+    [InlineData(@"%SystemRoot%\System32\drivers\PawnIO.sys")]
+    [InlineData(@"\DosDevices\C:\Windows\System32\drivers\PawnIO.sys")]
+    [InlineData(@"%SystemRoot%\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\..\PawnIO.sys")]
+    [InlineData(@"%SystemRoot%\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\nested\PawnIO.sys")]
+    [InlineData(@"\DosDevices\C:\Windows\System32\DriverStore\FileRepository\other.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"\DosDevices\C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\Other.sys")]
+    [InlineData(@"\DosDevices\%SystemRoot%\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"\??\%SystemRoot%\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"%SystemDrive%\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"%windir%\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"C:Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    [InlineData(@"""C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys""")]
+    [InlineData(@"C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys -argument")]
+    [InlineData(@"\\?\GLOBALROOT\SystemRoot\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys")]
+    public void AliasResolutionCannotAdmitOtherPackagesOrAmbiguousPaths(string path) =>
+        Assert.Throws<InvalidDataException>(() => PawnIoRuntimeAdmission.NormalizeDriverPath(path, @"C:\Windows"));
+
+    [Theory]
+    [InlineData(@"C:\Windows\System32\drivers\PawnIO.sys")]
+    [InlineData(@"C:\Users\Reporter\PawnIO.sys")]
+    [InlineData(@"C:\Windows\System32\DriverStore\FileRepository\other.inf_amd64_123\PawnIO.sys")]
+    public void RejectedBindingRecordsOriginalAndCandidatePathsWithoutUserIdentity(string path)
+    {
+        using var listener = new PawnIoTraceListener();
+        Trace.Listeners.Add(listener);
+        try
+        {
+            Assert.Throws<InvalidDataException>(() => PawnIoRuntimeAdmission.NormalizeDriverPath(path, @"C:\Windows"));
+            string log = string.Join("\n", listener.Messages);
+            Assert.Contains("DriverPathInput; ImagePath=", log);
+            Assert.Contains("DriverPathValidation; CandidatePath=", log);
+            Assert.Contains(@"ExpectedRoot=C:\Windows\System32\DriverStore\FileRepository\", log);
+            Assert.Contains("ExpectedPackage=pawnio.inf_amd64_*", log);
+            Assert.DoesNotContain("Reporter", log);
+            if (path.Contains("Reporter")) { Assert.Contains(@"C:\Users\[USER]\PawnIO.sys", log); }
+            else { Assert.Contains(path, log); }
+        }
+        finally { Trace.Listeners.Remove(listener); }
+    }
+
+    [Fact]
+    public void AdmissionObservationsAreBoundedSingleLineAndPreserveNativeError()
+    {
+        using var listener = new PawnIoTraceListener();
+        Trace.Listeners.Add(listener);
+        try
+        {
+            Marshal.SetLastPInvokeError(1783);
+            PawnIoRuntimeAdmission.TraceObservation("Test", "first\r\nsecond " + new string('x', 5000));
+            Assert.Equal(1783, Marshal.GetLastPInvokeError());
+            string message = Assert.Single(listener.Messages);
+            Assert.Contains(@"first\r\nsecond", message);
+            Assert.DoesNotContain("\r", message);
+            Assert.DoesNotContain("\n", message);
+            Assert.EndsWith("[truncated]", message);
+            Assert.True(message.Length < 4200);
+        }
+        finally { Trace.Listeners.Remove(listener); }
+    }
+
+    [Fact]
+    public void ThrowingDiagnosticSinkDoesNotChangeAdmissionOrNativeError()
+    {
+        using var listener = new PawnIoTraceListener { Throw = true };
+        Trace.Listeners.Add(listener);
+        try
+        {
+            Marshal.SetLastPInvokeError(5);
+            PawnIoRuntimeAdmission.TraceObservation("Test", "unavailable sink");
+            Assert.Equal(5, Marshal.GetLastPInvokeError());
+            Assert.Equal(@"C:\Windows\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys",
+                PawnIoRuntimeAdmission.NormalizeDriverPath(@"\SystemRoot\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys", @"C:\Windows"));
+        }
+        finally { Trace.Listeners.Remove(listener); }
+    }
+
+    private sealed class PawnIoTraceListener : TraceListener
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<string> Messages { get; } = new();
+        public bool Throw { get; init; }
+        public override void TraceEvent(TraceEventCache? eventCache, string source, TraceEventType eventType,
+            int id, string? format, params object?[]? args) =>
+            TraceEvent(eventCache, source, eventType, id,
+                args is { Length: > 0 } ? string.Format(format ?? string.Empty, args) : format);
+        public override void Write(string? message) { }
+        public override void WriteLine(string? message) { }
+        public override void TraceEvent(TraceEventCache? eventCache, string source, TraceEventType eventType,
+            int id, string? message)
+        {
+            if (message?.StartsWith("PawnIO admission: ", StringComparison.Ordinal) == true)
+            {
+                if (Throw) { throw new IOException("diagnostic sink unavailable"); }
+                Messages.Enqueue(message);
+            }
+        }
+    }
+
 }

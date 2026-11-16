@@ -13,7 +13,33 @@ function Get-OpenBladeSharedCargoCache {
     $commonDirectory = & git -C $Repository rev-parse --path-format=absolute --git-common-dir
     if ($LASTEXITCODE -ne 0 -or -not $commonDirectory) { throw 'Cannot determine shared Cargo cache identity.' }
     $repositoryName = Split-Path -Leaf (Split-Path -Parent ([string]$commonDirectory).Trim())
+    # Checkout names can be historical or task-specific. The origin repository
+    # name keeps linked worktrees in the same canonical build cache.
+    $origin = & git -C $Repository config --get remote.origin.url
+    if ($LASTEXITCODE -eq 0 -and $origin) {
+        $originPath = ([string]$origin).Trim()
+        [uri]$originUri = $null
+        if ([uri]::TryCreate($originPath, [UriKind]::Absolute, [ref]$originUri) -and
+            $originUri.Scheme -in @('http', 'https', 'ssh', 'git', 'file')) {
+            $originPath = [uri]::UnescapeDataString($originUri.AbsolutePath)
+        }
+        $originPath = $originPath.TrimEnd('/', '\')
+        # A local clone may name the Git directory rather than the worktree.
+        if ($originPath -match '(?i)[/\\]\.git$') { $originPath = $originPath.Substring(0, $originPath.Length - 5) }
+        if ($originPath -eq '.git') { $originPath = Split-Path -Parent ([string]$commonDirectory).Trim() }
+        $repositoryName = ($originPath.TrimEnd('/', '\') -split '[/\\:]')[-1] -replace '(?i)\.git$', ''
+        if ([string]::IsNullOrWhiteSpace($repositoryName) -or
+            $repositoryName.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0 -or
+            $repositoryName -in @('.', '..') -or
+            ($env:OS -eq 'Windows_NT' -and ($repositoryName.EndsWith('.') -or $repositoryName.EndsWith(' ')))) {
+            throw 'Cannot determine a safe repository name for the shared Cargo cache.'
+        }
+    }
+    elseif ($LASTEXITCODE -ne 1) { throw 'Cannot read the repository identity for the shared Cargo cache.' }
     if (-not $repositoryName) { throw 'Cannot determine shared Cargo cache repository name.' }
+    # Windows directory lookup ignores case, but named mutex lookup does not.
+    # Both names must identify the same cache even when origin casing differs.
+    if ($env:OS -eq 'Windows_NT') { $repositoryName = $repositoryName.ToLowerInvariant() }
     $cacheRoot = if ($env:OS -eq 'Windows_NT') { 'C:\build-cache\cargo' }
         else { Join-Path ([IO.Path]::GetTempPath()) 'openblade-cargo-cache' }
     $mutexPrefix = if ($env:OS -eq 'Windows_NT') { 'Global\' } else { '' }

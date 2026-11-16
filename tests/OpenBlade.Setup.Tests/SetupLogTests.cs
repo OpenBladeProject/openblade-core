@@ -7,8 +7,10 @@ namespace OpenBlade.Setup.Tests;
 
 public sealed class SetupLogTests : IDisposable
 {
-    [Fact]
-    public void TraceListener_RoutesWarningsThroughSetupLog()
+    [Theory]
+    [InlineData(TraceEventType.Information)]
+    [InlineData(TraceEventType.Warning)]
+    public void TraceListener_RoutesAdmissionObservationsThroughSetupLog(TraceEventType eventType)
     {
         string path = Path.Combine(directory, "setup.log");
         using var listener = new SetupDiagnosticTraceListener(new SetupLog(path));
@@ -16,17 +18,18 @@ public sealed class SetupLogTests : IDisposable
         listener.TraceEvent(
             null,
             "OpenBlade",
-            TraceEventType.Warning,
+            eventType,
             0,
-            "component={0} operation={1}",
-            "SetupFallback",
-            "Recover");
+            "PawnIO admission: {0}; ImagePath={1}",
+            "DriverPathInput",
+            @"\SystemRoot\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys");
 
         string line = Assert.Single(File.ReadAllLines(path));
         Assert.Contains(
-            "OpenBlade.Setup: Trace Warning: component=SetupFallback operation=Recover",
+            $"OpenBlade.Setup: Trace {eventType}: PawnIO admission: DriverPathInput; ImagePath=",
             line,
             StringComparison.Ordinal);
+        Assert.Contains(@"\SystemRoot\System32\DriverStore\FileRepository\pawnio.inf_amd64_123\PawnIO.sys", line, StringComparison.Ordinal);
     }
 
     private readonly string directory = Path.Combine(

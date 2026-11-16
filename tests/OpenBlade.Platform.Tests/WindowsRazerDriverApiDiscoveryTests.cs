@@ -152,6 +152,8 @@ public sealed class WindowsRazerDriverApiDiscoveryTests
     [InlineData(@"%SystemRoot%\System32\drivers\RzDev_02e0.sys")]
     [InlineData(@"System32\drivers\RzDev_02e0.sys")]
     [InlineData(@"C:\Windows\System32\drivers\RzDev_02e0.sys")]
+    [InlineData(@"\??\C:\Windows\System32\drivers\RzDev_02e0.sys")]
+    [InlineData(@"\DosDevices\C:\Windows\System32\drivers\RzDev_02e0.sys")]
     public void ResolvesOnlyProtectedServiceImage(string image)
     {
         Assert.Equal(@"C:\Windows\System32\drivers\RzDev_02e0.sys",
@@ -166,5 +168,32 @@ public sealed class WindowsRazerDriverApiDiscoveryTests
     {
         Assert.Throws<InvalidDataException>(() =>
             WindowsRazerDriverApiDiscovery.ResolveServiceImage(image, @"C:\Windows", "RzDev_02e0"));
+    }
+
+    [Theory]
+    [InlineData(@"%SystemRoot%\C:\Windows\System32\drivers\RzDev_02e0.sys")]
+    [InlineData(@"\SystemRoot\C:\Windows\System32\drivers\RzDev_02e0.sys")]
+    [InlineData(@"%SystemRoot%\\System32\drivers\RzDev_02e0.sys")]
+    [InlineData(@"\SystemRoot\\System32\drivers\RzDev_02e0.sys")]
+    public void SystemRootAliasCannotOverrideTheWindowsDirectory(string image) =>
+        Assert.Throws<InvalidDataException>(() =>
+            WindowsRazerDriverApiDiscovery.ResolveServiceImage(image, @"C:\Windows", "RzDev_02e0"));
+
+    [Theory]
+    [InlineData(@"drivers\RzDev_02e0.sys")]
+    [InlineData(@"RzDev_02e0.sys")]
+    [InlineData(@"C:Windows\System32\drivers\RzDev_02e0.sys")]
+    [InlineData(@"\Windows\System32\drivers\RzDev_02e0.sys")]
+    public void UnscopedRelativeImageIsRejectedBeforeResolvingAgainstTheProcessDirectory(string image)
+    {
+        RazerDriverApiPackageEvidence evidence = WindowsRazerDriverApiDiscovery.Capture("RzDev_02e0", stage =>
+        {
+            stage("ServiceImage");
+            string resolved = WindowsRazerDriverApiDiscovery.ResolveServiceImage(image, @"C:\Windows", "RzDev_02e0");
+            return new(true, true, resolved);
+        });
+        Assert.False(evidence.Trusted);
+        Assert.Equal("ServiceImage", evidence.FailureDetail?.Stage);
+        Assert.Equal("ServiceImagePathAmbiguous", evidence.FailureDetail?.Reason);
     }
 }
