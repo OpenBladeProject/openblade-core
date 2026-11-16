@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.64.2-nightly.116] - 2026-11-16
+
 ### Added
 
 - Add source-reviewed CPU Voltage Optimizer support for Blade 14 (2024, 8945HS) and Blade 14 (2023, 7940HS), with complete per-core readback and restoration. Share live voltage planning and recovery with Blade 16 (2025). ([#973](https://github.com/OpenBladeProject/openblade-core/pull/973))
@@ -2440,7 +2442,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.63.2-nightly.115...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.64.2-nightly.116...HEAD
+[0.64.2-nightly.116]: https://github.com/OSSBlade/openblade-core/compare/v0.63.2-nightly.115...v0.64.2-nightly.116
 [0.63.2-nightly.115]: https://github.com/OSSBlade/openblade-core/compare/v0.61.1-nightly.114...v0.63.2-nightly.115
 [0.61.1-nightly.114]: https://github.com/OSSBlade/openblade-core/compare/v0.60.0-nightly.113...v0.61.1-nightly.114
 [0.60.0-nightly.113]: https://github.com/OSSBlade/openblade-core/compare/v0.58.7-nightly.112...v0.60.0-nightly.113
