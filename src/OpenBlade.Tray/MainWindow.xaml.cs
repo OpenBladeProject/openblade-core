@@ -5903,7 +5903,6 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
 
             var content = new StackPanel { Spacing = 12 };
             content.Children.Add(selectedKey);
-            content.Children.Add(colorPicker);
             content.Children.Add(new ScrollViewer
             {
                 Content = keyboard,
@@ -5913,6 +5912,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 MaxWidth = 670,
             });
+            content.Children.Add(colorPicker);
 
             var dialog = new ContentDialog
             {
@@ -5920,7 +5920,13 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
                 Title = LocalizedResources.Get(
                     "MainWindow_KeyColorEditor_Title",
                     "Edit keyboard key colors"),
-                Content = content,
+                Content = new ScrollViewer
+                {
+                    Content = content,
+                    MaxHeight = 480,
+                    VerticalScrollMode = ScrollMode.Auto,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                },
                 PrimaryButtonText = LocalizedResources.Get(
                     "MainWindow_KeyColorEditor_Apply",
                     "Apply colors"),

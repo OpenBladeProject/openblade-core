@@ -53,6 +53,10 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("Root.Resources[\"SecondaryTextStyle\"]", handler, StringComparison.Ordinal);
         Assert.DoesNotContain("Style = (Style)Resources[\"SecondaryTextStyle\"]", handler, StringComparison.Ordinal);
         Assert.Contains("int keySlot = slot;", handler, StringComparison.Ordinal);
+        Assert.True(handler.IndexOf("content.Children.Add(new ScrollViewer", StringComparison.Ordinal)
+            < handler.IndexOf("content.Children.Add(colorPicker)", StringComparison.Ordinal));
+        Assert.Contains("Content = new ScrollViewer", handler, StringComparison.Ordinal);
+        Assert.Contains("VerticalScrollBarVisibility = ScrollBarVisibility.Auto", handler, StringComparison.Ordinal);
         string click = handler[handler.IndexOf("keyButton.Click +=", StringComparison.Ordinal)..handler.IndexOf("Grid.SetRow(keyButton", StringComparison.Ordinal)];
         Assert.Contains("selectedSlot = keySlot;", click, StringComparison.Ordinal);
         Assert.Contains("editor.Colors[keySlot]", click, StringComparison.Ordinal);
