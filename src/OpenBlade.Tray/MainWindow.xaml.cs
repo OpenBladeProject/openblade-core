@@ -5834,7 +5834,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
                 Text = LocalizedResources.Get(
                     "MainWindow_KeyColorEditor_SelectKey",
                     "Select a key to change its color."),
-                Style = (Style)Resources["SecondaryTextStyle"],
+                Style = (Style)Root.Resources["SecondaryTextStyle"],
                 TextWrapping = TextWrapping.Wrap,
             };
             var keyboard = new Grid

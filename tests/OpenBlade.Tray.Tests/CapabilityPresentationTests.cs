@@ -50,6 +50,8 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("new KeyboardKeyColorEditor(ViewModel.LightingDraft)", window, StringComparison.Ordinal);
         Assert.Contains("editor.BuildLightingSettings()", window, StringComparison.Ordinal);
         string handler = window[window.IndexOf("private async void OnEditKeyboardKeyColors", StringComparison.Ordinal)..window.IndexOf("private static Windows.UI.Color ToWindowsColor", StringComparison.Ordinal)];
+        Assert.Contains("Root.Resources[\"SecondaryTextStyle\"]", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("Style = (Style)Resources[\"SecondaryTextStyle\"]", handler, StringComparison.Ordinal);
         Assert.Contains("int keySlot = slot;", handler, StringComparison.Ordinal);
         string click = handler[handler.IndexOf("keyButton.Click +=", StringComparison.Ordinal)..handler.IndexOf("Grid.SetRow(keyButton", StringComparison.Ordinal)];
         Assert.Contains("selectedSlot = keySlot;", click, StringComparison.Ordinal);
