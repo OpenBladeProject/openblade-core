@@ -411,8 +411,7 @@ public sealed record DeviceCapabilities(
             || Blade18KeyboardLightingLayout.IsKnownLayout(Blade18KeyboardLayoutId.Value))
         && (KeyboardLightingLayoutId is null || KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutId))
         && (!LightingEffects.Contains(LightingEffect.Sequence)
-            || KeyboardLightingLayoutId is not null
-                && KeyboardLightingLayoutId != KeyboardLightingLayoutIds.Rz09_0529)
+            || KeyboardLightingLayoutId is not null)
         && (!ChargeLimits.Contains(100) || SupportsBatteryProtectionOff)
         && IsValidEnumSet(SupportedLightingRefreshRates)
         && IsValidEnumSet(ObservedLightingEffects)

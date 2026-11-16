@@ -79,12 +79,26 @@ public sealed partial class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task CurrentProtocol_RejectsSequenceCapabilityForReactiveOnlyLayout()
+    public async Task CurrentProtocol_RoundTripsRz09529SequenceCapability()
     {
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
         {
             LightingEffects = new HashSet<LightingEffect> { LightingEffect.Sequence },
             KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0529,
+        };
+        ServiceStatusSnapshot status = CreateStatus() with { Capabilities = capabilities };
+        ServiceStatusSnapshot decoded = await RoundTripStatusAsync(status);
+
+        Assert.Equal(KeyboardLightingLayoutIds.Rz09_0529, decoded.Capabilities!.KeyboardLightingLayoutId);
+        Assert.Contains(LightingEffect.Sequence, decoded.Capabilities.LightingEffects);
+    }
+
+    [Fact]
+    public async Task CurrentProtocol_RejectsSequenceCapabilityWithoutKeyboardLayout()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect> { LightingEffect.Sequence },
         };
         ServiceStatusSnapshot status = CreateStatus() with { Capabilities = capabilities };
         using MemoryStream stream = new();
