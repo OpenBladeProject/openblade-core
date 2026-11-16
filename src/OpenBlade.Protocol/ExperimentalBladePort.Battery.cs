@@ -108,19 +108,27 @@ internal sealed partial class ExperimentalBladePort
                 : model.ThermalPolicy is not null ? (byte)(baselineRaw & 0x7F) : (byte)0x50;
             // Exact-model Synapse parsers populate battery JSON only when the
             // successful SET ACK has data (694 bytes 22017..22413; 695 49350..49742).
-            // Accept empty ACKs, validate any returned byte, then independently GET.
+            // The optional byte is returned state, not a required echo or confirmation.
+            // Keep its one-byte geometry and require an independent exact GET below.
             bool statusAck = model.ThermalPolicy is not null;
-            await ExchangeAsync("BatteryProtection", 0x07, 0x12, [requestedRaw],
+            ReadOnlyMemory<byte> acknowledgment = await ExchangeAsync("BatteryProtection", 0x07, 0x12, [requestedRaw],
                 true, cancellationToken, variableResponse: statusAck,
                 payloadValidator: statusAck
-                    ? payload => payload.Length == 0 || payload.Length == 1 && payload.Span[0] == requestedRaw
+                    ? static payload => payload.Length <= 1
                     : null,
-                requireEcho: !statusAck).ConfigureAwait(false);
+                requireEcho: !statusAck, recordAcknowledgedSubmission: false).ConfigureAwait(false);
             submitted = true;
+            policy.Record("BatteryProtection", "Submission", "Acknowledged", true, requested,
+                acknowledgment.IsEmpty ? "AckPayload=Empty" : $"AckPayload={Convert.ToHexString(acknowledgment.Span)}");
             // 029F firmware may return the previous valid state for 1-2 seconds after a SET.
             // https://github.com/sqmagellan/razer-ctl/blob/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a/README.md
-            // Retry only valid stale GET results. Never replay the setter or retry failed/invalid reads.
-            int maximumConfirmationReads = model.ProductId == 0x029F ? 9 : 1;
+            // All admitted models sharing this limiter protocol use the same bounded
+            // read-only window; only the exact pre-write raw byte is treated as stale.
+            // This is software confirmation tolerance, not a claim of observed delay
+            // on every model. Keep the operation serialized through confirmation so
+            // another setter cannot interleave with its baseline and readback.
+            // Never replay the setter or retry failed/invalid reads.
+            const int maximumConfirmationReads = 9;
             for (int attempt = 0; attempt < maximumConfirmationReads; attempt++)
             {
                 if (attempt > 0)
@@ -135,8 +143,16 @@ internal sealed partial class ExperimentalBladePort
                     policy.Record("BatteryProtection", "Readback", "Confirmed", true, requested, requested);
                     return;
                 }
+                if (confirmedRaw != baselineRaw)
+                {
+                    policy.Record("BatteryProtection", "Readback", "UnexpectedState", true, requested,
+                        $"Raw={confirmedRaw:X2}", "UnexpectedBatteryReadback");
+                    throw new IOException("Independent battery readback changed from the pre-write value without matching the request.");
+                }
             }
-            throw new IOException("Independent battery readback did not converge to the requested value.");
+            policy.Record("BatteryProtection", "Readback", "Unconfirmed", true, requested,
+                $"Raw={baselineRaw:X2}", "BatteryConfirmationWindowExpired");
+            throw new IOException("Independent battery readback remained at the pre-write value through the confirmation window.");
         }
         catch (Exception exception)
         {

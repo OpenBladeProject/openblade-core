@@ -5,6 +5,31 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class PerformanceShortcutSelectionTests
 {
     [Fact]
+    public void OrdinaryCycleRequiresAdvertisedPresetsWithoutClassifyingSupply()
+    {
+        var admitted = new HashSet<PerformancePreset>
+        {
+            PerformancePreset.Creator, PerformancePreset.Balanced, PerformancePreset.MaximumPower,
+            PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver,
+        };
+        Assert.Equal(new[] { PerformancePreset.Balanced, PerformancePreset.MaximumPower, PerformancePreset.Creator },
+            PerformanceShortcutSelection.GetOrdinaryCycle(admitted));
+        Assert.True(PerformanceShortcutSelection.TrySelectNextOrdinary(admitted,
+            PerformancePreset.MaximumPower, out PerformancePreset next));
+        Assert.Equal(PerformancePreset.Creator, next);
+        Assert.True(PerformanceShortcutSelection.TrySelectNextOrdinary(admitted,
+            PerformancePreset.Creator, out next));
+        Assert.Equal(PerformancePreset.Balanced, next);
+        Assert.Empty(PerformanceShortcutSelection.GetOrdinaryCycle(null));
+        Assert.Empty(PerformanceShortcutSelection.GetOrdinaryCycle(new HashSet<PerformancePreset>()));
+        Assert.False(PerformanceShortcutSelection.TrySelectNextOrdinary(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.BatterySaver },
+            PerformancePreset.Balanced, out _));
+        Assert.False(PerformanceShortcutSelection.TrySelectNext(PowerSource.ExternalUnknown, admitted,
+            PerformancePreset.Balanced, out _));
+    }
+
+    [Fact]
     public void PluggedInCycle_UsesAdmittedModesInStableOrder()
     {
         var admitted = new HashSet<PerformancePreset>
@@ -56,7 +81,8 @@ public sealed class PerformanceShortcutSelectionTests
             PerformancePreset.Creator, out next));
         Assert.Equal(PerformancePreset.Balanced, next);
         Assert.Empty(PerformanceShortcutSelection.GetCycle(PowerSource.Battery, admitted));
-        Assert.Empty(PerformanceShortcutSelection.GetCycle(PowerSource.UsbC, admitted));
+        Assert.Equal(PerformanceShortcutSelection.GetCycle(PowerSource.PluggedIn, admitted),
+            PerformanceShortcutSelection.GetCycle(PowerSource.UsbC, admitted));
     }
 
     [Fact]
@@ -67,6 +93,7 @@ public sealed class PerformanceShortcutSelectionTests
             PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Performance, PerformancePreset.Custom,
         ];
         Assert.Equal(expected, PerformanceShortcutSelection.GetCycle(PowerSource.PluggedIn, null));
+        Assert.Equal(expected, PerformanceShortcutSelection.GetCycle(PowerSource.UsbC, null));
         Assert.Equal(expected, PerformanceShortcutSelection.GetCycle(PowerSource.PluggedIn, new HashSet<PerformancePreset>()));
     }
 
@@ -83,8 +110,8 @@ public sealed class PerformanceShortcutSelectionTests
     }
 
     [Theory]
-    [InlineData(PowerSource.UsbC)]
     [InlineData(PowerSource.ExternalUnknown)]
+    [InlineData((PowerSource)999)]
     public void UnsupportedPowerSource_DoesNotPredictASelection(PowerSource source)
     {
         Assert.False(PerformanceShortcutSelection.TrySelectNext(
@@ -93,4 +120,22 @@ public sealed class PerformanceShortcutSelectionTests
             PerformancePreset.Balanced,
             out _));
     }
+    [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.UsbC)]
+    public void EveryAdmittedPresetCyclesOnExternalPower(PowerSource source)
+    {
+        var admitted = new HashSet<PerformancePreset>(Enum.GetValues<PerformancePreset>())
+        {
+            (PerformancePreset)999,
+        };
+        IReadOnlyList<PerformancePreset> cycle = PerformanceShortcutSelection.GetCycle(source, admitted);
+        Assert.Equal(Enum.GetValues<PerformancePreset>().Order(), cycle.Order());
+        for (int index = 0; index < cycle.Count; index++)
+        {
+            Assert.True(PerformanceShortcutSelection.TrySelectNext(source, admitted, cycle[index], out var next));
+            Assert.Equal(cycle[(index + 1) % cycle.Count], next);
+        }
+    }
+
 }

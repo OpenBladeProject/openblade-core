@@ -11,6 +11,25 @@ public sealed class CpuLivePowerOwnershipJournalStoreTests : IDisposable
     private string JournalPath => Path.Combine(directory, "live-ppt.json");
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
+    [Theory]
+    [InlineData("RZ09-0482")]
+    [InlineData("RZ09-0508")]
+    public async Task ReadOnlyPhoenixContextCannotAdoptAPowerOwnershipJournal(string model)
+    {
+        var contract = model == "RZ09-0508" ? CpuLiveCurveContract.Rz090508 : CpuLiveCurveContract.Rz090482;
+        var context = CpuLivePowerContext.FromCurveContext(CpuLiveCurveTuningTransactionTests.Blade14Fixture(new(), contract).Context);
+        Assert.True(context.IsWellFormed);
+        var legacy = JsonNode.Parse(JsonSerializer.Serialize(Create(), Options))!;
+        legacy["context"] = JsonSerializer.SerializeToNode(context, Options);
+        string json = legacy.ToJsonString();
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(JournalPath, json);
+        var loaded = await new CpuLivePowerOwnershipJournalStore(JournalPath).LoadAsync(default);
+        Assert.True(loaded.Invalid);
+        Assert.Null(loaded.Journal);
+        Assert.Equal(json, await File.ReadAllTextAsync(JournalPath));
+    }
+
     [Fact]
     public async Task PublicDtoFieldsRoundTripExactFractionalOriginalAndFullPendingPair()
     {

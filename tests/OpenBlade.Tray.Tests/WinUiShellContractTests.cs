@@ -3668,7 +3668,7 @@ public sealed class WinUiShellContractTests
             "if (args.PropertyName == nameof(MainViewModel.LanguagePreference))",
             StringComparison.Ordinal);
         int nextProperty = window.IndexOf(
-            "if (args.PropertyName == nameof(MainViewModel.ActivePowerSource))",
+            "if (args.PropertyName is nameof(MainViewModel.ControlPowerSource) or nameof(MainViewModel.ExternalPowerPresent)",
             languageChange,
             StringComparison.Ordinal);
         Assert.True(languageChange >= 0 && languageChange < nextProperty);

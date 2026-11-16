@@ -22,11 +22,11 @@ public static class TrayIconStateResolver
         bool deviceVerified,
         PowerSource powerSource,
         PerformancePreset? effectivePerformance,
-        bool hyperBoostActive = false)
+        bool hyperBoostActive = false, bool externalPowerPresent = false)
     {
         if (!isConnected
             || !deviceVerified
-            || powerSource == PowerSource.ExternalUnknown
+            || powerSource == PowerSource.ExternalUnknown && !externalPowerPresent
             || effectivePerformance is null)
         {
             return TrayIconState.GenericError;
@@ -34,7 +34,7 @@ public static class TrayIconStateResolver
 
         if (hyperBoostActive)
         {
-            return powerSource == PowerSource.PluggedIn
+            return PowerSourcePolicy.IsExternal(powerSource)
                 && effectivePerformance is PerformancePreset.Balanced
                     or PerformancePreset.Silent
                     or PerformancePreset.Performance
@@ -43,28 +43,34 @@ public static class TrayIconStateResolver
                     or PerformancePreset.Gaming
                     or PerformancePreset.Creator
                     or PerformancePreset.Custom
+                    or PerformancePreset.BatteryBalanced
+                    or PerformancePreset.BatterySaver
                 ? TrayIconState.AcHyperBoost
                 : TrayIconState.GenericError;
         }
 
         return (powerSource, effectivePerformance.Value) switch
         {
-            (PowerSource.PluggedIn, PerformancePreset.Balanced) =>
+            (PowerSource.PluggedIn or PowerSource.ExternalUnknown, PerformancePreset.Balanced) =>
                 TrayIconState.AcBalanced,
-            (PowerSource.PluggedIn, PerformancePreset.Silent) =>
+            (PowerSource.PluggedIn or PowerSource.UsbC or PowerSource.ExternalUnknown, PerformancePreset.Silent) =>
                 TrayIconState.AcSilent,
-            (PowerSource.PluggedIn, PerformancePreset.Performance
+            (PowerSource.PluggedIn or PowerSource.UsbC or PowerSource.ExternalUnknown, PerformancePreset.Performance
                 or PerformancePreset.Turbo or PerformancePreset.MaximumPower
                 or PerformancePreset.Gaming or PerformancePreset.Creator) =>
                 TrayIconState.AcPerformance,
-            (PowerSource.PluggedIn, PerformancePreset.Custom) =>
+            (PowerSource.PluggedIn or PowerSource.UsbC or PowerSource.ExternalUnknown, PerformancePreset.Custom) =>
                 TrayIconState.AcCustom,
-            (PowerSource.UsbC, PerformancePreset.Balanced) =>
+            (PowerSource.UsbC, PerformancePreset.Balanced or PerformancePreset.BatteryBalanced) =>
                 TrayIconState.UsbCBalanced,
             (PowerSource.Battery, PerformancePreset.Balanced) =>
                 TrayIconState.BatteryBalanced,
+            (PowerSource.PluggedIn, PerformancePreset.BatteryBalanced) =>
+                TrayIconState.AcBalanced,
             (PowerSource.Battery, PerformancePreset.BatteryBalanced) =>
                 TrayIconState.BatteryBalanced,
+            (PowerSource.PluggedIn or PowerSource.UsbC, PerformancePreset.BatterySaver) =>
+                TrayIconState.AcSilent,
             (PowerSource.Battery, PerformancePreset.BatterySaver) =>
                 TrayIconState.BatterySaver,
             _ => TrayIconState.GenericError,

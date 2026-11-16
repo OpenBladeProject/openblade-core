@@ -90,6 +90,23 @@ public sealed class Blade18FnActionExecutorTests
         Assert.Equal([(PowerSource.Battery, expected)], applier.RefreshWrites);
     }
 
+    [Theory]
+    [InlineData(PowerSource.ExternalUnknown, DeviceObservationReason.None)]
+    [InlineData(PowerSource.PluggedIn, DeviceObservationReason.RetainedPowerSource)]
+    public async Task PositiveUnclassifiedAcUsesUnknownManualDisplayContext(
+        PowerSource presented, DeviceObservationReason reason)
+    {
+        var client = new RecordingServiceClient(Status(presented) with
+        {
+            ObservationReason = reason,
+            ExternalPowerPresent = true,
+        });
+        var applier = new RecordingDisplayProfileApplier(DisplayState("fixed-60"));
+        var executor = new Blade18FnActionExecutor(client, applier, new RecordingTouchpadController());
+        await executor.ExecuteAsync(Blade18FnShortcut.RefreshRate, CancellationToken.None);
+        Assert.Equal([(PowerSource.ExternalUnknown, "fixed-120")], applier.RefreshWrites);
+    }
+
     [Fact]
     public async Task UnavailableRefreshRateFailsWithoutMutation()
     {

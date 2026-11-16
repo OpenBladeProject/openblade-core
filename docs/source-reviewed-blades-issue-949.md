@@ -1,5 +1,7 @@
 # Blade 15 Advanced Mid 2021 and Blade Pro 17 2019
 
+The later [performance and fan review](source-reviewed-thermal-967.md) expands manual fan admission and adds exact presets. Fan exclusions below describe the original admission.
+
 The later [lighting review](source-reviewed-lighting.md) adds bounded lighting controls to these profiles. Lighting exclusions below describe the original admission.
 
 Issue [#949](https://github.com/OSSBlade/openblade-core/issues/949) requests

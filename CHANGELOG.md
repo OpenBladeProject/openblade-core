@@ -5,6 +5,30 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Add source-reviewed CPU Voltage Optimizer support for Blade 14 (2024, 8945HS) and Blade 14 (2023, 7940HS), with complete per-core readback and restoration. Share live voltage planning and recovery with Blade 16 (2025). ([#973](https://github.com/OpenBladeProject/openblade-core/pull/973))
+
+### Fixed
+
+- Avoid rejecting a valid PawnIO CPU temperature driver because Windows reports its path differently. Include the registered path and package checks in installer logs. ([#975](https://github.com/OSSBlade/openblade-core/pull/975))
+- Wait for the installed service process to exit before replacing or removing OpenBlade files, including broker installs, and retain actionable recovery paths if shutdown or restoration cannot be confirmed. ([#974](https://github.com/OpenBladeProject/openblade-core/pull/974))
+
+## [0.63.2-nightly.115] - 2026-11-14
+
+### Added
+
+- Offer all model-supported performance modes, including Custom and HyperBoost, on sufficient and limited external adapters. Preserve separate profiles, firmware power management and battery-drain notifications. ([#964](https://github.com/OSSBlade/openblade-core/pull/964))
+- Expand source-reviewed fixed fan speeds and host curves with per-preset firmware limits, add full-power AC host curves in the existing fixed-fan presets on RZ09-0482/RZ09-0483, add Creator on RZ09-0328 and Maximum Power on RZ09-0530, and preserve saved fan settings when live limits change. ([#968](https://github.com/OpenBladeProject/openblade-core/pull/968))
+
+### Fixed
+
+- Finish local broker installations by recognizing supported input helpers and waiting for startup inventory to settle before opening OpenBlade. ([#966](https://github.com/OSSBlade/openblade-core/pull/966))
+- Keep HyperBoost recovery bound to the confirmed power source after an upgrade, and prevent shared native build caches from reusing stale code or release metadata. ([#964](https://github.com/OSSBlade/openblade-core/pull/964))
+- Accept a valid PawnIO CPU temperature driver when uninstall/reinstall leaves disconnected device registrations. Report the present-device count when the binding remains missing or ambiguous. ([#970](https://github.com/OSSBlade/openblade-core/pull/970))
+- Keep source-supported ordinary controls available when Windows confirms external power but adapter wattage cannot be read, without guessing charger type or changing the reported power classification. ([#967](https://github.com/OpenBladeProject/openblade-core/issues/967))
+- Avoid rejecting supported battery-setting replies and allow a short confirmation window on source-reviewed Blade models. ([#965](https://github.com/OSSBlade/openblade-core/pull/965))
+
 ## [0.61.1-nightly.114] - 2026-11-13
 
 ### Added
@@ -2416,7 +2440,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.61.1-nightly.114...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.63.2-nightly.115...HEAD
+[0.63.2-nightly.115]: https://github.com/OSSBlade/openblade-core/compare/v0.61.1-nightly.114...v0.63.2-nightly.115
 [0.61.1-nightly.114]: https://github.com/OSSBlade/openblade-core/compare/v0.60.0-nightly.113...v0.61.1-nightly.114
 [0.60.0-nightly.113]: https://github.com/OSSBlade/openblade-core/compare/v0.58.7-nightly.112...v0.60.0-nightly.113
 [0.58.7-nightly.112]: https://github.com/OSSBlade/openblade-core/compare/v0.58.5-nightly.111...v0.58.7-nightly.112

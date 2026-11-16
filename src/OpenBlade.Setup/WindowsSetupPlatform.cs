@@ -45,7 +45,6 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
 {
     private const string ServiceName = OpenBladeWindowsService.Name;
     private const int ServiceDoesNotExist = 1060;
-    private const int ServiceNotActive = 1062;
     private static readonly TimeSpan ServiceHealthTimeout = TimeSpan.FromSeconds(30);
     private readonly SetupPaths paths;
     private readonly string payloadDirectory;
@@ -185,20 +184,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
 
     public async Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
     {
-        SetupServiceState? state = await serviceControl.GetStateAsync(ServiceName, cancellationToken);
-
-        if (state == SetupServiceState.Running)
-        {
-            await serviceControl.RunAsync(
-                ["stop", ServiceName],
-                [ServiceNotActive],
-                cancellationToken);
-            await serviceControl.WaitForStateAsync(
-                ServiceName,
-                SetupServiceState.Stopped,
-                TimeSpan.FromSeconds(30),
-                cancellationToken);
-        }
+        await StopServiceAndWaitForExitAsync(cancellationToken);
         guardianQuiescenceGuard.EnsureClear();
     }
 
@@ -238,21 +224,10 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             return;
         }
 
+        await StopServiceAndWaitForExitAsync(cancellationToken);
         if (current is null)
         {
             await ConfigureServiceAsync(startService: false, cancellationToken);
-        }
-        else if (current == SetupServiceState.Running)
-        {
-            await serviceControl.RunAsync(
-                ["stop", ServiceName],
-                [ServiceNotActive],
-                cancellationToken);
-            await serviceControl.WaitForStateAsync(
-                ServiceName,
-                SetupServiceState.Stopped,
-                TimeSpan.FromSeconds(30),
-                cancellationToken);
         }
     }
 
@@ -602,22 +577,21 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
 
     public async Task RemoveServiceAsync(CancellationToken cancellationToken)
     {
+        await StopServiceAndWaitForExitAsync(cancellationToken);
         if (!await serviceControl.ExistsAsync(ServiceName, cancellationToken))
         {
             guardianQuiescenceGuard.EnsureClear();
             return;
         }
 
-        await serviceControl.RunAsync(["stop", ServiceName], [ServiceDoesNotExist, ServiceNotActive], cancellationToken);
-        await serviceControl.WaitForStateAsync(
-            ServiceName,
-            SetupServiceState.Stopped,
-            TimeSpan.FromSeconds(30),
-            cancellationToken);
         guardianQuiescenceGuard.EnsureClear();
         await serviceControl.RunAsync(["delete", ServiceName], [ServiceDoesNotExist], cancellationToken);
         await serviceControl.WaitForDeletionAsync(ServiceName, TimeSpan.FromSeconds(30), cancellationToken);
     }
+
+    private Task StopServiceAndWaitForExitAsync(CancellationToken cancellationToken) =>
+        SetupServiceQuiescence.StopAsync(serviceControl, processOperations,
+            paths.InstallDirectory, TimeSpan.FromSeconds(30), cancellationToken);
 
     public Task StopTrayAsync(CancellationToken cancellationToken)
     {

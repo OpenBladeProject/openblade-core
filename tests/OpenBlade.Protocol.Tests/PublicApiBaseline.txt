@@ -511,6 +511,7 @@ type interface OpenBlade.Protocol.IBladeDevice
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> ReadStartupAnimationAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> ReleaseDriverModeAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.String> ReadMcuVersionAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.ValueTuple<System.Int32, System.Int32>> SetCurveFanTargetsAsync(OpenBlade.Contracts.PerformancePreset expectedPerformance, System.Int32 fan1Rpm, System.Int32 fan2Rpm, System.Threading.CancellationToken cancellationToken)
 type interface OpenBlade.Protocol.IControllerPresenceMonitor
   method abstract OpenBlade.Protocol.ControllerPresenceObservation Observe()
 type interface OpenBlade.Protocol.ICoolingPadDevice
@@ -563,6 +564,7 @@ type interface OpenBlade.Protocol.IProductionBatteryPort
   method virtual System.Boolean get_SupportsProtectionQuery()
   method virtual System.Boolean get_SupportsRz090581CapabilityDiagnosticsQuery()
   method virtual System.Boolean get_SupportsStartupAnimationQuery()
+  method virtual System.Threading.Tasks.Task ReleaseOwnedBatterySaverFanStopAsync(System.Func<System.Boolean> priorAuthorityAdmission, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task SetHyperBoostAsync(System.Boolean enabled, OpenBlade.Contracts.PerformancePreset baseMode, System.Boolean requiresCoolingPad, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task SetHyperBoostAsync(System.Boolean enabled, OpenBlade.Contracts.PerformancePreset baseMode, System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task SetHyperBoostAsync(System.Boolean enabled, System.Threading.CancellationToken cancellationToken)
@@ -572,6 +574,7 @@ type interface OpenBlade.Protocol.IProductionBatteryPort
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> QueryGamingModeAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> QueryStartupAnimationAsync(System.Threading.CancellationToken cancellationToken)
   method virtual System.Threading.Tasks.Task<System.String> QueryMcuVersionAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.ValueTuple<System.Int32, System.Int32>> SetCurveFanTargetsAsync(OpenBlade.Contracts.PerformancePreset expectedPerformance, System.Int32 fan1Rpm, System.Int32 fan2Rpm, System.Threading.CancellationToken cancellationToken)
   method virtual System.Void RequireBatterySaverFanStopRestorationAdmission()
   method virtual System.Void SetBatterySaverFanStopWriteAdmission(System.Func<System.Boolean> admission)
   property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; }

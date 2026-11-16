@@ -127,6 +127,7 @@ public sealed class ExperimentalExpandedBatteryTests
     {
         ExperimentalBladeModel model = Model(productId);
         var session = new BatterySession { Raw = 0x50, IgnoreSetter = true };
+        session.PostSetterReads.Enqueue(0xD0); // Different from both the baseline and requested 99%.
         var policy = new ExperimentalFeaturesPolicy(model);
         await using var port = Create(model, session, policy);
 

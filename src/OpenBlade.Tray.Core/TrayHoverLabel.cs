@@ -80,7 +80,7 @@ public static class TrayHoverLabelFormatter
                     FormatProfile(powerSource, performance, performanceLabelOverride),
                 TrayHoverLabelItemKind.PowerSource => FormatPowerSource(powerSource),
                 TrayHoverLabelItemKind.PowerMode => performanceLabelOverride
-                    ?? PerformancePresetPresentation.Label(performance),
+                    ?? PerformancePresetPresentation.Label(performance, powerSource),
                 TrayHoverLabelItemKind.BatteryPower => batteryPowerFlow,
                 TrayHoverLabelItemKind.CpuTemperature => FormatTemperature("CPU", cpuTemperatureCelsius),
                 // A missing NVIDIA reading means the discrete GPU is unavailable
@@ -157,7 +157,7 @@ public static class TrayHoverLabelFormatter
         string? performanceLabelOverride = null)
     {
         string performanceLabel = performanceLabelOverride
-            ?? PerformancePresetPresentation.Label(performance);
+            ?? PerformancePresetPresentation.Label(performance, powerSource);
         return powerSource switch
         {
             PowerSource.PluggedIn =>

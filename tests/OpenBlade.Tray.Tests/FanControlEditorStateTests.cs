@@ -144,4 +144,30 @@ public sealed class FanControlEditorStateTests
         Assert.Same(cpu, editor.CpuPoints);
         Assert.Same(gpu, editor.GpuPoints);
     }
+    [Fact]
+    public void Load_RefreshesIntentBoundsWithoutTruncatingSaved5500Rpm()
+    {
+        var editor = new FanControlEditorState();
+        FanCurvePoint[] points = [new(40, 5500), new(90, 5500)];
+        var settings = new FanControlSettings(FanMode.ManualCurve, 5500,
+            new ManualFanCurve(points, points, true));
+        editor.Load(settings, new FanSpeedRange(4200, 5500, 100));
+        IReadOnlyList<FanCurveEditorPoint> original = editor.CpuPoints;
+        var range = new FanSpeedRange(4300, 5500, 100);
+
+        FanControlEditorChanges changes = editor.Load(settings, range);
+
+        Assert.Equal(FanControlEditorChanges.CpuPoints | FanControlEditorChanges.GpuPoints, changes);
+        Assert.NotSame(original, editor.CpuPoints);
+        Assert.All(editor.CpuPoints.Concat(editor.GpuPoints), point =>
+        {
+            Assert.Equal(4300, point.MinimumRpm);
+            Assert.Equal(5500, point.MaximumRpm);
+            Assert.Equal(100, point.StepRpm);
+            Assert.Equal(5500, point.SpeedRpm);
+        });
+        editor.UpdatePoint(editor.CpuPoints[^1], 5500, range);
+        Assert.Equal(settings, editor.ToSettings(FanMode.ManualCurve));
+        Assert.Equal(5500, editor.CpuPoints[^1].MaximumRpm);
+    }
 }

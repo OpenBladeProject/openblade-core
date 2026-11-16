@@ -37,7 +37,7 @@ internal static class CpuPowerTestData
     internal static CpuLivePowerOwnershipJournal Legacy(CpuLivePowerOwnershipState state)
     {
         var original = PairFixture();
-        var target = PairFixture(90000, original.Slow.Milliwatts);
+        var target = PairFixture(90000, original.Slow.Milliwatts!.Value);
         bool restored = state == CpuLivePowerOwnershipState.Restored;
         bool completed = state == CpuLivePowerOwnershipState.OwnedVerified;
         var expected = completed ? target : original;
@@ -57,14 +57,16 @@ internal static class CpuPowerTestData
         Assert.True(CpuLivePowerValue.TryFromMilliwatts(fast, out var f)); Assert.True(CpuLivePowerValue.TryFromMilliwatts(slow, out var s));
         return new(f, s, Bits(60000));
     }
-    internal static CpuPmRawSnapshot Raw(CpuLivePowerPair pair)
+    internal static CpuPmRawSnapshot Raw(CpuLivePowerPair pair, CpuLiveCurveContract? contract = null)
     {
-        var reply = new byte[0xD54];
-        BinaryPrimitives.WriteUInt32LittleEndian(reply, 0xD50);
+        contract ??= CpuLiveCurveContract.Rz090528;
+        var table = contract.ExpectedPmTable;
+        var reply = new byte[sizeof(uint) + table.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(reply, (uint)table.Length);
         BinaryPrimitives.WriteUInt32LittleEndian(reply.AsSpan(4), pair.StapmRawBits);
         BinaryPrimitives.WriteUInt32LittleEndian(reply.AsSpan(12), pair.Fast.RawBits);
         BinaryPrimitives.WriteUInt32LittleEndian(reply.AsSpan(20), pair.Slow.RawBits);
-        Assert.True(CpuPmRawSnapshot.TryCreate(0x005D000B, new(true, reply), DateTimeOffset.UtcNow, 123, out var raw));
+        Assert.True(CpuPmRawSnapshot.TryCreate(contract, table.Version, new(true, reply), DateTimeOffset.UtcNow, 123, out var raw));
         return raw!;
     }
 }

@@ -7,9 +7,10 @@ namespace OpenBlade.Service;
 
 internal sealed record CpuLiveCurveBackendIdentity(string DriverSha256, string PlatformSha256, string DeviceSha256)
 {
-    internal bool IsPinned => DriverSha256 == Rz090528InstalledCpuBackendInspector.ExpectedHashes[Rz090528InstalledCpuBackendInspector.DriverPath]
-        && PlatformSha256 == Rz090528InstalledCpuBackendInspector.ExpectedHashes[Rz090528InstalledCpuBackendInspector.DirectoryPath + @"\Platform.dll"]
-        && DeviceSha256 == Rz090528InstalledCpuBackendInspector.ExpectedHashes[Rz090528InstalledCpuBackendInspector.DirectoryPath + @"\Device.dll"];
+    // The legacy power path has its own 0528-only admission.
+    internal bool IsPinned => Matches(CpuLiveCurveContract.Rz090528);
+
+    internal bool Matches(CpuLiveCurveContract contract) => contract.MatchesBackend(DriverSha256, PlatformSha256, DeviceSha256);
 }
 
 internal enum CpuLiveCurveBootSequenceSource { Unknown, WindowsKuserSharedData }
@@ -31,27 +32,27 @@ internal sealed record CpuLiveCurveContext(DeviceIdentity Identity, uint Enabled
     uint PmVersion, int PmTableLength, CpuLiveCurveBackendIdentity Backend, CpuLiveCurveBootSequence BootSequence)
 {
     public CpuLiveRuntimeLifetime? RuntimeLifetime { get; init; }
-    // Ignore only BIOS provenance; every other context field retains record equality.
-    internal bool MatchesHardwareContext(CpuLiveCurveContext? other) => other is not null
-        && CpuHardwareIdentity.Same(Identity, other.Identity) && (this with { Identity = other.Identity }) == other;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ContractId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ContractVersion { get; init; }
 
-    internal bool IsWellFormed => CpuSavedTuningPlan.IsExactIdentity(Identity)
-        && EnabledCoreMask == CpuLiveCurveSnapshot.SupportedMask
-        && PmVersion == CpuLiveCurveSnapshot.SupportedPmVersion
-        && PmTableLength == CpuLiveCurveSnapshot.SupportedPmLength
-        && Backend is { IsPinned: true } && BootSequence is { IsWellFormed: true };
+    internal CpuLiveCurveContract? Contract => CpuLiveCurveContract.Resolve(ContractId, ContractVersion, Identity);
+    internal int JournalSchemaVersion => ContractId is null && ContractVersion is null ? 3 : 4;
+
+    // Schema 3 implicitly names the original 0528 contract. Ignore only that
+    // spelling difference and BIOS provenance when comparing runtime contexts.
+    internal bool MatchesHardwareContext(CpuLiveCurveContext? other) => other is not null
+        && Contract is { } contract && other.Contract == contract && CpuHardwareIdentity.Same(Identity, other.Identity)
+        && (this with { Identity = other.Identity, ContractId = other.ContractId, ContractVersion = other.ContractVersion }) == other;
+
+    internal bool IsWellFormed => Contract is { } contract
+        && contract.AcceptsGeometry(EnabledCoreMask, PmVersion, PmTableLength)
+        && Backend?.Matches(contract) == true && BootSequence is { IsWellFormed: true };
 }
 
 internal enum CpuLiveCurveOwnershipState { Prepared, PossibleSubmission, OwnedVerified, Restored, Blocked }
-internal sealed record CpuLiveCurveStoredStep(int PhysicalCoreId, short Before, short After)
-{
-    internal CpuLiveCurveCommand Command(bool restoring)
-    {
-        if (!CpuLiveCurveCommand.TryCreate(PhysicalCoreId, restoring ? Before : After,
-            CpuLiveCurveSnapshot.SupportedMask, out var command)) { throw new InvalidDataException("Invalid live CO step."); }
-        return command;
-    }
-}
+internal sealed record CpuLiveCurveStoredStep(int PhysicalCoreId, short Before, short After);
 
 internal sealed class CpuLiveCurveOwnershipJournal
 {
@@ -93,8 +94,9 @@ internal sealed class CpuLiveCurveOwnershipJournal
     {
         get
         {
-            if (SchemaVersion != 3 || TransactionId == Guid.Empty || Context is not { IsWellFormed: true }
-                || UpdatedAtUtc == default || !Enum.IsDefined(State) || Steps.Count > 12
+            if (TransactionId == Guid.Empty || Context is not { IsWellFormed: true, Contract: { } contract }
+                || SchemaVersion != Context.JournalSchemaVersion
+                || UpdatedAtUtc == default || !Enum.IsDefined(State) || Steps.Count > contract.CoreCount
                 || CompletedSteps < 0 || CompletedSteps > Steps.Count
                 || Snapshot(OriginalBaseline) is not { } original || !original.CoreOffsets.SequenceEqual(OriginalBaseline)
                 || Snapshot(OperationBaseline) is not { } baseline || !baseline.CoreOffsets.SequenceEqual(OperationBaseline)
@@ -108,7 +110,7 @@ internal sealed class CpuLiveCurveOwnershipJournal
             int previousId = -1;
             foreach (var step in Steps)
             {
-                if (step is null || !CpuLiveCurveSnapshot.IsEnabled(step.PhysicalCoreId) || step.PhysicalCoreId <= previousId
+                if (step is null || !contract.IsEnabled(step.PhysicalCoreId) || step.PhysicalCoreId <= previousId
                     || step.After is < -30 or > 0 || step.Before == step.After
                     || OperationBaseline.Single(core => core.PhysicalCoreId == step.PhysicalCoreId).Offset != step.Before) { return false; }
                 previousId = step.PhysicalCoreId;
@@ -128,14 +130,20 @@ internal sealed class CpuLiveCurveOwnershipJournal
         }
     }
 
-    internal static CpuLiveCurveSnapshot? Snapshot(IReadOnlyList<CpuLiveCoreOffset> cores) =>
-        CpuLiveCurveSnapshot.TryCreate(new(CpuLiveCurveSnapshot.SupportedMask, CpuLiveCurveSnapshot.SupportedPmVersion,
-            CpuLiveCurveSnapshot.SupportedPmLength, cores));
+    internal CpuLiveCurveSnapshot? Snapshot(IReadOnlyList<CpuLiveCoreOffset> cores) => Context?.Contract is { } contract
+        ? CpuLiveCurveSnapshot.TryCreate(contract, new(Context.EnabledCoreMask, Context.PmVersion, Context.PmTableLength, cores)) : null;
+
+    internal CpuLiveCurveCommand Command(CpuLiveCurveStoredStep step, bool restoring)
+    {
+        if (Context.Contract is not { } contract || !CpuLiveCurveCommand.TryCreate(contract, step.PhysicalCoreId,
+            restoring ? step.Before : step.After, out var command)) { throw new InvalidDataException("Invalid live CO step."); }
+        return command;
+    }
 
     internal CpuLiveCurveSnapshot ExpectedAt(int completed)
     {
         var snapshot = Snapshot(OperationBaseline) ?? throw new InvalidDataException("Invalid live CO operation baseline.");
-        foreach (var step in Steps.Take(completed)) { snapshot = snapshot.WithOffset(step.Command(restoring: false)); }
+        foreach (var step in Steps.Take(completed)) { snapshot = snapshot.WithOffset(Command(step, restoring: false)); }
         return snapshot;
     }
 
@@ -144,12 +152,18 @@ internal sealed class CpuLiveCurveOwnershipJournal
             state, completed, restoring, DateTimeOffset.UtcNow);
 
     internal static CpuLiveCurveOwnershipJournal Prepare(CpuLiveCurveContext context, Rz090528CpuLiveCurvePlan plan,
-        CpuLiveCurveOwnershipJournal? owned = null) =>
-        new(3, owned?.TransactionId ?? Guid.NewGuid(), owned?.Context ?? context, owned?.OriginalBaseline ?? plan.Baseline.CoreOffsets,
+        CpuLiveCurveOwnershipJournal? owned = null)
+    {
+        if (!context.IsWellFormed || plan.Baseline.Contract != context.Contract
+            || owned is not null && !owned.Context.MatchesHardwareContext(context))
+        { throw new InvalidDataException("Curve plan and ownership context disagree."); }
+        return new(owned?.SchemaVersion ?? context.JournalSchemaVersion, owned?.TransactionId ?? Guid.NewGuid(),
+            owned?.Context ?? context, owned?.OriginalBaseline ?? plan.Baseline.CoreOffsets,
             plan.Baseline.CoreOffsets,
             plan.Steps.Select(step => new CpuLiveCurveStoredStep(step.Command.PhysicalCoreId,
                 step.RestoreCommand.Offset, step.Command.Offset)).ToArray(), plan.Baseline.CoreOffsets,
             CpuLiveCurveOwnershipState.Prepared, 0, false, DateTimeOffset.UtcNow);
+    }
 
     internal CpuLiveCurveOwnershipJournal ArmRestoration()
     {
@@ -171,18 +185,16 @@ internal sealed record CpuLiveCurvePostBootObservation(CpuLiveCurveContext Conte
     CpuLivePowerStoredPair PowerBefore, CpuLivePowerStoredPair PowerAfter, DateTimeOffset ObservedAtUtc)
 {
     internal bool Matches(CpuLiveCurveOwnershipJournal prior) => prior.IsPostBootReconciliationCandidate
-        && Context is { IsWellFormed: true, RuntimeLifetime.ServiceInstance: var service } && service != Guid.Empty
+        && Context is { IsWellFormed: true, Contract: { } contract, RuntimeLifetime.ServiceInstance: var service } && service != Guid.Empty
         && prior.Context.RuntimeLifetime is { ServiceInstance: var originalService } && originalService != Guid.Empty
         && service != originalService && Context.BootSequence != prior.Context.BootSequence
         && (Context with { BootSequence = prior.Context.BootSequence, RuntimeLifetime = prior.Context.RuntimeLifetime })
             .MatchesHardwareContext(prior.Context)
-        && CpuLiveCurveOwnershipJournal.Snapshot(CoreValues) is { } vector
+        && prior.Snapshot(CoreValues) is { } vector
         && vector.CoreOffsets.SequenceEqual(prior.OriginalBaseline)
         && PowerContext is { IsWellFormed: true }
-        && Context.MatchesHardwareContext(new(PowerContext.Identity, PowerContext.EnabledCoreMask,
-            PowerContext.PmVersion, PowerContext.PmTableLength, PowerContext.Backend, PowerContext.BootSequence)
-        { RuntimeLifetime = PowerContext.RuntimeLifetime })
-        && PowerBefore.Decode() is { } before && PowerAfter.Decode() == before && ObservedAtUtc != default;
+        && Context.MatchesHardwareContext(PowerContext.ToCurveContext())
+        && PowerBefore?.DecodeCurvePeer(contract) is { } before && PowerAfter?.DecodeCurvePeer(contract) == before && ObservedAtUtc != default;
 }
 
 internal sealed record CpuLiveCurvePostBootReceipt(string State, string Basis, string PreviousSha256,
@@ -258,7 +270,7 @@ internal sealed class CpuLiveCurveOwnershipJournalStore(string path) : ICpuLiveC
             byte[]? previous = await ReadBytesAsync(token).ConfigureAwait(false);
             if (previous is null || Hash(previous) != expectedSha256 || Decode(previous) is not { } prior
                 || !observation.Matches(prior) || !await stillAdmitted().ConfigureAwait(false)) { return null; }
-            var settled = new CpuLiveCurveOwnershipJournal(3, prior.TransactionId, prior.Context,
+            var settled = new CpuLiveCurveOwnershipJournal(prior.SchemaVersion, prior.TransactionId, prior.Context,
                 prior.OriginalBaseline, prior.OriginalBaseline, [], prior.OriginalBaseline,
                 CpuLiveCurveOwnershipState.Restored, 0, true, DateTimeOffset.UtcNow);
             byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(settled, Options);
@@ -303,7 +315,13 @@ internal sealed class CpuLiveCurveOwnershipJournalStore(string path) : ICpuLiveC
         using var document = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = 16 });
         if (!UniqueKeys(document.RootElement)) { return null; }
         var journal = JsonSerializer.Deserialize<CpuLiveCurveOwnershipJournal>(bytes, Options);
-        return journal is { IsWellFormed: true } ? journal : null;
+        if (journal is not { IsWellFormed: true }) { return null; }
+        if (journal.SchemaVersion == 3)
+        {
+            var context = document.RootElement.GetProperty("context");
+            if (context.TryGetProperty("contractId", out _) || context.TryGetProperty("contractVersion", out _)) { return null; }
+        }
+        return journal;
     }
 
     private static bool UniqueKeys(JsonElement element)

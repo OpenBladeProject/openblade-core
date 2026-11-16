@@ -15,6 +15,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     private readonly Func<CancellationToken, CpuLiveCurveBootSequence?> readBoot;
     private readonly WindowsCpuLiveCurveRangeMetadata metadata;
     private readonly CpuNativeWorkerCoordinator worker;
+    private readonly Lazy<CpuLiveCurveBackendIdentity> pinnedIdentity;
     private CpuInstalledBackendLease? installed;
     private object? rangeRequest;
     private CpuLiveCurveContext? rangeContext;
@@ -27,8 +28,8 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
 
     internal WindowsCpuLiveTuningTrustedNativeProvider(WindowsRz090528CpuNativeSession session,
         Func<CpuTuningController?> controller, ICpuTuningObservationSource source)
-        : this(session, controller, source, Rz090528CpuFreshUsbIdentity.Read, new WindowsCpuBootSequenceReader().Read,
-            new WindowsCpuLiveCurveRangeMetadata(), Rz090528CpuFreshUsbIdentity.CaptureGetter,
+        : this(session, controller, source, () => Rz090528CpuFreshUsbIdentity.Read(session.Contract), new WindowsCpuBootSequenceReader().Read,
+            new WindowsCpuLiveCurveRangeMetadata(), () => Rz090528CpuFreshUsbIdentity.CaptureGetter(session.Contract),
             () =>
             {
                 var diagnostic = controller()?.CaptureLiveObservationDiagnostic();
@@ -46,6 +47,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         this.session = session; this.controller = controller; this.source = source;
         this.readUsb = readUsb; this.readBoot = readBoot; this.metadata = metadata;
         worker = CpuNativeWorkerCoordinator.ForSession(session);
+        pinnedIdentity = new(() => PinnedIdentity(session.Contract));
         this.captureGetterUsb = captureGetterUsb; this.captureGetterControllers = captureGetterControllers;
     }
 
@@ -72,9 +74,9 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     public CpuLiveCurveWriteProof? CreatePreparedWriteProof(CpuLiveCurveContext exactContext,
         CpuLiveCurveNativeRequest exactRequest, CancellationToken token)
     {
-        if (getterAdmission is not null || !ValidCurveCommand(exactRequest.Command, exactRequest.Purpose)
+        if (getterAdmission is not null || !ValidCurveCommand(exactContext, exactRequest.Command, exactRequest.Purpose)
             || exactRequest.Purpose == CpuLiveCurveCommandPurpose.Forward
-                && !ValidCurveCommand(exactRequest.ImmediateReverse, CpuLiveCurveCommandPurpose.Restore)) { return null; }
+                && !ValidCurveCommand(exactContext, exactRequest.ImmediateReverse, CpuLiveCurveCommandPurpose.Restore)) { return null; }
 #if OPENBLADE_CPU_VOLTAGE_VALIDATION
         if (exactRequest.Before.CoreOffsets.Any(core => core.Offset is not (-1 or 0))) { return null; }
 #endif
@@ -116,7 +118,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     public bool CheckPlanAdmission(CpuLiveCurveContext exactContext,
         IReadOnlyList<CpuLiveCurveAdmissionCheck> checks, CancellationToken token)
     {
-        if (checks.Count is < 1 or > 36 || getterAdmission is not null) { return false; }
+        if (exactContext.Contract is not { } contract || checks.Count < 1 || checks.Count > 3 * contract.CoreCount || getterAdmission is not null) { return false; }
         var admission = Capture(exactContext, CpuTuningFeatures.CurveOptimizer, token);
         if (admission is null) { return false; }
         using (var scope = BeginGetter(token))
@@ -146,7 +148,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
                 // repeated environmental discovery for each scalar command.
                 foreach (var check in checks)
                 {
-                    if (token.IsCancellationRequested || !ValidCurveCommand(check.Command, check.Purpose)
+                    if (token.IsCancellationRequested || !ValidCurveCommand(exactContext, check.Command, check.Purpose)
                         || !freshRange.Allows(check.Command)) { return false; }
                 }
                 if (!CompleteGetter(exactContext, token)) { return false; }
@@ -189,10 +191,22 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
             || !Check(lifetime is { ServiceInstance: var instance } && instance != Guid.Empty, "provider runtime lifetime"))
         { return null; }
         var identity = source.ReadIdentity();
+        var contract = CpuLiveCurveContract.ForIdentity(identity);
+        if (!Check(contract is not null, "provider exact host identity")) { return null; }
+        // First binding performs a separate host read. Unknown identity at this
+        // point precedes any native resource and can be observed again later.
+        try
+        {
+            if (!Check(contract == session.Contract, "provider exact host identity")) { return null; }
+        }
+        catch (CpuVoltageHostUnavailableException)
+        {
+            Check(false, "provider exact host identity");
+            return null;
+        }
         var usb = readUsb();
         var boot = readBoot(token);
-        if (!Check(CpuSavedTuningPlan.IsExactIdentity(identity), "provider exact host identity")
-            || !Check(CpuHardwareIdentity.Same(identity, usb), "provider matching USB identity")
+        if (!Check(CpuHardwareIdentity.Same(identity, usb), "provider matching USB identity")
             || !Check(boot is { IsWellFormed: true }, "provider boot sequence")
             || !Check(current!(), "provider runtime after identity probes"))
         { return null; }
@@ -201,9 +215,13 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         installed ??= session.TryRetainInstalledBackend(() => current!() ? readUsb() : null, token);
         if (!Check(installed?.IsCurrent == true, "provider retained installed backend")
             || !Check(current!(), "provider runtime after backend retention")) { return null; }
-        return new(identity!, CpuLiveCurveSnapshot.SupportedMask, CpuLiveCurveSnapshot.SupportedPmVersion,
-            CpuLiveCurveSnapshot.SupportedPmLength, PinnedIdentity(), boot!)
-        { RuntimeLifetime = lifetime };
+        var table = contract!.ExpectedPmTable;
+        return new(identity!, contract.EnabledCoreMask, table.Version, table.Length, pinnedIdentity.Value, boot!)
+        {
+            RuntimeLifetime = lifetime,
+            ContractId = contract == CpuLiveCurveContract.Rz090528 ? null : contract.Id,
+            ContractVersion = contract == CpuLiveCurveContract.Rz090528 ? null : contract.Version,
+        };
     }
 
     public CpuQueryInstalledApproval? CreateInstalledQueryApproval(CpuLiveCurveContext exactContext, CancellationToken token)
@@ -220,9 +238,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     private CpuLivePowerContext? PowerContext(CancellationToken token)
     {
         var context = ReadFreshContext(token);
-        return context is null ? null : new(context.Identity, context.EnabledCoreMask, context.PmVersion,
-            context.PmTableLength, context.Backend, context.BootSequence)
-        { RuntimeLifetime = context.RuntimeLifetime };
+        return context is null ? null : CpuLivePowerContext.FromCurveContext(context);
     }
 
 
@@ -238,6 +254,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
 
     public IRz090528CpuLivePowerRangeMetadataReader? CreateObservationMetadata(CpuLivePowerContext exactContext, CancellationToken token)
     {
+        if (exactContext.Contract != CpuLiveCurveContract.Rz090528) { return null; }
         var admission = CapturePower(exactContext, token);
         return admission is null ? null : new WindowsCpuLivePowerRangeMetadata(exactContext, new PowerRangeScope(admission), token);
     }
@@ -246,7 +263,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         CpuPmObservationBatch exactObservation, CancellationToken token)
     {
         var admission = CapturePower(exactContext, token);
-        if (admission is null || !exactObservation.Complete
+        if (exactContext.Contract != CpuLiveCurveContract.Rz090528 || admission is null || !exactObservation.Complete
             || exactObservation.Profile != CpuPmObservationProfile.RangeSingleSample
             || exactObservation.FirmwareVersion != CpuPmObservationWireAdmission.ExpectedFirmwareVersion
             || exactObservation.RangeObservation is not { MetadataComplete: true, MinMax.Value: { Value: 0x50001, Stepping: 1 } limits }
@@ -262,9 +279,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     {
         var current = PowerContext(token);
         if (!context.MatchesHardwareContext(current)) { return null; }
-        var curve = new CpuLiveCurveContext(context.Identity, context.EnabledCoreMask, context.PmVersion,
-            context.PmTableLength, context.Backend, context.BootSequence)
-        { RuntimeLifetime = context.RuntimeLifetime };
+        var curve = context.ToCurveContext();
         return getterScope is { } getter ? () => getter.Current(curve) : Capture(curve, CpuTuningFeatures.None, token);
     }
 
@@ -272,7 +287,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         CpuLiveCurveCommandPurpose purpose, CancellationToken token)
     {
         if (getterAdmission is not null) { return false; }
-        if (!ValidCurveCommand(command, purpose)) { return false; }
+        if (!ValidCurveCommand(exactContext, command, purpose)) { return false; }
         var admission = Capture(exactContext, CpuTuningFeatures.CurveOptimizer, token);
         if (admission is null) { return false; }
         var request = controller()?.CaptureLiveRuntimeRequest();
@@ -287,17 +302,14 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         return range?.Allows(command) == true && admission();
     }
 
-    private static bool ValidCurveCommand(CpuLiveCurveCommand command, CpuLiveCurveCommandPurpose purpose)
+    private static bool ValidCurveCommand(CpuLiveCurveContext context, CpuLiveCurveCommand command, CpuLiveCurveCommandPurpose purpose)
     {
 #if OPENBLADE_CPU_VOLTAGE_VALIDATION
         // The developer profile narrows every purpose, including first-original
         // restoration. Fresh firmware metadata remains an independent intersection.
         if (command.Offset is not (-1 or 0)) { return false; }
 #endif
-        if (!Enum.IsDefined(purpose) || purpose == CpuLiveCurveCommandPurpose.Forward && command.Offset is < -30 or > 0
-            || !CpuLiveCurveCommand.TryDecode(CpuLiveCurveCommand.Message, command.EncodeArgument(),
-                CpuLiveCurveSnapshot.SupportedMask, out var decoded) || decoded != command) { return false; }
-        return true;
+        return CpuLiveCurveNativeBackend.ValidCommand(context, command, purpose);
     }
 
     public CpuLiveCurveWriteProof? CreateWriteProof(CpuLiveCurveContext exactContext,
@@ -347,10 +359,13 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         return !validateNow || Current() ? Current : null;
     }
 
-    private static CpuLiveCurveBackendIdentity PinnedIdentity() => new(
-        Rz090528InstalledCpuBackendInspector.ExpectedHashes[Rz090528InstalledCpuBackendInspector.DriverPath],
-        Rz090528InstalledCpuBackendInspector.ExpectedHashes[Rz090528InstalledCpuBackendInspector.DirectoryPath + @"\Platform.dll"],
-        Rz090528InstalledCpuBackendInspector.ExpectedHashes[Rz090528InstalledCpuBackendInspector.DirectoryPath + @"\Device.dll"]);
+    private static CpuLiveCurveBackendIdentity PinnedIdentity(CpuLiveCurveContract contract)
+    {
+        var profile = CpuInstalledBackendProfile.ForContract(contract);
+        return new(profile.ExpectedHashes[profile.DriverPath],
+            profile.ExpectedHashes[CpuInstalledBackendProfile.DirectoryPath + @"\Platform.dll"],
+            profile.ExpectedHashes[CpuInstalledBackendProfile.DirectoryPath + @"\Device.dll"]);
+    }
 
     public void Dispose()
     {
@@ -360,9 +375,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
     }
 
     bool ICpuLivePowerTrustedNativeProvider.CompleteGetter(CpuLivePowerContext expected, CancellationToken token) =>
-        CompleteGetter(new CpuLiveCurveContext(expected.Identity, expected.EnabledCoreMask, expected.PmVersion,
-            expected.PmTableLength, expected.Backend, expected.BootSequence)
-        { RuntimeLifetime = expected.RuntimeLifetime }, token);
+        CompleteGetter(expected.ToCurveContext(), token);
 
     public bool CompleteGetter(CpuLiveCurveContext expected, CancellationToken token)
     {
@@ -427,7 +440,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
                     && Check(admission.Allows, "provider getter admission before continuity")
                     && Check(() => Context is { } value && expected.MatchesHardwareContext(value), "provider getter matching context")
                     && Check(() => owner.installed?.GetterContinuityCurrent == true, "provider getter installed backend continuity")
-                    && Check(() => usb is not null ? usb.IsCurrent() : CpuHardwareIdentity.Same(Context!.Identity, owner.readUsb()), "provider getter USB continuity")
+                    && Check(() => usb is not null ? usb.IsCurrent() && CpuHardwareIdentity.Same(Context!.Identity, usb.Identity) : CpuHardwareIdentity.Same(Context!.Identity, owner.readUsb()), "provider getter USB continuity")
                     && Check(() => controllers?.Invoke() ?? owner.captureGetterControllers is null, "provider getter controller continuity")
                     && Check(() => Context!.BootSequence == owner.readBoot(token), "provider getter boot continuity")
                     && Check(() => owner.controller()?.CaptureLiveRuntimeLifetime() == Context!.RuntimeLifetime, "provider getter runtime lifetime")
@@ -503,11 +516,26 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
         public bool FinalCheckpointWithContext(CpuLiveCurveNativeRequest exactRequest, CpuLiveCurveContext expected,
             uint capability, CpuLivePowerFusedCap cap) => expected.IsWellFormed && expected.MatchesHardwareContext(context)
             && FinalCheckpointCurrent(exactRequest, capability, cap);
+        public bool UncappedFinalCheckpointWithContext(CpuLiveCurveNativeRequest exactRequest, CpuLiveCurveContext expected,
+            uint capability) => expected.IsWellFormed && expected.MatchesHardwareContext(context)
+            && UncappedFinalCheckpointCurrent(exactRequest, capability);
+
+        internal override bool IsUncappedFinalCheckpointCurrent(CpuLiveCurveNativeRequest exactRequest, uint capability) =>
+            SupportsFinalCheckpoint && ActiveRead is null && read && range?.AllowsOperation(exactRequest) == true
+            && UncappedPeerMatches(exactRequest, capability) && IsCurrent(exactRequest);
+
+        private bool UncappedPeerMatches(CpuLiveCurveNativeRequest exactRequest, uint capability) =>
+            context.Contract?.UsesPhoenixProtocol == true && exactRequest.Before.Contract == context.Contract
+            && exactRequest.PowerPeer is { Original: null } && capability != uint.MaxValue && (capability & 4) != 0;
+
+        internal override bool AdmitUncappedPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability) =>
+            CheckRead(exactRequest) && UncappedPeerMatches(exactRequest, capability) && CheckRead(exactRequest);
+
         // Range was freshly decoded inside this proof's native read scope.
         // Validate full write authority once, after every pure rejection.
         internal override bool IsFinalCheckpointCurrent(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap) =>
             SupportsFinalCheckpoint && ActiveRead is null && read && range?.AllowsOperation(exactRequest) == true
-            && exactRequest.PowerPeer is { Original: null } && CpuLivePowerCapability.TryDecode(capability) is not null
+            && context.Contract == CpuLiveCurveContract.Rz090528 && exactRequest.PowerPeer is { Original: null } && CpuLivePowerCapability.TryDecode(capability) is not null
             && IsCurrent(exactRequest);
         public bool? ReadCurrentWithContext(CpuLiveCurveNativeRequest exactRequest, CpuLiveCurveContext expected)
         {
@@ -556,7 +584,7 @@ internal sealed class WindowsCpuLiveTuningTrustedNativeProvider : ICpuLiveCurveT
             ? ReferenceEquals(owner.getterScope, getter) && owner.CompleteGetter(context, token) : current();
         internal override bool AdmitPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap)
         {
-            if (!CheckRead(exactRequest) || exactRequest.PowerPeer is not { } peer
+            if (context.Contract != CpuLiveCurveContract.Rz090528 || !CheckRead(exactRequest) || exactRequest.PowerPeer is not { } peer
                 || CpuLivePowerCapability.TryDecode(capability) is null) { return false; }
             // Historical PPT ownership is never silently promoted to read-only authority.
             if (peer.Original is not null) { return false; }

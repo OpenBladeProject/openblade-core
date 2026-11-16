@@ -446,6 +446,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         IDeviceStateReadDiagnostics,
         IGpuClockOffsetManagementDevice,
         ISingleAttemptThermalDevice,
+        IOwnedBatterySaverFanStopReleaseDevice,
         IPadlessHyperBoostLifecycleValidationDevice,
         IThermalExternalDriftValidationDevice,
         IDisposable
@@ -2230,6 +2231,18 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 allowSecondManualEntryContinuation: false,
                 cancellationToken);
 
+        Task IOwnedBatterySaverFanStopReleaseDevice.ReleaseOwnedBatterySaverFanStopOnceAsync(
+            Func<bool> priorAuthorityAdmission,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(priorAuthorityAdmission);
+            return batteryFactory.Capabilities.SupportsBatterySaverFanStop
+                ? ExecuteProductionWriteAsync(
+                    port => port.ReleaseOwnedBatterySaverFanStopAsync(priorAuthorityAdmission, cancellationToken),
+                    cancellationToken, allowFreshSessionRetry: false)
+                : RejectProductionWrite("Owned Battery Saver fan-stop release is not admitted.");
+        }
+
         private Task SetFanControlCoreAsync(
             FanControlSettings value,
             bool allowFreshSessionRetry,
@@ -2281,6 +2294,28 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 allowFreshSessionRetry: true,
                 isManualEntryContinuation: false,
                 cancellationToken);
+
+        public async Task<(int Fan1Rpm, int Fan2Rpm)> SetCurveFanTargetsAsync(
+            PerformancePreset expectedPerformance,
+            int fan1Rpm,
+            int fan2Rpm,
+            CancellationToken cancellationToken)
+        {
+            DeviceCapabilities capabilities = batteryFactory.Capabilities;
+            if (!capabilities.FanModes.Contains(FanMode.ManualCurve)
+                || capabilities.GetFanIntentSpeedRange(expectedPerformance) is not { } range
+                || !range.Supports(fan1Rpm) || !range.Supports(fan2Rpm))
+            {
+                await RejectProductionWrite("Manual curve targets are not admitted.").ConfigureAwait(false);
+            }
+            (int Fan1Rpm, int Fan2Rpm) applied = default;
+            await ExecuteProductionWriteAsync(async port =>
+            {
+                applied = await port.SetCurveFanTargetsAsync(
+                    expectedPerformance, fan1Rpm, fan2Rpm, cancellationToken).ConfigureAwait(false);
+            }, cancellationToken, allowFreshSessionRetry: false).ConfigureAwait(false);
+            return applied;
+        }
 
         Task ISingleAttemptThermalDevice.SetFanTargetsOnceAsync(
             int fan1Rpm,

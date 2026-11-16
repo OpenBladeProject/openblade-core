@@ -125,7 +125,9 @@ public sealed class AutomationSelectionParityTests
                 SetField(state, slot, candidate);
 
                 ResolvedSetting<PerformancePreset> expected =
-                    ManagedAutomationPolicyBaseline.IsPerformanceCompatibleWithSource(preset, source)
+                    (source is PowerSource.PluggedIn or PowerSource.UsbC
+                        ? Enum.IsDefined(preset)
+                        : ManagedAutomationPolicyBaseline.IsPerformanceCompatibleWithSource(preset, source))
                         ? new(preset, persistent ? SettingValueSource.PersistentOverride : SettingValueSource.TemporaryOverride)
                         : baseline;
                 Assert.Equal(expected, state.Resolve(confirmed).Performance);

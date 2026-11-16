@@ -170,19 +170,9 @@ public static class WindowsRazerDriverApiDiscovery
         {
             throw Reject("ServiceImageMissing", "The driver service image is unavailable.");
         }
-        string path = value.Trim();
-        if (path.StartsWith(@"\SystemRoot\", StringComparison.OrdinalIgnoreCase))
-        {
-            path = Path.Combine(windows, path[12..]);
-        }
-        else if (path.StartsWith(@"System32\", StringComparison.OrdinalIgnoreCase))
-        {
-            path = Path.Combine(windows, path);
-        }
-        else if (path.StartsWith(@"%SystemRoot%\", StringComparison.OrdinalIgnoreCase))
-        {
-            path = Path.Combine(windows, path[13..]);
-        }
+        string path;
+        try { path = WindowsDriverServiceImagePath.Resolve(value.Trim(), windows, allowSystem32Relative: true); }
+        catch (InvalidDataException error) { throw Reject("ServiceImagePathAmbiguous", error.Message); }
         path = Path.GetFullPath(path);
         RequireUnder(path, Path.Combine(windows, "System32", "drivers"));
         if (!string.Equals(Path.GetFileName(path), service + ".sys", StringComparison.OrdinalIgnoreCase))

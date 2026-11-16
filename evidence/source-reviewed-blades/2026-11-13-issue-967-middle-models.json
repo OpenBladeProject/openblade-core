@@ -1,0 +1,399 @@
+{
+  "schemaVersion": 1,
+  "audit": "issue967 middle-model source-only review",
+  "head": "345b45af",
+  "coordinates": "zero-based UTF8 byte ranges; end exclusive",
+  "physicalValidation": "none; downloaded and inspected data only; no vendor code executed",
+  "sources": [
+    {
+      "name": "597-6737.6da70458ec9e64b00f37.js",
+      "url": "https://apps.razer.com/synapse/products/597/mw/6737.6da70458ec9e64b00f37.js",
+      "bytes": 1957293,
+      "sha256": "C6E6E76DFB61F960913E22B864A31273280547E21E1462DE3138F096D2DB56EA"
+    },
+    {
+      "name": "597-main.a1e24f33c1759c4315e3.js",
+      "url": "https://apps.razer.com/synapse/products/597/mw/main.a1e24f33c1759c4315e3.js",
+      "bytes": 169214,
+      "sha256": "A864DC2BE2D35BC3703B81476C1659CAAA4D2C144C89616D9D5D0EE398F030FB"
+    },
+    {
+      "name": "597-rzDevice25.ae57bbfa911460c03510.js",
+      "url": "https://apps.razer.com/synapse/products/597/mw/rzDevice25.ae57bbfa911460c03510.js",
+      "bytes": 272265,
+      "sha256": "2F41299C36E60E65D0BFCCE1E666FF67F0FC07F21F4523BED0A4E8CA5AC6043D"
+    },
+    {
+      "name": "597-rzDevice25LedMatrixBladeWattage.5473a2df3a0c67e1323b.js",
+      "url": "https://apps.razer.com/synapse/products/597/mw/rzDevice25LedMatrixBladeWattage.5473a2df3a0c67e1323b.js",
+      "bytes": 2919,
+      "sha256": "CF35C15059DA3456D357C811743D86FB1D1D6F28BDDE670601FAD30E8B329663"
+    },
+    {
+      "name": "597-ui-main.8d820ba2.js",
+      "url": "https://apps.razer.com/synapse/products/597/ui/static/js/main.8d820ba2.js",
+      "bytes": 6540488,
+      "sha256": "ECE69EE8F422A9D919D280C9B4793B2823D5FC7D821AC9DD82519128BA48EAC1"
+    },
+    {
+      "name": "709-6737.d34a3f9a638030f35c6a.js",
+      "url": "https://apps.razer.com/synapse/products/709/mw/6737.d34a3f9a638030f35c6a.js",
+      "bytes": 2379746,
+      "sha256": "4758FB7E2D8296564FB9CE971F6DCE3D580ED5407EEF07A69E1C362A04FF28C0"
+    },
+    {
+      "name": "709-main.bb0dd1873a58a987c63a.js",
+      "url": "https://apps.razer.com/synapse/products/709/mw/main.bb0dd1873a58a987c63a.js",
+      "bytes": 187452,
+      "sha256": "CC8E0EFD2B37F1ED5AF6C8CC8C3AB1327B9502927DC05F20EE7465486AB006F1"
+    },
+    {
+      "name": "709-rzDevice25.d532642d8de7a9cfcf5d.js",
+      "url": "https://apps.razer.com/synapse/products/709/mw/rzDevice25.d532642d8de7a9cfcf5d.js",
+      "bytes": 280091,
+      "sha256": "9109826D790FEB8597BBFC115231066CA66E2C480ED9769BB85F3F91188AAD0A"
+    },
+    {
+      "name": "709-rzDevice25LedMatrixBlade2.da34a4070bcb5ea45648.js",
+      "url": "https://apps.razer.com/synapse/products/709/mw/rzDevice25LedMatrixBlade2.da34a4070bcb5ea45648.js",
+      "bytes": 20253,
+      "sha256": "41408CFD6CAB1117D49B13EB40FE68182EC395F63B2228C058BC0517A5C87E77"
+    },
+    {
+      "name": "709-ui-2915.4e513855.chunk.js",
+      "url": "https://apps.razer.com/synapse/products/709/ui/static/js/2915.4e513855.chunk.js",
+      "bytes": 499632,
+      "sha256": "6D6106090CDC8D26F527F0265C07DBB4035EC57FBD0BDC41F0EDB1A205ADCEB2"
+    },
+    {
+      "name": "709-ui-2915.50cc8c18.chunk.css",
+      "url": "https://apps.razer.com/synapse/products/709/ui/static/css/2915.50cc8c18.chunk.css",
+      "bytes": 102647,
+      "sha256": "CCE405A0C721D977CBFE9E73B1095BBA16D5C73A7A68EF011850A9F06D75BE40"
+    },
+    {
+      "name": "709-ui-3116.81933669.chunk.js",
+      "url": "https://apps.razer.com/synapse/products/709/ui/static/js/3116.81933669.chunk.js",
+      "bytes": 148603,
+      "sha256": "7EFB9F4A0FC28F2E37C1EE23C1C21BAC972BE2210CE16E985B7931E42EC8561F"
+    },
+    {
+      "name": "709-ui-7347.800426fd.chunk.js",
+      "url": "https://apps.razer.com/synapse/products/709/ui/static/js/7347.800426fd.chunk.js",
+      "bytes": 184938,
+      "sha256": "304E89C0585CA4A94ED9EF228D52148DADECD3B5376584B9D1A8850081E9E9B8"
+    },
+    {
+      "name": "709-ui-main.fd91712e.js",
+      "url": "https://apps.razer.com/synapse/products/709/ui/static/js/main.fd91712e.js",
+      "bytes": 1253504,
+      "sha256": "338D8F51C9A1179D3B2436F77FD44B3D393C3CC987D0EC73928E1F636BF3A9B7"
+    },
+    {
+      "name": "upstream-PerformanceMode.cs",
+      "url": "https://raw.githubusercontent.com/jdsgnrinfo/blade-control/92beedc82e6e378cb71dac276e5820c8ea84247d/src/BladeControl.Core/Models/PerformanceMode.cs",
+      "bytes": 748,
+      "sha256": "77254D5A03295FBD1FE11CA3A7F6C0F3C7E902BEB934AE688043FC9D76991CF3"
+    },
+    {
+      "name": "upstream-PerformanceService.cs",
+      "url": "https://raw.githubusercontent.com/jdsgnrinfo/blade-control/92beedc82e6e378cb71dac276e5820c8ea84247d/src/BladeControl.Core/Services/PerformanceService.cs",
+      "bytes": 13923,
+      "sha256": "1ABBE6CB01BBD907D52CA22BC33970FACF71F233D08B0A9FBE31FC4C8DE7E9A6"
+    },
+    {
+      "name": "upstream-RazerCommands.cs",
+      "url": "https://raw.githubusercontent.com/jdsgnrinfo/blade-control/92beedc82e6e378cb71dac276e5820c8ea84247d/src/BladeControl.Core/Hardware/RazerCommands.cs",
+      "bytes": 3071,
+      "sha256": "E628C28D77AACAF5FB7DFA24CEA705FBCBC19520FE5A253E408CF027B16BE707"
+    },
+    {
+      "name": "upstream-RazerLaptopModels.cs",
+      "url": "https://raw.githubusercontent.com/jdsgnrinfo/blade-control/92beedc82e6e378cb71dac276e5820c8ea84247d/src/BladeControl.Core/Hardware/RazerLaptopModels.cs",
+      "bytes": 4031,
+      "sha256": "915E0C1D6AF6A37ED8D7E696A120E12D1C7AD141BFE4E26ECAB5215A92AEA79C"
+    }
+  ],
+  "decisions": [
+    {
+      "model": "RZ09-0328",
+      "usb": "1532:0255",
+      "addPreset": "Creator wire2; preserve Performance wire1 compatibility label and existing upstreamCustom/Silent",
+      "manual": {
+        "Creator": [
+          4900,
+          5500,
+          100
+        ],
+        "Performance": [
+          4900,
+          5500,
+          100
+        ],
+        "Balanced": [
+          4300,
+          5500,
+          100
+        ]
+      },
+      "manualPower": "Full external AC established. UI explicitly hides manual on battery. Limited-adapter behavior requires shared policy review; no blanket gate removal based solely on generic path.",
+      "customAndSilentManual": "No min-max range established; retain no manual admission",
+      "rangeRule": "Intersect UI/MW declared bounds and fresh current-preset0D83 B/D/F metadata, reject zero/incoherence",
+      "other": "Retain owner-sourceCustom/Silent. Do not admit charge/maxflag07 writes or0D88 solely from common parser."
+    },
+    {
+      "model": "RZ09-0530",
+      "usb": "1532:02C5",
+      "addPreset": "MaximumPower wire2 (owning main enum); never raw7",
+      "manual": {
+        "Silent": [
+          3400,
+          3800,
+          100
+        ],
+        "Custom": [
+          4000,
+          5300,
+          100
+        ],
+        "BatteryBalanced": [
+          3400,
+          5200,
+          100
+        ],
+        "MaximumPower": [
+          3300,
+          5400,
+          100
+        ],
+        "Balanced": [
+          3400,
+          5200,
+          100
+        ]
+      },
+      "manualPower": "Full external AC for ordinary presets; battery onlyBatteryBalanced6, BatterySaver3Auto",
+      "rangeRule": "Intersect UI/MW declared bounds and fresh current-preset0D83 B/D/F metadata. Fresh metadata missing rejects",
+      "target": "0D01[1,fanId,rpm/100],0D81 independenttargetreadback;0D02 profile1/thermalId/mode/fanByte preserveperformance",
+      "other": "Custom manual exact activation true; source UI says unsupportedCpuBoostOption true so do not infer CPUBoost3. Existing lighting audit reused."
+    }
+  ],
+  "segments": [
+    {
+      "source": "597-main.a1e24f33c1759c4315e3.js",
+      "claim": "Owning wire enum; Performance 2 is alias Creator, Gaming 1, Hyperboost 7",
+      "startByte": 48540,
+      "endByte": 49220,
+      "segmentSha256": "5E33C47F6EC633C4EF44F2B33016D5967F82AD8158621A2CD8EF08082FFF1972",
+      "text": "Custom:16});const vo={Balanced_Mode:0,Gaming_Mode:1,Productivity_Creator_Mode:2,BatterySaver_Ultrabook_LowPowerMode:3,Custom_Mode:4,Silent_Mode:5,Normal_Mode:6,Performance_Mode:2,Hyperboost_Mode:7};Object.freeze(vo);const bo={Balanced_Mode:\"balanced\",Gaming_Mode:\"gaming\",Productivity_Creator_Mode:\"creator\",BatterySaver_Ultrabook_LowPowerMode:\"lowPower\",Custom_Mode:\"custom\",Battery_Saver_Mode:\"batterySaver\",Performance_Mode:\"maximumPower\",Silent_Mode:\"silent\",Turbo_Mode:\"turbo\",Hyperboost_Mode:\"hyperboost\"};Object.freeze(bo),Object.freeze({Auto:0,Manual:1});const Uo={DDS_Supported:{Non_DDS_Supported:0,DDS_Supported:1},Mini_LED_Resolution:{Non_Mini_LED_Supported:0,Mini_LED_"
+    },
+    {
+      "source": "709-main.bb0dd1873a58a987c63a.js",
+      "claim": "Owning wire enum; Performance 2, Hyperboost 7",
+      "startByte": 48610,
+      "endByte": 49290,
+      "segmentSha256": "988C07F9BBAB67D7DD18F315FE0F91CC87670580B184C200B0E95E695FC7A331",
+      "text": "Custom:16});const vr={Balanced_Mode:0,Gaming_Mode:1,Productivity_Creator_Mode:2,BatterySaver_Ultrabook_LowPowerMode:3,Custom_Mode:4,Silent_Mode:5,Normal_Mode:6,Performance_Mode:2,Hyperboost_Mode:7};Object.freeze(vr);const wr={Balanced_Mode:\"balanced\",Gaming_Mode:\"gaming\",Productivity_Creator_Mode:\"creator\",BatterySaver_Ultrabook_LowPowerMode:\"lowPower\",Custom_Mode:\"custom\",Battery_Saver_Mode:\"batterySaver\",Performance_Mode:\"maximumPower\",Silent_Mode:\"silent\",Turbo_Mode:\"turbo\",Hyperboost_Mode:\"hyperboost\"};Object.freeze(wr),Object.freeze({Auto:0,Manual:1});const Br={DDS_Supported:{Non_DDS_Supported:0,DDS_Supported:1},Mini_LED_Resolution:{Non_Mini_LED_Supported:0,Mini_LED_"
+    },
+    {
+      "source": "597-main.a1e24f33c1759c4315e3.js",
+      "claim": "Exact MW preset ranges",
+      "startByte": 143900,
+      "endByte": 146130,
+      "segmentSha256": "8B1D4CE999954ED00280E8FFB66221099571C119C294D67FD07BDB099009ABCD",
+      "text": "EM\",claimInterface:2},d=[{id:1,mode:i.mNQ.Balanced_Mode,title:n.Y_1,content:n.OC,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.021,0,0,1,22,4m0-2A20,20,0,1,0,42,22,20,20,0,0,0,22,2Zm1,5H21v4h2ZM15.366,8.51l-1.732,1,2,3.464,1.732-1ZM9.51,13.634l-1,1.732,3.464,2,1-1.732ZM7,21v2h4V21Zm1.51,7.634,1,1.732,3.464-2-1-1.732Zm25.98,1.732,1-1.732-3.464-2-1,1.732ZM37,23V21H33v2Zm-1.51-7.634-1-1.732-3.464,2,1,1.732ZM30.366,9.51l-1.732-1-2,3.464,1.732,1ZM22,15s-2,10.9-2,12a2,2,0,0,0,4,0C24,25.9,22,15,22,15Z\",isShowOnBattery:!0,minFanSpeedValue:4200,maxFanSpeedValue:5500,defaultFanSpeedValue:4900},{id:2,mode:i.mNQ.Productivity_Creator_Mode,title:n.w8F,content:n.Qn5,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.021,0,0,1,22,4m0-2A20,20,0,1,0,42,22,20,20,0,0,0,22,2ZM11.214,28.884A12.122,12.122,0,0,1,10.9,16.412a11.894,11.894,0,0,1,4.487-4.446,11.663,11.663,0,0,1,6.025-1.495,11.4,11.4,0,0,1,9.837,6.281,11.273,11.273,0,0,1,1.1,5.793,10.784,10.784,0,0,1-2,5.431l4.189,2.812A15.6,15.6,0,0,0,35,14.742a15.4,15.4,0,0,0-5.776-5.77A15.143,15.143,0,0,0,21.405,7,14.949,14.949,0,0,0,13.8,9.332,14.56,14.56,0,0,0,7.042,22.757a14.253,14.253,0,0,0,2.6,7.187ZM32.9,32.025s-9.056-6.379-10.06-6.841a2,2,0,0,0-1.674,3.632C22.166,29.279,32.9,32.025,32.9,32.025Z\",minFanSpeedValue:4900,maxFanSpeedValue:5500,defaultFanSpeedValue:5200},{id:3,mode:i.mNQ.Gaming_Mode,title:n.vOG,content:n.F07,icon:\"M19.266,13.475c-.6-.475,0-.475,0-.475h5.468s.6,0,0,.475c0,0-1.025,1.152-1.111,1.322a.611.611,0,0,1-.427.2H20.8a.611.611,0,0,1-.427-.2C20.291,14.627,19.266,13.475,19.266,13.475Zm11.168,1.276-.153-.421s-1.342-.767-2.185-1.112a2.528,2.528,0,0,0-2.07,0c-.384.23-.9,1.985-1.495,2.423a2.582,2.582,0,0,1-1.151.375H20.62s-1.068.01-1.386-.438c-.343-.484-.876-2.13-1.26-2.36a2.528,2.528,0,0,0-2.07,0c-.843.345-2.185,1.112-2.185,1.112l-.153.421A18.607,18.607,0,0,0,10,25.179c0,5.9,3.22,3.681,4.1,2.377s3.259-3.577,4.524-3.577h6.748c1.265,0,3.642,2.274,4.524,3.577S34,31.084,34,25.179A18.607,18.607,0,0,0,30.434,14.751ZM22,4A18,18,0,1,0,40,22,18.021,18.021,0,0,0,22,4m0-2A20,20,0,1,1,2,22,20,20,0,0,1,22,2Zm4,23.5h0a.5.5,0,0,0-.5-.5h-7a.5.5,0,0,0-.5.5h0a.5.5,0,0,0,.5.5h7A.5.5,0,0,0,26,25.5Z\",minFanSpeedValue:4900,maxFanSpeedValue:5500,defaultFanSpeedValue:5200}],f={category:p.ca"
+    },
+    {
+      "source": "709-main.bb0dd1873a58a987c63a.js",
+      "claim": "Exact MW preset ranges",
+      "startByte": 141300,
+      "endByte": 145860,
+      "segmentSha256": "ABD22B375E3383E245971F01692401F4A64ABA36D96C46F308A84FAC95C5E14E",
+      "text": "g\"}]},thxVersion:\"thxv4\"},f=[{id:1,mode:i.mNQ.Balanced_Mode,title:n.Y_1,content:n.OC,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.021,0,0,1,22,4m0-2A20,20,0,1,0,42,22,20,20,0,0,0,22,2Zm1,5H21v4h2ZM15.366,8.51l-1.732,1,2,3.464,1.732-1ZM9.51,13.634l-1,1.732,3.464,2,1-1.732ZM7,21v2h4V21Zm1.51,7.634,1,1.732,3.464-2-1-1.732Zm25.98,1.732,1-1.732-3.464-2-1,1.732ZM37,23V21H33v2Zm-1.51-7.634-1-1.732-3.464,2,1,1.732ZM30.366,9.51l-1.732-1-2,3.464,1.732,1ZM22,15s-2,10.9-2,12a2,2,0,0,0,4,0C24,25.9,22,15,22,15Z\",isShowOnBattery:!0,minFanSpeedValue:3400,maxFanSpeedValue:5200,defaultFanSpeedValue:4100},{id:2,mode:i.mNQ.Silent_Mode,title:n.Blt,content:n.REQ,icon:\"M20,2A18,18,0,1,0,38,20,18,18,0,0,0,20,2m0-2A20,20,0,1,1,0,20,20,20,0,0,1,20,0M15,20a5.142,5.142,0,0,0,.05.69A9.39,9.39,0,0,1,10,19.97a9.931,9.931,0,0,1,1.54-5.29,11.4,11.4,0,0,0,3.59,4.17A5.428,5.428,0,0,0,15,20m.74,2.62a11.277,11.277,0,0,1-5.49-.4,9.965,9.965,0,0,0,2.65,4.82,9.342,9.342,0,0,0,4.09-3.05,4.967,4.967,0,0,1-1.25-1.37m2.04-12.37a9.965,9.965,0,0,0-4.82,2.65,9.342,9.342,0,0,0,3.05,4.09,4.967,4.967,0,0,1,1.37-1.25,11.228,11.228,0,0,1,.4-5.49m2.91,14.7A5.142,5.142,0,0,1,20,25a5.428,5.428,0,0,1-1.15-.13,11.4,11.4,0,0,1-4.17,3.59A9.931,9.931,0,0,0,19.97,30a9.418,9.418,0,0,0,.72-5.05M20.03,10a9.418,9.418,0,0,0-.72,5.05A5.142,5.142,0,0,1,20,15a5.428,5.428,0,0,1,1.15.13,11.4,11.4,0,0,1,4.17-3.59A9.931,9.931,0,0,0,20.03,10m7.01,17.1a9.342,9.342,0,0,0-3.05-4.09,4.967,4.967,0,0,1-1.37,1.25,11.228,11.228,0,0,1-.4,5.49,9.965,9.965,0,0,0,4.82-2.65m.06-14.14a9.342,9.342,0,0,0-4.09,3.05,4.967,4.967,0,0,1,1.25,1.37,11.228,11.228,0,0,1,5.49.4,9.965,9.965,0,0,0-2.65-4.82m-2.15,6.35A5.142,5.142,0,0,1,25,20a5.428,5.428,0,0,1-.13,1.15,11.4,11.4,0,0,1,3.59,4.17A9.931,9.931,0,0,0,30,20.03a9.418,9.418,0,0,0-5.05-.72M20,19a1,1,0,1,0,1,1,1,1,0,0,0-1-1m0-2a3,3,0,1,1-3,3,3,3,0,0,1,3-3\",minFanSpeedValue:3400,maxFanSpeedValue:5200,defaultFanSpeedValue:4100},{id:3,mode:i.mNQ.Performance_Mode,title:n._TM,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.021,0,0,1,22,4m0-2A20,20,0,1,0,42,22,20,20,0,0,0,22,2ZM11.214,28.884A12.122,12.122,0,0,1,10.9,16.412a11.894,11.894,0,0,1,4.487-4.446,11.663,11.663,0,0,1,6.025-1.495,11.4,11.4,0,0,1,9.837,6.281,11.273,11.273,0,0,1,1.1,5.793,10.784,10.784,0,0,1-2,5.431l4.189,2.812A15.6,15.6,0,0,0,35,14.742a15.4,15.4,0,0,0-5.776-5.77A15.143,15.143,0,0,0,21.405,7,14.949,14.949,0,0,0,13.8,9.332,14.56,14.56,0,0,0,7.042,22.757a14.253,14.253,0,0,0,2.6,7.187ZM32.9,32.025s-9.056-6.379-10.06-6.841a2,2,0,0,0-1.674,3.632C22.166,29.279,32.9,32.025,32.9,32.025Z\",minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedValue:4300},{id:4,mode:i.mNQ.Custom_Mode,title:n.DBO,content:n.lJc,icon:\"M22,4A18,18,0,1,0,40,22,18.021,18.021,0,0,0,22,4m0-2A20,20,0,1,1,2,22,20,20,0,0,1,22,2Zm9,19H28.959a6.976,6.976,0,0,0-1.34-3.2l1.452-1.453a1,1,0,1,0-1.414-1.414L26.2,16.387A6.969,6.969,0,0,0,23,15.076V13a1,1,0,0,0-2,0v2.083a6.964,6.964,0,0,0-3.18,1.322l-1.477-1.476a1,1,0,1,0-1.414,1.414l1.476,1.477A6.964,6.964,0,0,0,15.083,21H13a1,1,0,0,0,0,2h2.076a6.964,6.964,0,0,0,1.312,3.2l-1.459,1.459a1,1,0,1,0,1.414,1.414L17.8,27.618A6.971,6.971,0,0,0,21,28.959V31a1,1,0,0,0,2,0V28.966a6.981,6.981,0,0,0,3.222-1.33l1.435,1.435a1,1,0,0,0,1.414-1.414l-1.435-1.435A6.981,6.981,0,0,0,28.966,23H31a1,1,0,0,0,0-2Zm-8.979,6.042a5.021,5.021,0,1,1,5.021-5.021A5.027,5.027,0,0,1,22.021,27.042Z\",minFanSpeedValue:4e3,maxFanSpeedValue:5300,defaultFanSpeedValue:4600},{id:5,mode:i.mNQ.Battery_Saver_Mode,title:n.hSE,content:n.$up,icon:\"M20 2C23.5601 2 27.0402 3.05568 30.0003 5.03355C32.9604 7.01141 35.2675 9.82263 36.6298 13.1117C37.9922 16.4008 38.3487 20.02 37.6541 23.5116C36.9596 27.0033 35.2453 30.2106 32.7279 32.7279C30.2106 35.2453 27.0033 36.9596 23.5116 37.6541C20.02 38.3487 16.4008 37.9922 13.1117 36.6298C9.82264 35.2675 7.01142 32.9603 5.03356 30.0003C3.05569 27.0402 2.00001 23.5601 2.00001 20C2.00557 15.2278 3.90377 10.6527 7.27823 7.27822C10.6527 3.90377 15.2278 2.00556 20 2ZM20 0C16.0444 0 12.1776 1.17298 8.8886 3.37061C5.59962 5.56824 3.03617 8.69181 1.52242 12.3463C0.00866568 16.0009 -0.387401 20.0222 0.384303 23.9018C1.15601 27.7814 3.06082 31.3451 5.85787 34.1421C8.65492 36.9392 12.2186 38.844 16.0982 39.6157C19.9778 40.3874 23.9992 39.9913 27.6537 38.4776C31.3082 36.9638 34.4318 34.4004 36.6294 31.1114C38.827 27.8224 40 23.9556 40 20C40 14.6957 37.8929 9.60859 34.1421 5.85786C30.3914 2.10714 25.3043 0 20 0ZM23.214 11L16 19.4L19.429 21.2L16.786 29L24 20.6L20.571 18.8L23.214 11Z\",isShowOnBattery:!0,isAvoidShowOnPlugged:!0,minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedV"
+    },
+    {
+      "source": "597-ui-main.8d820ba2.js",
+      "claim": "Exact UI preset ranges incl Balanced 4300",
+      "startByte": 5642054,
+      "endByte": 5644304,
+      "segmentSha256": "D99AC61454844488F3D3B5E7A274D42E594193E25CBEA70846460001A1E59281",
+      "text": "mInterface:2},I=[{id:1,mode:i.mNQ.Balanced_Mode,title:a.Y_1,content:a.OC,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.021,0,0,1,22,4m0-2A20,20,0,1,0,42,22,20,20,0,0,0,22,2Zm1,5H21v4h2ZM15.366,8.51l-1.732,1,2,3.464,1.732-1ZM9.51,13.634l-1,1.732,3.464,2,1-1.732ZM7,21v2h4V21Zm1.51,7.634,1,1.732,3.464-2-1-1.732Zm25.98,1.732,1-1.732-3.464-2-1,1.732ZM37,23V21H33v2Zm-1.51-7.634-1-1.732-3.464,2,1,1.732ZM30.366,9.51l-1.732-1-2,3.464,1.732,1ZM22,15s-2,10.9-2,12a2,2,0,0,0,4,0C24,25.9,22,15,22,15Z\",isShowOnBattery:!0,isNotEnoughBattery:!0,minFanSpeedValue:4300,maxFanSpeedValue:5500,defaultFanSpeedValue:4900},{id:2,mode:i.mNQ.Productivity_Creator_Mode,title:a.w8F,content:a.Qn5,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.021,0,0,1,22,4m0-2A20,20,0,1,0,42,22,20,20,0,0,0,22,2ZM11.214,28.884A12.122,12.122,0,0,1,10.9,16.412a11.894,11.894,0,0,1,4.487-4.446,11.663,11.663,0,0,1,6.025-1.495,11.4,11.4,0,0,1,9.837,6.281,11.273,11.273,0,0,1,1.1,5.793,10.784,10.784,0,0,1-2,5.431l4.189,2.812A15.6,15.6,0,0,0,35,14.742a15.4,15.4,0,0,0-5.776-5.77A15.143,15.143,0,0,0,21.405,7,14.949,14.949,0,0,0,13.8,9.332,14.56,14.56,0,0,0,7.042,22.757a14.253,14.253,0,0,0,2.6,7.187ZM32.9,32.025s-9.056-6.379-10.06-6.841a2,2,0,0,0-1.674,3.632C22.166,29.279,32.9,32.025,32.9,32.025Z\",minFanSpeedValue:4900,maxFanSpeedValue:5500,defaultFanSpeedValue:5200},{id:3,mode:i.mNQ.Gaming_Mode,title:a.vOG,content:a.F07,icon:\"M19.266,13.475c-.6-.475,0-.475,0-.475h5.468s.6,0,0,.475c0,0-1.025,1.152-1.111,1.322a.611.611,0,0,1-.427.2H20.8a.611.611,0,0,1-.427-.2C20.291,14.627,19.266,13.475,19.266,13.475Zm11.168,1.276-.153-.421s-1.342-.767-2.185-1.112a2.528,2.528,0,0,0-2.07,0c-.384.23-.9,1.985-1.495,2.423a2.582,2.582,0,0,1-1.151.375H20.62s-1.068.01-1.386-.438c-.343-.484-.876-2.13-1.26-2.36a2.528,2.528,0,0,0-2.07,0c-.843.345-2.185,1.112-2.185,1.112l-.153.421A18.607,18.607,0,0,0,10,25.179c0,5.9,3.22,3.681,4.1,2.377s3.259-3.577,4.524-3.577h6.748c1.265,0,3.642,2.274,4.524,3.577S34,31.084,34,25.179A18.607,18.607,0,0,0,30.434,14.751ZM22,4A18,18,0,1,0,40,22,18.021,18.021,0,0,0,22,4m0-2A20,20,0,1,1,2,22,20,20,0,0,1,22,2Zm4,23.5h0a.5.5,0,0,0-.5-.5h-7a.5.5,0,0,0-.5.5h0a.5.5,0,0,0,.5.5h7A.5.5,0,0,0,26,25.5Z\",minFanSpeedValue:4900,maxFanSpeedValue:5500,defaultFanSpeedValue:5200}],O=[{id:1,mode:i.mNQ.Ba"
+    },
+    {
+      "source": "597-ui-main.8d820ba2.js",
+      "claim": "AC-only scalar manual fan slider step100",
+      "startByte": 6328580,
+      "endByte": 6331000,
+      "segmentSha256": "92B7BE30EED349BC8B72352119BAA6C3F8B2FF9285EBBA052182291C8D3E0057",
+      "text": ":!0,midTag:we.E_p,active:_,value:X,changeValue:Re})]})]})}):b!==Be.ZCP&&b!==Be.TxO?!y&&P&&(()=>{const e=V===Be.XuP.manual,{minVal:E,maxVal:t,defaultValue:a}=Oe(b);return(0,qa.jsxs)(\"div\",{className:\"fan-mode \"+(i?\"\":\"disabled\"),children:[(0,qa.jsx)(\"div\",{className:\"fan-title\",children:(0,qa.jsx)(N_.A,{text:we.qTB})}),(0,qa.jsx)(XI.A,{name:we.GMJ,id:Be.XuP.auto,extraClass:\"display_content\",active:V===Be.XuP.auto,onCheck:()=>Ie(Be.XuP.auto)}),(0,qa.jsx)(\"div\",{style:{margin:\"0px 0px 10px 30px\"},className:\"subText\",children:(0,qa.jsx)(N_.A,{text:we.okU})}),(0,qa.jsx)(XI.A,{name:we.LTT,id:Be.XuP.manual,extraClass:\"display_content\",active:V===Be.XuP.manual,onCheck:()=>Ie(Be.XuP.manual)}),(0,qa.jsx)(\"div\",{style:{margin:\"0px 0px 10px 30px\"},className:\"subText\",children:(0,qa.jsx)(N_.A,{text:we.B9b})}),(0,qa.jsxs)(\"div\",{className:\"fan-slider\",children:[(0,qa.jsx)(\"div\",{className:e?\"on\":\"\",children:(0,qa.jsx)(cs,{d:\"M7,12a5.211,5.211,0,0,0,.05.69A9.389,9.389,0,0,1,2,11.97,9.929,9.929,0,0,1,3.54,6.68a11.4,11.4,0,0,0,3.59,4.17A5.4,5.4,0,0,0,7,12Zm.74,2.62a11.274,11.274,0,0,1-5.49-.4A9.963,9.963,0,0,0,4.9,19.04a9.342,9.342,0,0,0,4.09-3.05A4.955,4.955,0,0,1,7.74,14.62ZM9.78,2.25A9.963,9.963,0,0,0,4.96,4.9,9.342,9.342,0,0,0,8.01,8.99,4.955,4.955,0,0,1,9.38,7.74,11.231,11.231,0,0,1,9.78,2.25Zm2.91,14.7A5.212,5.212,0,0,1,12,17a5.4,5.4,0,0,1-1.15-.13,11.4,11.4,0,0,1-4.17,3.59A9.929,9.929,0,0,0,11.97,22,9.412,9.412,0,0,0,12.69,16.95ZM12.03,2a9.412,9.412,0,0,0-.72,5.05A5.211,5.211,0,0,1,12,7a5.4,5.4,0,0,1,1.15.13,11.4,11.4,0,0,1,4.17-3.59A9.929,9.929,0,0,0,12.03,2Zm7.01,17.1a9.342,9.342,0,0,0-3.05-4.09,4.955,4.955,0,0,1-1.37,1.25,11.231,11.231,0,0,1-.4,5.49A9.963,9.963,0,0,0,19.04,19.1ZM19.1,4.96a9.342,9.342,0,0,0-4.09,3.05,4.955,4.955,0,0,1,1.25,1.37,11.231,11.231,0,0,1,5.49.4A9.963,9.963,0,0,0,19.1,4.96Zm-2.15,6.35A5.212,5.212,0,0,1,17,12a5.4,5.4,0,0,1-.13,1.15,11.4,11.4,0,0,1,3.59,4.17A9.929,9.929,0,0,0,22,12.03,9.412,9.412,0,0,0,16.95,11.31ZM12,11a1,1,0,1,0,1,1,1,1,0,0,0-1-1m0-2a3,3,0,1,1-3,3,3,3,0,0,1,3-3Z\",width:20,height:20,transformX:-2,transformY:-2,fill:\"rgba(253, 89, 17, 1)\"})}),(0,qa.jsx)(ls.A,{min:E,max:t,step:100,minTag:\"\",maxTag:\"\",value:$,active:e&&i,changeValue:re}),(0,qa.jsx)(\"div\",{className:e?\"on\":\"\",children:(0,qa.jsx)(cs,{d:\"M-3,12a5.211,5.211,0,0,0,.05.69A9.389,9.389,0,0,1-8,11.97,9.929,9.929,0,0,1-6.46,6.68a11.4,11.4,0,0,0,3.59,4.17A5.4,5.4,0,0,0-3,12Zm.74,2.62a11.088,"
+    },
+    {
+      "source": "709-main.bb0dd1873a58a987c63a.js",
+      "claim": "Exact custom manual feature activation",
+      "startByte": 161650,
+      "endByte": 162430,
+      "segmentSha256": "627C2463AA9469FB9B83255A605474D65B069B664956B9F9565BB1456656B253",
+      "text": "id 0:l.js})),d.A.useFeature(\"deviceUI\",\"config\",{brightness:{hasTwoMode:!0},performance:{hasPerformanceMode:!0,hasFanSpeed:!0,hasResolution:!0,hasNativeDisplayMode:!0,hasRefreshRateForBatteryMode:!0,hasSystemDetails:!0,hasLocalDimming:!0,requireBOENotification:!0,hasAMDOverclock:!0,hasSystemMonitoringStatistics:!0,defaultACPerformanceMode:2,customModeSupportsMoreThanAuto:!0,minFanCurveCPUTemperature:40,minFanCurveGPUTemperature:30,maxFanCurveCPUTemperature:100,maxFanCurveGPUTemperature:90,dGPU:\"AMD\"},notification:{hasCustomFooter:!0},power:{hasSystemPower:!0,hasBatteryOptimizer:!0,hasBatteryChargingOverrideEnabled:!0,hasCustomColorProfile:!0},deviceSetting:{bladeSeries:11,latestBiosVersionRequired:1.04}}),d.A.useFeature(\"rzDeviceType\",\"rzDevice25LedMatrixBlade2\"),d.A.us"
+    },
+    {
+      "source": "709-main.bb0dd1873a58a987c63a.js",
+      "claim": "Custom enableAllFanCurveModes default",
+      "startByte": 158980,
+      "endByte": 159510,
+      "segmentSha256": "846797EBB6360A3F010120B496DD11296BB4AFFE47916976BF9FE1B17B79E654",
+      "text": "maximumPower\",balanced:{active:\"auto\",manualFanSpeed:4300,smartFanCurve:{activeTemperatureMode:\"cpu\",cpu:L,gpu:v}},silent:{active:\"auto\",manualFanSpeed:4100,smartFanCurve:{activeTemperatureMode:\"cpu\",cpu:M,gpu:P}},maximumPower:{active:\"auto\",manualFanSpeed:4100,smartFanCurve:{activeTemperatureMode:\"cpu\",cpu:D,gpu:w}},custom:{cpu:1,gpu:0,maxFanSpeedModeEnabled:!1,enableAllFanCurveModes:!0,active:\"auto\",manualFanSpeed:4200,smartFanCurve:{activeTemperatureMode:\"cpu\",cpu:D,gpu:w}}},battery:{mode:\"balanced\",balanced:{active:\"auto"
+    },
+    {
+      "source": "709-ui-2915.4e513855.chunk.js",
+      "claim": "Preset and battery fixed/manual gating",
+      "startByte": 154100,
+      "endByte": 156620,
+      "segmentSha256": "FAADC3297028F5ADC85981023DB751AD029A1C494D6EC031186D7E372E684BB4",
+      "text": "Settings:{showInRPM:_,showInFahrenheit:v,currentPoint:C}}=(0,f.useSelector)(e=>e.performanceReducer),S=(0,g.useMemo)(()=>x?\"battery\":\"plugged\",[x]),E=(0,g.useMemo)(()=>u&&u[S].mode||Xs.Fo.BALANCED,[u,S]),M=(0,g.useMemo)(()=>{var e;return(null===u||void 0===u||null===(e=u[S])||void 0===e?void 0:e.mode)||\"balanced\"},[S,u]),A=(0,g.useMemo)(()=>{var e;return(null===u||void 0===u||null===(e=u.battery)||void 0===e||!e.batterySaver||\"battery\"!==S||M===Xs.Fo.BATTERY_SAVER)&&\"battery\"===S},[S,M,null===u||void 0===u||null===(l=u.battery)||void 0===l?void 0:l.batterySaver]),w=(0,g.useMemo)(()=>{var e,t,s;return M===Xs.Fo.CUSTOM&&(null===(e=null===u||void 0===u||null===(t=u[S])||void 0===t||null===(s=t.custom)||void 0===s?void 0:s.enableAllFanCurveModes)||void 0===e||e)},[u,S,M]),y=(0,g.useMemo)(()=>{switch(E){case Xs.Fo.BALANCED:case Xs.Fo.QUIET:case Xs.Fo.PERFORMANCE:case Xs.Fo.TURBO:return!1;case Xs.Fo.BATTERY_SAVER:return!0;case Xs.Fo.CUSTOM:return!w;default:return!0}},[E]),D=(0,g.useMemo)(()=>{var e;return(null===(e=u[S])||void 0===e?void 0:e[M])||{}},[S,M,u]),b=(0,g.useMemo)(()=>D.active,[D]),R=(0,g.useMemo)(()=>{var e,t;return u?(null===(e=u[S])||void 0===e||null===(t=e[M])||void 0===t?void 0:t.smartFanCurve)||{}:(console.warn(\"Performance object is undefined\"),{})},[u,M,S]);console.log(\"Redux state:\",{performance:u,powerMode:S,activePerformanceMode:M,smartFanCurve:R});const T=async e=>{if(e!==(null===R||void 0===R?void 0:R.activeTemperatureMode))try{h({type:Ie.YRh,payload:{mode:M,isBattery:x,curve:{...R,activeTemperatureMode:e}}})}catch(t){console.error(\"Failed to update target:\",t)}},O=(0,g.useCallback)((e,t)=>{h({type:Ie.wW6,payload:{type:e,value:t}})},[h]),j=async e=>{try{h({type:Ie.ylr,payload:{fanMode:e,isBatteryMode:x}})}catch(t){console.error(\"Failed to update fan mode:\",t)}},P=(0,g.useCallback)(e=>{if(!Array.isArray(e))return void console.error(\"Settings is not an array:\",e);console.log(\"Updating curve with:\",e);const t={...R,activeTemperatureMode:R.activeTemperatureMode,[R.activeTemperatureMode]:e};h({type:Ie.YRh,payload:{mode:M,isBattery:x,curve:t}})},[h,R,M,x]);(0,g.useImperativeHandle)(r,()=>({setLanguage:m})),(0,g.useEffect)(()=>{m(p)},[p,m]);const I=(0,g.useCallback)(()=>{m(e=>\"en\"===e?\"es\":\"en\")},[m]);(0,g.useEffect)(()=>{(y&&b!==Xs.l8.Auto||A&&b===Xs.l8.Smart)&&h({type:Ie.ylr,payload:{fanMode:Xs.l8.Auto,isBatteryMode:x}})},[y,A,b,h,x]);const k=(0,g.useMemo)(()=>{var e,s,i;if(!t||!R)return!1;const a=null===(e=t[S])||void 0===e?void 0:e[M];if(!a)return!1;const o=R[n"
+    },
+    {
+      "source": "709-ui-2915.4e513855.chunk.js",
+      "claim": "Fixed target UI step100; battery smart hidden",
+      "startByte": 158400,
+      "endByte": 160002,
+      "segmentSha256": "82376AEA1E2AA21D9D033709F9AB2144B7780B97866E86D422FC42B2DB0FE3C5",
+      "text": ")(\"div\",{className:Rs,children:[(0,N.jsxs)(\"div\",{className:Ds,children:[(0,N.jsx)(qs,{id:`radio_${Xs.l8.Auto}`,name:String(Xs.l8.Auto),customName:d(Xs.FN[0].label),active:b===Xs.l8.Auto,onCheck:j}),(0,N.jsx)(\"div\",{className:Ts,children:d(Xs.FN[0].description)})]}),(0,N.jsxs)(\"div\",{className:y||A?bs:Ds,children:[(0,N.jsx)(qs,{id:`radio_${Xs.l8.Fixed}`,name:String(Xs.l8.Fixed),customName:d(Xs.FN[1].label),active:b===Xs.l8.Fixed,onCheck:j,disabled:y}),(0,N.jsx)(\"div\",{className:Ts,children:d(Xs.FN[1].description)}),b===Xs.l8.Fixed&&(0,N.jsx)(\"div\",{className:Os,children:(0,N.jsx)(si,{minSpeed:e.min,maxSpeed:e.max,step:100,value:D.manualFanSpeed,onChange:async e=>{try{h({type:Ie.b_8,payload:{manualFanSpeed:e,isBatteryMode:x}})}catch(t){console.error(\"Failed to update fixed speed:\",t)}},disabled:b!==Xs.l8.Fixed})})]}),!x&&(0,N.jsxs)(\"div\",{className:y?bs:Ds,children:[(0,N.jsx)(qs,{id:`radio_${Xs.l8.Smart}`,name:String(Xs.l8.Smart),customName:d(Xs.FN[2].label),active:b===Xs.l8.Smart,onCheck:j,disabled:y}),(0,N.jsx)(\"div\",{className:Ts,children:d(Xs.FN[2].description)})]})]}),b===Xs.l8.Smart&&!y&&!A&&(0,N.jsxs)(N.Fragment,{children:[(0,N.jsx)(\"div\",{className:js,children:(0,N.jsx)(\"button\",{className:Ps,onClick:L,disabled:!k,children:(0,N.jsx)(Ui,{})})}),(0,N.jsx)(wi,{xAxis:i,yAxis:a,xUnit:v?\"°F\":\"°C\",yUnit:_?\"RPM\":\"%\",initValues:V,onChange:P,width:820,height:410,xPadding:75,yPadding:75,cpuGpuOffset:o,fanSpeedRange:{min:e.min,max:e.max},enablePointAddDelete:n,hideGPULine:!0,renderXLabel:()=>(0,N.jsx)(\"div\",{className:`${Ls}`,children:(0,N.jsxs)(\"div\",{className:Vs,children:[(0,"
+    },
+    {
+      "source": "709-ui-2915.50cc8c18.chunk.css",
+      "claim": "Disabled class actually blocks pointer input",
+      "startByte": 25420,
+      "endByte": 25540,
+      "segmentSha256": "1A004F62413FE9469A09C2A9E8CF118B3F9A00E5732F1206069EE5DA2B2DC2CB",
+      "text": ".FanCurveModes_radio-container-disabled__JUsBt{opacity:.5;pointer-events:none}.FanCurveModes_fan-mode-radio__fEEoc{text-"
+    },
+    {
+      "source": "597-6737.6da70458ec9e64b00f37.js",
+      "claim": "Fresh preset0D83 metadata overrides declared defaults",
+      "startByte": 1226854,
+      "endByte": 1227814,
+      "segmentSha256": "33E3F8332FCCDD285268C317F783F35C8F12A08E84715A4C049B039608490B66",
+      "text": "id 0,void 0,void 0,(function*(){const e=P.jf.rzDevice,t=yield(0,mt._$)(),i=[],n=[];L.SupportedPerformanceModes.forEach((e=>i.push(e)));for(const o of i){let i;for(const n of t){const{profileId:t,fanMode:r,fanModeValue:a}=Hi.A.getPerformanceFanModeProfile(n,o.mode,\"auto\");yield e.setThermalFanMode(t,n,r,a).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)})),i=yield e.getThermalFanInformation(0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"getThermalFanInformation\",e)}))}void 0!==i&&(o.minFanSpeedValue=100*i.jsonData.B,o.defaultFanSpeedValue=100*i.jsonData.D,o.maxFanSpeedValue=100*i.jsonData.F,0!==o.minFanSpeedValue&&0!==o.defaultFanSpeedValue&&0!==o.maxFanSpeedValue&&n.push({mode:o.mode,min:o.minFanSpeedValue,default:o.defaultFanSpeedValue,max:o.maxFanSpeedValue}))}at.A.fanValues=n})),po=()=>Mn(void 0,void 0,void 0,(function*(){var e;let t=!1,i=1;const n=yield lt.A.systemSKU;let o=!1;const "
+    },
+    {
+      "source": "709-6737.d34a3f9a638030f35c6a.js",
+      "claim": "Fresh preset0D83 metadata overrides declared defaults",
+      "startByte": 1242954,
+      "endByte": 1243914,
+      "segmentSha256": "9DFBB8D7C70DBD14A0EE061F44379A03039E2FCD3F12804E78208D5FE8D9803F",
+      "text": "n(void 0,void 0,void 0,(function*(){const e=P.jf.rzDevice,t=yield(0,mt._$)(),i=[],n=[];L.SupportedPerformanceModes.forEach((e=>i.push(e)));for(const o of i){let i;for(const n of t){const{profileId:t,fanMode:r,fanModeValue:a}=Ki.A.getPerformanceFanModeProfile(n,o.mode,\"auto\");yield e.setThermalFanMode(t,n,r,a).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"setThermalFanMode\",e)})),i=yield e.getThermalFanInformation(0).catch((e=>{console.warn(\"[%s] [%s]\",(new Date).toLocaleString(),\"getThermalFanInformation\",e)}))}void 0!==i&&(o.minFanSpeedValue=100*i.jsonData.B,o.defaultFanSpeedValue=100*i.jsonData.D,o.maxFanSpeedValue=100*i.jsonData.F,0!==o.minFanSpeedValue&&0!==o.defaultFanSpeedValue&&0!==o.maxFanSpeedValue&&n.push({mode:o.mode,min:o.minFanSpeedValue,default:o.defaultFanSpeedValue,max:o.maxFanSpeedValue}))}at.A.fanValues=n})),Io=()=>Ln(void 0,void 0,void 0,(function*(){const e=P.jf.rzDevice,t={supportedFlag:1,total:2};try{const"
+    },
+    {
+      "source": "597-6737.6da70458ec9e64b00f37.js",
+      "claim": "Targetclass1 RPMdiv100;profile1;auto0/manual1",
+      "startByte": 1873906,
+      "endByte": 1874496,
+      "segmentSha256": "F1ACCBB3EF2DD34FE48A8765BA96FF59D3D96C7B1B5B7C9885CCA470EB34B5D3",
+      "text": "e:o.auM,payload:i},!0)}},50779:(e,t,i)=>{\"use strict\";i.d(t,{A:()=>r});var n=i(3327);const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},25434:(e,t,i)=>{\"use strict\";i.d(t,{L:()=>n});const n=e=>{const t=e.outputType;return\"object\"==typeof e[t]&&0="
+    },
+    {
+      "source": "709-6737.d34a3f9a638030f35c6a.js",
+      "claim": "Targetclass1 RPMdiv100;profile1;auto0/manual1",
+      "startByte": 2293020,
+      "endByte": 2293610,
+      "segmentSha256": "615C43D37604B122ED0B06A4C1BCCDC034830C6276EDB6389B7CA49466E27711",
+      "text": "nputID===i.inputID))));var i}}},50779:(e,t,i)=>{\"use strict\";i.d(t,{A:()=>r});var n=i(3327);const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},25434:(e,t,i)=>{\"use strict\";i.d(t,{L:()=>n});const n=e=>{const t=e.outputType;return\"object\"==typeof e"
+    },
+    {
+      "source": "597-rzDevice25.ae57bbfa911460c03510.js",
+      "claim": "GET0D81 SET0D01 selectors;mode0D82/02;range0D83 BDF indices",
+      "startByte": 60400,
+      "endByte": 62950,
+      "segmentSha256": "73DA360333872770AD4AA88ECF266DFC0617EC699EA8415E4C7C94291C1F7F7E",
+      "text": "etSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],thermalFanSpeed:t.data[2]})},l=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Ny[1],commandId:i.Ny[2],commandDesc:i.JK});const r=new Uint8Array(i.Ny[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.Ny,i.JK,r);return u(a),a})),m=(t,n,e,r)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===r||isNaN(n)||isNaN(e)||isNaN(r))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.t[1],commandId:i.t[2],commandDesc:i.jH});const a=new Uint8Array(i.t[0]);a[0]=n,a[1]=e,a[2]=r;const s=yield t.sendCommand(i.t,i.jH,a);return console.log(`setThermalFanSpeed classId:${n}, thermalId:${e}, thermalFanSpeed:${r}`),u(s),s})),v=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],fanMode:t.data[2],fanModeEnum:a.np(r.IH,t.data[2]),fanModeValue:t.data[3]})},S=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.tI[1],commandId:i.tI[2],commandDesc:i.Bu});const r=new Uint8Array(i.tI[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.tI,i.Bu,r);return v(a),a})),h=(t,n,e,r,c=0)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===r||void 0===c||isNaN(n)||isNaN(e)||isNaN(r)||isNaN(c))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.ZK[1],commandId:i.ZK[2],commandDesc:i.F8});const s=new Uint8Array(i.ZK[0]);s[0]=n,s[1]=e,s[2]=r,s[3]=c;const u=yield t.sendCommand(i.ZK,i.F8,s);return yield a.yy(200),console.log(`setThermalFanMode classId:${n}, thermalId:${e}, fanMode:${r}, fanModeValue:${c}`),v(u),u})),f=(t,n)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||isNaN(n))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Uo[1],commandId:i.Uo[2],commandDesc:i.yz});const e=new Uint8Array(i.Uo[0]);e[0]=n;const r=yield t.sendCommand(i.Uo,i.yz,e);return(t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],GPU:a.Jz(t.data[1],t.data[2]),VRAM:a.Jz(t.data[3],t.data[4]),A:t.data[5],B:t.data[6],C:t.data[7],D:t.data[8],E:t.data[9],F:t.data[10],G:t.data[11],thermalSampling:a.Jz(t.data[1],t.data[2]),hysteresis:t.data[3],fanUpdate:a.Jz(t.data[4],t.data[5]),fanMaxDelta:a.Jz(t.data[6],t.data[7])})})(r),r})),A=(t,n,e,r,c,u=-1)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===r||void 0===c||isN"
+    },
+    {
+      "source": "709-rzDevice25.d532642d8de7a9cfcf5d.js",
+      "claim": "GET0D81 SET0D01 selectors;mode0D82/02;range0D83 BDF indices",
+      "startByte": 60404,
+      "endByte": 62954,
+      "segmentSha256": "73DA360333872770AD4AA88ECF266DFC0617EC699EA8415E4C7C94291C1F7F7E",
+      "text": "etSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],thermalFanSpeed:t.data[2]})},l=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Ny[1],commandId:i.Ny[2],commandDesc:i.JK});const r=new Uint8Array(i.Ny[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.Ny,i.JK,r);return u(a),a})),m=(t,n,e,r)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===r||isNaN(n)||isNaN(e)||isNaN(r))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.t[1],commandId:i.t[2],commandDesc:i.jH});const a=new Uint8Array(i.t[0]);a[0]=n,a[1]=e,a[2]=r;const s=yield t.sendCommand(i.t,i.jH,a);return console.log(`setThermalFanSpeed classId:${n}, thermalId:${e}, thermalFanSpeed:${r}`),u(s),s})),v=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],thermalId:t.data[1],fanMode:t.data[2],fanModeEnum:a.np(r.IH,t.data[2]),fanModeValue:t.data[3]})},S=(t,n,e)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.tI[1],commandId:i.tI[2],commandDesc:i.Bu});const r=new Uint8Array(i.tI[0]);r[0]=n,r[1]=e;const a=yield t.sendCommand(i.tI,i.Bu,r);return v(a),a})),h=(t,n,e,r,c=0)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===r||void 0===c||isNaN(n)||isNaN(e)||isNaN(r)||isNaN(c))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.ZK[1],commandId:i.ZK[2],commandDesc:i.F8});const s=new Uint8Array(i.ZK[0]);s[0]=n,s[1]=e,s[2]=r,s[3]=c;const u=yield t.sendCommand(i.ZK,i.F8,s);return yield a.yy(200),console.log(`setThermalFanMode classId:${n}, thermalId:${e}, fanMode:${r}, fanModeValue:${c}`),v(u),u})),f=(t,n)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||isNaN(n))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Uo[1],commandId:i.Uo[2],commandDesc:i.yz});const e=new Uint8Array(i.Uo[0]);e[0]=n;const r=yield t.sendCommand(i.Uo,i.yz,e);return(t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={classId:t.data[0],GPU:a.Jz(t.data[1],t.data[2]),VRAM:a.Jz(t.data[3],t.data[4]),A:t.data[5],B:t.data[6],C:t.data[7],D:t.data[8],E:t.data[9],F:t.data[10],G:t.data[11],thermalSampling:a.Jz(t.data[1],t.data[2]),hysteresis:t.data[3],fanUpdate:a.Jz(t.data[4],t.data[5]),fanMaxDelta:a.Jz(t.data[6],t.data[7])})})(r),r})),A=(t,n,e,r,c,u=-1)=>s(void 0,void 0,void 0,(function*(){if(void 0===n||void 0===e||void 0===r||void 0===c||isN"
+    },
+    {
+      "source": "709-6737.d34a3f9a638030f35c6a.js",
+      "claim": "BatteryBalanced6 constant; BalancedAC0; CPUDefault1",
+      "startByte": 2296950,
+      "endByte": 2297200,
+      "segmentSha256": "F24A17940B9FBB58285CB0F7F805494ED11D0483EAF9BC60CA5375EDEAD980D8",
+      "text": ",power:Q}},additionalDeviceFirmwareInfo:V}=(0,g.i)(),Y=6,j=0,W=1,z=0;var $;let J;!function(e){e[e.normal=0]=\"normal\",e[e.driver=3]=\"driver\"}($||($={}));const q=()=>K(void 0,void 0,void 0,(function*(){var e;const t=a.jf.rzDevice;if(void 0===J)if(d.A.r"
+    },
+    {
+      "source": "709-6737.d34a3f9a638030f35c6a.js",
+      "claim": "Actual mode/manual setter routes BatteryBalanced6 and supports Custom manual",
+      "startByte": 1853132,
+      "endByte": 1855422,
+      "segmentSha256": "ACE0CE8EEA2E4EE07AC4A033F3C649CCD8DFC03B9D471A03E58DA7B91FCE056B",
+      "text": "t:!1,error:null,value:null}),g.value={params:Object.assign({},n)};try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const c=yield(0,d.FI)();y.A.isLowPower=c;const u=yield p.A.isOnBatteryPower;if((null==Me?void 0:Me.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode),i!==r.mNQ.Custom_Mode)(null==Me?void 0:Me.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Ge.maxFanSpeedMode,Ge.disabled)),yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>be(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield A.setThermalFanMode(o,n,d.jM,a):!u&&c?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield A.setThermalFanMode(o,n,d.KB,a)):yield A.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield A.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>be(this,void 0,void 0,(function*(){const o=(null==Me?void 0:Me.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&c)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield A.setThermalFanMode(r,n,d.KB,0);else if(yield A.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield A.setThermalFanSpeed(e,n,i)}}))))),Me.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Ge.maxFanSpeedModeEnabled:Ge.disabled;yield(0,d._w)(Ge.maxFanSpeedMode,e)}if(yield A.setOverClockingMode(i),i===r.mNQ.Custom_Mode)if(c)yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>be(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(yield A.setThermalFanMode(o,n,d.KB,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield A.setThermalFanSpeed(e,n,i)}})))));else if(!u)if(o)y"
+    },
+    {
+      "source": "597-6737.6da70458ec9e64b00f37.js",
+      "claim": "Actual nonCustom mode/manual setter; Custom forced auto",
+      "startByte": 1557788,
+      "endByte": 1559578,
+      "segmentSha256": "B13BF5F94EA5D1D60D548B993F04A9D56B62D91A95ABB28C6698F6B398E0CD68",
+      "text": "lue:null}),f.value={params:Object.assign({},n)};try{const{performanceSettings:{active:e,manualFanSpeed:t}}=n;let{performanceMode:i}=n;const c=yield(0,d.FI)();y.A.isLowPower=c;const u=yield p.A.isOnBatteryPower;if((null==Oe?void 0:Oe.needSwitchCreatorToGamingMode)&&i===r.mNQ.Productivity_Creator_Mode&&(i=r.mNQ.Gaming_Mode),i!==r.mNQ.Custom_Mode)(null==Oe?void 0:Oe.hasMaxFanSpeedModeEnabled)&&(yield(0,d._w)(Re.maxFanSpeedMode,Re.disabled)),yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>Se(this,void 0,void 0,(function*(){const{profileId:o,fanMode:r,fanModeValue:a}=v.A.getPerformanceFanModeProfile(n,i,e);if(u&&E.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===d.KB?yield l.setThermalFanMode(o,n,d.jM,a):!u&&c?(console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:o,thermalId:n}),yield l.setThermalFanMode(o,n,d.KB,0)):yield l.setThermalFanMode(o,n,r,a),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield l.setThermalFanSpeed(e,n,i)}})))));else if(yield Promise.all(s.jf.memoryStorageCache.compactDeviceData.fanIdList.map((n=>Se(this,void 0,void 0,(function*(){const o=(null==Oe?void 0:Oe.customModeSupportsMoreThanAuto)?e:\"auto\",{profileId:r,fanMode:a,fanModeValue:s}=v.A.getPerformanceFanModeProfile(n,i,o);if(!u&&c)console.log(\"%c Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC\",{profileId:r,thermalId:n}),yield l.setThermalFanMode(r,n,d.KB,0);else if(yield l.setThermalFanMode(r,n,a,s),\"manual\"===e){const{classId:e,thermalFanSpeed:i}=v.A.getPerformanceFanSpeedProfile(n,t);yield l.setThermalFanSpeed(e,n,i)}}))))),Oe.hasMaxFanSpeedModeEnabled){const e=n.performanceSettings.maxFanSpeedModeEnabled?Re.maxFanSpeedModeEnabled:Re.disabled"
+    },
+    {
+      "source": "upstream-RazerLaptopModels.cs",
+      "claim": "Exact0255 owner report preservesCustom/Silent legacy authority; no07class action or0D88",
+      "startByte": 0,
+      "endByte": 4031,
+      "segmentSha256": "915E0C1D6AF6A37ED8D7E696A120E12D1C7AD141BFE4E26ECAB5215A92AEA79C",
+      "text": "using BladeControl.Core.Models;\n\nnamespace BladeControl.Core.Hardware;\n\n/// <summary>\n/// Every Razer laptop this app knows how to find. To add one: plug it in with\n/// nothing else Razer-branded attached, open Device Manager, find the\n/// keyboard-adjacent HID device under this vendor, and read the product id\n/// (the four hex digits after \"PID_\") from its Hardware Ids. It is safe to\n/// add an unverified entry; see <see cref=\"RazerLaptopModel.Verified\"/>.\n/// </summary>\ninternal static class RazerLaptopModels\n{\n    public static readonly IReadOnlyList<RazerLaptopModel> Known =\n    [\n        new RazerLaptopModel(0x029F, \"Razer Blade 16 (2023)\", Verified: true),\n\n        // Community-reported product ids, not verified on this app: the\n        // command set is the one documented for the Blade 16 (2023) above,\n        // tried the same way on these (see RazerCommands). A command the\n        // firmware does not implement fails cleanly rather than guessing.\n        // From sqmagellan/razer-ctl's published device-support table.\n        new RazerLaptopModel(0x028A, \"Razer Blade 15 (2022)\", Verified: false),\n        new RazerLaptopModel(0x029D, \"Razer Blade 14 (2023) Mercury\", Verified: false),\n        new RazerLaptopModel(0x02B7, \"Razer Blade 16 (2024)\", Verified: false),\n        new RazerLaptopModel(0x02C6, \"Razer Blade 16 (2025)\", Verified: false, MayHaveBatteryModes: true),\n\n        // The other Blades from 2021 on, by the product ids OpenRazer's\n        // keyboard driver lists for them. Same command set, same caveat: not\n        // verified here, and what a firmware lacks is refused cleanly.\n        new RazerLaptopModel(0x026D, \"Razer Blade 15 Advanced (Early 2021)\", Verified: false),\n        new RazerLaptopModel(0x026E, \"Razer Blade 17 Pro (Early 2021)\", Verified: false),\n        new RazerLaptopModel(0x026F, \"Razer Blade 15 Base (Early 2021)\", Verified: false),\n        new RazerLaptopModel(0x0270, \"Razer Blade 14 (2021)\", Verified: false),\n        new RazerLaptopModel(0x0276, \"Razer Blade 15 Advanced (Mid 2021)\", Verified: false),\n        new RazerLaptopModel(0x0279, \"Razer Blade 17 Pro (Mid 2021)\", Verified: false),\n        new RazerLaptopModel(0x027A, \"Razer Blade 15 Base (2022)\", Verified: false),\n        new RazerLaptopModel(0x028B, \"Razer Blade 17 (2022)\", Verified: false),\n        new RazerLaptopModel(0x028C, \"Razer Blade 14 (2022)\", Verified: false),\n        new RazerLaptopModel(0x029E, \"Razer Blade 15 (2023)\", Verified: false),\n        new RazerLaptopModel(0x02A0, \"Razer Blade 18 (2023)\", Verified: false),\n        new RazerLaptopModel(0x02B6, \"Razer Blade 14 (2024)\", Verified: false),\n        new RazerLaptopModel(0x02B8, \"Razer Blade 18 (2024)\", Verified: false),\n        new RazerLaptopModel(0x02C5, \"Razer Blade 14 (2025)\", Verified: true, MayHaveBatteryModes: true), // Confirmed by a user on their own.\n        new RazerLaptopModel(0x02C7, \"Razer Blade 18 (2025)\", Verified: false, MayHaveBatteryModes: true),\n        new RazerLaptopModel(0x02E0, \"Razer Blade 16 (2026)\", Verified: false, MayHaveBatteryModes: true),\n        new RazerLaptopModel(0x02E1, \"Razer Blade 18 (2026)\", Verified: false, MayHaveBatteryModes: true),\n\n        // Tested by a user on their own RZ09-0328: performance modes (Gaming\n        // included), Custom boost levels, lighting (its keyboard is a single\n        // zone, so no Wave) and the controller temperature work. Its firmware\n        // echoes every class 0x07\n        // read and write without acting on it, so the charge limit and the\n        // max fan flag only look accepted; max fan speed works through the\n        // older manual fan method instead (not in Silent). It has no fan speed\n        // command (0x0D88).\n        new RazerLaptopModel(\n            0x0255,\n            \"Razer Blade 15 Base (2020)\",\n            Verified: false,\n            HasChargeLimit: false,\n            MaxFan: MaxFanMethod.ManualFan,\n            HasKeyboardColor: true,\n            HasFanSpeeds: false,\n            HasWaveEffect: false),\n    ];\n}\n"
+    },
+    {
+      "source": "upstream-PerformanceMode.cs",
+      "claim": "Upstream raw enum",
+      "startByte": 0,
+      "endByte": 748,
+      "segmentSha256": "77254D5A03295FBD1FE11CA3A7F6C0F3C7E902BEB934AE688043FC9D76991CF3",
+      "text": "namespace BladeControl.Core.Models;\n\n/// <summary>\n/// Performance modes Razer Synapse offers on the Blade 16 (2023), plus the\n/// 2020 Blades' Gaming, which the laptop may still report but the app no\n/// longer offers. The values are the EC's wire\n/// bytes. The 2025 and later firmware's battery modes (Battery Saver 3,\n/// Battery Balanced 6) are sent and read as Silent and Balanced on battery\n/// (see <see cref=\"Services.PerformanceService\"/>); Hyperboost is left out.\n/// </summary>\ninternal enum PerformanceMode : byte\n{\n    Balanced = 0,\n\n    // The 2020 Blades' high-performance mode (Synapse called it Gaming).\n    // Not offered any more: a saved Gaming profile is applied as Balanced.\n    Gaming = 1,\n\n    Custom = 4,\n    Silent = 5\n}\n"
+    },
+    {
+      "source": "709-ui-main.fd91712e.js",
+      "claim": "Exact UI ranges, all five preset entries",
+      "startByte": 1074711,
+      "endByte": 1079711,
+      "segmentSha256": "07E18E1FC4C26F2F84169F69BCAF9ECEDEAFCABD12144937CB84222158C89D5D",
+      "text": "ers/detail/a_id/15088\",WAVE_DIRECTION:\"LeftRight\",category:\"SYSTEM\",supportsHyperBoost:!1,thxVersion:\"thxv4\",dynamicBatterySaverSupported:!0},L=[{id:1,mode:i.mNQ.Balanced_Mode,title:E.Y_1,content:E.OC,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.021,0,0,1,22,4m0-2A20,20,0,1,0,42,22,20,20,0,0,0,22,2Zm1,5H21v4h2ZM15.366,8.51l-1.732,1,2,3.464,1.732-1ZM9.51,13.634l-1,1.732,3.464,2,1-1.732ZM7,21v2h4V21Zm1.51,7.634,1,1.732,3.464-2-1-1.732Zm25.98,1.732,1-1.732-3.464-2-1,1.732ZM37,23V21H33v2Zm-1.51-7.634-1-1.732-3.464,2,1,1.732ZM30.366,9.51l-1.732-1-2,3.464,1.732,1ZM22,15s-2,10.9-2,12a2,2,0,0,0,4,0C24,25.9,22,15,22,15Z\",isShowOnBattery:!0,minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedValue:4300},{id:2,mode:i.mNQ.Silent_Mode,title:E.Blt,content:E.REQ,icon:\"M20,2A18,18,0,1,0,38,20,18,18,0,0,0,20,2m0-2A20,20,0,1,1,0,20,20,20,0,0,1,20,0M15,20a5.142,5.142,0,0,0,.05.69A9.39,9.39,0,0,1,10,19.97a9.931,9.931,0,0,1,1.54-5.29,11.4,11.4,0,0,0,3.59,4.17A5.428,5.428,0,0,0,15,20m.74,2.62a11.277,11.277,0,0,1-5.49-.4,9.965,9.965,0,0,0,2.65,4.82,9.342,9.342,0,0,0,4.09-3.05,4.967,4.967,0,0,1-1.25-1.37m2.04-12.37a9.965,9.965,0,0,0-4.82,2.65,9.342,9.342,0,0,0,3.05,4.09,4.967,4.967,0,0,1,1.37-1.25,11.228,11.228,0,0,1,.4-5.49m2.91,14.7A5.142,5.142,0,0,1,20,25a5.428,5.428,0,0,1-1.15-.13,11.4,11.4,0,0,1-4.17,3.59A9.931,9.931,0,0,0,19.97,30a9.418,9.418,0,0,0,.72-5.05M20.03,10a9.418,9.418,0,0,0-.72,5.05A5.142,5.142,0,0,1,20,15a5.428,5.428,0,0,1,1.15.13,11.4,11.4,0,0,1,4.17-3.59A9.931,9.931,0,0,0,20.03,10m7.01,17.1a9.342,9.342,0,0,0-3.05-4.09,4.967,4.967,0,0,1-1.37,1.25,11.228,11.228,0,0,1-.4,5.49,9.965,9.965,0,0,0,4.82-2.65m.06-14.14a9.342,9.342,0,0,0-4.09,3.05,4.967,4.967,0,0,1,1.25,1.37,11.228,11.228,0,0,1,5.49.4,9.965,9.965,0,0,0-2.65-4.82m-2.15,6.35A5.142,5.142,0,0,1,25,20a5.428,5.428,0,0,1-.13,1.15,11.4,11.4,0,0,1,3.59,4.17A9.931,9.931,0,0,0,30,20.03a9.418,9.418,0,0,0-5.05-.72M20,19a1,1,0,1,0,1,1,1,1,0,0,0-1-1m0-2a3,3,0,1,1-3,3,3,3,0,0,1,3-3\",minFanSpeedValue:2200,maxFanSpeedValue:3800,defaultFanSpeedValue:3e3},{id:3,mode:i.mNQ.Performance_Mode,title:E._TM,icon:\"M22,4A18,18,0,1,1,4,22,18.021,18.021,0,0,1,22,4m0-2A20,20,0,1,0,42,22,20,20,0,0,0,22,2ZM11.214,28.884A12.122,12.122,0,0,1,10.9,16.412a11.894,11.894,0,0,1,4.487-4.446,11.663,11.663,0,0,1,6.025-1.495,11.4,11.4,0,0,1,9.837,6.281,11.273,11.273,0,0,1,1.1,5.793,10.784,10.784,0,0,1-2,5.431l4.189,2.812A15.6,15.6,0,0,0,35,14.742a15.4,15.4,0,0,0-5.776-5.77A15.143,15.143,0,0,0,21.405,7,14.949,14.949,0,0,0,13.8,9.332,14.56,14.56,0,0,0,7.042,22.757a14.253,14.253,0,0,0,2.6,7.187ZM32.9,32.025s-9.056-6.379-10.06-6.841a2,2,0,0,0-1.674,3.632C22.166,29.279,32.9,32.025,32.9,32.025Z\",minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedValue:4300},{id:4,mode:i.mNQ.Custom_Mode,title:E.DBO,content:E.lJc,icon:\"M22,4A18,18,0,1,0,40,22,18.021,18.021,0,0,0,22,4m0-2A20,20,0,1,1,2,22,20,20,0,0,1,22,2Zm9,19H28.959a6.976,6.976,0,0,0-1.34-3.2l1.452-1.453a1,1,0,1,0-1.414-1.414L26.2,16.387A6.969,6.969,0,0,0,23,15.076V13a1,1,0,0,0-2,0v2.083a6.964,6.964,0,0,0-3.18,1.322l-1.477-1.476a1,1,0,1,0-1.414,1.414l1.476,1.477A6.964,6.964,0,0,0,15.083,21H13a1,1,0,0,0,0,2h2.076a6.964,6.964,0,0,0,1.312,3.2l-1.459,1.459a1,1,0,1,0,1.414,1.414L17.8,27.618A6.971,6.971,0,0,0,21,28.959V31a1,1,0,0,0,2,0V28.966a6.981,6.981,0,0,0,3.222-1.33l1.435,1.435a1,1,0,0,0,1.414-1.414l-1.435-1.435A6.981,6.981,0,0,0,28.966,23H31a1,1,0,0,0,0-2Zm-8.979,6.042a5.021,5.021,0,1,1,5.021-5.021A5.027,5.027,0,0,1,22.021,27.042Z\",minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedValue:4300},{id:5,mode:i.mNQ.Battery_Saver_Mode,title:E.hSE,content:E.$up,icon:\"M20 2C23.5601 2 27.0402 3.05568 30.0003 5.03355C32.9604 7.01141 35.2675 9.82263 36.6298 13.1117C37.9922 16.4008 38.3487 20.02 37.6541 23.5116C36.9596 27.0033 35.2453 30.2106 32.7279 32.7279C30.2106 35.2453 27.0033 36.9596 23.5116 37.6541C20.02 38.3487 16.4008 37.9922 13.1117 36.6298C9.82264 35.2675 7.01142 32.9603 5.03356 30.0003C3.05569 27.0402 2.00001 23.5601 2.00001 20C2.00557 15.2278 3.90377 10.6527 7.27823 7.27822C10.6527 3.90377 15.2278 2.00556 20 2ZM20 0C16.0444 0 12.1776 1.17298 8.8886 3.37061C5.59962 5.56824 3.03617 8.69181 1.52242 12.3463C0.00866568 16.0009 -0.387401 20.0222 0.384303 23.9018C1.15601 27.7814 3.06082 31.3451 5.85787 34.1421C8.65492 36.9392 12.2186 38.844 16.0982 39.6157C19.9778 40.3874 23.9992 39.9913 27.6537 38.4776C31.3082 36.9638 34.4318 34.4004 36.6294 31.1114C38.827 27.8224 40 23.9556 40 20C40 14.6957 37.8929 9.60859 34.1421 5.85786C30.3914 2.10714 25.3043 0 20 0ZM23.214 11L16 19.4L19.429 21.2L16.786 29L24 20.6L20.571 18.8L23.214 11Z\",isShowOnBattery:!0,isAvoidShowOnPlugged:!0,minFanSpeedValue:3300,maxFanSpeedValue:5400,defaultFanSpeedValue:4300}],M={category:d.category.toLowerCase(),vendorId:d.vendorId,family:i.oRF.CHROMA_FAMILY_7},U=[{name:E.Rb7,id:i.AoV.Ambient_Effect},{name:E.ncy,id:i.AoV.Audio_Meter_Effect},{name:E.xkP,id:i.AoV.Breathing_Effect},{name:E.ZKq,id:i.AoV.Fire_Effect},{name:E.ckz,id:i.AoV.Reactive_Effect},{name:E.NnH,id:i.AoV.Ripple_Effec"
+    },
+    {
+      "source": "709-ui-2915.4e513855.chunk.js",
+      "claim": "Exact Custom UI excludes CPUBoost3; modern fan surface chosen",
+      "startByte": 165582,
+      "endByte": 166082,
+      "segmentSha256": "D69839A4AE5A910D6D791BC2561CDCFBEB527136996DE96F04CBF91479B1D031",
+      "text": "ldren:[(0,N.jsx)(vs,{supportedPerformanceModes:h,isCPUBoost:!0,isCPUPowerLimit:!0,supportsShortcut:!0,supportMaxFanSpeedModeEnabled:!1,supportCpuVoltageOptimizer:!0,supportFixedFanSpeed:!1,supportGpuOverclocking:!0,unsupportedCpuBoostOption:!0}),(0,N.jsx)(Hi,{fanSpeedRange:u,defaultCurves:{plugged:B.PLUGGED_DEFAULT_CURVES,battery:B.BATTERY_DEFAULT_CURVES},xAxis:p,yAxis:Gi,enablePointAddDelete:!0,cpuGpuOffset:200})]}),!a&&!o||r||l?null:(0,N.jsxs)(ct.A,{direction:\"right\",children:[a&&(0,N.jsx)(ys,"
+    },
+    {
+      "source": "upstream-PerformanceService.cs",
+      "claim": "Existing exact-model ManualFan preservesmode excludesSilent",
+      "startByte": 6200,
+      "endByte": 8900,
+      "segmentSha256": "A42EEE2DA38850712064DA036AEB84BC690A8AD0A7363AA618ADE0D4071CB88B",
+      "text": "  }\n\n        var state = ReadState();\n\n        // Report what the EC says rather than what was asked for.\n        if (state.MaxFan != enabled)\n            AppLog.Error($\"The EC accepted max fan speed {(enabled ? \"on\" : \"off\")} but reports {state.MaxFan?.ToString() ?? \"unknown\"}.\");\n\n        return state;\n    }\n\n    private void SetMaxFanFlag(bool enabled)\n    {\n        // The EC rejects this command outside Custom, so it is never sent from\n        // any other mode, whatever the caller believes the mode is.\n        if (GetMode() != PerformanceMode.Custom)\n            throw new InvalidOperationException(\"Max fan speed can only be changed in Custom mode.\");\n\n        transport.SendAndConfirm(\n            RazerCommands.SetMaxFan,\n            [enabled ? MaxFanOn : MaxFanOff],\n            $\"max fan speed {(enabled ? \"on\" : \"off\")}\");\n    }\n\n    // Each fan is switched to manual (or back to automatic) by rewriting the\n    // current mode with the fan byte set, then given its fixed speed. The mode\n    // itself is left as it is.\n    private void SetManualFan(bool enabled)\n    {\n        // Silent holds the fans down whatever is asked, so Max would only look\n        // on there. Turning it off is allowed in any known mode.\n        if (GetMode() is not PerformanceMode mode || (enabled && mode == PerformanceMode.Silent))\n            throw new InvalidOperationException(\"Max fan speed is not available in this mode.\");\n\n        // The byte the EC holds, so a battery mode is rewritten as itself.\n        var wire = _lastWireMode ?? (byte)mode;\n\n        foreach (var zone in Zones)\n        {\n            transport.SendAndConfirm(\n                RazerCommands.SetPerformanceMode,\n                [0x01, zone, wire, enabled ? FanModeManual : FanModeAuto],\n                $\"fan mode {(enabled ? \"manual\" : \"automatic\")} for zone {zone}\");\n\n            if (enabled)\n            {\n                transport.SendAndConfirm(\n                    RazerCommands.SetFanRpm,\n                    [0x01, zone, ManualMaxRpmHundreds],\n                    $\"fan speed for zone {zone}\");\n            }\n        }\n    }\n\n    // Both fans manual means Max is on, both automatic that it is off.\n    private bool? ReadManualFan()\n    {\n        var cpu = ReadZoneFanMode(Zones[0]);\n        var gpu = ReadZoneFanMode(Zones[1]);\n\n        return cpu == gpu\n            ? cpu switch\n            {\n                FanModeManual => true,\n                FanModeAuto => false,\n                _ => null\n            }\n            : null;\n    }\n\n    private byte ReadZoneFanMode(byte zone) =>\n        RazerHidPacket.GetArgument(transport.Send(RazerCommands.GetPerformanceMode, [0x00, zone, 0x00, 0x00]), 3);\n\n    // 2 turns"
+    },
+    {
+      "source": "597-rzDevice25.ae57bbfa911460c03510.js",
+      "claim": "Thermal command tuples GET0D81 SET0D01 GET0D83",
+      "startByte": 70800,
+      "endByte": 71350,
+      "segmentSha256": "EE6F7F2EFCDAA4056D16AAC9D54875CA46F0AD0FAE25CC20726958B15E0C47F2",
+      "text": "[80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),S=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),h=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),f=\"Set Thermal Fan Table\",A=new Uint8Array([80,13,133]),U=(new Uint8Array([80,13,5]),\"Get Thermal Reading\"),y=new Uint8Array([7,13,134]),I=(new Uin"
+    },
+    {
+      "source": "709-rzDevice25.d532642d8de7a9cfcf5d.js",
+      "claim": "Thermal command tuples GET0D81 SET0D01 GET0D83",
+      "startByte": 70804,
+      "endByte": 71354,
+      "segmentSha256": "EE6F7F2EFCDAA4056D16AAC9D54875CA46F0AD0FAE25CC20726958B15E0C47F2",
+      "text": "[80,13,128]),i=\"Get Thermal Fan Id List\",r=new Uint8Array([3,13,129]),a=new Uint8Array([3,13,1]),d=\"Get Thermal Fan Speed\",s=\"Set Thermal Fan Speed\",c=new Uint8Array([4,13,130]),u=new Uint8Array([4,13,2]),l=\"Get Thermal Fan Mode\",m=\"Set Thermal Fan Mode\",v=new Uint8Array([12,13,131]),S=(new Uint8Array([12,13,3]),\"Get Thermal Fan Information\"),h=(new Uint8Array([80,13,132]),new Uint8Array([80,13,4])),f=\"Set Thermal Fan Table\",A=new Uint8Array([80,13,133]),U=(new Uint8Array([80,13,5]),\"Get Thermal Reading\"),y=new Uint8Array([7,13,134]),I=(new Uin"
+    }
+  ]
+}

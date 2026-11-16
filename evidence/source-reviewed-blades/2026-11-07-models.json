@@ -1731,7 +1731,7 @@
       711
     ],
     "vendorContract": "The exact command helpers return successful SET status with an optional response payload; the parser populates JSON only when response bytes are present. Echo is not mandatory.",
-    "openBladeContract": "Accept zero bytes or one exact requested byte, then require independent exact raw07/92 confirmation. Any mismatch/uncertain submission pauses writes without setter replay.",
+    "openBladeContract": "Accept zero bytes or one optional state byte without requiring an echo; the ACK is not confirmation. Require an independent exact requested raw 07/92 value. Retry only the exact pre-write raw value, at most nine reads with 250 ms between reads. Other mismatches, invalid or failed reads, cancellation and uncertain submission pause writes without setter replay. This bounded software tolerance does not establish physical firmware latency.",
     "sources": [
       {
         "product": 694,

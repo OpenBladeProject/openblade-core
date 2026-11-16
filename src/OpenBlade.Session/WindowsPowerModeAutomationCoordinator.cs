@@ -80,6 +80,7 @@ public sealed class WindowsPowerModeAutomationCoordinator : IAsyncDisposable
             // association stored, then reconcile when a preset is confirmed again.
             if (status.ControlAccess != SessionControlAccess.Active
                 || !status.DeviceVerified
+                || status.ObservationReason == DeviceObservationReason.RetainedPowerSource
                 || status.UnconfirmedWrites.Contains(DeviceSubsystem.Performance)
                 || status.ActivePowerSource is not (
                     PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)

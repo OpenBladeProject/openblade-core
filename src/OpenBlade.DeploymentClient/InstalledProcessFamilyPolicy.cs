@@ -1,4 +1,5 @@
 using System.Globalization;
+using OpenBlade.ProcessArguments;
 
 namespace OpenBlade.DeploymentClient;
 
@@ -16,7 +17,7 @@ internal static class InstalledProcessFamilyPolicy
         InstalledPayloadPaths paths, int sessionId, string? ownerSid, InstalledProcessSnapshot snapshot)
     {
         bool valid = snapshot.IsComplete && !string.IsNullOrEmpty(ownerSid);
-        List<(InstalledProcessObservation Process, Role Role, int Parent)> agents = [];
+        List<(InstalledProcessObservation Process, Role Role, int Parent, InputHelperArguments? Input)> agents = [];
         int trays = 0;
         HashSet<int> ids = [];
         foreach (InstalledProcessObservation process in snapshot.Processes)
@@ -33,9 +34,9 @@ internal static class InstalledProcessFamilyPolicy
                 && SamePath(process.Arguments[0], process.ExecutablePath);
             if (agent)
             {
-                Role role = ParseRole(process.Arguments, out int parent);
+                Role role = ParseRole(process.Arguments, out int parent, out InputHelperArguments? input);
                 valid &= role != Role.Unknown;
-                agents.Add((process, role, parent));
+                agents.Add((process, role, parent, input));
             }
             else
             {
@@ -58,27 +59,49 @@ internal static class InstalledProcessFamilyPolicy
                 && child.Process.ParentProcessId == child.Parent
                 && child.Process.ProcessId != child.Parent
                 && parents[0].Process.CreationTime < child.Process.CreationTime;
+            if (child.Role == Role.SnapTapWorker && parents.Length == 1)
+            {
+                // A Windows-hook input never owns a driver worker. The reviewed
+                // driver supervisor passes one immutable feature set to its child.
+                valid &= parents[0].Input is { Backend: InputHelperBackend.RazerDriver } supervisor
+                    && child.Input is { } worker && worker.Features == supervisor.Features;
+            }
         }
-        // Supervisors own exactly one input worker; repeated helpers are not
-        // additional primary agents, but are still an ambiguous process family.
+        // Windows SnapTap and a driver function row have separate supervisors;
+        // the driver supervisor still owns the complete requested driver set.
         valid &= agents.Where(value => value.Role != Role.Main)
-            .GroupBy(value => (value.Role, value.Parent)).All(group => group.Count() == 1);
+            .GroupBy(value => (value.Role, value.Parent,
+                Backend: value.Role == Role.SnapTapInput ? value.Input?.Backend : null))
+            .All(group => group.Count() == 1);
+        foreach (var inputs in agents.Where(value => value.Role == Role.SnapTapInput).GroupBy(value => value.Parent))
+        {
+            if (inputs.Any(value => value.Input is { Backend: InputHelperBackend.WindowsHook }))
+            {
+                // The producer transfers SnapTap ownership before switching its
+                // backend. Only driver FunctionRow can coexist with Windows SnapTap.
+                valid &= inputs.Where(value => value.Input is { Backend: InputHelperBackend.RazerDriver })
+                    .All(value => value.Input is { Features: InputHelperFeatures.FunctionRow });
+            }
+        }
         return new InstalledProcessInventory(valid, primaries, trays, helpers);
     }
 
-    private static Role ParseRole(IReadOnlyList<string> args, out int parent)
+    private static Role ParseRole(IReadOnlyList<string> args, out int parent, out InputHelperArguments? input)
     {
         parent = 0;
+        input = null;
         if (args.Count == 1)
         {
             return Role.Main;
         }
-        if (args.Count == 3 && TryParent(args[2], out parent))
+        if (InputHelperCommandLine.TryParse(args, out InputHelperArguments parsed, startIndex: 1))
         {
-            return args[1] switch
+            parent = parsed.ParentProcessId;
+            input = parsed;
+            return parsed.Mode switch
             {
-                "--snap-tap-input" => Role.SnapTapInput,
-                "--snap-tap-driver-worker" => Role.SnapTapWorker,
+                InputHelperMode.Input => Role.SnapTapInput,
+                InputHelperMode.DriverWorker => Role.SnapTapWorker,
                 _ => Role.Unknown,
             };
         }

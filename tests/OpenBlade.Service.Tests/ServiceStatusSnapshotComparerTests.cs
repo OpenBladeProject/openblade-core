@@ -5,6 +5,22 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class ServiceStatusSnapshotComparerTests
 {
+    [Fact]
+    public void ExternalPresenceAndOrdinaryCapabilityChangesArePublishedIndependently()
+    {
+        ServiceStatusSnapshot baseline = CreateStatus();
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(baseline,
+            baseline with { ExternalPowerPresent = !baseline.ExternalPowerPresent }));
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(baseline, baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                SupportsOrdinaryThermalControlOnUnclassifiedExternalPower =
+                    !baseline.Capabilities.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower,
+            },
+        }));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

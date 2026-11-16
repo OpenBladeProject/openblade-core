@@ -1347,8 +1347,8 @@
                                                             <TextBlock Text="{x:Bind TemperatureLabel, Mode=OneTime}" VerticalAlignment="Center" />
                                                             <Slider Grid.Column="1"
                                                                     MinWidth="120"
-                                                                    Minimum="2000" Maximum="5400"
-                                                                    StepFrequency="100" SnapsTo="StepValues"
+                                                                    Minimum="{x:Bind MinimumRpm, Mode=OneTime}" Maximum="{x:Bind MaximumRpm, Mode=OneTime}"
+                                                                    StepFrequency="{x:Bind StepRpm, Mode=OneTime}" SnapsTo="StepValues"
                                                                     Tag="{x:Bind Mode=OneTime}"
                                                                     Value="{Binding SpeedRpm, Mode=TwoWay, Converter={StaticResource Int32Double}}"
                                                                     PointerCaptureLost="OnFanCurvePointCommit"
@@ -1383,8 +1383,8 @@
                                                             <TextBlock Text="{x:Bind TemperatureLabel, Mode=OneTime}" VerticalAlignment="Center" />
                                                             <Slider Grid.Column="1"
                                                                     MinWidth="120"
-                                                                    Minimum="2000" Maximum="5400"
-                                                                    StepFrequency="100" SnapsTo="StepValues"
+                                                                    Minimum="{x:Bind MinimumRpm, Mode=OneTime}" Maximum="{x:Bind MaximumRpm, Mode=OneTime}"
+                                                                    StepFrequency="{x:Bind StepRpm, Mode=OneTime}" SnapsTo="StepValues"
                                                                     Tag="{x:Bind Mode=OneTime}"
                                                                     Value="{Binding SpeedRpm, Mode=TwoWay, Converter={StaticResource Int32Double}}"
                                                                     PointerCaptureLost="OnFanCurvePointCommit"

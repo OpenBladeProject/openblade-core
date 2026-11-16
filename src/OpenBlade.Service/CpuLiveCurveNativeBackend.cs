@@ -52,6 +52,8 @@ internal interface ICpuLiveCurveContextBoundFinalProof
     bool SupportsFinalCheckpoint { get; }
     bool FinalCheckpointWithContext(CpuLiveCurveNativeRequest request, CpuLiveCurveContext expected,
         uint capability, CpuLivePowerFusedCap cap);
+    bool UncappedFinalCheckpointWithContext(CpuLiveCurveNativeRequest request, CpuLiveCurveContext expected,
+        uint capability) => false;
 }
 
 // Callers supply the same retained typed session and an actual
@@ -94,7 +96,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     public Task<bool> CheckWriteAdmissionAsync(CpuLiveCurveContext context, CpuLiveCurveCommand command,
         CpuLiveCurveCommandPurpose purpose, CancellationToken token) => Start(CpuLiveCurveNativeWorkerKind.Admission, workToken =>
         {
-            if (!ValidCommand(command, purpose) || !MatchesFresh(context, workToken)) { return false; }
+            if (!ValidCommand(context, command, purpose) || !MatchesFresh(context, workToken)) { return false; }
             bool admitted = provider.CheckWriteAdmission(context, command, purpose, workToken);
             workToken.ThrowIfCancellationRequested();
             return admitted && MatchesFresh(context, workToken);
@@ -103,12 +105,12 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     public Task<bool> CheckPlanAdmissionAsync(CpuLiveCurveContext context,
         IReadOnlyList<CpuLiveCurveAdmissionCheck> checks, CancellationToken token)
     {
-        if (checks.Count is < 1 or > 36) { return Task.FromResult(false); }
+        if (context.Contract is not { } contract || checks.Count < 1 || checks.Count > 3 * contract.CoreCount) { return Task.FromResult(false); }
         var exact = checks.ToArray();
         return Start(CpuLiveCurveNativeWorkerKind.Admission, workToken =>
         {
             using var stage = Diagnostic?.BeginStage("curve complete-plan preflight");
-            if (exact.Any(check => !ValidCommand(check.Command, check.Purpose)) || !MatchesFresh(context, workToken)) { return false; }
+            if (exact.Any(check => !ValidCommand(context, check.Command, check.Purpose)) || !MatchesFresh(context, workToken)) { return false; }
             return provider.CheckPlanAdmission(context, exact, workToken) && MatchesFresh(context, workToken);
         }, false, token);
     }
@@ -149,7 +151,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
         if (result.Diagnostic?.Stage == CpuQueryStage.Cleanup || installed!.IsRevoked) { Invalidate(); }
         token.ThrowIfCancellationRequested();
         if (!Check(result.Status == CpuLiveQueryStatus.Observed, "native curve query status " + result.Status)
-            || !Check(CpuLiveCurveSnapshot.TryCreate(result.Observation) is not null, "native curve snapshot invalid"))
+            || !Check(context!.Contract == session.Contract && CpuLiveCurveSnapshot.TryCreate(session.Contract, result.Observation) is not null, "native curve snapshot invalid"))
         { return new(null, null); }
         if (!Check(provider.CompleteGetter(context!, token), "native curve context after query")) { Invalidate(); return new(null, null); }
         return new(context, result.Observation);
@@ -167,7 +169,7 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
             token = deadline.Token;
         }
         using var preparation = diagnostic?.BeginStage("curve send proof preparation");
-        if (!Check(ValidCommand(command, purpose), "curve send command shape")) { return new(CpuLiveCurveSubmission.NotSubmitted); }
+        if (!Check(expectedBefore.Contract == context.Contract && ValidCommand(context, command, purpose), "curve send command shape")) { return new(CpuLiveCurveSubmission.NotSubmitted); }
         var request = new CpuLiveCurveNativeRequest(scope, command, purpose, expectedBefore, peer);
         CpuLiveCurveWriteProof? CreateProof()
         {
@@ -222,14 +224,14 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
     private bool MatchesFresh(CpuLiveCurveContext? expected, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        return expected is { IsWellFormed: true } && provider.ReadFreshContext(token) is { IsWellFormed: true } current
+        return expected is { IsWellFormed: true } && expected.Contract == session.Contract && provider.ReadFreshContext(token) is { IsWellFormed: true } current
             && expected.MatchesHardwareContext(current);
     }
     private DeviceIdentity? ReadBoundUsb(CpuLiveCurveContext context, CancellationToken token) =>
         MatchesFresh(context, token) ? context.Identity : null;
-    private static bool ValidCommand(CpuLiveCurveCommand command, CpuLiveCurveCommandPurpose purpose) =>
-        Enum.IsDefined(purpose) && CpuLiveCurveCommand.TryDecode(CpuLiveCurveCommand.Message, command.EncodeArgument(),
-            CpuLiveCurveSnapshot.SupportedMask, out var decoded) && decoded == command
+    internal static bool ValidCommand(CpuLiveCurveContext context, CpuLiveCurveCommand command, CpuLiveCurveCommandPurpose purpose) =>
+        context.Contract is { } contract && command.Contract == contract && Enum.IsDefined(purpose)
+        && CpuLiveCurveCommand.TryCreate(contract, command.PhysicalCoreId, command.Offset, out var decoded) && decoded == command
         && (purpose != CpuLiveCurveCommandPurpose.Forward || command.Offset is >= -30 and <= 0);
     private void Invalidate() => state.Invalidate();
 
@@ -248,6 +250,18 @@ internal sealed class CpuLiveCurveNativeBackend : ICpuLiveCurveBackend
             token.ThrowIfCancellationRequested();
             return current;
         }
+        internal override bool IsUncappedFinalCheckpointCurrent(CpuLiveCurveNativeRequest exactRequest, uint capability)
+        {
+            token.ThrowIfCancellationRequested();
+            bool current = context.Contract?.UsesPhoenixProtocol == true
+                && source is ICpuLiveCurveContextBoundFinalProof { SupportsFinalCheckpoint: true } bound
+                && bound.UncappedFinalCheckpointWithContext(exactRequest, context, capability);
+            token.ThrowIfCancellationRequested();
+            return current;
+        }
+        internal override bool AdmitUncappedPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability) =>
+            context.Contract?.UsesPhoenixProtocol == true && IsReadCurrent(exactRequest)
+            && source.AdmitUncappedPowerPeer(exactRequest, capability) && IsReadCurrent(exactRequest);
         internal override bool IsSubmissionCurrent(CpuLiveCurveNativeRequest exactRequest) =>
             source.SubmissionCurrent(exactRequest) && !token.IsCancellationRequested && (deadline?.IsCurrent() ?? true);
         internal override bool IsPreparationCurrent(CpuLiveCurveNativeRequest exactRequest) =>

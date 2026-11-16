@@ -9,6 +9,230 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed partial class MainViewModelTests
 {
+    [Theory]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, false)]
+    [InlineData(null, true, false)]
+    public async Task UnclassifiedOrdinaryControlsCannotImplicitlyExitHyperBoost(
+        bool? active, bool supportsHyperBoost, bool available)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportsOrdinaryThermalControlOnUnclassifiedExternalPower = true,
+            HyperBoostAccess = supportsHyperBoost ? DeviceFeatureAccess.ReadWrite : null,
+        };
+        ServiceStatusSnapshot ready = CreateStatus(true, false, capabilities: capabilities) with
+        {
+            ActivePowerSource = PowerSource.ExternalUnknown,
+            ExternalPowerPresent = true,
+            ConfirmedState = new(PerformancePreset.Balanced, FanMode.Automatic, null, null)
+            { HyperBoostActive = active },
+            Message = $"Unclassified HB={active};cap={supportsHyperBoost}",
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, ready);
+        Assert.Equal(available, viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
+        Assert.Equal(available, viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+        Assert.Equal(available, viewModel.AvailableActivePerformanceOptions.Count > 0);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task DirectBatteryControlsUsePositiveAcPresenceWithoutChoosingProfileSlot(bool presence)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot ready = CreateStatus(true, false) with
+        {
+            ActivePowerSource = PowerSource.ExternalUnknown,
+            ExternalPowerPresent = presence,
+            ConfirmedState = new(PerformancePreset.Balanced, FanMode.Automatic,
+                new ConfirmedBatteryState(true, 80, false), null)
+            { HyperBoostActive = false },
+            Message = $"Direct battery unclassified presence={presence}",
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, ready);
+        Assert.Equal(presence, viewModel.CanAdjustChargeLimit);
+        Assert.Equal(presence, viewModel.SetChargeLimitCommand.CanExecute(80));
+        Assert.Equal(presence, viewModel.ToggleBatteryProtectionCommand.CanExecute(null));
+        Assert.Equal(presence, viewModel.ToggleFullChargeCommand.CanExecute(true));
+        Assert.False(viewModel.SaveLaptopProfileDraftCommand.CanExecute(null));
+        Assert.Equal(PowerSource.ExternalUnknown, viewModel.ActivePowerSource);
+    }
+
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    public async Task UnclassifiedExternalControlsUsePositivePresenceAndReviewedOrdinaryCapability(
+        bool presence, bool ordinaryCapability, bool thermalAvailable)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportsOrdinaryThermalControlOnUnclassifiedExternalPower = ordinaryCapability,
+            PerformancePresets = Enum.GetValues<PerformancePreset>().ToHashSet(),
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
+        };
+        ServiceStatusSnapshot ready = CreateStatus(true, false, capabilities: capabilities) with
+        {
+            ActivePowerSource = PowerSource.ExternalUnknown,
+            ExternalPowerPresent = presence,
+            ConfirmedState = new(PerformancePreset.Balanced, FanMode.Automatic, null,
+                ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting)
+            { HyperBoostActive = false },
+            ExternalChanges = [DeviceSubsystem.Performance],
+            Message = $"Unclassified presence={presence};ordinary={ordinaryCapability}",
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, ready);
+        Assert.Equal(PowerSource.ExternalUnknown, viewModel.ActivePowerSource);
+        Assert.Equal("External power (unclassified)", viewModel.ActivePowerSourceLabel);
+        Assert.Equal(thermalAvailable, viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
+        Assert.Equal(thermalAvailable, viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+        Assert.Equal(presence, viewModel.SetLightingCommand.CanExecute(ready.Profiles.PluggedIn.Lighting));
+        Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.False(viewModel.CanToggleGpuClockTuning);
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatteryBalanced));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
+        Assert.DoesNotContain(viewModel.AvailableActivePerformanceOptions,
+            option => option.Value is PerformancePreset.BatteryBalanced or PerformancePreset.BatterySaver);
+        Assert.False(viewModel.CanEditWindowsPowerMode);
+        Assert.False(viewModel.CanReapplyChangedSettings);
+        Assert.False(viewModel.SaveLaptopProfileDraftCommand.CanExecute(null));
+        Assert.Equal(thermalAvailable, viewModel.AvailableActivePerformanceOptions.Count > 0);
+    }
+
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, true, true, false)]
+    [InlineData(PowerSource.UsbC, true, true, false)]
+    [InlineData(PowerSource.PluggedIn, false, true, false)]
+    [InlineData(PowerSource.PluggedIn, true, false, false)]
+    [InlineData(PowerSource.PluggedIn, true, true, true)]
+    public async Task RetainedSourceIsPresentationOnlyForManualAdmission(
+        PowerSource retained, bool presence, bool ordinaryCapability, bool blocked)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportsOrdinaryThermalControlOnUnclassifiedExternalPower = ordinaryCapability,
+            PerformancePresets = Enum.GetValues<PerformancePreset>().ToHashSet(),
+            HyperBoostAccess = DeviceFeatureAccess.ReadWrite,
+            HyperBoostWithoutCoolingPadAccess = DeviceFeatureAccess.ReadWrite,
+        };
+        ServiceStatusSnapshot status = CreateStatus(true, blocked, capabilities: capabilities) with
+        {
+            ActivePowerSource = retained,
+            ObservationReason = DeviceObservationReason.RetainedPowerSource,
+            ExternalPowerPresent = presence,
+            ConfirmedState = new(PerformancePreset.Balanced, FanMode.Automatic, null,
+                ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting)
+            { HyperBoostActive = false },
+            ExternalChanges = [DeviceSubsystem.Performance],
+            Message = $"Retained {retained}/{presence}/{ordinaryCapability}/{blocked}",
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status);
+        Assert.Equal(retained, viewModel.ActivePowerSource);
+        Assert.Equal(PowerSource.ExternalUnknown, viewModel.ControlPowerSource);
+        Assert.Equal(presence && ordinaryCapability && !blocked,
+            viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
+        Assert.Equal(presence && ordinaryCapability && !blocked,
+            viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+        Assert.Equal(presence && !blocked,
+            viewModel.SetLightingCommand.CanExecute(status.Profiles.PluggedIn.Lighting));
+        Assert.False(viewModel.CanToggleHyperBoost);
+        Assert.False(viewModel.CanToggleGpuClockTuning);
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatteryBalanced));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
+        Assert.DoesNotContain(viewModel.AvailableActivePerformanceOptions,
+            option => option.Value is PerformancePreset.BatteryBalanced or PerformancePreset.BatterySaver);
+        Assert.False(viewModel.CanEditWindowsPowerMode);
+        Assert.False(viewModel.CanReapplyChangedSettings);
+        Assert.False(viewModel.SaveLaptopProfileDraftCommand.CanExecute(null));
+
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status with
+        {
+            Revision = status.Revision + 1,
+            ObservationReason = DeviceObservationReason.None,
+            WritesBlocked = false,
+            Message = "Classification confirmed",
+        });
+        Assert.Equal(retained, viewModel.ControlPowerSource);
+        Assert.True(viewModel.CanEditWindowsPowerMode);
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
+        Assert.Contains(viewModel.AvailableActivePerformanceOptions,
+            option => option.Value == PerformancePreset.BatteryBalanced);
+    }
+
+    [Fact]
+    public async Task RetainedSourceCannotEnableAdvancedGpuControlsThroughOrdinaryPerformanceAdmission()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
+        await viewModel.StartAsync();
+        var offsets = new GpuClockOffsetSettings(0, 0);
+        ServiceStatusSnapshot baseline = CreateStatus(true, false);
+        ServiceStatusSnapshot ready = baseline with
+        {
+            ExternalPowerPresent = true,
+            Capabilities = baseline.Capabilities! with
+            {
+                SupportsOrdinaryThermalControlOnUnclassifiedExternalPower = true,
+                GpuOverclock = new GpuOverclockCapabilities(
+                    new DeviceNumericRange(-1000, 400, null),
+                    new DeviceNumericRange(-1000, 3000, null),
+                    DeviceFeatureAccess.ReadWrite),
+            },
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Automatic,
+                HyperBoostActive = false,
+                GpuClockOffsets = new GpuClockOffsetCapabilities("Reviewed GPU",
+                    new GpuClockOffsetRange(-1000, 1000, 0),
+                    new GpuClockOffsetRange(-1000, 3000, 0)),
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                GpuClockTuning = new GpuClockTuningSettings(true, offsets),
+            },
+            Message = "Classified with writable GPU tuning",
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, ready);
+        Assert.True(viewModel.CanToggleGpuClockTuning);
+        Assert.True(viewModel.CanEditGpuClockTuning);
+
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, ready with
+        {
+            Revision = ready.Revision + 1,
+            ObservationReason = DeviceObservationReason.RetainedPowerSource,
+            Message = "Current classification unavailable",
+        });
+        Assert.Equal(PowerSource.PluggedIn, viewModel.ActivePowerSource);
+        Assert.True(viewModel.CanEditPerformance);
+        Assert.True(viewModel.IsGpuClockTuningVisible);
+        Assert.True(viewModel.IsGpuClockTuningEnabled);
+        Assert.False(viewModel.CanToggleGpuClockTuning);
+        Assert.False(viewModel.CanEditGpuClockTuning);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            viewModel.SetGpuClockOffsetsAsync(new GpuClockOffsetSettings(100, 200), CancellationToken.None));
+        Assert.Null(client.PerformanceOverride);
+    }
+
     [Fact]
     public async Task CompactProfileComparison_PutsTheActiveProfileFirstAndStillAllowsReviewingOthers()
     {
@@ -2016,8 +2240,10 @@ public sealed partial class MainViewModelTests
         await WaitUntilAsync(() => viewModel.CanReapplyChangedSettings);
     }
 
-    [Fact]
-    public async Task PendingHyperBoostRestore_OffersOnlyTheExplicitRecoveryAction()
+    [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task PendingHyperBoostRestore_OffersOnlyTheExplicitRecoveryAction(PowerSource source)
     {
         var client = new FakeServiceClient
         {
@@ -2029,7 +2255,7 @@ public sealed partial class MainViewModelTests
         await viewModel.StartAsync();
         ServiceStatusSnapshot pending = CreateStatus(verified: true, blocked: true) with
         {
-            ActivePowerSource = PowerSource.PluggedIn,
+            ActivePowerSource = source,
             HyperBoostRestorePending = true,
             ExternalChanges = [DeviceSubsystem.Performance],
         };
@@ -2056,7 +2282,7 @@ public sealed partial class MainViewModelTests
         client.Publish(pending with
         {
             Revision = 2,
-            ActivePowerSource = PowerSource.UsbC,
+            ActivePowerSource = PowerSource.Battery,
         });
         await WaitUntilAsync(() => !viewModel.CanRecoverHyperBoostRestore);
     }
@@ -2107,7 +2333,7 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
-    public async Task UsbC_InvalidObservedThermalStateKeepsProfileSelectionPresentable()
+    public async Task UsbC_ObservedPerformanceRemainsTruthfulWhileUnadmittedFansUseProfile()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -2136,10 +2362,10 @@ public sealed partial class MainViewModelTests
         await WaitUntilAsync(() =>
             viewModel.IsConnected && viewModel.ActivePowerSource == PowerSource.UsbC);
 
-        Assert.Equal(PerformancePreset.Balanced, viewModel.SelectedPerformance);
-        Assert.Equal("Balanced", viewModel.ActivePerformanceLabel);
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+        Assert.Equal("Performance", viewModel.ActivePerformanceLabel);
         Assert.Equal(
-            PerformancePreset.Balanced,
+            PerformancePreset.Performance,
             Assert.IsType<PerformancePresetOption>(viewModel.SelectedPerformanceOption).Value);
         Assert.Equal(FanMode.Automatic, viewModel.SelectedFanMode);
         Assert.True(viewModel.HasExternalChanges);
@@ -3688,6 +3914,8 @@ public sealed partial class MainViewModelTests
                 PerformancePreset.Gaming,
                 PerformancePreset.Creator,
                 PerformancePreset.Custom,
+                PerformancePreset.BatteryBalanced,
+                PerformancePreset.BatterySaver,
             ],
             viewModel.AvailableActivePerformanceOptions.Select(option => option.Value));
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
@@ -3695,7 +3923,7 @@ public sealed partial class MainViewModelTests
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.MaximumPower));
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Gaming));
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Creator));
-        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
         Assert.Equal("AC profile", viewModel.ActivePowerSourceLabel);
         Assert.Equal("Save to AC profile", viewModel.SaveToActiveProfileLabel);
 
@@ -3732,15 +3960,16 @@ public sealed partial class MainViewModelTests
         });
 
         Assert.Equal(
-            [PerformancePreset.Balanced],
-            viewModel.AvailableActivePerformanceOptions.Select(option => option.Value));
+            viewModel.AvailablePluggedInPerformanceOptions,
+            viewModel.AvailableActivePerformanceOptions);
         Assert.Equal(viewModel.AvailableUsbCFanModes, viewModel.AvailableActiveFanModes);
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
-        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
-        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Turbo));
-        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.MaximumPower));
-        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Gaming));
-        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Creator));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Turbo));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.MaximumPower));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Gaming));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Creator));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Custom));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
         Assert.Equal("Low-power profile", viewModel.ActivePowerSourceLabel);
@@ -3820,14 +4049,141 @@ public sealed partial class MainViewModelTests
         Assert.True(Volatile.Read(ref visibleGpuClockTuningNotifications) > 0);
     }
 
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task UsbCCustomPerformance_SelectSaveAndDiscardPreserveOwnProfile(
+        bool readbackMatchesSaved, bool watchBeforeAcknowledgement)
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher,
+            new MutableTimeProvider(DateTimeOffset.UnixEpoch));
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        var savedCustom = new CustomPerformanceSettings(CustomPerformanceLevel.Low, CustomPerformanceLevel.High);
+        var tuning = new GpuClockTuningSettings(false, new GpuClockOffsetSettings(100, 200));
+        ServiceStatusSnapshot status = baseline with
+        {
+            ActivePowerSource = PowerSource.UsbC,
+            Profiles = baseline.Profiles with
+            {
+                UsbC = baseline.Profiles.UsbC with { CustomPerformance = savedCustom, GpuClockTuning = tuning },
+            },
+            Message = "USB-C Custom profile ready",
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Custom);
+        Assert.Equal(savedCustom, client.PerformanceOverride?.CustomPerformance);
+        Assert.Equal(tuning, client.PerformanceOverride?.GpuClockTuning);
+        Assert.True(viewModel.IsCustomPerformanceVisible);
+        Assert.Equal("Low-power adapter", PowerSourcePresentation.Label(viewModel.ActivePowerSource));
+        Assert.True(viewModel.SaveThermalProfileDraftCommand.CanExecute(null));
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveThermalProfileDraftCommand).ExecuteAsync(null);
+        ProfileSet saved = Assert.IsType<ProfileSet>(client.LastProfiles);
+        Assert.Equal(PerformancePreset.Custom, saved.UsbC.Performance);
+        Assert.Equal(savedCustom, saved.UsbC.CustomPerformance);
+        Assert.Equal(tuning, saved.UsbC.GpuClockTuning);
+        Assert.Equal(baseline.Profiles.PluggedIn, saved.PluggedIn);
+        var edited = new CustomPerformanceSettings(CustomPerformanceLevel.Medium, savedCustom.Gpu);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetCustomPerformanceCommand).ExecuteAsync(edited);
+        Assert.True(viewModel.HasThermalProfileDraft);
+        CustomPerformanceSettings restoredReadback = readbackMatchesSaved ? savedCustom : edited;
+        // The mock stores profile edits but does not run service reconciliation.
+        // Publish its independent post-restore observation through the watch
+        // stream; discard does not synchronously query or guess the readback.
+        ServiceStatusSnapshot restoredStatus = client.CurrentStatus! with
+        {
+            Revision = client.CurrentStatus!.Revision + 1,
+            Message = "USB-C Custom restore observed",
+            PerformanceOverride = null,
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = restoredReadback,
+            },
+            DesiredState = status.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Custom, SettingValueSource.PowerProfile),
+                CustomPerformance = savedCustom,
+                GpuClockTuning = tuning,
+            },
+        };
+        client.BlockMutations = watchBeforeAcknowledgement;
+        Task discard = Assert.IsType<AsyncRelayCommand>(viewModel.DiscardThermalProfileDraftCommand).ExecuteAsync(null);
+        if (watchBeforeAcknowledgement)
+        {
+            await WaitUntilAsync(() => client.PerformanceOverride is null);
+            await PublishStatusAndWaitAsync(client, dispatcher, viewModel, restoredStatus);
+            Assert.Equal(edited.Cpu, viewModel.SelectedCustomCpuLevel);
+            client.BlockMutations = false;
+            client.CompleteMutation();
+        }
+        await discard;
+        Assert.False(viewModel.HasThermalProfileDraft);
+        Assert.Null(client.PerformanceOverride);
+        if (!watchBeforeAcknowledgement)
+        {
+            Assert.Equal(edited.Cpu, viewModel.SelectedCustomCpuLevel);
+            await PublishStatusAndWaitAsync(client, dispatcher, viewModel, restoredStatus);
+        }
+        Assert.Equal(restoredReadback.Cpu, viewModel.SelectedCustomCpuLevel);
+        Assert.Equal(restoredReadback.Gpu, viewModel.SelectedCustomGpuLevel);
+        Assert.Equal(savedCustom, viewModel.Profiles.UsbC.CustomPerformance);
+    }
+
     [Fact]
-    public async Task CustomPerformance_ExposesValidPairsAndSendsTypedOverride()
+    public async Task RejectedCustomDiscardPreservesPendingEditAcrossUnmatchedObservation()
+    {
+        var client = new FakeServiceClient();
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher,
+            new MutableTimeProvider(DateTimeOffset.UnixEpoch));
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false) with
+        {
+            ActivePowerSource = PowerSource.UsbC,
+            Message = "USB-C Custom discard fixture ready",
+        };
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Custom);
+        var edited = new CustomPerformanceSettings(CustomPerformanceLevel.Low, CustomPerformanceLevel.High);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetCustomPerformanceCommand).ExecuteAsync(edited);
+        client.NextResult = new ControlOperationResult(ControlOperationStatus.Failed, "Override clear was rejected.");
+        await Assert.IsType<AsyncRelayCommand>(viewModel.DiscardThermalProfileDraftCommand).ExecuteAsync(null);
+        Assert.True(viewModel.HasThermalProfileDraft);
+        Assert.Contains("performance:<clear>", client.MutationOperations);
+        await PublishStatusAndWaitAsync(client, dispatcher, viewModel, status with
+        {
+            Revision = status.Revision + 1,
+            Message = "Unchanged Custom readback after rejected clear",
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = CustomPerformanceSettings.Default,
+            },
+        });
+        Assert.Equal(edited.Cpu, viewModel.SelectedCustomCpuLevel);
+        Assert.Equal(edited.Gpu, viewModel.SelectedCustomGpuLevel);
+        Assert.True(viewModel.HasThermalProfileDraft);
+    }
+
+    [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task CustomPerformance_ExposesValidPairsAndSendsTypedOverride(PowerSource source)
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
         ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false) with
         {
+            ActivePowerSource = source,
             ConfirmedState = CreateStatus(true, false).ConfirmedState! with
             {
                 Performance = PerformancePreset.Custom,
@@ -4869,8 +5225,10 @@ public sealed partial class MainViewModelTests
             client.PerformanceOverride?.GpuClockTuning);
     }
 
-    [Fact]
-    public async Task GpuClockTuning_WhileHyperBoostActive_UsesIndependentOperation()
+    [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task GpuClockTuning_WhileHyperBoostActive_UsesIndependentOperation(PowerSource source)
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -4883,6 +5241,7 @@ public sealed partial class MainViewModelTests
             new GpuClockOffsetRange(-1000, 3000, current.MemoryMegahertz));
         ServiceStatusSnapshot active = CreatePadlessHyperBoostStatus(baseline) with
         {
+            ActivePowerSource = source,
             Capabilities = baseline.Capabilities! with
             {
                 GpuOverclock = new GpuOverclockCapabilities(
@@ -7935,11 +8294,12 @@ public sealed partial class MainViewModelTests
             Message = "Power adapter classification is temporarily unavailable; the last confirmed power source is retained and control writes are blocked.",
         });
         await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
-        Assert.Equal("Ready", viewModel.ControlAccessStatus);
-        Assert.Equal("Ready", viewModel.ProfileStateLabel);
-        Assert.True(viewModel.IsReadinessReady);
-        Assert.False(viewModel.IsReadinessWarning);
+        Assert.Equal("Controls unavailable", viewModel.ControlAccessStatus);
+        Assert.Equal("Controls unavailable", viewModel.ProfileStateLabel);
+        Assert.False(viewModel.IsReadinessReady);
+        Assert.True(viewModel.IsReadinessWarning);
         Assert.False(viewModel.CanControlHardware);
+        Assert.True(viewModel.HasHardwareControlUnavailableMessage);
         Assert.Equal("Low-power adapter", viewModel.TroubleshootingPowerSourceStatus);
 
         client.Publish(CreateStatus(verified: true, blocked: false) with
@@ -8179,7 +8539,7 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
-    public async Task RetainedPowerSourceRecheck_KeepsKnownManualControlsAvailable()
+    public async Task RetainedPowerSourceRecheck_KeepsPresentationWithoutBypassingWriteBlock()
     {
         var client = new FakeServiceClient();
         var dispatcher = new RecordingDispatcher();
@@ -8210,18 +8570,23 @@ public sealed partial class MainViewModelTests
             Capabilities = DeviceCapabilities.Unavailable(),
         });
         await WaitUntilAsync(() => dispatcher.CompletedCalls > completedCalls
-            && viewModel.IsReadinessReady && !viewModel.CanControlHardware);
+            && viewModel.IsReadinessWarning && !viewModel.CanControlHardware);
 
-        Assert.True(viewModel.CanRequestHardwareControl);
+        Assert.False(viewModel.CanRequestHardwareControl);
+        Assert.False(viewModel.IsReadinessReady);
+        Assert.True(viewModel.IsReadinessWarning);
+        Assert.Equal("Controls unavailable", viewModel.ControlAccessStatus);
+        Assert.Equal("Controls unavailable", viewModel.ProfileStateLabel);
+        Assert.True(viewModel.HasHardwareControlUnavailableMessage);
         Assert.True(viewModel.IsPerformanceVisible);
         Assert.True(viewModel.IsFanControlVisible);
         Assert.NotEmpty(viewModel.AvailablePerformancePresets);
         Assert.NotEmpty(viewModel.AvailableFanModes);
-        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
-        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
-        Assert.True(viewModel.CanChangeBatteryProtection);
-        Assert.True(viewModel.CanAdjustChargeLimit);
-        Assert.True(viewModel.ToggleFullChargeCommand.CanExecute(true));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
+        Assert.False(viewModel.CanChangeBatteryProtection);
+        Assert.False(viewModel.CanAdjustChargeLimit);
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
 
         completedCalls = dispatcher.CompletedCalls;
         client.Publish(ready with
@@ -9907,7 +10272,7 @@ public sealed partial class MainViewModelTests
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         client.Publish(CreatePadlessHyperBoostStatus(baseline));
         await WaitUntilAsync(() => viewModel.CanToggleHyperBoost
-            && viewModel.AvailableLaptopPerformanceOptions.Count == 7);
+            && viewModel.AvailableLaptopPerformanceOptions.Count == 9);
 
         Assert.True(viewModel.IsHyperBoostVisible);
         Assert.True(viewModel.IsHyperBoostWritable);
@@ -9920,7 +10285,8 @@ public sealed partial class MainViewModelTests
             viewModel.AvailablePerformancePresets,
             preset => preset.ToString().Contains("Hyper", StringComparison.Ordinal));
         Assert.Equal(
-            ["Balanced", "Silent", "Performance", "Turbo", "Maximum Power", "Custom", "HyperBoost"],
+            ["Balanced", "Silent", "Performance", "Turbo", "Maximum Power", "Custom",
+                "Balanced (Battery)", "Battery Saver", "HyperBoost"],
             viewModel.AvailableLaptopPerformanceOptions.Select(option => option.Label));
         Assert.Equal(
             PerformancePreset.Balanced,
@@ -9986,8 +10352,10 @@ public sealed partial class MainViewModelTests
         Assert.Contains(nameof(viewModel.SelectedFanModeOption), changed);
     }
 
-    [Fact]
-    public async Task HyperBoostFailedCommand_PreservesAuthoritativePresentation()
+    [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task HyperBoostFailedCommand_PreservesAuthoritativePresentation(PowerSource source)
     {
         var client = new FakeServiceClient
         {
@@ -10000,6 +10368,7 @@ public sealed partial class MainViewModelTests
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
         ServiceStatusSnapshot active = CreatePadlessHyperBoostStatus(baseline) with
         {
+            ActivePowerSource = source,
             ConfirmedState = baseline.ConfirmedState! with
             {
                 HyperBoostActive = true,
@@ -10026,10 +10395,12 @@ public sealed partial class MainViewModelTests
             },
         });
         await WaitUntilAsync(() => !viewModel.HyperBoostActive
-            && viewModel.TrayIconState == TrayIconState.AcBalanced);
+            && viewModel.TrayIconState == (source == PowerSource.UsbC
+                ? TrayIconState.UsbCBalanced : TrayIconState.AcBalanced));
 
         Assert.False(viewModel.HyperBoostActive);
-        Assert.Equal(TrayIconState.AcBalanced, viewModel.TrayIconState);
+        Assert.Equal(source == PowerSource.UsbC ? TrayIconState.UsbCBalanced : TrayIconState.AcBalanced,
+            viewModel.TrayIconState);
     }
 
     [Fact]
@@ -10586,8 +10957,10 @@ public sealed partial class MainViewModelTests
         Assert.Null(client.HyperBoostEnabled);
     }
 
-    [Fact]
-    public async Task HyperBoostUnavailableReason_TracksControllerGateTransitions()
+    [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task HyperBoostUnavailableReason_TracksControllerGateTransitions(PowerSource source)
     {
         var client = new FakeServiceClient();
         var dispatcher = new RecordingDispatcher();
@@ -10602,7 +10975,10 @@ public sealed partial class MainViewModelTests
         };
         await viewModel.StartAsync();
         ServiceStatusSnapshot admitted = CreatePadlessHyperBoostStatus(
-            CreateStatus(verified: true, blocked: false));
+            CreateStatus(verified: true, blocked: false)) with
+        {
+            ActivePowerSource = source,
+        };
 
         await PushAsync(client, dispatcher, admitted with
         {
@@ -10916,8 +11292,7 @@ public sealed partial class MainViewModelTests
 
     [Theory]
     [InlineData(PowerSource.Battery)]
-    [InlineData(PowerSource.UsbC)]
-    public async Task HyperBoostPadlessPath_HidesUnavailableBannerOffFullPowerAc(
+    public async Task HyperBoostPadlessPath_HidesUnavailableBannerOnBattery(
         PowerSource powerSource)
     {
         var client = new FakeServiceClient();
@@ -10940,8 +11315,7 @@ public sealed partial class MainViewModelTests
 
     [Theory]
     [InlineData(PowerSource.Battery)]
-    [InlineData(PowerSource.UsbC)]
-    public async Task HyperBoostUnavailableBanner_ReturnsWhenFullPowerAcReturns(
+    public async Task HyperBoostUnavailableBanner_ReturnsWhenExternalPowerReturns(
         PowerSource powerSource)
     {
         var client = new FakeServiceClient();

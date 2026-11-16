@@ -18,11 +18,28 @@ internal sealed record CpuPmSessionEvidence(DeviceIdentity UsbIdentity, HostIden
 // power, controller and service evidence, not repeated hashing or PnP scans.
 internal interface ICpuPmObservationSessionAdmission
 {
+    CpuLiveCurveContract Contract => CpuLiveCurveContract.Rz090528;
     CpuPmSessionEvidence ReadFresh();
     bool ValidateSnapshotBoundary();
     // Null keeps the existing full per-IOCTL checks for unscoped callers.
     bool? TransportCurrent(CpuInstalledBackendLease expected) => null;
 }
+internal static class CpuPmSessionIdentity
+{
+    internal static bool HostMatches(CpuLiveCurveContract contract, HostIdentityReadResult host) =>
+        host.Failure is null && host.Evidence is { Manufacturer: "Razer" } evidence
+        && evidence.ProductName == contract.ProductName
+        && (contract != CpuLiveCurveContract.Rz090528 || evidence.Sku == "RZ09-05289EN4");
+
+    internal static bool ProcessorMatches(CpuLiveCurveContract contract, CpuQueryProcessorIdentity processor) =>
+        contract == CpuLiveCurveContract.Rz090528 ? processor is { Vendor: "AuthenticAMD", Family: 0x1A, Model: 0x24, Stepping: 0 }
+        : contract.UsesPhoenixProtocol && processor is { Vendor: "AuthenticAMD", Family: 0x19 }
+            && processor.Model == (contract == CpuLiveCurveContract.Rz090508 ? 0x75 : 0x74);
+
+    internal static bool PackageMatches(CpuLiveCurveContract contract, uint maximumLeaf, int package) =>
+        maximumLeaf >= 0x80000001 && (contract != CpuLiveCurveContract.Rz090528 || package == 1);
+}
+
 internal interface ICpuPmObservationClock
 {
     TimeSpan MonotonicNow { get; }
@@ -92,7 +109,9 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
 {
     private const uint Enumerate = 0x81112F18, Read = 0x81112F24, Write = 0x81112FF8;
     private const uint Response = 0x03B10A80, Argument = 0x03B10A88, Message = 0x03B10A20;
-    private readonly CpuPmObservationWireAdmission wire = new(profile);
+    private readonly CpuLiveCurveContract contract = admission.Contract;
+    private readonly CpuCurveNativeProfile native = CpuCurveNativeProfile.ForContract(admission.Contract);
+    private readonly CpuPmObservationWireAdmission wire = new(profile, admission.Contract);
     private readonly List<CpuPmCompletedSample> samples = [];
     private byte[] records = [];
     private uint orientationMask, fuseMask;
@@ -125,7 +144,8 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         {
             stage = CpuPmObservationStage.Admission;
             CheckBoundary(cancellationToken);
-            if (!Enum.IsDefined(profile) || profile == CpuPmObservationProfile.RangeSingleSample && metadataReader is null)
+            if (!Enum.IsDefined(profile) || native.IsPhoenix && profile != CpuPmObservationProfile.RangeSingleSample
+                || !native.IsPhoenix && profile == CpuPmObservationProfile.RangeSingleSample && metadataReader is null)
             { throw new Failure(CpuPmObservationFailure.AdmissionDenied); }
             stage = CpuPmObservationStage.Mutex;
             lease = synchronization.Acquire(TimeSpan.FromSeconds(20), cancellationToken);
@@ -137,23 +157,28 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
             ReadPci(bus, 0x18, 0, 0, cancellationToken);
             ReadPci(0, 0x18, 1, 0, cancellationToken);
             stage = CpuPmObservationStage.Mask;
-            orientationMask = ReadPci(0, 0x18, 1, 0x140, cancellationToken);
-            fuseMask = ~(ReadSmn(bus, 0x03820AB0, cancellationToken) >> 5) & 0xFFFF;
-            if (orientationMask != 0xFF55 || fuseMask != orientationMask) { throw new Failure(CpuPmObservationFailure.InvalidData); }
-            stage = CpuPmObservationStage.FusedCap;
-            ReadCap(bus, CpuLivePowerFusedCap.RegisterA0F, cancellationToken);
-            ReadCap(bus, CpuLivePowerFusedCap.RegisterA0B, cancellationToken);
-            if (new CpuPmFusedCapObservation(capA0F, capA0B).Candidate is null)
-            { throw new Failure(CpuPmObservationFailure.InvalidData); }
+            orientationMask = native.DecodeOrientation(ReadPci(0, 0x18, 1, 0x140, cancellationToken));
+            fuseMask = native.DecodeFuse(ReadSmn(bus, native.FuseAddress, cancellationToken));
+            if (orientationMask != contract.EnabledCoreMask || fuseMask != orientationMask) { throw new Failure(CpuPmObservationFailure.InvalidData); }
+            if (!native.IsPhoenix)
+            {
+                stage = CpuPmObservationStage.FusedCap;
+                ReadCap(bus, CpuLivePowerFusedCap.RegisterA0F, cancellationToken);
+                ReadCap(bus, CpuLivePowerFusedCap.RegisterA0B, cancellationToken);
+                if (new CpuPmFusedCapObservation(capA0F, capA0B).Candidate is null)
+                { throw new Failure(CpuPmObservationFailure.InvalidData); }
+                if (profile == CpuPmObservationProfile.RangeSingleSample)
+                {
+                    metadataApplicability = CpuLivePowerRangeMetadataApplicability.SourceMappedContinuousTypeOnePpt50001;
+                    ReadCap(bus, CpuLivePowerRangeObservation.RegisterA13, cancellationToken);
+                    ReadCap(bus, CpuLivePowerRangeObservation.RegisterA90, cancellationToken);
+                    // This firmware identity binds the separately admitted Strix PPT handlers.
+                    stage = CpuPmObservationStage.FirmwareVersion;
+                    firmwareVersion = Mailbox(bus, 2, 0, cancellationToken);
+                }
+            }
             if (profile == CpuPmObservationProfile.RangeSingleSample)
             {
-                metadataApplicability = CpuLivePowerRangeMetadataApplicability.SourceMappedContinuousTypeOnePpt50001;
-                ReadCap(bus, CpuLivePowerRangeObservation.RegisterA13, cancellationToken);
-                ReadCap(bus, CpuLivePowerRangeObservation.RegisterA90, cancellationToken);
-                // PM layout alone does not identify the reviewed PPT handlers.
-                // Bind the firmware inside this lease before the baseline copy.
-                stage = CpuPmObservationStage.FirmwareVersion;
-                firmwareVersion = Mailbox(bus, 2, 0, cancellationToken);
                 stage = CpuPmObservationStage.Capability;
                 capability = new(0x82, 0, false, false, null, null, null, false);
                 Mailbox(bus, 0x82, 0, cancellationToken);
@@ -172,14 +197,15 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
                 }
                 CheckSnapshotBoundary(cancellationToken);
                 stage = CpuPmObservationStage.Version;
-                Mailbox(bus, 6, 0, cancellationToken);
+                uint version = Mailbox(bus, 6, 0, cancellationToken);
+                int length = native.PmLength(version);
                 (uint refresh, byte[] reply) = CpuObservationCosts.Measure(CpuObservationCost.PMCopy, () =>
                 {
                     stage = CpuPmObservationStage.Refresh;
                     uint refreshed = Mailbox(bus, 0x65, 3, cancellationToken);
                     stage = CpuPmObservationStage.Copy;
                     CheckBoundary(cancellationToken);
-                    byte[] copied = Exchange(CpuPmObservationWireAdmission.Copy, Words(0xD50), 0xD54, cancellationToken);
+                    byte[] copied = Exchange(CpuPmObservationWireAdmission.Copy, Words((uint)length), length + sizeof(uint), cancellationToken);
                     CheckBoundary(cancellationToken);
                     return (refreshed, copied);
                 });
@@ -189,7 +215,7 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
                 stage = CpuPmObservationStage.PostVersion;
                 Mailbox(bus, 6, 0, cancellationToken); // explicitly reselect after hidden C4/C8 writes
                 CheckBoundary(cancellationToken);
-                if (!CpuPmRawSnapshot.TryCreate(CpuPmObservationWireAdmission.Version, new(true, reply), utc, timestamp, out var snapshot))
+                if (!CpuPmRawSnapshot.TryCreate(contract, version, new(true, reply), utc, timestamp, out var snapshot))
                 { throw new Failure(CpuPmObservationFailure.InvalidData); }
                 // Invalid candidate telemetry is retained privately, never claimed as a valid batch.
                 samples.Add(new(snapshot!, refresh));
@@ -197,7 +223,7 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
                 { throw new Failure(CpuPmObservationFailure.InvalidData); }
                 CheckSnapshotBoundary(cancellationToken);
             }
-            if (profile == CpuPmObservationProfile.RangeSingleSample) { ReadMetadata(cancellationToken); }
+            if (!native.IsPhoenix && profile == CpuPmObservationProfile.RangeSingleSample) { ReadMetadata(cancellationToken); }
         }
         catch (Failure failure)
         { wire.Abort(); diagnostic = new(stage, failure.Code, failure.NativeFailure, failure.NativeErrorCode, failure.Operation, failure.AdmissionFailure); }
@@ -240,7 +266,10 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         { diagnostic = diagnostic with { WireRejection = rejection, MailboxStatus = wire.RejectedMailboxStatus }; }
         CpuLivePowerRangeObservation? range = profile == CpuPmObservationProfile.RangeSingleSample
             ? new(capA0F, capA0B, capA13, capA90, capability, metadataVersion, null, metadataMinMax, metadataApplicability) : null;
-        return new(diagnostic is null && samples.Count == SampleCount && (range is null || range.MetadataComplete),
+        bool metadataComplete = native.IsPhoenix
+            ? capability is { ResponseAcknowledged: true, InvocationEntered: true, PostReadAdmissionPassed: true, ReturnedWordTransportSucceeded: true, RawValue: { } raw } && raw != uint.MaxValue && (raw & 4) != 0
+            : range is null || range.MetadataComplete;
+        return new(diagnostic is null && samples.Count == SampleCount && metadataComplete,
             samples, records, orientationMask, fuseMask, diagnostic,
             capA0F is null && capA0B is null ? null : new(capA0F, capA0B), profile, range)
         {
@@ -290,13 +319,13 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
     {
         CheckLifetime(cancellationToken);
         CpuPmSessionEvidence evidence = admission.ReadFresh();
-        if (evidence.UsbIdentity is not { Model: "RZ09-0528", VendorId: 0x1532, ProductId: 0x02C6 }
-            || evidence.Host.Failure is not null || evidence.Host.Evidence is not
-            { Manufacturer: "Razer", ProductName: "Blade 16 - RZ09-0528", Sku: "RZ09-05289EN4" }
-                || evidence.Processor is not { Vendor: "AuthenticAMD", Family: 0x1A, Model: 0x24, Stepping: 0 }
-            || evidence.MaximumExtendedCpuidLeaf < 0x80000001 || evidence.Package != 1
+        if (CpuLiveCurveContract.ForIdentity(evidence.UsbIdentity) != contract
+            || !CpuPmSessionIdentity.HostMatches(contract, evidence.Host)
+            || !CpuPmSessionIdentity.ProcessorMatches(contract, evidence.Processor)
+            || !CpuPmSessionIdentity.PackageMatches(contract, evidence.MaximumExtendedCpuidLeaf, evidence.Package)
+            || native.IsPhoenix && evidence.Continuity != CpuPmSessionContinuity.ConfirmedRetainedInstalledLifetime
             || !evidence.ControllersAbsent
-            || Rz090528InstalledCpuBackendInspector.Evaluate(evidence.Backend).Availability != CpuTuningBackendAvailability.Available)
+            || Rz090528InstalledCpuBackendInspector.Evaluate(evidence.Backend, CpuInstalledBackendProfile.ForContract(contract)).Availability != CpuTuningBackendAvailability.Available)
         { throw new Failure(CpuPmObservationFailure.AdmissionDenied); }
         if (evidence.Continuity == CpuPmSessionContinuity.ConfirmedRetainedInstalledLifetime)
         {
@@ -358,7 +387,7 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
         Put(request, 24, count);
         stage = CpuPmObservationStage.PciRecords;
         records = Exchange(Enumerate, request, request.Length, token);
-        return CpuQueryPciTopology.TryFindBus(records, out uint bus)
+        return CpuQueryPciTopology.TryFindBus(records, native, out uint bus)
             ? bus : throw new Failure(CpuPmObservationFailure.InvalidData);
     }
     private uint ReadPci(uint bus, uint device, uint function, uint offset, CancellationToken token) =>
@@ -459,8 +488,9 @@ internal sealed class Rz090528CpuPmObservationEngine(IRz090528CpuQueryIoctl ioct
             throw new Failure(!reply.Success ? reply.Failure == CpuQueryFailureCode.AdmissionDenied
                     ? CpuPmObservationFailure.AdmissionDenied : CpuPmObservationFailure.NativeFailure
                 : readingVersionArgument && code == Read && reply.Bytes.Length == 24 && Word(input, 12) == 0xC8
-                    && Word(reply.Bytes, 20) != (readingFirmwareArgument
-                        ? CpuPmObservationWireAdmission.ExpectedFirmwareVersion : CpuPmObservationWireAdmission.Version)
+                    && (readingFirmwareArgument
+                        ? Word(reply.Bytes, 20) != CpuPmObservationWireAdmission.ExpectedFirmwareVersion
+                        : !contract.AcceptsGeometry(contract.EnabledCoreMask, Word(reply.Bytes, 20), native.PmLength(Word(reply.Bytes, 20))))
                     ? CpuPmObservationFailure.UnsupportedVersion : CpuPmObservationFailure.ReplyRejected,
                 reply.Failure, reply.NativeErrorCode, code);
         }

@@ -21,19 +21,11 @@ public sealed partial class SourceReviewedBladeModelTests
             ? [PerformancePreset.Balanced, PerformancePreset.Custom]
             : [PerformancePreset.Balanced, PerformancePreset.Gaming, PerformancePreset.Creator];
         Assert.Equal(expected.Order(), capabilities.PerformancePresets.Order());
-        if (product == 0x0245)
-        {
-            Assert.Equal(new[] { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve }.Order(), capabilities.FanModes.Order());
-            Assert.Equal(new FanSpeedRange(3700, 5300, 100), capabilities.FanSpeedRange);
-            Assert.Equal(new FanSpeedRange(3700, 5300, 100), capabilities.GetFanSpeedRange(PerformancePreset.Balanced));
-            Assert.Null(capabilities.GetFanSpeedRange(PerformancePreset.Custom));
-            Assert.False(capabilities.SupportsDirectManualFanTransitions);
-        }
-        else
-        {
-            Assert.Equal(new[] { FanMode.Automatic }, capabilities.FanModes);
-            Assert.Null(capabilities.FanSpeedRange);
-        }
+        Assert.Equal(new[] { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve }.Order(), capabilities.FanModes.Order());
+        Assert.NotNull(capabilities.FanSpeedRange);
+        Assert.NotNull(capabilities.GetFanSpeedRange(PerformancePreset.Balanced));
+        Assert.Null(capabilities.GetFanSpeedRange(PerformancePreset.Custom));
+        Assert.False(capabilities.SupportsDirectManualFanTransitions);
         Assert.Empty(capabilities.ChargeLimits);
         if (product == 0x0245)
         {
@@ -163,11 +155,8 @@ public sealed partial class SourceReviewedBladeModelTests
         }
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.QueryProtectionAsync(default));
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetChargeLimitAsync(80, default));
-        if (product != 0x0245)
-        {
-            await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanTargetsAsync(4000, 4000, default));
-            await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanModeAsync(FanMode.ManualCurve, default));
-        }
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanTargetsAsync(1000, 1000, default));
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanModeAsync(FanMode.Maximum, default));
         Assert.Empty(session.Commands);
     }
 
@@ -325,7 +314,7 @@ public sealed partial class SourceReviewedBladeModelTests
     [Fact]
     public async Task GamingAndCreator_DoNotBroadenPreviouslyAdmittedModels()
     {
-        foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All.Where(model => model.ProductId is not (0x0246 or 0x0268)))
+        foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All.Where(model => model.ProductId is not (0x0246 or 0x0268 or 0x0255)))
         {
             var session = new Session();
             await using var port = Create(model.ProductId, session);

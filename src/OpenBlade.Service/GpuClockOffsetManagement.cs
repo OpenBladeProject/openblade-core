@@ -32,6 +32,14 @@ internal interface IGpuClockOffsetManagementDevice
     Task<bool> InvalidateGpuClockOffsetConfirmationAsync(CancellationToken cancellationToken);
 }
 
+// Prior ownership is separate from the read-interest used to observe Stop.
+internal interface IOwnedBatterySaverFanStopReleaseDevice
+{
+    Task ReleaseOwnedBatterySaverFanStopOnceAsync(
+        Func<bool> priorAuthorityAdmission,
+        CancellationToken cancellationToken);
+}
+
 public interface ISingleAttemptThermalDevice
 {
     Task SetPerformanceOnceAsync(

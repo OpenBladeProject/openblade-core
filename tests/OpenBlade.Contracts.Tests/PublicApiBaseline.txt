@@ -1086,6 +1086,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method OpenBlade.Contracts.CpuVoltageOptimizerCapabilities get_CpuVoltageOptimizer()
   method OpenBlade.Contracts.CustomPerformanceCapabilities get_CustomPerformance()
   method OpenBlade.Contracts.DeviceCapabilities <Clone>$()
+  method OpenBlade.Contracts.FanSpeedRange GetFanIntentSpeedRange(OpenBlade.Contracts.PerformancePreset performance)
   method OpenBlade.Contracts.FanSpeedRange GetFanSpeedRange(OpenBlade.Contracts.PerformancePreset performance)
   method OpenBlade.Contracts.FanSpeedRange get_FanSpeedRange()
   method OpenBlade.Contracts.GpuOverclockCapabilities get_GpuOverclock()
@@ -1106,6 +1107,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Boolean get_SupportsIndependentLightingControls()
   method System.Boolean get_SupportsKeyboardBrightness()
   method System.Boolean get_SupportsManualFansOnLimitedPower()
+  method System.Boolean get_SupportsOrdinaryThermalControlOnUnclassifiedExternalPower()
   method System.Boolean get_SupportsPlaybackMuteIndicator()
   method System.Boolean get_SupportsTemporaryFullCharge()
   method System.Boolean get_SupportsTouchpadStatusIndicator()
@@ -1113,6 +1115,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Boolean get_SupportsVaporChamberLighting()
   method System.Boolean get_SupportsWaveDirectionSelection()
   method System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> get_FanSpeedRangesByPerformancePreset()
+  method System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> get_ObservedFanSpeedRangesByPerformancePreset()
   method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PowerSourceBehaviorObservation> get_ObservedPowerSourceBehaviors()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.BreathingColorMode> get_SupportedBreathingColorModes()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> get_FanModes()
@@ -1151,6 +1154,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_LampArrayLightingAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
   method System.Void set_LightingEffects(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> value)
   method System.Void set_LogoLightingModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LogoLightingMode> value)
+  method System.Void set_ObservedFanSpeedRangesByPerformancePreset(System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> value)
   method System.Void set_ObservedLightingEffects(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> value)
   method System.Void set_ObservedLightingZones(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.ObservedLightingZone> value)
   method System.Void set_ObservedPowerSourceBehaviors(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PowerSourceBehaviorObservation> value)
@@ -1168,6 +1172,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_SupportsIndependentLightingControls(System.Boolean value)
   method System.Void set_SupportsKeyboardBrightness(System.Boolean value)
   method System.Void set_SupportsManualFansOnLimitedPower(System.Boolean value)
+  method System.Void set_SupportsOrdinaryThermalControlOnUnclassifiedExternalPower(System.Boolean value)
   method System.Void set_SupportsPlaybackMuteIndicator(System.Boolean value)
   method System.Void set_SupportsTemporaryFullCharge(System.Boolean value)
   method System.Void set_SupportsTouchpadStatusIndicator(System.Boolean value)
@@ -1204,6 +1209,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Boolean SupportsIndependentLightingControls { get; init; }
   property System.Boolean SupportsKeyboardBrightness { get; init; }
   property System.Boolean SupportsManualFansOnLimitedPower { get; init; }
+  property System.Boolean SupportsOrdinaryThermalControlOnUnclassifiedExternalPower { get; init; }
   property System.Boolean SupportsPlaybackMuteIndicator { get; init; }
   property System.Boolean SupportsTemporaryFullCharge { get; init; }
   property System.Boolean SupportsTouchpadStatusIndicator { get; init; }
@@ -1211,6 +1217,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Boolean SupportsVaporChamberLighting { get; init; }
   property System.Boolean SupportsWaveDirectionSelection { get; init; }
   property System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> FanSpeedRangesByPerformancePreset { get; init; }
+  property System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset, OpenBlade.Contracts.FanSpeedRange> ObservedFanSpeedRangesByPerformancePreset { get; init; }
   property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PowerSourceBehaviorObservation> ObservedPowerSourceBehaviors { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.BreathingColorMode> SupportedBreathingColorModes { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes { get; init; }
@@ -1508,6 +1515,7 @@ type sealed class OpenBlade.Contracts.FanControlSettings
   interface System.IEquatable<OpenBlade.Contracts.FanControlSettings>
   ctor (OpenBlade.Contracts.FanMode mode, System.Int32 fixedSpeedRpm, OpenBlade.Contracts.ManualFanCurve manualCurve)
   field const System.Int32 MaximumSpeedRpm = 5400
+  field const System.Int32 MaximumSupportedSpeedRpm = 5500
   field const System.Int32 MinimumSpeedRpm = 2000
   field const System.Int32 SpeedStepRpm = 100
   method OpenBlade.Contracts.FanControlSettings <Clone>$()
@@ -2357,7 +2365,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 83
+  field const System.Int32 ProtocolVersion = 84
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -2402,6 +2410,8 @@ type sealed class OpenBlade.Contracts.PerformanceOverride
   property OpenBlade.Contracts.GpuClockTuningSettings GpuClockTuning { get; init; }
   property OpenBlade.Contracts.OverrideLifetime Lifetime { get; init; }
   property OpenBlade.Contracts.PerformancePreset Value { get; init; }
+type static class OpenBlade.Contracts.PerformancePowerSourcePolicy
+  method static System.Boolean IsAllowed(OpenBlade.Contracts.PowerSource source, OpenBlade.Contracts.PerformancePreset preset)
 type enum OpenBlade.Contracts.PerformancePreset
   field System.Int32 value__
   field const OpenBlade.Contracts.PerformancePreset Balanced = 1
@@ -2436,7 +2446,9 @@ type sealed class OpenBlade.Contracts.PerformanceShortcutPreview
   property System.Int64 Generation { get; init; }
 type static class OpenBlade.Contracts.PerformanceShortcutSelection
   method static System.Boolean TrySelectNext(OpenBlade.Contracts.PowerSource powerSource, System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> admitted, OpenBlade.Contracts.PerformancePreset current, out OpenBlade.Contracts.PerformancePreset next)
+  method static System.Boolean TrySelectNextOrdinary(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> admitted, OpenBlade.Contracts.PerformancePreset current, out OpenBlade.Contracts.PerformancePreset next)
   method static System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PerformancePreset> GetCycle(OpenBlade.Contracts.PowerSource powerSource, System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> admitted)
+  method static System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PerformancePreset> GetOrdinaryCycle(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> admitted)
 type enum OpenBlade.Contracts.PerformanceShortcutSource
   field System.Int32 value__
   field const OpenBlade.Contracts.PerformanceShortcutSource DedicatedButton = 0
@@ -2537,6 +2549,8 @@ type sealed class OpenBlade.Contracts.PowerSourceBehaviorObservation
   property System.Nullable<System.Boolean> FixedFanControlAvailable { get; init; }
   property System.Nullable<System.Boolean> InadequatePowerWarningVisible { get; init; }
   property System.Nullable<System.Boolean> PerformanceModeAvailable { get; init; }
+type static class OpenBlade.Contracts.PowerSourcePolicy
+  method static System.Boolean IsExternal(OpenBlade.Contracts.PowerSource source)
 type static class OpenBlade.Contracts.ProfileDefaults
   method static OpenBlade.Contracts.ProfileSet CreateSafeDefaults()
 type sealed class OpenBlade.Contracts.ProfileSet
@@ -3089,6 +3103,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Boolean get_AlwaysOverrideExternalLightingChanges()
   method System.Boolean get_DeviceVerified()
   method System.Boolean get_ExperimentalWritesPaused()
+  method System.Boolean get_ExternalPowerPresent()
   method System.Boolean get_FullChargeOverride()
   method System.Boolean get_HyperBoostRestorePending()
   method System.Boolean get_IsExperimentalDevice()
@@ -3133,6 +3148,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_ExperimentalSupportSource(System.String value)
   method System.Void set_ExperimentalWritesPaused(System.Boolean value)
   method System.Void set_ExternalChanges(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> value)
+  method System.Void set_ExternalPowerPresent(System.Boolean value)
   method System.Void set_FanControlOverride(OpenBlade.Contracts.FanControlSettings value)
   method System.Void set_FanOverride(OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.FanMode> value)
   method System.Void set_FanStopStatus(OpenBlade.Contracts.FanStopStatus value)
@@ -3204,6 +3220,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property System.Boolean AlwaysOverrideExternalLightingChanges { get; init; }
   property System.Boolean DeviceVerified { get; init; }
   property System.Boolean ExperimentalWritesPaused { get; init; }
+  property System.Boolean ExternalPowerPresent { get; init; }
   property System.Boolean FullChargeOverride { get; init; }
   property System.Boolean HyperBoostRestorePending { get; init; }
   property System.Boolean IsExperimentalDevice { get; init; }

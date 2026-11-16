@@ -43,6 +43,10 @@ public interface IProductionBatteryPort : IAsyncDisposable
 
     void RequireBatterySaverFanStopRestorationAdmission() { }
 
+    Task ReleaseOwnedBatterySaverFanStopAsync(
+        Func<bool> priorAuthorityAdmission, CancellationToken cancellationToken) =>
+        Task.FromException(new NotSupportedException("Owned fan-stop release is not admitted by this backend."));
+
     Task<AdapterPowerState> QueryAdapterPowerStateAsync(
         CancellationToken cancellationToken);
 
@@ -101,6 +105,17 @@ public interface IProductionBatteryPort : IAsyncDisposable
         int fan1Rpm,
         int fan2Rpm,
         CancellationToken cancellationToken);
+
+    /// <summary>Applies a curve sample once and returns the independently confirmed targets.</summary>
+    async Task<(int Fan1Rpm, int Fan2Rpm)> SetCurveFanTargetsAsync(
+        PerformancePreset expectedPerformance,
+        int fan1Rpm,
+        int fan2Rpm,
+        CancellationToken cancellationToken)
+    {
+        await SetFanTargetsAsync(fan1Rpm, fan2Rpm, cancellationToken).ConfigureAwait(false);
+        return (fan1Rpm, fan2Rpm);
+    }
 
     Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken);
 

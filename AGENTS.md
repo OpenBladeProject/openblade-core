@@ -507,8 +507,14 @@ See [UI typography](docs/ui-typography.md) for the semantic scale and table use.
    validated. This exception admits no other laptop or API contract family. Keep
    standalone native/audio validation separate from simulated tests; see
    [THX audio](docs/thx-audio.md).
-   CPU Voltage Optimizer on RZ09-0528 is live-only through its reviewed,
-   signed, already installed AMD stack. Availability checks and reads must not
+   CPU Voltage Optimizer is live-only through each exact model's reviewed,
+   signed, already installed AMD stack: V31 on RZ09-0528 and V22 on RZ09-0508
+   (8945HS) and RZ09-0482 (7940HS). Keep each closed contract's own CPU,
+   topology, measured getter, PM peer layout and fresh range admission.
+   RZ09-0530 remains observed-only until its own ten-core contract is reviewed.
+   Existing schema 3 voltage journals retain their original V31 meaning;
+   new model journals use explicit schema 4 contract identity. See
+   [CPU undervolting](docs/cpu-undervolting.md). Availability checks and reads must not
    provision or start a driver. New saved-setting requests are retired; retain
    saved observations and exact-original journal recovery for compatibility.
    Firmware shadows must never substitute for measured running offsets.

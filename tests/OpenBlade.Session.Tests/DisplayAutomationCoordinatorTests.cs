@@ -7,6 +7,58 @@ namespace OpenBlade.Session.Tests;
 public sealed class DisplayAutomationCoordinatorTests
 {
     [Fact]
+    public async Task UnclassifiedManualCheckpointNeverEstablishesAnAutomationSource()
+    {
+        var context = new DisplayPowerContextState();
+        var applier = new FakeApplier();
+        DisplayAutomationRecoveryState? checkpoint = null;
+        await using var coordinator = new DisplayAutomationCoordinator(context, applier,
+            recordRecoveryState: value => { checkpoint = value; return true; });
+        ServiceStatusSnapshot unknown = Status(PowerSource.ExternalUnknown, Profiles("saved")) with
+        {
+            ExternalPowerPresent = true,
+        };
+        Assert.Equal(DisplayAutomationObservation.IgnoredUnconfirmed, coordinator.Observe(unknown));
+        Assert.True(coordinator.BeginManualOperation(new(null, true, null)));
+        Assert.NotNull(checkpoint);
+        Assert.Equal(PowerSource.ExternalUnknown, checkpoint.LastReconciledPowerSource);
+        Assert.True(checkpoint.ManualHold);
+        Assert.Null(checkpoint.ApplicationProfileId);
+        Assert.Null(checkpoint.Baseline);
+        Assert.Empty(applier.Transitions);
+        await using var restarted = new DisplayAutomationCoordinator(new(), new FakeApplier(),
+            recoveryState: checkpoint);
+        Assert.Equal(DisplayAutomationObservation.IgnoredUnconfirmed, restarted.Observe(unknown));
+    }
+
+    [Theory]
+    [InlineData(PowerSource.PluggedIn)]
+    [InlineData(PowerSource.UsbC)]
+    public async Task RetainedSourceDefersAutomationAndUsesUnknownManualContext(PowerSource retained)
+    {
+        var context = new DisplayPowerContextState();
+        var applier = new FakeApplier();
+        await using var coordinator = new DisplayAutomationCoordinator(context, applier);
+        var status = Status(retained, Profiles("saved")) with
+        {
+            ObservationReason = DeviceObservationReason.RetainedPowerSource,
+            ExternalPowerPresent = true,
+        };
+        Assert.Equal(DisplayAutomationObservation.IgnoredUnconfirmed, coordinator.Observe(status));
+        Assert.Null(coordinator.LastConfirmedPowerSource);
+        DisplayPowerContext admitted = context.Capture();
+        Assert.Equal(PowerSource.ExternalUnknown, admitted.PowerSource);
+        Assert.True(admitted.Generation > 0);
+        Assert.Empty(applier.Transitions);
+        coordinator.Observe(status);
+        Assert.Equal(admitted.Generation, context.Capture().Generation);
+        coordinator.Observe(status with { ExternalPowerPresent = false });
+        Assert.Equal(PowerSource.ExternalUnknown, context.Capture().PowerSource);
+        Assert.True(context.Capture().Generation > admitted.Generation);
+        Assert.Empty(applier.Transitions);
+    }
+
+    [Fact]
     public async Task ApplicationEntryAndExitApplyOverrideThenRestoreCapturedBaseline()
     {
         var context = new DisplayPowerContextState();

@@ -351,7 +351,10 @@ public sealed class ManualFanCurve : IEquatable<ManualFanCurve>
 public sealed record FanControlSettings
 {
     public const int MinimumSpeedRpm = 2000;
+    // Preserve the standard range and legacy Maximum target independently of
+    // the largest value representable by an exact-model capability.
     public const int MaximumSpeedRpm = 5400;
+    public const int MaximumSupportedSpeedRpm = 5500;
     public const int SpeedStepRpm = 100;
 
     public FanControlSettings(
@@ -391,17 +394,17 @@ public sealed record FanControlSettings
             speedRpm / (double)SpeedStepRpm,
             MidpointRounding.AwayFromZero) * SpeedStepRpm,
         MinimumSpeedRpm,
-        MaximumSpeedRpm);
+        MaximumSupportedSpeedRpm);
 
     internal static void ValidateSpeed(int speedRpm, string parameterName)
     {
-        if (speedRpm is < MinimumSpeedRpm or > MaximumSpeedRpm
+        if (speedRpm is < MinimumSpeedRpm or > MaximumSupportedSpeedRpm
             || speedRpm % SpeedStepRpm != 0)
         {
             throw new ArgumentOutOfRangeException(
                 parameterName,
                 speedRpm,
-                $"Fan speed must be from {MinimumSpeedRpm} to {MaximumSpeedRpm} RPM in {SpeedStepRpm} RPM steps.");
+                $"Fan speed must be from {MinimumSpeedRpm} to {MaximumSupportedSpeedRpm} RPM in {SpeedStepRpm} RPM steps.");
         }
     }
 }

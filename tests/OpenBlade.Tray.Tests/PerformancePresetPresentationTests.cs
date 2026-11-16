@@ -42,10 +42,12 @@ public sealed class PerformancePresetPresentationTests
                 PerformancePreset.Gaming,
                 PerformancePreset.Creator,
                 PerformancePreset.Custom,
+                PerformancePreset.BatteryBalanced,
+                PerformancePreset.BatterySaver,
             ],
             pluggedIn.Select(option => option.Value));
         Assert.Equal(
-            ["Balanced", "Silent", "Performance", "Turbo", "Maximum Power", "Gaming", "Creator", "Custom"],
+            ["Balanced", "Silent", "Performance", "Turbo", "Maximum Power", "Gaming", "Creator", "Custom", "Balanced (Battery)", "Battery Saver"],
             pluggedIn.Select(option => option.Label));
         Assert.Equal(
             [PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver],
@@ -53,9 +55,7 @@ public sealed class PerformancePresetPresentationTests
         Assert.Equal(
             ["Balanced", "Battery Saver"],
             battery.Select(option => option.Label));
-        Assert.Equal(
-            [PerformancePreset.Balanced],
-            usbC.Select(option => option.Value));
+        Assert.Equal(pluggedIn, usbC);
         Assert.Empty(PerformancePresetPresentation.CreateOptions(
             PowerSource.ExternalUnknown,
             admitted));
@@ -72,14 +72,16 @@ public sealed class PerformancePresetPresentationTests
         };
 
         Assert.Equal(
-            [PerformancePreset.Performance],
+            [PerformancePreset.Performance, PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver],
             PerformancePresetPresentation.CreateOptions(PowerSource.PluggedIn, admitted)
                 .Select(option => option.Value));
         Assert.Equal(
             [PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver],
             PerformancePresetPresentation.CreateOptions(PowerSource.Battery, admitted)
                 .Select(option => option.Value));
-        Assert.Empty(PerformancePresetPresentation.CreateOptions(PowerSource.UsbC, admitted));
+        Assert.Equal(
+            PerformancePresetPresentation.CreateOptions(PowerSource.PluggedIn, admitted),
+            PerformancePresetPresentation.CreateOptions(PowerSource.UsbC, admitted));
     }
 
     [Fact]
@@ -116,7 +118,7 @@ public sealed class PerformancePresetPresentationTests
     [InlineData(PerformancePreset.MaximumPower)]
     [InlineData(PerformancePreset.Gaming)]
     [InlineData(PerformancePreset.Creator)]
-    public void NewHighPerformancePresets_RequireExplicitCapabilitiesAndFullPower(PerformancePreset preset)
+    public void NewHighPerformancePresets_RequireExplicitCapabilitiesAndConfirmedExternalPower(PerformancePreset preset)
     {
         var legacy = new HashSet<PerformancePreset>
         {
@@ -127,7 +129,10 @@ public sealed class PerformancePresetPresentationTests
         Assert.Single(PerformancePresetPresentation.CreateOptions(PowerSource.PluggedIn,
             new HashSet<PerformancePreset> { preset }));
         Assert.True(PerformancePresetPresentation.IsAvailable(PowerSource.PluggedIn, preset));
-        foreach (PowerSource source in new[] { PowerSource.Battery, PowerSource.UsbC, PowerSource.ExternalUnknown })
+        Assert.True(PerformancePresetPresentation.IsAvailable(PowerSource.UsbC, preset));
+        Assert.Single(PerformancePresetPresentation.CreateOptions(PowerSource.UsbC,
+            new HashSet<PerformancePreset> { preset }));
+        foreach (PowerSource source in new[] { PowerSource.Battery, PowerSource.ExternalUnknown })
         {
             Assert.False(PerformancePresetPresentation.IsAvailable(source, preset));
             Assert.Empty(PerformancePresetPresentation.CreateOptions(source,
@@ -153,9 +158,12 @@ public sealed class PerformancePresetPresentationTests
         Assert.True(PerformancePresetPresentation.IsAvailable(
             PowerSource.UsbC,
             PerformancePreset.Balanced));
-        Assert.False(PerformancePresetPresentation.IsAvailable(
+        Assert.True(PerformancePresetPresentation.IsAvailable(
             PowerSource.UsbC,
             PerformancePreset.Silent));
+        Assert.False(PerformancePresetPresentation.IsAvailable(
+            PowerSource.UsbC,
+            (PerformancePreset)int.MaxValue));
         Assert.False(PerformancePresetPresentation.IsAvailable(
             PowerSource.ExternalUnknown,
             PerformancePreset.Balanced));

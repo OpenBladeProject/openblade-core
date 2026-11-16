@@ -25,6 +25,8 @@ internal sealed record FirmwareQueryObservation(
     // A caller may report a semantic rejection after another query completes.
     // Registration belongs to that observation and is never exported.
     internal FirmwareQueryRegistration? Registration { get; init; }
+
+    public byte? ResponseStatus { get; init; }
 }
 
 internal sealed class FirmwareQueryRegistration(FirmwareQueryDiagnostics owner)
@@ -91,6 +93,7 @@ internal sealed class FirmwareQueryDiagnostics
                 SafePayload(result.QueryResponsePayloadHex))
             {
                 Registration = new(this),
+                ResponseStatus = result.QueryResponseStatus,
             };
             var key = (name, request);
             FirmwareQueryDiagnostic entry = entries.TryGetValue(key, out var previous)
@@ -147,7 +150,7 @@ internal sealed class FirmwareQueryDiagnostics
                 ? observation : entry.FirstFailure,
             LastFailure = entry.LastFailure is null || observation.Id > entry.LastFailure.Id
                 ? observation : entry.LastFailure,
-            LastResponseFailure = observation.ResponsePayloadHex is not null
+            LastResponseFailure = (observation.ResponsePayloadHex is not null || observation.ResponseStatus is not null)
                 && (entry.LastResponseFailure is null || observation.Id > entry.LastResponseFailure.Id)
                     ? observation : entry.LastResponseFailure,
         };
@@ -194,6 +197,7 @@ internal sealed class FirmwareQueryDiagnostics
             (0x07, 0x8C) => arguments is [0, 0],
             (0x07, 0x8F) or (0x07, 0x92) or (0x0F, 0x98)
                 or (0x0D, 0x8E) or (0x0D, 0x8F) => arguments is [0],
+            (0x0D, 0x83) => arguments.Length == 12 && !arguments.ContainsAnyExcept((byte)0),
             (0x0D, 0x80) => arguments.Length == 80 && !arguments.ContainsAnyExcept((byte)0),
             // Validated models use class 1; the experimental definitions use 0.
             (0x0D, 0x82) => arguments is [0 or 1, 1 or 2, 0, 0],

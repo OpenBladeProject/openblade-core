@@ -21,11 +21,11 @@ public sealed partial class SourceReviewedBladeModelTests
             ? [PerformancePreset.Balanced, PerformancePreset.Custom]
             : [PerformancePreset.Balanced, PerformancePreset.Custom, PerformancePreset.Silent, PerformancePreset.BatteryBalanced];
         Assert.Equal(expected.Order(), capabilities.PerformancePresets.Order());
-        Assert.Equal(new[] { FanMode.Automatic }, capabilities.FanModes);
-        Assert.Null(capabilities.FanSpeedRange);
-        Assert.Empty(capabilities.FanSpeedRangesByPerformancePreset);
+        Assert.Equal(new[] { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve }.Order(), capabilities.FanModes.Order());
+        Assert.NotNull(capabilities.FanSpeedRange);
+        Assert.NotEmpty(capabilities.FanSpeedRangesByPerformancePreset);
         Assert.False(capabilities.SupportsDirectManualFanTransitions);
-        Assert.False(capabilities.ReportsPerformanceWithManualFans);
+        Assert.True(capabilities.ReportsPerformanceWithManualFans);
         LightingEffect[] expectedLighting = IsEarlyAcOnly(product)
             ? []
             : product == 0x028A
@@ -99,8 +99,8 @@ public sealed partial class SourceReviewedBladeModelTests
             await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetChargeLimitAsync(80, default));
             await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetProtectionOffAsync(default));
         }
-        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanTargetsAsync(4300, 4300, default));
-        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanModeAsync(FanMode.ManualCurve, default));
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanTargetsAsync(1000, 1000, default));
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanModeAsync(FanMode.Maximum, default));
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetCustomPerformanceAsync(
             new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High) { MaximumFans = true }, default));
         Assert.Empty(session.Commands);

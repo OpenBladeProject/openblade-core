@@ -9,13 +9,15 @@ internal static class Rz090528CpuFreshUsbIdentity
     // Re-enumerate present USB PnP devnodes for every adapter admission check.
     // Service status preserves last-confirmed identity and is unsuitable as a
     // fresh-device source. This path opens no HID handle or control interface.
-    internal static DeviceIdentity? Read()
+    internal static DeviceIdentity? Read() => Read(CpuLiveCurveContract.Rz090528);
+    internal static DeviceIdentity? Read(CpuLiveCurveContract contract)
     {
-        using var proof = CaptureGetter();
+        using var proof = CaptureGetter(contract);
         return proof?.IsCurrent() == true ? proof.Identity : null;
     }
 
-    internal static CpuGetterUsbContinuity? CaptureGetter()
+    internal static CpuGetterUsbContinuity? CaptureGetter() => CaptureGetter(CpuLiveCurveContract.Rz090528);
+    internal static CpuGetterUsbContinuity? CaptureGetter(CpuLiveCurveContract contract)
     {
         if (!OperatingSystem.IsWindows()) { return null; }
         IntPtr deviceSet = SetupDiGetClassDevs(IntPtr.Zero, "USB", IntPtr.Zero, 0x02 | 0x04);
@@ -35,14 +37,14 @@ internal static class Rz090528CpuFreshUsbIdentity
                     if (failure != 259) { throw new Win32Exception(failure); }
                     if (exactDevices != 1 || exactInstance is null) { return null; }
                     var proof = new CpuGetterUsbContinuity(() => ReadNode(exactNode), exactInstance,
-                        () => { if (!SetupDiDestroyDeviceInfoList(deviceSet)) { throw new Win32Exception(Marshal.GetLastWin32Error()); } });
+                        () => { if (!SetupDiDestroyDeviceInfoList(deviceSet)) { throw new Win32Exception(Marshal.GetLastWin32Error()); } }, contract);
                     retained = true;
                     return proof;
                 }
                 var instanceId = new StringBuilder(1024);
                 if (!SetupDiGetDeviceInstanceId(deviceSet, ref info, instanceId, instanceId.Capacity, out _))
                 { throw new Win32Exception(Marshal.GetLastWin32Error()); }
-                if (IsExactUsbInstance(instanceId.ToString()))
+                if (IsExactUsbInstance(instanceId.ToString(), contract))
                 {
                     if (CM_Get_DevNode_Status(out uint status, out uint problem, info.DeviceInstance, 0) != 0
                         || problem != 0 || (status & 0x08) == 0)
@@ -66,9 +68,10 @@ internal static class Rz090528CpuFreshUsbIdentity
         return new(id.ToString(), status, problem);
     }
 
-    internal static bool IsExactUsbInstance(string instanceId)
+    internal static bool IsExactUsbInstance(string instanceId) => IsExactUsbInstance(instanceId, CpuLiveCurveContract.Rz090528);
+    internal static bool IsExactUsbInstance(string instanceId, CpuLiveCurveContract contract)
     {
-        const string prefix = "USB\\VID_1532&PID_02C6\\";
+        string prefix = $"USB\\VID_1532&PID_{contract.ProductId:X4}\\";
         return instanceId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
             && instanceId.Length > prefix.Length;
     }
@@ -104,17 +107,19 @@ internal readonly record struct CpuGetterUsbNode(string? InstanceId, uint Status
 
 // Keeps the exact enumerated devnode/instance rather than re-enumerating all USB
 // devices. The originating getter still requires full unique-device revalidation.
-internal sealed class CpuGetterUsbContinuity(Func<CpuGetterUsbNode> read, string instance, Action release) : IDisposable
+internal sealed class CpuGetterUsbContinuity(Func<CpuGetterUsbNode> read, string instance, Action release, CpuLiveCurveContract? selectedContract = null) : IDisposable
 {
     private int revoked, disposed;
-    internal DeviceIdentity Identity { get; } = new("RZ09-0528", 0x1532, 0x02C6, "Unknown");
+    private readonly CpuLiveCurveContract contract = selectedContract ?? CpuLiveCurveContract.Rz090528;
+    internal DeviceIdentity Identity { get; } = new((selectedContract ?? CpuLiveCurveContract.Rz090528).ModelNumber,
+        0x1532, (selectedContract ?? CpuLiveCurveContract.Rz090528).ProductId, "Unknown");
     internal bool IsCurrent()
     {
         if (Volatile.Read(ref revoked) != 0 || Volatile.Read(ref disposed) != 0) { return false; }
         try
         {
             var current = read();
-            if (Rz090528CpuFreshUsbIdentity.IsExactUsbInstance(instance)
+            if (Rz090528CpuFreshUsbIdentity.IsExactUsbInstance(instance, contract)
                 && string.Equals(current.InstanceId, instance, StringComparison.OrdinalIgnoreCase)
                 && current.Problem == 0 && (current.Status & 0x08) != 0
                 && Volatile.Read(ref disposed) == 0 && Volatile.Read(ref revoked) == 0) { return true; }

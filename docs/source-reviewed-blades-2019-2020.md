@@ -1,5 +1,7 @@
 # Source-reviewed Blade 15 models from 2019 and 2020
 
+The later [performance and fan review](source-reviewed-thermal-967.md) expands manual fan admission and adds exact presets. Fan exclusions below describe the original admission.
+
 The later [lighting review](source-reviewed-lighting.md) adds bounded lighting controls to these profiles. Lighting exclusions below describe the original admission.
 
 This review adds three exact profiles to official source-reviewed support. Physical validation remains pending. The [admission manifest](../evidence/source-reviewed-blades/2026-11-07-models-2019-2020.json) records 79 complete source pins, 97 byte-offset excerpts, exact identity evidence and two signed firmware carriers.

@@ -285,3 +285,26 @@ fn performance_source_abi_checks_admission_before_writing_eligibility() {
         assert_eq!((eligible, written), (0, 0));
     }
 }
+
+#[test]
+fn external_source_eligibility_admits_all_defined_modes_through_abi() {
+    let mut eligible = 99;
+    let mut written = 99;
+    for source in [0, 2] {
+        for preset in -1..=10 {
+            // SAFETY: outputs are valid, aligned, disjoint locals; no error output requested.
+            let status = unsafe {
+                ob_v1_performance_source_eligible(
+                    OB_AUTOMATION_ABI_VERSION,
+                    preset,
+                    source,
+                    &mut eligible,
+                    &mut written,
+                    ptr::null_mut(),
+                )
+            };
+            assert_eq!((status, written), (0, 0));
+            assert_eq!(eligible, u32::from((0..=9).contains(&preset)));
+        }
+    }
+}

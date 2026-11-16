@@ -1130,10 +1130,88 @@ public sealed class DeploymentClientCoordinatorTests
         context.AssertNoReplay();
     }
 
-    private sealed class FinalInventoryContext(params InstalledProcessInventory[] finalObservations)
+    [Fact]
+    public async Task AgentInventory_TransientStartupCensusSettlesBeforeLaunchingTray()
     {
-        internal SequenceProcessInventory Inventory { get; } = new(
-            [new(true, 1, 1), new(true, 0, 0), new(true, 0, 0), new(true, 1, 0), .. finalObservations]);
+        var context = FinalInventoryContext.ForAgentStartup(
+            [new(false, 1, 0), new(true, 1, 0, 2)], [new(true, 1, 1, 2)]);
+        Assert.True(await context.RunAsync());
+        Assert.Equal(TimeSpan.FromMilliseconds(200), context.Clock.Elapsed);
+        Assert.Empty(context.Diagnostics);
+        context.AssertNoReplay();
+    }
+
+    [Theory]
+    [InlineData(false, 1, 0)]
+    [InlineData(true, 2, 0)]
+    [InlineData(true, 1, 1)]
+    [InlineData(true, 0, 0)]
+    public async Task AgentInventory_PersistentMismatchTimesOutWithoutTrayOrReplay(bool complete, int agents, int trays)
+    {
+        var context = FinalInventoryContext.ForAgentStartup([new(complete, agents, trays)], []);
+        Assert.False(await context.RunAsync());
+        Assert.Equal(TimeSpan.FromSeconds(10), context.Clock.Elapsed);
+        Assert.Equal(["session-agent-inventory-timeout"], context.Diagnostics);
+        context.AssertNoReplay(trayExpected: false);
+    }
+
+    [Fact]
+    public async Task AgentInventory_ExitedOriginalCannotBeReplacedDuringSettling()
+    {
+        var context = FinalInventoryContext.ForAgentStartup([new(false, 1, 0), new(true, 1, 0)], []);
+        context.Clock.AfterDelay = () => context.Processes.StartedProcesses[0].HasExited = true;
+        Assert.False(await context.RunAsync());
+        Assert.Equal(["session-agent-relaunch-failed"], context.Diagnostics);
+        context.AssertNoReplay(trayExpected: false);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AgentInventory_CancellationOrContextLossDuringHealthyReadBlocksTray(bool canceled)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var context = FinalInventoryContext.ForAgentStartup([new(true, 1, 0)], [new(true, 1, 1)]);
+        context.Inventory.BeforeInspect = _ =>
+        {
+            if (context.Processes.Plans.Count == 1)
+            {
+                if (canceled) { cancellation.Cancel(); }
+                else { context.Caller.Active = false; }
+            }
+        };
+        Assert.False(await context.RunAsync(cancellation.Token));
+        context.AssertNoReplay(trayExpected: false);
+    }
+
+    [Fact]
+    public async Task AgentInventory_DeadlineReachedDuringHealthyReadCannotSucceed()
+    {
+        var context = FinalInventoryContext.ForAgentStartup([new(true, 1, 0)], [new(true, 1, 1)]);
+        context.Inventory.BeforeInspect = _ =>
+        {
+            if (context.Processes.Plans.Count == 1) { context.Clock.Advance(TimeSpan.FromSeconds(10)); }
+        };
+        Assert.False(await context.RunAsync());
+        Assert.Equal(["session-agent-inventory-timeout"], context.Diagnostics);
+        context.AssertNoReplay(trayExpected: false);
+    }
+
+    private sealed class FinalInventoryContext
+    {
+        internal FinalInventoryContext(params InstalledProcessInventory[] finalObservations)
+            : this(([new(true, 1, 0)], finalObservations)) { }
+
+        private FinalInventoryContext((InstalledProcessInventory[] Agent, InstalledProcessInventory[] Final) observations)
+        {
+            Inventory = new([new(true, 1, 1), new(true, 0, 0), new(true, 0, 0), .. observations.Agent, .. observations.Final]);
+        }
+
+        internal static FinalInventoryContext ForAgentStartup(
+            InstalledProcessInventory[] agentObservations, InstalledProcessInventory[] finalObservations) =>
+            new((agentObservations, finalObservations));
+
+        internal SequenceProcessInventory Inventory { get; }
         internal SettlingClock Clock { get; } = new();
         internal MutableClientContext Caller { get; } = new();
         internal RecordingProcessLauncher Processes { get; } = new(sessionRemainsAlive: true);
@@ -1148,15 +1226,15 @@ public sealed class DeploymentClientCoordinatorTests
                 Inventory, shutdown, Processes, new FixedRequestIdSource(), Diagnostics.Add,
                 Clock, Clock.DelayAsync).ApplyFixedInboxAsync(cancellationToken);
 
-        internal void AssertNoReplay()
+        internal void AssertNoReplay(bool trayExpected = true)
         {
             Assert.Equal(1, broker.Calls);
             Assert.Equal(1, cleanup.Calls);
             Assert.Equal([InstalledProcessShape.SessionAgentAndTray], shutdown.Shapes);
-            Assert.Equal([Paths.SessionAgentExecutable, Paths.TrayExecutable],
-                Processes.Plans.Select(plan => plan.FileName));
+            string[] expected = trayExpected ? [Paths.SessionAgentExecutable, Paths.TrayExecutable] : [Paths.SessionAgentExecutable];
+            Assert.Equal(expected, Processes.Plans.Select(plan => plan.FileName));
             Assert.Equal(1, Processes.SessionAliveChecks);
-            Assert.Equal(1, Processes.TrayAliveChecks);
+            Assert.Equal(trayExpected ? 1 : 0, Processes.TrayAliveChecks);
         }
     }
 

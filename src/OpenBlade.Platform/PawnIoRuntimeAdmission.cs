@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Platform;
 
@@ -24,10 +25,12 @@ public static class PawnIoRuntimeAdmission
     public static PawnIoInstallation? Inspect(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        TraceObservation("OpenServiceManager", "Access=Connect; inspection is read-only.");
         nint manager = OpenSCManager(null, null, 1);
         if (manager == 0) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
         try
         {
+            TraceObservation("OpenService", "Service=PawnIO; Access=QueryConfig|QueryStatus.");
             nint service = OpenService(manager, "PawnIO", 1 | 4); // QUERY_CONFIG | QUERY_STATUS
             if (service == 0)
             {
@@ -38,32 +41,40 @@ public static class PawnIoRuntimeAdmission
                     using RegistryKey? uninstall = Registry.LocalMachine.OpenSubKey(
                         @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO");
                     using RegistryKey? devices = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\ROOT\PawnIO");
-                    if (uninstall is not null || devices is not null)
-                    { throw new InvalidOperationException("PawnIO registration exists without its kernel service. Preserve it for repair."); }
+                    string[] instances = devices?.GetSubKeyNames() ?? [];
+                    TraceObservation("ServiceAbsent", $"UninstallRegistration={uninstall is not null}; RegisteredDevices={instances.Length}.");
+                    VerifyNoInstallation(uninstall is not null, instances,
+                        (string id, out uint node) => CM_Locate_DevNode(out node, id, 0), cancellationToken);
                     return null;
                 }
                 throw new Win32Exception(error);
             }
             try
             {
+                TraceObservation("QueryServiceConfiguration", "Service=PawnIO.");
                 nint buffer = ReadServiceConfigurationBuffer(
                     (nint target, int size, out int needed) => QueryServiceConfig(service, target, size, out needed));
                 try
                 {
                     ServiceConfig config = Marshal.PtrToStructure<ServiceConfig>(buffer);
+                    string imagePath = Marshal.PtrToStringUni(config.BinaryPath) ?? string.Empty;
+                    TraceObservation("ServiceConfiguration", $"ServiceType={config.ServiceType}; StartType={config.StartType}; ErrorControl={config.ErrorControl}; ImagePath={imagePath}");
                     if (config.ServiceType != 1 || config.StartType != 3)
                     { throw new InvalidDataException("PawnIO is not the expected demand-start kernel service."); }
-                    string driver = NormalizeDriverPath(Marshal.PtrToStringUni(config.BinaryPath) ?? string.Empty,
+                    string driver = NormalizeDriverPath(imagePath,
                         Environment.GetFolderPath(Environment.SpecialFolder.Windows));
+                    TraceObservation("ReadDriverVersion", $"DriverPath={driver}");
                     FileVersionInfo info = FileVersionInfo.GetVersionInfo(driver);
                     Version version = new(info.FileMajorPart, info.FileMinorPart, info.FileBuildPart, info.FilePrivatePart);
                     // Version is provenance. The reviewed API/module handshake and a
                     // complete temperature read establish runtime compatibility; the
                     // bundled installer's version is not a runtime build allowlist.
                     string catalog = Path.Combine(Path.GetDirectoryName(driver)!, "PawnIO.cat");
+                    TraceObservation("VerifyCatalog", $"DriverPath={driver}; CatalogPath={catalog}; FileVersion={version}");
                     string identity = WindowsDriverApiTrust.VerifyCatalogMembers(catalog, [driver],
                         [WindowsDriverApiTrust.MicrosoftHardwareCompatibilityPublisher], cancellationToken);
                     InspectDevice(cancellationToken);
+                    TraceObservation("QueryServiceStatus", "Service=PawnIO; signed catalog and device binding verified.");
                     if (!QueryServiceStatus(service, out ServiceStatus status))
                     { throw new Win32Exception(Marshal.GetLastWin32Error()); }
                     // The official 2.1 INF has the same root binding but its driver
@@ -71,6 +82,7 @@ public static class PawnIoRuntimeAdmission
                     // actual kernel service to be running, without treating an old
                     // devnode's DN_STARTED flag as an API compatibility selector.
                     bool started = status.CurrentState == 4;
+                    TraceObservation("Admitted", $"FileVersion={version}; ServiceState={status.CurrentState}; Started={started}; CatalogIdentity={identity}");
                     return new(version, started, identity);
                 }
                 finally { Marshal.FreeHGlobal(buffer); }
@@ -78,6 +90,27 @@ public static class PawnIoRuntimeAdmission
             finally { CloseServiceHandle(service); }
         }
         finally { CloseServiceHandle(manager); }
+    }
+
+    // Setup bridges Trace into its package log, which Burn retains on failure.
+    // Keep observations beside their checks so rejected values survive rollback;
+    // diagnostic sinks must not change admission, cancellation or native errors.
+    internal static void TraceObservation(string stage, string context)
+    {
+        int nativeError = Marshal.GetLastPInvokeError();
+        try
+        {
+            string sanitized = DiagnosticText.Redact(context).Replace("\r", "\\r").Replace("\n", "\\n");
+            const int maximum = 4096;
+            if (sanitized.Length > maximum)
+            { sanitized = sanitized[..maximum] + " [truncated]"; }
+            Trace.TraceInformation("PawnIO admission: {0}; {1}", stage, sanitized);
+        }
+        catch
+        {
+            // Best effort only, including an unavailable or throwing Trace listener.
+        }
+        finally { Marshal.SetLastPInvokeError(nativeError); }
     }
 
     internal delegate bool ServiceConfigurationQuery(nint buffer, int size, out int needed);
@@ -109,11 +142,14 @@ public static class PawnIoRuntimeAdmission
 
     internal static string NormalizeDriverPath(string imagePath, string windows)
     {
-        string path = imagePath;
-        if (path.StartsWith(@"\SystemRoot\", StringComparison.OrdinalIgnoreCase))
-        { path = Path.Combine(windows, path[12..]); }
-        else if (path.StartsWith(@"\??\", StringComparison.Ordinal)) { path = path[4..]; }
+        TraceObservation("DriverPathInput", $"ImagePath={imagePath}; WindowsDirectory={windows}");
+        // QueryServiceConfigW paths use the kernel aliases recognized by Microsoft's
+        // driver-service resolver (PropertyHelper.cpp, 7895dd22785ddba5e973662ed942be3b3452b89d).
+        // Resolve the literal SystemRoot token using the Windows-provided directory,
+        // never arbitrary process environment variables. Keep package checks below.
+        string path = WindowsDriverServiceImagePath.Resolve(imagePath, windows, allowSystem32Relative: false);
         string root = Path.Combine(windows, "System32", "DriverStore", "FileRepository") + Path.DirectorySeparatorChar;
+        TraceObservation("DriverPathValidation", $"CandidatePath={path}; ExpectedRoot={root}; ExpectedFile=PawnIO.sys; ExpectedPackage=pawnio.inf_amd64_*");
         if (!Path.IsPathFullyQualified(path) || !string.Equals(Path.GetFullPath(path), path, StringComparison.OrdinalIgnoreCase)
             || !path.StartsWith(root, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(Path.GetFileName(path), "PawnIO.sys", StringComparison.OrdinalIgnoreCase))
@@ -129,19 +165,72 @@ public static class PawnIoRuntimeAdmission
     {
         using RegistryKey? root = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\ROOT\PawnIO");
         string[] instances = root?.GetSubKeyNames() ?? [];
-        if (instances.Length != 1)
-        { throw new InvalidDataException("PawnIO must have one independently present Root\\PawnIO device."); }
+        InspectDevice(instances, (string id, out uint node) => CM_Locate_DevNode(out node, id, 0),
+            selected =>
+            {
+                using RegistryKey instance = root!.OpenSubKey(selected)
+                    ?? throw new InvalidDataException("The PawnIO device registration disappeared.");
+                if (!string.Equals(instance.GetValue("Service") as string, "PawnIO", StringComparison.OrdinalIgnoreCase)
+                    || instance.GetValue("HardwareID") is not string[] ids
+                    || !ids.Contains(@"Root\PawnIO", StringComparer.OrdinalIgnoreCase))
+                { throw new InvalidDataException("The PawnIO device is not bound to its reviewed service and hardware ID."); }
+            }, node => CM_Get_DevNode_Status(out _, out _, node, 0), cancellationToken);
+    }
+
+    internal static void InspectDevice(string[] instances, DeviceNodeLocator locate,
+        Action<string> validateBinding, Func<uint, uint> queryStatus, CancellationToken cancellationToken)
+    {
+        (string selected, uint devnode) = SelectPresentDevice(instances, locate, cancellationToken);
+        validateBinding(selected);
         cancellationToken.ThrowIfCancellationRequested();
-        using RegistryKey instance = root!.OpenSubKey(instances[0])
-            ?? throw new InvalidDataException("The PawnIO device registration disappeared.");
-        if (!string.Equals(instance.GetValue("Service") as string, "PawnIO", StringComparison.OrdinalIgnoreCase)
-            || instance.GetValue("HardwareID") is not string[] ids
-            || !ids.Contains(@"Root\PawnIO", StringComparer.OrdinalIgnoreCase))
-        { throw new InvalidDataException("The PawnIO device is not bound to its reviewed service and hardware ID."); }
-        uint result = CM_Locate_DevNode(out uint devnode, @"ROOT\PawnIO\" + instances[0], 0);
-        if (result != 0) { throw new InvalidDataException($"PawnIO device is not present (ConfigManager {result})."); }
-        result = CM_Get_DevNode_Status(out _, out _, devnode, 0);
+        uint result = queryStatus(devnode);
         if (result != 0) { throw new InvalidDataException($"PawnIO device status is unavailable (ConfigManager {result})."); }
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    internal static void VerifyNoInstallation(bool uninstallRegistrationExists, string[] instances,
+        DeviceNodeLocator locate, CancellationToken cancellationToken)
+    {
+        // A disconnected Enum residue alone does not establish a partial install.
+        // Keep actual registration/present-device evidence blocking replacement.
+        if (uninstallRegistrationExists || LocatePresentDevices(instances, locate, cancellationToken).Count != 0)
+        { throw new InvalidOperationException("PawnIO registration exists without its kernel service. Preserve it for repair."); }
+    }
+
+    internal delegate uint DeviceNodeLocator(string instanceId, out uint devnode);
+
+    internal static (string Instance, uint Devnode) SelectPresentDevice(string[] instances,
+        DeviceNodeLocator locate, CancellationToken cancellationToken)
+    {
+        var present = LocatePresentDevices(instances, locate, cancellationToken);
+        TraceObservation("DevicePresence", $"Present={present.Count}; Registered={instances.Length}");
+        if (present.Count != 1)
+        {
+            throw new InvalidDataException($"PawnIO must have one independently present Root\\PawnIO device "
+                + $"(present: {present.Count}; registered: {instances.Length}).");
+        }
+        TraceObservation("DeviceBinding", $"Instance=ROOT\\PawnIO\\{present[0].Instance}; Devnode={present[0].Devnode}");
+        return present[0];
+    }
+
+    private static List<(string Instance, uint Devnode)> LocatePresentDevices(string[] instances,
+        DeviceNodeLocator locate, CancellationToken cancellationToken)
+    {
+        // Enum retains disconnected instances after uninstall/reinstall. Count only
+        // nodes independently located with CM_LOCATE_DEVNODE_NORMAL (never PHANTOM).
+        // Only CR_NO_SUCH_DEVNODE proves absence; other query errors remain failures.
+        List<(string Instance, uint Devnode)> present = [];
+        foreach (string instance in instances)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            uint result = locate(@"ROOT\PawnIO\" + instance, out uint devnode);
+            if (result == 0x0D) { continue; } // CR_NO_SUCH_DEVNODE
+            if (result != 0)
+            { throw new InvalidDataException($"PawnIO device presence is unavailable (ConfigManager {result})."); }
+            present.Add((instance, devnode));
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        return present;
     }
 
     [StructLayout(LayoutKind.Sequential)]
