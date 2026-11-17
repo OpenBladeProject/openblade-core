@@ -3081,12 +3081,6 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_TextBlockVaporChamberLighting2.Text" xml:space="preserve"><value>均热板灯光</value></data>
   <data name="MainWindow_TouchpadStatusIndicatorControlText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>触控板状态指示灯</value></data>
   <data name="MainWindow_VaporChamberLightingControlText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>均热板灯光</value></data>
-  <data name="MainWindow_ButtonEditKeyboardKeyColors.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>编辑键盘按键颜色</value>
-  </data>
-  <data name="MainWindow_ButtonEditKeyboardKeyColors.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>编辑键盘按键颜色</value>
-  </data>
   <data name="MainWindow_TextBlockChooseAColorForEachKeyboardKey.Text" xml:space="preserve">
     <value>为这台笔记本电脑的每个按键选择颜色。</value>
   </data>
@@ -3099,19 +3093,10 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_KeyColorEditor_FailedTitle" xml:space="preserve">
     <value>无法应用键盘颜色</value>
   </data>
-  <data name="MainWindow_KeyColorEditor_Instructions" xml:space="preserve">
-    <value>先选择颜色，再选择按键。选择其他按键可为其设置不同颜色。</value>
-  </data>
   <data name="MainWindow_KeyColorEditor_PresetName" xml:space="preserve">
     <value>自定义按键颜色</value>
   </data>
-  <data name="MainWindow_KeyColorEditor_SelectKey" xml:space="preserve">
-    <value>选择要更改颜色的按键。</value>
-  </data>
   <data name="MainWindow_KeyColorEditor_SelectedKey" xml:space="preserve">
     <value>已选择按键：{0}</value>
-  </data>
-  <data name="MainWindow_KeyColorEditor_Title" xml:space="preserve">
-    <value>编辑键盘按键颜色</value>
   </data>
 </root>

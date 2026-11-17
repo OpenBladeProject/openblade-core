@@ -3130,12 +3130,6 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_VaporChamberLightingControlText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Vapor chamber lighting</value>
   </data>
-  <data name="MainWindow_ButtonEditKeyboardKeyColors.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Edit keyboard key colors</value>
-  </data>
-  <data name="MainWindow_ButtonEditKeyboardKeyColors.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>Edit keyboard key colors</value>
-  </data>
   <data name="MainWindow_TextBlockChooseAColorForEachKeyboardKey.Text" xml:space="preserve">
     <value>Choose a color for each key on this laptop.</value>
   </data>
@@ -3148,19 +3142,10 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_KeyColorEditor_FailedTitle" xml:space="preserve">
     <value>Keyboard colors could not be applied</value>
   </data>
-  <data name="MainWindow_KeyColorEditor_Instructions" xml:space="preserve">
-    <value>Choose a color, then select a key. Select another key to give it a different color.</value>
-  </data>
   <data name="MainWindow_KeyColorEditor_PresetName" xml:space="preserve">
     <value>Custom key colors</value>
   </data>
-  <data name="MainWindow_KeyColorEditor_SelectKey" xml:space="preserve">
-    <value>Select a key to change its color.</value>
-  </data>
   <data name="MainWindow_KeyColorEditor_SelectedKey" xml:space="preserve">
     <value>Selected key: {0}</value>
-  </data>
-  <data name="MainWindow_KeyColorEditor_Title" xml:space="preserve">
-    <value>Edit keyboard key colors</value>
   </data>
 </root>
