@@ -307,3 +307,7 @@ fn refreshed(
         Err(error) => Err(error),
     }
 }
+
+#[cfg(test)]
+#[path = "hdr_write_tests.rs"]
+mod tests;

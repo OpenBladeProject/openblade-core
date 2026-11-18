@@ -521,3 +521,82 @@ fn nested_duplicates_private_tokens_and_negative_zero_are_invalid() {
     let benign = "{\"SchemaVersion\":1,\"Note\":\"see $serde_json::private::\"}";
     assert!(!Recovery::load(Mem::with(benign.as_bytes())).flags().1);
 }
+
+fn hdr_supported() -> Snapshot {
+    // The managed fixture reads HDR as supported and leaves brightness absent.
+    super::super::observation::fixture_query("available")
+}
+
+#[test]
+fn hdr_operation_gates_only_hdr_and_explicit_reads_clear_only_observed_fields() {
+    let (mut recovery, file) = from_fixture("battery-minimal");
+    assert!(recovery.begin(Fields::HDR, None));
+    let stored = file.stored();
+    assert_eq!(stored["UncertainHdr"], true);
+    assert_eq!(stored["UncertainBrightness"], false);
+    recovery.complete(Status::Indeterminate, &hdr_supported());
+    assert_eq!(recovery.unresolved(), Fields::HDR);
+
+    // A brightness operation adds its own gate without clearing HDR.
+    assert!(recovery.begin(Fields::BRIGHTNESS, None));
+    recovery.complete(Status::Indeterminate, &Snapshot::unavailable("unknown"));
+    let both = Fields {
+        hdr: true,
+        brightness: true,
+        ..Fields::default()
+    };
+    assert_eq!(recovery.unresolved(), both);
+    assert_eq!(recovery.flags(), (true, true, both));
+
+    // Restart restores both gates from the durable record.
+    let mut restarted = Recovery::load(file.clone());
+    assert_eq!(restarted.unresolved(), both);
+
+    // HDR without brightness clears only HDR; the managed pause remains.
+    assert!(!restarted.explicit_read(&hdr_supported()));
+    assert_eq!(restarted.unresolved(), Fields::BRIGHTNESS);
+    assert_eq!(file.stored()["AutomaticWritesPaused"], true);
+
+    // Brightness without HDR support clears brightness and resumes nothing
+    // until every uncertain field reads back.
+    let mut restarted = Recovery::load(file.clone());
+    let mut value = serde_json::to_value(with_brightness()).unwrap();
+    value["hdrSupported"] = false.into();
+    let no_hdr: Snapshot = serde_json::from_value(value).unwrap();
+    assert!(!restarted.explicit_read(&no_hdr));
+    assert_eq!(restarted.unresolved(), Fields::HDR);
+
+    // A read observing both resumes managed automation as before.
+    assert!(restarted.explicit_read(&with_brightness()));
+    assert_eq!(restarted.unresolved(), Fields::default());
+    assert_eq!(restarted.flags(), (false, false, Fields::default()));
+}
+
+#[test]
+fn hdr_succeeded_without_hdr_readback_keeps_the_pause_but_not_the_gate() {
+    let (mut recovery, file) = from_fixture("battery-minimal");
+    assert!(recovery.begin(Fields::HDR, Some(0)));
+    let mut value = serde_json::to_value(hdr_supported()).unwrap();
+    value["hdrSupported"] = false.into();
+    let unsupported: Snapshot = serde_json::from_value(value).unwrap();
+    recovery.complete(Status::Succeeded, &unsupported);
+    assert_eq!(recovery.unresolved(), Fields::default());
+    assert_eq!(recovery.flags(), (true, true, Fields::HDR));
+    assert_eq!(file.stored()["UncertainHdr"], true);
+    // Managed CompleteManualOperation then resumes once HDR reads back.
+    recovery.complete(Status::Succeeded, &hdr_supported());
+    assert_eq!(recovery.flags(), (true, false, Fields::default()));
+}
+
+#[test]
+fn only_a_paused_load_restores_the_hdr_gate() {
+    // Managed uncertainty without a pause (an in-flight hold) gates nothing.
+    let (recovery, _) = from_fixture("battery-owned-brightness-uncertain-hdr-hold");
+    assert!(recovery.flags().2.hdr && !recovery.flags().1);
+    assert_eq!(recovery.unresolved(), Fields::default());
+    // A paused record restores exactly its uncertain fields.
+    let paused = Mem::with(
+        br#"{"SchemaVersion":4,"LastReconciledPowerSource":1,"ManualHold":true,"AutomaticWritesPaused":true,"UncertainHdr":true}"#,
+    );
+    assert_eq!(Recovery::load(paused).unresolved(), Fields::HDR);
+}

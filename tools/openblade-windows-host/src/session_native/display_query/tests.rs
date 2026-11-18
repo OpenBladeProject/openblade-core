@@ -1088,3 +1088,362 @@ mod brightness_writes {
         assert!(supplier.canceled.load(Ordering::Acquire));
     }
 }
+
+/// Selected manual HDR writes through the production dispatcher.
+#[cfg(feature = "agent-display-hdr-write-v1")]
+mod hdr_writes {
+    use super::*;
+    use hdr_write::{
+        CANCELED, MULTIPLE, NO_INTERNAL, NOT_SUPPORTED, PANEL_CHANGED, PAUSED, STALE, STALE_AFTER,
+        UNCONFIRMED, rejected,
+    };
+    use recovery::Status;
+    use std::borrow::Cow;
+    use write::{CHANGED_POWER, CHECKPOINT, UNCONFIRMED_POWER};
+
+    struct Writes {
+        outcome: Option<(Status, Option<Cow<'static, str>>, Snapshot)>,
+        received: Vec<SetHdr>,
+        queries: usize,
+        brightness: usize,
+    }
+    impl Writes {
+        fn new(status: Status, error: Option<Cow<'static, str>>, state: Snapshot) -> Self {
+            Self {
+                outcome: Some((status, error, state)),
+                received: Vec::new(),
+                queries: 0,
+                brightness: 0,
+            }
+        }
+    }
+    impl Supplier for Writes {
+        async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
+            self.queries += 1;
+            Ok(Snapshot::unavailable("unused"))
+        }
+        #[cfg(feature = "agent-display-brightness-write-v1")]
+        async fn set_brightness(
+            &mut self,
+            _request: SetBrightness,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<WriteOutcome> {
+            self.brightness += 1;
+            Err(io::Error::other("HDR test supplier received setBrightness"))
+        }
+        async fn set_hdr(
+            &mut self,
+            request: SetHdr,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<HdrWriteOutcome> {
+            self.received.push(request);
+            let (status, error, state) = self.outcome.take().expect("one write");
+            Ok(HdrWriteOutcome {
+                status,
+                error,
+                state,
+            })
+        }
+    }
+    fn set(expected: Value, enabled: Value) -> Vec<u8> {
+        request(json!({
+            "operation":"setHdr","version":2,"requestId":ID,
+            "expectedPowerSource":expected,"enabled":enabled,
+        }))
+    }
+    fn capture_write(name: &str, frame: &[u8], status: Status, error: Option<&str>, state: &Value) {
+        capture_row(
+            json!({"case":name,"expectedStatus":status as u8,"expectedError":error,
+            "expectedState":state,"frame":frame}),
+        );
+    }
+
+    #[tokio::test]
+    async fn every_hdr_status_reaches_the_managed_response_shape() {
+        let state = || observation::fixture_query("available");
+        let text = |error: &'static str| Some(Cow::Borrowed(error));
+        let cases: [(&str, Status, Option<Cow<'static, str>>); 14] = [
+            ("hdr-write-succeeded", Status::Succeeded, None),
+            ("hdr-write-blocked-paused", Status::Blocked, text(PAUSED)),
+            (
+                "hdr-write-blocked-checkpoint",
+                Status::Blocked,
+                text(CHECKPOINT),
+            ),
+            (
+                "hdr-write-blocked-unconfirmed-power",
+                Status::Blocked,
+                text(UNCONFIRMED_POWER),
+            ),
+            (
+                "hdr-write-blocked-power",
+                Status::Blocked,
+                text(CHANGED_POWER),
+            ),
+            ("hdr-write-blocked-stale", Status::Blocked, text(STALE)),
+            (
+                "hdr-write-blocked-panel",
+                Status::Blocked,
+                text(PANEL_CHANGED),
+            ),
+            (
+                "hdr-write-blocked-canceled",
+                Status::Blocked,
+                text(CANCELED),
+            ),
+            (
+                "hdr-write-failed-unsupported",
+                Status::Failed,
+                text(NOT_SUPPORTED),
+            ),
+            (
+                "hdr-write-failed-no-panel",
+                Status::Failed,
+                text(NO_INTERNAL),
+            ),
+            ("hdr-write-failed-multiple", Status::Failed, text(MULTIPLE)),
+            (
+                "hdr-write-indeterminate-rejected",
+                Status::Indeterminate,
+                Some(rejected(87)),
+            ),
+            (
+                "hdr-write-indeterminate-unconfirmed",
+                Status::Indeterminate,
+                text(UNCONFIRMED),
+            ),
+            (
+                "hdr-write-indeterminate-stale",
+                Status::Indeterminate,
+                text(STALE_AFTER),
+            ),
+        ];
+        for (index, (case, status, error)) in cases.into_iter().enumerate() {
+            let enabled = index % 2 == 0;
+            let expected = serde_json::to_value(state()).unwrap();
+            let mut supplier = Writes::new(status, error.clone(), state());
+            // Managed polymorphic order: discriminator first, then members.
+            let (result, bytes, admissions) =
+                exchange(&mut supplier, &set(json!(2), json!(enabled))).await;
+            result.unwrap();
+            assert_eq!(admissions, 2);
+            assert_eq!((supplier.queries, supplier.brightness), (0, 0));
+            assert_eq!(
+                supplier.received,
+                [SetHdr {
+                    expected_power_source: 2,
+                    enabled
+                }]
+            );
+            let body: Value = serde_json::from_slice(&bytes[4..]).unwrap();
+            assert_eq!(body["requestId"], ID);
+            assert_eq!(body["status"], status as u8);
+            assert_eq!(body["error"], json!(error.as_deref()));
+            assert_eq!(body["state"], expected);
+            capture_write(case, &bytes, status, error.as_deref(), &expected);
+        }
+        assert_eq!(
+            rejected(87),
+            "Windows could not change HDR: Win32 error 87."
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_hdr_members_and_other_mutations_reach_no_supplier() {
+        let mut inputs = vec![
+            set(json!(3), json!(true)),
+            set(json!(-1), json!(true)),
+            set(json!(0.5), json!(true)),
+            set(json!("PluggedIn"), json!(true)),
+            set(Value::Null, json!(true)),
+            set(json!(0), Value::Null),
+            set(json!(0), json!("true")),
+            set(json!(0), json!(1)),
+            set(json!(0), json!(0)),
+            set(json!(0), json!([true])),
+            request(json!({"version":2,"requestId":ID,"operation":"setHdr","enabled":true})),
+            request(json!({"version":2,"requestId":ID,"operation":"setHdr","expectedPowerSource":0})),
+            request(json!({"version":2,"requestId":ID,"operation":"setHdr",
+                "expectedPowerSource":0,"enabled":true,"percent":50})),
+            request(json!({"version":1,"requestId":ID,"operation":"setHdr",
+                "expectedPowerSource":0,"enabled":true})),
+            request(json!({"version":2,"requestId":ID,"operation":"query","enabled":true})),
+            request(json!({"version":2,"requestId":ID,"operation":"setBrightness",
+                "expectedPowerSource":0,"enabled":true})),
+            request(json!({"version":2,"requestId":ID,"operation":"setBrightness",
+                "expectedPowerSource":0,"percent":50,"enabled":false})),
+            request(json!({"version":2,"requestId":ID,"operation":"setRefreshRate",
+                "expectedPowerSource":0,"refreshRateKey":"fixed-240"})),
+            request(json!({"version":2,"requestId":ID,"operation":"setColorProfile",
+                "expectedPowerSource":0,"colorProfileKey":"x"})),
+            request(json!({"version":2,"requestId":ID,"operation":"applyProfile",
+                "expectedPowerSource":0,"settings":{}})),
+            raw_request(
+                format!(
+                    r#"{{"version":2,"requestId":"{ID}","operation":"setHdr","expectedPowerSource":0,"enabled":true,"enabled":false}}"#
+                )
+                .as_bytes(),
+            ),
+        ];
+        // An HDR-only build has no brightness mutation at all.
+        #[cfg(not(feature = "agent-display-brightness-write-v1"))]
+        inputs.push(request(
+            json!({"version":2,"requestId":ID,"operation":"setBrightness",
+            "expectedPowerSource":0,"percent":50}),
+        ));
+        for input in inputs {
+            let mut supplier = Writes::new(Status::Succeeded, None, Snapshot::unavailable("x"));
+            let (result, bytes, _) = exchange(&mut supplier, &input).await;
+            assert!(matches!(result, Err(ServeError::Connection(_))));
+            assert!(bytes.is_empty());
+            assert!(supplier.received.is_empty());
+            assert_eq!((supplier.queries, supplier.brightness), (0, 0));
+        }
+    }
+
+    /// An HDR write that only finishes after its gate opens, recording whether
+    /// cancellation was requested and whether it completed.
+    struct HeldWrite {
+        gate: Arc<(Mutex<bool>, Condvar)>,
+        canceled: Arc<AtomicBool>,
+        recorded: Arc<AtomicBool>,
+        started: Arc<AtomicBool>,
+    }
+    impl HeldWrite {
+        fn new() -> Self {
+            Self {
+                gate: Arc::new((Mutex::new(false), Condvar::new())),
+                canceled: Arc::default(),
+                recorded: Arc::default(),
+                started: Arc::default(),
+            }
+        }
+    }
+    impl Supplier for HeldWrite {
+        async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
+            unreachable!("write test received a query")
+        }
+        #[cfg(feature = "agent-display-brightness-write-v1")]
+        async fn set_brightness(
+            &mut self,
+            _request: SetBrightness,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<WriteOutcome> {
+            unreachable!("HDR test supplier received setBrightness")
+        }
+        async fn set_hdr(
+            &mut self,
+            _request: SetHdr,
+            canceled: Arc<AtomicBool>,
+        ) -> io::Result<HdrWriteOutcome> {
+            let gate = self.gate.clone();
+            let seen = self.canceled.clone();
+            let recorded = self.recorded.clone();
+            let started = self.started.clone();
+            tokio::task::spawn_blocking(move || {
+                started.store(true, Ordering::Release);
+                let (lock, event) = &*gate;
+                let mut open = lock.lock().unwrap();
+                while !*open {
+                    open = event.wait(open).unwrap();
+                }
+                seen.store(canceled.load(Ordering::Acquire), Ordering::Release);
+                recorded.store(true, Ordering::Release);
+                Ok(HdrWriteOutcome {
+                    status: Status::Indeterminate,
+                    error: Some(Cow::Borrowed(UNCONFIRMED)),
+                    state: Snapshot::unavailable("recorded"),
+                })
+            })
+            .await
+            .unwrap()
+        }
+    }
+
+    #[tokio::test]
+    async fn stop_and_client_loss_join_the_recorded_hdr_write_and_send_nothing() {
+        for client_loss in [false, true] {
+            let mut supplier = HeldWrite::new();
+            let gate = supplier.gate.clone();
+            let started = supplier.started.clone();
+            let recorded = supplier.recorded.clone();
+            let (mut server, mut client) = tokio::io::duplex(1024);
+            client.write_all(&set(json!(0), json!(true))).await.unwrap();
+            let (sender, mut stop) = watch::channel(false);
+            let (result, bytes) = tokio::join!(
+                async {
+                    let result =
+                        serve(&mut server, &mut stop, &mut supplier, |_| Ok(()), || Ok(())).await;
+                    drop(server);
+                    result
+                },
+                async {
+                    wait_flag(&started).await;
+                    if client_loss {
+                        client.write_all(&[0]).await.unwrap();
+                    } else {
+                        sender.send(true).unwrap();
+                    }
+                    // The server must still be waiting on the blocking write.
+                    sleep(Duration::from_millis(50)).await;
+                    assert!(!recorded.load(Ordering::Acquire));
+                    release(&gate);
+                    let mut bytes = Vec::new();
+                    client.read_to_end(&mut bytes).await.unwrap();
+                    bytes
+                },
+            );
+            result.unwrap();
+            assert!(bytes.is_empty(), "an abandoned write sends no reply");
+            assert!(supplier.recorded.load(Ordering::Acquire));
+            assert!(supplier.canceled.load(Ordering::Acquire));
+        }
+    }
+
+    #[tokio::test]
+    async fn origin_loss_during_an_hdr_write_joins_the_record_then_stops_the_endpoint() {
+        let mut supplier = HeldWrite::new();
+        let gate = supplier.gate.clone();
+        let started = supplier.started.clone();
+        let recorded = supplier.recorded.clone();
+        let lost = Arc::new(AtomicBool::new(false));
+        let (mut server, mut client) = tokio::io::duplex(1024);
+        client
+            .write_all(&set(json!(1), json!(false)))
+            .await
+            .unwrap();
+        let (_sender, mut stop) = watch::channel(false);
+        let verify = {
+            let lost = lost.clone();
+            move || {
+                if lost.load(Ordering::Acquire) {
+                    Err(io::Error::other("injected Origin loss"))
+                } else {
+                    Ok(())
+                }
+            }
+        };
+        let (result, bytes) = tokio::join!(
+            async {
+                let result = serve(&mut server, &mut stop, &mut supplier, |_| Ok(()), verify).await;
+                drop(server);
+                result
+            },
+            async {
+                wait_flag(&started).await;
+                lost.store(true, Ordering::Release);
+                // Origin polling notices the loss but must keep the write owned.
+                sleep(ORIGIN_POLL * 2).await;
+                assert!(!recorded.load(Ordering::Acquire));
+                release(&gate);
+                let mut bytes = Vec::new();
+                client.read_to_end(&mut bytes).await.unwrap();
+                bytes
+            },
+        );
+        assert!(matches!(result, Err(ServeError::Fatal(_))));
+        assert!(bytes.is_empty());
+        assert!(supplier.recorded.load(Ordering::Acquire));
+        assert!(supplier.canceled.load(Ordering::Acquire));
+    }
+}

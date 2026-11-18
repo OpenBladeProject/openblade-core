@@ -323,6 +323,16 @@ impl BrightnessOwner {
         }
     }
 
+    /// A test owner that never starts a worker, for writes that read no brightness.
+    #[cfg(all(test, feature = "agent-display-hdr-write-v1"))]
+    pub(super) fn inert() -> Self {
+        Self {
+            worker: None,
+            closed: false,
+            start: Box::new(|| Ok(Err(io::Error::other("test owner cannot start a worker")))),
+        }
+    }
+
     /// A test owner whose replacement workers come from `start`.
     #[cfg(all(test, feature = "agent-display-brightness-write-v1"))]
     pub(super) fn with_starter(
