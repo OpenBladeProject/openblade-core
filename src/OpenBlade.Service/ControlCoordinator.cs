@@ -500,8 +500,7 @@ public sealed class ControlCoordinator
                 relinquishWhenUnconfigured && effectiveGpuClockTuning is null
                     ? RelinquishGpuClockOffsetManagementAsync(token)
                     : Task.CompletedTask,
-            resolveIndeterminateWriteByReadback:
-                resolveIndeterminatePerformanceWrites,
+            resolveIndeterminateWriteByReadback: () => resolveIndeterminatePerformanceWrites,
             unchangedAfterIndeterminateWrite: PerformanceStateMatches,
             writeBlockReason: performanceWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss:
@@ -543,7 +542,7 @@ public sealed class ControlCoordinator
             initialStateBlockReason: state => state.HyperBoostActive != false && !ownsHyperBoost
                 ? "GPU clock tuning requires confirmed OpenBlade ownership of active HyperBoost."
                 : null,
-            resolveIndeterminateWriteByReadback: true,
+            resolveIndeterminateWriteByReadback: static () => true,
             unchangedAfterIndeterminateWrite: PerformanceStateMatches,
             writeBlockReason: performanceWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss: true);
@@ -634,7 +633,7 @@ public sealed class ControlCoordinator
             // so every explicit manual-mode action must submit its RPM target.
             forceWrite: DeviceSubsystemOrder.IsManualFanMode(value.Mode)
                 || initialStateBlockReason is not null,
-            resolveIndeterminateWriteByReadback:
+            resolveIndeterminateWriteByReadback: () =>
                 resolveIndeterminateAutomaticFanWrites
                     && value.Mode == FanMode.Automatic,
             unchangedAfterIndeterminateWrite: PerformanceStateMatches,
@@ -820,7 +819,6 @@ public sealed class ControlCoordinator
                 DeviceSubsystemOrder.IsManualFanMode(state.Fans)
                 && state.HyperBoostActive == false,
             forceWrite: true,
-            resolveIndeterminateWriteByReadback: false,
             reconcileUnconfirmableIndeterminateWrite: true,
             writeBlockReason: fanWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss: fanWriteBlockReason is not null).ConfigureAwait(false);
@@ -1320,27 +1318,45 @@ public sealed class ControlCoordinator
                 return LightingSupported(capabilities, value);
             },
             state => LightingMatches(state, value, independent),
-            token => independent
-                ? value.IndependentControls is { } fields
-                    ? device.SetIndependentLightingAsync(fields, token) : Task.CompletedTask
-                : device.SetLightingAsync(value, token),
+            token => ApplyLightingWritesAsync(device, value, independent, baseline, forceWrite, token),
             cancellationToken,
             initialStateBlockReason,
-            acceptSetterCompletionWithoutReadback: value.IndependentControls is null && value.Effect != LightingEffect.Off,
-            setterCompletionEvidence: state => !independent && LogoMatches(state, value),
+            acceptSetterCompletionWithoutReadback: value.Effect != LightingEffect.Off,
+            setterCompletionEvidence: state => !independent && (value.IndependentControls is null
+                ? LogoMatches(state, value)
+                : CombinedLightingSetterCompletionMatches(device, state, value)),
+            acceptSetterCompletionOnReadFailure: value.IndependentControls is null,
             forceWrite: forceWrite,
             writeAllowed: writeAllowed,
+            resolveIndeterminateWriteByReadback: () => !independent && value.IndependentControls is not null,
             stateReader: async token =>
             {
-                ConfirmedDeviceState state = independent && value.IndependentControls is { } fields
-                    ? await device.ReadIndependentLightingStateAsync(fields, token)
-                    : await device.ReadLightingStateAsync(token);
+                ConfirmedDeviceState state;
+                if (independent && value.IndependentControls is { } fields)
+                {
+                    state = await device.ReadIndependentLightingStateAsync(fields, token);
+                }
+                else
+                {
+                    state = await device.ReadLightingStateAsync(token);
+                    if (value.IndependentControls is { } combinedFields)
+                    {
+                        ConfirmedDeviceState independentState = await device.ReadIndependentLightingStateAsync(combinedFields, token);
+                        state = state with
+                        {
+                            IndependentLighting = independentState.IndependentLighting,
+                            LogoLighting = independentState.LogoLighting ?? state.LogoLighting,
+                        };
+                    }
+                }
                 baseline ??= state;
                 return state;
             });
         // Each admitted independent field needs its own observed confirmation.
         // A successful setter or a readable different value cannot allow replay.
-        return independent && outcome.WriteAttempted && !outcome.ReadbackMatched
+        return outcome.WriteAttempted && !outcome.ReadbackMatched
+            && (independent || value.IndependentControls is not null
+                && outcome.WriteSubmissionState == WriteSubmissionState.Indeterminate)
             ? outcome with { ConfirmationUnavailable = true, PreWriteState = baseline }
             : outcome;
     }
@@ -1398,7 +1414,7 @@ public sealed class ControlCoordinator
             IBladeDevice initialDevice = thermalStepRunner?.CurrentDevice ?? device;
             capabilities = await initialDevice.ReadCapabilitiesAsync(cancellationToken);
             EnsureGpuClockOffsetManagementContract(capabilities);
-            desired = DropUnsupportedGpuClockTuning(desired, capabilities);
+            desired = ProjectIndependentLightingTarget(capabilities, DropUnsupportedGpuClockTuning(desired, capabilities));
             if (desired.GpuClockTuning is null && continuationScopeResolver is null)
             {
                 // Null means OpenBlade no longer manages or reports NVIDIA
@@ -1529,7 +1545,7 @@ public sealed class ControlCoordinator
                 HashSet<DeviceSubsystem> confirmationUnavailable =
                     transition.Completed
                         .Where(subsystem =>
-                            !states[subsystem].AcceptSetterCompletionWithoutReadback)
+                            !HasAcceptedSetterCompletionWithoutReadback(subsystem, states[subsystem], transition))
                         .ToHashSet();
                 confirmationUnavailable.UnionWith(
                     transition.ConfirmationUnavailable);
@@ -1631,6 +1647,8 @@ public sealed class ControlCoordinator
             !capabilities.SupportsDirectManualFanTransitions
             || !manualFansDesired
             || IsConfirmedDirectManualFanWriteBaseline(initial);
+        LightingSettings lighting = desired.Lighting.Value;
+        bool independentLightingOnly = UsesIndependentLighting(capabilities, lighting);
         bool thermalCombinationSupported = directTransitionBaselineSupported
             && IsVerifiedThermalCombination(
                 desired.Performance.Value,
@@ -1726,16 +1744,15 @@ public sealed class ControlCoordinator
             },
             [DeviceSubsystem.Lighting] = new(
                 "Lighting",
-                IsLightingValid(desired.Lighting.Value)
-                    && LightingSupported(capabilities, desired.Lighting.Value),
-                LightingMatches(initial, desired.Lighting.Value, UsesIndependentLighting(capabilities, desired.Lighting.Value)),
-                token => UsesIndependentLighting(capabilities, desired.Lighting.Value)
-                    ? desired.Lighting.Value.IndependentControls is { } fields
-                        ? device.SetIndependentLightingAsync(fields, token) : Task.CompletedTask
-                    : device.SetLightingAsync(desired.Lighting.Value, token),
-                state => LightingMatches(state, desired.Lighting.Value, UsesIndependentLighting(capabilities, desired.Lighting.Value)),
-                AcceptSetterCompletionWithoutReadback:
-                    !UsesIndependentLighting(capabilities, desired.Lighting.Value) && desired.Lighting.Value.Effect != LightingEffect.Off),
+                IsLightingValid(lighting) && LightingSupported(capabilities, lighting),
+                LightingMatches(initial, lighting, independentLightingOnly),
+                token => ApplyLightingWritesAsync(device, lighting, independentLightingOnly, initial, false, token),
+                state => LightingMatches(state, lighting, independentLightingOnly),
+                AcceptSetterCompletionWithoutReadback: !independentLightingOnly && lighting.Effect != LightingEffect.Off)
+            {
+                SetterCompletionEvidence = lighting.IndependentControls is null
+                    ? null : state => CombinedLightingSetterCompletionMatches(device, state, lighting),
+            },
         };
     }
 
@@ -2247,7 +2264,8 @@ public sealed class ControlCoordinator
                         HasAcceptedSetterCompletionWithoutReadback(
                             subsystem,
                             pending,
-                            transition)
+                            transition,
+                            final)
                             && (subsystem != DeviceSubsystem.Lighting
                                 || LogoMatches(final, desired.Lighting.Value))
                             ? AppliedWithoutReadback(pending.Name)
@@ -2298,7 +2316,8 @@ public sealed class ControlCoordinator
         HasAcceptedSetterCompletionWithoutReadback(
             subsystem,
             pending,
-            transition)
+            transition,
+            final)
         && (subsystem != DeviceSubsystem.Lighting
             || final.LogoLighting is null
             || LogoMatches(final, desired.Lighting.Value));
@@ -2306,9 +2325,12 @@ public sealed class ControlCoordinator
     private static bool HasAcceptedSetterCompletionWithoutReadback(
         DeviceSubsystem subsystem,
         PendingSubsystem pending,
-        FullTransitionApplyState transition) =>
+        FullTransitionApplyState transition,
+        ConfirmedDeviceState? readback = null) =>
         transition.Completed.Contains(subsystem)
-        && pending.AcceptSetterCompletionWithoutReadback;
+        && pending.AcceptSetterCompletionWithoutReadback
+        && (pending.SetterCompletionEvidence is null
+            || readback is not null && pending.SetterCompletionEvidence(readback));
 
     private static bool HasExplicitFinalReadbackContradiction(
         DeviceSubsystem subsystem,
@@ -2490,13 +2512,14 @@ public sealed class ControlCoordinator
         bool acceptSetterCompletionWithoutReadback = false,
         Func<ConfirmedDeviceState, bool>? setterCompletionEvidence = null,
         bool setterCompletionEvidenceConfirmsReadback = false,
+        bool acceptSetterCompletionOnReadFailure = true,
         bool forceWrite = false,
         Func<ConfirmedDeviceState, CancellationToken, Task>? stateAwareSetter = null,
         Func<CancellationToken, Task<ConfirmedDeviceState>>? stateReader = null,
         Func<bool>? writeAllowed = null,
         Func<string?>? writeBlockReason = null,
         Func<DeviceCapabilities, CancellationToken, Task>? beforeInitialStateRead = null,
-        bool resolveIndeterminateWriteByReadback = false,
+        Func<bool>? resolveIndeterminateWriteByReadback = null,
         Func<ConfirmedDeviceState, ConfirmedDeviceState, bool>?
             unchangedAfterIndeterminateWrite = null,
         bool returnBlockedOnWriteAuthorityLoss = false,
@@ -2666,7 +2689,7 @@ public sealed class ControlCoordinator
         catch (BladeWriteException exception)
             when (writeAttempted
                 && exception.SubmissionState is WriteSubmissionState.Indeterminate
-                && resolveIndeterminateWriteByReadback)
+                && resolveIndeterminateWriteByReadback?.Invoke() == true)
         {
             return await ResolveIndeterminateWriteByReadbackAsync(
                     subsystem,
@@ -2720,7 +2743,7 @@ public sealed class ControlCoordinator
                 && initialStateReadStarted
                 && !initialStateReadCompleted
                 && IsRetryableThermalInitialReadFailure(subsystem, exception);
-            if (setterCompleted && acceptSetterCompletionWithoutReadback)
+            if (setterCompleted && acceptSetterCompletionWithoutReadback && acceptSetterCompletionOnReadFailure)
             {
                 return new ScopedApplyOutcome(
                     AppliedWithoutReadback(name),
@@ -2731,7 +2754,7 @@ public sealed class ControlCoordinator
                     DeviceAccessFailed: false);
             }
 
-            if (setterCompleted && resolveIndeterminateWriteByReadback)
+            if (setterCompleted && resolveIndeterminateWriteByReadback?.Invoke() == true)
             {
                 return await ResolveIndeterminateWriteByReadbackAsync(
                         subsystem,
@@ -2953,43 +2976,147 @@ public sealed class ControlCoordinator
     private static bool IsLightingValid(LightingSettings value)
         => LightingSettingsValidation.IsWellFormed(value);
 
-    private static bool UsesIndependentLighting(DeviceCapabilities capabilities, LightingSettings value) =>
-        capabilities.SupportsIndependentLightingControls
-        && (value.IndependentControls is not null || !value.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0);
+    internal static bool UsesIndependentLighting(DeviceCapabilities? capabilities, LightingSettings value) =>
+        capabilities is { SupportsIndependentLightingControls: true }
+        && (!value.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0);
+
+    // Reconciliation must use the same authority as the actual write, even
+    // when a stored profile opts into an effect this port cannot offer.
+    internal static DesiredDeviceState ProjectIndependentLightingTarget(
+        DeviceCapabilities? capabilities,
+        DesiredDeviceState desired) =>
+        desired.Lighting.Value.ControlsKeyboardEffect && UsesIndependentLighting(capabilities, desired.Lighting.Value)
+            ? desired with
+            {
+                Lighting = desired.Lighting with
+                {
+                    Value = desired.Lighting.Value with { ControlsKeyboardEffect = false },
+                },
+            }
+            : desired;
+
+    private static async Task ApplyLightingWritesAsync(
+        IBladeDevice device,
+        LightingSettings value,
+        bool independentOnly,
+        ConfirmedDeviceState? baseline,
+        bool forceWrite,
+        CancellationToken cancellationToken)
+    {
+        bool writeKeyboard = !independentOnly
+            && (value.IndependentControls is null || forceWrite || baseline is null
+                || !KeyboardLightingMatches(baseline, value));
+        if (writeKeyboard)
+        {
+            byte? independentBrightness = value.Effect == LightingEffect.Off
+                ? null : value.IndependentControls?.Brightness;
+            await device.SetLightingAsync(value with
+            {
+                Brightness = independentBrightness is > 0 ? independentBrightness.Value : value.Brightness,
+                LogoMode = value.IndependentControls?.LogoMode is null ? value.LogoMode : null,
+                // The exact hybrid backend uses the independent raw conversion
+                // so the later field readback can confirm without a second SET.
+                IndependentControls = independentBrightness is > 0 ? new(Brightness: independentBrightness) : null,
+            }, cancellationToken);
+        }
+
+        if (value.IndependentControls is not { } fields)
+        {
+            return;
+        }
+
+        if (!writeKeyboard)
+        {
+            await device.SetIndependentLightingAsync(fields, cancellationToken);
+            return;
+        }
+
+        try
+        {
+            await device.SetIndependentLightingAsync(fields, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // The keyboard effect was already submitted. Treat a later field failure as
+            // indeterminate so the coordinator reconciles the combined state read-only.
+            throw new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Independent lighting failed after the keyboard effect was submitted.",
+                exception);
+        }
+    }
 
     private static bool LightingSupported(
         DeviceCapabilities capabilities,
         LightingSettings value) =>
-        UsesIndependentLighting(capabilities, value)
-            ? value.IndependentControls is null
-                || value.IndependentControls is { IsWellFormed: true } fields
-                    && (!fields.Brightness.HasValue || capabilities.SupportsKeyboardBrightness)
-                    && (fields.LogoMode is null || capabilities.LogoLightingModes.Contains(fields.LogoMode.Value))
-            : value.IndependentControls is null
-                && capabilities.LightingEffects.Contains(value.Effect)
-                && (value.LogoMode is null || capabilities.LogoLightingModes.Contains(value.LogoMode.Value));
+        (UsesIndependentLighting(capabilities, value)
+            || capabilities.LightingEffects.Contains(value.Effect)
+                && (value.LogoMode is null || capabilities.LogoLightingModes.Contains(value.LogoMode.Value)))
+        && (value.IndependentControls is null
+            || capabilities.SupportsIndependentLightingControls
+                && value.IndependentControls is { IsWellFormed: true } fields
+                && (!fields.Brightness.HasValue || capabilities.SupportsKeyboardBrightness)
+                && (!fields.VaporChamberLightingEnabled.HasValue || capabilities.SupportsVaporChamberLighting)
+                && (!fields.TouchpadStatusIndicatorEnabled.HasValue || capabilities.SupportsTouchpadStatusIndicator)
+                && (fields.LogoMode is null || capabilities.LogoLightingModes.Contains(fields.LogoMode.Value)));
 
     private static bool LightingMatches(
         ConfirmedDeviceState confirmed,
         LightingSettings desired,
         bool independent = false)
     {
-        if (independent)
-        {
-            return desired.IndependentControls is not { } fields
-                || (!fields.Brightness.HasValue || confirmed.IndependentLighting?.Brightness == fields.Brightness)
-                    && (fields.LogoMode is null || (confirmed.IndependentLighting?.LogoMode ?? confirmed.LogoLighting) == fields.LogoMode);
-        }
-        LightingSettings desiredKeyboard = desired with { LogoMode = null, ControlsKeyboardEffect = false };
-        LightingSettings? confirmedKeyboard = confirmed.Lighting is { } lighting
-            ? lighting with { LogoMode = null, ControlsKeyboardEffect = false }
-            : null;
-        return confirmedKeyboard == desiredKeyboard && LogoMatches(confirmed, desired);
+        return (independent || KeyboardLightingMatches(confirmed, desired))
+            && (desired.IndependentControls is not { } fields || IndependentLightingMatches(confirmed, fields));
     }
+
+    internal static bool KeyboardLightingMatches(ConfirmedDeviceState confirmed, LightingSettings desired)
+    {
+        if (confirmed.Lighting is not { } lighting)
+        {
+            return false;
+        }
+
+        // In a combined request the independently observed field supplies the
+        // shared brightness and logo targets. Compare keyboard content once.
+        return (lighting with
+        {
+            Brightness = desired.IndependentControls?.Brightness is null ? lighting.Brightness : desired.Brightness,
+            LogoMode = null,
+            IndependentControls = null,
+            ControlsKeyboardEffect = false,
+        }) == (desired with { LogoMode = null, IndependentControls = null, ControlsKeyboardEffect = false })
+            && LogoMatches(confirmed, desired);
+    }
+
+    private static bool CombinedLightingSetterCompletionMatches(
+        IBladeDevice device,
+        ConfirmedDeviceState confirmed,
+        LightingSettings requested) =>
+        // Host-rendered pixels cannot be queried. A confirmed zero brightness
+        // can also make the built-in effect unobservable on the hybrid backend.
+        // The runtime still checks that a requested renderer remains owned.
+        confirmed.Lighting is null
+        && requested.IndependentControls is { } fields
+        && (device.RequiresLightingRendererOwnership(requested) || fields.Brightness == 0)
+        && LogoMatches(confirmed, requested)
+        && IndependentLightingMatches(confirmed, fields);
+
+    private static bool IndependentLightingMatches(
+        ConfirmedDeviceState confirmed,
+        IndependentLightingSettings fields) =>
+        (!fields.Brightness.HasValue || confirmed.IndependentLighting?.Brightness == fields.Brightness)
+        && (!fields.VaporChamberLightingEnabled.HasValue || confirmed.IndependentLighting?.VaporChamberLightingEnabled == fields.VaporChamberLightingEnabled)
+        && (!fields.TouchpadStatusIndicatorEnabled.HasValue || confirmed.IndependentLighting?.TouchpadStatusIndicatorEnabled == fields.TouchpadStatusIndicatorEnabled)
+        && (fields.LogoMode is null || (confirmed.IndependentLighting?.LogoMode ?? confirmed.LogoLighting) == fields.LogoMode);
 
     private static bool LogoMatches(
         ConfirmedDeviceState confirmed,
-        LightingSettings desired) => desired.LogoMode is null
+        LightingSettings desired) => desired.IndependentControls?.LogoMode is not null
+        || desired.LogoMode is null
         || confirmed.LogoLighting == desired.LogoMode;
 
     private static bool IsTerminalDeviceFailure(Exception exception) =>
@@ -3387,6 +3514,7 @@ public sealed class ControlCoordinator
         bool AcceptSetterCompletionWithoutReadback = false)
     {
         public BatteryConfirmationScope BatteryConfirmation { get; init; } = BatteryConfirmationScope.All;
+        public Func<ConfirmedDeviceState, bool>? SetterCompletionEvidence { get; init; }
 
         public Func<ConfirmedDeviceState, CancellationToken, Task>? StateAwareSetter
         {

@@ -252,6 +252,8 @@ public sealed record DeviceCapabilities(
     // effect or RGB restoration baseline can be read. Older frames default off.
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     public bool SupportsIndependentLightingControls { get; init; }
+    public bool SupportsVaporChamberLighting { get; init; }
+    public bool SupportsTouchpadStatusIndicator { get; init; }
 
     // Older/full implementations support the complete parameter pickers by default.
     public bool SupportsBreathingColorSelection { get; init; } = true;
@@ -341,6 +343,10 @@ public sealed record DeviceCapabilities(
     public IReadOnlySet<LightingEffect> ObservedLightingEffects { get; init; } =
         new HashSet<LightingEffect>();
 
+    /// <summary>Owner-reported regions with no admitted lighting read/write contract.</summary>
+    public IReadOnlySet<ObservedLightingZone> ObservedLightingZones { get; init; } =
+        new HashSet<ObservedLightingZone>();
+
     public IReadOnlyList<PowerSourceBehaviorObservation> ObservedPowerSourceBehaviors
     {
         get;
@@ -403,13 +409,13 @@ public sealed record DeviceCapabilities(
         && (ThxAudio is null || ThxAudio.IsWellFormed)
         && (Blade18KeyboardLayoutId is null
             || Blade18KeyboardLightingLayout.IsKnownLayout(Blade18KeyboardLayoutId.Value))
-        && (KeyboardLightingLayoutId is null
-            ? !LightingEffects.Contains(LightingEffect.Sequence)
-            : KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutId)
-                && LightingEffects.Contains(LightingEffect.Sequence))
+        && (KeyboardLightingLayoutId is null || KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutId))
+        && (!LightingEffects.Contains(LightingEffect.Sequence)
+            || KeyboardLightingLayoutId is not null)
         && (!ChargeLimits.Contains(100) || SupportsBatteryProtectionOff)
         && IsValidEnumSet(SupportedLightingRefreshRates)
         && IsValidEnumSet(ObservedLightingEffects)
+        && IsValidEnumSet(ObservedLightingZones)
         && IsValidEnumSet(LogoLightingModes)
         && IsValidEnumSet(HostManagedLaptopControls)
         && HostManagedLaptopControls.All(control => control is

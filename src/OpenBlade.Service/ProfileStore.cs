@@ -13,7 +13,7 @@ public sealed record ProfileLoadResult(
 
 public sealed class ProfileStore
 {
-    internal const int CurrentSchemaVersion = 26;
+    internal const int CurrentSchemaVersion = 27;
     internal const int KeyboardEffectControlSchemaVersion = 26;
     internal const int FanStopRollingAverageSchemaVersion = 25;
     internal const int FanStopSettingsSchemaVersion = 24;
@@ -206,6 +206,10 @@ public sealed class ProfileStore
         {
             RejectIndependentControlsInLegacySchema(parsed.RootElement);
         }
+        if (schemaVersion < 27 && LightingSettingsValidation.ContainsZoneControlIntent(parsed.RootElement))
+        {
+            throw new InvalidDataException("Lighting zone controls require profile schema 27.");
+        }
         if (schemaVersion < KeyboardEffectControlSchemaVersion)
         {
             RejectKeyboardEffectControlInLegacySchema(parsed.RootElement);
@@ -296,6 +300,10 @@ public sealed class ProfileStore
                 PluggedIn = profiles.PluggedIn with { StopFansInBatterySaver = false },
                 UsbC = profiles.UsbC with { StopFansInBatterySaver = false },
             };
+        }
+        if (schemaVersion == KeyboardEffectControlSchemaVersion)
+        {
+            profiles = LightingSettingsFactory.PreserveLegacyIndependentProfileIntent(profiles);
         }
         validator.ValidateStoredCustomIntent(profiles);
         return profiles;

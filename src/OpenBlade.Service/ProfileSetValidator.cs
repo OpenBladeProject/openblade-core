@@ -62,6 +62,8 @@ public sealed class ProfileValidationPolicy
     public IReadOnlySet<LightingEffect> SupportedLightingEffects { get; }
 
     public bool SupportsIndependentLightingControls { get; init; }
+    public bool SupportsVaporChamberLighting { get; init; }
+    public bool SupportsTouchpadStatusIndicator { get; init; }
 
     public CustomPerformanceCapabilities? CustomPerformance { get; }
 
@@ -157,6 +159,8 @@ public sealed class ProfileValidationPolicy
             batteryCapabilities.FanSpeedRangesByPerformancePreset)
         {
             SupportsIndependentLightingControls = lightingCapabilities.SupportsIndependentLightingControls,
+            SupportsVaporChamberLighting = lightingCapabilities.SupportsVaporChamberLighting,
+            SupportsTouchpadStatusIndicator = lightingCapabilities.SupportsTouchpadStatusIndicator,
             SupportedFanModes = new HashSet<FanMode>(batteryCapabilities.FanModes),
             ManualFanCurveRequiresFullPower = batteryCapabilities.ReportsPerformanceWithManualFans,
             SupportsManualFansOnLimitedPower = batteryCapabilities.SupportsManualFansOnLimitedPower,
@@ -553,9 +557,19 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid($"The {name} lighting effect is undefined.");
         }
 
+        if (lighting.IndependentControls is { } independent
+            && (!independent.IsWellFormed
+                || !allowStoredIndependentIntent
+                    && (!validationPolicy.SupportsIndependentLightingControls
+                        || independent.VaporChamberLightingEnabled.HasValue && !validationPolicy.SupportsVaporChamberLighting
+                        || independent.TouchpadStatusIndicatorEnabled.HasValue && !validationPolicy.SupportsTouchpadStatusIndicator)))
+        {
+            throw Invalid($"The {name} independent lighting settings are invalid or unavailable.");
+        }
+
         if (validationPolicy.SupportsIndependentLightingControls
-                && (lighting.IndependentControls is not null || !lighting.ControlsKeyboardEffect || validationPolicy.SupportedLightingEffects.Count == 0)
-            || allowStoredIndependentIntent && lighting.IndependentControls is not null)
+                && (!lighting.ControlsKeyboardEffect || validationPolicy.SupportedLightingEffects.Count == 0)
+            || allowStoredIndependentIntent && lighting.IndependentControls is not null && !lighting.ControlsKeyboardEffect)
         {
             // Preserve the well-formed saved effect as unmanaged intent. This
             // capability applies only the independently opted-in nullable fields.
@@ -564,10 +578,6 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
                 throw Invalid($"The {name} independent lighting settings are invalid.");
             }
             return;
-        }
-        if (lighting.IndependentControls is not null)
-        {
-            throw Invalid($"The {name} independent lighting controls are unavailable.");
         }
         if (!validationPolicy.SupportedLightingEffects.Contains(lighting.Effect))
         {

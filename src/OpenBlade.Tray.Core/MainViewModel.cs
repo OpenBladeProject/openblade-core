@@ -2415,6 +2415,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && HasLightingCapability
         && (UsesIndependentLightingControls || !UseWindowsDynamicLighting);
 
+    public bool SupportsRz090529KeyColorEditor =>
+        Capabilities.KeyboardLightingLayoutId == KeyboardLightingLayoutIds.Rz09_0529
+        && Capabilities.LightingEffects.Contains(LightingEffect.Sequence);
+
+    public bool CanApplyRz090529KeyColors => SupportsRz090529KeyColorEditor
+        && CanControlLighting
+        && CommandCapabilities.LightingEffects.Contains(LightingEffect.Sequence);
+
     public bool IsLightingControlUnavailable =>
         !CanControlLighting && !IsCheckingLaptopConnection(latestStatus);
 
@@ -3229,6 +3237,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsSpecialKeyBindingsEditable));
             Notify(nameof(IsWindowsDynamicLightingAvailable));
             Notify(nameof(CanControlLighting));
+            Notify(nameof(SupportsRz090529KeyColorEditor));
+            Notify(nameof(ShowObservedOnlyLightingEffects));
+            Notify(nameof(ObservedOnlyLightingEffectsText));
+            Notify(nameof(ShowObservedTouchpadLighting));
+            Notify(nameof(ShowObservedUnderGlassLighting));
+            Notify(nameof(ShowVaporChamberLighting));
             Notify(nameof(SupportsSixtyHzLighting));
             Notify(nameof(CanSetLightingRefreshRate));
             NotifyGamingModeKeyPolicy();
@@ -4523,6 +4537,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool IsLogoLightingVisible => AvailableLogoLightingModeOptions.Count > 0;
 
+    public bool ShowObservedTouchpadLighting =>
+        Capabilities.ObservedLightingZones.Contains(ObservedLightingZone.Touchpad);
+
+    public bool ShowObservedUnderGlassLighting =>
+        Capabilities.ObservedLightingZones.Contains(ObservedLightingZone.UnderGlass);
+
     public bool LightingShowsBrightness => UsesIndependentLightingControls || LightingEffectEditor != LightingEffect.Off;
 
     public bool LightingShowsBreathingColorMode =>
@@ -5660,9 +5680,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         SelectedLighting = confirmed?.Lighting ?? status.DesiredState.Lighting.Value;
         if (status.Capabilities?.SupportsIndependentLightingControls == true)
         {
+            LightingSettings intent = status.LightingOverride?.Value ?? status.DesiredState.Lighting.Value;
+            // The keyboard readback carries only the effect and brightness.
+            // Preserve configured zone intent separately from the current observations.
             SelectedLighting = SelectedLighting with
             {
-                ControlsKeyboardEffect = (status.LightingOverride?.Value ?? status.DesiredState.Lighting.Value).ControlsKeyboardEffect,
+                ControlsKeyboardEffect = intent.ControlsKeyboardEffect,
+                IndependentControls = intent.IndependentControls,
             };
         }
         if (confirmed?.LogoLighting is { } confirmedLogo)
@@ -6333,6 +6357,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ArgumentNullException.ThrowIfNull(preset);
         return CanControlLighting
             && LightingSettingsValidation.IsWellFormed(preset.Lighting)
+            && ProfileAdmissionPolicy.LightingSupported(preset.Lighting with
+            {
+                ControlsKeyboardEffect = Capabilities.SupportsIndependentLightingControls || preset.Lighting.ControlsKeyboardEffect,
+            }, CommandCapabilities)
             && preset.Lighting.LogoMode is null
             && Capabilities.LightingEffects.Contains(preset.Lighting.Effect)
             && (preset.Lighting.Parameters is not SequenceLightingParameters sequence
@@ -6355,6 +6383,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         LoadLightingEditor(preset.Lighting with
         {
             LogoMode = LogoLightingModeEditor,
+            IndependentControls = MergeIndependentLighting(LightingDraft.IndependentControls, preset.Lighting.IndependentControls),
             ControlsKeyboardEffect = Capabilities.SupportsIndependentLightingControls || preset.Lighting.ControlsKeyboardEffect,
         });
         lightingEditor.SetDirty(true);
@@ -6933,7 +6962,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private async Task SetLightingAsync(object? parameter, CancellationToken token)
     {
         LightingSettings requested = (LightingSettings)parameter!;
-        if (requested.IndependentControls is not null)
+        if (requested.IndependentControls is not null
+            && (!requested.ControlsKeyboardEffect
+                || UsesIndependentLightingControls && requested == IndependentLightingDraft))
         {
             await SetIndependentLightingAsync(requested, token);
             return;
@@ -8306,7 +8337,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         InvalidatePendingLightingHold();
         controlsKeyboardEffect = value.ControlsKeyboardEffect;
         independentLightingEditorActive = Capabilities.SupportsIndependentLightingControls
-            && (value.IndependentControls is not null || !value.ControlsKeyboardEffect || Capabilities.LightingEffects.Count == 0);
+            && (!value.ControlsKeyboardEffect || Capabilities.LightingEffects.Count == 0);
         if (UsesIndependentLightingControls)
         {
             LoadIndependentLightingEditor(value, value.IndependentControls
@@ -8315,7 +8346,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         EnsureImportedSequenceOption(value);
+        independentLightingDelta = null;
         lightingEditor.Load(value, startUnconfirmedEffectAtDefaultBrightness);
+        NotifyIndependentLightingPresentation();
         NotifyLightingParameterPresentation();
         NotifyComputed(nameof(SelectedLightingEffectOption), SelectedLightingEffectOption);
         NotifyComputed(nameof(SelectedLogoLightingModeOption), SelectedLogoLightingModeOption);
@@ -8632,7 +8665,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return activeProfileDraft.Lighting is not null
                     ? savedControls != currentControls
                     : ConfiguredValueDiffers(savedControls?.Brightness, independentBrightness)
-                        || ConfiguredValueDiffers(savedControls?.LogoMode, independentLogo);
+                        || ConfiguredValueDiffers(savedControls?.LogoMode, independentLogo)
+                        || ConfiguredValueDiffers(savedControls?.VaporChamberLightingEnabled, independentVaporChamber)
+                        || ConfiguredValueDiffers(savedControls?.TouchpadStatusIndicatorEnabled, independentTouchpadIndicator);
             }
             bool keyboardDiffers = (activeProfileDraft.Lighting is not null
                     || !IsKeyboardEffectUnconfirmed)

@@ -178,7 +178,7 @@ public sealed partial class MainWindow
             throw new InvalidOperationException("Notification measurements require disconnected live fixtures.");
         }
         return
-        [
+        (TelemetryNotificationMeasurement[])[
             Measure("freshness", () => Notify(nameof(MainViewModel.LatestTelemetryFreshness))),
             Measure("history", () => Notify(nameof(MainViewModel.TelemetryHistorySnapshot))),
             Measure("accepted-sample-notifications", () =>

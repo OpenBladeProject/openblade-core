@@ -771,6 +771,9 @@
   <data name="Lighting brightness" xml:space="preserve">
     <value>灯光亮度</value>
   </data>
+  <data name="Synapse lists these effects for this model; OpenBlade cannot control them yet: {0}" xml:space="preserve">
+    <value>Synapse 为此型号列出了以下效果，但 OpenBlade 目前尚无法控制：\n{0}</value>
+  </data>
   <data name="Lighting color" xml:space="preserve">
     <value>灯光颜色</value>
   </data>
@@ -1133,6 +1136,18 @@
   </data>
   <data name="Switch off lighting" xml:space="preserve">
     <value>关闭灯光</value>
+  </data>
+  <data name="Touchpad lighting" xml:space="preserve">
+    <value>触控板灯光</value>
+  </data>
+  <data name="Show Touchpad lighting when the laptop reports this zone." xml:space="preserve">
+    <value>笔记本报告存在此灯光区域时显示。</value>
+  </data>
+  <data name="Under-glass lighting" xml:space="preserve">
+    <value>玻璃下方灯光</value>
+  </data>
+  <data name="Show Under-glass lighting when the laptop reports this zone." xml:space="preserve">
+    <value>笔记本报告存在此灯光区域时显示。</value>
   </data>
   <data name="Temperatures" xml:space="preserve">
     <value>温度</value>
@@ -1862,4 +1877,6 @@
   <data name="Both" xml:space="preserve">
     <value>两者</value>
   </data>
+  <data name="Vapor chamber lighting" xml:space="preserve"><value>均热板灯光</value></data>
+  <data name="Touchpad status indicator" xml:space="preserve"><value>触控板状态指示灯</value></data>
 </root>

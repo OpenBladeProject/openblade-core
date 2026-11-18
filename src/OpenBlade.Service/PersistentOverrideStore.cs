@@ -51,7 +51,8 @@ public sealed class PersistentOverrideStore
         new(StringComparer.OrdinalIgnoreCase);
     // CPU Boost and the Custom maximum-fan flag require a new schema so older
     // builds preserve this document rather than accepting an incomplete intent.
-    private const int CurrentSchemaVersion = 9;
+    private const int CurrentSchemaVersion = 10;
+    private const int SchemaNineVersion = 9;
     private const int SchemaEightVersion = 8;
     private const int SchemaSevenVersion = 7;
     private const int SchemaSixVersion = 6;
@@ -312,6 +313,7 @@ public sealed class PersistentOverrideStore
 
         PersistentOverrideState overrides;
         if (schemaVersion is CurrentSchemaVersion
+            or SchemaNineVersion
             or SchemaEightVersion
             or SchemaSevenVersion
             or SchemaSixVersion
@@ -362,9 +364,20 @@ public sealed class PersistentOverrideStore
         {
             throw new InvalidDataException("Independent lighting controls require override schema 8.");
         }
-        if (schemaVersion < CurrentSchemaVersion)
+        if (schemaVersion < 10 && LightingSettingsValidation.ContainsZoneControlIntent(parsed.RootElement))
+        {
+            throw new InvalidDataException("Lighting zone controls require override schema 10.");
+        }
+        if (schemaVersion < SchemaNineVersion)
         {
             ProfileStore.RejectKeyboardEffectControlInLegacySchema(parsed.RootElement);
+        }
+        if (schemaVersion == SchemaNineVersion)
+        {
+            overrides = overrides with
+            {
+                Lighting = LightingSettingsFactory.PreserveLegacyIndependentIntent(overrides.Lighting),
+            };
         }
         PersistentOverrideState normalized =
             NormalizeLegacyGpuClockTuning(

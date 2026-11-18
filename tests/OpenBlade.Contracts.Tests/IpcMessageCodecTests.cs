@@ -144,6 +144,33 @@ public sealed partial class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task ObservedLightingZones_RoundTripAsNonWritableMetadata()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            Capabilities = DeviceCapabilities.Unavailable() with
+            {
+                ObservedLightingZones = new HashSet<ObservedLightingZone>
+                {
+                    ObservedLightingZone.Touchpad,
+                    ObservedLightingZone.UnderGlass,
+                },
+            },
+        };
+
+        DeviceCapabilities decoded = (await RoundTripStatusAsync(status)).Capabilities!;
+
+        Assert.Equal(
+            new HashSet<ObservedLightingZone>
+            {
+                ObservedLightingZone.Touchpad,
+                ObservedLightingZone.UnderGlass,
+            },
+            decoded.ObservedLightingZones);
+        Assert.Empty(decoded.LightingEffects);
+    }
+
+    [Fact]
     public async Task SourceReviewed5500RpmCapabilitiesRoundTripWithCurrentPeers()
     {
         var range = new FanSpeedRange(4300, 5500, 100);
@@ -561,7 +588,7 @@ public sealed partial class IpcMessageCodecTests
               "operation":"pulseReactiveKey",
               "version":{{OpenBladeIpc.ProtocolVersion}},
               "requestId":"{{requestId}}",
-              "pulse":{"matrixSlot":102}
+               "pulse":{"matrixSlot":114}
             }
             """);
 
@@ -862,7 +889,7 @@ public sealed partial class IpcMessageCodecTests
             BatteryProtectionOverride = false,
         };
 
-        Assert.Equal(83, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(84, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -904,7 +931,7 @@ public sealed partial class IpcMessageCodecTests
         using MemoryStream requestBytes = new();
         await IpcMessageCodec.WriteRequestAsync(requestBytes, request, CancellationToken.None);
         JsonObject requestJson = FramedJsonObject(requestBytes);
-        Assert.Equal(83, requestJson["version"]!.GetValue<int>());
+        Assert.Equal(84, requestJson["version"]!.GetValue<int>());
         Assert.Equal(wireValue, requestJson["value"]!["value"]!.GetValue<int>());
         requestBytes.Position = 0;
         Assert.Equal(request, await IpcMessageCodec.ReadRequestAsync(requestBytes, CancellationToken.None));
@@ -1001,7 +1028,7 @@ public sealed partial class IpcMessageCodecTests
                 }),
             CancellationToken.None);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(83, json["version"]!.GetValue<int>());
+        Assert.Equal(84, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsDirectManualFanTransitions"));
@@ -1036,7 +1063,7 @@ public sealed partial class IpcMessageCodecTests
             await IpcMessageCodec.ReadServerFrameAsync(encoded, CancellationToken.None));
         Assert.True(roundTrip.Status.Capabilities!.SupportsManualFansOnLimitedPower);
         JsonObject json = FramedJsonObject(encoded);
-        Assert.Equal(83, json["version"]!.GetValue<int>());
+        Assert.Equal(84, json["version"]!.GetValue<int>());
         JsonObject status = Assert.IsType<JsonObject>(json["status"]);
         JsonObject capabilities = Assert.IsType<JsonObject>(status["capabilities"]);
         Assert.True(capabilities.Remove("supportsManualFansOnLimitedPower"));
@@ -1611,7 +1638,7 @@ public sealed partial class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(83, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(84, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -2328,7 +2355,7 @@ public sealed partial class IpcMessageCodecTests
             IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(83, exception.ExpectedVersion);
+        Assert.Equal(84, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2360,7 +2387,7 @@ public sealed partial class IpcMessageCodecTests
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(83, exception.ExpectedVersion);
+        Assert.Equal(84, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2404,7 +2431,7 @@ public sealed partial class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
-        Assert.Equal(83, exception.ExpectedVersion);
+        Assert.Equal(84, exception.ExpectedVersion);
         Assert.Equal(previousProtocolVersion, exception.ActualVersion);
     }
 
@@ -2564,7 +2591,7 @@ public sealed partial class IpcMessageCodecTests
 
     [Theory]
     [InlineData(null, true)]
-    [InlineData(KeyboardLightingLayoutIds.Rz09_0581, false)]
+    [InlineData("openblade.razer.unknown.keyboard.6x16.v1", false)]
     public async Task WriteServerFrameAsync_RejectsInconsistentSequenceLayoutCapability(
         string? layoutId,
         bool includesSequence)

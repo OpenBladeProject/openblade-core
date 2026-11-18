@@ -8,9 +8,8 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    // Earlier peers reject explicit hybrid keyboard-effect intent.
-    // Protocol 82 admits exact-model 5500-RPM values; protocol 81 peers reject them.
-    public const int ProtocolVersion = 83;
+    // Protocol 84 combines source-main power metadata with RZ09-0529 lighting-zone intent.
+    public const int ProtocolVersion = 84;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -1432,6 +1431,15 @@ public static class IpcMessageCodec
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "thxAudio", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "observedLightingZones", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "supportsVaporChamberLighting", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "supportsTouchpadStatusIndicator", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
             }
 

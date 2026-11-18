@@ -41,7 +41,9 @@ public sealed partial class SourceReviewedBladeModelTests
         }
         else
         {
-            LightingEffect[] effects = product == 0x02B7
+            LightingEffect[] effects = product == 0x02C7
+                ? Enum.GetValues<LightingEffect>()
+                : product == 0x02B7
                 ? [LightingEffect.Off, LightingEffect.Breathing, LightingEffect.Wave]
                 : [LightingEffect.Off, LightingEffect.Static, LightingEffect.Breathing, LightingEffect.Wave];
             Assert.Equal(effects.Order(),
@@ -50,7 +52,7 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Equal(3, capabilities.LogoLightingModes.Count);
         Assert.True(capabilities.SupportsKeyboardBrightness);
         Assert.True(capabilities.SupportsIndependentLightingControls);
-        Assert.False(capabilities.SupportsUniformLightingFrames);
+        Assert.Equal(product == 0x02C7, capabilities.SupportsUniformLightingFrames);
         Assert.Null(capabilities.HyperBoostAccess);
         Assert.Null(capabilities.ThxAudio);
         Assert.Empty(capabilities.OneShotLaptopControls);
@@ -384,6 +386,7 @@ public sealed partial class SourceReviewedBladeModelTests
             Assert.True(command.ClassId == 0x0D && command.CommandId is 0x82 or 0x87
                 || command.ClassId == 0x07 && command.CommandId is 0x92 or 0x8F
                 || command.ClassId == 0x03 && command.CommandId is 0x80 or 0x82 or 0x83
+                || product == 0x02C7 && command.ClassId == 0 && command.CommandId == 0xD9
                 || command.ClassId == 0x0F && command.CommandId == 0x82));
         if (product == 0x02C7)
         {
@@ -510,6 +513,7 @@ public sealed partial class SourceReviewedBladeModelTests
         internal bool RetireOnQueryFailure;
         private RazerCommandSessionDisposition disposition;
         internal bool RejectLogoQuery;
+        internal bool RejectVaporChamberQuery;
         internal byte Fan1 = 45;
         internal byte Fan2 = 45;
         internal byte[] DynamicFanRange = [0, 0, 0, 0, 0, 0, 37, 0, 45, 0, 53, 0];
@@ -553,7 +557,9 @@ public sealed partial class SourceReviewedBladeModelTests
                 || RejectAdapterQuery && command.ClassId == 0x07 && command.CommandId == 0x8C
                 || RejectDynamicFanRange && command.ClassId == 0x0D && command.CommandId == 0x83
                 || RejectLightingQuery && command.ClassId == 0x03 && command.CommandId >= 0x80
-                || RejectLogoQuery && command.ClassId == 0x03 && command.CommandId is 0x80 or 0x82)
+                || RejectLogoQuery && command.ClassId == 0x03 && command.CommandId is 0x80 or 0x82
+                || RejectVaporChamberQuery && command.ClassId == 0x03 && command.CommandId == 0x80
+                    && command.Arguments.Span[1] == 38)
             {
                 if (RetireOnQueryFailure)
                 {
@@ -565,12 +571,13 @@ public sealed partial class SourceReviewedBladeModelTests
             byte[] payload = (command.ClassId, command.CommandId) switch
             {
                 (0x03, 0x83) => [arguments[0], 5, Brightness],
-                (0x03, 0x80) => [0, 4, LogoOn],
+                (0x03, 0x80) => arguments[1] == 38 ? [0, 38, 1] : [0, 4, LogoOn],
+                (0x00, 0xD9) => [0, 1, 1],
                 (0x03, 0x82) => [0, 4, LogoEffect],
                 (0x03, 0x00) or (0x03, 0x02) or (0x03, 0x03) => EchoLightingAck ? arguments : [],
                 (0x0F, 0x82) => McuLighting.ToArray(),
                 (0x0F, 0x02) => arguments,
-                (0x03, 0x0A) => [],
+                (0x03, 0x0A) or (0x03, 0x0B) => [],
                 (0x07, 0x8C) => Adapter,
                 (0x07, 0x8F) => [Flags],
                 (0x07, 0x92) => BatteryReadbacks.TryDequeue(out byte[]? readback) ? readback : [Battery],
@@ -615,7 +622,7 @@ public sealed partial class SourceReviewedBladeModelTests
                         {
                             break; // Exact newer MCU shortcut precedes overlay cleanup.
                         }
-                        McuCustomOverlay = false;
+                        McuCustomOverlay = arguments[2] == 8;
                         if (McuStaticEqualityShortcut && arguments[2] == 1 && McuLighting[2] == 1
                             || arguments[2] == 2 && McuLighting[2] == 2 && McuLighting[5] == arguments[5])
                         {

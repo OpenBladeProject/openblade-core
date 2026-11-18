@@ -120,6 +120,15 @@ public static class LightingPresentation
                 parts.Add(TrayText.Get("Laptop lid logo") + ": " + LogoLightingModeLabel(logo));
             }
 
+            if (independent.VaporChamberLightingEnabled is { } vaporChamber)
+            {
+                parts.Add(TrayText.Get("Vapor chamber lighting") + ": " + TrayText.Get(vaporChamber ? "On" : "Off"));
+            }
+            if (independent.TouchpadStatusIndicatorEnabled is { } touchpadIndicator)
+            {
+                parts.Add(TrayText.Get("Touchpad status indicator") + ": " + TrayText.Get(touchpadIndicator ? "On" : "Off"));
+            }
+
             return string.Join(" · ", parts);
         }
 

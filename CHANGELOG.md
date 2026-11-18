@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Add keyboard-only host-rendered lighting effects and per-key color editing on Blade 18 (2025, RZ09-0529). Keep Vapor Chamber RGB unavailable until its prior state can be restored; no touchpad RGB zone is claimed. ([#977](https://github.com/OpenBladeProject/openblade-core/pull/977))
+
 ## [0.64.2-nightly.116] - 2026-11-16
 
 ### Added

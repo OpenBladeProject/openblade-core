@@ -78,6 +78,7 @@ internal sealed class LightingEditorState
     private ReactiveLightingDuration lightingReactiveDurationEditor =
         ReactiveLightingDuration.Medium;
     private SequenceLightingParameters? importedSequenceParameters;
+    private IndependentLightingSettings? independentControls;
     private bool lightingRandomColorsEditor;
     private LightingDirection lightingDirectionEditor = LightingDirection.Rightward;
     private LightingRotationDirection lightingRotationDirectionEditor =
@@ -122,7 +123,8 @@ internal sealed class LightingEditorState
         {
             ArgumentOutOfRangeException.ThrowIfNegative(value);
             ArgumentOutOfRangeException.ThrowIfGreaterThan(value, 100);
-            SetLightingEditorField(ref lightingBrightnessEditor, value, LightingEditorValue.Brightness);
+            SetLightingEditorField(ref lightingBrightnessEditor, value, LightingEditorValue.Brightness,
+                supersedeIndependentTarget: true);
         }
     }
 
@@ -388,7 +390,8 @@ internal sealed class LightingEditorState
                 return;
             }
 
-            if (SetLightingEditorField(ref logoLightingModeEditor, value, LightingEditorValue.LogoMode))
+            if (SetLightingEditorField(ref logoLightingModeEditor, value, LightingEditorValue.LogoMode,
+                supersedeIndependentTarget: true))
             {
                 Publish(LightingEditorChangeKind.TransitionCompleted, LightingEditorValue.LogoMode);
             }
@@ -399,6 +402,7 @@ internal sealed class LightingEditorState
         LightingSettings value,
         bool startUnconfirmedEffectAtDefaultBrightness = false)
     {
+        independentControls = value.IndependentControls;
         if (value.Parameters is SequenceLightingParameters sequence)
         {
             importedSequenceParameters = sequence;
@@ -640,7 +644,7 @@ internal sealed class LightingEditorState
                     brightness),
             _ => new LightingSettings(Effect, default, brightness),
         };
-        return keyboard with { LogoMode = LogoMode };
+        return keyboard with { LogoMode = LogoMode, IndependentControls = independentControls };
     }
 
     private void SeedVisibleLightingDefaults(
@@ -652,12 +656,24 @@ internal sealed class LightingEditorState
             return;
         }
 
-        if (Brightness == 0)
+        byte? inheritedBrightness = previous == LightingEffect.Off ? independentControls?.Brightness : null;
+        if (Brightness == 0 || inheritedBrightness.HasValue)
         {
-            SetLightingEditorField(
-                ref lightingBrightnessEditor,
-                (int)DefaultBrightness,
-                LightingEditorValue.Brightness);
+            int visibleBrightness = inheritedBrightness is > 0
+                ? inheritedBrightness.Value : DefaultBrightness;
+            bool replaceDarkTarget = inheritedBrightness == 0;
+            if (replaceDarkTarget && independentControls is { } fields)
+            {
+                // Selecting a visible effect takes the keyboard out of the saved dark state.
+                independentControls = fields with { Brightness = DefaultBrightness };
+            }
+
+            if (!SetLightingEditorField(ref lightingBrightnessEditor, visibleBrightness, LightingEditorValue.Brightness)
+                && replaceDarkTarget)
+            {
+                // An unconfirmed status load can already have displayed the default.
+                Publish(LightingEditorChangeKind.ValueChanged, LightingEditorValue.Draft);
+            }
         }
 
         bool selectedUsesColor = selected is LightingEffect.Static
@@ -785,7 +801,8 @@ internal sealed class LightingEditorState
     private bool SetLightingEditorField<T>(
         ref T field,
         T value,
-        LightingEditorValue fieldName)
+        LightingEditorValue fieldName,
+        bool supersedeIndependentTarget = false)
     {
         if (EqualityComparer<T>.Default.Equals(field, value))
         {
@@ -793,6 +810,18 @@ internal sealed class LightingEditorState
         }
 
         SetDirty(true);
+        // Only explicit brightness and logo edits supersede duplicate
+        // targets carried forward from a combined profile.
+        if (supersedeIndependentTarget && independentControls is { } fields)
+        {
+            IndependentLightingSettings remaining = fieldName switch
+            {
+                LightingEditorValue.Brightness => fields with { Brightness = null },
+                LightingEditorValue.LogoMode => fields with { LogoMode = null },
+                _ => fields,
+            };
+            independentControls = remaining.IsWellFormed ? remaining : null;
+        }
         SetValue(ref field, value, fieldName);
         Publish(LightingEditorChangeKind.ValueChanged, LightingEditorValue.Draft);
         Publish(LightingEditorChangeKind.EditCompleted);

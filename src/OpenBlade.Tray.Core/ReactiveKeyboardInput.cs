@@ -322,6 +322,8 @@ public static class ReactiveRawKeyboardInput
                 TryCreateBlade18Pulse(blade18KeyboardLayoutId, makeCode, isExtended, out primary, out secondary),
             RazerBladeInputDeviceKind.Rz09_0530 =>
                 TryCreateBlade14Pulse(makeCode, isExtended, out primary, out secondary),
+            RazerBladeInputDeviceKind.Rz09_0529 =>
+                TryCreateRz090529Pulse(makeCode, isExtended, out primary, out secondary),
             RazerBladeInputDeviceKind.Rz09_0528 =>
                 Rz09_0528ReactiveKeyMap.TryMap(
                     makeCode,
@@ -337,6 +339,19 @@ public static class ReactiveRawKeyboardInput
     {
         secondary = null;
         if (Blade14KeyboardLightingLayout.TryMapScanCode(makeCode, extended, out byte slot))
+        {
+            primary = new(slot);
+            return true;
+        }
+        primary = default;
+        return false;
+    }
+
+    private static bool TryCreateRz090529Pulse(
+        ushort makeCode, bool extended, out ReactiveKeyPulse primary, out ReactiveKeyPulse? secondary)
+    {
+        secondary = null;
+        if (Rz090529KeyboardLightingLayout.TryMapScanCode(makeCode, extended, out byte slot))
         {
             primary = new(slot);
             return true;
@@ -518,12 +533,22 @@ public enum RazerBladeInputDeviceKind
     Rz09_0528,
     Rz09_0484,
     Rz09_0530,
+    Rz09_0529,
 }
 
 public static class RazerBladeReactiveInputDevice
 {
     public static RazerBladeInputDeviceKind ClassifyPath(string? path)
     {
+        if (!string.IsNullOrWhiteSpace(path) && HasIdentity(path, "VID_1532&PID_02C7"))
+        {
+            // KI8110's own active descriptors: MI00 is one keyboard TLC;
+            // MI01's first TLC is keyboard. MI02 is mouse/vendor control and
+            // MI03 is vendor-feature-only despite its keyboard protocol byte.
+            // See the exact image/descriptor pins in the 0529 frame review.
+            return IsLightingKeyboardPath(path, "VID_1532&PID_02C7")
+                ? RazerBladeInputDeviceKind.Rz09_0529 : RazerBladeInputDeviceKind.Unsupported;
+        }
         if (!string.IsNullOrWhiteSpace(path) && HasIdentity(path, "VID_1532&PID_02C5"))
         {
             return IsBlade14LightingKeyboardPath(path)
@@ -561,6 +586,8 @@ public static class RazerBladeReactiveInputDevice
                 RazerBladeInputDeviceKind.Rz09_0484,
             "RZ09-0530" =>
                 RazerBladeInputDeviceKind.Rz09_0530,
+            "RZ09-0529" =>
+                RazerBladeInputDeviceKind.Rz09_0529,
             _ => RazerBladeInputDeviceKind.Unsupported,
         };
 
@@ -571,7 +598,12 @@ public static class RazerBladeReactiveInputDevice
         // MI00 report descriptor 0xC2CF is a single keyboard TLC; MI01's
         // descriptor at 0xC230 has keyboard as its first TLC. MI03 is vendor
         // input despite its keyboard interface protocol and is not admitted.
-        int start = path.IndexOf("VID_1532&PID_02C5", StringComparison.OrdinalIgnoreCase);
+        return IsLightingKeyboardPath(path, "VID_1532&PID_02C5");
+    }
+
+    private static bool IsLightingKeyboardPath(string path, string exactIdentity)
+    {
+        int start = path.IndexOf(exactIdentity, StringComparison.OrdinalIgnoreCase);
         int end = path.IndexOfAny(['#', '\\'], start);
         string identity = end < 0 ? path[start..] : path[start..end];
         string[] fields = identity.Split('&');

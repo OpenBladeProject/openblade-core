@@ -793,7 +793,7 @@ public partial class App
             }
             IEnumerable<string> destinations = captureProfilesVariant || captureFeatureSnapshot || captureSnapTap
                 || captureDischargeSettings || captureFanStop || captureLabsTarget || captureGlobalSearch
-                ? [requestedPage!]
+                ? (string[])[requestedPage!]
                 : string.IsNullOrWhiteSpace(requestedPage)
                     ? mainDestinations
                     : mainDestinations.Where(destination => string.Equals(
@@ -926,6 +926,11 @@ public partial class App
                     }
                     string? controlSnapshot = Environment.GetEnvironmentVariable(
                         "OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE");
+                    if (destination == "lighting" && controlSnapshot == "rz0529-lighting")
+                    {
+                        snapshotMainWindow.ShowRz090529LightingZonesSnapshot();
+                        await WaitForSnapshotLayoutAsync();
+                    }
                     if (destination == "laptop" && (controlSnapshot?.StartsWith(
                             "one-shot-", StringComparison.Ordinal) == true
                         || controlSnapshot == "blade18-function-row"))
@@ -1698,7 +1703,7 @@ public partial class App
             Guid.NewGuid(),
             SessionGpuOperationStatus.Succeeded,
             null,
-            [app],
+            (SessionGpuApp[])[app],
             []);
         var coordinator = new GpuAppCleanupCoordinator(
             _ => Task.FromResult(scan),
@@ -1733,7 +1738,7 @@ public partial class App
             await SaveSnapshotAsync(host, reportPath + ".gpu-empty.png");
         }
 
-        scan = scan with { Apps = [app] };
+        scan = scan with { Apps = (SessionGpuApp[])[app] };
         await coordinator.ObserveAsync(CancellationToken.None);
         await WaitForSnapshotLayoutAsync();
         RequireResponsiveSelector(
@@ -1793,6 +1798,12 @@ public partial class App
             ApplyExperimentalBatterySnapshotState(window, state == "blade18-battery-off");
             return;
         }
+        if (state == "rz0529-lighting")
+        {
+            ApplyRz0301IndependentLightingSnapshotState(window, populated: true, paused: false,
+                hybrid: true, fullEffect: true, rz090529: true);
+            return;
+        }
         if (state is "rz0301-hybrid-lighting-unknown" or "rz0301-hybrid-lighting-static")
         {
             ApplyRz0301IndependentLightingSnapshotState(window, populated: true, paused: false,
@@ -1842,7 +1853,7 @@ public partial class App
         }
         ServiceStatusSnapshot status = new(
             1, !unsupported && !controllerBlocked, blocked,
-            controllerBlocked ? ["RazerAppEngine", "razerwdl"] : [],
+            controllerBlocked ? (string[])["RazerAppEngine", "razerwdl"] : [],
             null, [], "Control availability snapshot",
             unsupported || controllerBlocked
                 ? DeviceCapabilities.Unavailable()
@@ -1995,8 +2006,8 @@ public partial class App
                 PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver];
         FanControlSettings fanControl = legacyBase
             ? new(FanMode.ManualCurve, 5500, new ManualFanCurve(
-                [new(40, 3900), new(50, 3900), new(60, 4200), new(70, 4600), new(80, 5000), new(90, 5500)],
-                [new(40, 3900), new(50, 3900), new(60, 4300), new(70, 4700), new(80, 5100), new(90, 5500)],
+                (FanCurvePoint[])[new(40, 3900), new(50, 3900), new(60, 4200), new(70, 4600), new(80, 5000), new(90, 5500)],
+                (FanCurvePoint[])[new(40, 3900), new(50, 3900), new(60, 4300), new(70, 4700), new(80, 5100), new(90, 5500)],
                 true))
             : FanControlSettings.Default;
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
@@ -2103,7 +2114,7 @@ public partial class App
                 DeviceFeatureAccess.ReadWrite) : null,
         };
         var status = new ServiceStatusSnapshot(
-            1, true, false, controllerBlocked ? ["RazerAppEngine"] : [], null, [],
+            1, true, false, controllerBlocked ? (string[])["RazerAppEngine"] : [], null, [],
             "Experimental Custom preview", capabilities,
             new ConfirmedDeviceState(PerformancePreset.Custom, FanMode.Automatic, null, null)
             { CustomPerformance = custom, HyperBoostActive = hyperBoostActive }, profiles,
@@ -2302,11 +2313,15 @@ public partial class App
     }
 
     private static void ApplyRz0301IndependentLightingSnapshotState(
-        MainWindow window, bool populated, bool paused, bool hybrid = false, bool fullEffect = false)
+        MainWindow window, bool populated, bool paused, bool hybrid = false, bool fullEffect = false, bool rz090529 = false)
     {
         // Synthetic observations only. Snapshot windows never start the service
         // client or native integration, and this fixture cannot access hardware.
         IndependentLightingSettings? controls = populated ? new(65, LogoLightingMode.Static) : null;
+        if (rz090529)
+        {
+            controls = new(65, LogoLightingMode.Static, true, false);
+        }
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         LightingSettings lighting = fullEffect
             ? LightingSettingsFactory.Static(new RgbColor(40, 170, 240), 65) with
@@ -2330,8 +2345,19 @@ public partial class App
             LogoLightingModes = new HashSet<LogoLightingMode>
                 { LogoLightingMode.Off, LogoLightingMode.Static, LogoLightingMode.Breathing },
         };
+        if (rz090529)
+        {
+            capabilities = capabilities with
+            {
+                LightingEffects = Enum.GetValues<LightingEffect>().Where(effect => effect != LightingEffect.Sequence).ToHashSet(),
+                SupportsVaporChamberLighting = true,
+                SupportsTouchpadStatusIndicator = true,
+                ObservedLightingZones = new HashSet<ObservedLightingZone> { ObservedLightingZone.Touchpad, ObservedLightingZone.UnderGlass },
+            };
+        }
         ServiceStatusSnapshot status = new(
-            1, true, paused, [], null, [], "Source-reviewed RZ09-0301 independent lighting preview",
+            1, true, paused, [], null, [], rz090529
+                ? "Source-reviewed RZ09-0529 lighting preview" : "Source-reviewed RZ09-0301 independent lighting preview",
             capabilities,
             new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, null, null)
             { IndependentLighting = controls, Lighting = fullEffect ? lighting with { ControlsKeyboardEffect = false } : null, LogoLighting = controls?.LogoMode }, profiles,
@@ -2344,7 +2370,8 @@ public partial class App
         {
             IsExperimentalDevice = true,
             AllowExperimentalFeatures = true,
-            ExperimentalSupportSource = "SynapseSourceBacked:RZ09-0301:581",
+            ExperimentalSupportSource = rz090529
+                ? "SynapseSourceBacked:RZ09-0529:711" : "SynapseSourceBacked:RZ09-0301:581",
             ExperimentalWritesPaused = paused,
         };
         System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
@@ -2455,7 +2482,7 @@ public partial class App
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         ServiceStatusSnapshot status = new(
             1, true, false,
-            ["Razer Chroma SDK Service", "RazerAppEngine", "Razer Gaming Services Updater", "razerwdl"],
+            (string[])["Razer Chroma SDK Service", "RazerAppEngine", "Razer Gaming Services Updater", "razerwdl"],
             null, [], "Ready",
             DeviceCapabilities.SafeTargetDefaults() with
             {
@@ -2538,7 +2565,7 @@ public partial class App
         applyStatus.Invoke(window.ViewModel, [status with
         {
             Revision = 2,
-            PotentialControllers = ["Razer Chroma SDK Service"],
+            PotentialControllers = (string[])["Razer Chroma SDK Service"],
         }, false]);
         await WaitForSnapshotLayoutAsync();
         RequireResponsiveSelector(

@@ -263,6 +263,42 @@ public sealed class WriteConfirmationPolicyTests
             }));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Lighting_ConfirmsStandaloneRequestedLogoFromEachReadbackShape(bool combined)
+    {
+        LightingSettings effect = LightingSettingsFactory.SpectrumCycling(65);
+        LightingSettings requested = effect with
+        {
+            ControlsKeyboardEffect = true,
+            LogoMode = LogoLightingMode.Static,
+            IndependentControls = combined ? new(42, null) : null,
+        };
+        DesiredDeviceState target = Desired();
+        var expectation = new WriteConfirmationExpectation(
+            target with { Lighting = target.Lighting with { Value = requested } }, Confirmed());
+        ConfirmedDeviceState observed = Confirmed() with
+        {
+            Lighting = effect,
+            IndependentLighting = new(42, null),
+        };
+
+        Assert.Equal(PendingConfirmationResult.Unavailable,
+            Match(DeviceSubsystem.Lighting, expectation, observed));
+        foreach (LogoLightingMode logo in new[] { LogoLightingMode.Static, LogoLightingMode.Off })
+        {
+            PendingConfirmationResult expected = logo == requested.LogoMode
+                ? PendingConfirmationResult.Match : PendingConfirmationResult.Mismatch;
+            Assert.Equal(expected,
+                Match(DeviceSubsystem.Lighting, expectation, observed with { LogoLighting = logo }));
+            Assert.Equal(expected,
+                Match(DeviceSubsystem.Lighting, expectation, observed with { IndependentLighting = new(42, logo) }));
+            Assert.Equal(expected,
+                Match(DeviceSubsystem.Lighting, expectation, observed with { Lighting = effect with { LogoMode = logo } }));
+        }
+    }
+
     [Fact]
     public void HyperBoostExit_RequiresRestoredPerformanceAndAutomaticFansInBothSubsystems()
     {

@@ -112,7 +112,10 @@ other single color becomes `static` at 100% brightness. The conversion is
 lossless even when the source contains multiple identical frames.
 
 Classic `Keyboard` per-key files are accepted on the separately verified
-RZ09-0581 and RZ09-0528 layouts, and experimentally on RZ09-0484.
+RZ09-0581 and RZ09-0528 layouts, and experimentally on RZ09-0484 and
+source-reviewed RZ09-0529. The RZ09-0529 projection uses its exact common
+scan-code map across regional layouts, so keys without a shared binding are
+reported and omitted instead of being assigned by guessed position.
 Blade 18 projects through its recovered regional key map into its own 6×16
 frame; a one-frame import holds per-key colors. See
 [Blade 18 lighting](blade18-spatial-lighting.md#per-key-colors-and-playback). The adapter starts with Razer's official

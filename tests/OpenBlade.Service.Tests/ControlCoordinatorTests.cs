@@ -80,6 +80,48 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task DesiredStateAppliesExplicitKeyboardEffectBeforeIndependentFields()
+    {
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsIndependentLightingControls = true,
+            SupportsKeyboardBrightness = true,
+            SupportsVaporChamberLighting = true,
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+                LightingEffect.Spectrum,
+            },
+        };
+        device.State = device.State with
+        {
+            IndependentLighting = new(50, null, VaporChamberLightingEnabled: false),
+        };
+        LightingSettings requested = LightingSettingsFactory.SpectrumCycling(70) with
+        {
+            ControlsKeyboardEffect = true,
+            IndependentControls = new(65, null, VaporChamberLightingEnabled: true),
+        };
+        DesiredDeviceState desired = CreateDesiredState() with
+        {
+            Lighting = new ResolvedSetting<LightingSettings>(requested, SettingValueSource.PowerProfile),
+        };
+
+        FullTransitionApplyOutcome outcome = await new ControlCoordinator(device)
+            .ApplyDesiredStateOutcomeAsync(desired, default);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Lighting.Status);
+        Assert.Contains("SetLighting", device.Calls);
+        Assert.Contains("SetIndependentLighting", device.Calls);
+        Assert.True(device.Calls.IndexOf("SetLighting") < device.Calls.IndexOf("SetIndependentLighting"));
+        Assert.Equal(requested.Effect, device.State.Lighting!.Effect);
+        Assert.Equal<byte?>(65, device.State.IndependentLighting!.Brightness);
+        Assert.True(device.State.IndependentLighting.VaporChamberLightingEnabled);
+    }
+
+    [Fact]
     public async Task FixedFans_PostSetterReadFailure_KeepsValidatedWriteApplied()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
@@ -3399,6 +3441,8 @@ public sealed class ControlCoordinatorTests
 
         public int LightingSetCalls { get; private set; }
 
+        public int IndependentLightingSetCalls { get; private set; }
+
         public int StateReadCalls { get; private set; }
 
         public int LightingStateReadCalls { get; private set; }
@@ -3773,6 +3817,29 @@ public sealed class ControlCoordinatorTests
             if (ShouldConfirm(DeviceSubsystem.Lighting))
             {
                 State = State with { Lighting = value };
+            }
+
+            AfterSetter?.Invoke(DeviceSubsystem.Lighting);
+            return Task.CompletedTask;
+        }
+
+        public Task SetIndependentLightingAsync(
+            IndependentLightingSettings value,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls.Add("SetIndependentLighting");
+            IndependentLightingSetCalls++;
+            if (ShouldConfirm(DeviceSubsystem.Lighting))
+            {
+                State = State with
+                {
+                    IndependentLighting = new(
+                        value.Brightness ?? State.IndependentLighting?.Brightness,
+                        value.LogoMode ?? State.IndependentLighting?.LogoMode,
+                        value.VaporChamberLightingEnabled ?? State.IndependentLighting?.VaporChamberLightingEnabled,
+                        value.TouchpadStatusIndicatorEnabled ?? State.IndependentLighting?.TouchpadStatusIndicatorEnabled),
+                };
             }
 
             AfterSetter?.Invoke(DeviceSubsystem.Lighting);

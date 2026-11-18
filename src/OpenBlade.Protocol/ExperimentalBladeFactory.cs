@@ -14,12 +14,13 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
     private readonly Func<PowerSource> capturePowerSource;
     private readonly SemaphoreSlim sharedCommandGate;
     private readonly SemaphoreSlim operationGate = new(1, 1);
-    private readonly ExperimentalLightingOwnershipState lightingOwnership = new();
+    private readonly ExperimentalLightingOwnershipState lightingOwnership;
     private readonly ExperimentalStartupAnimationState startupAnimationState = new();
 
     internal ExperimentalBladeFactory(ExperimentalBladeModel model, IHostIdentitySource identity,
         IHidCandidateNative native, IHardwareAccessGuard guard, IHidFeatureIo io,
-        Func<PowerSource> capturePowerSource, SemaphoreSlim? sharedCommandGate = null)
+        Func<PowerSource> capturePowerSource, SemaphoreSlim? sharedCommandGate = null,
+        ExperimentalLightingBaselineJournal? lightingJournal = null)
     {
         this.model = model;
         this.identity = identity;
@@ -31,6 +32,24 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         // A native operation may outlive the provider's managed operation lock.
         this.sharedCommandGate = sharedCommandGate ?? new(1, 1);
         policy = new(model);
+        if (model.ProductId != 0x02C7)
+        {
+            // This journal admits the KI8110 active-bank baseline contract.
+            // Legacy frame backends retain their separately reviewed saved-bank
+            // and Spectrum restoration semantics; do not apply this parser to them.
+            lightingOwnership = new();
+            return;
+        }
+        lightingJournal ??= new(model);
+        ExperimentalLightingBaselineJournalLoadResult journal = lightingJournal.Load();
+        lightingOwnership = new()
+        {
+            Journal = lightingJournal,
+            JournalInvalid = journal.Invalid,
+            Baseline = journal.Baseline,
+            Ownership = journal.Invalid || journal.Baseline is not null
+                ? (int)LightingRendererOwnershipState.Faulted : 0,
+        };
     }
 
     public string EvidenceSource => model.EvidenceSource;

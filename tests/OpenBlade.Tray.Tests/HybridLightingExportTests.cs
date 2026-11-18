@@ -52,11 +52,40 @@ public sealed class HybridLightingExportTests
             UsbC = defaults.UsbC with { Lighting = legacyOff },
         };
         JsonNode document = CurrentDocument(source);
-        Assert.Equal(17, document["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(18, document["schemaVersion"]!.GetValue<int>());
         ProfileSet loaded = ProfileExportSerializer.Deserialize(document.ToJsonString());
         Assert.Equal(typed, loaded.PluggedIn.Lighting);
         Assert.Equal(legacyOff with { Parameters = LightingSettingsFactory.Off().Parameters }, loaded.UsbC.Lighting);
         Assert.False(loaded.Battery.Lighting.ControlsKeyboardEffect);
+    }
+
+    [Theory]
+    [InlineData(17, false)]
+    [InlineData(18, true)]
+    public void ExportPreservesIndependentFieldsWithTheirOriginalAuthority(
+        int schema, bool controlsKeyboardEffect)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        LightingSettings lighting = LightingSettingsFactory.SpectrumCycling(70) with
+        {
+            ControlsKeyboardEffect = true,
+            IndependentControls = new(42, null),
+        };
+        var application = new ApplicationProfileDefinition(
+            Guid.NewGuid(), "Game", @"C:\Games\game.exe", ApplicationActivationMode.Foreground,
+            new ApplicationProfileOverrideSet { UsbC = new ApplicationPowerProfileOverride { Lighting = lighting } });
+        JsonNode document = CurrentDocument(defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Lighting = lighting },
+            ApplicationProfiles = [application],
+        });
+        document["schemaVersion"] = schema;
+
+        ProfileSet imported = ProfileExportSerializer.Deserialize(document.ToJsonString());
+
+        LightingSettings expected = lighting with { ControlsKeyboardEffect = controlsKeyboardEffect };
+        Assert.Equal(expected, imported.PluggedIn.Lighting);
+        Assert.Equal(expected, Assert.Single(imported.ApplicationProfiles).Overrides.UsbC!.Lighting);
     }
 
     [Theory]
@@ -95,7 +124,7 @@ public sealed class HybridLightingExportTests
         document["profiles"]!["pluggedIn"]!["lighting"]!["controlsKeyboardEffect"] = "true";
         Assert.Throws<InvalidDataException>(() => ProfileExportSerializer.Deserialize(document.ToJsonString()));
         document["profiles"]!["pluggedIn"]!["lighting"]!.AsObject().Remove("controlsKeyboardEffect");
-        document["schemaVersion"] = 18;
+        document["schemaVersion"] = 19;
         Assert.Throws<InvalidDataException>(() => ProfileExportSerializer.Deserialize(document.ToJsonString()));
     }
 

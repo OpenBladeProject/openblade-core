@@ -163,6 +163,7 @@ public sealed partial class MainViewModel
             && left.SupportsManualFansOnLimitedPower == right.SupportsManualFansOnLimitedPower
             && left.LightingEffects.SetEquals(right.LightingEffects)
             && left.ObservedLightingEffects.SetEquals(right.ObservedLightingEffects)
+            && left.ObservedLightingZones.SetEquals(right.ObservedLightingZones)
             && left.SupportedLightingRefreshRates.SetEquals(
                 right.SupportedLightingRefreshRates)
             && left.LogoLightingModes.SetEquals(right.LogoLightingModes)
@@ -171,6 +172,8 @@ public sealed partial class MainViewModel
             && left.ChargeLimits.SetEquals(right.ChargeLimits)
             && left.SupportsKeyboardBrightness == right.SupportsKeyboardBrightness
             && left.SupportsIndependentLightingControls == right.SupportsIndependentLightingControls
+            && left.SupportsVaporChamberLighting == right.SupportsVaporChamberLighting
+            && left.SupportsTouchpadStatusIndicator == right.SupportsTouchpadStatusIndicator
             && left.SupportsBreathingColorSelection == right.SupportsBreathingColorSelection
             && (left.SupportedBreathingColorModes is null
                 ? right.SupportedBreathingColorModes is null

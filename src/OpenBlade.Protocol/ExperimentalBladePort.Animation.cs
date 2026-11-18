@@ -78,12 +78,14 @@ internal sealed partial class ExperimentalBladePort
         cancellationToken.ThrowIfCancellationRequested();
         lock (animationEffectSync)
         {
-            if (model.ProductId == 0x02C5)
+            if (model.ProductId is 0x02C5 or 0x02C7)
             {
                 if (disposed || !policy.WritesAllowed || gridAnimation?.IsKeyTriggered != true
                     || OwnershipState is not (LightingRendererOwnershipState.Reactive
                         or LightingRendererOwnershipState.Ripple)
-                    || !Blade14KeyboardLightingLayout.IsKeySlot(pulse.MatrixSlot))
+                    || !(model.ProductId == 0x02C7
+                        ? Rz090529KeyboardLightingLayout.IsKeySlot(pulse.MatrixSlot)
+                        : Blade14KeyboardLightingLayout.IsKeySlot(pulse.MatrixSlot)))
                 {
                     throw new CapabilityUnavailableException(
                         "Key-triggered lighting input is outside the reviewed Blade 14 map or owner.");

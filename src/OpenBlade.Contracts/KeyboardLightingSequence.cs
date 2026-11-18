@@ -8,11 +8,13 @@ public static class KeyboardLightingLayoutIds
     public const string Rz09_0484 = "openblade.razer.rz09-0484.keyboard.6x16.v1";
     public const string Rz09_0530 = "openblade.razer.rz09-0530.keyboard.6x16.v1";
     public const string Rz09_0528 = "openblade.razer.rz09-0528.keyboard.6x17.v1";
+    public const string Rz09_0529 = "openblade.razer.rz09-0529.keyboard.6x19.v1";
 
     public static bool IsKnown(string? layoutId) =>
         string.Equals(layoutId, Rz09_0581, StringComparison.Ordinal)
         || string.Equals(layoutId, Rz09_0528, StringComparison.Ordinal)
         || string.Equals(layoutId, Rz09_0530, StringComparison.Ordinal)
+        || string.Equals(layoutId, Rz09_0529, StringComparison.Ordinal)
         || string.Equals(layoutId, Rz09_0484, StringComparison.Ordinal);
 }
 
@@ -24,6 +26,8 @@ public sealed record KeyboardLightingSequence(
     IReadOnlyList<KeyboardLightingSequenceFrame> Frames)
 {
     public bool IsWellFormed() => KeyboardLightingSequenceCodec.IsWellFormed(this);
+
+    public bool IsWellFormed(string layoutId) => KeyboardLightingSequenceCodec.IsWellFormed(this, layoutId);
 }
 
 public static class KeyboardLightingSequenceCodec
@@ -74,7 +78,8 @@ public static class KeyboardLightingSequenceCodec
 
         int offset = HeaderByteCount;
         int totalDurationMilliseconds = 0;
-        var previous = new RgbColor[AmbientLightingFrame.SlotCount];
+        int slotCount = SlotCountForLayout(layoutId);
+        var previous = new RgbColor[slotCount];
 
         foreach (KeyboardLightingSequenceFrame frame in materialized)
         {
@@ -87,7 +92,7 @@ public static class KeyboardLightingSequenceCodec
             int deltaCountOffset = offset++;
             byte deltaCount = 0;
 
-            for (int slot = 0; slot < AmbientLightingFrame.SlotCount; slot++)
+            for (int slot = 0; slot < slotCount; slot++)
             {
                 RgbColor color = frame.Slots[slot];
                 if (color == previous[slot])
@@ -104,7 +109,7 @@ public static class KeyboardLightingSequenceCodec
             }
 
             encoded[deltaCountOffset] = deltaCount;
-            for (int slot = 0; slot < AmbientLightingFrame.SlotCount; slot++)
+            for (int slot = 0; slot < slotCount; slot++)
             {
                 previous[slot] = frame.Slots[slot];
             }
@@ -161,8 +166,14 @@ public static class KeyboardLightingSequenceCodec
     {
         KeyboardLightingLayoutIds.Rz09_0484 => !Blade18KeyboardLightingLayout.IsKeySlot(slot),
         KeyboardLightingLayoutIds.Rz09_0530 => !Blade14KeyboardLightingLayout.IsKeySlot(slot),
+        KeyboardLightingLayoutIds.Rz09_0529 => !Rz090529KeyboardLightingLayout.IsKeySlot(slot),
         _ => AmbientLightingFrame.IsHole(slot),
     };
+
+    private static int SlotCountForLayout(string? layoutId) =>
+        layoutId == KeyboardLightingLayoutIds.Rz09_0529
+            ? Rz090529KeyboardLightingLayout.SlotCount
+            : AmbientLightingFrame.SlotCount;
 
     private static KeyboardLightingSequence? DecodeCore(
         string? timelineBase64,
@@ -205,7 +216,8 @@ public static class KeyboardLightingSequenceCodec
 
         int offset = HeaderByteCount;
         int totalDurationMilliseconds = 0;
-        Span<RgbColor> previous = stackalloc RgbColor[AmbientLightingFrame.SlotCount];
+        int slotCount = SlotCountForLayout(layoutId);
+        Span<RgbColor> previous = stackalloc RgbColor[slotCount];
         previous.Clear();
         KeyboardLightingSequenceFrame[]? frames = materialize
             ? new KeyboardLightingSequenceFrame[frameCount]
@@ -223,7 +235,7 @@ public static class KeyboardLightingSequenceCodec
             ValidateDuration(durationMilliseconds, ref totalDurationMilliseconds);
 
             int deltaCount = encoded[offset++];
-            if (deltaCount > AmbientLightingFrame.SlotCount
+            if (deltaCount > slotCount
                 || encoded.Length - offset < deltaCount * 4)
             {
                 throw new InvalidDataException("The lighting timeline delta list is invalid.");
@@ -237,7 +249,7 @@ public static class KeyboardLightingSequenceCodec
                     encoded[offset++],
                     encoded[offset++],
                     encoded[offset++]);
-                if (slot >= AmbientLightingFrame.SlotCount
+                if (slot >= slotCount
                     || IsHole(slot, layoutId)
                     || slot <= previousDeltaSlot
                     || color == previous[slot])
@@ -268,7 +280,20 @@ public static class KeyboardLightingSequenceCodec
             : new KeyboardLightingSequence(Array.AsReadOnly(frames));
     }
 
-    public static bool IsWellFormed(KeyboardLightingSequence? sequence)
+    public static bool IsWellFormed(KeyboardLightingSequence? sequence) =>
+        IsWellFormedCore(sequence, null);
+
+    public static bool IsWellFormed(KeyboardLightingSequence? sequence, string layoutId)
+    {
+        if (!KeyboardLightingLayoutIds.IsKnown(layoutId))
+        {
+            return false;
+        }
+
+        return IsWellFormedCore(sequence, layoutId);
+    }
+
+    private static bool IsWellFormedCore(KeyboardLightingSequence? sequence, string? layoutId)
     {
         if (sequence is null || sequence.Frames is null)
         {
@@ -277,7 +302,7 @@ public static class KeyboardLightingSequenceCodec
 
         try
         {
-            _ = Encode(sequence.Frames);
+            _ = EncodeCore(sequence.Frames, layoutId);
             return true;
         }
         catch (InvalidDataException)
@@ -299,13 +324,14 @@ public static class KeyboardLightingSequenceCodec
         ref int totalDurationMilliseconds, string? layoutId = null)
     {
         if (frame?.Slots is null
-            || frame.Slots.Count != AmbientLightingFrame.SlotCount)
+            || frame.Slots.Count != SlotCountForLayout(layoutId))
         {
-            throw new InvalidDataException("Each sequence frame must contain exactly 102 slots.");
+            throw new InvalidDataException(
+                $"Each sequence frame must contain exactly {SlotCountForLayout(layoutId)} slots.");
         }
 
         ValidateDuration(frame.DurationMilliseconds, ref totalDurationMilliseconds);
-        for (int slot = 0; slot < AmbientLightingFrame.SlotCount; slot++)
+        for (int slot = 0; slot < SlotCountForLayout(layoutId); slot++)
         {
             if (IsHole(slot, layoutId) && frame.Slots[slot] != default)
             {

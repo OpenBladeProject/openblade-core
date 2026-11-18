@@ -771,6 +771,9 @@
   <data name="Lighting brightness" xml:space="preserve">
     <value>[!! Líghtíng bríghtnéss ~~~~~~~ !!]</value>
   </data>
+  <data name="Synapse lists these effects for this model; OpenBlade cannot control them yet: {0}" xml:space="preserve">
+    <value>[!! Sýnápsé lísts thésé éffécts fór thís módél; OpenBlade cánnót cóntról thém ýét: {0} ~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="Lighting color" xml:space="preserve">
     <value>[!! Líghtíng cólór ~~~~~ !!]</value>
   </data>
@@ -1133,6 +1136,18 @@
   </data>
   <data name="Switch off lighting" xml:space="preserve">
     <value>[!! Swítch óff líghtíng ~~~~~~ !!]</value>
+  </data>
+  <data name="Touchpad lighting" xml:space="preserve">
+    <value>[!! Tóúchpád líghtíng ~~~~~~ !!]</value>
+  </data>
+  <data name="Show Touchpad lighting when the laptop reports this zone." xml:space="preserve">
+    <value>[!! Shów Tóúchpád líghtíng whén thé láptóp répórts thís zóné. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Under-glass lighting" xml:space="preserve">
+    <value>[!! Úndér-gláss líghtíng ~~~~~~~ !!]</value>
+  </data>
+  <data name="Show Under-glass lighting when the laptop reports this zone." xml:space="preserve">
+    <value>[!! Shów Úndér-gláss líghtíng whén thé láptóp répórts thís zóné. ~~~~~~~~~~~~~~~~~~ !!]</value>
   </data>
   <data name="Temperatures" xml:space="preserve">
     <value>[!! Témpérátúrés ~~~~~ !!]</value>
@@ -1971,5 +1986,11 @@ Détáíls: {1} ~~~ !!]</value>
   </data>
   <data name="Both" xml:space="preserve">
     <value>[!! Bóth ~~ !!]</value>
+  </data>
+  <data name="Vapor chamber lighting" xml:space="preserve">
+    <value>[!! Vápór chámbér líghtíng ~~~~~~~ !!]</value>
+  </data>
+  <data name="Touchpad status indicator" xml:space="preserve">
+    <value>[!! Tóúchpád státús índícátór ~~~~~~~~~ !!]</value>
   </data>
 </root>

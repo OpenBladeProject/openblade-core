@@ -527,7 +527,7 @@ public sealed partial class ProductionLightingPortTests
     }
 
     [Fact]
-    public async Task Rz090528Reactive_PulseWakeRendersWithPostWakeTime()
+    public async Task Rz090528Reactive_RejectsWiderPulsesAndValidPulseRendersWithPostWakeTime()
     {
         var time = new ManualTimeProvider();
         var session = new LightingSession(initialBrightness: 128);
@@ -546,6 +546,12 @@ public sealed partial class ProductionLightingPortTests
                 ReactiveLightingDuration.Medium),
             default);
 
+        foreach (byte slot in new byte[] { Rz090528MatrixFrame.SlotCount, ReactiveKeyPulse.MaximumMatrixSlot })
+        {
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+                port.PulseReactiveKeyAsync(new ReactiveKeyPulse(slot), default));
+        }
+        await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(94), default); // Legacy no-op.
         time.Advance(TimeSpan.FromMilliseconds(100));
         await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(59), default);
         for (int attempt = 0;
@@ -2431,6 +2437,25 @@ public sealed partial class ProductionLightingPortTests
 
         await port.SetPlaybackMuteIndicatorAsync(muted: true, default);
         Assert.Equal(new MatrixRgb(0xFF, 0, 0), writer.Reports[^1].Frame[2]);
+    }
+
+    [Fact]
+    public async Task ReactivePulse_RejectsWiderLayoutBeforeQueueingAndKeepsRendererUsable()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        await port.SetLightingAsync(LightingSettingsFactory.Reactive(
+            new RgbColor(0x12, 0x34, 0x56), 100, ReactiveLightingDuration.Medium), default);
+        foreach (byte slot in new byte[] { 102, 113 })
+        {
+            BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+                port.PulseReactiveKeyAsync(new ReactiveKeyPulse(slot), default));
+            Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        }
+        await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(19), default);
+        await writer.WaitForWriteCountAsync(2, TimeSpan.FromSeconds(2));
+        Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[19]);
     }
 
     [Fact]

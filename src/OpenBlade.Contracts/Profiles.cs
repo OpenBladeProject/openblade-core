@@ -488,10 +488,12 @@ public enum KeyboardBrightnessDirection
 public readonly record struct RgbColor(byte Red, byte Green, byte Blue);
 
 /// <summary>Only the requested independent fields are changed; null leaves a field alone.</summary>
-public sealed record IndependentLightingSettings(byte? Brightness = null, LogoLightingMode? LogoMode = null)
+public sealed record IndependentLightingSettings(byte? Brightness = null, LogoLightingMode? LogoMode = null,
+    bool? VaporChamberLightingEnabled = null, bool? TouchpadStatusIndicatorEnabled = null)
 {
     [System.Text.Json.Serialization.JsonIgnore]
-    public bool IsWellFormed => (Brightness.HasValue || LogoMode.HasValue)
+    public bool IsWellFormed => (Brightness.HasValue || LogoMode.HasValue
+            || VaporChamberLightingEnabled.HasValue || TouchpadStatusIndicatorEnabled.HasValue)
         && Brightness is not > 100
         && (LogoMode is null || Enum.IsDefined(LogoMode.Value));
 }

@@ -112,6 +112,7 @@ public sealed class ServiceStatusSnapshotComparerTests
                 FanModes = capabilities.FanModes.Reverse().ToHashSet(),
                 LightingEffects = capabilities.LightingEffects.Reverse().ToHashSet(),
                 ObservedLightingEffects = capabilities.ObservedLightingEffects.Reverse().ToHashSet(),
+                ObservedLightingZones = capabilities.ObservedLightingZones.Reverse().ToHashSet(),
                 SupportedLightingRefreshRates = capabilities.SupportedLightingRefreshRates.Reverse().ToHashSet(),
                 LogoLightingModes = capabilities.LogoLightingModes.Reverse().ToHashSet(),
                 OneShotLaptopControls = capabilities.OneShotLaptopControls.Reverse().ToHashSet(),
@@ -126,6 +127,30 @@ public sealed class ServiceStatusSnapshotComparerTests
         Assert.NotEqual(baseline, reconstructed);
         Assert.True(ServiceStatusSnapshotComparer.Equivalent(baseline, reconstructed));
         Assert.True(ServiceStatusSnapshotComparer.Equivalent(reconstructed, baseline));
+    }
+
+    [Fact]
+    public void Equivalent_DetectsObservedLightingZoneChanges()
+    {
+        ServiceStatusSnapshot baseline = CreateStatus() with
+        {
+            Capabilities = CreateStatus().Capabilities! with
+            {
+                ObservedLightingZones = new HashSet<ObservedLightingZone>
+                {
+                    ObservedLightingZone.Touchpad,
+                    ObservedLightingZone.UnderGlass,
+                },
+            },
+        };
+
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(baseline, baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                ObservedLightingZones = new HashSet<ObservedLightingZone>(),
+            },
+        }));
     }
 
     [Theory]

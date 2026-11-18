@@ -629,6 +629,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         LightingEffects = lighting.Capabilities.LightingEffects,
                         ObservedLightingEffects =
                             lighting.Capabilities.ObservedLightingEffects,
+                        ObservedLightingZones =
+                            lighting.Capabilities.ObservedLightingZones,
                         SpecialKeyBindingsAccess =
                             lighting.Capabilities.SpecialKeyBindingsAccess,
                         WritableSpecialKeySlots =
@@ -637,6 +639,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                             lighting.Capabilities.LampArrayLightingAccess,
                         LogoLightingModes = lighting.Capabilities.LogoLightingModes,
                         SupportsIndependentLightingControls = lighting.Capabilities.SupportsIndependentLightingControls,
+                        SupportsVaporChamberLighting = lighting.Capabilities.SupportsVaporChamberLighting,
+                        SupportsTouchpadStatusIndicator = lighting.Capabilities.SupportsTouchpadStatusIndicator,
                         SupportsKeyboardBrightness =
                             lighting.Capabilities.SupportsKeyboardBrightness,
                         SupportsBreathingColorSelection = lighting.Capabilities.SupportsBreathingColorSelection,
