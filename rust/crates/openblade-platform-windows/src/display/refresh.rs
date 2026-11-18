@@ -74,7 +74,7 @@ impl<T> TimingEvidence<T> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RefreshOption {
     pub key: String,
     pub name: String,
@@ -343,7 +343,7 @@ pub(super) fn normalize(rate: Option<RefreshRate>) -> Option<i32> {
     (hertz <= f64::from(i32::MAX)).then_some(hertz as i32)
 }
 
-fn classify<'a>(
+pub(super) fn classify<'a>(
     display: &ActiveInternalDisplay,
     options: &'a [RefreshOption],
 ) -> Option<&'a RefreshOption> {

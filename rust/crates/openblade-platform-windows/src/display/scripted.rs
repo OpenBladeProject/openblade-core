@@ -84,12 +84,26 @@ impl Scenario {
                             preferred,
                             &timings,
                         )
+                        .ok()
                     })
                     .map(PreparedRefresh)
             }
             _ => None,
         };
         Ok((reading, packet))
+    }
+
+    /// The production writer's observation over this script.
+    #[cfg(feature = "display-refresh-write")]
+    pub fn observe_refresh(
+        self,
+        enabled: bool,
+        timing: RefreshTiming,
+        replaced: bool,
+    ) -> Result<super::refresh_write::RefreshObservation, DisplayReadError> {
+        super::refresh_write::RefreshObservation::observe_with(
+            &mut self.script(enabled, timing, replaced),
+        )
     }
 
     fn script(self, hdr_enabled: bool, timing: RefreshTiming, replaced: bool) -> Script {
@@ -145,12 +159,38 @@ pub struct ValidatedRefresh(RefreshPacket);
 impl ValidatedRefresh {
     pub fn submit(self) -> RefreshTiming {
         assert_eq!(APPLY, 0x282a0);
-        let path = self.0.selected_path();
-        let desktop = path.targetInfo.refreshRate;
-        RefreshTiming {
-            desktop,
-            physical: self.0.selected_mode().unwrap_or_else(|| signal(desktop)),
-            boost: path.flags & PATH_BOOST_REFRESH_RATE != 0,
+        applied(&self.0)
+    }
+}
+
+/// The timing the scripted panel reports after `packet` is applied.
+fn applied(packet: &RefreshPacket) -> RefreshTiming {
+    let path = packet.selected_path();
+    let desktop = path.targetInfo.refreshRate;
+    RefreshTiming {
+        desktop,
+        physical: packet.selected_mode().unwrap_or_else(|| signal(desktop)),
+        boost: path.flags & PATH_BOOST_REFRESH_RATE != 0,
+    }
+}
+
+#[cfg(feature = "display-refresh-write")]
+impl super::refresh_write::RefreshPlan {
+    /// The timing the scripted panel reports after this plan is applied. A
+    /// plan that omits the target timing models Windows selecting the signal
+    /// at the desktop rate.
+    pub fn scripted_timing(&self) -> RefreshTiming {
+        applied(&self.0)
+    }
+}
+
+impl RefreshTiming {
+    /// A non-boosted timing with these desktop and physical signal rates.
+    pub fn fixed(desktop: u32, physical: u32) -> Self {
+        Self {
+            desktop: rate(desktop),
+            physical: signal(rate(physical)),
+            boost: false,
         }
     }
 }

@@ -114,8 +114,15 @@ select it. A Dynamic rate requires an admitted physical timing. Scripted
 validation and application use the corresponding
 [SetDisplayConfig flags](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayconfig).
 The fixture requires separate CCD readback of the exact panel and mode and pauses
-all display writes on uncertain submission, readback or reply. Only a platform
-unit test retains the refresh setter import, and it never calls it.
+all display writes on uncertain submission, readback or reply. Platform unit
+tests retain the refresh setter import without calling it. Production builds
+with the `display-refresh-write` feature share the same packet preparation and
+call `SetDisplayConfig` only from `refresh_write::set_internal_refresh`: once
+with `SDC_VALIDATE`, then, after the host fence admits it, once with
+`SDC_APPLY`. A fixed rate supplies the panel's exact target timing when one is
+known; success needs a readback that matches both the desktop and the signal
+rate. `RefreshNative::apply` is public, so a dependent must not call it
+outside that sequence.
 
 Phase 6v extends the private fence across process restarts. `foreground` uses
 a fresh pipe ID and creates its matching fixture directory under the process's

@@ -11,6 +11,9 @@ controller-process-compile-check = ["windows-sys/Win32_System_Services"]
 scripted-display = []
 # Production manual HDR writer (SET_HDR_STATE). Never implied by scripted-display.
 display-hdr-write = []
+# Production manual refresh writer (SetDisplayConfig VALIDATE then APPLY).
+# Never implied by scripted-display.
+display-refresh-write = []
 scripted-gpu = []
 scripted-gpu-close = ["scripted-gpu"]
 

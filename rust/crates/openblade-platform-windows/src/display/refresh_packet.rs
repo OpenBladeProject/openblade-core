@@ -1,4 +1,5 @@
-//! CCD packet preparation for the private scripted refresh setter.
+//! CCD packet preparation for the refresh setters: the private scripted
+//! fixture and the production `refresh_write` writer share it.
 #![allow(unsafe_code)]
 
 use super::{
@@ -23,6 +24,20 @@ const COMMON: u32 =
 pub(super) const VALIDATE: u32 = COMMON | SDC_VALIDATE;
 pub(super) const APPLY: u32 = COMMON | SDC_APPLY | SDC_SAVE_TO_DATABASE;
 
+/// Why a SetDisplayConfig request could not be built from one CCD frame.
+/// Every variant precedes validation and submission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrepareError {
+    /// Managed `PrepareRefreshTopology`: the admitted path, its source mode
+    /// or its target mode is no longer in the frame.
+    PathChanged,
+    /// Managed `PrepareRefreshPath`: no admitted physical timing for the
+    /// requested Dynamic maximum.
+    DynamicTimingUnavailable,
+    /// The option's desktop rate is not representable (managed `checked`).
+    InvalidOption,
+}
+
 pub(super) struct RefreshPacket {
     topology: Topology,
     path: usize,
@@ -36,18 +51,20 @@ impl RefreshPacket {
         option: &RefreshOption,
         preferred: Option<DISPLAYCONFIG_TARGET_MODE>,
         timings: &[edid::DetailedTiming],
-    ) -> Option<Self> {
+    ) -> Result<Self, PrepareError> {
+        use PrepareError::{DynamicTimingUnavailable, InvalidOption, PathChanged};
         let mut matches = topology.paths.iter().enumerate().filter(|(_, path)| {
             path.flags & DISPLAYCONFIG_PATH_ACTIVE != 0
                 && EndpointId::new(path.sourceInfo.adapterId, path.sourceInfo.id) == display.source
                 && EndpointId::new(path.targetInfo.adapterId, path.targetInfo.id) == display.target
         });
-        let (index, path) = matches.next()?;
+        let (index, path) = matches.next().ok_or(PathChanged)?;
         if matches.next().is_some() || !valid_source(path, &topology.modes, display.source) {
-            return None;
+            return Err(PathChanged);
         }
 
-        let mode_index = native::target_mode_index(path, &topology.modes, display.target).ok()?;
+        let mode_index = native::target_mode_index(path, &topology.modes, display.target)
+            .map_err(|_| PathChanged)?;
         // SAFETY: target_mode_index checked the type and endpoint for this frame.
         let active = unsafe { topology.modes[mode_index].Anonymous.targetMode };
         let timing = native::signal_timing(active.targetVideoSignalInfo);
@@ -67,12 +84,12 @@ impl RefreshPacket {
 
         let path = &mut topology.paths[index];
         path.targetInfo.refreshRate = DISPLAYCONFIG_RATIONAL {
-            Numerator: u32::try_from(option.desktop_hertz).ok()?,
+            Numerator: u32::try_from(option.desktop_hertz).map_err(|_| InvalidOption)?,
             Denominator: 1,
         };
         if option.is_dynamic {
             if path.flags & DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE == 0 {
-                return None;
+                return Err(DynamicTimingUnavailable);
             }
             path.flags |= PATH_BOOST_REFRESH_RATE;
         } else {
@@ -84,7 +101,7 @@ impl RefreshPacket {
                 path.targetInfo.refreshRate = mode.targetVideoSignalInfo.vSyncFreq;
             }
         } else if option.is_dynamic {
-            return None;
+            return Err(DynamicTimingUnavailable);
         } else {
             // Omitting just the target mode lets Windows select the signal.
             // The source and virtual desktop image indices belong to this frame.
@@ -96,7 +113,7 @@ impl RefreshPacket {
                     DISPLAYCONFIG_PATH_MODE_IDX_INVALID
                 };
         }
-        Some(Self {
+        Ok(Self {
             topology,
             path: index,
             target: display.target,
@@ -119,6 +136,39 @@ impl RefreshPacket {
                 .ok()?;
         // SAFETY: target_mode_index verified the discriminant and target.
         Some(unsafe { self.topology.modes[index].Anonymous.targetMode })
+    }
+}
+
+// The production SetDisplayConfig call sites, reachable only through
+// `refresh_write::WindowsRefreshNative`. Unit-test builds exclude them so no
+// test can validate or apply a configuration.
+#[cfg(all(feature = "display-refresh-write", not(test)))]
+impl RefreshPacket {
+    /// `SDC_VALIDATE`: Windows checks the supplied configuration only.
+    pub(super) fn validate(&self) -> u32 {
+        self.set_display_config(VALIDATE)
+    }
+
+    /// The one `SDC_APPLY | SDC_SAVE_TO_DATABASE` submission.
+    pub(super) fn apply(&self) -> u32 {
+        self.set_display_config(APPLY)
+    }
+
+    fn set_display_config(&self, flags: u32) -> u32 {
+        let (paths, modes) = (&self.topology.paths, &self.topology.modes);
+        // Both arrays are bounded by MAX_ENTRIES when queried.
+        let (path_count, mode_count) = (paths.len() as u32, modes.len() as u32);
+        // SAFETY: Both arrays are initialized, owned by this packet and live
+        // for the whole synchronous input-only call; the counts are their lengths.
+        (unsafe {
+            windows_sys::Win32::Devices::Display::SetDisplayConfig(
+                path_count,
+                paths.as_ptr(),
+                mode_count,
+                modes.as_ptr(),
+                flags,
+            )
+        }) as u32
     }
 }
 

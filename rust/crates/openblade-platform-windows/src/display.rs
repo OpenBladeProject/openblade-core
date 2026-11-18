@@ -21,8 +21,10 @@ pub mod hdr;
 mod native;
 mod refresh;
 pub use fence::SubmissionFence;
-#[cfg(feature = "scripted-display")]
+#[cfg(any(feature = "scripted-display", feature = "display-refresh-write"))]
 mod refresh_packet;
+#[cfg(feature = "display-refresh-write")]
+pub mod refresh_write;
 #[cfg(feature = "scripted-display")]
 pub mod scripted;
 pub use refresh::{
