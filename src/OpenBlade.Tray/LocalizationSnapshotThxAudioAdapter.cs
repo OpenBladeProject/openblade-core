@@ -23,7 +23,7 @@ internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = fals
             }));
         }
         return Task.FromResult(Response(new ThxAudioState(endpoint, true, true, "music",
-            [new("game", "Game"), new("movie", "Movie"), new("music", "Music"), new("voice", "Voice"), new("custom", "Custom")])
+            (ThxAudioPreset[])[new("game", "Game"), new("movie", "Movie"), new("music", "Music"), new("voice", "Voice"), new("custom", "Custom")])
         {
             SystemEffectsDisabled = systemEffectsDisabled ? true : null,
             EqualizerBands = (endpoint == ThxAudioEndpoint.Speakers && !usesRznb11
@@ -33,7 +33,7 @@ internal sealed class LocalizationSnapshotThxAudioAdapter(bool usesRznb11 = fals
             SoundNormalization = endpoint == ThxAudioEndpoint.Speakers ? new(false, 50) : null,
             VoiceClarity = new(false, 50),
             ApplicationProfiles = ThxAudioFeatureAccess.Available,
-            ApplicationProfileCatalog = [new("game.exe", true, true)],
+            ApplicationProfileCatalog = (ThxAudioApplicationProfile[])[new("game.exe", true, true)],
             FactoryPresetCurves = new[] { "game", "movie", "music", "voice", "custom" }
                 .Select(id => new ThxAudioPresetCurve(id, new double[endpoint == ThxAudioEndpoint.Speakers && !usesRznb11 ? 7 : 10])).ToArray(),
         }));

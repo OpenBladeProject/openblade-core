@@ -161,7 +161,7 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
     private static IReadOnlyList<SpecialKeyActionOption> CreateActionOptions() =>
-    [
+    (SpecialKeyActionOption[])[
         new(SpecialKeyActionKind.Default, LocalizedResources.Get("SpecialKey_Action_Default", "Default")),
         new(SpecialKeyActionKind.Disabled, LocalizedResources.Get("SpecialKey_Action_Disabled", "Disabled")),
         new(SpecialKeyActionKind.KeyboardShortcut, LocalizedResources.Get("SpecialKey_Action_KeyboardShortcut", "Keyboard shortcut")),

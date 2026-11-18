@@ -793,7 +793,7 @@ public partial class App
             }
             IEnumerable<string> destinations = captureProfilesVariant || captureFeatureSnapshot || captureSnapTap
                 || captureDischargeSettings || captureFanStop || captureLabsTarget || captureGlobalSearch
-                ? [requestedPage!]
+                ? (string[])[requestedPage!]
                 : string.IsNullOrWhiteSpace(requestedPage)
                     ? mainDestinations
                     : mainDestinations.Where(destination => string.Equals(
@@ -1703,7 +1703,7 @@ public partial class App
             Guid.NewGuid(),
             SessionGpuOperationStatus.Succeeded,
             null,
-            [app],
+            (SessionGpuApp[])[app],
             []);
         var coordinator = new GpuAppCleanupCoordinator(
             _ => Task.FromResult(scan),
@@ -1738,7 +1738,7 @@ public partial class App
             await SaveSnapshotAsync(host, reportPath + ".gpu-empty.png");
         }
 
-        scan = scan with { Apps = [app] };
+        scan = scan with { Apps = (SessionGpuApp[])[app] };
         await coordinator.ObserveAsync(CancellationToken.None);
         await WaitForSnapshotLayoutAsync();
         RequireResponsiveSelector(
@@ -1853,7 +1853,7 @@ public partial class App
         }
         ServiceStatusSnapshot status = new(
             1, !unsupported && !controllerBlocked, blocked,
-            controllerBlocked ? ["RazerAppEngine", "razerwdl"] : [],
+            controllerBlocked ? (string[])["RazerAppEngine", "razerwdl"] : [],
             null, [], "Control availability snapshot",
             unsupported || controllerBlocked
                 ? DeviceCapabilities.Unavailable()
@@ -2006,8 +2006,8 @@ public partial class App
                 PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver];
         FanControlSettings fanControl = legacyBase
             ? new(FanMode.ManualCurve, 5500, new ManualFanCurve(
-                [new(40, 3900), new(50, 3900), new(60, 4200), new(70, 4600), new(80, 5000), new(90, 5500)],
-                [new(40, 3900), new(50, 3900), new(60, 4300), new(70, 4700), new(80, 5100), new(90, 5500)],
+                (FanCurvePoint[])[new(40, 3900), new(50, 3900), new(60, 4200), new(70, 4600), new(80, 5000), new(90, 5500)],
+                (FanCurvePoint[])[new(40, 3900), new(50, 3900), new(60, 4300), new(70, 4700), new(80, 5100), new(90, 5500)],
                 true))
             : FanControlSettings.Default;
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
@@ -2114,7 +2114,7 @@ public partial class App
                 DeviceFeatureAccess.ReadWrite) : null,
         };
         var status = new ServiceStatusSnapshot(
-            1, true, false, controllerBlocked ? ["RazerAppEngine"] : [], null, [],
+            1, true, false, controllerBlocked ? (string[])["RazerAppEngine"] : [], null, [],
             "Experimental Custom preview", capabilities,
             new ConfirmedDeviceState(PerformancePreset.Custom, FanMode.Automatic, null, null)
             { CustomPerformance = custom, HyperBoostActive = hyperBoostActive }, profiles,
@@ -2482,7 +2482,7 @@ public partial class App
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         ServiceStatusSnapshot status = new(
             1, true, false,
-            ["Razer Chroma SDK Service", "RazerAppEngine", "Razer Gaming Services Updater", "razerwdl"],
+            (string[])["Razer Chroma SDK Service", "RazerAppEngine", "Razer Gaming Services Updater", "razerwdl"],
             null, [], "Ready",
             DeviceCapabilities.SafeTargetDefaults() with
             {
@@ -2565,7 +2565,7 @@ public partial class App
         applyStatus.Invoke(window.ViewModel, [status with
         {
             Revision = 2,
-            PotentialControllers = ["Razer Chroma SDK Service"],
+            PotentialControllers = (string[])["Razer Chroma SDK Service"],
         }, false]);
         await WaitForSnapshotLayoutAsync();
         RequireResponsiveSelector(

@@ -391,7 +391,7 @@ public sealed partial class MainWindow
     private void ShowLocalizationSnapshotApplicationDiscoveryFixture(bool populated)
     {
         IReadOnlyList<InstalledApplicationCandidate> candidates = populated
-            ? [
+            ? (InstalledApplicationCandidate[])[
                 new("Elden Ring", @"C:\Games\Elden Ring\Game\eldenring.exe", "Steam", @"C:\Games\Elden Ring"),
                 new("Elden Ring", @"C:\Games\Elden Ring\Game\eldenring.exe", "Steam", @"C:\Games\Elden Ring"),
                 new("Baldur's Gate 3", @"C:\Games\Baldurs Gate 3\bin\bg3.exe", "Steam", @"C:\Games\Baldurs Gate 3"),
@@ -425,7 +425,7 @@ public sealed partial class MainWindow
             });
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
         {
-            ApplicationProfiles = populated ? [profile] : [],
+            ApplicationProfiles = populated ? (ApplicationProfileDefinition[])[profile] : [],
         };
         ApplySnapshotStatus(profiles, populated ? profile.Id : null);
         RefreshApplicationProfiles();
@@ -542,13 +542,13 @@ public sealed partial class MainWindow
             FeatureSnapshotTime,
             new WindowsBatteryStatus(95_200, 82_600, 86.8, 184),
             gaps ?
-            [
+            (WindowsBatteryReportInterval[])[
                 Interval(2, 8, WindowsBatteryPowerSource.Battery,
                     WindowsBatteryActivity.Active, 86, 11_700),
                 Interval(10, 22, WindowsBatteryPowerSource.Ac,
                     WindowsBatteryActivity.Active, 61, null),
             ] :
-            [
+            (WindowsBatteryReportInterval[])[
                 Interval(0, 4, WindowsBatteryPowerSource.Battery,
                     WindowsBatteryActivity.Active, 86, 11_700),
                 Interval(4, 6, WindowsBatteryPowerSource.Unknown,
@@ -591,7 +591,7 @@ public sealed partial class MainWindow
         var snapshot = new DisplaySettingsSnapshot(
             IsAvailable: true,
             RefreshRateOptions:
-            [
+            (DisplayRefreshRateOption[])[
                 new DisplayRefreshRateOption("fixed-60", "60 Hz"),
                 new DisplayRefreshRateOption("dynamic-48-240", "Dynamic (48â€“240 Hz)", true),
             ],
@@ -599,7 +599,7 @@ public sealed partial class MainWindow
             IsHdrSupported: true,
             IsHdrEnabled: false,
             ColorProfileOptions:
-            [
+            (DisplayColorProfileOption[])[
                 new DisplayColorProfileOption("native", "Native"),
                 new DisplayColorProfileOption("srgb", "sRGB"),
             ],
@@ -611,7 +611,7 @@ public sealed partial class MainWindow
         {
             BrightnessPercent = brightnessAvailable ? (byte)65 : null,
             SupportedBrightnessLevels = brightnessAvailable
-                ? [0, 20, 35, 50, 65, 80, 100]
+                ? (byte[])[0, 20, 35, 50, 65, 80, 100]
                 : [],
         };
         MethodInfo apply = typeof(DisplaySettingsViewModel).GetMethod(

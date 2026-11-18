@@ -673,7 +673,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
     public ObservableCollection<SpecialKeyBindingViewModel> SpecialKeyBindings { get; } = [];
 
     public IReadOnlyList<AppAccentColorOption> AccentColorOptions { get; } =
-    [
+    (AppAccentColorOption[])[
         new(AppAccentColorMode.RazerGreen, LocalizedResources.Get("MainWindow_Accent_OpenBladeGreen", "OpenBlade green")),
         new(AppAccentColorMode.Windows, LocalizedResources.Get("MainWindow_Accent_Windows", "Windows accent")),
         new(AppAccentColorMode.Custom, LocalizedResources.Get("MainWindow_Accent_Custom", "Custom")),
@@ -2569,7 +2569,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
                 LocalizedResources.Get(
                     "MainWindow_GpuApps_ForceConfirmationIntro",
                     "These apps did not close. Force closing can discard unsaved work.\n\n")
-                + FormatGpuApps([app], includeBlockReason: false)),
+                + FormatGpuApps((SessionGpuApp[])[app], includeBlockReason: false)),
             PrimaryButtonText = LocalizedResources.Get(
                 "MainWindow_GpuApps_ForceButton",
                 "Force close"),
