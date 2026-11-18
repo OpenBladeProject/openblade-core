@@ -15,8 +15,12 @@ use windows_sys::Win32::{
     Graphics::Gdi::{DISPLAYCONFIG_PATH_ACTIVE, DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE},
 };
 
+mod fence;
+#[cfg(feature = "display-hdr-write")]
+pub mod hdr;
 mod native;
 mod refresh;
+pub use fence::SubmissionFence;
 #[cfg(feature = "scripted-display")]
 mod refresh_packet;
 #[cfg(feature = "scripted-display")]

@@ -9,6 +9,8 @@ publish.workspace = true
 [features]
 controller-process-compile-check = ["windows-sys/Win32_System_Services"]
 scripted-display = []
+# Production manual HDR writer (SET_HDR_STATE). Never implied by scripted-display.
+display-hdr-write = []
 scripted-gpu = []
 scripted-gpu-close = ["scripted-gpu"]
 

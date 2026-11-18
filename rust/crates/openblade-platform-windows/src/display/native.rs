@@ -58,14 +58,14 @@ impl GetAdvancedColorInfo2 {
 }
 
 // WinSDK wingdi.h: SET_HDR_STATE (16), with only enableHdr in bit zero.
-#[cfg(any(test, feature = "scripted-display"))]
+#[cfg(any(test, feature = "scripted-display", feature = "display-hdr-write"))]
 #[repr(C)]
 pub(super) struct SetHdrState {
     pub(super) header: DISPLAYCONFIG_DEVICE_INFO_HEADER,
     pub(super) value: u32,
 }
 
-#[cfg(any(test, feature = "scripted-display"))]
+#[cfg(any(test, feature = "scripted-display", feature = "display-hdr-write"))]
 impl SetHdrState {
     pub(super) fn new(target: EndpointId, enabled: bool) -> Self {
         Self {
@@ -83,7 +83,7 @@ impl SetHdrState {
     }
 }
 
-#[cfg(any(test, feature = "scripted-display"))]
+#[cfg(any(test, feature = "scripted-display", feature = "display-hdr-write"))]
 const _: () = {
     assert!(size_of::<SetHdrState>() == 24);
     assert!(align_of::<SetHdrState>() == 4);
@@ -103,6 +103,20 @@ fn set_hdr_state(target: EndpointId, enabled: bool) -> i32 {
             std::ptr::from_ref(&packet).cast(),
         )
     }
+}
+
+// The one production SET_HDR_STATE call site, reachable only through
+// `hdr::WindowsHdrNative`. Unit-test builds exclude it so no test can submit.
+#[cfg(all(feature = "display-hdr-write", not(test)))]
+pub(super) fn submit_hdr_state(target: EndpointId, enabled: bool) -> u32 {
+    let packet = SetHdrState::new(target, enabled);
+    // SAFETY: The packet starts with the initialized SDK header and is
+    // valid for the entire synchronous input-only call.
+    (unsafe {
+        windows_sys::Win32::Devices::Display::DisplayConfigSetDeviceInfo(
+            std::ptr::from_ref(&packet).cast(),
+        )
+    }) as u32
 }
 
 #[cfg(test)]

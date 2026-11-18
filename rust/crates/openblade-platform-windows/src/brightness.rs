@@ -177,15 +177,10 @@ pub struct CallBudget<'a> {
     fence: Option<&'a dyn SubmissionFence>,
 }
 
-/// Host authority re-checked at the one possible WmiSetBrightness invocation,
-/// after method rebinding and parameter preparation. A fresh internal-panel
-/// topology must still identify the admitted target, and the host's current
-/// lifetime/session/power admission must still hold. Either refusal occurs
-/// before the request gate opens, so it can never be a possible submission.
-pub trait SubmissionFence: Send + Sync {
-    fn topology(&self) -> Result<InternalDisplayTopology, DisplayReadError>;
-    fn admit(&self) -> bool;
-}
+/// Re-checked at the one possible WmiSetBrightness invocation, after method
+/// rebinding and parameter preparation. Either refusal occurs before the
+/// request gate opens, so it can never be a possible submission.
+pub use crate::display::SubmissionFence;
 
 impl CallBudget<'_> {
     /// Use the remaining time to bound waits. A provider request that outlives
