@@ -60,7 +60,9 @@ internal static class WriteConfirmationPolicy
         {
             return independent;
         }
-        if (confirmed.Lighting is null)
+        if (confirmed.Lighting is null
+            || requested is { IndependentControls: { LogoMode: null }, LogoMode: not null }
+                && confirmed.LogoLighting is null)
         {
             return PendingConfirmationResult.Unavailable;
         }

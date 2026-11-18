@@ -500,8 +500,7 @@ public sealed class ControlCoordinator
                 relinquishWhenUnconfigured && effectiveGpuClockTuning is null
                     ? RelinquishGpuClockOffsetManagementAsync(token)
                     : Task.CompletedTask,
-            resolveIndeterminateWriteByReadback:
-                resolveIndeterminatePerformanceWrites,
+            resolveIndeterminateWriteByReadback: () => resolveIndeterminatePerformanceWrites,
             unchangedAfterIndeterminateWrite: PerformanceStateMatches,
             writeBlockReason: performanceWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss:
@@ -543,7 +542,7 @@ public sealed class ControlCoordinator
             initialStateBlockReason: state => state.HyperBoostActive != false && !ownsHyperBoost
                 ? "GPU clock tuning requires confirmed OpenBlade ownership of active HyperBoost."
                 : null,
-            resolveIndeterminateWriteByReadback: true,
+            resolveIndeterminateWriteByReadback: static () => true,
             unchangedAfterIndeterminateWrite: PerformanceStateMatches,
             writeBlockReason: performanceWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss: true);
@@ -634,7 +633,7 @@ public sealed class ControlCoordinator
             // so every explicit manual-mode action must submit its RPM target.
             forceWrite: DeviceSubsystemOrder.IsManualFanMode(value.Mode)
                 || initialStateBlockReason is not null,
-            resolveIndeterminateWriteByReadback:
+            resolveIndeterminateWriteByReadback: () =>
                 resolveIndeterminateAutomaticFanWrites
                     && value.Mode == FanMode.Automatic,
             unchangedAfterIndeterminateWrite: PerformanceStateMatches,
@@ -820,7 +819,6 @@ public sealed class ControlCoordinator
                 DeviceSubsystemOrder.IsManualFanMode(state.Fans)
                 && state.HyperBoostActive == false,
             forceWrite: true,
-            resolveIndeterminateWriteByReadback: false,
             reconcileUnconfirmableIndeterminateWrite: true,
             writeBlockReason: fanWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss: fanWriteBlockReason is not null).ConfigureAwait(false);
@@ -1330,7 +1328,7 @@ public sealed class ControlCoordinator
             acceptSetterCompletionOnReadFailure: value.IndependentControls is null,
             forceWrite: forceWrite,
             writeAllowed: writeAllowed,
-            resolveIndeterminateWriteByReadback: value.ControlsKeyboardEffect && value.IndependentControls is not null,
+            resolveIndeterminateWriteByReadback: () => !independent && value.IndependentControls is not null,
             stateReader: async token =>
             {
                 ConfirmedDeviceState state;
@@ -2521,7 +2519,7 @@ public sealed class ControlCoordinator
         Func<bool>? writeAllowed = null,
         Func<string?>? writeBlockReason = null,
         Func<DeviceCapabilities, CancellationToken, Task>? beforeInitialStateRead = null,
-        bool resolveIndeterminateWriteByReadback = false,
+        Func<bool>? resolveIndeterminateWriteByReadback = null,
         Func<ConfirmedDeviceState, ConfirmedDeviceState, bool>?
             unchangedAfterIndeterminateWrite = null,
         bool returnBlockedOnWriteAuthorityLoss = false,
@@ -2691,7 +2689,7 @@ public sealed class ControlCoordinator
         catch (BladeWriteException exception)
             when (writeAttempted
                 && exception.SubmissionState is WriteSubmissionState.Indeterminate
-                && resolveIndeterminateWriteByReadback)
+                && resolveIndeterminateWriteByReadback?.Invoke() == true)
         {
             return await ResolveIndeterminateWriteByReadbackAsync(
                     subsystem,
@@ -2756,7 +2754,7 @@ public sealed class ControlCoordinator
                     DeviceAccessFailed: false);
             }
 
-            if (setterCompleted && resolveIndeterminateWriteByReadback)
+            if (setterCompleted && resolveIndeterminateWriteByReadback?.Invoke() == true)
             {
                 return await ResolveIndeterminateWriteByReadbackAsync(
                         subsystem,
@@ -2978,8 +2976,8 @@ public sealed class ControlCoordinator
     private static bool IsLightingValid(LightingSettings value)
         => LightingSettingsValidation.IsWellFormed(value);
 
-    private static bool UsesIndependentLighting(DeviceCapabilities capabilities, LightingSettings value) =>
-        capabilities.SupportsIndependentLightingControls
+    internal static bool UsesIndependentLighting(DeviceCapabilities? capabilities, LightingSettings value) =>
+        capabilities is { SupportsIndependentLightingControls: true }
         && (!value.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0);
 
     private static async Task ApplyLightingWritesAsync(
@@ -2995,12 +2993,15 @@ public sealed class ControlCoordinator
                 || !KeyboardLightingMatches(baseline, value));
         if (writeKeyboard)
         {
+            byte? independentBrightness = value.Effect == LightingEffect.Off
+                ? null : value.IndependentControls?.Brightness;
             await device.SetLightingAsync(value with
             {
-                Brightness = value.Effect != LightingEffect.Off && value.IndependentControls?.Brightness is > 0 and var brightness
-                    ? brightness : value.Brightness,
+                Brightness = independentBrightness is > 0 ? independentBrightness.Value : value.Brightness,
                 LogoMode = value.IndependentControls?.LogoMode is null ? value.LogoMode : null,
-                IndependentControls = null,
+                // The exact hybrid backend uses the independent raw conversion
+                // so the later field readback can confirm without a second SET.
+                IndependentControls = independentBrightness is > 0 ? new(Brightness: independentBrightness) : null,
             }, cancellationToken);
         }
 

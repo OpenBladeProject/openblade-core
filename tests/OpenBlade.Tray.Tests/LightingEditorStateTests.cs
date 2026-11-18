@@ -86,6 +86,22 @@ public sealed class LightingEditorStateTests
     }
 
     [Fact]
+    public void EffectSelection_BrightnessDefaultPreservesTheIndependentTarget()
+    {
+        var editor = new LightingEditorState();
+        var fields = new IndependentLightingSettings(
+            Brightness: 72, TouchpadStatusIndicatorEnabled: false);
+        editor.Load(LightingSettingsFactory.Off() with { IndependentControls = fields });
+
+        editor.SelectEffect(LightingEffect.Static);
+
+        LightingSettings draft = editor.ToSettings();
+        Assert.Equal(LightingEffect.Static, draft.Effect);
+        Assert.Equal(50, draft.Brightness);
+        Assert.Equal(fields, draft.IndependentControls);
+    }
+
+    [Fact]
     public void EffectSelection_PublishesDirtyBeforeAssignmentAndEachVisibleDefaultInOrder()
     {
         var editor = new LightingEditorState();

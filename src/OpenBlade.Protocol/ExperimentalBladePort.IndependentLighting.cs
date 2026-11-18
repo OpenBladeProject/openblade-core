@@ -91,7 +91,7 @@ internal sealed partial class ExperimentalBladePort
             {
                 // Each admitted product uses ceil(percent * 255 / 100), with floor on
                 // readback. Retain the actual raw baseline, never an inferred effect.
-                byte raw = checked((byte)((percent * 255 + 99) / 100));
+                byte raw = LightingBrightnessProtocol.PercentToRaw(percent);
                 byte baseline = await ReadBrightnessAsync(cancellationToken).ConfigureAwait(false);
                 if (baseline != raw)
                 {

@@ -123,7 +123,8 @@ internal sealed class LightingEditorState
         {
             ArgumentOutOfRangeException.ThrowIfNegative(value);
             ArgumentOutOfRangeException.ThrowIfGreaterThan(value, 100);
-            SetLightingEditorField(ref lightingBrightnessEditor, value, LightingEditorValue.Brightness);
+            SetLightingEditorField(ref lightingBrightnessEditor, value, LightingEditorValue.Brightness,
+                supersedeIndependentTarget: true);
         }
     }
 
@@ -389,7 +390,8 @@ internal sealed class LightingEditorState
                 return;
             }
 
-            if (SetLightingEditorField(ref logoLightingModeEditor, value, LightingEditorValue.LogoMode))
+            if (SetLightingEditorField(ref logoLightingModeEditor, value, LightingEditorValue.LogoMode,
+                supersedeIndependentTarget: true))
             {
                 Publish(LightingEditorChangeKind.TransitionCompleted, LightingEditorValue.LogoMode);
             }
@@ -787,7 +789,8 @@ internal sealed class LightingEditorState
     private bool SetLightingEditorField<T>(
         ref T field,
         T value,
-        LightingEditorValue fieldName)
+        LightingEditorValue fieldName,
+        bool supersedeIndependentTarget = false)
     {
         if (EqualityComparer<T>.Default.Equals(field, value))
         {
@@ -795,9 +798,9 @@ internal sealed class LightingEditorState
         }
 
         SetDirty(true);
-        // A direct keyboard editor change supersedes any duplicate target
-        // carried forward from a combined profile.
-        if (independentControls is { } fields)
+        // Only explicit brightness and logo edits supersede duplicate
+        // targets carried forward from a combined profile.
+        if (supersedeIndependentTarget && independentControls is { } fields)
         {
             IndependentLightingSettings remaining = fieldName switch
             {

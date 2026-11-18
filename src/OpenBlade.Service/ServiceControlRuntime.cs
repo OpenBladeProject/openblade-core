@@ -1827,7 +1827,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 }
                 RefreshBatterySaverFanStopReadInterest();
                 LightingSettings updatedLightingIntent = ResolveAutomationDesired(profileResolutionState).Lighting.Value;
-                if (UsesIndependentLightingIntent(GetStatus().Capabilities, updatedLightingIntent)
+                if (ControlCoordinator.UsesIndependentLighting(GetStatus().Capabilities, updatedLightingIntent)
                     ? updatedLightingIntent.IndependentControls != priorLightingIntent.IndependentControls
                     : updatedLightingIntent != priorLightingIntent)
                 {
@@ -4877,7 +4877,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             bool isSuppressed = lightingSuppressions.Count > 0;
 
             LightingSettings suppressionIntent = ResolveAutomationDesired(current.ConfirmedState ?? UnknownConfirmedState).Lighting.Value;
-            if (UsesIndependentLightingIntent(GetStatus().Capabilities, suppressionIntent)
+            if (ControlCoordinator.UsesIndependentLighting(GetStatus().Capabilities, suppressionIntent)
                 && suppressionIntent.IndependentControls?.Brightness is null)
             {
                 lightingSuppressionWritePending = false;
@@ -15224,8 +15224,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             CancellationToken token)
     {
         bool independentOnly = subsystem == DeviceSubsystem.Lighting
-            && desired.Lighting.Value.IndependentControls is not null
-            && UsesIndependentLightingIntent(outcome.Capabilities ?? GetStatus().Capabilities, desired.Lighting.Value);
+            && ControlCoordinator.UsesIndependentLighting(outcome.Capabilities ?? GetStatus().Capabilities, desired.Lighting.Value);
         ConfirmedDeviceState? confirmed = cachedConfirmed;
         if (outcome.Readback is { } readback)
         {
@@ -15247,6 +15246,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 .ConfigureAwait(false);
         if (independentOnly)
         {
+            if (outcome.Result.Status is ControlResultStatus.Applied or ControlResultStatus.Unchanged)
+            {
+                // A field-only result never grants authority to restart a prior effect.
+                RelinquishRememberedLightingOwnership();
+            }
             return (outcome, confirmed);
         }
         LightingSettings requested = desired.Lighting.Value;
@@ -16546,7 +16550,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             DeviceSubsystem.Lighting);
         if (lightingResult.Status is ControlResultStatus.Applied
                 or ControlResultStatus.Unchanged
-            && !UsesIndependentLightingIntent(outcome.Capabilities ?? GetStatus().Capabilities, desired.Lighting.Value)
+            && !ControlCoordinator.UsesIndependentLighting(outcome.Capabilities ?? GetStatus().Capabilities, desired.Lighting.Value)
             && !LightingOwnershipMatches(device, observedLightingOwnership, desired.Lighting.Value))
         {
             if (outcome.Readback is { } readback
@@ -16702,13 +16706,19 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             // Display-off reconciliation can keep Applied while queuing a
             // destination renderer retry. Only an actually accepted ownership
             // result supersedes that queue; native effects still need no stream.
-            bool lightingAccepted = lightingResult.Status is ControlResultStatus.Applied
-                    or ControlResultStatus.Unchanged
-                && !UsesIndependentLightingIntent(outcome.Capabilities ?? GetStatus().Capabilities, desired.Lighting.Value)
-                && LightingOwnershipMatches(device, observedLightingOwnership, desired.Lighting.Value);
-            UpdateOwnedLightingSnapshot(
-                observedLightingOwnership,
-                lightingAccepted ? desired.Lighting.Value : null);
+            bool lightingAccepted = lightingResult.Status is ControlResultStatus.Applied or ControlResultStatus.Unchanged;
+            bool independentOnly = ControlCoordinator.UsesIndependentLighting(outcome.Capabilities ?? GetStatus().Capabilities, desired.Lighting.Value);
+            if (lightingAccepted && independentOnly)
+            {
+                RelinquishRememberedLightingOwnership();
+            }
+            else
+            {
+                UpdateOwnedLightingSnapshot(
+                    observedLightingOwnership,
+                    lightingAccepted && LightingOwnershipMatches(device, observedLightingOwnership, desired.Lighting.Value)
+                        ? desired.Lighting.Value : null);
+            }
             if (lightingResult.Status is ControlResultStatus.Applied
                 or ControlResultStatus.Unchanged)
             {
@@ -19208,7 +19218,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             Lighting = desired.Lighting with
             {
-                Value = UsesIndependentLightingIntent(capabilities, desired.Lighting.Value)
+                Value = ControlCoordinator.UsesIndependentLighting(capabilities, desired.Lighting.Value)
                     ? desired.Lighting.Value with
                     {
                         IndependentControls = SuppressIndependentBrightness(desired.Lighting.Value.IndependentControls, suppressed: true),
@@ -21660,15 +21670,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         });
     }
 
-    private static bool UsesIndependentLightingIntent(DeviceCapabilities? capabilities, LightingSettings lighting) =>
-        capabilities?.SupportsIndependentLightingControls == true
-        && (!lighting.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0);
-
     private async Task PersistLastKnownLightingAsync(
         LightingSettings lighting,
         CancellationToken cancellationToken)
     {
-        if (UsesIndependentLightingIntent(GetStatus().Capabilities, lighting))
+        if (ControlCoordinator.UsesIndependentLighting(GetStatus().Capabilities, lighting))
         {
             return; // An independent field observation cannot confirm a keyboard effect.
         }

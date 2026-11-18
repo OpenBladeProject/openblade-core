@@ -240,6 +240,44 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
     }
 
+    [Fact]
+    public async Task ClearingOverrideDoesNotReactivateUnmanagedProfileEffectWithoutFields()
+    {
+        TestContext context = await CreateIndependentLightingContextAsync(hybrid: true);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        await context.Runtime.UpdateProfilesAsync(profiles with
+        {
+            PluggedIn = profiles.PluggedIn with { Lighting = LightingSettingsFactory.SpectrumCycling(70) },
+        }, default);
+        int count = context.Device.LightingSetCalls;
+
+        ControlOperationResult result = await context.Runtime.SetLightingOverrideAsync(null, default);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(count, context.Device.LightingSetCalls);
+        Assert.Empty(context.Device.IndependentLightingWrites);
+    }
+
+    [Fact]
+    public async Task AcceptedFieldOnlyOverrideRetiresQueuedKeyboardRecovery()
+    {
+        TestContext context = await CreateIndependentLightingContextAsync(hybrid: true);
+        context.Device.LightingOwnershipAfterSet = LightingRendererOwnershipState.Faulted;
+        var render = new ManualOverride<LightingSettings>(
+            LightingSettingsFactory.SpectrumCycling(70) with { ControlsKeyboardEffect = true },
+            OverrideLifetime.Persistent);
+        Assert.Equal(ControlOperationStatus.Failed, (await context.Runtime.SetLightingOverrideAsync(render, default)).Status);
+        context.Device.LightingOwnershipAfterSet = null;
+        int writes = context.Device.LightingSetCalls;
+
+        Assert.Equal(ControlOperationStatus.Applied, (await context.Runtime.SetIndependentLightingOverrideAsync(
+            new(new(Brightness: 42), OverrideLifetime.Persistent), default)).Status);
+        await context.Runtime.ObserveAsync(default);
+
+        Assert.Equal(writes, context.Device.LightingSetCalls);
+        Assert.Equal<byte?>(42, context.Runtime.GetStatus().ConfirmedState?.IndependentLighting?.Brightness);
+    }
+
     private async Task<TestContext> CreateIndependentLightingContextAsync(string? overridePath = null, bool hybrid = false)
     {
         TestContext context = CreateContext(true, persistentOverridePath: overridePath);

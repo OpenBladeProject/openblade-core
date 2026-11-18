@@ -1,5 +1,6 @@
 using System.Text.Json;
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
 using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
@@ -153,6 +154,26 @@ public sealed class Rz090529IndependentZoneTests
         Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
         Assert.Empty(device.LightingWrites);
         Assert.Equal(requested.IndependentControls, Assert.Single(device.IndependentLightingWrites));
+    }
+
+    [Fact]
+    public async Task MissingKeyboardCapabilityKeepsAnUncertainFieldWriteInFieldOnlyRecovery()
+    {
+        BatteryTestDevice device = CreateDevice();
+        device.IndependentLightingWriteFailure = new BladeWriteException(
+            WriteSubmissionState.Indeterminate, "The zone setter response was unavailable.");
+        LightingSettings requested = LightingSettingsFactory.Fire(60) with
+        {
+            ControlsKeyboardEffect = true,
+            IndependentControls = new(VaporChamberLightingEnabled: true),
+        };
+
+        ScopedApplyOutcome result = await new ControlCoordinator(device).ApplyLightingOutcomeAsync(requested, default);
+
+        Assert.True(result.ConfirmationUnavailable);
+        Assert.Equal(1, device.StateReadCalls);
+        Assert.Empty(device.LightingWrites);
+        Assert.Single(device.IndependentLightingWrites);
     }
 
     private static BatteryTestDevice CreateDevice() => new()

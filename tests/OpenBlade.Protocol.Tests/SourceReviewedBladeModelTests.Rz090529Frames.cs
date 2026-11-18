@@ -217,6 +217,37 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Equal(count, session.Commands.Count);
     }
 
+    [Theory]
+    [InlineData(false, 10)]
+    [InlineData(true, 11)]
+    public async Task Rz090529_CombinedBrightnessUsesOneCanonicalRawSet(bool combined, byte expectedRaw)
+    {
+        var session = new Session
+        {
+            McuLighting = [0, 5, 1, 0, 0, 1, 11, 22, 33, 0, 0, 0],
+        };
+        await using var port = CreateRz090529Frames(session);
+        var independent = new IndependentLightingSettings(Brightness: 4);
+        LightingSettings requested = LightingSettingsFactory.Wave(LightingDirection.Rightward, 4) with
+        {
+            ControlsKeyboardEffect = true,
+            IndependentControls = combined ? independent : null,
+        };
+
+        await port.SetLightingAsync(requested, default);
+        if (combined)
+        {
+            await port.SetIndependentLightingAsync(independent, default);
+            Assert.Equal(independent, await port.ReadIndependentLightingAsync(independent, default));
+        }
+
+        RazerCommandSpec brightness = Assert.Single(session.Commands,
+            command => command.ClassId == 3 && command.CommandId == 3);
+        Assert.Equal(new byte[] { 0, 5, expectedRaw }, brightness.Arguments.ToArray());
+        Assert.Equal(expectedRaw, session.Brightness);
+        Assert.Equal(4, (await port.ReadStateAsync(default))!.Brightness);
+    }
+
     [Fact]
     public async Task Rz090529_FirstRowRefusalClearsUnneededDurableBaselineAndCanRetry()
     {

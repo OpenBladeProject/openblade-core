@@ -604,7 +604,22 @@ internal sealed partial class ExperimentalBladePort
         bool startingHostFrameFromFault = replacingFaultedFrame
             && (animationRequest || settings.Effect is LightingEffect.AmbientAwareness
                 or LightingEffect.AudioMeter);
-        byte raw = checked((byte)((settings.Brightness * 255 + 50) / 100));
+        // The coordinator projects a combined positive brightness onto the effect
+        // write. Use the independent field's raw encoding so its confirmation
+        // does not need to correct an already applied keyboard brightness.
+        bool combinedBrightness = SupportsReviewedMcuLighting(model)
+            && settings.ControlsKeyboardEffect
+            && settings.IndependentControls is
+            {
+                Brightness: > 0 and var percent,
+                LogoMode: null,
+                VaporChamberLightingEnabled: null,
+                TouchpadStatusIndicatorEnabled: null,
+            }
+            && percent == settings.Brightness;
+        byte raw = combinedBrightness
+            ? LightingBrightnessProtocol.PercentToRaw(settings.Brightness)
+            : checked((byte)((settings.Brightness * 255 + 50) / 100));
         string requested = $"{settings.Effect};Raw={raw};Logo={settings.LogoMode?.ToString() ?? "Unchanged"}";
         try
         {
