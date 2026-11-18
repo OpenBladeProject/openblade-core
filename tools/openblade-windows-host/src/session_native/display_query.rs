@@ -90,6 +90,11 @@ struct Request {
 }
 impl Request {
     fn parse(body: &[u8]) -> io::Result<Self> {
+        // System.Text.Json polymorphism requires the discriminator first; the
+        // managed reader refuses a request whose first member is anything else.
+        if !operation_first(body) {
+            return Err(invalid("Display request operation must be first"));
+        }
         let envelope: Envelope = serde_json::from_slice(body).map_err(invalid)?;
         let id = &envelope.request_id;
         if envelope.version != 2
@@ -508,5 +513,16 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
         result = timeout(FRAME_TIMEOUT, pipe.write_all(&frame)) => { result??; Ok(()) },
     }
 }
+/// The first member name is literally `"operation"` (an escaped spelling is
+/// refused; stricter than managed only for an encoding it never writes).
+fn operation_first(body: &[u8]) -> bool {
+    let rest = body.trim_ascii_start();
+    rest.strip_prefix(b"{")
+        .is_some_and(|rest| rest.trim_ascii_start().starts_with(b"\"operation\""))
+}
+
+#[cfg(test)]
+#[path = "display_query/request_parity_tests.rs"]
+mod request_parity_tests;
 #[cfg(test)]
 mod tests;

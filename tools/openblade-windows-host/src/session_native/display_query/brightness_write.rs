@@ -8,7 +8,9 @@
 //! deadline or Stop has already abandoned the reply.
 #[cfg(test)]
 use super::write::explicit_read;
-pub(super) use super::write::{CHANGED_POWER, CHECKPOINT, UNCONFIRMED_POWER, UNREFRESHED};
+pub(super) use super::write::{
+    CHANGED_POWER, CHECKPOINT, STALE_AFTER, UNCONFIRMED_POWER, UNREFRESHED,
+};
 use super::{
     observation::{SharedBrightness, Snapshot},
     recovery::{CheckpointFile, Fields, Recovery, Status},
@@ -111,14 +113,26 @@ pub(super) fn set_brightness<F: CheckpointFile>(
             (status, Some(UNAVAILABLE), None, Some(error))
         }
     };
-    let state = match fatal {
-        Some(_) => Snapshot::unavailable(UNREFRESHED),
-        None => refreshed(host, brightness, canceled)?,
+    // A failed reply query is fatal, but the admitted operation is recorded
+    // first, as for HDR (a Confirmed level it cannot show is Indeterminate).
+    let (state, fatal) = match fatal {
+        Some(error) => (Snapshot::unavailable(UNREFRESHED), Some(error)),
+        None => match refreshed(host, brightness, canceled) {
+            Ok(state) => (state, None),
+            Err(error) => (Snapshot::unavailable(UNREFRESHED), Some(error)),
+        },
     };
     let (status, error) = match confirmed {
         // Managed applier: success must still show the selected level.
         Some(percent) if state.brightness() != Some(percent) => {
             (Status::Indeterminate, Some(UNCONFIRMED))
+        }
+        _ => (status, error),
+    };
+    // Managed ExecuteSetterAsync.EnsureCurrent after a successful setter.
+    let (status, error) = match power {
+        Some(admitted) if status == Status::Succeeded && host.power() != Some(admitted) => {
+            (Status::Indeterminate, Some(STALE_AFTER))
         }
         _ => (status, error),
     };

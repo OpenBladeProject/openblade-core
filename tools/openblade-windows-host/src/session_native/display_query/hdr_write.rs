@@ -42,9 +42,7 @@ pub(super) const CANCELED: &str =
 pub(super) const NOT_SUPPORTED: &str = "HDR is not supported for the active internal display.";
 /// Managed `PrepareHdrCore` readback mismatch.
 pub(super) const UNCONFIRMED: &str = "Windows did not confirm the requested HDR state.";
-/// Managed dispatcher: `EnsureCurrent` failed after a successful setter.
-pub(super) const STALE_AFTER: &str =
-    "The display operation became stale after the power source changed.";
+pub(super) use super::write::STALE_AFTER;
 /// Managed `GetSingleInternalTarget` and `QueryTopology` preparation failures.
 pub(super) const NO_INTERNAL: &str = "No active internal laptop display was found.";
 pub(super) const MULTIPLE: &str = "More than one active internal display was found, so OpenBlade did not choose one automatically.";

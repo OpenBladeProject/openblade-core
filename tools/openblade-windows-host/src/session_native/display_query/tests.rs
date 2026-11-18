@@ -42,8 +42,16 @@ impl Supplier for Script {
         ))
     }
 }
-fn request(body: Value) -> Vec<u8> {
-    raw_request(&serde_json::to_vec(&body).unwrap())
+/// Encode like the managed codec: the `operation` discriminator first (the
+/// json! map would otherwise sort it after `expectedPowerSource`).
+fn request(mut body: Value) -> Vec<u8> {
+    let Some(operation) = body.as_object_mut().and_then(|map| map.remove("operation")) else {
+        return raw_request(&serde_json::to_vec(&body).unwrap());
+    };
+    let rest = serde_json::to_string(&body).unwrap();
+    let separator = if rest == "{}" { "" } else { "," };
+    let encoded = format!("{{\"operation\":{operation}{separator}{}", &rest[1..]);
+    raw_request(encoded.as_bytes())
 }
 fn raw_request(body: &[u8]) -> Vec<u8> {
     [(body.len() as i32).to_le_bytes().as_slice(), body].concat()

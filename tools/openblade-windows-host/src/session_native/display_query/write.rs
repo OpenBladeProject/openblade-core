@@ -30,6 +30,9 @@ pub(super) const UNCONFIRMED_POWER: &str =
 pub(super) const CHANGED_POWER: &str =
     "The active power source changed before the display operation began.";
 pub(super) const UNREFRESHED: &str = "Display state could not be refreshed.";
+/// Managed dispatcher: `EnsureCurrent` failed after a successful setter.
+pub(super) const STALE_AFTER: &str =
+    "The display operation became stale after the power source changed.";
 
 /// Managed `ResumeAfterSuccessfulExplicitRead`, plus the native write gates.
 ///

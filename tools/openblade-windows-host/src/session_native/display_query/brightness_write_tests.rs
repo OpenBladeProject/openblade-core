@@ -659,3 +659,50 @@ fn explicit_read_without_an_unresolved_write_keeps_the_worker() {
         "no replacement without a gate"
     );
 }
+
+/// The power generation changes after the first `power()` read.
+struct Drifting(Host, AtomicUsize);
+impl WriteHost for Drifting {
+    fn power(&self) -> Option<PowerContext> {
+        let read = self.1.fetch_add(1, Ordering::SeqCst);
+        self.0.power().map(|mut power| {
+            if read > 0 {
+                power.generation += 1;
+            }
+            power
+        })
+    }
+    fn fence(&self, admitted: PowerContext) -> Arc<dyn SubmissionFence> {
+        self.0.fence(admitted)
+    }
+    fn target(&mut self) -> Result<BrightnessTarget, BrightnessError> {
+        self.0.target()
+    }
+    fn query(
+        &mut self,
+        brightness: &SharedBrightness,
+        canceled: &AtomicBool,
+    ) -> io::Result<Snapshot> {
+        self.0.query(brightness, canceled)
+    }
+}
+
+#[test]
+fn power_change_after_a_confirmed_write_is_indeterminate_like_managed() {
+    let rig = Rig::new(25, Mode::Apply, Memory::default());
+    let mut host = Drifting(Host::admitted(1), AtomicUsize::new(0));
+    let request = SetBrightness {
+        expected_power_source: 1,
+        percent: 75,
+    };
+    let none = AtomicBool::new(false);
+    let outcome = set_brightness(&mut host, &rig.owner, &rig.recovery, request, &none).unwrap();
+    assert_eq!(
+        (outcome.status, outcome.error),
+        (Status::Indeterminate, Some(STALE_AFTER))
+    );
+    assert_eq!(rig.submitted(), 1);
+    assert!(rig.recovery.lock().unwrap().unresolved().brightness);
+    let record = rig.file.record();
+    assert!(flag(&record, "AutomaticWritesPaused") && flag(&record, "UncertainBrightness"));
+}
