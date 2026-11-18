@@ -8,7 +8,7 @@ using OpenBlade.Session;
 // Offline only: consume actual native dispatcher frames and checkpoint bytes with
 // the production managed Display codec and checkpoint store. No OS supplier,
 // provider, process or endpoint runs.
-const string Usage = "Usage: DisplayQueryParity <native-dispatcher-frames.jsonl> | checkpoints-verify <native.jsonl> | checkpoints-emit <out.jsonl>";
+const string Usage = "Usage: DisplayQueryParity <native-dispatcher-frames.jsonl> | checkpoints-verify <native.jsonl> | checkpoints-emit <out.jsonl> | requests-emit <out.jsonl> | requests-verify <in.jsonl>";
 if (args.Length == 1)
 {
     return await VerifyFramesAsync(args[0]);
@@ -20,6 +20,14 @@ if (args.Length == 2 && args[0] == "checkpoints-verify")
 if (args.Length == 2 && args[0] == "checkpoints-emit")
 {
     return EmitCheckpoints(args[1]);
+}
+if (args.Length == 2 && args[0] == "requests-emit")
+{
+    return await EmitRequestsAsync(args[1]);
+}
+if (args.Length == 2 && args[0] == "requests-verify")
+{
+    return await VerifyRequestsAsync(args[1]);
 }
 throw new ArgumentException(Usage);
 
@@ -239,6 +247,169 @@ static int VerifyCheckpoints(string path)
     }
     Require(seen.Count > 0, "Corpus must contain checkpoint rows.");
     Console.WriteLine($"PASS native checkpoint bytes match managed store ({valid} loadable cases, {invalid} rejected cases).");
+    return 0;
+}
+
+static async Task<byte[]> EncodeRequestAsync(SessionDisplayRequest request)
+{
+    using var stream = new MemoryStream();
+    await SessionDisplayIpcCodec.WriteRequestAsync(stream, request);
+    return stream.ToArray();
+}
+
+static byte[] RawFrame(string json)
+{
+    byte[] body = Encoding.UTF8.GetBytes(json);
+    byte[] frame = new byte[body.Length + 4];
+    BinaryPrimitives.WriteInt32LittleEndian(frame, body.Length);
+    body.CopyTo(frame, 4);
+    return frame;
+}
+
+static async Task<SessionDisplayRequest> DecodeRequestAsync(byte[] frame)
+{
+    using var stream = new MemoryStream(frame, writable: false);
+    SessionDisplayRequest request = await SessionDisplayIpcCodec.ReadRequestAsync(stream);
+    Require(stream.Position == stream.Length, "Request decoder did not consume the complete frame.");
+    return request;
+}
+
+static async Task<bool> RejectedAsync(byte[] frame)
+{
+    try
+    {
+        await DecodeRequestAsync(frame);
+        return false;
+    }
+    catch (InvalidDataException)
+    {
+        return true;
+    }
+}
+
+static async Task<int> EmitRequestsAsync(string outPath)
+{
+    Guid id = Guid.Parse("9f876742-1234-4321-abcd-d3ea3e1cf102");
+    const int V = SessionDisplayIpc.ProtocolVersion;
+    var rows = new List<(string Name, bool Valid, byte[] Frame)>();
+    async Task AddValid(string name, SessionDisplayRequest request) =>
+        rows.Add((name, true, await EncodeRequestAsync(request)));
+    void AddInvalid(string name, string json) => rows.Add((name, false, RawFrame(json)));
+
+    await AddValid("query", new QueryDisplayRequest(V, id));
+    foreach (byte percent in new byte[] { 0, 50, 100 })
+    {
+        foreach (PowerSource source in new[] { PowerSource.PluggedIn, PowerSource.Battery, PowerSource.UsbC })
+        {
+            await AddValid($"setBrightness-{percent}-power{(int)source}", new SetBrightnessRequest(V, id, source, percent));
+        }
+    }
+    await AddValid("setRefreshRate-normal", new SetRefreshRateRequest(V, id, PowerSource.Battery, "1920x1080@144"));
+    await AddValid("setRefreshRate-1024", new SetRefreshRateRequest(V, id, PowerSource.PluggedIn, new string('r', 1024)));
+    await AddValid("setHdr-true", new SetHdrRequest(V, id, PowerSource.UsbC, true));
+    await AddValid("setHdr-false", new SetHdrRequest(V, id, PowerSource.PluggedIn, false));
+    await AddValid("setColorProfile-spaces-nonascii", new SetColorProfileRequest(
+        V, id, PowerSource.Battery, "sRGB écran 日本 \U0001F600 x"));
+    await AddValid("applyProfile-all-null", new ApplyDisplayProfileRequest(
+        V, id, PowerSource.PluggedIn, new DisplayProfileSettings(null, null, null)));
+    await AddValid("applyProfile-full", new ApplyDisplayProfileRequest(
+        V, id, PowerSource.Battery, new DisplayProfileSettings("60 Hz", true, "Profile one") { BrightnessPercent = 75 }));
+
+    string Op(string op, string rest, int version = V) =>
+        $"{{\"operation\":\"{op}\",\"version\":{version},\"requestId\":\"{id}\"{rest}}}";
+    string Rate(string key) =>
+        Op("setRefreshRate", $",\"expectedPowerSource\":0,\"refreshRateKey\":{JsonSerializer.Serialize(key)}");
+
+    AddInvalid("unknown-member", Op("setBrightness", ",\"expectedPowerSource\":0,\"percent\":50,\"extra\":1"));
+    AddInvalid("null-version", $"{{\"operation\":\"query\",\"version\":null,\"requestId\":\"{id}\"}}");
+    AddInvalid("null-requestId", $"{{\"operation\":\"query\",\"version\":{V},\"requestId\":null}}");
+    AddInvalid("null-expectedPowerSource", Op("setBrightness", ",\"expectedPowerSource\":null,\"percent\":50"));
+    AddInvalid("null-percent", Op("setBrightness", ",\"expectedPowerSource\":0,\"percent\":null"));
+    AddInvalid("null-refreshRateKey", Op("setRefreshRate", ",\"expectedPowerSource\":0,\"refreshRateKey\":null"));
+    AddInvalid("null-enabled", Op("setHdr", ",\"expectedPowerSource\":0,\"enabled\":null"));
+    AddInvalid("null-colorProfileKey", Op("setColorProfile", ",\"expectedPowerSource\":0,\"colorProfileKey\":null"));
+    AddInvalid("null-settings", Op("applyProfile", ",\"expectedPowerSource\":0,\"settings\":null"));
+    AddInvalid("power-source-3", Op("setBrightness", ",\"expectedPowerSource\":3,\"percent\":50"));
+    AddInvalid("power-source-minus-1", Op("setBrightness", ",\"expectedPowerSource\":-1,\"percent\":50"));
+    AddInvalid("percent-101", Op("setBrightness", ",\"expectedPowerSource\":0,\"percent\":101"));
+    AddInvalid("blank-key", Rate("   "));
+    AddInvalid("empty-key", Rate(string.Empty));
+    AddInvalid("space-padded-key", Rate(" 60 Hz "));
+    AddInvalid("key-1025", Rate(new string('r', 1025)));
+    AddInvalid("control-char-key", Rate("60\u0007Hz"));
+    AddInvalid("enabled-as-string", Op("setHdr", ",\"expectedPowerSource\":0,\"enabled\":\"true\""));
+    AddInvalid("wrong-version", Op("setBrightness", ",\"expectedPowerSource\":0,\"percent\":50", V + 1));
+    AddInvalid("operation-not-first", $"{{\"version\":{V},\"requestId\":\"{id}\",\"operation\":\"query\"}}");
+    // Managed leniency (last member wins), so not a fixture row; printed instead.
+    var lenient = new List<(string Name, string Json)>
+    {
+        ("duplicate-member", Op("setBrightness", ",\"expectedPowerSource\":0,\"percent\":50,\"percent\":60")),
+    };
+    AddInvalid("unknown-operation", Op("bogus", string.Empty));
+
+    var seen = new HashSet<string>(StringComparer.Ordinal);
+    var lines = new List<string>();
+    foreach ((string name, string json) in lenient)
+    {
+        Console.WriteLine("observed managed behavior (not in fixture) " + name + ": " + ((await RejectedAsync(RawFrame(json))) ? "rejected" : "accepted"));
+    }
+    foreach ((string name, bool valid, byte[] frame) in rows)
+    {
+        Require(seen.Add(name), "Duplicate case name: " + name);
+        if (valid)
+        {
+            await DecodeRequestAsync(frame);
+        }
+        else
+        {
+            bool rejected = await RejectedAsync(frame);
+            Console.WriteLine((rejected ? "rejected " : "ACCEPTED ") + name);
+            Require(rejected, "Managed reader accepted invalid case: " + name);
+        }
+        var row = new JsonObject
+        {
+            ["case"] = name,
+            ["valid"] = valid,
+            ["frame"] = Convert.ToBase64String(frame),
+        };
+        lines.Add(row.ToJsonString());
+    }
+    File.WriteAllText(outPath, string.Join("\n", lines) + "\n", new UTF8Encoding(false));
+    Console.WriteLine($"Wrote {rows.Count(r => r.Valid)} valid and {rows.Count(r => !r.Valid)} invalid request rows.");
+    return 0;
+}
+
+static async Task<int> VerifyRequestsAsync(string path)
+{
+    var corpus = new FileInfo(path);
+    Require(corpus.Length is > 0 and <= 16 * 1024 * 1024, "Corpus size is invalid.");
+    var seen = new HashSet<string>(StringComparer.Ordinal);
+    int valid = 0, invalid = 0;
+    foreach (string line in await File.ReadAllLinesAsync(corpus.FullName))
+    {
+        using JsonDocument doc = JsonDocument.Parse(line);
+        JsonElement item = doc.RootElement;
+        Require(item.ValueKind == JsonValueKind.Object && item.EnumerateObject().Count() == 3,
+            "Row must have case, valid and frame.");
+        string name = item.GetProperty("case").GetString() ?? throw new InvalidDataException("Missing case.");
+        Require(seen.Add(name), "Duplicate case: " + name);
+        bool expectValid = item.GetProperty("valid").GetBoolean();
+        byte[] frame = Convert.FromBase64String(item.GetProperty("frame").GetString() ?? string.Empty);
+        if (expectValid)
+        {
+            SessionDisplayRequest request = await DecodeRequestAsync(frame);
+            Require((await EncodeRequestAsync(request)).AsSpan().SequenceEqual(frame),
+                "Managed re-encode differs from fixture bytes: " + name);
+            valid++;
+        }
+        else
+        {
+            Require(await RejectedAsync(frame), "Managed reader accepted invalid case: " + name);
+            invalid++;
+        }
+    }
+    Require(valid > 0 && invalid > 0, "Corpus must contain valid and invalid rows.");
+    Console.WriteLine($"PASS managed request codec agrees with {valid} valid and {invalid} invalid rows.");
     return 0;
 }
 

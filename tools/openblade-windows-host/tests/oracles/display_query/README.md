@@ -20,6 +20,17 @@ Modes:
   store through `LoadRecovery`, requires every member to equal the expected
   state, and requires a save/load roundtrip. Rows marked `expectedInvalid` must
   load as null.
+- `requests-emit <out.jsonl>`: writes `{case, valid, frame}` rows (frame is base64
+  of the length-prefixed bytes). Valid rows are encoded by
+  `SessionDisplayIpcCodec.WriteRequestAsync`; invalid rows are hand-built JSON
+  that `ReadRequestAsync` must reject (the run fails otherwise). Output is
+  committed as `tests/fixtures/display-requests/managed-requests.jsonl`.
+  The managed reader accepts duplicate members (last wins), so that case is
+  printed as an observation and is not a fixture row; it rejects `operation`
+  when it is not the first member.
+- `requests-verify <in.jsonl>`: decodes every valid row with `ReadRequestAsync`,
+  requires the managed re-encode to equal the row bytes, and requires every
+  invalid row to be rejected.
 
 Run from the repository root (long worktree paths may need `subst X: <worktree>`):
 
@@ -33,3 +44,11 @@ dotnet "$run\artifacts\bin\DisplayQueryParity\debug\DisplayQueryParity.dll" chec
 
 Passing proves bounded wire and storage parity only. It does not prove Windows
 supplier behavior, the installed runtime or hardware behavior.
+
+Regenerate and re-check the request fixture with the same build:
+
+```powershell
+$fx = 'tools/openblade-windows-host/tests/fixtures/display-requests/managed-requests.jsonl'
+dotnet "$run\artifacts\bin\DisplayQueryParity\debug\DisplayQueryParity.dll" requests-emit $fx
+dotnet "$run\artifacts\bin\DisplayQueryParity\debug\DisplayQueryParity.dll" requests-verify $fx
+```
