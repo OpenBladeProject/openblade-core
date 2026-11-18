@@ -96,6 +96,74 @@ impl Fields {
         color: true,
         brightness: true,
     };
+    #[cfg(any(test, feature = "agent-display-brightness-write-v1"))]
+    pub(super) const BRIGHTNESS: Self = Self {
+        refresh: false,
+        hdr: false,
+        color: false,
+        brightness: true,
+    };
+    #[cfg(any(test, feature = "agent-display-hdr-write-v1"))]
+    pub(super) const HDR: Self = Self {
+        refresh: false,
+        hdr: true,
+        color: false,
+        brightness: false,
+    };
+
+    /// Managed `DisplayOwnedSettings.Include`.
+    fn include(self, other: Self) -> Self {
+        Self {
+            refresh: self.refresh || other.refresh,
+            hdr: self.hdr || other.hdr,
+            color: self.color || other.color,
+            brightness: self.brightness || other.brightness,
+        }
+    }
+
+    /// Each field set on `self` that this snapshot independently reads back.
+    fn confirmed_by(self, state: &Snapshot) -> Self {
+        let read = |selected: bool, field: Self| selected && state.confirms(field);
+        Self {
+            refresh: read(
+                self.refresh,
+                Self {
+                    refresh: true,
+                    ..Self::default()
+                },
+            ),
+            hdr: read(
+                self.hdr,
+                Self {
+                    hdr: true,
+                    ..Self::default()
+                },
+            ),
+            color: read(
+                self.color,
+                Self {
+                    color: true,
+                    ..Self::default()
+                },
+            ),
+            brightness: read(
+                self.brightness,
+                Self {
+                    brightness: true,
+                    ..Self::default()
+                },
+            ),
+        }
+    }
+
+    fn without(self, other: Self) -> Self {
+        Self {
+            refresh: self.refresh && !other.refresh,
+            hdr: self.hdr && !other.hdr,
+            color: self.color && !other.color,
+            brightness: self.brightness && !other.brightness,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -117,10 +185,12 @@ pub(super) struct Recovery<F> {
     uncertain: Fields,
     inherited_pause: bool,
     inherited: Fields,
-    /// Native-only manual gate. Set while a brightness submission may be
-    /// unresolved, including after restart; cleared only by an explicit read
-    /// that independently observes brightness.
-    brightness_unresolved: bool,
+    /// Fields of the manual operation between begin and complete.
+    operation: Fields,
+    /// Native-only per-field manual write gate. A field is set while a
+    /// submission to it may be unresolved, including after restart; each is
+    /// cleared only by an explicit read that independently observes it.
+    unresolved: Fields,
 }
 
 impl<F: CheckpointFile> Recovery<F> {
@@ -141,7 +211,8 @@ impl<F: CheckpointFile> Recovery<F> {
             uncertain: Fields::default(),
             inherited_pause: false,
             inherited: Fields::default(),
-            brightness_unresolved: false,
+            operation: Fields::default(),
+            unresolved: Fields::default(),
         };
         match loaded {
             Loaded::Absent => {}
@@ -163,18 +234,20 @@ impl<F: CheckpointFile> Recovery<F> {
                 }
             }
         }
-        state.brightness_unresolved = state.paused && state.uncertain.brightness;
+        if state.paused {
+            state.unresolved = state.uncertain;
+        }
         state
     }
 
-    pub(super) fn brightness_unresolved(&self) -> bool {
-        self.brightness_unresolved
+    pub(super) fn unresolved(&self) -> Fields {
+        self.unresolved
     }
 
-    /// `BeginManualOperation` for a brightness-only request. `source` is the
-    /// current trusted power source, which managed observation would already
-    /// have recorded. Returns false when the checkpoint could not be saved.
-    pub(super) fn begin_brightness(&mut self, source: Option<u8>) -> bool {
+    /// `BeginManualOperation` for a manual request affecting `fields`. `source`
+    /// is the current trusted power source, which managed observation would
+    /// already have recorded. Returns false when the checkpoint could not be saved.
+    pub(super) fn begin(&mut self, fields: Fields, source: Option<u8>) -> bool {
         if let Some(source) = source {
             self.last = Some(source);
         }
@@ -182,7 +255,8 @@ impl<F: CheckpointFile> Recovery<F> {
         self.inherited = self.uncertain;
         self.manual_hold = true;
         self.paused = true;
-        self.uncertain.brightness = true;
+        self.uncertain = self.uncertain.include(fields);
+        self.operation = fields;
         self.baseline = None;
         self.owned = Fields::default();
         self.application_profile_id = None;
@@ -190,6 +264,7 @@ impl<F: CheckpointFile> Recovery<F> {
             self.inherited_pause = false;
             self.uncertain = self.inherited;
             self.inherited = Fields::default();
+            self.operation = Fields::default();
             self.latch();
             return false;
         }
@@ -209,7 +284,9 @@ impl<F: CheckpointFile> Recovery<F> {
             // submission: a Succeeded write already showed its level (or
             // submitted nothing), so unrelated inherited fields must not gate it.
             self.paused = true;
-            self.brightness_unresolved |= status == Status::Indeterminate;
+            if status == Status::Indeterminate {
+                self.unresolved = self.unresolved.include(self.operation);
+            }
         } else {
             self.paused = self.inherited_pause;
             self.uncertain = if self.paused {
@@ -220,21 +297,18 @@ impl<F: CheckpointFile> Recovery<F> {
         }
         self.inherited_pause = false;
         self.inherited = Fields::default();
+        self.operation = Fields::default();
         if self.last.is_some() && !self.persist() {
             self.uncertain = affected;
             self.latch();
-            self.brightness_unresolved |= affected.brightness;
+            self.unresolved = self.unresolved.include(affected);
         }
     }
 
-    /// `ResumeAfterSuccessfulExplicitRead`, plus the native brightness gate.
+    /// `ResumeAfterSuccessfulExplicitRead`, plus the native per-field gate:
+    /// the read clears exactly the unresolved fields it independently observes.
     pub(super) fn explicit_read(&mut self, state: &Snapshot) -> bool {
-        if state.confirms(Fields {
-            brightness: true,
-            ..Fields::default()
-        }) {
-            self.brightness_unresolved = false;
-        }
+        self.unresolved = self.unresolved.without(self.unresolved.confirmed_by(state));
         if !self.paused || self.last.is_none() || !state.confirms(self.uncertain) {
             return false;
         }

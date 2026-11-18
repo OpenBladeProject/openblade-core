@@ -135,7 +135,7 @@ impl Snapshot {
     }
 
     /// Managed DisplayAutomationCoordinator.HasCompleteReadback.
-    #[cfg(feature = "agent-display-brightness-write-v1")]
+    #[cfg(openblade_display_write)]
     pub(super) fn confirms(&self, fields: super::recovery::Fields) -> bool {
         let text = |value: &Option<String>| value.as_deref().is_some_and(|s| !s.trim().is_empty());
         self.is_available
@@ -152,6 +152,13 @@ impl Snapshot {
     #[cfg(feature = "agent-display-brightness-write-v1")]
     pub(super) fn brightness(&self) -> Option<u8> {
         self.brightness_percent
+    }
+
+    /// The HDR user preference when this available snapshot supports HDR
+    /// (managed `ResolveHdrMutationResult` reconciliation).
+    #[cfg(feature = "agent-display-hdr-write-v1")]
+    pub(super) fn hdr(&self) -> Option<bool> {
+        (self.is_available && self.hdr_supported).then_some(self.hdr_enabled)
     }
 }
 

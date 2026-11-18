@@ -1,7 +1,7 @@
 //! Selected installed Display.v2 endpoint. The real supplier performs
 //! coherent CCD/refresh/HDR/WCS and targeted, owned WMI brightness reads.
-//! A separately selected build adds manual `setBrightness` only; every other
-//! mutation stays outside this endpoint.
+//! Separately selected builds add manual `setBrightness` and/or manual
+//! `setHdr`; every other mutation stays outside this endpoint.
 use super::diagnostics;
 use openblade_windows_host::pipe::Endpoint;
 use serde::Deserialize;
@@ -21,18 +21,24 @@ use tokio::{
 };
 #[cfg(feature = "agent-display-brightness-write-v1")]
 mod brightness_write;
+#[cfg(feature = "agent-display-hdr-write-v1")]
+mod hdr_write;
 mod observation;
-#[cfg(feature = "agent-display-brightness-write-v1")]
+#[cfg(openblade_display_write)]
 mod recovery;
+#[cfg(openblade_display_write)]
+mod write;
 #[cfg(feature = "agent-display-brightness-write-v1")]
 use brightness_write::{SetBrightness, WriteOutcome};
+#[cfg(feature = "agent-display-hdr-write-v1")]
+use hdr_write::{HdrWriteOutcome, SetHdr};
 use observation::Snapshot;
 
 const MAX_FRAME: i32 = 65_536;
 const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
 const DISPATCH_TIMEOUT: Duration = Duration::from_secs(5);
 /// Managed `SessionDisplayRequestDispatcher.MutationDispatchTimeout`.
-#[cfg(feature = "agent-display-brightness-write-v1")]
+#[cfg(openblade_display_write)]
 const MUTATION_DISPATCH_TIMEOUT: Duration = Duration::from_secs(30);
 const ORIGIN_POLL: Duration = Duration::from_millis(250);
 
@@ -42,17 +48,22 @@ struct Envelope {
     version: i32,
     request_id: String,
     operation: Name,
-    #[cfg(feature = "agent-display-brightness-write-v1")]
+    #[cfg(openblade_display_write)]
     #[serde(default, deserialize_with = "present")]
     expected_power_source: Option<i32>,
     #[cfg(feature = "agent-display-brightness-write-v1")]
     #[serde(default, deserialize_with = "present")]
     percent: Option<i32>,
+    #[cfg(feature = "agent-display-hdr-write-v1")]
+    #[serde(default, deserialize_with = "present")]
+    enabled: Option<bool>,
 }
 /// Absent members stay `None`; an explicit JSON null is malformed.
-#[cfg(feature = "agent-display-brightness-write-v1")]
-fn present<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<i32>, D::Error> {
-    i32::deserialize(deserializer).map(Some)
+#[cfg(openblade_display_write)]
+fn present<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error> {
+    T::deserialize(deserializer).map(Some)
 }
 // The closed operation set rejects every unselected mutation before any
 // supplier is invoked.
@@ -62,12 +73,16 @@ enum Name {
     Query,
     #[cfg(feature = "agent-display-brightness-write-v1")]
     SetBrightness,
+    #[cfg(feature = "agent-display-hdr-write-v1")]
+    SetHdr,
 }
 #[derive(Clone, Copy)]
 enum Operation {
     Query,
     #[cfg(feature = "agent-display-brightness-write-v1")]
     SetBrightness(SetBrightness),
+    #[cfg(feature = "agent-display-hdr-write-v1")]
+    SetHdr(SetHdr),
 }
 struct Request {
     request_id: String,
@@ -90,24 +105,47 @@ impl Request {
         {
             return Err(invalid("invalid Display query envelope"));
         }
+        #[cfg(openblade_display_write)]
+        let power = envelope.expected_power_source;
+        #[cfg(feature = "agent-display-brightness-write-v1")]
+        let percent = envelope.percent;
+        #[cfg(all(
+            openblade_display_write,
+            not(feature = "agent-display-brightness-write-v1")
+        ))]
+        let percent: Option<i32> = None;
+        #[cfg(feature = "agent-display-hdr-write-v1")]
+        let enabled = envelope.enabled;
+        #[cfg(all(openblade_display_write, not(feature = "agent-display-hdr-write-v1")))]
+        let enabled: Option<bool> = None;
+        // Each operation accepts exactly its own managed members.
         let operation = match envelope.operation {
-            #[cfg(not(feature = "agent-display-brightness-write-v1"))]
+            #[cfg(not(openblade_display_write))]
             Name::Query => Operation::Query,
-            #[cfg(feature = "agent-display-brightness-write-v1")]
-            Name::Query => match (envelope.expected_power_source, envelope.percent) {
-                (None, None) => Operation::Query,
+            #[cfg(openblade_display_write)]
+            Name::Query => match (power, percent, enabled) {
+                (None, None, None) => Operation::Query,
                 _ => return Err(invalid("invalid Display query members")),
             },
             // Managed IsConfirmed (PluggedIn, Battery, UsbC) and byte percent <= 100.
             #[cfg(feature = "agent-display-brightness-write-v1")]
-            Name::SetBrightness => match (envelope.expected_power_source, envelope.percent) {
-                (Some(source @ 0..=2), Some(percent @ 0..=100)) => {
+            Name::SetBrightness => match (power, percent, enabled) {
+                (Some(source @ 0..=2), Some(percent @ 0..=100), None) => {
                     Operation::SetBrightness(SetBrightness {
                         expected_power_source: source as u8,
                         percent: percent as u8,
                     })
                 }
                 _ => return Err(invalid("invalid Display setBrightness members")),
+            },
+            // Managed IsConfirmed and a required JSON Boolean.
+            #[cfg(feature = "agent-display-hdr-write-v1")]
+            Name::SetHdr => match (power, percent, enabled) {
+                (Some(source @ 0..=2), None, Some(enabled)) => Operation::SetHdr(SetHdr {
+                    expected_power_source: source as u8,
+                    enabled,
+                }),
+                _ => return Err(invalid("invalid Display setHdr members")),
             },
         };
         Ok(Self {
@@ -130,14 +168,21 @@ trait Supplier {
         request: SetBrightness,
         canceled: Arc<AtomicBool>,
     ) -> impl Future<Output = io::Result<WriteOutcome>>;
+    /// The same custody contract as `set_brightness`.
+    #[cfg(feature = "agent-display-hdr-write-v1")]
+    fn set_hdr(
+        &mut self,
+        request: SetHdr,
+        canceled: Arc<AtomicBool>,
+    ) -> impl Future<Output = io::Result<HdrWriteOutcome>>;
     async fn drain(&mut self) -> io::Result<()> {
         Ok(())
     }
 }
 struct WindowsSupplier {
     brightness: observation::SharedBrightness,
-    #[cfg(feature = "agent-display-brightness-write-v1")]
-    writer: brightness_write::Writer,
+    #[cfg(openblade_display_write)]
+    writer: write::Writer,
 }
 impl Supplier for WindowsSupplier {
     async fn acquire(&mut self, canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
@@ -145,12 +190,12 @@ impl Supplier for WindowsSupplier {
             return Err(io::ErrorKind::Interrupted.into());
         }
         let brightness = self.brightness.clone();
-        #[cfg(feature = "agent-display-brightness-write-v1")]
+        #[cfg(openblade_display_write)]
         let writer = self.writer.clone();
         tokio::task::spawn_blocking(move || {
             let snapshot = observation::query(&canceled, brightness.clone())?;
             // Managed ResumeAfterSuccessfulExplicitRead after every completed query.
-            #[cfg(feature = "agent-display-brightness-write-v1")]
+            #[cfg(openblade_display_write)]
             writer.explicit_read(&brightness, &snapshot)?;
             Ok(snapshot)
         })
@@ -169,6 +214,18 @@ impl Supplier for WindowsSupplier {
             .await
             .map_err(|_| io::Error::other("display write worker failed"))?
     }
+    #[cfg(feature = "agent-display-hdr-write-v1")]
+    async fn set_hdr(
+        &mut self,
+        request: SetHdr,
+        canceled: Arc<AtomicBool>,
+    ) -> io::Result<HdrWriteOutcome> {
+        let brightness = self.brightness.clone();
+        let writer = self.writer.clone();
+        tokio::task::spawn_blocking(move || writer.set_hdr(&brightness, request, &canceled))
+            .await
+            .map_err(|_| io::Error::other("display write worker failed"))?
+    }
     async fn drain(&mut self) -> io::Result<()> {
         observation::drain_brightness(self.brightness.clone()).await
     }
@@ -183,19 +240,18 @@ impl Drop for Cancellation {
 pub(super) async fn run(
     origin: Arc<crate::loaded_origin::Origin>,
     mut stop: watch::Receiver<bool>,
-    #[cfg(feature = "agent-display-brightness-write-v1")]
-    power: super::power_admission::PowerAdmission,
+    #[cfg(openblade_display_write)] power: super::power_admission::PowerAdmission,
 ) -> io::Result<()> {
     super::verify_origin(&origin)?;
     let endpoint = Endpoint::current_user_display().map_err(diagnostics::listener)?;
     let _claim = endpoint.claim().map_err(diagnostics::listener)?;
     let mut supplier = WindowsSupplier {
         brightness: Default::default(),
-        #[cfg(feature = "agent-display-brightness-write-v1")]
+        #[cfg(openblade_display_write)]
         writer: {
             let origin = origin.clone();
             let stop = stop.clone();
-            tokio::task::spawn_blocking(move || brightness_write::Writer::load(origin, power, stop))
+            tokio::task::spawn_blocking(move || write::Writer::load(origin, power, stop))
                 .await
                 .map_err(|_| io::Error::other("display recovery load failed"))?
         },
@@ -333,6 +389,8 @@ enum Reply {
     Query(Snapshot),
     #[cfg(feature = "agent-display-brightness-write-v1")]
     Write(WriteOutcome),
+    #[cfg(feature = "agent-display-hdr-write-v1")]
+    Hdr(HdrWriteOutcome),
 }
 
 /// Every started blocking operation is awaited, including on deadline,
@@ -369,6 +427,8 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
         Operation::Query => DISPATCH_TIMEOUT,
         #[cfg(feature = "agent-display-brightness-write-v1")]
         Operation::SetBrightness(_) => MUTATION_DISPATCH_TIMEOUT,
+        #[cfg(feature = "agent-display-hdr-write-v1")]
+        Operation::SetHdr(_) => MUTATION_DISPATCH_TIMEOUT,
     };
     enum End {
         Complete(io::Result<Reply>),
@@ -385,6 +445,8 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
                     .set_brightness(request, flag)
                     .await
                     .map(Reply::Write),
+                #[cfg(feature = "agent-display-hdr-write-v1")]
+                Operation::SetHdr(request) => supplier.set_hdr(request, flag).await.map(Reply::Hdr),
             }
         };
         tokio::pin!(work);
@@ -428,6 +490,13 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
             &request.request_id,
             outcome.status as u8,
             outcome.error,
+            outcome.state,
+        )?,
+        #[cfg(feature = "agent-display-hdr-write-v1")]
+        Reply::Hdr(outcome) => frame(
+            &request.request_id,
+            outcome.status as u8,
+            outcome.error.as_deref(),
             outcome.state,
         )?,
     };

@@ -167,6 +167,14 @@ impl Supplier for OwnedSupplier {
     ) -> io::Result<WriteOutcome> {
         unreachable!("query-only test supplier received a write")
     }
+    #[cfg(feature = "agent-display-hdr-write-v1")]
+    async fn set_hdr(
+        &mut self,
+        _request: SetHdr,
+        _canceled: Arc<AtomicBool>,
+    ) -> io::Result<HdrWriteOutcome> {
+        unreachable!("query-only test supplier received a write")
+    }
     async fn drain(&mut self) -> io::Result<()> {
         observation::drain_brightness(self.owner.clone()).await
     }

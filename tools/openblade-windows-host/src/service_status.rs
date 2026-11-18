@@ -883,7 +883,7 @@ impl Snapshot {
     // fields during failed observations. Require the managed completion
     // guards and explicit absence of observation or write uncertainty.
     /// Managed PowerSource wire value, already bounded to 0..=3 by `verify`.
-    #[cfg(feature = "agent-display-brightness-write-v1")]
+    #[cfg(openblade_display_write)]
     pub(crate) fn active_power_source(&self) -> i32 {
         self.active_power_source
     }

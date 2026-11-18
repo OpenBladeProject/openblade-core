@@ -45,9 +45,9 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
         // from verified, fresh status on the authenticated subscription. Stop,
         // Origin loss and a finished watcher each retire it permanently, before
         // the feature drains, so no in-flight write can pass its fence after.
-        #[cfg(feature = "agent-display-brightness-write-v1")]
+        #[cfg(openblade_display_write)]
         let power = super::power_admission::PowerAdmission::default();
-        #[cfg(feature = "agent-display-brightness-write-v1")]
+        #[cfg(openblade_display_write)]
         let _retire = Retire(power.clone());
         let canceled = async {
             let result = async {
@@ -62,7 +62,7 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
                 }
             }
             .await;
-            #[cfg(feature = "agent-display-brightness-write-v1")]
+            #[cfg(openblade_display_write)]
             power.retire();
             result
         };
@@ -71,7 +71,7 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
             Some(&authority),
             std::future::pending::<()>(),
             |update| {
-                #[cfg(feature = "agent-display-brightness-write-v1")]
+                #[cfg(openblade_display_write)]
                 let result = (|| {
                     super::verify_origin(&origin)?;
                     match update {
@@ -88,14 +88,14 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
                     }
                     Ok(())
                 })();
-                #[cfg(feature = "agent-display-brightness-write-v1")]
+                #[cfg(openblade_display_write)]
                 if result.is_err() {
                     power.unavailable();
                 }
-                #[cfg(feature = "agent-display-brightness-write-v1")]
+                #[cfg(openblade_display_write)]
                 return result;
                 // No firmware projection is claimed by a metadata subscription.
-                #[cfg(not(feature = "agent-display-brightness-write-v1"))]
+                #[cfg(not(openblade_display_write))]
                 {
                     super::verify_origin(&origin)?;
                     match update {
@@ -106,18 +106,15 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
                 }
             },
         );
-        #[cfg(feature = "agent-display-brightness-write-v1")]
+        #[cfg(openblade_display_write)]
         let watch = async {
             let result = watch.await;
             power.retire();
             result
         };
-        #[cfg(all(
-            feature = "agent-display-query-v1",
-            not(feature = "agent-display-brightness-write-v1")
-        ))]
+        #[cfg(all(feature = "agent-display-query-v1", not(openblade_display_write)))]
         let display = |feature_stop| super::display_query::run(origin.clone(), feature_stop);
-        #[cfg(feature = "agent-display-brightness-write-v1")]
+        #[cfg(openblade_display_write)]
         let display =
             |feature_stop| super::display_query::run(origin.clone(), feature_stop, power.clone());
         #[cfg(not(any(
@@ -162,9 +159,9 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
 }
 
 /// Retires display power admission on every exit from the monitor runtime.
-#[cfg(feature = "agent-display-brightness-write-v1")]
+#[cfg(openblade_display_write)]
 struct Retire(super::power_admission::PowerAdmission);
-#[cfg(feature = "agent-display-brightness-write-v1")]
+#[cfg(openblade_display_write)]
 impl Drop for Retire {
     fn drop(&mut self) {
         self.0.retire();

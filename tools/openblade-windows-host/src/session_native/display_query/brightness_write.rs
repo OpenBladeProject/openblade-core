@@ -6,37 +6,28 @@
 //! power generation and panel topology after preparation. Every admitted
 //! operation records its certainty before returning, even when the client,
 //! deadline or Stop has already abandoned the reply.
+#[cfg(test)]
+use super::write::explicit_read;
+pub(super) use super::write::{CHANGED_POWER, CHECKPOINT, UNCONFIRMED_POWER, UNREFRESHED};
 use super::{
     observation::{SharedBrightness, Snapshot},
-    recovery::{CheckpointFile, Recovery, Status, WindowsCheckpointFile},
+    recovery::{CheckpointFile, Fields, Recovery, Status},
+    write::WindowsHost,
 };
-use crate::{
-    loaded_origin::Origin,
-    session_native::{
-        power_admission::{PowerAdmission, PowerContext},
-        user_environment::active_console,
-    },
-};
+use crate::session_native::power_admission::PowerContext;
 use openblade_platform_windows::{
     brightness::{
         BrightnessError, BrightnessOutcome, BrightnessTarget, NativeFailure, SubmissionFence,
     },
-    display::{DisplayReadError, InternalDisplayTopology, read_internal_display},
+    display::{InternalDisplayTopology, read_internal_display},
 };
 use std::{
     io,
     sync::{Arc, Mutex, atomic::AtomicBool},
 };
-use tokio::sync::watch;
 
 pub(super) const PAUSED: &str =
     "Brightness changes are paused until a display read confirms the last change.";
-pub(super) const CHECKPOINT: &str =
-    "The display operation was blocked because its recovery checkpoint could not be saved.";
-pub(super) const UNCONFIRMED_POWER: &str =
-    "Display changes are blocked until the power source is confirmed.";
-pub(super) const CHANGED_POWER: &str =
-    "The active power source changed before the display operation began.";
 pub(super) const STALE: &str =
     "The display operation became stale before the brightness change was submitted.";
 pub(super) const PANEL_CHANGED: &str =
@@ -47,7 +38,6 @@ pub(super) const BUSY: &str = "Display brightness is busy. Try again.";
 pub(super) const UNSUPPORTED: &str = "The display does not support the requested brightness.";
 pub(super) const UNAVAILABLE: &str = "Display brightness is unavailable.";
 pub(super) const UNCONFIRMED: &str = "Windows did not confirm the requested display brightness.";
-pub(super) const UNREFRESHED: &str = "Display state could not be refreshed.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct SetBrightness {
@@ -90,9 +80,9 @@ pub(super) fn set_brightness<F: CheckpointFile>(
     let power = host.power();
     {
         let mut recovery = lock()?;
-        let refused = if recovery.brightness_unresolved() {
+        let refused = if recovery.unresolved().brightness {
             Some(PAUSED)
-        } else if !recovery.begin_brightness(power.map(|power| power.source)) {
+        } else if !recovery.begin(Fields::BRIGHTNESS, power.map(|power| power.source)) {
             Some(CHECKPOINT)
         } else {
             None
@@ -141,36 +131,6 @@ pub(super) fn set_brightness<F: CheckpointFile>(
             state,
         }),
     }
-}
-
-/// Managed `ResumeAfterSuccessfulExplicitRead`, plus the native write gate.
-///
-/// The worker keeps its own in-process pause after a possible submission
-/// (an unconfirmed acknowledgement, a native failure after the submission
-/// boundary, or an abandoned started reply); a query never resolves it. The
-/// gate reopens only when this explicit read, taken through that same worker,
-/// observed brightness, which means the worker finished every pending call.
-/// Before reopening, positively join and drop that worker so the next write
-/// starts a fresh one: the same boundary an Agent restart provides. A failed
-/// join keeps the gate closed and stops the feature.
-pub(super) fn explicit_read<F: CheckpointFile>(
-    brightness: &SharedBrightness,
-    recovery: &Mutex<Recovery<F>>,
-    state: &Snapshot,
-) -> io::Result<()> {
-    let lock = || {
-        recovery
-            .lock()
-            .map_err(|_| io::Error::other("display recovery state failed"))
-    };
-    if lock()?.brightness_unresolved() && state.brightness().is_some() {
-        brightness
-            .lock()
-            .map_err(|_| io::Error::other("brightness owner state failed"))?
-            .retire_worker()?;
-    }
-    lock()?.explicit_read(state);
-    Ok(())
 }
 
 type Attempt = Result<(Status, Option<&'static str>, Option<u8>), (bool, io::Error)>;
@@ -235,98 +195,13 @@ fn attempt(
     })
 }
 
-/// Production state shared by queries and writes on this Display endpoint.
-#[derive(Clone)]
-pub(super) struct Writer {
-    recovery: Arc<Mutex<Recovery<WindowsCheckpointFile>>>,
-    host: WindowsHost,
-}
-
-impl Writer {
-    /// Blocking: reads the current user's managed checkpoint once.
-    pub(super) fn load(
-        origin: Arc<Origin>,
-        power: PowerAdmission,
-        stop: watch::Receiver<bool>,
-    ) -> Self {
-        Self {
-            recovery: Arc::new(Mutex::new(Recovery::load(
-                WindowsCheckpointFile::current_user(),
-            ))),
-            host: WindowsHost {
-                origin,
-                power,
-                stop,
-            },
-        }
-    }
-
-    /// Blocking: a completed explicit query may resume paused recovery.
-    pub(super) fn explicit_read(
-        &self,
-        brightness: &SharedBrightness,
-        state: &Snapshot,
-    ) -> io::Result<()> {
-        explicit_read(brightness, &self.recovery, state)
-    }
-
-    /// Blocking: the complete admitted operation, including its record.
-    pub(super) fn set_brightness(
-        &self,
-        brightness: &SharedBrightness,
-        request: SetBrightness,
-        canceled: &AtomicBool,
-    ) -> io::Result<WriteOutcome> {
-        set_brightness(
-            &mut self.host.clone(),
-            brightness,
-            &self.recovery,
-            request,
-            canceled,
-        )
-    }
-}
-
-#[derive(Clone)]
-struct WindowsHost {
-    origin: Arc<Origin>,
-    power: PowerAdmission,
-    /// The display feature stop, which every lifetime exit (Stop, Origin
-    /// loss, status watcher or sibling failure) signals before draining.
-    stop: watch::Receiver<bool>,
-}
-
-/// Re-checked by the worker after preparation, immediately before the one
-/// possible WmiSetBrightness: fresh CCD topology, the loaded Origin, the
-/// active console session and the unchanged trusted power generation.
-struct WindowsFence {
-    host: WindowsHost,
-    admitted: PowerContext,
-}
-
-impl SubmissionFence for WindowsFence {
-    fn topology(&self) -> Result<InternalDisplayTopology, DisplayReadError> {
-        read_internal_display()
-    }
-
-    fn admit(&self) -> bool {
-        self.host.origin.verify().is_ok()
-            && active_console(self.host.origin.session)
-            && self.host.power.current(self.admitted)
-            && !*self.host.stop.borrow()
-    }
-}
-
 impl WriteHost for WindowsHost {
     fn power(&self) -> Option<PowerContext> {
-        self.power.capture()
+        WindowsHost::power(self)
     }
 
     fn fence(&self, admitted: PowerContext) -> Arc<dyn SubmissionFence> {
-        Arc::new(WindowsFence {
-            host: self.clone(),
-            admitted,
-        })
+        WindowsHost::fence(self, admitted)
     }
 
     fn target(&mut self) -> Result<BrightnessTarget, BrightnessError> {
@@ -344,7 +219,7 @@ impl WriteHost for WindowsHost {
         brightness: &SharedBrightness,
         canceled: &AtomicBool,
     ) -> io::Result<Snapshot> {
-        super::observation::query(canceled, brightness.clone())
+        WindowsHost::query(self, brightness, canceled)
     }
 }
 

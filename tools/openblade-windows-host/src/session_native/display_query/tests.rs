@@ -30,6 +30,17 @@ impl Supplier for Script {
             "query-only test supplier received a write",
         ))
     }
+    #[cfg(feature = "agent-display-hdr-write-v1")]
+    async fn set_hdr(
+        &mut self,
+        _request: SetHdr,
+        _canceled: Arc<AtomicBool>,
+    ) -> io::Result<HdrWriteOutcome> {
+        self.calls += 1;
+        Err(io::Error::other(
+            "query-only test supplier received a write",
+        ))
+    }
 }
 fn request(body: Value) -> Vec<u8> {
     raw_request(&serde_json::to_vec(&body).unwrap())
@@ -253,6 +264,14 @@ impl Supplier for Blocker {
         _request: SetBrightness,
         _canceled: Arc<AtomicBool>,
     ) -> io::Result<WriteOutcome> {
+        unreachable!("query-only test supplier received a write")
+    }
+    #[cfg(feature = "agent-display-hdr-write-v1")]
+    async fn set_hdr(
+        &mut self,
+        _request: SetHdr,
+        _canceled: Arc<AtomicBool>,
+    ) -> io::Result<HdrWriteOutcome> {
         unreachable!("query-only test supplier received a write")
     }
 }
@@ -804,6 +823,14 @@ mod brightness_writes {
                 state,
             })
         }
+        #[cfg(feature = "agent-display-hdr-write-v1")]
+        async fn set_hdr(
+            &mut self,
+            _request: SetHdr,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<HdrWriteOutcome> {
+            unreachable!("brightness test supplier received setHdr")
+        }
     }
     fn set(expected: Value, percent: Value) -> Vec<u8> {
         request(json!({
@@ -887,8 +914,6 @@ mod brightness_writes {
                 "expectedPowerSource":0,"percent":50}),
             ),
             request(json!({"version":2,"requestId":ID,"operation":"query","percent":50})),
-            request(json!({"version":2,"requestId":ID,"operation":"setHdr",
-                "expectedPowerSource":0,"enabled":true})),
             request(
                 json!({"version":2,"requestId":ID,"operation":"setRefreshRate",
                 "expectedPowerSource":0,"refreshRateKey":"fixed-240"}),
@@ -903,6 +928,12 @@ mod brightness_writes {
                 r#"{{"version":2,"requestId":"{ID}","operation":"setBrightness","expectedPowerSource":0,"percent":50,"percent":60}}"#
             )
             .as_bytes(),
+        ));
+        // A valid setHdr reaches no brightness-only supplier.
+        #[cfg(not(feature = "agent-display-hdr-write-v1"))]
+        inputs.push(request(
+            json!({"version":2,"requestId":ID,"operation":"setHdr",
+            "expectedPowerSource":0,"enabled":true}),
         ));
         for input in inputs {
             let mut supplier = Writes::new(Status::Succeeded, None, Snapshot::unavailable("x"));
@@ -952,6 +983,14 @@ mod brightness_writes {
             })
             .await
             .unwrap()
+        }
+        #[cfg(feature = "agent-display-hdr-write-v1")]
+        async fn set_hdr(
+            &mut self,
+            _request: SetHdr,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<HdrWriteOutcome> {
+            unreachable!("brightness test supplier received setHdr")
         }
     }
 

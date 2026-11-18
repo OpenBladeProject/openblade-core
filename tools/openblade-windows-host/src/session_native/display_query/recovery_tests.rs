@@ -142,7 +142,7 @@ fn loads_every_managed_fixture_row_and_rewrites_the_same_state() {
             "{case}"
         );
         assert_eq!(
-            recovery.brightness_unresolved(),
+            recovery.unresolved().brightness,
             state["AutomaticWritesPaused"] == true && state["UncertainBrightness"] == true,
             "{case}"
         );
@@ -180,28 +180,28 @@ fn invalid_or_unreadable_files_pause_with_every_field_uncertain() {
     ] {
         let recovery = Recovery::load(Mem::with(bytes.as_bytes()));
         assert_eq!(recovery.flags(), (false, true, Fields::ALL), "{name}");
-        assert!(recovery.brightness_unresolved(), "{name}");
+        assert!(recovery.unresolved().brightness, "{name}");
     }
     let unreadable = Recovery::load(Mem {
         fail_read: true,
         ..Mem::default()
     });
     assert_eq!(unreadable.flags(), (false, true, Fields::ALL));
-    assert!(unreadable.brightness_unresolved());
+    assert!(unreadable.unresolved().brightness);
 }
 
 #[test]
 fn absent_file_is_not_paused() {
     let recovery = Recovery::load(Mem::default());
     assert_eq!(recovery.flags(), (false, false, Fields::default()));
-    assert!(!recovery.brightness_unresolved());
+    assert!(!recovery.unresolved().brightness);
 }
 
 #[test]
 fn begin_persists_hold_pause_and_brightness_uncertainty_before_returning() {
     let file = Mem::default();
     let mut recovery = Recovery::load(file.clone());
-    assert!(recovery.begin_brightness(Some(1)));
+    assert!(recovery.begin(Fields::BRIGHTNESS, Some(1)));
     let stored = file.stored();
     assert_eq!(stored["LastReconciledPowerSource"], 1);
     assert_eq!(stored["ManualHold"], true);
@@ -219,7 +219,7 @@ fn begin_persists_hold_pause_and_brightness_uncertainty_before_returning() {
 #[test]
 fn begin_clears_baseline_ownership_and_profile_like_managed() {
     let (mut recovery, file) = from_fixture("pluggedin-owned-all-with-profile-full-baseline");
-    assert!(recovery.begin_brightness(None));
+    assert!(recovery.begin(Fields::BRIGHTNESS, None));
     let stored = file.stored();
     assert_eq!(stored["LastReconciledPowerSource"], 0);
     assert!(stored["Baseline"].is_null() && stored["ApplicationProfileId"].is_null());
@@ -237,7 +237,7 @@ fn begin_clears_baseline_ownership_and_profile_like_managed() {
 fn begin_without_any_power_source_fails_and_writes_nothing() {
     let file = Mem::default();
     let mut recovery = Recovery::load(file.clone());
-    assert!(!recovery.begin_brightness(None));
+    assert!(!recovery.begin(Fields::BRIGHTNESS, None));
     assert!(file.raw().is_none());
     assert!(recovery.flags().1);
 }
@@ -247,7 +247,7 @@ fn begin_replace_failure_latches_and_restores_prior_uncertainty() {
     let (mut recovery, file) = from_fixture("battery-minimal");
     let before = file.raw();
     recovery.file().fail_replace = true;
-    assert!(!recovery.begin_brightness(Some(0)));
+    assert!(!recovery.begin(Fields::BRIGHTNESS, Some(0)));
     assert_eq!(recovery.flags(), (true, true, Fields::default()));
     assert_eq!(file.raw(), before);
 }
@@ -255,11 +255,11 @@ fn begin_replace_failure_latches_and_restores_prior_uncertainty() {
 #[test]
 fn complete_succeeded_with_brightness_readback_resumes() {
     let (mut recovery, file) = from_fixture("battery-minimal");
-    assert!(recovery.begin_brightness(None));
+    assert!(recovery.begin(Fields::BRIGHTNESS, None));
     recovery.complete(Status::Succeeded, &with_brightness());
     let (_, paused, uncertain) = recovery.flags();
     assert!(!paused && uncertain == Fields::default());
-    assert!(!recovery.brightness_unresolved());
+    assert!(!recovery.unresolved().brightness);
     let stored = file.stored();
     assert_eq!(stored["AutomaticWritesPaused"], false);
     assert_eq!(stored["UncertainBrightness"], false);
@@ -275,14 +275,14 @@ fn complete_without_confirmation_or_indeterminate_stays_unresolved() {
         (Status::Indeterminate, with_brightness(), true),
     ] {
         let (mut recovery, file) = from_fixture("battery-minimal");
-        assert!(recovery.begin_brightness(None));
+        assert!(recovery.begin(Fields::BRIGHTNESS, None));
         recovery.complete(status, &snapshot);
         assert_eq!(
             recovery.flags(),
             (true, true, brightness_only()),
             "{status:?}"
         );
-        assert_eq!(recovery.brightness_unresolved(), gated, "{status:?}");
+        assert_eq!(recovery.unresolved().brightness, gated, "{status:?}");
         assert_eq!(file.stored()["AutomaticWritesPaused"], true);
         assert_eq!(file.stored()["UncertainBrightness"], true);
     }
@@ -292,15 +292,15 @@ fn complete_without_confirmation_or_indeterminate_stays_unresolved() {
 fn complete_blocked_or_failed_restores_the_inherited_pause() {
     for status in [Status::Blocked, Status::Failed] {
         let (mut clean, _) = from_fixture("battery-minimal");
-        assert!(clean.begin_brightness(None));
+        assert!(clean.begin(Fields::BRIGHTNESS, None));
         clean.complete(status, &without_brightness());
         assert!(!clean.flags().1, "{status:?}");
         assert_eq!(clean.flags().2, Fields::default(), "{status:?}");
-        assert!(!clean.brightness_unresolved());
+        assert!(!clean.unresolved().brightness);
 
         let (mut paused, file) =
             from_fixture("pluggedin-owned-refresh-color-uncertain-refresh-paused");
-        assert!(paused.begin_brightness(None));
+        assert!(paused.begin(Fields::BRIGHTNESS, None));
         paused.complete(status, &without_brightness());
         let refresh_only = Fields {
             refresh: true,
@@ -308,7 +308,7 @@ fn complete_blocked_or_failed_restores_the_inherited_pause() {
         };
         assert!(paused.flags().1, "{status:?}");
         assert_eq!(paused.flags().2, refresh_only, "{status:?}");
-        assert!(!paused.brightness_unresolved());
+        assert!(!paused.unresolved().brightness);
         assert_eq!(file.stored()["UncertainBrightness"], false);
     }
 }
@@ -316,42 +316,42 @@ fn complete_blocked_or_failed_restores_the_inherited_pause() {
 #[test]
 fn complete_replace_failure_latches_and_keeps_brightness_unresolved() {
     let (mut recovery, _) = from_fixture("battery-minimal");
-    assert!(recovery.begin_brightness(None));
+    assert!(recovery.begin(Fields::BRIGHTNESS, None));
     recovery.file().fail_replace = true;
     recovery.complete(Status::Succeeded, &with_brightness());
     assert_eq!(recovery.flags(), (true, true, brightness_only()));
-    assert!(recovery.brightness_unresolved());
+    assert!(recovery.unresolved().brightness);
 }
 
 #[test]
 fn indeterminate_survives_restart_until_an_explicit_brightness_read() {
     let (mut recovery, file) = from_fixture("battery-minimal");
-    assert!(recovery.begin_brightness(None));
+    assert!(recovery.begin(Fields::BRIGHTNESS, None));
     recovery.complete(Status::Indeterminate, &Snapshot::unavailable("unknown"));
 
     let mut restarted = Recovery::load(file.clone());
-    assert!(restarted.brightness_unresolved());
+    assert!(restarted.unresolved().brightness);
     assert_eq!(restarted.flags(), (true, true, brightness_only()));
 
     assert!(!restarted.explicit_read(&Snapshot::unavailable("still gone")));
     assert!(!restarted.explicit_read(&without_brightness()));
-    assert!(restarted.brightness_unresolved());
+    assert!(restarted.unresolved().brightness);
     assert_eq!(file.stored()["AutomaticWritesPaused"], true);
 
     assert!(restarted.explicit_read(&with_brightness()));
-    assert!(!restarted.brightness_unresolved());
+    assert!(!restarted.unresolved().brightness);
     assert_eq!(restarted.flags(), (false, false, Fields::default()));
     let stored = file.stored();
     assert_eq!(stored["AutomaticWritesPaused"], false);
     assert_eq!(stored["ManualHold"], false);
     assert_eq!(stored["UncertainBrightness"], false);
-    assert!(!Recovery::load(file).brightness_unresolved());
+    assert!(!Recovery::load(file).unresolved().brightness);
 }
 
 #[test]
 fn explicit_read_resume_replace_failure_stays_latched() {
     let (mut recovery, _) = from_fixture("battery-minimal");
-    assert!(recovery.begin_brightness(None));
+    assert!(recovery.begin(Fields::BRIGHTNESS, None));
     recovery.complete(Status::Indeterminate, &Snapshot::unavailable("unknown"));
     recovery.file().fail_replace = true;
     assert!(!recovery.explicit_read(&with_brightness()));
@@ -385,7 +385,7 @@ fn emits_native_rows_for_the_managed_oracle() {
 
     let file = Mem::default();
     let mut begun = Recovery::load(file.clone());
-    assert!(begun.begin_brightness(Some(1)));
+    assert!(begun.begin(Fields::BRIGHTNESS, Some(1)));
     row("native-after-begin", &begun, &file);
     begun.complete(Status::Indeterminate, &Snapshot::unavailable("unknown"));
     row("native-after-indeterminate", &begun, &file);
@@ -393,7 +393,7 @@ fn emits_native_rows_for_the_managed_oracle() {
     row("native-after-resume", &begun, &file);
 
     let (mut cleared, file) = from_fixture("pluggedin-owned-all-with-profile-full-baseline");
-    assert!(cleared.begin_brightness(None));
+    assert!(cleared.begin(Fields::BRIGHTNESS, None));
     row("native-begin-clears-baseline", &cleared, &file);
 
     let (mut resumed, file) =
@@ -427,7 +427,7 @@ fn emits_native_rows_for_the_managed_oracle() {
 fn legacy_record_without_a_source_defaults_to_plugged_in() {
     let recovery = Recovery::load(Mem::with(b"{\"SchemaVersion\":1}"));
     assert_eq!(recovery.flags(), (false, false, Fields::default()));
-    assert!(!recovery.brightness_unresolved());
+    assert!(!recovery.unresolved().brightness);
     assert_eq!(recovery.last, Some(0));
 }
 
@@ -442,7 +442,7 @@ fn nesting_beyond_the_managed_reader_depth_is_invalid() {
         )
     };
     let accepted = Recovery::load(Mem::with(nested(64).as_bytes()));
-    assert!(!accepted.brightness_unresolved());
+    assert!(!accepted.unresolved().brightness);
     let rejected = Recovery::load(Mem::with(nested(65).as_bytes()));
     assert_eq!(rejected.flags(), (false, true, Fields::ALL));
 }
@@ -481,11 +481,11 @@ fn succeeded_without_brightness_confirmation_regates_after_restart() {
     // the conservative gate until an explicit read observes brightness.
     let file = Mem::default();
     let mut recovery = Recovery::load(file.clone());
-    assert!(recovery.begin_brightness(Some(1)));
+    assert!(recovery.begin(Fields::BRIGHTNESS, Some(1)));
     recovery.complete(Status::Succeeded, &without_brightness());
-    assert!(!recovery.brightness_unresolved());
+    assert!(!recovery.unresolved().brightness);
     let restarted = Recovery::load(file.clone());
-    assert!(restarted.brightness_unresolved());
+    assert!(restarted.unresolved().brightness);
 }
 
 #[test]

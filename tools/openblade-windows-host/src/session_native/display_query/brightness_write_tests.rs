@@ -8,7 +8,10 @@ use openblade_platform_windows::{
         Acknowledgement, CallBudget, MethodRow, ReadingRow, Submission, TopologyFailure,
         WindowsBrightnessWorker, WmiBrightnessNative,
     },
-    display::scripted::{RefreshTiming, Scenario},
+    display::{
+        DisplayReadError,
+        scripted::{RefreshTiming, Scenario},
+    },
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -468,7 +471,7 @@ fn possible_submission_pauses_without_replay_across_restart_until_explicit_read(
 
         // Restart: the durable checkpoint restores the gate.
         let restarted = Rig::new(25, Mode::Apply, rig.file.clone());
-        assert!(restarted.recovery.lock().unwrap().brightness_unresolved());
+        assert!(restarted.recovery.lock().unwrap().unresolved().brightness);
         let blocked = restarted.set(&mut host, 2, 75).unwrap();
         assert_eq!(blocked.error, Some(PAUSED));
         assert_eq!(restarted.setters(), 0);
@@ -476,7 +479,7 @@ fn possible_submission_pauses_without_replay_across_restart_until_explicit_read(
         // An explicit read that observes brightness reopens manual writes.
         let read = fixture_query_owned(restarted.owner.clone(), &AtomicBool::new(false)).unwrap();
         restarted.recovery.lock().unwrap().explicit_read(&read);
-        assert!(!restarted.recovery.lock().unwrap().brightness_unresolved());
+        assert!(!restarted.recovery.lock().unwrap().unresolved().brightness);
         let outcome = restarted.set(&mut host, 2, 75).unwrap();
         assert_eq!(outcome.status, Status::Succeeded);
         assert_eq!(restarted.submitted(), 1);
@@ -491,7 +494,7 @@ fn uncertain_completion_persistence_latches_the_pause() {
     rig.file.allow.store(1, Ordering::SeqCst);
     let outcome = rig.set(&mut host, 0, 100).unwrap();
     assert_eq!(outcome.status, Status::Succeeded);
-    assert!(rig.recovery.lock().unwrap().brightness_unresolved());
+    assert!(rig.recovery.lock().unwrap().unresolved().brightness);
     // The durable bytes still hold the begin checkpoint (paused, uncertain).
     let record = rig.file.record();
     assert!(flag(&record, "AutomaticWritesPaused") && flag(&record, "UncertainBrightness"));
@@ -514,7 +517,7 @@ fn lost_worker_after_submission_records_indeterminate_then_stops_the_feature() {
     assert_eq!(host.queries, 0);
     let record = rig.file.record();
     assert!(flag(&record, "AutomaticWritesPaused") && flag(&record, "UncertainBrightness"));
-    assert!(rig.recovery.lock().unwrap().brightness_unresolved());
+    assert!(rig.recovery.lock().unwrap().unresolved().brightness);
 }
 
 #[test]
@@ -543,7 +546,7 @@ fn same_process_explicit_read_replaces_the_paused_worker_without_replay() {
         let read = fixture_query_owned(rig.owner.clone(), &none).unwrap();
         assert_eq!(read.brightness(), Some(25));
         explicit_read(&rig.owner, &rig.recovery, &read).unwrap();
-        assert!(!rig.recovery.lock().unwrap().brightness_unresolved());
+        assert!(!rig.recovery.lock().unwrap().unresolved().brightness);
         let next = rig.set(&mut host, 2, 50).unwrap();
         assert_eq!((next.status, next.error), (Status::Succeeded, None));
         assert_eq!(next.state.brightness(), Some(50));
@@ -600,7 +603,7 @@ fn inherited_unrelated_uncertainty_keeps_the_managed_pause_but_not_the_write_gat
         let outcome = set_brightness(&mut host, &rig.owner, &rig.recovery, request, &none).unwrap();
         assert_eq!((outcome.status, outcome.error), (Status::Succeeded, None));
         assert_eq!(rig.submitted(), submitted);
-        assert!(!rig.recovery.lock().unwrap().brightness_unresolved());
+        assert!(!rig.recovery.lock().unwrap().unresolved().brightness);
         // Managed CompleteManualOperation still cannot confirm HDR.
         let record = rig.file.record();
         assert!(flag(&record, "AutomaticWritesPaused") && flag(&record, "UncertainHdr"));
@@ -617,7 +620,7 @@ fn unchanged_request_is_never_uncertain_even_if_the_reply_read_fails() {
     assert_eq!((outcome.status, outcome.error), (Status::Succeeded, None));
     assert_eq!(outcome.state.brightness(), None);
     assert_eq!(rig.setters(), 0);
-    assert!(!rig.recovery.lock().unwrap().brightness_unresolved());
+    assert!(!rig.recovery.lock().unwrap().unresolved().brightness);
     assert_eq!(rig.set(&mut host, 1, 75).unwrap().status, Status::Succeeded);
 }
 
@@ -635,7 +638,7 @@ fn cancellation_after_submission_is_recorded_without_replay() {
         (outcome.status, outcome.error),
         (Status::Indeterminate, Some(UNCONFIRMED))
     );
-    assert!(rig.recovery.lock().unwrap().brightness_unresolved());
+    assert!(rig.recovery.lock().unwrap().unresolved().brightness);
     *rig.wmi.cancel_on_submit.lock().unwrap() = None;
     assert_eq!(rig.set(&mut host, 1, 75).unwrap().error, Some(PAUSED));
     assert_eq!(rig.submitted(), 1);

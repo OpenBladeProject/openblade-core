@@ -20,13 +20,13 @@ mod display_query;
 mod feature_lifetime;
 #[cfg(not(test))]
 mod installed_monitor;
-#[cfg(feature = "agent-display-brightness-write-v1")]
+#[cfg(openblade_display_write)]
 mod power_admission;
 #[allow(dead_code)]
 mod scm_peer;
 pub(crate) mod service_client;
 mod token;
-#[cfg(feature = "agent-display-brightness-write-v1")]
+#[cfg(openblade_display_write)]
 mod user_environment;
 
 // Preserve the source of installed-origin failures across the monitor and
