@@ -392,6 +392,15 @@ fn emits_native_rows_for_the_managed_oracle() {
     assert!(begun.explicit_read(&with_brightness()));
     row("native-after-resume", &begun, &file);
 
+    let file = Mem::default();
+    let mut hdr = Recovery::load(file.clone());
+    assert!(hdr.begin(Fields::HDR, Some(2)));
+    row("native-hdr-after-begin", &hdr, &file);
+    hdr.complete(Status::Indeterminate, &Snapshot::unavailable("unknown"));
+    row("native-hdr-after-indeterminate", &hdr, &file);
+    assert!(hdr.explicit_read(&hdr_supported()));
+    row("native-hdr-after-resume", &hdr, &file);
+
     let (mut cleared, file) = from_fixture("pluggedin-owned-all-with-profile-full-baseline");
     assert!(cleared.begin(Fields::BRIGHTNESS, None));
     row("native-begin-clears-baseline", &cleared, &file);
@@ -599,4 +608,54 @@ fn only_a_paused_load_restores_the_hdr_gate() {
         br#"{"SchemaVersion":4,"LastReconciledPowerSource":1,"ManualHold":true,"AutomaticWritesPaused":true,"UncertainHdr":true}"#,
     );
     assert_eq!(Recovery::load(paused).unresolved(), Fields::HDR);
+}
+
+#[test]
+fn indeterminate_gates_only_the_operation_fields_in_process() {
+    // Inherited, unpaused brightness uncertainty is not a gate; an HDR
+    // Indeterminate must not turn it into one.
+    let file = Mem::with(br#"{"SchemaVersion":4,"UncertainBrightness":true}"#);
+    let mut recovery = Recovery::load(file.clone());
+    assert_eq!(recovery.unresolved(), Fields::default());
+    assert!(recovery.begin(Fields::HDR, Some(0)));
+    recovery.complete(Status::Indeterminate, &Snapshot::unavailable("unknown"));
+    assert_eq!(recovery.unresolved(), Fields::HDR);
+}
+
+#[test]
+fn exponents_and_short_escapes_are_not_private_tokens_or_negative_zero() {
+    for (name, bytes) in [
+        ("negative exponent", r#"{"SchemaVersion":4,"X":1e-05}"#),
+        (
+            "negative exponent zero",
+            r#"{"SchemaVersion":4,"X":[1E-0,1.5e-07]}"#,
+        ),
+        (
+            "carriage return escape",
+            r#"{"SchemaVersion":4,"X":"$se\rde_json::private::x"}"#,
+        ),
+        (
+            "tab escape",
+            r#"{"SchemaVersion":4,"X":"$serde_json::private:\t"}"#,
+        ),
+    ] {
+        let recovery = Recovery::load(Mem::with(bytes.as_bytes()));
+        assert!(!recovery.flags().1, "{name}");
+    }
+    // The real token through a short escape is still refused.
+    let escaped = r#"{"SchemaVersion":4,"X":{"$serde_json::private::\u004eumber":"1"}}"#;
+    assert_eq!(
+        Recovery::load(Mem::with(escaped.as_bytes())).flags(),
+        (false, true, Fields::ALL)
+    );
+}
+
+#[test]
+fn brightness_indeterminate_does_not_gate_hdr() {
+    let file = Mem::default();
+    let mut recovery = Recovery::load(file.clone());
+    assert!(recovery.begin(Fields::BRIGHTNESS, Some(1)));
+    recovery.complete(Status::Indeterminate, &Snapshot::unavailable("unknown"));
+    assert_eq!(recovery.unresolved(), Fields::BRIGHTNESS);
+    assert!(!recovery.unresolved().hdr);
 }

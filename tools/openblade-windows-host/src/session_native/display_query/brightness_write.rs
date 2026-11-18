@@ -129,9 +129,14 @@ pub(super) fn set_brightness<F: CheckpointFile>(
         }
         _ => (status, error),
     };
-    // Managed ExecuteSetterAsync.EnsureCurrent after a successful setter.
+    // Managed ExecuteSetterAsync.EnsureCurrent after a successful setter. A
+    // no-op returns before the setter in managed SetBrightnessAsync, unchecked.
     let (status, error) = match power {
-        Some(admitted) if status == Status::Succeeded && host.power() != Some(admitted) => {
+        Some(admitted)
+            if status == Status::Succeeded
+                && confirmed.is_some()
+                && host.power() != Some(admitted) =>
+        {
             (Status::Indeterminate, Some(STALE_AFTER))
         }
         _ => (status, error),

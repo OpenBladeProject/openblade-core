@@ -47,6 +47,7 @@ const ORIGIN_POLL: Duration = Duration::from_millis(250);
 struct Envelope {
     version: i32,
     request_id: String,
+    #[serde(deserialize_with = "operation_name")]
     operation: Name,
     #[cfg(openblade_display_write)]
     #[serde(default, deserialize_with = "present")]
@@ -57,6 +58,12 @@ struct Envelope {
     #[cfg(feature = "agent-display-hdr-write-v1")]
     #[serde(default, deserialize_with = "present")]
     enabled: Option<bool>,
+}
+/// The managed discriminator is a JSON string. serde's externally tagged form
+/// (`{"setHdr":null}`) would otherwise also select a unit variant.
+fn operation_name<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Name, D::Error> {
+    let name = String::deserialize(deserializer)?;
+    Name::deserialize(serde::de::value::StrDeserializer::<D::Error>::new(&name))
 }
 /// Absent members stay `None`; an explicit JSON null is malformed.
 #[cfg(openblade_display_write)]

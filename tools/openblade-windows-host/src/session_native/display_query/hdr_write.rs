@@ -247,8 +247,10 @@ fn attempt(
             HdrError::PanelChanged => done(Status::Blocked, PANEL_CHANGED),
             HdrError::AdmissionDenied => done(Status::Blocked, STALE),
             HdrError::Cancelled => done(Status::Blocked, CANCELED),
-            // Not produced before a submission; never claim certainty.
-            HdrError::Rejected(_) | HdrError::Unconfirmed => done(Status::Failed, UNCONFIRMED),
+            // Only produced after a possible submission; never claim certainty.
+            HdrError::Rejected(_) | HdrError::Unconfirmed => {
+                done(Status::Indeterminate, UNCONFIRMED)
+            }
         },
     }
 }

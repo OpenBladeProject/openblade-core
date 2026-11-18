@@ -98,8 +98,11 @@ profiles in either state.
 The packet layout and command type follow the
 [Microsoft SDK header](https://raw.githubusercontent.com/microsoft/win32metadata/main/generation/WinSDK/RecompiledIdlHeaders/um/wingdi.h)
 and [DisplayConfigSetDeviceInfo](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-displayconfigsetdeviceinfo).
-Only the platform unit test links the native setter; the test retains its
-function pointer and checks packet encoding without executing the call.
+The platform unit test links the native setter only to check packet encoding;
+it retains the function pointer without executing the call. Production builds
+with the `display-hdr-write` feature call it once, from `hdr::set_internal_hdr`
+after the host fence admits the submission; `HdrNative::submit` is public, so a
+dependent must not call it outside that sequence.
 
 Phase 6t admits the existing v2 SetRefreshRate request through the Tray client.
 The fixture checks option membership against the initial and fresh snapshots.

@@ -933,7 +933,7 @@ mod brightness_writes {
         ];
         inputs.push(raw_request(
             format!(
-                r#"{{"version":2,"requestId":"{ID}","operation":"setBrightness","expectedPowerSource":0,"percent":50,"percent":60}}"#
+                r#"{{"operation":"setBrightness","version":2,"requestId":"{ID}","expectedPowerSource":0,"percent":50,"percent":60}}"#
             )
             .as_bytes(),
         ));
@@ -1288,7 +1288,7 @@ mod hdr_writes {
                 "expectedPowerSource":0,"settings":{}})),
             raw_request(
                 format!(
-                    r#"{{"version":2,"requestId":"{ID}","operation":"setHdr","expectedPowerSource":0,"enabled":true,"enabled":false}}"#
+                    r#"{{"operation":"setHdr","version":2,"requestId":"{ID}","expectedPowerSource":0,"enabled":true,"enabled":false}}"#
                 )
                 .as_bytes(),
             ),

@@ -76,3 +76,20 @@ fn duplicate_members_and_late_operation_are_refused() {
     let spaced = b" {\r\n \"operation\":\"query\",\"version\":2,\"requestId\":\"9f876742-1234-4321-abcd-d3ea3e1cf102\"}";
     assert!(Request::parse(spaced).is_ok());
 }
+
+#[test]
+fn object_form_discriminators_are_refused_like_managed() {
+    let id = "9f876742-1234-4321-abcd-d3ea3e1cf102";
+    let query = format!(r#"{{"operation":{{"query":null}},"version":2,"requestId":"{id}"}}"#);
+    assert!(Request::parse(query.as_bytes()).is_err());
+    let hdr = format!(
+        r#"{{"operation":{{"setHdr":null}},"version":2,"requestId":"{id}","expectedPowerSource":2,"enabled":true}}"#
+    );
+    assert!(Request::parse(hdr.as_bytes()).is_err());
+    let brightness = format!(
+        r#"{{"operation":{{"setBrightness":null}},"version":2,"requestId":"{id}","expectedPowerSource":2,"percent":5}}"#
+    );
+    assert!(Request::parse(brightness.as_bytes()).is_err());
+    let string = format!(r#"{{"operation":"query","version":2,"requestId":"{id}"}}"#);
+    assert!(Request::parse(string.as_bytes()).is_ok());
+}

@@ -706,3 +706,59 @@ fn power_change_after_a_confirmed_write_is_indeterminate_like_managed() {
     let record = rig.file.record();
     assert!(flag(&record, "AutomaticWritesPaused") && flag(&record, "UncertainBrightness"));
 }
+
+#[test]
+fn unchanged_request_skips_the_post_write_power_check_like_managed() {
+    // Managed SetBrightnessAsync returns before the setter for a no-op, so
+    // EnsureCurrent never runs and a later power change is not uncertainty.
+    let rig = Rig::new(50, Mode::Apply, Memory::default());
+    let mut host = Drifting(Host::admitted(1), AtomicUsize::new(0));
+    let request = SetBrightness {
+        expected_power_source: 1,
+        percent: 50,
+    };
+    let none = AtomicBool::new(false);
+    let outcome = set_brightness(&mut host, &rig.owner, &rig.recovery, request, &none).unwrap();
+    assert_eq!((outcome.status, outcome.error), (Status::Succeeded, None));
+    assert_eq!(rig.setters(), 0);
+    assert!(!rig.recovery.lock().unwrap().unresolved().brightness);
+}
+
+/// The reply query fails with a non-cancellation error.
+struct FailingQuery(Host);
+impl WriteHost for FailingQuery {
+    fn power(&self) -> Option<PowerContext> {
+        self.0.power()
+    }
+    fn fence(&self, admitted: PowerContext) -> Arc<dyn SubmissionFence> {
+        self.0.fence(admitted)
+    }
+    fn target(&mut self) -> Result<BrightnessTarget, BrightnessError> {
+        self.0.target()
+    }
+    fn query(&mut self, _: &SharedBrightness, _: &AtomicBool) -> io::Result<Snapshot> {
+        self.0.queries += 1;
+        Err(io::Error::other("display query failed"))
+    }
+}
+
+#[test]
+fn fatal_reply_query_records_the_submitted_write_before_failing() {
+    let rig = Rig::new(25, Mode::Apply, Memory::default());
+    let mut host = FailingQuery(Host::admitted(1));
+    let request = SetBrightness {
+        expected_power_source: 1,
+        percent: 75,
+    };
+    let none = AtomicBool::new(false);
+    let error = set_brightness(&mut host, &rig.owner, &rig.recovery, request, &none)
+        .err()
+        .expect("a failed reply query is fatal");
+    assert_eq!(error.to_string(), "display query failed");
+    assert_eq!((rig.submitted(), host.0.queries), (1, 1));
+    // The confirmed level cannot be shown, so the record is uncertain.
+    assert!(rig.recovery.lock().unwrap().unresolved().brightness);
+    let record = rig.file.record();
+    assert!(flag(&record, "AutomaticWritesPaused") && flag(&record, "UncertainBrightness"));
+    assert!(!flag(&record, "UncertainHdr"));
+}

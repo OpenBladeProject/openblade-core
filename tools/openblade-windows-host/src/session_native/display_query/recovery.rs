@@ -429,7 +429,8 @@ const PRIVATE_TOKEN: &[u8] = b"$serde_json::private::";
 
 /// Maximum container nesting of the raw document (the root object is 1),
 /// ignoring brackets inside strings, or `None` when any decoded string starts
-/// with a serde_json private token, or for an integer "-0". Malformed input is left to the parser.
+/// with a serde_json private token, or for an integer "-0" (not an exponent).
+/// Malformed input is left to the parser.
 fn scan(bytes: &[u8]) -> Option<usize> {
     let (mut current, mut deepest) = (0usize, 0usize);
     let mut index = 0;
@@ -456,6 +457,11 @@ fn scan(bytes: &[u8]) -> Option<usize> {
                                         .and_then(|hex| u8::from_str_radix(hex, 16).ok())
                                         .filter(u8::is_ascii)
                                 }
+                                Some(b'b') => Some(0x08),
+                                Some(b'f') => Some(0x0C),
+                                Some(b'n') => Some(0x0A),
+                                Some(b'r') => Some(0x0D),
+                                Some(b't') => Some(0x09),
                                 Some(other) => Some(other),
                                 None => None,
                             }
@@ -477,8 +483,10 @@ fn scan(bytes: &[u8]) -> Option<usize> {
             }
             // serde_json reads an integer "-0" as 0; System.Text.Json refuses
             // it for the unsigned Byte member. Refuse it anywhere (stricter).
+            // A sign after an exponent marker (`1e-05`) is not a number start.
             b'-' if bytes.get(index) == Some(&b'0')
-                && !matches!(bytes.get(index + 1), Some(b'.' | b'e' | b'E')) =>
+                && !matches!(bytes.get(index + 1), Some(b'.' | b'e' | b'E'))
+                && !matches!(index.checked_sub(2).map(|at| bytes[at]), Some(b'e' | b'E')) =>
             {
                 return None;
             }
