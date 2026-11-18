@@ -133,6 +133,25 @@ impl Snapshot {
                 .all(|pair| pair[0] < pair[1])
             && (self.brightness_percent.is_some() == !self.supported_brightness_levels.is_empty())
     }
+
+    /// Managed DisplayAutomationCoordinator.HasCompleteReadback.
+    #[cfg(feature = "agent-display-brightness-write-v1")]
+    pub(super) fn confirms(&self, fields: super::recovery::Fields) -> bool {
+        let text = |value: &Option<String>| value.as_deref().is_some_and(|s| !s.trim().is_empty());
+        self.is_available
+            && (!fields.refresh || text(&self.current_refresh_key))
+            && (!fields.hdr || self.hdr_supported)
+            && (!fields.color
+                || self.hdr_enabled
+                || (self.color_profiles_enabled && text(&self.active_color_profile_id)))
+            && (!fields.brightness
+                || self.brightness_percent.is_some() && !self.supported_brightness_levels.is_empty())
+    }
+
+    #[cfg(feature = "agent-display-brightness-write-v1")]
+    pub(super) fn brightness(&self) -> Option<u8> {
+        self.brightness_percent
+    }
 }
 
 trait DisplayReads {
@@ -198,6 +217,52 @@ impl BrightnessOwner {
         ) {
             return Err(io::Error::other("brightness worker disconnected"));
         }
+        Ok(result)
+    }
+
+    /// One fenced manual write on the same feature-owned worker as queries.
+    /// A busy worker (a prior call still retiring) refuses without submitting.
+    #[cfg(feature = "agent-display-brightness-write-v1")]
+    pub(super) fn apply(
+        &mut self,
+        percent: u8,
+        target: openblade_platform_windows::brightness::BrightnessTarget,
+        fence: Arc<dyn openblade_platform_windows::brightness::SubmissionFence>,
+        canceled: &AtomicBool,
+    ) -> io::Result<
+        Result<
+            openblade_platform_windows::brightness::BrightnessOutcome,
+            openblade_platform_windows::brightness::BrightnessFailure,
+        >,
+    > {
+        use openblade_platform_windows::brightness::{
+            BrightnessFailure, BrightnessRequest,
+        };
+        if self.closed {
+            return Err(io::Error::other("brightness owner is closed"));
+        }
+        let unavailable = |reason| BrightnessFailure {
+            reason,
+            submission_may_have_occurred: false,
+            state: None,
+        };
+        if self.worker.is_none() {
+            if let Err(error) = process_security_status() {
+                return Ok(Err(unavailable(BrightnessError::Native(error))));
+            }
+            // A worker that never started submitted nothing; only a lost reply
+            // from an existing worker reports WorkerDisconnected (fatal).
+            self.worker = match WindowsBrightnessWorker::start() {
+                Ok(worker) => Some(worker),
+                Err(_) => return Ok(Err(unavailable(BrightnessError::ControllerUnavailable))),
+            };
+        }
+        let result = self.worker.as_mut().expect("owned worker").apply_target_fenced(
+            BrightnessRequest::SetPercent(percent),
+            target,
+            fence,
+            || canceled.load(Ordering::Acquire),
+        );
         Ok(result)
     }
 

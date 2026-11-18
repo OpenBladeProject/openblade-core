@@ -41,31 +41,86 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
         .enable_all()
         .build()?;
     runtime.block_on(async {
+        // Display mutation admission retains only the confirmed power source
+        // from verified, fresh status on the authenticated subscription. Stop,
+        // Origin loss and a finished watcher each retire it permanently, before
+        // the feature drains, so no in-flight write can pass its fence after.
+        #[cfg(feature = "agent-display-brightness-write-v1")]
+        let power = super::power_admission::PowerAdmission::default();
+        #[cfg(feature = "agent-display-brightness-write-v1")]
+        let _retire = Retire(power.clone());
         let canceled = async {
-            loop {
-                match unsafe { WaitForSingleObject(stop.as_raw_handle(), 0) } {
-                    WAIT_OBJECT_0 => return Ok::<(), io::Error>(()),
-                    WAIT_TIMEOUT => (),
-                    _ => return Err(io::Error::last_os_error()),
+            let result = async {
+                loop {
+                    match unsafe { WaitForSingleObject(stop.as_raw_handle(), 0) } {
+                        WAIT_OBJECT_0 => return Ok::<(), io::Error>(()),
+                        WAIT_TIMEOUT => (),
+                        _ => return Err(io::Error::last_os_error()),
+                    }
+                    super::verify_origin(&origin)?;
+                    tokio::time::sleep(Duration::from_millis(250)).await;
                 }
-                super::verify_origin(&origin)?;
-                tokio::time::sleep(Duration::from_millis(250)).await;
             }
+            .await;
+            #[cfg(feature = "agent-display-brightness-write-v1")]
+            power.retire();
+            result
         };
         tokio::pin!(canceled);
         let watch = service_client::watch_status(
             Some(&authority),
             std::future::pending::<()>(),
             |update| {
-                super::verify_origin(&origin)?;
+                #[cfg(feature = "agent-display-brightness-write-v1")]
+                let result = (|| {
+                    super::verify_origin(&origin)?;
+                    match update {
+                        service_client::StatusUpdate::Opened(value) => {
+                            value.require_fresh()?;
+                            let source = value.into_observation().snapshot.active_power_source();
+                            power.opened(source);
+                        }
+                        service_client::StatusUpdate::Event(value) => {
+                            value.require_fresh()?;
+                            power.observed(value.snapshot.active_power_source());
+                        }
+                        service_client::StatusUpdate::Reconnecting => power.unavailable(),
+                    }
+                    Ok(())
+                })();
+                #[cfg(feature = "agent-display-brightness-write-v1")]
+                if result.is_err() {
+                    power.unavailable();
+                }
+                #[cfg(feature = "agent-display-brightness-write-v1")]
+                return result;
                 // No firmware projection is claimed by a metadata subscription.
-                match update {
-                    service_client::StatusUpdate::Opened(value) => value.require_fresh(),
-                    service_client::StatusUpdate::Event(value) => value.require_fresh(),
-                    service_client::StatusUpdate::Reconnecting => Ok(()),
+                #[cfg(not(feature = "agent-display-brightness-write-v1"))]
+                {
+                    super::verify_origin(&origin)?;
+                    match update {
+                        service_client::StatusUpdate::Opened(value) => value.require_fresh(),
+                        service_client::StatusUpdate::Event(value) => value.require_fresh(),
+                        service_client::StatusUpdate::Reconnecting => Ok(()),
+                    }
                 }
             },
         );
+        #[cfg(feature = "agent-display-brightness-write-v1")]
+        let watch = async {
+            let result = watch.await;
+            power.retire();
+            result
+        };
+        #[cfg(all(
+            feature = "agent-display-query-v1",
+            not(feature = "agent-display-brightness-write-v1")
+        ))]
+        let display = |feature_stop| super::display_query::run(origin.clone(), feature_stop);
+        #[cfg(feature = "agent-display-brightness-write-v1")]
+        let display = |feature_stop| {
+            super::display_query::run(origin.clone(), feature_stop, power.clone())
+        };
         #[cfg(not(any(
             feature = "agent-battery-report-v1",
             feature = "agent-display-query-v1"
@@ -89,7 +144,7 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
         ))]
         {
             super::feature_lifetime::run(canceled, watch, |feature_stop| {
-                super::display_query::run(origin.clone(), feature_stop)
+                display(feature_stop)
             })
             .await
         }
@@ -102,9 +157,19 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
                 canceled,
                 watch,
                 |feature_stop| super::battery::run(origin.clone(), feature_stop),
-                |feature_stop| super::display_query::run(origin.clone(), feature_stop),
+                |feature_stop| display(feature_stop),
             )
             .await
         }
     })
+}
+
+/// Retires display power admission on every exit from the monitor runtime.
+#[cfg(feature = "agent-display-brightness-write-v1")]
+struct Retire(super::power_admission::PowerAdmission);
+#[cfg(feature = "agent-display-brightness-write-v1")]
+impl Drop for Retire {
+    fn drop(&mut self) {
+        self.0.retire();
+    }
 }

@@ -159,6 +159,14 @@ impl Supplier for OwnedSupplier {
             .await
             .unwrap()
     }
+    #[cfg(feature = "agent-display-brightness-write-v1")]
+    async fn set_brightness(
+        &mut self,
+        _request: SetBrightness,
+        _canceled: Arc<AtomicBool>,
+    ) -> io::Result<WriteOutcome> {
+        unreachable!("query-only test supplier received a write")
+    }
     async fn drain(&mut self) -> io::Result<()> {
         observation::drain_brightness(self.owner.clone()).await
     }

@@ -882,6 +882,11 @@ impl Snapshot {
     // Use only for a direct, admitted ObserveState reply. v80 can retain
     // fields during failed observations. Require the managed completion
     // guards and explicit absence of observation or write uncertainty.
+    /// Managed PowerSource wire value, already bounded to 0..=3 by `verify`.
+    #[cfg(feature = "agent-display-brightness-write-v1")]
+    pub(crate) fn active_power_source(&self) -> i32 {
+        self.active_power_source
+    }
     pub(crate) fn confirmed_performance(&self) -> Option<ConfirmedPerformance> {
         let observing = self.feature_fields.get("observationReason")?.as_i64()? != 0;
         let unconfirmed = self.feature_fields.get("unconfirmedWrites")?.as_array()?;

@@ -19,6 +19,15 @@ impl Supplier for Script {
             .take()
             .expect("unexpected repeated display query"))
     }
+    #[cfg(feature = "agent-display-brightness-write-v1")]
+    async fn set_brightness(
+        &mut self,
+        _request: SetBrightness,
+        _canceled: Arc<AtomicBool>,
+    ) -> io::Result<WriteOutcome> {
+        self.calls += 1;
+        Err(io::Error::other("query-only test supplier received a write"))
+    }
 }
 fn request(body: Value) -> Vec<u8> {
     raw_request(&serde_json::to_vec(&body).unwrap())
@@ -62,6 +71,10 @@ async fn exchange(
     (result, bytes, admissions.get())
 }
 fn capture(name: &str, frame: &[u8], expected: &Value) {
+    capture_row(json!({"case":name,"expectedStatus":0,"expectedState":expected,"frame":frame}));
+}
+/// One lock serializes every corpus row appended by parallel tests.
+fn capture_row(row: Value) {
     if let Some(path) = std::env::var_os("OPENBLADE_NATIVE_AGENT_DISPLAY_FRAMES") {
         use std::io::Write;
         static LOCK: Mutex<()> = Mutex::new(());
@@ -71,12 +84,7 @@ fn capture(name: &str, frame: &[u8], expected: &Value) {
             .append(true)
             .open(path)
             .unwrap();
-        writeln!(
-            file,
-            "{}",
-            json!({"case":name,"expectedStatus":0,"expectedState":expected,"frame":frame})
-        )
-        .unwrap();
+        writeln!(file, "{row}").unwrap();
     }
 }
 #[tokio::test]
@@ -236,6 +244,14 @@ impl Supplier for Blocker {
                 }
             }
         }
+    }
+    #[cfg(feature = "agent-display-brightness-write-v1")]
+    async fn set_brightness(
+        &mut self,
+        _request: SetBrightness,
+        _canceled: Arc<AtomicBool>,
+    ) -> io::Result<WriteOutcome> {
+        unreachable!("query-only test supplier received a write")
     }
 }
 async fn wait_flag(flag: &AtomicBool) {
@@ -475,7 +491,7 @@ fn admitted_large_snapshot(target_body: usize) -> Snapshot {
             }))
             .collect::<Vec<_>>()
     );
-    let initial = frame(ID, serde_json::from_value(state.clone()).unwrap()).unwrap();
+    let initial = frame(ID, 0, None, serde_json::from_value(state.clone()).unwrap()).unwrap();
     let mut remaining = target_body.checked_sub(initial.len() - 4).unwrap();
     for profile in state["colorProfiles"].as_array_mut().unwrap() {
         let name = profile["name"].as_str().unwrap();
@@ -641,6 +657,8 @@ async fn owned_private_pipe_unread_admitted_frame_retires_then_normal_peer_recei
         let snapshot = admitted_large_snapshot(body_bytes);
         let expected = frame(
             ID,
+            0,
+            None,
             serde_json::from_value(serde_json::to_value(&snapshot).unwrap()).unwrap(),
         )
         .unwrap();
@@ -710,7 +728,7 @@ async fn owned_pending_write_cancellation_releases_slot_and_preserves_bounded_wr
         .await
         .unwrap()
         .unwrap();
-    let body = frame(ID, admitted_large_snapshot(MAX_FRAME as usize)).unwrap();
+    let body = frame(ID, 0, None, admitted_large_snapshot(MAX_FRAME as usize)).unwrap();
     let mut write = Box::pin(server.write_all(&body));
     std::future::poll_fn(|cx| match write.as_mut().poll(cx) {
         std::task::Poll::Pending => std::task::Poll::Ready(()),
@@ -744,4 +762,219 @@ async fn owned_pending_write_cancellation_releases_slot_and_preserves_bounded_wr
         .create(&name)
         .unwrap();
     drop(fresh);
+}
+
+/// Selected manual brightness writes through the production dispatcher.
+#[cfg(feature = "agent-display-brightness-write-v1")]
+mod brightness_writes {
+    use super::*;
+    use recovery::Status;
+
+    struct Writes {
+        outcome: Option<(Status, Option<&'static str>, Snapshot)>,
+        received: Vec<SetBrightness>,
+        queries: usize,
+    }
+    impl Writes {
+        fn new(status: Status, error: Option<&'static str>, state: Snapshot) -> Self {
+            Self {
+                outcome: Some((status, error, state)),
+                received: Vec::new(),
+                queries: 0,
+            }
+        }
+    }
+    impl Supplier for Writes {
+        async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
+            self.queries += 1;
+            Ok(Snapshot::unavailable("unused"))
+        }
+        async fn set_brightness(
+            &mut self,
+            request: SetBrightness,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<WriteOutcome> {
+            self.received.push(request);
+            let (status, error, state) = self.outcome.take().expect("one write");
+            Ok(WriteOutcome {
+                status,
+                error,
+                state,
+            })
+        }
+    }
+    fn set(expected: Value, percent: Value) -> Vec<u8> {
+        request(json!({
+            "operation":"setBrightness","version":2,"requestId":ID,
+            "expectedPowerSource":expected,"percent":percent,
+        }))
+    }
+    fn capture_write(name: &str, frame: &[u8], status: Status, error: Option<&str>, state: &Value) {
+        capture_row(json!({"case":name,"expectedStatus":status as u8,"expectedError":error,
+            "expectedState":state,"frame":frame}));
+    }
+
+    #[tokio::test]
+    async fn every_write_status_reaches_the_managed_response_shape() {
+        use brightness_write::{CHANGED_POWER, CHECKPOINT, PAUSED, UNAVAILABLE, UNCONFIRMED};
+        let state = || observation::fixture_query("brightness-hundred");
+        for (case, status, error) in [
+            ("write-succeeded", Status::Succeeded, None),
+            ("write-blocked-paused", Status::Blocked, Some(PAUSED)),
+            ("write-blocked-checkpoint", Status::Blocked, Some(CHECKPOINT)),
+            ("write-blocked-power", Status::Blocked, Some(CHANGED_POWER)),
+            ("write-failed", Status::Failed, Some(UNAVAILABLE)),
+            ("write-indeterminate", Status::Indeterminate, Some(UNCONFIRMED)),
+        ] {
+            let expected = serde_json::to_value(state()).unwrap();
+            let mut supplier = Writes::new(status, error, state());
+            // Managed polymorphic order: discriminator first, then members.
+            let (result, bytes, admissions) =
+                exchange(&mut supplier, &set(json!(1), json!(64))).await;
+            result.unwrap();
+            assert_eq!(admissions, 2);
+            assert_eq!(supplier.queries, 0);
+            assert_eq!(
+                supplier.received,
+                [SetBrightness {
+                    expected_power_source: 1,
+                    percent: 64
+                }]
+            );
+            let body: Value = serde_json::from_slice(&bytes[4..]).unwrap();
+            assert_eq!(body["requestId"], ID);
+            assert_eq!(body["status"], status as u8);
+            assert_eq!(body["error"], json!(error));
+            assert_eq!(body["state"], expected);
+            capture_write(case, &bytes, status, error, &expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_write_members_and_other_mutations_reach_no_supplier() {
+        let mut inputs = vec![
+            set(json!(3), json!(50)),
+            set(json!(-1), json!(50)),
+            set(json!(0), json!(101)),
+            set(json!(0), json!(-1)),
+            set(json!(0), json!(50.5)),
+            set(json!(0), json!("50")),
+            set(json!("PluggedIn"), json!(50)),
+            set(Value::Null, json!(50)),
+            set(json!(0), Value::Null),
+            request(json!({"version":2,"requestId":ID,"operation":"setBrightness","percent":50})),
+            request(json!({"version":2,"requestId":ID,"operation":"setBrightness","expectedPowerSource":0})),
+            request(json!({"version":2,"requestId":ID,"operation":"setBrightness",
+                "expectedPowerSource":0,"percent":50,"enabled":true})),
+            request(json!({"version":1,"requestId":ID,"operation":"setBrightness",
+                "expectedPowerSource":0,"percent":50})),
+            request(json!({"version":2,"requestId":ID,"operation":"query","percent":50})),
+            request(json!({"version":2,"requestId":ID,"operation":"setHdr",
+                "expectedPowerSource":0,"enabled":true})),
+            request(json!({"version":2,"requestId":ID,"operation":"setRefreshRate",
+                "expectedPowerSource":0,"refreshRateKey":"fixed-240"})),
+            request(json!({"version":2,"requestId":ID,"operation":"applyProfile",
+                "expectedPowerSource":0,"settings":{}})),
+        ];
+        inputs.push(raw_request(
+            format!(
+                r#"{{"version":2,"requestId":"{ID}","operation":"setBrightness","expectedPowerSource":0,"percent":50,"percent":60}}"#
+            )
+            .as_bytes(),
+        ));
+        for input in inputs {
+            let mut supplier = Writes::new(Status::Succeeded, None, Snapshot::unavailable("x"));
+            let (result, bytes, _) = exchange(&mut supplier, &input).await;
+            assert!(matches!(result, Err(ServeError::Connection(_))));
+            assert!(bytes.is_empty());
+            assert!(supplier.received.is_empty());
+            assert_eq!(supplier.queries, 0);
+        }
+    }
+
+    /// A write that only finishes after its gate opens, recording whether
+    /// cancellation was requested and whether it completed.
+    struct HeldWrite {
+        gate: Arc<(Mutex<bool>, Condvar)>,
+        canceled: Arc<AtomicBool>,
+        recorded: Arc<AtomicBool>,
+        started: Arc<AtomicBool>,
+    }
+    impl Supplier for HeldWrite {
+        async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
+            unreachable!("write test received a query")
+        }
+        async fn set_brightness(
+            &mut self,
+            _request: SetBrightness,
+            canceled: Arc<AtomicBool>,
+        ) -> io::Result<WriteOutcome> {
+            let gate = self.gate.clone();
+            let seen = self.canceled.clone();
+            let recorded = self.recorded.clone();
+            let started = self.started.clone();
+            tokio::task::spawn_blocking(move || {
+                started.store(true, Ordering::Release);
+                let (lock, event) = &*gate;
+                let mut open = lock.lock().unwrap();
+                while !*open {
+                    open = event.wait(open).unwrap();
+                }
+                seen.store(canceled.load(Ordering::Acquire), Ordering::Release);
+                recorded.store(true, Ordering::Release);
+                Ok(WriteOutcome {
+                    status: Status::Indeterminate,
+                    error: Some(brightness_write::UNCONFIRMED),
+                    state: Snapshot::unavailable("recorded"),
+                })
+            })
+            .await
+            .unwrap()
+        }
+    }
+
+    #[tokio::test]
+    async fn stop_and_client_loss_join_the_recorded_write_and_send_nothing() {
+        for client_loss in [false, true] {
+            let mut supplier = HeldWrite {
+                gate: Arc::new((Mutex::new(false), Condvar::new())),
+                canceled: Arc::default(),
+                recorded: Arc::default(),
+                started: Arc::default(),
+            };
+            let gate = supplier.gate.clone();
+            let started = supplier.started.clone();
+            let recorded = supplier.recorded.clone();
+            let (mut server, mut client) = tokio::io::duplex(1024);
+            client.write_all(&set(json!(0), json!(40))).await.unwrap();
+            let (sender, mut stop) = watch::channel(false);
+            let (result, bytes) = tokio::join!(
+                async {
+                    let result =
+                        serve(&mut server, &mut stop, &mut supplier, |_| Ok(()), || Ok(())).await;
+                    drop(server);
+                    result
+                },
+                async {
+                    wait_flag(&started).await;
+                    if client_loss {
+                        client.write_all(&[0]).await.unwrap();
+                    } else {
+                        sender.send(true).unwrap();
+                    }
+                    // The server must still be waiting on the blocking write.
+                    sleep(Duration::from_millis(50)).await;
+                    assert!(!recorded.load(Ordering::Acquire));
+                    release(&gate);
+                    let mut bytes = Vec::new();
+                    client.read_to_end(&mut bytes).await.unwrap();
+                    bytes
+                },
+            );
+            result.unwrap();
+            assert!(bytes.is_empty(), "an abandoned write sends no reply");
+            assert!(supplier.recorded.load(Ordering::Acquire));
+            assert!(supplier.canceled.load(Ordering::Acquire));
+        }
+    }
 }
