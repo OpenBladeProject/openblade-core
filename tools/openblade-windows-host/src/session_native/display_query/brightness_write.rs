@@ -131,6 +131,8 @@ pub(super) fn set_brightness<F: CheckpointFile>(
     };
     // Managed ExecuteSetterAsync.EnsureCurrent after a successful setter. A
     // no-op returns before the setter in managed SetBrightnessAsync, unchecked.
+    // (Managed still checks a controller-level no-op after its fresh read; native
+    // skips that too. Nothing is submitted on either path, so it is not uncertain.)
     let (status, error) = match power {
         Some(admitted)
             if status == Status::Succeeded
