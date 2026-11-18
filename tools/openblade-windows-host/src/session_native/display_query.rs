@@ -381,9 +381,10 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
             match operation {
                 Operation::Query => supplier.acquire(flag).await.map(Reply::Query),
                 #[cfg(feature = "agent-display-brightness-write-v1")]
-                Operation::SetBrightness(request) => {
-                    supplier.set_brightness(request, flag).await.map(Reply::Write)
-                }
+                Operation::SetBrightness(request) => supplier
+                    .set_brightness(request, flag)
+                    .await
+                    .map(Reply::Write),
             }
         };
         tokio::pin!(work);

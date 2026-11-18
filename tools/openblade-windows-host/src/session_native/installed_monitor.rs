@@ -118,9 +118,8 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
         ))]
         let display = |feature_stop| super::display_query::run(origin.clone(), feature_stop);
         #[cfg(feature = "agent-display-brightness-write-v1")]
-        let display = |feature_stop| {
-            super::display_query::run(origin.clone(), feature_stop, power.clone())
-        };
+        let display =
+            |feature_stop| super::display_query::run(origin.clone(), feature_stop, power.clone());
         #[cfg(not(any(
             feature = "agent-battery-report-v1",
             feature = "agent-display-query-v1"
@@ -143,10 +142,8 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
             not(feature = "agent-battery-report-v1")
         ))]
         {
-            super::feature_lifetime::run(canceled, watch, |feature_stop| {
-                display(feature_stop)
-            })
-            .await
+            super::feature_lifetime::run(canceled, watch, |feature_stop| display(feature_stop))
+                .await
         }
         #[cfg(all(
             feature = "agent-battery-report-v1",

@@ -26,7 +26,9 @@ impl Supplier for Script {
         _canceled: Arc<AtomicBool>,
     ) -> io::Result<WriteOutcome> {
         self.calls += 1;
-        Err(io::Error::other("query-only test supplier received a write"))
+        Err(io::Error::other(
+            "query-only test supplier received a write",
+        ))
     }
 }
 fn request(body: Value) -> Vec<u8> {
@@ -810,8 +812,10 @@ mod brightness_writes {
         }))
     }
     fn capture_write(name: &str, frame: &[u8], status: Status, error: Option<&str>, state: &Value) {
-        capture_row(json!({"case":name,"expectedStatus":status as u8,"expectedError":error,
-            "expectedState":state,"frame":frame}));
+        capture_row(
+            json!({"case":name,"expectedStatus":status as u8,"expectedError":error,
+            "expectedState":state,"frame":frame}),
+        );
     }
 
     #[tokio::test]
@@ -821,10 +825,18 @@ mod brightness_writes {
         for (case, status, error) in [
             ("write-succeeded", Status::Succeeded, None),
             ("write-blocked-paused", Status::Blocked, Some(PAUSED)),
-            ("write-blocked-checkpoint", Status::Blocked, Some(CHECKPOINT)),
+            (
+                "write-blocked-checkpoint",
+                Status::Blocked,
+                Some(CHECKPOINT),
+            ),
             ("write-blocked-power", Status::Blocked, Some(CHANGED_POWER)),
             ("write-failed", Status::Failed, Some(UNAVAILABLE)),
-            ("write-indeterminate", Status::Indeterminate, Some(UNCONFIRMED)),
+            (
+                "write-indeterminate",
+                Status::Indeterminate,
+                Some(UNCONFIRMED),
+            ),
         ] {
             let expected = serde_json::to_value(state()).unwrap();
             let mut supplier = Writes::new(status, error, state());
@@ -863,18 +875,28 @@ mod brightness_writes {
             set(Value::Null, json!(50)),
             set(json!(0), Value::Null),
             request(json!({"version":2,"requestId":ID,"operation":"setBrightness","percent":50})),
-            request(json!({"version":2,"requestId":ID,"operation":"setBrightness","expectedPowerSource":0})),
-            request(json!({"version":2,"requestId":ID,"operation":"setBrightness",
-                "expectedPowerSource":0,"percent":50,"enabled":true})),
-            request(json!({"version":1,"requestId":ID,"operation":"setBrightness",
-                "expectedPowerSource":0,"percent":50})),
+            request(
+                json!({"version":2,"requestId":ID,"operation":"setBrightness","expectedPowerSource":0}),
+            ),
+            request(
+                json!({"version":2,"requestId":ID,"operation":"setBrightness",
+                "expectedPowerSource":0,"percent":50,"enabled":true}),
+            ),
+            request(
+                json!({"version":1,"requestId":ID,"operation":"setBrightness",
+                "expectedPowerSource":0,"percent":50}),
+            ),
             request(json!({"version":2,"requestId":ID,"operation":"query","percent":50})),
             request(json!({"version":2,"requestId":ID,"operation":"setHdr",
                 "expectedPowerSource":0,"enabled":true})),
-            request(json!({"version":2,"requestId":ID,"operation":"setRefreshRate",
-                "expectedPowerSource":0,"refreshRateKey":"fixed-240"})),
-            request(json!({"version":2,"requestId":ID,"operation":"applyProfile",
-                "expectedPowerSource":0,"settings":{}})),
+            request(
+                json!({"version":2,"requestId":ID,"operation":"setRefreshRate",
+                "expectedPowerSource":0,"refreshRateKey":"fixed-240"}),
+            ),
+            request(
+                json!({"version":2,"requestId":ID,"operation":"applyProfile",
+                "expectedPowerSource":0,"settings":{}}),
+            ),
         ];
         inputs.push(raw_request(
             format!(

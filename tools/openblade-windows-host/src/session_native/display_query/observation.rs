@@ -145,7 +145,8 @@ impl Snapshot {
                 || self.hdr_enabled
                 || (self.color_profiles_enabled && text(&self.active_color_profile_id)))
             && (!fields.brightness
-                || self.brightness_percent.is_some() && !self.supported_brightness_levels.is_empty())
+                || self.brightness_percent.is_some()
+                    && !self.supported_brightness_levels.is_empty())
     }
 
     #[cfg(feature = "agent-display-brightness-write-v1")]
@@ -183,8 +184,10 @@ pub(super) struct BrightnessOwner {
 /// Starts a worker when none is owned. The outer error is a process security
 /// refusal; the inner one is a worker that never started (submitted nothing).
 type Starter = Box<
-    dyn FnMut() -> Result<io::Result<WindowsBrightnessWorker>, openblade_platform_windows::brightness::NativeFailure>
-        + Send,
+    dyn FnMut() -> Result<
+            io::Result<WindowsBrightnessWorker>,
+            openblade_platform_windows::brightness::NativeFailure,
+        > + Send,
 >;
 
 impl Default for BrightnessOwner {
@@ -210,13 +213,14 @@ impl BrightnessOwner {
             return Err(io::Error::other("brightness owner is closed"));
         }
         if self.worker.is_none() {
-            self.worker = match (self.start)() {
-                Err(error) => return Ok(Err(BrightnessError::Native(error))),
-                Ok(Ok(worker)) => Some(worker),
-                Ok(Err(_)) => return Ok(Err(BrightnessError::Native(
-                    openblade_platform_windows::brightness::NativeFailure::WorkerDisconnected,
-                ))),
-            };
+            self.worker =
+                match (self.start)() {
+                    Err(error) => return Ok(Err(BrightnessError::Native(error))),
+                    Ok(Ok(worker)) => Some(worker),
+                    Ok(Err(_)) => return Ok(Err(BrightnessError::Native(
+                        openblade_platform_windows::brightness::NativeFailure::WorkerDisconnected,
+                    ))),
+                };
         }
         let result = self
             .worker
@@ -252,9 +256,7 @@ impl BrightnessOwner {
             openblade_platform_windows::brightness::BrightnessFailure,
         >,
     > {
-        use openblade_platform_windows::brightness::{
-            BrightnessFailure, BrightnessRequest,
-        };
+        use openblade_platform_windows::brightness::{BrightnessFailure, BrightnessRequest};
         if self.closed {
             return Err(io::Error::other("brightness owner is closed"));
         }
@@ -272,12 +274,16 @@ impl BrightnessOwner {
                 Ok(Err(_)) => return Ok(Err(unavailable(BrightnessError::ControllerUnavailable))),
             };
         }
-        let result = self.worker.as_mut().expect("owned worker").apply_target_fenced(
-            BrightnessRequest::SetPercent(percent),
-            target,
-            fence,
-            || canceled.load(Ordering::Acquire),
-        );
+        let result = self
+            .worker
+            .as_mut()
+            .expect("owned worker")
+            .apply_target_fenced(
+                BrightnessRequest::SetPercent(percent),
+                target,
+                fence,
+                || canceled.load(Ordering::Acquire),
+            );
         Ok(result)
     }
 
