@@ -176,6 +176,33 @@ public sealed class Rz090529IndependentZoneTests
         Assert.Single(device.IndependentLightingWrites);
     }
 
+    [Fact]
+    public async Task FullTransitionConfirmsOnlyFieldsWhenTheSelectedEffectIsUnavailable()
+    {
+        BatteryTestDevice device = CreateDevice();
+        device.ReadStateFailureOnCall = 2;
+        LightingSettings requested = LightingSettingsFactory.Off() with
+        {
+            ControlsKeyboardEffect = true,
+            IndependentControls = new(Brightness: 42),
+        };
+        var desired = new DesiredDeviceState(
+            new(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+            new(FanMode.Automatic, SettingValueSource.PowerProfile),
+            new(requested, SettingValueSource.PowerProfile),
+            new(BatteryPolicy.Create(80), true, false));
+
+        FullTransitionApplyOutcome outcome = await new ControlCoordinator(device).ApplyDesiredStateOutcomeAsync(desired, default);
+
+        Assert.Contains(DeviceSubsystem.Lighting, outcome.ConfirmationUnavailable!);
+        Assert.NotNull(outcome.EffectiveDesired);
+        Assert.False(outcome.EffectiveDesired.Lighting.Value.ControlsKeyboardEffect);
+        Assert.True(desired.Lighting.Value.ControlsKeyboardEffect);
+        Assert.Empty(device.LightingWrites);
+        Assert.Equal(PendingConfirmationResult.Match, WriteConfirmationPolicy.Match(
+            DeviceSubsystem.Lighting, new(outcome.EffectiveDesired, outcome.PreWriteState!), device.State, gpuClockOffsetManagementState: null));
+    }
+
     private static BatteryTestDevice CreateDevice() => new()
     {
         Capabilities = DeviceCapabilities.SafeTargetDefaults() with

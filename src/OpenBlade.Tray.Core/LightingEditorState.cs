@@ -656,12 +656,24 @@ internal sealed class LightingEditorState
             return;
         }
 
-        if (Brightness == 0)
+        byte? inheritedBrightness = previous == LightingEffect.Off ? independentControls?.Brightness : null;
+        if (Brightness == 0 || inheritedBrightness.HasValue)
         {
-            SetLightingEditorField(
-                ref lightingBrightnessEditor,
-                (int)DefaultBrightness,
-                LightingEditorValue.Brightness);
+            int visibleBrightness = inheritedBrightness is > 0
+                ? inheritedBrightness.Value : DefaultBrightness;
+            bool replaceDarkTarget = inheritedBrightness == 0;
+            if (replaceDarkTarget && independentControls is { } fields)
+            {
+                // Selecting a visible effect takes the keyboard out of the saved dark state.
+                independentControls = fields with { Brightness = DefaultBrightness };
+            }
+
+            if (!SetLightingEditorField(ref lightingBrightnessEditor, visibleBrightness, LightingEditorValue.Brightness)
+                && replaceDarkTarget)
+            {
+                // An unconfirmed status load can already have displayed the default.
+                Publish(LightingEditorChangeKind.ValueChanged, LightingEditorValue.Draft);
+            }
         }
 
         bool selectedUsesColor = selected is LightingEffect.Static

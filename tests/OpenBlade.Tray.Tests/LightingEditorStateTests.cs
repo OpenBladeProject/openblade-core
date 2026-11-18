@@ -85,20 +85,37 @@ public sealed class LightingEditorStateTests
         Assert.Equal(new IndependentLightingSettings(TouchpadStatusIndicatorEnabled: false), logoEdit.IndependentControls);
     }
 
-    [Fact]
-    public void EffectSelection_BrightnessDefaultPreservesTheIndependentTarget()
+    [Theory]
+    [InlineData(72, 72, false)]
+    [InlineData(72, 72, true)]
+    [InlineData(0, 50, false)]
+    [InlineData(0, 50, true)]
+    public void EffectSelection_UsesPositiveIndependentBrightnessAndReplacesDarkTarget(
+        int inheritedBrightness, int visibleBrightness, bool startAtDefault)
     {
         var editor = new LightingEditorState();
         var fields = new IndependentLightingSettings(
-            Brightness: 72, TouchpadStatusIndicatorEnabled: false);
-        editor.Load(LightingSettingsFactory.Off() with { IndependentControls = fields });
+            Brightness: (byte)inheritedBrightness, TouchpadStatusIndicatorEnabled: false);
+        editor.SetEffectUnconfirmed(startAtDefault);
+        editor.Load(LightingSettingsFactory.Off() with { IndependentControls = fields },
+            startUnconfirmedEffectAtDefaultBrightness: startAtDefault);
+        LightingSettings? lastPublishedDraft = null;
+        editor.Changed += change =>
+        {
+            if (change is { Kind: LightingEditorChangeKind.ValueChanged, Value: LightingEditorValue.Draft })
+            {
+                lastPublishedDraft = editor.ToSettings();
+            }
+        };
 
         editor.SelectEffect(LightingEffect.Static);
 
         LightingSettings draft = editor.ToSettings();
         Assert.Equal(LightingEffect.Static, draft.Effect);
-        Assert.Equal(50, draft.Brightness);
-        Assert.Equal(fields, draft.IndependentControls);
+        Assert.Equal(visibleBrightness, editor.Brightness);
+        Assert.Equal(visibleBrightness, draft.Brightness);
+        Assert.Equal(fields with { Brightness = (byte)visibleBrightness }, draft.IndependentControls);
+        Assert.Equal(draft, lastPublishedDraft);
     }
 
     [Fact]

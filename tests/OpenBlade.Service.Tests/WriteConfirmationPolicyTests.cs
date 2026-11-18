@@ -263,15 +263,17 @@ public sealed class WriteConfirmationPolicyTests
             }));
     }
 
-    [Fact]
-    public void CombinedLighting_RequiresStandaloneRequestedLogoReadback()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Lighting_ConfirmsStandaloneRequestedLogoFromEachReadbackShape(bool combined)
     {
         LightingSettings effect = LightingSettingsFactory.SpectrumCycling(65);
         LightingSettings requested = effect with
         {
             ControlsKeyboardEffect = true,
             LogoMode = LogoLightingMode.Static,
-            IndependentControls = new(42, null),
+            IndependentControls = combined ? new(42, null) : null,
         };
         DesiredDeviceState target = Desired();
         var expectation = new WriteConfirmationExpectation(
@@ -284,10 +286,17 @@ public sealed class WriteConfirmationPolicyTests
 
         Assert.Equal(PendingConfirmationResult.Unavailable,
             Match(DeviceSubsystem.Lighting, expectation, observed));
-        Assert.Equal(PendingConfirmationResult.Match,
-            Match(DeviceSubsystem.Lighting, expectation, observed with { LogoLighting = LogoLightingMode.Static }));
-        Assert.Equal(PendingConfirmationResult.Mismatch,
-            Match(DeviceSubsystem.Lighting, expectation, observed with { LogoLighting = LogoLightingMode.Off }));
+        foreach (LogoLightingMode logo in new[] { LogoLightingMode.Static, LogoLightingMode.Off })
+        {
+            PendingConfirmationResult expected = logo == requested.LogoMode
+                ? PendingConfirmationResult.Match : PendingConfirmationResult.Mismatch;
+            Assert.Equal(expected,
+                Match(DeviceSubsystem.Lighting, expectation, observed with { LogoLighting = logo }));
+            Assert.Equal(expected,
+                Match(DeviceSubsystem.Lighting, expectation, observed with { IndependentLighting = new(42, logo) }));
+            Assert.Equal(expected,
+                Match(DeviceSubsystem.Lighting, expectation, observed with { Lighting = effect with { LogoMode = logo } }));
+        }
     }
 
     [Fact]

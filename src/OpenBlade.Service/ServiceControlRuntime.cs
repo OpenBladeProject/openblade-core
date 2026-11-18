@@ -13738,6 +13738,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
 
         ServiceStatusSnapshot current = GetStatus();
+        LightingSettings activeIntent = ResolveAutomationDesired(current.ConfirmedState ?? UnknownConfirmedState).Lighting.Value;
+        if (!activeIntent.ControlsKeyboardEffect
+            && ControlCoordinator.UsesIndependentLighting(current.Capabilities ?? deviceProvider.ExperimentalCapabilities, activeIntent))
+        {
+            // Preferences retain the previous effect for reference. Current
+            // field-only authority cannot restore it on drift or restart.
+            RelinquishRememberedLightingOwnership();
+            return true;
+        }
+
         LightingSettings? requested = pendingLightingRestore;
         bool lifecycleRestore = pendingLightingRestoreFromLifecycle;
         if (requested is null
@@ -14654,9 +14664,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         if (reconciliationUnavailable
             && outcome.PreWriteState is { } preWriteState)
         {
+            DesiredDeviceState target = outcome.EffectiveDesired ?? desired;
+            if (subsystem == DeviceSubsystem.Lighting)
+            {
+                target = ControlCoordinator.ProjectIndependentLightingTarget(outcome.Capabilities, target);
+            }
             SetPendingWriteConfirmation(subsystem, new PendingWriteConfirmation(
                 powerSource,
-                outcome.EffectiveDesired ?? desired,
+                target,
                 preWriteState,
                 BatteryIntentCommit: pendingBatteryIntentCommit,
                 GpuClockTuningOnly: gpuClockTuningOnly,
@@ -15246,7 +15261,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 .ConfigureAwait(false);
         if (independentOnly)
         {
-            if (outcome.Result.Status is ControlResultStatus.Applied or ControlResultStatus.Unchanged)
+            if (!desired.Lighting.Value.ControlsKeyboardEffect
+                && outcome.Result.Status is ControlResultStatus.Applied or ControlResultStatus.Unchanged)
             {
                 // A field-only result never grants authority to restart a prior effect.
                 RelinquishRememberedLightingOwnership();
@@ -16708,9 +16724,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             // result supersedes that queue; native effects still need no stream.
             bool lightingAccepted = lightingResult.Status is ControlResultStatus.Applied or ControlResultStatus.Unchanged;
             bool independentOnly = ControlCoordinator.UsesIndependentLighting(outcome.Capabilities ?? GetStatus().Capabilities, desired.Lighting.Value);
-            if (lightingAccepted && independentOnly)
+            if (independentOnly)
             {
-                RelinquishRememberedLightingOwnership();
+                if (lightingAccepted && !desired.Lighting.Value.ControlsKeyboardEffect)
+                {
+                    RelinquishRememberedLightingOwnership();
+                }
             }
             else
             {
@@ -16719,8 +16738,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     lightingAccepted && LightingOwnershipMatches(device, observedLightingOwnership, desired.Lighting.Value)
                         ? desired.Lighting.Value : null);
             }
-            if (lightingResult.Status is ControlResultStatus.Applied
-                or ControlResultStatus.Unchanged)
+            if (lightingAccepted)
             {
                 await TryPersistRememberedLightingIntentAsync(
                     confirmed,

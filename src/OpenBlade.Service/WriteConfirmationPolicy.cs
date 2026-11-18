@@ -60,26 +60,19 @@ internal static class WriteConfirmationPolicy
         {
             return independent;
         }
+        LogoLightingMode? observedLogo = confirmed.LogoLighting
+            ?? confirmed.IndependentLighting?.LogoMode
+            ?? confirmed.Lighting?.LogoMode;
         if (confirmed.Lighting is null
-            || requested is { IndependentControls: { LogoMode: null }, LogoMode: not null }
-                && confirmed.LogoLighting is null)
+            || requested.LogoMode.HasValue && requested.IndependentControls?.LogoMode is null
+                && !observedLogo.HasValue)
         {
             return PendingConfirmationResult.Unavailable;
         }
-        bool keyboardMatches = requested.IndependentControls is not null
-            ? ControlCoordinator.KeyboardLightingMatches(confirmed, requested)
-            : (confirmed.Lighting with { ControlsKeyboardEffect = false })
-                == (requested with { ControlsKeyboardEffect = false });
-        PendingConfirmationResult keyboard = keyboardMatches
-            ? PendingConfirmationResult.Match
-            : PendingConfirmationResult.Mismatch;
-        if (keyboard == PendingConfirmationResult.Mismatch || independent == PendingConfirmationResult.Mismatch)
-        {
-            return PendingConfirmationResult.Mismatch;
-        }
-        return keyboard == PendingConfirmationResult.Match && independent == PendingConfirmationResult.Match
-            ? PendingConfirmationResult.Match
-            : PendingConfirmationResult.Unavailable;
+
+        bool keyboardMatches = ControlCoordinator.KeyboardLightingMatches(
+            confirmed with { LogoLighting = observedLogo }, requested);
+        return keyboardMatches ? independent : PendingConfirmationResult.Mismatch;
     }
 
     private static PendingConfirmationResult MatchIndependentLighting(

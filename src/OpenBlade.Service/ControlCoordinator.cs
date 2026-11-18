@@ -1414,7 +1414,7 @@ public sealed class ControlCoordinator
             IBladeDevice initialDevice = thermalStepRunner?.CurrentDevice ?? device;
             capabilities = await initialDevice.ReadCapabilitiesAsync(cancellationToken);
             EnsureGpuClockOffsetManagementContract(capabilities);
-            desired = DropUnsupportedGpuClockTuning(desired, capabilities);
+            desired = ProjectIndependentLightingTarget(capabilities, DropUnsupportedGpuClockTuning(desired, capabilities));
             if (desired.GpuClockTuning is null && continuationScopeResolver is null)
             {
                 // Null means OpenBlade no longer manages or reports NVIDIA
@@ -2979,6 +2979,21 @@ public sealed class ControlCoordinator
     internal static bool UsesIndependentLighting(DeviceCapabilities? capabilities, LightingSettings value) =>
         capabilities is { SupportsIndependentLightingControls: true }
         && (!value.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0);
+
+    // Reconciliation must use the same authority as the actual write, even
+    // when a stored profile opts into an effect this port cannot offer.
+    internal static DesiredDeviceState ProjectIndependentLightingTarget(
+        DeviceCapabilities? capabilities,
+        DesiredDeviceState desired) =>
+        desired.Lighting.Value.ControlsKeyboardEffect && UsesIndependentLighting(capabilities, desired.Lighting.Value)
+            ? desired with
+            {
+                Lighting = desired.Lighting with
+                {
+                    Value = desired.Lighting.Value with { ControlsKeyboardEffect = false },
+                },
+            }
+            : desired;
 
     private static async Task ApplyLightingWritesAsync(
         IBladeDevice device,
