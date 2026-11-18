@@ -68,7 +68,11 @@ pub(super) trait WriteHost {
     fn power(&self) -> Option<PowerContext>;
     fn fence(&self, admitted: PowerContext) -> Arc<dyn SubmissionFence>;
     fn target(&mut self) -> Result<BrightnessTarget, BrightnessError>;
-    fn query(&mut self, brightness: &SharedBrightness, canceled: &AtomicBool) -> io::Result<Snapshot>;
+    fn query(
+        &mut self,
+        brightness: &SharedBrightness,
+        canceled: &AtomicBool,
+    ) -> io::Result<Snapshot>;
 }
 
 pub(super) fn set_brightness<F: CheckpointFile>(
@@ -169,7 +173,7 @@ pub(super) fn explicit_read<F: CheckpointFile>(
     Ok(())
 }
 
-type Attempt =Result<(Status, Option<&'static str>, Option<u8>), (bool, io::Error)>;
+type Attempt = Result<(Status, Option<&'static str>, Option<u8>), (bool, io::Error)>;
 
 fn attempt(
     host: &mut impl WriteHost,
@@ -335,7 +339,11 @@ impl WriteHost for WindowsHost {
         }
     }
 
-    fn query(&mut self, brightness: &SharedBrightness, canceled: &AtomicBool) -> io::Result<Snapshot> {
+    fn query(
+        &mut self,
+        brightness: &SharedBrightness,
+        canceled: &AtomicBool,
+    ) -> io::Result<Snapshot> {
         super::observation::query(canceled, brightness.clone())
     }
 }

@@ -311,7 +311,7 @@ impl BrightnessOwner {
     }
 
     /// A test owner whose replacement workers come from `start`.
-    #[cfg(test)]
+    #[cfg(all(test, feature = "agent-display-brightness-write-v1"))]
     pub(super) fn with_starter(
         mut start: impl FnMut() -> io::Result<WindowsBrightnessWorker> + Send + 'static,
     ) -> Self {

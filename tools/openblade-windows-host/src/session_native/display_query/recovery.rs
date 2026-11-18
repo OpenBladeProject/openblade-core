@@ -53,7 +53,8 @@ impl CheckpointFile for WindowsCheckpointFile {
             Err(error) => return Err(error),
         };
         let mut bytes = Vec::new();
-        file.take(MAXIMUM_BYTES as u64 + 1).read_to_end(&mut bytes)?;
+        file.take(MAXIMUM_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)?;
         Ok(Some(bytes))
     }
 
@@ -312,20 +313,33 @@ fn parse(bytes: &[u8]) -> Loaded {
     if bytes.is_empty() || bytes.len() > MAXIMUM_BYTES {
         return Loaded::Invalid;
     }
-    let Ok(Value::Object(object)) = serde_json::from_slice::<Value>(bytes) else {
+    // System.Text.Json's default MaxDepth rejects deeper documents, including
+    // nesting inside members neither reader binds or a shadowed duplicate. The
+    // scan runs on the raw tokens because a parsed map keeps only the last one.
+    if depth(bytes) > MAXIMUM_DEPTH {
+        return Loaded::Invalid;
+    }
+    let Ok(Members(members)) = serde_json::from_slice::<Members>(bytes) else {
         return Loaded::Invalid;
     };
-    // System.Text.Json's default MaxDepth rejects deeper documents, including
-    // nesting inside members neither reader binds.
-    if 1 + object.values().map(depth).max().unwrap_or(0) > MAXIMUM_DEPTH {
-        return Loaded::Invalid;
+    // The managed readers type-check every occurrence of a bound member, so a
+    // shadowed duplicate can make them refuse a document whose last value is
+    // valid. Refuse duplicate top-level members (stricter, never weaker).
+    let mut object = Map::new();
+    for (name, value) in members {
+        if object.insert(name, value).is_some() {
+            return Loaded::Invalid;
+        }
     }
     if let Some(record) = recovery(&object) {
         return Loaded::Recovery(record);
     }
     // The legacy reader binds only these two members of the same document; a
     // missing source defaults to PluggedIn (0), as in the typed managed record.
-    match (integer(&object, "SchemaVersion"), integer(&object, "LastReconciledPowerSource")) {
+    match (
+        integer(&object, "SchemaVersion"),
+        integer(&object, "LastReconciledPowerSource"),
+    ) {
         (Some(Some(SCHEMA)), Some(source)) => match source.unwrap_or(0) {
             source @ 0..=2 => Loaded::Legacy(source as u8),
             _ => Loaded::Invalid,
@@ -336,12 +350,57 @@ fn parse(bytes: &[u8]) -> Loaded {
 
 const MAXIMUM_DEPTH: usize = 64;
 
-/// Container nesting depth: a scalar is 0, `[]` and `{}` are 1.
-fn depth(value: &Value) -> usize {
-    match value {
-        Value::Array(items) => 1 + items.iter().map(depth).max().unwrap_or(0),
-        Value::Object(members) => 1 + members.values().map(depth).max().unwrap_or(0),
-        _ => 0,
+/// Maximum container nesting of the raw document (the root object is 1),
+/// ignoring brackets inside strings. Malformed input is left to the parser.
+fn depth(bytes: &[u8]) -> usize {
+    let (mut current, mut deepest) = (0usize, 0usize);
+    let (mut string, mut escaped) = (false, false);
+    for &byte in bytes {
+        if string {
+            match (escaped, byte) {
+                (true, _) => escaped = false,
+                (false, b'\\') => escaped = true,
+                (false, b'"') => string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match byte {
+            b'"' => string = true,
+            b'[' | b'{' => {
+                current += 1;
+                deepest = deepest.max(current);
+            }
+            b']' | b'}' => current = current.saturating_sub(1),
+            _ => {}
+        }
+    }
+    deepest
+}
+
+/// Top-level members in document order, duplicates included.
+struct Members(Vec<(String, Value)>);
+
+impl<'de> serde::Deserialize<'de> for Members {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = Members;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a JSON object")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Members, A::Error> {
+                let mut members = Vec::new();
+                while let Some(member) = map.next_entry::<String, Value>()? {
+                    members.push(member);
+                }
+                Ok(Members(members))
+            }
+        }
+        deserializer.deserialize_map(Visitor)
     }
 }
 
@@ -419,7 +478,12 @@ fn guid(text: &str) -> bool {
 }
 
 fn valid_settings(settings: &Map<String, Value>) -> bool {
-    let text = |name| matches!(settings.get(name), None | Some(Value::Null | Value::String(_)));
+    let text = |name| {
+        matches!(
+            settings.get(name),
+            None | Some(Value::Null | Value::String(_))
+        )
+    };
     text("RefreshRateKey")
         && text("ColorProfileKey")
         && matches!(

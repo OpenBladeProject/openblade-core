@@ -122,13 +122,25 @@ fn loads_every_managed_fixture_row_and_rewrites_the_same_state() {
         let file = Mem::with(row["bytes"].as_str().unwrap().as_bytes());
         let mut recovery = Recovery::load(file.clone());
         if row["state"].is_null() {
-            assert_eq!(recovery.last, row["legacySource"].as_u64().map(|s| s as u8), "{case}");
-            assert_eq!(recovery.flags(), (false, false, Fields::default()), "{case}");
+            assert_eq!(
+                recovery.last,
+                row["legacySource"].as_u64().map(|s| s as u8),
+                "{case}"
+            );
+            assert_eq!(
+                recovery.flags(),
+                (false, false, Fields::default()),
+                "{case}"
+            );
             assert!(recovery.baseline.is_none(), "{case}");
             continue;
         }
         let state = &row["state"];
-        assert_eq!(comparable(expected(&recovery)), comparable(state.clone()), "{case}");
+        assert_eq!(
+            comparable(expected(&recovery)),
+            comparable(state.clone()),
+            "{case}"
+        );
         assert_eq!(
             recovery.brightness_unresolved(),
             state["AutomaticWritesPaused"] == true && state["UncertainBrightness"] == true,
@@ -146,12 +158,18 @@ fn invalid_or_unreadable_files_pause_with_every_field_uncertain() {
     let minimal = fixture("pluggedin-minimal");
     let oversize = format!("{minimal}{}", " ".repeat(MAXIMUM_BYTES));
     let wrong_type = minimal.replace("\"ManualHold\":false", "\"ManualHold\":\"no\"");
-    let bad_source = minimal.replace("\"LastReconciledPowerSource\":0", "\"LastReconciledPowerSource\":3");
+    let bad_source = minimal.replace(
+        "\"LastReconciledPowerSource\":0",
+        "\"LastReconciledPowerSource\":3",
+    );
     let bad_guid = fixture("pluggedin-owned-all-with-profile-full-baseline")
         .replace("3f2c8a10-5b6d-4e7a-9c1f-0a2b3c4d5e6f", "not-a-guid");
     for (name, bytes) in [
         ("wrong schema", "{\"SchemaVersion\":9}".to_owned()),
-        ("legacy source", "{\"SchemaVersion\":1,\"LastReconciledPowerSource\":3}".to_owned()),
+        (
+            "legacy source",
+            "{\"SchemaVersion\":1,\"LastReconciledPowerSource\":3}".to_owned(),
+        ),
         ("oversize", oversize),
         ("malformed", "{\"SchemaVersion\":4,".to_owned()),
         ("not an object", "[]".to_owned()),
@@ -189,7 +207,11 @@ fn begin_persists_hold_pause_and_brightness_uncertainty_before_returning() {
     assert_eq!(stored["ManualHold"], true);
     assert_eq!(stored["AutomaticWritesPaused"], true);
     assert_eq!(stored["UncertainBrightness"], true);
-    for member in ["UncertainRefreshRate", "UncertainHdr", "UncertainColorProfile"] {
+    for member in [
+        "UncertainRefreshRate",
+        "UncertainHdr",
+        "UncertainColorProfile",
+    ] {
         assert_eq!(stored[member], false, "{member}");
     }
 }
@@ -201,7 +223,12 @@ fn begin_clears_baseline_ownership_and_profile_like_managed() {
     let stored = file.stored();
     assert_eq!(stored["LastReconciledPowerSource"], 0);
     assert!(stored["Baseline"].is_null() && stored["ApplicationProfileId"].is_null());
-    for member in ["OwnedRefreshRate", "OwnedHdr", "OwnedColorProfile", "OwnedBrightness"] {
+    for member in [
+        "OwnedRefreshRate",
+        "OwnedHdr",
+        "OwnedColorProfile",
+        "OwnedBrightness",
+    ] {
         assert_eq!(stored[member], false, "{member}");
     }
 }
@@ -250,7 +277,11 @@ fn complete_without_confirmation_or_indeterminate_stays_unresolved() {
         let (mut recovery, file) = from_fixture("battery-minimal");
         assert!(recovery.begin_brightness(None));
         recovery.complete(status, &snapshot);
-        assert_eq!(recovery.flags(), (true, true, brightness_only()), "{status:?}");
+        assert_eq!(
+            recovery.flags(),
+            (true, true, brightness_only()),
+            "{status:?}"
+        );
         assert_eq!(recovery.brightness_unresolved(), gated, "{status:?}");
         assert_eq!(file.stored()["AutomaticWritesPaused"], true);
         assert_eq!(file.stored()["UncertainBrightness"], true);
@@ -372,7 +403,11 @@ fn emits_native_rows_for_the_managed_oracle() {
 
     let (mut blocked, file) = from_fixture("pluggedin-owned-all-with-profile-full-baseline");
     blocked.complete(Status::Blocked, &without_brightness());
-    row("native-complete-preserves-profile-baseline", &blocked, &file);
+    row(
+        "native-complete-preserves-profile-baseline",
+        &blocked,
+        &file,
+    );
 
     let invalid = json!({
         "case": "native-invalid-schema",
@@ -380,7 +415,11 @@ fn emits_native_rows_for_the_managed_oracle() {
         "expectedInvalid": true,
     });
     rows.push_str(&format!("{invalid}\n"));
-    let mut output = OpenOptions::new().create(true).append(true).open(path).unwrap();
+    let mut output = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .unwrap();
     output.write_all(rows.as_bytes()).unwrap();
 }
 
@@ -406,4 +445,45 @@ fn nesting_beyond_the_managed_reader_depth_is_invalid() {
     assert!(!accepted.brightness_unresolved());
     let rejected = Recovery::load(Mem::with(nested(65).as_bytes()));
     assert_eq!(rejected.flags(), (false, true, Fields::ALL));
+}
+
+#[test]
+fn shadowed_duplicate_members_are_invalid() {
+    let deep = format!("{}0{}", "[".repeat(64), "]".repeat(64));
+    for (name, bytes) in [
+        (
+            "deep shadowed",
+            format!("{{\"SchemaVersion\":1,\"Ignored\":{deep},\"Ignored\":0}}"),
+        ),
+        (
+            "mistyped shadowed",
+            "{\"SchemaVersion\":\"x\",\"SchemaVersion\":1}".to_owned(),
+        ),
+        (
+            "same value",
+            "{\"SchemaVersion\":1,\"SchemaVersion\":1}".to_owned(),
+        ),
+    ] {
+        let recovery = Recovery::load(Mem::with(bytes.as_bytes()));
+        assert_eq!(recovery.flags(), (false, true, Fields::ALL), "{name}");
+    }
+    // Brackets inside strings are not nesting.
+    let quoted = format!(
+        "{{\"SchemaVersion\":1,\"Note\":\"{}\\\"\"}}",
+        "[".repeat(80)
+    );
+    assert!(!Recovery::load(Mem::with(quoted.as_bytes())).flags().1);
+}
+
+#[test]
+fn succeeded_without_brightness_confirmation_regates_after_restart() {
+    // Managed records an unconfirmed field as uncertain; a restart re-derives
+    // the conservative gate until an explicit read observes brightness.
+    let file = Mem::default();
+    let mut recovery = Recovery::load(file.clone());
+    assert!(recovery.begin_brightness(Some(1)));
+    recovery.complete(Status::Succeeded, &without_brightness());
+    assert!(!recovery.brightness_unresolved());
+    let restarted = Recovery::load(file.clone());
+    assert!(restarted.brightness_unresolved());
 }

@@ -190,7 +190,11 @@ impl WriteHost for Host {
         self.power
     }
     fn fence(&self, admitted: PowerContext) -> Arc<dyn SubmissionFence> {
-        assert_eq!(Some(admitted), self.power, "fence binds the captured context");
+        assert_eq!(
+            Some(admitted),
+            self.power,
+            "fence binds the captured context"
+        );
         Arc::new(TestFence {
             changed: self.changed,
             admit: self.admit,
@@ -203,7 +207,11 @@ impl WriteHost for Host {
         };
         BrightnessTarget::from_display(&display)
     }
-    fn query(&mut self, brightness: &SharedBrightness, canceled: &AtomicBool) -> io::Result<Snapshot> {
+    fn query(
+        &mut self,
+        brightness: &SharedBrightness,
+        canceled: &AtomicBool,
+    ) -> io::Result<Snapshot> {
         self.queries += 1;
         fixture_query_owned(brightness.clone(), canceled)
     }
@@ -354,7 +362,11 @@ fn denied_admission_and_preparation_failures_never_reach_the_setter() {
         (outcome.status, outcome.error),
         (Status::Blocked, Some(UNCONFIRMED_POWER))
     );
-    assert_eq!(rig.wmi.native.load(Ordering::SeqCst), 3, "only the reply query read WMI");
+    assert_eq!(
+        rig.wmi.native.load(Ordering::SeqCst),
+        3,
+        "only the reply query read WMI"
+    );
     // Blocked completion restores the inherited (unpaused) state.
     let record = rig.file.record();
     assert!(!flag(&record, "AutomaticWritesPaused") && !flag(&record, "UncertainBrightness"));
@@ -371,7 +383,10 @@ fn denied_admission_and_preparation_failures_never_reach_the_setter() {
     let mut host = Host::admitted(1);
     host.admit = false;
     let outcome = rig.set(&mut host, 1, 75).unwrap();
-    assert_eq!((outcome.status, outcome.error), (Status::Blocked, Some(STALE)));
+    assert_eq!(
+        (outcome.status, outcome.error),
+        (Status::Blocked, Some(STALE))
+    );
     assert_eq!(host.fence_checks.load(Ordering::SeqCst), 1);
 
     // Target changed after preparation.
@@ -440,9 +455,16 @@ fn possible_submission_pauses_without_replay_across_restart_until_explicit_read(
         // Same process: refused before any device interaction, never replayed.
         let native = rig.wmi.native.load(Ordering::SeqCst);
         let blocked = rig.set(&mut host, 2, 75).unwrap();
-        assert_eq!((blocked.status, blocked.error), (Status::Blocked, Some(PAUSED)));
+        assert_eq!(
+            (blocked.status, blocked.error),
+            (Status::Blocked, Some(PAUSED))
+        );
         assert_eq!(rig.submitted(), 1);
-        assert_eq!(rig.wmi.native.load(Ordering::SeqCst) - native, 3, "reply query only");
+        assert_eq!(
+            rig.wmi.native.load(Ordering::SeqCst) - native,
+            3,
+            "reply query only"
+        );
 
         // Restart: the durable checkpoint restores the gate.
         let restarted = Rig::new(25, Mode::Apply, rig.file.clone());
@@ -482,7 +504,10 @@ fn uncertain_completion_persistence_latches_the_pause() {
 fn lost_worker_after_submission_records_indeterminate_then_stops_the_feature() {
     let rig = Rig::new(25, Mode::Panic, Memory::default());
     let mut host = Host::admitted(1);
-    let error = rig.set(&mut host, 1, 75).err().expect("worker loss is fatal");
+    let error = rig
+        .set(&mut host, 1, 75)
+        .err()
+        .expect("worker loss is fatal");
     assert_eq!(error.to_string(), "brightness worker disconnected");
     assert_eq!(rig.submitted(), 1);
     // Certainty was recorded before the fatal return; no reply query ran.
@@ -497,12 +522,17 @@ fn same_process_explicit_read_replaces_the_paused_worker_without_replay() {
     for mode in [Mode::Timeout, Mode::Ignore] {
         let rig = Rig::new(25, mode, Memory::default());
         let mut host = Host::admitted(2);
-        assert_eq!(rig.set(&mut host, 2, 75).unwrap().status, Status::Indeterminate);
+        assert_eq!(
+            rig.set(&mut host, 2, 75).unwrap().status,
+            Status::Indeterminate
+        );
         *rig.wmi.mode.lock().unwrap() = Mode::Apply;
         let none = AtomicBool::new(false);
 
         // A read that misses brightness keeps the gate and the paused worker.
-        rig.wmi.fail_read_at.store(rig.wmi.reads.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
+        rig.wmi
+            .fail_read_at
+            .store(rig.wmi.reads.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
         let missed = fixture_query_owned(rig.owner.clone(), &none).unwrap();
         assert_eq!(missed.brightness(), None);
         explicit_read(&rig.owner, &rig.recovery, &missed).unwrap();
@@ -517,8 +547,16 @@ fn same_process_explicit_read_replaces_the_paused_worker_without_replay() {
         let next = rig.set(&mut host, 2, 50).unwrap();
         assert_eq!((next.status, next.error), (Status::Succeeded, None));
         assert_eq!(next.state.brightness(), Some(50));
-        assert_eq!(rig.submitted(), 2, "one new submission, never a replay of 75");
-        assert_eq!(rig.wmi.starts.load(Ordering::SeqCst), 2, "the paused worker was replaced");
+        assert_eq!(
+            rig.submitted(),
+            2,
+            "one new submission, never a replay of 75"
+        );
+        assert_eq!(
+            rig.wmi.starts.load(Ordering::SeqCst),
+            2,
+            "the paused worker was replaced"
+        );
     }
 }
 
@@ -533,7 +571,11 @@ impl WriteHost for NoHdr {
     fn target(&mut self) -> Result<BrightnessTarget, BrightnessError> {
         self.0.target()
     }
-    fn query(&mut self, brightness: &SharedBrightness, canceled: &AtomicBool) -> io::Result<Snapshot> {
+    fn query(
+        &mut self,
+        brightness: &SharedBrightness,
+        canceled: &AtomicBool,
+    ) -> io::Result<Snapshot> {
         let mut value = serde_json::to_value(self.0.query(brightness, canceled)?).unwrap();
         value["hdrSupported"] = serde_json::Value::Bool(false);
         Ok(serde_json::from_value(value).unwrap())
@@ -597,4 +639,20 @@ fn cancellation_after_submission_is_recorded_without_replay() {
     *rig.wmi.cancel_on_submit.lock().unwrap() = None;
     assert_eq!(rig.set(&mut host, 1, 75).unwrap().error, Some(PAUSED));
     assert_eq!(rig.submitted(), 1);
+}
+
+#[test]
+fn explicit_read_without_an_unresolved_write_keeps_the_worker() {
+    let rig = Rig::new(25, Mode::Apply, Memory::default());
+    let mut host = Host::admitted(1);
+    assert_eq!(rig.set(&mut host, 1, 75).unwrap().status, Status::Succeeded);
+    let read = fixture_query_owned(rig.owner.clone(), &AtomicBool::new(false)).unwrap();
+    assert_eq!(read.brightness(), Some(75));
+    explicit_read(&rig.owner, &rig.recovery, &read).unwrap();
+    assert_eq!(rig.set(&mut host, 1, 50).unwrap().status, Status::Succeeded);
+    assert_eq!(
+        rig.wmi.starts.load(Ordering::SeqCst),
+        1,
+        "no replacement without a gate"
+    );
 }
