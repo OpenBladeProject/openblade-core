@@ -1,0 +1,35 @@
+# Managed Display parity oracle
+
+Offline console that runs the production managed Display code against native
+Rust output. It references `OpenBlade.Session`; no OS supplier, installed
+product, endpoint, hardware, SCM or UAC is involved.
+
+Modes:
+
+- `DisplayQueryParity <frames.jsonl>`: each row holds one native response frame.
+  Rows with 4 members (case, expectedStatus, expectedState, frame) are read-only
+  queries and must be Succeeded. Rows with 5 members add expectedError and cover
+  setBrightness results (0 Succeeded, 1 Blocked, 2 Failed, 3 Indeterminate).
+  Each frame must decode with `SessionDisplayIpcCodec`, match status, error and
+  state exactly, and survive a managed roundtrip.
+- `checkpoints-emit <out.jsonl>`: writes exact checkpoint bytes using the
+  production `DisplayAutomationCheckpointStore` (schema 4 and one legacy schema 1)
+  with the expected state. Output is committed as
+  `tests/fixtures/display-automation/managed-checkpoints.jsonl`.
+- `checkpoints-verify <native.jsonl>`: loads bytes written by the native Rust
+  store through `LoadRecovery`, requires every member to equal the expected
+  state, and requires a save/load roundtrip. Rows marked `expectedInvalid` must
+  load as null.
+
+Run from the repository root (long worktree paths may need `subst X: <worktree>`):
+
+```powershell
+$run = 'C:\tmp\display-query-parity'
+$project = 'tools/openblade-windows-host/tests/oracles/display_query/DisplayQueryParity.csproj'
+dotnet restore $project -p:ArtifactsPath="$run\artifacts" -p:NuGetAudit=false
+dotnet build $project --no-restore -p:ArtifactsPath="$run\artifacts"
+dotnet "$run\artifacts\bin\DisplayQueryParity\debug\DisplayQueryParity.dll" checkpoints-emit '<out.jsonl>'
+```
+
+Passing proves bounded wire and storage parity only. It does not prove Windows
+supplier behavior, the installed runtime or hardware behavior.
