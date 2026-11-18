@@ -487,3 +487,37 @@ fn succeeded_without_brightness_confirmation_regates_after_restart() {
     let restarted = Recovery::load(file.clone());
     assert!(restarted.brightness_unresolved());
 }
+
+#[test]
+fn nested_duplicates_private_tokens_and_negative_zero_are_invalid() {
+    let deep = format!("{}0{}", "[".repeat(64), "]".repeat(64));
+    for (name, bytes) in [
+        (
+            "nested duplicate",
+            "{\"SchemaVersion\":4,\"Baseline\":{\"HdrEnabled\":\"x\",\"HdrEnabled\":true}}".to_owned(),
+        ),
+        (
+            "private number",
+            "{\"SchemaVersion\":{\"$serde_json::private::Number\":\"4\"}}".to_owned(),
+        ),
+        (
+            "escaped private raw value",
+            r#"{"SchemaVersion":4,"AutomaticWritesPaused":{"\u0024serde_json::private::RawValue":"false"}}"#.to_owned(),
+        ),
+        (
+            "negative zero byte",
+            "{\"SchemaVersion\":4,\"Baseline\":{\"BrightnessPercent\":-0}}".to_owned(),
+        ),
+        // An escaped quote must not end the string early and hide real nesting.
+        (
+            "escaped quote before depth",
+            format!("{{\"SchemaVersion\":1,\"S\":\"a\\\"b\",\"D\":{deep}}}"),
+        ),
+    ] {
+        let recovery = Recovery::load(Mem::with(bytes.as_bytes()));
+        assert_eq!(recovery.flags(), (false, true, Fields::ALL), "{name}");
+    }
+    // The token text inside an ordinary value that does not start with it.
+    let benign = "{\"SchemaVersion\":1,\"Note\":\"see $serde_json::private::\"}";
+    assert!(!Recovery::load(Mem::with(benign.as_bytes())).flags().1);
+}

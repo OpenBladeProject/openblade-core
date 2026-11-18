@@ -316,21 +316,20 @@ fn parse(bytes: &[u8]) -> Loaded {
     // System.Text.Json's default MaxDepth rejects deeper documents, including
     // nesting inside members neither reader binds or a shadowed duplicate. The
     // scan runs on the raw tokens because a parsed map keeps only the last one.
-    if depth(bytes) > MAXIMUM_DEPTH {
+    // It also refuses serde_json's private number/raw-value tokens, which this
+    // crate's arbitrary_precision/raw_value features would read as typed values.
+    if !scan(bytes).is_some_and(|depth| depth <= MAXIMUM_DEPTH) {
         return Loaded::Invalid;
     }
-    let Ok(Members(members)) = serde_json::from_slice::<Members>(bytes) else {
-        return Loaded::Invalid;
-    };
     // The managed readers type-check every occurrence of a bound member, so a
     // shadowed duplicate can make them refuse a document whose last value is
-    // valid. Refuse duplicate top-level members (stricter, never weaker).
-    let mut object = Map::new();
-    for (name, value) in members {
-        if object.insert(name, value).is_some() {
-            return Loaded::Invalid;
-        }
+    // valid. Refuse duplicate members at every depth (stricter, never weaker).
+    if openblade_domain::thermal_history::validate_json_members(bytes).is_err() {
+        return Loaded::Invalid;
     }
+    let Ok(Value::Object(object)) = serde_json::from_slice::<Value>(bytes) else {
+        return Loaded::Invalid;
+    };
     if let Some(record) = recovery(&object) {
         return Loaded::Recovery(record);
     }
@@ -350,23 +349,65 @@ fn parse(bytes: &[u8]) -> Loaded {
 
 const MAXIMUM_DEPTH: usize = 64;
 
+/// serde_json's private map keys for arbitrary-precision numbers and raw
+/// values. Managed reads such an object as an object.
+const PRIVATE_TOKEN: &[u8] = b"$serde_json::private::";
+
 /// Maximum container nesting of the raw document (the root object is 1),
-/// ignoring brackets inside strings. Malformed input is left to the parser.
-fn depth(bytes: &[u8]) -> usize {
+/// ignoring brackets inside strings, or `None` when any decoded string starts
+/// with a serde_json private token, or for an integer "-0". Malformed input is left to the parser.
+fn scan(bytes: &[u8]) -> Option<usize> {
     let (mut current, mut deepest) = (0usize, 0usize);
-    let (mut string, mut escaped) = (false, false);
-    for &byte in bytes {
-        if string {
-            match (escaped, byte) {
-                (true, _) => escaped = false,
-                (false, b'\\') => escaped = true,
-                (false, b'"') => string = false,
-                _ => {}
-            }
-            continue;
-        }
+    let mut index = 0;
+    while let Some(&byte) = bytes.get(index) {
+        index += 1;
         match byte {
-            b'"' => string = true,
+            b'"' => {
+                // Decode only as far as needed to compare an ASCII prefix;
+                // a non-ASCII or malformed escape cannot spell the token.
+                let mut prefix = Vec::with_capacity(PRIVATE_TOKEN.len());
+                let mut matching = true;
+                while let Some(&byte) = bytes.get(index) {
+                    index += 1;
+                    let decoded = match byte {
+                        b'"' => break,
+                        b'\\' => {
+                            let escape = bytes.get(index).copied();
+                            index += 1;
+                            match escape {
+                                Some(b'u') => {
+                                    let hex = bytes.get(index..index + 4);
+                                    index += 4;
+                                    hex.and_then(|hex| std::str::from_utf8(hex).ok())
+                                        .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+                                        .filter(u8::is_ascii)
+                                }
+                                Some(other) => Some(other),
+                                None => None,
+                            }
+                        }
+                        other => Some(other),
+                    };
+                    if matching && prefix.len() < PRIVATE_TOKEN.len() {
+                        match decoded {
+                            Some(decoded) if decoded == PRIVATE_TOKEN[prefix.len()] => {
+                                prefix.push(decoded)
+                            }
+                            _ => matching = false,
+                        }
+                    }
+                }
+                if matching && prefix.len() == PRIVATE_TOKEN.len() {
+                    return None;
+                }
+            }
+            // serde_json reads an integer "-0" as 0; System.Text.Json refuses
+            // it for the unsigned Byte member. Refuse it anywhere (stricter).
+            b'-' if bytes.get(index) == Some(&b'0')
+                && !matches!(bytes.get(index + 1), Some(b'.' | b'e' | b'E')) =>
+            {
+                return None;
+            }
             b'[' | b'{' => {
                 current += 1;
                 deepest = deepest.max(current);
@@ -375,33 +416,7 @@ fn depth(bytes: &[u8]) -> usize {
             _ => {}
         }
     }
-    deepest
-}
-
-/// Top-level members in document order, duplicates included.
-struct Members(Vec<(String, Value)>);
-
-impl<'de> serde::Deserialize<'de> for Members {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct Visitor;
-        impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = Members;
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("a JSON object")
-            }
-            fn visit_map<A: serde::de::MapAccess<'de>>(
-                self,
-                mut map: A,
-            ) -> Result<Members, A::Error> {
-                let mut members = Vec::new();
-                while let Some(member) = map.next_entry::<String, Value>()? {
-                    members.push(member);
-                }
-                Ok(Members(members))
-            }
-        }
-        deserializer.deserialize_map(Visitor)
-    }
+    Some(deepest)
 }
 
 /// Typed System.Text.Json default semantics: case-sensitive names, missing
