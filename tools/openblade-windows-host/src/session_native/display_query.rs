@@ -148,10 +148,10 @@ impl Supplier for WindowsSupplier {
         #[cfg(feature = "agent-display-brightness-write-v1")]
         let writer = self.writer.clone();
         tokio::task::spawn_blocking(move || {
-            let snapshot = observation::query(&canceled, brightness)?;
+            let snapshot = observation::query(&canceled, brightness.clone())?;
             // Managed ResumeAfterSuccessfulExplicitRead after every completed query.
             #[cfg(feature = "agent-display-brightness-write-v1")]
-            writer.explicit_read(&snapshot)?;
+            writer.explicit_read(&brightness, &snapshot)?;
             Ok(snapshot)
         })
         .await
@@ -194,7 +194,8 @@ pub(super) async fn run(
         #[cfg(feature = "agent-display-brightness-write-v1")]
         writer: {
             let origin = origin.clone();
-            tokio::task::spawn_blocking(move || brightness_write::Writer::load(origin, power))
+            let stop = stop.clone();
+            tokio::task::spawn_blocking(move || brightness_write::Writer::load(origin, power, stop))
                 .await
                 .map_err(|_| io::Error::other("display recovery load failed"))?
         },

@@ -240,16 +240,18 @@ fn complete_succeeded_with_brightness_readback_resumes() {
 
 #[test]
 fn complete_without_confirmation_or_indeterminate_stays_unresolved() {
-    for (status, snapshot) in [
-        (Status::Succeeded, without_brightness()),
-        (Status::Succeeded, Snapshot::unavailable("gone")),
-        (Status::Indeterminate, with_brightness()),
+    // Durable state follows managed CompleteManualOperation in every case; the
+    // native write gate is set only when a submission may be unconfirmed.
+    for (status, snapshot, gated) in [
+        (Status::Succeeded, without_brightness(), false),
+        (Status::Succeeded, Snapshot::unavailable("gone"), false),
+        (Status::Indeterminate, with_brightness(), true),
     ] {
         let (mut recovery, file) = from_fixture("battery-minimal");
         assert!(recovery.begin_brightness(None));
         recovery.complete(status, &snapshot);
         assert_eq!(recovery.flags(), (true, true, brightness_only()), "{status:?}");
-        assert!(recovery.brightness_unresolved(), "{status:?}");
+        assert_eq!(recovery.brightness_unresolved(), gated, "{status:?}");
         assert_eq!(file.stored()["AutomaticWritesPaused"], true);
         assert_eq!(file.stored()["UncertainBrightness"], true);
     }
@@ -380,4 +382,28 @@ fn emits_native_rows_for_the_managed_oracle() {
     rows.push_str(&format!("{invalid}\n"));
     let mut output = OpenOptions::new().create(true).append(true).open(path).unwrap();
     output.write_all(rows.as_bytes()).unwrap();
+}
+
+#[test]
+fn legacy_record_without_a_source_defaults_to_plugged_in() {
+    let recovery = Recovery::load(Mem::with(b"{\"SchemaVersion\":1}"));
+    assert_eq!(recovery.flags(), (false, false, Fields::default()));
+    assert!(!recovery.brightness_unresolved());
+    assert_eq!(recovery.last, Some(0));
+}
+
+#[test]
+fn nesting_beyond_the_managed_reader_depth_is_invalid() {
+    // System.Text.Json's default MaxDepth is 64, counting the root object.
+    let nested = |levels: usize| {
+        format!(
+            "{{\"SchemaVersion\":1,\"Ignored\":{}0{}}}",
+            "[".repeat(levels - 1),
+            "]".repeat(levels - 1)
+        )
+    };
+    let accepted = Recovery::load(Mem::with(nested(64).as_bytes()));
+    assert!(!accepted.brightness_unresolved());
+    let rejected = Recovery::load(Mem::with(nested(65).as_bytes()));
+    assert_eq!(rejected.flags(), (false, true, Fields::ALL));
 }

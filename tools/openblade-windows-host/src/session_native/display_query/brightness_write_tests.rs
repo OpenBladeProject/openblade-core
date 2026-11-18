@@ -61,6 +61,13 @@ struct Wmi {
     /// Submissions that passed the fence and the gate.
     submitted: AtomicUsize,
     native: AtomicUsize,
+    /// Workers started by the owner (replacement after an explicit read).
+    starts: AtomicUsize,
+    /// 1-based active-reading call that fails (0: none).
+    fail_read_at: AtomicUsize,
+    reads: AtomicUsize,
+    /// Set after the submission boundary (cancellation racing a write).
+    cancel_on_submit: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 impl Wmi {
@@ -71,6 +78,10 @@ impl Wmi {
             setters: AtomicUsize::new(0),
             submitted: AtomicUsize::new(0),
             native: AtomicUsize::new(0),
+            starts: AtomicUsize::new(0),
+            fail_read_at: AtomicUsize::new(0),
+            reads: AtomicUsize::new(0),
+            cancel_on_submit: Mutex::new(None),
         })
     }
 }
@@ -88,6 +99,10 @@ impl WmiBrightnessNative for Native {
         _: usize,
     ) -> Result<Vec<ReadingRow>, NativeFailure> {
         self.0.native.fetch_add(1, Ordering::SeqCst);
+        let read = self.0.reads.fetch_add(1, Ordering::SeqCst) + 1;
+        if read == self.0.fail_read_at.load(Ordering::SeqCst) {
+            return Err(NativeFailure::Status(-1));
+        }
         Ok(vec![ReadingRow {
             instance: Some(instance()),
             percent: Some(*self.0.percent.lock().unwrap()),
@@ -115,6 +130,9 @@ impl WmiBrightnessNative for Native {
         self.0.setters.fetch_add(1, Ordering::SeqCst);
         submission.begin()?;
         self.0.submitted.fetch_add(1, Ordering::SeqCst);
+        if let Some(cancel) = &*self.0.cancel_on_submit.lock().unwrap() {
+            cancel.store(true, Ordering::SeqCst);
+        }
         match *self.0.mode.lock().unwrap() {
             Mode::Apply => {
                 *self.0.percent.lock().unwrap() = level;
@@ -244,10 +262,15 @@ impl Rig {
     fn new(percent: u8, mode: Mode, file: Memory) -> Self {
         let wmi = Wmi::new(percent, mode);
         let native = wmi.clone();
-        let worker = WindowsBrightnessWorker::start_scripted(move || Native(native)).unwrap();
+        let starts = wmi.clone();
+        let owner = BrightnessOwner::with_starter(move || {
+            starts.starts.fetch_add(1, Ordering::SeqCst);
+            let native = native.clone();
+            WindowsBrightnessWorker::start_scripted(move || Native(native))
+        });
         Self {
             wmi,
-            owner: Arc::new(Mutex::new(BrightnessOwner::with_worker(worker))),
+            owner: Arc::new(Mutex::new(owner)),
             recovery: Mutex::new(Recovery::load(file.clone())),
             file,
         }
@@ -467,4 +490,111 @@ fn lost_worker_after_submission_records_indeterminate_then_stops_the_feature() {
     let record = rig.file.record();
     assert!(flag(&record, "AutomaticWritesPaused") && flag(&record, "UncertainBrightness"));
     assert!(rig.recovery.lock().unwrap().brightness_unresolved());
+}
+
+#[test]
+fn same_process_explicit_read_replaces_the_paused_worker_without_replay() {
+    for mode in [Mode::Timeout, Mode::Ignore] {
+        let rig = Rig::new(25, mode, Memory::default());
+        let mut host = Host::admitted(2);
+        assert_eq!(rig.set(&mut host, 2, 75).unwrap().status, Status::Indeterminate);
+        *rig.wmi.mode.lock().unwrap() = Mode::Apply;
+        let none = AtomicBool::new(false);
+
+        // A read that misses brightness keeps the gate and the paused worker.
+        rig.wmi.fail_read_at.store(rig.wmi.reads.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
+        let missed = fixture_query_owned(rig.owner.clone(), &none).unwrap();
+        assert_eq!(missed.brightness(), None);
+        explicit_read(&rig.owner, &rig.recovery, &missed).unwrap();
+        assert_eq!(rig.set(&mut host, 2, 50).unwrap().error, Some(PAUSED));
+        assert_eq!(rig.submitted(), 1);
+
+        // An explicit read through the same worker joins and replaces it.
+        let read = fixture_query_owned(rig.owner.clone(), &none).unwrap();
+        assert_eq!(read.brightness(), Some(25));
+        explicit_read(&rig.owner, &rig.recovery, &read).unwrap();
+        assert!(!rig.recovery.lock().unwrap().brightness_unresolved());
+        let next = rig.set(&mut host, 2, 50).unwrap();
+        assert_eq!((next.status, next.error), (Status::Succeeded, None));
+        assert_eq!(next.state.brightness(), Some(50));
+        assert_eq!(rig.submitted(), 2, "one new submission, never a replay of 75");
+        assert_eq!(rig.wmi.starts.load(Ordering::SeqCst), 2, "the paused worker was replaced");
+    }
+}
+
+struct NoHdr(Host);
+impl WriteHost for NoHdr {
+    fn power(&self) -> Option<PowerContext> {
+        self.0.power()
+    }
+    fn fence(&self, admitted: PowerContext) -> Arc<dyn SubmissionFence> {
+        self.0.fence(admitted)
+    }
+    fn target(&mut self) -> Result<BrightnessTarget, BrightnessError> {
+        self.0.target()
+    }
+    fn query(&mut self, brightness: &SharedBrightness, canceled: &AtomicBool) -> io::Result<Snapshot> {
+        let mut value = serde_json::to_value(self.0.query(brightness, canceled)?).unwrap();
+        value["hdrSupported"] = serde_json::Value::Bool(false);
+        Ok(serde_json::from_value(value).unwrap())
+    }
+}
+
+#[test]
+fn inherited_unrelated_uncertainty_keeps_the_managed_pause_but_not_the_write_gate() {
+    let file = Memory::default();
+    *file.bytes.lock().unwrap() = Some(
+        br#"{"SchemaVersion":4,"LastReconciledPowerSource":1,"ManualHold":true,"AutomaticWritesPaused":true,"UncertainHdr":true}"#
+            .to_vec(),
+    );
+    let rig = Rig::new(25, Mode::Apply, file);
+    let mut host = NoHdr(Host::admitted(1));
+    let none = AtomicBool::new(false);
+    for (percent, submitted) in [(75, 1), (50, 2)] {
+        let request = SetBrightness {
+            expected_power_source: 1,
+            percent,
+        };
+        let outcome = set_brightness(&mut host, &rig.owner, &rig.recovery, request, &none).unwrap();
+        assert_eq!((outcome.status, outcome.error), (Status::Succeeded, None));
+        assert_eq!(rig.submitted(), submitted);
+        assert!(!rig.recovery.lock().unwrap().brightness_unresolved());
+        // Managed CompleteManualOperation still cannot confirm HDR.
+        let record = rig.file.record();
+        assert!(flag(&record, "AutomaticWritesPaused") && flag(&record, "UncertainHdr"));
+    }
+}
+
+#[test]
+fn unchanged_request_is_never_uncertain_even_if_the_reply_read_fails() {
+    let rig = Rig::new(50, Mode::Apply, Memory::default());
+    let mut host = Host::admitted(1);
+    // Read 1 is the worker's own observation; read 2 is the reply query.
+    rig.wmi.fail_read_at.store(2, Ordering::SeqCst);
+    let outcome = rig.set(&mut host, 1, 40).unwrap();
+    assert_eq!((outcome.status, outcome.error), (Status::Succeeded, None));
+    assert_eq!(outcome.state.brightness(), None);
+    assert_eq!(rig.setters(), 0);
+    assert!(!rig.recovery.lock().unwrap().brightness_unresolved());
+    assert_eq!(rig.set(&mut host, 1, 75).unwrap().status, Status::Succeeded);
+}
+
+#[test]
+fn cancellation_after_submission_is_recorded_without_replay() {
+    let rig = Rig::new(25, Mode::Apply, Memory::default());
+    let mut host = Host::admitted(1);
+    let canceled = Arc::new(AtomicBool::new(false));
+    *rig.wmi.cancel_on_submit.lock().unwrap() = Some(canceled.clone());
+    let outcome = rig.set_canceled(&mut host, 1, 75, &canceled).unwrap();
+    // The submission completed; the interrupted reply query cannot show it, so
+    // the record is uncertain (managed records cancellation the same way).
+    assert_eq!(rig.submitted(), 1);
+    assert_eq!(
+        (outcome.status, outcome.error),
+        (Status::Indeterminate, Some(UNCONFIRMED))
+    );
+    assert!(rig.recovery.lock().unwrap().brightness_unresolved());
+    *rig.wmi.cancel_on_submit.lock().unwrap() = None;
+    assert_eq!(rig.set(&mut host, 1, 75).unwrap().error, Some(PAUSED));
+    assert_eq!(rig.submitted(), 1);
 }

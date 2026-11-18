@@ -174,10 +174,30 @@ pub(super) type SharedBrightness = Arc<Mutex<BrightnessOwner>>;
 /// The feature owns one native thread/COM connection across requests. Reply
 /// failure is independent of retirement: pending native work stays on this
 /// same owner and makes subsequent brightness reads busy, never replacements.
-#[derive(Default)]
 pub(super) struct BrightnessOwner {
     worker: Option<WindowsBrightnessWorker>,
     closed: bool,
+    start: Starter,
+}
+
+/// Starts a worker when none is owned. The outer error is a process security
+/// refusal; the inner one is a worker that never started (submitted nothing).
+type Starter = Box<
+    dyn FnMut() -> Result<io::Result<WindowsBrightnessWorker>, openblade_platform_windows::brightness::NativeFailure>
+        + Send,
+>;
+
+impl Default for BrightnessOwner {
+    fn default() -> Self {
+        Self {
+            worker: None,
+            closed: false,
+            start: Box::new(|| {
+                process_security_status()?;
+                Ok(WindowsBrightnessWorker::start())
+            }),
+        }
+    }
 }
 
 impl BrightnessOwner {
@@ -190,16 +210,13 @@ impl BrightnessOwner {
             return Err(io::Error::other("brightness owner is closed"));
         }
         if self.worker.is_none() {
-            if let Err(error) = process_security_status() {
-                return Ok(Err(BrightnessError::Native(error)));
-            }
-            self.worker =
-                match WindowsBrightnessWorker::start() {
-                    Ok(worker) => Some(worker),
-                    Err(_) => return Ok(Err(BrightnessError::Native(
-                        openblade_platform_windows::brightness::NativeFailure::WorkerDisconnected,
-                    ))),
-                };
+            self.worker = match (self.start)() {
+                Err(error) => return Ok(Err(BrightnessError::Native(error))),
+                Ok(Ok(worker)) => Some(worker),
+                Ok(Err(_)) => return Ok(Err(BrightnessError::Native(
+                    openblade_platform_windows::brightness::NativeFailure::WorkerDisconnected,
+                ))),
+            };
         }
         let result = self
             .worker
@@ -247,14 +264,12 @@ impl BrightnessOwner {
             state: None,
         };
         if self.worker.is_none() {
-            if let Err(error) = process_security_status() {
-                return Ok(Err(unavailable(BrightnessError::Native(error))));
-            }
             // A worker that never started submitted nothing; only a lost reply
             // from an existing worker reports WorkerDisconnected (fatal).
-            self.worker = match WindowsBrightnessWorker::start() {
-                Ok(worker) => Some(worker),
-                Err(_) => return Ok(Err(unavailable(BrightnessError::ControllerUnavailable))),
+            self.worker = match (self.start)() {
+                Err(error) => return Ok(Err(unavailable(BrightnessError::Native(error)))),
+                Ok(Ok(worker)) => Some(worker),
+                Ok(Err(_)) => return Ok(Err(unavailable(BrightnessError::ControllerUnavailable))),
             };
         }
         let result = self.worker.as_mut().expect("owned worker").apply_target_fenced(
@@ -266,6 +281,16 @@ impl BrightnessOwner {
         Ok(result)
     }
 
+    /// Join the current worker and let the next request start a fresh one.
+    /// Only called when no request is pending on it (a completed read).
+    #[cfg(feature = "agent-display-brightness-write-v1")]
+    pub(super) fn retire_worker(&mut self) -> io::Result<()> {
+        match self.worker.take() {
+            Some(worker) => worker.shutdown(),
+            None => Ok(()),
+        }
+    }
+
     pub(super) fn shutdown(&mut self) -> io::Result<()> {
         self.closed = true;
         match self.worker.take() {
@@ -274,11 +299,26 @@ impl BrightnessOwner {
         }
     }
 
+    /// A test owner never reaches the Windows starter: it refuses to replace
+    /// its worker.
     #[cfg(test)]
     pub(super) fn with_worker(worker: WindowsBrightnessWorker) -> Self {
         Self {
             worker: Some(worker),
             closed: false,
+            start: Box::new(|| Ok(Err(io::Error::other("test owner cannot start a worker")))),
+        }
+    }
+
+    /// A test owner whose replacement workers come from `start`.
+    #[cfg(test)]
+    pub(super) fn with_starter(
+        mut start: impl FnMut() -> io::Result<WindowsBrightnessWorker> + Send + 'static,
+    ) -> Self {
+        Self {
+            worker: None,
+            closed: false,
+            start: Box::new(move || Ok(start())),
         }
     }
 }

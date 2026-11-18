@@ -977,4 +977,53 @@ mod brightness_writes {
             assert!(supplier.canceled.load(Ordering::Acquire));
         }
     }
+
+    #[tokio::test]
+    async fn origin_loss_during_a_write_joins_the_record_then_stops_the_endpoint() {
+        let mut supplier = HeldWrite {
+            gate: Arc::new((Mutex::new(false), Condvar::new())),
+            canceled: Arc::default(),
+            recorded: Arc::default(),
+            started: Arc::default(),
+        };
+        let gate = supplier.gate.clone();
+        let started = supplier.started.clone();
+        let recorded = supplier.recorded.clone();
+        let lost = Arc::new(AtomicBool::new(false));
+        let (mut server, mut client) = tokio::io::duplex(1024);
+        client.write_all(&set(json!(1), json!(40))).await.unwrap();
+        let (_sender, mut stop) = watch::channel(false);
+        let verify = {
+            let lost = lost.clone();
+            move || {
+                if lost.load(Ordering::Acquire) {
+                    Err(io::Error::other("injected Origin loss"))
+                } else {
+                    Ok(())
+                }
+            }
+        };
+        let (result, bytes) = tokio::join!(
+            async {
+                let result = serve(&mut server, &mut stop, &mut supplier, |_| Ok(()), verify).await;
+                drop(server);
+                result
+            },
+            async {
+                wait_flag(&started).await;
+                lost.store(true, Ordering::Release);
+                // Origin polling notices the loss but must keep the write owned.
+                sleep(ORIGIN_POLL * 2).await;
+                assert!(!recorded.load(Ordering::Acquire));
+                release(&gate);
+                let mut bytes = Vec::new();
+                client.read_to_end(&mut bytes).await.unwrap();
+                bytes
+            },
+        );
+        assert!(matches!(result, Err(ServeError::Fatal(_))));
+        assert!(bytes.is_empty());
+        assert!(supplier.recorded.load(Ordering::Acquire));
+        assert!(supplier.canceled.load(Ordering::Acquire));
+    }
 }

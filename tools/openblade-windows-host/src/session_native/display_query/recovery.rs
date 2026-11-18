@@ -203,8 +203,12 @@ impl<F: CheckpointFile> Recovery<F> {
             self.paused = false;
             self.uncertain = Fields::default();
         } else if matches!(status, Status::Indeterminate | Status::Succeeded) {
+            // Managed keeps the durable pause until every affected field reads
+            // back. The native write gate tracks only a possible unconfirmed
+            // submission: a Succeeded write already showed its level (or
+            // submitted nothing), so unrelated inherited fields must not gate it.
             self.paused = true;
-            self.brightness_unresolved = true;
+            self.brightness_unresolved |= status == Status::Indeterminate;
         } else {
             self.paused = self.inherited_pause;
             self.uncertain = if self.paused {
@@ -311,13 +315,33 @@ fn parse(bytes: &[u8]) -> Loaded {
     let Ok(Value::Object(object)) = serde_json::from_slice::<Value>(bytes) else {
         return Loaded::Invalid;
     };
+    // System.Text.Json's default MaxDepth rejects deeper documents, including
+    // nesting inside members neither reader binds.
+    if 1 + object.values().map(depth).max().unwrap_or(0) > MAXIMUM_DEPTH {
+        return Loaded::Invalid;
+    }
     if let Some(record) = recovery(&object) {
         return Loaded::Recovery(record);
     }
-    // The legacy reader binds only these two members of the same document.
+    // The legacy reader binds only these two members of the same document; a
+    // missing source defaults to PluggedIn (0), as in the typed managed record.
     match (integer(&object, "SchemaVersion"), integer(&object, "LastReconciledPowerSource")) {
-        (Some(Some(SCHEMA)), Some(Some(source @ 0..=2))) => Loaded::Legacy(source as u8),
+        (Some(Some(SCHEMA)), Some(source)) => match source.unwrap_or(0) {
+            source @ 0..=2 => Loaded::Legacy(source as u8),
+            _ => Loaded::Invalid,
+        },
         _ => Loaded::Invalid,
+    }
+}
+
+const MAXIMUM_DEPTH: usize = 64;
+
+/// Container nesting depth: a scalar is 0, `[]` and `{}` are 1.
+fn depth(value: &Value) -> usize {
+    match value {
+        Value::Array(items) => 1 + items.iter().map(depth).max().unwrap_or(0),
+        Value::Object(members) => 1 + members.values().map(depth).max().unwrap_or(0),
+        _ => 0,
     }
 }
 
