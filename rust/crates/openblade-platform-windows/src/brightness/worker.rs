@@ -58,6 +58,7 @@ struct Request {
     admission_deadline: Instant,
     gate: Arc<RequestGate>,
     finished: Arc<AtomicBool>,
+    fence: Option<Arc<dyn SubmissionFence>>,
 }
 
 struct Completion(Arc<AtomicBool>);
@@ -135,6 +136,7 @@ impl WindowsBrightnessWorker {
                         deadline: request.admission_deadline,
                         cancelled: &cancelled,
                         submission_gate: Some(&request.gate),
+                        fence: request.fence.as_deref(),
                     };
                     match request.operation {
                         Operation::Read(target, reply) => {
@@ -187,7 +189,7 @@ impl WindowsBrightnessWorker {
         target: BrightnessQueryTarget,
         cancelled: impl Fn() -> bool,
     ) -> ReadResult {
-        self.execute(CALL_LIMIT, &cancelled, |reply| {
+        self.execute(CALL_LIMIT, &cancelled, None, |reply| {
             Operation::Query(target, reply)
         })
         .map_err(|(failure, _)| BrightnessError::Native(failure))?
@@ -210,7 +212,7 @@ impl WindowsBrightnessWorker {
         target: Option<BrightnessTarget>,
         cancelled: impl Fn() -> bool,
     ) -> ReadResult {
-        self.execute(CALL_LIMIT, &cancelled, |reply| {
+        self.execute(CALL_LIMIT, &cancelled, None, |reply| {
             Operation::Read(target, reply)
         })
         .map_err(|(failure, _)| BrightnessError::Native(failure))?
@@ -221,7 +223,7 @@ impl WindowsBrightnessWorker {
         intent: BrightnessRequest,
         cancelled: impl Fn() -> bool,
     ) -> ApplyResult {
-        self.apply_with_target(intent, None, cancelled)
+        self.apply_with_target(intent, None, None, cancelled)
     }
 
     pub fn apply_target(
@@ -230,13 +232,26 @@ impl WindowsBrightnessWorker {
         target: BrightnessTarget,
         cancelled: impl Fn() -> bool,
     ) -> ApplyResult {
-        self.apply_with_target(intent, Some(target), cancelled)
+        self.apply_with_target(intent, Some(target), None, cancelled)
+    }
+
+    /// Apply to an exact display with host authority re-checked by the
+    /// worker immediately before the one possible native invocation.
+    pub fn apply_target_fenced(
+        &mut self,
+        intent: BrightnessRequest,
+        target: BrightnessTarget,
+        fence: Arc<dyn SubmissionFence>,
+        cancelled: impl Fn() -> bool,
+    ) -> ApplyResult {
+        self.apply_with_target(intent, Some(target), Some(fence), cancelled)
     }
 
     fn apply_with_target(
         &mut self,
         intent: BrightnessRequest,
         target: Option<BrightnessTarget>,
+        fence: Option<Arc<dyn SubmissionFence>>,
         cancelled: impl Fn() -> bool,
     ) -> ApplyResult {
         if self.submission_unresolved {
@@ -246,7 +261,7 @@ impl WindowsBrightnessWorker {
                 state: None,
             });
         }
-        self.execute(WRITE_REPLY_LIMIT, &cancelled, |reply| {
+        self.execute(WRITE_REPLY_LIMIT, &cancelled, fence, |reply| {
             Operation::Apply(intent, target, reply)
         })
         .map_err(|(failure, started)| BrightnessFailure {
@@ -260,6 +275,7 @@ impl WindowsBrightnessWorker {
         &mut self,
         limit: Duration,
         cancelled: &dyn Fn() -> bool,
+        fence: Option<Arc<dyn SubmissionFence>>,
         operation: impl FnOnce(SyncSender<T>) -> Operation,
     ) -> Result<T, (NativeFailure, bool)> {
         if cancelled() {
@@ -280,6 +296,7 @@ impl WindowsBrightnessWorker {
                 admission_deadline: start + CALL_LIMIT,
                 gate: Arc::clone(&gate),
                 finished: Arc::clone(&finished),
+                fence,
             })
             .map_err(|error| {
                 let failure = match error {

@@ -174,7 +174,7 @@ fn timeout_after_start_blocks_writes_while_worker_is_live_and_after_it_drains() 
         }
         false
     };
-    let result = worker.execute(Duration::from_millis(75), &cancel, |reply| {
+    let result = worker.execute(Duration::from_millis(75), &cancel, None, |reply| {
         Operation::Apply(BrightnessRequest::SetPercent(50), None, reply)
     });
     assert_eq!(result, Err((NativeFailure::DeadlineExceeded, true)));
@@ -206,7 +206,7 @@ fn disconnected_reply_retains_possible_submission() {
         pending: None,
         submission_unresolved: false,
     };
-    let result = worker.execute(CALL_LIMIT, &|| false, |reply| {
+    let result = worker.execute(CALL_LIMIT, &|| false, None, |reply| {
         Operation::Apply(BrightnessRequest::StepDown, None, reply)
     });
     worker.join().unwrap();

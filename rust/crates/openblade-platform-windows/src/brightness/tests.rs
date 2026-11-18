@@ -1,4 +1,8 @@
-use std::{cell::Cell, collections::VecDeque};
+use std::{
+    cell::Cell,
+    collections::VecDeque,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use crate::display::ActiveInternalDisplay;
 
@@ -635,6 +639,7 @@ fn expired_budget_prevents_native_work_and_submission() {
         deadline: Instant::now(),
         cancelled: &|| false,
         submission_gate: None,
+        fence: None,
     };
     let mut controller = WmiBrightness::new(Script::new([]));
     assert!(matches!(
@@ -644,6 +649,7 @@ fn expired_budget_prevents_native_work_and_submission() {
     let mut submission = Submission {
         budget: &budget,
         completion_deadline: None,
+        panel: None,
     };
     assert_eq!(submission.begin(), Err(NativeFailure::DeadlineExceeded));
     assert!(submission.completion_deadline.is_none());
@@ -735,10 +741,12 @@ fn submission_gets_its_own_completion_budget() {
         deadline: Instant::now() + Duration::from_millis(500),
         cancelled: &|| false,
         submission_gate: None,
+        fence: None,
     };
     let mut submission = Submission {
         budget: &admission,
         completion_deadline: None,
+        panel: None,
     };
     submission.begin().unwrap();
     assert!(submission.completion_deadline.unwrap() > admission.deadline);
@@ -746,4 +754,117 @@ fn submission_gets_its_own_completion_budget() {
         submission.begin(),
         Err(NativeFailure::SubmissionAlreadyStarted)
     );
+}
+
+struct Fence {
+    target: u32,
+    admit: bool,
+    topologies: AtomicUsize,
+    admissions: AtomicUsize,
+}
+
+impl SubmissionFence for Fence {
+    fn topology(&self) -> Result<InternalDisplayTopology, DisplayReadError> {
+        self.topologies.fetch_add(1, Ordering::SeqCst);
+        Ok(InternalDisplayTopology::Single(
+            ActiveInternalDisplay::brightness_fixture(PATH, self.target),
+        ))
+    }
+    fn admit(&self) -> bool {
+        self.admissions.fetch_add(1, Ordering::SeqCst);
+        self.admit
+    }
+}
+
+// A targeted observation brackets the WMI read with two topology reads.
+fn targeted_change(submit: bool) -> VecDeque<Call> {
+    let observe = |percent| {
+        [
+            topology(PATH, 2),
+            Call::Read(Ok(vec![row(INSTANCE, percent, &[30, 40])])),
+            topology(PATH, 2),
+        ]
+    };
+    let mut calls: VecDeque<Call> = observe(30)
+        .into_iter()
+        .chain([Call::Methods(vec![method(INSTANCE, 42)])])
+        .chain(observe(30))
+        .chain([
+            topology(PATH, 2),
+            Call::Set {
+                start: true,
+                level: 40,
+                response: Ok(Acknowledgement::Status(0)),
+            },
+        ])
+        .collect();
+    if submit {
+        calls.extend(observe(40));
+    }
+    calls
+}
+
+fn fenced_apply(
+    fence: &Fence,
+    calls: VecDeque<Call>,
+) -> (Result<BrightnessOutcome, BrightnessFailure>, usize) {
+    let gate = worker::RequestGate::default();
+    let budget = CallBudget {
+        deadline: Instant::now() + CALL_LIMIT,
+        cancelled: &|| false,
+        submission_gate: Some(&gate),
+        fence: Some(fence),
+    };
+    let mut controller = WmiBrightness::new(Script::new(calls));
+    let target = BrightnessTarget::from_display(&ActiveInternalDisplay::brightness_fixture(PATH, 2))
+        .unwrap();
+    let result =
+        controller.apply_with_budget(BrightnessRequest::SetPercent(40), Some(&target), &budget);
+    let pending = controller.native.calls.len();
+    // A refused fence must leave the gate unopened: a later submission
+    // attempt on the same request is cancelled rather than reported started.
+    (result, pending + usize::from(gate.begin().is_err()))
+}
+
+#[test]
+fn fence_rechecks_target_and_admission_after_preparation_before_the_gate() {
+    for (target, admit, reason) in [
+        (3, true, BrightnessError::PanelChanged),
+        (2, false, BrightnessError::Native(NativeFailure::AdmissionDenied)),
+    ] {
+        let fence = Fence {
+            target,
+            admit,
+            topologies: AtomicUsize::new(0),
+            admissions: AtomicUsize::new(0),
+        };
+        // The full targeted preflight reaches the one Set call, whose begin is
+        // refused by the fence. No readback follows a refused submission.
+        let (result, leftover) = fenced_apply(&fence, targeted_change(false));
+        let failure = result.unwrap_err();
+        assert_eq!(failure.reason, reason);
+        assert!(!failure.submission_may_have_occurred);
+        assert_eq!(leftover, 0, "gate stayed closed and no readback was taken");
+        assert_eq!(fence.topologies.load(Ordering::SeqCst), 1);
+        assert_eq!(fence.admissions.load(Ordering::SeqCst), usize::from(target == 2));
+    }
+}
+
+#[test]
+fn admitted_fence_allows_exactly_one_submission_and_readback() {
+    let fence = Fence {
+        target: 2,
+        admit: true,
+        topologies: AtomicUsize::new(0),
+        admissions: AtomicUsize::new(0),
+    };
+    let (result, leftover) = fenced_apply(&fence, targeted_change(true));
+    assert_eq!(
+        result,
+        Ok(BrightnessOutcome::Confirmed(snapshot(40, &[30, 40])))
+    );
+    // Gate already started: the extra probe fails with SubmissionAlreadyStarted.
+    assert_eq!(leftover, 1);
+    assert_eq!(fence.topologies.load(Ordering::SeqCst), 1);
+    assert_eq!(fence.admissions.load(Ordering::SeqCst), 1);
 }

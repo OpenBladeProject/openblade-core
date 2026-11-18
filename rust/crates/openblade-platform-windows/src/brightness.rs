@@ -140,6 +140,10 @@ pub enum NativeFailure {
     WorkerBusy,
     WorkerDisconnected,
     SubmissionAlreadyStarted,
+    /// The fenced fresh topology no longer identifies the admitted panel.
+    TargetChanged,
+    /// The host's lifetime, session or power admission no longer holds.
+    AdmissionDenied,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -170,6 +174,17 @@ pub struct CallBudget<'a> {
     deadline: Instant,
     cancelled: &'a dyn Fn() -> bool,
     submission_gate: Option<&'a RequestGate>,
+    fence: Option<&'a dyn SubmissionFence>,
+}
+
+/// Host authority re-checked at the one possible WmiSetBrightness invocation,
+/// after method rebinding and parameter preparation. A fresh internal-panel
+/// topology must still identify the admitted target, and the host's current
+/// lifetime/session/power admission must still hold. Either refusal occurs
+/// before the request gate opens, so it can never be a possible submission.
+pub trait SubmissionFence: Send + Sync {
+    fn topology(&self) -> Result<InternalDisplayTopology, DisplayReadError>;
+    fn admit(&self) -> bool;
 }
 
 impl CallBudget<'_> {
@@ -195,6 +210,7 @@ fn time_left(deadline: Instant) -> Result<Duration, NativeFailure> {
 pub struct Submission<'a> {
     budget: &'a CallBudget<'a>,
     completion_deadline: Option<Instant>,
+    panel: Option<&'a Panel>,
 }
 
 impl Submission<'_> {
@@ -203,6 +219,23 @@ impl Submission<'_> {
             return Err(NativeFailure::SubmissionAlreadyStarted);
         }
         self.budget.remaining()?;
+        if let Some(fence) = self.budget.fence {
+            let fresh = fence
+                .topology()
+                .ok()
+                .and_then(|topology| Panel::from_topology(topology).ok());
+            if !self
+                .panel
+                .zip(fresh.as_ref())
+                .is_some_and(|(admitted, fresh)| admitted.same_as(fresh))
+            {
+                return Err(NativeFailure::TargetChanged);
+            }
+            if !fence.admit() {
+                return Err(NativeFailure::AdmissionDenied);
+            }
+            self.budget.remaining()?;
+        }
         if let Some(gate) = self.budget.submission_gate {
             gate.begin()?;
         }
@@ -419,13 +452,15 @@ impl<N: WmiBrightnessNative> WmiBrightness<N> {
         let mut submission = Submission {
             budget: admission,
             completion_deadline: None,
+            panel: Some(&panel),
         };
         let response = self.native.set_brightness(method, target, &mut submission);
         *submitted = submission.completion_deadline.is_some();
         if !*submitted {
-            return Err(BrightnessError::Native(
-                response.err().unwrap_or(NativeFailure::InvalidData),
-            ));
+            return Err(match response.err().unwrap_or(NativeFailure::InvalidData) {
+                NativeFailure::TargetChanged => BrightnessError::PanelChanged,
+                failure => BrightnessError::Native(failure),
+            });
         }
 
         let ack = response
@@ -578,6 +613,7 @@ fn budget(cancelled: &dyn Fn() -> bool) -> CallBudget<'_> {
         deadline: Instant::now() + CALL_LIMIT,
         cancelled,
         submission_gate: None,
+        fence: None,
     }
 }
 
