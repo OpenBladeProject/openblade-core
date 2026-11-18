@@ -50,8 +50,10 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         bool agentBattery = features.Contains("agent-battery-report-v1", StringComparer.Ordinal);
         bool agentDisplay = features.Contains("agent-display-query-v1", StringComparer.Ordinal);
         bool agentWrite = features.Contains("agent-display-brightness-write-v1", StringComparer.Ordinal);
+        bool agentHdr = features.Contains("agent-display-hdr-write-v1", StringComparer.Ordinal);
         if (agentWrite && !agentDisplay) { throw new InvalidDataException("Brightness write requires the display query contract."); }
-        if ((agentBattery || agentDisplay || agentWrite) && !features.Contains("native-agent-entry-compile-check", StringComparer.Ordinal)) { throw new InvalidDataException("Selected Agent queries require the native Agent entry."); }
+        if (agentHdr && !agentDisplay) { throw new InvalidDataException("HDR write requires the display query contract."); }
+        if ((agentBattery || agentDisplay || agentWrite || agentHdr) && !features.Contains("native-agent-entry-compile-check", StringComparer.Ordinal)) { throw new InvalidDataException("Selected Agent queries require the native Agent entry."); }
         if (temporary && !battery) { throw new InvalidDataException("Temporary charge requires shared battery custody."); }
         if (battery && !fan) { throw new InvalidDataException("Battery mutation requires shared fan custody."); }
         if (fan && !mutation) { throw new InvalidDataException("Fan mutation requires the thermal custody contract."); }
@@ -59,7 +61,7 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         if (observation && (!hardware || metadata)) { throw new InvalidDataException("Mailbox observation requires its exclusive acquisition composition."); }
         if (schema == 1)
         {
-            if (metadata || hardware || agentBattery || agentDisplay || agentWrite) { throw new InvalidDataException("Legacy artifacts cannot assert v2 composition."); }
+            if (metadata || hardware || agentBattery || agentDisplay || agentWrite || agentHdr) { throw new InvalidDataException("Legacy artifacts cannot assert v2 composition."); }
             return;
         }
         string expected = "none";
@@ -75,10 +77,15 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         }
         if (role == "agent")
         {
-            expected = agentBattery && agentWrite ? "agent-battery-report-v1,session-display-query-partial-v1,session-display-brightness-write-partial-v1"
-                : agentWrite ? "session-display-query-partial-v1,session-display-brightness-write-partial-v1"
-                : agentBattery && agentDisplay ? "agent-battery-report-v1,session-display-query-partial-v1"
-                : agentBattery ? "agent-battery-report-v1" : agentDisplay ? "session-display-query-partial-v1" : "none";
+            // Each selected Agent contract in fixed order; both writes require the display query.
+            string[] selected = [.. new (bool Selected, string Marker)[]
+            {
+                (agentBattery, "agent-battery-report-v1"),
+                (agentDisplay, "session-display-query-partial-v1"),
+                (agentWrite, "session-display-brightness-write-partial-v1"),
+                (agentHdr, "session-display-hdr-write-partial-v1"),
+            }.Where(entry => entry.Selected).Select(entry => entry.Marker)];
+            expected = selected.Length == 0 ? "none" : string.Join(',', selected);
         }
         if (capabilities != expected) { throw new InvalidDataException("Native capabilities differ from the authenticated role composition."); }
     }

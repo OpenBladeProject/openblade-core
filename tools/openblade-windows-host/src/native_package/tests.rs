@@ -938,3 +938,80 @@ fn selected_partial_display_brightness_write_capability_is_exact_and_read_only_b
     }
     assert!(capabilities(2, "service", selected, write).is_err());
 }
+
+#[test]
+fn selected_partial_display_hdr_write_capability_is_exact_and_other_builds_cannot_claim_it() {
+    const QUERY: &str = "session-display-query-partial-v1";
+    const BRIGHTNESS: &str = "session-display-brightness-write-partial-v1";
+    const HDR: &str = "session-display-hdr-write-partial-v1";
+    const BATTERY: &str = "agent-battery-report-v1";
+    let entry = "native-agent-entry-compile-check";
+    for battery in [false, true] {
+        for brightness in [false, true] {
+            let mut features = vec![
+                "agent-display-hdr-write-v1",
+                "agent-display-query-v1",
+                entry,
+            ];
+            let mut markers = vec![QUERY, HDR];
+            if brightness {
+                features.push("agent-display-brightness-write-v1");
+                markers.insert(1, BRIGHTNESS);
+            }
+            if battery {
+                features.push("agent-battery-report-v1");
+                markers.insert(0, BATTERY);
+            }
+            features.sort();
+            let selected = features.join(",");
+            let expected = markers.join(",");
+            assert!(capabilities(2, "agent", &selected, &expected).is_ok());
+            assert!(capabilities(1, "agent", &selected, &expected).is_err());
+            assert!(capabilities(2, "service", &selected, &expected).is_err());
+            // The write needs both the display query and the native entry.
+            for missing in ["agent-display-query-v1", entry] {
+                let partial: Vec<_> = features.iter().copied().filter(|f| *f != missing).collect();
+                assert!(capabilities(2, "agent", &partial.join(","), &expected).is_err());
+            }
+            let without_hdr: Vec<_> = markers.iter().copied().filter(|m| *m != HDR).collect();
+            let reordered = {
+                let mut reordered = markers.clone();
+                let hdr = reordered.pop().unwrap();
+                reordered.insert(reordered.len() - 1, hdr);
+                reordered.join(",")
+            };
+            for forged in [
+                "none".to_owned(),
+                without_hdr.join(","),
+                HDR.to_owned(),
+                format!("{expected},{HDR}"),
+                reordered,
+            ] {
+                assert!(
+                    capabilities(2, "agent", &selected, &forged).is_err(),
+                    "{forged}"
+                );
+            }
+        }
+    }
+    // Query-only and brightness-only builds cannot claim the HDR marker.
+    for (features, markers) in [
+        (
+            "agent-display-query-v1,native-agent-entry-compile-check",
+            vec![QUERY],
+        ),
+        (
+            "agent-display-brightness-write-v1,agent-display-query-v1,native-agent-entry-compile-check",
+            vec![QUERY, BRIGHTNESS],
+        ),
+        (
+            "agent-battery-report-v1,agent-display-brightness-write-v1,agent-display-query-v1,native-agent-entry-compile-check",
+            vec![BATTERY, QUERY, BRIGHTNESS],
+        ),
+    ] {
+        assert!(capabilities(2, "agent", features, &markers.join(",")).is_ok());
+        let mut claimed = markers.clone();
+        claimed.push(HDR);
+        assert!(capabilities(2, "agent", features, &claimed.join(",")).is_err());
+    }
+}

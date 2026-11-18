@@ -670,10 +670,13 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     let agent_battery = has("agent-battery-report-v1");
     let agent_display = has("agent-display-query-v1");
     let agent_write = has("agent-display-brightness-write-v1");
-    if agent_write && !agent_display {
+    let agent_hdr = has("agent-display-hdr-write-v1");
+    if (agent_write || agent_hdr) && !agent_display {
         return Err(deny());
     }
-    if (agent_battery || agent_display || agent_write) && !has("native-agent-entry-compile-check") {
+    if (agent_battery || agent_display || agent_write || agent_hdr)
+        && !has("native-agent-entry-compile-check")
+    {
         return Err(deny());
     }
     if temporary && !battery {
@@ -692,7 +695,8 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         return Err(deny());
     }
     if schema == 1 {
-        return if metadata || hardware || agent_battery || agent_display || agent_write {
+        return if metadata || hardware || agent_battery || agent_display || agent_write || agent_hdr
+        {
             Err(deny())
         } else {
             Ok(())
@@ -714,6 +718,18 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     {
         return Err(deny());
     }
+    // Each selected Agent contract in fixed order; the write features already
+    // require the display query above.
+    let agent = [
+        (agent_battery, "agent-battery-report-v1"),
+        (agent_display, "session-display-query-partial-v1"),
+        (agent_write, "session-display-brightness-write-partial-v1"),
+        (agent_hdr, "session-display-hdr-write-partial-v1"),
+    ]
+    .into_iter()
+    .filter_map(|(selected, marker)| selected.then_some(marker))
+    .collect::<Vec<_>>()
+    .join(",");
     let expected = if role == "service" {
         if metadata == hardware || !has("startup-custody-v1") || hardware != firmware {
             return Err(deny());
@@ -733,18 +749,10 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         } else {
             "private-service-custody-v1"
         }
-    } else if agent_battery && agent_write {
-        "agent-battery-report-v1,session-display-query-partial-v1,session-display-brightness-write-partial-v1"
-    } else if agent_write {
-        "session-display-query-partial-v1,session-display-brightness-write-partial-v1"
-    } else if agent_battery && agent_display {
-        "agent-battery-report-v1,session-display-query-partial-v1"
-    } else if agent_battery {
-        "agent-battery-report-v1"
-    } else if agent_display {
-        "session-display-query-partial-v1"
-    } else {
+    } else if agent.is_empty() {
         "none"
+    } else {
+        &agent
     };
     if value != expected {
         return Err(deny());

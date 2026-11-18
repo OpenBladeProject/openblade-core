@@ -2,6 +2,7 @@ use std::{env, fs, path::PathBuf, process::Command};
 
 fn main() {
     println!("cargo::rustc-check-cfg=cfg(openblade_metadata_acquisition_probe)");
+    println!("cargo::rustc-check-cfg=cfg(openblade_display_write)");
     for name in ["OPENBLADE_NATIVE_BUILD_NONCE", "OPENBLADE_NATIVE_SOURCE"] {
         println!("cargo:rerun-if-env-changed={name}");
     }
@@ -61,6 +62,29 @@ fn main() {
     let compiler = String::from_utf8(compiler.stdout).expect("compiler UTF-8");
     let target = env::var("TARGET").expect("target");
     let profile = env::var("PROFILE").expect("profile");
+    // Selected Agent contracts in fixed order. Both partial display writes
+    // imply the display query feature.
+    let agent = [
+        ("agent-battery-report-v1", "agent-battery-report-v1"),
+        ("agent-display-query-v1", "session-display-query-partial-v1"),
+        (
+            "agent-display-brightness-write-v1",
+            "session-display-brightness-write-partial-v1",
+        ),
+        (
+            "agent-display-hdr-write-v1",
+            "session-display-hdr-write-partial-v1",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(feature, marker)| has(feature).then_some(marker))
+    .collect::<Vec<_>>()
+    .join(",");
+    // Shared write infrastructure (power admission, recovery, fence) for either
+    // selected partial display write.
+    if has("agent-display-brightness-write-v1") || has("agent-display-hdr-write-v1") {
+        println!("cargo::rustc-cfg=openblade_display_write");
+    }
     for (role, name) in [
         ("service", "service_identity.rs"),
         ("agent", "agent_identity.rs"),
@@ -88,20 +112,8 @@ fn main() {
             } else {
                 "private-service-custody-v1"
             }
-        } else if role == "agent"
-            && has("agent-battery-report-v1")
-            && has("agent-display-brightness-write-v1")
-        {
-            "agent-battery-report-v1,session-display-query-partial-v1,session-display-brightness-write-partial-v1"
-        } else if role == "agent" && has("agent-display-brightness-write-v1") {
-            "session-display-query-partial-v1,session-display-brightness-write-partial-v1"
-        } else if role == "agent" && has("agent-battery-report-v1") && has("agent-display-query-v1")
-        {
-            "agent-battery-report-v1,session-display-query-partial-v1"
-        } else if role == "agent" && has("agent-battery-report-v1") {
-            "agent-battery-report-v1"
-        } else if role == "agent" && has("agent-display-query-v1") {
-            "session-display-query-partial-v1"
+        } else if role == "agent" && !agent.is_empty() {
+            &agent
         } else {
             "none"
         };

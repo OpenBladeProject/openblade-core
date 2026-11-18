@@ -18,6 +18,9 @@ path = "src/discover.rs"
 agent-display-query-v1 = ["native-agent-entry-compile-check"]
 # Partial display mutation: manual setBrightness only. Query-only builds stay read-only.
 agent-display-brightness-write-v1 = ["agent-display-query-v1"]
+# Partial display mutation: manual setHdr only, through the separately
+# selected production SET_HDR_STATE writer. It does not imply brightness writes.
+agent-display-hdr-write-v1 = ["agent-display-query-v1", "openblade-platform-windows/display-hdr-write"]
 agent-battery-report-v1 = ["native-agent-entry-compile-check"]
 native-agent-entry-compile-check = ["windows-sys/Win32_System_RemoteDesktop"]
 cpu-worker-fixture = []
