@@ -88,6 +88,13 @@ fn main() {
             } else {
                 "private-service-custody-v1"
             }
+        } else if role == "agent"
+            && has("agent-battery-report-v1")
+            && has("agent-display-brightness-write-v1")
+        {
+            "agent-battery-report-v1,session-display-query-partial-v1,session-display-brightness-write-partial-v1"
+        } else if role == "agent" && has("agent-display-brightness-write-v1") {
+            "session-display-query-partial-v1,session-display-brightness-write-partial-v1"
         } else if role == "agent" && has("agent-battery-report-v1") && has("agent-display-query-v1")
         {
             "agent-battery-report-v1,session-display-query-partial-v1"

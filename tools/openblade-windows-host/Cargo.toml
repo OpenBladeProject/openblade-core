@@ -16,6 +16,8 @@ path = "src/discover.rs"
 
 [features]
 agent-display-query-v1 = ["native-agent-entry-compile-check"]
+# Partial display mutation: manual setBrightness only. Query-only builds stay read-only.
+agent-display-brightness-write-v1 = ["agent-display-query-v1"]
 agent-battery-report-v1 = ["native-agent-entry-compile-check"]
 native-agent-entry-compile-check = ["windows-sys/Win32_System_RemoteDesktop"]
 cpu-worker-fixture = []

@@ -886,3 +886,55 @@ fn selected_partial_display_query_capability_is_exact_and_composes_with_battery(
     );
     assert!(capabilities(2, "service", combined, both).is_err());
 }
+
+#[test]
+fn selected_partial_display_brightness_write_capability_is_exact_and_read_only_builds_cannot_claim_it() {
+    let write = "session-display-query-partial-v1,session-display-brightness-write-partial-v1";
+    let battery_write = "agent-battery-report-v1,session-display-query-partial-v1,session-display-brightness-write-partial-v1";
+    let selected = "agent-display-brightness-write-v1,agent-display-query-v1,native-agent-entry-compile-check";
+    assert!(capabilities(2, "agent", selected, write).is_ok());
+    assert!(capabilities(1, "agent", selected, write).is_err());
+    assert!(
+        capabilities(
+            2,
+            "agent",
+            "agent-display-brightness-write-v1,native-agent-entry-compile-check",
+            write
+        )
+        .is_err()
+    );
+    assert!(
+        capabilities(
+            2,
+            "agent",
+            "agent-display-brightness-write-v1,agent-display-query-v1",
+            write
+        )
+        .is_err()
+    );
+    for forged in [
+        "none",
+        "session-display-query-partial-v1",
+        "session-display-brightness-write-partial-v1",
+        "session-display-brightness-write-partial-v1,session-display-query-partial-v1",
+        "agent-battery-report-v1,session-display-query-partial-v1",
+        battery_write,
+        "session-display-query-partial-v1,session-display-brightness-write-partial-v1,session-display-brightness-write-partial-v1",
+    ] {
+        assert!(capabilities(2, "agent", selected, forged).is_err());
+    }
+    let query_only = "agent-display-query-v1,native-agent-entry-compile-check";
+    assert!(capabilities(2, "agent", query_only, write).is_err());
+    assert!(capabilities(2, "agent", query_only, battery_write).is_err());
+    let combined = "agent-battery-report-v1,agent-display-brightness-write-v1,agent-display-query-v1,native-agent-entry-compile-check";
+    assert!(capabilities(2, "agent", combined, battery_write).is_ok());
+    for forged in [
+        write,
+        "agent-battery-report-v1,session-display-query-partial-v1",
+        "session-display-query-partial-v1,session-display-brightness-write-partial-v1,agent-battery-report-v1",
+        "agent-battery-report-v1,session-display-brightness-write-partial-v1,session-display-query-partial-v1",
+    ] {
+        assert!(capabilities(2, "agent", combined, forged).is_err());
+    }
+    assert!(capabilities(2, "service", selected, write).is_err());
+}

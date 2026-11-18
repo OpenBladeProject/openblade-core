@@ -669,7 +669,11 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     let temporary = has("service-temporary-charge-v1");
     let agent_battery = has("agent-battery-report-v1");
     let agent_display = has("agent-display-query-v1");
-    if (agent_battery || agent_display) && !has("native-agent-entry-compile-check") {
+    let agent_write = has("agent-display-brightness-write-v1");
+    if agent_write && !agent_display {
+        return Err(deny());
+    }
+    if (agent_battery || agent_display || agent_write) && !has("native-agent-entry-compile-check") {
         return Err(deny());
     }
     if temporary && !battery {
@@ -688,7 +692,7 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         return Err(deny());
     }
     if schema == 1 {
-        return if metadata || hardware || agent_battery || agent_display {
+        return if metadata || hardware || agent_battery || agent_display || agent_write {
             Err(deny())
         } else {
             Ok(())
@@ -729,6 +733,10 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         } else {
             "private-service-custody-v1"
         }
+    } else if agent_battery && agent_write {
+        "agent-battery-report-v1,session-display-query-partial-v1,session-display-brightness-write-partial-v1"
+    } else if agent_write {
+        "session-display-query-partial-v1,session-display-brightness-write-partial-v1"
     } else if agent_battery && agent_display {
         "agent-battery-report-v1,session-display-query-partial-v1"
     } else if agent_battery {
