@@ -50,6 +50,12 @@ Wave retain the typed MCU implementation. Imported sequences use the same
 keyboard-only renderer with the exact RZ09-0529 114-slot sequence layout; they
 do not include auxiliary row 6.
 
+Each submitted frame uses six acknowledged keyboard rows. The HID session
+waits 30 ms before reading each acknowledgment, so the row exchanges take at
+least 180 ms before accounting for HID I/O. For imported sequences, the animation
+scheduler waits at least 50 ms after each update and samples the sequence against
+elapsed time, so short timeline frames can be skipped.
+
 The input map keeps 94 ordinary keyboard scan bindings common to all nine
 layouts. It excludes vendor `dkm` identifiers, auxiliary-row inputs and regional
 Enter/backslash/Alt disagreements. Spatial Ripple additionally needs a common
@@ -147,7 +153,7 @@ previous duration. Sleep-policy mutation remains unavailable because the entire
 original state cannot yet be independently saved and restored. This limitation
 does not apply to the independent VC enabled flag.
 
-Service IPC is 83, machine profile schema 27, override schema 10 and exported
+Service IPC is 84, machine profile schema 27, override schema 10 and exported
 profile schema 18. Old documents cannot introduce non-null zone-control intent;
 ordinary prior settings migrate without opting in to the new fields.
 

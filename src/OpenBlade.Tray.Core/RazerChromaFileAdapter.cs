@@ -312,6 +312,7 @@ public static partial class RazerChromaFileAdapter
         Add(1, 12, 0x0C);
         Add(1, 13, 0x0D);
         Add(1, 14, 0x0E);
+        Add(1, 15, 0x52, extended: true);
         Add(2, 1, 0x0F);
         for (int index = 0; index < 10; index++)
         {
@@ -319,6 +320,7 @@ public static partial class RazerChromaFileAdapter
         }
         Add(2, 12, 0x1A);
         Add(2, 13, 0x1B);
+        Add(2, 15, 0x53, extended: true);
         Add(3, 14, 0x1C);
         Add(3, 1, 0x3A);
         for (int index = 0; index < 9; index++)

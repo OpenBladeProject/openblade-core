@@ -2212,6 +2212,7 @@ type static class OpenBlade.Contracts.LightingSettingsFactory
   method static OpenBlade.Contracts.LightingSettings NormalizeLegacyInvisibleEffect(OpenBlade.Contracts.LightingSettings settings)
   method static OpenBlade.Contracts.LightingSettings NormalizeLegacyOff(OpenBlade.Contracts.LightingSettings settings)
   method static OpenBlade.Contracts.LightingSettings Off()
+  method static OpenBlade.Contracts.LightingSettings PreserveLegacyIndependentIntent(OpenBlade.Contracts.LightingSettings settings)
   method static OpenBlade.Contracts.LightingSettings Reactive(OpenBlade.Contracts.RgbColor color, System.Byte brightness, OpenBlade.Contracts.ReactiveLightingDuration duration)
   method static OpenBlade.Contracts.LightingSettings Ripple(OpenBlade.Contracts.RgbColor color, System.Byte brightness)
   method static OpenBlade.Contracts.LightingSettings Sequence(System.String layoutId, System.String timelineBase64, System.Boolean loop, System.Byte brightness)
@@ -2223,6 +2224,7 @@ type static class OpenBlade.Contracts.LightingSettingsFactory
   method static OpenBlade.Contracts.LightingSettings Tidal(OpenBlade.Contracts.RgbColor primaryColor, OpenBlade.Contracts.RgbColor secondaryColor, System.Boolean randomColors, OpenBlade.Contracts.LightingDirection direction, System.Byte brightness)
   method static OpenBlade.Contracts.LightingSettings Wave(OpenBlade.Contracts.LightingDirection direction, System.Byte brightness)
   method static OpenBlade.Contracts.LightingSettings Wheel(OpenBlade.Contracts.LightingRotationDirection direction, System.Byte brightness)
+  method static OpenBlade.Contracts.ProfileSet PreserveLegacyIndependentProfileIntent(OpenBlade.Contracts.ProfileSet profiles)
   method static OpenBlade.Contracts.RgbColor get_DefaultVisibleColor()
   property OpenBlade.Contracts.RgbColor DefaultVisibleColor { get; }
 type static class OpenBlade.Contracts.LightingSettingsValidation

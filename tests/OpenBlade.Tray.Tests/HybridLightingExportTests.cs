@@ -60,6 +60,35 @@ public sealed class HybridLightingExportTests
     }
 
     [Theory]
+    [InlineData(17, false)]
+    [InlineData(18, true)]
+    public void ExportPreservesIndependentFieldsWithTheirOriginalAuthority(
+        int schema, bool controlsKeyboardEffect)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        LightingSettings lighting = LightingSettingsFactory.SpectrumCycling(70) with
+        {
+            ControlsKeyboardEffect = true,
+            IndependentControls = new(42, null),
+        };
+        var application = new ApplicationProfileDefinition(
+            Guid.NewGuid(), "Game", @"C:\Games\game.exe", ApplicationActivationMode.Foreground,
+            new ApplicationProfileOverrideSet { UsbC = new ApplicationPowerProfileOverride { Lighting = lighting } });
+        JsonNode document = CurrentDocument(defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Lighting = lighting },
+            ApplicationProfiles = [application],
+        });
+        document["schemaVersion"] = schema;
+
+        ProfileSet imported = ProfileExportSerializer.Deserialize(document.ToJsonString());
+
+        LightingSettings expected = lighting with { ControlsKeyboardEffect = controlsKeyboardEffect };
+        Assert.Equal(expected, imported.PluggedIn.Lighting);
+        Assert.Equal(expected, Assert.Single(imported.ApplicationProfiles).Overrides.UsbC!.Lighting);
+    }
+
+    [Theory]
     [InlineData("controlsKeyboardEffect")]
     [InlineData("ControlsKeyboardEffect")]
     [InlineData("CONTROLSKEYBOARDEFFECT")]

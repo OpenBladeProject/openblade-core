@@ -37,6 +37,38 @@ public sealed partial class SourceReviewedBladeModelTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Rz090529_RecoveryPreservesReadableFieldsWhenVaporChamberQueryFails(bool retireSession)
+    {
+        var session = new Session
+        {
+            McuLighting = [0, 5, 1, 0, 0, 1, 11, 22, 33, 0, 0, 0],
+            RejectVaporChamberQuery = true,
+            RetireOnQueryFailure = retireSession,
+        };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x02C7));
+        policy.RequireRecovery(ExperimentalRecoveryScope.All);
+        await using var port = CreateRz090529Frames(session, policy);
+
+        if (retireSession)
+        {
+            await Assert.ThrowsAnyAsync<IOException>(() => port.ReadRecoveryStateAsync(default));
+            Assert.DoesNotContain(session.Commands, command => command.ClassId == 0 && command.CommandId == 0xD9);
+            return;
+        }
+
+        ConfirmedDeviceState observed = await port.ReadRecoveryStateAsync(default);
+        Assert.Equal(PerformancePreset.Balanced, observed.Performance);
+        Assert.Equal(LightingSettingsFactory.Static(new(11, 22, 33), 50), observed.Lighting);
+        Assert.Equal(new IndependentLightingSettings(50, LogoLightingMode.Static,
+            VaporChamberLightingEnabled: null, TouchpadStatusIndicatorEnabled: true),
+            observed.IndependentLighting);
+        Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
+        Assert.True(policy.IsPaused);
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(99)]
     public void RecoveryScope_CannotNarrowBatteryOrUnknownObligation(int strictScope)

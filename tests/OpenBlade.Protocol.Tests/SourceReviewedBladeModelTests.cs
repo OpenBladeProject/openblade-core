@@ -513,6 +513,7 @@ public sealed partial class SourceReviewedBladeModelTests
         internal bool RetireOnQueryFailure;
         private RazerCommandSessionDisposition disposition;
         internal bool RejectLogoQuery;
+        internal bool RejectVaporChamberQuery;
         internal byte Fan1 = 45;
         internal byte Fan2 = 45;
         internal byte[] DynamicFanRange = [0, 0, 0, 0, 0, 0, 37, 0, 45, 0, 53, 0];
@@ -556,7 +557,9 @@ public sealed partial class SourceReviewedBladeModelTests
                 || RejectAdapterQuery && command.ClassId == 0x07 && command.CommandId == 0x8C
                 || RejectDynamicFanRange && command.ClassId == 0x0D && command.CommandId == 0x83
                 || RejectLightingQuery && command.ClassId == 0x03 && command.CommandId >= 0x80
-                || RejectLogoQuery && command.ClassId == 0x03 && command.CommandId is 0x80 or 0x82)
+                || RejectLogoQuery && command.ClassId == 0x03 && command.CommandId is 0x80 or 0x82
+                || RejectVaporChamberQuery && command.ClassId == 0x03 && command.CommandId == 0x80
+                    && command.Arguments.Span[1] == 38)
             {
                 if (RetireOnQueryFailure)
                 {

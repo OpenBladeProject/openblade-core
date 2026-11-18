@@ -189,6 +189,7 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(before + 1, context.Device.LightingSetCalls);
         Assert.Equal(new IndependentLightingSettings(42, null), Assert.Single(context.Device.IndependentLightingWrites));
         Assert.Equal(effect.Effect, context.Runtime.GetStatus().LightingOverride!.Value.Effect);
+        Assert.False(context.Runtime.GetStatus().LightingOverride!.Value.ControlsKeyboardEffect);
         Assert.Equal(new IndependentLightingSettings(42, null), context.Runtime.GetStatus().LightingOverride!.Value.IndependentControls);
         Assert.Null(context.Runtime.GetStatus().ConfirmedState!.Lighting);
     }

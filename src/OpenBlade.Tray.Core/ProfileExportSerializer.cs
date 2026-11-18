@@ -15,6 +15,8 @@ public static class ProfileExportSerializer
     public const int CurrentSchemaVersion = 18;
     public const int MaximumFileSizeBytes = 1024 * 1024;
 
+    private const int KeyboardEffectControlSchemaVersion = 17;
+
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
         {
@@ -102,7 +104,9 @@ public static class ProfileExportSerializer
         ValidateThxAudio(profiles);
         ValidateApplicationProfiles(profiles);
         ValidateIndependentLighting(profiles);
-        return profiles;
+        return schemaVersion == KeyboardEffectControlSchemaVersion
+            ? LightingSettingsFactory.PreserveLegacyIndependentProfileIntent(profiles)
+            : profiles;
     }
 
     private static int ReadSchemaVersion(string json)
@@ -129,7 +133,7 @@ public static class ProfileExportSerializer
             {
                 RejectLegacyIndependentLighting(document.RootElement);
             }
-            if (schemaVersion < 17)
+            if (schemaVersion < KeyboardEffectControlSchemaVersion)
             {
                 RejectLegacyKeyboardEffectControl(document.RootElement);
             }

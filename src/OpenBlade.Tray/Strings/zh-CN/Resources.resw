@@ -3090,6 +3090,9 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_KeyColorEditor_Apply" xml:space="preserve">
     <value>应用颜色</value>
   </data>
+  <data name="MainWindow_KeyColorEditor_DraftChanged" xml:space="preserve">
+    <value>打开颜色选择器后，灯光设置已更改。请重新打开颜色选择器以编辑当前设置。</value>
+  </data>
   <data name="MainWindow_KeyColorEditor_FailedTitle" xml:space="preserve">
     <value>无法应用键盘颜色</value>
   </data>

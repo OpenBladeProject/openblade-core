@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -332,6 +333,44 @@ public static class LightingSettingsFactory
             && settings.Brightness == 0
                 ? settings with { Parameters = Off().Parameters }
                 : settings;
+    }
+
+    // Older schemas applied only the independent fields on hybrid devices.
+    // Keep their saved effect as context without granting it write authority.
+    [return: NotNullIfNotNull(nameof(settings))]
+    public static LightingSettings? PreserveLegacyIndependentIntent(LightingSettings? settings) =>
+        settings is { ControlsKeyboardEffect: true, IndependentControls: not null }
+            ? settings with { ControlsKeyboardEffect = false }
+            : settings;
+
+    public static ProfileSet PreserveLegacyIndependentProfileIntent(ProfileSet profiles)
+    {
+        static PowerProfile PreservePowerProfile(PowerProfile profile) =>
+            profile with { Lighting = PreserveLegacyIndependentIntent(profile.Lighting) };
+
+        static ApplicationPowerProfileOverride? PreserveOverride(ApplicationPowerProfileOverride? profile) =>
+            profile is { Lighting: { } lighting }
+                ? profile with { Lighting = PreserveLegacyIndependentIntent(lighting) }
+                : profile;
+
+        return profiles with
+        {
+            PluggedIn = PreservePowerProfile(profiles.PluggedIn),
+            Battery = PreservePowerProfile(profiles.Battery),
+            UsbC = PreservePowerProfile(profiles.UsbC),
+            ApplicationProfiles = profiles.ApplicationProfiles?.Select(application =>
+                application is { Overrides: { } overrides }
+                    ? application with
+                    {
+                        Overrides = overrides with
+                        {
+                            PluggedIn = PreserveOverride(overrides.PluggedIn),
+                            Battery = PreserveOverride(overrides.Battery),
+                            UsbC = PreserveOverride(overrides.UsbC),
+                        },
+                    }
+                    : application).ToArray()!,
+        };
     }
 
     public static LightingSettings NormalizeLegacyInvisibleEffect(

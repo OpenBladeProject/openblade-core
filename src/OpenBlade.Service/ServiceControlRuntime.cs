@@ -15223,13 +15223,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ScopedApplyOutcome outcome,
             CancellationToken token)
     {
+        bool independentOnly = subsystem == DeviceSubsystem.Lighting
+            && desired.Lighting.Value.IndependentControls is not null
+            && UsesIndependentLightingIntent(outcome.Capabilities ?? GetStatus().Capabilities, desired.Lighting.Value);
         ConfirmedDeviceState? confirmed = cachedConfirmed;
-        if (outcome.Readback is not null)
+        if (outcome.Readback is { } readback)
         {
             confirmed = MergeScopedReadback(
                 subsystem,
                 cachedConfirmed,
-                outcome.Readback,
+                readback,
                 subsystem == DeviceSubsystem.Lighting ? desired.Lighting.Value.IndependentControls : null);
             driftTracker.Observe(confirmed);
         }
@@ -15242,6 +15245,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         LightingRendererOwnershipState observed =
             await PublishObservedLightingOwnershipAsync(device, token)
                 .ConfigureAwait(false);
+        if (independentOnly)
+        {
+            return (outcome, confirmed);
+        }
         LightingSettings requested = desired.Lighting.Value;
         if (outcome.Result.Status is ControlResultStatus.Applied
                 or ControlResultStatus.Unchanged
@@ -16539,6 +16546,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             DeviceSubsystem.Lighting);
         if (lightingResult.Status is ControlResultStatus.Applied
                 or ControlResultStatus.Unchanged
+            && !UsesIndependentLightingIntent(outcome.Capabilities ?? GetStatus().Capabilities, desired.Lighting.Value)
             && !LightingOwnershipMatches(device, observedLightingOwnership, desired.Lighting.Value))
         {
             if (outcome.Readback is { } readback
@@ -16696,6 +16704,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             // result supersedes that queue; native effects still need no stream.
             bool lightingAccepted = lightingResult.Status is ControlResultStatus.Applied
                     or ControlResultStatus.Unchanged
+                && !UsesIndependentLightingIntent(outcome.Capabilities ?? GetStatus().Capabilities, desired.Lighting.Value)
                 && LightingOwnershipMatches(device, observedLightingOwnership, desired.Lighting.Value);
             UpdateOwnedLightingSnapshot(
                 observedLightingOwnership,
@@ -19204,7 +19213,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     {
                         IndependentControls = SuppressIndependentBrightness(desired.Lighting.Value.IndependentControls, suppressed: true),
                     }
-                    : LightingSettingsFactory.Off() with { ControlsKeyboardEffect = desired.Lighting.Value.ControlsKeyboardEffect },
+                    : LightingSettingsFactory.Off() with
+                    {
+                        ControlsKeyboardEffect = desired.Lighting.Value.ControlsKeyboardEffect,
+                        IndependentControls = SuppressIndependentBrightness(desired.Lighting.Value.IndependentControls, suppressed: true),
+                    },
             },
         };
     }

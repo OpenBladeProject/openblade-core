@@ -57,6 +57,22 @@ public sealed class KeyboardKeyColorEditor
         frames = [new(DefaultFrameDurationMilliseconds, colors.ToArray())];
     }
 
+    public static KeyboardKeyColorEditor FromDraft(LightingSettings draft)
+    {
+        // Unmanaged intent may still carry a saved sequence for another model.
+        // Seed this keyboard from the default color without projecting those slots.
+        if (draft.Parameters is SequenceLightingParameters { LayoutId: not KeyboardLightingLayoutIds.Rz09_0529 })
+        {
+            draft = LightingSettingsFactory.Static(
+                LightingSettingsFactory.DefaultVisibleColor, draft.Brightness) with
+            {
+                IndependentControls = draft.IndependentControls,
+            };
+        }
+
+        return new(draft);
+    }
+
     public IReadOnlyList<RgbColor> Colors => Array.AsReadOnly(colors);
 
     public bool HasChanges => editedSlots.Count != 0;

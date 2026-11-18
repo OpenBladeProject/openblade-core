@@ -495,6 +495,13 @@ public sealed class BatteryConfigurationStore
             ProfileStore.RejectKeyboardEffectControlInLegacySchema(preferencesElement);
         }
         BatteryAutomationPreferences preferences = document.Preferences;
+        if (expectedSchemaVersion == ProfileStore.KeyboardEffectControlSchemaVersion)
+        {
+            preferences = preferences with
+            {
+                LastKnownLighting = LightingSettingsFactory.PreserveLegacyIndependentIntent(preferences.LastKnownLighting),
+            };
+        }
         if (expectedSchemaVersion >= ProfileStore.FanStopSettingsSchemaVersion
             && (!preferencesElement.TryGetProperty("fanStopSettings", out JsonElement stopSettings)
                 || stopSettings.ValueKind != JsonValueKind.Object || preferences.FanStopSettings is null))

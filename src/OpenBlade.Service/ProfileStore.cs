@@ -301,6 +301,10 @@ public sealed class ProfileStore
                 UsbC = profiles.UsbC with { StopFansInBatterySaver = false },
             };
         }
+        if (schemaVersion == KeyboardEffectControlSchemaVersion)
+        {
+            profiles = LightingSettingsFactory.PreserveLegacyIndependentProfileIntent(profiles);
+        }
         validator.ValidateStoredCustomIntent(profiles);
         return profiles;
     }

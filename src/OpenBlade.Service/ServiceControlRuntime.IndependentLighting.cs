@@ -42,6 +42,7 @@ public sealed partial class ServiceControlRuntime
                 // nor its confirmation invents an active keyboard effect.
                 var staged = new ManualOverride<LightingSettings>(intent with
                 {
+                    ControlsKeyboardEffect = false,
                     IndependentControls = fields,
                 }, value.Lifetime);
                 await SetLightingOverrideCoreAsync(staged, cancellationToken).ConfigureAwait(false);

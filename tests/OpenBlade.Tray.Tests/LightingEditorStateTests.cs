@@ -62,6 +62,30 @@ public sealed class LightingEditorStateTests
     }
 
     [Fact]
+    public void EditingKeyboardBrightnessAndLogoKeepsOnlyUnrelatedIndependentFields()
+    {
+        var editor = new LightingEditorState();
+        editor.Load(LightingSettingsFactory.Static(new(1, 2, 3), 50) with
+        {
+            LogoMode = LogoLightingMode.Static,
+            IndependentControls = new(65, LogoLightingMode.Breathing, TouchpadStatusIndicatorEnabled: false),
+        });
+
+        editor.Brightness = 75;
+
+        LightingSettings brightnessEdit = editor.ToSettings();
+        Assert.Equal(75, brightnessEdit.Brightness);
+        Assert.Equal(new IndependentLightingSettings(LogoMode: LogoLightingMode.Breathing, TouchpadStatusIndicatorEnabled: false),
+            brightnessEdit.IndependentControls);
+
+        editor.LogoMode = LogoLightingMode.Off;
+
+        LightingSettings logoEdit = editor.ToSettings();
+        Assert.Equal(LogoLightingMode.Off, logoEdit.LogoMode);
+        Assert.Equal(new IndependentLightingSettings(TouchpadStatusIndicatorEnabled: false), logoEdit.IndependentControls);
+    }
+
+    [Fact]
     public void EffectSelection_PublishesDirtyBeforeAssignmentAndEachVisibleDefaultInOrder()
     {
         var editor = new LightingEditorState();

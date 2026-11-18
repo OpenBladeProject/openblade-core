@@ -96,7 +96,7 @@ internal sealed class ExperimentalLightingBaselineJournal
         }
     }
 
-    // Caller must independently confirm restoration (or an explicitly requested built-in destination).
+    // Require a confirmed built-in destination, or a confirmed baseline with a known pre-submission failure.
     // A durable cleared tombstone avoids deletion/recreation races; failure leaves recovery pending.
     internal void ClearAfterVerifiedRestoration()
     {

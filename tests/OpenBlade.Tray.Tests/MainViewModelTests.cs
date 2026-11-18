@@ -6639,6 +6639,135 @@ public sealed partial class MainViewModelTests
     }
 
     [Fact]
+    public async Task ImportKeyColors_FromConfirmedBuiltInEffectPreservesSavedZoneIntent()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportsIndependentLightingControls = true,
+            SupportsTouchpadStatusIndicator = true,
+            KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0529,
+            LightingEffects = new HashSet<LightingEffect> { LightingEffect.Static, LightingEffect.Sequence },
+        };
+        var fields = new IndependentLightingSettings(TouchpadStatusIndicatorEnabled: false);
+        var confirmed = LightingSettingsFactory.Static(new(10, 20, 30), 42);
+        var saved = LightingSettingsFactory.Static(new(40, 50, 60), 65) with
+        {
+            IndependentControls = fields,
+            ControlsKeyboardEffect = true,
+        };
+        ServiceStatusSnapshot status = CreateStatus(true, false, capabilities: capabilities);
+        client.Publish(status with
+        {
+            Profiles = status.Profiles with
+            {
+                PluggedIn = status.Profiles.PluggedIn with { Lighting = saved },
+            },
+            DesiredState = status.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(saved, SettingValueSource.PowerProfile),
+            },
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Lighting = confirmed,
+                IndependentLighting = new(TouchpadStatusIndicatorEnabled: true),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.CanApplyRz090529KeyColors
+            && viewModel.LightingDraft.Color == confirmed.Color);
+
+        Assert.False(viewModel.UsesIndependentLightingControls);
+        var editor = KeyboardKeyColorEditor.FromDraft(viewModel.LightingDraft);
+        editor.SetKeyColor(40, new(7, 8, 9));
+        Assert.True(viewModel.TryImportKeyboardLighting(
+            new("Key colors", "User", null, 1, editor.BuildLightingSettings())));
+
+        LightingSettings draft = viewModel.LightingDraft;
+        Assert.Equal(fields, draft.IndependentControls);
+        Assert.Equal(confirmed.Brightness, draft.Brightness);
+        var sequence = Assert.IsType<SequenceLightingParameters>(draft.Parameters);
+        Assert.Equal(confirmed.Color, Assert.Single(KeyboardLightingSequenceCodec.Decode(
+            sequence.TimelineBase64, sequence.LayoutId).Frames).Slots[41]);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand).ExecuteAsync(draft);
+        Assert.Equal(draft, client.LightingOverride?.Value);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLightingProfileDraftCommand).ExecuteAsync(null);
+        Assert.Equal(draft, client.LastProfiles?.PluggedIn.Lighting);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task KeyColorEditor_RequiresTheSequenceCapability(bool offersSequence)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        var effects = new HashSet<LightingEffect> { LightingEffect.Static };
+        if (offersSequence)
+        {
+            effects.Add(LightingEffect.Sequence);
+        }
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0529,
+            LightingEffects = effects,
+        };
+        client.Publish(CreateStatus(true, false, capabilities: capabilities));
+        await WaitUntilAsync(() => viewModel.CanControlLighting
+            && viewModel.Capabilities.KeyboardLightingLayoutId == KeyboardLightingLayoutIds.Rz09_0529);
+
+        Assert.Equal(offersSequence, viewModel.SupportsRz090529KeyColorEditor);
+        Assert.Equal(offersSequence, viewModel.CanApplyRz090529KeyColors);
+    }
+
+    [Fact]
+    public async Task SelectFullLightingEffect_PreservesSavedAndPendingZoneFields()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            SupportsIndependentLightingControls = true,
+            SupportsKeyboardBrightness = true,
+            SupportsVaporChamberLighting = true,
+            SupportsTouchpadStatusIndicator = true,
+            LightingEffects = new HashSet<LightingEffect> { LightingEffect.Static },
+        };
+        var fields = new IndependentLightingSettings(Brightness: 66,
+            VaporChamberLightingEnabled: true, TouchpadStatusIndicatorEnabled: false);
+        var baseline = LightingSettingsFactory.Static(new(10, 20, 30), 42) with
+        {
+            IndependentControls = fields,
+        };
+        ServiceStatusSnapshot status = CreateStatus(true, false, capabilities: capabilities);
+        client.Publish(status with
+        {
+            DesiredState = status.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(baseline, SettingValueSource.PowerProfile),
+            },
+            ConfirmedState = status.ConfirmedState! with { IndependentLighting = fields },
+        });
+        await WaitUntilAsync(() => viewModel.CanEditVaporChamberLighting && viewModel.UsesIndependentLightingControls);
+        viewModel.VaporChamberLightingEnabledEditor = false;
+
+        viewModel.LightingEffectEditor = LightingEffect.Static;
+
+        LightingSettings draft = viewModel.LightingDraft;
+        Assert.True(draft.ControlsKeyboardEffect);
+        Assert.Equal(66, draft.Brightness);
+        Assert.Equal(new IndependentLightingSettings(
+            VaporChamberLightingEnabled: false, TouchpadStatusIndicatorEnabled: false),
+            draft.IndependentControls);
+        Assert.True(viewModel.SetLightingCommand.CanExecute(draft));
+    }
+
+    [Fact]
     public async Task FullEffectWithIndependentFields_DoesNotBypassEffectLayoutOrZoneAdmission()
     {
         var client = new FakeServiceClient();
@@ -6731,6 +6860,12 @@ public sealed partial class MainViewModelTests
         Assert.Equal(new IndependentLightingSettings(VaporChamberLightingEnabled: false),
             client.IndependentLightingOverride?.Value);
         Assert.Null(client.LightingOverride);
+        Assert.False(viewModel.LightingDraft.ControlsKeyboardEffect);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLightingProfileDraftCommand).ExecuteAsync(null);
+
+        Assert.Equal(draft with { ControlsKeyboardEffect = false },
+            client.LastProfiles?.PluggedIn.Lighting);
     }
 
     [Fact]

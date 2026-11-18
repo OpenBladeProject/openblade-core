@@ -68,8 +68,8 @@ internal sealed partial class ExperimentalBladePort
     private async Task<IndependentLightingSettings> ReadIndependentLightingCoreAsync(CancellationToken token) => new(
         checked((byte)(await ReadBrightnessAsync(token).ConfigureAwait(false) * 100 / 255)),
         SupportsExperimentalLogo(model) ? await ReadLogoAsync(token).ConfigureAwait(false) : null,
-        SupportsRz090529Zones ? await ReadRz090529ZoneAsync(false, token).ConfigureAwait(false) : null,
-        SupportsRz090529Zones ? await ReadRz090529ZoneAsync(true, token).ConfigureAwait(false) : null);
+        SupportsRz090529Zones ? await ReadOptionalRz090529ZoneAsync(false, token).ConfigureAwait(false) : null,
+        SupportsRz090529Zones ? await ReadOptionalRz090529ZoneAsync(true, token).ConfigureAwait(false) : null);
 
     public async Task SetIndependentLightingAsync(IndependentLightingSettings value, CancellationToken cancellationToken)
     {

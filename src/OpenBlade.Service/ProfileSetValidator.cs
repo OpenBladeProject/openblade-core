@@ -579,11 +579,6 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             }
             return;
         }
-        if (lighting.IndependentControls is not null && !validationPolicy.SupportsIndependentLightingControls
-            && !allowStoredIndependentIntent)
-        {
-            throw Invalid($"The {name} independent lighting controls are unavailable.");
-        }
         if (!validationPolicy.SupportedLightingEffects.Contains(lighting.Effect))
         {
             throw Invalid($"The {name} lighting effect is not supported by the active validation policy.");

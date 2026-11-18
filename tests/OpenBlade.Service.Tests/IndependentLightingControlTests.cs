@@ -25,7 +25,7 @@ public sealed class IndependentLightingControlTests
 
         Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
         Assert.True(outcome.ReadbackMatched);
-        Assert.Equal(request with { IndependentControls = null }, Assert.Single(device.LightingWrites));
+        Assert.Equal(request with { Brightness = 65, IndependentControls = null }, Assert.Single(device.LightingWrites));
         Assert.Equal(request.IndependentControls, Assert.Single(device.IndependentLightingWrites));
         Assert.Equal(request.Effect, outcome.Readback!.Lighting!.Effect);
         Assert.Equal<byte?>(65, outcome.Readback.IndependentLighting!.Brightness);

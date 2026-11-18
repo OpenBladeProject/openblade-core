@@ -556,17 +556,6 @@ internal sealed partial class ExperimentalBladePort
         bool blade18UniformRequest = model.ProductId == 0x02A0
             && settings.Effect is LightingEffect.AmbientAwareness or LightingEffect.AudioMeter;
         bool hostFrameRequest = RequiresLightingRendererOwnership(settings);
-        if (lightingOwnership.Journal?.Load().Invalid == true)
-        {
-            lightingOwnership.JournalInvalid = true;
-        }
-        if (lightingOwnership.JournalInvalid
-            || hostFrameRequest && OwnershipState == LightingRendererOwnershipState.Faulted
-                && lightingOwnership.Journal is not null && lightingOwnership.Baseline is not null)
-        {
-            throw new CapabilityUnavailableException(
-                "Lighting recovery requires a confirmed built-in destination before starting another renderer.");
-        }
         if (blade18UniformRequest && session is not IRazerSetFeatureCommandSession)
         {
             throw new CapabilityUnavailableException("This model has no admitted uniform frame transport.");
@@ -585,6 +574,15 @@ internal sealed partial class ExperimentalBladePort
                 ?? standardEffect?.RenderFrame(TimeSpan.Zero)
                 ?? Blade18LightingAnimation.Render(settings, TimeSpan.Zero) : null;
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            RequireLightingJournalAdmission(hostFrameRequest);
+        }
+        catch
+        {
+            operationGate.Release();
+            throw;
+        }
         bool mirrorCommitted = false;
         keyboardMirrorTransitionPending = true;
         keyboardMirrorFrame = null;
@@ -594,6 +592,7 @@ internal sealed partial class ExperimentalBladePort
         bool frameWriteAttempted = false;
         bool frameActivationAttempted = false;
         bool capturedBaselineForFrameAttempt = false;
+        ExperimentalLightingBaselineJournal? newlyPendingJournal = null;
         LightingRendererOwnershipState priorOwnership = OwnershipState;
         ExperimentalLightingBaseline? priorBaseline = lightingOwnership.Baseline;
         LightingSettings? priorIntent = lightingOwnership.Intent;
@@ -672,6 +671,10 @@ internal sealed partial class ExperimentalBladePort
                 ExperimentalLightingBaseline saved = lightingOwnership.Baseline ?? CaptureFrameBaseline();
                 journal.SavePending(saved);
                 lightingOwnership.Baseline = saved;
+                if (priorBaseline is null)
+                {
+                    newlyPendingJournal = journal;
+                }
             }
             bool wakingFromDark = baselineRaw == 0 && raw != 0;
             policy.Record("KeyboardLighting", "Baseline", baseline is null ? "Unavailable" : "Confirmed", requested: requested,
@@ -992,9 +995,27 @@ internal sealed partial class ExperimentalBladePort
         {
             bool indeterminate = exception is BladeWriteException
             { SubmissionState: WriteSubmissionState.Indeterminate };
+            if (newlyPendingJournal is not null && !submitted && !indeterminate)
+            {
+                try
+                {
+                    // The confirmed baseline is intact because no write was submitted.
+                    newlyPendingJournal.ClearAfterVerifiedRestoration();
+                    lightingOwnership.Baseline = priorBaseline;
+                }
+                catch (Exception cleanup) when (cleanup is IOException or InvalidDataException or UnauthorizedAccessException)
+                {
+                    SetLightingFaulted();
+                    policy.Record("KeyboardLighting", "Baseline", "JournalClearFailed",
+                        failure: cleanup.GetType().Name);
+                    throw MapWriteFailure("KeyboardLighting", false, exception);
+                }
+            }
+
             // A failed replacement cannot still claim an active renderer after
             // its loop was drained. Do not restart it after lost admission.
             if (stoppedAnimation || (replacingOwnedFrame && submitted)
+                || (newlyPendingJournal is not null && (submitted || indeterminate))
                 || (hostOwnershipAcquired && (submitted || indeterminate))
                 || frameActivationAttempted
                 || frameWriteAttempted
@@ -1167,6 +1188,25 @@ internal sealed partial class ExperimentalBladePort
             or LightingRendererOwnershipState.Wave
             or LightingRendererOwnershipState.Wheel;
 
+    private void RequireLightingJournalAdmission(bool hostFrameRequest)
+    {
+        if (lightingOwnership.Journal?.Load().Invalid == true)
+        {
+            lightingOwnership.JournalInvalid = true;
+        }
+        if (lightingOwnership.JournalInvalid)
+        {
+            throw new CapabilityUnavailableException(
+                "The lighting recovery journal is invalid or unreadable. Repair the protected OpenBlade data storage and restart the OpenBlade service.");
+        }
+        if (hostFrameRequest && OwnershipState == LightingRendererOwnershipState.Faulted
+            && lightingOwnership.Journal is not null && lightingOwnership.Baseline is not null)
+        {
+            throw new CapabilityUnavailableException(
+                "Lighting recovery requires a confirmed built-in destination before starting another renderer.");
+        }
+    }
+
     private void ClearOwnedFrame()
     {
         if (lightingOwnership.Baseline is not null && lightingOwnership.Journal is { } journal)
@@ -1187,11 +1227,7 @@ internal sealed partial class ExperimentalBladePort
     {
         ExperimentalLightingBaseline baseline = lightingOwnership.Baseline
             ?? throw new IOException("The owned static frame baseline is unavailable.");
-        if (lightingOwnership.Journal?.Load().Invalid == true)
-        {
-            lightingOwnership.JournalInvalid = true;
-            throw new IOException("The lighting baseline journal changed; restoration is paused.");
-        }
+        RequireLightingJournalAdmission(hostFrameRequest: false);
         byte currentRaw = await ReadBrightnessAsync(cancellationToken).ConfigureAwait(false);
 
         if (SupportsReviewedMcuLighting(model))

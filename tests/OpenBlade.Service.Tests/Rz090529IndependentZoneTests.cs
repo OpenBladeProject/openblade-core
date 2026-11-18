@@ -89,6 +89,72 @@ public sealed class Rz090529IndependentZoneTests
         Assert.Contains(DeviceSubsystem.Lighting, tracker.ExternalChanges);
     }
 
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    public async Task CombinedHostEffectRequiresZoneReadback(bool profileTransition, bool confirmZone)
+    {
+        BatteryTestDevice device = CreateDevice();
+        device.Capabilities = device.Capabilities with { LightingEffects = new HashSet<LightingEffect> { LightingEffect.Fire } };
+        LightingSettings requested = LightingSettingsFactory.Fire(60) with
+        {
+            ControlsKeyboardEffect = true,
+            IndependentControls = new(VaporChamberLightingEnabled: true),
+        };
+        device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Lighting)
+            {
+                device.State = device.State with
+                {
+                    Lighting = null,
+                    IndependentLighting = confirmZone ? device.State.IndependentLighting : null,
+                };
+            }
+        };
+        var coordinator = new ControlCoordinator(device);
+        ControlResult result;
+        if (profileTransition)
+        {
+            var desired = new DesiredDeviceState(
+                new(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+                new(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new(requested, SettingValueSource.PowerProfile),
+                new(BatteryPolicy.Create(80), true, false));
+            result = (await coordinator.ApplyDesiredStateOutcomeAsync(desired, default)).Results.Lighting;
+        }
+        else
+        {
+            result = (await coordinator.ApplyLightingOutcomeAsync(requested, default)).Result;
+        }
+
+        Assert.Equal(confirmZone ? ControlResultStatus.Applied : ControlResultStatus.Failed, result.Status);
+        Assert.Single(device.LightingWrites);
+        Assert.Single(device.IndependentLightingWrites);
+    }
+
+    [Fact]
+    public async Task MatchedBuiltInEffectIsNotRewrittenForIndependentFields()
+    {
+        BatteryTestDevice device = CreateDevice();
+        device.Capabilities = device.Capabilities with { LightingEffects = new HashSet<LightingEffect> { LightingEffect.Static } };
+        LightingSettings active = LightingSettingsFactory.Static(new(12, 34, 56), 50);
+        device.State = device.State with { Lighting = active };
+        LightingSettings requested = active with
+        {
+            ControlsKeyboardEffect = true,
+            IndependentControls = new(Brightness: 42, TouchpadStatusIndicatorEnabled: true),
+        };
+
+        ScopedApplyOutcome outcome = await new ControlCoordinator(device).ApplyLightingOutcomeAsync(requested, default);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.Empty(device.LightingWrites);
+        Assert.Equal(requested.IndependentControls, Assert.Single(device.IndependentLightingWrites));
+    }
+
     private static BatteryTestDevice CreateDevice() => new()
     {
         Capabilities = DeviceCapabilities.SafeTargetDefaults() with

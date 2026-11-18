@@ -2416,7 +2416,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && (UsesIndependentLightingControls || !UseWindowsDynamicLighting);
 
     public bool SupportsRz090529KeyColorEditor =>
-        Capabilities.KeyboardLightingLayoutId == KeyboardLightingLayoutIds.Rz09_0529;
+        Capabilities.KeyboardLightingLayoutId == KeyboardLightingLayoutIds.Rz09_0529
+        && Capabilities.LightingEffects.Contains(LightingEffect.Sequence);
+
+    public bool CanApplyRz090529KeyColors => SupportsRz090529KeyColorEditor
+        && CanControlLighting
+        && CommandCapabilities.LightingEffects.Contains(LightingEffect.Sequence);
 
     public bool IsLightingControlUnavailable =>
         !CanControlLighting && !IsCheckingLaptopConnection(latestStatus);
@@ -5675,9 +5680,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         SelectedLighting = confirmed?.Lighting ?? status.DesiredState.Lighting.Value;
         if (status.Capabilities?.SupportsIndependentLightingControls == true)
         {
+            LightingSettings intent = status.LightingOverride?.Value ?? status.DesiredState.Lighting.Value;
+            // The keyboard readback carries only the effect and brightness.
+            // Preserve configured zone intent separately from the current observations.
             SelectedLighting = SelectedLighting with
             {
-                ControlsKeyboardEffect = (status.LightingOverride?.Value ?? status.DesiredState.Lighting.Value).ControlsKeyboardEffect,
+                ControlsKeyboardEffect = intent.ControlsKeyboardEffect,
+                IndependentControls = intent.IndependentControls,
             };
         }
         if (confirmed?.LogoLighting is { } confirmedLogo)

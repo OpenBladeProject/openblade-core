@@ -64,10 +64,13 @@ internal static class WriteConfirmationPolicy
         {
             return PendingConfirmationResult.Unavailable;
         }
-        PendingConfirmationResult keyboard = (confirmed.Lighting with { ControlsKeyboardEffect = false })
-            == (requested with { IndependentControls = null, ControlsKeyboardEffect = false })
-                ? PendingConfirmationResult.Match
-                : PendingConfirmationResult.Mismatch;
+        bool keyboardMatches = requested.IndependentControls is not null
+            ? ControlCoordinator.KeyboardLightingMatches(confirmed, requested)
+            : (confirmed.Lighting with { ControlsKeyboardEffect = false })
+                == (requested with { ControlsKeyboardEffect = false });
+        PendingConfirmationResult keyboard = keyboardMatches
+            ? PendingConfirmationResult.Match
+            : PendingConfirmationResult.Mismatch;
         if (keyboard == PendingConfirmationResult.Mismatch || independent == PendingConfirmationResult.Mismatch)
         {
             return PendingConfirmationResult.Mismatch;

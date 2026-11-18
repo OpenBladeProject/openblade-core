@@ -3107,6 +3107,9 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_KeyColorEditor_Apply" xml:space="preserve">
     <value>Применить цвета</value>
   </data>
+  <data name="MainWindow_KeyColorEditor_DraftChanged" xml:space="preserve">
+    <value>Настройки подсветки изменились, пока было открыто окно выбора цвета. Откройте его снова, чтобы изменить текущие настройки.</value>
+  </data>
   <data name="MainWindow_KeyColorEditor_FailedTitle" xml:space="preserve">
     <value>Не удалось применить цвета клавиатуры</value>
   </data>

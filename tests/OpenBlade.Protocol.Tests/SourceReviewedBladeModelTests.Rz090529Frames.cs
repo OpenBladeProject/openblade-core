@@ -217,6 +217,105 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Equal(count, session.Commands.Count);
     }
 
+    [Fact]
+    public async Task Rz090529_FirstRowRefusalClearsUnneededDurableBaselineAndCanRetry()
+    {
+        using var storage = new Rz090529LightingJournalFixture();
+        var session = new Session
+        {
+            McuLighting = [0, 5, 1, 0, 0, 1, 11, 22, 33, 0, 0, 0],
+        };
+        bool verified = true;
+        session.BeforeSubmission = command =>
+        {
+            if (command.ClassId == 3 && command.CommandId == 0x0B)
+            {
+                verified = false;
+            }
+        };
+        await using var port = CreateRz090529Frames(session, ownership: new() { Journal = storage.Journal },
+            exactHostStillPresent: () => verified);
+
+        BladeWriteException refused = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(LightingSettingsFactory.Fire(50), default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, refused.SubmissionState);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        Assert.Null(storage.Journal.Load().Baseline);
+        Assert.All(session.Commands, command => Assert.True(command.CommandId >= 0x80));
+        verified = true;
+        session.BeforeSubmission = null;
+
+        await port.SetLightingAsync(LightingSettingsFactory.Wave(LightingDirection.Rightward, 50), default);
+        await port.SetLightingAsync(LightingSettingsFactory.Fire(50), default);
+        await port.RelinquishRendererAsync(default);
+
+        Assert.Equal(new byte[] { 0, 5, 4, 2, 40, 0, 0, 0, 0, 0, 0, 0 }, session.McuLighting);
+        Assert.Null(storage.Journal.Load().Baseline);
+    }
+
+    [Fact]
+    public async Task Rz090529_UnconfirmedInitialBrightnessRetainsFaultedJournalUntilBuiltInIsConfirmed()
+    {
+        using var storage = new Rz090529LightingJournalFixture();
+        var session = new Session
+        {
+            McuLighting = [0, 5, 1, 0, 0, 1, 11, 22, 33, 0, 0, 0],
+            IgnoreWrites = true,
+        };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x02C7));
+        await using var port = CreateRz090529Frames(session, policy, new() { Journal = storage.Journal });
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(LightingSettingsFactory.Fire(60), default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.Equal(LightingRendererOwnershipState.Faulted, port.OwnershipState);
+        Assert.Equal(new ExperimentalLightingBaseline(
+            LightingSettingsFactory.Static(new(11, 22, 33), 50), 128), storage.Journal.Load().Baseline);
+        Assert.DoesNotContain(session.Commands, command => command.ClassId == 3 && command.CommandId == 0x0B);
+
+        session.IgnoreWrites = false;
+        ConfirmedDeviceState recovered = await port.ReadRecoveryStateAsync(default);
+        Assert.NotNull(recovered.Lighting);
+        Assert.True(policy.TryCompleteRecovery(ExperimentalRecoveryScope.All, () => true));
+        int priorCommands = session.Commands.Count;
+        CapabilityUnavailableException blocked = await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            port.SetLightingAsync(LightingSettingsFactory.Fire(60), default));
+        Assert.Contains("confirmed built-in", blocked.Message, StringComparison.Ordinal);
+        Assert.Equal(priorCommands, session.Commands.Count);
+
+        await port.SetLightingAsync(LightingSettingsFactory.Wave(LightingDirection.Rightward, 50), default);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        Assert.Null(storage.Journal.Load().Baseline);
+    }
+
+    [Fact]
+    public async Task Rz090529_ExternallyChangedJournalBlocksBuiltinAndRendererWithStorageGuidance()
+    {
+        using var storage = new Rz090529LightingJournalFixture();
+        var session = new Session
+        {
+            McuLighting = [0, 5, 1, 0, 0, 1, 11, 22, 33, 0, 0, 0],
+        };
+        await using var port = CreateRz090529Frames(session, ownership: new() { Journal = storage.Journal });
+        await port.SetLightingAsync(LightingSettingsFactory.Fire(50), default);
+        File.WriteAllText(storage.JournalPath, "{}");
+        int priorCommands = session.Commands.Count;
+
+        foreach (LightingSettings requested in new[]
+        {
+            LightingSettingsFactory.Off(),
+            LightingSettingsFactory.Fire(50),
+        })
+        {
+            CapabilityUnavailableException blocked = await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+                port.SetLightingAsync(requested, default));
+            Assert.Contains("Repair the protected OpenBlade data storage", blocked.Message, StringComparison.Ordinal);
+        }
+        Assert.Equal(priorCommands, session.Commands.Count);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -245,11 +344,28 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Equal(1, session.McuLighting[2]);
     }
 
-    private static ExperimentalBladePort CreateRz090529Frames(Session session, ExperimentalFeaturesPolicy? policy = null)
+    private static ExperimentalBladePort CreateRz090529Frames(Session session,
+        ExperimentalFeaturesPolicy? policy = null, ExperimentalLightingOwnershipState? ownership = null,
+        Func<bool>? exactHostStillPresent = null)
     {
         session.EchoLightingAck = true;
-        return new(session, new(), Model(0x02C7), policy ?? new(Model(0x02C7)), () => true,
-            () => PowerSource.PluggedIn, lightingTimeProvider: new FrozenLightingClock());
+        return new(session, new(), Model(0x02C7), policy ?? new(Model(0x02C7)), exactHostStillPresent ?? (() => true),
+            () => PowerSource.PluggedIn, sharedLightingOwnership: ownership, lightingTimeProvider: new FrozenLightingClock());
+    }
+
+    private sealed class Rz090529LightingJournalFixture : IDisposable
+    {
+        private readonly DirectoryInfo directory = Directory.CreateTempSubdirectory("openblade-0529-journal-");
+
+        internal Rz090529LightingJournalFixture()
+        {
+            Journal = new(directory.FullName, "RZ09-0529", 0x02C7, _ => { });
+        }
+
+        internal ExperimentalLightingBaselineJournal Journal { get; }
+        internal string JournalPath => Path.Combine(directory.FullName, "RZ09-0529-1532-02C7.json");
+
+        public void Dispose() => directory.Delete(recursive: true);
     }
 
     private sealed class FrozenLightingClock : TimeProvider

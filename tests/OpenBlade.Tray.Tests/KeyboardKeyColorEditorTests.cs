@@ -148,6 +148,33 @@ public sealed class KeyboardKeyColorEditorTests
     }
 
     [Fact]
+    public void FromDraft_SeedsThisKeyboardWhenUnmanagedIntentCarriesAnotherModelsSequence()
+    {
+        var slots = new RgbColor[AmbientLightingFrame.SlotCount];
+        slots[40] = new(15, 30, 45);
+        string timeline = KeyboardLightingSequenceCodec.Encode([new(100, slots)]);
+        var controls = new IndependentLightingSettings(TouchpadStatusIndicatorEnabled: false);
+        var draft = LightingSettingsFactory.Sequence(
+            KeyboardLightingLayoutIds.Rz09_0581, timeline, loop: true, brightness: 42) with
+        {
+            IndependentControls = controls,
+            ControlsKeyboardEffect = false,
+        };
+
+        var editor = KeyboardKeyColorEditor.FromDraft(draft);
+        Assert.Equal(LightingSettingsFactory.DefaultVisibleColor, editor.Colors[40]);
+        Assert.False(editor.HasChanges);
+        editor.SetKeyColor(41, new(10, 20, 30));
+        LightingSettings updated = editor.BuildLightingSettings();
+
+        Assert.Equal(42, updated.Brightness);
+        Assert.Equal(controls, updated.IndependentControls);
+        Assert.True(updated.ControlsKeyboardEffect);
+        Assert.Equal(KeyboardLightingLayoutIds.Rz09_0529,
+            Assert.IsType<SequenceLightingParameters>(updated.Parameters).LayoutId);
+    }
+
+    [Fact]
     public void Constructor_RejectsInvalidDraftAndOtherModelsSequence()
     {
         Assert.Throws<ArgumentException>(() => new KeyboardKeyColorEditor(

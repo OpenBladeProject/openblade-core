@@ -795,6 +795,18 @@ internal sealed class LightingEditorState
         }
 
         SetDirty(true);
+        // A direct keyboard editor change supersedes any duplicate target
+        // carried forward from a combined profile.
+        if (independentControls is { } fields)
+        {
+            IndependentLightingSettings remaining = fieldName switch
+            {
+                LightingEditorValue.Brightness => fields with { Brightness = null },
+                LightingEditorValue.LogoMode => fields with { LogoMode = null },
+                _ => fields,
+            };
+            independentControls = remaining.IsWellFormed ? remaining : null;
+        }
         SetValue(ref field, value, fieldName);
         Publish(LightingEditorChangeKind.ValueChanged, LightingEditorValue.Draft);
         Publish(LightingEditorChangeKind.EditCompleted);

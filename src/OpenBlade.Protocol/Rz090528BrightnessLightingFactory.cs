@@ -923,6 +923,11 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort, 
             ObjectDisposedException.ThrowIf(
                 closing || Volatile.Read(ref disposed) != 0,
                 this);
+            if (pulse.MatrixSlot >= Rz090528MatrixFrame.SlotCount)
+            {
+                return Task.FromException(new CapabilityUnavailableException(
+                    "The key is outside the reviewed PID 02C6 keyboard map."));
+            }
             lock (effectSync)
             {
                 if (activeEffect is not IRz090528KeyTriggeredLightingEffect triggered)

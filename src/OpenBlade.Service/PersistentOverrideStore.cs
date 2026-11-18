@@ -372,6 +372,13 @@ public sealed class PersistentOverrideStore
         {
             ProfileStore.RejectKeyboardEffectControlInLegacySchema(parsed.RootElement);
         }
+        if (schemaVersion == SchemaNineVersion)
+        {
+            overrides = overrides with
+            {
+                Lighting = LightingSettingsFactory.PreserveLegacyIndependentIntent(overrides.Lighting),
+            };
+        }
         PersistentOverrideState normalized =
             NormalizeLegacyGpuClockTuning(
                 NormalizeLegacyFanControl(NormalizeLegacyLighting(overrides)));

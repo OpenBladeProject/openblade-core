@@ -46,6 +46,9 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(scrollViewer, keyboard.Ancestors());
         string window = ReadTraySource("MainWindow.xaml.cs");
         Assert.Contains("EnsureKeyboardKeyColorsGridInitialized()", window, StringComparison.Ordinal);
+        Assert.Contains("pageSectionPresentations[PageSectionKind.LightingKeyboard] = keyboard;", window, StringComparison.Ordinal);
+        Assert.Contains("FindDescendant<Grid>(keyboardSection, \"KeyboardKeyColorsGridHost\")", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("FindDescendant<Grid>(Root, \"KeyboardKeyColorsGridHost\")", window, StringComparison.Ordinal);
         Assert.Contains("if (keyboardGrid is null)", window, StringComparison.Ordinal);
         Assert.Contains("keyboardGrid.Children.Add(keyButton)", window, StringComparison.Ordinal);
         Assert.Contains("private async void OnKeyboardKeyColorKeyClick", window, StringComparison.Ordinal);
@@ -55,13 +58,18 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("CanControlLighting", clickGuard, StringComparison.Ordinal);
         Assert.Contains("new ColorPicker", handler, StringComparison.Ordinal);
         Assert.Contains("pickerContent.Children.Add(colorPicker)", handler, StringComparison.Ordinal);
-        Assert.Contains("IsPrimaryButtonEnabled = ViewModel.CanControlLighting", handler, StringComparison.Ordinal);
+        Assert.Contains("bool canApply = ViewModel.CanApplyRz090529KeyColors;", handler, StringComparison.Ordinal);
+        Assert.Contains("IsPrimaryButtonEnabled = canApply", handler, StringComparison.Ordinal);
         Assert.Contains("ViewModel.LightingControlUnavailableMessage", handler, StringComparison.Ordinal);
         Assert.Contains("AppTypography.Apply(unavailableMessage, AppTypography.Body)", handler, StringComparison.Ordinal);
         Assert.DoesNotContain("Root.Resources[\"SecondaryTextStyle\"]", handler, StringComparison.Ordinal);
         Assert.Contains("editor.SetKeyColor(slot, color)", handler, StringComparison.Ordinal);
         Assert.Contains("editor.BuildLightingSettings()", handler, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.TryImportKeyboardLighting(preset)", handler, StringComparison.Ordinal);
+        int contextCheck = handler.IndexOf("ViewModel.ActivePowerSource != source || ViewModel.LightingDraft != draft", StringComparison.Ordinal);
+        Assert.InRange(contextCheck,
+            handler.IndexOf("await ShowContentDialogAsync(dialog)", StringComparison.Ordinal),
+            handler.IndexOf("editor.SetKeyColor(slot, color)", StringComparison.Ordinal) - 1);
+        Assert.Contains("!ViewModel.CanApplyRz090529KeyColors || !ViewModel.TryImportKeyboardLighting(preset)", handler, StringComparison.Ordinal);
     }
 
     [Fact]

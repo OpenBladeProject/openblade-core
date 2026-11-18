@@ -168,11 +168,15 @@ public sealed partial class MainViewModel
         }
         if (UsesIndependentLightingControls)
         {
-            // Selecting an effect explicitly replaces field-only intent. Until
-            // then unknown effects retain independent brightness/logo editing.
+            // The effect takes over keyboard brightness and logo. Keep the
+            // configured zone fields, including any pending zone edits.
+            IndependentLightingSettings? zones = IndependentLightingDraft.IndependentControls is { } fields
+                ? new(VaporChamberLightingEnabled: fields.VaporChamberLightingEnabled,
+                    TouchpadStatusIndicatorEnabled: fields.TouchpadStatusIndicatorEnabled)
+                : null;
             LightingSettings baseline = (independentLightingWrapper ?? SelectedLighting) with
             {
-                IndependentControls = null,
+                IndependentControls = zones is { IsWellFormed: true } ? zones : null,
                 ControlsKeyboardEffect = true,
                 Brightness = independentBrightness ?? 50,
                 LogoMode = independentLogo,
@@ -304,6 +308,7 @@ public sealed partial class MainViewModel
             return;
         }
 
+        LightingSettings fieldIntent = requested with { ControlsKeyboardEffect = false };
         PowerSource sourceAtStart = ActivePowerSource;
         long revisionAtStart = latestAcceptedRevision;
         long connectionAtStart = connectionGeneration;
@@ -322,7 +327,7 @@ public sealed partial class MainViewModel
                 if (result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored
                     && lightingPresentationGeneration == generationAtStart)
                 {
-                    MarkActiveProfileDraft(sourceAtStart, lighting: requested);
+                    MarkActiveProfileDraft(sourceAtStart, lighting: fieldIntent);
                 }
             });
         }
@@ -361,12 +366,12 @@ public sealed partial class MainViewModel
                 return;
             }
 
-            independentLightingWrapper = requested;
+            independentLightingWrapper = fieldIntent;
             independentLightingDelta = null;
             if (resultStatus == ControlOperationStatus.Applied && IsConnected
                 && connectionGeneration == connectionAtStart)
             {
-                pendingLighting = new PendingLightingHold(requested, sourceAtStart, revisionAtStart,
+                pendingLighting = new PendingLightingHold(fieldIntent, sourceAtStart, revisionAtStart,
                     timeProvider.GetUtcNow() + ControlPresentationHoldGracePeriod);
                 if (latestStatus is { } status)
                 {

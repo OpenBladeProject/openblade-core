@@ -67,8 +67,11 @@ internal static class ProfileAdmissionPolicy
         && (capabilities.SupportsIndependentLightingControls
             && (!draft.Lighting.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0)
             ? LightingSupported(draft.Lighting, capabilities)
-                && (draft.Lighting with { IndependentControls = null })
-                    == (current.Lighting with { IndependentControls = null })
+                && (!draft.Lighting.ControlsKeyboardEffect || current.Lighting.ControlsKeyboardEffect)
+                && ((draft.Lighting with { IndependentControls = null, ControlsKeyboardEffect = false })
+                    == (current.Lighting with { IndependentControls = null, ControlsKeyboardEffect = false })
+                    || !draft.Lighting.ControlsKeyboardEffect
+                        && LightingSupported(draft.Lighting with { ControlsKeyboardEffect = true }, capabilities))
             : LightingSupported(draft.Lighting, capabilities) || draft.Lighting == current.Lighting);
 
     private static bool RetainsThermalIntent(PowerProfile draft, PowerProfile current) =>

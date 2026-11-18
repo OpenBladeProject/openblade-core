@@ -140,6 +140,8 @@ public sealed class RazerChromaFileAdapterTests
     [InlineData(5, 15, 0x4B, true)] // Left
     [InlineData(5, 16, 0x50, true)] // Down
     [InlineData(5, 17, 0x4D, true)] // Right
+    [InlineData(1, 15, 0x52, true)] // Insert
+    [InlineData(2, 15, 0x53, true)] // Delete
     [InlineData(5, 7, 0x39, false)] // Space
     [InlineData(1, 18, 0x45, false)] // Num Lock
     [InlineData(1, 19, 0x35, true)] // Numpad Divide

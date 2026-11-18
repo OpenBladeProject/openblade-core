@@ -3139,6 +3139,9 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_KeyColorEditor_Apply" xml:space="preserve">
     <value>[!! Ápplý cólórs ~~~~ !!]</value>
   </data>
+  <data name="MainWindow_KeyColorEditor_DraftChanged" xml:space="preserve">
+    <value>[!! Líghtíng séttíngs chángéd whílé thé píckér wás ópén. Ópén ít ágáín tó édít thé cúrrént séttíngs. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="MainWindow_KeyColorEditor_FailedTitle" xml:space="preserve">
     <value>[!! Kéýbóárd cólórs cóúld nót bé ápplíéd ~~~~~~~~~~~ !!]</value>
   </data>
