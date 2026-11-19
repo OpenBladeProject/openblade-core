@@ -1723,6 +1723,12 @@ fn package_carries_both_roles_at_the_identity_bound() {
         let role = case["role"].as_str().unwrap();
         inspect_artifact(record, &large(case, "image"), role, &release).unwrap();
     }
+    // Only package_record widens its two fields: decode64 keeps 4096 characters.
+    for field in [parsed.fields[8], parsed.fields[9]] {
+        assert!(decode64(field).is_err());
+    }
+    assert_eq!(decode64(&"A".repeat(4096)).unwrap().len(), 3072);
+    assert!(decode64(&"A".repeat(4100)).is_err());
 }
 
 #[test]
