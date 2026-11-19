@@ -79,8 +79,9 @@ public sealed partial class IpcMessageCodecTests
         return (group == "requests" ? fixture["requests"] : fixture["serverFrames"]!["rows"])!.AsArray();
     }
 
-    // The managed-written base frame, with the row's object member replaced by
-    // an array of its members in the listed (native declaration) order.
+    // The managed-written base frame after the row's edit: the object at path
+    // replaced by an array of its listed (or all) members, or the member at
+    // path replaced by the row's JSON text.
     private static string ObjectServerFrame(JsonObject row)
     {
         (string file, int index) = row["base"]!.GetValue<string>() switch
@@ -101,7 +102,7 @@ public sealed partial class IpcMessageCodecTests
             frames,
             offset + sizeof(int),
             BinaryPrimitives.ReadInt32LittleEndian(frames.AsSpan(offset)));
-        if (row["positional"] is not JsonArray members)
+        if (row["positional"] is null && row["value"] is null)
         {
             return payload;
         }
@@ -114,13 +115,27 @@ public sealed partial class IpcMessageCodecTests
             target = target[path[depth]!.GetValue<string>()]!.AsObject();
         }
 
+        // A value row splices its JSON text in place of the member, unparsed.
+        if (row["value"] is JsonNode value)
+        {
+            const string Mark = "\"object-frame-value\"";
+            target[path[^1]!.GetValue<string>()] = Mark.Trim('"');
+            string marked = frame.ToJsonString();
+            Assert.Equal(2, marked.Split(Mark).Length);
+            return marked.Replace(Mark, value.GetValue<string>(), StringComparison.Ordinal);
+        }
+
         JsonObject member = path.Count == 0
             ? target
             : target[path[^1]!.GetValue<string>()]!.AsObject();
+        IEnumerable<string> keys = row["positional"] is JsonArray members
+            ? members.Select(name => name!.GetValue<string>())
+            : row["positional"]!.GetValue<string>() == "*"
+                ? member.Select(pair => pair.Key).ToList()
+                : throw new InvalidOperationException("Unknown positional form");
         JsonArray positional = [];
-        foreach (JsonNode? memberName in members)
+        foreach (string key in keys)
         {
-            string key = memberName!.GetValue<string>();
             Assert.True(member.ContainsKey(key), key);
             positional.Add(member[key]?.DeepClone());
         }
