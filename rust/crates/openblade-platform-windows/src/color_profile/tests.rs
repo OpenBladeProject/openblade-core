@@ -10,7 +10,7 @@ use crate::display::{
 use super::{
     HdrState, Monitor, ProfileRead, ProfileReadError, ProfileReads, ProfileScope,
     native::returned,
-    query_color_profiles, snapshot,
+    profile_ids_equal, profiles_match, query_color_profiles, snapshot,
     transaction::{
         CurrentUserChange, Disposition, Failure, Outcome, ScriptedOperations, SetColorProfile,
         set_color_profile as guarded_set_color_profile,
@@ -819,4 +819,17 @@ fn successful_submit_without_an_association_is_not_replayed() {
     assert_eq!(failure.cause, Failure::Readback);
     assert_eq!(failure.disposition, Disposition::BaselineConfirmed);
     api.assert_writes(&["add:Native_CTR.icm"]);
+}
+
+#[test]
+fn whole_profile_ids_compare_ordinally_ignoring_case_without_file_names() {
+    let same = |left: &str, right: &str| profile_ids_equal(OsStr::new(left), OsStr::new(right));
+    assert!(same(NATIVE, "native_ctr.ICM"));
+    assert!(same("", ""));
+    assert!(!same(NATIVE, FACTORY));
+    assert!(!same(NATIVE, ""));
+    // The file-name equivalence belongs to profiles_match only.
+    let path = r"C:\Windows\System32\spool\drivers\color\Native_CTR.icm";
+    assert!(!same(path, NATIVE));
+    assert!(profiles_match(OsStr::new(path), OsStr::new(NATIVE)));
 }

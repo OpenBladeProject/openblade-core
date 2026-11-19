@@ -184,8 +184,15 @@ fn file_name(value: &OsStr) -> OsString {
 /// compared ordinally ignoring case.
 #[cfg(any(test, feature = "scripted-display", feature = "display-color-write"))]
 pub fn profiles_match(left: &OsStr, right: &OsStr) -> bool {
+    profile_ids_equal(left, right) || profile_ids_equal(&file_name(left), &file_name(right))
+}
+
+/// Managed `string.Equals(left, right, StringComparison.OrdinalIgnoreCase)`
+/// of two whole profile IDs, without the file-name equivalence of
+/// [`profiles_match`]. Managed `DisplayProfileApplier` compares this way.
+#[cfg(any(test, feature = "scripted-display", feature = "display-color-write"))]
+pub fn profile_ids_equal(left: &OsStr, right: &OsStr) -> bool {
     native::ordinal_ignore_case(left, right) == Ordering::Equal
-        || native::ordinal_ignore_case(&file_name(left), &file_name(right)) == Ordering::Equal
 }
 
 /// One `EnumDisplayDevicesW(EDD_GET_DEVICE_INTERFACE_NAME)` monitor of a GDI
