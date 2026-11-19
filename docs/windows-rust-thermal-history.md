@@ -184,7 +184,10 @@ At every start, the Service's mandatory native custody gate reacquires the
 retired owner and recomputes the handback from native history. Custody refuses
 a handback record or resolution beside any generation it does not hand back,
 and startup admission carries the generations it does hand back, with their
-fresh history commitments, to the Service through ServiceMailboxHandoff. The
+fresh history commitments, to the Service through ServiceMailboxHandoff, which
+the hosted ServiceMailboxCustodyStartup opens before Worker. The store reads that
+binding lazily; its first read is unexpected-exit startup in Worker, after every
+hosted-service constructor. The
 Service adopts a record only for a generation in that binding and only when its
 history commitment matches. A bound generation without a record, a record that
 differs from its history, or unresolved items from more than one generation keep
