@@ -3600,18 +3600,34 @@ async fn correction_first_intent_io_failure_retains_uncertainty_and_all_evidence
 
 #[tokio::test]
 async fn history_dispatcher_capacity_refusal_precedes_prepared_and_all_transport_writes() {
-    let files = MemoryFiles::default();
-    files.profiles(1);
-    files.capacity_refuse.store(true, Ordering::Release);
-    let rig = Rig::new(files);
-    let result = rig.set(99, value(2, 1)).await;
-    assert_eq!(result["result"]["status"], 2);
-    assert!(
-        result["result"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("no submission intent or thermal setter")
-    );
+    // A positively known capacity refusal leaves nothing to reconcile: the saved
+    // intent stays Stored, as managed reports persisted-but-unapplied intent.
+    // Uncertain reservation I/O still quarantines and blocks.
+    for uncertain in [false, true] {
+        let files = MemoryFiles::default();
+        files.profiles(1);
+        if uncertain {
+            files.reserve_uncertain.store(true, Ordering::Release);
+        } else {
+            files.capacity_refuse.store(true, Ordering::Release);
+        }
+        let rig = Rig::new(files);
+        let result = rig.set(99, value(2, 1)).await;
+        let message = result["result"]["message"].as_str().unwrap();
+        if uncertain {
+            assert_eq!(result["result"]["status"], 2);
+            assert!(message.contains("no submission intent or thermal setter"));
+        } else {
+            assert_eq!(result["result"]["status"], 0);
+            assert!(message.starts_with("Performance intent stored."));
+            assert!(message.contains("capacity refused before publication"));
+            assert!(rig.files.read("manual-overrides.json").unwrap().is_some());
+        }
+        assert_capacity_refusal_reached_no_journal_or_setter(rig).await;
+    }
+}
+
+async fn assert_capacity_refusal_reached_no_journal_or_setter(rig: Rig) {
     assert_eq!(rig.files.prepared_attempts.load(Ordering::Acquire), 0);
     assert_eq!(
         rig.files.submission_intent_attempts.load(Ordering::Acquire),
