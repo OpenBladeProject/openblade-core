@@ -13,7 +13,7 @@ public sealed class WindowsNativeEpochTests
 {
     private const string Features = "installed-service-candidate,native-agent-entry-compile-check,startup-custody-v1";
 
-    private static string AgentCapabilities(bool battery, bool display, bool brightness, bool hdr, bool refresh = false)
+    private static string AgentCapabilities(bool battery, bool display, bool brightness, bool hdr, bool refresh = false, bool color = false)
     {
         string[] markers = [.. new (bool Selected, string Marker)[]
         {
@@ -22,11 +22,12 @@ public sealed class WindowsNativeEpochTests
             (brightness, "session-display-brightness-write-partial-v1"),
             (hdr, "session-display-hdr-write-partial-v1"),
             (refresh, "session-display-refresh-write-partial-v1"),
+            (color, "session-display-color-write-partial-v1"),
         }.Where(entry => entry.Selected).Select(entry => entry.Marker)];
         return markers.Length == 0 ? "none" : string.Join(',', markers);
     }
 
-    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1, int schema = 1, string? capabilities = null, bool mailbox = false, string? sourceRevision = null, bool mutation = false, bool fan = false, bool battery = false, bool temporary = false, bool agentBattery = false, bool agentDisplay = false, bool agentWrite = false, bool agentHdr = false, bool agentRefresh = false)
+    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1, int schema = 1, string? capabilities = null, bool mailbox = false, string? sourceRevision = null, bool mutation = false, bool fan = false, bool battery = false, bool temporary = false, bool agentBattery = false, bool agentDisplay = false, bool agentWrite = false, bool agentHdr = false, bool agentRefresh = false, bool agentColor = false)
     {
         byte[] bytes = new byte[0xA00];
         void U16(int n, ushort v) => BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(n), v);
@@ -43,10 +44,11 @@ public sealed class WindowsNativeEpochTests
         if (agentRefresh) { fields[4] = "agent-display-refresh-write-v1," + fields[4]; }
         if (agentDisplay) { fields[4] = "agent-display-query-v1," + fields[4]; }
         if (agentHdr) { fields[4] = "agent-display-hdr-write-v1," + fields[4]; }
+        if (agentColor) { fields[4] = "agent-display-color-write-v1," + fields[4]; }
         if (agentWrite) { fields[4] = "agent-display-brightness-write-v1," + fields[4]; }
         if (agentBattery) { fields[4] = "agent-battery-report-v1," + fields[4]; }
-        if (role == "agent" && (agentDisplay || agentWrite || agentHdr || agentRefresh) && capabilities is null)
-        { capabilities = AgentCapabilities(agentBattery, display: true, agentWrite, agentHdr, agentRefresh); }
+        if (role == "agent" && (agentDisplay || agentWrite || agentHdr || agentRefresh || agentColor) && capabilities is null)
+        { capabilities = AgentCapabilities(agentBattery, display: true, agentWrite, agentHdr, agentRefresh, agentColor); }
         byte[] metadata = NativeCanonical.Lines($"OpenBlade.NativeArtifact.v{schema}", schema == 1 ? fields
             : [.. fields, capabilities ?? (role == "service" ? temporary ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1" : battery ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1" : fan ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2" : mutation ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1" : mailbox ? "private-service-custody-v1,service-mailbox-observation-v1" : "private-service-custody-v1,service-metadata-only-v1" : agentBattery ? "agent-battery-report-v1" : "none")]);
         int section = 0x98 + 240;
@@ -253,6 +255,65 @@ public sealed class WindowsNativeEpochTests
         {
             Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
                 [.. Image("agent", schema: schema, capabilities: alone, agentBattery: agentBattery, agentRefresh: true)], "agent", source));
+        }
+    }
+
+    [Theory]
+    [InlineData(false, false, false, false)]
+    [InlineData(true, false, false, false)]
+    [InlineData(false, true, false, false)]
+    [InlineData(false, false, true, false)]
+    [InlineData(false, false, false, true)]
+    [InlineData(true, true, true, true)]
+    public void PartialDisplayColorWriteCapabilityIsExactAndOtherBuildsCannotClaimIt(bool agentBattery, bool agentWrite, bool agentHdr, bool agentRefresh)
+    {
+        string source = new('a', 40);
+        const string color = "session-display-color-write-partial-v1";
+        string expected = AgentCapabilities(agentBattery, display: true, agentWrite, agentHdr, agentRefresh, color: true);
+        var agent = NativeArtifact.Inspect([.. Image("agent", schema: 2, agentBattery: agentBattery, agentDisplay: true, agentWrite: agentWrite, agentHdr: agentHdr, agentRefresh: agentRefresh, agentColor: true)], "agent", source);
+        Assert.Equal(expected, agent.Capabilities);
+        Assert.False(agent.PrivateCustody);
+        Assert.False(agent.MetadataOnly);
+        string withoutColor = AgentCapabilities(agentBattery, display: true, agentWrite, agentHdr, agentRefresh);
+        foreach (string forged in new[] { "none", withoutColor, color, expected + "," + color, color + "," + withoutColor })
+        {
+            Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("agent", schema: 2, capabilities: forged, agentBattery: agentBattery, agentDisplay: true, agentWrite: agentWrite, agentHdr: agentHdr, agentRefresh: agentRefresh, agentColor: true)], "agent", source));
+        }
+        // Builds without the color write cannot claim its marker.
+        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("agent", schema: 2, capabilities: expected, agentBattery: agentBattery, agentDisplay: true, agentWrite: agentWrite, agentHdr: agentHdr, agentRefresh: agentRefresh)], "agent", source));
+        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("agent", schema: 1, agentBattery: agentBattery, agentDisplay: true, agentWrite: agentWrite, agentHdr: agentHdr, agentRefresh: agentRefresh, agentColor: true)], "agent", source));
+        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, capabilities: expected, agentBattery: agentBattery, agentDisplay: true, agentWrite: agentWrite, agentHdr: agentHdr, agentRefresh: agentRefresh, agentColor: true)], "service", source));
+    }
+
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(false, 2)]
+    [InlineData(true, 1)]
+    [InlineData(true, 2)]
+    public void ColorWriteRequiresTheDisplayQuery(bool agentBattery, int schema)
+    {
+        // A build selecting the color write without the display query is refused
+        // whatever it claims: its own marker alone, or with the query marker it lacks.
+        string source = new('a', 40);
+        const string color = "session-display-color-write-partial-v1";
+        string battery = agentBattery ? "agent-battery-report-v1," : string.Empty;
+        foreach (string claimed in new[] { battery + color, battery + "session-display-query-partial-v1," + color })
+        {
+            var error = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("agent", schema: schema, capabilities: claimed, agentBattery: agentBattery, agentColor: true)], "agent", source));
+            Assert.Equal("Color-profile write requires the display query contract.", error.Message);
+        }
+        // The same composition with the query is admitted (schema 2 only), so
+        // the refusal above is the missing query, not the color write itself.
+        if (schema == 2)
+        {
+            var admitted = NativeArtifact.Inspect(
+                [.. Image("agent", schema: 2, agentBattery: agentBattery, agentDisplay: true, agentColor: true)], "agent", source);
+            Assert.Equal(battery + "session-display-query-partial-v1," + color, admitted.Capabilities);
         }
     }
 
@@ -487,7 +548,8 @@ public sealed class WindowsNativeEpochTests
         bool agentWrite = b.Features.Split(',').Contains("agent-display-brightness-write-v1", StringComparer.Ordinal);
         bool agentHdr = b.Features.Split(',').Contains("agent-display-hdr-write-v1", StringComparer.Ordinal);
         bool agentRefresh = b.Features.Split(',').Contains("agent-display-refresh-write-v1", StringComparer.Ordinal);
-        string expectedAgentCapabilities = AgentCapabilities(agentBattery, agentDisplay, agentWrite, agentHdr, agentRefresh);
+        bool agentColor = b.Features.Split(',').Contains("agent-display-color-write-v1", StringComparer.Ordinal);
+        string expectedAgentCapabilities = AgentCapabilities(agentBattery, agentDisplay, agentWrite, agentHdr, agentRefresh, agentColor);
         Assert.Equal(expectedAgentCapabilities, b.Capabilities); Assert.False(b.PrivateCustody); Assert.False(b.MetadataOnly);
         if (Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_COMPOSITION") == "combined")
         { Assert.Equal(a.Features, b.Features); Assert.Contains("service-metadata-only-v1", b.Features); }
