@@ -1353,6 +1353,7 @@ fn the_real_agent_import_descriptors_pass_artifact_inspection() {
     let mut unreviewed = REAL_AGENT_IMPORTS.to_vec();
     unreviewed.insert(7, "winhttp.dll");
     let image = with_imports(bytes(&v, "agentImage"), &unreviewed);
-    let named = canonical.replace("user32.dll,", "user32.dll,winhttp.dll,");
+    // The record is canonical, so only the allowlist can refuse it.
+    let named = canonical.replace("webservices.dll,", "webservices.dll,winhttp.dll,");
     assert!(inspect_artifact(&agent_record(&v, &image, &named), &image, "agent", &r).is_err());
 }
