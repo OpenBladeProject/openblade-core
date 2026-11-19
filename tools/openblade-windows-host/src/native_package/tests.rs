@@ -1389,3 +1389,129 @@ fn the_real_agent_import_descriptors_pass_artifact_inspection() {
     let named = canonical.replace("webservices.dll,", "webservices.dll,winhttp.dll,");
     assert!(inspect_artifact(&agent_record(&v, &image, &named), &image, "agent", &r).is_err());
 }
+
+#[test]
+fn the_identity_bounds_match_the_managed_and_build_script_bounds() {
+    for constant in [
+        format!("internal const int MaximumIdentityBytes = {MAX_IDENTITY_BYTES};"),
+        format!("internal const int MaximumRecordBase64 = {MAX_ARTIFACT_RECORD_BASE64};"),
+    ] {
+        assert_eq!(MANAGED_PACKAGE.matches(&constant).count(), 1, "{constant}");
+    }
+    // build.rs emits the identity under the same included bound.
+    let build = include_str!("../../build.rs");
+    assert!(build.contains("include!(\"src/native_package/identity_bound.rs\");"));
+    assert!(build.contains("record.len() <= MAX_IDENTITY_BYTES"));
+}
+
+/// native-identity-bound-v1.json: identities padded to 1025 bytes, the shared
+/// bound, and one byte over it. The managed `WindowsNativeEpochTests` checks
+/// `NativeArtifact.Inspect` against the same images and records.
+fn identity_bound_cases() -> serde_json::Value {
+    let data: serde_json::Value = serde_json::from_str(include_str!(
+        "../../tests/data/native-identity-bound-v1.json"
+    ))
+    .unwrap();
+    assert_eq!(data["bound"], MAX_IDENTITY_BYTES);
+    data
+}
+
+/// A test value of any length; `decode64` keeps its 4096-character bound.
+fn large(case: &serde_json::Value, name: &str) -> Vec<u8> {
+    let value = case[name].as_str().unwrap();
+    decode64_bounded(value, value.len()).unwrap()
+}
+
+fn vector_release() -> Release {
+    let v = vector();
+    authenticate(
+        &bytes(&v, "enrollment"),
+        &bytes(&v, "manifest"),
+        &bytes(&v, "signature"),
+    )
+    .unwrap()
+}
+
+#[test]
+fn compiled_identity_is_admitted_up_to_the_shared_bound_and_no_further() {
+    let data = identity_bound_cases();
+    let release = vector_release();
+    let cases = data["cases"].as_array().unwrap();
+    let sizes: Vec<_> = cases
+        .iter()
+        .map(|case| case["identityBytes"].as_u64().unwrap() as usize)
+        .collect();
+    assert_eq!(
+        sizes,
+        [
+            1025,
+            MAX_IDENTITY_BYTES,
+            MAX_IDENTITY_BYTES,
+            MAX_IDENTITY_BYTES + 1
+        ]
+    );
+    for (case, size) in cases.iter().zip(sizes) {
+        let image = large(case, "image");
+        let record = large(case, "record");
+        let accepted = case["accepted"].as_bool().unwrap();
+        assert_eq!(
+            compiled_record(&image).map(<[u8]>::len).ok(),
+            accepted.then_some(size),
+            "{}",
+            case["name"]
+        );
+        assert_eq!(
+            inspect_artifact(&record, &image, case["role"].as_str().unwrap(), &release).is_ok(),
+            accepted,
+            "{}",
+            case["name"]
+        );
+    }
+}
+
+#[test]
+fn package_carries_both_roles_at_the_identity_bound() {
+    let data = identity_bound_cases();
+    let release = vector_release();
+    let case = |name: &str| {
+        data["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == name)
+            .unwrap()
+    };
+    let (service, agent) = (case("service-at-bound"), case("agent-at-bound"));
+    let records = [
+        encode64(&large(service, "record")),
+        encode64(&large(agent, "record")),
+    ];
+    let (installation, digest) = ("1".repeat(32), "a".repeat(64));
+    let package = encode(
+        "OpenBlade.NativePackage.v2",
+        &[
+            "LocalDev",
+            &installation,
+            &digest,
+            "4294967296",
+            &digest,
+            &digest,
+            &digest,
+            &digest,
+            &records[0],
+            &records[1],
+            "two-executables-static-crt-system-imports-v2",
+            &digest,
+        ],
+    );
+    let f = lines(&package, "OpenBlade.NativePackage.v2", 12).unwrap();
+    for (field, case) in [(f[8], service), (f[9], agent)] {
+        // Beyond the general base64 bound, within the artifact record bound.
+        assert!(decode64(field).is_err());
+        let record = artifact_record(field).unwrap();
+        let role = case["role"].as_str().unwrap();
+        inspect_artifact(&record, &large(case, "image"), role, &release).unwrap();
+    }
+    assert!(artifact_record(&"A".repeat(MAX_ARTIFACT_RECORD_BASE64)).is_ok());
+    assert!(artifact_record(&"A".repeat(MAX_ARTIFACT_RECORD_BASE64 + 4)).is_err());
+}

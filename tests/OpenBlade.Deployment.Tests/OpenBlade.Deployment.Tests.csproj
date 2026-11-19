@@ -30,5 +30,6 @@
     <None Include="../../tools/openblade-windows-host/tests/data/native-origin-corrections-v1.json" Link="native-origin-corrections-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/native-verification-v1.json" Link="native-verification-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/native-package-v1.json" Link="native-package-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/native-identity-bound-v1.json" Link="native-identity-bound-v1.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

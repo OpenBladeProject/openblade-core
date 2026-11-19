@@ -23,6 +23,12 @@ use windows_sys::{
 const ZERO: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 const DOMAIN: &[u8] = b"OpenBlade-Local-Dev-Deployment-Manifest-v1\0";
 const ROLES: &[u8] = b"OpenBlade.WindowsNativeRoles\0v1\0win-x64\0";
+include!("native_package/identity_bound.rs");
+/// Largest base64 artifact record a package carries, about 8 KiB of record. It
+/// holds an identity at `MAX_IDENTITY_BYTES` plus its size, digest and
+/// imports. The package's 16384-byte record bound limits the pair. The
+/// managed `NativeArtifact.MaximumRecordBase64` states the same value.
+const MAX_ARTIFACT_RECORD_BASE64: usize = 10924;
 
 fn deny() -> io::Error {
     paths::denied("native package/epoch evidence is unavailable, changed, or unadmitted")
@@ -392,6 +398,9 @@ struct Enrollment {
 fn decode64(value: &str) -> io::Result<Vec<u8>> {
     decode64_bounded(value, 4096)
 }
+fn artifact_record(value: &str) -> io::Result<Vec<u8>> {
+    decode64_bounded(value, MAX_ARTIFACT_RECORD_BASE64)
+}
 fn decode64_bounded(value: &str, maximum: usize) -> io::Result<Vec<u8>> {
     if value.is_empty() || !value.len().is_multiple_of(4) || value.len() > maximum {
         return Err(deny());
@@ -645,7 +654,7 @@ fn compiled_record(image: &[u8]) -> io::Result<&[u8]> {
             }
             let size = u32at(o + 8)?;
             let raw = u32at(o + 20)?;
-            if size == 0 || size > 1024 {
+            if size == 0 || size > MAX_IDENTITY_BYTES {
                 return Err(deny());
             }
             result = image.get(raw..raw.checked_add(size).ok_or_else(deny)?);
@@ -921,7 +930,7 @@ fn inspect_artifact(
         }
         sections.push((rva, size, raw, raw_size));
         if name == b".obid\0\0\0" {
-            if marker.is_some() || size == 0 || size > 1024 || raw_size < size {
+            if marker.is_some() || size == 0 || size > MAX_IDENTITY_BYTES || raw_size < size {
                 return Err(deny());
             }
             marker = Some(image.get(raw..raw + size).ok_or_else(deny)?);
@@ -1656,8 +1665,8 @@ fn read_package(allow_provisional: bool) -> io::Result<InstalledPackage> {
         64 * 1024 * 1024,
         &mut held,
     )?;
-    if inspect_artifact(&decode64(f[8])?, &service, "service", &release)? != epoch.service
-        || inspect_artifact(&decode64(f[9])?, &agent, "agent", &release)? != epoch.agent
+    if inspect_artifact(&artifact_record(f[8])?, &service, "service", &release)? != epoch.service
+        || inspect_artifact(&artifact_record(f[9])?, &agent, "agent", &release)? != epoch.agent
         || inventory[inventory.len() - 64..inventory.len() - 32] != Sha256::digest(&service)[..]
         || inventory[inventory.len() - 32..] != Sha256::digest(&agent)[..]
     {
@@ -1792,7 +1801,7 @@ pub(crate) fn historical_battery_producer(
     paths::verify_security(&app, Policy::Directory { extra_rights: 0 })?;
     let service = retain_bytes(&app, "OpenBlade.Service.exe", 64 * 1024 * 1024, &mut held)?;
     let policy = startup_policy(compiled_record(&service)?)?;
-    if inspect_artifact(&decode64(f[8])?, &service, "service", &release)? != artifact
+    if inspect_artifact(&artifact_record(f[8])?, &service, "service", &release)? != artifact
         || !matches!(
             policy,
             "service-battery-policy-v1" | "service-temporary-charge-v1"

@@ -11,6 +11,19 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
     string Features, string Compiler, string Profile, long Size, string Sha256, string Imports,
     int Schema = 1, string Capabilities = "none")
 {
+    // Largest compiled build identity (.obid section), in bytes. build.rs and
+    // the Rust readers share MAX_IDENTITY_BYTES from
+    // native_package/identity_bound.rs, and a Rust test pins this value. The
+    // sorted Cargo feature list is most of the record and grows with every
+    // Agent capability; the worst shippable composition was 977 bytes when
+    // this bound was raised from 1024.
+    internal const int MaximumIdentityBytes = 4096;
+    // Largest base64 artifact record a package carries, about 8 KiB of record. It
+    // holds an identity at MaximumIdentityBytes plus its size, digest and
+    // imports. The package's 16384-byte record bound limits the pair. Rust
+    // states the same MAX_ARTIFACT_RECORD_BASE64.
+    internal const int MaximumRecordBase64 = 10924;
+
     internal bool HasStartupCustody => Features.Split(',').Contains("startup-custody-v1", StringComparer.Ordinal);
     internal bool PrivateCustody => Schema == 2 && Capabilities.Split(',').Contains("private-service-custody-v1", StringComparer.Ordinal);
     internal bool MetadataOnly => Schema == 2 && Capabilities.Split(',').Contains("service-metadata-only-v1", StringComparer.Ordinal);
@@ -111,7 +124,7 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
             throw new InvalidDataException("Native artifact requires a bounded x64 executable with no CLR or delay-import closure.");
         }
         var sections = headers.SectionHeaders.Where(s => s.Name == ".obid").ToArray();
-        if (sections.Length != 1 || sections[0].VirtualSize is < 1 or > 1024
+        if (sections.Length != 1 || sections[0].VirtualSize is < 1 or > MaximumIdentityBytes
             || sections[0].SizeOfRawData < sections[0].VirtualSize)
         {
             throw new InvalidDataException("Native artifact has no unique compiled build identity.");
@@ -192,7 +205,14 @@ internal static class NativeCanonical
 
     internal static byte[] Lines(string header, params string[] fields)
     {
-        int maximum = header is "OpenBlade.NativeStartupOwner.v2" or "OpenBlade.NativeServiceLaunch.v1" or "OpenBlade.NativeReadiness.v2" or "OpenBlade.ManagedNativeResolution.v2" ? 10924 : 2048;
+        int maximum = header switch
+        {
+            "OpenBlade.NativeStartupOwner.v2" or "OpenBlade.NativeServiceLaunch.v1" or "OpenBlade.NativeReadiness.v2" or "OpenBlade.ManagedNativeResolution.v2" => 10924,
+            // One identity field, such as the sorted feature list, can fill most of the identity.
+            "OpenBlade.NativeArtifactRecord.v1" or "OpenBlade.NativeArtifactRecord.v2" => NativeArtifact.MaximumIdentityBytes,
+            "OpenBlade.NativePackage.v2" => NativeArtifact.MaximumRecordBase64,
+            _ => 2048,
+        };
         if (fields.Any(f => f.Length > maximum || f.Any(c => c < 0x20 || c > 0x7e))
             || header.Length + fields.Sum(f => f.Length + 1) + 1 > 16384)
         { throw new InvalidDataException("Canonical native records require bounded ASCII fields."); }

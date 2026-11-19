@@ -1,5 +1,7 @@
 use std::{env, fs, path::PathBuf, process::Command};
 
+include!("src/native_package/identity_bound.rs");
+
 fn main() {
     println!("cargo::rustc-check-cfg=cfg(openblade_metadata_acquisition_probe)");
     println!("cargo::rustc-check-cfg=cfg(openblade_display_write)");
@@ -143,7 +145,11 @@ fn main() {
             features.join(","),
             compiler.trim()
         );
-        assert!(record.len() <= 1024 && record.is_ascii());
+        assert!(
+            record.len() <= MAX_IDENTITY_BYTES && record.is_ascii(),
+            "the {role} build identity must be ASCII and at most {MAX_IDENTITY_BYTES} bytes, not {}",
+            record.len()
+        );
         let bytes = format!("{:?}", record.as_bytes());
         let generated = format!(
             "#[allow(unsafe_code)]\n#[used]\n#[unsafe(link_section = \".obid\")]\nstatic NATIVE_ARTIFACT_IDENTITY: [u8; {}] = {bytes};\n",

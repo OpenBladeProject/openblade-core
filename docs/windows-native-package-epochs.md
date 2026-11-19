@@ -22,7 +22,9 @@ size/digest verification, role ownership reconciliation, bounded cabinet
 extraction and native inventory decoding. Both role executables are extracted
 from those bytes. A fixed .obid PE section emitted by build.rs contains a build
 nonce plus role, target, exact source revision, sorted features, compiler version
-and profile. The publisher records its full file digest and rejects a conflicting
+and profile, plus v2 capabilities. The section holds at most 4096 bytes; build.rs
+and both readers share that bound, and the sorted feature list is most of it.
+The publisher records its full file digest and rejects a conflicting
 mapping for an artifact ID across retained epochs, including abandoned complete
 preparations. Rebuilding with a reused nonce and different bytes is denied.
 
@@ -50,7 +52,9 @@ Canonical version 1 records are bounded ASCII lines with exact headers, field
 counts and a final LF. NativeArtifactRecord binds identity/provenance/imports to
 size and SHA-256. NativePackage binds LocalDev installation, original installer,
 manifest/signature/key, original role resource, both artifacts and closure recipe.
-NativeEpoch binds phase, random epoch, predecessor selection digest, increasing
+It carries each artifact record as base64 of at most 10924 characters, and the
+whole package stays within the 16384-byte record bound with both identities at
+4096 bytes. NativeEpoch binds phase, random epoch, predecessor selection digest, increasing
 ordinal, installation, package commitment, fresh request, both artifact IDs,
 readiness and live-owner nonce. Cross-language known-answer data is checked in at
 tools/openblade-windows-host/tests/data/native-package-v1.json. Its public test

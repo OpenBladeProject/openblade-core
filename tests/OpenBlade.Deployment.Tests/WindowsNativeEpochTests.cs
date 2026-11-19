@@ -70,9 +70,13 @@ public sealed class WindowsNativeEpochTests
         return bytes;
     }
 
-    internal static async Task<WindowsNativePackage> Package(WindowsNativeEpochFiles files, char nonce = 'b', byte marker = 1, int schema = 1, bool mailbox = false, string? sourceRevision = null, bool mutation = false)
+    internal static Task<WindowsNativePackage> Package(WindowsNativeEpochFiles files, char nonce = 'b', byte marker = 1, int schema = 1, bool mailbox = false, string? sourceRevision = null, bool mutation = false) =>
+        Package(files, Image("service", nonce, marker, schema, mailbox: mailbox, sourceRevision: sourceRevision, mutation: mutation),
+            Image("agent", nonce, 2, schema, mailbox: mailbox, sourceRevision: sourceRevision, mutation: mutation), sourceRevision);
+
+    internal static async Task<WindowsNativePackage> Package(WindowsNativeEpochFiles files, byte[] service, byte[] agent, string? sourceRevision = null)
     {
-        byte[] bytes = WindowsNativeInventoryBurnExtractorTests.NativeEpochBundle(Image("service", nonce, marker, schema, mailbox: mailbox, sourceRevision: sourceRevision, mutation: mutation), Image("agent", nonce, 2, schema, mailbox: mailbox, sourceRevision: sourceRevision, mutation: mutation), sourceRevision);
+        byte[] bytes = WindowsNativeInventoryBurnExtractorTests.NativeEpochBundle(service, agent, sourceRevision);
         using var signed = OpenBladeSignedReleaseVerifierTests.TestRelease.CreateWithInstallerBytes(bytes, sourceRevision ?? new string('a', 40));
         if (!File.Exists(Path.Combine(files.Root, "root.bin")))
         {
@@ -441,6 +445,58 @@ public sealed class WindowsNativeEpochTests
         Assert.Equal(package.Service.Encode(), Convert.FromBase64String(f[8]));
         Assert.Equal(package.Agent.Encode(), Convert.FromBase64String(f[9]));
         Assert.Equal("two-executables-static-crt-system-imports-v2", f[10]);
+    }
+
+    // native-identity-bound-v1.json: identities padded to 1025 bytes, the
+    // shared bound, and one byte over it. native_package::tests checks the Rust
+    // readers against the same images and records.
+    private static JsonElement[] IdentityBoundCases(out int bound)
+    {
+        using var data = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "native-identity-bound-v1.json")));
+        bound = data.RootElement.GetProperty("bound").GetInt32();
+        return [.. data.RootElement.GetProperty("cases").EnumerateArray().Select(c => c.Clone())];
+    }
+
+    private static byte[] Base64(JsonElement item, string name) => Convert.FromBase64String(item.GetProperty(name).GetString()!);
+
+    [Fact]
+    public void CompiledIdentityIsAdmittedUpToTheSharedBoundAndNoFurther()
+    {
+        var cases = IdentityBoundCases(out int bound);
+        Assert.Equal(NativeArtifact.MaximumIdentityBytes, bound);
+        Assert.Equal(new[] { 1025, bound, bound, bound + 1 }, cases.Select(c => c.GetProperty("identityBytes").GetInt32()));
+        foreach (var item in cases)
+        {
+            byte[] image = Base64(item, "image");
+            string role = item.GetProperty("role").GetString()!;
+            int section = 0x98 + 240;
+            Assert.Equal(item.GetProperty("identityBytes").GetInt32(), BinaryPrimitives.ReadInt32LittleEndian(image.AsSpan(section + 8)));
+            if (!item.GetProperty("accepted").GetBoolean())
+            {
+                var refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect([.. image], role, new string('a', 40)));
+                Assert.Equal("Native artifact has no unique compiled build identity.", refused.Message);
+                continue;
+            }
+            var artifact = NativeArtifact.Inspect([.. image], role, new string('a', 40));
+            Assert.Equal(Base64(item, "record"), artifact.Encode());
+            Assert.Contains("agent-display-color-write-v1", artifact.Features.Split(','));
+        }
+    }
+
+    [Fact]
+    public async Task PackageCarriesBothRolesAtTheIdentityBound()
+    {
+        var cases = IdentityBoundCases(out _);
+        byte[] Role(string name) => Base64(cases.Single(c => c.GetProperty("name").GetString() == name), "image");
+        using var files = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var package = await Package(files, Role("service-at-bound"), Role("agent-at-bound"));
+        byte[] record = package.Record;
+        Assert.InRange(record.Length, 1, 16384);
+        var f = NativeCanonical.ParseLines(record, "OpenBlade.NativePackage.v2", 13);
+        Assert.Equal(package.Service.Encode(), Convert.FromBase64String(f[8]));
+        Assert.Equal(package.Agent.Encode(), Convert.FromBase64String(f[9]));
+        // Each base64 record exceeds the general 2048-character field bound.
+        Assert.All(f[8..10], field => Assert.InRange(field.Length, 2049, NativeArtifact.MaximumRecordBase64));
     }
 
     [Fact]
