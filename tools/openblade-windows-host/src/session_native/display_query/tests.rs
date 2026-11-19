@@ -1514,3 +1514,419 @@ mod hdr_writes {
         assert!(supplier.canceled.load(Ordering::Acquire));
     }
 }
+
+/// Selected manual refresh-rate writes through the production dispatcher.
+#[cfg(feature = "agent-display-refresh-write-v1")]
+mod refresh_writes {
+    use super::*;
+    use ccd_write::{MULTIPLE, NO_INTERNAL};
+    use recovery::Status;
+    use refresh_write::{
+        CANCELED, PANEL_CHANGED, PAUSED, STALE, UNAVAILABLE, UNCONFIRMED, apply_failed,
+        not_confirmed, validation_rejected,
+    };
+    use std::borrow::Cow;
+    use write::{CHANGED_POWER, CHECKPOINT, STALE_AFTER, UNCONFIRMED_POWER};
+
+    struct Writes {
+        outcome: Option<(Status, Option<Cow<'static, str>>, Snapshot)>,
+        received: Vec<SetRefreshRate>,
+        others: usize,
+    }
+    impl Writes {
+        fn new(status: Status, error: Option<Cow<'static, str>>, state: Snapshot) -> Self {
+            Self {
+                outcome: Some((status, error, state)),
+                received: Vec::new(),
+                others: 0,
+            }
+        }
+    }
+    impl Supplier for Writes {
+        async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
+            self.others += 1;
+            Ok(Snapshot::unavailable("unused"))
+        }
+        #[cfg(feature = "agent-display-brightness-write-v1")]
+        async fn set_brightness(
+            &mut self,
+            _request: SetBrightness,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<WriteOutcome> {
+            self.others += 1;
+            Err(io::Error::other(
+                "refresh test supplier received setBrightness",
+            ))
+        }
+        #[cfg(feature = "agent-display-hdr-write-v1")]
+        async fn set_hdr(
+            &mut self,
+            _request: SetHdr,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<CcdWriteOutcome> {
+            self.others += 1;
+            Err(io::Error::other("refresh test supplier received setHdr"))
+        }
+        async fn set_refresh_rate(
+            &mut self,
+            request: SetRefreshRate,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<CcdWriteOutcome> {
+            self.received.push(request);
+            let (status, error, state) = self.outcome.take().expect("one write");
+            Ok(CcdWriteOutcome {
+                status,
+                error,
+                state,
+            })
+        }
+    }
+    fn set(expected: Value, key: Value) -> Vec<u8> {
+        request(json!({
+            "operation":"setRefreshRate","version":2,"requestId":ID,
+            "expectedPowerSource":expected,"refreshRateKey":key,
+        }))
+    }
+    fn capture_write(name: &str, frame: &[u8], status: Status, error: Option<&str>, state: &Value) {
+        capture_row(
+            json!({"case":name,"expectedStatus":status as u8,"expectedError":error,
+            "expectedState":state,"frame":frame}),
+        );
+    }
+
+    #[tokio::test]
+    async fn every_refresh_status_reaches_the_managed_response_shape() {
+        let state = || observation::fixture_query("available");
+        let text = |error: &'static str| Some(Cow::Borrowed(error));
+        let cases: [(&str, Status, Option<Cow<'static, str>>); 17] = [
+            ("refresh-write-succeeded", Status::Succeeded, None),
+            (
+                "refresh-write-blocked-paused",
+                Status::Blocked,
+                text(PAUSED),
+            ),
+            (
+                "refresh-write-blocked-checkpoint",
+                Status::Blocked,
+                text(CHECKPOINT),
+            ),
+            (
+                "refresh-write-blocked-unconfirmed-power",
+                Status::Blocked,
+                text(UNCONFIRMED_POWER),
+            ),
+            (
+                "refresh-write-blocked-power",
+                Status::Blocked,
+                text(CHANGED_POWER),
+            ),
+            ("refresh-write-blocked-stale", Status::Blocked, text(STALE)),
+            (
+                "refresh-write-blocked-panel",
+                Status::Blocked,
+                text(PANEL_CHANGED),
+            ),
+            (
+                "refresh-write-blocked-canceled",
+                Status::Blocked,
+                text(CANCELED),
+            ),
+            (
+                "refresh-write-failed-unavailable",
+                Status::Failed,
+                text(UNAVAILABLE),
+            ),
+            (
+                "refresh-write-failed-validation",
+                Status::Failed,
+                Some(validation_rejected(87)),
+            ),
+            (
+                "refresh-write-failed-no-panel",
+                Status::Failed,
+                text(NO_INTERNAL),
+            ),
+            (
+                "refresh-write-failed-multiple",
+                Status::Failed,
+                text(MULTIPLE),
+            ),
+            (
+                "refresh-write-indeterminate-apply",
+                Status::Indeterminate,
+                Some(apply_failed(1610)),
+            ),
+            (
+                "refresh-write-indeterminate-unconfirmed",
+                Status::Indeterminate,
+                text(UNCONFIRMED),
+            ),
+            (
+                "refresh-write-indeterminate-readback",
+                Status::Indeterminate,
+                Some(not_confirmed(NO_INTERNAL)),
+            ),
+            (
+                "refresh-write-indeterminate-stale",
+                Status::Indeterminate,
+                text(STALE_AFTER),
+            ),
+            (
+                "refresh-write-indeterminate-unrefreshed",
+                Status::Indeterminate,
+                text(UNCONFIRMED),
+            ),
+        ];
+        for (index, (case, status, error)) in cases.into_iter().enumerate() {
+            let key = if index % 2 == 0 {
+                "fixed-240"
+            } else {
+                "dynamic-60-240"
+            };
+            let state = if case.ends_with("-unrefreshed") {
+                Snapshot::unavailable(write::UNREFRESHED)
+            } else {
+                state()
+            };
+            let expected = serde_json::to_value(&state).unwrap();
+            let mut supplier = Writes::new(status, error.clone(), state);
+            // Managed polymorphic order: discriminator first, then members.
+            let (result, bytes, admissions) =
+                exchange(&mut supplier, &set(json!(2), json!(key))).await;
+            result.unwrap();
+            assert_eq!(admissions, 2);
+            assert_eq!(supplier.others, 0);
+            assert_eq!(
+                supplier.received,
+                [SetRefreshRate {
+                    expected_power_source: 2,
+                    key: key.into(),
+                }]
+            );
+            let body: Value = serde_json::from_slice(&bytes[4..]).unwrap();
+            assert_eq!(body["requestId"], ID);
+            assert_eq!(body["status"], status as u8);
+            assert_eq!(body["error"], json!(error.as_deref()));
+            assert_eq!(body["state"], expected);
+            capture_write(case, &bytes, status, error.as_deref(), &expected);
+        }
+        assert_eq!(
+            validation_rejected(87),
+            "The refresh-rate configuration could not be prepared: Windows rejected the \
+             requested display configuration: Win32 error 87."
+        );
+        assert_eq!(
+            apply_failed(1610),
+            "The refresh-rate change failed: Windows could not apply the requested display \
+             configuration: Win32 error 1610."
+        );
+    }
+
+    #[tokio::test]
+    async fn managed_key_limits_reach_the_supplier_exactly() {
+        // ValidKey counts UTF-16 units: 512 surrogate pairs are exactly 1024.
+        for key in [
+            "fixed-240".to_string(),
+            "\u{1F600}".repeat(512),
+            "a".repeat(1024),
+        ] {
+            let mut supplier = Writes::new(Status::Succeeded, None, Snapshot::unavailable("x"));
+            let (result, bytes, _) = exchange(&mut supplier, &set(json!(0), json!(key))).await;
+            result.unwrap();
+            assert!(!bytes.is_empty());
+            assert_eq!(supplier.received.len(), 1);
+            assert_eq!(supplier.received[0].key, key);
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_refresh_members_and_other_mutations_reach_no_supplier() {
+        let id = ID;
+        let mut inputs = vec![
+            set(json!(3), json!("fixed-240")),
+            set(json!(-1), json!("fixed-240")),
+            set(json!(0.5), json!("fixed-240")),
+            set(json!("PluggedIn"), json!("fixed-240")),
+            set(Value::Null, json!("fixed-240")),
+            set(json!(0), Value::Null),
+            set(json!(0), json!("")),
+            set(json!(0), json!("   ")),
+            set(json!(0), json!(" fixed-240")),
+            set(json!(0), json!("fixed-240 ")),
+            set(json!(0), json!("fixed-240\n")),
+            set(json!(0), json!("fixed\u{1}240")),
+            set(json!(0), json!("fixed\u{85}240")),
+            set(json!(0), json!("\u{1F600}".repeat(513))),
+            set(json!(0), json!("a".repeat(1025))),
+            set(json!(0), json!(240)),
+            set(json!(0), json!(["fixed-240"])),
+            set(json!(0), json!({"key":"fixed-240"})),
+            request(json!({"version":2,"requestId":ID,"operation":"setRefreshRate",
+                "refreshRateKey":"fixed-240"})),
+            request(json!({"version":2,"requestId":ID,"operation":"setRefreshRate",
+                "expectedPowerSource":0})),
+            request(json!({"version":2,"requestId":ID,"operation":"setRefreshRate",
+                "expectedPowerSource":0,"refreshRateKey":"fixed-240","percent":50})),
+            request(json!({"version":2,"requestId":ID,"operation":"setRefreshRate",
+                "expectedPowerSource":0,"refreshRateKey":"fixed-240","enabled":true})),
+            request(json!({"version":2,"requestId":ID,"operation":"setRefreshRate",
+                "expectedPowerSource":0,"refreshRateKey":"fixed-240","colorProfileKey":"x"})),
+            request(json!({"version":1,"requestId":ID,"operation":"setRefreshRate",
+                "expectedPowerSource":0,"refreshRateKey":"fixed-240"})),
+            request(json!({"version":2,"requestId":ID,"operation":"query",
+                "refreshRateKey":"fixed-240"})),
+            request(json!({"version":2,"requestId":ID,"operation":"setHdr",
+                "expectedPowerSource":0,"enabled":true,"refreshRateKey":"fixed-240"})),
+            request(json!({"version":2,"requestId":ID,"operation":"setBrightness",
+                "expectedPowerSource":0,"percent":50,"refreshRateKey":"fixed-240"})),
+            request(json!({"version":2,"requestId":ID,"operation":"setColorProfile",
+                "expectedPowerSource":0,"colorProfileKey":"x"})),
+            request(json!({"version":2,"requestId":ID,"operation":"applyProfile",
+                "expectedPowerSource":0,"settings":{}})),
+            raw_request(
+                format!(
+                    r#"{{"operation":"setRefreshRate","version":2,"requestId":"{id}","expectedPowerSource":0,"refreshRateKey":"fixed-60","refreshRateKey":"fixed-240"}}"#
+                )
+                .as_bytes(),
+            ),
+            raw_request(
+                format!(
+                    r#"{{"version":2,"operation":"setRefreshRate","requestId":"{id}","expectedPowerSource":0,"refreshRateKey":"fixed-240"}}"#
+                )
+                .as_bytes(),
+            ),
+            raw_request(
+                format!(
+                    r#"{{"operation":{{"setRefreshRate":null}},"version":2,"requestId":"{id}","expectedPowerSource":0,"refreshRateKey":"fixed-240"}}"#
+                )
+                .as_bytes(),
+            ),
+        ];
+        // Builds without the other writes refuse them entirely.
+        if !cfg!(feature = "agent-display-hdr-write-v1") {
+            inputs.push(request(
+                json!({"version":2,"requestId":ID,"operation":"setHdr",
+            "expectedPowerSource":0,"enabled":true}),
+            ));
+        }
+        if !cfg!(feature = "agent-display-brightness-write-v1") {
+            inputs.push(request(
+                json!({"version":2,"requestId":ID,"operation":"setBrightness",
+            "expectedPowerSource":0,"percent":50}),
+            ));
+        }
+        for input in inputs {
+            let mut supplier = Writes::new(Status::Succeeded, None, Snapshot::unavailable("x"));
+            let (result, bytes, _) = exchange(&mut supplier, &input).await;
+            assert!(matches!(result, Err(ServeError::Connection(_))));
+            assert!(bytes.is_empty());
+            assert!(supplier.received.is_empty());
+            assert_eq!(supplier.others, 0);
+        }
+    }
+
+    /// A refresh write that only finishes after its gate opens, recording
+    /// whether cancellation was requested and whether it completed.
+    struct HeldWrite {
+        gate: Arc<(Mutex<bool>, Condvar)>,
+        canceled: Arc<AtomicBool>,
+        recorded: Arc<AtomicBool>,
+        started: Arc<AtomicBool>,
+    }
+    impl Supplier for HeldWrite {
+        async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
+            unreachable!("write test received a query")
+        }
+        #[cfg(feature = "agent-display-brightness-write-v1")]
+        async fn set_brightness(
+            &mut self,
+            _request: SetBrightness,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<WriteOutcome> {
+            unreachable!("refresh test supplier received setBrightness")
+        }
+        #[cfg(feature = "agent-display-hdr-write-v1")]
+        async fn set_hdr(
+            &mut self,
+            _request: SetHdr,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<CcdWriteOutcome> {
+            unreachable!("refresh test supplier received setHdr")
+        }
+        async fn set_refresh_rate(
+            &mut self,
+            _request: SetRefreshRate,
+            canceled: Arc<AtomicBool>,
+        ) -> io::Result<CcdWriteOutcome> {
+            let gate = self.gate.clone();
+            let seen = self.canceled.clone();
+            let recorded = self.recorded.clone();
+            let started = self.started.clone();
+            tokio::task::spawn_blocking(move || {
+                started.store(true, Ordering::Release);
+                let (lock, event) = &*gate;
+                let mut open = lock.lock().unwrap();
+                while !*open {
+                    open = event.wait(open).unwrap();
+                }
+                seen.store(canceled.load(Ordering::Acquire), Ordering::Release);
+                recorded.store(true, Ordering::Release);
+                Ok(CcdWriteOutcome {
+                    status: Status::Indeterminate,
+                    error: Some(Cow::Borrowed(UNCONFIRMED)),
+                    state: Snapshot::unavailable("recorded"),
+                })
+            })
+            .await
+            .unwrap()
+        }
+    }
+
+    #[tokio::test]
+    async fn stop_and_client_loss_join_the_recorded_refresh_write_and_send_nothing() {
+        for client_loss in [false, true] {
+            let mut supplier = HeldWrite {
+                gate: Arc::new((Mutex::new(false), Condvar::new())),
+                canceled: Arc::default(),
+                recorded: Arc::default(),
+                started: Arc::default(),
+            };
+            let gate = supplier.gate.clone();
+            let started = supplier.started.clone();
+            let recorded = supplier.recorded.clone();
+            let (mut server, mut client) = tokio::io::duplex(1024);
+            client
+                .write_all(&set(json!(0), json!("fixed-240")))
+                .await
+                .unwrap();
+            let (sender, mut stop) = watch::channel(false);
+            let (result, bytes) = tokio::join!(
+                async {
+                    let result =
+                        serve(&mut server, &mut stop, &mut supplier, |_| Ok(()), || Ok(())).await;
+                    drop(server);
+                    result
+                },
+                async {
+                    wait_flag(&started).await;
+                    if client_loss {
+                        client.write_all(&[0]).await.unwrap();
+                    } else {
+                        sender.send(true).unwrap();
+                    }
+                    // The server must still be waiting on the blocking write.
+                    sleep(Duration::from_millis(50)).await;
+                    assert!(!recorded.load(Ordering::Acquire));
+                    release(&gate);
+                    let mut bytes = Vec::new();
+                    client.read_to_end(&mut bytes).await.unwrap();
+                    bytes
+                },
+            );
+            result.unwrap();
+            assert!(bytes.is_empty(), "an abandoned write sends no reply");
+            assert!(supplier.recorded.load(Ordering::Acquire));
+            assert!(supplier.canceled.load(Ordering::Acquire));
+        }
+    }
+}
