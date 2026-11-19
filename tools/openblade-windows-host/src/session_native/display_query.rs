@@ -120,10 +120,11 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Object<T> {
 /// Managed `DisplayProfileSettings` exactly as its codec writes it: an
 /// object with every member present, the setting members nullable, and the
 /// computed `isConfigured` (managed ignores it on read; native requires the
-/// written value). Stricter than managed only for encodings it never writes:
-/// a missing `brightnessPercent` or `isConfigured` (managed requires the
-/// other members too), an inconsistent `isConfigured`, PascalCase names and a
-/// string percent. A positional array is refused like managed (`Object`).
+/// written value). Stricter than managed only for encodings managed never
+/// writes, for example a missing `brightnessPercent` or `isConfigured`
+/// (managed requires the other members too), an inconsistent or null
+/// `isConfigured`, duplicate members, other member-name casing and a string
+/// percent. A positional array is refused like managed (`Object`).
 #[cfg(feature = "agent-display-profile-apply-v1")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

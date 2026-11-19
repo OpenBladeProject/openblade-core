@@ -196,9 +196,10 @@ configured field facing an unavailable reply fails (Indeterminate after a
 submission); and the request must be a settings object carrying every member
 the managed codec writes, including the computed `isConfigured` (managed
 requires `refreshRateKey`, `hdrEnabled` and `colorProfileKey` too, but also
-accepts a missing `brightnessPercent` or `isConfigured`, an inconsistent
-`isConfigured`, PascalCase names and a string percent; it rejects an array
-like native).
+accepts encodings it never writes, such as a missing `brightnessPercent` or
+`isConfigured`, an inconsistent or null `isConfigured`, duplicate members,
+other member-name casing and a string percent; it rejects an array like
+native).
 
 Current HDR output mode, complete snapshot parity, and native display behavior
 need separate evidence before replacement. Live refresh still needs authorized
