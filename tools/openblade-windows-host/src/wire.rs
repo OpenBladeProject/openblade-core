@@ -31,9 +31,10 @@ async fn write_frame(io: &mut (impl AsyncWrite + Unpin), frame: Frame<'_>) -> io
     service_frame::write_frame(io, &frame).await
 }
 
-pub(crate) const CURRENT_FIXTURE: &str = include_str!(
-    "../../../tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service-status-event.json"
-);
+// This development host still speaks protocol 79. It embeds the frozen IPC79 copy
+// of the managed status event; the managed oracle tracks the current version.
+pub(crate) const CURRENT_FIXTURE: &str =
+    include_str!("../tests/data/ipc79/service-status-event.json");
 const LEGACY_FIXTURE: &str =
     include_str!("../../../rust/crates/openblade-status-cli/fixtures/response.json");
 

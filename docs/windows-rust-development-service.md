@@ -269,8 +269,8 @@ The replay in `tools/openblade-windows-host/tests/fixtures/get-status-v79.frames
 contains two consecutive managed codec frames. The managed
 `IpcMessageCodec.WriteRequestAsync` writes `GetStatusRequest(79, id)`, then
 `WriteServerFrameAsync` writes a successful `ServiceResponse` with the same ID.
-The status comes from decoding the checked-in
-`tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service-status-event.json`
+The status comes from decoding the v79 status event, now frozen for this host at
+`tools/openblade-windows-host/tests/data/ipc79/service-status-event.json`,
 through the managed codec. The ID is
 `11111111-2222-4333-8444-555555555555`. Tests replay the bytes in memory without
 opening a named pipe.

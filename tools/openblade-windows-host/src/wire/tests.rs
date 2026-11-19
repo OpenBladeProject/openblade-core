@@ -7,10 +7,10 @@ use tokio::task::JoinHandle;
 
 use super::*;
 
-const REPLAY: &str =
-    include_str!("../../../../tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service.json");
-const RUNTIME: &str =
-    include_str!("../../../../tests/OpenBlade.Service.Tests/WindowsReplay/v1/service-runtime.json");
+// Frozen IPC79 copies of the managed replay oracle: this read-only development
+// host still speaks protocol 79, while the managed fixtures track the current version.
+const REPLAY: &str = include_str!("../../tests/data/ipc79/service.json");
+const RUNTIME: &str = include_str!("../../tests/data/ipc79/service-runtime.json");
 const LEGACY_REQUEST: &str =
     include_str!("../../../../rust/crates/openblade-status-cli/fixtures/request.json");
 const ID: &str = "11111111-2222-4333-8444-555555555555";
