@@ -7,6 +7,7 @@ use std::io;
 mod fan_request;
 pub(crate) use fan_request::FanOverride;
 
+use openblade_windows_host::json_object::{self, nullable_object, object};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -27,6 +28,8 @@ pub(crate) fn production_path() -> String {
 // LiveReadingSensors is a four-bit mask. The managed legacy default is All.
 const ALL_LIVE_READINGS: u8 = 15;
 
+// Decoded through `json_object`: managed reads the request and every nested
+// struct member only from a JSON object, never a positional array.
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(
     tag = "operation",
@@ -38,6 +41,7 @@ pub(crate) enum StatusRequest {
     SetBatteryPolicy {
         version: i32,
         request_id: String,
+        #[serde(deserialize_with = "object")]
         value: openblade_domain::battery_history::Policy,
     },
     SetBatteryProtection {
@@ -53,7 +57,7 @@ pub(crate) enum StatusRequest {
     SetFanOverride {
         version: i32,
         request_id: String,
-        #[serde(deserialize_with = "Deserialize::deserialize")]
+        #[serde(deserialize_with = "nullable_object")]
         value: Option<FanOverride>,
         #[serde(default)]
         settings: Option<Value>,
@@ -61,7 +65,7 @@ pub(crate) enum StatusRequest {
     SetPerformanceOverride {
         version: i32,
         request_id: String,
-        #[serde(deserialize_with = "Deserialize::deserialize")]
+        #[serde(deserialize_with = "nullable_object")]
         value: Option<PerformanceOverride>,
     },
     ReportApplicationContext {
@@ -132,7 +136,7 @@ impl StatusRequest {
     pub(crate) fn decode(payload: &[u8]) -> io::Result<Self> {
         openblade_domain::thermal_history::validate_json_members(payload)
             .map_err(|_| invalid("duplicate Service request member"))?;
-        let request: Self = serde_json::from_slice(payload)
+        let request: Self = json_object::from_slice(payload)
             .map_err(|_| invalid("invalid Service status request"))?;
         request.validate()?;
         Ok(request)
@@ -295,7 +299,7 @@ enum Frame {
 // duplicate members. GetStatus and SubscribeStatus keep their existing codec.
 #[derive(Deserialize)]
 struct ObserveReplyMembers {
-    #[serde(rename = "status")]
+    #[serde(rename = "status", deserialize_with = "object")]
     _status: ObserveStatusMembers,
 }
 
@@ -305,9 +309,17 @@ struct ObserveStatusMembers {
     _observation_reason: Option<serde::de::IgnoredAny>,
     #[serde(rename = "unconfirmedWrites")]
     _unconfirmed_writes: Option<serde::de::IgnoredAny>,
-    #[serde(rename = "confirmedState")]
+    #[serde(
+        rename = "confirmedState",
+        default,
+        deserialize_with = "nullable_object"
+    )]
     _confirmed_state: Option<ObservedPerformanceMember>,
-    #[serde(rename = "fanStopStatus")]
+    #[serde(
+        rename = "fanStopStatus",
+        default,
+        deserialize_with = "nullable_object"
+    )]
     _fan_stop_status: Option<ObservedFanStopMember>,
 }
 
@@ -394,7 +406,7 @@ impl StatusResponse {
         request: &StatusRequest,
         expected_access: Option<i32>,
     ) -> io::Result<Snapshot> {
-        let reply: Self = serde_json::from_slice(payload)
+        let reply: Self = json_object::from_slice(payload)
             .map_err(|_| invalid("invalid Service status response"))?;
         if reply.version != PROTOCOL_VERSION
             || !reply.request_id.eq_ignore_ascii_case(request.header().1)
@@ -442,7 +454,7 @@ impl StatusResponse {
             .status
             .ok_or_else(|| invalid("Service status response has no snapshot"))?;
         if request.is_observation() {
-            serde_json::from_slice::<ObserveReplyMembers>(payload)
+            json_object::from_slice::<ObserveReplyMembers>(payload)
                 .map_err(|_| invalid("invalid ObserveState confirmation members"))?;
         }
         status.verify(expected_access.unwrap_or(status.control_access))?;
@@ -482,17 +494,42 @@ pub(crate) async fn subscribe<S: AsyncRead + AsyncWrite + Unpin>(
 pub(crate) async fn read_status_event(
     stream: &mut (impl AsyncRead + Unpin),
 ) -> io::Result<Snapshot> {
+    // A plain struct, not a tagged enum: serde buffers tagged content, which
+    // would let a map member read a non-integer number as a one-entry map.
+    // serde_json reads an integer `-0` as a float, so typed members refuse it,
+    // as `StatusResponse::decode` always has. Managed reads it as 0 but never
+    // writes it; only `version` keeps reporting the mismatch it is.
     #[derive(Deserialize)]
-    #[serde(tag = "frame", rename_all = "camelCase", deny_unknown_fields)]
-    enum Event {
-        StatusEvent { version: i32, status: Snapshot },
+    #[serde(deny_unknown_fields)]
+    struct Event {
+        frame: String,
+        #[serde(deserialize_with = "event_version")]
+        version: i32,
+        status: Snapshot,
+    }
+
+    // With `arbitrary_precision` a `Number` keeps the exact text, so this reads
+    // an Int32 as managed `TryGetInt32` does: `-0` is 0, while `-0.0`, `80.0`
+    // and out-of-range integers are refused. A visitor would see `-0` and
+    // `-0.0` as the same float. The scan refuses a private-token object first.
+    fn event_version<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<i32, D::Error> {
+        serde_json::Number::deserialize(deserializer)?
+            .as_i64()
+            .and_then(|version| i32::try_from(version).ok())
+            .ok_or_else(|| serde::de::Error::custom("an Int32 version"))
     }
 
     // The producer can go quiet when status is unchanged. Only the handshake
     // has a receive deadline. The owning watcher cancels or drops this stream.
     let payload = read_payload(stream).await?;
-    let Event::StatusEvent { version, status } =
-        serde_json::from_slice(&payload).map_err(|_| invalid("invalid Service status event"))?;
+    let Event {
+        frame,
+        version,
+        status,
+    } = json_object::from_slice(&payload).map_err(|_| invalid("invalid Service status event"))?;
+    if frame != "statusEvent" {
+        return Err(invalid("invalid Service status event"));
+    }
     if version != PROTOCOL_VERSION {
         return Err(invalid("Service status event version mismatch"));
     }
@@ -554,6 +591,7 @@ pub(crate) struct Snapshot {
     profiles: Profiles,
     desired_state: DesiredState,
     active_power_source: i32,
+    #[serde(default, deserialize_with = "nullable_object")]
     live_readings: Option<LiveReadings>,
     performance_override: Option<FeatureRecord>,
     fan_override: Option<FeatureRecord>,
@@ -948,6 +986,7 @@ struct Profiles {
     plugged_in: PowerProfile,
     battery: PowerProfile,
     usb_c: PowerProfile,
+    #[serde(deserialize_with = "object")]
     battery_policy: BatteryPolicy,
     #[serde(flatten)]
     feature_fields: FeatureRecord,
@@ -972,9 +1011,13 @@ struct BatteryPolicy {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DesiredState {
+    #[serde(deserialize_with = "object")]
     performance: Resolved<i32>,
+    #[serde(deserialize_with = "object")]
     fans: Resolved<i32>,
+    #[serde(deserialize_with = "object")]
     lighting: Resolved<FeatureRecord>,
+    #[serde(deserialize_with = "object")]
     battery: DesiredBattery,
     #[serde(flatten)]
     feature_fields: FeatureRecord,
@@ -990,6 +1033,7 @@ struct Resolved<T> {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DesiredBattery {
+    #[serde(deserialize_with = "object")]
     configured_policy: BatteryPolicy,
     protection_enabled: bool,
     temporary_full_charge: bool,
@@ -1340,3 +1384,6 @@ impl Snapshot {
         value
     }
 }
+
+#[cfg(test)]
+mod object_tests;

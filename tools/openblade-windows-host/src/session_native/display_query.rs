@@ -5,6 +5,9 @@
 //! all four writes it composes); every other mutation stays outside this
 //! endpoint.
 use super::diagnostics;
+use openblade_windows_host::json_object;
+#[cfg(feature = "agent-display-profile-apply-v1")]
+use openblade_windows_host::json_object::Object;
 use openblade_windows_host::pipe::Endpoint;
 use serde::Deserialize;
 use std::{
@@ -87,35 +90,9 @@ struct Envelope {
     color_profile_key: Option<String>,
     #[cfg(feature = "agent-display-profile-apply-v1")]
     #[serde(default, deserialize_with = "present")]
+    // Nested derived structs are read only from an object (`json_object`). The
+    // envelope is an object because `operation_first` requires a leading `{`.
     settings: Option<Object<WireSettings>>,
-}
-/// A request struct nested in a Session endpoint request, read only from a
-/// JSON object. A serde-derived struct also accepts a positional JSON array
-/// (`[null, true, null, null, true]`), which the managed System.Text.Json
-/// codec rejects for an object type. Every nested derived request struct
-/// goes through this; top-level requests are objects by their own checks
-/// (`operation_first` here, the hand-written map visitor of Battery.v1).
-#[cfg(feature = "agent-display-profile-apply-v1")]
-struct Object<T>(T);
-#[cfg(feature = "agent-display-profile-apply-v1")]
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Object<T> {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct Members<T>(std::marker::PhantomData<T>);
-        impl<'de, T: Deserialize<'de>> serde::de::Visitor<'de> for Members<T> {
-            type Value = T;
-
-            fn expecting(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                out.write_str("a JSON object")
-            }
-
-            fn visit_map<M: serde::de::MapAccess<'de>>(self, map: M) -> Result<T, M::Error> {
-                T::deserialize(serde::de::value::MapAccessDeserializer::new(map))
-            }
-        }
-        deserializer
-            .deserialize_map(Members(std::marker::PhantomData))
-            .map(Object)
-    }
 }
 /// Managed `DisplayProfileSettings` exactly as its codec writes it: an
 /// object with every member present, the setting members nullable, and the
@@ -243,7 +220,7 @@ impl Request {
         if !operation_first(body) {
             return Err(invalid("Display request operation must be first"));
         }
-        let envelope: Envelope = serde_json::from_slice(body).map_err(invalid)?;
+        let envelope: Envelope = json_object::from_slice(body).map_err(invalid)?;
         let id = &envelope.request_id;
         if envelope.version != 2
             || id.len() != 36

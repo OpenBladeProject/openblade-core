@@ -159,6 +159,10 @@ static int EmitCheckpoints(string outPath)
         ("usbc-uncertain-all-brightness-only-baseline", S(PowerSource.UsbC, null, brightnessOnly, uR: true, uH: true, uC: true, uB: true)),
         ("battery-owned-brightness-uncertain-hdr-hold", S(PowerSource.Battery, guid, brightnessOnly, oB: true, uH: true, hold: true)),
         ("pluggedin-owned-refresh-color-uncertain-refresh-paused", S(PowerSource.PluggedIn, null, full, oR: true, oC: true, uR: true, paused: true)),
+        // Saved keys are text a user can choose; serde_json treats only member
+        // names with this prefix specially.
+        ("battery-private-prefix-keys-baseline", S(PowerSource.Battery, null,
+            new DisplayProfileSettings("$serde_json::private::Number", false, "$serde_json::private::srgb"), oR: true, oC: true)),
     };
     var lines = new StringBuilder();
     foreach (var (name, state) in cases)
@@ -311,6 +315,9 @@ static async Task<int> EmitRequestsAsync(string outPath)
     await AddValid("setColorProfile-spaces-nonascii", new SetColorProfileRequest(
         V, id, PowerSource.Battery, "sRGB écran 日本 \U0001F600 x"));
     await AddValid("setColorProfile-1024", new SetColorProfileRequest(V, id, PowerSource.UsbC, new string('c', 1024)));
+    // Keys are text a user can choose; only member names are serde_json tokens.
+    await AddValid("setRefreshRate-private-prefix", new SetRefreshRateRequest(V, id, PowerSource.Battery, "$serde_json::private::Number"));
+    await AddValid("setColorProfile-private-prefix", new SetColorProfileRequest(V, id, PowerSource.UsbC, "$serde_json::private::RawValue"));
     await AddValid("applyProfile-all-null", new ApplyDisplayProfileRequest(
         V, id, PowerSource.PluggedIn, new DisplayProfileSettings(null, null, null)));
     await AddValid("applyProfile-full", new ApplyDisplayProfileRequest(
@@ -321,6 +328,10 @@ static async Task<int> EmitRequestsAsync(string outPath)
         V, id, PowerSource.PluggedIn, new DisplayProfileSettings(null, false, null)));
     await AddValid("applyProfile-color-nonascii", new ApplyDisplayProfileRequest(
         V, id, PowerSource.Battery, new DisplayProfileSettings(null, null, "sRGB écran 日本 \U0001F600 x")));
+    await AddValid("applyProfile-private-prefix-keys", new ApplyDisplayProfileRequest(
+        V, id, PowerSource.PluggedIn, new DisplayProfileSettings("$serde_json::private::Number", null, "$serde_json::private::game")));
+    await AddValid("applyProfile-private-prefix-color", new ApplyDisplayProfileRequest(
+        V, id, PowerSource.Battery, new DisplayProfileSettings(null, true, "$serde_json::private::")));
     await AddValid("applyProfile-brightness-0", new ApplyDisplayProfileRequest(
         V, id, PowerSource.UsbC, DisplayProfileSettings.Unconfigured() with { BrightnessPercent = 0 }));
     await AddValid("applyProfile-brightness-100", new ApplyDisplayProfileRequest(
@@ -358,6 +369,10 @@ static async Task<int> EmitRequestsAsync(string outPath)
     AddInvalid("enabled-as-string", Op("setHdr", ",\"expectedPowerSource\":0,\"enabled\":\"true\""));
     AddInvalid("wrong-version", Op("setBrightness", ",\"expectedPowerSource\":0,\"percent\":50", V + 1));
     AddInvalid("operation-not-first", $"{{\"version\":{V},\"requestId\":\"{id}\",\"operation\":\"query\"}}");
+    // A JSON array is not an object. These are positional in the native
+    // envelope declaration order, which a bare serde derive would bind.
+    AddInvalid("query-positional-array", $"[{V},\"{id}\",\"query\"]");
+    AddInvalid("setBrightness-positional-array", $"[{V},\"{id}\",\"setBrightness\",0,50]");
     // The discriminator must be a JSON string. serde's externally tagged
     // form of a selected operation, {"<name>":null}, with otherwise valid
     // members, is refused.

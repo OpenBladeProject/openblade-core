@@ -245,6 +245,35 @@ jobs:
           dotnet test ../tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj --filter 'FullyQualifiedName~RustBatteryParity|FullyQualifiedName~RustPerformanceParity|FullyQualifiedName~RustFanParity'
           dotnet test ../tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj --filter FullyQualifiedName~RustFanParity
 
+      # The default test run builds neither candidate. Run the shared-fixture
+      # IPC decoder tests in the Service build that admits every request and
+      # in an Agent build that reads Service status events and Display
+      # requests and keeps the Display recovery checkpoint.
+      - name: Test the candidates' object-only IPC decoders
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manifest = '../tools/openblade-windows-host/Cargo.toml'
+          $agent = @('openblade-windows-agent-candidate', 'agent-display-brightness-write-v1')
+          # One run per filter, so a filter that matches no test fails the step.
+          foreach ($run in @(
+              @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'service_status::object_tests'),
+              ($agent + 'service_status::object_tests'),
+              ($agent + 'display_query::recovery'),
+              ($agent + 'display_query::request_parity'))) {
+            # Capture the exit code instead of throwing, so the output is printed first.
+            $PSNativeCommandUseErrorActionPreference = $false
+            $output = cargo test --locked --manifest-path $manifest --target ${{ matrix.target }} --bin $run[0] --features $run[1] -- $run[2]
+            $exit = $LASTEXITCODE
+            $output
+            if ($exit -ne 0) {
+              throw "$($run[2]) failed in $($run[0]) (exit $exit)."
+            }
+            if (-not ($output -match '^test result: ok\. [1-9]')) {
+              throw "No $($run[2]) tests ran in $($run[0])."
+            }
+          }
+
       - name: Verify the Windows configuration writer against the managed store
         if: runner.os == 'Windows'
         run: |
