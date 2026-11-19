@@ -153,6 +153,15 @@ async fn malformed_envelopes_never_invoke_acquisition() {
             ]
             .concat()
         },
+        {
+            // Battery.v1 is object-only (its hand-written map visitor).
+            let body = format!(r#"[1,"{ID}"]"#);
+            [
+                i32::try_from(body.len()).unwrap().to_le_bytes().as_slice(),
+                body.as_bytes(),
+            ]
+            .concat()
+        },
     ] {
         let mut script = Script::new(Err(Failure::Start));
         let (result, bytes, _) = exchange(&mut script, &body).await;

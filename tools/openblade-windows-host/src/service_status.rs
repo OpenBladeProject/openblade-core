@@ -7,6 +7,7 @@ use std::io;
 mod fan_request;
 pub(crate) use fan_request::FanOverride;
 
+use openblade_windows_host::json_object::{self, nullable_object, object};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -27,6 +28,8 @@ pub(crate) fn production_path() -> String {
 // LiveReadingSensors is a four-bit mask. The managed legacy default is All.
 const ALL_LIVE_READINGS: u8 = 15;
 
+// Decoded through `json_object`: managed reads the request and every nested
+// struct member only from a JSON object, never a positional array.
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(
     tag = "operation",
@@ -38,6 +41,7 @@ pub(crate) enum StatusRequest {
     SetBatteryPolicy {
         version: i32,
         request_id: String,
+        #[serde(deserialize_with = "object")]
         value: openblade_domain::battery_history::Policy,
     },
     SetBatteryProtection {
@@ -53,7 +57,7 @@ pub(crate) enum StatusRequest {
     SetFanOverride {
         version: i32,
         request_id: String,
-        #[serde(deserialize_with = "Deserialize::deserialize")]
+        #[serde(deserialize_with = "nullable_object")]
         value: Option<FanOverride>,
         #[serde(default)]
         settings: Option<Value>,
@@ -61,7 +65,7 @@ pub(crate) enum StatusRequest {
     SetPerformanceOverride {
         version: i32,
         request_id: String,
-        #[serde(deserialize_with = "Deserialize::deserialize")]
+        #[serde(deserialize_with = "nullable_object")]
         value: Option<PerformanceOverride>,
     },
     ReportApplicationContext {
@@ -132,7 +136,7 @@ impl StatusRequest {
     pub(crate) fn decode(payload: &[u8]) -> io::Result<Self> {
         openblade_domain::thermal_history::validate_json_members(payload)
             .map_err(|_| invalid("duplicate Service request member"))?;
-        let request: Self = serde_json::from_slice(payload)
+        let request: Self = json_object::from_slice(payload)
             .map_err(|_| invalid("invalid Service status request"))?;
         request.validate()?;
         Ok(request)
@@ -295,7 +299,7 @@ enum Frame {
 // duplicate members. GetStatus and SubscribeStatus keep their existing codec.
 #[derive(Deserialize)]
 struct ObserveReplyMembers {
-    #[serde(rename = "status")]
+    #[serde(rename = "status", deserialize_with = "object")]
     _status: ObserveStatusMembers,
 }
 
@@ -305,9 +309,17 @@ struct ObserveStatusMembers {
     _observation_reason: Option<serde::de::IgnoredAny>,
     #[serde(rename = "unconfirmedWrites")]
     _unconfirmed_writes: Option<serde::de::IgnoredAny>,
-    #[serde(rename = "confirmedState")]
+    #[serde(
+        rename = "confirmedState",
+        default,
+        deserialize_with = "nullable_object"
+    )]
     _confirmed_state: Option<ObservedPerformanceMember>,
-    #[serde(rename = "fanStopStatus")]
+    #[serde(
+        rename = "fanStopStatus",
+        default,
+        deserialize_with = "nullable_object"
+    )]
     _fan_stop_status: Option<ObservedFanStopMember>,
 }
 
@@ -394,7 +406,7 @@ impl StatusResponse {
         request: &StatusRequest,
         expected_access: Option<i32>,
     ) -> io::Result<Snapshot> {
-        let reply: Self = serde_json::from_slice(payload)
+        let reply: Self = json_object::from_slice(payload)
             .map_err(|_| invalid("invalid Service status response"))?;
         if reply.version != PROTOCOL_VERSION
             || !reply.request_id.eq_ignore_ascii_case(request.header().1)
@@ -442,7 +454,7 @@ impl StatusResponse {
             .status
             .ok_or_else(|| invalid("Service status response has no snapshot"))?;
         if request.is_observation() {
-            serde_json::from_slice::<ObserveReplyMembers>(payload)
+            json_object::from_slice::<ObserveReplyMembers>(payload)
                 .map_err(|_| invalid("invalid ObserveState confirmation members"))?;
         }
         status.verify(expected_access.unwrap_or(status.control_access))?;
@@ -492,7 +504,7 @@ pub(crate) async fn read_status_event(
     // has a receive deadline. The owning watcher cancels or drops this stream.
     let payload = read_payload(stream).await?;
     let Event::StatusEvent { version, status } =
-        serde_json::from_slice(&payload).map_err(|_| invalid("invalid Service status event"))?;
+        json_object::from_slice(&payload).map_err(|_| invalid("invalid Service status event"))?;
     if version != PROTOCOL_VERSION {
         return Err(invalid("Service status event version mismatch"));
     }
@@ -554,6 +566,7 @@ pub(crate) struct Snapshot {
     profiles: Profiles,
     desired_state: DesiredState,
     active_power_source: i32,
+    #[serde(default, deserialize_with = "nullable_object")]
     live_readings: Option<LiveReadings>,
     performance_override: Option<FeatureRecord>,
     fan_override: Option<FeatureRecord>,
@@ -948,6 +961,7 @@ struct Profiles {
     plugged_in: PowerProfile,
     battery: PowerProfile,
     usb_c: PowerProfile,
+    #[serde(deserialize_with = "object")]
     battery_policy: BatteryPolicy,
     #[serde(flatten)]
     feature_fields: FeatureRecord,
@@ -972,9 +986,13 @@ struct BatteryPolicy {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DesiredState {
+    #[serde(deserialize_with = "object")]
     performance: Resolved<i32>,
+    #[serde(deserialize_with = "object")]
     fans: Resolved<i32>,
+    #[serde(deserialize_with = "object")]
     lighting: Resolved<FeatureRecord>,
+    #[serde(deserialize_with = "object")]
     battery: DesiredBattery,
     #[serde(flatten)]
     feature_fields: FeatureRecord,
@@ -990,6 +1008,7 @@ struct Resolved<T> {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DesiredBattery {
+    #[serde(deserialize_with = "object")]
     configured_policy: BatteryPolicy,
     protection_enabled: bool,
     temporary_full_charge: bool,
@@ -1340,3 +1359,6 @@ impl Snapshot {
         value
     }
 }
+
+#[cfg(test)]
+mod object_tests;
