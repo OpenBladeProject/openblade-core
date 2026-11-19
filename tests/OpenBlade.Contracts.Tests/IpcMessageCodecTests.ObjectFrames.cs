@@ -46,11 +46,24 @@ public sealed partial class IpcMessageCodecTests
     public async Task ObjectFrames_ServiceServerFramesAreReadOnlyFromObjects(string name)
     {
         JsonObject row = ObjectFrameRow("serverFrames", name);
-        using MemoryStream stream = FrameJson(ObjectServerFrame(row));
+        string payload = ObjectServerFrame(row);
+        using MemoryStream stream = FrameJson(payload);
         Task<ServiceServerFrame> read = IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None);
         if (row["valid"]!.GetValue<bool>())
         {
-            Assert.Equal(OpenBladeIpc.ProtocolVersion, (await read).Version);
+            // Valid rows, edited ones included, are what the managed writer
+            // produces for the frame they decode to.
+            ServiceServerFrame frame = await read;
+            Assert.Equal(OpenBladeIpc.ProtocolVersion, frame.Version);
+            using MemoryStream encoded = new();
+            await IpcMessageCodec.WriteServerFrameAsync(encoded, frame, CancellationToken.None);
+            JsonNode written = JsonNode.Parse(Encoding.UTF8.GetString(
+                encoded.ToArray(), sizeof(int), (int)encoded.Length - sizeof(int)))!;
+            Assert.True(JsonNode.DeepEquals(JsonNode.Parse(payload), written), name);
+        }
+        else if (row["managedError"]?.GetValue<string>() == "versionMismatch")
+        {
+            await Assert.ThrowsAsync<IpcProtocolVersionMismatchException>(() => read);
         }
         else
         {
