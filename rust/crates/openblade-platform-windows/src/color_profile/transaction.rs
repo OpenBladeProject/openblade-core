@@ -51,6 +51,7 @@ pub enum Failure {
     Context,
     Readback,
     NullDefault,
+    #[cfg_attr(test, allow(dead_code))] // Raised by the Session Agent's display path.
     IntentUnavailable,
 }
 

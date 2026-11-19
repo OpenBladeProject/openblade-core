@@ -43,7 +43,7 @@ impl Record {
         }
         let text = std::str::from_utf8(bytes).map_err(|_| deny())?;
         let f: Vec<_> = text.split('\n').collect();
-        if f.len() != 10 || f[0] != "OpenBlade.NativeOwner.v1" || f[9] != "" {
+        if f.len() != 10 || f[0] != "OpenBlade.NativeOwner.v1" || !f[9].is_empty() {
             return Err(deny());
         }
         let phase = match f[1] {

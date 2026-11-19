@@ -1,4 +1,5 @@
 #[cfg(windows)]
+#[allow(dead_code)] // Only the installed entries bind ingress and lifetime.
 pub(crate) mod origin_lifetime;
 
 #[cfg(windows)]

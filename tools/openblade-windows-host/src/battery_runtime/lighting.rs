@@ -391,10 +391,8 @@ impl Lighting {
         if uncertain || self.renderer.as_ref().is_some_and(Renderer::closed) {
             status["writesBlocked"] = true.into();
         }
-        if uncertain {
-            if let Some(unconfirmed) = status["unconfirmedWrites"].as_array_mut() {
-                unconfirmed.push(LIGHTING.into());
-            }
+        if uncertain && let Some(unconfirmed) = status["unconfirmedWrites"].as_array_mut() {
+            unconfirmed.push(LIGHTING.into());
         }
     }
 }

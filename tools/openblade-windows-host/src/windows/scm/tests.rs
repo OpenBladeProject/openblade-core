@@ -238,7 +238,7 @@ fn scripted_stop_during_fixture_admission_never_publishes_running() {
         );
         assert_eq!(
             ClientOptions::new()
-                .open(&format!("{PREFIX}{id}"))
+                .open(format!("{PREFIX}{id}"))
                 .unwrap_err()
                 .kind(),
             io::ErrorKind::NotFound

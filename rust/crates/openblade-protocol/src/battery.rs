@@ -6,7 +6,7 @@ use openblade_types::ProtocolValidationFailure;
 pub const CONFIRMATION_READS: usize = 9;
 pub const CONFIRMATION_INTERVAL_MS: u64 = 250;
 pub fn admitted_limit(limit: u8) -> bool {
-    (50..=80).contains(&limit) && limit % 5 == 0
+    (50..=80).contains(&limit) && limit.is_multiple_of(5)
 }
 pub fn valid_policy(raw: u8) -> bool {
     raw == 0x50 || raw & 0x80 != 0 && admitted_limit(raw & 0x7f)

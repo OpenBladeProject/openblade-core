@@ -266,6 +266,7 @@ mod tests {
 
     #[test]
     #[ignore = "internal child of the job supervision test"]
+    #[allow(clippy::zombie_processes)] // The supervision test needs the descendant to outlive this root.
     fn inert_fixture_parent() {
         let _descendant = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--ignored", "--exact", FIXTURE_DESCENDANT])

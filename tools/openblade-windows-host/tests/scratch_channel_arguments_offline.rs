@@ -1,6 +1,7 @@
 //! Pure argument parsing only. No pipe, token or process APIs are called.
 #![cfg(windows)]
 #[path = "fixtures/scratch_child_channels.rs"]
+#[allow(dead_code)] // Only parsing runs here; the candidate receipt fixture opens channels.
 mod scratch_child_channels;
 
 #[test]

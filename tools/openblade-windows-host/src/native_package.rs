@@ -187,8 +187,8 @@ fn require_launch_budget(
         {
             return Err(malformed());
         }
-        if let Some(drain) = drains.get(name) {
-            if *drain
+        if let Some(drain) = drains.get(name)
+            && *drain
                 != encode(
                     if read_only_mailbox {
                         "OpenBlade.NativeTransportDrain.v1"
@@ -197,9 +197,8 @@ fn require_launch_budget(
                     },
                     &[&epoch.id, &digest(bytes), f[5], f[6]],
                 )
-            {
-                return Err(malformed());
-            }
+        {
+            return Err(malformed());
         }
     }
     if drains.keys().any(|key| !launches.contains_key(key)) {
@@ -260,8 +259,10 @@ impl StartupOwner {
             if !raw.len().is_multiple_of(2) {
                 return Err(deny());
             }
-            raw.chunks_exact(2)
-                .map(|v| u16::from_le_bytes([v[0], v[1]]))
+            raw.as_chunks::<2>()
+                .0
+                .iter()
+                .map(|v| u16::from_le_bytes(*v))
                 .collect()
         };
         if units.is_empty() || units.len() > 4096 || units.contains(&0) {
@@ -423,7 +424,7 @@ fn decode64_bounded(value: &str, maximum: usize) -> io::Result<Vec<u8>> {
     }
     let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = Vec::new();
-    for (i, group) in value.as_bytes().chunks_exact(4).enumerate() {
+    for (i, group) in value.as_bytes().as_chunks::<4>().0.iter().enumerate() {
         let mut v = [0u32; 4];
         let mut pad = 0;
         for j in 0..4 {
@@ -1012,7 +1013,7 @@ fn inspect_artifact(
         .ok_or_else(deny)?;
     let mut imports = std::collections::BTreeSet::new();
     let mut terminated = false;
-    for entry in table.chunks_exact(20) {
+    for entry in table.as_chunks::<20>().0 {
         if entry.iter().all(|&b| b == 0) {
             terminated = true;
             break;
@@ -1122,10 +1123,10 @@ impl Promotion {
         {
             return Err(deny());
         }
-        if let Some((deadline, expected)) = &self.pending {
-            if now >= *deadline || expected != frontier {
-                return Err(deny());
-            }
+        if let Some((deadline, expected)) = &self.pending
+            && (now >= *deadline || expected != frontier)
+        {
+            return Err(deny());
         }
         if current == frontier {
             self.pending = None;
@@ -1442,7 +1443,7 @@ impl InstalledPackage {
                 self.commitment = Sha256::digest(&self.selection).into();
                 self.startup_owner = None;
             }
-            app_names(&self.service_path.parent().ok_or_else(deny)?.to_path_buf())?;
+            app_names(self.service_path.parent().ok_or_else(deny)?)?;
             if let Some(owner) = &mut self.startup_owner {
                 owner
                     .check_live()

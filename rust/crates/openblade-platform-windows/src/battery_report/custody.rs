@@ -510,9 +510,9 @@ mod tests {
                 .unwrap()
         };
         for writer_first in [true, false] {
-            let before = writer_first.then(&open_writer);
+            let before = writer_first.then(open_writer);
             let pins = pin_directories(&shared).unwrap();
-            let after = (!writer_first).then(&open_writer);
+            let after = (!writer_first).then(open_writer);
             let child = shared.join("child");
             fs::write(&child, b"x").unwrap();
             fs::remove_file(child).unwrap();

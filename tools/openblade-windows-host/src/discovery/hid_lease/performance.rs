@@ -39,6 +39,7 @@ pub(crate) use windows::{native_read_worker, native_worker};
 #[allow(unused_imports)]
 pub(crate) use worker::Worker;
 #[cfg(all(windows, test, not(feature = "service-hardware-compile-check")))]
+#[allow(unused_imports)] // Not every test binary names the worker directly.
 pub(crate) use worker::Worker;
 
 const MODEL: &str = "RZ09-0581";
