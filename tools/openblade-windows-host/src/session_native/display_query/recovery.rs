@@ -135,7 +135,7 @@ impl Fields {
     }
 
     /// Managed `DisplayOwnedSettings.Include`.
-    fn include(self, other: Self) -> Self {
+    pub(super) fn include(self, other: Self) -> Self {
         Self {
             refresh: self.refresh || other.refresh,
             hdr: self.hdr || other.hdr,
@@ -296,8 +296,23 @@ impl<F: CheckpointFile> Recovery<F> {
         true
     }
 
-    /// `CompleteManualOperation`.
+    /// `CompleteManualOperation` for a single-field write: an Indeterminate
+    /// result leaves the operation's field unresolved.
     pub(super) fn complete(&mut self, status: Status, state: &Snapshot) {
+        let unresolved = if status == Status::Indeterminate {
+            self.operation
+        } else {
+            Fields::default()
+        };
+        self.complete_with(status, state, unresolved);
+    }
+
+    /// `CompleteManualOperation`, adding exactly `unresolved` (fields of this
+    /// operation whose submission may be unresolved) to the native write
+    /// gate. The durable managed record does not depend on it.
+    pub(super) fn complete_with(&mut self, status: Status, state: &Snapshot, unresolved: Fields) {
+        debug_assert_eq!(unresolved.without(self.operation), Fields::default());
+        self.unresolved = self.unresolved.include(unresolved);
         let affected = self.uncertain;
         let confirmed = status == Status::Succeeded && state.confirms(self.uncertain);
         if confirmed {
@@ -309,9 +324,6 @@ impl<F: CheckpointFile> Recovery<F> {
             // submission: a Succeeded write already showed its level (or
             // submitted nothing), so unrelated inherited fields must not gate it.
             self.paused = true;
-            if status == Status::Indeterminate {
-                self.unresolved = self.unresolved.include(self.operation);
-            }
         } else {
             self.paused = self.inherited_pause;
             self.uncertain = if self.paused {

@@ -154,7 +154,9 @@ pub(super) fn set_brightness<F: CheckpointFile>(
     }
 }
 
-type Attempt = Result<(Status, Option<&'static str>, Option<u8>), (bool, io::Error)>;
+/// The status, error and confirmed level of one attempt, or a fatal error and
+/// whether a submission may have occurred before it.
+pub(super) type Attempt = Result<(Status, Option<&'static str>, Option<u8>), (bool, io::Error)>;
 
 fn attempt(
     host: &mut impl WriteHost,
@@ -169,6 +171,18 @@ fn attempt(
     if power.source != request.expected_power_source {
         return Ok((Status::Blocked, Some(CHANGED_POWER), None));
     }
+    admitted(host, brightness, request.percent, power, canceled)
+}
+
+/// One fenced targeted write after power admission. A confirmed level is
+/// the worker's own readback; an unchanged one submitted nothing.
+pub(super) fn admitted(
+    host: &mut impl WriteHost,
+    brightness: &SharedBrightness,
+    percent: u8,
+    power: PowerContext,
+    canceled: &AtomicBool,
+) -> Attempt {
     let target = match host.target() {
         Ok(target) => target,
         Err(_) => return Ok((Status::Failed, Some(UNAVAILABLE), None)),
@@ -177,7 +191,7 @@ fn attempt(
     let result = brightness
         .lock()
         .map_err(|_| (false, io::Error::other("brightness owner state failed")))?
-        .apply(request.percent, target, fence, canceled)
+        .apply(percent, target, fence, canceled)
         .map_err(|error| (false, error))?;
     Ok(match result {
         // Nothing was submitted: the worker's own read is the confirmation,

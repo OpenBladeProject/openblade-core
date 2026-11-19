@@ -90,8 +90,14 @@ impl<H: ManualHost<Native: ColorProfileNative>> ManualRequest<H> for SetColorPro
         }
     }
 
-    /// Managed `verifyApplied`: the reply's active profile matches the request.
     fn shown_by(&self, state: &Snapshot) -> bool {
+        self.shown(state)
+    }
+}
+
+impl SetColorProfile {
+    /// Managed `verifyApplied`: the reply's active profile matches the request.
+    pub(super) fn shown(&self, state: &Snapshot) -> bool {
         state
             .color_profile()
             .is_some_and(|active| profiles_match(OsStr::new(active), OsStr::new(&self.key)))

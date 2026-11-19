@@ -1,6 +1,8 @@
 //! The manual-operation frame shared by the synchronous display writes
 //! (`setHdr` and `setRefreshRate` through CCD, `setColorProfile` through WCS).
-//! Brightness owns its operation order (`brightness_write`).
+//! Brightness owns its operation order (`brightness_write`). `applyProfile`
+//! (`profile_apply`) composes the same admission, attempts and reconciliation
+//! over several fields.
 //!
 //! Mirrors managed `DisplayAutomationCoordinator.BeginManualOperation`, the
 //! applier's `RunExpectedAsync`/`ValidateExpectedAsync` power admission and
@@ -169,6 +171,86 @@ pub(super) trait ManualRequest<H: ManualHost> {
     fn shown_by(&self, state: &Snapshot) -> bool;
 }
 
+impl Attempt {
+    /// Reconcile this attempt with whether the reply snapshot shows the
+    /// request: a confirmed write it does not show is `unconfirmed`.
+    pub(super) fn resolve(
+        self,
+        shown: bool,
+        unconfirmed: &'static str,
+    ) -> (Status, Option<Cow<'static, str>>) {
+        match self {
+            Attempt::Unchanged => (Status::Succeeded, None),
+            Attempt::Confirmed if shown => (Status::Succeeded, None),
+            Attempt::Confirmed => (Status::Indeterminate, Some(Cow::Borrowed(unconfirmed))),
+            Attempt::Failed {
+                reply_resolves: true,
+                ..
+            } if shown => (Status::Succeeded, None),
+            Attempt::Failed { error, .. } => (Status::Failed, Some(error)),
+            Attempt::Done(status, error) => (status, Some(error)),
+        }
+    }
+}
+
+pub(super) fn lock<F>(
+    recovery: &Mutex<Recovery<F>>,
+) -> io::Result<std::sync::MutexGuard<'_, Recovery<F>>> {
+    recovery
+        .lock()
+        .map_err(|_| io::Error::other("display recovery state failed"))
+}
+
+/// Managed `BeginManualOperation`, after the native write gate: a request
+/// touching an unresolved field is refused with `paused`, then the durable
+/// checkpoint for `fields` precedes any device interaction. A refusal is not
+/// admitted (managed returns Blocked without completing) and is answered by
+/// `query`; `None` admits the operation, which must then be completed.
+pub(super) fn begin<F: CheckpointFile>(
+    recovery: &Mutex<Recovery<F>>,
+    fields: Fields,
+    paused: &'static str,
+    power: Option<PowerContext>,
+    query: impl FnOnce() -> io::Result<Snapshot>,
+) -> io::Result<Option<ManualWriteOutcome>> {
+    let refused = {
+        let mut recovery = lock(recovery)?;
+        if recovery.unresolved().overlaps(fields) {
+            Some(paused)
+        } else if !recovery.begin(fields, power.map(|power| power.source)) {
+            Some(CHECKPOINT)
+        } else {
+            None
+        }
+    };
+    let Some(error) = refused else {
+        return Ok(None);
+    };
+    Ok(Some(ManualWriteOutcome {
+        status: Status::Blocked,
+        error: Some(Cow::Borrowed(error)),
+        state: refreshed(query())?,
+    }))
+}
+
+/// Managed `ValidateExpectedAsync`: the trusted power source is confirmed and
+/// is the one the request expects, or the Blocked refusal.
+pub(super) fn admit_power(
+    power: Option<PowerContext>,
+    expected: u8,
+) -> Result<PowerContext, Attempt> {
+    match power {
+        None => Err(Attempt::Done(
+            Status::Blocked,
+            Cow::Borrowed(UNCONFIRMED_POWER),
+        )),
+        Some(power) if power.source != expected => {
+            Err(Attempt::Done(Status::Blocked, Cow::Borrowed(CHANGED_POWER)))
+        }
+        Some(power) => Ok(power),
+    }
+}
+
 /// The complete admitted manual operation.
 pub(super) fn run<F: CheckpointFile, H: ManualHost, R: ManualRequest<H>>(
     host: &mut H,
@@ -178,58 +260,23 @@ pub(super) fn run<F: CheckpointFile, H: ManualHost, R: ManualRequest<H>>(
     canceled: &AtomicBool,
 ) -> io::Result<ManualWriteOutcome> {
     let field = R::FIELD;
-    let lock = || {
-        recovery
-            .lock()
-            .map_err(|_| io::Error::other("display recovery state failed"))
-    };
     let power = host.power();
-    {
-        let mut recovery = lock()?;
-        let refused = if recovery.unresolved().overlaps(field.fields) {
-            Some(field.paused)
-        } else if !recovery.begin(field.fields, power.map(|power| power.source)) {
-            Some(CHECKPOINT)
-        } else {
-            None
-        };
-        if let Some(error) = refused {
-            drop(recovery);
-            // Not admitted: managed returns Blocked without completing.
-            return Ok(ManualWriteOutcome {
-                status: Status::Blocked,
-                error: Some(Cow::Borrowed(error)),
-                state: refreshed(host.query(brightness, canceled))?,
-            });
-        }
+    if let Some(refused) = begin(recovery, field.fields, field.paused, power, || {
+        host.query(brightness, canceled)
+    })? {
+        return Ok(refused);
     }
 
     // Admitted manual operation: whatever happens next, record its certainty.
-    let attempt = match power {
-        None => Attempt::Done(Status::Blocked, Cow::Borrowed(UNCONFIRMED_POWER)),
-        Some(power) if power.source != request.expected_power_source() => {
-            Attempt::Done(Status::Blocked, Cow::Borrowed(CHANGED_POWER))
-        }
-        Some(power) => request.attempt(host, power, canceled),
+    let attempt = match admit_power(power, request.expected_power_source()) {
+        Err(refused) => refused,
+        Ok(power) => request.attempt(host, power, canceled),
     };
     let (state, fatal) = match refreshed(host.query(brightness, canceled)) {
         Ok(state) => (state, None),
         Err(error) => (Snapshot::unavailable(UNREFRESHED), Some(error)),
     };
-    let (status, error) = match attempt {
-        Attempt::Unchanged => (Status::Succeeded, None),
-        Attempt::Confirmed if request.shown_by(&state) => (Status::Succeeded, None),
-        Attempt::Confirmed => (
-            Status::Indeterminate,
-            Some(Cow::Borrowed(field.unconfirmed)),
-        ),
-        Attempt::Failed {
-            reply_resolves: true,
-            ..
-        } if request.shown_by(&state) => (Status::Succeeded, None),
-        Attempt::Failed { error, .. } => (Status::Failed, Some(error)),
-        Attempt::Done(status, error) => (status, Some(error)),
-    };
+    let (status, error) = attempt.resolve(request.shown_by(&state), field.unconfirmed);
     // Managed ExecuteSetterAsync.EnsureCurrent after a successful setter,
     // including a no-op one.
     let (status, error) = match power {
@@ -238,7 +285,7 @@ pub(super) fn run<F: CheckpointFile, H: ManualHost, R: ManualRequest<H>>(
         }
         _ => (status, error),
     };
-    lock()?.complete(status, &state);
+    lock(recovery)?.complete(status, &state);
     match fatal {
         Some(error) => Err(error),
         None => Ok(ManualWriteOutcome {

@@ -128,8 +128,14 @@ impl<H: ManualHost<Native: RefreshNative>> ManualRequest<H> for SetRefreshRate {
         }
     }
 
-    /// Managed `ExecuteRefreshMutation`: the reply classifies the requested key.
     fn shown_by(&self, state: &Snapshot) -> bool {
+        self.shown(state)
+    }
+}
+
+impl SetRefreshRate {
+    /// Managed `ExecuteRefreshMutation`: the reply classifies the requested key.
+    pub(super) fn shown(&self, state: &Snapshot) -> bool {
         state.refresh_key() == Some(self.key.as_str())
     }
 }

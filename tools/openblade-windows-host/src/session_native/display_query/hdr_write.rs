@@ -118,8 +118,14 @@ impl<H: ManualHost<Native: HdrNative>> ManualRequest<H> for SetHdr {
         }
     }
 
-    /// Managed `ResolveHdrMutationResult`: the reply shows the requested state.
     fn shown_by(&self, state: &Snapshot) -> bool {
+        self.shown(state)
+    }
+}
+
+impl SetHdr {
+    /// Managed `ResolveHdrMutationResult`: the reply shows the requested state.
+    pub(super) fn shown(&self, state: &Snapshot) -> bool {
         state.hdr() == Some(self.enabled)
     }
 }
