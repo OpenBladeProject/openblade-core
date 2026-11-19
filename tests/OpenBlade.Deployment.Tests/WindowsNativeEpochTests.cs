@@ -103,7 +103,7 @@ public sealed class WindowsNativeEpochTests
     }
 
     // The import descriptors of a real bound Agent (static CRT, every Agent
-    // feature), in linker order, read from the image without executing it.
+    // feature), read from the image without executing it.
     // native_package/tests.rs pins the same set for the Rust inspector.
     internal static readonly string[] RealAgentImports = ["kernel32.dll", "wtsapi32.dll", "shell32.dll",
         "combase.dll", "webservices.dll", "bcrypt.dll", "advapi32.dll", "ntdll.dll", "ole32.dll",

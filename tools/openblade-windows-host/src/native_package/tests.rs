@@ -1241,7 +1241,7 @@ fn selected_partial_display_color_write_capability_is_exact_and_other_builds_can
 }
 
 /// The import descriptors of a real bound Agent (static CRT, every Agent
-/// feature), in linker order, read from the image without executing it; the
+/// feature), read from the image without executing it; the
 /// managed `WindowsNativeEpochTests.RealAgentImports` pins the same set.
 const REAL_AGENT_IMPORTS: [&str; 15] = [
     "kernel32.dll",
