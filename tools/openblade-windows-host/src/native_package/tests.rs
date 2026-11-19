@@ -1124,3 +1124,118 @@ fn selected_partial_display_refresh_write_capability_is_exact_and_other_builds_c
         }
     }
 }
+
+#[test]
+fn selected_partial_display_color_write_capability_is_exact_and_other_builds_cannot_claim_it() {
+    const QUERY: &str = "session-display-query-partial-v1";
+    const BRIGHTNESS: &str = "session-display-brightness-write-partial-v1";
+    const HDR: &str = "session-display-hdr-write-partial-v1";
+    const REFRESH: &str = "session-display-refresh-write-partial-v1";
+    const COLOR: &str = "session-display-color-write-partial-v1";
+    const BATTERY: &str = "agent-battery-report-v1";
+    let entry = "native-agent-entry-compile-check";
+    for selection in 0..16 {
+        let mut features = vec![
+            "agent-display-query-v1",
+            "agent-display-color-write-v1",
+            entry,
+        ];
+        let mut markers = vec![QUERY];
+        if selection & 1 != 0 {
+            features.push("agent-battery-report-v1");
+            markers.insert(0, BATTERY);
+        }
+        for (bit, feature, marker) in [
+            (2, "agent-display-brightness-write-v1", BRIGHTNESS),
+            (4, "agent-display-hdr-write-v1", HDR),
+            (8, "agent-display-refresh-write-v1", REFRESH),
+        ] {
+            if selection & bit != 0 {
+                features.push(feature);
+                markers.push(marker);
+            }
+        }
+        markers.push(COLOR);
+        features.sort();
+        let selected = features.join(",");
+        let expected = markers.join(",");
+        assert!(
+            capabilities(2, "agent", &selected, &expected).is_ok(),
+            "{expected}"
+        );
+        assert!(capabilities(1, "agent", &selected, &expected).is_err());
+        assert!(capabilities(2, "service", &selected, &expected).is_err());
+        // The write needs both the display query and the native entry.
+        for missing in ["agent-display-query-v1", entry] {
+            let partial: Vec<_> = features.iter().copied().filter(|f| *f != missing).collect();
+            assert!(capabilities(2, "agent", &partial.join(","), &expected).is_err());
+        }
+        let without_color: Vec<_> = markers.iter().copied().filter(|m| *m != COLOR).collect();
+        let reordered = {
+            let mut reordered = markers.clone();
+            let color = reordered.pop().unwrap();
+            reordered.insert(reordered.len() - 1, color);
+            reordered.join(",")
+        };
+        for forged in [
+            "none".to_owned(),
+            without_color.join(","),
+            COLOR.to_owned(),
+            format!("{expected},{COLOR}"),
+            reordered,
+        ] {
+            assert!(
+                capabilities(2, "agent", &selected, &forged).is_err(),
+                "{forged}"
+            );
+        }
+    }
+    // Builds without the color write cannot claim its marker.
+    for (features, markers) in [
+        (
+            "agent-display-query-v1,native-agent-entry-compile-check",
+            vec![QUERY],
+        ),
+        (
+            "agent-display-brightness-write-v1,agent-display-query-v1,native-agent-entry-compile-check",
+            vec![QUERY, BRIGHTNESS],
+        ),
+        (
+            "agent-display-hdr-write-v1,agent-display-query-v1,native-agent-entry-compile-check",
+            vec![QUERY, HDR],
+        ),
+        (
+            "agent-display-query-v1,agent-display-refresh-write-v1,native-agent-entry-compile-check",
+            vec![QUERY, REFRESH],
+        ),
+        (
+            "agent-battery-report-v1,agent-display-brightness-write-v1,agent-display-hdr-write-v1,agent-display-query-v1,agent-display-refresh-write-v1,native-agent-entry-compile-check",
+            vec![BATTERY, QUERY, BRIGHTNESS, HDR, REFRESH],
+        ),
+    ] {
+        assert!(capabilities(2, "agent", features, &markers.join(",")).is_ok());
+        let mut claimed = markers.clone();
+        claimed.push(COLOR);
+        assert!(capabilities(2, "agent", features, &claimed.join(",")).is_err());
+    }
+    // The color write requires the display query: a build without it
+    // cannot claim the color marker alone under either schema.
+    for battery in [false, true] {
+        let mut features = vec!["agent-display-color-write-v1", entry];
+        let mut markers = vec![COLOR];
+        if battery {
+            features.insert(0, "agent-battery-report-v1");
+            markers.insert(0, BATTERY);
+        }
+        for schema in [1, 2] {
+            assert!(
+                capabilities(schema, "agent", &features.join(","), &markers.join(",")).is_err(),
+                "{schema} {battery}"
+            );
+        }
+        // Nor with the query marker it does not have.
+        let mut claimed = markers.clone();
+        claimed.insert(claimed.len() - 1, QUERY);
+        assert!(capabilities(2, "agent", &features.join(","), &claimed.join(",")).is_err());
+    }
+}

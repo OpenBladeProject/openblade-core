@@ -147,6 +147,20 @@ recovery query after process exit can settle the saved baseline or the
 complete expected selection. The displayed profile ID alone cannot settle
 intent. While intent is unresolved, all four display setters remain fenced.
 
+The installed Agent's `agent-display-color-write-v1` build answers manual
+setColorProfile with the managed transaction. `color_profile::write` reads the
+panel, HDR state, listed profiles and the current-user scope, default and
+associations, then refuses HDR on, unknown HDR, an unlisted profile or a
+changed panel before any submission. It adds a missing association, selects the
+current-user scope and sets the default, confirming each step by a separate
+read. After a submitted step fails it reconciles, then restores the default,
+removes the added association and restores the scope, in the managed order,
+without repeating the failed setter. The host fence admits the first setter;
+a later failure pauses display writes until an explicit read. Platform unit
+tests retain the WCS imports without calling them; production builds with
+`display-color-write` call them only from `set_internal_color_profile`, so a
+dependent must not call `ColorProfileNative` outside that sequence.
+
 Current HDR output mode, complete snapshot parity, and native display behavior
 need separate evidence before replacement. Live refresh still needs authorized
 validation of the exact packet on the active console, fresh power/session and

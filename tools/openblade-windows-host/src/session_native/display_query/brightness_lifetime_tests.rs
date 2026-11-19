@@ -186,6 +186,14 @@ impl Supplier for OwnedSupplier {
     async fn drain(&mut self) -> io::Result<()> {
         observation::drain_brightness(self.owner.clone()).await
     }
+    #[cfg(feature = "agent-display-color-write-v1")]
+    async fn set_color_profile(
+        &mut self,
+        _request: SetColorProfile,
+        _canceled: Arc<AtomicBool>,
+    ) -> io::Result<CcdWriteOutcome> {
+        unreachable!("test supplier received setColorProfile")
+    }
 }
 type Incoming = Arc<tokio::sync::Mutex<tokio::sync::mpsc::Receiver<tokio::io::DuplexStream>>>;
 fn incoming() -> (tokio::sync::mpsc::Sender<tokio::io::DuplexStream>, Incoming) {

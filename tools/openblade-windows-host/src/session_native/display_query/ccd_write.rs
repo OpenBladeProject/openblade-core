@@ -1,5 +1,6 @@
-//! The manual-operation frame shared by the CCD display writes (`setHdr` and
-//! `setRefreshRate`).
+//! The manual-operation frame shared by the synchronous display writes
+//! (`setHdr`, `setRefreshRate` and `setColorProfile`). The name predates the
+//! WCS color-profile write, which needs the same frame.
 //!
 //! Mirrors managed `DisplayAutomationCoordinator.BeginManualOperation`, the
 //! applier's `RunExpectedAsync`/`ValidateExpectedAsync` power admission and

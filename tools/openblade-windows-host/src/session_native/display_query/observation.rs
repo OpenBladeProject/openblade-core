@@ -64,7 +64,8 @@ const MAX_KEY: usize = 1024;
 const OUT_OF_BOUNDS: &str =
     "The display observation could not be represented in the display protocol.";
 const CHANGED: &str = "Windows could not reconfirm the internal display topology and state.";
-const HDR_UNKNOWN: &str = "Windows could not confirm HDR state for the internal display.";
+pub(super) const HDR_UNKNOWN: &str =
+    "Windows could not confirm HDR state for the internal display.";
 
 fn bounded(value: &str, limit: usize) -> bool {
     value.encode_utf16().take(limit + 1).count() <= limit
@@ -151,20 +152,26 @@ impl Snapshot {
     }
 
     /// The native write gate's reopening rule: whether this snapshot observed
-    /// the current state of `fields`. Refresh needs only an available snapshot,
-    /// which always carries a complete refresh read even when the mode matches
-    /// no option (issue #884: a 60 Hz desktop over a 240 Hz signal, or a
-    /// desktop-only apply); managed has no such gate and a manual change is the
-    /// way out of that state. HDR and brightness keep `HasCompleteReadback`:
-    /// an available snapshot always observed HDR and setHdr is refused while
-    /// it is unsupported, and brightness without a reading was not observed,
-    /// so neither gate can trap a request that could succeed. `confirms`
-    /// already requires an available snapshot, so dropping its refresh-key
-    /// condition is the whole rule.
+    /// the current state of `fields`. Refresh and color need only an available
+    /// snapshot. It always carries a complete refresh read even when the mode
+    /// matches no option (issue #884: a 60 Hz desktop over a 240 Hz signal, or
+    /// a desktop-only apply); managed has no such gate and a manual change is
+    /// the way out of that state. Likewise it always completed the WCS read
+    /// (an unreadable scope, association list or default makes it
+    /// unavailable), and under confirmed SDR with no listed default it shows
+    /// no active profile, which only a color write can change. With HDR on,
+    /// `HasCompleteReadback` already accepts the color field and setColorProfile
+    /// is refused before any submission. HDR and brightness keep
+    /// `HasCompleteReadback`: an available snapshot always observed HDR and
+    /// setHdr is refused while it is unsupported, and brightness without a
+    /// reading was not observed, so neither gate can trap a request that could
+    /// succeed. `confirms` already requires an available snapshot, so dropping
+    /// its refresh-key and color conditions is the whole rule.
     #[cfg(openblade_display_write)]
     pub(super) fn observes(&self, fields: super::recovery::Fields) -> bool {
         self.confirms(super::recovery::Fields {
             refresh: false,
+            color: false,
             ..fields
         })
     }
@@ -187,6 +194,15 @@ impl Snapshot {
         self.current_refresh_key
             .as_deref()
             .filter(|_| self.is_available)
+    }
+
+    /// The active color-profile ID of this available snapshot under
+    /// confirmed SDR (managed `ActiveColorProfileId`).
+    #[cfg(feature = "agent-display-color-write-v1")]
+    pub(super) fn color_profile(&self) -> Option<&str> {
+        self.active_color_profile_id
+            .as_deref()
+            .filter(|_| self.is_available && self.color_profiles_enabled)
     }
 }
 

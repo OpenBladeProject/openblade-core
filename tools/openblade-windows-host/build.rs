@@ -80,6 +80,10 @@ fn main() {
             "agent-display-refresh-write-v1",
             "session-display-refresh-write-partial-v1",
         ),
+        (
+            "agent-display-color-write-v1",
+            "session-display-color-write-partial-v1",
+        ),
     ]
     .into_iter()
     .filter_map(|(feature, marker)| has(feature).then_some(marker))
@@ -90,11 +94,16 @@ fn main() {
     if has("agent-display-brightness-write-v1")
         || has("agent-display-hdr-write-v1")
         || has("agent-display-refresh-write-v1")
+        || has("agent-display-color-write-v1")
     {
         println!("cargo::rustc-cfg=openblade_display_write");
     }
-    // The manual-operation frame shared by the CCD writes (HDR, refresh rate).
-    if has("agent-display-hdr-write-v1") || has("agent-display-refresh-write-v1") {
+    // The manual-operation frame shared by the HDR, refresh-rate and color-profile
+    // writes.
+    if has("agent-display-hdr-write-v1")
+        || has("agent-display-refresh-write-v1")
+        || has("agent-display-color-write-v1")
+    {
         println!("cargo::rustc-cfg=openblade_display_ccd_write");
     }
     for (role, name) in [

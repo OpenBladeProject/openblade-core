@@ -310,6 +310,7 @@ static async Task<int> EmitRequestsAsync(string outPath)
     await AddValid("setHdr-false", new SetHdrRequest(V, id, PowerSource.PluggedIn, false));
     await AddValid("setColorProfile-spaces-nonascii", new SetColorProfileRequest(
         V, id, PowerSource.Battery, "sRGB écran 日本 \U0001F600 x"));
+    await AddValid("setColorProfile-1024", new SetColorProfileRequest(V, id, PowerSource.UsbC, new string('c', 1024)));
     await AddValid("applyProfile-all-null", new ApplyDisplayProfileRequest(
         V, id, PowerSource.PluggedIn, new DisplayProfileSettings(null, null, null)));
     await AddValid("applyProfile-full", new ApplyDisplayProfileRequest(
@@ -319,6 +320,8 @@ static async Task<int> EmitRequestsAsync(string outPath)
         $"{{\"operation\":\"{op}\",\"version\":{version},\"requestId\":\"{id}\"{rest}}}";
     string Rate(string key) =>
         Op("setRefreshRate", $",\"expectedPowerSource\":0,\"refreshRateKey\":{JsonSerializer.Serialize(key)}");
+    string Color(string key) =>
+        Op("setColorProfile", $",\"expectedPowerSource\":0,\"colorProfileKey\":{JsonSerializer.Serialize(key)}");
 
     AddInvalid("unknown-member", Op("setBrightness", ",\"expectedPowerSource\":0,\"percent\":50,\"extra\":1"));
     AddInvalid("null-version", $"{{\"operation\":\"query\",\"version\":null,\"requestId\":\"{id}\"}}");
@@ -337,6 +340,11 @@ static async Task<int> EmitRequestsAsync(string outPath)
     AddInvalid("space-padded-key", Rate(" 60 Hz "));
     AddInvalid("key-1025", Rate(new string('r', 1025)));
     AddInvalid("control-char-key", Rate("60\u0007Hz"));
+    AddInvalid("color-blank-key", Color("   "));
+    AddInvalid("color-empty-key", Color(string.Empty));
+    AddInvalid("color-space-padded-key", Color(" sRGB.icm "));
+    AddInvalid("color-key-1025", Color(new string('c', 1025)));
+    AddInvalid("color-control-char-key", Color("sRGB\u0007.icm"));
     AddInvalid("enabled-as-string", Op("setHdr", ",\"expectedPowerSource\":0,\"enabled\":\"true\""));
     AddInvalid("wrong-version", Op("setBrightness", ",\"expectedPowerSource\":0,\"percent\":50", V + 1));
     AddInvalid("operation-not-first", $"{{\"version\":{V},\"requestId\":\"{id}\",\"operation\":\"query\"}}");
@@ -349,6 +357,7 @@ static async Task<int> EmitRequestsAsync(string outPath)
     AddInvalid("object-operation-setBrightness", ObjectOp("setBrightness", ",\"expectedPowerSource\":0,\"percent\":50"));
     AddInvalid("object-operation-setHdr", ObjectOp("setHdr", ",\"expectedPowerSource\":0,\"enabled\":true"));
     AddInvalid("object-operation-setRefreshRate", ObjectOp("setRefreshRate", ",\"expectedPowerSource\":0,\"refreshRateKey\":\"fixed-60\""));
+    AddInvalid("object-operation-setColorProfile", ObjectOp("setColorProfile", ",\"expectedPowerSource\":0,\"colorProfileKey\":\"sRGB.icm\""));
     // Managed leniency (last member wins), so not a fixture row; printed instead.
     var lenient = new List<(string Name, string Json)>
     {

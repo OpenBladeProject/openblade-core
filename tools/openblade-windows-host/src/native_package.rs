@@ -672,10 +672,11 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     let agent_write = has("agent-display-brightness-write-v1");
     let agent_hdr = has("agent-display-hdr-write-v1");
     let agent_refresh = has("agent-display-refresh-write-v1");
-    if (agent_write || agent_hdr || agent_refresh) && !agent_display {
+    let agent_color = has("agent-display-color-write-v1");
+    if (agent_write || agent_hdr || agent_refresh || agent_color) && !agent_display {
         return Err(deny());
     }
-    if (agent_battery || agent_display || agent_write || agent_hdr || agent_refresh)
+    if (agent_battery || agent_display || agent_write || agent_hdr || agent_refresh || agent_color)
         && !has("native-agent-entry-compile-check")
     {
         return Err(deny());
@@ -703,6 +704,7 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
             || agent_write
             || agent_hdr
             || agent_refresh
+            || agent_color
         {
             Err(deny())
         } else {
@@ -733,6 +735,7 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         (agent_write, "session-display-brightness-write-partial-v1"),
         (agent_hdr, "session-display-hdr-write-partial-v1"),
         (agent_refresh, "session-display-refresh-write-partial-v1"),
+        (agent_color, "session-display-color-write-partial-v1"),
     ]
     .into_iter()
     .filter_map(|(selected, marker)| selected.then_some(marker))

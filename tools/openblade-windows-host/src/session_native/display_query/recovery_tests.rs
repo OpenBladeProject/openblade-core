@@ -410,6 +410,15 @@ fn emits_native_rows_for_the_managed_oracle() {
     assert!(refresh.explicit_read(&without_brightness()));
     row("native-refresh-after-resume", &refresh, &file);
 
+    let file = Mem::default();
+    let mut color = Recovery::load(file.clone());
+    assert!(color.begin(Fields::COLOR, Some(1)));
+    row("native-color-after-begin", &color, &file);
+    color.complete(Status::Indeterminate, &Snapshot::unavailable("unknown"));
+    row("native-color-after-indeterminate", &color, &file);
+    assert!(color.explicit_read(&without_brightness()));
+    row("native-color-after-resume", &color, &file);
+
     let (mut cleared, file) = from_fixture("pluggedin-owned-all-with-profile-full-baseline");
     assert!(cleared.begin(Fields::BRIGHTNESS, None));
     row("native-begin-clears-baseline", &cleared, &file);
@@ -739,4 +748,57 @@ fn refresh_succeeded_with_an_unclassified_reply_keeps_the_managed_pause() {
     // A classified reply is the complete readback that resumes it.
     assert!(recovery.explicit_read(&without_brightness()));
     assert_eq!(recovery.flags(), (false, false, Fields::default()));
+}
+
+/// The available snapshot with these managed members replaced.
+fn reading(changes: Value) -> Snapshot {
+    let mut value = serde_json::to_value(without_brightness()).unwrap();
+    for (member, change) in changes.as_object().unwrap() {
+        value[member] = change.clone();
+    }
+    serde_json::from_value(value).unwrap()
+}
+
+/// The color gate reopens on any available read: it always completed the WCS
+/// read, and SDR without a listed default shows no active profile, which only
+/// a color write can change. The managed pause keeps `HasCompleteReadback`,
+/// which an HDR-on read satisfies for the color field.
+#[test]
+fn color_operation_gates_only_color_and_reopens_on_any_available_read() {
+    let (mut recovery, file) = from_fixture("battery-minimal");
+    assert!(recovery.begin(Fields::COLOR, None));
+    let stored = file.stored();
+    assert_eq!(stored["UncertainColorProfile"], true);
+    assert_eq!(stored["UncertainRefreshRate"], false);
+    assert_eq!(stored["UncertainHdr"], false);
+    assert_eq!(stored["UncertainBrightness"], false);
+    recovery.complete(Status::Indeterminate, &Snapshot::unavailable("unknown"));
+    assert_eq!(recovery.unresolved(), Fields::COLOR);
+
+    let mut restarted = Recovery::load(file.clone());
+    assert_eq!(restarted.unresolved(), Fields::COLOR);
+    assert!(!restarted.explicit_read(&Snapshot::unavailable("gone")));
+    assert_eq!(restarted.unresolved(), Fields::COLOR);
+
+    // SDR with no active profile: the gate reopens, the managed pause stays.
+    let unselected = reading(json!({"activeColorProfileId": null}));
+    assert!(!unselected.confirms(Fields::COLOR) && unselected.observes(Fields::COLOR));
+    assert!(!restarted.explicit_read(&unselected));
+    assert_eq!(restarted.unresolved(), Fields::default());
+    assert_eq!(restarted.flags(), (true, true, Fields::COLOR));
+    assert_eq!(file.stored()["UncertainColorProfile"], true);
+    let mut restarted = Recovery::load(file.clone());
+    assert_eq!(restarted.unresolved(), Fields::COLOR);
+
+    // HDR on: color profiles are disabled and none is active, yet managed
+    // HasCompleteReadback accepts the color field, so automation resumes.
+    let hdr_on = reading(json!({
+        "hdrEnabled": true,
+        "colorProfilesEnabled": false,
+        "activeColorProfileId": null,
+    }));
+    assert!(hdr_on.confirms(Fields::COLOR));
+    assert!(restarted.explicit_read(&hdr_on));
+    assert_eq!(restarted.unresolved(), Fields::default());
+    assert_eq!(restarted.flags(), (false, false, Fields::default()));
 }

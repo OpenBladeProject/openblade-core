@@ -117,6 +117,13 @@ impl Fields {
         color: false,
         brightness: false,
     };
+    #[cfg(any(test, feature = "agent-display-color-write-v1"))]
+    pub(super) const COLOR: Self = Self {
+        refresh: false,
+        hdr: false,
+        color: true,
+        brightness: false,
+    };
 
     /// Whether any field is set on both.
     #[cfg(openblade_display_ccd_write)]

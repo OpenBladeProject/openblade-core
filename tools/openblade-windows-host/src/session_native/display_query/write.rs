@@ -1,10 +1,10 @@
 //! Production state shared by the selected partial display writes.
 //!
 //! One managed recovery checkpoint, one trusted power admission and one
-//! submission fence serve manual `setBrightness`, `setHdr` and `setRefreshRate`.
-//! Brightness owns its operation order (`brightness_write`); the CCD writes share
-//! the manual-operation frame of `ccd_write`, and each supplies only its native
-//! attempt and reply predicate.
+//! submission fence serve manual `setBrightness`, `setHdr`, `setRefreshRate` and
+//! `setColorProfile`. Brightness owns its operation order (`brightness_write`);
+//! the other writes share the manual-operation frame of `ccd_write`, and each
+//! supplies only its native attempt and reply predicate.
 use super::{
     observation::{SharedBrightness, Snapshot},
     recovery::{CheckpointFile, Recovery, WindowsCheckpointFile},
@@ -56,9 +56,9 @@ pub(super) fn refreshed(query: io::Result<Snapshot>) -> io::Result<Snapshot> {
 /// the same worker, observed brightness, which means the worker finished every
 /// pending call. Before reopening, positively join and drop that worker so the
 /// next write starts a fresh one: the same boundary an Agent restart provides.
-/// A failed join keeps the gate closed and stops the feature. HDR and
-/// refresh-rate submissions are synchronous, so the read itself is the only
-/// reopening condition.
+/// A failed join keeps the gate closed and stops the feature. HDR,
+/// refresh-rate and color-profile submissions are synchronous, so the read
+/// itself is the only reopening condition.
 pub(super) fn explicit_read<F: CheckpointFile>(
     brightness: &SharedBrightness,
     recovery: &Mutex<Recovery<F>>,
@@ -166,6 +166,26 @@ impl Writer {
             &mut super::ccd_write::WindowsCcdHost::new(
                 self.host.clone(),
                 openblade_platform_windows::display::refresh_write::WindowsRefreshNative::current_user(),
+            ),
+            brightness,
+            &self.recovery,
+            request,
+            canceled,
+        )
+    }
+
+    /// Blocking: the complete admitted color-profile operation, including its record.
+    #[cfg(feature = "agent-display-color-write-v1")]
+    pub(super) fn set_color_profile(
+        &self,
+        brightness: &SharedBrightness,
+        request: &super::color_write::SetColorProfile,
+        canceled: &std::sync::atomic::AtomicBool,
+    ) -> io::Result<super::ccd_write::CcdWriteOutcome> {
+        super::ccd_write::run(
+            &mut super::ccd_write::WindowsCcdHost::new(
+                self.host.clone(),
+                openblade_platform_windows::color_profile::write::WindowsColorProfileNative::current_user(),
             ),
             brightness,
             &self.recovery,

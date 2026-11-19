@@ -35,6 +35,7 @@ fn selected(case: &str) -> bool {
         "setBrightness" => cfg!(feature = "agent-display-brightness-write-v1"),
         "setHdr" => cfg!(feature = "agent-display-hdr-write-v1"),
         "setRefreshRate" => cfg!(feature = "agent-display-refresh-write-v1"),
+        "setColorProfile" => cfg!(feature = "agent-display-color-write-v1"),
         _ => false,
     }
 }
@@ -62,7 +63,7 @@ fn managed_request_frames_parse_exactly_for_selected_operations() {
         );
         checked += 1;
     }
-    assert_eq!(checked, 42, "every fixture row is checked");
+    assert_eq!(checked, 49, "every fixture row is checked");
 }
 
 #[test]

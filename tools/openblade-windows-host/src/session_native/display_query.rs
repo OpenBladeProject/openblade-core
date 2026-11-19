@@ -1,7 +1,8 @@
 //! Selected installed Display.v2 endpoint. The real supplier performs
 //! coherent CCD/refresh/HDR/WCS and targeted, owned WMI brightness reads.
-//! Separately selected builds add manual `setBrightness`, `setHdr` and/or
-//! `setRefreshRate`; every other mutation stays outside this endpoint.
+//! Separately selected builds add manual `setBrightness`, `setHdr`,
+//! `setRefreshRate` and/or `setColorProfile`; every other mutation stays
+//! outside this endpoint.
 use super::diagnostics;
 use openblade_windows_host::pipe::Endpoint;
 use serde::Deserialize;
@@ -23,6 +24,8 @@ use tokio::{
 mod brightness_write;
 #[cfg(openblade_display_ccd_write)]
 mod ccd_write;
+#[cfg(feature = "agent-display-color-write-v1")]
+mod color_write;
 #[cfg(feature = "agent-display-hdr-write-v1")]
 mod hdr_write;
 mod observation;
@@ -36,6 +39,8 @@ mod write;
 use brightness_write::{SetBrightness, WriteOutcome};
 #[cfg(openblade_display_ccd_write)]
 use ccd_write::CcdWriteOutcome;
+#[cfg(feature = "agent-display-color-write-v1")]
+use color_write::SetColorProfile;
 #[cfg(feature = "agent-display-hdr-write-v1")]
 use hdr_write::SetHdr;
 use observation::Snapshot;
@@ -72,6 +77,9 @@ struct Envelope {
     #[cfg(feature = "agent-display-refresh-write-v1")]
     #[serde(default, deserialize_with = "present")]
     refresh_rate_key: Option<String>,
+    #[cfg(feature = "agent-display-color-write-v1")]
+    #[serde(default, deserialize_with = "present")]
+    color_profile_key: Option<String>,
 }
 /// The managed discriminator is a JSON string. serde's externally tagged form
 /// (`{"setHdr":null}`) would otherwise also select a unit variant.
@@ -98,6 +106,8 @@ enum Name {
     SetHdr,
     #[cfg(feature = "agent-display-refresh-write-v1")]
     SetRefreshRate,
+    #[cfg(feature = "agent-display-color-write-v1")]
+    SetColorProfile,
 }
 enum Operation {
     Query,
@@ -107,6 +117,8 @@ enum Operation {
     SetHdr(SetHdr),
     #[cfg(feature = "agent-display-refresh-write-v1")]
     SetRefreshRate(SetRefreshRate),
+    #[cfg(feature = "agent-display-color-write-v1")]
+    SetColorProfile(SetColorProfile),
 }
 impl Operation {
     /// Managed `SessionDisplayPipeServer` (SessionDisplayPipeServer.cs:9-10):
@@ -121,6 +133,8 @@ impl Operation {
             Self::SetHdr(_) => MUTATION_DISPATCH_TIMEOUT,
             #[cfg(feature = "agent-display-refresh-write-v1")]
             Self::SetRefreshRate(_) => MUTATION_DISPATCH_TIMEOUT,
+            #[cfg(feature = "agent-display-color-write-v1")]
+            Self::SetColorProfile(_) => MUTATION_DISPATCH_TIMEOUT,
         }
     }
 }
@@ -170,19 +184,23 @@ impl Request {
             not(feature = "agent-display-refresh-write-v1")
         ))]
         let key: Option<String> = None;
+        #[cfg(feature = "agent-display-color-write-v1")]
+        let color = envelope.color_profile_key;
+        #[cfg(all(openblade_display_write, not(feature = "agent-display-color-write-v1")))]
+        let color: Option<String> = None;
         // Each operation accepts exactly its own managed members.
         let operation = match envelope.operation {
             #[cfg(not(openblade_display_write))]
             Name::Query => Operation::Query,
             #[cfg(openblade_display_write)]
-            Name::Query => match (power, percent, enabled, key) {
-                (None, None, None, None) => Operation::Query,
+            Name::Query => match (power, percent, enabled, key, color) {
+                (None, None, None, None, None) => Operation::Query,
                 _ => return Err(invalid("invalid Display query members")),
             },
             // Managed IsConfirmed (PluggedIn, Battery, UsbC) and byte percent <= 100.
             #[cfg(feature = "agent-display-brightness-write-v1")]
-            Name::SetBrightness => match (power, percent, enabled, key) {
-                (Some(source @ 0..=2), Some(percent @ 0..=100), None, None) => {
+            Name::SetBrightness => match (power, percent, enabled, key, color) {
+                (Some(source @ 0..=2), Some(percent @ 0..=100), None, None, None) => {
                     Operation::SetBrightness(SetBrightness {
                         expected_power_source: source as u8,
                         percent: percent as u8,
@@ -192,24 +210,41 @@ impl Request {
             },
             // Managed IsConfirmed and a required JSON Boolean.
             #[cfg(feature = "agent-display-hdr-write-v1")]
-            Name::SetHdr => match (power, percent, enabled, key) {
-                (Some(source @ 0..=2), None, Some(enabled), None) => Operation::SetHdr(SetHdr {
-                    expected_power_source: source as u8,
-                    enabled,
-                }),
+            Name::SetHdr => match (power, percent, enabled, key, color) {
+                (Some(source @ 0..=2), None, Some(enabled), None, None) => {
+                    Operation::SetHdr(SetHdr {
+                        expected_power_source: source as u8,
+                        enabled,
+                    })
+                }
                 _ => return Err(invalid("invalid Display setHdr members")),
             },
             // Managed IsConfirmed and ValidKey (non-blank, trimmed, at most
             // 1024 UTF-16 units, no control characters).
             #[cfg(feature = "agent-display-refresh-write-v1")]
-            Name::SetRefreshRate => match (power, percent, enabled, key) {
-                (Some(source @ 0..=2), None, None, Some(key)) if observation::valid_key(&key) => {
+            Name::SetRefreshRate => match (power, percent, enabled, key, color) {
+                (Some(source @ 0..=2), None, None, Some(key), None)
+                    if observation::valid_key(&key) =>
+                {
                     Operation::SetRefreshRate(SetRefreshRate {
                         expected_power_source: source as u8,
                         key,
                     })
                 }
                 _ => return Err(invalid("invalid Display setRefreshRate members")),
+            },
+            // Managed IsConfirmed and ValidKey, like setRefreshRate.
+            #[cfg(feature = "agent-display-color-write-v1")]
+            Name::SetColorProfile => match (power, percent, enabled, key, color) {
+                (Some(source @ 0..=2), None, None, None, Some(key))
+                    if observation::valid_key(&key) =>
+                {
+                    Operation::SetColorProfile(SetColorProfile {
+                        expected_power_source: source as u8,
+                        key,
+                    })
+                }
+                _ => return Err(invalid("invalid Display setColorProfile members")),
             },
         };
         Ok(Self {
@@ -244,6 +279,13 @@ trait Supplier {
     fn set_refresh_rate(
         &mut self,
         request: SetRefreshRate,
+        canceled: Arc<AtomicBool>,
+    ) -> impl Future<Output = io::Result<CcdWriteOutcome>>;
+    /// The same custody contract as `set_brightness`.
+    #[cfg(feature = "agent-display-color-write-v1")]
+    fn set_color_profile(
+        &mut self,
+        request: SetColorProfile,
         canceled: Arc<AtomicBool>,
     ) -> impl Future<Output = io::Result<CcdWriteOutcome>>;
     async fn drain(&mut self) -> io::Result<()> {
@@ -307,6 +349,20 @@ impl Supplier for WindowsSupplier {
         let writer = self.writer.clone();
         tokio::task::spawn_blocking(move || {
             writer.set_refresh_rate(&brightness, &request, &canceled)
+        })
+        .await
+        .map_err(|_| io::Error::other("display write worker failed"))?
+    }
+    #[cfg(feature = "agent-display-color-write-v1")]
+    async fn set_color_profile(
+        &mut self,
+        request: SetColorProfile,
+        canceled: Arc<AtomicBool>,
+    ) -> io::Result<CcdWriteOutcome> {
+        let brightness = self.brightness.clone();
+        let writer = self.writer.clone();
+        tokio::task::spawn_blocking(move || {
+            writer.set_color_profile(&brightness, &request, &canceled)
         })
         .await
         .map_err(|_| io::Error::other("display write worker failed"))?
@@ -529,6 +585,11 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
                 #[cfg(feature = "agent-display-refresh-write-v1")]
                 Operation::SetRefreshRate(request) => supplier
                     .set_refresh_rate(request, flag)
+                    .await
+                    .map(Reply::Ccd),
+                #[cfg(feature = "agent-display-color-write-v1")]
+                Operation::SetColorProfile(request) => supplier
+                    .set_color_profile(request, flag)
                     .await
                     .map(Reply::Ccd),
             }
