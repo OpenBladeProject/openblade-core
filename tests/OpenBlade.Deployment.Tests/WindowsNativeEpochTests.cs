@@ -246,6 +246,14 @@ public sealed class WindowsNativeEpochTests
             [.. Image("agent", schema: 1, agentBattery: agentBattery, agentDisplay: true, agentWrite: agentWrite, agentHdr: agentHdr, agentRefresh: true)], "agent", source));
         Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
             [.. Image("service", schema: 2, capabilities: expected, agentBattery: agentBattery, agentDisplay: true, agentWrite: agentWrite, agentHdr: agentHdr, agentRefresh: true)], "service", source));
+        // The refresh write requires the display query: a build without it cannot
+        // claim the refresh marker alone under either schema.
+        string alone = agentBattery ? "agent-battery-report-v1," + refresh : refresh;
+        foreach (int schema in new[] { 1, 2 })
+        {
+            Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("agent", schema: schema, capabilities: alone, agentBattery: agentBattery, agentRefresh: true)], "agent", source));
+        }
     }
 
     [Fact]
