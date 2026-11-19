@@ -28,8 +28,8 @@
 use std::ffi::{OsStr, OsString};
 
 use crate::display::{
-    ActiveInternalDisplay, DisplayReadError, InternalDisplayTopology, PanelIdentity,
-    SubmissionFence,
+    ActiveInternalDisplay, DisplayReadError, FenceRefusal, InternalDisplayTopology, PanelIdentity,
+    SubmissionFence, admit_submission,
 };
 
 use super::{
@@ -338,21 +338,24 @@ impl<N: ColorProfileNative + ?Sized> Transaction<'_, N> {
         if self.submitted {
             return Ok(());
         }
-        let refused = |reason| Err(Stop::Refused(reason));
-        if (self.cancelled)() {
-            return refused(ColorRefusal::Cancelled);
-        }
-        let fenced = self.fence.topology();
-        if !matches!(&fenced, Ok(InternalDisplayTopology::Single(fresh)) if self.panel.same_as(fresh))
-        {
-            return refused(ColorRefusal::PanelChanged);
-        }
-        if !self.fence.admit() {
-            return refused(ColorRefusal::AdmissionDenied);
-        }
-        if (self.cancelled)() {
-            return refused(ColorRefusal::Cancelled);
-        }
+        let panel = &self.panel;
+        admit_submission(
+            self.fence,
+            self.cancelled,
+            |fresh| {
+                if panel.same_as(fresh) {
+                    Ok(())
+                } else {
+                    Err(ColorRefusal::PanelChanged)
+                }
+            },
+            |refusal| match refusal {
+                FenceRefusal::Cancelled => ColorRefusal::Cancelled,
+                FenceRefusal::PanelChanged => ColorRefusal::PanelChanged,
+                FenceRefusal::AdmissionDenied => ColorRefusal::AdmissionDenied,
+            },
+        )
+        .map_err(Stop::Refused)?;
         // From here Windows may change state.
         self.submitted = true;
         Ok(())

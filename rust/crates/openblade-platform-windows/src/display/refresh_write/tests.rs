@@ -3,8 +3,8 @@
 //! so no SetDisplayConfig call, VALIDATE included, can run here.
 use super::*;
 use crate::display::{
-    AdvancedColorState, EndpointId, MonitorName, RefreshOption, RefreshSnapshot, TimingEvidence,
-    native, refresh::classify,
+    AdvancedColorState, EndpointId, InternalDisplayTopology, MonitorName, RefreshOption,
+    RefreshSnapshot, TimingEvidence, native, refresh::classify,
 };
 use std::{
     collections::VecDeque,

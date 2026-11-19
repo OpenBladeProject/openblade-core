@@ -10,7 +10,8 @@
 
 use super::{
     ActiveInternalDisplay, AdvancedColorState, DisplayReadError, EndpointId,
-    InternalDisplayTopology, SubmissionFence, fence::PanelIdentity,
+    InternalDisplayTopology, SubmissionFence,
+    fence::{FenceRefusal, PanelIdentity, admit_submission},
 };
 
 /// CCD identity of the internal display admitted for one HDR request.
@@ -122,19 +123,23 @@ pub fn set_internal_hdr<N: HdrNative + ?Sized>(
     if current == enabled {
         return Ok(HdrOutcome::Unchanged);
     }
-    if cancelled() {
-        return Err(refused(HdrError::Cancelled));
-    }
-    let fenced = fence.topology();
-    if !matches!(&fenced, Ok(InternalDisplayTopology::Single(fresh)) if admitted.same_as(fresh)) {
-        return Err(refused(HdrError::PanelChanged));
-    }
-    if !fence.admit() {
-        return Err(refused(HdrError::AdmissionDenied));
-    }
-    if cancelled() {
-        return Err(refused(HdrError::Cancelled));
-    }
+    admit_submission(
+        fence,
+        cancelled,
+        |fresh| {
+            if admitted.same_as(fresh) {
+                Ok(())
+            } else {
+                Err(HdrError::PanelChanged)
+            }
+        },
+        |refusal| match refusal {
+            FenceRefusal::Cancelled => HdrError::Cancelled,
+            FenceRefusal::PanelChanged => HdrError::PanelChanged,
+            FenceRefusal::AdmissionDenied => HdrError::AdmissionDenied,
+        },
+    )
+    .map_err(refused)?;
 
     // From here Windows may have applied the change. Caller cancellation no
     // longer applies; the readback always runs.

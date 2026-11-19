@@ -303,8 +303,7 @@ pub(super) fn monitors(source_name: &OsStr) -> Vec<super::Monitor> {
         UI::WindowsAndMessaging::EDD_GET_DEVICE_INTERFACE_NAME,
     };
     let source = wide(source_name);
-    let mut monitors = Vec::new();
-    for index in 0..MAX_MONITORS {
+    bounded_monitors(|index| {
         let mut device = DISPLAY_DEVICEW {
             cb: size_of::<DISPLAY_DEVICEW>() as u32,
             ..Default::default()
@@ -319,14 +318,25 @@ pub(super) fn monitors(source_name: &OsStr) -> Vec<super::Monitor> {
                 EDD_GET_DEVICE_INTERFACE_NAME,
             )
         };
-        if found == 0 {
-            return monitors;
-        }
-        monitors.push(super::Monitor {
+        (found != 0).then(|| super::Monitor {
             interface: fixed_text(&device.DeviceID),
             key: fixed_text(&device.DeviceKey),
             active: device.StateFlags & DISPLAY_DEVICE_ACTIVE != 0,
-        });
+        })
+    })
+}
+
+/// The enumeration rule of [`monitors`]: indices from zero until `next`
+/// reports none. A list still unfinished after [`MAX_MONITORS`] entries yields
+/// no monitors, so no single active monitor is chosen from a partial list.
+#[cfg(any(test, feature = "display-color-write"))]
+fn bounded_monitors(mut next: impl FnMut(u32) -> Option<super::Monitor>) -> Vec<super::Monitor> {
+    let mut monitors = Vec::new();
+    for index in 0..MAX_MONITORS {
+        match next(index) {
+            Some(monitor) => monitors.push(monitor),
+            None => return monitors,
+        }
     }
     Vec::new()
 }
@@ -477,6 +487,40 @@ mod tests {
         };
         let (adapter, id) = display_address(&display);
         assert_eq!((adapter.LowPart, adapter.HighPart, id), (4, 5, 3));
+    }
+
+    #[test]
+    fn monitor_enumeration_stops_at_the_end_and_rejects_an_unbounded_list() {
+        let monitor = |index: u32| crate::color_profile::Monitor {
+            interface: format!("monitor{index}").into(),
+            key: format!("key{index}").into(),
+            active: index == 1,
+        };
+        let mut asked = Vec::new();
+        let listed = bounded_monitors(|index| {
+            asked.push(index);
+            (index < 2).then(|| monitor(index))
+        });
+        assert_eq!(asked, [0, 1, 2]);
+        assert_eq!(
+            listed.iter().map(|m| m.key.clone()).collect::<Vec<_>>(),
+            ["key0", "key1"]
+        );
+        // The last admitted index still ends the list.
+        let last = MAX_MONITORS - 1;
+        assert_eq!(
+            bounded_monitors(|index| (index < last).then(|| monitor(index))).len(),
+            last as usize
+        );
+        // A source that still reports an entry at the bound yields none, and
+        // nothing past the bound is asked for.
+        let mut highest = 0;
+        let unbounded = bounded_monitors(|index| {
+            highest = index;
+            Some(monitor(index))
+        });
+        assert!(unbounded.is_empty());
+        assert_eq!(highest, MAX_MONITORS - 1);
     }
 
     #[test]

@@ -18,9 +18,9 @@
 
 pub use super::refresh_packet::PrepareError;
 use super::{
-    ActiveInternalDisplay, DisplayReadError, InternalDisplayRefresh, InternalDisplayTopology,
-    PATH_BOOST_REFRESH_RATE, RefreshRate, SubmissionFence, Topology,
-    fence::PanelIdentity,
+    ActiveInternalDisplay, DisplayReadError, InternalDisplayRefresh, PATH_BOOST_REFRESH_RATE,
+    RefreshRate, SubmissionFence, Topology,
+    fence::{FenceRefusal, PanelIdentity, admit_submission},
     refresh::{RefreshApi, edid, observe_refresh},
     refresh_packet::RefreshPacket,
 };
@@ -200,23 +200,26 @@ pub fn set_internal_refresh<N: RefreshNative + ?Sized>(
         0 => {}
         status => return Err(refused(RefreshError::ValidationRejected(status))),
     }
-    if cancelled() {
-        return Err(refused(RefreshError::Cancelled));
-    }
     // The fence reads immediately before the submission. The plan carries
     // this frame's arrays, so the fenced panel must equal the observed one
     // (identity, rates and flags), not just be the same panel.
-    let fenced = fence.topology();
-    if !matches!(&fenced, Ok(InternalDisplayTopology::Single(fresh)) if *fresh == snapshot.display)
-    {
-        return Err(refused(RefreshError::PanelChanged));
-    }
-    if !fence.admit() {
-        return Err(refused(RefreshError::AdmissionDenied));
-    }
-    if cancelled() {
-        return Err(refused(RefreshError::Cancelled));
-    }
+    admit_submission(
+        fence,
+        cancelled,
+        |fresh| {
+            if *fresh == snapshot.display {
+                Ok(())
+            } else {
+                Err(RefreshError::PanelChanged)
+            }
+        },
+        |refusal| match refusal {
+            FenceRefusal::Cancelled => RefreshError::Cancelled,
+            FenceRefusal::PanelChanged => RefreshError::PanelChanged,
+            FenceRefusal::AdmissionDenied => RefreshError::AdmissionDenied,
+        },
+    )
+    .map_err(refused)?;
 
     // From here Windows may have applied the configuration. Caller
     // cancellation no longer applies; the readback always runs.

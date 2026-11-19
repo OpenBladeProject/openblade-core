@@ -15,6 +15,53 @@ pub trait SubmissionFence: Send + Sync {
     fn admit(&self) -> bool;
 }
 
+/// Why [`admit_submission`] refused. Each refusal precedes the submission.
+#[cfg(any(
+    feature = "display-hdr-write",
+    feature = "display-refresh-write",
+    feature = "display-color-write"
+))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FenceRefusal {
+    Cancelled,
+    /// The fenced topology is not a single internal panel.
+    PanelChanged,
+    AdmissionDenied,
+}
+
+/// The fence sequence shared by the HDR, refresh and color-profile writers,
+/// immediately before their first submission: caller cancellation, then one
+/// fenced topology whose single panel `fresh` must accept, then the host
+/// admission, then cancellation again, because the admission may wait.
+/// `fresh` refuses with the writer's own reason; `refusal` maps the shared
+/// ones.
+#[cfg(any(
+    feature = "display-hdr-write",
+    feature = "display-refresh-write",
+    feature = "display-color-write"
+))]
+pub(crate) fn admit_submission<E>(
+    fence: &dyn SubmissionFence,
+    cancelled: &dyn Fn() -> bool,
+    fresh: impl FnOnce(&super::ActiveInternalDisplay) -> Result<(), E>,
+    refusal: impl Fn(FenceRefusal) -> E,
+) -> Result<(), E> {
+    if cancelled() {
+        return Err(refusal(FenceRefusal::Cancelled));
+    }
+    match fence.topology() {
+        Ok(InternalDisplayTopology::Single(display)) => fresh(&display)?,
+        _ => return Err(refusal(FenceRefusal::PanelChanged)),
+    }
+    if !fence.admit() {
+        return Err(refusal(FenceRefusal::AdmissionDenied));
+    }
+    if cancelled() {
+        return Err(refusal(FenceRefusal::Cancelled));
+    }
+    Ok(())
+}
+
 /// The internal panel admitted for one HDR, refresh or color-profile write: the same CCD
 /// endpoints and the same monitor device path, compared ASCII case-
 /// insensitively like managed `PrepareBrightness` (`OrdinalIgnoreCase`), or
