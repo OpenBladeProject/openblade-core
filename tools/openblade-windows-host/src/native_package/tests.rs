@@ -1398,15 +1398,29 @@ fn the_identity_bounds_match_the_managed_and_build_script_bounds() {
     ] {
         assert_eq!(MANAGED_PACKAGE.matches(&constant).count(), 1, "{constant}");
     }
-    // build.rs mounts the same module and names the bound exactly once,
-    // path-qualified, so no item or binding of its own can shadow it.
+    // build.rs mounts the same module once and names the bound only in its
+    // assert, path-qualified. This is a text check: it catches a second module,
+    // import or binding named identity_bound written in build.rs (including
+    // another #[path] mount), another use of the bound, and a changed
+    // condition or message. It cannot see a name brought in by a macro or an
+    // include!, or a cfg-dependent definition inside identity_bound.rs.
     let build = include_str!("../../build.rs");
     let module = "#[path = \"src/native_package/identity_bound.rs\"]\nmod identity_bound;\n";
     assert_eq!(build.matches(module).count(), 1);
-    assert_eq!(build.matches("MAX_IDENTITY_BYTES").count(), 1);
-    assert!(
-        build.contains("record.len() <= identity_bound::MAX_IDENTITY_BYTES && record.is_ascii()")
+    assert_eq!(build.matches("#[path").count(), 1);
+    assert_eq!(build.matches("identity_bound").count(), 4);
+    assert_eq!(build.matches("MAX_IDENTITY_BYTES").count(), 2);
+    assert_eq!(
+        build.matches("identity_bound::MAX_IDENTITY_BYTES").count(),
+        2
     );
+    for text in [
+        "record.len() <= identity_bound::MAX_IDENTITY_BYTES && record.is_ascii(),",
+        "at most {} bytes, not {}\",\n            identity_bound::MAX_IDENTITY_BYTES,\n            \
+         record.len()\n",
+    ] {
+        assert_eq!(build.matches(text).count(), 1, "{text}");
+    }
 }
 
 const IDENTITY_BOUND_DATA: &str = include_str!("../../tests/data/native-identity-bound-v1.json");

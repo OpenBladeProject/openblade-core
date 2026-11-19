@@ -148,8 +148,8 @@ fn main() {
         );
         assert!(
             record.len() <= identity_bound::MAX_IDENTITY_BYTES && record.is_ascii(),
-            "the {role} build identity must be ASCII and within the shared bound in \
-             src/native_package/identity_bound.rs, not {} bytes",
+            "the {role} build identity must be ASCII and at most {} bytes, not {}",
+            identity_bound::MAX_IDENTITY_BYTES,
             record.len()
         );
         let bytes = format!("{:?}", record.as_bytes());
