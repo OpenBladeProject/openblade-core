@@ -1239,3 +1239,39 @@ fn selected_partial_display_color_write_capability_is_exact_and_other_builds_can
         assert!(capabilities(2, "agent", &features.join(","), &claimed.join(",")).is_err());
     }
 }
+
+/// The import descriptors of a real bound Agent (static CRT, every Agent
+/// feature), in linker order, read from the image without executing it; the
+/// managed `WindowsNativeEpochTests.RealAgentImports` pins the same set.
+const REAL_AGENT_IMPORTS: [&str; 15] = [
+    "kernel32.dll",
+    "wtsapi32.dll",
+    "shell32.dll",
+    "combase.dll",
+    "webservices.dll",
+    "bcrypt.dll",
+    "advapi32.dll",
+    "ntdll.dll",
+    "ole32.dll",
+    "api-ms-win-core-synch-l1-2-0.dll",
+    "user32.dll",
+    "oleaut32.dll",
+    "mscms.dll",
+    "bcryptprimitives.dll",
+    "KERNEL32.dll",
+];
+
+#[test]
+fn real_agent_imports_are_reviewed_system_contracts_and_others_are_not() {
+    for name in REAL_AGENT_IMPORTS {
+        assert!(system_import(&name.to_ascii_lowercase()), "{name}");
+    }
+    for name in [
+        "winhttp.dll",
+        "wininet.dll",
+        "mscms.dll.evil",
+        "webservices",
+    ] {
+        assert!(!system_import(name), "{name}");
+    }
+}

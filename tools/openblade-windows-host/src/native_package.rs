@@ -1040,6 +1040,12 @@ fn system_import(name: &str) -> bool {
             | "winmm.dll"
             | "dbghelp.dll"
             | "msvcrt.dll"
+            // Inbox Windows Color System: the Agent display query reads the
+            // active profile and setColorProfile writes it.
+            | "mscms.dll"
+            // Inbox Windows Web Services XML reader over the Agent battery
+            // report's bounded in-memory buffer; no channel or network API.
+            | "webservices.dll"
     ) || name.starts_with("api-ms-win-")
         && name.ends_with(".dll")
         && name

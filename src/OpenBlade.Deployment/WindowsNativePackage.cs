@@ -171,6 +171,15 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         or "combase.dll" or "bcryptprimitives.dll"
         or "psapi.dll" or "gdi32.dll" or "dwmapi.dll" or "comctl32.dll" or "comdlg32.dll"
         or "shlwapi.dll" or "hid.dll" or "winmm.dll" or "dbghelp.dll" or "msvcrt.dll"
+        // Inbox Windows Color System: the Agent display query reads the active
+        // profile (ColorProfileGetDisplayList/Default/UserScope) and
+        // setColorProfile writes it (ColorProfile*DisplayAssociation,
+        // ColorProfileSetDisplayDefaultAssociation, WcsSetUsePerUserProfiles).
+        or "mscms.dll"
+        // Inbox Windows Web Services XML reader: the Agent battery report parses
+        // a bounded in-memory buffer (WsCreateReader/WsSetInput/WsReadNode/
+        // WsGetReaderNode/WsFreeReader). No channel, proxy or network API.
+        or "webservices.dll"
         || (name.StartsWith("api-ms-win-", StringComparison.Ordinal) && name.EndsWith(".dll", StringComparison.Ordinal)
             && name.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '.'));
 }

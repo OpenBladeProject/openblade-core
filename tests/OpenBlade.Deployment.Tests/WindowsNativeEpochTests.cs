@@ -27,9 +27,9 @@ public sealed class WindowsNativeEpochTests
         return markers.Length == 0 ? "none" : string.Join(',', markers);
     }
 
-    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1, int schema = 1, string? capabilities = null, bool mailbox = false, string? sourceRevision = null, bool mutation = false, bool fan = false, bool battery = false, bool temporary = false, bool agentBattery = false, bool agentDisplay = false, bool agentWrite = false, bool agentHdr = false, bool agentRefresh = false, bool agentColor = false)
+    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1, int schema = 1, string? capabilities = null, bool mailbox = false, string? sourceRevision = null, bool mutation = false, bool fan = false, bool battery = false, bool temporary = false, bool agentBattery = false, bool agentDisplay = false, bool agentWrite = false, bool agentHdr = false, bool agentRefresh = false, bool agentColor = false, string[]? imports = null)
     {
-        byte[] bytes = new byte[0xA00];
+        byte[] bytes = new byte[imports is null ? 0xA00 : 0xC00];
         void U16(int n, ushort v) => BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(n), v);
         void U32(int n, uint v) => BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(n), v);
         "MZ"u8.CopyTo(bytes); U32(60, 0x80); "PE\0\0"u8.CopyTo(bytes.AsSpan(0x80));
@@ -53,8 +53,20 @@ public sealed class WindowsNativeEpochTests
             : [.. fields, capabilities ?? (role == "service" ? temporary ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1" : battery ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1" : fan ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2" : mutation ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1" : mailbox ? "private-service-custody-v1,service-mailbox-observation-v1" : "private-service-custody-v1,service-metadata-only-v1" : agentBattery ? "agent-battery-report-v1" : "none")]);
         int section = 0x98 + 240;
         ".obid"u8.CopyTo(bytes.AsSpan(section)); U32(section + 8, (uint)metadata.Length); U32(section + 12, 0x1000); U32(section + 16, 0x400); U32(section + 20, 0x400); U32(section + 36, 0x40000040);
-        ".idata"u8.CopyTo(bytes.AsSpan(section + 40)); U32(section + 48, 0x200); U32(section + 52, 0x2000); U32(section + 56, 0x200); U32(section + 60, 0x800); U32(section + 76, 0x40000040);
-        metadata.CopyTo(bytes, 0x400); U32(0x800 + 12, 0x2040); "KERNEL32.dll\0"u8.CopyTo(bytes.AsSpan(0x840)); bytes[^1] = marker;
+        ".idata"u8.CopyTo(bytes.AsSpan(section + 40)); U32(section + 48, imports is null ? 0x200u : 0x400u); U32(section + 52, 0x2000); U32(section + 56, imports is null ? 0x200u : 0x400u); U32(section + 60, 0x800); U32(section + 76, 0x40000040);
+        metadata.CopyTo(bytes, 0x400); bytes[^1] = marker;
+        if (imports is null) { U32(0x800 + 12, 0x2040); "KERNEL32.dll\0"u8.CopyTo(bytes.AsSpan(0x840)); }
+        else
+        {
+            // One descriptor per name, the terminator, then the names.
+            int name = 0x800 + 20 * (imports.Length + 1);
+            for (int i = 0; i < imports.Length; i++)
+            {
+                U32(0x800 + 20 * i + 12, (uint)(0x2000 + name - 0x800));
+                name += Encoding.ASCII.GetBytes(imports[i] + "\0", bytes.AsSpan(name));
+            }
+            U32(0x98 + 124, (uint)(20 * (imports.Length + 1)));
+        }
         return bytes;
     }
 
@@ -88,6 +100,32 @@ public sealed class WindowsNativeEpochTests
         Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect([.. bytes], "service", new string('c', 40)));
         bytes[^1] ^= 1;
         Assert.NotEqual(artifact.Sha256, NativeArtifact.Inspect([.. bytes], "service", new string('a', 40)).Sha256);
+    }
+
+    // The import descriptors of a real bound Agent (static CRT, every Agent
+    // feature), in linker order, read from the image without executing it.
+    // native_package/tests.rs pins the same set for the Rust inspector.
+    internal static readonly string[] RealAgentImports = ["kernel32.dll", "wtsapi32.dll", "shell32.dll",
+        "combase.dll", "webservices.dll", "bcrypt.dll", "advapi32.dll", "ntdll.dll", "ole32.dll",
+        "api-ms-win-core-synch-l1-2-0.dll", "user32.dll", "oleaut32.dll", "mscms.dll", "bcryptprimitives.dll",
+        "KERNEL32.dll"];
+
+    [Fact]
+    public void RealAgentImportSetIsAdmittedAndAnUnreviewedDllIsNot()
+    {
+        string source = new('a', 40);
+        byte[] Agent(string[] imports) => Image("agent", schema: 2, agentBattery: true, agentDisplay: true,
+            agentWrite: true, agentHdr: true, agentRefresh: true, agentColor: true, imports: imports);
+        var artifact = NativeArtifact.Inspect([.. Agent(RealAgentImports)], "agent", source);
+        Assert.Equal("advapi32.dll,api-ms-win-core-synch-l1-2-0.dll,bcrypt.dll,bcryptprimitives.dll,combase.dll,"
+            + "kernel32.dll,mscms.dll,ntdll.dll,ole32.dll,oleaut32.dll,shell32.dll,user32.dll,webservices.dll,wtsapi32.dll",
+            artifact.Imports);
+        foreach (string unreviewed in new[] { "winhttp.dll", "wininet.dll", "mscms.dll.evil" })
+        {
+            var refused = Assert.Throws<InvalidDataException>(
+                () => NativeArtifact.Inspect([.. Agent([.. RealAgentImports, unreviewed])], "agent", source));
+            Assert.Equal("Unreviewed external import contract.", refused.Message);
+        }
     }
 
     [Fact]
