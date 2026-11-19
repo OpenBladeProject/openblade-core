@@ -2,6 +2,7 @@
 
 pub mod configuration;
 pub mod cpu_worker;
+pub mod json_object;
 
 #[cfg(windows)]
 pub fn valid_dev_id(id: &str) -> bool {
