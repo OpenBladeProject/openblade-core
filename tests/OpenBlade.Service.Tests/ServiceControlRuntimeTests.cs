@@ -31353,6 +31353,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
     public void Dispose()
     {
+        DisposeHandbackFixtures();
         if (Directory.Exists(directory))
         {
             Directory.Delete(directory, recursive: true);

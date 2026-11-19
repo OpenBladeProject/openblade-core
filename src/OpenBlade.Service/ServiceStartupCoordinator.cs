@@ -51,8 +51,9 @@ public sealed class ServiceStartupCoordinator(
             return false;
         }
 
-        bool recoveringUnexpectedExit =
+        bool recoveringManagedRun =
             startupKind == ServiceStartupKind.UnexpectedExitRecovery;
+        bool recoveringUnexpectedExit = recoveringManagedRun;
         if (recoveringUnexpectedExit)
         {
             logger.LogWarning(
@@ -62,6 +63,7 @@ public sealed class ServiceStartupCoordinator(
         {
             // The previous native service crashed with writes managed must
             // confirm. Recover as after an unexpected exit; apply no profile.
+            // Without a managed run marker, managed owned no fan state.
             recoveringUnexpectedExit = true;
             logger.LogWarning(
                 "The previous native service left unconfirmed changes. OpenBlade will observe fresh state before any write.");
@@ -74,7 +76,8 @@ public sealed class ServiceStartupCoordinator(
             startup.Configuration,
             powerSource,
             startup.Overrides,
-            recoveringUnexpectedExit);
+            recoveringUnexpectedExit,
+            recoveringManagedRun);
         RuntimeInitialized = true;
 
         try

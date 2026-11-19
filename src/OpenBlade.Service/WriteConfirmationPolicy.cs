@@ -29,11 +29,17 @@ internal static class WriteConfirmationPolicy
     // A crashed native write is confirmed against its own target only. Native
     // performance never runs under owned manual fans, so manual fans are a
     // mismatch; native fan targets compare by Automatic versus manual topology.
+    // Native sets the two thermal channels in turn, so a crash between them can
+    // leave a pair that reads as no state at all. A pair that still disagrees
+    // after the read's own retry is a definite firmware state other than the
+    // target. It survives restarts, so it is reported for an explicit reapply,
+    // as managed's own interrupted write is after a restart, never waited on.
     internal static PendingConfirmationResult MatchNativeHandback(
         DeviceSubsystem subsystem,
         WriteConfirmationExpectation expectation,
         ConfirmedDeviceState confirmed,
-        NativeHandbackClaim claim)
+        NativeHandbackClaim claim,
+        bool thermalChannelsDisagree = false)
     {
         if (!claim.Resolvable)
         {
@@ -44,12 +50,12 @@ internal static class WriteConfirmationPolicy
             DeviceSubsystem.Performance => DeviceSubsystemOrder.IsManualFanMode(confirmed.Fans)
                 ? PendingConfirmationResult.Mismatch
                 : confirmed.Performance is not { } preset
-                    ? PendingConfirmationResult.Unavailable
+                    ? thermalChannelsDisagree ? PendingConfirmationResult.Mismatch : PendingConfirmationResult.Unavailable
                     : preset == expectation.Target.Performance.Value
                         ? PendingConfirmationResult.Match
                         : PendingConfirmationResult.Mismatch,
             DeviceSubsystem.Fans => confirmed.Fans is not { } fans
-                ? PendingConfirmationResult.Unavailable
+                ? thermalChannelsDisagree ? PendingConfirmationResult.Mismatch : PendingConfirmationResult.Unavailable
                 : DeviceSubsystemOrder.IsManualFanMode(fans)
                     == DeviceSubsystemOrder.IsManualFanMode(expectation.Target.Fans.Value)
                     ? PendingConfirmationResult.Match

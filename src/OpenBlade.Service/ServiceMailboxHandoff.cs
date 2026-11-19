@@ -14,6 +14,10 @@ internal sealed class ServiceMailboxHandoff : IDisposable
     private Func<Task>? retainedOwnerClose;
     private Action? retainedGuardianProof;
     internal MailboxLifetime Lifetime { get; } = new();
+    // Fresh native custody computed these handback history commitments at
+    // this start; the Service adopts only a record bound to one of them.
+    internal IReadOnlyDictionary<string, string> NativeHandbacks =>
+        startup?.NativeHandbacks ?? new Dictionary<string, string>(StringComparer.Ordinal);
     public ServiceMailboxHandoff()
     {
         startup = ManagedMailboxStartup.Open(ManagedMailboxNativeCustody.Acquire,

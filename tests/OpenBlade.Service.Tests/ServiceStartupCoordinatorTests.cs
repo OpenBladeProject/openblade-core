@@ -55,6 +55,7 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         Assert.True(await coordinator.InitializeAsync(CancellationToken.None));
 
         Assert.True(runtime.RecoveringUnexpectedExit);
+        Assert.True(runtime.RecoveringManagedRun);
         Assert.Equal(
             [
                 "Initialize",
@@ -78,7 +79,9 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         Assert.True(await coordinator.InitializeAsync(CancellationToken.None));
 
         // A crashed native generation left unconfirmed writes: no profile apply.
+        // Without a managed run marker, managed owned no fan state to recover.
         Assert.True(runtime.RecoveringUnexpectedExit);
+        Assert.False(runtime.RecoveringManagedRun);
         Assert.DoesNotContain("ReconcileStartupProfile", runtime.Calls);
         Assert.Contains("ReconcileUnexpectedExit", runtime.Calls);
     }
@@ -609,6 +612,7 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         public PowerSource? InitialPowerSource { get; private set; }
         public PersistentOverrideState? PersistentOverrides { get; private set; }
         public bool RecoveringUnexpectedExit { get; private set; }
+        public bool? RecoveringManagedRun { get; private set; }
         public bool NativeHandbackRecoveryPending { get; init; }
         public BatteryConfiguration? Configuration { get; private set; }
 
@@ -638,6 +642,17 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         {
             RecoveringUnexpectedExit = recoveringUnexpectedExit;
             Initialize(configuration, powerSource, persistentOverrides);
+        }
+
+        public void Initialize(
+            BatteryConfiguration configuration,
+            PowerSource powerSource,
+            PersistentOverrideState persistentOverrides,
+            bool recoveringUnexpectedExit,
+            bool recoveringManagedRun)
+        {
+            RecoveringManagedRun = recoveringManagedRun;
+            Initialize(configuration, powerSource, persistentOverrides, recoveringUnexpectedExit);
         }
 
         public Task ObserveAsync(bool includeLiveReadings, CancellationToken cancellationToken)

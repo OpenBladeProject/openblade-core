@@ -123,9 +123,10 @@ internal sealed record PendingWriteConfirmation(
         ConfirmedDeviceState confirmed,
         PowerSource powerSource,
         ProfileAutomationState owner,
-        GpuClockOffsetManagementState? managementState) =>
+        GpuClockOffsetManagementState? managementState,
+        bool thermalChannelsDisagree = false) =>
         NativeHandback is { } handback
-            ? WriteConfirmationPolicy.MatchNativeHandback(subsystem, Expectation, confirmed, handback)
+            ? WriteConfirmationPolicy.MatchNativeHandback(subsystem, Expectation, confirmed, handback, thermalChannelsDisagree)
             : CanConfirm(powerSource, owner)
             ? WriteConfirmationPolicy.Match(subsystem, Expectation, confirmed, managementState)
             : PendingConfirmationResult.Mismatch;

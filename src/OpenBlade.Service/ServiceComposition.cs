@@ -73,7 +73,8 @@ internal static class ServiceComposition
                 coolingPadDeviceProvider: new WindowsCoolingPadDeviceProvider(),
                 coolingPadStateDirectory: Path.Combine(machineDataDirectory, "cooling-pad"),
                 nativeHandbackStore: new NativeHandbackStore(
-                    Path.Combine(machineDataDirectory, OpenBlade.Deployment.WindowsNativeHandbackWriter.DirectoryName)));
+                    () => OpenBlade.Deployment.WindowsNativeHandbackStorage.OpenExisting(machineDataDirectory),
+                    () => provider.GetRequiredService<ServiceMailboxHandoff>().NativeHandbacks));
             return runtime;
         });
         services.AddSingleton<ServiceSessionPowerTransitionCoordinator>();
