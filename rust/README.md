@@ -164,6 +164,28 @@ tests retain the WCS imports without calling them; production builds with
 `display-color-write` call them only from `set_internal_color_profile`, so a
 dependent must not call `ColorProfileNative` outside that sequence.
 
+The installed Agent's `agent-display-profile-apply-v1` build answers manual
+applyProfile (`session-display-profile-apply-partial-v1`). It selects all four
+display writes and adds no setter: each step is the reviewed single-field
+attempt with its own fence. One checkpoint covers every configured field before
+any device interaction. An unconfigured profile is one query without power
+admission. Otherwise one query selects the steps in the managed order and with
+the managed conditions (refresh rate, HDR when supported, color profile under
+SDR ignoring case, the nearest brightness level); each step is followed by a
+reply query, and a successful step whose power context changed is stale. The
+first step that does not succeed ends the profile, and the final reply must
+show every requested setting. The durable record keeps the managed semantics,
+while the native write gate pauses exactly the fields that may have an
+unresolved submission or that the final reply no longer shows. Deliberate
+deviations, each toward fewer writes or less claimed certainty: a no-op step
+is not a submission, so a later failure before any submission is Failed or
+Blocked rather than Indeterminate; the profile stops at a confirmed step its
+reply does not show; a step's fence refusal before any submission is Blocked;
+the gate refuses the whole profile while any configured field is unresolved; a
+selecting read interrupted by cancellation fails before any write; and the
+request must carry every settings member the managed codec writes, including
+the computed `isConfigured`.
+
 Current HDR output mode, complete snapshot parity, and native display behavior
 need separate evidence before replacement. Live refresh still needs authorized
 validation of the exact packet on the active console, fresh power/session and
