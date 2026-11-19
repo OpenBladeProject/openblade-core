@@ -1,6 +1,7 @@
 use std::{env, fs, path::PathBuf, process::Command};
 
-include!("src/native_package/identity_bound.rs");
+#[path = "src/native_package/identity_bound.rs"]
+mod identity_bound;
 
 fn main() {
     println!("cargo::rustc-check-cfg=cfg(openblade_metadata_acquisition_probe)");
@@ -146,8 +147,9 @@ fn main() {
             compiler.trim()
         );
         assert!(
-            record.len() <= MAX_IDENTITY_BYTES && record.is_ascii(),
-            "the {role} build identity must be ASCII and at most {MAX_IDENTITY_BYTES} bytes, not {}",
+            record.len() <= identity_bound::MAX_IDENTITY_BYTES && record.is_ascii(),
+            "the {role} build identity must be ASCII and within the shared bound in \
+             src/native_package/identity_bound.rs, not {} bytes",
             record.len()
         );
         let bytes = format!("{:?}", record.as_bytes());
