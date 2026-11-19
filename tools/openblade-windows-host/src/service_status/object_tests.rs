@@ -40,7 +40,7 @@ fn managed_request_objects_decode_exactly_as_before() {
         .into_iter()
         .filter(|row| row["valid"] == true)
         .collect();
-    assert_eq!(valid.len(), 9);
+    assert_eq!(valid.len(), 11);
     for row in valid {
         let frame = text(&row, "frame").as_bytes();
         let object: StatusRequest = json_object::from_slice(frame).unwrap();
@@ -60,7 +60,7 @@ fn request_arrays_are_refused_by_the_parser_at_every_position() {
         .into_iter()
         .filter(|row| row["valid"] == false && row["nativeRefusal"].is_null())
         .collect();
-    assert_eq!(refused.len(), 13);
+    assert_eq!(refused.len(), 23);
     for row in refused {
         let frame = text(&row, "frame").as_bytes();
         assert!(
@@ -99,7 +99,7 @@ fn service_decoder_refuses_request_arrays_like_managed() {
     }
 }
 
-/// The managed-written frame for a row's base, after its positional edit.
+/// The managed-written frame for a row's base, after its edit.
 fn server_frame(row: &Value) -> (StatusRequest, Vec<u8>) {
     let (frames, index) = match text(row, "base") {
         "get-status" => (GET_STATUS, 1),
@@ -109,18 +109,31 @@ fn server_frame(row: &Value) -> (StatusRequest, Vec<u8>) {
     };
     let payloads = payloads(frames);
     let request = serde_json::from_slice(payloads[0]).unwrap();
-    let Some(members) = row["positional"].as_array() else {
+    if row["positional"].is_null() && row["value"].is_null() {
         return (request, payloads[index].to_vec());
-    };
+    }
     let mut frame: Value = serde_json::from_slice(payloads[index]).unwrap();
     let mut target = &mut frame;
     for key in row["path"].as_array().unwrap() {
         target = target.get_mut(key.as_str().unwrap()).unwrap();
     }
-    let array = members
-        .iter()
-        .map(|name| target.get(name.as_str().unwrap()).unwrap().clone())
-        .collect();
+    // Spliced as text: a parsed Value would already read a private token.
+    if let Some(text) = row["value"].as_str() {
+        const MARK: &str = "\"object-frame-value\"";
+        *target = Value::String(MARK.trim_matches('"').to_owned());
+        let frame = serde_json::to_string(&frame).unwrap();
+        assert_eq!(frame.matches(MARK).count(), 1);
+        return (request, frame.replace(MARK, text).into_bytes());
+    }
+    let array = match &row["positional"] {
+        Value::String(all) if all == "*" => target.as_object().unwrap().values().cloned().collect(),
+        members => members
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|name| target.get(name.as_str().unwrap()).unwrap().clone())
+            .collect(),
+    };
     *target = Value::Array(array);
     (request, serde_json::to_vec(&frame).unwrap())
 }
@@ -161,7 +174,7 @@ fn status_response_arrays_are_refused_at_every_object_position() {
         }
         checked += 1;
     }
-    assert_eq!(checked, 11);
+    assert_eq!(checked, 22);
 }
 
 #[cfg(feature = "native-agent-entry-compile-check")]
@@ -186,7 +199,7 @@ async fn status_event_arrays_are_refused_at_every_object_position() {
         }
         checked += 1;
     }
-    assert_eq!(checked, 4);
+    assert_eq!(checked, 15);
 }
 
 /// The ObserveState confirmation pass reads members that the snapshot keeps
@@ -213,4 +226,125 @@ fn observe_confirmation_members_are_object_only() {
             "{refused}"
         );
     }
+}
+
+/// Managed requires `liveReadings` (a required ServiceStatusSnapshot
+/// constructor parameter). The native reader has always read an absent member
+/// as none, and still does.
+#[test]
+fn absent_live_readings_stay_absent() {
+    let (request, frame) = server_frame(&rows("serverFrames")[0]);
+    let mut frame: Value = serde_json::from_slice(&frame).unwrap();
+    let status = frame["status"].as_object_mut().unwrap();
+    assert!(status.remove("liveReadings").unwrap().is_object());
+    let frame = serde_json::to_vec(&frame).unwrap();
+    let snapshot = StatusResponse::decode(&frame, &request, None).unwrap();
+    assert!(snapshot.live_readings.is_none());
+}
+
+/// JSON pointers of every object in `value`, the root included.
+fn object_pointers(value: &Value, pointer: String, out: &mut Vec<String>) {
+    match value {
+        Value::Object(members) => {
+            for (name, member) in members {
+                let name = name.replace('~', "~0").replace('/', "~1");
+                object_pointers(member, format!("{pointer}/{name}"), out);
+            }
+            out.push(pointer);
+        }
+        Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                object_pointers(item, format!("{pointer}/{index}"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// `frame` with each object position replaced by an array of its values, and
+/// by a non-integer number, with the replaced pointer and the new value.
+fn reshaped(frame: &[u8]) -> Vec<(String, Value, Vec<u8>)> {
+    let frame: Value = serde_json::from_slice(frame).unwrap();
+    let mut pointers = Vec::new();
+    object_pointers(&frame, String::new(), &mut pointers);
+    let number: Value = serde_json::from_str("1.5").unwrap();
+    let mut mutants = Vec::new();
+    for pointer in pointers {
+        let members = frame.pointer(&pointer).unwrap().as_object().unwrap();
+        let array = Value::Array(members.values().cloned().collect());
+        for shape in [array, number.clone()] {
+            let mut mutant = frame.clone();
+            *mutant.pointer_mut(&pointer).unwrap() = shape.clone();
+            let bytes = serde_json::to_vec(&mutant).unwrap();
+            mutants.push((pointer.clone(), shape, bytes));
+        }
+    }
+    mutants
+}
+
+/// An accepted mutant must hold the array or number it was given at that
+/// position: no derived struct or map read it as an object.
+fn assert_kept(decoded: &Value, pointer: &str, shape: &Value, case: &Value) {
+    let kept = decoded.pointer(pointer);
+    assert!(kept == Some(shape), "{case}: {pointer} became {kept:?}");
+}
+
+/// A structural guard over every object position of every valid fixture
+/// frame, beyond the named rows: each is refused as an array or a number, or
+/// kept as given in an opaque member.
+#[test]
+fn no_object_position_reads_an_array_or_a_number_as_an_object() {
+    let (mut mutants, mut accepted) = (0, 0);
+    for row in rows("requests") {
+        if row["valid"] != true {
+            continue;
+        }
+        for (pointer, shape, frame) in reshaped(text(&row, "frame").as_bytes()) {
+            mutants += 1;
+            if let Ok(request) = json_object::from_slice::<StatusRequest>(&frame) {
+                accepted += 1;
+                let decoded = serde_json::to_value(request).unwrap();
+                assert_kept(&decoded, &pointer, &shape, &row["case"]);
+            }
+        }
+    }
+    for row in rows("serverFrames") {
+        if row["valid"] != true || text(&row, "base") == "status-event" {
+            continue;
+        }
+        let (request, frame) = server_frame(&row);
+        for (pointer, shape, frame) in reshaped(&frame) {
+            mutants += 1;
+            if let Ok(snapshot) = StatusResponse::decode(&frame, &request, None) {
+                accepted += 1;
+                let pointer = pointer.strip_prefix("/status").unwrap();
+                let decoded = serde_json::to_value(snapshot).unwrap();
+                assert_kept(&decoded, pointer, &shape, &row["case"]);
+            }
+        }
+    }
+    // Opaque members (fan settings, unbound status fields) keep any shape.
+    assert!(mutants > 100 && accepted > 0 && accepted < mutants);
+}
+
+#[cfg(feature = "native-agent-entry-compile-check")]
+#[tokio::test]
+async fn no_status_event_object_position_reads_an_array_or_a_number_as_an_object() {
+    let row = rows("serverFrames")
+        .into_iter()
+        .find(|row| row["valid"] == true && text(row, "base") == "status-event")
+        .unwrap();
+    let (_, frame) = server_frame(&row);
+    let (mut mutants, mut accepted) = (0, 0);
+    for (pointer, shape, payload) in reshaped(&frame) {
+        mutants += 1;
+        let framed = [&(payload.len() as i32).to_le_bytes()[..], &payload].concat();
+        if let Ok(snapshot) = read_status_event(&mut framed.as_slice()).await {
+            accepted += 1;
+            let pointer = pointer.strip_prefix("/status").unwrap();
+            let decoded = serde_json::to_value(snapshot).unwrap();
+            assert_kept(&decoded, pointer, &shape, &row["case"]);
+        }
+    }
+    assert!(mutants > 100 && accepted > 0 && accepted < mutants);
 }

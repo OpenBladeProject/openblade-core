@@ -494,17 +494,27 @@ pub(crate) async fn subscribe<S: AsyncRead + AsyncWrite + Unpin>(
 pub(crate) async fn read_status_event(
     stream: &mut (impl AsyncRead + Unpin),
 ) -> io::Result<Snapshot> {
+    // A plain struct, not a tagged enum: serde buffers tagged content, which
+    // would let a map member read a non-integer number as a one-entry map.
     #[derive(Deserialize)]
-    #[serde(tag = "frame", rename_all = "camelCase", deny_unknown_fields)]
-    enum Event {
-        StatusEvent { version: i32, status: Snapshot },
+    #[serde(deny_unknown_fields)]
+    struct Event {
+        frame: String,
+        version: i32,
+        status: Snapshot,
     }
 
     // The producer can go quiet when status is unchanged. Only the handshake
     // has a receive deadline. The owning watcher cancels or drops this stream.
     let payload = read_payload(stream).await?;
-    let Event::StatusEvent { version, status } =
-        json_object::from_slice(&payload).map_err(|_| invalid("invalid Service status event"))?;
+    let Event {
+        frame,
+        version,
+        status,
+    } = json_object::from_slice(&payload).map_err(|_| invalid("invalid Service status event"))?;
+    if frame != "statusEvent" {
+        return Err(invalid("invalid Service status event"));
+    }
     if version != PROTOCOL_VERSION {
         return Err(invalid("Service status event version mismatch"));
     }

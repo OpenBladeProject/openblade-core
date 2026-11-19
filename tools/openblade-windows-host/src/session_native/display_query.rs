@@ -5,6 +5,7 @@
 //! all four writes it composes); every other mutation stays outside this
 //! endpoint.
 use super::diagnostics;
+use openblade_windows_host::json_object;
 #[cfg(feature = "agent-display-profile-apply-v1")]
 use openblade_windows_host::json_object::Object;
 use openblade_windows_host::pipe::Endpoint;
@@ -219,7 +220,7 @@ impl Request {
         if !operation_first(body) {
             return Err(invalid("Display request operation must be first"));
         }
-        let envelope: Envelope = serde_json::from_slice(body).map_err(invalid)?;
+        let envelope: Envelope = json_object::from_slice(body).map_err(invalid)?;
         let id = &envelope.request_id;
         if envelope.version != 2
             || id.len() != 36

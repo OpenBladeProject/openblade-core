@@ -1,21 +1,40 @@
-//! Object-only JSON decoding for IPC input.
+//! Managed-compatible decoding of untrusted IPC JSON.
 //!
-//! serde's derived struct visitor also binds a JSON array by position, and an
-//! internally tagged enum reads `["tag", ...]` as a tagged sequence;
-//! `deny_unknown_fields` changes neither. The managed System.Text.Json codecs
-//! read those types only from a JSON object. Decode every such payload with
-//! [`from_slice`], and every nested member whose type is a derived struct with
-//! [`object`], [`nullable_object`] or [`Object`]. Scalars, strings, maps and
-//! `Value` members need no wrapper. Valid objects decode exactly as before:
-//! the wrapper only declines the sequence form.
+//! Two serde behaviours accept input that the managed System.Text.Json codecs
+//! refuse:
+//!
+//! - A derived struct also binds a JSON array by position, and an internally
+//!   tagged enum reads `["tag", ...]` as a tagged sequence;
+//!   `deny_unknown_fields` changes neither.
+//! - With this crate's `arbitrary_precision` and `raw_value` features,
+//!   serde_json reads an object whose member is `$serde_json::private::Number`
+//!   or `$serde_json::private::RawValue` as a number or as re-parsed JSON text.
+//!   A `Value`, `Number` or ignored member takes it as such, and the raw text
+//!   hides its members from the duplicate-member check. serde also buffers a
+//!   non-integer or out-of-range number in that private form inside internally
+//!   tagged or flattened content, where a map visitor would take it as a map.
+//!
+//! Decode every payload with [`from_slice`], which refuses any string spelling
+//! a private token, and every nested member whose type is a derived struct
+//! with [`object`], [`nullable_object`] or [`Object`], which refuse arrays and
+//! private member names. Scalar, string, map and `Value` members need no
+//! wrapper once the payload passed [`from_slice`]. Valid managed frames decode
+//! exactly as before.
 
 use serde::{
     Deserialize, Deserializer,
-    de::{MapAccess, Visitor, value::MapAccessDeserializer},
+    de::{
+        DeserializeSeed, Error, MapAccess, Visitor,
+        value::{BorrowedStrDeserializer, MapAccessDeserializer, StringDeserializer},
+    },
 };
 use std::{fmt, marker::PhantomData};
 
-/// A value read only from a JSON object.
+/// The prefix of serde_json's private member names for arbitrary-precision
+/// numbers and raw values. Managed reads such a member as an ordinary one.
+const PRIVATE_TOKEN: &[u8] = b"$serde_json::private::";
+
+/// A value read only from a JSON object without serde_json private members.
 pub struct Object<T>(pub T);
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for Object<T> {
@@ -30,7 +49,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Object<T> {
             }
 
             fn visit_map<M: MapAccess<'de>>(self, map: M) -> Result<T, M::Error> {
-                T::deserialize(MapAccessDeserializer::new(map))
+                T::deserialize(MapAccessDeserializer::new(PublicMembers(map)))
             }
         }
 
@@ -40,9 +59,179 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Object<T> {
     }
 }
 
-/// `serde_json::from_slice` for a payload whose root must be a JSON object.
+/// Forwards a map, refusing serde_json's private member names. A buffered
+/// `1.5` arrives as such a one-member map.
+struct PublicMembers<M>(M);
+
+impl<'de, M: MapAccess<'de>> MapAccess<'de> for PublicMembers<M> {
+    type Error = M::Error;
+
+    fn next_key_seed<K: DeserializeSeed<'de>>(
+        &mut self,
+        seed: K,
+    ) -> Result<Option<K::Value>, M::Error> {
+        let name = match self.0.next_key::<Name<'de>>()? {
+            None => return Ok(None),
+            Some(name) => name,
+        };
+        if name.text().as_bytes().starts_with(PRIVATE_TOKEN) {
+            return Err(M::Error::custom("a private serde_json member"));
+        }
+        match name {
+            Name::Borrowed(name) => seed.deserialize(BorrowedStrDeserializer::new(name)),
+            Name::Owned(name) => seed.deserialize(StringDeserializer::new(name)),
+        }
+        .map(Some)
+    }
+
+    fn next_value_seed<V: DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value, M::Error> {
+        self.0.next_value_seed(seed)
+    }
+
+    fn size_hint(&self) -> Option<usize> {
+        self.0.size_hint()
+    }
+}
+
+/// A member name, borrowed from the input when it has no escapes.
+enum Name<'de> {
+    Borrowed(&'de str),
+    Owned(String),
+}
+
+impl Name<'_> {
+    fn text(&self) -> &str {
+        match self {
+            Self::Borrowed(name) => name,
+            Self::Owned(name) => name,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Name<'de> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Text;
+
+        impl<'de> Visitor<'de> for Text {
+            type Value = Name<'de>;
+
+            fn expecting(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
+                out.write_str("a member name")
+            }
+
+            fn visit_borrowed_str<E: Error>(self, name: &'de str) -> Result<Name<'de>, E> {
+                Ok(Name::Borrowed(name))
+            }
+
+            fn visit_str<E: Error>(self, name: &str) -> Result<Name<'de>, E> {
+                Ok(Name::Owned(name.to_owned()))
+            }
+
+            fn visit_string<E: Error>(self, name: String) -> Result<Name<'de>, E> {
+                Ok(Name::Owned(name))
+            }
+        }
+
+        deserializer.deserialize_str(Text)
+    }
+}
+
+/// `serde_json::from_slice` for a payload whose root must be a JSON object
+/// and in which no string spells a serde_json private token.
 pub fn from_slice<'a, T: Deserialize<'a>>(payload: &'a [u8]) -> serde_json::Result<T> {
+    public_tokens(payload)?;
     serde_json::from_slice(payload).map(|Object(value)| value)
+}
+
+/// Refuses a payload in which any string spells a serde_json private token,
+/// for a decoder whose own visitor already reads only objects.
+pub fn public_tokens(payload: &[u8]) -> serde_json::Result<()> {
+    match scan(payload) {
+        Some(_) => Ok(()),
+        None => Err(serde_json::Error::custom("a private serde_json token")),
+    }
+}
+
+/// Raw-token facts that a parsed value no longer shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Scan {
+    /// Maximum container nesting (the root container is 1), ignoring
+    /// brackets inside strings.
+    pub depth: usize,
+    /// An integer `-0` (not `-0.5` or an exponent sign), which serde_json
+    /// reads as 0.
+    pub negative_zero: bool,
+}
+
+/// One pass over the raw bytes; `None` when any decoded string, member name
+/// or value, starts with a serde_json private token (escapes included).
+/// Malformed input is left to the parser.
+pub fn scan(bytes: &[u8]) -> Option<Scan> {
+    let mut found = Scan {
+        depth: 0,
+        negative_zero: false,
+    };
+    let mut current = 0usize;
+    let mut index = 0;
+    while let Some(&byte) = bytes.get(index) {
+        index += 1;
+        match byte {
+            b'"' => {
+                // Decode only as far as needed to compare an ASCII prefix;
+                // a non-ASCII or malformed escape cannot spell the token.
+                let mut matched = Some(0usize);
+                while let Some(&byte) = bytes.get(index) {
+                    index += 1;
+                    let decoded = match byte {
+                        b'"' => break,
+                        b'\\' => {
+                            let escape = bytes.get(index).copied();
+                            index += 1;
+                            match escape {
+                                Some(b'u') => {
+                                    let hex = bytes.get(index..index + 4);
+                                    index += 4;
+                                    hex.and_then(|hex| std::str::from_utf8(hex).ok())
+                                        .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+                                        .filter(u8::is_ascii)
+                                }
+                                Some(b'b') => Some(0x08),
+                                Some(b'f') => Some(0x0C),
+                                Some(b'n') => Some(0x0A),
+                                Some(b'r') => Some(0x0D),
+                                Some(b't') => Some(0x09),
+                                Some(other) => Some(other),
+                                None => None,
+                            }
+                        }
+                        other => Some(other),
+                    };
+                    matched = match matched {
+                        Some(at) if at == PRIVATE_TOKEN.len() => Some(at),
+                        Some(at) if decoded == Some(PRIVATE_TOKEN[at]) => Some(at + 1),
+                        _ => None,
+                    };
+                }
+                if matched == Some(PRIVATE_TOKEN.len()) {
+                    return None;
+                }
+            }
+            // A sign after an exponent marker (`1e-05`) is not a number start.
+            b'-' if bytes.get(index) == Some(&b'0')
+                && !matches!(bytes.get(index + 1), Some(b'.' | b'e' | b'E'))
+                && !matches!(index.checked_sub(2).map(|at| bytes[at]), Some(b'e' | b'E')) =>
+            {
+                found.negative_zero = true;
+            }
+            b'[' | b'{' => {
+                current += 1;
+                found.depth = found.depth.max(current);
+            }
+            b']' | b'}' => current = current.saturating_sub(1),
+            _ => {}
+        }
+    }
+    Some(found)
 }
 
 /// `deserialize_with` for a member that must hold an object.
@@ -149,6 +338,109 @@ mod tests {
             r#"{"operation":"set"}"#,
         ] {
             assert!(from_slice::<Tagged>(frame.as_bytes()).is_err(), "{frame}");
+        }
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    struct Readings {
+        rpm: Option<i32>,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
+    enum Loose {
+        Set {
+            #[serde(default, deserialize_with = "nullable_object")]
+            readings: Option<Readings>,
+            settings: Option<Value>,
+        },
+    }
+
+    // Without the guards, serde_json reads private tokens as typed values, and
+    // a member of all-optional fields takes a buffered `1.5` as a map.
+    #[test]
+    fn serde_alone_reads_private_tokens_and_buffered_numbers() {
+        let token =
+            r#"{"operation":"set","settings":{"mode":{"$serde_json::private::Number":"1"}}}"#;
+        let Loose::Set { settings, .. } = serde_json::from_str(token).unwrap();
+        assert_eq!(settings.unwrap()["mode"], json!(1));
+        let raw = r#"{"operation":"set","settings":{"$serde_json::private::RawValue":"{\"mode\":3,\"mode\":1}"}}"#;
+        let Loose::Set { settings, .. } = serde_json::from_str(raw).unwrap();
+        assert_eq!(settings.unwrap()["mode"], json!(1));
+        #[derive(Deserialize)]
+        #[serde(tag = "operation", rename_all = "camelCase")]
+        enum Bare {
+            Set { readings: Option<Readings> },
+        }
+        let Bare::Set { readings } =
+            serde_json::from_str(r#"{"operation":"set","readings":1.5}"#).unwrap();
+        assert_eq!(readings, Some(Readings { rpm: None }));
+    }
+
+    #[test]
+    fn private_tokens_are_refused_in_any_string() {
+        for frame in [
+            r#"{"operation":"set","settings":{"mode":{"$serde_json::private::Number":"1"}}}"#,
+            r#"{"operation":"set","settings":{"$serde_json::private::RawValue":"{\"mode\":1}"}}"#,
+            r#"{"operation":"set","settings":{"$serde_json::private::":1}}"#,
+            r#"{"operation":"set","settings":{"\u0024serde_json::private::Number":"1"}}"#,
+            r#"{"operation":"set","settings":{"$serde_json::priv\u0061te::Number":"1"}}"#,
+            r#"{"operation":"set","settings":{"$serde_json\u003a:private::Number":"1"}}"#,
+            r#"{"operation":"set","settings":{"mode":"$serde_json::private::Number"}}"#,
+            r#"{"$serde_json::private::Number":"1"}"#,
+        ] {
+            assert!(scan(frame.as_bytes()).is_none(), "{frame}");
+            assert!(from_slice::<Loose>(frame.as_bytes()).is_err(), "{frame}");
+        }
+        // Near misses decode unchanged.
+        for frame in [
+            r#"{"operation":"set","settings":{"$serde_json::private:":1}}"#,
+            r#"{"operation":"set","settings":{"x$serde_json::private::Number":1}}"#,
+            r#"{"operation":"set","settings":{"$serde_json::Private::Number":1}}"#,
+            r#"{"operation":"set","settings":{"$serde_json::private\u00e9":1}}"#,
+        ] {
+            assert!(scan(frame.as_bytes()).is_some(), "{frame}");
+            assert!(from_slice::<Loose>(frame.as_bytes()).is_ok(), "{frame}");
+        }
+    }
+
+    #[test]
+    fn buffered_non_integer_numbers_are_not_objects() {
+        for number in ["1.5", "1e2", "-0.0", "123456789012345678901234567890"] {
+            let frame = format!(r#"{{"operation":"set","readings":{number}}}"#);
+            assert!(from_slice::<Loose>(frame.as_bytes()).is_err(), "{frame}");
+            // A Value member still reads the number as a number.
+            let frame = format!(r#"{{"operation":"set","settings":{number}}}"#);
+            let Loose::Set { settings, .. } = from_slice(frame.as_bytes()).unwrap();
+            assert!(settings.unwrap().is_number(), "{frame}");
+        }
+        let frame = br#"{"operation":"set","readings":{"rpm":1},"settings":{"a":1.5}}"#;
+        assert_eq!(
+            from_slice::<Loose>(frame).unwrap(),
+            Loose::Set {
+                readings: Some(Readings { rpm: Some(1) }),
+                settings: Some(json!({"a":1.5})),
+            }
+        );
+        // Escaped member names still reach the struct visitor.
+        let frame = br#"{"operation":"set","readings":{"\u0072pm":2}}"#;
+        let Loose::Set { readings, .. } = from_slice(frame).unwrap();
+        assert_eq!(readings, Some(Readings { rpm: Some(2) }));
+    }
+
+    #[test]
+    fn scan_reports_depth_and_integer_negative_zero() {
+        let scanned = |text: &str| scan(text.as_bytes()).unwrap();
+        assert_eq!(scanned(r#"{"a":[{"b":"[{["}]}"#).depth, 3);
+        assert_eq!(scanned("{}").depth, 1);
+        for zero in ["-0", "[-0]", r#"{"a":-0}"#] {
+            assert!(scanned(zero).negative_zero, "{zero}");
+        }
+        for other in [
+            "-0.5", "-0e1", "-0E1", "1e-05", "1E-0", r#""-0""#, "-1", "0",
+        ] {
+            assert!(!scanned(other).negative_zero, "{other}");
         }
     }
 }

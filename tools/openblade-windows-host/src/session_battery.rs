@@ -1,6 +1,7 @@
 //! Private replay of the managed battery report endpoint.
 use std::{future::pending, io, time::Duration};
 
+use openblade_windows_host::json_object;
 use openblade_windows_host::pipe::{Connection as NamedPipeServer, Identity};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
@@ -67,7 +68,8 @@ pub(super) async fn serve(
     // The read supplies the message token. Dispatch only after current-user
     // and session admission via the shared pipe owner.
     identity.authorize(pipe)?;
-    let request: Request = serde_json::from_slice(&body)
+    let request: Request = json_object::public_tokens(&body)
+        .and_then(|()| serde_json::from_slice(&body))
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     let Some(result) = dispatch(pipe, scenario).await else {
         return Ok(());
