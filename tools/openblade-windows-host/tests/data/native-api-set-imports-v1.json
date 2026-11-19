@@ -1,0 +1,13 @@
+{
+  "description": "API-set import names that both import allowlists admit or refuse. Read by native_package::tests and WindowsNativeEpochTests.",
+  "cases": [
+    { "name": "api-ms-win-core-synch-l1-2-0.dll", "admitted": true },
+    { "name": "api-ms-win-core-file-l1-1-0.dll", "admitted": true },
+    { "name": "api-foo.dll", "admitted": false },
+    { "name": "ext-ms-win-core-l1-1-0.dll", "admitted": false },
+    { "name": "api-ms-win-core-synch-l1-2-0", "admitted": false },
+    { "name": "api-ms-win-..\\x.dll", "admitted": false },
+    { "name": "api-ms-win-a_b.dll", "admitted": false },
+    { "name": "api-ms-win-a b.dll", "admitted": false }
+  ]
+}

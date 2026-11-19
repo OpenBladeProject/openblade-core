@@ -1262,24 +1262,49 @@ const REAL_AGENT_IMPORTS: [&str; 15] = [
 ];
 
 /// The managed package source, whose `IsSystemImport` must admit exactly the
-/// names of [`SYSTEM_IMPORTS`]; the Rust workflow also runs on its changes.
+/// names of [`SYSTEM_IMPORTS`] and then only the API-set rule; the Rust
+/// workflow also runs on its changes.
 const MANAGED_PACKAGE: &str =
     include_str!("../../../../src/OpenBlade.Deployment/WindowsNativePackage.cs");
 
 #[test]
-fn the_import_allowlist_names_match_the_managed_allowlist() {
+fn the_import_allowlist_matches_the_managed_allowlist() {
     let (_, rule) = MANAGED_PACKAGE
         .split_once("bool IsSystemImport(string name) =>")
         .expect("the managed allowlist");
+    let (rule, _) = rule.split_once(';').expect("one expression");
     let (names, api_sets) = rule
-        .split_once("|| (name.StartsWith(\"api-ms-win-\", StringComparison.Ordinal)")
+        .split_once("|| (name.StartsWith(")
         .expect("the managed API-set rule follows the names");
-    assert!(api_sets.contains("name.EndsWith(\".dll\", StringComparison.Ordinal)"));
+    // Nothing but the API-set rule follows the names; both sides check that
+    // rule against the shared native-api-set-imports-v1.json table.
+    assert_eq!(
+        api_sets.split_whitespace().collect::<Vec<_>>().join(" "),
+        "\"api-ms-win-\", StringComparison.Ordinal) && name.EndsWith(\".dll\", \
+         StringComparison.Ordinal) && name.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' \
+         or '.'))"
+    );
     let mut managed: Vec<_> = names.split('"').skip(1).step_by(2).collect();
     let mut native = SYSTEM_IMPORTS.to_vec();
     managed.sort_unstable();
     native.sort_unstable();
     assert_eq!(managed, native);
+}
+
+#[test]
+fn api_set_imports_follow_the_shared_table() {
+    let data: serde_json::Value = serde_json::from_str(include_str!(
+        "../../tests/data/native-api-set-imports-v1.json"
+    ))
+    .unwrap();
+    for case in data["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        assert_eq!(
+            system_import(name),
+            case["admitted"].as_bool().unwrap(),
+            "{name}"
+        );
+    }
 }
 
 #[test]

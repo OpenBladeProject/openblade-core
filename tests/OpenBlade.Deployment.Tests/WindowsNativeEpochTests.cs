@@ -128,6 +128,33 @@ public sealed class WindowsNativeEpochTests
         }
     }
 
+    // native_package::tests checks the Rust allowlist against the same rows.
+    public static TheoryData<string, bool> ApiSetImports()
+    {
+        using var data = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "native-api-set-imports-v1.json")));
+        var rows = new TheoryData<string, bool>();
+        foreach (var row in data.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            rows.Add(row.GetProperty("name").GetString()!, row.GetProperty("admitted").GetBoolean());
+        }
+        return rows;
+    }
+
+    [Theory]
+    [MemberData(nameof(ApiSetImports))]
+    public void ApiSetImportsFollowTheSharedTable(string name, bool admitted)
+    {
+        byte[] image = Image("agent", imports: [name]);
+        if (admitted)
+        {
+            Assert.Equal(name, NativeArtifact.Inspect([.. image], "agent", new string('a', 40)).Imports);
+        }
+        else
+        {
+            Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect([.. image], "agent", new string('a', 40)));
+        }
+    }
+
     [Fact]
     public void BatteryReportAgentCapabilityRequiresExplicitSelectionAndExactRole()
     {
