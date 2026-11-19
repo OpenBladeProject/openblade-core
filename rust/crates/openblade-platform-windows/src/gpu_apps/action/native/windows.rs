@@ -4,7 +4,9 @@
 #![allow(unsafe_code)]
 
 use super::{Exit, Held, ProcessApi, Terminated, WindowClose};
-use crate::process_query::{image_path, open_process, process_times, token_identity};
+use crate::process_query::{
+    image_path, open_process, open_process_token, process_times, token_identity,
+};
 use std::{
     os::windows::io::{AsRawHandle, OwnedHandle},
     ptr::null_mut,
@@ -18,9 +20,12 @@ use windows_sys::{
             ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, GetLastError, HANDLE, HWND, LPARAM,
             WAIT_OBJECT_0, WAIT_TIMEOUT,
         },
+        Security::{
+            GetTokenInformation, SECURITY_MAX_SID_SIZE, TOKEN_MANDATORY_LABEL, TokenIntegrityLevel,
+        },
         System::Threading::{
-            GetProcessId, PROCESS_BASIC_INFORMATION, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
-            TerminateProcess, WaitForSingleObject,
+            GetCurrentProcess, GetProcessId, PROCESS_BASIC_INFORMATION, PROCESS_SYNCHRONIZE,
+            PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
         },
         UI::WindowsAndMessaging::{
             EnumWindows, GW_OWNER, GWL_STYLE, GetWindow, GetWindowLongW, GetWindowThreadProcessId,
@@ -153,6 +158,56 @@ impl ProcessApi for WindowsProcesses {
     fn current_process_id(&self) -> i32 {
         i32::try_from(std::process::id()).unwrap_or(0)
     }
+
+    fn integrity(&mut self, process: &OwnedHandle) -> Option<u32> {
+        token_integrity(process.as_raw_handle())
+    }
+
+    fn current_integrity(&mut self) -> Option<u32> {
+        // SAFETY: The current-process pseudo-handle needs no closing.
+        token_integrity(unsafe { GetCurrentProcess() })
+    }
+}
+
+/// The RID of the token's mandatory label (`S-1-16-<RID>`). Any other shape
+/// is unreadable, so the caller refuses the process.
+fn token_integrity(process: HANDLE) -> Option<u32> {
+    let token = open_process_token(process)?;
+    const LABEL_BYTES: usize = size_of::<TOKEN_MANDATORY_LABEL>();
+    const BUFFER_WORDS: usize =
+        (LABEL_BYTES + SECURITY_MAX_SID_SIZE as usize).div_ceil(size_of::<usize>());
+    let mut buffer = [0_usize; BUFFER_WORDS];
+    let base = buffer.as_mut_ptr().cast::<u8>();
+    let capacity = size_of_val(&buffer);
+    let mut used = 0;
+    // SAFETY: The initialized buffer is aligned for TOKEN_MANDATORY_LABEL and
+    // has space for the maximum binary SID.
+    if unsafe {
+        GetTokenInformation(
+            token.as_raw_handle(),
+            TokenIntegrityLevel,
+            base.cast(),
+            capacity as u32,
+            &mut used,
+        )
+    } == 0
+        || !(LABEL_BYTES..=capacity).contains(&(used as usize))
+    {
+        return None;
+    }
+    // SAFETY: A complete aligned TOKEN_MANDATORY_LABEL was returned.
+    let sid = unsafe { (*base.cast::<TOKEN_MANDATORY_LABEL>()).Label.Sid };
+    let offset = sid
+        .addr()
+        .checked_sub(base.addr())
+        .filter(|&offset| offset >= LABEL_BYTES)?;
+    // SAFETY: The validated output length fits in the initialized buffer.
+    let payload = unsafe { std::slice::from_raw_parts(base, used as usize) }.get(offset..)?;
+    // Revision 1, one subauthority, SECURITY_MANDATORY_LABEL_AUTHORITY.
+    let [1, 1, 0, 0, 0, 0, 0, 16, a, b, c, d, ..] = *payload else {
+        return None;
+    };
+    Some(u32::from_le_bytes([a, b, c, d]))
 }
 
 /// Managed `MainWindowFinder`: the first enumerated top-level window of the

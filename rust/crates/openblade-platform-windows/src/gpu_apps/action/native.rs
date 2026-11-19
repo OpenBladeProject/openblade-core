@@ -13,11 +13,23 @@
 //! window without an owner, refused when disabled, then `WM_CLOSE`. Force
 //! close is `Process.Kill(entireProcessTree: true)`: terminate the target,
 //! then each descendant whose parent link and later creation time are read on
-//! its own handle, unless the calling Agent is in that tree.
+//! its own handle, unless the calling Agent is in that tree. As managed
+//! `KillTree` holds each child until its own subtree is done, every
+//! descendant's handle stays open until its children have been enumerated,
+//! so its PID cannot pass to an unrelated process in between.
+//!
+//! Matching managed by an explicit check: managed opens the target with
+//! `PROCESS_ALL_ACCESS`, which Windows refuses for a process above the
+//! caller's integrity level, and never recognises such a process as a child.
+//! Force close therefore reads the mandatory integrity level from the token of
+//! each held process and acts only at or below the Agent's own level. A
+//! higher or unreadable level refuses the target before any termination and
+//! skips a descendant with its subtree.
 //!
 //! Deliberate deviations from managed:
 //! - The handle asks only for query, synchronize and, for force close,
-//!   terminate rights, not `PROCESS_ALL_ACCESS`.
+//!   terminate rights, not `PROCESS_ALL_ACCESS`; the integrity check above
+//!   keeps the set of processes it can terminate within managed's.
 //! - A failed `PostMessageW` is "Windows could not close this process.";
 //!   managed ignores the result and reports success.
 //! - A submitted termination must be observed as process exit within
@@ -132,6 +144,11 @@ trait ProcessApi {
     fn child_ids(&mut self, parent: i32) -> Vec<i32>;
     fn close_main_window(&mut self, process: &Self::Process, process_id: i32) -> WindowClose;
     fn current_process_id(&self) -> i32;
+    /// The mandatory integrity RID of the held process's token, `None` when it
+    /// cannot be read.
+    fn integrity(&mut self, process: &Self::Process) -> Option<u32>;
+    /// The calling Agent's own integrity RID.
+    fn current_integrity(&mut self) -> Option<u32>;
 }
 
 type Compare<'a> = &'a dyn Fn(&str, &str) -> Ordering;
@@ -254,6 +271,12 @@ impl<A: ProcessApi> RetainedTarget for Retained<'_, A> {
                 WindowClose::Failed => Submission::Rejected,
             },
             Kind::ForceClose => {
+                // Managed cannot open a process above its own integrity level,
+                // so it reports the action failure without terminating.
+                let ceiling = api.current_integrity();
+                if !integrity_admitted(&mut *api, &self.process, ceiling) {
+                    return Submission::Rejected;
+                }
                 // Managed refuses a tree kill that contains the calling process
                 // and then terminates only the exact target.
                 let tree = !contains_current(&mut *api, &self.held);
@@ -269,7 +292,7 @@ impl<A: ProcessApi> RetainedTarget for Retained<'_, A> {
                     }
                 }
                 if tree {
-                    terminate_descendants(&mut *api, &self.held, context);
+                    terminate_descendants(&mut *api, &self.held, context, ceiling);
                 }
                 Submission::Accepted
             }
@@ -355,13 +378,32 @@ fn contains_current<A: ProcessApi>(api: &mut A, target: &Held) -> bool {
     true
 }
 
-/// Managed `KillTree` below a target whose exit was confirmed. Its held
-/// handle pins the PID, so a child naming it was created by this target.
-fn terminate_descendants<A: ProcessApi>(api: &mut A, target: &Held, context: &Context<'_, A>) {
+/// The held process is at or below the Agent's integrity level. Either level
+/// unreadable refuses it.
+fn integrity_admitted<A: ProcessApi>(
+    api: &mut A,
+    process: &A::Process,
+    ceiling: Option<u32>,
+) -> bool {
+    matches!((api.integrity(process), ceiling), (Some(level), Some(ceiling)) if level <= ceiling)
+}
+
+/// Managed `KillTree` below a target whose exit was confirmed. The caller
+/// holds the target's handle for the whole walk, and each queued descendant
+/// keeps its own handle until its children have been enumerated. A held
+/// handle pins its PID, so a later-created child naming it was created by
+/// that process and not by a later owner of a recycled PID.
+fn terminate_descendants<A: ProcessApi>(
+    api: &mut A,
+    target: &Held,
+    context: &Context<'_, A>,
+    ceiling: Option<u32>,
+) {
     let current = api.current_process_id();
-    let mut pending = VecDeque::from([(target.process_id, target.created_filetime)]);
+    let mut pending: VecDeque<(i32, i64, Option<A::Process>)> =
+        VecDeque::from([(target.process_id, target.created_filetime, None)]);
     let mut visited = BTreeSet::from([target.process_id]);
-    while let Some((parent, parent_created)) = pending.pop_front() {
+    while let Some((parent, parent_created, parent_handle)) = pending.pop_front() {
         for process_id in api.child_ids(parent) {
             if context.cancelled.load(Relaxed) || visited.len() > MAX_TREE {
                 return;
@@ -383,12 +425,17 @@ fn terminate_descendants<A: ProcessApi>(api: &mut A, target: &Held, context: &Co
                 || child.session_id != context.user.session_id
                 || executable_stem(&child.image_path)
                     .is_none_or(|name| is_protected(&name, &context.compare))
+                // Managed never sees a child above its integrity level, nor
+                // that child's subtree.
+                || !integrity_admitted(api, &process, ceiling)
             {
                 continue;
             }
             // As managed, a descendant failure does not change the result.
             let _ = api.terminate(&process);
-            pending.push_back((process_id, child.created_filetime));
+            pending.push_back((process_id, child.created_filetime, Some(process)));
         }
+        // Only now may this descendant's PID be released.
+        drop(parent_handle);
     }
 }
