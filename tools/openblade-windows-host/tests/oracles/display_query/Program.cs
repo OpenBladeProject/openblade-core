@@ -358,6 +358,10 @@ static async Task<int> EmitRequestsAsync(string outPath)
     AddInvalid("enabled-as-string", Op("setHdr", ",\"expectedPowerSource\":0,\"enabled\":\"true\""));
     AddInvalid("wrong-version", Op("setBrightness", ",\"expectedPowerSource\":0,\"percent\":50", V + 1));
     AddInvalid("operation-not-first", $"{{\"version\":{V},\"requestId\":\"{id}\",\"operation\":\"query\"}}");
+    // A JSON array is not an object. These are positional in the native
+    // envelope declaration order, which a bare serde derive would bind.
+    AddInvalid("query-positional-array", $"[{V},\"{id}\",\"query\"]");
+    AddInvalid("setBrightness-positional-array", $"[{V},\"{id}\",\"setBrightness\",0,50]");
     // The discriminator must be a JSON string. serde's externally tagged
     // form of a selected operation, {"<name>":null}, with otherwise valid
     // members, is refused.
