@@ -32,8 +32,10 @@ fn payloads(mut frames: &[u8]) -> Vec<&[u8]> {
     payloads
 }
 
+/// Valid rows are exact managed-written bytes (the managed test re-encodes
+/// them). The object-only parser yields the same request as plain serde.
 #[test]
-fn request_objects_parse_and_reencode_byte_for_byte() {
+fn managed_request_objects_decode_exactly_as_before() {
     let valid: Vec<_> = rows("requests")
         .into_iter()
         .filter(|row| row["valid"] == true)
@@ -41,10 +43,11 @@ fn request_objects_parse_and_reencode_byte_for_byte() {
     assert_eq!(valid.len(), 9);
     for row in valid {
         let frame = text(&row, "frame").as_bytes();
-        let request: StatusRequest = json_object::from_slice(frame).unwrap();
+        let object: StatusRequest = json_object::from_slice(frame).unwrap();
+        let plain: StatusRequest = serde_json::from_slice(frame).unwrap();
         assert_eq!(
-            serde_json::to_vec(&request).unwrap(),
-            frame,
+            serde_json::to_vec(&object).unwrap(),
+            serde_json::to_vec(&plain).unwrap(),
             "{}",
             row["case"]
         );
@@ -133,7 +136,13 @@ fn status_response_arrays_are_refused_at_every_object_position() {
         let (request, frame) = server_frame(&row);
         let result = StatusResponse::decode(&frame, &request, None);
         if row["valid"] == true {
-            result.unwrap_or_else(|error| panic!("{case}: {error}"));
+            let snapshot = result.unwrap_or_else(|error| panic!("{case}: {error}"));
+            let plain: StatusResponse = serde_json::from_slice(&frame).unwrap();
+            assert_eq!(
+                serde_json::to_value(snapshot).unwrap(),
+                serde_json::to_value(plain.status.unwrap()).unwrap(),
+                "{case}"
+            );
             // The positional edits re-encode; key order alone is not a refusal.
             let reordered = serde_json::to_vec(&serde_json::from_slice::<Value>(&frame).unwrap());
             StatusResponse::decode(&reordered.unwrap(), &request, None).unwrap();
