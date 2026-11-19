@@ -268,10 +268,39 @@ and forced close return a correlated failure before sampling. The host has no
 process action or fallback on this endpoint.
 
 Live GPU query and coherent parent metadata still need separate validation.
-The Phase 6n native sampler does not supply a process parent table. A later
-close implementation needs fresh identity checks on a retained target handle
-and separate action validation. This fixture does not run the native sampler,
-inspect system processes or change the installed product.
+The Phase 6n native sampler does not supply a process parent table. This
+fixture does not run the native sampler, inspect system processes or change the
+installed product.
+
+#### Installed Session GPU endpoint
+
+The installed Agent's `agent-gpu-v1` build serves the managed Session GPU v2
+endpoint. It uses the managed pipe name, ACL, deadlines, strings and caps, and
+reports `Readiness.gpu`. Queries use the production sampler. Close and force
+close use the platform `gpu-close` backend, which opens each confirmed row once
+and re-reads its identity, owner and user on the handle it acts on. Stop leaves
+the remaining targets unattempted and writes no reply, as managed does.
+
+Deliberate differences from managed:
+
+- Requests must use the managed-written encoding: camelCase names, JSON
+  numbers, no duplicate members and `operation` first.
+- A disconnect or an extra byte cancels the dispatch, like Stop.
+- An app list beyond the 64 KiB frame keeps the largest prefix that fits.
+  Managed fails the write.
+- After an unconfirmed close, every close is refused until a query succeeds.
+- Handles use least-privilege access rights.
+- A failed `WM_CLOSE` post is a failure.
+- A force close succeeds only after the process is seen to exit within 5 s.
+- Force close never falls back from the tree to the exact process.
+  Descendants are terminated only after the root exits. Each must be in the
+  current user's session and unprotected. At most 256 are visited.
+- A failed name comparison refuses the submission.
+
+[Native Session GPU endpoint](../docs/windows-native-session-gpu.md) lists the
+complete differences, the offline evidence and the runtime validation still
+needed. None of it has run against live counters, processes, windows or a real
+pipe.
 
 
 Its application reporter binding accepts an already observed foreground HWND.
