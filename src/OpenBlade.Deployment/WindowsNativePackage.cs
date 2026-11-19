@@ -139,8 +139,9 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         string capabilities = schema == 2 ? fields[7] : "none";
         RequireCapabilities(schema, role, features, capabilities);
         // This bounded package recipe has exactly two app-local executables. Imports
-        // must be Windows system or the existing shared VC runtime contracts; dynamic optional integrations require their
-        // own later loader/origin policy. No Microsoft-only CIG policy is installed.
+        // must be reviewed inbox Windows system contracts (both link the C runtime
+        // statically); dynamic optional integrations require their own later
+        // loader/origin policy. No Microsoft-only CIG policy is installed.
         var imports = new SortedSet<string>(StringComparer.Ordinal);
         var directory = pe.ImportTableDirectory;
         if (directory.Size is < 20 or > 65536) { throw new InvalidDataException("Native import table is missing or unbounded."); }
