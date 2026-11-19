@@ -3,6 +3,7 @@
 //! managed codec (IpcMessageCodecTests.ObjectFrames.cs).
 use super::*;
 use openblade_windows_host::json_object;
+use serde_json::json;
 
 const FIXTURE: &str = include_str!("../../tests/fixtures/service-object-frames.json");
 const GET_STATUS: &[u8] = include_bytes!("../../tests/fixtures/get-status-v80.frames");
@@ -115,7 +116,8 @@ fn server_frame(row: &Value) -> (StatusRequest, Vec<u8>) {
     let mut frame: Value = serde_json::from_slice(payloads[index]).unwrap();
     let mut target = &mut frame;
     for key in row["path"].as_array().unwrap() {
-        target = target.get_mut(key.as_str().unwrap()).unwrap();
+        // A value row may add a member; positional rows need an object there.
+        target = &mut target[key.as_str().unwrap()];
     }
     // Spliced as text: a parsed Value would already read a private token.
     if let Some(text) = row["value"].as_str() {
@@ -174,7 +176,7 @@ fn status_response_arrays_are_refused_at_every_object_position() {
         }
         checked += 1;
     }
-    assert_eq!(checked, 22);
+    assert_eq!(checked, 27);
 }
 
 #[cfg(feature = "native-agent-entry-compile-check")]
@@ -190,16 +192,26 @@ async fn status_event_arrays_are_refused_at_every_object_position() {
         let framed = [&(payload.len() as i32).to_le_bytes()[..], &payload].concat();
         let result = read_status_event(&mut framed.as_slice()).await;
         if row["valid"] == true {
-            result.unwrap_or_else(|error| panic!("{case}: {error}"));
+            let snapshot = result.unwrap_or_else(|error| panic!("{case}: {error}"));
+            let frame: Value = serde_json::from_slice(&payload).unwrap();
+            let plain: Snapshot = serde_json::from_value(frame["status"].clone()).unwrap();
+            assert_eq!(
+                serde_json::to_value(snapshot).unwrap(),
+                serde_json::to_value(plain).unwrap(),
+                "{case}"
+            );
         } else {
             let error = result
                 .err()
                 .unwrap_or_else(|| panic!("{case} was accepted"));
-            assert_eq!(error.to_string(), "invalid Service status event", "{case}");
+            let expected = row["nativeError"]
+                .as_str()
+                .unwrap_or("invalid Service status event");
+            assert_eq!(error.to_string(), expected, "{case}");
         }
         checked += 1;
     }
-    assert_eq!(checked, 15);
+    assert_eq!(checked, 20);
 }
 
 /// The ObserveState confirmation pass reads members that the snapshot keeps
@@ -347,4 +359,57 @@ async fn no_status_event_object_position_reads_an_array_or_a_number_as_an_object
         }
     }
     assert!(mutants > 100 && accepted > 0 && accepted < mutants);
+}
+
+/// serde_json reads an integer `-0` as a float, so typed status members
+/// refuse it in a response and in an event. Managed reads it as 0 but never
+/// writes it.
+#[test]
+fn integer_negative_zero_in_typed_response_members_is_refused() {
+    for path in [
+        json!(["version"]),
+        json!(["status", "revision"]),
+        json!(["status", "activePowerSource"]),
+        json!(["status", "controlAccess"]),
+    ] {
+        let row = json!({"base": "get-status", "path": path, "value": "-0"});
+        let (request, frame) = server_frame(&row);
+        let error = StatusResponse::decode(&frame, &request, None)
+            .err()
+            .unwrap();
+        assert_eq!(
+            error.to_string(),
+            "invalid Service status response",
+            "{path}"
+        );
+    }
+}
+
+#[cfg(feature = "native-agent-entry-compile-check")]
+#[tokio::test]
+async fn integer_negative_zero_in_typed_event_members_is_refused() {
+    for (path, message) in [
+        (json!(["version"]), "Service status event version mismatch"),
+        (
+            json!(["status", "revision"]),
+            "invalid Service status event",
+        ),
+        (
+            json!(["status", "activePowerSource"]),
+            "invalid Service status event",
+        ),
+        (
+            json!(["status", "controlAccess"]),
+            "invalid Service status event",
+        ),
+    ] {
+        let row = json!({"base": "status-event", "path": path, "value": "-0"});
+        let (_, payload) = server_frame(&row);
+        let framed = [&(payload.len() as i32).to_le_bytes()[..], &payload].concat();
+        let error = read_status_event(&mut framed.as_slice())
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.to_string(), message, "{path}");
+    }
 }

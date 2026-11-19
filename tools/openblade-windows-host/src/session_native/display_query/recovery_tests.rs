@@ -116,7 +116,7 @@ fn comparable(mut record: Value) -> Value {
 #[test]
 fn loads_every_managed_fixture_row_and_rewrites_the_same_state() {
     let rows = fixtures();
-    assert_eq!(rows.len(), 9);
+    assert_eq!(rows.len(), 10);
     for row in rows {
         let case = row["case"].as_str().unwrap();
         let file = Mem::with(row["bytes"].as_str().unwrap().as_bytes());
@@ -564,6 +564,10 @@ fn nested_duplicates_private_tokens_and_negative_zero_are_invalid() {
     // The token text inside an ordinary value that does not start with it.
     let benign = "{\"SchemaVersion\":1,\"Note\":\"see $serde_json::private::\"}";
     assert!(!Recovery::load(Mem::with(benign.as_bytes())).flags().1);
+    // serde_json reinterprets only member names. A saved Display key is text a
+    // user can choose, so a key value with the token prefix still loads.
+    let keys = r#"{"SchemaVersion":4,"Baseline":{"RefreshRateKey":"$serde_json::private::Number","ColorProfileKey":"$serde_json::private::srgb"}}"#;
+    assert!(!Recovery::load(Mem::with(keys.as_bytes())).flags().1);
 }
 
 fn hdr_supported() -> Snapshot {
@@ -755,15 +759,15 @@ fn exponents_and_short_escapes_are_not_private_tokens_or_negative_zero() {
         ),
         (
             "carriage return escape",
-            r#"{"SchemaVersion":4,"X":"$se\rde_json::private::x"}"#,
+            r#"{"SchemaVersion":4,"$se\rde_json::private::x":1}"#,
         ),
         (
             "tab escape",
-            r#"{"SchemaVersion":4,"X":"$serde_json::priva\te::x"}"#,
+            r#"{"SchemaVersion":4,"$serde_json::priva\te::x":1}"#,
         ),
         (
             "newline escape",
-            r#"{"SchemaVersion":4,"X":"$serde_jso\n::private::x"}"#,
+            r#"{"SchemaVersion":4,"$serde_jso\n::private::x":1}"#,
         ),
     ] {
         let recovery = Recovery::load(Mem::with(bytes.as_bytes()));

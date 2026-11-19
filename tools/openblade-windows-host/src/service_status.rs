@@ -496,12 +496,23 @@ pub(crate) async fn read_status_event(
 ) -> io::Result<Snapshot> {
     // A plain struct, not a tagged enum: serde buffers tagged content, which
     // would let a map member read a non-integer number as a one-entry map.
+    // serde_json reads an integer `-0` as a float, so typed members refuse it,
+    // as `StatusResponse::decode` always has. Managed reads it as 0 but never
+    // writes it; only `version` keeps reporting the mismatch it is.
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
     struct Event {
         frame: String,
+        #[serde(deserialize_with = "event_version")]
         version: i32,
         status: Snapshot,
+    }
+
+    fn event_version<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<i32, D::Error> {
+        serde_json::Number::deserialize(deserializer)?
+            .as_i64()
+            .and_then(|version| i32::try_from(version).ok())
+            .ok_or_else(|| serde::de::Error::custom("an Int32 version"))
     }
 
     // The producer can go quiet when status is unchanged. Only the handshake

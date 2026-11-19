@@ -39,7 +39,7 @@
     { "case": "setBatteryPolicy value as a 30-digit integer", "valid": false, "frame": "{\"operation\":\"setBatteryPolicy\",\"value\":123456789012345678901234567890,\"version\":80,\"requestId\":\"11111111-2222-4333-8444-555555555555\"}" }
   ],
   "serverFrames": {
-    "description": "Rows edit one managed-written frame: get-status-v80.frames and observe-state-v80.frames response frames, or the subscribe-status-v80.frames status event. A row with positional members replaces the object at path (the root when empty) with an array of those members in native declaration order, or of all its members when positional is the string *. A row with value replaces the member at path with that JSON text.",
+    "description": "Rows edit one managed-written frame: get-status-v80.frames and observe-state-v80.frames response frames, or the subscribe-status-v80.frames status event. A row with positional members replaces the object at path (the root when empty) with an array of those members in native declaration order, or of all its members when positional is the string *. A row with value replaces (or adds) the member at path with that JSON text. nativeError names the native message when it differs from the decoder's fixed parse message. managedError versionMismatch expects the managed version-mismatch exception instead of InvalidDataException.",
     "rows": [
       { "case": "getStatus response", "base": "get-status", "valid": true },
       { "case": "observeState response", "base": "observe-state", "valid": true },
@@ -77,7 +77,17 @@
       { "case": "observed observationReason as a private number token", "base": "observe-state", "valid": false, "path": ["status", "observationReason"], "value": "{\"$serde_json::private::Number\":\"0\"}" },
       { "case": "status event observationReason as a private number token", "base": "status-event", "valid": false, "path": ["status", "observationReason"], "value": "{\"$serde_json::private::Number\":\"0\"}" },
       { "case": "profiles.pluggedIn.lighting as a private raw value", "base": "get-status", "valid": false, "path": ["status", "profiles", "pluggedIn", "lighting"], "value": "{\"$serde_json::private::RawValue\":\"{}\"}" },
-      { "case": "status event frame as response", "base": "status-event", "valid": false, "path": ["frame"], "value": "\"response\"" }
+      { "case": "status event frame as response", "base": "status-event", "valid": false, "path": ["frame"], "value": "\"response\"" },
+      { "case": "profile named with the private prefix", "base": "get-status", "valid": true, "path": ["status", "profiles", "applicationProfiles"], "value": "[{\"id\":\"33333333-4444-4555-8666-777777777777\",\"name\":\"$serde_json::private::game\",\"executablePath\":\"C:\\\\Games\\\\game.exe\",\"activationMode\":0,\"overrides\":{\"pluggedIn\":{\"performance\":1,\"customPerformance\":null,\"gpuClockTuning\":null,\"fans\":null,\"fanControl\":null,\"lighting\":null,\"display\":null,\"gamingModeEnabled\":null,\"gamingModeKeyPolicy\":null,\"isConfigured\":true},\"battery\":null,\"usbC\":null,\"isConfigured\":true},\"enabled\":true}]" },
+      { "case": "status event profile named with the private prefix", "base": "status-event", "valid": true, "path": ["status", "profiles", "applicationProfiles"], "value": "[{\"id\":\"33333333-4444-4555-8666-777777777777\",\"name\":\"$serde_json::private::game\",\"executablePath\":\"C:\\\\Games\\\\game.exe\",\"activationMode\":0,\"overrides\":{\"pluggedIn\":{\"performance\":1,\"customPerformance\":null,\"gpuClockTuning\":null,\"fans\":null,\"fanControl\":null,\"lighting\":null,\"display\":null,\"gamingModeEnabled\":null,\"gamingModeKeyPolicy\":null,\"isConfigured\":true},\"battery\":null,\"usbC\":null,\"isConfigured\":true},\"enabled\":true}]" },
+      { "case": "message with the private prefix", "base": "get-status", "valid": true, "path": ["status", "message"], "value": "\"$serde_json::private::Number\"" },
+      { "case": "observed message with the private prefix", "base": "observe-state", "valid": true, "path": ["status", "message"], "value": "\"$serde_json::private::RawValue\"" },
+      { "case": "status event message with the private prefix", "base": "status-event", "valid": true, "path": ["status", "message"], "value": "\"$serde_json::private::\"" },
+      { "case": "potentialControllers with the private prefix", "base": "get-status", "valid": true, "path": ["status", "potentialControllers"], "value": "[\"$serde_json::private::RawValue\"]" },
+      { "case": "controllerDetectionWarning with the private prefix", "base": "get-status", "valid": true, "path": ["status", "controllerDetectionWarning"], "value": "\"$serde_json::private::game\"" },
+      { "case": "status event with an unknown member", "base": "status-event", "valid": false, "path": ["extra"], "value": "1" },
+      { "case": "status event frame as StatusEvent", "base": "status-event", "valid": false, "path": ["frame"], "value": "\"StatusEvent\"" },
+      { "case": "status event version as -0", "base": "status-event", "valid": false, "path": ["version"], "value": "-0", "nativeError": "Service status event version mismatch", "managedError": "versionMismatch" }
     ]
   }
 }

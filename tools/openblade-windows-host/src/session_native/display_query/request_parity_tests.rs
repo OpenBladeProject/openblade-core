@@ -64,7 +64,7 @@ fn managed_request_frames_parse_exactly_for_selected_operations() {
         );
         checked += 1;
     }
-    assert_eq!(checked, 73, "every fixture row is checked");
+    assert_eq!(checked, 77, "every fixture row is checked");
 }
 
 #[test]

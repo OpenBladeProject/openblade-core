@@ -7,15 +7,18 @@
 //!   tagged enum reads `["tag", ...]` as a tagged sequence;
 //!   `deny_unknown_fields` changes neither.
 //! - With this crate's `arbitrary_precision` and `raw_value` features,
-//!   serde_json reads an object whose member is `$serde_json::private::Number`
-//!   or `$serde_json::private::RawValue` as a number or as re-parsed JSON text.
+//!   serde_json reads an object whose member name is
+//!   `$serde_json::private::Number` or `$serde_json::private::RawValue` as a
+//!   number or as re-parsed JSON text. Only member names are reinterpreted; a
+//!   string value with that prefix is ordinary text, for example a profile
+//!   name or a Display key a user chose.
 //!   A `Value`, `Number` or ignored member takes it as such, and the raw text
 //!   hides its members from the duplicate-member check. serde also buffers a
 //!   non-integer or out-of-range number in that private form inside internally
 //!   tagged or flattened content, where a map visitor would take it as a map.
 //!
-//! Decode every payload with [`from_slice`], which refuses any string spelling
-//! a private token, and every nested member whose type is a derived struct
+//! Decode every payload with [`from_slice`], which refuses any member name
+//! spelling a private token, and every nested member whose type is a derived struct
 //! with [`object`], [`nullable_object`] or [`Object`], which refuse arrays and
 //! private member names. Scalar, string, map and `Value` members need no
 //! wrapper once the payload passed [`from_slice`]. Valid managed frames decode
@@ -137,13 +140,13 @@ impl<'de> Deserialize<'de> for Name<'de> {
 }
 
 /// `serde_json::from_slice` for a payload whose root must be a JSON object
-/// and in which no string spells a serde_json private token.
+/// and in which no member name spells a serde_json private token.
 pub fn from_slice<'a, T: Deserialize<'a>>(payload: &'a [u8]) -> serde_json::Result<T> {
     public_tokens(payload)?;
     serde_json::from_slice(payload).map(|Object(value)| value)
 }
 
-/// Refuses a payload in which any string spells a serde_json private token,
+/// Refuses a payload in which any member name spells a serde_json private token,
 /// for a decoder whose own visitor already reads only objects.
 pub fn public_tokens(payload: &[u8]) -> serde_json::Result<()> {
     match scan(payload) {
@@ -163,9 +166,10 @@ pub struct Scan {
     pub negative_zero: bool,
 }
 
-/// One pass over the raw bytes; `None` when any decoded string, member name
-/// or value, starts with a serde_json private token (escapes included).
-/// Malformed input is left to the parser.
+/// One pass over the raw bytes; `None` when any decoded member name starts
+/// with a serde_json private token (escapes included). A string is a member
+/// name when the next non-whitespace byte is `:`; string values are never
+/// refused. Malformed input is left to the parser.
 pub fn scan(bytes: &[u8]) -> Option<Scan> {
     let mut found = Scan {
         depth: 0,
@@ -212,7 +216,11 @@ pub fn scan(bytes: &[u8]) -> Option<Scan> {
                         _ => None,
                     };
                 }
-                if matched == Some(PRIVATE_TOKEN.len()) {
+                let name = bytes[index.min(bytes.len())..]
+                    .iter()
+                    .find(|byte| !matches!(byte, b' ' | 0x09 | 0x0A | 0x0D))
+                    == Some(&b':');
+                if name && matched == Some(PRIVATE_TOKEN.len()) {
                     return None;
                 }
             }
@@ -379,7 +387,7 @@ mod tests {
     }
 
     #[test]
-    fn private_tokens_are_refused_in_any_string() {
+    fn private_tokens_are_refused_as_member_names() {
         for frame in [
             r#"{"operation":"set","settings":{"mode":{"$serde_json::private::Number":"1"}}}"#,
             r#"{"operation":"set","settings":{"$serde_json::private::RawValue":"{\"mode\":1}"}}"#,
@@ -387,7 +395,7 @@ mod tests {
             r#"{"operation":"set","settings":{"\u0024serde_json::private::Number":"1"}}"#,
             r#"{"operation":"set","settings":{"$serde_json::priv\u0061te::Number":"1"}}"#,
             r#"{"operation":"set","settings":{"$serde_json\u003a:private::Number":"1"}}"#,
-            r#"{"operation":"set","settings":{"mode":"$serde_json::private::Number"}}"#,
+            r#"{"operation":"set","settings":{"$serde_json::private::Number"  :"1"}}"#,
             r#"{"$serde_json::private::Number":"1"}"#,
         ] {
             assert!(scan(frame.as_bytes()).is_none(), "{frame}");
@@ -402,6 +410,46 @@ mod tests {
         ] {
             assert!(scan(frame.as_bytes()).is_some(), "{frame}");
             assert!(from_slice::<Loose>(frame.as_bytes()).is_ok(), "{frame}");
+        }
+    }
+
+    // serde_json reinterprets only member names, so a string value with the
+    // token prefix is ordinary text: a profile name or a Display key a user
+    // chose. The same spellings as member names are refused.
+    #[test]
+    fn private_token_values_decode_and_names_are_refused() {
+        let backslash = char::from(92);
+        let whitespace = String::from_utf8(vec![13, 10, 9, 32]).unwrap();
+        for text in [
+            "$serde_json::private::Number",
+            "$serde_json::private::RawValue",
+            "$serde_json::private::",
+            "$serde_json::private::game",
+        ] {
+            let escaped = text.replacen('$', &format!("{backslash}u0024"), 1);
+            for spelled in [text.to_owned(), escaped] {
+                for frame in [
+                    format!(r#"{{"operation":"set","settings":{{"mode":"{spelled}"}}}}"#),
+                    format!(r#"{{"operation":"set","settings":{{"a":"{spelled}" , "b":1}}}}"#),
+                    format!(
+                        r#"{{"operation":"set","settings":["{spelled}",{{"x":"{spelled}"}}]}}"#
+                    ),
+                    format!(r#"{{"operation":"set","settings":"{spelled}"}}"#),
+                ] {
+                    assert!(scan(frame.as_bytes()).is_some(), "{frame}");
+                    let Loose::Set { settings, .. } = from_slice(frame.as_bytes()).unwrap();
+                    assert!(settings.unwrap().to_string().contains(text), "{frame}");
+                }
+                for frame in [
+                    format!(r#"{{"operation":"set","settings":{{"{spelled}":"1"}}}}"#),
+                    format!(r#"{{"operation":"set","settings":{{"{spelled}"{whitespace}:"1"}}}}"#),
+                    format!(r#"{{"operation":"set","settings":[{{"{spelled}":"1"}}]}}"#),
+                    format!(r#"{{"{spelled}":"1","operation":"set"}}"#),
+                ] {
+                    assert!(scan(frame.as_bytes()).is_none(), "{frame}");
+                    assert!(from_slice::<Loose>(frame.as_bytes()).is_err(), "{frame}");
+                }
+            }
         }
     }
 
@@ -434,6 +482,8 @@ mod tests {
         let scanned = |text: &str| scan(text.as_bytes()).unwrap();
         assert_eq!(scanned(r#"{"a":[{"b":"[{["}]}"#).depth, 3);
         assert_eq!(scanned("{}").depth, 1);
+        // The deepest container, not the last one opened.
+        assert_eq!(scanned("[[[]],[]]").depth, 3);
         for zero in ["-0", "[-0]", r#"{"a":-0}"#] {
             assert!(scanned(zero).negative_zero, "{zero}");
         }
