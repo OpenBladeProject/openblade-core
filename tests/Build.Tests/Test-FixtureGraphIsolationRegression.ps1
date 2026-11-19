@@ -44,13 +44,13 @@ Write-Output 'PASS: full presence and all eight repeated-root agreement fields.'
 $replica = Join-Path $ScratchRoot 'source'
 $tests = Join-Path $replica 'tests/Build.Tests'
 [IO.Directory]::CreateDirectory($tests) | Out-Null
-foreach ($file in @('FixtureGraphIsolation.Tests.ps1','FixtureGraphIsolation.ps1')) {
+foreach ($file in @('Test-FixtureGraphIsolation.ps1','FixtureGraphIsolation.ps1')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $tests
 }
 $sentinel = Join-Path $replica 'sentinel.txt'
 Set-Content -LiteralPath $sentinel -Value 'preserve source'
 $before = @(Get-ChildItem -LiteralPath $replica -File -Recurse | Get-FileHash | ForEach-Object { "$($_.Path)|$($_.Hash)" })
-$script = Join-Path $tests 'FixtureGraphIsolation.Tests.ps1'
+$script = Join-Path $tests 'Test-FixtureGraphIsolation.ps1'
 foreach ($root in @($replica, ($replica + '\'), ($replica + '\\'), $replica.ToUpperInvariant(),
     (Join-Path $replica 'nested'), (Join-Path $replica 'nested/../child/'))) {
     Assert-Rejected { & $script -EvidenceRoot $root } 'Use an external private evaluation directory.'
