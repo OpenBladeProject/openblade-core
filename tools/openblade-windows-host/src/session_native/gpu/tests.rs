@@ -135,25 +135,13 @@ impl Supplier for Script {
 }
 
 /// One connection carrying `bytes`; returns the serve result and the reply.
-async fn exchange(
-    script: &mut Script,
-    fenced: &mut bool,
-    bytes: &[u8],
-) -> (Result<(), ServeError>, Option<Value>) {
+async fn exchange(script: &mut Script, bytes: &[u8]) -> (Result<(), ServeError>, Option<Value>) {
     let (mut server, mut client) = tokio::io::duplex(256 * 1024);
     client.write_all(bytes).await.unwrap();
     let (_sender, mut stop) = watch::channel(false);
     let (result, reply) = tokio::join!(
         async {
-            let result = serve(
-                &mut server,
-                &mut stop,
-                script,
-                fenced,
-                |_| Ok(()),
-                || Ok(()),
-            )
-            .await;
+            let result = serve(&mut server, &mut stop, script, |_| Ok(()), || Ok(())).await;
             drop(server);
             result
         },
@@ -195,17 +183,15 @@ fn results(reply: &Value) -> Vec<(i64, Value)> {
 }
 
 #[tokio::test]
-async fn query_projects_the_managed_response_and_lifts_the_close_fence() {
+async fn query_projects_the_managed_response() {
     let mut script = Script::default();
     script.queries.push_back(Ok(Ok(inventory(vec![
         app(41, "Game", None),
         app(42, "explorer", Some(BlockReason::Protected)),
     ]))));
-    let mut fenced = true;
     let upper = request(json!({"operation":"query","version":2,"requestId":ID.to_uppercase()}));
-    let (result, reply) = exchange(&mut script, &mut fenced, &upper).await;
+    let (result, reply) = exchange(&mut script, &upper).await;
     result.unwrap();
-    assert!(!fenced);
     assert_eq!(
         reply.unwrap(),
         json!({
@@ -229,7 +215,7 @@ async fn truncated_inventory_is_a_partial_query_with_the_first_128_apps() {
     for (inventory, count) in [(inventory(many), 128), (flagged, 1)] {
         let mut script = Script::default();
         script.queries.push_back(Ok(Ok(inventory)));
-        let (result, reply) = exchange(&mut script, &mut false, &query()).await;
+        let (result, reply) = exchange(&mut script, &query()).await;
         result.unwrap();
         let reply = reply.unwrap();
         assert_eq!(reply["status"], 1);
@@ -262,7 +248,6 @@ async fn unavailable_scans_map_to_managed_replies_and_cancellation_is_silent() {
     ] {
         for close_request in [false, true] {
             let mut script = Script::default();
-            let mut fenced = true;
             let bytes = if close_request {
                 script.closes.push_back(Ok(Err(error)));
                 close(false, &[(41, ticks(41), "Game")])
@@ -270,14 +255,7 @@ async fn unavailable_scans_map_to_managed_replies_and_cancellation_is_silent() {
                 script.queries.push_back(Ok(Err(error)));
                 query()
             };
-            // Only a successful query lifts the fence; open it for the close.
-            let mut open = false;
-            let fence = if close_request {
-                &mut open
-            } else {
-                &mut fenced
-            };
-            let (result, reply) = exchange(&mut script, fence, &bytes).await;
+            let (result, reply) = exchange(&mut script, &bytes).await;
             result.unwrap();
             assert_eq!(
                 reply.as_ref().map(|reply| reply["error"].clone()),
@@ -288,9 +266,6 @@ async fn unavailable_scans_map_to_managed_replies_and_cancellation_is_silent() {
                 assert_eq!(reply["status"], 2);
                 assert_eq!(reply["apps"], json!([]));
                 assert_eq!(reply["results"], json!([]));
-            }
-            if !close_request {
-                assert!(fenced, "an unavailable query does not reconcile");
             }
         }
     }
@@ -312,7 +287,7 @@ async fn close_reports_stale_action_and_unattempted_results_in_managed_order() {
         (41, ticks(41), "Game"),
         (43, ticks(43), "Tool"),
     ];
-    let (result, reply) = exchange(&mut script, &mut false, &close(false, &targets)).await;
+    let (result, reply) = exchange(&mut script, &close(false, &targets)).await;
     result.unwrap();
     let reply = reply.unwrap();
     assert_eq!(reply["status"], 1);
@@ -337,12 +312,7 @@ async fn close_reports_stale_action_and_unattempted_results_in_managed_order() {
         script
             .closes
             .push_back(Ok(Ok((inventory(vec![app(41, "Game", None)]), outcome))));
-        let (result, reply) = exchange(
-            &mut script,
-            &mut false,
-            &close(true, &[(41, ticks(41), "Game")]),
-        )
-        .await;
+        let (result, reply) = exchange(&mut script, &close(true, &[(41, ticks(41), "Game")])).await;
         result.unwrap();
         let reply = reply.unwrap();
         assert_eq!(reply["status"], status);
@@ -351,77 +321,55 @@ async fn close_reports_stale_action_and_unattempted_results_in_managed_order() {
     }
 }
 
+/// The Tray force-closes each remaining app with its own request and sends
+/// no query between them (`GpuAppCleanupCoordinator.RunAsync`). An
+/// unconfirmed force close of one app reports only that app; the next app,
+/// and a repeat of the first, are each attempted with a fresh scan.
 #[tokio::test]
-async fn an_unconfirmed_close_fences_closes_until_a_successful_query() {
+async fn an_unconfirmed_close_reports_its_own_app_and_later_closes_are_attempted() {
     let mut script = Script::default();
     script.closes.push_back(Ok(Ok((
         inventory(vec![app(41, "Game", None), app(42, "Other", None)]),
-        report(
-            &[(41, Some(UNCERTAIN)), (42, Some(NOT_ATTEMPTED))],
-            Some(UNCERTAIN),
-        ),
+        report(&[(41, Some(UNCERTAIN))], Some(UNCERTAIN)),
     ))));
-    let mut fenced = false;
-    let targets = [(41, ticks(41), "Game"), (42, ticks(42), "Other")];
-    let (result, reply) = exchange(&mut script, &mut fenced, &close(false, &targets)).await;
+    script.closes.push_back(Ok(Ok((
+        inventory(vec![app(41, "Game", None), app(42, "Other", None)]),
+        report(&[(42, None)], None),
+    ))));
+    // The platform's fresh scan no longer lists the first app.
+    script.closes.push_back(Ok(Ok((
+        inventory(vec![]),
+        report(&[(41, Some(STALE))], Some(NONE)),
+    ))));
+    let (result, reply) = exchange(&mut script, &close(true, &[(41, ticks(41), "Game")])).await;
     result.unwrap();
     let reply = reply.unwrap();
-    assert_eq!(reply["status"], 2);
-    assert_eq!(reply["error"], UNCERTAIN);
     assert_eq!(
-        results(&reply),
+        (reply["status"].clone(), reply["error"].clone()),
+        (json!(2), json!(UNCERTAIN))
+    );
+    assert_eq!(results(&reply), [(41, Value::from(UNCERTAIN))]);
+
+    let (result, reply) = exchange(&mut script, &close(true, &[(42, ticks(42), "Other")])).await;
+    result.unwrap();
+    let reply = reply.unwrap();
+    assert_eq!(
+        (reply["status"].clone(), reply["error"].clone()),
+        (json!(0), Value::Null)
+    );
+    assert_eq!(results(&reply), [(42, Value::Null)]);
+
+    let (result, reply) = exchange(&mut script, &close(true, &[(41, ticks(41), "Game")])).await;
+    result.unwrap();
+    assert_eq!(results(&reply.unwrap()), [(41, Value::from(STALE))]);
+    assert_eq!(
+        script.calls,
         [
-            (41, Value::from(UNCERTAIN)),
-            (42, Value::from(NOT_ATTEMPTED))
+            Call::Close(Kind::ForceClose, vec![41]),
+            Call::Close(Kind::ForceClose, vec![42]),
+            Call::Close(Kind::ForceClose, vec![41]),
         ]
     );
-    assert!(fenced);
-
-    // A repeated close is refused before any scan or action.
-    for force in [false, true] {
-        let (result, reply) = exchange(
-            &mut script,
-            &mut fenced,
-            &close(force, &[(41, ticks(41), "Game")]),
-        )
-        .await;
-        result.unwrap();
-        let reply = reply.unwrap();
-        assert_eq!(
-            (reply["status"].clone(), reply["error"].clone()),
-            (json!(2), json!(FENCED))
-        );
-        assert_eq!(reply["results"], json!([]));
-    }
-    assert_eq!(script.calls.len(), 1);
-
-    // A failed query keeps the fence; a successful one lifts it.
-    script
-        .queries
-        .push_back(Ok(Err(QueryUnavailable::Counters)));
-    script.queries.push_back(Ok(Ok(inventory(vec![]))));
-    exchange(&mut script, &mut fenced, &query())
-        .await
-        .0
-        .unwrap();
-    assert!(fenced);
-    exchange(&mut script, &mut fenced, &query())
-        .await
-        .0
-        .unwrap();
-    assert!(!fenced);
-    script.closes.push_back(Ok(Ok((
-        inventory(vec![app(41, "Game", None)]),
-        report(&[(41, None)], None),
-    ))));
-    let (result, reply) = exchange(
-        &mut script,
-        &mut fenced,
-        &close(false, &[(41, ticks(41), "Game")]),
-    )
-    .await;
-    result.unwrap();
-    assert_eq!(reply.unwrap()["status"], 0);
 }
 
 #[tokio::test]
@@ -449,8 +397,7 @@ async fn invalid_frames_close_the_connection_before_any_supplier_call() {
     frames.push((MAX_FRAME + 1).to_le_bytes().to_vec());
     for bytes in frames {
         let mut script = Script::default();
-        let mut fenced = false;
-        let (result, reply) = exchange(&mut script, &mut fenced, &bytes).await;
+        let (result, reply) = exchange(&mut script, &bytes).await;
         assert!(
             matches!(result, Err(ServeError::Connection(_))),
             "{}",
@@ -465,7 +412,7 @@ async fn invalid_frames_close_the_connection_before_any_supplier_call() {
 async fn lost_workers_reply_for_a_query_and_end_the_endpoint_for_a_close() {
     let mut script = Script::default();
     script.queries.push_back(Err(WorkerLost));
-    let (result, reply) = exchange(&mut script, &mut false, &query()).await;
+    let (result, reply) = exchange(&mut script, &query()).await;
     result.unwrap();
     let reply = reply.unwrap();
     assert_eq!(
@@ -474,20 +421,14 @@ async fn lost_workers_reply_for_a_query_and_end_the_endpoint_for_a_close() {
     );
 
     script.closes.push_back(Err(WorkerLost));
-    let (result, reply) = exchange(
-        &mut script,
-        &mut false,
-        &close(false, &[(41, ticks(41), "Game")]),
-    )
-    .await;
+    let (result, reply) = exchange(&mut script, &close(false, &[(41, ticks(41), "Game")])).await;
     assert!(matches!(result, Err(ServeError::Fatal(_))));
     assert!(reply.is_none());
 }
 
 /// Stop, the dispatch deadline, a disconnect, an extra byte and Origin loss
-/// cancel the operation, wait for the worker and write nothing. The worker's
-/// report (here the platform's unattempted results, or an unconfirmed
-/// submission) still decides the close fence.
+/// cancel the operation, wait for the worker and write nothing, whether the
+/// worker reports unattempted results or an unconfirmed submission.
 #[tokio::test(start_paused = true)]
 async fn interruption_cancels_joins_the_worker_and_writes_no_reply() {
     for reason in ["stop", "deadline", "disconnect", "extra", "origin"] {
@@ -517,7 +458,6 @@ async fn interruption_cancels_joins_the_worker_and_writes_no_reply() {
             client.write_all(&close(false, &targets)).await.unwrap();
             let (signal, mut stop) = watch::channel(false);
             let origin_live = Cell::new(true);
-            let mut fenced = false;
             let begun = tokio::time::Instant::now();
             let (result, reply) = tokio::join!(
                 async {
@@ -525,7 +465,6 @@ async fn interruption_cancels_joins_the_worker_and_writes_no_reply() {
                         &mut server,
                         &mut stop,
                         &mut script,
-                        &mut fenced,
                         |_| Ok(()),
                         || {
                             if origin_live.get() {
@@ -570,7 +509,6 @@ async fn interruption_cancels_joins_the_worker_and_writes_no_reply() {
             } else {
                 result.unwrap();
             }
-            assert_eq!(fenced, uncertain, "{reason}");
         }
     }
 }
@@ -585,14 +523,14 @@ async fn an_app_list_beyond_the_frame_keeps_its_ordered_prefix() {
     };
     let mut script = Script::default();
     script.queries.push_back(Ok(Ok(inventory(big()))));
-    let (result, reply) = exchange(&mut script, &mut false, &query()).await;
+    let (result, reply) = exchange(&mut script, &query()).await;
     result.unwrap();
     let reply = reply.unwrap();
     let apps = reply["apps"].as_array().unwrap();
     assert!(!apps.is_empty() && apps.len() < 128);
     assert_eq!(
         (reply["status"].clone(), reply["error"].clone()),
-        (json!(1), json!(TRUNCATED))
+        (json!(1), json!(TRIMMED))
     );
     assert!(
         apps.iter()
@@ -604,12 +542,7 @@ async fn an_app_list_beyond_the_frame_keeps_its_ordered_prefix() {
     script
         .closes
         .push_back(Ok(Ok((inventory(big()), report(&[(1, None)], None)))));
-    let (result, reply) = exchange(
-        &mut script,
-        &mut false,
-        &close(false, &[(1, ticks(1), &name)]),
-    )
-    .await;
+    let (result, reply) = exchange(&mut script, &close(false, &[(1, ticks(1), &name)])).await;
     result.unwrap();
     let reply = reply.unwrap();
     assert_eq!(
@@ -626,19 +559,23 @@ async fn an_invalid_projected_app_is_a_failed_write_like_managed() {
     bad.utilization_percent = f64::NAN;
     let mut script = Script::default();
     script.queries.push_back(Ok(Ok(inventory(vec![bad]))));
-    let (result, reply) = exchange(&mut script, &mut false, &query()).await;
+    let (result, reply) = exchange(&mut script, &query()).await;
     assert!(matches!(result, Err(ServeError::Connection(_))));
     assert!(reply.is_none());
 }
 
-/// The fence persists across connections; a connection error is contained;
+/// Each connection is served on its own; a connection error is contained;
 /// Stop ends the loop without accepting again.
 #[tokio::test]
-async fn connections_share_one_fence_and_stop_ends_the_listener() {
+async fn connections_are_served_in_turn_and_stop_ends_the_listener() {
     let mut script = Script::default();
     script.closes.push_back(Ok(Ok((
         inventory(vec![app(41, "Game", None)]),
         report(&[(41, Some(UNCERTAIN))], Some(UNCERTAIN)),
+    ))));
+    script.closes.push_back(Ok(Ok((
+        inventory(vec![]),
+        report(&[(41, Some(STALE))], Some(NONE)),
     ))));
     let requests = [
         close(true, &[(41, ticks(41), "Game")]),
@@ -687,8 +624,8 @@ async fn connections_share_one_fence_and_stop_ends_the_listener() {
     assert_eq!(accepted.get(), 3);
     assert_eq!(replies[0].as_ref().unwrap()["error"], UNCERTAIN);
     assert!(replies[1].is_none());
-    assert_eq!(replies[2].as_ref().unwrap()["error"], FENCED);
-    assert_eq!(script.calls.len(), 1);
+    assert_eq!(replies[2].as_ref().unwrap()["error"], NONE);
+    assert_eq!(script.calls.len(), 2);
 }
 
 #[test]

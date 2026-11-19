@@ -169,10 +169,12 @@ fn capture(case: &str, frame: &[u8]) {
     }
 }
 
-/// The scan the managed dispatcher saw and the results it reported become
-/// the native supplier's inventory and platform report. The native mapping
-/// must then write the managed response: status, error, app projection, and
-/// both 128-entry caps.
+/// The response mapping only: the scan the managed dispatcher saw and the
+/// results it reported become the inventory and report given to the native
+/// mapping, which must then write the managed response (status, error, app
+/// projection and both 128-entry caps). The platform test
+/// `managed_dispatch_close_rows_are_derived_by_the_decision` derives those
+/// results from the same rows through the real close decision.
 #[test]
 fn managed_dispatcher_responses_match_the_native_mapping() {
     let mut checked = 0;
@@ -233,7 +235,6 @@ fn managed_dispatcher_responses_match_the_native_mapping() {
 fn native_only_replies_are_valid_managed_responses() {
     let id = "9f876742-1234-4321-abcd-d3ea3e1cf102";
     for (case, error) in [
-        ("native-fenced", FENCED),
         ("native-dispatch-failure", DISPATCH_FAILURE),
         ("native-counters-unavailable", COUNTERS_UNAVAILABLE),
     ] {
@@ -265,5 +266,8 @@ fn native_only_replies_are_valid_managed_responses() {
     };
     let frame = response.frame(true).unwrap();
     assert!(frame.len() <= MAX_FRAME as usize + 4);
+    let trimmed: Value = serde_json::from_slice(body(&frame)).unwrap();
+    assert_eq!(trimmed["error"], TRIMMED);
+    assert!(trimmed["apps"].as_array().unwrap().len() < 128);
     capture("native-trimmed-query", &frame);
 }

@@ -15,10 +15,8 @@
 //!   the dispatch ends.
 //! - A response whose app list exceeds the 64 KiB frame keeps the largest
 //!   ordered prefix that fits (a query then reports partial success).
-//!   Managed fails the write and closes the connection.
-//! - After a close reported (or retired with) an unconfirmed submission,
-//!   every close is refused until a query succeeds, so a possibly applied
-//!   close is never replayed from an old confirmation.
+//!   Managed fails the write and closes the connection. A query trimmed this
+//!   way says that only part of the list is shown.
 //! - A force close that terminated the process but cannot observe its exit
 //!   within 5 s is reported as unconfirmed, not as success. See the platform
 //!   backend for the remaining process-level differences.
@@ -62,8 +60,8 @@ const COUNTERS_UNAVAILABLE: &str = "Windows GPU activity counters are unavailabl
 const TRUNCATED: &str = "Only the first 128 GPU applications are shown.";
 /// Managed `SessionGpuPipeServer` reply for an unexpected dispatch failure.
 const DISPATCH_FAILURE: &str = "The Session Agent could not complete the GPU app operation.";
-/// Native only: a close after an unconfirmed close, before a fresh query.
-const FENCED: &str = "A previous close could not be confirmed. Refresh the GPU app list first.";
+/// Native only: a query whose app list was cut to fit the 64 KiB frame.
+const TRIMMED: &str = "Only part of the GPU application list fits in the reply.";
 
 #[derive(Debug, PartialEq)]
 enum Request {
@@ -315,7 +313,7 @@ impl Response {
         if body.len() > limit {
             if query {
                 self.status = PARTIAL;
-                self.error = Some(TRUNCATED);
+                self.error = Some(TRIMMED);
             }
             // Keep the largest ordered prefix of apps that fits the byte cap.
             let apps = std::mem::take(&mut self.apps);
@@ -552,7 +550,6 @@ where
     S: AsyncRead + AsyncWrite + Unpin,
     F: Future<Output = io::Result<S>>,
 {
-    let mut fenced = false;
     loop {
         if *stop.borrow() {
             return Ok(());
@@ -563,7 +560,7 @@ where
             _ = stopped(stop) => return Ok(()),
             result = accept() => result.map_err(diagnostics::listener)?,
         };
-        match serve(&mut pipe, stop, supplier, &mut fenced, &authorize, &verify).await {
+        match serve(&mut pipe, stop, supplier, &authorize, &verify).await {
             Ok(()) => (),
             Err(ServeError::Connection(error)) => drop(error),
             Err(ServeError::Fatal(error)) => return Err(error),
@@ -584,7 +581,6 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     pipe: &mut S,
     stop: &mut watch::Receiver<bool>,
     supplier: &mut impl Supplier,
-    fenced: &mut bool,
     authorize: impl Fn(&S) -> io::Result<()>,
     verify: impl Fn() -> io::Result<()>,
 ) -> Result<(), ServeError> {
@@ -606,86 +602,68 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     }
     let request_id = request.request_id().to_owned();
     let query = matches!(request, Request::Query { .. });
-    let answer = if !query && *fenced {
-        Answer::Reply(Response::failed(&request_id, FENCED))
-    } else {
-        let canceled = Cancellation(Arc::new(AtomicBool::new(false)));
-        let flag = canceled.0.clone();
-        let work = async {
-            match request {
-                Request::Query { .. } => Work::Query(supplier.query(flag).await),
-                Request::Close { kind, targets, .. } => {
-                    let targets = targets
-                        .into_iter()
-                        .map(|target| Target {
-                            process_id: target.process_id,
-                            start_time_utc_ticks: target.start_time_utc_ticks,
-                            name: target.name,
-                        })
-                        .collect();
-                    Work::Close(supplier.close(targets, kind, flag).await)
-                }
+    // No close is refused for an earlier unconfirmed one. Every close takes
+    // its own fresh scan and re-reads each identity on the handle it acts on,
+    // so an app an earlier close already ended is reported as changed, and
+    // repeating a termination that did apply is harmless. This keeps the
+    // Tray's one-request-per-app force-close loop working as with managed.
+    let canceled = Cancellation(Arc::new(AtomicBool::new(false)));
+    let flag = canceled.0.clone();
+    let work = async {
+        match request {
+            Request::Query { .. } => Work::Query(supplier.query(flag).await),
+            Request::Close { kind, targets, .. } => {
+                let targets = targets
+                    .into_iter()
+                    .map(|target| Target {
+                        process_id: target.process_id,
+                        start_time_utc_ticks: target.start_time_utc_ticks,
+                        name: target.name,
+                    })
+                    .collect();
+                Work::Close(supplier.close(targets, kind, flag).await)
             }
-        };
-        tokio::pin!(work);
-        enum End {
-            Complete(Work),
-            Retire(Work),
-            Stale(io::Error, Work),
         }
-        let mut extra = [0u8];
-        let end = tokio::select! {
-            biased;
-            _ = stopped(stop) => None,
-            error = origin_invalid(&verify) => Some(Err(error)),
-            _ = sleep(DISPATCH_TIMEOUT) => None,
-            _ = pipe.read(&mut extra) => None,
-            work = &mut work => Some(Ok(work)),
-        };
-        let end = match end {
-            Some(Ok(work)) => End::Complete(work),
-            interrupted => {
-                canceled.0.store(true, Ordering::Release);
-                let work = work.await;
-                match interrupted {
-                    Some(Err(error)) => End::Stale(error, work),
-                    _ => End::Retire(work),
-                }
-            }
-        };
-        let (work, reply) = match end {
-            End::Complete(work) => (work, true),
-            End::Retire(work) => (work, false),
-            End::Stale(error, work) => {
-                // Record the certainty first; the endpoint ends either way.
-                record(fenced, &work);
+    };
+    tokio::pin!(work);
+    let mut extra = [0u8];
+    let end = tokio::select! {
+        biased;
+        _ = stopped(stop) => None,
+        error = origin_invalid(&verify) => Some(Err(error)),
+        _ = sleep(DISPATCH_TIMEOUT) => None,
+        _ = pipe.read(&mut extra) => None,
+        work = &mut work => Some(Ok(work)),
+    };
+    let (work, reply) = match end {
+        Some(Ok(work)) => (work, true),
+        interrupted => {
+            canceled.0.store(true, Ordering::Release);
+            let work = work.await;
+            if let Some(Err(error)) = interrupted {
                 return Err(ServeError::Fatal(diagnostics::origin(error)));
             }
-        };
-        record(fenced, &work);
-        let answer = match work {
-            Work::Close(Err(WorkerLost)) => {
-                // A lost close worker may have submitted an action. Never
-                // report or retry it; end the endpoint.
-                return Err(ServeError::Fatal(io::Error::other(
-                    "the GPU close worker ended without a result",
-                )));
-            }
-            Work::Query(Err(WorkerLost)) => {
-                Answer::Reply(Response::failed(&request_id, DISPATCH_FAILURE))
-            }
-            Work::Query(Ok(result)) => answer_query(&request_id, result),
-            Work::Close(Ok(result)) => answer_close(&request_id, result),
-        };
-        if !reply {
-            return Ok(());
+            (work, false)
         }
-        answer
+    };
+    let answer = match work {
+        Work::Close(Err(WorkerLost)) => {
+            // A lost close worker may have submitted an action. Never report
+            // or retry it; end the endpoint, and with it the Agent.
+            return Err(ServeError::Fatal(io::Error::other(
+                "the GPU close worker ended without a result",
+            )));
+        }
+        Work::Query(Err(WorkerLost)) => {
+            Answer::Reply(Response::failed(&request_id, DISPATCH_FAILURE))
+        }
+        Work::Query(Ok(result)) => answer_query(&request_id, result),
+        Work::Close(Ok(result)) => answer_close(&request_id, result),
     };
     let Answer::Reply(response) = answer else {
         return Ok(());
     };
-    if *stop.borrow() {
+    if !reply || *stop.borrow() {
         return Ok(());
     }
     let frame = response.frame(query)?;
@@ -695,16 +673,6 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
         biased;
         _ = stopped(stop) => Ok(()),
         result = timeout(FRAME_TIMEOUT, pipe.write_all(&frame)) => { result??; Ok(()) },
-    }
-}
-
-/// An unconfirmed close fences later closes; only a successful fresh query
-/// (the read-only reconciliation) lifts the fence.
-fn record(fenced: &mut bool, work: &Work) {
-    match work {
-        Work::Close(Ok(Ok((_, report)))) if report.uncertain() => *fenced = true,
-        Work::Query(Ok(Ok(_))) => *fenced = false,
-        _ => (),
     }
 }
 
