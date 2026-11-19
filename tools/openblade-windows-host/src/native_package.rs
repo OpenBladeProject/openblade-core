@@ -1010,7 +1010,6 @@ fn system_import(name: &str) -> bool {
         name,
         "combase.dll"
             | "bcryptprimitives.dll"
-            | "vcruntime140.dll"
             | "kernel32.dll"
             | "ntdll.dll"
             | "advapi32.dll"

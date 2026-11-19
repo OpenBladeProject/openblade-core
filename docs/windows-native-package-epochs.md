@@ -37,8 +37,9 @@ build inputs, like the existing release process.
 The version 1 app-local recipe contains exactly the Service and Session Agent
 executables. Both must be native x64 PE images without CLR or delay-import
 contracts. C# and Rust inspect the compiled section and canonical import names.
-The fresh app directory has exactly those two files. Windows system imports and
-the existing VC runtime prerequisite are external platform boundaries; this recipe grants no dynamic-load origin or optional
+The fresh app directory has exactly those two files. Both link the C runtime
+statically, so their only external imports are reviewed inbox Windows system DLLs,
+an external platform boundary; this recipe grants no dynamic-load origin or optional
 Razer/NVIDIA/THX module authority. It installs no CIG policy. Additional app-local
 assets or optional module consumers require the next integrated loader/origin
 recipe and their existing admission, rather than inheriting another backend.
