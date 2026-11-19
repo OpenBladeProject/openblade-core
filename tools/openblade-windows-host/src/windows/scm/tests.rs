@@ -11,15 +11,14 @@ use tokio::{
 use windows_sys::Win32::{
     Foundation::{ERROR_GEN_FAILURE, NO_ERROR},
     System::Services::{
-        SERVICE_ACCEPT_SHUTDOWN, SERVICE_ACCEPT_STOP, SERVICE_CONTROL_SHUTDOWN,
-        SERVICE_CONTROL_STOP, SERVICE_RUNNING, SERVICE_START_PENDING, SERVICE_STOP_PENDING,
-        SERVICE_STOPPED,
+        SERVICE_CONTROL_SHUTDOWN, SERVICE_CONTROL_STOP, SERVICE_RUNNING, SERVICE_START_PENDING,
+        SERVICE_STOP_PENDING, SERVICE_STOPPED,
     },
 };
 
 use super::*;
 use crate::battery_runtime::{ProfileReplay, ProfileSaveBarrier};
-use crate::scm_host::{Phase, control};
+use crate::scm_host::{Phase, RUNNING_CONTROLS, control};
 use crate::windows::{
     PREFIX,
     pipe::Endpoint,
@@ -190,11 +189,7 @@ fn scripted_controls_wait_for_both_the_accepted_save_and_owned_renderer() {
             phases,
             [
                 (SERVICE_START_PENDING, 0, NO_ERROR),
-                (
-                    SERVICE_RUNNING,
-                    SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN,
-                    NO_ERROR
-                ),
+                (SERVICE_RUNNING, RUNNING_CONTROLS, NO_ERROR),
                 (SERVICE_STOP_PENDING, 0, NO_ERROR),
                 (SERVICE_STOPPED, 0, NO_ERROR),
             ]

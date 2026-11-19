@@ -163,23 +163,21 @@ pub(crate) unsafe extern "system" fn control(
     CONTROLS.handle(code)
 }
 
+/// Controls accepted while running. The thermal composition also takes power and
+/// session events, for every service host compiled with it.
+pub(crate) const RUNNING_CONTROLS: u32 = SERVICE_ACCEPT_STOP
+    | SERVICE_ACCEPT_SHUTDOWN
+    | if cfg!(feature = "service-thermal-mutation-v1") {
+        windows_sys::Win32::System::Services::SERVICE_ACCEPT_POWEREVENT
+            | windows_sys::Win32::System::Services::SERVICE_ACCEPT_SESSIONCHANGE
+    } else {
+        0
+    };
+
 pub(crate) fn status_for(phase: Phase) -> SERVICE_STATUS {
     let (state, controls, checkpoint, wait_hint, error) = match phase {
         Phase::Starting => (SERVICE_START_PENDING, 0, 1, 5000, NO_ERROR),
-        Phase::Running => (
-            SERVICE_RUNNING,
-            SERVICE_ACCEPT_STOP
-                | SERVICE_ACCEPT_SHUTDOWN
-                | if cfg!(feature = "service-thermal-mutation-v1") {
-                    windows_sys::Win32::System::Services::SERVICE_ACCEPT_POWEREVENT
-                        | windows_sys::Win32::System::Services::SERVICE_ACCEPT_SESSIONCHANGE
-                } else {
-                    0
-                },
-            0,
-            0,
-            NO_ERROR,
-        ),
+        Phase::Running => (SERVICE_RUNNING, RUNNING_CONTROLS, 0, 0, NO_ERROR),
         Phase::Stopping => (SERVICE_STOP_PENDING, 0, 1, 5000, NO_ERROR),
         Phase::Stopped { failed } => (
             SERVICE_STOPPED,

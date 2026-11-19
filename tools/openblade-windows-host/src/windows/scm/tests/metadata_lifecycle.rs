@@ -278,11 +278,7 @@ fn metadata_lifecycle_refreshes_fresh_evidence_and_drains_on_service_stop() {
             phases,
             [
                 (SERVICE_START_PENDING, 0, NO_ERROR),
-                (
-                    SERVICE_RUNNING,
-                    SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN,
-                    NO_ERROR
-                ),
+                (SERVICE_RUNNING, RUNNING_CONTROLS, NO_ERROR),
                 (SERVICE_STOP_PENDING, 0, NO_ERROR),
                 (SERVICE_STOPPED, 0, NO_ERROR),
             ]
