@@ -124,9 +124,15 @@ mod submission {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use crate::display::MonitorName;
+        use crate::display::{DisplayReadError, MonitorName};
+        use std::{
+            cell::Cell,
+            sync::atomic::{AtomicUsize, Ordering},
+        };
 
         const PATH: &str = r"\?\DISPLAY#SYN0001#FIXTURE#{guid}";
+
+        type Topology = fn() -> Result<InternalDisplayTopology, DisplayReadError>;
 
         fn panel() -> ActiveInternalDisplay {
             ActiveInternalDisplay::brightness_fixture(PATH, 2)
@@ -166,6 +172,117 @@ mod submission {
             let mut renamed = panel();
             renamed.source_name = r"\.\DISPLAY7".into();
             assert!(PanelIdentity::of(&panel()).same_as(&renamed));
+        }
+
+        /// A writer error: the shared refusals, or the writer's own.
+        #[derive(Debug, PartialEq, Eq)]
+        enum Refused {
+            Fence(FenceRefusal),
+            Stale,
+        }
+
+        impl From<FenceRefusal> for Refused {
+            fn from(refusal: FenceRefusal) -> Self {
+                Self::Fence(refusal)
+            }
+        }
+
+        struct Fence {
+            topology: Topology,
+            admit: bool,
+            admissions: AtomicUsize,
+        }
+
+        impl SubmissionFence for Fence {
+            fn topology(&self) -> Result<InternalDisplayTopology, DisplayReadError> {
+                (self.topology)()
+            }
+
+            fn admit(&self) -> bool {
+                self.admissions.fetch_add(1, Ordering::SeqCst);
+                self.admit
+            }
+        }
+
+        fn fence(topology: Topology, admit: bool) -> Fence {
+            Fence {
+                topology,
+                admit,
+                admissions: AtomicUsize::new(0),
+            }
+        }
+
+        fn single() -> Result<InternalDisplayTopology, DisplayReadError> {
+            Ok(InternalDisplayTopology::Single(panel()))
+        }
+
+        /// The fence result, how many panels `fresh` saw, and admissions.
+        fn admit(
+            fence: &Fence,
+            cancelled: &dyn Fn() -> bool,
+            fresh: Result<(), Refused>,
+        ) -> (Result<(), Refused>, usize, usize) {
+            let seen = Cell::new(0);
+            let result = admit_submission(fence, cancelled, |display| {
+                assert!(PanelIdentity::of(&panel()).same_as(display));
+                seen.set(seen.get() + 1);
+                fresh
+            });
+            (result, seen.get(), fence.admissions.load(Ordering::SeqCst))
+        }
+
+        #[test]
+        fn a_fresh_single_panel_and_the_admission_admit_the_submission() {
+            assert_eq!(
+                admit(&fence(single, true), &|| false, Ok(())),
+                (Ok(()), 1, 1)
+            );
+        }
+
+        #[test]
+        fn a_non_single_fenced_topology_is_a_panel_change_before_the_admission() {
+            let topologies: [Topology; 4] = [
+                || Ok(InternalDisplayTopology::Empty),
+                || Ok(InternalDisplayTopology::NoInternalDisplay),
+                || Ok(InternalDisplayTopology::MultipleInternalDisplays),
+                || Err(DisplayReadError::TopologyChanging),
+            ];
+            for topology in topologies {
+                assert_eq!(
+                    admit(&fence(topology, true), &|| false, Ok(())),
+                    (Err(Refused::Fence(FenceRefusal::PanelChanged)), 0, 0)
+                );
+            }
+        }
+
+        #[test]
+        fn the_writer_refusal_and_a_denied_admission_refuse_in_order() {
+            assert_eq!(
+                admit(&fence(single, true), &|| false, Err(Refused::Stale)),
+                (Err(Refused::Stale), 1, 0)
+            );
+            assert_eq!(
+                admit(&fence(single, false), &|| false, Ok(())),
+                (Err(Refused::Fence(FenceRefusal::AdmissionDenied)), 1, 1)
+            );
+        }
+
+        #[test]
+        fn cancellation_is_checked_before_the_fence_and_after_the_admission() {
+            assert_eq!(
+                admit(&fence(single, true), &|| true, Ok(())),
+                (Err(Refused::Fence(FenceRefusal::Cancelled)), 0, 0)
+            );
+            // Cancelled while the admission waited.
+            let checks = Cell::new(0);
+            let later = || {
+                checks.set(checks.get() + 1);
+                checks.get() > 1
+            };
+            assert_eq!(
+                admit(&fence(single, true), &later, Ok(())),
+                (Err(Refused::Fence(FenceRefusal::Cancelled)), 1, 1)
+            );
         }
     }
 }
