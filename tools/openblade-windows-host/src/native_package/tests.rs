@@ -1296,3 +1296,63 @@ fn real_agent_imports_are_reviewed_system_contracts_and_others_are_not() {
         assert!(!system_import(name), "{name}");
     }
 }
+
+/// The vector's Agent image with its import section grown to 0x400 bytes:
+/// one descriptor per name, the terminator, then the names, like the managed
+/// `WindowsNativeEpochTests.Image(imports:)`.
+fn with_imports(mut image: Vec<u8>, imports: &[&str]) -> Vec<u8> {
+    const IDATA: usize = 0x800;
+    let put = |image: &mut Vec<u8>, at: usize, value: usize| {
+        image[at..at + 4].copy_from_slice(&u32::try_from(value).unwrap().to_le_bytes());
+    };
+    let pe = u32::from_le_bytes(image[60..64].try_into().unwrap()) as usize;
+    let section = pe + 24 + 240 + 40;
+    assert_eq!(&image[section..section + 8], b".idata\0\0");
+    image.truncate(IDATA);
+    image.resize(IDATA + 0x400, 0);
+    put(&mut image, section + 8, 0x400);
+    put(&mut image, section + 16, 0x400);
+    put(&mut image, pe + 24 + 124, 20 * (imports.len() + 1));
+    let mut name = IDATA + 20 * (imports.len() + 1);
+    for (index, import) in imports.iter().enumerate() {
+        put(&mut image, IDATA + 20 * index + 12, 0x2000 + name - IDATA);
+        image[name..name + import.len()].copy_from_slice(import.as_bytes());
+        name += import.len() + 1;
+    }
+    image
+}
+
+/// The vector's Agent record bound to `image` and naming `imports`.
+fn agent_record(v: &serde_json::Value, image: &[u8], imports: &str) -> Vec<u8> {
+    let record = bytes(v, "agentRecord");
+    let mut f = lines(&record, "OpenBlade.NativeArtifactRecord.v1", 10).unwrap();
+    let (size, sha) = (image.len().to_string(), digest(image));
+    (f[7], f[8], f[9]) = (&size, &sha, imports);
+    encode("OpenBlade.NativeArtifactRecord.v1", &f)
+}
+
+#[test]
+fn the_real_agent_import_descriptors_pass_artifact_inspection() {
+    let v = vector();
+    let r = authenticate(
+        &bytes(&v, "enrollment"),
+        &bytes(&v, "manifest"),
+        &bytes(&v, "signature"),
+    )
+    .unwrap();
+    let image = with_imports(bytes(&v, "agentImage"), &REAL_AGENT_IMPORTS);
+    // The record names the canonical set: lowercase, sorted, deduplicated.
+    let canonical = "advapi32.dll,api-ms-win-core-synch-l1-2-0.dll,bcrypt.dll,\
+                     bcryptprimitives.dll,combase.dll,kernel32.dll,mscms.dll,ntdll.dll,\
+                     ole32.dll,oleaut32.dll,shell32.dll,user32.dll,webservices.dll,wtsapi32.dll";
+    inspect_artifact(&agent_record(&v, &image, canonical), &image, "agent", &r).unwrap();
+    let (fewer, _) = canonical.rsplit_once(',').unwrap();
+    assert!(inspect_artifact(&agent_record(&v, &image, fewer), &image, "agent", &r).is_err());
+
+    // One unreviewed descriptor among them refuses the whole image.
+    let mut unreviewed = REAL_AGENT_IMPORTS.to_vec();
+    unreviewed.insert(7, "winhttp.dll");
+    let image = with_imports(bytes(&v, "agentImage"), &unreviewed);
+    let named = canonical.replace("user32.dll,", "user32.dll,winhttp.dll,");
+    assert!(inspect_artifact(&agent_record(&v, &image, &named), &image, "agent", &r).is_err());
+}
