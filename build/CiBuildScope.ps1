@@ -318,7 +318,7 @@ function Get-OpenBladeCiPlan {
                 $recognizedNonDocumentation = $true
                 $reasons.Add("$path selects its own build-contract suite.")
             }
-            else {
+            elseif ($null -eq $projectOwner) {
                 return New-OpenBladeCiFullPlan -ChangedPath $normalizedPaths -Reason "Unknown build-contract input changed: $path"
             }
         }

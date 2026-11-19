@@ -343,6 +343,12 @@ $unknownMetadata = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @('t
 Assert-Equal 'full' $unknownMetadata.Mode 'Unowned metadata must fail closed.'
 $deletedMetadata = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @('tests/OpenBlade.DeploymentClient.Tests/Deleted.csproj')
 Assert-Equal 'full' $deletedMetadata.Mode 'Deleted project metadata must fail closed.'
+$ownedFixtureFile = Get-OpenBladeCiPlan -Repository $repository -ChangedPath @(
+    'tests/Build.Tests/WindowsNativeRoleBurnFixture/Program.cs')
+Assert-Equal 'affected' $ownedFixtureFile.Mode 'A Build.Tests file owned by a test project must be classified by that project.'
+Assert-Contains $ownedFixtureFile.TestProjects `
+    'tests/Build.Tests/WindowsNativeRoleBurnFixture/InventoryWriter.csproj' `
+    'A Build.Tests file owned by a test project must select that project.'
 
 foreach ($globalPath in @(
         'Directory.Build.props',
