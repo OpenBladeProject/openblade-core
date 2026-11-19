@@ -211,6 +211,80 @@ public sealed class NativeHandbackTests : IDisposable
         Assert.Throws<InvalidDataException>(() => WindowsNativeHandback.Parse(new WindowsNativeHandback(new string('2', 32), null, null, null, null, null).Serialize([])));
     }
 
+    // Custody recomputes the history commitment from native history at every
+    // start and compares it with the record. A change to classification, to
+    // the commitment lines or to the record encoding would therefore block
+    // every handed-back machine, so the format is pinned by a checked-in vector.
+    [Fact]
+    public void HandbackFormatMatchesItsKnownAnswerVector()
+    {
+        JsonElement v = Vector("native-handback-record-v1.json");
+        string[] owner = [.. v.GetProperty("ownerReference").EnumerateArray().Select(e => e.GetString()!)];
+        var reference = new WindowsNativeTrustLifecycle.OwnerReference(owner[0], owner[1], owner[2], owner[3], owner[4], owner[5]);
+        Assert.Equal(Original, reference);
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        Thermal(files, Bytes(string.Join('\n', v.GetProperty("journal").EnumerateArray().Select(e => e.GetString())) + "\n"));
+        var handback = WindowsNativeThermalHistory.Read(files, [reference], reference).Handback!;
+        NativeHandbackEvidence[] evidence = [.. v.GetProperty("pendingOverrides").EnumerateArray()
+            .Select(e => new NativeHandbackEvidence(e.GetProperty("userSid").GetString()!, e.GetProperty("sha256").GetString()!))];
+
+        // The literal commitment lines and their digests, independent of the code under test.
+        byte[] historyLines = Bytes(v.GetProperty("historyLines").GetString()!);
+        byte[] recordLines = Bytes(v.GetProperty("recordLines").GetString()!);
+        Assert.Equal(v.GetProperty("history").GetString(), Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(historyLines)));
+        Assert.Equal(v.GetProperty("commitment").GetString(), Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(recordLines)));
+        Assert.Equal(v.GetProperty("history").GetString(), handback.Commitment);
+        Assert.Equal(v.GetProperty("commitment").GetString(), handback.RecordCommitment(evidence));
+
+        byte[] record = handback.Serialize(evidence);
+        Assert.Equal(v.GetProperty("record").GetString(), Encoding.UTF8.GetString(record));
+        Assert.Equal(v.GetProperty("recordSha256").GetString(), Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(record)));
+        var (parsed, overrides, commitment) = WindowsNativeHandback.Parse(Bytes(v.GetProperty("record").GetString()!));
+        Assert.Equal(handback, parsed);
+        Assert.Equal(evidence, overrides);
+        Assert.Equal(v.GetProperty("commitment").GetString(), commitment);
+    }
+
+    // The exact descriptor the private-custody recipe issues in product trust
+    // mode: private custody accepts it, and so does the ordinary read check
+    // the Service uses for the record and its resolution. The namespace's
+    // inherited Users read is what private custody excludes.
+    [Fact]
+    public void ProductPrivateCustodyDescriptorPassesOrdinaryReads()
+    {
+        var administrators = new System.Security.Principal.SecurityIdentifier("S-1-5-32-544");
+        var system = new System.Security.Principal.SecurityIdentifier("S-1-5-18");
+        var users = new System.Security.Principal.SecurityIdentifier("S-1-5-32-545");
+        System.Security.AccessControl.RawSecurityDescriptor Descriptor(bool usersRead)
+        {
+            var security = new System.Security.AccessControl.FileSecurity();
+            security.SetOwner(administrators);
+            security.SetAccessRuleProtection(isProtected: !usersRead, preserveInheritance: false);
+            foreach (var principal in new[] { system, administrators })
+            {
+                security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(principal,
+                    System.Security.AccessControl.FileSystemRights.FullControl, System.Security.AccessControl.AccessControlType.Allow));
+            }
+            if (usersRead)
+            {
+                security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(users,
+                    System.Security.AccessControl.FileSystemRights.ReadAndExecute, System.Security.AccessControl.AccessControlType.Allow));
+            }
+            return new(security.GetSecurityDescriptorBinaryForm(), 0);
+        }
+
+        var privateDescriptor = Descriptor(usersRead: false);
+        Assert.True(WindowsNativeEpochFiles.AcceptsPrivateCustody(privateDescriptor));
+        WindowsNativeEpochFiles.RequireProtectedEntry(privateDescriptor);
+        var shared = Descriptor(usersRead: true);
+        Assert.False(WindowsNativeEpochFiles.AcceptsPrivateCustody(shared));
+        WindowsNativeEpochFiles.RequireProtectedEntry(shared);
+    }
+
+    private static System.Security.AccessControl.RawSecurityDescriptor DescriptorOf(string path) =>
+        new(Directory.Exists(path) ? new DirectoryInfo(path).GetAccessControl().GetSecurityDescriptorBinaryForm()
+            : new FileInfo(path).GetAccessControl().GetSecurityDescriptorBinaryForm(), 0);
+
     private static readonly (string Slot, NativeHandbackItem Item)[] Incoherent =
     [
         ("liveTemporaryCharge", Item("performance", 2, performance: "Balanced")),
@@ -353,6 +427,10 @@ public sealed class NativeHandbackTests : IDisposable
         Assert.Equal(ExitMarker(crash, 17, 1), File.ReadAllBytes(Path.Combine(crash.Attempts, "exited-17-1.bin")));
         byte[] record = File.ReadAllBytes(crash.RecordPath);
         var handback = WindowsNativeHandback.Parse(record).Handback;
+        // Private custody: the record names user SIDs and requested settings.
+        var generation = DescriptorOf(crash.Generation);
+        Assert.True(WindowsNativeEpochFiles.AcceptsPrivateCustody(DescriptorOf(crash.RecordPath), generation.Owner));
+        Assert.False(WindowsNativeEpochFiles.AcceptsPrivateCustody(DescriptorOf(Path.Combine(crash.Attempts, "launch-17-1.bin")), generation.Owner));
         Assert.Equal((crash.Record.Epoch, 2, "Balanced"), (handback.Epoch, handback.Pending!.Progress, handback.Pending.Performance));
         string proof = Assert.Single(Directory.GetFiles(crash.Proofs));
         string[] fields = ManagedMailboxNativeCustody.ParseRetirement(File.ReadAllBytes(proof));

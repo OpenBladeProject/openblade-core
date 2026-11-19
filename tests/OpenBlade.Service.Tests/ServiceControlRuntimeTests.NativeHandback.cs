@@ -59,7 +59,7 @@ public sealed partial class ServiceControlRuntimeTests
 
     // The binding this start's fresh native custody admitted.
     private static NativeHandbackStore StoreFor(WindowsNativeEpochFiles? files, IReadOnlyDictionary<string, string> authenticated) =>
-        new(() => new NativeHandbackBinding(authenticated, files is null ? null : files.RetainView));
+        new(() => new NativeHandbackBinding(authenticated, files is null ? null : files.ReopenLater()));
 
     // The history commitments this start's fresh native custody computed.
     private static Dictionary<string, string> Bound(params WindowsNativeHandback[] records) =>
@@ -692,7 +692,7 @@ public sealed partial class ServiceControlRuntimeTests
         WindowsNativeHandback record = PendingHandback(HandbackItem("performance", 2, performance: "Balanced"));
         WindowsNativeEpochFiles files = HandbackFiles(record);
         var handoff = new ServiceMailboxHandoff(new ManagedMailboxStartup.Admission(null, null, null,
-            new NativeHandbackBinding(Bound(record), files.RetainView)));
+            new NativeHandbackBinding(Bound(record), files.ReopenLater())));
         using ServiceProvider provider = new ServiceCollection().AddSingleton(handoff).BuildServiceProvider();
         NativeHandbackStore store = ServiceComposition.CreateNativeHandbackStore(provider);
 
@@ -881,5 +881,144 @@ public sealed partial class ServiceControlRuntimeTests
         await ActivateAndTickAsync(context);
         AssertNoHardwareWrite(context);
         Assert.True(HistoryContains(context, RecoveryCompleted), Describe(context));
+    }
+    // A temporary charge confirmed before sign-in is an active charge, not a
+    // request. If it ended before a restart, either slot reports it ended,
+    // with no external-change latch and no battery write.
+    [Theory]
+    [InlineData("live")]
+    [InlineData("pending-enable")]
+    public async Task NativeHandback_ContinuingChargeThatEndedBeforeARestartIsReportedEnded(string kind)
+    {
+        WindowsNativeHandback record = kind == "live"
+            ? new(HandbackEpoch, null, null, HandbackItem("temporaryCharge", 72, battery: new(80, true, true)), null, null)
+            : PendingHandback(HandbackItem("temporaryCharge", 71, battery: new(80, true, true)));
+        string key = kind == "live" ? "liveTemporaryCharge" : "pending";
+        WindowsNativeEpochFiles files = HandbackFiles(record);
+        var active = new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, new ConfirmedBatteryState(true, 80, true), LightingSettingsFactory.Off());
+        await StartProductionHandbackAsync(StoreFor(files, Bound(record)), active);
+        Assert.Equal(NativeHandbackStore.Continuing, Outcome(files, key));
+
+        File.Delete(Path.Combine(directory, "service-running.json"));
+        var (context, _) = await StartProductionHandbackAsync(StoreFor(files, Bound(record)),
+            active with { Battery = new ConfirmedBatteryState(true, 80, false) });
+
+        Assert.Equal("reported", Outcome(files, key));
+        Assert.DoesNotContain(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
+        Assert.True(HistoryHas(context, "Temporary full charge started by the previous native service has ended."), Describe(context));
+        await ActivateAndTickAsync(context);
+        Assert.Equal("reported", Outcome(files, key));
+        Assert.DoesNotContain(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
+        Assert.False(context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        AssertNoHardwareWrite(context);
+    }
+
+    // Any result between two disagreeing observations restarts the count, so
+    // alternating with another unreadable read never resolves; two
+    // consecutive disagreements then do.
+    [Fact]
+    public async Task NativeHandback_DisagreementAlternatingWithAnotherUnreadableReadStaysPending()
+    {
+        WindowsNativeHandback record = PendingHandback(HandbackItem("performance", 2, performance: "Balanced"));
+        WindowsNativeEpochFiles files = HandbackFiles(record);
+        var state = new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, ConfirmedBattery(80), LightingSettingsFactory.Off());
+        var (context, _) = await StartProductionHandbackAsync(StoreFor(files, Bound(record)), state,
+            arrange: c => c.Device.ReadStateFailure = ThermalRejection(DeviceStateQuery.ThermalChannelAgreement, state));
+        for (int cycle = 0; cycle < 6; cycle++)
+        {
+            context.Device.ReadStateFailure = ThermalRejection(
+                cycle % 2 == 0 ? DeviceStateQuery.ThermalChannelOne : DeviceStateQuery.ThermalChannelAgreement, state);
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+            await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+        }
+        Assert.Null(Outcome(files, "pending"));
+        Assert.Contains(DeviceSubsystem.Performance, context.Runtime.GetStatus().UnconfirmedWrites);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal("mismatched", Outcome(files, "pending"));
+        AssertNoHardwareWrite(context);
+    }
+
+    // The resolution names the outcome for user requests; like its record it
+    // is private custody and never inherits the namespace's Users read.
+    [Fact]
+    public void NativeHandback_ResolutionIsPublishedWithPrivateCustody()
+    {
+        WindowsNativeHandback record = PendingHandback(HandbackItem("performance", 2, performance: "Balanced"));
+        NativeHandbackStore store = HandbackStore(record, out WindowsNativeEpochFiles files);
+        NativeHandbackObligation obligation = Assert.Single(store.Load().Obligations);
+        Assert.True(store.TryResolve(new(obligation.Epoch, obligation.RecordCommitment, [obligation.Key], null, false), "matched"));
+
+        var resolution = new System.Security.AccessControl.RawSecurityDescriptor(new FileInfo(WindowsNativeHandbackStorage.ResolutionPath(files, HandbackEpoch))
+            .GetAccessControl().GetSecurityDescriptorBinaryForm(), 0);
+        var root = new System.Security.AccessControl.RawSecurityDescriptor(new DirectoryInfo(files.Root)
+            .GetAccessControl().GetSecurityDescriptorBinaryForm(), 0);
+        Assert.Equal(root.Owner, resolution.Owner);
+        Assert.True(WindowsNativeEpochFiles.AcceptsPrivateCustody(resolution, root.Owner));
+        // Replacing the resolution keeps the private recipe, and it still reads.
+        Assert.True(store.TryResolve(new(obligation.Epoch, obligation.RecordCommitment, [obligation.Key], null, false), "matched"));
+        Assert.True(WindowsNativeEpochFiles.AcceptsPrivateCustody(new System.Security.AccessControl.RawSecurityDescriptor(
+            new FileInfo(WindowsNativeHandbackStorage.ResolutionPath(files, HandbackEpoch)).GetAccessControl().GetSecurityDescriptorBinaryForm(), 0), root.Owner));
+        Assert.Null(StoreFor(files, Bound(record)).Load().Failure);
+    }
+
+    // The production registration: AddServiceControlRuntime registers the
+    // store over the handoff binding, and the runtime factory first requests
+    // that registered store. The probe stops at that request, so no backend
+    // is constructed.
+    [Fact]
+    public void NativeHandback_ServiceControlRuntimeRegistrationUsesTheRegisteredStore()
+    {
+        WindowsNativeHandback record = PendingHandback(HandbackItem("performance", 2, performance: "Balanced"));
+        WindowsNativeEpochFiles files = HandbackFiles(record);
+        var services = new ServiceCollection();
+        services.AddServiceControlRuntime(Path.Combine(directory, "machine"));
+        services.AddSingleton(new ServiceMailboxHandoff(new ManagedMailboxStartup.Admission(null, null, null,
+            new NativeHandbackBinding(Bound(record), files.ReopenLater()))));
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        NativeHandbackStore store = provider.GetRequiredService<NativeHandbackStore>();
+        Assert.Equal("pending", Assert.Single(store.Load().Obligations).Key);
+
+        ServiceDescriptor runtime = Assert.Single(services, d => d.ServiceType == typeof(IServiceControlRuntime));
+        var requests = new List<Type>();
+        Assert.Throws<FirstRequestProvider.Stop>(() => runtime.ImplementationFactory!(new FirstRequestProvider(requests)));
+        Assert.Equal([typeof(NativeHandbackStore)], requests);
+    }
+
+    private sealed class FirstRequestProvider(List<Type> requests) : IServiceProvider
+    {
+        internal sealed class Stop : Exception;
+        public object? GetService(Type serviceType)
+        {
+            requests.Add(serviceType);
+            throw new Stop();
+        }
+    }
+
+    // The hosted startup is what opens custody: before it the handoff refuses
+    // the binding and every transport reservation, after it both are admitted,
+    // and custody is never reacquired.
+    [Fact]
+    public void NativeHandback_HostedCustodyStartupOpensTheHandoff()
+    {
+        WindowsNativeHandback record = PendingHandback(HandbackItem("performance", 2, performance: "Balanced"));
+        WindowsNativeEpochFiles files = HandbackFiles(record);
+        var binding = new NativeHandbackBinding(Bound(record), files.ReopenLater());
+        var admission = new ManagedMailboxStartup.Admission(new NoMailboxRun(), null, null, binding);
+        int opens = 0;
+        var handoff = new ServiceMailboxHandoff(() => { opens++; return admission; });
+        Assert.Throws<InvalidOperationException>(() => handoff.NativeHandbacks);
+        Assert.Throws<IOException>(() => handoff.Lifetime.Reserve());
+
+        _ = new ServiceMailboxCustodyStartup(handoff);
+
+        Assert.Equal(1, opens);
+        Assert.Same(binding, handoff.NativeHandbacks);
+        handoff.Lifetime.Reserve().Dispose();
+        Assert.Throws<IOException>(() => handoff.Open());
+        Assert.Equal(1, opens);
     }
 }
