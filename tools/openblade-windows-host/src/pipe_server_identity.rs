@@ -40,7 +40,6 @@ pub(crate) type ServerIdentityMonitor = Box<dyn Fn() -> io::Result<(u32, u32)>>;
 
 // Duplicate the actual connected pipe object for idle metadata checks while an
 // async read borrows the stream. No name/PID reopen and no authority is minted.
-#[allow(dead_code)] // Only the Session Agent's Service client retains a monitor.
 pub(crate) fn retain_monitor(pipe: RawHandle) -> io::Result<ServerIdentityMonitor> {
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
     use windows_sys::Win32::{

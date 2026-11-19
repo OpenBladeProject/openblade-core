@@ -31,6 +31,7 @@ mod windows_protected_path;
 mod windows_token;
 
 #[cfg(windows)]
+#[allow(dead_code)] // The library never retains a monitor; the Session Agent's Service client does.
 mod pipe_server_identity;
 #[cfg(windows)]
 mod retained_process;

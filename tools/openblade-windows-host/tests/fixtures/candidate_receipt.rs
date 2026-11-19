@@ -4,6 +4,7 @@
 #[path = "../../src/candidate_receipt.rs"]
 mod candidate_receipt;
 #[cfg(windows)]
+#[allow(dead_code)] // This fixture only reads the server identity; it retains no monitor.
 #[path = "../../src/pipe_server_identity.rs"]
 mod pipe_server_identity;
 #[cfg(windows)]

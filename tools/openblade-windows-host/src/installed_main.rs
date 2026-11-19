@@ -20,6 +20,7 @@ mod loaded_origin;
 #[cfg(windows)]
 mod native_package;
 #[cfg(windows)]
+#[allow(dead_code)] // The Service retains no monitor; the Session Agent's Service client does.
 mod pipe_server_identity;
 #[cfg(windows)]
 mod retained_process;

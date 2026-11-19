@@ -29,7 +29,8 @@ pub(crate) enum Phase {
 pub(crate) static CONTROLS: Controls = Controls::new();
 type IngressHook = fn(u32, u32);
 static INGRESS: Mutex<Option<IngressHook>> = Mutex::new(None);
-#[allow(dead_code)] // The development host binds no ingress hook.
+// The installed entry that binds the ingress is compiled out of test builds.
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn set_ingress(hook: IngressHook) -> io::Result<()> {
     let mut slot = INGRESS
         .lock()
@@ -167,7 +168,7 @@ pub(crate) unsafe extern "system" fn control(
 
 /// Controls accepted while running. The thermal composition also takes power and
 /// session events, for every service host compiled with it.
-pub(crate) const RUNNING_CONTROLS: u32 = SERVICE_ACCEPT_STOP
+const RUNNING_CONTROLS: u32 = SERVICE_ACCEPT_STOP
     | SERVICE_ACCEPT_SHUTDOWN
     | if cfg!(feature = "service-thermal-mutation-v1") {
         windows_sys::Win32::System::Services::SERVICE_ACCEPT_POWEREVENT
@@ -264,7 +265,7 @@ pub(crate) fn startup_stopped() -> io::Error {
 
 /// The installed entry callback and injected outer service use this same action.
 /// Only terminal controls revoke loaded-build custody; routine events fence work.
-#[allow(dead_code)] // The development host binds no ingress hook.
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn installed_ingress(lifecycle: &Lifecycle, code: u32, event: u32, stop: impl FnOnce()) {
     use windows_sys::Win32::System::Services::{SERVICE_CONTROL_SHUTDOWN, SERVICE_CONTROL_STOP};
     if matches!(code, SERVICE_CONTROL_STOP | SERVICE_CONTROL_SHUTDOWN) {
