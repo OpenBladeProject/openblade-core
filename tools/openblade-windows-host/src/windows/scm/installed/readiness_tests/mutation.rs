@@ -5644,8 +5644,12 @@ async fn battery_publication_delayed_temporary_does_not_rejuvenate_policy() {
             std::thread::sleep(Duration::from_millis(600));
         }
     }));
+    // Active temporary charge refuses this basic battery request after it reads
+    // policy, then temporary flags, in every battery composition. Temporary-charge
+    // builds route setFullChargeOverride to their own flags-only exchange instead.
+    r.port.state.lock().unwrap().temporary_raw = 4;
     assert_eq!(
-        r.request(battery_request(406, "setFullChargeOverride", json!(false)))
+        r.request(battery_request(406, "setBatteryProtection", json!(false)))
             .await["result"]["status"],
         2
     );
@@ -5800,8 +5804,10 @@ async fn battery_publication_incompatible_independent_fields_are_unavailable_wit
     let r = Rig::new(MemoryFiles::default());
     r.get().await;
     r.port.state.lock().unwrap().temporary_raw = 4;
+    // Refused after both independent reads in every battery composition; a
+    // temporary-charge build would cancel through setFullChargeOverride instead.
     assert_eq!(
-        r.request(battery_request(409, "setFullChargeOverride", json!(false)))
+        r.request(battery_request(409, "setBatteryProtection", json!(false)))
             .await["result"]["status"],
         2
     );
