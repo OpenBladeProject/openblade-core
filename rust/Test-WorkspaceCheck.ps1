@@ -50,8 +50,13 @@ try {
         @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = '[dev-dependencies]'; After = '[build-dependencies]'; Error = 'Unreviewed dependency kind*' },
         @{ Path = 'crates/openblade-domain/src/lib.rs'; Before = '#![no_std]'; After = ''; Error = 'The portable crate must retain no_std*' },
         @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = 'name = "openblade-domain"'; After = "name = 'openblade-domain'`nautotests = false"; Error = 'Reviewed integration tests are missing*' },
-        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = '=1.0.149'; After = '^1.0.149'; Error = 'Unreviewed dependency kind*' },
-        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = "features = ['derive']"; After = "features = ['derive', 'rc']"; Error = 'Unreviewed fixture-reader features*' },
+        # Target the dev roots; the optional thermal-history roots have their own cases below.
+        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = "serde_json = '=1.0.149'"; After = "serde_json = '^1.0.149'"; Error = 'Unreviewed dependency kind*' },
+        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = "features = ['derive'] }"; After = "features = ['derive', 'rc'] }"; Error = 'Unreviewed fixture-reader features*' },
+        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = "sha2 = { version = '=0.10.9'"; After = "sha2 = { version = '^0.10.9'"; Error = 'Conditional, optional or renamed*' },
+        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = "features = ['arbitrary_precision']"; After = "features = ['arbitrary_precision', 'raw_value']"; Error = 'Conditional, optional or renamed*' },
+        @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = '[features]'; After = "[features]`ndefault = ['thermal-history']"; Error = 'Unreviewed openblade-domain features*' },
+        @{ Path = 'crates/openblade-ffi/Cargo.toml'; Before = 'openblade-domain.workspace = true'; After = "openblade-domain = { workspace = true, features = ['thermal-history'] }"; Error = 'The thermal-history feature is not admitted*' },
         @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = "serde_json = '=1.0.149'"; After = ''; Error = 'Fixture-reader dev dependencies changed*' },
         @{ Path = 'crates/openblade-domain/Cargo.toml'; Before = '[dev-dependencies]'; After = "[[test]]`nname = 'unexpected'`npath = 'src/lib.rs'`n`n[dev-dependencies]"; Error = 'Unreviewed target*' },
         @{ Path = 'crates/openblade-types/Cargo.toml'; Before = '[lints]'; After = "[dependencies]`nserde_json = '=1.0.149'`n`n[lints]"; Error = 'Unreviewed dependency kind*' }
@@ -183,7 +188,7 @@ try {
         & (Join-Path $probe 'Check-Workspace.ps1')
     }
     finally { Pop-Location }
-    Write-Output 'Workspace guard tests passed: caller location, compiler policies, MSRV, production/dev features and roots, CLI isolation and targets, external package admission, test targets and equivalent TOML.'
+    Write-Output 'Workspace guard tests passed: caller location, compiler policies, MSRV, production/dev and thermal-history features and roots, CLI isolation and targets, external package admission, test targets and equivalent TOML.'
 }
 finally {
     # Only remove the unique directory this invocation created under temporary storage.
