@@ -246,15 +246,16 @@ fn the_reply_query_reconciles_each_attempt() {
 
 #[test]
 fn a_successful_setter_whose_power_changed_is_stale() {
-    let drifted = Some(PowerContext {
-        source: 0,
-        generation: 8,
-    });
+    // The admitted context is source 1, generation 7.
+    let drifted = |source, generation| Some(PowerContext { source, generation });
     // Managed ExecuteSetterAsync.EnsureCurrent, applied to a submitted change
-    // and to an unchanged request alike, and to lost confirmation.
+    // and to an unchanged request alike, and to lost confirmation. Either
+    // field drifting alone is stale.
     for (attempt, later) in [
-        (Attempt::Confirmed, drifted),
-        (Attempt::Unchanged, drifted),
+        (Attempt::Confirmed, drifted(0, 8)),
+        (Attempt::Confirmed, drifted(0, 7)),
+        (Attempt::Confirmed, drifted(1, 8)),
+        (Attempt::Unchanged, drifted(0, 8)),
         (Attempt::Confirmed, None),
     ] {
         let rig = Rig::new(Memory::default());
@@ -270,7 +271,7 @@ fn a_successful_setter_whose_power_changed_is_stale() {
     // Only a success is re-checked; a failure keeps its own result.
     let rig = Rig::new(Memory::default());
     let mut host = host(1, failed(false), true);
-    host.later = Some(drifted);
+    host.later = Some(drifted(0, 8));
     let outcome = rig.set(&mut host, 1, ()).unwrap();
     assert_eq!(result(&outcome), (Status::Failed, Some(FAILED)));
     assert!(!rig.unresolved().refresh);
