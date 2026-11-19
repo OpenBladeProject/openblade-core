@@ -472,8 +472,10 @@ impl Runtime {
         } else if accepted {
             let cause = permit.cause.lock().map_err(|_| io::ErrorKind::Other)?;
             if matches!(*cause, Cause::ManualDeferred) {
-                // Managed also reports Stored only for this manual-fan deferral
-                // (ServiceControlRuntime.DeferredPerformanceIntentMessage).
+                // Stored matches managed's reply for this AC manual-fan deferral
+                // (ServiceControlRuntime.DeferredPerformanceIntentMessage). Only the
+                // reply matches: managed applies the saved intent when fans return
+                // to Automatic on AC, and native does not yet.
                 Outcome {
                     status: 0,
                     message: format!("Performance intent stored. {}", cause.message()),
@@ -486,7 +488,14 @@ impl Runtime {
                 } else {
                     "Performance override intent was stored."
                 };
-                Outcome::blocked(format!("{committed} Hardware result: {}", cause.message()))
+                // The policy can select and confirm another destination while the
+                // requested value itself stays saved but unapplied.
+                let reason = if observed.is_some() && !requested_applied {
+                    "The current power and profile policy selects another performance destination, which is confirmed; the requested value is saved but not applied.".into()
+                } else {
+                    cause.message()
+                };
+                Outcome::blocked(format!("{committed} Hardware result: {reason}"))
             }
         } else {
             Outcome::blocked(
@@ -544,6 +553,7 @@ struct RequestPermit {
 #[derive(Debug)]
 enum Cause {
     CurrentAdmission,
+    FanHandbackPending,
     Gpu,
     ManualDeferred,
     NoEligiblePolicy,
@@ -556,6 +566,7 @@ impl Cause {
     fn message(&self) -> String {
         match self {
             Self::CurrentAdmission => "Current admission or independent readback did not complete; no successful application is reported.".into(),
+            Self::FanHandbackPending => "OpenBlade still owns a fan change that has not been handed back to firmware Automatic; no thermal setter was submitted.".into(),
             Self::Gpu => "GPU clock handling is incomplete; no thermal setter was submitted.".into(),
             Self::ManualDeferred => "Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.".into(),
             Self::NoEligiblePolicy => "No supported performance destination is selected by the current power and profile policy.".into(),
@@ -612,15 +623,19 @@ impl Permit for RequestPermit {
                 .map_err(|_| io::ErrorKind::Other)? = desired.map(|(_, s)| s);
             let desired = desired.map(|(p, _)| p);
             *self.destination.lock().map_err(|_| io::ErrorKind::Other)? = desired;
-            if self.storage.outstanding_fan()
-                || openblade_domain::thermal_mutation::defer_manual_performance(
-                    baseline,
-                    power,
-                    self.storage
-                        .desired_manual_fans(power, self.application.as_deref())?,
-                )
-            {
+            if openblade_domain::thermal_mutation::defer_manual_performance(
+                baseline,
+                power,
+                self.storage
+                    .desired_manual_fans(power, self.application.as_deref())?,
+            ) {
                 self.set_cause(Cause::ManualDeferred);
+                return Ok(None);
+            }
+            // An owned fan row without its handback is not a manual-fan deferral:
+            // the saved fan intent may already be Automatic or cleared.
+            if self.storage.outstanding_fan() {
+                self.set_cause(Cause::FanHandbackPending);
                 return Ok(None);
             }
             if desired.is_none() {

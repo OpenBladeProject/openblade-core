@@ -870,11 +870,17 @@ async fn installed_source_ineligible_intent_is_stored_and_power_change_stops_par
         assert_eq!(status["status"]["writesBlocked"], true);
         assert_eq!(result["result"]["status"], 2);
         assert_eq!(status["status"]["performanceOverride"]["value"], 2);
+        let message = result["result"]["message"].as_str().unwrap();
+        assert!(message.starts_with("Performance override intent was stored. Hardware result: "));
         if actual == 0 {
             assert_eq!(rig.port.state.lock().unwrap().writes, 0)
         } else {
             assert_eq!(status["status"]["desiredState"]["performance"]["value"], 1);
             assert_eq!(status["status"]["confirmedState"]["performance"], 1);
+            // The policy-selected preset is confirmed; that is not an admission failure.
+            assert!(message.ends_with(
+                "The current power and profile policy selects another performance destination, which is confirmed; the requested value is saved but not applied."
+            ));
         }
         rig.stop().await;
     }
@@ -890,6 +896,19 @@ async fn installed_source_ineligible_intent_is_stored_and_power_change_stops_par
             .unwrap()
             .progress(),
         Some(2)
+    );
+    rig.stop().await;
+}
+#[tokio::test]
+async fn installed_cleared_performance_override_keeps_the_managed_prefix() {
+    let rig = Rig::new(MemoryFiles::default());
+    rig.port.state.lock().unwrap().selectors = [2, 2];
+    rig.port.state.lock().unwrap().change_power = Some((2, 0));
+    let cleared = rig.set(91, Value::Null).await;
+    assert_eq!(cleared["result"]["status"], 2);
+    assert_eq!(
+        cleared["result"]["message"],
+        "Performance override was cleared. Hardware result: No supported performance destination is selected by the current power and profile policy."
     );
     rig.stop().await;
 }
@@ -4135,7 +4154,7 @@ async fn fan_v2_known_capacity_refusal_preserves_owner_but_uncertain_reservation
 
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
-async fn fan_v2_owned_limited_source_performance_stays_stored_without_consuming_release() {
+async fn fan_v2_owned_limited_source_performance_is_saved_blocked_without_consuming_release() {
     let r = fan_rig(0, 0);
     r.port.state.lock().unwrap().actual = 10;
     r.get().await;
@@ -4143,7 +4162,13 @@ async fn fan_v2_owned_limited_source_performance_stays_stored_without_consuming_
     assert_eq!(applied["result"]["status"], 1);
     let before = fan_rows(&r).len();
     let perf = r.set(181, value(1, 1)).await;
-    assert_eq!(perf["result"]["status"], 0);
+    // Managed defers only on PluggedIn power; an owned fan elsewhere blocks with
+    // the committed-intent prefix instead of the AC deferral's Stored reply.
+    assert_eq!(perf["result"]["status"], 2);
+    assert_eq!(
+        perf["result"]["message"],
+        "Performance override intent was stored. Hardware result: OpenBlade still owns a fan change that has not been handed back to firmware Automatic; no thermal setter was submitted."
+    );
     assert_eq!(fan_rows(&r).len(), before);
     assert_eq!(r.port.state.lock().unwrap().writes, 4);
     let desired = r.files.document("manual-overrides.json");
@@ -4153,6 +4178,65 @@ async fn fan_v2_owned_limited_source_performance_stays_stored_without_consuming_
     r.stop().await;
     assert_eq!(r.port.state.lock().unwrap().writes, 6);
     assert_eq!(fan_rows(&r).last().unwrap()["progress"], 50);
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_ac_manual_deferral_is_stored_but_cleared_fan_handback_blocks() {
+    // AC with saved and observed manual fans: managed's deferral reply.
+    let r = fan_rig(0, 0);
+    r.get().await;
+    assert_eq!(
+        r.request(fan_request(180, Some(1), 3700)).await["result"]["status"],
+        1
+    );
+    let deferred = r.set(181, value(2, 1)).await;
+    assert_eq!(deferred["result"]["status"], 0);
+    assert_eq!(
+        deferred["result"]["message"],
+        "Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans."
+    );
+    r.origin.stop();
+    r.stop().await;
+
+    // The fan override is cleared but its handback is still outstanding: no
+    // manual fan intent remains, so the reply is Blocked with the prefix.
+    let r = fan_rig(0, 0);
+    r.get().await;
+    assert_eq!(
+        r.request(fan_request(180, Some(1), 3700)).await["result"]["status"],
+        1
+    );
+    r.port.state.lock().unwrap().selectors = [4, 4];
+    let cleared = r.request(fan_request(182, None, 0)).await;
+    assert_eq!(cleared["result"]["status"], 2);
+    assert!(
+        cleared["result"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Fan override was cleared. Hardware result: ")
+    );
+    assert_eq!(fan_rows(&r).last().unwrap()["progress"], 30);
+    assert!(r.storage.outstanding_fan());
+    assert_eq!(
+        r.files.document("manual-overrides.json")["overrides"]["fanControl"],
+        Value::Null
+    );
+    let writes = r.port.state.lock().unwrap().writes;
+    let blocked = r.set(183, value(2, 1)).await;
+    assert_eq!(blocked["result"]["status"], 2);
+    assert_eq!(
+        blocked["result"]["message"],
+        "Performance override intent was stored. Hardware result: OpenBlade still owns a fan change that has not been handed back to firmware Automatic; no thermal setter was submitted."
+    );
+    assert_eq!(r.port.state.lock().unwrap().writes, writes);
+    assert_eq!(
+        r.files.document("manual-overrides.json")["overrides"]["performance"],
+        2
+    );
+    r.port.state.lock().unwrap().selectors = [0, 0];
+    r.origin.stop();
+    assert!(r.source.lock().await.drain().await.is_ok());
 }
 
 #[cfg(feature = "service-fan-mutation-v2")]

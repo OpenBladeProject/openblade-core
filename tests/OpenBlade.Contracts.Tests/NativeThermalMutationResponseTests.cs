@@ -19,7 +19,7 @@ public sealed class NativeThermalMutationResponseTests
         var seen = new HashSet<ControlOperationStatus>();
         bool sawConfirmedPreset = false;
         bool sawPartialCustom = false;
-        bool sawManualDeferral = false, sawGpuIncomplete = false, sawCapacityRefusal = false, sawPowerChanged = false;
+        bool sawManualDeferral = false, sawGpuIncomplete = false, sawCapacityRefusal = false, sawPowerChanged = false, sawCleared = false;
         var decodeErrors = new List<string>();
         int index = 0;
         foreach (JsonElement element in document.RootElement.EnumerateArray())
@@ -106,14 +106,19 @@ public sealed class NativeThermalMutationResponseTests
                 sawCapacityRefusal |= cause.Contains("capacity refused before publication", StringComparison.Ordinal);
                 sawPowerChanged |= cause.StartsWith("The independently observed power source changed", StringComparison.Ordinal);
             }
+            sawCleared |= result.Status == ControlOperationStatus.Blocked
+                && result.Message.StartsWith("Performance override was cleared. Hardware result: ", StringComparison.Ordinal);
             if (result.Status != ControlOperationStatus.Blocked)
             {
                 Assert.DoesNotContain("Hardware result:", result.Message, StringComparison.Ordinal);
             }
         }
-        Assert.True(sawManualDeferral, "Manual-fan deferral is the native Stored reply, as in managed.");
+        // Reply parity only: managed applies the deferred intent when fans return
+        // to Automatic on AC; native does not yet.
+        Assert.True(sawManualDeferral, "AC manual-fan deferral is the native Stored reply, matching managed's reply.");
         Assert.True(sawGpuIncomplete && sawCapacityRefusal && sawPowerChanged,
             "Saved but unapplied GPU, capacity and power-change replies are Blocked with the managed prefix.");
+        Assert.True(sawCleared, "An unapplied clear is Blocked with managed's cleared prefix.");
         Assert.True(decodeErrors.Count == 0, string.Join(Environment.NewLine, decodeErrors));
         Assert.True(sawPartialCustom, "Actual CustomManual observation must retain known selectors and unknown settings.");
         using var requestedFrame = FrameJson("""{"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":5,"lifetime":1,"customPerformance":null,"gpuClockTuning":null}}""");

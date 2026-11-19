@@ -36,6 +36,10 @@
         {
           "name": "installed::readiness::tests::mutation::correction_prepared_only_settles_after_drain_and_allows_fresh_request",
           "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::installed_cleared_performance_override_keeps_the_managed_prefix",
+          "minimumRecords": 1
         }
       ],
       "wrapper": false,
