@@ -275,11 +275,14 @@ installed product.
 #### Installed Session GPU endpoint
 
 The installed Agent's `agent-gpu-v1` build serves the managed Session GPU v2
-endpoint. It uses the managed pipe name, ACL, deadlines, strings and caps, and
-reports `Readiness.gpu`. Queries use the production sampler. Close and force
-close use the platform `gpu-close` backend, which opens each confirmed row once
-and re-reads its identity, owner and user on the handle it acts on. Stop leaves
-the remaining targets unattempted and writes no reply, as managed does.
+endpoint. It uses the managed pipe name, ACL, deadlines, strings and caps.
+Queries use the production sampler. Close and force close use the platform
+`gpu-close` backend, which opens each confirmed row once and re-reads its
+identity, owner and user on the handle it acts on. Stop leaves
+the remaining targets unattempted and writes no reply, as managed does. As
+managed, force close acts only at or below the Agent's integrity level, and
+each descendant stays held until its children are listed. Any endpoint ending
+stops the Agent.
 
 Deliberate differences from managed:
 
@@ -288,7 +291,6 @@ Deliberate differences from managed:
 - A disconnect or an extra byte cancels the dispatch, like Stop.
 - An app list beyond the 64 KiB frame keeps the largest prefix that fits.
   Managed fails the write.
-- After an unconfirmed close, every close is refused until a query succeeds.
 - Handles use least-privilege access rights.
 - A failed `WM_CLOSE` post is a failure.
 - A force close succeeds only after the process is seen to exit within 5 s.

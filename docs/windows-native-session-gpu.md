@@ -2,8 +2,9 @@
 
 The installed Rust Session Agent can serve the Session GPU app list and its
 close and force-close actions when it is built with `agent-gpu-v1`. The Tray
-keeps using its unchanged managed client (`SessionGpuIpcClient`); the managed
-Session Agent and its GPU endpoint are unchanged.
+keeps using its unchanged managed client (`SessionGpuAppAdapter`), including
+the one-request-per-app force-close loop in `GpuAppCleanupCoordinator`. The
+managed Session Agent and its GPU endpoint are unchanged.
 
 ## What the build contains
 
@@ -19,14 +20,35 @@ Session Agent and its GPU endpoint are unchanged.
   - The managed v2 request and response format, 64 KiB frames, 2 s frame
     deadlines and a 20 s dispatch deadline.
   - The managed status and error strings, and the 128-app and 128-target caps.
-  - `Readiness.gpu`.
+- `Readiness::native_endpoints` sets only `gpu` for this build. Nothing in
+  the installed Agent reads it yet; it records which role this endpoint
+  completes for the later readiness gate.
 - The GPU endpoint runs beside the Battery and Display endpoints under one
   feature lifetime. Stop signals every endpoint and waits for each to finish.
   Stop during a close leaves the remaining targets unattempted and writes no
-  reply, as managed does.
+  reply, as managed does. When any endpoint ends, whether from a listener
+  failure, Origin loss or a lost close worker, the others are stopped and the
+  Agent process exits.
 - The native package epoch admits the `session-gpu-apps-v1` capability only for
   a build that selected `agent-gpu-v1`, in both the Rust package admission and
   `WindowsNativePackage`.
+
+## Matching managed by an explicit check
+
+- Force close acts only on a process at or below the Agent's own integrity
+  level. Managed opens the target with `PROCESS_ALL_ACCESS`, which Windows
+  refuses for a higher-integrity process, and never recognises such a process
+  as a child. Native reads the mandatory integrity level from the token of
+  each held process. A higher or unreadable level reports "Windows could not
+  close this process." without any termination, and a descendant at such a
+  level is skipped together with its subtree.
+- Each descendant's handle stays open until its own children have been
+  enumerated, as managed `KillTree` holds each child until its subtree is
+  done. A terminated descendant's PID therefore cannot pass to an unrelated
+  process while the walk is still below it.
+- The held image is named with the same projection as the scan (the leaf name
+  without a final `.exe`). Every image the scan lists as closable, including
+  UNC, volume-GUID, `.scr`, `.com` and extensionless paths, can be closed.
 
 ## Deliberate differences from managed
 
@@ -41,15 +63,12 @@ Endpoint (`tools/openblade-windows-host/src/session_native/gpu.rs`):
   in the same way as Stop or the deadline. Managed ignores the client until
   the dispatch ends.
 - When the app list does not fit in a 64 KiB frame, the reply keeps the
-  largest ordered prefix that fits, and a query then reports partial success.
-  Managed fails the write and closes the connection. Managed escapes non-ASCII
-  names, so very long localized names reach this limit first.
-- After a close reports an unconfirmed submission, or is stopped after one,
-  every later close is refused with "A previous close could not be confirmed.
-  Refresh the GPU app list first." until a query succeeds. This fence covers
-  every connection to the endpoint.
+  largest ordered prefix that fits. A query then reports partial success with
+  "Only part of the GPU application list fits in the reply." Managed fails the
+  write and closes the connection. Managed escapes non-ASCII names, so very
+  long localized names reach this limit first.
 - A lost query worker replies with the managed dispatch-failure text. A lost
-  close worker ends the endpoint without a reply, because a close may already
+  close worker writes no reply and ends the Agent, because a close may already
   have been submitted.
 - Scan failures map as follows:
   - A current-user or name-comparison failure replies with the dispatch-failure
@@ -58,15 +77,20 @@ Endpoint (`tools/openblade-windows-host/src/session_native/gpu.rs`):
   - Counter, adapter and data failures reply with "Windows GPU activity
     counters are unavailable."
 
+An unconfirmed close is reported in that request's results only. A later
+close, of the same app or another one, takes its own fresh scan and re-reads
+each identity on the handle it acts on, so an app that an earlier close did
+end is reported as changed.
+
 Close backend (`rust/crates/openblade-platform-windows/src/gpu_apps/action/native.rs`):
 
 - Process handles ask only for query, synchronize and, for force close,
-  terminate access. Managed asks for `PROCESS_ALL_ACCESS`.
+  terminate access. Managed asks for `PROCESS_ALL_ACCESS`. The integrity check
+  above keeps the processes native can terminate within those managed can.
 - The process's identity, owner and user are read again on the same handle
-  that is acted on: PID, creation time, user SID, session, image, exit state
-  and the parent the scan would group it under. A reused PID, an exited
-  process, a UNC or device image path, or a changed owner reports the row as
-  changed.
+  that is acted on: PID, creation time, user SID, session, image name, exit
+  state and the parent the scan would group it under. A reused PID, an exited
+  process or a changed owner reports the row as changed.
 - A failed `WM_CLOSE` post is a failure. Managed reports it as success.
 - A force close succeeds only when process exit is observed within 5 s.
   Otherwise it is unconfirmed. Managed reports success once
@@ -86,6 +110,11 @@ pipes. None samples GPU counters or opens, signals or closes a real process.
   `gpu-close`, `scripted-gpu-close` and both together. The backend tests cover:
   - graceful close, and a force-close tree that skips a reused PID, a foreign
     account and a protected name
+  - each descendant held until its children are listed, and a recycled
+    descendant PID that never reaches the later owner's child
+  - higher or unreadable integrity on the root, a descendant or the Agent
+  - UNC, volume-GUID, `.scr` and extensionless images closed like the scan
+    names them
   - unconfirmed or interrupted exit reported as unconfirmed, and refused
     termination
   - the Agent in the tree, and changed or unreadable identity
@@ -93,12 +122,14 @@ pipes. None samples GPU counters or opens, signals or closes a real process.
   - a missing window and a failed post
   - partial success, and Stop between targets and during the tree walk
   - every opened handle released
+  - the eight available close rows of `managed-dispatch.jsonl` replayed through
+    the real decision and backend, giving the managed results, order and error
 - Host: `cargo test --locked --manifest-path tools/openblade-windows-host/Cargo.toml
   --bin openblade-windows-agent-candidate --features agent-gpu-v1`, alone and
   with Display and Battery. The endpoint tests cover:
   - query projection, truncation and unavailable mapping
   - close ordering, and partial, failed and successful closes
-  - the fence across connections
+  - the Tray's force-close loop after one unconfirmed close
   - invalid frames refused before any supplier call
   - lost workers
   - Stop, deadline, disconnect, extra byte and origin loss, each writing no
@@ -109,11 +140,14 @@ pipes. None samples GPU counters or opens, signals or closes a real process.
   - `managed-requests.jsonl` holds 10 managed-written requests and 55 that the
     managed reader rejects. Native accepts exactly the first set.
   - `managed-dispatch.jsonl` holds 13 dispatcher responses over scripted scans
-    and close results. The native mapping writes the same responses.
+    and close results. The native response mapping writes the same responses,
+    and the platform test derives the close results from the same rows.
   - `responses-verify` decodes every native frame, including the native-only
     replies and a trimmed list, with the managed reader.
 - The Deployment epoch tests check that only a build that selected
   `agent-gpu-v1` can claim `session-gpu-apps-v1`.
+- CI checks the non-test Agent build with `agent-gpu-v1` alone and with
+  Battery and every Display write, so the monitor wiring compiles.
 
 ## Runtime validation still needed
 
@@ -121,6 +155,7 @@ None of the following has been run:
 
 - the production sampler and the close backend against live PDH counters,
   DXGI adapters, the process table, windows and termination
+- the token integrity read on real medium- and high-integrity processes
 - the endpoint on a real named pipe, including its ACL, the peer identity check
   and two instances
 - an installed or packaged native Agent, and the Tray against it on a live pipe
