@@ -230,7 +230,7 @@ pub(crate) fn rules(profiles: &Value) -> &[Value] {
 }
 
 pub(crate) fn install_fixture_rule(profiles: &mut Value) {
-    // Use the full managed v79 shape so a battery-only update can round-trip
+    // Use the full managed v80 profile shape so a battery-only update can round-trip
     // the immutable fixture rule without writing it to the profile aggregate.
     let battery = json!({
         "performance": 4, "customPerformance": null, "gpuClockTuning": null,
