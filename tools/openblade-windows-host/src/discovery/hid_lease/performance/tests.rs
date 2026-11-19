@@ -364,7 +364,7 @@ async fn power_controller_session_and_owner_loss_block_remaining_traffic_or_publ
     for (revoked_on, evidence, sent, received) in [
         (1, None, 0, 0), // No owner at entry.
         (
-            3,
+            5,
             Some(Admission {
                 controller_clear: false,
                 ..ADMITTED
@@ -373,7 +373,7 @@ async fn power_controller_session_and_owner_loss_block_remaining_traffic_or_publ
             0,
         ), // Controller unknown or present after sending the getter.
         (
-            5,
+            7,
             Some(Admission {
                 full_adapter: false,
                 ..ADMITTED
@@ -382,7 +382,7 @@ async fn power_controller_session_and_owner_loss_block_remaining_traffic_or_publ
             1,
         ), // Power is no longer confirmed before channel 2.
         (
-            7,
+            9,
             Some(Admission {
                 epoch: 11,
                 ..ADMITTED
@@ -391,7 +391,7 @@ async fn power_controller_session_and_owner_loss_block_remaining_traffic_or_publ
             1,
         ), // Power/lifecycle cycle.
         (
-            9,
+            11,
             Some(Admission {
                 session: 2,
                 ..ADMITTED
@@ -702,9 +702,10 @@ async fn custom_cpu_success_then_claimed_gpu_admission_cancel_submits_no_gpu() {
         .observe(
             &mut || {
                 calls += 1;
-                // Initial/pair checkpoints consume ten calls; CPU entry/read consume
-                // four. CPU has decoded successfully before GPU invokes admission.
-                if calls == 15 {
+                // The read_pair entry checkpoint consumes two calls, then the reserved
+                // pair's checkpoints consume ten; CPU entry/read consume four. CPU has
+                // decoded successfully before GPU invokes admission.
+                if calls == 17 {
                     cancelled.store(true, Ordering::Release);
                 }
                 Some(proof)
