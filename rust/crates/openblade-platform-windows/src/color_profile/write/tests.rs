@@ -769,6 +769,17 @@ fn fence_refusals_and_cancellation_before_the_first_setter_submit_nothing() {
     );
     assert!(wcs.log.writes().is_empty());
 
+    // A fenced topology without a single internal panel is the shared fence's
+    // own panel change.
+    let mut wcs = Wcs::empty();
+    let mut several = fence(&wcs);
+    several.topology = || Ok(InternalDisplayTopology::MultipleInternalDisplays);
+    assert_eq!(
+        set_internal_color_profile(&mut wcs, NATIVE, &several, &|| false),
+        refused(ColorRefusal::PanelChanged)
+    );
+    assert!(wcs.log.writes().is_empty());
+
     let mut wcs = Wcs::empty();
     let fence = fence(&wcs);
     assert_eq!(
