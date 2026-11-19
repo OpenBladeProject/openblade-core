@@ -129,7 +129,9 @@ a refused retirement leaves the attempts directory byte-identical. The commit
 sequence is then: handback record, proof snapshot, exit marker, retirement. The
 native launcher refuses the unknown marker name, so the marker is published only
 directly before retirement. A crash anywhere in the sequence reruns from the
-same evidence, and each record already published must be byte-identical and is
+same evidence. A handback record already published is reused when it carries
+the same epoch and history commitment; any other existing record refuses. The
+proof snapshot and exit marker already published must be byte-identical and are
 reused. Other readers accept only an existing exact marker. Metadata-only
 producers never publish one, and only the custody holder of that epoch receives
 the exit.
@@ -154,17 +156,21 @@ owned row must belong to the exited owner:
 A staged thermal-mutation.journal.pending is preserved and its SHA-256 committed.
 Any .rollover file still refuses retirement.
 
-The record lives in ProgramData\OpenBlade\native-handback\EPOCH.json. Setup
-creates that directory with a protected DACL (Administrators owner; SYSTEM and
-Administrators only) and reads and writes it only through the exact-path,
-non-reparse, trusted-ACL checks of WindowsNativeEpochFiles, because it runs
-before the Service's own machine-data protection. The record holds schema 1, the
+The record lives in the handed-back generation's own directory of the native
+namespace, ProgramData\OpenBlade.NativeEpochs\EPOCH\handback.json, beside the
+history it is bound to, and shares that history's lifetime. Setup writes it
+through the same epoch-files view that holds custody, so it inherits the
+namespace's protected DACL and its exact-path, non-reparse, trusted-ACL checks.
+Uninstall and purge removes ProgramData\OpenBlade but not the native namespace,
+so a start after purge still finds the record and its resolution together with
+the history that binds them. The record holds schema 1, the
 history commitment, the record commitment, the items with their original request,
 user SID and target, the staged-journal digest, and the SHA-256 of each user's
 preserved manual-overrides.json.pending. The parser admits only the slot, family
 and progress that classification produces, and refuses a temporary charge with
-protection off. An existing record must carry the same history commitment;
-without a destination, retirement refuses.
+protection off. An existing record must carry the same history commitment; a
+resolution without its record, or a record path that cannot be published, refuses
+retirement.
 
 The history commitment is the SHA-256 of canonical lines headed
 OpenBlade.NativeHandback.v1. NativeRetirementProof.v4 appends it to the eight v3
@@ -175,14 +181,19 @@ to v3 empty-thermal case. The record commitment additionally covers the
 pending-override digests (OpenBlade.NativeHandbackRecord.v1).
 
 At every start, the Service's mandatory native custody gate reacquires the
-retired owner and recomputes the handback from native history. The Service
-adopts a record with unresolved items only when that fresh history commitment
-matches the record's. A bound generation without a record, a record that differs
-from its history, an unbound record with unresolved items, unknown files, or
-unresolved items from more than one generation keep performance, fan and battery
-writes blocked. Records are never deleted. The Service does not check the v4
-proof itself: the custody gate already recomputes the same commitment from the
-same authenticated history, so the proof adds no independent evidence.
+retired owner and recomputes the handback from native history. Custody refuses
+a handback record or resolution beside any generation it does not hand back,
+and startup admission carries the generations it does hand back, with their
+fresh history commitments, to the Service through ServiceMailboxHandoff. The
+Service adopts a record only for a generation in that binding and only when its
+history commitment matches. A bound generation without a record, a record that
+differs from its history, or unresolved items from more than one generation keep
+performance, fan and battery writes blocked. An admission that never opened, or
+a custody refusal, is not read as "no handback": it propagates as the custody
+failure it is. An empty binding reads nothing. Records are never deleted. The
+Service does not check the v4 proof itself: the custody gate already recomputes
+the same commitment from the same authenticated history, so the proof adds no
+independent evidence.
 
 Unresolved items start the unexpected-exit recovery path. Pending performance,
 fan and battery writes, and a live temporary charge, become pending write
@@ -191,20 +202,32 @@ them. A target comes from the record, not from user configuration, so these
 confirmations resolve while recovery still waits for the active user; deferred
 recovery can complete only once nothing is pending. A match is confirmed, and a
 difference is reported as an external change for an explicit reapply. An
-unreadable value stays pending, except that thermal channels which still
-disagree after the read's own retry are a definite state other than the target
-and resolve as a difference. Each outcome is persisted to EPOCH.resolved, beside
-the record and bound to its record commitment, before the Service acts on it; if
-it cannot be persisted, the item stays pending.
+unreadable value stays pending. Thermal channels that still disagree after the
+read's own retry resolve as a difference only when the next fresh observation
+reports the same disagreement, which rules out a transition still in progress;
+any other result restarts that count. The report then states that thermal
+changes cannot be applied until both channels report the same state, because
+every thermal write is refused while they disagree. Each outcome is persisted
+to EPOCH\handback.resolved, beside the record and bound to its record
+commitment, before the Service acts on it; if it cannot be persisted, the item
+stays pending.
 
-A confirmed live temporary charge continues as managed's temporary full charge
-only when the user who started it signs in and that user's battery settings
-include it; otherwise it is reported. One that has already ended is reported
-without an external change. Owned fans and unsent preparations are reported
-only. Forced recovery from a handback alone, without a managed run marker, arms
-no manual-fan safety floor, curve recovery or shutdown handback, so managed
-makes no fan write at start, on later ticks or at shutdown until the user
-reapplies a fan setting.
+The external-change latch a mismatch raises lives in memory, as it does for
+any managed external change; only the outcome is persisted. After a restart a
+resolved item is not seeded again, and the Service starts from the user's
+settings like any other start, without writing on native's behalf.
+
+A confirmed temporary charge is persisted as "continuing" until a user's
+configuration is active. It then continues as managed's temporary full charge
+only for the user who started it, when that user's battery settings include it,
+and becomes "matched"; otherwise it is "reported". A restart before that
+sign-in seeds a continuing charge again, and a fresh read confirms it before it
+continues, because it may have ended in between. One that has ended is reported
+without an external change, and no case writes the battery. Owned fans and
+unsent preparations are reported only. Forced recovery from a handback alone,
+without a managed run marker, arms no manual-fan safety floor, curve recovery or
+shutdown handback, so managed makes no fan write at start, on later ticks or at
+shutdown until the user reapplies a fan setting.
 
 Still deferred: the Rust reader does not accept the exit marker, inherited fan
 ownership is not adopted, and an interrupted rollover is not handed back.
