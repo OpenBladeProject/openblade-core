@@ -816,8 +816,9 @@ fn fenced_apply(
         fence: Some(fence),
     };
     let mut controller = WmiBrightness::new(Script::new(calls));
-    let target = BrightnessTarget::from_display(&ActiveInternalDisplay::brightness_fixture(PATH, 2))
-        .unwrap();
+    let target =
+        BrightnessTarget::from_display(&ActiveInternalDisplay::brightness_fixture(PATH, 2))
+            .unwrap();
     let result =
         controller.apply_with_budget(BrightnessRequest::SetPercent(40), Some(&target), &budget);
     let pending = controller.native.calls.len();
@@ -830,7 +831,11 @@ fn fenced_apply(
 fn fence_rechecks_target_and_admission_after_preparation_before_the_gate() {
     for (target, admit, reason) in [
         (3, true, BrightnessError::PanelChanged),
-        (2, false, BrightnessError::Native(NativeFailure::AdmissionDenied)),
+        (
+            2,
+            false,
+            BrightnessError::Native(NativeFailure::AdmissionDenied),
+        ),
     ] {
         let fence = Fence {
             target,
@@ -846,7 +851,10 @@ fn fence_rechecks_target_and_admission_after_preparation_before_the_gate() {
         assert!(!failure.submission_may_have_occurred);
         assert_eq!(leftover, 0, "gate stayed closed and no readback was taken");
         assert_eq!(fence.topologies.load(Ordering::SeqCst), 1);
-        assert_eq!(fence.admissions.load(Ordering::SeqCst), usize::from(target == 2));
+        assert_eq!(
+            fence.admissions.load(Ordering::SeqCst),
+            usize::from(target == 2)
+        );
     }
 }
 

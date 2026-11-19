@@ -311,11 +311,22 @@ impl Files for MemoryFiles {
                 return Err(io::ErrorKind::PermissionDenied.into());
             }
         }
-        if name == "thermal-mutation.journal" && self.fail_battery_settled.load(Ordering::Acquire)
-            && bytes.split(|b| *b == b'\n').filter(|line| !line.is_empty()).last()
-                .is_some_and(|line| matches!(serde_json::from_slice::<Value>(line).unwrap()["progress"].as_u64(), Some(62 | 63 | 72 | 73)))
+        if name == "thermal-mutation.journal"
+            && self.fail_battery_settled.load(Ordering::Acquire)
+            && bytes
+                .split(|b| *b == b'\n')
+                .filter(|line| !line.is_empty())
+                .last()
+                .is_some_and(|line| {
+                    matches!(
+                        serde_json::from_slice::<Value>(line).unwrap()["progress"].as_u64(),
+                        Some(62 | 63 | 72 | 73)
+                    )
+                })
         {
-            return Err(io::Error::other("injected battery settlement publication failure"));
+            return Err(io::Error::other(
+                "injected battery settlement publication failure",
+            ));
         }
         if self.fail.load(Ordering::Acquire) {
             return Err(io::ErrorKind::PermissionDenied.into());

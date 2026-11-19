@@ -730,8 +730,10 @@ impl Runtime {
             public_only: false,
             desired,
             observation: original.historical_observation()?,
-            public_message: self.release_deferred.get().map_or_else(
-                || message.clone(), |cause| cause.compose(&message)),
+            public_message: self
+                .release_deferred
+                .get()
+                .map_or_else(|| message.clone(), |cause| cause.compose(&message)),
             message,
             sid: original.sid.clone(),
         }))
@@ -906,7 +908,9 @@ impl Runtime {
                 .into()
         };
         let public_message = self.release_deferred.get().map_or_else(
-            || public_message.clone(), |cause| cause.compose(&public_message));
+            || public_message.clone(),
+            |cause| cause.compose(&public_message),
+        );
         let update = BatteryUpdate {
             public_only: false,
             desired,

@@ -112,7 +112,14 @@ pub(super) struct Runtime {
     temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     temporary_pending: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     release_deferred: Rc<std::cell::Cell<Option<super::thermal_storage::ReleasePause>>>,
-    release_notice: Rc<RefCell<Option<(Arc<battery::BatteryPermit>, Option<super::thermal_storage::ReleasePause>)>>>,
+    release_notice: Rc<
+        RefCell<
+            Option<(
+                Arc<battery::BatteryPermit>,
+                Option<super::thermal_storage::ReleasePause>,
+            )>,
+        >,
+    >,
     #[cfg(test)]
     release_hook: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
     temporary_event: Rc<std::cell::Cell<Option<u64>>>,
