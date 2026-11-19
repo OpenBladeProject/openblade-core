@@ -340,6 +340,14 @@ static async Task<int> EmitRequestsAsync(string outPath)
     AddInvalid("enabled-as-string", Op("setHdr", ",\"expectedPowerSource\":0,\"enabled\":\"true\""));
     AddInvalid("wrong-version", Op("setBrightness", ",\"expectedPowerSource\":0,\"percent\":50", V + 1));
     AddInvalid("operation-not-first", $"{{\"version\":{V},\"requestId\":\"{id}\",\"operation\":\"query\"}}");
+    // The discriminator must be a JSON string: an object naming a selected
+    // operation, with otherwise valid members, is refused.
+    string ObjectOp(string op, string rest) =>
+        $"{{\"operation\":{{\"operation\":\"{op}\"}},\"version\":{V},\"requestId\":\"{id}\"{rest}}}";
+    AddInvalid("object-operation-query", ObjectOp("query", string.Empty));
+    AddInvalid("object-operation-setBrightness", ObjectOp("setBrightness", ",\"expectedPowerSource\":0,\"percent\":50"));
+    AddInvalid("object-operation-setHdr", ObjectOp("setHdr", ",\"expectedPowerSource\":0,\"enabled\":true"));
+    AddInvalid("object-operation-setRefreshRate", ObjectOp("setRefreshRate", ",\"expectedPowerSource\":0,\"refreshRateKey\":\"fixed-60\""));
     // Managed leniency (last member wins), so not a fixture row; printed instead.
     var lenient = new List<(string Name, string Json)>
     {
