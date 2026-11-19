@@ -123,7 +123,8 @@ native counterpart, so native keeps Blocked:
 - Uncertain submission by this request. Native leaves the journal unsettled and
   replies Blocked with the reconciliation reason. Managed replies Failed, `<Name>
   write is indeterminate...`, but an unsettled journal also follows a checkpoint
-  or ownership stop after Prepared, which managed reports as Blocked.
+  or ownership stop after the first intent row, which managed reports as
+  Blocked. (A stop after Prepared only settles as known-not-submitted.)
 - Lease transport error after the intent was saved. Native replies Blocked with
   `Thermal transport or ownership did not complete`. Managed replies Failed for
   read failures, rejected writes and indeterminate writes, and Blocked for
