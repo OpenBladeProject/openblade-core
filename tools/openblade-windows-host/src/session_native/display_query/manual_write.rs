@@ -248,3 +248,7 @@ pub(super) fn run<F: CheckpointFile, H: ManualHost, R: ManualRequest<H>>(
         }),
     }
 }
+
+#[cfg(test)]
+#[path = "manual_write_tests.rs"]
+mod tests;

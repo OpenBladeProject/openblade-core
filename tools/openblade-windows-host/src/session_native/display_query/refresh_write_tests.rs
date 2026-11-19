@@ -7,7 +7,6 @@ use crate::session_native::display_query::{
     manual_write::CHANGING,
     observation::fixture_query,
     test_support::{FencedTopology, Host, Memory, Rig, TestPanel, flag, result},
-    write::{CHANGED_POWER, CHECKPOINT, STALE_AFTER, UNCONFIRMED_POWER},
 };
 use openblade_platform_windows::display::{
     DisplayReadError, InternalDisplayRefresh, Operation, RefreshRate,
@@ -340,24 +339,9 @@ fn observation_failures_fail_without_validation() {
 }
 
 #[test]
-fn denied_admission_and_fence_refusals_never_submit() {
+fn fence_refusals_never_submit() {
+    // Power admission precedes the attempt: `manual_write` tests it once.
     let rig = Rig::new(Memory::legacy(0));
-
-    // Unconfirmed power: blocked after a durable manual hold, never observed.
-    let mut host = admitted(0, 60, 240);
-    host.power = None;
-    let outcome = rig.set(&mut host, 0, "fixed-240").unwrap();
-    assert_eq!(result(&outcome), (Status::Blocked, Some(UNCONFIRMED_POWER)));
-    assert_eq!(host.panel.observations, 0);
-    assert_eq!(host.queries, 1, "only the reply query ran");
-    let record = rig.file.record();
-    assert!(!flag(&record, "AutomaticWritesPaused") && !flag(&record, "UncertainRefreshRate"));
-
-    // Changed power source.
-    let mut host = admitted(1, 60, 240);
-    let outcome = rig.set(&mut host, 2, "fixed-240").unwrap();
-    assert_eq!(result(&outcome), (Status::Blocked, Some(CHANGED_POWER)));
-    assert_eq!(host.panel.observations, 0);
 
     // Origin, session, power generation or Stop changed after validation.
     let mut host = admitted(1, 60, 240);
@@ -397,28 +381,6 @@ fn denied_admission_and_fence_refusals_never_submit() {
         rig.set(&mut host, 1, "fixed-240").unwrap().status,
         Status::Succeeded
     );
-}
-
-#[test]
-fn checkpoint_failure_before_submission_blocks_without_device_interaction() {
-    let file = Memory::legacy(1);
-    file.allow.store(0, Ordering::SeqCst);
-    let rig = Rig::new(file);
-    let mut host = admitted(1, 60, 240);
-    let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
-    assert_eq!(result(&outcome), (Status::Blocked, Some(CHECKPOINT)));
-    assert_eq!(host.panel.observations, 0);
-    assert_eq!(host.interactions(), (0, 0, 0));
-
-    // No prior checkpoint and no confirmed source: nothing can be saved.
-    let rig = Rig::new(Memory::default());
-    let mut host = admitted(1, 60, 240);
-    host.power = None;
-    assert_eq!(
-        rig.set(&mut host, 1, "fixed-240").unwrap().error.as_deref(),
-        Some(CHECKPOINT)
-    );
-    assert_eq!((host.panel.observations, host.submissions()), (0, 0));
 }
 
 #[test]
@@ -581,34 +543,6 @@ fn reply_that_does_not_show_a_confirmed_change_is_indeterminate() {
 }
 
 #[test]
-fn power_change_after_a_successful_change_is_indeterminate() {
-    let drifted = Some(PowerContext {
-        source: 0,
-        generation: 8,
-    });
-    for (desktop, submitted) in [(60, true), (240, false)] {
-        let rig = Rig::new(Memory::default());
-        let mut host = admitted(1, desktop, 240);
-        host.later = Some(drifted);
-        let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
-        // Managed ExecuteSetterAsync.EnsureCurrent, applied to a submitted
-        // change and to an unchanged request alike.
-        assert_eq!(result(&outcome), (Status::Indeterminate, Some(STALE_AFTER)));
-        assert_eq!(host.submissions(), usize::from(submitted));
-        assert_eq!(host.captures.get(), 2);
-        assert!(rig.unresolved().refresh);
-        assert!(flag(&rig.file.record(), "AutomaticWritesPaused"));
-    }
-
-    // Lost confirmation after success is also stale.
-    let rig = Rig::new(Memory::default());
-    let mut host = admitted(1, 60, 240);
-    host.later = Some(None);
-    let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
-    assert_eq!(result(&outcome), (Status::Indeterminate, Some(STALE_AFTER)));
-}
-
-#[test]
 fn cancellation_after_submission_is_recorded_without_replay() {
     let rig = Rig::new(Memory::default());
     let mut host = admitted(1, 60, 240);
@@ -627,22 +561,6 @@ fn cancellation_after_submission_is_recorded_without_replay() {
     let blocked = rig.set(&mut host, 1, "fixed-60").unwrap();
     assert_eq!(result(&blocked), (Status::Blocked, Some(PAUSED)));
     assert_eq!(host.submissions(), 1);
-}
-
-#[test]
-fn fatal_reply_query_records_certainty_before_returning() {
-    let rig = Rig::new(Memory::default());
-    let mut host = admitted(1, 60, 240);
-    host.fail_query = true;
-    let error = rig
-        .set(&mut host, 1, "fixed-240")
-        .err()
-        .expect("a fatal query stops the feature");
-    assert_eq!(error.to_string(), "injected reply query failure");
-    assert_eq!(host.submissions(), 1);
-    let record = rig.file.record();
-    assert!(flag(&record, "AutomaticWritesPaused") && flag(&record, "UncertainRefreshRate"));
-    assert!(rig.unresolved().refresh);
 }
 
 #[test]
