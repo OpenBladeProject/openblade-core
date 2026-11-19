@@ -29,6 +29,37 @@ pub fn sample_windows_gpu_apps(
     Ok(inventory)
 }
 
+/// Managed `SessionGpuRequestDispatcher` close over `WindowsGpuAppManager`:
+/// a fresh scan, matched against its complete projection (only a response
+/// caps the rows), then the shared decision with the retained-handle backend.
+/// Runs on the calling thread; the flag interrupts sampling, stops before each
+/// target and ends a force-close confirmation wait as uncertain.
+#[cfg(feature = "gpu-close")]
+pub fn close_windows_gpu_apps(
+    targets: &[Target],
+    kind: Kind,
+    cancelled: &AtomicBool,
+) -> Result<(GpuAppInventory, Report), QueryUnavailable> {
+    let mut api = native::WindowsSampling::default();
+    let (inventory, (sid, session_id)) = scan_for_user(&mut api, cancelled, usize::MAX)?;
+    if api.comparison_failed.get() {
+        return Err(Unavailable::NameComparison);
+    }
+    let report = super::action::native::close_windows(
+        &inventory,
+        targets,
+        kind,
+        &CurrentUser {
+            sid: &sid,
+            session_id,
+        },
+        &|left, right| api.compare_names(left, right),
+        &api.comparison_failed,
+        cancelled,
+    );
+    Ok((inventory, report))
+}
+
 fn scan(
     api: &mut impl SamplingApi,
     cancelled: &AtomicBool,
@@ -41,6 +72,16 @@ fn scan_with_limit(
     cancelled: &AtomicBool,
     app_limit: usize,
 ) -> Result<GpuAppInventory, Unavailable> {
+    scan_for_user(api, cancelled, app_limit).map(|(inventory, _)| inventory)
+}
+
+/// The inventory and the current user it was projected for. A close decision
+/// must use the same user as the scan it matches against.
+fn scan_for_user(
+    api: &mut impl SamplingApi,
+    cancelled: &AtomicBool,
+    app_limit: usize,
+) -> Result<(GpuAppInventory, (Vec<u8>, u32)), Unavailable> {
     check_cancelled(cancelled)?;
     let user = api.current_user();
     check_cancelled(cancelled)?;
@@ -62,7 +103,7 @@ fn scan_with_limit(
         app_limit,
     );
     check_cancelled(cancelled)?;
-    inventory
+    Ok((inventory?, (sid, session_id)))
 }
 
 fn check_cancelled(cancelled: &AtomicBool) -> Result<(), Unavailable> {
@@ -266,13 +307,18 @@ fn project_identity(
     }
 }
 
-fn dotnet_ticks(filetime: i64) -> Option<i64> {
+pub(in crate::gpu_apps) fn dotnet_ticks(filetime: i64) -> Option<i64> {
     let ticks = filetime.checked_add(DOTNET_FILETIME_OFFSET)?;
     (filetime > 0 && ticks <= MAX_DATETIME_TICKS).then_some(ticks)
 }
 
 fn process_name(path: &[u16]) -> Option<String> {
-    let path = String::from_utf16(path).ok()?;
+    executable_stem(&String::from_utf16(path).ok()?)
+}
+
+/// The managed `Process.ProcessName` projection of an image path: the leaf
+/// name without a final `.exe`.
+pub(in crate::gpu_apps) fn executable_stem(path: &str) -> Option<String> {
     let file = path.rsplit('\\').next()?;
     let name = match file.rsplit_once('.') {
         Some((stem, extension)) if extension.eq_ignore_ascii_case("exe") => stem,

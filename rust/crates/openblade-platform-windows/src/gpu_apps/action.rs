@@ -1,4 +1,6 @@
-//! Decision seam for the scripted GPU fixture. No native backend is provided.
+//! Shared close decision over a fresh GPU inventory. The scripted fixture
+//! (`scripted-gpu-close`) and the retained-handle Windows backend
+//! (`gpu-close`, see `native`) supply the process observations and actions.
 
 use super::{CurrentUser, GpuAppInventory, MAXIMUM_APPS, is_protected, valid_name};
 use std::{
@@ -53,6 +55,14 @@ pub struct Report {
     pub error: Option<&'static str>,
 }
 
+impl Report {
+    /// A submission may have taken effect without confirmation. Later targets
+    /// in the request were not attempted; a host must not replay the close.
+    pub fn uncertain(&self) -> bool {
+        self.error == Some(UNCERTAIN)
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Observation<'a> {
     process_id: i32,
@@ -83,13 +93,13 @@ enum Submission {
     Accepted,
     NoWindow,
     #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "exercised by the inert test backend")
+        not(any(test, feature = "gpu-close")),
+        expect(dead_code, reason = "produced by the Windows and test backends")
     )]
     Rejected,
     #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "exercised by the inert test backend")
+        not(any(test, feature = "gpu-close")),
+        expect(dead_code, reason = "produced by the Windows and test backends")
     )]
     Uncertain,
 }
@@ -230,10 +240,15 @@ fn executable_name<'a>(
         .then_some(name)
 }
 
-// The only backend shipped with this seam owns fixed records. No request
-// value becomes an image path or is sent to the operating system.
+// The scripted backend owns fixed records. No request value becomes an
+// image path or is sent to the operating system.
 #[cfg(feature = "scripted-gpu-close")]
 pub(super) mod fixture;
+
+// The Windows backend holds each target handle across its identity recheck
+// and action. Its policy is compiled for tests over a scripted process API.
+#[cfg(any(test, feature = "gpu-close"))]
+pub(super) mod native;
 
 #[cfg(test)]
 mod tests;

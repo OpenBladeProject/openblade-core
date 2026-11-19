@@ -19,6 +19,9 @@ display-refresh-write = []
 display-color-write = []
 scripted-gpu = []
 scripted-gpu-close = ["scripted-gpu"]
+# Production Session GPU close and force-close backend (retained-handle
+# identity recheck, WM_CLOSE, TerminateProcess). Never implied by scripted-gpu.
+gpu-close = ["windows-sys/Wdk_System_Threading", "windows-sys/Win32_System_Kernel"]
 
 foreground-watcher = ["windows-sys/Win32_UI_Accessibility"]
 foreground-watcher-replay = ["foreground-watcher"]
