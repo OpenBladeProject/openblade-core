@@ -66,7 +66,7 @@ have separate module trees from the fixture roles. Neither is a Setup payload.
 
 After the other adapter checks pass, the candidate lease must start its
 retained Service watcher and obtain a fresh initial subscription snapshot.
-The separate one-shot client uses the shared Service v79
+The separate one-shot client uses the shared Service v80
 `GetStatus` request and response on the local `OpenBlade.Service.v2` endpoint.
 The exchange is limited to a 64 KiB frame and a two-second deadline, including
 connection establishment. Only listener absence or a busy pipe is retried
@@ -82,7 +82,7 @@ retained connection. The proof provider and installed lease remain unwired.
 Status fields retain the producer's meaning, including inactive or unsupported
 states. Feature records are preserved for future consumers.
 
-The native watcher sends a fresh v79 `SubscribeStatus` request on each
+The native watcher sends a fresh v80 `SubscribeStatus` request on each
 connection and delivers an open marker only after a successful correlated
 response with a snapshot. It reads subsequent typed `statusEvent` frames in
 wire order. A new open always establishes a new baseline, including after a
@@ -123,20 +123,20 @@ Managed Agent call sites use the following Service operations:
 
 The managed server's protocol-51 compatibility path is limited to cached
 `GetStatus` and `SubscribeStatus` with a read-only projection. The native
-Agent status binding requires v79, matching the ordinary managed Agent. The
-installed Service candidate has a v79 `SubscribeStatus` handler behind the
+Agent status binding requires v80, matching the ordinary managed Agent. The
+installed Service candidate has a v80 `SubscribeStatus` handler behind the
 existing listener admission. It returns a correlated failure when the
 publication feed is unavailable. The startup probe
 still requires the exact self-issued `GetStatus` exchange.
 
-The Agent candidate also has a one-shot v79 `ObserveState` client for
+The Agent candidate also has a one-shot v80 `ObserveState` client for
 performance shortcut readback. Its request matches
 `ObserveStateAsync(LiveReadingSensors.None)`. The Service candidate requires
 an active caller and a fresh performance read from a separate admitted port.
 The installed metadata observer has no firmware read port, so it returns a
 correlated refusal. Optional live sensor selections also receive a refusal.
 The Agent requires a Service generation admitted for fresh observation. The
-v79 status envelope alone carries no proof of a fresh firmware read. The
+v80 status envelope alone carries no proof of a fresh firmware read. The
 Agent also checks verified device state, control access, power classification,
 observation state, Fan Stop ownership and unresolved performance writes.
 
@@ -195,10 +195,10 @@ budget expires, the Service can report only that cancellation was requested
 and retirement is unconfirmed. An explicit cleanup failure retains the
 resources and quarantines the native slot until process exit.
 
-The typed result can populate a fresh v79 reply only with independently
+The typed result can populate a fresh v80 reply only with independently
 verified status guards for the same live authority epoch. The installed read
 projection carries the complete decoded preset/fan state,
-HyperBoost observation and nullable Custom settings in the existing v79 schema.
+HyperBoost observation and nullable Custom settings in the existing v80 schema.
 Accepted levels use numeric CPU/GPU values and maximumFans=false; the manual
 selector does not imply that separate setting. Retained ordinary status has no
 fresh-read witness.
@@ -266,28 +266,20 @@ reply reuse contract for this worker. Exhaustion remains terminal for further
 observations in that process, with no wrap or automatic restart.
 
 The replay in `tools/openblade-windows-host/tests/fixtures/get-status-v79.frames`
-contains two consecutive managed codec frames. The managed
-`IpcMessageCodec.WriteRequestAsync` writes `GetStatusRequest(79, id)`, then
-`WriteServerFrameAsync` writes a successful `ServiceResponse` with the same ID.
-The status comes from decoding the v79 status event, now frozen at
-`tools/openblade-windows-host/tests/data/ipc79/service-status-event.json`,
-through the managed codec. The ID is
-`11111111-2222-4333-8444-555555555555`. Tests replay the bytes in memory without
-opening a named pipe.
+contains two consecutive managed codec frames recorded before the IPC80 bump.
+The managed `IpcMessageCodec.WriteRequestAsync` wrote `GetStatusRequest(79, id)`,
+then `WriteServerFrameAsync` wrote a successful `ServiceResponse` with the same
+ID and the v79 replay status. The ID is `11111111-2222-4333-8444-555555555555`.
+`observe-state-v79.frames` uses the same codec and request ID with confirmed
+Performance on AC power. `subscribe-status-v79.frames` holds
+`SubscribeStatusRequest(79, id)`, the correlated response and a v79
+`ServiceStatusEvent` with the status revision incremented by one.
 
-`tools/openblade-windows-host/tests/fixtures/observe-state-v79.frames` uses
-the same managed codec and request ID. The synthetic status starts from the
-same replay template and supplies confirmed Performance on AC power.
-In-memory tests exercise the client and candidate dispatcher with this
-fixture, including the refusal from a source without performance read access.
-
-`tools/openblade-windows-host/tests/fixtures/subscribe-status-v79.frames`
-contains three consecutive frames written by the same managed codec.
-It uses `SubscribeStatusRequest(79, id)`, the correlated response with the
-same managed replay status, and a v79 `ServiceStatusEvent` with the status
-revision incremented by one. The request ID is the same as in the one-shot
-fixture. Rust tests compare the emitted request and read both reply frames
-over in-memory streams with deterministic time and injected peer proof.
+The Service status client and server now speak v80, so these three recordings
+are rejection controls. `original_v79_wire_fixtures_are_rejected_before_dispatch`
+replays each request in memory and checks that the installed dispatcher closes
+it without a reply or a firmware read, then accepts the same request with its
+version set to 80.
 The installed server tests feed the managed replay into the same dispatcher
 the candidate uses, including an update while the initial response is blocked.
 The feed holds one latest revision and supplies both the active and inactive
@@ -345,7 +337,7 @@ Immutable v2 proof snapshots bind the complete attempt-set dispositions and
 independently validated owner chain. Public readers may still block legacy
 custody. Recovery preserves descriptors, launches, drains, counters, snapshots
 and partial staging evidence. The separate endpoint seam
-requires the installed ACL, caller admission, and a successful correlated v79
+requires the installed ACL, caller admission, and a successful correlated v80
 `GetStatus` response with a status snapshot on `OpenBlade.Service.v2`, bound to
 the admitted PID. The candidate publishes `SERVICE_RUNNING` only after that
 evidence. Setup's external probe still runs afterward. The fixture endpoints

@@ -3,7 +3,7 @@
 This layer authenticates a native package and publishes its installation epoch.
 It does not prove which executable a process loaded, issue native ownership,
 certify worker drain, activate the native backend, or replace the C# product.
-Contracts and IPC remain version 79. Windows is the only target in scope.
+It changes neither Contracts nor IPC, which is version 80. Windows is the only target in scope.
 
 ## Trust and artifact identity
 
