@@ -1261,6 +1261,27 @@ const REAL_AGENT_IMPORTS: [&str; 15] = [
     "KERNEL32.dll",
 ];
 
+/// The managed package source, whose `IsSystemImport` must admit exactly the
+/// names of [`SYSTEM_IMPORTS`]; the Rust workflow also runs on its changes.
+const MANAGED_PACKAGE: &str =
+    include_str!("../../../../src/OpenBlade.Deployment/WindowsNativePackage.cs");
+
+#[test]
+fn the_import_allowlist_names_match_the_managed_allowlist() {
+    let (_, rule) = MANAGED_PACKAGE
+        .split_once("bool IsSystemImport(string name) =>")
+        .expect("the managed allowlist");
+    let (names, api_sets) = rule
+        .split_once("|| (name.StartsWith(\"api-ms-win-\", StringComparison.Ordinal)")
+        .expect("the managed API-set rule follows the names");
+    assert!(api_sets.contains("name.EndsWith(\".dll\", StringComparison.Ordinal)"));
+    let mut managed: Vec<_> = names.split('"').skip(1).step_by(2).collect();
+    let mut native = SYSTEM_IMPORTS.to_vec();
+    managed.sort_unstable();
+    native.sort_unstable();
+    assert_eq!(managed, native);
+}
+
 #[test]
 fn real_agent_imports_are_reviewed_system_contracts_and_others_are_not() {
     for name in REAL_AGENT_IMPORTS {
