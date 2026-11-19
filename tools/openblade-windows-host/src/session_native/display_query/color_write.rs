@@ -45,9 +45,10 @@ pub(super) const UNAVAILABLE: &str =
     "That color profile is not available for the internal display.";
 /// Managed `ColorProfileMutationTransaction.Execute` readback mismatch.
 pub(super) const UNCONFIRMED: &str = "Windows did not confirm the requested color profile.";
-/// Native-only: the readback did not re-identify the panel with a readable
-/// advanced-color state, so managed `Restore` was not attempted.
-pub(super) const UNRESTORED: &str = "The previous color-profile configuration was not restored because the internal display could not be confirmed.";
+/// Native-only: the readback did not re-identify the panel under a known
+/// advanced-color state, so managed `Restore` was not attempted and the
+/// field stays unresolved like [`PAUSED`].
+pub(super) const UNVERIFIED: &str = "Windows applied the color profile, but OpenBlade could not confirm it on the internal display. Color-profile changes are paused until a display read confirms it.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct SetColorProfile {
@@ -78,13 +79,9 @@ impl<H: ManualHost<Native: ColorProfileNative>> ManualRequest<H> for SetColorPro
             Err(ColorFailure::Uncertain { fault, restoration }) => {
                 Attempt::Done(Status::Indeterminate, uncertain(fault, restoration))
             }
-            Err(ColorFailure::Unverified(readback)) => Attempt::Done(
-                Status::Indeterminate,
-                Cow::Owned(format!(
-                    "The color-profile change failed: {} {UNRESTORED}",
-                    readback_text(readback)
-                )),
-            ),
+            Err(ColorFailure::Unverified(_)) => {
+                Attempt::Done(Status::Indeterminate, Cow::Borrowed(UNVERIFIED))
+            }
         }
     }
 

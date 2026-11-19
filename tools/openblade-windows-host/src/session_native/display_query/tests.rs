@@ -2041,10 +2041,7 @@ mod color_writes {
             (
                 "color-write-indeterminate-unverified",
                 Status::Indeterminate,
-                Some(Cow::Owned(format!(
-                    "The color-profile change failed: {UNCONFIRMED} {}",
-                    color_write::UNRESTORED
-                ))),
+                text(color_write::UNVERIFIED),
             ),
             (
                 "color-write-indeterminate-stale",

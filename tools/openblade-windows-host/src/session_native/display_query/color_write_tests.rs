@@ -642,14 +642,10 @@ fn readback_that_does_not_confirm_is_uncertain_and_restored() {
 
 #[test]
 fn readback_that_does_not_reidentify_the_panel_is_indeterminate_without_restoration() {
-    // Another panel, then no internal panel (the managed QueryCore text):
-    // neither is restored against.
-    for (readback, error) in [
-        (
-            Scenario::Available.topology_with_hdr(false, RefreshTiming::default(), true),
-            UNCONFIRMED,
-        ),
-        (Scenario::Unavailable.topology(false), NO_INTERNAL),
+    // Another panel, then no internal panel: neither is restored against.
+    for readback in [
+        Scenario::Available.topology_with_hdr(false, RefreshTiming::default(), true),
+        Scenario::Unavailable.topology(false),
     ] {
         let rig = Rig::new(Memory::default());
         let mut host = admitted(1);
@@ -657,11 +653,7 @@ fn readback_that_does_not_reidentify_the_panel_is_indeterminate_without_restorat
         host.panel.topology_script.push_back(observed);
         host.panel.topology_script.push_back(readback);
         let outcome = rig.set(&mut host, 1, SRGB).unwrap();
-        let expected = format!("The color-profile change failed: {error} {UNRESTORED}");
-        assert_eq!(
-            result(&outcome),
-            (Status::Indeterminate, Some(expected.as_str()))
-        );
+        assert_eq!(result(&outcome), (Status::Indeterminate, Some(UNVERIFIED)));
         assert_eq!(
             host.panel.writes,
             ["add:sRGB_CTR.icm", "scope:true", "default:sRGB_CTR.icm"]
