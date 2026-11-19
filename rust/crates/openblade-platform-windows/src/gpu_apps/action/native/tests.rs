@@ -365,7 +365,6 @@ fn unconfirmed_or_interrupted_exit_is_uncertain_and_ends_the_tree() {
             script.exit = Exit::Unconfirmed;
         }
         let (report, events) = run_with(script, &[GAME], Kind::ForceClose, &cancelled, false);
-        assert!(report.uncertain());
         assert_eq!(report.error, Some(UNCERTAIN));
         assert_eq!(errors(&report), [(41, Some(UNCERTAIN))]);
         assert_eq!(actions(&events), [Event::Terminate(41), Event::Wait(41)]);
@@ -377,7 +376,7 @@ fn refused_termination_is_reported_once_without_fallback_or_tree() {
     let mut script = fixture();
     script.terminate.insert(41, Terminated::Failed);
     let (report, events) = run(script, &[GAME], Kind::ForceClose);
-    assert!(!report.uncertain());
+    assert_ne!(report.error, Some(UNCERTAIN));
     assert_eq!(errors(&report), [(41, Some(ACTION_FAILED))]);
     assert_eq!(actions(&events), [Event::Terminate(41)]);
 }
@@ -511,7 +510,7 @@ fn graceful_close_maps_missing_window_and_failed_post() {
         script.windows.insert(41, outcome);
         let (report, _) = run(script, &[GAME], Kind::Close);
         assert_eq!(errors(&report), [(41, Some(expected))]);
-        assert!(!report.uncertain());
+        assert_ne!(report.error, Some(UNCERTAIN));
     }
 }
 
@@ -581,16 +580,16 @@ fn a_recycled_descendant_pid_never_reaches_an_unrelated_process() {
 }
 
 /// Managed cannot open a process above its own integrity level: the root is
-/// refused before any termination and a descendant is skipped with its
+/// refused before any post or termination and a descendant is skipped with its
 /// subtree. An unreadable level is a refusal too.
 #[test]
-fn force_close_refuses_higher_or_unreadable_integrity() {
+fn both_actions_refuse_higher_or_unreadable_integrity() {
     for level in [Some(HIGH), None] {
         let mut script = fixture();
         script.integrity.insert(41, level);
         let (report, events) = run(script, &[GAME], Kind::ForceClose);
         assert_eq!(errors(&report), [(41, Some(ACTION_FAILED))], "{level:?}");
-        assert!(!report.uncertain());
+        assert_ne!(report.error, Some(UNCERTAIN));
         assert!(actions(&events).is_empty(), "{events:?}");
     }
     let mut script = fixture();
@@ -618,10 +617,23 @@ fn force_close_refuses_higher_or_unreadable_integrity() {
     let (report, _) = run(script, &[GAME], Kind::ForceClose);
     assert_eq!(errors(&report), [(41, None)]);
 
-    // Graceful close reads no integrity; Windows itself refuses a post to a
-    // higher-integrity window, which is reported as an action failure.
+    // Graceful close is refused the same way, before any WM_CLOSE post, so it
+    // does not depend on UIPI refusing the post.
+    for (level, current) in [
+        (Some(HIGH), Some(MEDIUM)),
+        (None, Some(MEDIUM)),
+        (Some(MEDIUM), None),
+    ] {
+        let mut script = fixture();
+        script.integrity.insert(41, level);
+        script.current_integrity = current;
+        let (report, events) = run(script, &[GAME], Kind::Close);
+        assert_eq!(errors(&report), [(41, Some(ACTION_FAILED))], "{level:?}");
+        assert!(actions(&events).is_empty(), "{events:?}");
+    }
     let mut script = fixture();
-    script.integrity.insert(41, None);
+    script.current_integrity = Some(HIGH);
+    script.integrity.insert(41, Some(HIGH));
     let (report, events) = run(script, &[GAME], Kind::Close);
     assert_eq!(errors(&report), [(41, None)]);
     assert_eq!(actions(&events), [Event::Window(41)]);

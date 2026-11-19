@@ -57,14 +57,6 @@ pub struct Report {
     pub error: Option<&'static str>,
 }
 
-impl Report {
-    /// A submission may have taken effect without confirmation. Later targets
-    /// in the request were not attempted; a host must not replay the close.
-    pub fn uncertain(&self) -> bool {
-        self.error == Some(UNCERTAIN)
-    }
-}
-
 #[derive(Clone, Copy)]
 struct Observation<'a> {
     process_id: i32,

@@ -21,15 +21,21 @@
 //! Matching managed by an explicit check: managed opens the target with
 //! `PROCESS_ALL_ACCESS`, which Windows refuses for a process above the
 //! caller's integrity level, and never recognises such a process as a child.
-//! Force close therefore reads the mandatory integrity level from the token of
-//! each held process and acts only at or below the Agent's own level. A
-//! higher or unreadable level refuses the target before any termination and
-//! skips a descendant with its subtree.
+//! Both actions therefore read the mandatory integrity level from the token of
+//! each held process and act only at or below the Agent's own level. A higher
+//! or unreadable level refuses the target before any post or termination, and
+//! force close skips such a descendant with its subtree.
 //!
 //! Deliberate deviations from managed:
 //! - The handle asks only for query, synchronize and, for force close,
-//!   terminate rights, not `PROCESS_ALL_ACCESS`; the integrity check above
-//!   keeps the set of processes it can terminate within managed's.
+//!   terminate rights, not `PROCESS_ALL_ACCESS`. The integrity check above
+//!   removes the cross-integrity difference. Within one integrity level a
+//!   difference remains: a hardened same-user process whose DACL denies
+//!   `PROCESS_ALL_ACCESS` but grants these three rights can be force-closed by
+//!   native, where managed fails to open it.
+//! - A root that exits between its identity read and its integrity read has no
+//!   readable token, so it reports the action failure and no tree is walked.
+//!   Managed instead treats a process that has already exited as closed.
 //! - A failed `PostMessageW` is "Windows could not close this process.";
 //!   managed ignores the result and reports success.
 //! - A submitted termination must be observed as process exit within
@@ -264,6 +270,12 @@ impl<A: ProcessApi> RetainedTarget for Retained<'_, A> {
             return Submission::Rejected;
         }
         let mut api = context.api.borrow_mut();
+        // Managed cannot open a process above its own integrity level, so it
+        // reports the action failure without posting or terminating.
+        let ceiling = api.current_integrity();
+        if !integrity_admitted(&mut *api, &self.process, ceiling) {
+            return Submission::Rejected;
+        }
         match kind {
             Kind::Close => match api.close_main_window(&self.process, self.held.process_id) {
                 WindowClose::Posted => Submission::Accepted,
@@ -271,12 +283,6 @@ impl<A: ProcessApi> RetainedTarget for Retained<'_, A> {
                 WindowClose::Failed => Submission::Rejected,
             },
             Kind::ForceClose => {
-                // Managed cannot open a process above its own integrity level,
-                // so it reports the action failure without terminating.
-                let ceiling = api.current_integrity();
-                if !integrity_admitted(&mut *api, &self.process, ceiling) {
-                    return Submission::Rejected;
-                }
                 // Managed refuses a tree kill that contains the calling process
                 // and then terminates only the exact target.
                 let tree = !contains_current(&mut *api, &self.held);

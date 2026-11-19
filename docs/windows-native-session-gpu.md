@@ -35,13 +35,15 @@ managed Session Agent and its GPU endpoint are unchanged.
 
 ## Matching managed by an explicit check
 
-- Force close acts only on a process at or below the Agent's own integrity
-  level. Managed opens the target with `PROCESS_ALL_ACCESS`, which Windows
-  refuses for a higher-integrity process, and never recognises such a process
-  as a child. Native reads the mandatory integrity level from the token of
-  each held process. A higher or unreadable level reports "Windows could not
-  close this process." without any termination, and a descendant at such a
-  level is skipped together with its subtree.
+- Close and force close act only on a process at or below the Agent's own
+  integrity level. Managed opens the target with `PROCESS_ALL_ACCESS`, which
+  Windows refuses for a higher-integrity process, and never recognises such a
+  process as a child. Native reads the mandatory integrity level from the
+  token of each held process. A higher or unreadable level reports "Windows
+  could not close this process." without any `WM_CLOSE` post or termination,
+  and force close skips a descendant at such a level together with its
+  subtree. Graceful close therefore does not depend on Windows refusing a post
+  to a higher-integrity window.
 - Each descendant's handle stays open until its own children have been
   enumerated, as managed `KillTree` holds each child until its subtree is
   done. A terminated descendant's PID therefore cannot pass to an unrelated
@@ -86,7 +88,13 @@ Close backend (`rust/crates/openblade-platform-windows/src/gpu_apps/action/nativ
 
 - Process handles ask only for query, synchronize and, for force close,
   terminate access. Managed asks for `PROCESS_ALL_ACCESS`. The integrity check
-  above keeps the processes native can terminate within those managed can.
+  above removes the cross-integrity difference. One difference remains within
+  a single integrity level: a hardened same-user process whose DACL denies
+  `PROCESS_ALL_ACCESS` but grants these three rights can be force-closed by
+  native, where managed fails to open it.
+- A root that exits between its identity read and its integrity read has no
+  readable token. It reports "Windows could not close this process." and no
+  tree is walked. Managed treats a process that has already exited as closed.
 - The process's identity, owner and user are read again on the same handle
   that is acted on: PID, creation time, user SID, session, image name, exit
   state and the parent the scan would group it under. A reused PID, an exited
@@ -112,7 +120,8 @@ pipes. None samples GPU counters or opens, signals or closes a real process.
     account and a protected name
   - each descendant held until its children are listed, and a recycled
     descendant PID that never reaches the later owner's child
-  - higher or unreadable integrity on the root, a descendant or the Agent
+  - higher or unreadable integrity on the root, a descendant or the Agent,
+    for both close and force close
   - UNC, volume-GUID, `.scr` and extensionless images closed like the scan
     names them
   - unconfirmed or interrupted exit reported as unconfirmed, and refused
