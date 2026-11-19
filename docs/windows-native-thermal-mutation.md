@@ -139,10 +139,12 @@ ID reservation, and IDs already reserved are never reclaimed.
 After ambiguity, explicit observation remains read-only. It can report current
 thermal state but does not clear the durable mutation fence or replay an uncertain
 request. Unresolved owner history cannot be repaired by guessing retirement.
-Managed native-to-managed recovery/cleanup explicitly refuses thermal journal
-history, including confirmed history, until a complete shared journal-history
-consumer is implemented. Transport retirement alone is not firmware reconciliation.
-This is a material packaging/recovery limitation, not full backend readiness.
+Managed recovery accepts thermal journal history through the native-to-managed
+handback described in [thermal history](windows-rust-thermal-history.md#native-to-managed-handback):
+Setup records each unsettled or owned obligation of a crashed generation, and the
+managed Service resolves it by fresh reads without replay. Transport retirement
+alone is not firmware reconciliation. Inherited manual-fan ownership and an
+interrupted journal rollover remain unresolved and are not taken over.
 
 A separate read-parity gap remains: native observed HyperBoost combined with a
 null broad capability snapshot does not satisfy the managed decoder's capability

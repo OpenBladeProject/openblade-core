@@ -115,6 +115,58 @@ history/new namespace, and current retirement refuses a legacy producer claiming
 thermal rows. No evidence is deleted to make an incompatible predecessor start.
 This stage performs no producer activation, packaging default switch or install.
 
+## Native-to-managed handback
+
+A thermal producer that crashed leaves its terminal owner record Active or
+Retiring. Setup's RetireRecoverableSelection, under the exact reacquired custody,
+then proves that process exited: its launch record exists and no drain does. It
+publishes attempts/exited-PID-CREATED.bin with the lines
+OpenBlade.NativeAttemptExited.v1, epoch, launch-record SHA-256, PID and creation
+time. Other readers accept only an existing exact marker. Metadata-only producers
+never publish one, and the native launcher refuses the unknown name, so the
+retired epoch cannot be relaunched.
+
+With that exit, the tail is classified instead of refused. Every unsettled or
+owned row must belong to the exited owner:
+
+- pending: the open frontier with progress above 0, a possibly submitted write;
+- abandonedPrepared: an open frontier at progress 0, never submitted;
+- ownedFan: manual fan control the exited owner held (progress 30);
+- liveTemporaryCharge: a temporary full charge it started (row 72).
+
+A staged thermal-mutation.journal.pending is preserved and its SHA-256 committed.
+Any .rollover file still refuses retirement.
+
+Before publishing retirement, Setup writes the record to
+ProgramData\OpenBlade\native-handback\EPOCH.json: schema 1, the commitment, the
+items with their original request, user SID and target, the staged-journal digest,
+and the SHA-256 of each user's preserved manual-overrides.json.pending. The write
+uses a flushed temporary file, a rename and independent readback. An existing
+record must match exactly. Without a destination, retirement refuses. The
+commitment is the SHA-256 of canonical lines headed OpenBlade.NativeHandback.v1.
+NativeRetirementProof.v4 appends it to the eight v3 fields, only for the generation
+whose record is non-empty; other generations keep byte-identical v3 proofs.
+Retained and fresh proofs compare every thermal field and must have the same
+version. The only cross-version match is the existing v2 to v3 empty-thermal case.
+
+The managed Service reads records and never deletes them. Unresolved items start
+the unexpected-exit recovery path. Pending performance, fan and battery writes,
+and a live temporary charge, become pending write confirmations. They block
+Reapply and convergence until a fresh read is available. A match is confirmed, a
+difference is reported as an external change, and an unreadable value stays
+pending. Each outcome is persisted in resolutions.json before the Service acts on
+it. If it cannot be persisted, the item stays pending. A confirmed live temporary
+charge resumes as managed's temporary full charge only for the same active user;
+otherwise it is reported. Owned fans and abandoned Prepared rows are reported
+only, and managed makes no fan write until the user reapplies a fan setting. The
+record is consumed once every item has an outcome. An unreadable record or
+resolution file, or unresolved items from more than one generation, keeps
+thermal and battery writes blocked.
+
+Still deferred: the Rust reader does not accept the exit marker, inherited fan
+ownership is not adopted, and an interrupted rollover is not handed back.
+Performance confirmation compares the preset only, not native GPU offsets.
+
 ## Verification limits
 
 Executed checks use only inspected pure/injected test bodies, inert signed-package
