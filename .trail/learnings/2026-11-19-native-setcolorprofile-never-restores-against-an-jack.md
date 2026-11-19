@@ -29,4 +29,4 @@ touches:
 
 ## Watch out
 - Residual parity cost: if Windows changes the endpoints but the device path is the same physical panel, native reports Indeterminate until the next display read where managed would confirm.
-- The 977/1024-byte .obid headroom blocks the next Agent capability (applyDisplayProfile) until the record format changes.
+- The .obid identity bound is now 4096 bytes with an unchanged record format, so the next Agent capability (applyDisplayProfile) fits: the worst composition is 977 bytes. See 2026-11-19-native-build-identity-bound-and-the-jack.md.
