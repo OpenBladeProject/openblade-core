@@ -5,9 +5,12 @@ namespace OpenBlade.Deployment;
 [SupportedOSPlatform("windows")]
 internal static class ManagedMailboxStartup
 {
-    internal sealed class Admission(IManagedMailboxRun? run, IDisposable? unenrolled, IDisposable? legacy) : IDisposable
+    internal sealed class Admission(IManagedMailboxRun? run, IDisposable? unenrolled, IDisposable? legacy,
+        IReadOnlyDictionary<string, string>? nativeHandbacks = null) : IDisposable
     {
         internal IManagedMailboxRun? Run { get; } = run;
+        // Freshly derived native handback commitments, kept after custody ends.
+        internal IReadOnlyDictionary<string, string> NativeHandbacks { get; } = nativeHandbacks ?? new Dictionary<string, string>();
         public void Dispose()
         {
             try { Run?.Dispose(); }
@@ -37,7 +40,7 @@ internal static class ManagedMailboxStartup
             // a new native reader needs its NEW exact request/receipt and SCM
             // original. Retaining native owner locks here would incorrectly
             // prevent first enrollment of this unenrolled default run.
-            return new(run, ordinary, legacy);
+            return new(run, ordinary, legacy, native.Handbacks);
         }
         catch
         {

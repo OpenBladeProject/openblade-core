@@ -26,12 +26,12 @@ public sealed class NativeHandbackTests : IDisposable
     private static JsonElement Vector(string name) => JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, name))).RootElement;
     private static string[] Lines(string journal) => journal.Split('\n', StringSplitOptions.RemoveEmptyEntries);
     private static void Thermal(WindowsNativeEpochFiles files, byte[] tail) => File.WriteAllBytes(Path.Combine(files.Root, "owner", "thermal-mutation.journal"), tail);
-    private static byte[] Performance(string nonce, int last)
+    private static byte[] Performance(string nonce, int last, string request = "aaaaaaaa-bbbb-cccc-dddd-000000000001")
     {
         using var stream = new MemoryStream();
         for (int progress = 0; progress <= last; progress++)
         {
-            stream.Write(JsonSerializer.SerializeToUtf8Bytes(new { request = "aaaaaaaa-bbbb-cccc-dddd-000000000001", owner = nonce, user_sid = "S-1-5-21-111-222-333-1002", caller_pid = 42, session = 7, requested = (object?)null, destination = 1, intent = NativeCanonical.Digest("null"u8), progress }));
+            stream.Write(JsonSerializer.SerializeToUtf8Bytes(new { request, owner = nonce, user_sid = "S-1-5-21-111-222-333-1002", caller_pid = 42, session = 7, requested = (object?)null, destination = 1, intent = NativeCanonical.Digest("null"u8), progress }));
             stream.WriteByte(10);
         }
         return stream.ToArray();
@@ -52,7 +52,9 @@ public sealed class NativeHandbackTests : IDisposable
             if (e.TryGetProperty("tfc", out var t) && p is 72 or 73) { live = t.GetProperty("desired").GetProperty("temporary").GetBoolean(); }
         }
         bool open = !settled.Contains(progress);
-        return (open && progress != 0 ? progress : null, owned, live, open && progress == 0 ? 0 : null);
+        // Prepared (0) and release preparation (31) precede every setter.
+        bool prepared = open && progress is 0 or 31;
+        return (open && !prepared ? progress : null, owned, live, prepared ? progress : null);
     }
 
     private static void AssertClassified(string[] rows, WindowsNativeHandback handback)
@@ -146,19 +148,85 @@ public sealed class NativeHandbackTests : IDisposable
         Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [Original], Original));
     }
 
+
+    [Fact]
+    public void LiveTemporaryChargeOfAnEarlierOwnerIsNotHandedBackByALaterExit()
+    {
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        string enable = Vector("temporary-charge-history-v1.json").GetProperty("cases").EnumerateArray()
+            .Single(c => c.GetProperty("name").GetString() == "enable").GetProperty("journal").GetString()!;
+        var later = Original with { Nonce = new string('9', 64), Epoch = new string('4', 32), Process = "18:2" };
+        Thermal(files, [.. Bytes(enable.EndsWith('\n') ? enable : enable + "\n"), .. Performance(later.Nonce, 2)]);
+        var handback = WindowsNativeThermalHistory.Read(files, [Original, later], later).Handback!;
+        Assert.Equal(2, handback.Pending!.Progress);
+        Assert.Null(handback.LiveTemporaryCharge);
+        // The earlier owner cannot claim the later owner's open row either.
+        Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [Original, later], Original));
+    }
+
+    private static NativeHandbackItem Item(string family, int progress, string? performance = null, string? fanMode = null, NativeHandbackBattery? battery = null) =>
+        new("aaaaaaaa-bbbb-cccc-dddd-000000000001", family, progress, "S-1-5-21-1-2-3-1001", performance, fanMode, battery);
+
     [Fact]
     public void RecordRoundTripsAndRefusesTampering()
     {
-        var item = new NativeHandbackItem("aaaaaaaa-bbbb-cccc-dddd-000000000001", "temporaryCharge", 72, "S-1-5-21-1-2-3-1001", null, null, new(80, true, true));
-        var handback = new WindowsNativeHandback(new string('2', 32), null, null, item, null, null);
-        byte[] bytes = handback.Serialize([new("S-1-5-21-1-2-3-1001", new string('a', 64))]);
-        var (parsed, overrides) = WindowsNativeHandback.Parse(bytes);
+        var handback = new WindowsNativeHandback(new string('2', 32), null, null, Item("temporaryCharge", 72, battery: new(80, true, true)), null, null);
+        NativeHandbackEvidence[] evidence = [new("S-1-5-21-1-2-3-1001", new string('a', 64))];
+        byte[] bytes = handback.Serialize(evidence);
+        var (parsed, overrides, commitment) = WindowsNativeHandback.Parse(bytes);
         Assert.Equal(handback, parsed);
-        Assert.Single(overrides);
+        Assert.Equal(evidence, overrides);
+        Assert.Equal(handback.RecordCommitment(evidence), commitment);
+        Assert.NotEqual(handback.RecordCommitment([]), commitment);
         string text = Encoding.UTF8.GetString(bytes);
-        foreach (string bad in new[] { text.Replace("\"limit\":80", "\"limit\":81", StringComparison.Ordinal), text.Replace("\"schema\":1", "\"schema\":2", StringComparison.Ordinal), text.Replace("}", ",\"extra\":1}", StringComparison.Ordinal), "{" })
+        foreach (string bad in new[]
+        {
+            text.Replace("\"limit\":80", "\"limit\":81", StringComparison.Ordinal),
+            text.Replace("\"schema\":1", "\"schema\":2", StringComparison.Ordinal),
+            text.Replace("}", ",\"extra\":1}", StringComparison.Ordinal),
+            // The record commits to the override evidence it carries.
+            text.Replace(new string('a', 64), new string('b', 64), StringComparison.Ordinal),
+            "{",
+        })
         { Assert.Throws<InvalidDataException>(() => WindowsNativeHandback.Parse(Bytes(bad))); }
         Assert.Throws<InvalidDataException>(() => WindowsNativeHandback.Parse(new WindowsNativeHandback(new string('2', 32), null, null, null, null, null).Serialize([])));
+    }
+
+    private static readonly (string Slot, NativeHandbackItem Item)[] Incoherent =
+    [
+        ("liveTemporaryCharge", Item("performance", 2, performance: "Balanced")),
+        ("liveTemporaryCharge", Item("temporaryCharge", 71, battery: new(80, true, true))),
+        ("liveTemporaryCharge", Item("temporaryCharge", 72, battery: new(80, true, false))),
+        ("pending", Item("temporaryCharge", 70, battery: new(80, false, true))),
+        ("pending", Item("temporaryCharge", 72, battery: new(80, true, true))),
+        ("pending", Item("performance", 5, performance: "Balanced")),
+        ("pending", Item("performance", 0, performance: "Balanced")),
+        ("pending", Item("fan", 30, fanMode: "Fixed")),
+        ("pending", Item("fan", 31, fanMode: "Automatic")),
+        ("pending", Item("fan", 41, fanMode: "Fixed")),
+        ("pending", Item("battery", 62, battery: new(80, true, false))),
+        ("ownedFan", Item("fan", 30, fanMode: "Automatic")),
+        ("ownedFan", Item("fan", 12, fanMode: "Fixed")),
+        ("abandonedPrepared", Item("fan", 31, fanMode: "Fixed")),
+        ("abandonedPrepared", Item("performance", 2, performance: "Balanced")),
+    ];
+    public static TheoryData<int> IncoherentSlots() => [.. Enumerable.Range(0, Incoherent.Length)];
+
+    [Theory]
+    [MemberData(nameof(IncoherentSlots))]
+    public void RecordRefusesASlotThatClassificationNeverProduces(int index)
+    {
+        var (slot, item) = Incoherent[index];
+        string epoch = new('2', 32);
+        var handback = slot switch
+        {
+            "pending" => new WindowsNativeHandback(epoch, item, null, null, null, null),
+            "ownedFan" => new WindowsNativeHandback(epoch, null, item, null, null, null),
+            "liveTemporaryCharge" => new WindowsNativeHandback(epoch, null, null, item, null, null),
+            _ => new WindowsNativeHandback(epoch, null, null, null, item, null),
+        };
+        Assert.False(WindowsNativeHandback.ValidSlot(slot, item) && item.Battery is not { Temporary: true, Protection: false });
+        Assert.Throws<InvalidDataException>(() => WindowsNativeHandback.Parse(handback.Serialize([])));
     }
 
     [Fact]
@@ -185,20 +253,26 @@ public sealed class NativeHandbackTests : IDisposable
     {
         internal required WindowsNativeEpochFiles Epochs { get; init; }
         internal required WindowsNativeEpochFiles Managed { get; init; }
-        internal required IDisposable Packages { get; init; }
+        internal required WindowsNativeEpochFiles Handback { get; init; }
+        internal required ManagedMailboxCorrectionTests.SignedPair Packages { get; init; }
         internal required IDisposable Transfer { get; init; }
         internal required NativeEpochRecord Record { get; init; }
         internal required WindowsNativeHandbackWriter Writer { get; init; }
         internal string Attempts => Path.Combine(Epochs.Root, Record.Epoch, "attempts");
-        internal string RecordPath => Path.Combine(Writer.Directory, Record.Epoch + ".json");
-        public void Dispose() { Transfer.Dispose(); Packages.Dispose(); Managed.Dispose(); Epochs.Dispose(); }
+        internal string RecordPath => Path.Combine(Handback.Root, Record.Epoch + ".json");
+        internal string Proofs => Path.Combine(Epochs.Root, Record.Epoch, "retirement-proofs");
+        public void Dispose() { Transfer.Dispose(); Packages.Dispose(); Handback.Dispose(); Managed.Dispose(); Epochs.Dispose(); }
     }
+
+    private static string[] Snapshot(string directory) => [.. Directory.EnumerateFiles(directory).Order(StringComparer.Ordinal)
+        .Select(p => Path.GetFileName(p) + ":" + Convert.ToBase64String(File.ReadAllBytes(p)))];
 
     // The native process launched, became the Active owner, wrote rows and
     // exited without its drain or owner retirement.
-    private async Task<Crash> Crashed(int progress, string terminal = "Active")
+    private static async Task<Crash> Crashed(int progress, string terminal = "Active")
     {
         var epochs = ManagedMailboxCorrectionTests.Bootstrap(); var managed = ManagedMailboxCorrectionTests.Handoff();
+        var handback = WindowsNativeEpochFiles.CreatePrivateFixture();
         var packages = await ManagedMailboxCorrectionTests.Packages(mutation: true);
         var run = new ManagedMailboxRun(new string('1', 32), "17:100", new string('2', 64), new string('3', 64), new string('4', 32));
         var transfer = ManagedMailboxCorrectionTests.SignedTransfer(managed, packages, run, '6');
@@ -218,12 +292,29 @@ public sealed class NativeHandbackTests : IDisposable
         {
             Epochs = epochs,
             Managed = managed,
+            Handback = handback,
             Packages = packages,
             Transfer = transfer,
             Record = record,
-            Writer = new WindowsNativeHandbackWriter(Path.Combine(root, "machine-" + Guid.NewGuid().ToString("N"))),
+            Writer = new WindowsNativeHandbackWriter(() => handback.RetainFixtureView(), null),
         };
     }
+
+    private static void TransportDrain(Crash crash, uint pid, long created)
+    {
+        NativeRecoveryTests.AddAttempt(crash.Epochs, crash.Record, pid, created, false);
+        PublishDrain(crash, pid, created);
+    }
+
+    private static void PublishDrain(Crash crash, uint pid, long created)
+    {
+        byte[] launch = File.ReadAllBytes(Path.Combine(crash.Attempts, $"launch-{pid}-{created}.bin"));
+        crash.Epochs.Publish(Path.Combine(crash.Attempts, $"drain-{pid}-{created}.bin"), NativeCanonical.Lines("OpenBlade.NativeTransportDrain.v1",
+            crash.Record.Epoch, NativeCanonical.Digest(launch), pid.ToString(CultureInfo.InvariantCulture), created.ToString(CultureInfo.InvariantCulture)));
+    }
+
+    private static byte[] ExitMarker(Crash crash, uint pid, long created) => WindowsNativeAttemptHistory.Exited(crash.Record.Epoch,
+        File.ReadAllBytes(Path.Combine(crash.Attempts, $"launch-{pid}-{created}.bin")), pid.ToString(CultureInfo.InvariantCulture), created.ToString(CultureInfo.InvariantCulture));
 
     [Theory]
     [InlineData("Active")]
@@ -234,10 +325,6 @@ public sealed class NativeHandbackTests : IDisposable
         byte[] journal = File.ReadAllBytes(Path.Combine(crash.Epochs.Root, "owner", "thermal-mutation.journal"));
         using (var selection = await WindowsNativeInstalledSelection.OpenAsync(crash.Epochs.RetainFixtureView(), default))
         {
-            // Without a destination the obligation stays fenced and unretired.
-            Assert.Equal(NativeRecoveryReason.FirmwareOwnerUnresolved, Assert.Throws<NativeRecoveryException>(() => selection.RetireRecoverableSelection(17, 1)).Reason);
-            Assert.NotEqual(NativeEpochPhase.Retired, selection.Record.Phase);
-            Assert.False(File.Exists(Path.Combine(crash.Epochs.Root, crash.Record.Epoch, "Retired.bin")));
             selection.RetireRecoverableSelection(17, 1, crash.Writer);
             Assert.Equal(NativeEpochPhase.Retired, selection.Record.Phase);
         }
@@ -245,39 +332,158 @@ public sealed class NativeHandbackTests : IDisposable
         using (var reopened = await WindowsNativeInstalledSelection.OpenAsync(crash.Epochs.RetainFixtureView(), default)) { retired = reopened.Record; }
         var transfer = ManagedMailboxRecovery.Selected(crash.Managed)!;
         Assert.Equal(journal, File.ReadAllBytes(Path.Combine(crash.Epochs.Root, "owner", "thermal-mutation.journal")));
-        Assert.True(File.Exists(Path.Combine(crash.Attempts, "exited-17-1.bin")));
+        Assert.Equal(ExitMarker(crash, 17, 1), File.ReadAllBytes(Path.Combine(crash.Attempts, "exited-17-1.bin")));
         byte[] record = File.ReadAllBytes(crash.RecordPath);
         var handback = WindowsNativeHandback.Parse(record).Handback;
         Assert.Equal((crash.Record.Epoch, 2, "Balanced"), (handback.Epoch, handback.Pending!.Progress, handback.Pending.Performance));
-        string proof = Assert.Single(Directory.GetFiles(Path.Combine(crash.Epochs.Root, crash.Record.Epoch, "retirement-proofs")));
+        string proof = Assert.Single(Directory.GetFiles(crash.Proofs));
         string[] fields = ManagedMailboxNativeCustody.ParseRetirement(File.ReadAllBytes(proof));
         Assert.Equal((9, handback.Commitment, "metadata-attempts-classified"), (fields.Length, fields[8], fields[4]));
         // Later readers accept the retired exit; a rerun re-verifies the same proof.
         using (var selection = await WindowsNativeInstalledSelection.OpenAsync(crash.Epochs.RetainFixtureView(), default)) { selection.RetireRecoverableSelection(); }
         Assert.Equal(record, File.ReadAllBytes(crash.RecordPath));
-        using (var native = ManagedMailboxNativeCustody.AcquireForTests(crash.Epochs.RetainFixtureView())) { ManagedMailboxRecovery.Resolve(crash.Managed, native, _ => { }); }
+        using (var native = ManagedMailboxNativeCustody.AcquireForTests(crash.Epochs.RetainFixtureView()))
+        {
+            // The Service binds the record to this fresh derivation.
+            Assert.Equal(handback.Commitment, Assert.Single(native.Handbacks, pair => pair.Key == crash.Record.Epoch).Value);
+            ManagedMailboxRecovery.Resolve(crash.Managed, native, _ => { });
+        }
         byte[] terminalProof = File.ReadAllBytes(ManagedMailboxRecovery.PathFor(crash.Managed, transfer, "native-proof"));
         using (var native = ManagedMailboxNativeCustody.AcquireForTests(crash.Epochs.RetainFixtureView()))
         { native.RequirePreservedResolution(transfer, retired, terminalProof, "consumed-and-retired"); }
     }
 
+    // Every refusal leaves native attempt history byte-identical: a marker
+    // written before refusal would stop the still-selected generation starting.
     [Theory]
-    [InlineData("same")]
-    [InlineData("different")]
-    public async Task RecordWrittenBeforeACrashIsReusedOnlyWhenIdentical(string existing)
+    [InlineData("no-destination", "FirmwareOwnerUnresolved")]
+    [InlineData("destination-unavailable", "RetirementPublicationFailed")]
+    [InlineData("different-record", "RetirementPublicationFailed")]
+    [InlineData("rollover", "FirmwareOwnerUnresolved")]
+    [InlineData("second-undrained-launch", "MissingAttemptDrain")]
+    [InlineData("drained-but-active", "FirmwareOwnerUnresolved")]
+    [InlineData("wrong-exit-marker", "FirmwareOwnerUnresolved")]
+    [InlineData("exit-beside-drain", "MissingAttemptDrain")]
+    public async Task RefusedRetirementLeavesAttemptHistoryUnchanged(string fault, string refusal)
+    {
+        using var crash = await Crashed(2);
+        WindowsNativeHandbackWriter? writer = crash.Writer;
+        switch (fault)
+        {
+            case "no-destination": writer = null; break;
+            case "destination-unavailable": writer = new WindowsNativeHandbackWriter(() => throw new IOException("Destination unavailable."), null); break;
+            case "different-record":
+                crash.Writer.Persist(new WindowsNativeHandback(crash.Record.Epoch, Item("performance", 3, performance: "Balanced"), null, null, null, null));
+                break;
+            case "rollover":
+                File.WriteAllBytes(Path.Combine(crash.Epochs.Root, "owner", "thermal-mutation.journal.rollover"), "partial"u8.ToArray());
+                break;
+            // SCM restarted the generation and that instance also died undrained.
+            case "second-undrained-launch": NativeRecoveryTests.AddAttempt(crash.Epochs, crash.Record, 18, 2, false); break;
+            case "drained-but-active": PublishDrain(crash, 17, 1); break;
+            case "wrong-exit-marker":
+                crash.Epochs.Publish(Path.Combine(crash.Attempts, "exited-17-1.bin"), WindowsNativeAttemptHistory.Exited(crash.Record.Epoch,
+                    File.ReadAllBytes(Path.Combine(crash.Attempts, "launch-17-1.bin")), "17", "2"));
+                break;
+            // A drained restart must not also carry an exit record.
+            case "exit-beside-drain":
+                TransportDrain(crash, 18, 2);
+                crash.Epochs.Publish(Path.Combine(crash.Attempts, "exited-18-2.bin"), ExitMarker(crash, 18, 2));
+                break;
+        }
+        string[] attempts = Snapshot(crash.Attempts);
+        string[] records = Snapshot(crash.Handback.Root);
+        using var selection = await WindowsNativeInstalledSelection.OpenAsync(crash.Epochs.RetainFixtureView(), default);
+        Assert.Equal(Enum.Parse<NativeRecoveryReason>(refusal), Assert.Throws<NativeRecoveryException>(() => selection.RetireRecoverableSelection(17, 1, writer)).Reason);
+        Assert.NotEqual(NativeEpochPhase.Retired, selection.Record.Phase);
+        Assert.Equal(attempts, Snapshot(crash.Attempts));
+        Assert.Equal(records, Snapshot(crash.Handback.Root));
+        Assert.False(Directory.Exists(crash.Proofs));
+    }
+
+    [Fact]
+    public async Task OnlyTheCustodyHolderOfThatEpochReceivesTheExit()
+    {
+        using var crash = await Crashed(2);
+        // Readers and custody of another generation cannot establish this exit.
+        Assert.Equal(NativeRecoveryReason.FirmwareOwnerUnresolved, Assert.Throws<NativeRecoveryException>(() => WindowsNativeTrustLifecycle.AcquireRetiredOwner(crash.Epochs)).Reason);
+        Assert.Equal(NativeRecoveryReason.FirmwareOwnerUnresolved, Assert.Throws<NativeRecoveryException>(
+            () => WindowsNativeTrustLifecycle.AcquireRetiredOwner(crash.Epochs, exitedUnderCustody: new string('9', 32))).Reason);
+        using (var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(crash.Epochs, exitedUnderCustody: crash.Record.Epoch))
+        {
+            Assert.Equal(ExitMarker(crash, 17, 1), owner.PendingExit!.Bytes);
+            Assert.Equal(crash.Record.Epoch, owner.Thermal.Handback!.Epoch);
+        }
+        Assert.False(File.Exists(Path.Combine(crash.Attempts, "exited-17-1.bin")));
+    }
+
+    [Fact]
+    public async Task RestartedInstanceWithItsDrainIsHandedBackForTheCrashedOwner()
+    {
+        using var crash = await Crashed(2);
+        TransportDrain(crash, 18, 2);
+        using var selection = await WindowsNativeInstalledSelection.OpenAsync(crash.Epochs.RetainFixtureView(), default);
+        selection.RetireRecoverableSelection(18, 2, crash.Writer);
+        Assert.Equal(NativeEpochPhase.Retired, selection.Record.Phase);
+        Assert.True(File.Exists(crash.RecordPath));
+        Assert.False(File.Exists(Path.Combine(crash.Attempts, "exited-18-2.bin")));
+    }
+
+    // A rerun after any crash in the commit sequence completes with the same
+    // record, marker and proof.
+    [Theory]
+    [InlineData("record")]
+    [InlineData("proof")]
+    [InlineData("marker")]
+    public async Task InterruptedCommitSequenceCompletesOnRerun(string completed)
     {
         using var crash = await Crashed(3);
-        var pending = new NativeHandbackItem("aaaaaaaa-bbbb-cccc-dddd-000000000001", "performance", existing == "same" ? 3 : 2, "S-1-5-21-111-222-333-1002", "Balanced", null, null);
+        WindowsNativeHandback expected;
+        NativeEpochRecord current;
+        using (var opened = await WindowsNativeInstalledSelection.OpenAsync(crash.Epochs.RetainFixtureView(), default)) { current = opened.Record; }
+        using (var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(crash.Epochs, exitedUnderCustody: crash.Record.Epoch))
+        {
+            expected = owner.Thermal.Handback!;
+            crash.Writer.Persist(expected);
+            if (completed is "proof" or "marker")
+            {
+                byte[] proof = WindowsNativeAttemptHistory.RequireDrained(crash.Epochs, current, Path.Combine(crash.Epochs.Root, crash.Record.Epoch), crash.Packages.Native.Service, owner);
+                crash.Epochs.CreateDirectoryOnce(crash.Proofs);
+                crash.Epochs.Publish(Path.Combine(crash.Proofs, NativeCanonical.Digest(proof) + ".bin"), proof);
+            }
+            if (completed == "marker") { owner.PublishExit(crash.Epochs); }
+        }
+        byte[] record = File.ReadAllBytes(crash.RecordPath);
+        using var selection = await WindowsNativeInstalledSelection.OpenAsync(crash.Epochs.RetainFixtureView(), default);
+        selection.RetireRecoverableSelection(17, 1, crash.Writer);
+        Assert.Equal(NativeEpochPhase.Retired, selection.Record.Phase);
+        Assert.Equal(record, File.ReadAllBytes(crash.RecordPath));
+        Assert.Equal(ExitMarker(crash, 17, 1), File.ReadAllBytes(Path.Combine(crash.Attempts, "exited-17-1.bin")));
+        Assert.Equal(expected.Commitment, ManagedMailboxNativeCustody.ParseRetirement(File.ReadAllBytes(Assert.Single(Directory.GetFiles(crash.Proofs))))[8]);
+    }
+
+    [Fact]
+    public async Task RecordWrittenBeforeACrashIsReusedWhenIdentical()
+    {
+        using var crash = await Crashed(3);
+        var pending = new NativeHandbackItem("aaaaaaaa-bbbb-cccc-dddd-000000000001", "performance", 3, "S-1-5-21-111-222-333-1002", "Balanced", null, null);
         crash.Writer.Persist(new WindowsNativeHandback(crash.Record.Epoch, pending, null, null, null, null));
         byte[] before = File.ReadAllBytes(crash.RecordPath);
         using var selection = await WindowsNativeInstalledSelection.OpenAsync(crash.Epochs.RetainFixtureView(), default);
-        if (existing == "same") { selection.RetireRecoverableSelection(17, 1, crash.Writer); Assert.Equal(NativeEpochPhase.Retired, selection.Record.Phase); }
-        else
-        {
-            Assert.Equal(NativeRecoveryReason.RetirementPublicationFailed, Assert.Throws<NativeRecoveryException>(() => selection.RetireRecoverableSelection(17, 1, crash.Writer)).Reason);
-            Assert.False(Directory.Exists(Path.Combine(crash.Epochs.Root, crash.Record.Epoch, "retirement-proofs")));
-        }
+        selection.RetireRecoverableSelection(17, 1, crash.Writer);
+        Assert.Equal(NativeEpochPhase.Retired, selection.Record.Phase);
         Assert.Equal(before, File.ReadAllBytes(crash.RecordPath));
+    }
+
+    [Fact]
+    public async Task ResolutionThatPredatesItsRecordIsNeverAdopted()
+    {
+        using var crash = await Crashed(2);
+        crash.Handback.Publish(Path.Combine(crash.Handback.Root, crash.Record.Epoch + ".resolved"), "planted"u8.ToArray());
+        using var selection = await WindowsNativeInstalledSelection.OpenAsync(crash.Epochs.RetainFixtureView(), default);
+        Assert.Equal(NativeRecoveryReason.RetirementPublicationFailed, Assert.Throws<NativeRecoveryException>(() => selection.RetireRecoverableSelection(17, 1, crash.Writer)).Reason);
+        Assert.False(File.Exists(crash.RecordPath));
+        Assert.False(File.Exists(Path.Combine(crash.Attempts, "exited-17-1.bin")));
     }
 
     [Fact]
@@ -286,9 +492,9 @@ public sealed class NativeHandbackTests : IDisposable
         using var crash = await Crashed(5);
         using var selection = await WindowsNativeInstalledSelection.OpenAsync(crash.Epochs.RetainFixtureView(), default);
         selection.RetireRecoverableSelection(17, 1);
-        string proof = Assert.Single(Directory.GetFiles(Path.Combine(crash.Epochs.Root, crash.Record.Epoch, "retirement-proofs")));
+        string proof = Assert.Single(Directory.GetFiles(crash.Proofs));
         Assert.StartsWith("OpenBlade.NativeRetirementProof.v3\n", File.ReadAllText(proof), StringComparison.Ordinal);
-        Assert.False(Directory.Exists(crash.Writer.Directory));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(crash.Handback.Root));
     }
 
     [Fact]
@@ -300,8 +506,61 @@ public sealed class NativeHandbackTests : IDisposable
         { Assert.Equal(NativeRecoveryReason.ActiveOrUnknownCustody, Assert.Throws<NativeRecoveryException>(() => selection.RetireRecoverableSelection(17, 1, crash.Writer)).Reason); }
         Assert.False(File.Exists(Path.Combine(crash.Attempts, "exited-17-1.bin")));
         Assert.False(File.Exists(crash.RecordPath));
-        // Readers without custody never create the exit marker themselves.
-        Assert.Equal(NativeRecoveryReason.FirmwareOwnerUnresolved, Assert.Throws<NativeRecoveryException>(() => WindowsNativeTrustLifecycle.AcquireRetiredOwner(crash.Epochs)).Reason);
-        Assert.False(File.Exists(Path.Combine(crash.Attempts, "exited-17-1.bin")));
+    }
+
+    // The owner chain is one-way: once a later generation crashes and hands
+    // back, an earlier settled generation keeps its exact v3 proof.
+    [Fact]
+    public async Task HandbackOfALaterGenerationKeepsTheEarlierGenerationProof()
+    {
+        using var epochs = ManagedMailboxCorrectionTests.Bootstrap(); using var managed = ManagedMailboxCorrectionTests.Handoff();
+        using var handbackFiles = WindowsNativeEpochFiles.CreatePrivateFixture();
+        using var packages = await ManagedMailboxCorrectionTests.Packages(mutation: true);
+        var storage = new ManagedMailboxStorage(() => false, () => throw new InvalidOperationException("No legacy root"), () => managed.RetainFixtureView());
+        var run = new ManagedMailboxRun(new string('1', 32), "17:100", new string('2', 64), new string('3', 64), new string('4', 32));
+        using var firstTransfer = ManagedMailboxCorrectionTests.SignedTransfer(managed, packages, run, '6');
+        NativeEpochRecord first;
+        using (var tx = WindowsNativeEpochTransaction.Begin(epochs.RetainFixtureView(), packages.Native, Guid.ParseExact(new string('6', 32), "N"), managedTransfer: firstTransfer, storage: storage))
+        {
+            first = tx.Record; tx.MarkStartupSubmitted(); NativeRecoveryTests.AddAttempt(epochs, first, 17, 1, false);
+            byte[] launch = File.ReadAllBytes(Path.Combine(epochs.Root, first.Epoch, "attempts", "launch-17-1.bin"));
+            epochs.Publish(Path.Combine(epochs.Root, first.Epoch, "attempts", "drain-17-1.bin"), NativeCanonical.Lines("OpenBlade.NativeTransportDrain.v1", first.Epoch, NativeCanonical.Digest(launch), "17", "1"));
+            tx.CommitAfterBoundReadiness(new string('e', 64));
+        }
+        string firstNonce = new('4', 64); string? previous = null; ulong sequence = 1;
+        foreach (string phase in new[] { "Reserved", "Active", "Retiring", "Retired" })
+        {
+            byte[] bytes = NativeCanonical.Lines("OpenBlade.NativeOwner.v1", phase, sequence.ToString(CultureInfo.InvariantCulture), previous ?? new string('0', 64), first.Installation, first.Epoch, first.ServiceId, "17:1", firstNonce);
+            epochs.Publish(Path.Combine(epochs.Root, "owner", $"owner-{sequence:D20}.bin"), bytes);
+            sequence++; previous = NativeCanonical.Digest(bytes);
+        }
+        Thermal(epochs, Performance(firstNonce, 5));
+        using (var selection = await WindowsNativeInstalledSelection.OpenAsync(epochs.RetainFixtureView(), default)) { selection.RetireRecoverableSelection(17, 1); first = selection.Record; }
+        byte[] firstProof;
+        using (var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(epochs))
+        { firstProof = WindowsNativeAttemptHistory.RequireDrained(epochs, first, Path.Combine(epochs.Root, first.Epoch), packages.Native.Service, owner); }
+        using (var native = ManagedMailboxNativeCustody.AcquireForTests(epochs.RetainFixtureView())) { ManagedMailboxRecovery.Resolve(managed, native, _ => { }); }
+
+        using var secondTransfer = ManagedMailboxCorrectionTests.SignedTransfer(managed, packages, run with { Run = new string('9', 32), Process = "18:101" }, 'a');
+        NativeEpochRecord second;
+        using (var tx = WindowsNativeEpochTransaction.Begin(epochs.RetainFixtureView(), packages.Native, Guid.ParseExact(new string('a', 32), "N"), managedTransfer: secondTransfer, storage: storage))
+        { second = tx.Record; tx.MarkStartupSubmitted(); NativeRecoveryTests.AddAttempt(epochs, second, 18, 2, false); tx.CommitAfterBoundReadiness(new string('e', 64)); }
+        string secondNonce = new('5', 64);
+        foreach (string phase in new[] { "Reserved", "Active" })
+        {
+            byte[] bytes = NativeCanonical.Lines("OpenBlade.NativeOwner.v1", phase, sequence.ToString(CultureInfo.InvariantCulture), previous!, second.Installation, second.Epoch, second.ServiceId, "18:2", secondNonce);
+            epochs.Publish(Path.Combine(epochs.Root, "owner", $"owner-{sequence:D20}.bin"), bytes);
+            sequence++; previous = NativeCanonical.Digest(bytes);
+        }
+        Thermal(epochs, [.. Performance(firstNonce, 5), .. Performance(secondNonce, 2, "aaaaaaaa-bbbb-cccc-dddd-000000000002")]);
+        using (var selection = await WindowsNativeInstalledSelection.OpenAsync(epochs.RetainFixtureView(), default))
+        { selection.RetireRecoverableSelection(18, 2, new WindowsNativeHandbackWriter(() => handbackFiles.RetainFixtureView(), null)); }
+        using (var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(epochs))
+        {
+            Assert.Equal(second.Epoch, owner.Thermal.Handback!.Epoch);
+            byte[] fresh = WindowsNativeAttemptHistory.RequireDrained(epochs, first, Path.Combine(epochs.Root, first.Epoch), packages.Native.Service, owner);
+            Assert.StartsWith("OpenBlade.NativeRetirementProof.v3\n", Encoding.ASCII.GetString(fresh), StringComparison.Ordinal);
+            Assert.Equal(ManagedMailboxNativeCustody.ParseRetirement(firstProof)[7], ManagedMailboxNativeCustody.ParseRetirement(fresh)[7]);
+        }
     }
 }

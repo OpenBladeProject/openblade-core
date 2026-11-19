@@ -193,9 +193,13 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
             { throw new NativeRecoveryException(NativeRecoveryReason.FirmwareOwnerUnresolved, "Native history has unsettled obligations and no managed handback destination; history was preserved."); }
             Recover(NativeRecoveryReason.RetirementPublicationFailed, () => { handback.Persist(inherited); return true; });
         }
+        // Every refusal check has passed. The native launcher refuses an epoch
+        // with an exit marker, so the marker is published only here, directly
+        // before retirement. A rerun after a crash reuses each identical record.
         Recover(NativeRecoveryReason.RetirementPublicationFailed, () =>
         {
             PublishProofSnapshot(directory, proof);
+            owner.PublishExit(files);
             PublishRetirement(directory, owner);
             return true;
         });

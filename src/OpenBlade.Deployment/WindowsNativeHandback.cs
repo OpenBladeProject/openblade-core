@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text.Json;
 
 namespace OpenBlade.Deployment;
@@ -19,10 +21,20 @@ internal sealed record NativeHandbackEvidence(string UserSid, string Sha256);
 internal sealed record WindowsNativeHandback(string Epoch, NativeHandbackItem? Pending, NativeHandbackItem? OwnedFan,
     NativeHandbackItem? LiveTemporaryCharge, NativeHandbackItem? AbandonedPrepared, string? StagedJournal)
 {
-    internal const int MaximumBytes = 65536;
+    // WindowsNativeEpochFiles publishes at most 16 KiB per record.
+    internal const int MaximumBytes = 16384;
+    internal const int MaximumUsers = 32;
     internal bool IsEmpty => Pending is null && OwnedFan is null && LiveTemporaryCharge is null && AbandonedPrepared is null && StagedJournal is null;
+
+    // Derived from native history alone; NativeRetirementProof.v4 commits to it.
     internal string Commitment => NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.NativeHandback.v1", Epoch,
         Line(Pending), Line(OwnedFan), Line(LiveTemporaryCharge), Line(AbandonedPrepared), StagedJournal ?? "no-staged-journal"));
+
+    // The record additionally commits to the override evidence Setup observed.
+    internal string RecordCommitment(IReadOnlyList<NativeHandbackEvidence> pendingOverrides) =>
+        NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.NativeHandbackRecord.v1",
+            [Commitment, pendingOverrides.Count.ToString(CultureInfo.InvariantCulture), .. pendingOverrides.Select(o => o.UserSid + "," + o.Sha256)]));
+
     private static string Line(NativeHandbackItem? item) => item is null ? "none" : string.Join(',', item.Request, item.Family,
         item.Progress.ToString(CultureInfo.InvariantCulture), item.UserSid, item.Performance ?? "-", item.FanMode ?? "-",
         item.Battery is { } b ? $"{b.Limit.ToString(CultureInfo.InvariantCulture)}/{b.Protection}/{b.Temporary}" : "-");
@@ -35,7 +47,8 @@ internal sealed record WindowsNativeHandback(string Epoch, NativeHandbackItem? P
             w.WriteStartObject();
             w.WriteNumber("schema", 1);
             w.WriteString("epoch", Epoch);
-            w.WriteString("commitment", Commitment);
+            w.WriteString("history", Commitment);
+            w.WriteString("commitment", RecordCommitment(pendingOverrides));
             void Item(string name, NativeHandbackItem? item)
             {
                 w.WritePropertyName(name);
@@ -66,23 +79,23 @@ internal sealed record WindowsNativeHandback(string Epoch, NativeHandbackItem? P
     }
 
     // Strict: any unknown, missing or inconsistent field refuses the record.
-    internal static (WindowsNativeHandback Handback, IReadOnlyList<NativeHandbackEvidence> PendingOverrides) Parse(byte[] bytes)
+    internal static (WindowsNativeHandback Handback, IReadOnlyList<NativeHandbackEvidence> PendingOverrides, string RecordCommitment) Parse(byte[] bytes)
     {
         try { return ParseCore(bytes); }
         catch (Exception error) when (error is JsonException or InvalidOperationException or KeyNotFoundException or FormatException)
         { throw new InvalidDataException("Native handback record is malformed.", error); }
     }
-    private static (WindowsNativeHandback Handback, IReadOnlyList<NativeHandbackEvidence> PendingOverrides) ParseCore(byte[] bytes)
+    private static (WindowsNativeHandback, IReadOnlyList<NativeHandbackEvidence>, string) ParseCore(byte[] bytes)
     {
         if (bytes.Length is 0 or > MaximumBytes) { throw new InvalidDataException("Native handback record has an invalid size."); }
         using var document = JsonDocument.Parse(bytes);
         var e = document.RootElement;
-        Members(e, "schema", "epoch", "commitment", "pending", "ownedFan", "liveTemporaryCharge", "abandonedPrepared", "stagedJournal", "pendingOverrides");
+        Members(e, "schema", "epoch", "history", "commitment", "pending", "ownedFan", "liveTemporaryCharge", "abandonedPrepared", "stagedJournal", "pendingOverrides");
         if (e.GetProperty("schema").GetInt32() != 1) { throw Invalid(); }
         string epoch = Text(e, "epoch");
         string? staged = e.GetProperty("stagedJournal").ValueKind == JsonValueKind.Null ? null : Text(e, "stagedJournal");
-        var handback = new WindowsNativeHandback(epoch, Item(e.GetProperty("pending")), Item(e.GetProperty("ownedFan")),
-            Item(e.GetProperty("liveTemporaryCharge")), Item(e.GetProperty("abandonedPrepared")), staged);
+        var handback = new WindowsNativeHandback(epoch, Item(e.GetProperty("pending"), "pending"), Item(e.GetProperty("ownedFan"), "ownedFan"),
+            Item(e.GetProperty("liveTemporaryCharge"), "liveTemporaryCharge"), Item(e.GetProperty("abandonedPrepared"), "abandonedPrepared"), staged);
         var overrides = new List<NativeHandbackEvidence>();
         foreach (var o in e.GetProperty("pendingOverrides").EnumerateArray())
         {
@@ -90,15 +103,15 @@ internal sealed record WindowsNativeHandback(string Epoch, NativeHandbackItem? P
             overrides.Add(new(Text(o, "userSid"), Text(o, "sha256")));
         }
         if (!NativeCanonical.IsHex(epoch, 32) || staged is not null && !NativeCanonical.IsHex(staged, 64) || handback.IsEmpty
-            || Text(e, "commitment") != handback.Commitment || overrides.Count > MaximumUsers
-            || overrides.Any(o => !IsSid(o.UserSid) || !NativeCanonical.IsHex(o.Sha256, 64)))
+            || overrides.Count > MaximumUsers || overrides.Any(o => !IsSid(o.UserSid) || !NativeCanonical.IsHex(o.Sha256, 64))
+            || overrides.Select(o => o.UserSid).Distinct(StringComparer.Ordinal).Count() != overrides.Count
+            || Text(e, "history") != handback.Commitment || Text(e, "commitment") != handback.RecordCommitment(overrides))
         { throw Invalid(); }
-        return (handback, overrides);
+        return (handback, overrides, handback.RecordCommitment(overrides));
     }
-    internal const int MaximumUsers = 256;
     internal static bool IsSid(string value) => value.Length <= 184 && value.StartsWith("S-1-5-21-", StringComparison.Ordinal)
         && value.All(c => char.IsAsciiDigit(c) || c is 'S' or '-');
-    private static NativeHandbackItem? Item(JsonElement e)
+    private static NativeHandbackItem? Item(JsonElement e, string slot)
     {
         if (e.ValueKind == JsonValueKind.Null) { return null; }
         Members(e, "request", "family", "progress", "userSid", "performance", "fanMode", "battery");
@@ -113,15 +126,33 @@ internal sealed record WindowsNativeHandback(string Epoch, NativeHandbackItem? P
         var item = new NativeHandbackItem(Text(e, "request"), Text(e, "family"), e.GetProperty("progress").GetInt32(), Text(e, "userSid"),
             Optional("performance"), Optional("fanMode"), battery);
         bool valid = Guid.TryParseExact(item.Request, "D", out var request) && request != Guid.Empty && IsSid(item.UserSid)
-            && item.Progress is >= 0 and <= 73 && item.Family switch
+            && item.Family switch
             {
                 "performance" => item.Performance is "Balanced" or "Performance" && item.FanMode is null && battery is null,
                 "fan" => item.FanMode is "Automatic" or "Fixed" or "Maximum" && item.Performance is null && battery is null,
-                "battery" or "temporaryCharge" => battery is { Limit: >= 50 and <= 99 } && item.Performance is null && item.FanMode is null,
+                // Managed cannot hold a temporary full charge with protection off.
+                "battery" or "temporaryCharge" => battery is { Limit: >= 50 and <= 99 } && !(battery.Temporary && !battery.Protection)
+                    && item.Performance is null && item.FanMode is null,
                 _ => false,
-            };
+            }
+            && ValidSlot(slot, item);
         return valid ? item : throw Invalid();
     }
+
+    // Each slot holds only the family and progress that Classify assigns to it.
+    internal static bool ValidSlot(string slot, NativeHandbackItem item) => (slot, item.Family, item.Progress) switch
+    {
+        ("pending", "performance", >= 1 and <= 4) => true,
+        ("pending", "fan", >= 10 and <= 17) => true,
+        ("pending", "fan", >= 40 and <= 43) => item.FanMode == "Automatic",
+        ("pending", "battery", 60 or 61) => true,
+        ("pending", "temporaryCharge", 70 or 71) => true,
+        ("ownedFan", "fan", 30) => item.FanMode is "Fixed" or "Maximum",
+        ("liveTemporaryCharge", "temporaryCharge", 72 or 73) => item.Battery is { Temporary: true },
+        ("abandonedPrepared", _, 0) => true,
+        ("abandonedPrepared", "fan", 31) => item.FanMode == "Automatic",
+        _ => false,
+    };
     private static string Text(JsonElement e, string name) => e.GetProperty(name).GetString() ?? throw Invalid();
     private static void Members(JsonElement e, params string[] names)
     {
@@ -133,40 +164,81 @@ internal sealed record WindowsNativeHandback(string Epoch, NativeHandbackItem? P
     private static InvalidDataException Invalid() => new("Native handback record is unsupported or inconsistent.");
 }
 
-// Setup-owned writer. The record is immutable: a rerun keeps an identical
-// commitment and refuses a different one. Managed resolution lives elsewhere.
+// Records and managed resolutions live in a protected child of the
+// installer-protected machine-data directory. Every access uses the exact-path,
+// non-reparse, trusted-ACL checks of WindowsNativeEpochFiles.
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-internal sealed class WindowsNativeHandbackWriter(string machineDataDirectory)
+internal static class WindowsNativeHandbackStorage
 {
     internal const string DirectoryName = "native-handback";
-    internal string Directory { get; } = Path.Combine(Path.GetFullPath(machineDataDirectory), DirectoryName);
+    internal static string RecordPath(WindowsNativeEpochFiles files, string epoch) => Path.Combine(files.Root, epoch + ".json");
+    internal static string ResolutionPath(WindowsNativeEpochFiles files, string epoch) => Path.Combine(files.Root, epoch + ".resolved");
+
+    // Setup only. The anchor must already be protected; a missing child is
+    // created with an explicit private DACL, as the managed handoff child is.
+    internal static WindowsNativeEpochFiles CreateOrOpen(string machineDataDirectory)
+    {
+        string anchor = Path.GetFullPath(machineDataDirectory);
+        string child = Path.Combine(anchor, DirectoryName);
+        using (WindowsNativeEpochFiles.OpenProtected(anchor))
+        {
+            if (!WindowsNativeEpochFiles.IsPresentDirectory(child))
+            {
+                var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+                var security = new DirectorySecurity();
+                security.SetOwner(administrators);
+                security.SetAccessRuleProtection(true, false);
+                foreach (var sid in new[] { administrators, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) })
+                {
+                    security.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl,
+                        InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                }
+                new DirectoryInfo(child).Create(security);
+            }
+        }
+        return WindowsNativeEpochFiles.OpenProtected(child);
+    }
+
+    // Service. Absence is only explicit not-found evidence; a reparse point or
+    // an untrusted ACL refuses instead of reading as absent.
+    internal static WindowsNativeEpochFiles? OpenExisting(string machineDataDirectory)
+    {
+        string child = Path.Combine(Path.GetFullPath(machineDataDirectory), DirectoryName);
+        return WindowsNativeEpochFiles.IsPresentDirectory(child) ? WindowsNativeEpochFiles.OpenProtected(child) : null;
+    }
+}
+
+// Setup-owned writer. The record is immutable: a rerun keeps a record with the
+// same history commitment and refuses a different one.
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+internal sealed class WindowsNativeHandbackWriter(Func<WindowsNativeEpochFiles> open, string? usersDirectory)
+{
+    internal static WindowsNativeHandbackWriter ForMachineData(string machineDataDirectory) =>
+        new(() => WindowsNativeHandbackStorage.CreateOrOpen(machineDataDirectory), Path.Combine(Path.GetFullPath(machineDataDirectory), "users"));
 
     internal void Persist(WindowsNativeHandback handback)
     {
-        string path = Path.Combine(Directory, handback.Epoch + ".json");
-        if (File.Exists(path))
+        using var files = open();
+        string path = WindowsNativeHandbackStorage.RecordPath(files, handback.Epoch);
+        if (ManagedMailboxRecovery.ReadOptional(files, path) is { } existing)
         {
-            var existing = WindowsNativeHandback.Parse(ReadBounded(path)).Handback;
-            if (existing.Epoch != handback.Epoch || existing.Commitment != handback.Commitment)
+            var preserved = WindowsNativeHandback.Parse(existing).Handback;
+            if (preserved.Epoch != handback.Epoch || preserved.Commitment != handback.Commitment)
             { throw new IOException("A different native handback record is already preserved for this generation."); }
             return;
         }
-        System.IO.Directory.CreateDirectory(Directory);
-        byte[] bytes = handback.Serialize(PendingOverrides());
-        string staging = path + ".tmp";
-        using (var stream = new FileStream(staging, FileMode.Create, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
-        { stream.Write(bytes); stream.Flush(flushToDisk: true); }
-        File.Move(staging, path, overwrite: false);
-        if (!ReadBounded(path).AsSpan().SequenceEqual(bytes)) { throw new IOException("Native handback record publication is unresolved."); }
+        // Resolutions follow their record. One that predates it was not written
+        // for this record and is never adopted.
+        WindowsNativeEpochFiles.RequireAbsent(WindowsNativeHandbackStorage.ResolutionPath(files, handback.Epoch));
+        files.Publish(path, handback.Serialize(PendingOverrides()));
     }
 
     // manual-overrides.json.pending is preserved for review; only its digest is recorded.
     private List<NativeHandbackEvidence> PendingOverrides()
     {
-        string users = Path.Combine(Path.GetDirectoryName(Directory)!, "users");
         var result = new List<NativeHandbackEvidence>();
-        if (!System.IO.Directory.Exists(users)) { return result; }
-        foreach (string user in System.IO.Directory.EnumerateDirectories(users).Order(StringComparer.Ordinal))
+        if (usersDirectory is null || !Directory.Exists(usersDirectory)) { return result; }
+        foreach (string user in Directory.EnumerateDirectories(usersDirectory).Order(StringComparer.Ordinal))
         {
             string sid = Path.GetFileName(user);
             string pending = Path.Combine(user, "manual-overrides.json.pending");
@@ -176,14 +248,5 @@ internal sealed class WindowsNativeHandbackWriter(string machineDataDirectory)
             result.Add(new(sid, Convert.ToHexStringLower(SHA256.HashData(stream))));
         }
         return result;
-    }
-
-    private static byte[] ReadBounded(string path)
-    {
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        if (stream.Length is 0 or > WindowsNativeHandback.MaximumBytes) { throw new InvalidDataException("Native handback record has an invalid size."); }
-        byte[] bytes = new byte[stream.Length];
-        stream.ReadExactly(bytes);
-        return bytes;
     }
 }

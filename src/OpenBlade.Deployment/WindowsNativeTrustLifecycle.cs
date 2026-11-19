@@ -101,7 +101,8 @@ public static class WindowsNativeTrustLifecycle
     // Global order: epoch writer -> original service custody -> owner writer.
     // Native Origin retains custody before Store::open and never takes epoch writer.
     // exitedUnderCustody names the epoch whose exact service custody the caller
-    // holds. Only that caller may record the terminal owner process's exit.
+    // holds. Only that caller may receive the terminal owner process's exit,
+    // and it publishes the exit only after its own admission has completed.
     internal static OwnerLease AcquireRetiredOwner(WindowsNativeEpochFiles files, string? exitedUnderCustody = null)
     {
         WindowsNativeEpochFiles.DirectoryLease? directory = null;
@@ -111,21 +112,32 @@ public static class WindowsNativeTrustLifecycle
             directory = files.RetainDirectory(Path.Combine(files.Root, "owner"));
             writer = files.AcquireOwnerWriter();
             var references = new List<OwnerReference>();
-            (string ownerCommitment, OwnerReference? exited) = RequireOwnerRetiredCore(files, references, exitedUnderCustody);
+            (string ownerCommitment, OwnerReference? exited, PendingExit? pending) = RequireOwnerRetiredCore(files, references, exitedUnderCustody);
             var thermal = WindowsNativeThermalHistory.Read(files, references, exited);
             string commitment = thermal.Present ? NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.NativeOwnerHistory.v2", ownerCommitment, thermal.Commitment)) : ownerCommitment;
-            return new OwnerLease(directory, writer, commitment, references.ToImmutableArray(), thermal);
+            return new OwnerLease(directory, writer, commitment, references.ToImmutableArray(), thermal, pending);
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException or KeyNotFoundException or FormatException or OverflowException)
         { writer?.Dispose(); directory?.Dispose(); throw new NativeRecoveryException(NativeRecoveryReason.FirmwareOwnerUnresolved, "Native firmware ownership history is active, partial or unknown; no drain was inferred.", error); }
     }
     internal sealed record OwnerReference(string Installation, string Epoch, string Service, string Process, string Nonce, string Active);
-    internal sealed class OwnerLease(IDisposable directory, IDisposable writer, string commitment, ImmutableArray<OwnerReference> references, WindowsNativeThermalHistory thermal) : IDisposable
+    // An exit proven under custody but not yet durable. Admission treats it as
+    // present; it is published only after every refusal check has passed.
+    internal sealed record PendingExit(string Epoch, string Path, byte[] Bytes);
+    internal sealed class OwnerLease(IDisposable directory, IDisposable writer, string commitment, ImmutableArray<OwnerReference> references, WindowsNativeThermalHistory thermal, PendingExit? pendingExit = null) : IDisposable
     {
         internal string Commitment { get; } = commitment;
         internal WindowsNativeThermalHistory Thermal { get; } = thermal;
         internal ImmutableArray<OwnerReference> References { get; } = references;
+        internal PendingExit? PendingExit { get; } = pendingExit;
         internal bool IsKnownEmpty => References.IsEmpty;
+        internal void PublishExit(WindowsNativeEpochFiles files)
+        {
+            if (PendingExit is not { } exit) { return; }
+            if (ManagedMailboxRecovery.ReadOptional(files, exit.Path) is null) { files.Publish(exit.Path, exit.Bytes); }
+            using var held = files.OpenFile(exit.Path);
+            WindowsNativeEpochFiles.RequireExact(held, exit.Bytes);
+        }
         public void Dispose() { try { writer.Dispose(); } finally { directory.Dispose(); } }
     }
     private static bool ValidArtifact(string value) => value.Length == 72 && value.EndsWith("-service", StringComparison.Ordinal) && NativeCanonical.IsHex(value[..64], 64);
@@ -136,7 +148,7 @@ public static class WindowsNativeTrustLifecycle
             && ulong.TryParse(parts[1], out ulong created) && created > 0
             && value == pid.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + created.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
-    private static (string Commitment, OwnerReference? Exited) RequireOwnerRetiredCore(WindowsNativeEpochFiles files, List<OwnerReference> references, string? exitedUnderCustody)
+    private static (string Commitment, OwnerReference? Exited, PendingExit? Pending) RequireOwnerRetiredCore(WindowsNativeEpochFiles files, List<OwnerReference> references, string? exitedUnderCustody)
     {
         string owner = Path.Combine(files.Root, "owner");
         using var directory = files.RetainDirectory(owner);
@@ -176,18 +188,22 @@ public static class WindowsNativeTrustLifecycle
         // A crashed native process cannot retire its own owner. Its later-acquired
         // exact custody proves exit; managed then inherits the unsettled history.
         OwnerReference? exited = null;
+        PendingExit? pending = null;
         if (priorFields is not null && priorFields[0] != "Retired")
         {
             exited = references.LastOrDefault(r => r.Nonce == priorFields[7]);
-            if (exited is null || !RequireExited(files, exited, publish: exited.Epoch == exitedUnderCustody))
+            if (exited is null || !RequireExited(files, exited, underCustody: exited.Epoch == exitedUnderCustody, out pending))
             { throw new IOException("Native ownership drain remains unresolved; enrollment was preserved."); }
         }
         return (NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.NativeOwnerHistory.v1",
-            count.ToString(System.Globalization.CultureInfo.InvariantCulture), previous is null ? "known-empty" : NativeCanonical.Digest(previous))), exited);
+            count.ToString(System.Globalization.CultureInfo.InvariantCulture), previous is null ? "known-empty" : NativeCanonical.Digest(previous))), exited, pending);
 
     }
-    private static bool RequireExited(WindowsNativeEpochFiles files, OwnerReference owner, bool publish)
+    // Writes nothing. Without a durable marker, only the caller holding this
+    // epoch's exact custody receives the exit, as a pending publication.
+    private static bool RequireExited(WindowsNativeEpochFiles files, OwnerReference owner, bool underCustody, out PendingExit? pending)
     {
+        pending = null;
         string attempts = Path.Combine(files.Root, owner.Epoch, "attempts");
         string key = owner.Process.Replace(':', '-') + ".bin";
         byte[]? launch = ManagedMailboxRecovery.ReadOptional(files, Path.Combine(attempts, "launch-" + key));
@@ -199,10 +215,8 @@ public static class WindowsNativeTrustLifecycle
         byte[]? existing = ManagedMailboxRecovery.ReadOptional(files, marker);
         if (existing is null)
         {
-            if (!publish) { return false; }
-            files.Publish(marker, expected);
-            using var held = files.OpenFile(marker);
-            WindowsNativeEpochFiles.RequireExact(held, expected);
+            if (!underCustody) { return false; }
+            pending = new(owner.Epoch, marker, expected);
             return true;
         }
         return existing.AsSpan().SequenceEqual(expected);

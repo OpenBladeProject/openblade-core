@@ -38,6 +38,11 @@ internal static class WindowsNativeAttemptHistory
             else if (name.StartsWith("exited-", StringComparison.Ordinal) && name.EndsWith(".bin", StringComparison.Ordinal)) { exits.Add(name[7..], Read(path)); }
             else { throw new NativeRecoveryException(NativeRecoveryReason.UnknownAttemptHistory, "Unknown native attempt history was preserved."); }
         }
+        // The caller publishes a pending exit only after this proof and every
+        // other admission check succeed; until then it is checked as present.
+        if (owner.PendingExit is { } pending && pending.Epoch == record.Epoch
+            && !exits.TryAdd(Path.GetFileName(pending.Path)[7..], pending.Bytes))
+        { throw new NativeRecoveryException(NativeRecoveryReason.MissingAttemptDrain, "A pending native exit record is already present."); }
         if (launches.Count > MaximumAttempts || drains.Count > MaximumAttempts)
         { throw new NativeRecoveryException(NativeRecoveryReason.AttemptHistoryOverLimit, "Native launch/drain history exceeds the shared attempt budget."); }
         string submission = Path.Combine(directory, "submission.bin");
@@ -86,7 +91,7 @@ internal static class WindowsNativeAttemptHistory
                 record.Epoch, NativeCanonical.Digest(bytes), f[5], f[6])))
             { throw new NativeRecoveryException(NativeRecoveryReason.MissingAttemptDrain, "The exact native process drain is malformed or mismatched."); }
             // An exit marker is published only under this epoch's reacquired
-            // custody for the terminal unretired owner process.
+            // custody for the terminal unretired owner process, after admission.
             bool exited = exits.TryGetValue(name, out byte[]? exit);
             if (exited && !exit!.AsSpan().SequenceEqual(Exited(record.Epoch, bytes, f[5], f[6])))
             { throw new NativeRecoveryException(NativeRecoveryReason.MissingAttemptDrain, "The exact native process exit record is malformed or mismatched."); }

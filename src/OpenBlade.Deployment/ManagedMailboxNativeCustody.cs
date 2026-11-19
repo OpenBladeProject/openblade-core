@@ -9,6 +9,8 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
 {
     private readonly WindowsNativeEpochFiles? files;
     internal bool IsPrivateFixture => files?.IsPrivateFixture == true;
+    // Epoch to history commitment of each native handback, freshly derived.
+    internal IReadOnlyDictionary<string, string> Handbacks { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
     private FileStream? writer;
     private readonly List<IDisposable> held = [];
     private readonly Dictionary<string, Generation> generations = new(StringComparer.Ordinal);
@@ -119,6 +121,8 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
             // All original custody precedes the one global owner writer.
             var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files); held.Add(owner);
             ownerCommitment = owner.Commitment;
+            // A crashed generation hands back only what this fresh read derives.
+            if (owner.Thermal.Handback is { IsEmpty: false } handback) { Handbacks = new Dictionary<string, string>(StringComparer.Ordinal) { [handback.Epoch] = handback.Commitment }; }
             // A complete owner chain is not proof that its native generations
             // survived. Never reset ordinal/predecessor against retained owners.
             if (firstPreparation && (!owner.IsKnownEmpty || authenticated.Count == 0

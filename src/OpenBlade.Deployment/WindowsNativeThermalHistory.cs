@@ -107,8 +107,10 @@ internal sealed class WindowsNativeThermalHistory
         // Chronology admits at most one unsettled row, always the last one.
         Row? open = frontier is { Progress: not (5 or 6 or 30 or 50 or 51 or 62 or 63 or 72 or 73) } last ? last : null;
         if (open is not null && open.Owner != exited.Nonce || ownedFan is not null && ownedFan.Owner != exited.Nonce) { throw Denied(); }
-        return new(exited.Epoch, open is { Progress: not 0 } ? Item(open) : null, ownedFan is null ? null : Item(ownedFan),
-            liveTemporary is not null && liveTemporary.Owner == exited.Nonce ? Item(liveTemporary) : null, open is { Progress: 0 } ? Item(open) : null, staged);
+        // Prepared (0) and release preparation (31) precede any setter.
+        bool prepared = open is { Progress: 0 or 31 };
+        return new(exited.Epoch, open is not null && !prepared ? Item(open) : null, ownedFan is null ? null : Item(ownedFan),
+            liveTemporary is not null && liveTemporary.Owner == exited.Nonce ? Item(liveTemporary) : null, prepared ? Item(open!) : null, staged);
     }
     private static NativeHandbackItem Item(Row row)
     {
