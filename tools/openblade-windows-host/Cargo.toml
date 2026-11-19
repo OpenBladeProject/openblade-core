@@ -27,6 +27,14 @@ agent-display-refresh-write-v1 = ["agent-display-query-v1", "openblade-platform-
 # Partial display mutation: manual setColorProfile only, through the separately
 # selected production WCS writer. It implies no other display write.
 agent-display-color-write-v1 = ["agent-display-query-v1", "openblade-platform-windows/display-color-write"]
+# Manual applyProfile: managed composes refresh-rate, HDR, color-profile and
+# brightness writes, so the profile selects all four reviewed writers.
+agent-display-profile-apply-v1 = [
+    "agent-display-brightness-write-v1",
+    "agent-display-hdr-write-v1",
+    "agent-display-refresh-write-v1",
+    "agent-display-color-write-v1",
+]
 agent-battery-report-v1 = ["native-agent-entry-compile-check"]
 native-agent-entry-compile-check = ["windows-sys/Win32_System_RemoteDesktop"]
 cpu-worker-fixture = []

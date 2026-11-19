@@ -315,6 +315,16 @@ static async Task<int> EmitRequestsAsync(string outPath)
         V, id, PowerSource.PluggedIn, new DisplayProfileSettings(null, null, null)));
     await AddValid("applyProfile-full", new ApplyDisplayProfileRequest(
         V, id, PowerSource.Battery, new DisplayProfileSettings("60 Hz", true, "Profile one") { BrightnessPercent = 75 }));
+    await AddValid("applyProfile-refresh-1024", new ApplyDisplayProfileRequest(
+        V, id, PowerSource.UsbC, new DisplayProfileSettings(new string('r', 1024), null, null)));
+    await AddValid("applyProfile-hdr-false", new ApplyDisplayProfileRequest(
+        V, id, PowerSource.PluggedIn, new DisplayProfileSettings(null, false, null)));
+    await AddValid("applyProfile-color-nonascii", new ApplyDisplayProfileRequest(
+        V, id, PowerSource.Battery, new DisplayProfileSettings(null, null, "sRGB écran 日本 \U0001F600 x")));
+    await AddValid("applyProfile-brightness-0", new ApplyDisplayProfileRequest(
+        V, id, PowerSource.UsbC, DisplayProfileSettings.Unconfigured() with { BrightnessPercent = 0 }));
+    await AddValid("applyProfile-brightness-100", new ApplyDisplayProfileRequest(
+        V, id, PowerSource.PluggedIn, DisplayProfileSettings.Unconfigured() with { BrightnessPercent = 100 }));
 
     string Op(string op, string rest, int version = V) =>
         $"{{\"operation\":\"{op}\",\"version\":{version},\"requestId\":\"{id}\"{rest}}}";
@@ -358,10 +368,38 @@ static async Task<int> EmitRequestsAsync(string outPath)
     AddInvalid("object-operation-setHdr", ObjectOp("setHdr", ",\"expectedPowerSource\":0,\"enabled\":true"));
     AddInvalid("object-operation-setRefreshRate", ObjectOp("setRefreshRate", ",\"expectedPowerSource\":0,\"refreshRateKey\":\"fixed-60\""));
     AddInvalid("object-operation-setColorProfile", ObjectOp("setColorProfile", ",\"expectedPowerSource\":0,\"colorProfileKey\":\"sRGB.icm\""));
+    // applyProfile settings exactly as the managed codec writes them.
+    string Settings(string refresh = "null", string hdr = "null", string color = "null",
+        string brightness = "null", string configured = "true") =>
+        $"{{\"refreshRateKey\":{refresh},\"hdrEnabled\":{hdr},\"colorProfileKey\":{color},\"brightnessPercent\":{brightness},\"isConfigured\":{configured}}}";
+    string Profile(string settings, string power = "0") =>
+        Op("applyProfile", $",\"expectedPowerSource\":{power},\"settings\":{settings}");
+    AddInvalid("object-operation-applyProfile", ObjectOp("applyProfile", ",\"expectedPowerSource\":0,\"settings\":" + Settings(brightness: "50")));
+    AddInvalid("applyProfile-power-source-3", Profile(Settings(brightness: "50"), "3"));
+    AddInvalid("applyProfile-missing-power-source", Op("applyProfile", ",\"settings\":" + Settings(brightness: "50")));
+    AddInvalid("applyProfile-missing-settings", Op("applyProfile", ",\"expectedPowerSource\":0"));
+    AddInvalid("applyProfile-settings-array", Profile("[]"));
+    AddInvalid("applyProfile-blank-refresh-key", Profile(Settings(refresh: "\"   \"")));
+    AddInvalid("applyProfile-refresh-key-1025", Profile(Settings(refresh: JsonSerializer.Serialize(new string('r', 1025)))));
+    AddInvalid("applyProfile-padded-color-key", Profile(Settings(color: "\" sRGB.icm \"")));
+    AddInvalid("applyProfile-control-char-color-key", Profile(Settings(color: JsonSerializer.Serialize("sRGB\u0007.icm"))));
+    AddInvalid("applyProfile-brightness-101", Profile(Settings(brightness: "101")));
+    AddInvalid("applyProfile-brightness-minus-1", Profile(Settings(brightness: "-1")));
+    AddInvalid("applyProfile-hdr-as-string", Profile(Settings(hdr: "\"true\"")));
+    AddInvalid("applyProfile-missing-refreshRateKey", Profile("{\"hdrEnabled\":true,\"colorProfileKey\":null,\"brightnessPercent\":null,\"isConfigured\":true}"));
+    AddInvalid("applyProfile-unknown-settings-member", Profile(Settings(brightness: "50").TrimEnd('}') + ",\"extra\":1}"));
+    AddInvalid("applyProfile-percent-member", Op("applyProfile", ",\"expectedPowerSource\":0,\"percent\":50,\"settings\":" + Settings(brightness: "50")));
     // Managed leniency (last member wins), so not a fixture row; printed instead.
     var lenient = new List<(string Name, string Json)>
     {
         ("duplicate-member", Op("setBrightness", ",\"expectedPowerSource\":0,\"percent\":50,\"percent\":60")),
+        // Members the managed codec always writes but does not require or
+        // check; native requires the written shape.
+        ("applyProfile-missing-brightnessPercent", Profile("{\"refreshRateKey\":null,\"hdrEnabled\":true,\"colorProfileKey\":null,\"isConfigured\":true}")),
+        ("applyProfile-missing-isConfigured", Profile("{\"refreshRateKey\":null,\"hdrEnabled\":true,\"colorProfileKey\":null,\"brightnessPercent\":null}")),
+        ("applyProfile-inconsistent-isConfigured", Profile(Settings(hdr: "true", configured: "false"))),
+        ("applyProfile-pascal-case-settings", Profile("{\"RefreshRateKey\":null,\"HdrEnabled\":true,\"ColorProfileKey\":null,\"BrightnessPercent\":null,\"IsConfigured\":true}")),
+        ("applyProfile-brightness-as-string", Profile(Settings(brightness: "\"50\""))),
     };
     AddInvalid("unknown-operation", Op("bogus", string.Empty));
 

@@ -9,7 +9,7 @@ Modes:
 - `DisplayQueryParity <frames.jsonl>`: each row holds one native response frame.
   Rows with 4 members (case, expectedStatus, expectedState, frame) are read-only
   queries and must be Succeeded. Rows with 5 members add expectedError and cover
-  setBrightness, setHdr, setRefreshRate and setColorProfile results
+  setBrightness, setHdr, setRefreshRate, setColorProfile and applyProfile results
   (0 Succeeded, 1 Blocked, 2 Failed, 3 Indeterminate). Each frame must decode
   with `SessionDisplayIpcCodec`, match status, error and state exactly, and
   survive a managed roundtrip. The expected texts come from the Rust test
@@ -29,8 +29,10 @@ Modes:
   `SessionDisplayIpcCodec.WriteRequestAsync`; invalid rows are hand-built JSON
   that `ReadRequestAsync` must reject (the run fails otherwise). Output is
   committed as `tests/fixtures/display-requests/managed-requests.jsonl`.
-  The managed reader accepts duplicate members (last wins), so that case is
-  printed as an observation and is not a fixture row; it rejects `operation`
+  The managed reader accepts duplicate members (last wins) and applyProfile
+  settings it never writes (a missing `brightnessPercent` or `isConfigured`,
+  an inconsistent `isConfigured`, PascalCase names, a string percent), so those
+  cases are printed as observations and are not fixture rows; it rejects `operation`
   when it is not the first member.
 - `requests-verify <in.jsonl>`: decodes every valid row with `ReadRequestAsync`,
   requires the managed re-encode to equal the row bytes, and requires every

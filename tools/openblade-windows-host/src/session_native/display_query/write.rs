@@ -1,10 +1,11 @@
 //! Production state shared by the selected partial display writes.
 //!
 //! One managed recovery checkpoint, one trusted power admission and one
-//! submission fence serve manual `setBrightness`, `setHdr`, `setRefreshRate` and
-//! `setColorProfile`. Brightness owns its operation order (`brightness_write`);
-//! the other writes share the manual-operation frame of `manual_write`, and each
-//! supplies only its native attempt and reply predicate.
+//! submission fence serve manual `setBrightness`, `setHdr`, `setRefreshRate`,
+//! `setColorProfile` and `applyProfile`. Brightness owns its operation order
+//! (`brightness_write`); the other single-field writes share the
+//! manual-operation frame of `manual_write`, and each supplies only its native
+//! attempt and reply predicate. `profile_apply` composes those attempts.
 use super::{
     observation::{SharedBrightness, Snapshot},
     recovery::{CheckpointFile, Recovery, WindowsCheckpointFile},
@@ -187,6 +188,23 @@ impl Writer {
                 self.host.clone(),
                 openblade_platform_windows::color_profile::write::WindowsColorProfileNative::current_user(),
             ),
+            brightness,
+            &self.recovery,
+            request,
+            canceled,
+        )
+    }
+
+    /// Blocking: the complete admitted profile operation, including its record.
+    #[cfg(feature = "agent-display-profile-apply-v1")]
+    pub(super) fn apply_profile(
+        &self,
+        brightness: &SharedBrightness,
+        request: &super::profile_apply::ApplyProfile,
+        canceled: &std::sync::atomic::AtomicBool,
+    ) -> io::Result<super::manual_write::ManualWriteOutcome> {
+        super::profile_apply::run(
+            &mut self.host.clone(),
             brightness,
             &self.recovery,
             request,

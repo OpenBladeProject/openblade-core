@@ -66,7 +66,8 @@ fn main() {
     let target = env::var("TARGET").expect("target");
     let profile = env::var("PROFILE").expect("profile");
     // Selected Agent contracts in fixed order. Every partial display write
-    // implies the display query feature.
+    // implies the display query feature, and the profile apply implies every
+    // display write it composes.
     let agent = [
         ("agent-battery-report-v1", "agent-battery-report-v1"),
         ("agent-display-query-v1", "session-display-query-partial-v1"),
@@ -85,6 +86,10 @@ fn main() {
         (
             "agent-display-color-write-v1",
             "session-display-color-write-partial-v1",
+        ),
+        (
+            "agent-display-profile-apply-v1",
+            "session-display-profile-apply-partial-v1",
         ),
     ]
     .into_iter()

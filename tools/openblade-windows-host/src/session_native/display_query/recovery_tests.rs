@@ -419,6 +419,19 @@ fn emits_native_rows_for_the_managed_oracle() {
     assert!(color.explicit_read(&without_brightness()));
     row("native-color-after-resume", &color, &file);
 
+    // A profile checkpoint covers every configured field; a partial outcome
+    // keeps the managed durable record whatever the native gate holds.
+    let file = Mem::default();
+    let mut profile = Recovery::load(file.clone());
+    assert!(profile.begin(Fields::ALL, Some(2)));
+    row("native-profile-after-begin", &profile, &file);
+    profile.complete_with(
+        Status::Indeterminate,
+        &Snapshot::unavailable("unknown"),
+        Fields::HDR,
+    );
+    row("native-profile-after-partial-indeterminate", &profile, &file);
+
     let (mut cleared, file) = from_fixture("pluggedin-owned-all-with-profile-full-baseline");
     assert!(cleared.begin(Fields::BRIGHTNESS, None));
     row("native-begin-clears-baseline", &cleared, &file);

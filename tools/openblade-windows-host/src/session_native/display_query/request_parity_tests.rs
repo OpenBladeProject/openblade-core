@@ -36,6 +36,7 @@ fn selected(case: &str) -> bool {
         "setHdr" => cfg!(feature = "agent-display-hdr-write-v1"),
         "setRefreshRate" => cfg!(feature = "agent-display-refresh-write-v1"),
         "setColorProfile" => cfg!(feature = "agent-display-color-write-v1"),
+        "applyProfile" => cfg!(feature = "agent-display-profile-apply-v1"),
         _ => false,
     }
 }
@@ -63,7 +64,7 @@ fn managed_request_frames_parse_exactly_for_selected_operations() {
         );
         checked += 1;
     }
-    assert_eq!(checked, 49, "every fixture row is checked");
+    assert_eq!(checked, 69, "every fixture row is checked");
 }
 
 #[test]
@@ -94,4 +95,35 @@ fn object_form_discriminators_are_refused_like_managed() {
     assert!(Request::parse(brightness.as_bytes()).is_err());
     let string = format!(r#"{{"operation":"query","version":2,"requestId":"{id}"}}"#);
     assert!(Request::parse(string.as_bytes()).is_ok());
+}
+
+/// Managed reads these (the oracle prints them as accepted observations) but
+/// never writes them: its codec always writes every settings member, with
+/// camelCase names, a number percent and the computed `isConfigured`.
+/// Native requires that written shape (stricter).
+#[cfg(feature = "agent-display-profile-apply-v1")]
+#[test]
+fn managed_lenient_profile_settings_are_refused() {
+    let id = "9f876742-1234-4321-abcd-d3ea3e1cf102";
+    let profile = |settings: &str| {
+        format!(
+            r#"{{"operation":"applyProfile","version":2,"requestId":"{id}","expectedPowerSource":0,"settings":{settings}}}"#
+        )
+    };
+    let written = profile(
+        r#"{"refreshRateKey":null,"hdrEnabled":true,"colorProfileKey":null,"brightnessPercent":null,"isConfigured":true}"#,
+    );
+    assert!(Request::parse(written.as_bytes()).is_ok());
+    for settings in [
+        r#"{"refreshRateKey":null,"hdrEnabled":true,"colorProfileKey":null,"isConfigured":true}"#,
+        r#"{"refreshRateKey":null,"hdrEnabled":true,"colorProfileKey":null,"brightnessPercent":null}"#,
+        r#"{"refreshRateKey":null,"hdrEnabled":true,"colorProfileKey":null,"brightnessPercent":null,"isConfigured":false}"#,
+        r#"{"RefreshRateKey":null,"HdrEnabled":true,"ColorProfileKey":null,"BrightnessPercent":null,"IsConfigured":true}"#,
+        r#"{"refreshRateKey":null,"hdrEnabled":null,"colorProfileKey":null,"brightnessPercent":"50","isConfigured":true}"#,
+    ] {
+        assert!(
+            Request::parse(profile(settings).as_bytes()).is_err(),
+            "{settings}"
+        );
+    }
 }

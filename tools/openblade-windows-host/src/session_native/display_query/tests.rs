@@ -51,6 +51,16 @@ macro_rules! unscripted_writes {
             unscripted("setColorProfile")
         }
     };
+    (@ apply_profile) => {
+        #[cfg(feature = "agent-display-profile-apply-v1")]
+        async fn apply_profile(
+            &mut self,
+            _: ApplyProfile,
+            _: Arc<AtomicBool>,
+        ) -> io::Result<ManualWriteOutcome> {
+            unscripted("applyProfile")
+        }
+    };
 }
 #[path = "brightness_lifetime_tests.rs"]
 mod brightness_lifetime;
@@ -72,7 +82,13 @@ impl Supplier for Script {
             .take()
             .expect("unexpected repeated display query"))
     }
-    unscripted_writes!(set_brightness, set_hdr, set_refresh_rate, set_color_profile);
+    unscripted_writes!(
+        set_brightness,
+        set_hdr,
+        set_refresh_rate,
+        set_color_profile,
+        apply_profile
+    );
 }
 /// Encode like the managed codec: the `operation` discriminator first (the
 /// json! map would otherwise sort it after `expectedPowerSource`).
@@ -131,6 +147,12 @@ fn every_selected_write_has_the_managed_mutation_deadline() {
     if cfg!(feature = "agent-display-color-write-v1") {
         let mut body = common("setColorProfile");
         body["colorProfileKey"] = "sRGB_CTR.icm".into();
+        writes.push(body);
+    }
+    if cfg!(feature = "agent-display-profile-apply-v1") {
+        let mut body = common("applyProfile");
+        body["settings"] = json!({"refreshRateKey":null,"hdrEnabled":null,
+            "colorProfileKey":null,"brightnessPercent":50,"isConfigured":true});
         writes.push(body);
     }
     for body in writes {
@@ -344,7 +366,13 @@ impl Supplier for Blocker {
             }
         }
     }
-    unscripted_writes!(set_brightness, set_hdr, set_refresh_rate, set_color_profile);
+    unscripted_writes!(
+        set_brightness,
+        set_hdr,
+        set_refresh_rate,
+        set_color_profile,
+        apply_profile
+    );
 }
 async fn wait_flag(flag: &AtomicBool) {
     timeout(Duration::from_secs(5), async {
@@ -894,7 +922,7 @@ mod brightness_writes {
                 state,
             })
         }
-        unscripted_writes!(set_hdr, set_refresh_rate, set_color_profile);
+        unscripted_writes!(set_hdr, set_refresh_rate, set_color_profile, apply_profile);
     }
     fn set(expected: Value, percent: Value) -> Vec<u8> {
         request(json!({
@@ -1052,7 +1080,7 @@ mod brightness_writes {
             .await
             .unwrap()
         }
-        unscripted_writes!(set_hdr, set_refresh_rate, set_color_profile);
+        unscripted_writes!(set_hdr, set_refresh_rate, set_color_profile, apply_profile);
     }
 
     #[tokio::test]
@@ -1179,7 +1207,12 @@ mod hdr_writes {
             self.queries += 1;
             Ok(Snapshot::unavailable("unused"))
         }
-        unscripted_writes!(set_brightness, set_refresh_rate, set_color_profile);
+        unscripted_writes!(
+            set_brightness,
+            set_refresh_rate,
+            set_color_profile,
+            apply_profile
+        );
         async fn set_hdr(
             &mut self,
             request: SetHdr,
@@ -1383,7 +1416,12 @@ mod hdr_writes {
         async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
             unreachable!("write test received a query")
         }
-        unscripted_writes!(set_brightness, set_refresh_rate, set_color_profile);
+        unscripted_writes!(
+            set_brightness,
+            set_refresh_rate,
+            set_color_profile,
+            apply_profile
+        );
         async fn set_hdr(
             &mut self,
             _request: SetHdr,
@@ -1533,7 +1571,7 @@ mod refresh_writes {
             self.queries += 1;
             Ok(Snapshot::unavailable("unused"))
         }
-        unscripted_writes!(set_brightness, set_hdr, set_color_profile);
+        unscripted_writes!(set_brightness, set_hdr, set_color_profile, apply_profile);
         async fn set_refresh_rate(
             &mut self,
             request: SetRefreshRate,
@@ -1812,7 +1850,7 @@ mod refresh_writes {
         async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
             unreachable!("write test received a query")
         }
-        unscripted_writes!(set_brightness, set_hdr, set_color_profile);
+        unscripted_writes!(set_brightness, set_hdr, set_color_profile, apply_profile);
         async fn set_refresh_rate(
             &mut self,
             _request: SetRefreshRate,
@@ -1926,7 +1964,7 @@ mod color_writes {
             self.queries += 1;
             Ok(Snapshot::unavailable("unused"))
         }
-        unscripted_writes!(set_brightness, set_hdr, set_refresh_rate);
+        unscripted_writes!(set_brightness, set_hdr, set_refresh_rate, apply_profile);
         async fn set_color_profile(
             &mut self,
             request: SetColorProfile,
@@ -2212,7 +2250,7 @@ mod color_writes {
         async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
             unreachable!("write test received a query")
         }
-        unscripted_writes!(set_brightness, set_hdr, set_refresh_rate);
+        unscripted_writes!(set_brightness, set_hdr, set_refresh_rate, apply_profile);
         async fn set_color_profile(
             &mut self,
             _request: SetColorProfile,
@@ -2285,6 +2323,477 @@ mod color_writes {
             );
             result.unwrap();
             assert!(bytes.is_empty(), "an abandoned write sends no reply");
+            assert!(supplier.recorded.load(Ordering::Acquire));
+            assert!(supplier.canceled.load(Ordering::Acquire));
+        }
+    }
+}
+
+#[cfg(feature = "agent-display-profile-apply-v1")]
+mod profile_applies {
+    use super::*;
+    use profile_apply::{PAUSED, Settings, UNAVAILABLE, UNCONFIRMED};
+    use recovery::Status;
+    use std::borrow::Cow;
+    use write::{CHANGED_POWER, CHECKPOINT, STALE_AFTER, UNCONFIRMED_POWER};
+
+    struct Writes {
+        outcome: Option<(Status, Option<Cow<'static, str>>, Snapshot)>,
+        received: Vec<ApplyProfile>,
+        queries: usize,
+    }
+    impl Writes {
+        fn new(status: Status, error: Option<Cow<'static, str>>, state: Snapshot) -> Self {
+            Self {
+                outcome: Some((status, error, state)),
+                received: Vec::new(),
+                queries: 0,
+            }
+        }
+    }
+    impl Supplier for Writes {
+        async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
+            self.queries += 1;
+            Ok(Snapshot::unavailable("unused"))
+        }
+        unscripted_writes!(set_brightness, set_hdr, set_refresh_rate, set_color_profile);
+        async fn apply_profile(
+            &mut self,
+            request: ApplyProfile,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<ManualWriteOutcome> {
+            self.received.push(request);
+            let (status, error, state) = self.outcome.take().expect("one write");
+            Ok(ManualWriteOutcome {
+                status,
+                error,
+                state,
+            })
+        }
+    }
+    /// The managed codec's encoding of `DisplayProfileSettings`.
+    fn settings(refresh: Value, hdr: Value, color: Value, brightness: Value) -> Value {
+        let configured =
+            !(refresh.is_null() && hdr.is_null() && color.is_null() && brightness.is_null());
+        json!({"refreshRateKey":refresh,"hdrEnabled":hdr,"colorProfileKey":color,
+            "brightnessPercent":brightness,"isConfigured":configured})
+    }
+    fn full() -> Value {
+        settings(
+            json!("fixed-240"),
+            json!(true),
+            json!("sRGB_CTR.icm"),
+            json!(75),
+        )
+    }
+    fn apply(expected: Value, settings: Value) -> Vec<u8> {
+        request(json!({
+            "operation":"applyProfile","version":2,"requestId":ID,
+            "expectedPowerSource":expected,"settings":settings,
+        }))
+    }
+    fn capture_write(name: &str, frame: &[u8], status: Status, error: Option<&str>, state: &Value) {
+        capture_row(
+            json!({"case":name,"expectedStatus":status as u8,"expectedError":error,
+            "expectedState":state,"frame":frame}),
+        );
+    }
+
+    #[tokio::test]
+    async fn every_profile_status_reaches_the_managed_response_shape() {
+        let state = || observation::fixture_query("available");
+        let text = |error: &'static str| Some(Cow::Borrowed(error));
+        let cases: [(&str, Status, Option<Cow<'static, str>>); 15] = [
+            ("profile-succeeded", Status::Succeeded, None),
+            ("profile-blocked-paused", Status::Blocked, text(PAUSED)),
+            (
+                "profile-blocked-checkpoint",
+                Status::Blocked,
+                text(CHECKPOINT),
+            ),
+            (
+                "profile-blocked-unconfirmed-power",
+                Status::Blocked,
+                text(UNCONFIRMED_POWER),
+            ),
+            (
+                "profile-blocked-power",
+                Status::Blocked,
+                text(CHANGED_POWER),
+            ),
+            (
+                "profile-blocked-step-canceled",
+                Status::Blocked,
+                text(hdr_write::CANCELED),
+            ),
+            (
+                "profile-failed-unavailable",
+                Status::Failed,
+                text(UNAVAILABLE),
+            ),
+            (
+                "profile-failed-message",
+                Status::Failed,
+                Some(Cow::Owned("The internal display is not active.".into())),
+            ),
+            (
+                "profile-failed-brightness",
+                Status::Failed,
+                text(brightness_write::UNAVAILABLE),
+            ),
+            (
+                "profile-failed-unconfirmed",
+                Status::Failed,
+                text(UNCONFIRMED),
+            ),
+            (
+                "profile-failed-step",
+                Status::Failed,
+                text(refresh_write::UNAVAILABLE),
+            ),
+            (
+                "profile-indeterminate-unconfirmed",
+                Status::Indeterminate,
+                text(UNCONFIRMED),
+            ),
+            (
+                "profile-indeterminate-step",
+                Status::Indeterminate,
+                text(color_write::UNCONFIRMED),
+            ),
+            (
+                "profile-indeterminate-stale",
+                Status::Indeterminate,
+                text(STALE_AFTER),
+            ),
+            (
+                "profile-indeterminate-unrefreshed",
+                Status::Indeterminate,
+                text(hdr_write::UNCONFIRMED),
+            ),
+        ];
+        for (index, (case, status, error)) in cases.into_iter().enumerate() {
+            let state = if case.ends_with("-unrefreshed") {
+                Snapshot::unavailable(write::UNREFRESHED)
+            } else {
+                state()
+            };
+            let source = index as u8 % 3;
+            let expected = serde_json::to_value(&state).unwrap();
+            let mut supplier = Writes::new(status, error.clone(), state);
+            let (result, bytes, admissions) =
+                exchange(&mut supplier, &apply(json!(source), full())).await;
+            result.unwrap();
+            assert_eq!(admissions, 2);
+            assert_eq!(supplier.queries, 0);
+            assert_eq!(
+                supplier.received,
+                [ApplyProfile {
+                    expected_power_source: source,
+                    settings: Settings {
+                        refresh_rate_key: Some("fixed-240".into()),
+                        hdr_enabled: Some(true),
+                        color_profile_key: Some("sRGB_CTR.icm".into()),
+                        brightness_percent: Some(75),
+                    },
+                }]
+            );
+            let body: Value = serde_json::from_slice(&bytes[4..]).unwrap();
+            assert_eq!(body["requestId"], ID);
+            assert_eq!(body["status"], status as u8);
+            assert_eq!(body["error"], json!(error.as_deref()));
+            assert_eq!(body["state"], expected);
+            capture_write(case, &bytes, status, error.as_deref(), &expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn managed_settings_reach_the_supplier_exactly() {
+        let cases = [
+            (
+                settings(Value::Null, Value::Null, Value::Null, Value::Null),
+                Settings::default(),
+            ),
+            (
+                settings(
+                    json!("a".repeat(1024)),
+                    Value::Null,
+                    Value::Null,
+                    Value::Null,
+                ),
+                Settings {
+                    refresh_rate_key: Some("a".repeat(1024)),
+                    ..Settings::default()
+                },
+            ),
+            (
+                settings(Value::Null, json!(false), Value::Null, Value::Null),
+                Settings {
+                    hdr_enabled: Some(false),
+                    ..Settings::default()
+                },
+            ),
+            (
+                settings(
+                    Value::Null,
+                    Value::Null,
+                    json!("\u{1F600}".repeat(512)),
+                    Value::Null,
+                ),
+                Settings {
+                    color_profile_key: Some("\u{1F600}".repeat(512)),
+                    ..Settings::default()
+                },
+            ),
+            (
+                settings(Value::Null, Value::Null, Value::Null, json!(0)),
+                Settings {
+                    brightness_percent: Some(0),
+                    ..Settings::default()
+                },
+            ),
+            (
+                settings(Value::Null, Value::Null, Value::Null, json!(100)),
+                Settings {
+                    brightness_percent: Some(100),
+                    ..Settings::default()
+                },
+            ),
+        ];
+        for (source, (wire, expected)) in cases.into_iter().enumerate() {
+            let source = source as u8 % 3;
+            let mut supplier = Writes::new(Status::Succeeded, None, Snapshot::unavailable("x"));
+            let (result, bytes, _) = exchange(&mut supplier, &apply(json!(source), wire)).await;
+            result.unwrap();
+            assert!(!bytes.is_empty());
+            assert_eq!(
+                supplier.received,
+                [ApplyProfile {
+                    expected_power_source: source,
+                    settings: expected,
+                }]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_profile_members_reach_no_supplier() {
+        let id = ID;
+        let with = |member: &str, value: Value| {
+            let mut wire = full();
+            wire[member] = value;
+            wire
+        };
+        let without = |member: &str| {
+            let mut wire = full();
+            wire.as_object_mut().unwrap().remove(member);
+            wire
+        };
+        let mut inputs = vec![
+            apply(json!(3), full()),
+            apply(json!(-1), full()),
+            apply(json!(0.5), full()),
+            apply(json!("PluggedIn"), full()),
+            apply(Value::Null, full()),
+            apply(json!(0), Value::Null),
+            apply(json!(0), json!({})),
+            apply(json!(0), json!([])),
+            apply(json!(0), json!("settings")),
+            apply(json!(0), with("refreshRateKey", json!(""))),
+            apply(json!(0), with("refreshRateKey", json!("   "))),
+            apply(json!(0), with("refreshRateKey", json!(" fixed-240"))),
+            apply(json!(0), with("refreshRateKey", json!("fixed\u{7}240"))),
+            apply(json!(0), with("refreshRateKey", json!("a".repeat(1025)))),
+            apply(json!(0), with("refreshRateKey", json!(240))),
+            apply(json!(0), with("colorProfileKey", json!(""))),
+            apply(json!(0), with("colorProfileKey", json!("sRGB_CTR.icm "))),
+            apply(
+                json!(0),
+                with("colorProfileKey", json!("\u{1F600}".repeat(513))),
+            ),
+            apply(json!(0), with("hdrEnabled", json!("true"))),
+            apply(json!(0), with("hdrEnabled", json!(1))),
+            apply(json!(0), with("brightnessPercent", json!(101))),
+            apply(json!(0), with("brightnessPercent", json!(-1))),
+            apply(json!(0), with("brightnessPercent", json!(50.5))),
+            apply(json!(0), with("brightnessPercent", json!("50"))),
+            apply(json!(0), with("isConfigured", Value::Null)),
+            apply(json!(0), with("isConfigured", json!(false))),
+            apply(
+                json!(0),
+                settings(Value::Null, Value::Null, Value::Null, Value::Null)
+                    .as_object()
+                    .map(|map| {
+                        let mut map = map.clone();
+                        map.insert("isConfigured".into(), json!(true));
+                        Value::Object(map)
+                    })
+                    .unwrap(),
+            ),
+            apply(json!(0), with("extra", json!(1))),
+            apply(json!(0), with("RefreshRateKey", json!("fixed-240"))),
+            apply(json!(0), without("refreshRateKey")),
+            apply(json!(0), without("hdrEnabled")),
+            apply(json!(0), without("colorProfileKey")),
+            apply(json!(0), without("brightnessPercent")),
+            apply(json!(0), without("isConfigured")),
+            request(
+                json!({"version":2,"requestId":ID,"operation":"applyProfile",
+                "settings":full()}),
+            ),
+            request(
+                json!({"version":2,"requestId":ID,"operation":"applyProfile",
+                "expectedPowerSource":0}),
+            ),
+            request(
+                json!({"version":2,"requestId":ID,"operation":"applyProfile",
+                "expectedPowerSource":0,"settings":full(),"percent":50}),
+            ),
+            request(
+                json!({"version":2,"requestId":ID,"operation":"applyProfile",
+                "expectedPowerSource":0,"settings":full(),"enabled":true}),
+            ),
+            request(
+                json!({"version":2,"requestId":ID,"operation":"applyProfile",
+                "expectedPowerSource":0,"settings":full(),"refreshRateKey":"fixed-240"}),
+            ),
+            request(
+                json!({"version":2,"requestId":ID,"operation":"applyProfile",
+                "expectedPowerSource":0,"settings":full(),"colorProfileKey":"sRGB_CTR.icm"}),
+            ),
+            request(
+                json!({"version":1,"requestId":ID,"operation":"applyProfile",
+                "expectedPowerSource":0,"settings":full()}),
+            ),
+            request(json!({"version":2,"requestId":ID,"operation":"query","settings":full()})),
+            request(json!({"version":2,"requestId":ID,"operation":"setHdr",
+                "expectedPowerSource":0,"enabled":true,"settings":full()})),
+            request(
+                json!({"version":2,"requestId":ID,"operation":"setBrightness",
+                "expectedPowerSource":0,"percent":50,"settings":full()}),
+            ),
+            request(
+                json!({"version":2,"requestId":ID,"operation":"setRefreshRate",
+                "expectedPowerSource":0,"refreshRateKey":"fixed-240","settings":full()}),
+            ),
+            request(
+                json!({"version":2,"requestId":ID,"operation":"setColorProfile",
+                "expectedPowerSource":0,"colorProfileKey":"sRGB_CTR.icm","settings":full()}),
+            ),
+        ];
+        let settings = full().to_string();
+        for raw in [
+            format!(
+                r#"{{"operation":"applyProfile","version":2,"requestId":"{id}","expectedPowerSource":0,"settings":{settings},"settings":{settings}}}"#
+            ),
+            format!(
+                r#"{{"version":2,"operation":"applyProfile","requestId":"{id}","expectedPowerSource":0,"settings":{settings}}}"#
+            ),
+            format!(
+                r#"{{"operation":{{"applyProfile":null}},"version":2,"requestId":"{id}","expectedPowerSource":0,"settings":{settings}}}"#
+            ),
+            format!(
+                r#"{{"operation":"applyProfile","version":2,"requestId":"{id}","expectedPowerSource":0,"settings":{{"refreshRateKey":"fixed-240","refreshRateKey":null,"hdrEnabled":null,"colorProfileKey":null,"brightnessPercent":null,"isConfigured":true}}}}"#
+            ),
+        ] {
+            inputs.push(raw_request(raw.as_bytes()));
+        }
+        for input in inputs {
+            let mut supplier = Writes::new(Status::Succeeded, None, Snapshot::unavailable("x"));
+            let (result, bytes, _) = exchange(&mut supplier, &input).await;
+            assert!(
+                matches!(result, Err(ServeError::Connection(_))),
+                "{}",
+                String::from_utf8_lossy(&input[4..])
+            );
+            assert!(bytes.is_empty());
+            assert!(supplier.received.is_empty());
+            assert_eq!(supplier.queries, 0);
+        }
+    }
+
+    /// A profile that only finishes after its gate opens, recording whether
+    /// cancellation was requested and whether it completed.
+    struct HeldWrite {
+        gate: Arc<(Mutex<bool>, Condvar)>,
+        canceled: Arc<AtomicBool>,
+        recorded: Arc<AtomicBool>,
+        started: Arc<AtomicBool>,
+    }
+    impl Supplier for HeldWrite {
+        async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
+            unreachable!("write test received a query")
+        }
+        unscripted_writes!(set_brightness, set_hdr, set_refresh_rate, set_color_profile);
+        async fn apply_profile(
+            &mut self,
+            _request: ApplyProfile,
+            canceled: Arc<AtomicBool>,
+        ) -> io::Result<ManualWriteOutcome> {
+            let gate = self.gate.clone();
+            let seen = self.canceled.clone();
+            let recorded = self.recorded.clone();
+            let started = self.started.clone();
+            tokio::task::spawn_blocking(move || {
+                started.store(true, Ordering::Release);
+                let (lock, event) = &*gate;
+                let mut open = lock.lock().unwrap();
+                while !*open {
+                    open = event.wait(open).unwrap();
+                }
+                seen.store(canceled.load(Ordering::Acquire), Ordering::Release);
+                recorded.store(true, Ordering::Release);
+                Ok(ManualWriteOutcome {
+                    status: Status::Indeterminate,
+                    error: Some(Cow::Borrowed(UNCONFIRMED)),
+                    state: Snapshot::unavailable("recorded"),
+                })
+            })
+            .await
+            .unwrap()
+        }
+    }
+
+    #[tokio::test]
+    async fn stop_and_client_loss_join_the_recorded_profile_and_send_nothing() {
+        for client_loss in [false, true] {
+            let mut supplier = HeldWrite {
+                gate: Arc::new((Mutex::new(false), Condvar::new())),
+                canceled: Arc::default(),
+                recorded: Arc::default(),
+                started: Arc::default(),
+            };
+            let gate = supplier.gate.clone();
+            let started = supplier.started.clone();
+            let recorded = supplier.recorded.clone();
+            let (mut server, mut client) = tokio::io::duplex(1024);
+            client.write_all(&apply(json!(0), full())).await.unwrap();
+            let (sender, mut stop) = watch::channel(false);
+            let (result, bytes) = tokio::join!(
+                async {
+                    let result =
+                        serve(&mut server, &mut stop, &mut supplier, |_| Ok(()), || Ok(())).await;
+                    drop(server);
+                    result
+                },
+                async {
+                    wait_flag(&started).await;
+                    if client_loss {
+                        client.write_all(&[0]).await.unwrap();
+                    } else {
+                        sender.send(true).unwrap();
+                    }
+                    // The server must still be waiting on the blocking write.
+                    sleep(Duration::from_millis(50)).await;
+                    assert!(!recorded.load(Ordering::Acquire));
+                    release(&gate);
+                    let mut bytes = Vec::new();
+                    client.read_to_end(&mut bytes).await.unwrap();
+                    bytes
+                },
+            );
+            result.unwrap();
+            assert!(bytes.is_empty(), "an abandoned profile sends no reply");
             assert!(supplier.recorded.load(Ordering::Acquire));
             assert!(supplier.canceled.load(Ordering::Acquire));
         }

@@ -204,6 +204,35 @@ impl Snapshot {
             .as_deref()
             .filter(|_| self.is_available && self.color_profiles_enabled)
     }
+
+    /// The raw members managed `ApplyProfileCoreAsync` reads, unfiltered by
+    /// availability, as the managed snapshot exposes them.
+    #[cfg(feature = "agent-display-profile-apply-v1")]
+    pub(super) fn observed(&self) -> Observed<'_> {
+        Observed {
+            available: self.is_available,
+            message: self.message.as_deref(),
+            refresh_key: self.current_refresh_key.as_deref(),
+            hdr_supported: self.hdr_supported,
+            hdr_enabled: self.hdr_enabled,
+            color_profile: self.active_color_profile_id.as_deref(),
+            brightness: self.brightness_percent,
+            levels: &self.supported_brightness_levels,
+        }
+    }
+}
+
+/// Managed `DisplaySettingsSnapshot` members of one snapshot, by reference.
+#[cfg(feature = "agent-display-profile-apply-v1")]
+pub(super) struct Observed<'a> {
+    pub(super) available: bool,
+    pub(super) message: Option<&'a str>,
+    pub(super) refresh_key: Option<&'a str>,
+    pub(super) hdr_supported: bool,
+    pub(super) hdr_enabled: bool,
+    pub(super) color_profile: Option<&'a str>,
+    pub(super) brightness: Option<u8>,
+    pub(super) levels: &'a [u8],
 }
 
 trait DisplayReads {

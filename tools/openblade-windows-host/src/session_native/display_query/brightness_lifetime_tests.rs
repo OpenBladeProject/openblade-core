@@ -159,7 +159,13 @@ impl Supplier for OwnedSupplier {
             .await
             .unwrap()
     }
-    unscripted_writes!(set_brightness, set_hdr, set_refresh_rate, set_color_profile);
+    unscripted_writes!(
+        set_brightness,
+        set_hdr,
+        set_refresh_rate,
+        set_color_profile,
+        apply_profile
+    );
     async fn drain(&mut self) -> io::Result<()> {
         observation::drain_brightness(self.owner.clone()).await
     }
