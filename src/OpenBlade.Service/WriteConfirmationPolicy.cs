@@ -26,6 +26,39 @@ internal static class WriteConfirmationPolicy
                 ? PendingConfirmationResult.Match
                 : PendingConfirmationResult.Mismatch);
 
+    // A crashed native write is confirmed against its own target only. Native
+    // performance never runs under owned manual fans, so manual fans are a
+    // mismatch; native fan targets compare by Automatic versus manual topology.
+    internal static PendingConfirmationResult MatchNativeHandback(
+        DeviceSubsystem subsystem,
+        WriteConfirmationExpectation expectation,
+        ConfirmedDeviceState confirmed,
+        NativeHandbackClaim claim)
+    {
+        if (!claim.Resolvable)
+        {
+            return PendingConfirmationResult.Unavailable;
+        }
+        return subsystem switch
+        {
+            DeviceSubsystem.Performance => DeviceSubsystemOrder.IsManualFanMode(confirmed.Fans)
+                ? PendingConfirmationResult.Mismatch
+                : confirmed.Performance is not { } preset
+                    ? PendingConfirmationResult.Unavailable
+                    : preset == expectation.Target.Performance.Value
+                        ? PendingConfirmationResult.Match
+                        : PendingConfirmationResult.Mismatch,
+            DeviceSubsystem.Fans => confirmed.Fans is not { } fans
+                ? PendingConfirmationResult.Unavailable
+                : DeviceSubsystemOrder.IsManualFanMode(fans)
+                    == DeviceSubsystemOrder.IsManualFanMode(expectation.Target.Fans.Value)
+                    ? PendingConfirmationResult.Match
+                    : PendingConfirmationResult.Mismatch,
+            DeviceSubsystem.Battery => MatchPendingBattery(expectation, confirmed.Battery),
+            _ => PendingConfirmationResult.Unavailable,
+        };
+    }
+
     private static PendingConfirmationResult? MatchWithoutGpuManagementState(
         DeviceSubsystem subsystem,
         WriteConfirmationExpectation pending,

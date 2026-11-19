@@ -31180,7 +31180,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         IFanStopBackend? fanStopBackend = null,
         ICoolingPadDeviceProvider? coolingPadDeviceProvider = null,
         string? coolingPadStateDirectory = null,
-        MachineConfigurationWriterBinding? machineWriter = null)
+        MachineConfigurationWriterBinding? machineWriter = null,
+        NativeHandbackStore? nativeHandbackStore = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -31279,7 +31280,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             batterySaverFanStopPowerReader: batterySaverFanStopPowerReader ?? (() => telemetry.Current.PowerSource),
             fanStopBackend: fanStopBackend,
             coolingPadDeviceProvider: coolingPadDeviceProvider,
-            coolingPadStateDirectory: coolingPadStateDirectory);
+            coolingPadStateDirectory: coolingPadStateDirectory,
+            nativeHandbackStore: nativeHandbackStore);
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides || machineWriter is not null

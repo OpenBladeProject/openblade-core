@@ -69,6 +69,21 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
     }
 
     [Fact]
+    public async Task InitializeAsync_NativeHandbackUsesOwnedRecoverySequenceWithoutRunMarker()
+    {
+        string path = Path.Combine(directory, "profiles.json");
+        var runtime = new RecordingRuntime(path) { NativeHandbackRecoveryPending = true };
+        var coordinator = CreateCoordinator(path, runtime, new RecordingLogger());
+
+        Assert.True(await coordinator.InitializeAsync(CancellationToken.None));
+
+        // A crashed native generation left unconfirmed writes: no profile apply.
+        Assert.True(runtime.RecoveringUnexpectedExit);
+        Assert.DoesNotContain("ReconcileStartupProfile", runtime.Calls);
+        Assert.Contains("ReconcileUnexpectedExit", runtime.Calls);
+    }
+
+    [Fact]
     public async Task InitializeAsync_ObservationFailureLogsErrorAndAllowsIpcStartup()
     {
         string path = Path.Combine(directory, "profiles.json");
@@ -594,6 +609,7 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         public PowerSource? InitialPowerSource { get; private set; }
         public PersistentOverrideState? PersistentOverrides { get; private set; }
         public bool RecoveringUnexpectedExit { get; private set; }
+        public bool NativeHandbackRecoveryPending { get; init; }
         public BatteryConfiguration? Configuration { get; private set; }
 
         public void Initialize(BatteryConfiguration configuration, PowerSource powerSource)

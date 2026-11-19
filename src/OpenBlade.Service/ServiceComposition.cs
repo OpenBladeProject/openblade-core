@@ -71,7 +71,9 @@ internal static class ServiceComposition
                 fanStopBackend: guardian,
                 cpuTuningController: provider.GetRequiredService<CpuTuningController>(),
                 coolingPadDeviceProvider: new WindowsCoolingPadDeviceProvider(),
-                coolingPadStateDirectory: Path.Combine(machineDataDirectory, "cooling-pad"));
+                coolingPadStateDirectory: Path.Combine(machineDataDirectory, "cooling-pad"),
+                nativeHandbackStore: new NativeHandbackStore(
+                    Path.Combine(machineDataDirectory, OpenBlade.Deployment.WindowsNativeHandbackWriter.DirectoryName)));
             return runtime;
         });
         services.AddSingleton<ServiceSessionPowerTransitionCoordinator>();

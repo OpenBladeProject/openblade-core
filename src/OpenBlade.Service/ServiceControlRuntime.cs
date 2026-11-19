@@ -3,6 +3,7 @@ using System.Security.Principal;
 using System.Text;
 using OpenBlade.Contracts;
 using OpenBlade.Core.Native;
+using OpenBlade.Deployment;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
@@ -25,6 +26,10 @@ public interface IServiceControlRuntime
         bool recoveringUnexpectedExit) =>
         throw new NotSupportedException(
             "This runtime does not implement unexpected-exit startup classification.");
+
+    // A crashed native generation handed unresolved writes to managed; startup
+    // then follows unexpected-exit recovery instead of applying profiles.
+    bool NativeHandbackRecoveryPending => false;
 
     ServiceStatusSnapshot GetStatus();
 
@@ -575,8 +580,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private ConfirmedStateDriftTracker driftTracker = new();
     private readonly HashSet<DeviceSubsystem> initialAutomaticComparisons = [];
     // Process-local by design. Service startup establishes a fresh read-only
-    // baseline before startup reconciliation can apply saved intent.
+    // baseline before startup reconciliation can apply saved intent. The one
+    // exception is native handback, whose obligations are durable records.
     private readonly PendingWriteConfirmationTracker pendingWriteConfirmations = new();
+    private readonly NativeHandbackStore? nativeHandbackStore;
+    private NativeHandbackAdoption? nativeHandbackAdoption;
     private volatile PendingTransitionContinuation? pendingTransitionContinuation;
     private volatile PendingResumePerformanceDrift? pendingResumePerformanceDrift;
     private long resumePowerSourceTransitionGeneration = -1;
@@ -903,8 +911,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         IFanStopBackend? fanStopBackend = null,
         CpuTuningController? cpuTuningController = null,
         ICoolingPadDeviceProvider? coolingPadDeviceProvider = null,
-        string? coolingPadStateDirectory = null)
+        string? coolingPadStateDirectory = null,
+        NativeHandbackStore? nativeHandbackStore = null)
     {
+        this.nativeHandbackStore = nativeHandbackStore;
         fanStopController = new(fanStopBackend ?? UnavailableFanStopBackend.Instance);
         userStores = new UserConfigurationStores(
             store ?? throw new ArgumentNullException(nameof(store)),
@@ -1043,9 +1053,87 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     .Resolve(UnknownConfirmedState)
                     .Lighting
                     .Value;
+            SeedNativeHandback(initializedAutomation, powerSource);
             Volatile.Write(ref status, ProjectFanStopStatus(ProjectBatterySaverFanStopStatus(CreateInitialSnapshot(powerSource))));
             RecordFanStopTransition();
             RefreshBatterySaverFanStopReadInterest();
+        }
+    }
+
+    public bool NativeHandbackRecoveryPending => NativeHandbackState.RequiresRecovery;
+
+    // Read once per process; resolutions persist through the store.
+    private NativeHandbackAdoption NativeHandbackState =>
+        LazyInitializer.EnsureInitialized(ref nativeHandbackAdoption,
+            () => nativeHandbackStore?.Load() ?? NativeHandbackAdoption.None);
+
+    // Writes a crashed native service may have submitted are held behind the
+    // ordinary pending confirmation until a fresh read resolves them. Managed
+    // makes no write on native's behalf, and an inherited manual fan stays on
+    // the existing manual-topology path that requires an explicit reapply.
+    private void SeedNativeHandback(ProfileAutomationState automation, PowerSource powerSource)
+    {
+        NativeHandbackAdoption adoption = NativeHandbackState;
+        DesiredDeviceState resolved = automation.Resolve(UnknownConfirmedState);
+        if (adoption.Failure is { } failure)
+        {
+            foreach (DeviceSubsystem subsystem in new[] { DeviceSubsystem.Performance, DeviceSubsystem.Battery })
+            {
+                pendingWriteConfirmations.Set(subsystem, new(powerSource, resolved, UnknownConfirmedState,
+                    NativeHandback: NativeHandbackClaim.Unresolvable));
+            }
+            history.RecordSummary(ControlOperationStatus.Blocked,
+                $"{failure} Performance, fan and battery changes stay paused until it can be read.");
+            return;
+        }
+
+        NativeHandbackObligation[] battery = [.. adoption.Obligations.Where(o =>
+            o.Key is "pending" or "liveTemporaryCharge" && o.Item.Family is "battery" or "temporaryCharge")];
+        foreach (NativeHandbackObligation obligation in adoption.Obligations)
+        {
+            NativeHandbackClaim claim = new(obligation.Epoch, obligation.RecordSha256, [obligation.Key],
+                obligation.Item.UserSid, EnablesTemporaryFullCharge: false);
+            switch (obligation)
+            {
+                case { Key: "pending", Item.Family: "performance" }:
+                    pendingWriteConfirmations.Set(DeviceSubsystem.Performance, new(powerSource,
+                        resolved with
+                        {
+                            Performance = new(Enum.Parse<PerformancePreset>(obligation.Item.Performance!), SettingValueSource.ConfirmedFirmwareState),
+                        },
+                        UnknownConfirmedState, NativeHandback: claim));
+                    break;
+                case { Key: "pending", Item.Family: "fan" }:
+                    pendingWriteConfirmations.Set(DeviceSubsystem.Fans, new(powerSource,
+                        resolved with
+                        {
+                            Fans = new(Enum.Parse<FanMode>(obligation.Item.FanMode!), SettingValueSource.ConfirmedFirmwareState),
+                            FanControl = null,
+                        },
+                        UnknownConfirmedState, NativeHandback: claim));
+                    break;
+                case { Key: "ownedFan" or "abandonedPrepared" }:
+                    // Nothing is outstanding for managed to confirm. Persist first,
+                    // then report; a failed write reports again next start.
+                    nativeHandbackStore!.TryResolve(claim, "reported");
+                    history.RecordSummary(ControlOperationStatus.Stored, obligation.Key == "ownedFan"
+                        ? "The previous native service stopped while it controlled the fans. OpenBlade left them unchanged; reapply your fan setting to take control."
+                        : "The previous native service stopped before sending a prepared change to the laptop. Nothing was sent, and OpenBlade did not resend it.");
+                    break;
+            }
+        }
+
+        if (battery.Length > 0)
+        {
+            NativeHandbackObligation primary = battery.FirstOrDefault(o => o.Key == "pending") ?? battery[0];
+            NativeHandbackBattery desired = primary.Item.Battery!;
+            pendingWriteConfirmations.Set(DeviceSubsystem.Battery, new(powerSource,
+                resolved with { Battery = new DesiredBatteryState(new BatteryPolicy(desired.Limit), desired.Protection, desired.Temporary) },
+                UnknownConfirmedState,
+                BatteryConfirmation: primary.Item.Family == "battery" && !desired.Temporary
+                    ? BatteryConfirmationScope.PolicyOnly : BatteryConfirmationScope.All,
+                NativeHandback: new(primary.Epoch, primary.RecordSha256, [.. battery.Select(o => o.Key)],
+                    primary.Item.UserSid, EnablesTemporaryFullCharge: desired.Temporary)));
         }
     }
 
@@ -17954,10 +18042,25 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         KeyValuePair<DeviceSubsystem, PendingWriteConfirmation>[] pending =
             pendingWriteConfirmations.Clear();
 
+        // A power-source change does not settle a native handback; its record
+        // still names an unresolved firmware write.
+        foreach ((DeviceSubsystem subsystem, PendingWriteConfirmation entry) in pending)
+        {
+            if (entry.NativeHandback is not null)
+            {
+                pendingWriteConfirmations.Set(subsystem, entry);
+            }
+        }
+
         if (markExternal)
         {
-            foreach ((DeviceSubsystem subsystem, _) in pending)
+            foreach ((DeviceSubsystem subsystem, PendingWriteConfirmation entry) in pending)
             {
+                if (entry.NativeHandback is not null)
+                {
+                    continue;
+                }
+
                 if (subsystem == DeviceSubsystem.Lighting
                     && !ControllerMayOwnLighting(GetStatus()))
                 {
@@ -17980,9 +18083,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         foreach ((DeviceSubsystem subsystem, PendingWriteConfirmation pending) in
             pendingWriteConfirmations.Snapshot())
         {
+            // Native handback waits for the active user's own automation, which
+            // replaces the machine bootstrap, and never reads management state.
+            NativeHandbackClaim? handback = pending.NativeHandback;
+            if (handback is not null && unexpectedExitRecoveryDeferredForUserConfiguration)
+            {
+                continue;
+            }
+
             // A stale power source or battery intent owner must not query device
             // management state or let matching firmware recommit abandoned intent.
-            GpuClockOffsetManagementState? managementState = pending.CanConfirm(powerSource, Automation)
+            GpuClockOffsetManagementState? managementState = handback is null && pending.CanConfirm(powerSource, Automation)
                 ? GetWriteConfirmationManagementState(subsystem, pending.Expectation, confirmed, device)
                 : null;
             PendingConfirmationResult result = pending.Match(
@@ -17990,6 +18101,34 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             if (result == PendingConfirmationResult.Unavailable)
             {
                 continue;
+            }
+
+            // Write-ahead: an unpersisted resolution keeps the subsystem blocked.
+            if (handback is not null)
+            {
+                bool matched = result == PendingConfirmationResult.Match;
+                if (!nativeHandbackStore!.TryResolve(handback, matched ? "matched" : "mismatched"))
+                {
+                    continue;
+                }
+
+                string message = matched
+                    ? $"Confirmed the {subsystem} change the previous native service was making."
+                    : $"The {subsystem} state differs from the change the previous native service was making. OpenBlade left it unchanged; reapply your setting to change it.";
+                if (matched && handback.EnablesTemporaryFullCharge)
+                {
+                    // Only the requesting user's automation inherits the override.
+                    if (string.Equals(Volatile.Read(ref activeUserSid), handback.UserSid, StringComparison.Ordinal))
+                    {
+                        Automation.EnableTemporaryFullCharge();
+                        message = "Temporary full charge started by the previous native service is still active.";
+                    }
+                    else
+                    {
+                        message = "Temporary full charge started by the previous native service is still active for another user.";
+                    }
+                }
+                history.RecordSummary(matched ? ControlOperationStatus.Stored : ControlOperationStatus.Blocked, message);
             }
 
             if (result == PendingConfirmationResult.Mismatch

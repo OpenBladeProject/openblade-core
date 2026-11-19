@@ -58,6 +58,14 @@ public sealed class ServiceStartupCoordinator(
             logger.LogWarning(
                 "An uncleared service run marker was found. OpenBlade will observe fresh state and recover only owned long-running behavior.");
         }
+        else if (runtime.NativeHandbackRecoveryPending)
+        {
+            // The previous native service crashed with writes managed must
+            // confirm. Recover as after an unexpected exit; apply no profile.
+            recoveringUnexpectedExit = true;
+            logger.LogWarning(
+                "The previous native service left unconfirmed changes. OpenBlade will observe fresh state before any write.");
+        }
 
         cancellationToken.ThrowIfCancellationRequested();
         PowerSource powerSource = powerStateProvider.CapturePowerSource();
