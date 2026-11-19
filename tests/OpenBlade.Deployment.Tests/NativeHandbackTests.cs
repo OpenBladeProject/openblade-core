@@ -10,16 +10,35 @@ namespace OpenBlade.Deployment.Tests;
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public sealed class NativeHandbackTests : IDisposable
 {
-    private readonly string root;
+    private readonly string? ownedRoot;
 
+    // The fixture runner supplies both the root and the SID; a plain run uses a
+    // fresh own-user temp root, as NativeThermalHistoryTests does.
     public NativeHandbackTests()
     {
-        root = Environment.GetEnvironmentVariable("OPENBLADE_HISTORY_MANAGED_FIXTURE_ROOT") ?? throw new InvalidOperationException("Explicit fixture root required.");
-        string sid = Environment.GetEnvironmentVariable("OPENBLADE_THERMAL_FIXTURE_SID") ?? throw new InvalidOperationException("Explicit supplied own SID required.");
+        string? root = Environment.GetEnvironmentVariable("OPENBLADE_HISTORY_MANAGED_FIXTURE_ROOT");
+        string? sid = Environment.GetEnvironmentVariable("OPENBLADE_THERMAL_FIXTURE_SID");
+        if (root is null && sid is null)
+        {
+            ownedRoot = root = Directory.CreateTempSubdirectory("obh").FullName;
+            using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+            sid = identity.User!.Value;
+        }
+        if (root is null) { throw new InvalidOperationException("Explicit fixture root required."); }
+        if (sid is null) { throw new InvalidOperationException("Explicit supplied own SID required."); }
         if (!Path.IsPathFullyQualified(root)) { throw new InvalidOperationException("Absolute fixture root required."); }
         WindowsNativeEpochFiles.FixtureFactoryForTests.Value = () => WindowsNativeEpochFiles.CreateSuppliedPrivateFixture(Path.Combine(root, "OpenBlade.NativeEpochFixture-" + Guid.NewGuid().ToString("N")), sid);
     }
-    public void Dispose() => WindowsNativeEpochFiles.FixtureFactoryForTests.Value = null;
+    public void Dispose()
+    {
+        WindowsNativeEpochFiles.FixtureFactoryForTests.Value = null;
+        if (ownedRoot is null) { return; }
+        // Fixture views a test did not dispose still pin directories until finalized.
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        try { Directory.Delete(ownedRoot, recursive: true); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+    }
 
     private static readonly WindowsNativeTrustLifecycle.OwnerReference Original = new(new string('1', 32), new string('2', 32), new string('3', 64) + "-service", "17:1", new string('7', 64), new string('8', 64));
     private static byte[] Bytes(string text) => Encoding.UTF8.GetBytes(text);

@@ -708,6 +708,39 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Throws<InvalidOperationException>(() => new ServiceMailboxHandoff(new NoMailboxRun()).NativeHandbacks);
     }
 
+    // Production order: the handoff constructor does no I/O, and the hosted
+    // ServiceMailboxCustodyStartup opens custody before Worker. The store is a
+    // lazy delegate: composing the runtime never evaluates it, and its first
+    // evaluation is InitializeAsync from Worker.ExecuteAsync, after every
+    // hosted-service constructor. Before Open the handoff fails closed, so the
+    // coordinator refuses to start instead of reading "no handback".
+    [Fact]
+    public async Task NativeHandback_StoreIsNeverEvaluatedBeforeCustodyOpens()
+    {
+        var handoff = new ServiceMailboxHandoff();
+        using ServiceProvider provider = new ServiceCollection().AddSingleton(handoff).BuildServiceProvider();
+        int reads = 0;
+        NativeHandbackStore production = ServiceComposition.CreateNativeHandbackStore(provider);
+        var counting = new NativeHandbackStore(() => { reads++; return handoff.NativeHandbacks; });
+
+        TestContext context = CreateContext(providerAvailable: true, initialize: false, nativeHandbackStore: production);
+        TestContext counted = CreateContext(providerAvailable: true, initialize: false, nativeHandbackStore: counting);
+        Assert.Equal(0, reads);
+
+        Assert.Throws<InvalidOperationException>(() => production.Load());
+        Assert.Throws<InvalidOperationException>(() => counted.Runtime.NativeHandbackRecoveryPending);
+        Assert.Equal(1, reads);
+        var coordinator = new ServiceStartupCoordinator(
+            new MachineProfileBootstrapper(context.Store),
+            new PersistentOverrideStore(Path.Combine(directory, "manual-overrides.json")),
+            new ServiceRunMarkerStore(Path.Combine(directory, "service-running.json")),
+            context.Runtime,
+            context.Telemetry,
+            NullLogger.Instance);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.InitializeAsync(CancellationToken.None));
+        Assert.True(context.Device.TotalSetterCalls == 0 && context.Device.FanTargets.Count == 0 && context.Device.FanWrites.Count == 0);
+    }
+
     private sealed class NoMailboxRun : IManagedMailboxRun
     {
         public void PublishQuiescent() { }
