@@ -20,10 +20,22 @@
 //! is uncertain whatever restoration achieves, and caller cancellation no
 //! longer applies (managed `RunMutationAsync` keeps ownership through
 //! restoration). A failure before it (a read, the fence or cancellation)
-//! submitted nothing and runs no restoration. Deliberate deviation: managed
-//! reports a read failure inside `Execute` before its first setter as
-//! possibly submitted and its `Restore` may then write, although nothing was
-//! changed.
+//! submitted nothing and runs no restoration. The fence also requires the
+//! fresh panel to be in confirmed SDR.
+//!
+//! Deliberate deviations from managed:
+//! - A read failure inside `Execute` before its first setter is a refusal.
+//!   Managed reports it as possibly submitted and its `Restore` may then
+//!   write, although nothing was changed.
+//! - HDR on or unreadable at the fence is a refusal. Managed checks HDR only
+//!   in its observation.
+//! - Restoration runs only after a readback that re-identified the same single
+//!   panel with a readable advanced-color state. Another panel, no or several
+//!   internal panels, a failed topology read or an unreadable advanced-color
+//!   state report [`ColorFailure::Unverified`] without restoration writes:
+//!   restoring would write to a stale target or under an unknown state.
+//!   Managed reads a failed advanced-color read as SDR, so it may confirm
+//!   there, and restores after every `verifyApplied` failure.
 
 use std::ffi::{OsStr, OsString};
 
@@ -82,6 +94,12 @@ pub enum ColorFailure {
         fault: Fault,
         restoration: Result<(), Fault>,
     },
+    /// A setter was called and the independent observation did not re-identify
+    /// the same single panel with a readable advanced-color state, so the
+    /// managed `Restore` was not attempted: it would write to a stale target
+    /// or under an unknown state. Deliberate deviation: managed restores
+    /// after every `verifyApplied` failure.
+    Unverified(Readback),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -92,9 +110,11 @@ pub enum ColorRefusal {
     MultipleInternalDisplays,
     /// A WCS read before the first setter failed.
     Read(ProfileReadError),
-    /// Managed `ColorProfilesEnabled` is false.
+    /// Managed `ColorProfilesEnabled` is false, at the observation or at the
+    /// fence.
     HdrEnabled,
-    /// The advanced-color read failed, so SDR is unconfirmed.
+    /// The advanced-color read failed at the observation or at the fence, so
+    /// SDR is unconfirmed.
     HdrUnknown,
     /// The request matches no listed profile.
     ProfileUnavailable,
@@ -140,8 +160,20 @@ pub enum Readback {
     NoInternalDisplay,
     MultipleInternalDisplays,
     Read(ProfileReadError),
-    /// Another panel, unconfirmed SDR, or a different active profile.
+    /// Another panel (endpoints or monitor path) was read back.
+    PanelChanged,
+    /// The panel's advanced-color read failed.
+    HdrUnknown,
+    /// HDR on, or a different or no active profile.
     Mismatch,
+}
+
+impl Readback {
+    /// Whether the readback re-identified the same single panel under a
+    /// known advanced-color state, the condition for running `Restore`.
+    fn identifies_the_panel(&self) -> bool {
+        matches!(self, Self::Read(_) | Self::Mismatch)
+    }
 }
 
 /// Select the listed profile matching `key` (managed `ProfilesMatch`) as the
@@ -215,6 +247,9 @@ pub fn set_internal_color_profile<N: ColorProfileNative + ?Sized>(
     match transaction.execute(&requested.id, &baseline) {
         Ok(()) => Ok(ColorOutcome::Confirmed),
         Err(Stop::Refused(reason)) => Err(refused(reason)),
+        Err(Stop::Fault(Fault::Readback(readback))) if !readback.identifies_the_panel() => {
+            Err(ColorFailure::Unverified(readback))
+        }
         Err(Stop::Fault(fault)) => Err(ColorFailure::Uncertain {
             fault,
             restoration: transaction.restore(&requested.id, &baseline),
@@ -342,11 +377,16 @@ impl<N: ColorProfileNative + ?Sized> Transaction<'_, N> {
         admit_submission(
             self.fence,
             self.cancelled,
+            // The observation's HDR refusal also holds at the fence: SDR must
+            // still be confirmed immediately before the first setter.
             |fresh| {
-                if panel.same_as(fresh) {
-                    Ok(())
-                } else {
-                    Err(ColorRefusal::PanelChanged)
+                if !panel.same_as(fresh) {
+                    return Err(ColorRefusal::PanelChanged);
+                }
+                match HdrState::of(fresh) {
+                    HdrState::Off => Ok(()),
+                    HdrState::On => Err(ColorRefusal::HdrEnabled),
+                    HdrState::Unknown => Err(ColorRefusal::HdrUnknown),
                 }
             },
             |refusal| match refusal {
@@ -446,7 +486,9 @@ impl<N: ColorProfileNative + ?Sized> Transaction<'_, N> {
     }
 
     /// Managed `verifyApplied`: a fresh observation of the same panel under
-    /// confirmed SDR shows the requested profile active.
+    /// confirmed SDR shows the requested profile active. Another panel or an
+    /// unreadable advanced-color state is reported apart from a mismatch:
+    /// neither confirms, and neither may be restored against.
     fn verify(&mut self, requested: &OsStr) -> Result<(), Readback> {
         let after = match self.native.topology().map_err(Readback::Topology)? {
             InternalDisplayTopology::Single(after) => after,
@@ -458,11 +500,15 @@ impl<N: ColorProfileNative + ?Sized> Transaction<'_, N> {
             }
         };
         if !self.panel.same_as(&after) {
-            return Err(Readback::Mismatch);
+            return Err(Readback::PanelChanged);
         }
-        // Without confirmed SDR no default is read, so nothing is selected.
+        let hdr = HdrState::of(&after);
+        if hdr == HdrState::Unknown {
+            return Err(Readback::HdrUnknown);
+        }
+        // With HDR on no default is read, so nothing is selected.
         let observed: ColorProfileSnapshot =
-            snapshot(self.native, &after, HdrState::of(&after)).map_err(Readback::Read)?;
+            snapshot(self.native, &after, hdr).map_err(Readback::Read)?;
         match observed.selected.as_deref() {
             Some(active) if profiles_match(active, requested) => Ok(()),
             _ => Err(Readback::Mismatch),

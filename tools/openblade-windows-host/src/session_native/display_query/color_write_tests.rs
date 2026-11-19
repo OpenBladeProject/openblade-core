@@ -58,6 +58,8 @@ struct Panel {
     cancel_on_write: Option<Arc<AtomicBool>>,
     /// The reply query shows this active profile instead of the panel's.
     reply_active: Option<Option<&'static str>>,
+    /// The fence reads this HDR state instead of the panel.s.
+    fence_hdr: Option<bool>,
 }
 
 impl Panel {
@@ -216,7 +218,7 @@ impl TestPanel for Panel {
     }
 
     fn fenced(&self) -> FencedTopology {
-        let hdr = self.hdr;
+        let hdr = self.fence_hdr.unwrap_or(self.hdr);
         Box::new(move || {
             Scenario::Available.topology_with_hdr(hdr, RefreshTiming::default(), false)
         })
@@ -265,6 +267,7 @@ fn admitted(source: u8) -> Host<Panel> {
             writes: Vec::new(),
             cancel_on_write: None,
             reply_active: None,
+            fence_hdr: None,
         },
     )
 }
@@ -482,6 +485,13 @@ fn denied_admission_and_fence_refusals_never_submit() {
     assert_eq!(result(&outcome), (Status::Blocked, Some(PANEL_CHANGED)));
     assert_eq!(host.interactions(), (1, 0));
 
+    // HDR turned on after the observation: refused at the fence, certain.
+    let mut host = admitted(1);
+    host.panel.fence_hdr = Some(true);
+    let outcome = rig.set(&mut host, 1, SRGB).unwrap();
+    assert_eq!(result(&outcome), (Status::Failed, Some(HDR_ON)));
+    assert_eq!(host.interactions(), (1, 0));
+
     // Canceled before submission (client loss, deadline or Stop).
     let mut host = admitted(1);
     let outcome = rig
@@ -636,14 +646,14 @@ fn mid_transaction_failure_reports_managed_restoration_without_replay() {
 
 #[test]
 fn readback_that_does_not_confirm_is_uncertain_and_restored() {
-    // The independent observation reads another panel.
+    // The independent observation reads the same panel with HDR on.
     let rig = Rig::new(Memory::default());
     let mut host = admitted(1);
     let observed = host.panel.topology();
     host.panel.topology_script.push_back(observed);
     host.panel
         .topology_script
-        .push_back(Scenario::Available.topology_with_hdr(false, RefreshTiming::default(), true));
+        .push_back(Scenario::Available.topology_with_hdr(true, RefreshTiming::default(), false));
     let outcome = rig.set(&mut host, 1, SRGB).unwrap();
     let expected = failed(UNCONFIRMED);
     assert_eq!(
@@ -662,21 +672,37 @@ fn readback_that_does_not_confirm_is_uncertain_and_restored() {
     );
     assert_eq!(host.panel.active(), None);
     assert_eq!(rig.unresolved(), Fields::COLOR);
+}
 
-    // A failed readback reports the managed QueryCore text.
-    let rig = Rig::new(Memory::default());
-    let mut host = admitted(1);
-    let observed = host.panel.topology();
-    host.panel.topology_script.push_back(observed);
-    host.panel
-        .topology_script
-        .push_back(Scenario::Unavailable.topology(false));
-    let outcome = rig.set(&mut host, 1, SRGB).unwrap();
-    let expected = failed(NO_INTERNAL);
-    assert_eq!(
-        result(&outcome),
-        (Status::Indeterminate, Some(expected.as_str()))
-    );
+#[test]
+fn readback_that_does_not_reidentify_the_panel_is_indeterminate_without_restoration() {
+    // Another panel, then no internal panel (the managed QueryCore text):
+    // neither is restored against.
+    for (readback, error) in [
+        (
+            Scenario::Available.topology_with_hdr(false, RefreshTiming::default(), true),
+            UNCONFIRMED,
+        ),
+        (Scenario::Unavailable.topology(false), NO_INTERNAL),
+    ] {
+        let rig = Rig::new(Memory::default());
+        let mut host = admitted(1);
+        let observed = host.panel.topology();
+        host.panel.topology_script.push_back(observed);
+        host.panel.topology_script.push_back(readback);
+        let outcome = rig.set(&mut host, 1, SRGB).unwrap();
+        let expected = format!("The color-profile change failed: {error} {UNRESTORED}");
+        assert_eq!(
+            result(&outcome),
+            (Status::Indeterminate, Some(expected.as_str()))
+        );
+        assert_eq!(
+            host.panel.writes,
+            ["add:sRGB_CTR.icm", "scope:true", "default:sRGB_CTR.icm"]
+        );
+        assert_eq!(host.panel.active().as_deref(), Some(OsStr::new(SRGB)));
+        assert_eq!(rig.unresolved(), Fields::COLOR);
+    }
 }
 
 #[test]

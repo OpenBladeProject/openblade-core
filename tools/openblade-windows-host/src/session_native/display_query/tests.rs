@@ -2154,7 +2154,7 @@ mod color_writes {
     async fn every_color_status_reaches_the_managed_response_shape() {
         let state = || observation::fixture_query("available");
         let text = |error: &'static str| Some(Cow::Borrowed(error));
-        let cases: [(&str, Status, Option<Cow<'static, str>>); 20] = [
+        let cases: [(&str, Status, Option<Cow<'static, str>>); 21] = [
             ("color-write-succeeded", Status::Succeeded, None),
             ("color-write-blocked-paused", Status::Blocked, text(PAUSED)),
             (
@@ -2233,6 +2233,14 @@ mod color_writes {
                 "color-write-indeterminate-unconfirmed",
                 Status::Indeterminate,
                 text(UNCONFIRMED),
+            ),
+            (
+                "color-write-indeterminate-unverified",
+                Status::Indeterminate,
+                Some(Cow::Owned(format!(
+                    "The color-profile change failed: {UNCONFIRMED} {}",
+                    color_write::UNRESTORED
+                ))),
             ),
             (
                 "color-write-indeterminate-stale",

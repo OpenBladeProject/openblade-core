@@ -45,6 +45,9 @@ pub(super) const UNAVAILABLE: &str =
     "That color profile is not available for the internal display.";
 /// Managed `ColorProfileMutationTransaction.Execute` readback mismatch.
 pub(super) const UNCONFIRMED: &str = "Windows did not confirm the requested color profile.";
+/// Native-only: the readback did not re-identify the panel with a readable
+/// advanced-color state, so managed `Restore` was not attempted.
+pub(super) const UNRESTORED: &str = "The previous color-profile configuration was not restored because the internal display could not be confirmed.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct SetColorProfile {
@@ -75,6 +78,13 @@ impl<H: CcdHost<Native: ColorProfileNative>> CcdRequest<H> for SetColorProfile {
             Err(ColorFailure::Uncertain { fault, restoration }) => {
                 Attempt::Done(Status::Indeterminate, uncertain(fault, restoration))
             }
+            Err(ColorFailure::Unverified(readback)) => Attempt::Done(
+                Status::Indeterminate,
+                Cow::Owned(format!(
+                    "The color-profile change failed: {} {UNRESTORED}",
+                    readback_text(readback)
+                )),
+            ),
         }
     }
 
@@ -127,13 +137,7 @@ fn fault_text(fault: Fault) -> Cow<'static, str> {
         Fault::ScopeUnconfirmed => {
             text("Windows did not confirm the requested color-profile scope.")
         }
-        // Managed `verifyApplied` reads with `QueryCore`, whose exception ends
-        // `Execute` like any other.
-        Fault::Readback(Readback::Topology(error)) => unreadable(error),
-        Fault::Readback(Readback::NoInternalDisplay) => text(NO_INTERNAL),
-        Fault::Readback(Readback::MultipleInternalDisplays) => text(MULTIPLE),
-        Fault::Readback(Readback::Read(error)) => text(read_text(error)),
-        Fault::Readback(Readback::Mismatch) => text(UNCONFIRMED),
+        Fault::Readback(readback) => readback_text(readback),
         Fault::AssociationsChanged => text(
             "The current-user color-profile associations changed unexpectedly; restoration stopped without altering them.",
         ),
@@ -142,6 +146,21 @@ fn fault_text(fault: Fault) -> Cow<'static, str> {
         ),
         Fault::RestorationUnconfirmed => {
             text("Windows did not confirm restoration of the previous color-profile configuration.")
+        }
+    }
+}
+
+/// Managed `verifyApplied` reads with `QueryCore`, whose exception ends
+/// `Execute` like any other. Another panel and an unreadable advanced-color
+/// state are native-only distinctions that report the managed mismatch.
+fn readback_text(readback: Readback) -> Cow<'static, str> {
+    match readback {
+        Readback::Topology(error) => unreadable(error),
+        Readback::NoInternalDisplay => Cow::Borrowed(NO_INTERNAL),
+        Readback::MultipleInternalDisplays => Cow::Borrowed(MULTIPLE),
+        Readback::Read(error) => Cow::Borrowed(read_text(error)),
+        Readback::PanelChanged | Readback::HdrUnknown | Readback::Mismatch => {
+            Cow::Borrowed(UNCONFIRMED)
         }
     }
 }

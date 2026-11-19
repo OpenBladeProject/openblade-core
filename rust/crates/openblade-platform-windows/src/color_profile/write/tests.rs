@@ -441,13 +441,15 @@ fn failed_default_change_restores_the_default_before_removing_the_association() 
 }
 
 #[test]
-fn unconfirmed_readback_restores_the_exact_empty_baseline() {
+fn a_readback_showing_another_profile_restores_the_exact_empty_baseline() {
+    // Same SDR panel, but the scope is switched back before the independent
+    // observation, so the selected (system) default is the factory profile.
     let mut wcs = Wcs::empty();
-    // The independent observation reads another panel.
-    wcs.topologies.push_back(sdr());
-    wcs.topologies.push_back(Ok(InternalDisplayTopology::Single(
-        ActiveInternalDisplay::brightness_fixture(r"\\?\DISPLAY#OTHER", 32),
-    )));
+    wcs.default_failure = Some(|wcs, profile| {
+        wcs.user_default = Some(profile.into());
+        wcs.scope = ProfileScope::SystemWide;
+        0
+    });
     assert_eq!(
         set(&mut wcs, NATIVE),
         uncertain(Fault::Readback(Readback::Mismatch), Ok(()))
@@ -459,7 +461,6 @@ fn unconfirmed_readback_restores_the_exact_empty_baseline() {
             "scope:true",
             "default:Native_CTR.icm",
             "remove:Native_CTR.icm",
-            "scope:false",
         ]
     );
     assert_eq!(wcs.scope, ProfileScope::SystemWide);
@@ -489,20 +490,52 @@ fn failed_reconciliation_read_stops_without_restoration_writes() {
 }
 
 #[test]
-fn other_readback_failures_are_uncertain_and_restored() {
-    let other = |topology: Result<InternalDisplayTopology, DisplayReadError>| {
-        let mut wcs = Wcs::empty();
-        wcs.topologies.push_back(sdr());
-        wcs.topologies.push_back(topology);
-        let result = set(&mut wcs, NATIVE);
-        assert_eq!(wcs.log.writes().len(), 5);
-        result
-    };
-    let hdr_on = Ok(InternalDisplayTopology::Single(panel(Some(true))));
-    let hdr_unknown = Ok(InternalDisplayTopology::Single(panel(None)));
+fn a_readback_under_hdr_on_is_uncertain_and_restored() {
+    // A known state on the same panel: managed `Restore` runs.
+    let mut wcs = Wcs::empty();
+    wcs.topologies.push_back(sdr());
+    wcs.topologies
+        .push_back(Ok(InternalDisplayTopology::Single(panel(Some(true)))));
+    assert_eq!(
+        set(&mut wcs, NATIVE),
+        uncertain(Fault::Readback(Readback::Mismatch), Ok(()))
+    );
+    assert_eq!(
+        wcs.log.writes(),
+        [
+            "add:Native_CTR.icm",
+            "scope:true",
+            "default:Native_CTR.icm",
+            "remove:Native_CTR.icm",
+            "scope:false",
+        ]
+    );
+    assert_eq!(wcs.scope, ProfileScope::SystemWide);
+    assert!(wcs.user.is_empty());
+}
+
+#[test]
+fn readbacks_that_do_not_reidentify_the_panel_are_unverified_without_restoration() {
+    let mut moved_path = panel(Some(false));
+    moved_path.monitor_name = Ok(crate::display::MonitorName {
+        friendly_name: None,
+        device_path: Some(r"\?\DISPLAY#OTHER".into()),
+    });
+    let mut moved_source = panel(Some(false));
+    moved_source.source.id = 13;
     for (topology, readback) in [
-        (hdr_on, Readback::Mismatch),
-        (hdr_unknown, Readback::Mismatch),
+        (
+            Ok(InternalDisplayTopology::Single(panel(None))),
+            Readback::HdrUnknown,
+        ),
+        (
+            Ok(InternalDisplayTopology::Single(moved_path)),
+            Readback::PanelChanged,
+        ),
+        (
+            Ok(InternalDisplayTopology::Single(moved_source)),
+            Readback::PanelChanged,
+        ),
         (
             Ok(InternalDisplayTopology::MultipleInternalDisplays),
             Readback::MultipleInternalDisplays,
@@ -516,10 +549,24 @@ fn other_readback_failures_are_uncertain_and_restored() {
             Readback::Topology(DisplayReadError::TopologyChanging),
         ),
     ] {
+        let mut wcs = Wcs::empty();
+        wcs.topologies.push_back(sdr());
+        wcs.topologies.push_back(topology);
+        let label = format!("{readback:?}");
         assert_eq!(
-            other(topology),
-            uncertain(Fault::Readback(readback), Ok(()))
+            set(&mut wcs, NATIVE),
+            Err(ColorFailure::Unverified(readback)),
+            "{label}"
         );
+        // Neither confirmed nor rolled back: no restoration write, and the
+        // readback reads no profile state under the unestablished panel.
+        assert_eq!(
+            wcs.log.writes(),
+            ["add:Native_CTR.icm", "scope:true", "default:Native_CTR.icm"],
+            "{label}"
+        );
+        assert_eq!(wcs.user_default.as_deref(), Some(OsStr::new(NATIVE)));
+        assert_eq!(wcs.scope, ProfileScope::CurrentUser);
     }
 }
 
@@ -782,6 +829,27 @@ fn the_fence_precedes_whichever_setter_comes_first() {
             ["monitors", "fence"],
             "{scope:?} {user:?}"
         );
+    }
+}
+
+#[test]
+fn hdr_on_or_unreadable_at_the_fence_submits_nothing() {
+    let on = || Ok(InternalDisplayTopology::Single(panel(Some(true))));
+    let unknown = || Ok(InternalDisplayTopology::Single(panel(None)));
+    for (topology, reason) in [
+        (on as fn() -> _, ColorRefusal::HdrEnabled),
+        (unknown, ColorRefusal::HdrUnknown),
+    ] {
+        let mut wcs = Wcs::empty();
+        let mut changed = fence(&wcs);
+        changed.topology = topology;
+        let label = format!("{reason:?}");
+        assert_eq!(
+            set_internal_color_profile(&mut wcs, NATIVE, &changed, &|| false),
+            refused(reason),
+            "{label}"
+        );
+        assert_eq!(wcs.log.entries(), ["monitors", "fence"], "{label}");
     }
 }
 
