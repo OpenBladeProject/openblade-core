@@ -593,7 +593,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     // baseline before startup reconciliation can apply saved intent. The one
     // exception is native handback, whose obligations are durable records.
     private readonly PendingWriteConfirmationTracker pendingWriteConfirmations = new();
-    private readonly NativeHandbackStore? nativeHandbackStore;
+    private readonly NativeHandbackStore nativeHandbackStore;
     private NativeHandbackAdoption? nativeHandbackAdoption;
     // A confirmed native temporary full charge awaiting the user who started
     // it. Its resolution stays "continuing" until a user's configuration is
@@ -764,7 +764,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             controllerPresenceMonitor,
             firmwareVersionSource,
             static (delay, token) => Task.Delay(delay, token),
-            ProfileSetValidator.CreateUnverifiedSafeDefaults())
+            ProfileSetValidator.CreateUnverifiedSafeDefaults(),
+            NativeHandbackStore.Unbound)
     {
     }
 
@@ -790,7 +791,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             controllerPresenceMonitor,
             firmwareVersionSource,
             static (delay, token) => Task.Delay(delay, token),
-            validator)
+            validator,
+            NativeHandbackStore.Unbound)
     {
     }
 
@@ -818,6 +820,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             firmwareVersionSource,
             static (delay, token) => Task.Delay(delay, token),
             validator,
+            NativeHandbackStore.Unbound,
             fanTemperatureSource: null,
             userConfigurationRepository: userConfigurationRepository)
     {
@@ -848,6 +851,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             firmwareVersionSource,
             static (delay, token) => Task.Delay(delay, token),
             validator,
+            NativeHandbackStore.Unbound,
             fanTemperatureSource: null,
             userConfigurationRepository: userConfigurationRepository,
             displayBrightnessHidController: displayBrightnessHidController)
@@ -875,7 +879,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             controllerPresenceMonitor,
             UnavailableFirmwareVersionSource.Instance,
             transitionRetryDelay,
-            ProfileSetValidator.CreateUnverifiedSafeDefaults())
+            ProfileSetValidator.CreateUnverifiedSafeDefaults(),
+            NativeHandbackStore.Unbound)
     {
     }
 
@@ -901,7 +906,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             controllerPresenceMonitor,
             firmwareVersionSource,
             transitionRetryDelay,
-            ProfileSetValidator.CreateUnverifiedSafeDefaults())
+            ProfileSetValidator.CreateUnverifiedSafeDefaults(),
+            NativeHandbackStore.Unbound)
     {
     }
 
@@ -917,6 +923,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         IFirmwareVersionSource firmwareVersionSource,
         Func<TimeSpan, CancellationToken, Task> transitionRetryDelay,
         ProfileSetValidator validator,
+        NativeHandbackStore nativeHandbackStore,
         IFanTemperatureSource? fanTemperatureSource = null,
         TimeProvider? timeProvider = null,
         IUserConfigurationRepository? userConfigurationRepository = null,
@@ -929,10 +936,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         IFanStopBackend? fanStopBackend = null,
         CpuTuningController? cpuTuningController = null,
         ICoolingPadDeviceProvider? coolingPadDeviceProvider = null,
-        string? coolingPadStateDirectory = null,
-        NativeHandbackStore? nativeHandbackStore = null)
+        string? coolingPadStateDirectory = null)
     {
-        this.nativeHandbackStore = nativeHandbackStore;
+        this.nativeHandbackStore = nativeHandbackStore ?? throw new ArgumentNullException(nameof(nativeHandbackStore));
         fanStopController = new(fanStopBackend ?? UnavailableFanStopBackend.Instance);
         userStores = new UserConfigurationStores(
             store ?? throw new ArgumentNullException(nameof(store)),
@@ -1100,7 +1106,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     // Read once per process; resolutions persist through the store.
     private NativeHandbackAdoption NativeHandbackState =>
         LazyInitializer.EnsureInitialized(ref nativeHandbackAdoption,
-            () => nativeHandbackStore?.Load() ?? NativeHandbackAdoption.None);
+            () => nativeHandbackStore.Load());
 
     // Writes a crashed native service may have submitted are held behind the
     // ordinary pending confirmation until a fresh read resolves them. Managed
@@ -1159,7 +1165,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 case { Key: "ownedFan" or "abandonedPrepared" }:
                     // Nothing is outstanding for managed to confirm. Persist first,
                     // then report; a failed write reports again next start.
-                    nativeHandbackStore!.TryResolve(claim, "reported");
+                    nativeHandbackStore.TryResolve(claim, "reported");
                     history.RecordSummary(ControlOperationStatus.Stored, obligation.Key == "ownedFan"
                         ? "The previous native service stopped while it controlled the fans. OpenBlade left them unchanged; reapply your fan setting to take control."
                         : "The previous native service stopped before sending a prepared change to the laptop. Nothing was sent, and OpenBlade did not resend it.");
@@ -1178,7 +1184,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     ? BatteryConfirmationScope.PolicyOnly : BatteryConfirmationScope.All,
                 NativeHandback: new(primary.Epoch, primary.RecordCommitment, [.. battery.Select(o => o.Key)],
                     primary.Item.UserSid, EnablesTemporaryFullCharge: desired.Temporary,
-                    ConfirmedCharge: battery.All(o => o.Confirmed || o.Key == "liveTemporaryCharge"))));
+                    ActiveChargeOnly: battery.All(o => o.Confirmed || o.Key == "liveTemporaryCharge"))));
         }
     }
 
@@ -18183,7 +18189,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 string outcome = matched
                     ? handback.EnablesTemporaryFullCharge ? NativeHandbackStore.Continuing : "matched"
                     : ended ? "reported" : "mismatched";
-                if (!nativeHandbackStore!.TryResolve(handback, outcome))
+                if (!nativeHandbackStore.TryResolve(handback, outcome))
                 {
                     continue;
                 }
@@ -18269,13 +18275,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         // the same decision for the same evidence.
         if (!string.Equals(active, charge.UserSid, StringComparison.OrdinalIgnoreCase))
         {
-            nativeHandbackStore?.TryResolve(charge, "reported");
+            nativeHandbackStore.TryResolve(charge, "reported");
             return (ControlOperationStatus.Stored,
                 "Temporary full charge started by the previous native service is still active for another user.");
         }
 
         Automation.EnableTemporaryFullCharge();
-        nativeHandbackStore?.TryResolve(charge, Automation.DesiredBattery.TemporaryFullCharge ? "matched" : "reported");
+        nativeHandbackStore.TryResolve(charge, Automation.DesiredBattery.TemporaryFullCharge ? "matched" : "reported");
         return Automation.DesiredBattery.TemporaryFullCharge
             ? (ControlOperationStatus.Stored,
                 "Temporary full charge started by the previous native service continues for the signed-in user.")

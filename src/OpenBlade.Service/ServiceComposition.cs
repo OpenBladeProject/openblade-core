@@ -48,8 +48,9 @@ internal static class ServiceComposition
         services.AddSingleton(CreateNativeHandbackStore);
         services.AddSingleton<IServiceControlRuntime>(provider =>
         {
-            // Resolved first: composition tests pin this request without
-            // constructing the backends below.
+            // The runtime requires this registered store. Requesting it first lets
+            // a composition test observe that request and stop before the rest
+            // of this factory runs.
             NativeHandbackStore nativeHandbackStore = provider.GetRequiredService<NativeHandbackStore>();
             ServiceControlRuntime? runtime = null;
             var guardian = new GuardianFanStopBackend(new WindowsFanStopGuardianClient(

@@ -18,15 +18,13 @@ internal sealed record NativeHandbackAdoption(IReadOnlyList<NativeHandbackObliga
 
 // Identifies the items a pending confirmation resolves. An unresolvable claim
 // stands for unreadable evidence and keeps its subsystem blocked.
+// ActiveChargeOnly: every claimed item is an active charge, either the live
+// slot or a charge an earlier start confirmed. Nothing native sent is
+// outstanding, so its end is reported rather than treated as a mismatch.
 internal sealed record NativeHandbackClaim(string Epoch, string RecordCommitment, IReadOnlyList<string> Keys, string? UserSid,
-    bool EnablesTemporaryFullCharge, bool Resolvable = true, bool ConfirmedCharge = false)
+    bool EnablesTemporaryFullCharge, bool Resolvable = true, bool ActiveChargeOnly = false)
 {
     internal static readonly NativeHandbackClaim Unresolvable = new("", "", [], null, false, Resolvable: false);
-
-    // Only an active charge is claimed, either the live slot or a charge an
-    // earlier start confirmed; nothing native sent is outstanding, so its end
-    // is reported rather than treated as a mismatch.
-    internal bool ActiveChargeOnly => Keys is ["liveTemporaryCharge"] || ConfirmedCharge;
 }
 
 // Setup writes an immutable record into the handed-back generation's directory
@@ -38,6 +36,9 @@ internal sealed record NativeHandbackClaim(string Epoch, string RecordCommitment
 // not caught here: it is the custody failure it is, never "no handback".
 internal sealed class NativeHandbackStore(Func<NativeHandbackBinding> binding)
 {
+    // No handback binding: Load reports none and no claim resolves. Only the
+    // runtime convenience constructors use it; the Service passes its own store.
+    internal static NativeHandbackStore Unbound => new(() => NativeHandbackBinding.None);
     internal const string Continuing = "continuing";
     internal static readonly string[] Keys = ["pending", "ownedFan", "liveTemporaryCharge", "abandonedPrepared"];
     // continuing: a temporary full charge confirmed while its owner had not

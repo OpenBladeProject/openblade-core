@@ -31281,7 +31281,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             fanStopBackend: fanStopBackend,
             coolingPadDeviceProvider: coolingPadDeviceProvider,
             coolingPadStateDirectory: coolingPadStateDirectory,
-            nativeHandbackStore: nativeHandbackStore);
+            nativeHandbackStore: nativeHandbackStore ?? NativeHandbackStore.Unbound);
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides || machineWriter is not null
