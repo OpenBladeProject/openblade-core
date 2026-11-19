@@ -1,4 +1,6 @@
-//! Scripted transaction only. There is no Windows writer or production mutation caller.
+//! Scripted transaction for the private display replay only. Its ownership
+//! rules are stricter than managed; the production writer (`write`) mirrors
+//! managed `ColorProfileMutationTransaction` instead.
 
 use std::{
     cmp::Ordering,
@@ -10,17 +12,12 @@ use crate::display::{
 };
 
 use super::{
-    ColorProfileSnapshot, HdrState, ProfileReadError, ProfileReads, ProfileScope, file_name,
-    native::ordinal_ignore_case, present, profiles_match, snapshot,
+    ColorProfileSnapshot, HdrState, Monitor, ProfileReadError, ProfileReads, ProfileScope,
+    file_name, monitor_path, native::ordinal_ignore_case, present, profiles_match,
+    resolve_monitor_key, snapshot,
 };
 
 pub(super) struct SetColorProfile<'a>(pub &'a OsStr);
-
-pub(super) struct Monitor {
-    pub interface: OsString,
-    pub key: OsString,
-    pub active: bool,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum CurrentUserChange<'a> {
@@ -187,10 +184,6 @@ fn admitted_display(
     }
 }
 
-fn monitor_path(display: &ActiveInternalDisplay) -> Option<&OsStr> {
-    display.monitor_name.as_ref().ok()?.device_path.as_deref()
-}
-
 fn same_display(before: &ActiveInternalDisplay, after: &ActiveInternalDisplay) -> bool {
     let endpoints = |display: &ActiveInternalDisplay| -> (EndpointId, EndpointId) {
         (display.source, display.target)
@@ -207,15 +200,8 @@ pub(super) fn monitor_key(
     let path = monitor_path(display)
         .filter(|path| present(path))
         .ok_or(Failure::Target)?;
-    let mut matches = api
-        .monitors(display)?
-        .into_iter()
-        .filter(|monitor| monitor.active && same_name(&monitor.interface, path));
-    let first = matches.next().ok_or(Failure::Target)?;
-    if matches.next().is_some() || !present(&first.key) {
-        return Err(Failure::Target);
-    }
-    Ok(first.key)
+    let monitors = api.monitors(display)?;
+    resolve_monitor_key(path, monitors).map_err(|_| Failure::Target)
 }
 
 fn selected(snapshot: &ColorProfileSnapshot, profile: &OsStr) -> bool {

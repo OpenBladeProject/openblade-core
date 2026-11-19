@@ -20,6 +20,8 @@ mod fence;
 pub mod hdr;
 mod native;
 mod refresh;
+#[cfg(feature = "display-color-write")]
+pub(crate) use fence::PanelIdentity;
 pub use fence::SubmissionFence;
 #[cfg(any(feature = "scripted-display", feature = "display-refresh-write"))]
 mod refresh_packet;

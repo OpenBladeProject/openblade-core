@@ -1,4 +1,6 @@
-//! Read-only WCS boundary. The SDK owns returned buffers until LocalFree.
+//! WCS boundary: the read-only observation calls, plus the fixed-purpose
+//! setters of the production color-profile writer. The SDK owns returned
+//! buffers until LocalFree.
 #![allow(unsafe_code)]
 
 use std::{
@@ -262,10 +264,203 @@ fn comparison(result: i32) -> Option<Ordering> {
     }
 }
 
+/// WinSDK icm.h `CLASS_MONITOR` ('mntr'); windows-sys 0.61.2 does not export it.
+#[cfg(any(test, feature = "display-color-write"))]
+const CLASS_MONITOR: u32 = u32::from_be_bytes(*b"mntr");
+/// Bound on `EnumDisplayDevicesW` monitors per GDI source. A source that never
+/// ends its list yields no monitors, so no single active monitor is chosen.
+#[cfg(any(test, feature = "display-color-write"))]
+const MAX_MONITORS: u32 = 64;
+
+/// A NUL-terminated copy for a `PCWSTR` input.
+#[cfg(any(test, feature = "display-color-write"))]
+fn wide(value: &OsStr) -> Vec<u16> {
+    value.encode_wide().chain([0]).collect()
+}
+
+/// A fixed `DISPLAY_DEVICEW` text field up to its first NUL (managed
+/// `ByValTStr` with `TrimEnd('\0')`).
+#[cfg(any(test, feature = "display-color-write"))]
+fn fixed_text(field: &[u16]) -> OsString {
+    let end = field
+        .iter()
+        .position(|&unit| unit == 0)
+        .unwrap_or(field.len());
+    OsString::from_wide(&field[..end])
+}
+
+// The production color-profile writer's Windows call sites, reachable only
+// through `write::WindowsColorProfileNative`. Unit-test builds exclude them,
+// so no test can enumerate monitors or change a profile. Association and
+// default operations always use the current-user scope and standard ICC,
+// like managed `Add/Remove/SetDefaultStandardColorProfile...`.
+
+/// Managed `GetMonitorDeviceKey`: every monitor of this GDI source.
+#[cfg(all(feature = "display-color-write", not(test)))]
+pub(super) fn monitors(source_name: &OsStr) -> Vec<super::Monitor> {
+    use windows_sys::Win32::{
+        Graphics::Gdi::{DISPLAY_DEVICE_ACTIVE, DISPLAY_DEVICEW, EnumDisplayDevicesW},
+        UI::WindowsAndMessaging::EDD_GET_DEVICE_INTERFACE_NAME,
+    };
+    let source = wide(source_name);
+    let mut monitors = Vec::new();
+    for index in 0..MAX_MONITORS {
+        let mut device = DISPLAY_DEVICEW {
+            cb: size_of::<DISPLAY_DEVICEW>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: The source name is NUL-terminated and the writable packet
+        // carries its own size, for this synchronous call only.
+        let found = unsafe {
+            EnumDisplayDevicesW(
+                source.as_ptr(),
+                index,
+                &mut device,
+                EDD_GET_DEVICE_INTERFACE_NAME,
+            )
+        };
+        if found == 0 {
+            return monitors;
+        }
+        monitors.push(super::Monitor {
+            interface: fixed_text(&device.DeviceID),
+            key: fixed_text(&device.DeviceKey),
+            active: device.StateFlags & DISPLAY_DEVICE_ACTIVE != 0,
+        });
+    }
+    Vec::new()
+}
+
+/// `ColorProfileAddDisplayAssociation`, neither default nor advanced color.
+#[cfg(all(feature = "display-color-write", not(test)))]
+pub(super) fn add_display_association(display: &ActiveInternalDisplay, profile: &OsStr) -> i32 {
+    let (adapter, source_id) = display_address(display);
+    let profile = wide(profile);
+    // SAFETY: The profile name is NUL-terminated and live for the call.
+    unsafe {
+        windows_sys::Win32::UI::ColorSystem::ColorProfileAddDisplayAssociation(
+            WCS_PROFILE_MANAGEMENT_SCOPE_CURRENT_USER,
+            profile.as_ptr(),
+            adapter,
+            source_id,
+            0,
+            0,
+        )
+    }
+}
+
+/// `ColorProfileRemoveDisplayAssociation`, keeping any advanced-color one.
+#[cfg(all(feature = "display-color-write", not(test)))]
+pub(super) fn remove_display_association(display: &ActiveInternalDisplay, profile: &OsStr) -> i32 {
+    let (adapter, source_id) = display_address(display);
+    let profile = wide(profile);
+    // SAFETY: The profile name is NUL-terminated and live for the call.
+    unsafe {
+        windows_sys::Win32::UI::ColorSystem::ColorProfileRemoveDisplayAssociation(
+            WCS_PROFILE_MANAGEMENT_SCOPE_CURRENT_USER,
+            profile.as_ptr(),
+            adapter,
+            source_id,
+            0,
+        )
+    }
+}
+
+/// `ColorProfileSetDisplayDefaultAssociation` for the standard ICC default.
+#[cfg(all(feature = "display-color-write", not(test)))]
+pub(super) fn set_display_default(display: &ActiveInternalDisplay, profile: &OsStr) -> i32 {
+    let (adapter, source_id) = display_address(display);
+    let profile = wide(profile);
+    // SAFETY: The profile name is NUL-terminated and live for the call.
+    unsafe {
+        windows_sys::Win32::UI::ColorSystem::ColorProfileSetDisplayDefaultAssociation(
+            WCS_PROFILE_MANAGEMENT_SCOPE_CURRENT_USER,
+            profile.as_ptr(),
+            CPT_ICC,
+            CPST_STANDARD_DISPLAY_COLOR_MODE,
+            adapter,
+            source_id,
+        )
+    }
+}
+
+/// `WcsSetUsePerUserProfiles(CLASS_MONITOR)` on the monitor device key;
+/// a failure carries `GetLastError`.
+#[cfg(all(feature = "display-color-write", not(test)))]
+pub(super) fn use_per_user_profiles(monitor_key: &OsStr, enabled: bool) -> Result<(), u32> {
+    let key = wide(monitor_key);
+    // SAFETY: The device key is NUL-terminated and live for the call.
+    let changed = unsafe {
+        windows_sys::Win32::UI::ColorSystem::WcsSetUsePerUserProfiles(
+            key.as_ptr(),
+            CLASS_MONITOR,
+            i32::from(enabled),
+        )
+    };
+    if changed != 0 {
+        Ok(())
+    } else {
+        // SAFETY: Reads this thread's last error immediately after the call.
+        Err(unsafe { windows_sys::Win32::Foundation::GetLastError() })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::display::EndpointId;
+
+    #[test]
+    fn color_profile_setter_constants_text_and_linkage() {
+        // Retain the SDK imports without calling them; unit-test builds have
+        // no route to the production call sites.
+        use windows_sys::{
+            Win32::{
+                Foundation::LUID,
+                Graphics::Gdi::{DISPLAY_DEVICEW, EnumDisplayDevicesW},
+                UI::ColorSystem::{
+                    COLORPROFILESUBTYPE, COLORPROFILETYPE, ColorProfileAddDisplayAssociation,
+                    ColorProfileRemoveDisplayAssociation, ColorProfileSetDisplayDefaultAssociation,
+                    WcsSetUsePerUserProfiles,
+                },
+            },
+            core::{BOOL, HRESULT, PCWSTR},
+        };
+        type Scope = WCS_PROFILE_MANAGEMENT_SCOPE;
+        let _ = std::hint::black_box((
+            ColorProfileAddDisplayAssociation
+                as unsafe extern "system" fn(Scope, PCWSTR, LUID, u32, BOOL, BOOL) -> HRESULT,
+            ColorProfileRemoveDisplayAssociation
+                as unsafe extern "system" fn(Scope, PCWSTR, LUID, u32, BOOL) -> HRESULT,
+            ColorProfileSetDisplayDefaultAssociation
+                as unsafe extern "system" fn(
+                    Scope,
+                    PCWSTR,
+                    COLORPROFILETYPE,
+                    COLORPROFILESUBTYPE,
+                    LUID,
+                    u32,
+                ) -> HRESULT,
+            WcsSetUsePerUserProfiles as unsafe extern "system" fn(PCWSTR, u32, BOOL) -> BOOL,
+            EnumDisplayDevicesW
+                as unsafe extern "system" fn(PCWSTR, u32, *mut DISPLAY_DEVICEW, u32) -> BOOL,
+        ));
+        // Managed WindowsDisplayNative: ClassMonitor, ColorProfileTypeIcc,
+        // ColorProfileSubtypeStandardDisplay and CurrentUserScope.
+        assert_eq!(CLASS_MONITOR, 0x6D6E_7472);
+        assert_eq!((CPT_ICC, CPST_STANDARD_DISPLAY_COLOR_MODE), (0, 7));
+        assert_eq!(WCS_PROFILE_MANAGEMENT_SCOPE_CURRENT_USER, 1);
+        assert_eq!(MAX_MONITORS, 64);
+        assert_eq!(
+            wide(OsStr::new("ab")),
+            [u16::from(b'a'), u16::from(b'b'), 0]
+        );
+        let mut field = [0u16; 8];
+        field[..3].copy_from_slice(&[u16::from(b'k'), u16::from(b'e'), u16::from(b'y')]);
+        field[4] = u16::from(b'x');
+        assert_eq!(fixed_text(&field), "key");
+        assert_eq!(fixed_text(&[u16::from(b'z'); 2]), "zz");
+    }
 
     #[test]
     fn wcs_address_combines_target_adapter_and_source_id() {

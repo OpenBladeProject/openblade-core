@@ -3,13 +3,13 @@
 use std::ffi::{OsStr, OsString};
 
 use super::{
-    ActiveInternalDisplay, ColorProfileSnapshot, HdrState, ProfileRead, ProfileReadError,
+    ActiveInternalDisplay, ColorProfileSnapshot, HdrState, Monitor, ProfileRead, ProfileReadError,
     ProfileReads, ProfileScope,
     native::ordinal_ignore_case,
     profiles_match, snapshot,
     transaction::{
-        CurrentUserChange, Monitor, ScriptedOperations, SetColorProfile, monitor_key,
-        same_effect_name, set_color_profile,
+        CurrentUserChange, ScriptedOperations, SetColorProfile, monitor_key, same_effect_name,
+        set_color_profile,
     },
 };
 use crate::display::{DisplayReadError, InternalDisplayTopology, scripted::MONITOR_PATH};
@@ -111,7 +111,7 @@ impl Profiles {
     }
 
     pub fn evidence(&mut self, display: &ActiveInternalDisplay) -> Result<WcsEvidence, Failure> {
-        let hdr = hdr_preference(display);
+        let hdr = HdrState::of(display);
         if hdr != HdrState::Off {
             return Err(Failure::Hdr(hdr));
         }
@@ -152,7 +152,7 @@ impl Profiles {
         &mut self,
         display: &ActiveInternalDisplay,
     ) -> Result<ColorProfileSnapshot, ProfileReadError> {
-        snapshot(self, display, hdr_preference(display))
+        snapshot(self, display, HdrState::of(display))
     }
 
     pub fn set(
@@ -166,21 +166,13 @@ impl Profiles {
             SetColorProfile(OsStr::new(key)),
             self,
             topology,
-            hdr_preference,
+            HdrState::of,
             admitted,
             |profiles, display, profile| {
                 let canonical = profile.to_str().ok_or(Failure::ProfileUnavailable)?;
                 prepare(profiles.evidence(display)?, canonical.into())
             },
         )
-    }
-}
-
-fn hdr_preference(display: &ActiveInternalDisplay) -> HdrState {
-    match &display.advanced_color {
-        Ok(hdr) if hdr.hdr_user_enabled => HdrState::On,
-        Ok(_) => HdrState::Off,
-        Err(_) => HdrState::Unknown,
     }
 }
 

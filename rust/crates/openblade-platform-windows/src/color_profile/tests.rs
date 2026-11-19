@@ -8,12 +8,12 @@ use crate::display::{
 };
 
 use super::{
-    HdrState, ProfileRead, ProfileReadError, ProfileReads, ProfileScope,
+    HdrState, Monitor, ProfileRead, ProfileReadError, ProfileReads, ProfileScope,
     native::returned,
     query_color_profiles, snapshot,
     transaction::{
-        CurrentUserChange, Disposition, Failure, Monitor, Outcome, ScriptedOperations,
-        SetColorProfile, set_color_profile as guarded_set_color_profile,
+        CurrentUserChange, Disposition, Failure, Outcome, ScriptedOperations, SetColorProfile,
+        set_color_profile as guarded_set_color_profile,
     },
     valid_monitor_rgb_header,
 };

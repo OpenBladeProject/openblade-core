@@ -15,12 +15,27 @@ pub mod scripted;
 mod tests;
 #[cfg(any(test, feature = "scripted-display"))]
 mod transaction;
+#[cfg(feature = "display-color-write")]
+pub mod write;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HdrState {
     Off,
     On,
     Unknown,
+}
+
+impl HdrState {
+    /// The HDR user preference of one CCD observation. A failed
+    /// advanced-color read is Unknown, never SDR: only a confirmed SDR
+    /// observation may read or change the SDR default.
+    pub fn of(display: &ActiveInternalDisplay) -> Self {
+        match &display.advanced_color {
+            Ok(state) if state.hdr_user_enabled => Self::On,
+            Ok(_) => Self::Off,
+            Err(_) => Self::Unknown,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,7 +85,9 @@ pub fn query_color_profiles(
     snapshot(&mut native::WindowsProfiles, display, hdr)
 }
 
-trait ProfileReads {
+/// The read-only WCS boundary for one display: the selected scope, a scope's
+/// associations and standard ICC default, and the vendor presets.
+pub trait ProfileReads {
     fn scope(&mut self, display: &ActiveInternalDisplay) -> Result<ProfileScope, ProfileReadError>;
     fn associations(
         &mut self,
@@ -86,7 +103,7 @@ trait ProfileReads {
 }
 
 fn snapshot(
-    api: &mut impl ProfileReads,
+    api: &mut (impl ProfileReads + ?Sized),
     display: &ActiveInternalDisplay,
     hdr: HdrState,
 ) -> Result<ColorProfileSnapshot, ProfileReadError> {
@@ -159,10 +176,57 @@ fn file_name(value: &OsStr) -> OsString {
     OsString::from_wide(&units[index..])
 }
 
-#[cfg(any(test, feature = "scripted-display"))]
-fn profiles_match(left: &OsStr, right: &OsStr) -> bool {
+/// Managed `ProfilesMatch`: the same ID, or the same Windows file name,
+/// compared ordinally ignoring case.
+#[cfg(any(test, feature = "scripted-display", feature = "display-color-write"))]
+pub fn profiles_match(left: &OsStr, right: &OsStr) -> bool {
     native::ordinal_ignore_case(left, right) == Ordering::Equal
         || native::ordinal_ignore_case(&file_name(left), &file_name(right)) == Ordering::Equal
+}
+
+/// One `EnumDisplayDevicesW(EDD_GET_DEVICE_INTERFACE_NAME)` monitor of a GDI
+/// source: managed `DisplayMonitorDeviceIdentity`.
+#[cfg(any(test, feature = "scripted-display", feature = "display-color-write"))]
+pub struct Monitor {
+    pub interface: OsString,
+    pub key: OsString,
+    pub active: bool,
+}
+
+/// Why managed `GetMonitorDeviceKey` found no WCS device key for the panel.
+#[cfg(any(test, feature = "scripted-display", feature = "display-color-write"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MonitorKeyError {
+    /// The CCD target reported no monitor device path.
+    NoDevicePath,
+    NoActiveMonitor,
+    MultipleActiveMonitors,
+    /// The one matching monitor reported a blank device key.
+    NoDeviceKey,
+}
+
+/// The panel's monitor device path, which identifies its WCS monitor.
+#[cfg(any(test, feature = "scripted-display", feature = "display-color-write"))]
+fn monitor_path(display: &ActiveInternalDisplay) -> Option<&OsStr> {
+    display.monitor_name.as_ref().ok()?.device_path.as_deref()
+}
+
+/// Managed `DisplayMonitorDeviceKeyResolver.Resolve`: exactly one active
+/// monitor whose interface name equals the path (ordinal, ignoring case),
+/// with a non-blank device key.
+#[cfg(any(test, feature = "scripted-display", feature = "display-color-write"))]
+fn resolve_monitor_key(path: &OsStr, monitors: Vec<Monitor>) -> Result<OsString, MonitorKeyError> {
+    let mut matches = monitors.into_iter().filter(|monitor| {
+        monitor.active && native::ordinal_ignore_case(&monitor.interface, path) == Ordering::Equal
+    });
+    let first = matches.next().ok_or(MonitorKeyError::NoActiveMonitor)?;
+    if matches.next().is_some() {
+        return Err(MonitorKeyError::MultipleActiveMonitors);
+    }
+    if !present(&first.key) {
+        return Err(MonitorKeyError::NoDeviceKey);
+    }
+    Ok(first.key)
 }
 
 fn friendly_name(leaf: &OsStr) -> String {

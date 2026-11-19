@@ -14,6 +14,9 @@ display-hdr-write = []
 # Production manual refresh writer (SetDisplayConfig VALIDATE then APPLY).
 # Never implied by scripted-display.
 display-refresh-write = []
+# Production manual color-profile writer (WCS association, scope and default
+# transaction). Never implied by scripted-display.
+display-color-write = []
 scripted-gpu = []
 scripted-gpu-close = ["scripted-gpu"]
 

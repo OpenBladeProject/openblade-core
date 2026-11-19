@@ -7,28 +7,37 @@ use super::{DisplayReadError, InternalDisplayTopology};
 /// identify the admitted target, and the host's current lifetime/session/power
 /// admission must still hold. Either refusal precedes the submission, so it
 /// can never be a possible submission. Brightness (WmiSetBrightness), HDR
-/// (SET_HDR_STATE) and refresh (SetDisplayConfig APPLY, after its
-/// non-submitting VALIDATE) share this contract.
+/// (SET_HDR_STATE), refresh (SetDisplayConfig APPLY, after its
+/// non-submitting VALIDATE) and the color profile (before the first WCS
+/// setter of its transaction) share this contract.
 pub trait SubmissionFence: Send + Sync {
     fn topology(&self) -> Result<InternalDisplayTopology, DisplayReadError>;
     fn admit(&self) -> bool;
 }
 
-/// The internal panel admitted for one HDR or refresh write: the same CCD
+/// The internal panel admitted for one HDR, refresh or color-profile write: the same CCD
 /// endpoints and the same monitor device path, compared ASCII case-
 /// insensitively like managed `PrepareBrightness` (`OrdinalIgnoreCase`), or
 /// both unreadable. Endpoint IDs alone can be reused by another panel.
-#[cfg(any(feature = "display-hdr-write", feature = "display-refresh-write"))]
+#[cfg(any(
+    feature = "display-hdr-write",
+    feature = "display-refresh-write",
+    feature = "display-color-write"
+))]
 #[derive(Debug)]
-pub(super) struct PanelIdentity {
+pub(crate) struct PanelIdentity {
     source: super::EndpointId,
     target: super::EndpointId,
     path: Option<std::ffi::OsString>,
 }
 
-#[cfg(any(feature = "display-hdr-write", feature = "display-refresh-write"))]
+#[cfg(any(
+    feature = "display-hdr-write",
+    feature = "display-refresh-write",
+    feature = "display-color-write"
+))]
 impl PanelIdentity {
-    pub(super) fn of(display: &super::ActiveInternalDisplay) -> Self {
+    pub(crate) fn of(display: &super::ActiveInternalDisplay) -> Self {
         Self {
             source: display.source,
             target: display.target,
@@ -41,7 +50,7 @@ impl PanelIdentity {
         self.target
     }
 
-    pub(super) fn same_as(&self, display: &super::ActiveInternalDisplay) -> bool {
+    pub(crate) fn same_as(&self, display: &super::ActiveInternalDisplay) -> bool {
         self.source == display.source
             && self.target == display.target
             && match (self.path.as_ref(), device_path(display)) {
@@ -58,7 +67,11 @@ impl PanelIdentity {
     }
 }
 
-#[cfg(any(feature = "display-hdr-write", feature = "display-refresh-write"))]
+#[cfg(any(
+    feature = "display-hdr-write",
+    feature = "display-refresh-write",
+    feature = "display-color-write"
+))]
 fn device_path(display: &super::ActiveInternalDisplay) -> Option<&std::ffi::OsString> {
     display
         .monitor_name
@@ -69,7 +82,11 @@ fn device_path(display: &super::ActiveInternalDisplay) -> Option<&std::ffi::OsSt
 
 #[cfg(all(
     test,
-    any(feature = "display-hdr-write", feature = "display-refresh-write")
+    any(
+        feature = "display-hdr-write",
+        feature = "display-refresh-write",
+        feature = "display-color-write"
+    )
 ))]
 mod tests {
     use super::*;
