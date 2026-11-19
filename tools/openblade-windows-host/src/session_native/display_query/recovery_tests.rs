@@ -680,14 +680,18 @@ fn exponents_and_short_escapes_are_not_private_tokens_or_negative_zero() {
         ),
         (
             "tab escape",
-            r#"{"SchemaVersion":4,"X":"$serde_json::private:\t"}"#,
+            r#"{"SchemaVersion":4,"X":"$serde_json::priva\te::x"}"#,
+        ),
+        (
+            "newline escape",
+            r#"{"SchemaVersion":4,"X":"$serde_jso\n::private::x"}"#,
         ),
     ] {
         let recovery = Recovery::load(Mem::with(bytes.as_bytes()));
         assert!(!recovery.flags().1, "{name}");
     }
-    // The real token through a short escape is still refused.
-    let escaped = r#"{"SchemaVersion":4,"X":{"$serde_json::private::\u004eumber":"1"}}"#;
+    // A unicode escape inside the token is still decoded and refused.
+    let escaped = r#"{"SchemaVersion":4,"X":{"$serde_json::priv\u0061te::Number":"1"}}"#;
     assert_eq!(
         Recovery::load(Mem::with(escaped.as_bytes())).flags(),
         (false, true, Fields::ALL)
