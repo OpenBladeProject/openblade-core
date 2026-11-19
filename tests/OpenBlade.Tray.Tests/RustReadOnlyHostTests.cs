@@ -576,9 +576,9 @@ public sealed partial class RustReadOnlyHostTests
         const string id = "11111111-2222-4333-8444-555555555555";
         foreach (string malformed in new[]
         {
-            $$$"""{"operation":"setBatteryPolicy","version":79,"requestId":"{{{id}}}","value":{"chargeLimitPercent":100}}""",
-            $$$"""{"operation":"setBatteryPolicy","version":79,"requestId":"{{{id}}}","value":{"chargeLimitPercent":70,"chargeLimitPercent":75}}""",
-            $$"""{"operation":"setBatteryProtection","version":79,"requestId":"{{id}}"}""",
+            $$$"""{"operation":"setBatteryPolicy","version":{{{OpenBladeIpc.ProtocolVersion}}},"requestId":"{{{id}}}","value":{"chargeLimitPercent":100}}""",
+            $$$"""{"operation":"setBatteryPolicy","version":{{{OpenBladeIpc.ProtocolVersion}}},"requestId":"{{{id}}}","value":{"chargeLimitPercent":70,"chargeLimitPercent":75}}""",
+            $$"""{"operation":"setBatteryProtection","version":{{OpenBladeIpc.ProtocolVersion}},"requestId":"{{id}}"}""",
         })
         {
             await using NamedPipeClientStream pipe = await ConnectAsync(endpointId, token);

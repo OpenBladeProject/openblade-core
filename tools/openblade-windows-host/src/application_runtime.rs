@@ -473,7 +473,7 @@ mod tests {
     fn report(instance: &str, sequence: i64, path: Option<&str>) -> Report {
         Report {
             _operation: String::new(),
-            _version: 79,
+            _version: 80,
             _request_id: String::new(),
             instance_id: instance.into(),
             sequence,
@@ -529,7 +529,7 @@ mod tests {
     #[test]
     fn rejects_missing_reset_field_duplicate_members_and_bad_sequences() {
         let reset = json!({
-            "operation": "reportApplicationContext", "version": 79, "requestId": ID,
+            "operation": "reportApplicationContext", "version": 80, "requestId": ID,
             "instanceId": ID.to_ascii_uppercase(), "sequence": 1, "executablePath": null
         });
         let accepted = Report::decode(&serde_json::to_vec(&reset).unwrap()).unwrap();
