@@ -148,6 +148,28 @@ fn a_checkpoint_failure_blocks_before_any_attempt() {
 }
 
 #[test]
+fn a_refused_request_still_returns_a_fatal_reply_query() {
+    // A paused field, then a checkpoint that cannot be saved: neither request
+    // is admitted, and neither hides the failed reply behind Blocked.
+    let paused = Rig::new(Memory::default());
+    let mut first = host(1, Attempt::Confirmed, false);
+    let outcome = paused.set(&mut first, 1, ()).unwrap();
+    assert_eq!(result(&outcome), (Status::Indeterminate, Some(UNCONFIRMED)));
+    let file = Memory::legacy(1);
+    file.allow.store(0, Ordering::SeqCst);
+    for rig in [paused, Rig::new(file)] {
+        let mut refused = host(1, Attempt::Confirmed, true);
+        refused.fail_query = true;
+        let error = rig
+            .set(&mut refused, 1, ())
+            .err()
+            .expect("a fatal query stops the feature");
+        assert_eq!(error.to_string(), "injected reply query failure");
+        assert_eq!((refused.native().attempts, refused.queries), (0, 1));
+    }
+}
+
+#[test]
 fn power_admission_blocks_after_the_hold_without_an_attempt() {
     let rig = Rig::new(Memory::legacy(0));
 
