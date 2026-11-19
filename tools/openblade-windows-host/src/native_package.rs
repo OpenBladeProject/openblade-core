@@ -1005,51 +1005,56 @@ fn inspect_artifact(
     Ok(f[0].into())
 }
 
+/// The reviewed inbox Windows DLLs a native executable may import by name,
+/// besides the `api-ms-win-` API sets. The managed
+/// `WindowsNativePackage.IsSystemImport` admits the same names.
+const SYSTEM_IMPORTS: &[&str] = &[
+    "combase.dll",
+    "bcryptprimitives.dll",
+    "kernel32.dll",
+    "ntdll.dll",
+    "advapi32.dll",
+    "bcrypt.dll",
+    "crypt32.dll",
+    "user32.dll",
+    "userenv.dll",
+    "shell32.dll",
+    "ole32.dll",
+    "oleaut32.dll",
+    "ws2_32.dll",
+    "iphlpapi.dll",
+    "setupapi.dll",
+    "cfgmgr32.dll",
+    "powrprof.dll",
+    "wtsapi32.dll",
+    "secur32.dll",
+    "version.dll",
+    "wintrust.dll",
+    "psapi.dll",
+    "gdi32.dll",
+    "dwmapi.dll",
+    "comctl32.dll",
+    "comdlg32.dll",
+    "shlwapi.dll",
+    "hid.dll",
+    "winmm.dll",
+    "dbghelp.dll",
+    "msvcrt.dll",
+    // Inbox Windows Color System: the Agent display query reads the
+    // active profile and setColorProfile writes it.
+    "mscms.dll",
+    // Inbox Windows Web Services XML reader over the Agent battery
+    // report's bounded in-memory buffer; no channel or network API.
+    "webservices.dll",
+];
+
 fn system_import(name: &str) -> bool {
-    matches!(
-        name,
-        "combase.dll"
-            | "bcryptprimitives.dll"
-            | "kernel32.dll"
-            | "ntdll.dll"
-            | "advapi32.dll"
-            | "bcrypt.dll"
-            | "crypt32.dll"
-            | "user32.dll"
-            | "userenv.dll"
-            | "shell32.dll"
-            | "ole32.dll"
-            | "oleaut32.dll"
-            | "ws2_32.dll"
-            | "iphlpapi.dll"
-            | "setupapi.dll"
-            | "cfgmgr32.dll"
-            | "powrprof.dll"
-            | "wtsapi32.dll"
-            | "secur32.dll"
-            | "version.dll"
-            | "wintrust.dll"
-            | "psapi.dll"
-            | "gdi32.dll"
-            | "dwmapi.dll"
-            | "comctl32.dll"
-            | "comdlg32.dll"
-            | "shlwapi.dll"
-            | "hid.dll"
-            | "winmm.dll"
-            | "dbghelp.dll"
-            | "msvcrt.dll"
-            // Inbox Windows Color System: the Agent display query reads the
-            // active profile and setColorProfile writes it.
-            | "mscms.dll"
-            // Inbox Windows Web Services XML reader over the Agent battery
-            // report's bounded in-memory buffer; no channel or network API.
-            | "webservices.dll"
-    ) || name.starts_with("api-ms-win-")
-        && name.ends_with(".dll")
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
+    SYSTEM_IMPORTS.contains(&name)
+        || name.starts_with("api-ms-win-")
+            && name.ends_with(".dll")
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
 }
 
 const PROMOTION_BUDGET: std::time::Duration = std::time::Duration::from_secs(4);
