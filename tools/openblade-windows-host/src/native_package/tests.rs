@@ -1489,22 +1489,228 @@ fn the_identity_bounds_match_the_managed_and_build_script_bounds() {
     ] {
         assert_eq!(MANAGED_PACKAGE.matches(&constant).count(), 1, "{constant}");
     }
-    // build.rs emits the identity under the same included bound.
+    // build.rs mounts the same module once and names the bound only in its
+    // assert, path-qualified. This is a text check: it catches a second module,
+    // import or binding named identity_bound written in build.rs (including
+    // another #[path] mount), another use of the bound, and a changed
+    // condition or message. It cannot see a name brought in by a macro or an
+    // include!, or a cfg-dependent definition inside identity_bound.rs.
     let build = include_str!("../../build.rs");
-    assert!(build.contains("include!(\"src/native_package/identity_bound.rs\");"));
-    assert!(build.contains("record.len() <= MAX_IDENTITY_BYTES"));
+    let module = "#[path = \"src/native_package/identity_bound.rs\"]\nmod identity_bound;\n";
+    assert_eq!(build.matches(module).count(), 1);
+    assert_eq!(build.matches("#[path").count(), 1);
+    assert_eq!(build.matches("identity_bound").count(), 4);
+    assert_eq!(build.matches("MAX_IDENTITY_BYTES").count(), 2);
+    assert_eq!(
+        build.matches("identity_bound::MAX_IDENTITY_BYTES").count(),
+        2
+    );
+    for text in [
+        "record.len() <= identity_bound::MAX_IDENTITY_BYTES && record.is_ascii(),",
+        "at most {} bytes, not {}\",\n            identity_bound::MAX_IDENTITY_BYTES,\n            \
+         record.len()\n",
+    ] {
+        assert_eq!(build.matches(text).count(), 1, "{text}");
+    }
 }
+
+const IDENTITY_BOUND_DATA: &str = include_str!("../../tests/data/native-identity-bound-v1.json");
 
 /// native-identity-bound-v1.json: identities padded to 1025 bytes, the shared
 /// bound, and one byte over it. The managed `WindowsNativeEpochTests` checks
 /// `NativeArtifact.Inspect` against the same images and records.
 fn identity_bound_cases() -> serde_json::Value {
-    let data: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tests/data/native-identity-bound-v1.json"
-    ))
-    .unwrap();
+    let data: serde_json::Value = serde_json::from_str(IDENTITY_BOUND_DATA).unwrap();
     assert_eq!(data["bound"], MAX_IDENTITY_BYTES);
     data
+}
+
+/// The worst shippable composition's Cargo features: the closure of
+/// service-temporary-charge-v1 and every Agent feature, sorted.
+const WORST_COMPOSITION: [&str; 19] = [
+    "agent-battery-report-v1",
+    "agent-display-brightness-write-v1",
+    "agent-display-color-write-v1",
+    "agent-display-hdr-write-v1",
+    "agent-display-query-v1",
+    "agent-display-refresh-write-v1",
+    "controller-admission-compile-check",
+    "firmware-performance-compile-check",
+    "hid-identity-compile-check",
+    "installed-service-candidate",
+    "lifecycle-evidence-compile-check",
+    "native-agent-entry-compile-check",
+    "service-battery-policy-v1",
+    "service-fan-mutation-v2",
+    "service-hardware-compile-check",
+    "service-mailbox-observation-v1",
+    "service-temporary-charge-v1",
+    "service-thermal-mutation-v1",
+    "startup-custody-v1",
+];
+
+/// A release identity for `role` built from [`WORST_COMPOSITION`], padded to
+/// exactly `length` bytes with reserved feature names.
+fn bound_identity(role: &str, length: usize) -> String {
+    let capabilities = if role == "agent" {
+        "agent-battery-report-v1,session-display-query-partial-v1,\
+         session-display-brightness-write-partial-v1,session-display-hdr-write-partial-v1,\
+         session-display-refresh-write-partial-v1,session-display-color-write-partial-v1"
+    } else {
+        "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,\
+         service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1"
+    };
+    let identity = |features: &[String]| {
+        let mut sorted = features.to_vec();
+        sorted.sort_unstable();
+        format!(
+            "OpenBlade.NativeArtifact.v2\n{}-{role}\n{role}\nx86_64-pc-windows-msvc\n{}\n{}\n\
+             rustc 1.99.1 (58cf8f9c3 2026-10-13)\nrelease\n{capabilities}\n",
+            "c".repeat(64),
+            "a".repeat(40),
+            sorted.join(",")
+        )
+    };
+    let mut features: Vec<String> = WORST_COMPOSITION.map(String::from).to_vec();
+    // Whole reserved capability names while room remains for the fill name.
+    for n in 0.. {
+        let next = [
+            features.clone(),
+            vec![format!("agent-reserved-capability-{n:03}-v1")],
+        ]
+        .concat();
+        if identity(&next).len() + 32 > length {
+            break;
+        }
+        features = next;
+    }
+    let fill = "agent-reserved-fill-";
+    let base = identity(&[features.clone(), vec![fill.into()]].concat()).len();
+    features.push(format!("{fill}{}", "x".repeat(length - base)));
+    let text = identity(&features);
+    assert_eq!(text.len(), length);
+    text
+}
+
+/// Inert PE32+ headers, no instructions: `.obid` at RVA 0x1000 with raw room
+/// for 4608 bytes, then `.idata` at RVA 0x3000 importing KERNEL32.dll, so no
+/// tested identity overlaps another section.
+fn bound_image(identity: &[u8]) -> Vec<u8> {
+    let mut image = vec![0u8; 0x1800];
+    let mut put = |at: usize, bytes: &[u8]| image[at..at + bytes.len()].copy_from_slice(bytes);
+    put(0, b"MZ");
+    put(60, &0x80u32.to_le_bytes());
+    put(0x80, b"PE\0\0");
+    for (at, value) in [
+        (0x84, 0x8664u16),
+        (0x86, 2),
+        (0x94, 240),
+        (0x96, 2),
+        (0x98, 0x20b),
+    ] {
+        put(at, &value.to_le_bytes());
+    }
+    let header = [(32, 0x1000u32), (36, 0x200), (56, 0x4000), (60, 0x400)];
+    for (at, value) in header
+        .into_iter()
+        .chain([(108, 16), (120, 0x3000), (124, 40)])
+    {
+        put(0x98 + at, &value.to_le_bytes());
+    }
+    let sections = 0x98 + 240;
+    put(sections, b".obid");
+    put(sections + 40, b".idata");
+    let length = u32::try_from(identity.len()).unwrap();
+    for (at, value) in [
+        (8, length),
+        (12, 0x1000),
+        (16, 0x1200),
+        (20, 0x400),
+        (36, 0x4000_0040),
+        (48, 0x200),
+        (52, 0x3000),
+        (56, 0x200),
+        (60, 0x1600),
+        (76, 0x4000_0040),
+    ] {
+        put(sections + at, &value.to_le_bytes());
+    }
+    put(0x400, identity);
+    put(0x1600 + 12, &0x3040u32.to_le_bytes());
+    put(0x1640, b"KERNEL32.dll\0");
+    image
+}
+
+/// The exact text of native-identity-bound-v1.json.
+fn identity_bound_data() -> String {
+    let cases = [
+        ("agent-above-former-1024-bound", "agent", 1025, true),
+        ("agent-at-bound", "agent", MAX_IDENTITY_BYTES, true),
+        ("service-at-bound", "service", MAX_IDENTITY_BYTES, true),
+        ("agent-over-bound", "agent", MAX_IDENTITY_BYTES + 1, false),
+    ];
+    let rows: Vec<_> = cases
+        .into_iter()
+        .map(|(name, role, length, accepted)| {
+            let identity = bound_identity(role, length);
+            let image = bound_image(identity.as_bytes());
+            let f: Vec<_> = identity.split('\n').collect();
+            let (size, sha) = (image.len().to_string(), digest(&image));
+            let record = encode(
+                "OpenBlade.NativeArtifactRecord.v2",
+                &[
+                    f[1],
+                    f[2],
+                    f[3],
+                    f[4],
+                    f[5],
+                    f[6],
+                    f[7],
+                    &size,
+                    &sha,
+                    "kernel32.dll",
+                    f[8],
+                ],
+            );
+            format!(
+                "    {{\n      \"name\": \"{name}\",\n      \"role\": \"{role}\",\n      \
+                 \"identityBytes\": {length},\n      \"accepted\": {accepted},\n      \
+                 \"image\": \"{}\",\n      \"record\": \"{}\"\n    }}",
+                encode64(&image),
+                encode64(&record)
+            )
+        })
+        .collect();
+    format!(
+        "{{\n  \"note\": \"Inert PE32+ headers with no executable instructions. Each .obid \
+         identity is the worst shippable composition (service-temporary-charge-v1 and every \
+         Agent feature) padded with reserved feature names to an exact length around the \
+         shared {MAX_IDENTITY_BYTES}-byte bound. Generated by native_package::tests::\
+         regenerate_identity_bound_data.\",\n  \"bound\": {MAX_IDENTITY_BYTES},\n  \
+         \"cases\": [\n{}\n  ]\n}}\n",
+        rows.join(",\n")
+    )
+}
+
+/// Rewrites the data after a bound change:
+/// `cargo test --manifest-path tools/openblade-windows-host/Cargo.toml --lib
+/// regenerate_identity_bound_data -- --ignored`.
+#[test]
+#[ignore = "writes tests/data/native-identity-bound-v1.json"]
+fn regenerate_identity_bound_data() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/data/native-identity-bound-v1.json"
+    );
+    std::fs::write(path, identity_bound_data()).unwrap();
+}
+
+#[test]
+fn identity_bound_data_is_the_generator_output() {
+    assert!(
+        IDENTITY_BOUND_DATA == identity_bound_data(),
+        "regenerate native-identity-bound-v1.json with regenerate_identity_bound_data"
+    );
 }
 
 /// A test value of any length; `decode64` keeps its 4096-character bound.
@@ -1560,6 +1766,28 @@ fn compiled_identity_is_admitted_up_to_the_shared_bound_and_no_further() {
     }
 }
 
+/// A package record whose artifact fields are `service` and `agent`.
+fn package_with(service: &str, agent: &str) -> Vec<u8> {
+    let (installation, digest) = ("1".repeat(32), "a".repeat(64));
+    encode(
+        "OpenBlade.NativePackage.v2",
+        &[
+            "LocalDev",
+            &installation,
+            &digest,
+            "4294967296",
+            &digest,
+            &digest,
+            &digest,
+            &digest,
+            service,
+            agent,
+            "two-executables-static-crt-system-imports-v2",
+            &digest,
+        ],
+    )
+}
+
 #[test]
 fn package_carries_both_roles_at_the_identity_bound() {
     let data = identity_bound_cases();
@@ -1573,36 +1801,42 @@ fn package_carries_both_roles_at_the_identity_bound() {
             .unwrap()
     };
     let (service, agent) = (case("service-at-bound"), case("agent-at-bound"));
-    let records = [
-        encode64(&large(service, "record")),
-        encode64(&large(agent, "record")),
-    ];
-    let (installation, digest) = ("1".repeat(32), "a".repeat(64));
-    let package = encode(
-        "OpenBlade.NativePackage.v2",
-        &[
-            "LocalDev",
-            &installation,
-            &digest,
-            "4294967296",
-            &digest,
-            &digest,
-            &digest,
-            &digest,
-            &records[0],
-            &records[1],
-            "two-executables-static-crt-system-imports-v2",
-            &digest,
-        ],
+    let package = package_with(
+        &encode64(&large(service, "record")),
+        &encode64(&large(agent, "record")),
     );
-    let f = lines(&package, "OpenBlade.NativePackage.v2", 12).unwrap();
-    for (field, case) in [(f[8], service), (f[9], agent)] {
-        // Beyond the general base64 bound, within the artifact record bound.
-        assert!(decode64(field).is_err());
-        let record = artifact_record(field).unwrap();
+    let parsed = package_record(&package).unwrap();
+    assert_eq!(parsed.fields.len(), 12);
+    for (record, case) in [(&parsed.service, service), (&parsed.agent, agent)] {
+        // Each record is beyond decode64's 3072-byte reach.
+        assert!(record.len() > 3072);
+        assert_eq!(*record, large(case, "record"));
         let role = case["role"].as_str().unwrap();
-        inspect_artifact(&record, &large(case, "image"), role, &release).unwrap();
+        inspect_artifact(record, &large(case, "image"), role, &release).unwrap();
     }
-    assert!(artifact_record(&"A".repeat(MAX_ARTIFACT_RECORD_BASE64)).is_ok());
-    assert!(artifact_record(&"A".repeat(MAX_ARTIFACT_RECORD_BASE64 + 4)).is_err());
+    // Only package_record widens its two fields: decode64 keeps 4096 characters.
+    for field in [parsed.fields[8], parsed.fields[9]] {
+        assert!(decode64(field).is_err());
+    }
+    assert_eq!(decode64(&"A".repeat(4096)).unwrap().len(), 3072);
+    assert!(decode64(&"A".repeat(4100)).is_err());
+}
+
+#[test]
+fn package_artifact_fields_are_bounded_at_the_shared_base64_bound() {
+    let at = "A".repeat(MAX_ARTIFACT_RECORD_BASE64);
+    let over = "A".repeat(MAX_ARTIFACT_RECORD_BASE64 + 4);
+    let package = package_with(&at, "AAAA");
+    let parsed = package_record(&package).unwrap();
+    // The managed NativeArtifact.MaximumRecordBytes: the encoder's limit.
+    assert_eq!(parsed.service.len(), 8193);
+    assert_eq!(
+        package_record(&package_with("AAAA", &at))
+            .unwrap()
+            .agent
+            .len(),
+        8193
+    );
+    assert!(package_record(&package_with(&over, "AAAA")).is_err());
+    assert!(package_record(&package_with("AAAA", &over)).is_err());
 }

@@ -23,11 +23,14 @@ use windows_sys::{
 const ZERO: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 const DOMAIN: &[u8] = b"OpenBlade-Local-Dev-Deployment-Manifest-v1\0";
 const ROLES: &[u8] = b"OpenBlade.WindowsNativeRoles\0v1\0win-x64\0";
-include!("native_package/identity_bound.rs");
-/// Largest base64 artifact record a package carries, about 8 KiB of record. It
-/// holds an identity at `MAX_IDENTITY_BYTES` plus its size, digest and
-/// imports. The package's 16384-byte record bound limits the pair. The
-/// managed `NativeArtifact.MaximumRecordBase64` states the same value.
+#[path = "native_package/identity_bound.rs"]
+mod identity_bound;
+use identity_bound::MAX_IDENTITY_BYTES;
+/// Largest base64 artifact record a package carries: up to 8193 bytes of
+/// record, which the managed encoder also refuses to exceed. An identity at
+/// `MAX_IDENTITY_BYTES` plus its size, digest and imports fits. The package's
+/// 16384-byte record bound limits the pair. The managed
+/// `NativeArtifact.MaximumRecordBase64` states the same value.
 const MAX_ARTIFACT_RECORD_BASE64: usize = 10924;
 
 fn deny() -> io::Error {
@@ -398,8 +401,21 @@ struct Enrollment {
 fn decode64(value: &str) -> io::Result<Vec<u8>> {
     decode64_bounded(value, 4096)
 }
-fn artifact_record(value: &str) -> io::Result<Vec<u8>> {
-    decode64_bounded(value, MAX_ARTIFACT_RECORD_BASE64)
+/// A package record's fields, with the Service and Agent artifact records it
+/// carries decoded. Both production readers parse through this after checking
+/// the bytes against the epoch's package digest.
+struct PackageRecord<'a> {
+    fields: Vec<&'a str>,
+    service: Vec<u8>,
+    agent: Vec<u8>,
+}
+fn package_record(bytes: &[u8]) -> io::Result<PackageRecord<'_>> {
+    let fields = lines(bytes, "OpenBlade.NativePackage.v2", 12)?;
+    Ok(PackageRecord {
+        service: decode64_bounded(fields[8], MAX_ARTIFACT_RECORD_BASE64)?,
+        agent: decode64_bounded(fields[9], MAX_ARTIFACT_RECORD_BASE64)?,
+        fields,
+    })
 }
 fn decode64_bounded(value: &str, maximum: usize) -> io::Result<Vec<u8>> {
     if value.is_empty() || !value.len().is_multiple_of(4) || value.len() > maximum {
@@ -1607,7 +1623,11 @@ fn read_package(allow_provisional: bool) -> io::Result<InstalledPackage> {
     if digest(&package) != epoch.package {
         return Err(deny());
     }
-    let f = lines(&package, "OpenBlade.NativePackage.v2", 12)?;
+    let PackageRecord {
+        fields: f,
+        service: service_record,
+        agent: agent_record,
+    } = package_record(&package)?;
     let manifest = retain_bytes(&generation, "release.json", 4096, &mut held)?;
     let signature = retain_bytes(&generation, "release.sig", 64, &mut held)?;
     let projection = retain_bytes(&generation, "verification.bin", 2048, &mut held)?;
@@ -1678,8 +1698,8 @@ fn read_package(allow_provisional: bool) -> io::Result<InstalledPackage> {
         64 * 1024 * 1024,
         &mut held,
     )?;
-    if inspect_artifact(&artifact_record(f[8])?, &service, "service", &release)? != epoch.service
-        || inspect_artifact(&artifact_record(f[9])?, &agent, "agent", &release)? != epoch.agent
+    if inspect_artifact(&service_record, &service, "service", &release)? != epoch.service
+        || inspect_artifact(&agent_record, &agent, "agent", &release)? != epoch.agent
         || inventory[inventory.len() - 64..inventory.len() - 32] != Sha256::digest(&service)[..]
         || inventory[inventory.len() - 32..] != Sha256::digest(&agent)[..]
     {
@@ -1771,7 +1791,11 @@ pub(crate) fn historical_battery_producer(
     if digest(&package) != origin.package {
         return Err(deny());
     }
-    let f = lines(&package, "OpenBlade.NativePackage.v2", 12)?;
+    let PackageRecord {
+        fields: f,
+        service: service_record,
+        ..
+    } = package_record(&package)?;
     let manifest = retain_bytes(&generation, "release.json", 4096, &mut held)?;
     let signature = retain_bytes(&generation, "release.sig", 64, &mut held)?;
     let projection = retain_bytes(&generation, "verification.bin", 2048, &mut held)?;
@@ -1814,7 +1838,7 @@ pub(crate) fn historical_battery_producer(
     paths::verify_security(&app, Policy::Directory { extra_rights: 0 })?;
     let service = retain_bytes(&app, "OpenBlade.Service.exe", 64 * 1024 * 1024, &mut held)?;
     let policy = startup_policy(compiled_record(&service)?)?;
-    if inspect_artifact(&artifact_record(f[8])?, &service, "service", &release)? != artifact
+    if inspect_artifact(&service_record, &service, "service", &release)? != artifact
         || !matches!(
             policy,
             "service-battery-policy-v1" | "service-temporary-charge-v1"

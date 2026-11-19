@@ -18,11 +18,16 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
     // Agent capability; the worst shippable composition was 977 bytes when
     // this bound was raised from 1024.
     internal const int MaximumIdentityBytes = 4096;
-    // Largest base64 artifact record a package carries, about 8 KiB of record. It
-    // holds an identity at MaximumIdentityBytes plus its size, digest and
-    // imports. The package's 16384-byte record bound limits the pair. Rust
-    // states the same MAX_ARTIFACT_RECORD_BASE64.
+    // Largest base64 artifact record a package carries. An identity at
+    // MaximumIdentityBytes plus its size, digest and imports fits. The
+    // package's 16384-byte record bound limits the pair. Rust states the same
+    // MAX_ARTIFACT_RECORD_BASE64.
     internal const int MaximumRecordBase64 = 10924;
+    // The record bytes that base64 holds (8193). Encode refuses a longer record
+    // instead of producing one the package must refuse; only a hand-built
+    // artifact can reach it, since an identity at the bound with 2048-character
+    // imports is about 6.2 KB.
+    internal const int MaximumRecordBytes = MaximumRecordBase64 / 4 * 3;
 
     internal bool HasStartupCustody => Features.Split(',').Contains("startup-custody-v1", StringComparer.Ordinal);
     internal bool PrivateCustody => Schema == 2 && Capabilities.Split(',').Contains("private-service-custody-v1", StringComparer.Ordinal);
@@ -39,7 +44,9 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
     {
         string[] fields = [Id, Role, Target, Source, Features, Compiler, Profile,
             Size.ToString(System.Globalization.CultureInfo.InvariantCulture), Sha256, Imports];
-        return NativeCanonical.Lines($"OpenBlade.NativeArtifactRecord.v{Schema}", Schema == 1 ? fields : [.. fields, Capabilities]);
+        byte[] record = NativeCanonical.Lines($"OpenBlade.NativeArtifactRecord.v{Schema}", Schema == 1 ? fields : [.. fields, Capabilities]);
+        if (record.Length > MaximumRecordBytes) { throw new InvalidDataException("Native artifact record exceeds the package bound."); }
+        return record;
     }
 
     internal static string[] RecordFields(byte[] bytes)
@@ -209,19 +216,25 @@ internal static class NativeCanonical
 
     internal static byte[] Lines(string header, params string[] fields)
     {
-        int maximum = header switch
-        {
-            "OpenBlade.NativeStartupOwner.v2" or "OpenBlade.NativeServiceLaunch.v1" or "OpenBlade.NativeReadiness.v2" or "OpenBlade.ManagedNativeResolution.v2" => 10924,
-            // One identity field, such as the sorted feature list, can fill most of the identity.
-            "OpenBlade.NativeArtifactRecord.v1" or "OpenBlade.NativeArtifactRecord.v2" => NativeArtifact.MaximumIdentityBytes,
-            "OpenBlade.NativePackage.v2" => NativeArtifact.MaximumRecordBase64,
-            _ => 2048,
-        };
-        if (fields.Any(f => f.Length > maximum || f.Any(c => c < 0x20 || c > 0x7e))
+        if (fields.Where((f, index) => f.Length > FieldMaximum(header, index) || f.Any(c => c < 0x20 || c > 0x7e)).Any()
             || header.Length + fields.Sum(f => f.Length + 1) + 1 > 16384)
         { throw new InvalidDataException("Canonical native records require bounded ASCII fields."); }
         return Encoding.ASCII.GetBytes(header + "\n" + string.Join('\n', fields) + "\n");
     }
+
+    // Fields are 2048 characters unless a record needs more, and then only the
+    // fields that do.
+    internal static int FieldMaximum(string header, int index) => (header, index) switch
+    {
+        ("OpenBlade.NativeStartupOwner.v2" or "OpenBlade.NativeServiceLaunch.v1" or "OpenBlade.NativeReadiness.v2" or "OpenBlade.ManagedNativeResolution.v2", _) => 10924,
+        // Features and Capabilities, the identity lines without a tighter check
+        // in Inspect, share the identity bound. Imports is not identity content.
+        // build.rs emits only v2 identities, so v1 records keep 2048.
+        ("OpenBlade.NativeArtifactRecord.v2", 4 or 10) => NativeArtifact.MaximumIdentityBytes,
+        // The Service and Agent artifact records, as base64.
+        ("OpenBlade.NativePackage.v2", 8 or 9) => NativeArtifact.MaximumRecordBase64,
+        _ => 2048,
+    };
 
     internal static string[] ParseLines(byte[] bytes, string header, int lines)
     {
