@@ -122,6 +122,13 @@ function Get-OpenBladeCiProjectCatalog {
     $trayTestsKey = 'tests/openblade.tray.tests/openblade.tray.tests.csproj'
     if ($nodes.ContainsKey($trayTestsKey)) {
         $nodes[$trayTestsKey].References += 'src/OpenBlade.Tray/OpenBlade.Tray.csproj'
+        # Tray.Tests references the Service project only for the gated Rust
+        # protected-runtime parity test, which consumes the stable
+        # BatteryConfigurationStore format. Following that edge would make
+        # every Service change select Tray.Tests, which always builds the WinUI
+        # Tray, so it does not propagate Service changes.
+        $nodes[$trayTestsKey].References = @($nodes[$trayTestsKey].References |
+            Where-Object { $_ -ne 'src/OpenBlade.Service/OpenBlade.Service.csproj' })
     }
 
     return $nodes
