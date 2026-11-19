@@ -472,7 +472,8 @@ async fn composed_stop_and_origin_loss_join_blocking_supplier_and_sibling() {
         client.write_all(&query()).await.unwrap();
         let (result, ()) = tokio::join!(
             async {
-                let result = super::super::feature_lifetime::run_pair(
+                use super::super::feature_lifetime::{feature, run_all};
+                let result = run_all(
                     async {
                         stopped(&mut shutdown).await;
                         if origin_loss {
@@ -482,21 +483,25 @@ async fn composed_stop_and_origin_loss_join_blocking_supplier_and_sibling() {
                         }
                     },
                     std::future::pending(),
-                    |mut stop| {
-                        let sibling_done = &sibling_done;
-                        async move {
-                            stopped(&mut stop).await;
-                            sibling_done.set(true);
-                            Ok(())
-                        }
-                    },
-                    |mut stop| async move {
-                        serve(&mut server, &mut stop, &mut supplier, |_| Ok(()), || Ok(()))
-                            .await
-                            .map_err(|error| match error {
-                                ServeError::Fatal(error) | ServeError::Connection(error) => error,
-                            })
-                    },
+                    vec![
+                        feature(|mut stop| {
+                            let sibling_done = &sibling_done;
+                            async move {
+                                stopped(&mut stop).await;
+                                sibling_done.set(true);
+                                Ok(())
+                            }
+                        }),
+                        feature(|mut stop| async move {
+                            serve(&mut server, &mut stop, &mut supplier, |_| Ok(()), || Ok(()))
+                                .await
+                                .map_err(|error| match error {
+                                    ServeError::Fatal(error) | ServeError::Connection(error) => {
+                                        error
+                                    }
+                                })
+                        }),
+                    ],
                 )
                 .await;
                 owned.set(false);

@@ -294,3 +294,27 @@ fn sign_in_entry_rejects_arguments_before_reading_launch_evidence() {
         assert_eq!(error.to_string(), "unexpected Session Agent arguments");
     }
 }
+
+#[test]
+fn native_endpoint_readiness_reports_only_the_selected_complete_gpu_contract() {
+    let ready = Readiness::native_endpoints();
+    assert_eq!(ready.gpu, cfg!(feature = "agent-gpu-v1"));
+    // No other role is claimed by this constructor.
+    for (role, value) in [
+        ("display", ready.display),
+        ("audio", ready.audio),
+        ("battery", ready.battery),
+        ("tray events", ready.tray_events),
+        ("service client", ready.service_client),
+        ("stop", ready.stop),
+    ] {
+        assert!(!value, "{role}");
+    }
+    let mut bindings = Bindings {
+        ready,
+        ..Bindings::default()
+    };
+    let result = start(token(), Some(&mut bindings));
+    assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Unsupported);
+    assert!(!bindings.held.get());
+}

@@ -1,6 +1,10 @@
-//! Decision seam for the scripted GPU fixture. No native backend is provided.
+//! Shared close decision over a fresh GPU inventory. The scripted fixture
+//! (`scripted-gpu-close`) and the retained-handle Windows backend
+//! (`gpu-close`, see `native`) supply the process observations and actions.
 
-use super::{CurrentUser, GpuAppInventory, MAXIMUM_APPS, is_protected, valid_name};
+use super::{
+    CurrentUser, GpuAppInventory, MAXIMUM_APPS, is_protected, sampling::executable_stem, valid_name,
+};
 use std::{
     cmp::Ordering,
     collections::BTreeSet,
@@ -83,13 +87,13 @@ enum Submission {
     Accepted,
     NoWindow,
     #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "exercised by the inert test backend")
+        not(any(test, feature = "gpu-close")),
+        expect(dead_code, reason = "produced by the Windows and test backends")
     )]
     Rejected,
     #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "exercised by the inert test backend")
+        not(any(test, feature = "gpu-close")),
+        expect(dead_code, reason = "produced by the Windows and test backends")
     )]
     Uncertain,
 }
@@ -158,7 +162,11 @@ fn decide(
                 Err(()) => Some(ACTION_FAILED),
                 Ok(Some(mut retained)) => {
                     let actual = retained.observe();
-                    let name = executable_name(actual.image_path, &compare);
+                    // The same `Process.ProcessName` projection the scan named
+                    // the row with; the handle, creation time, user and session
+                    // carry the identity.
+                    let name = executable_stem(actual.image_path);
+                    let name = name.as_deref();
                     if actual.exited
                         || actual.process_id != app.process_id
                         || actual.start_time_utc_ticks != app.start_time_utc_ticks
@@ -212,28 +220,15 @@ fn decide(
     Report { results, error }
 }
 
-fn executable_name<'a>(
-    path: &'a str,
-    compare: &impl Fn(&str, &str) -> Ordering,
-) -> Option<&'a str> {
-    // Fixture observations use an absolute DOS path. An unqualified name
-    // or a non-executable image supplies no action identity.
-    let [drive, b':', b'\\', ..] = path.as_bytes() else {
-        return None;
-    };
-    if !drive.is_ascii_alphabetic() {
-        return None;
-    }
-    let leaf = path.rsplit_once('\\')?.1;
-    let (name, extension) = leaf.rsplit_once('.')?;
-    (valid_name(name) && !name.contains(['/', ':']) && compare(extension, "exe").is_eq())
-        .then_some(name)
-}
-
-// The only backend shipped with this seam owns fixed records. No request
-// value becomes an image path or is sent to the operating system.
+// The scripted backend owns fixed records. No request value becomes an
+// image path or is sent to the operating system.
 #[cfg(feature = "scripted-gpu-close")]
 pub(super) mod fixture;
+
+// The Windows backend holds each target handle across its identity recheck
+// and action. Its policy is compiled for tests over a scripted process API.
+#[cfg(any(test, feature = "gpu-close"))]
+pub(super) mod native;
 
 #[cfg(test)]
 mod tests;

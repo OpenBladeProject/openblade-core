@@ -1840,3 +1840,51 @@ fn package_artifact_fields_are_bounded_at_the_shared_base64_bound() {
     assert!(package_record(&package_with(&over, "AAAA")).is_err());
     assert!(package_record(&package_with("AAAA", &over)).is_err());
 }
+
+#[test]
+fn selected_session_gpu_capability_is_exact_and_composes_after_display() {
+    const GPU: &str = "session-gpu-apps-v1";
+    let selected = "agent-gpu-v1,native-agent-entry-compile-check";
+    assert!(capabilities(2, "agent", selected, GPU).is_ok());
+    assert!(capabilities(1, "agent", selected, GPU).is_err());
+    assert!(capabilities(2, "agent", "agent-gpu-v1", GPU).is_err());
+    assert!(capabilities(2, "service", selected, GPU).is_err());
+    for forged in [
+        "none",
+        "agent-gpu-v1",
+        "session-gpu-v2",
+        "session-gpu-apps-v1,session-gpu-apps-v1",
+    ] {
+        assert!(
+            capabilities(2, "agent", selected, forged).is_err(),
+            "{forged}"
+        );
+    }
+    // A build without the GPU feature cannot claim its marker.
+    let battery = "agent-battery-report-v1,native-agent-entry-compile-check";
+    assert!(capabilities(2, "agent", battery, GPU).is_err());
+    assert!(
+        capabilities(
+            2,
+            "agent",
+            battery,
+            "agent-battery-report-v1,session-gpu-apps-v1"
+        )
+        .is_err()
+    );
+
+    let combined = "agent-battery-report-v1,agent-display-query-v1,agent-gpu-v1,native-agent-entry-compile-check";
+    let expected = "agent-battery-report-v1,session-display-query-partial-v1,session-gpu-apps-v1";
+    assert!(capabilities(2, "agent", combined, expected).is_ok());
+    for forged in [
+        GPU,
+        "agent-battery-report-v1,session-display-query-partial-v1",
+        "session-gpu-apps-v1,agent-battery-report-v1,session-display-query-partial-v1",
+        "agent-battery-report-v1,session-gpu-apps-v1,session-display-query-partial-v1",
+    ] {
+        assert!(
+            capabilities(2, "agent", combined, forged).is_err(),
+            "{forged}"
+        );
+    }
+}

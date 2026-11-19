@@ -12,9 +12,8 @@ use std::{
 
 use windows_sys::{
     Win32::{
-        Foundation::{ERROR_INVALID_PARAMETER, HANDLE, LUID, STILL_ACTIVE},
+        Foundation::{ERROR_INVALID_PARAMETER, LUID, STILL_ACTIVE},
         Globalization::CompareStringOrdinal,
-        Security::{GetTokenInformation, SECURITY_MAX_SID_SIZE, TOKEN_USER, TokenUser},
         System::{
             Performance::*,
             Threading::{GetCurrentProcess, GetExitCodeProcess},
@@ -24,9 +23,7 @@ use windows_sys::{
 };
 
 use super::*;
-use crate::process_query::{
-    image_path, open_process, open_process_token, process_times, token_session,
-};
+use crate::process_query::{image_path, open_process, process_times, token_identity};
 
 const PDH_FMT_NOCAP100: u32 = 0x8000;
 const MAX_ENGINE_COUNTERS: usize = 65_536;
@@ -315,50 +312,6 @@ fn inspect_process(pid: i32) -> Inspection {
         }),
         None => Inspection::Unavailable,
     }
-}
-
-fn token_identity(process: HANDLE) -> Option<(Vec<u8>, u32)> {
-    let token = open_process_token(process)?;
-    let session = token_session(&token)?;
-    let mut used = 0;
-
-    const TOKEN_USER_BYTES: usize = size_of::<TOKEN_USER>();
-    const BUFFER_WORDS: usize =
-        (TOKEN_USER_BYTES + SECURITY_MAX_SID_SIZE as usize).div_ceil(size_of::<usize>());
-    let mut buffer = [0_usize; BUFFER_WORDS];
-    let base = buffer.as_mut_ptr().cast::<u8>();
-    let capacity = size_of_val(&buffer);
-    // SAFETY: The initialized buffer is aligned for TOKEN_USER and has space
-    // for the maximum binary SID.
-    if unsafe {
-        GetTokenInformation(
-            token.as_raw_handle(),
-            TokenUser,
-            base.cast(),
-            capacity as u32,
-            &mut used,
-        )
-    } == 0
-        || !(TOKEN_USER_BYTES..=capacity).contains(&(used as usize))
-    {
-        return None;
-    }
-    // SAFETY: A complete aligned TOKEN_USER was returned inside the buffer.
-    let sid = unsafe { (*base.cast::<TOKEN_USER>()).User.Sid };
-    let offset = sid
-        .addr()
-        .checked_sub(base.addr())
-        .filter(|&offset| offset >= TOKEN_USER_BYTES)?;
-    // SAFETY: The validated output length fits in the initialized buffer.
-    let payload = unsafe { std::slice::from_raw_parts(base, used as usize) }.get(offset..)?;
-    let [1, subauthorities, ..] = payload else {
-        return None;
-    };
-    let length = 8 + 4 * usize::from(*subauthorities);
-    if length > SECURITY_MAX_SID_SIZE as usize {
-        return None;
-    }
-    Some((payload.get(..length)?.to_vec(), session))
 }
 
 // windows-sys does not project DXGI COM interfaces. Use the DXGI 1.1 slots

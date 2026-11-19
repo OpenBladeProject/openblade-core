@@ -6,18 +6,14 @@ use std::{
 
 #[cfg(feature = "agent-battery-report-v1")]
 mod battery;
-#[cfg(any(
-    feature = "agent-battery-report-v1",
-    feature = "agent-display-query-v1"
-))]
+#[cfg(openblade_agent_endpoint)]
 pub(crate) mod diagnostics;
 #[cfg(feature = "agent-display-query-v1")]
 mod display_query;
-#[cfg(any(
-    feature = "agent-battery-report-v1",
-    feature = "agent-display-query-v1"
-))]
+#[cfg(openblade_agent_endpoint)]
 mod feature_lifetime;
+#[cfg(feature = "agent-gpu-v1")]
+mod gpu;
 #[cfg(not(test))]
 mod installed_monitor;
 #[cfg(openblade_display_write)]
@@ -36,10 +32,7 @@ fn verify_origin(origin: &crate::loaded_origin::Origin) -> io::Result<()> {
 }
 
 fn origin_error(error: io::Error) -> io::Error {
-    #[cfg(any(
-        feature = "agent-battery-report-v1",
-        feature = "agent-display-query-v1"
-    ))]
+    #[cfg(openblade_agent_endpoint)]
     let error = diagnostics::origin(error);
     error
 }
@@ -130,6 +123,21 @@ struct Readiness {
 }
 
 impl Readiness {
+    /// Readiness set by this build's native endpoints. Only the GPU role,
+    /// whose complete managed contract (query, close, force close) the
+    /// selected endpoint serves, is set here; the partial display endpoint
+    /// and every other role keep their own readiness decision.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the sign-in lease that reports it is unwired")
+    )]
+    fn native_endpoints() -> Self {
+        Self {
+            gpu: cfg!(feature = "agent-gpu-v1"),
+            ..Self::default()
+        }
+    }
+
     fn require_complete(&self) -> io::Result<()> {
         for (ready, role) in [
             (self.display, "display"),

@@ -8,7 +8,10 @@ use std::{
 
 use windows_sys::Win32::{
     Foundation::{FILETIME, GetLastError, HANDLE},
-    Security::{GetTokenInformation, TOKEN_QUERY, TokenSessionId},
+    Security::{
+        GetTokenInformation, SECURITY_MAX_SID_SIZE, TOKEN_QUERY, TOKEN_USER, TokenSessionId,
+        TokenUser,
+    },
     System::Threading::{
         GetProcessTimes, OpenProcess, OpenProcessToken, PROCESS_ACCESS_RIGHTS,
         PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
@@ -101,4 +104,49 @@ pub(crate) fn token_session(token: &OwnedHandle) -> Option<u32> {
         return None;
     }
     Some(session)
+}
+
+/// Canonical binary user SID and session of a held process's primary token.
+pub(crate) fn token_identity(process: HANDLE) -> Option<(Vec<u8>, u32)> {
+    let token = open_process_token(process)?;
+    let session = token_session(&token)?;
+    let mut used = 0;
+
+    const TOKEN_USER_BYTES: usize = size_of::<TOKEN_USER>();
+    const BUFFER_WORDS: usize =
+        (TOKEN_USER_BYTES + SECURITY_MAX_SID_SIZE as usize).div_ceil(size_of::<usize>());
+    let mut buffer = [0_usize; BUFFER_WORDS];
+    let base = buffer.as_mut_ptr().cast::<u8>();
+    let capacity = size_of_val(&buffer);
+    // SAFETY: The initialized buffer is aligned for TOKEN_USER and has space
+    // for the maximum binary SID.
+    if unsafe {
+        GetTokenInformation(
+            token.as_raw_handle(),
+            TokenUser,
+            base.cast(),
+            capacity as u32,
+            &mut used,
+        )
+    } == 0
+        || !(TOKEN_USER_BYTES..=capacity).contains(&(used as usize))
+    {
+        return None;
+    }
+    // SAFETY: A complete aligned TOKEN_USER was returned inside the buffer.
+    let sid = unsafe { (*base.cast::<TOKEN_USER>()).User.Sid };
+    let offset = sid
+        .addr()
+        .checked_sub(base.addr())
+        .filter(|&offset| offset >= TOKEN_USER_BYTES)?;
+    // SAFETY: The validated output length fits in the initialized buffer.
+    let payload = unsafe { std::slice::from_raw_parts(base, used as usize) }.get(offset..)?;
+    let [1, subauthorities, ..] = payload else {
+        return None;
+    };
+    let length = 8 + 4 * usize::from(*subauthorities);
+    if length > SECURITY_MAX_SID_SIZE as usize {
+        return None;
+    }
+    Some((payload.get(..length)?.to_vec(), session))
 }

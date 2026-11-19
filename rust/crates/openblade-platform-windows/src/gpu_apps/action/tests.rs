@@ -263,10 +263,6 @@ fn retained_observation_must_match_and_is_always_released() {
             ..ACTUAL
         },
         Observation {
-            image_path: "game.exe",
-            ..ACTUAL
-        },
-        Observation {
             image_path: "",
             ..ACTUAL
         },

@@ -7,6 +7,7 @@ fn main() {
     println!("cargo::rustc-check-cfg=cfg(openblade_metadata_acquisition_probe)");
     println!("cargo::rustc-check-cfg=cfg(openblade_display_write)");
     println!("cargo::rustc-check-cfg=cfg(openblade_display_manual_write)");
+    println!("cargo::rustc-check-cfg=cfg(openblade_agent_endpoint)");
     for name in ["OPENBLADE_NATIVE_BUILD_NONCE", "OPENBLADE_NATIVE_SOURCE"] {
         println!("cargo:rerun-if-env-changed={name}");
     }
@@ -92,11 +93,16 @@ fn main() {
             "agent-display-profile-apply-v1",
             "session-display-profile-apply-partial-v1",
         ),
+        ("agent-gpu-v1", "session-gpu-apps-v1"),
     ]
     .into_iter()
     .filter_map(|(feature, marker)| has(feature).then_some(marker))
     .collect::<Vec<_>>()
     .join(",");
+    // Any selected installed Agent endpoint: shared lifetime and diagnostics.
+    if has("agent-battery-report-v1") || has("agent-display-query-v1") || has("agent-gpu-v1") {
+        println!("cargo::rustc-cfg=openblade_agent_endpoint");
+    }
     // Shared write infrastructure (power admission, recovery, fence) for any
     // selected partial display write.
     if has("agent-display-brightness-write-v1")

@@ -210,6 +210,19 @@ jobs:
           cargo test --locked -p openblade-domain --features thermal-history --target ${{ matrix.target }}
           cargo clippy --locked -p openblade-domain --features thermal-history --all-targets --target ${{ matrix.target }} -- -D warnings
 
+      # The workspace build leaves the production Session GPU close backend
+      # off. Its tests drive scripted process seams only; none opens, signals
+      # or closes a real process.
+      - name: Test and lint the Windows Session GPU close backend
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          foreach ($features in @('gpu-close', 'gpu-close,scripted-gpu-close')) {
+            cargo test --locked -p openblade-platform-windows --features $features --target ${{ matrix.target }}
+            cargo clippy --locked -p openblade-platform-windows --features $features --all-targets --target ${{ matrix.target }} -- -D warnings
+          }
+
       - name: Test the macOS discovery pilot
         if: runner.os == 'macOS'
         run: |
@@ -257,19 +270,28 @@ jobs:
       # The default test run builds neither candidate. Run the shared-fixture
       # IPC decoder tests in the Service build that admits every request and
       # in an Agent build that reads Service status events and Display
-      # requests and keeps the Display recovery checkpoint.
+      # requests and keeps the Display recovery checkpoint. The Session GPU
+      # request, response and endpoint tests run in an Agent build that
+      # serves GPU beside Display.
       - name: Test the candidates' object-only IPC decoders
         if: runner.os == 'Windows'
         run: |
           $ErrorActionPreference = 'Stop'
           $manifest = '../tools/openblade-windows-host/Cargo.toml'
           $agent = @('openblade-windows-agent-candidate', 'agent-display-brightness-write-v1')
+          # The GPU endpoint runs beside Display so the shared feature
+          # lifetime is exercised with more than one feature.
+          $gpu = @('openblade-windows-agent-candidate', 'agent-display-query-v1,agent-gpu-v1')
           # One run per filter, so a filter that matches no test fails the step.
           foreach ($run in @(
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'service_status::object_tests'),
               ($agent + 'service_status::object_tests'),
               ($agent + 'display_query::recovery'),
-              ($agent + 'display_query::request_parity'))) {
+              ($agent + 'display_query::request_parity'),
+              ($gpu + 'gpu::request_parity'),
+              ($gpu + 'gpu::tests'),
+              ($gpu + 'feature_lifetime'),
+              ($gpu + 'native_endpoint_readiness'))) {
             # Capture the exit code instead of throwing, so the output is printed first.
             $PSNativeCommandUseErrorActionPreference = $false
             $output = cargo test --locked --manifest-path $manifest --target ${{ matrix.target }} --bin $run[0] --features $run[1] -- $run[2]
@@ -281,6 +303,19 @@ jobs:
             if (-not ($output -match '^test result: ok\. [1-9]')) {
               throw "No $($run[2]) tests ran in $($run[0])."
             }
+          }
+
+      # Tests compile the installed Agent's endpoints but not its monitor
+      # wiring, which only a non-test build selects. Check that build with
+      # the GPU endpoint alone and beside Battery and every Display write.
+      - name: Check the installed Agent builds that serve GPU
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $manifest = '../tools/openblade-windows-host/Cargo.toml'
+          foreach ($features in @('agent-gpu-v1', 'agent-gpu-v1,agent-battery-report-v1,agent-display-profile-apply-v1')) {
+            cargo check --locked --manifest-path $manifest --target ${{ matrix.target }} --bin openblade-windows-agent-candidate --features $features
           }
 
       - name: Verify the Windows configuration writer against the managed store

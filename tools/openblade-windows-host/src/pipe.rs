@@ -43,6 +43,17 @@ mod response;
 pub use response::{Connection, MAX_WRITE_BYTES};
 
 const PIPE_BUFFER_BYTES: u32 = 8192;
+const DISPLAY_PREFIX: &str = "OpenBlade.Session.Display.v1";
+const GPU_PREFIX: &str = "OpenBlade.Session.Gpu.v2";
+
+/// Managed `SessionAgentPipeEndpoint.Create`: the prefix, then the upper-case
+/// hex of the first 16 bytes of SHA-256 over `"{sid}|{session}"`.
+fn session_pipe_path(prefix: &str, sid: &str, session: u32, suffix: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let hash = Sha256::digest(format!("{sid}|{session}").as_bytes());
+    let hash: String = hash[..16].iter().map(|b| format!("{b:02X}")).collect();
+    format!(r"\\.\pipe\{prefix}.{hash}{suffix}")
+}
 
 pub struct Endpoint {
     path: String,
@@ -82,16 +93,20 @@ impl Endpoint {
     /// Existing managed Battery.v1 name and protected one-SID ownership policy.
     /// No caller-supplied endpoint path or session evidence is accepted here.
     pub fn current_user_battery() -> io::Result<Self> {
-        Self::current_user_session(".Battery.v1")
+        Self::current_user_session(DISPLAY_PREFIX, ".Battery.v1")
     }
 
     /// Fixed managed Display.v1 endpoint, query-only in the selected Agent.
     pub fn current_user_display() -> io::Result<Self> {
-        Self::current_user_session("")
+        Self::current_user_session(DISPLAY_PREFIX, "")
     }
 
-    fn current_user_session(suffix: &'static str) -> io::Result<Self> {
-        use sha2::{Digest, Sha256};
+    /// Fixed managed Gpu.v2 endpoint (`SessionAgentPipeEndpoint.CreateGpu`).
+    pub fn current_user_gpu() -> io::Result<Self> {
+        Self::current_user_session(GPU_PREFIX, "")
+    }
+
+    fn current_user_session(prefix: &'static str, suffix: &'static str) -> io::Result<Self> {
         let identity = Identity::read(&process_token()?)?;
         if identity.session == 0
             || !identity.primary
@@ -99,10 +114,8 @@ impl Endpoint {
         {
             return Err(denied());
         }
-        let hash = Sha256::digest(format!("{}|{}", identity.sid, identity.session).as_bytes());
-        let hash: String = hash[..16].iter().map(|b| format!("{b:02X}")).collect();
         let endpoint = Self::new(
-            format!(r"\\.\pipe\OpenBlade.Session.Display.v1.{hash}{suffix}"),
+            session_pipe_path(prefix, &identity.sid, identity.session, suffix),
             2,
         )?;
         if endpoint.identity.sid != identity.sid
@@ -282,4 +295,26 @@ pub fn stale_connection(error: &io::Error) -> bool {
         error.raw_os_error().map(|code| code as u32),
         Some(ERROR_BROKEN_PIPE | ERROR_NO_DATA | ERROR_PIPE_NOT_CONNECTED)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_pipe_names_match_managed_endpoint_composition() {
+        // SHA-256("S-1-5-21-1-2-3-1001|1")[..16], upper-case hex.
+        let display = session_pipe_path(DISPLAY_PREFIX, "S-1-5-21-1-2-3-1001", 1, "");
+        let gpu = session_pipe_path(GPU_PREFIX, "S-1-5-21-1-2-3-1001", 1, "");
+        let hash = "9FEC1D0680D6490058B5B240382A51FD";
+        assert_eq!(
+            display,
+            format!(r"\\.\pipe\OpenBlade.Session.Display.v1.{hash}")
+        );
+        assert_eq!(gpu, format!(r"\\.\pipe\OpenBlade.Session.Gpu.v2.{hash}"));
+        assert_eq!(
+            session_pipe_path(DISPLAY_PREFIX, "S-1-5-21-1-2-3-1001", 1, ".Battery.v1"),
+            format!(r"\\.\pipe\OpenBlade.Session.Display.v1.{hash}.Battery.v1")
+        );
+    }
 }

@@ -3,6 +3,11 @@
 //! The Windows reader binds each process record to the counter
 //! observation without reopening a bare PID for its metadata. Two matching
 //! identities are required before residency becomes an app row.
+//!
+//! The separately selected `gpu-close` feature adds the managed
+//! `WindowsGpuAppManager` close and force-close actions over a fresh,
+//! uncapped scan (`close_windows_gpu_apps`). `action::native` holds the
+//! retained-handle backend and lists its deliberate deviations from managed.
 
 use std::{
     cmp::Ordering,
@@ -12,9 +17,13 @@ use std::{
 
 mod sampling;
 
-#[cfg(any(test, feature = "scripted-gpu-close"))]
+#[cfg(any(test, feature = "scripted-gpu-close", feature = "gpu-close"))]
 mod action;
 
+#[cfg(feature = "gpu-close")]
+pub use action::{ActionResult, Kind, Report, Target};
+#[cfg(feature = "gpu-close")]
+pub use sampling::close_windows_gpu_apps;
 pub use sampling::sample_windows_gpu_apps;
 
 #[cfg(feature = "scripted-gpu")]

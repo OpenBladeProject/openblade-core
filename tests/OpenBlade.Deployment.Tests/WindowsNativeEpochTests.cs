@@ -28,7 +28,7 @@ public sealed class WindowsNativeEpochTests
         return markers.Length == 0 ? "none" : string.Join(',', markers);
     }
 
-    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1, int schema = 1, string? capabilities = null, bool mailbox = false, string? sourceRevision = null, bool mutation = false, bool fan = false, bool battery = false, bool temporary = false, bool agentBattery = false, bool agentDisplay = false, bool agentWrite = false, bool agentHdr = false, bool agentRefresh = false, bool agentColor = false, string[]? imports = null, bool agentProfile = false)
+    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1, int schema = 1, string? capabilities = null, bool mailbox = false, string? sourceRevision = null, bool mutation = false, bool fan = false, bool battery = false, bool temporary = false, bool agentBattery = false, bool agentDisplay = false, bool agentWrite = false, bool agentHdr = false, bool agentRefresh = false, bool agentColor = false, string[]? imports = null, bool agentProfile = false, bool agentGpu = false)
     {
         byte[] bytes = new byte[imports is null ? 0xA00 : 0xC00];
         void U16(int n, ushort v) => BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(n), v);
@@ -42,6 +42,7 @@ public sealed class WindowsNativeEpochTests
                 : "installed-service-candidate,native-agent-entry-compile-check,service-metadata-only-v1,startup-custody-v1",
             "rustc 1.99.1 (inert test data)", "debug"];
         if (temporary) { fields[4] = "controller-admission-compile-check,firmware-performance-compile-check,installed-service-candidate,native-agent-entry-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1"; }
+        if (agentGpu) { fields[4] = "agent-gpu-v1," + fields[4]; }
         if (agentRefresh) { fields[4] = "agent-display-refresh-write-v1," + fields[4]; }
         if (agentDisplay) { fields[4] = "agent-display-query-v1," + fields[4]; }
         if (agentProfile) { fields[4] = "agent-display-profile-apply-v1," + fields[4]; }
@@ -433,6 +434,36 @@ public sealed class WindowsNativeEpochTests
         var error = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
             [.. Image("agent", schema: schema, capabilities: claimed, agentDisplay: true, agentWrite: writes[0], agentHdr: writes[1], agentRefresh: writes[2], agentColor: writes[3], agentProfile: true)], "agent", source));
         Assert.Equal("Display profile apply requires every display write it composes.", error.Message);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void SessionGpuCapabilityIsExactAndOtherBuildsCannotClaimIt(bool agentBattery, bool agentDisplay)
+    {
+        string source = new('a', 40);
+        const string gpu = "session-gpu-apps-v1";
+        string without = AgentCapabilities(agentBattery, agentDisplay, brightness: false, hdr: false);
+        string expected = without == "none" ? gpu : without + "," + gpu;
+        byte[] Agent(int schema = 2, string? capabilities = null, bool agentGpu = true) => Image("agent", schema: schema,
+            capabilities: capabilities ?? expected, agentBattery: agentBattery, agentDisplay: agentDisplay, agentGpu: agentGpu);
+        var agent = NativeArtifact.Inspect([.. Agent()], "agent", source);
+        Assert.Equal(expected, agent.Capabilities);
+        Assert.Contains("agent-gpu-v1", agent.Features.Split(','));
+        Assert.False(agent.PrivateCustody);
+        foreach (string forged in new[] { "none", without, gpu + "," + gpu, gpu + "," + without, expected + "," + gpu })
+        {
+            if (forged != expected)
+            {
+                Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect([.. Agent(capabilities: forged)], "agent", source));
+            }
+        }
+        // A build without the GPU feature cannot claim its marker.
+        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect([.. Agent(agentGpu: false)], "agent", source));
+        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect([.. Agent(schema: 1)], "agent", source));
+        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, capabilities: expected, agentBattery: agentBattery, agentDisplay: agentDisplay, agentGpu: true)], "service", source));
     }
 
     [Fact]
