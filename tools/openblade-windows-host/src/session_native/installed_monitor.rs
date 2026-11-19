@@ -117,43 +117,27 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
         #[cfg(openblade_display_write)]
         let display =
             |feature_stop| super::display_query::run(origin.clone(), feature_stop, power.clone());
-        #[cfg(not(any(
-            feature = "agent-battery-report-v1",
-            feature = "agent-display-query-v1"
-        )))]
+        #[cfg(not(openblade_agent_endpoint))]
         {
             tokio::select! { result = &mut canceled => result, result = watch => result }
         }
-        #[cfg(all(
-            feature = "agent-battery-report-v1",
-            not(feature = "agent-display-query-v1")
-        ))]
+        #[cfg(openblade_agent_endpoint)]
         {
-            super::feature_lifetime::run(canceled, watch, |feature_stop| {
+            use super::feature_lifetime::{feature, run_all};
+            // Every selected endpoint shares one stop signal and is drained
+            // before the stop event, Origin and status custody are released.
+            let mut features = Vec::new();
+            #[cfg(feature = "agent-battery-report-v1")]
+            features.push(feature(|feature_stop| {
                 super::battery::run(origin.clone(), feature_stop)
-            })
-            .await
-        }
-        #[cfg(all(
-            feature = "agent-display-query-v1",
-            not(feature = "agent-battery-report-v1")
-        ))]
-        {
-            super::feature_lifetime::run(canceled, watch, |feature_stop| display(feature_stop))
-                .await
-        }
-        #[cfg(all(
-            feature = "agent-battery-report-v1",
-            feature = "agent-display-query-v1"
-        ))]
-        {
-            super::feature_lifetime::run_pair(
-                canceled,
-                watch,
-                |feature_stop| super::battery::run(origin.clone(), feature_stop),
-                |feature_stop| display(feature_stop),
-            )
-            .await
+            }));
+            #[cfg(feature = "agent-display-query-v1")]
+            features.push(feature(display));
+            #[cfg(feature = "agent-gpu-v1")]
+            features.push(feature(|feature_stop| {
+                super::gpu::run(origin.clone(), feature_stop)
+            }));
+            run_all(canceled, watch, features).await
         }
     })
 }

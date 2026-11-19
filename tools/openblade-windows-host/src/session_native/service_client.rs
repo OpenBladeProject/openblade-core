@@ -463,13 +463,7 @@ async fn connect_installed() -> io::Result<NamedPipeClient> {
 #[cfg(test)]
 pub(super) mod tests;
 
-#[cfg(all(
-    test,
-    any(
-        feature = "agent-battery-report-v1",
-        feature = "agent-display-query-v1"
-    )
-))]
+#[cfg(all(test, openblade_agent_endpoint))]
 #[test]
 fn diagnostic_origin_cause_survives_actual_denied_service_conversion() {
     use openblade_platform_windows::agent_diagnostics::Event;

@@ -345,7 +345,8 @@ async fn pair_stop_and_origin_failure_join_pending_call_local_cleanup_and_owner_
         let sibling_done = Cell::new(false);
         let (result, ()) = tokio::join!(
             async {
-                let result = super::super::super::feature_lifetime::run_pair(
+                use super::super::super::feature_lifetime::{feature, run_all};
+                let result = run_all(
                     async {
                         stopped(&mut shutdown).await;
                         if origin_loss {
@@ -355,24 +356,26 @@ async fn pair_stop_and_origin_failure_join_pending_call_local_cleanup_and_owner_
                         }
                     },
                     std::future::pending(),
-                    |mut stop| {
-                        let done = &sibling_done;
-                        async move {
-                            stopped(&mut stop).await;
-                            done.set(true);
-                            Ok(())
-                        }
-                    },
-                    |mut stop| async move {
-                        run_connections(
-                            &mut stop,
-                            &mut supplier,
-                            || next(incoming.clone()),
-                            |_| Ok(()),
-                            || Ok(()),
-                        )
-                        .await
-                    },
+                    vec![
+                        feature(|mut stop| {
+                            let done = &sibling_done;
+                            async move {
+                                stopped(&mut stop).await;
+                                done.set(true);
+                                Ok(())
+                            }
+                        }),
+                        feature(|mut stop| async move {
+                            run_connections(
+                                &mut stop,
+                                &mut supplier,
+                                || next(incoming.clone()),
+                                |_| Ok(()),
+                                || Ok(()),
+                            )
+                            .await
+                        }),
+                    ],
                 )
                 .await;
                 owned.set(false);

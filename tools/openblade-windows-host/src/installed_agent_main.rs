@@ -33,33 +33,15 @@ mod windows_token;
 #[cfg(not(test))]
 fn main() -> std::process::ExitCode {
     std::hint::black_box(&NATIVE_ARTIFACT_IDENTITY);
-    #[cfg(all(
-        windows,
-        any(
-            feature = "agent-battery-report-v1",
-            feature = "agent-display-query-v1"
-        )
-    ))]
+    #[cfg(all(windows, openblade_agent_endpoint))]
     let _diagnostics = openblade_platform_windows::agent_diagnostics::register();
-    #[cfg(all(
-        windows,
-        any(
-            feature = "agent-battery-report-v1",
-            feature = "agent-display-query-v1"
-        )
-    ))]
+    #[cfg(all(windows, openblade_agent_endpoint))]
     let result = {
         loaded_origin::Origin::acquire("agent", &NATIVE_ARTIFACT_IDENTITY)
             .map_err(session_native::diagnostics::origin)
             .and_then(session_native::entry_installed)
     };
-    #[cfg(all(
-        windows,
-        not(any(
-            feature = "agent-battery-report-v1",
-            feature = "agent-display-query-v1"
-        ))
-    ))]
+    #[cfg(all(windows, not(openblade_agent_endpoint)))]
     let result = loaded_origin::Origin::acquire("agent", &NATIVE_ARTIFACT_IDENTITY)
         .and_then(session_native::entry_installed);
     #[cfg(not(windows))]
@@ -71,21 +53,9 @@ fn main() -> std::process::ExitCode {
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
-            #[cfg(not(all(
-                windows,
-                any(
-                    feature = "agent-battery-report-v1",
-                    feature = "agent-display-query-v1"
-                )
-            )))]
+            #[cfg(not(all(windows, openblade_agent_endpoint)))]
             eprintln!("OpenBlade installed Session Agent candidate: {error}");
-            #[cfg(all(
-                windows,
-                any(
-                    feature = "agent-battery-report-v1",
-                    feature = "agent-display-query-v1"
-                )
-            ))]
+            #[cfg(all(windows, openblade_agent_endpoint))]
             session_native::diagnostics::terminal(
                 &error,
                 openblade_platform_windows::agent_diagnostics::record,

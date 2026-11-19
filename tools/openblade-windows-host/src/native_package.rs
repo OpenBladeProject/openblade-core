@@ -700,6 +700,7 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     let agent_refresh = has("agent-display-refresh-write-v1");
     let agent_color = has("agent-display-color-write-v1");
     let agent_profile = has("agent-display-profile-apply-v1");
+    let agent_gpu = has("agent-gpu-v1");
     if (agent_write || agent_hdr || agent_refresh || agent_color) && !agent_display {
         return Err(deny());
     }
@@ -713,7 +714,8 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         || agent_hdr
         || agent_refresh
         || agent_color
-        || agent_profile)
+        || agent_profile
+        || agent_gpu)
         && !has("native-agent-entry-compile-check")
     {
         return Err(deny());
@@ -743,6 +745,7 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
             || agent_refresh
             || agent_color
             || agent_profile
+            || agent_gpu
         {
             Err(deny())
         } else {
@@ -775,6 +778,7 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         (agent_refresh, "session-display-refresh-write-partial-v1"),
         (agent_color, "session-display-color-write-partial-v1"),
         (agent_profile, "session-display-profile-apply-partial-v1"),
+        (agent_gpu, "session-gpu-apps-v1"),
     ]
     .into_iter()
     .filter_map(|(selected, marker)| selected.then_some(marker))
