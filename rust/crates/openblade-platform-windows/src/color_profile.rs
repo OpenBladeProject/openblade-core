@@ -27,8 +27,12 @@ pub enum HdrState {
 
 impl HdrState {
     /// The HDR user preference of one CCD observation. A failed
-    /// advanced-color read is Unknown, never SDR: only a confirmed SDR
-    /// observation may read or change the SDR default.
+    /// advanced-color read is Unknown, never SDR. A snapshot reads the SDR
+    /// default, and the color writer selects a profile, only under confirmed
+    /// SDR. The writer's restoration after a possible submission is the one
+    /// exception: after a readback under known HDR on it reads the
+    /// current-user state and restores the default, the association it added
+    /// and the scope to their baseline; under Unknown it writes nothing.
     pub fn of(display: &ActiveInternalDisplay) -> Self {
         match &display.advanced_color {
             Ok(state) if state.hdr_user_enabled => Self::On,

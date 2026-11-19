@@ -10,11 +10,12 @@
 //! per-user scope unless it is selected, makes the profile the default,
 //! checks each step by readback and confirms the selection with an
 //! independent observation. Any failure after the first setter runs managed
-//! `Restore` exactly: reconcile first and stop if the associations changed
-//! unexpectedly; otherwise restore the default, remove an association this
-//! transaction added, restore the scope and confirm the baseline. No failed
-//! call is retried; like managed `Restore`, restoration calls the default
-//! and scope setters again, with their baseline values.
+//! `Restore` exactly, unless the observation did not re-identify the panel
+//! (see the deviations below): reconcile first and stop if the associations
+//! changed unexpectedly; otherwise restore the default, remove an association
+//! this transaction added, restore the scope and confirm the baseline. No
+//! failed call is retried; like managed `Restore`, restoration calls the
+//! default and scope setters again, with their baseline values.
 //!
 //! The native layer adds the host fence immediately before the first setter.
 //! From that setter on Windows may have changed state, so every later failure
@@ -30,11 +31,12 @@
 //!   write, although nothing was changed.
 //! - HDR on or unreadable at the fence is a refusal. Managed checks HDR only
 //!   in its observation.
-//! - Restoration runs only after a readback that re-identified the same single
-//!   panel with a readable advanced-color state. Another panel, no or several
-//!   internal panels, a failed topology read or an unreadable advanced-color
-//!   state report [`ColorFailure::Unverified`] without restoration writes:
-//!   restoring would write to a stale target or under an unknown state.
+//! - Once every setter succeeded, restoration runs only after a readback that
+//!   re-identified the same single panel with a readable advanced-color
+//!   state. Another panel, no or several internal panels, a failed topology
+//!   read or an unreadable advanced-color state report
+//!   [`ColorFailure::Unverified`] without restoration writes: restoring would
+//!   write to a stale target or under an unknown state.
 //!   Managed reads a failed advanced-color read as SDR, so it may confirm
 //!   there, and restores after every `verifyApplied` failure.
 
