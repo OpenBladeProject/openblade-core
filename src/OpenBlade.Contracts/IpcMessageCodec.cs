@@ -152,7 +152,9 @@ public static class IpcMessageCodec
             Protocol51SerializerOptions);
     }
 
-    private static async Task WriteFramedAsync<T>(
+    // Internal for the candidate-receipt fixtures in OpenBlade.Setup.Tests, which compare
+    // the native readiness serializer with this framing and write malformed frames.
+    internal static async Task WriteFramedAsync<T>(
         Stream stream,
         T message,
         CancellationToken cancellationToken,

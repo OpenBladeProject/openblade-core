@@ -72,7 +72,7 @@ pub(crate) trait InstalledServiceAuthority {
 }
 
 // Implement only when EVERY acquired generation's ObserveState path
-// independently reads performance or refuses. A v79 status peer alone
+// independently reads performance or refuses. A v80 status peer alone
 // cannot attest that its observation handler refreshed the hardware.
 pub(crate) trait InstalledObservationAuthority: InstalledServiceAuthority {}
 

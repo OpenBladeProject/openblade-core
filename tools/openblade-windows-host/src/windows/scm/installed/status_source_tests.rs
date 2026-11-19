@@ -248,9 +248,15 @@ async fn partial_observations_replace_prior_fields_and_caller_projection_keeps_r
     assert!(ambiguous["message"].as_str().unwrap().contains("ambiguous"));
     let unavailable = to_value(source.snapshot(SYSTEM, Instant::now()).await.unwrap()).unwrap();
     assert_eq!(unavailable["revision"], 3);
+    // Mailbox compositions serve explicit thermal reads, so they report the missing
+    // fresh read instead of the read-only composition's denied observation.
     assert_eq!(
         unavailable["message"],
-        "Device identity is unavailable. Firmware observation denied: adapter, activity and managed drain admission are unavailable."
+        if cfg!(feature = "service-mailbox-observation-v1") {
+            "Device identity is unavailable. No fresh thermal observation is confirmed."
+        } else {
+            "Device identity is unavailable. Firmware observation denied: adapter, activity and managed drain admission are unavailable."
+        }
     );
 }
 

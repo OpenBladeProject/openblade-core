@@ -580,27 +580,6 @@ pub(crate) fn dword(bytes: &[u8], offset: usize) -> Option<u32> {
     ))
 }
 
-#[cfg(test)]
-mod native_root_path_tests {
-    use super::*;
-    #[test]
-    fn shared_reserved_device_guard_rejects_superscript_and_numeric_aliases() {
-        for name in [
-            "COM1",
-            "LPT9.txt",
-            "COM\u{b9}",
-            "LPT\u{b2}",
-            "COM\u{b3}.bin",
-            "LPT\u{b9} .dat",
-        ] {
-            assert!(reserved_device(name), "alias accepted: {name}");
-        }
-        for name in ["COM10", "COMx", "LPT0", "ordinary.bin"] {
-            assert!(!reserved_device(name));
-        }
-    }
-}
-
 pub(crate) fn rename_same_directory(file: &File, target: &str, replace: bool) -> io::Result<()> {
     use windows_sys::{
         Wdk::Storage::FileSystem::{
@@ -690,4 +669,25 @@ pub(crate) fn retain_descriptor(file: &File) -> io::Result<LocalDescriptor> {
     }
     let descriptor = LocalDescriptor(descriptor);
     Ok(descriptor)
+}
+
+#[cfg(test)]
+mod native_root_path_tests {
+    use super::*;
+    #[test]
+    fn shared_reserved_device_guard_rejects_superscript_and_numeric_aliases() {
+        for name in [
+            "COM1",
+            "LPT9.txt",
+            "COM\u{b9}",
+            "LPT\u{b2}",
+            "COM\u{b3}.bin",
+            "LPT\u{b9} .dat",
+        ] {
+            assert!(reserved_device(name), "alias accepted: {name}");
+        }
+        for name in ["COM10", "COMx", "LPT0", "ordinary.bin"] {
+            assert!(!reserved_device(name));
+        }
+    }
 }

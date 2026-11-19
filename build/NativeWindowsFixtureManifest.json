@@ -24,6 +24,22 @@
         {
           "name": "installed::readiness::tests::mutation::installed_persistence_failure_and_budget_exhaustion_submit_no_mutation",
           "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::correction_manual_active0581_stores_without_setters_and_automatic_stays_direct",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::history_dispatcher_capacity_refusal_precedes_prepared_and_all_transport_writes",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::correction_prepared_only_settles_after_drain_and_allows_fresh_request",
+          "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::installed_cleared_performance_override_keeps_the_managed_prefix",
+          "minimumRecords": 1
         }
       ],
       "wrapper": false,

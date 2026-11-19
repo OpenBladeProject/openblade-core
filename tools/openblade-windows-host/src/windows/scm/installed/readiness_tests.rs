@@ -552,9 +552,16 @@ async fn readiness_serves_managed_setup_then_closes_partial_exchange_on_stop() {
             .unwrap();
             write_frame(&mut client, input).await.unwrap();
             let response = read_payload(&mut client).await;
+            // Thermal compositions re-admit the peer, including its control session,
+            // before projecting caller-private status (725ddcf3).
+            let per_read = if cfg!(feature = "service-thermal-mutation-v1") {
+                2
+            } else {
+                1
+            };
             assert_eq!(
                 reads.get() - reads_before,
-                usize::from(caller.logon == Logon::Interactive)
+                per_read * usize::from(caller.logon == Logon::Interactive)
             );
             let Some(expected_access) = expected_access else {
                 assert_eq!(response.unwrap_err().kind(), io::ErrorKind::UnexpectedEof);

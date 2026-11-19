@@ -83,17 +83,67 @@ Stored-only publication merges onto the latest hardware without renewing a read
 witness or timestamp. Late accepted persistence becomes visible on a later fresh
 read without replaying a write.
 
-Configured GPU clock effects are Stored with an explicit incomplete outcome and
-no thermal pair. GPU clocks, manual fan application, display, lighting, and other
-native controls are not implemented here. Their saved fields are not confirmation.
-The broad capabilities snapshot remains null. Applied means this bounded thermal
-preset was independently confirmed, with GPU/broad capability incompleteness
-stated in the result. An ineligible saved request is Stored even if a different
-eligible profile's thermal preset was confirmed. Requested override, effective
+Configured GPU clock effects are saved without a thermal pair and reply Blocked
+with managed's committed-intent prefix, `Performance override intent was stored.
+Hardware result: GPU clock handling is incomplete...`. GPU clocks, manual fan
+application, display, lighting, and other native controls are not implemented
+here. Their saved fields are not confirmation. The broad capabilities snapshot
+remains null. Applied means this bounded thermal preset was independently
+confirmed, with GPU/broad capability incompleteness stated in the result. An
+ineligible saved request also replies Blocked with that prefix, even when the
+policy-selected preset is confirmed; the hardware result then says that the
+policy selects another destination. Requested override, effective
 selected value/provenance, and observed state remain distinct. Mutation success
 frames contain only the operation result, as required by the unchanged v80
 single-body response contract. Status travels separately through GetStatus,
 ObserveState and subscriptions.
+
+### Reply parity with managed
+
+Native replies follow managed's status and message shape for saved but
+unapplied intent:
+
+| Native case | Reply |
+| --- | --- |
+| PluggedIn current-manual plus desired-manual fans | Stored, `Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved...` |
+| OpenBlade-owned fan row whose handback to Automatic is outstanding, without that manual deferral | Blocked, `Performance override intent was stored. Hardware result: OpenBlade still owns a fan change...` |
+| GPU effect, ineligible policy, power change, admission, capacity, storage or transport cause after the intent was saved | Blocked, `Performance override intent was stored. Hardware result: <cause>` |
+| Saved clear that was not applied | Blocked, `Performance override was cleared. Hardware result: <cause>` |
+| Fan intent saved but not applied | Blocked, `Fan override intent was stored. Hardware result: ...` or `Fan override was cleared. Hardware result: ...` |
+
+The Stored reply matches managed's reply only. Managed applies a deferred
+performance intent when fans return to Automatic on PluggedIn power
+(`ServiceControlRuntime` fan-override path). Native does not yet: after the fan
+handback the saved performance intent stays unapplied until a new performance
+request. This missing apply-on-handback is a functional gap and a cutover gate.
+
+Native never replies Failed. These managed Failed cases have no unambiguous
+native counterpart, so native keeps Blocked:
+
+- Uncertain submission by this request. Native leaves the journal unsettled and
+  replies Blocked with the reconciliation reason. Managed replies Failed, `<Name>
+  write is indeterminate...`, but an unsettled journal also follows a checkpoint
+  or ownership stop after Prepared, which managed reports as Blocked.
+- Lease transport error after the intent was saved. Native replies Blocked with
+  `Thermal transport or ownership did not complete`. Managed replies Failed for
+  read failures, rejected writes and indeterminate writes, and Blocked for
+  capability or ownership refusal; the native lease error carries both classes.
+- Read or readback failure inside the worker, including a changed final
+  readback. The worker returns no observation without an error class, so native
+  replies Blocked with the admission or reconciliation reason. Managed replies
+  Failed, `could not be read before writing` or `changed before the final
+  aggregate readback`.
+- Intent rejected with nothing saved. Native replies Blocked, `Performance intent
+  was not accepted...` or `Saved configuration replacement failed...`. Managed
+  replies Failed, `The requested intent was rejected: ...`, except Blocked for a
+  quarantined configuration. Native saves after the hardware observation and
+  uses one refusal path for quarantine, an unsettled journal, validation and file
+  errors.
+- The same classes in fan replies, which are Blocked whenever the fan intent is
+  not applied.
+
+Mapping any of these needs native error classification first; a status change
+alone would misreport the other class.
 
 ## Submission, ambiguity and finite transport lifetime
 

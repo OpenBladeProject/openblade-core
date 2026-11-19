@@ -1,4 +1,5 @@
 #[cfg(windows)]
+#[allow(dead_code)] // Only the installed entries bind ingress and lifetime.
 pub(crate) mod origin_lifetime;
 
 #[cfg(windows)]
@@ -21,6 +22,8 @@ mod performance_runtime;
 #[cfg(any(windows, test))]
 mod runtime;
 #[cfg(windows)]
+#[allow(dead_code)]
+// This host binds no SCM ingress: set_ingress and installed_ingress serve installed entries.
 mod scm_host;
 #[cfg(all(windows, feature = "vm-scm-fixture"))]
 #[path = "windows/scm/identity.rs"]

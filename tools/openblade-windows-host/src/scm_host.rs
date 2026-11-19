@@ -27,8 +27,11 @@ pub(crate) enum Phase {
 }
 
 pub(crate) static CONTROLS: Controls = Controls::new();
-static INGRESS: Mutex<Option<fn(u32, u32)>> = Mutex::new(None);
-pub(crate) fn set_ingress(hook: fn(u32, u32)) -> io::Result<()> {
+type IngressHook = fn(u32, u32);
+static INGRESS: Mutex<Option<IngressHook>> = Mutex::new(None);
+// The installed entry that binds the ingress is compiled out of test builds.
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn set_ingress(hook: IngressHook) -> io::Result<()> {
     let mut slot = INGRESS
         .lock()
         .map_err(|_| io::Error::other("SCM callback ingress lost"))?;
@@ -163,23 +166,21 @@ pub(crate) unsafe extern "system" fn control(
     CONTROLS.handle(code)
 }
 
+/// Controls accepted while running. The thermal composition also takes power and
+/// session events, for every service host compiled with it.
+const RUNNING_CONTROLS: u32 = SERVICE_ACCEPT_STOP
+    | SERVICE_ACCEPT_SHUTDOWN
+    | if cfg!(feature = "service-thermal-mutation-v1") {
+        windows_sys::Win32::System::Services::SERVICE_ACCEPT_POWEREVENT
+            | windows_sys::Win32::System::Services::SERVICE_ACCEPT_SESSIONCHANGE
+    } else {
+        0
+    };
+
 pub(crate) fn status_for(phase: Phase) -> SERVICE_STATUS {
     let (state, controls, checkpoint, wait_hint, error) = match phase {
         Phase::Starting => (SERVICE_START_PENDING, 0, 1, 5000, NO_ERROR),
-        Phase::Running => (
-            SERVICE_RUNNING,
-            SERVICE_ACCEPT_STOP
-                | SERVICE_ACCEPT_SHUTDOWN
-                | if cfg!(feature = "service-thermal-mutation-v1") {
-                    windows_sys::Win32::System::Services::SERVICE_ACCEPT_POWEREVENT
-                        | windows_sys::Win32::System::Services::SERVICE_ACCEPT_SESSIONCHANGE
-                } else {
-                    0
-                },
-            0,
-            0,
-            NO_ERROR,
-        ),
+        Phase::Running => (SERVICE_RUNNING, RUNNING_CONTROLS, 0, 0, NO_ERROR),
         Phase::Stopping => (SERVICE_STOP_PENDING, 0, 1, 5000, NO_ERROR),
         Phase::Stopped { failed } => (
             SERVICE_STOPPED,
@@ -264,6 +265,7 @@ pub(crate) fn startup_stopped() -> io::Error {
 
 /// The installed entry callback and injected outer service use this same action.
 /// Only terminal controls revoke loaded-build custody; routine events fence work.
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn installed_ingress(lifecycle: &Lifecycle, code: u32, event: u32, stop: impl FnOnce()) {
     use windows_sys::Win32::System::Services::{SERVICE_CONTROL_SHUTDOWN, SERVICE_CONTROL_STOP};
     if matches!(code, SERVICE_CONTROL_STOP | SERVICE_CONTROL_SHUTDOWN) {

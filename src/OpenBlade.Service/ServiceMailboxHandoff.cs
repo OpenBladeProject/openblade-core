@@ -4,10 +4,13 @@ using OpenBlade.Protocol;
 namespace OpenBlade.Service;
 
 // Owns exclusion before production factory construction and through late work.
+// Construction does no machine I/O: Open acquires custody, and until then the
+// transport lifetime refuses every mailbox reservation.
 internal sealed class ServiceMailboxHandoff : IDisposable
 {
-    private readonly IManagedMailboxRun? run;
-    private readonly ManagedMailboxStartup.Admission? startup;
+    private IManagedMailboxRun? run;
+    private ManagedMailboxStartup.Admission? startup;
+    private int openAttempted;
     private int quarantined;
     private int completionAttempted;
     private Task? ownerRetirement;
@@ -21,6 +24,14 @@ internal sealed class ServiceMailboxHandoff : IDisposable
         startup?.NativeHandbacks ?? throw new InvalidOperationException("Native custody admission is not open.");
     public ServiceMailboxHandoff()
     {
+        Lifetime = new(admitted: false);
+    }
+
+    // Called once by ServiceMailboxCustodyStartup, which the host constructs before Worker.
+    internal void Open()
+    {
+        if (Interlocked.Exchange(ref openAttempted, 1) != 0)
+        { throw new IOException("Service mailbox custody is never reacquired."); }
         startup = ManagedMailboxStartup.Open(ManagedMailboxNativeCustody.Acquire,
             WindowsManagedMailboxRun.AcquireLegacyExclusion,
             native =>
@@ -31,6 +42,7 @@ internal sealed class ServiceMailboxHandoff : IDisposable
                 return WindowsManagedMailboxRun.Start(upgrade, native);
             }, WindowsManagedMailboxRun.AcquireUnenrolledExclusion);
         run = startup.Run;
+        Lifetime.Admit();
     }
     internal ServiceMailboxHandoff(IManagedMailboxRun run) { this.run = run; }
     // An admission produced by ManagedMailboxStartup.Open over injected storage.
@@ -99,4 +111,15 @@ internal sealed class ServiceMailboxHandoff : IDisposable
         retainedOwnerClose = null;
         retainedGuardianProof = null;
     }
+}
+
+// The host constructs hosted services in registration order after its lifetime
+// starts, so registering this before Worker acquires custody before Worker's
+// dependencies construct the production factories, at the same point in startup
+// where DI resolution of the handoff used to acquire it.
+internal sealed class ServiceMailboxCustodyStartup : IHostedService
+{
+    public ServiceMailboxCustodyStartup(ServiceMailboxHandoff handoff) => handoff.Open();
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

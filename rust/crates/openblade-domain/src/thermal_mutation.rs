@@ -49,6 +49,20 @@ impl Progress {
         !settled(self as u8)
     }
 }
+pub fn settled(progress: u8) -> bool {
+    matches!(progress, 5 | 6 | 30 | 50 | 51 | 62 | 63 | 72 | 73)
+}
+pub fn progress_follows(prior: u8, next: u8) -> bool {
+    (prior < 5 && next == prior + 1) || (prior == 0 && next == 6)
+}
+/// Existing exact0581 performance-only policy; not a firmware prerequisite.
+pub fn defer_manual_performance(
+    current: ObservedPerformance,
+    power: i32,
+    desired_manual: bool,
+) -> bool {
+    power == 0 && desired_manual && current.projection().1 != 0
+}
 
 #[cfg(test)]
 mod tests {
@@ -79,19 +93,4 @@ mod tests {
         assert!(Progress::SecondAcknowledged.next(Progress::Confirmed));
         assert!(!Progress::Confirmed.blocks_restart());
     }
-}
-
-pub fn settled(progress: u8) -> bool {
-    matches!(progress, 5 | 6 | 30 | 50 | 51 | 62 | 63 | 72 | 73)
-}
-pub fn progress_follows(prior: u8, next: u8) -> bool {
-    (prior < 5 && next == prior + 1) || (prior == 0 && next == 6)
-}
-/// Existing exact0581 performance-only policy; not a firmware prerequisite.
-pub fn defer_manual_performance(
-    current: ObservedPerformance,
-    power: i32,
-    desired_manual: bool,
-) -> bool {
-    power == 0 && desired_manual && current.projection().1 != 0
 }

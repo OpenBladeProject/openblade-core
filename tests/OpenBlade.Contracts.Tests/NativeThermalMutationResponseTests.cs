@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts.Tests;
 
 public sealed class NativeThermalMutationResponseTests
 {
-    [Fact]
+    [NativeThermalEdgeFact]
     public async Task ActualNativeMutationResponsesUseManagedV80CodecAndOutcomes()
     {
         // The evidence runner extracts actual emitted Rust test replies into a
@@ -19,6 +19,7 @@ public sealed class NativeThermalMutationResponseTests
         var seen = new HashSet<ControlOperationStatus>();
         bool sawConfirmedPreset = false;
         bool sawPartialCustom = false;
+        bool sawManualDeferral = false, sawGpuIncomplete = false, sawCapacityRefusal = false, sawPowerChanged = false, sawCleared = false;
         var decodeErrors = new List<string>();
         int index = 0;
         foreach (JsonElement element in document.RootElement.EnumerateArray())
@@ -89,7 +90,35 @@ public sealed class NativeThermalMutationResponseTests
             {
                 Assert.Contains("GPU", result.Message, StringComparison.Ordinal);
             }
+            // Managed's only Stored-without-apply performance reply is its manual-fan
+            // deferral; any other saved but unapplied override is Blocked with the
+            // committed-intent prefix of ExecuteScopedMutationAsync.
+            if (result.Status == ControlOperationStatus.Stored)
+            {
+                Assert.StartsWith("Performance intent stored. Performance is saved, not applied.", result.Message, StringComparison.Ordinal);
+                sawManualDeferral = true;
+            }
+            const string committed = "Performance override intent was stored. Hardware result: ";
+            if (result.Status == ControlOperationStatus.Blocked && result.Message.StartsWith(committed, StringComparison.Ordinal))
+            {
+                string cause = result.Message[committed.Length..];
+                sawGpuIncomplete |= cause.StartsWith("GPU clock handling is incomplete", StringComparison.Ordinal);
+                sawCapacityRefusal |= cause.Contains("capacity refused before publication", StringComparison.Ordinal);
+                sawPowerChanged |= cause.StartsWith("The independently observed power source changed", StringComparison.Ordinal);
+            }
+            sawCleared |= result.Status == ControlOperationStatus.Blocked
+                && result.Message.StartsWith("Performance override was cleared. Hardware result: ", StringComparison.Ordinal);
+            if (result.Status != ControlOperationStatus.Blocked)
+            {
+                Assert.DoesNotContain("Hardware result:", result.Message, StringComparison.Ordinal);
+            }
         }
+        // Reply parity only: managed applies the deferred intent when fans return
+        // to Automatic on AC; native does not yet.
+        Assert.True(sawManualDeferral, "AC manual-fan deferral is the native Stored reply, matching managed's reply.");
+        Assert.True(sawGpuIncomplete && sawCapacityRefusal && sawPowerChanged,
+            "Saved but unapplied GPU, capacity and power-change replies are Blocked with the managed prefix.");
+        Assert.True(sawCleared, "An unapplied clear is Blocked with managed's cleared prefix.");
         Assert.True(decodeErrors.Count == 0, string.Join(Environment.NewLine, decodeErrors));
         Assert.True(sawPartialCustom, "Actual CustomManual observation must retain known selectors and unknown settings.");
         using var requestedFrame = FrameJson("""{"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":5,"lifetime":1,"customPerformance":null,"gpuClockTuning":null}}""");
@@ -100,7 +129,7 @@ public sealed class NativeThermalMutationResponseTests
         Assert.Contains(ControlOperationStatus.Blocked, seen);
     }
 
-    [Fact]
+    [NativeThermalEdgeFact]
     public async Task ActualNativeBatteryResponsesKeepConfirmedPolicyDesiredLimitAndUnknownTemporarySeparate()
     {
         string path = Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_BATTERY_RESPONSES") ?? throw new InvalidOperationException("Explicit actual native battery responses required.");
@@ -121,7 +150,7 @@ public sealed class NativeThermalMutationResponseTests
         Assert.Contains(ControlOperationStatus.Applied, outcomes); Assert.Contains(ControlOperationStatus.Blocked, outcomes);
     }
 
-    [Fact]
+    [NativeThermalEdgeFact]
     public async Task ActualNativeBatteryPublicationsKeepUnavailableGroupsAndUnknownTemporaryCompatible()
     {
         string path = Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_BATTERY_PUBLICATIONS")
@@ -165,7 +194,7 @@ public sealed class NativeThermalMutationResponseTests
         Assert.True(eventSeen);
     }
 
-    [Fact]
+    [NativeThermalEdgeFact]
     public async Task ActualNativeTemporaryChargeCorrectionFramesKeepStrictManagedCodec()
     {
         string path = Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_TFC_CORRECTION_FRAMES")

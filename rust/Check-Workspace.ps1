@@ -56,17 +56,27 @@ try {
         'mio', 'pin-project-lite', 'signal-hook-registry', 'socket2', 'tokio',
         'tokio-macros', 'wasi', 'windows-link', 'windows-sys'
     )
+    # Sorted as Sort-Object orders them. The two Wdk_ features plus Security_Authorization,
+    # System_IO, System_JobObjects and UI_Shell back the battery report provider (27e6f725).
     $expectedWindowsFeatures = @(
+        'Wdk_Foundation', 'Wdk_Storage_FileSystem',
         'Win32_Devices_Display', 'Win32_Foundation', 'Win32_Globalization', 'Win32_Graphics_Gdi',
-        'Win32_Security', 'Win32_Storage_FileSystem', 'Win32_System_Com', 'Win32_System_Diagnostics_ToolHelp',
+        'Win32_Security', 'Win32_Security_Authorization', 'Win32_Storage_FileSystem', 'Win32_System_Com',
+        'Win32_System_Diagnostics_ToolHelp', 'Win32_System_IO', 'Win32_System_JobObjects',
         'Win32_System_LibraryLoader', 'Win32_System_Ole', 'Win32_System_Performance', 'Win32_System_Registry',
         'Win32_System_RemoteDesktop', 'Win32_System_Rpc', 'Win32_System_StationsAndDesktops',
         'Win32_System_SystemInformation', 'Win32_System_Threading', 'Win32_System_Variant', 'Win32_System_Wmi',
-        'Win32_UI_ColorSystem', 'Win32_UI_Input_KeyboardAndMouse', 'Win32_UI_WindowsAndMessaging'
+        'Win32_UI_ColorSystem', 'Win32_UI_Input_KeyboardAndMouse', 'Win32_UI_Shell', 'Win32_UI_WindowsAndMessaging'
     ) -join ','
+    # openblade-domain's off-by-default thermal-history feature carries the bounded
+    # history grammar for tools/openblade-windows-host, which is outside this workspace.
+    # Only these exact optional roots are admitted, and no workspace crate enables them.
+    $expectedThermalHistoryDependencies = @{ serde = '=1.0.228'; serde_json = '=1.0.149'; sha2 = '=0.10.9' }
+    $expectedThermalHistoryFeatures = @{ serde = 'derive'; serde_json = 'arbitrary_precision'; sha2 = '' }
     $fixtureReaderPackages = @('openblade-protocol', 'openblade-domain')
     $expectedTests = @{
-        'openblade-protocol' = @('report_parity', 'report_properties')
+        # custom_performance (cbf8aacc) and temporary_charge (a882588c) pin shared native grammar.
+        'openblade-protocol' = @('custom_performance', 'report_parity', 'report_properties', 'temporary_charge')
         'openblade-domain' = @('automation_policy', 'function_row_policy', 'profile_policy', 'recovery_replay')
     }
 
@@ -80,14 +90,10 @@ try {
     if ($localPackages.Count -ne $expectedDependencies.Count) {
         throw 'Only the seven reviewed local packages are admitted.'
     }
+    # Local packages, including their optional roots and features, are checked before
+    # external names: an enabled thermal-history feature must fail as a feature error.
     foreach ($package in $metadata.packages) {
-        if ($null -ne $package.source) {
-            if ($package.name -notin $allowedExternal -or
-                $package.source -cne 'registry+https://github.com/rust-lang/crates.io-index') {
-                throw "Unreviewed external package: $($package.name)"
-            }
-            continue
-        }
+        if ($null -ne $package.source) { continue }
         if (-not $expectedDependencies.ContainsKey($package.name) -or
             $package.id -notin $metadata.workspace_members) {
             throw "Unreviewed workspace package: $($package.name)"
@@ -141,9 +147,13 @@ try {
         $normal = @()
         $dev = @()
         $cli = @()
+        $thermalHistory = @()
         $windowsSdkCount = 0
         $windowsPolicyCount = 0
         foreach ($dependency in $package.dependencies) {
+            if ($dependency.name -ceq 'openblade-domain' -and @($dependency.features).Count -ne 0) {
+                throw "The thermal-history feature is not admitted inside the workspace: $($package.name)"
+            }
             if ($isWindowsPlatform -and $dependency.name -ceq 'windows-sys' -and
                 $dependency.target -ceq 'cfg(windows)' -and $null -eq $dependency.kind -and
                 $null -eq $dependency.rename -and -not $dependency.optional -and
@@ -161,6 +171,17 @@ try {
                 $dependency.req -ceq '*' -and $dependency.uses_default_features -and
                 @($dependency.features).Count -eq 0) {
                 $windowsPolicyCount++
+                continue
+            }
+            if ($package.name -ceq 'openblade-domain' -and $dependency.optional -and
+                $null -eq $dependency.kind -and $null -eq $dependency.target -and
+                $null -eq $dependency.rename -and $null -eq $dependency.PSObject.Properties['path'] -and
+                $dependency.source -ceq 'registry+https://github.com/rust-lang/crates.io-index' -and
+                $expectedThermalHistoryDependencies.ContainsKey($dependency.name) -and
+                $dependency.req -ceq $expectedThermalHistoryDependencies[$dependency.name] -and
+                $dependency.uses_default_features -and
+                (@($dependency.features | Sort-Object) -join ',') -ceq $expectedThermalHistoryFeatures[$dependency.name]) {
+                $thermalHistory += $dependency.name
                 continue
             }
             $expectedTarget = if ($isWindowsPlatform -and $dependency.name -ceq 'openblade-application-reporter') {
@@ -216,6 +237,21 @@ try {
         if ((@($dev | Sort-Object) -join ',') -cne $expectedDev) {
             throw "Fixture-reader dev dependencies changed for $($package.name)"
         }
+        $isDomain = $package.name -ceq 'openblade-domain'
+        $expectedThermalHistory = if ($isDomain) {
+            @($expectedThermalHistoryDependencies.Keys | Sort-Object) -join ','
+        } else { '' }
+        if ((@($thermalHistory | Sort-Object) -join ',') -cne $expectedThermalHistory) {
+            throw "Thermal-history dependencies changed for $($package.name)"
+        }
+        if ($isDomain) {
+            $domainFeatures = @($package.features.PSObject.Properties | ForEach-Object {
+                $_.Name + '=' + (@($_.Value | Sort-Object) -join '+')
+            }) -join ','
+            if ($domainFeatures -cne 'thermal-history=dep:serde+dep:serde_json+dep:sha2') {
+                throw "Unreviewed openblade-domain features: $domainFeatures"
+            }
+        }
         $expectedCli = if ($isCli) { @($expectedCliDependencies.Keys | Sort-Object) -join ',' } else { '' }
         if ((@($cli | Sort-Object) -join ',') -cne $expectedCli) {
             throw "CLI dependencies changed for $($package.name)"
@@ -237,6 +273,15 @@ try {
         } else { '' }
         if ((@($tests | Sort-Object) -join ',') -cne $expectedTestNames) {
             throw "Reviewed integration tests are missing: $($package.name)"
+        }
+    }
+    # Default-feature metadata lists only activated packages. The feature checks above
+    # keep thermal-history off, so its sha2 closure never reaches this name check.
+    foreach ($package in $metadata.packages) {
+        if ($null -eq $package.source) { continue }
+        if ($package.name -notin $allowedExternal -or
+            $package.source -cne 'registry+https://github.com/rust-lang/crates.io-index') {
+            throw "Unreviewed external package: $($package.name)"
         }
     }
     Write-Output 'Workspace boundaries passed: four local libraries with inward production edges, isolated status CLI, Windows adapter with inward reporter and domain edges, reviewed parsing/runtime roots, compiler policies and MSRV.'

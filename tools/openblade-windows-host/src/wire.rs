@@ -19,7 +19,7 @@ use crate::{
 };
 use openblade_domain::recovery::ScopedStatus;
 
-const CURRENT_VERSION: i32 = 79;
+const CURRENT_VERSION: i32 = 80;
 const LEGACY_VERSION: i32 = 51;
 #[path = "service_frame.rs"]
 mod service_frame;

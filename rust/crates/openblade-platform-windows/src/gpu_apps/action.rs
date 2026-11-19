@@ -43,6 +43,7 @@ pub enum Kind {
 
 pub struct ActionResult {
     pub process_id: i32,
+    #[cfg_attr(test, allow(dead_code))] // Read by the Session Agent's close report.
     pub start_time_utc_ticks: i64,
     pub error: Option<&'static str>,
 }

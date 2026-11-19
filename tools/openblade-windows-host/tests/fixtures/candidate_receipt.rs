@@ -4,6 +4,7 @@
 #[path = "../../src/candidate_receipt.rs"]
 mod candidate_receipt;
 #[cfg(windows)]
+#[allow(dead_code)] // This fixture only reads the server identity; it retains no monitor.
 #[path = "../../src/pipe_server_identity.rs"]
 mod pipe_server_identity;
 #[cfg(windows)]
@@ -241,7 +242,7 @@ mod scratch {
             .ok_or_else(|| denied("scratch readiness has no kernel-observed Setup peer"))?;
         let frame: StartupFrame = serde_json::from_slice(&bytes)?;
         if frame.frame != "verifyProvisional"
-            || frame.version != 79
+            || frame.version != 80
             || !is_guid(&frame.request_id)
             || !is_guid(&frame.deployment_request_id)
             || frame.step != step

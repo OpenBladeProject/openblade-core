@@ -26,6 +26,25 @@ public sealed class MailboxLifetimeTests
     }
 
     [Fact]
+    public void ActualNativeOpenWaitsForCustodyAdmission()
+    {
+        var scope = new MailboxLifetime(admitted: false);
+        int attempts = 0;
+        var native = new WindowsHidNative(scope, (_, _) =>
+        {
+            attempts++;
+            return new Microsoft.Win32.SafeHandles.SafeFileHandle(new IntPtr(123), ownsHandle: false);
+        });
+        Assert.Throws<IOException>(() => native.TryOpen("injected-no-device", new(0, 0, 0, 0, false)));
+        Assert.Equal(0, attempts);
+        scope.Admit();
+        var result = native.TryOpen("injected-no-device", new(0, 0, 0, 0, false));
+        Assert.NotNull(result.Candidate);
+        Assert.Equal(1, attempts);
+        result.Candidate!.Dispose();
+    }
+
+    [Fact]
     public async Task ActualNativeCompletionCallbackRetainsScopeAfterOperationFinalization()
     {
         var scope = new MailboxLifetime();

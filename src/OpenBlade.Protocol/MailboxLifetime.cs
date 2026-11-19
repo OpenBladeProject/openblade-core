@@ -8,11 +8,17 @@ internal sealed class MailboxLifetime
     private int pending;
     private bool sealedAdmission;
     private Exception? failure;
+    private bool admitted;
+    internal MailboxLifetime() : this(admitted: true) { }
+    // A production Service run reserves nothing until it holds mailbox custody.
+    internal MailboxLifetime(bool admitted) { this.admitted = admitted; }
+    internal void Admit() { lock (sync) { admitted = true; } }
     internal Participation Reserve()
     {
         lock (sync)
         {
             if (sealedAdmission) { throw new IOException("Service mailbox acquisition/submission is sealed."); }
+            if (!admitted) { throw new IOException("Service mailbox custody has not been acquired."); }
             return Add();
         }
     }

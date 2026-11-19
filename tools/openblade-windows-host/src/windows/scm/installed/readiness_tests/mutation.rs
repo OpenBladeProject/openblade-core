@@ -845,14 +845,12 @@ async fn installed_gpu_intent_is_stored_with_explicit_incompleteness_and_no_pair
     let result = rig.set(1, desired).await;
     let status = rig.get().await;
     assert_eq!(status["status"]["writesBlocked"], true);
-    assert_eq!(result["result"]["status"], 0);
+    // Managed reports a saved but unapplied override as Blocked with this prefix.
+    assert_eq!(result["result"]["status"], 2);
     assert_eq!(rig.port.state.lock().unwrap().writes, 0);
-    assert!(
-        result["result"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("GPU")
-    );
+    let message = result["result"]["message"].as_str().unwrap();
+    assert!(message.starts_with("Performance override intent was stored. Hardware result: "));
+    assert!(message.contains("GPU"));
     assert_eq!(
         rig.files.document("manual-overrides.json")["overrides"]["gpuClockTuning"]["offsets"]["coreMegahertz"],
         10
@@ -870,13 +868,19 @@ async fn installed_source_ineligible_intent_is_stored_and_power_change_stops_par
         let result = rig.set(1, value(2, 1)).await;
         let status = rig.get().await;
         assert_eq!(status["status"]["writesBlocked"], true);
-        assert_eq!(result["result"]["status"], 0);
+        assert_eq!(result["result"]["status"], 2);
         assert_eq!(status["status"]["performanceOverride"]["value"], 2);
+        let message = result["result"]["message"].as_str().unwrap();
+        assert!(message.starts_with("Performance override intent was stored. Hardware result: "));
         if actual == 0 {
             assert_eq!(rig.port.state.lock().unwrap().writes, 0)
         } else {
             assert_eq!(status["status"]["desiredState"]["performance"]["value"], 1);
             assert_eq!(status["status"]["confirmedState"]["performance"], 1);
+            // The policy-selected preset is confirmed; that is not an admission failure.
+            assert!(message.ends_with(
+                "The current power and profile policy selects another performance destination, which is confirmed; the requested value is saved but not applied."
+            ));
         }
         rig.stop().await;
     }
@@ -892,6 +896,19 @@ async fn installed_source_ineligible_intent_is_stored_and_power_change_stops_par
             .unwrap()
             .progress(),
         Some(2)
+    );
+    rig.stop().await;
+}
+#[tokio::test]
+async fn installed_cleared_performance_override_keeps_the_managed_prefix() {
+    let rig = Rig::new(MemoryFiles::default());
+    rig.port.state.lock().unwrap().selectors = [2, 2];
+    rig.port.state.lock().unwrap().change_power = Some((2, 0));
+    let cleared = rig.set(91, Value::Null).await;
+    assert_eq!(cleared["result"]["status"], 2);
+    assert_eq!(
+        cleared["result"]["message"],
+        "Performance override was cleared. Hardware result: No supported performance destination is selected by the current power and profile policy."
     );
     rig.stop().await;
 }
@@ -1308,7 +1325,7 @@ async fn correction_prepared_only_settles_after_drain_and_allows_fresh_request()
     let rig = Rig::new(MemoryFiles::default());
     rig.port.state.lock().unwrap().change_power = Some((2, 0));
     let response = rig.set(91, value(1, 1)).await;
-    assert_eq!(response["result"]["status"], 0);
+    assert_eq!(response["result"]["status"], 2);
     assert!(
         response["result"]["message"]
             .as_str()
@@ -1366,7 +1383,7 @@ async fn correction_storage_failure_and_postacceptance_capacity_have_truthful_ca
     let rig = Rig::new(MemoryFiles::default());
     rig.port.reserve_for_tests(122);
     let response = rig.set(91, value(1, 1)).await;
-    assert_eq!(response["result"]["status"], 0);
+    assert_eq!(response["result"]["status"], 2);
     assert!(
         response["result"]["message"]
             .as_str()
@@ -1551,7 +1568,7 @@ async fn correction_queued_stored_subscription_rebases_latest_hardware_without_r
         let timestamp = rig.reader.last_completed_for_tests();
         assert!(timestamp.is_some());
         let (result, _) = b.await.unwrap();
-        assert_eq!(result.status, 0);
+        assert_eq!(result.status, 2);
         let event_b: Value = serde_json::from_slice(
             &crate::service_frame::read_payload(&mut client)
                 .await
@@ -1719,7 +1736,7 @@ async fn correction_prepared_settlement_waits_for_actual_retirement_and_rejects_
     assert!(prior.pending());
     assert_eq!(rig.port.state.lock().unwrap().writes, 0);
     released.store(true, Ordering::Release);
-    assert_eq!(request.await["result"]["status"], 0);
+    assert_eq!(request.await["result"]["status"], 2);
     let settled = rig.files.read("thermal-mutation.journal").unwrap().unwrap();
     assert!(settled.starts_with(&prepared));
     let mut lines: Vec<Value> = settled
@@ -1846,7 +1863,7 @@ async fn edge_configuration_drift_keeps_public_read_proof_and_truthful_cause() {
     let mut desired = value(2, 1);
     desired["gpuClockTuning"] =
         json!({"enabled":true,"offsets":{"coreMegahertz":10,"memoryMegahertz":20}});
-    assert_eq!(rig.set(91, desired).await["result"]["status"], 0);
+    assert_eq!(rig.set(91, desired).await["result"]["status"], 2);
     let before = fresh_observe(&rig).await;
     let mut foreign = rig.files.document("manual-overrides.json");
     foreign["overrides"]["performance"] = json!(1);
@@ -2080,7 +2097,7 @@ async fn edge_outer_policy_fatal_capture_and_health_fail_get_and_observe() {
         let mut saved = value(1, 1);
         saved["gpuClockTuning"] =
             json!({"enabled":true,"offsets":{"coreMegahertz":10,"memoryMegahertz":20}});
-        assert_eq!(rig.set(91, saved).await["result"]["status"], 0);
+        assert_eq!(rig.set(91, saved).await["result"]["status"], 2);
         let journal = rig.files.read("thermal-mutation.journal").unwrap();
         let events: Events = Rc::default();
         let controls = Controls::new();
@@ -2299,7 +2316,7 @@ async fn edge_stored_temporary_publication_cannot_resurrect_expired_policy() {
         .unwrap();
         assert!(expiry["status"]["performanceOverride"].is_null());
         release.store(true, Ordering::Release);
-        assert_eq!(request.await["result"]["status"], 0);
+        assert_eq!(request.await["result"]["status"], 2);
         let bytes = crate::service_frame::read_payload(&mut client)
             .await
             .unwrap();
@@ -2483,7 +2500,7 @@ async fn edge_managed_saved_custom_survives_unpublished_activation_and_private_f
             request["gpuClockTuning"]["effectiveOffsets"] =
                 json!({"coreMegahertz":0,"memoryMegahertz":0});
         }
-        assert_eq!(rig.set(91, request).await["result"]["status"], 0);
+        assert_eq!(rig.set(91, request).await["result"]["status"], 2);
         assert_eq!(rig.port.state.lock().unwrap().writes, 0);
         assert!(
             rig.files
@@ -2996,7 +3013,7 @@ async fn correction_inflight_config_drift_distinguishes_stored_from_first_intent
             let seeded = rig.set(90, value(1, 1)).await;
             assert_eq!(
                 seeded["result"]["status"],
-                if progress == 5 { 1 } else { 0 }
+                if progress == 5 { 1 } else { 2 }
             );
             assert_eq!(
                 Storage::open(Box::new(rig.files.clone()), SID)
@@ -3600,18 +3617,36 @@ async fn correction_first_intent_io_failure_retains_uncertainty_and_all_evidence
 
 #[tokio::test]
 async fn history_dispatcher_capacity_refusal_precedes_prepared_and_all_transport_writes() {
-    let files = MemoryFiles::default();
-    files.profiles(1);
-    files.capacity_refuse.store(true, Ordering::Release);
-    let rig = Rig::new(files);
-    let result = rig.set(99, value(2, 1)).await;
-    assert_eq!(result["result"]["status"], 2);
-    assert!(
-        result["result"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("no submission intent or thermal setter")
-    );
+    // A positively known capacity refusal leaves nothing to reconcile: the intent
+    // stays saved and the reply is Blocked, as managed reports a saved intent whose
+    // hardware apply did not happen. Uncertain reservation I/O still quarantines.
+    for uncertain in [false, true] {
+        let files = MemoryFiles::default();
+        files.profiles(1);
+        if uncertain {
+            files.reserve_uncertain.store(true, Ordering::Release);
+        } else {
+            files.capacity_refuse.store(true, Ordering::Release);
+        }
+        let rig = Rig::new(files);
+        let result = rig.set(99, value(2, 1)).await;
+        let message = result["result"]["message"].as_str().unwrap();
+        if uncertain {
+            assert_eq!(result["result"]["status"], 2);
+            assert!(message.contains("no submission intent or thermal setter"));
+        } else {
+            assert_eq!(result["result"]["status"], 2);
+            assert!(
+                message.starts_with("Performance override intent was stored. Hardware result: ")
+            );
+            assert!(message.contains("capacity refused before publication"));
+            assert!(rig.files.read("manual-overrides.json").unwrap().is_some());
+        }
+        assert_capacity_refusal_reached_no_journal_or_setter(rig).await;
+    }
+}
+
+async fn assert_capacity_refusal_reached_no_journal_or_setter(rig: Rig) {
     assert_eq!(rig.files.prepared_attempts.load(Ordering::Acquire), 0);
     assert_eq!(
         rig.files.submission_intent_attempts.load(Ordering::Acquire),
@@ -3797,7 +3832,7 @@ async fn fan_v2_noop_observation_and_pending_modes_never_mint_owner() {
             if selector == 0 && manual == 0 && mode == 0 {
                 1
             } else {
-                0
+                2
             }
         );
         assert_eq!(r.port.state.lock().unwrap().writes, 0);
@@ -4119,7 +4154,7 @@ async fn fan_v2_known_capacity_refusal_preserves_owner_but_uncertain_reservation
 
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
-async fn fan_v2_owned_limited_source_performance_stays_stored_without_consuming_release() {
+async fn fan_v2_owned_limited_source_performance_is_saved_blocked_without_consuming_release() {
     let r = fan_rig(0, 0);
     r.port.state.lock().unwrap().actual = 10;
     r.get().await;
@@ -4127,7 +4162,13 @@ async fn fan_v2_owned_limited_source_performance_stays_stored_without_consuming_
     assert_eq!(applied["result"]["status"], 1);
     let before = fan_rows(&r).len();
     let perf = r.set(181, value(1, 1)).await;
-    assert_eq!(perf["result"]["status"], 0);
+    // Managed defers only on PluggedIn power; an owned fan elsewhere blocks with
+    // the committed-intent prefix instead of the AC deferral's Stored reply.
+    assert_eq!(perf["result"]["status"], 2);
+    assert_eq!(
+        perf["result"]["message"],
+        "Performance override intent was stored. Hardware result: OpenBlade still owns a fan change that has not been handed back to firmware Automatic; no thermal setter was submitted."
+    );
     assert_eq!(fan_rows(&r).len(), before);
     assert_eq!(r.port.state.lock().unwrap().writes, 4);
     let desired = r.files.document("manual-overrides.json");
@@ -4137,6 +4178,65 @@ async fn fan_v2_owned_limited_source_performance_stays_stored_without_consuming_
     r.stop().await;
     assert_eq!(r.port.state.lock().unwrap().writes, 6);
     assert_eq!(fan_rows(&r).last().unwrap()["progress"], 50);
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_ac_manual_deferral_is_stored_but_cleared_fan_handback_blocks() {
+    // AC with saved and observed manual fans: managed's deferral reply.
+    let r = fan_rig(0, 0);
+    r.get().await;
+    assert_eq!(
+        r.request(fan_request(180, Some(1), 3700)).await["result"]["status"],
+        1
+    );
+    let deferred = r.set(181, value(2, 1)).await;
+    assert_eq!(deferred["result"]["status"], 0);
+    assert_eq!(
+        deferred["result"]["message"],
+        "Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans."
+    );
+    r.origin.stop();
+    r.stop().await;
+
+    // The fan override is cleared but its handback is still outstanding: no
+    // manual fan intent remains, so the reply is Blocked with the prefix.
+    let r = fan_rig(0, 0);
+    r.get().await;
+    assert_eq!(
+        r.request(fan_request(180, Some(1), 3700)).await["result"]["status"],
+        1
+    );
+    r.port.state.lock().unwrap().selectors = [4, 4];
+    let cleared = r.request(fan_request(182, None, 0)).await;
+    assert_eq!(cleared["result"]["status"], 2);
+    assert!(
+        cleared["result"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Fan override was cleared. Hardware result: ")
+    );
+    assert_eq!(fan_rows(&r).last().unwrap()["progress"], 30);
+    assert!(r.storage.outstanding_fan());
+    assert_eq!(
+        r.files.document("manual-overrides.json")["overrides"]["fanControl"],
+        Value::Null
+    );
+    let writes = r.port.state.lock().unwrap().writes;
+    let blocked = r.set(183, value(2, 1)).await;
+    assert_eq!(blocked["result"]["status"], 2);
+    assert_eq!(
+        blocked["result"]["message"],
+        "Performance override intent was stored. Hardware result: OpenBlade still owns a fan change that has not been handed back to firmware Automatic; no thermal setter was submitted."
+    );
+    assert_eq!(r.port.state.lock().unwrap().writes, writes);
+    assert_eq!(
+        r.files.document("manual-overrides.json")["overrides"]["performance"],
+        2
+    );
+    r.port.state.lock().unwrap().selectors = [0, 0];
+    r.origin.stop();
+    assert!(r.source.lock().await.drain().await.is_ok());
 }
 
 #[cfg(feature = "service-fan-mutation-v2")]
@@ -4284,9 +4384,14 @@ async fn fan_correction_cancelled_positive_worker_then_refusal_releases_latest_e
     r.port.state.lock().unwrap().on_mutation_retired = None;
     release.store(true, Ordering::Release);
     r.files.capacity_refuse.store(true, Ordering::Release);
-    assert_eq!(
-        r.request(fan_request(192, Some(1), 3700)).await["result"]["status"],
-        0
+    // Saved but unapplied fan intent is Blocked, as managed reports it.
+    let refused = r.request(fan_request(192, Some(1), 3700)).await;
+    assert_eq!(refused["result"]["status"], 2);
+    assert!(
+        refused["result"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Fan override intent was stored. Hardware result: ")
     );
     let saved = r.files.read("manual-overrides.json").unwrap();
     let writes = r.port.state.lock().unwrap().writes;
@@ -4332,7 +4437,7 @@ async fn fan_correction_saved_pending_profile_edit_and_temporary_expiry_keep_cle
         if kind == 0 {
             assert_eq!(
                 r.request(fan_request(201, Some(2), 4000)).await["result"]["status"],
-                0
+                2
             );
         } else if kind == 1 {
             profile(4000);
@@ -5628,8 +5733,12 @@ async fn battery_publication_delayed_temporary_does_not_rejuvenate_policy() {
             std::thread::sleep(Duration::from_millis(600));
         }
     }));
+    // Active temporary charge refuses this basic battery request after it reads
+    // policy, then temporary flags, in every battery composition. Temporary-charge
+    // builds route setFullChargeOverride to their own flags-only exchange instead.
+    r.port.state.lock().unwrap().temporary_raw = 4;
     assert_eq!(
-        r.request(battery_request(406, "setFullChargeOverride", json!(false)))
+        r.request(battery_request(406, "setBatteryProtection", json!(false)))
             .await["result"]["status"],
         2
     );
@@ -5784,8 +5893,10 @@ async fn battery_publication_incompatible_independent_fields_are_unavailable_wit
     let r = Rig::new(MemoryFiles::default());
     r.get().await;
     r.port.state.lock().unwrap().temporary_raw = 4;
+    // Refused after both independent reads in every battery composition; a
+    // temporary-charge build would cancel through setFullChargeOverride instead.
     assert_eq!(
-        r.request(battery_request(409, "setFullChargeOverride", json!(false)))
+        r.request(battery_request(409, "setBatteryProtection", json!(false)))
             .await["result"]["status"],
         2
     );

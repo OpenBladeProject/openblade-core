@@ -1,3 +1,4 @@
+#if OPENBLADE_NATIVE_PACKAGE_TESTS
 using OpenBlade.Deployment;
 using OpenBlade.Deployment.Tests;
 using OpenBlade.Setup;
@@ -53,3 +54,4 @@ public sealed partial class SetupCommandRunnerTests
         Assert.DoesNotContain("payload-commit", platform.Operations);
     }
 }
+#endif

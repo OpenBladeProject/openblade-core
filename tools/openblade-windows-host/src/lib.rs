@@ -2,6 +2,7 @@
 
 pub mod configuration;
 pub mod cpu_worker;
+pub mod json_object;
 
 #[cfg(windows)]
 pub fn valid_dev_id(id: &str) -> bool {
@@ -31,6 +32,7 @@ mod windows_protected_path;
 mod windows_token;
 
 #[cfg(windows)]
+#[allow(dead_code)] // The library never retains a monitor; the Session Agent's Service client does.
 mod pipe_server_identity;
 #[cfg(windows)]
 mod retained_process;

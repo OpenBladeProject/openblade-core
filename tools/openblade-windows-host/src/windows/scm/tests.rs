@@ -11,9 +11,8 @@ use tokio::{
 use windows_sys::Win32::{
     Foundation::{ERROR_GEN_FAILURE, NO_ERROR},
     System::Services::{
-        SERVICE_ACCEPT_SHUTDOWN, SERVICE_ACCEPT_STOP, SERVICE_CONTROL_SHUTDOWN,
-        SERVICE_CONTROL_STOP, SERVICE_RUNNING, SERVICE_START_PENDING, SERVICE_STOP_PENDING,
-        SERVICE_STOPPED,
+        SERVICE_CONTROL_SHUTDOWN, SERVICE_CONTROL_STOP, SERVICE_RUNNING, SERVICE_START_PENDING,
+        SERVICE_STOP_PENDING, SERVICE_STOPPED,
     },
 };
 
@@ -28,6 +27,15 @@ use crate::windows::{
 };
 
 mod metadata_lifecycle;
+
+// Spelled out instead of reusing scm_host's mask, so a production change fails here.
+// STOP (0x1) | SHUTDOWN (0x4), plus POWEREVENT (0x40) | SESSIONCHANGE (0x80) when
+// the thermal composition is compiled.
+const EXPECTED_RUNNING_CONTROLS: u32 = if cfg!(feature = "service-thermal-mutation-v1") {
+    0xC5
+} else {
+    0x05
+};
 
 fn phase(status: &SERVICE_STATUS) -> (u32, u32, u32) {
     (
@@ -96,7 +104,7 @@ fn scripted_controls_wait_for_both_the_accepted_save_and_owned_renderer() {
                 request
                     .send(serde_json::to_vec(&serde_json::json!({
                         "operation": "updateProfiles",
-                        "version": 79,
+                        "version": 80,
                         "requestId": "11111111-2222-4333-8444-555555555555",
                         "profiles": changed
                     }))?)
@@ -190,11 +198,7 @@ fn scripted_controls_wait_for_both_the_accepted_save_and_owned_renderer() {
             phases,
             [
                 (SERVICE_START_PENDING, 0, NO_ERROR),
-                (
-                    SERVICE_RUNNING,
-                    SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN,
-                    NO_ERROR
-                ),
+                (SERVICE_RUNNING, EXPECTED_RUNNING_CONTROLS, NO_ERROR),
                 (SERVICE_STOP_PENDING, 0, NO_ERROR),
                 (SERVICE_STOPPED, 0, NO_ERROR),
             ]
@@ -243,7 +247,7 @@ fn scripted_stop_during_fixture_admission_never_publishes_running() {
         );
         assert_eq!(
             ClientOptions::new()
-                .open(&format!("{PREFIX}{id}"))
+                .open(format!("{PREFIX}{id}"))
                 .unwrap_err()
                 .kind(),
             io::ErrorKind::NotFound

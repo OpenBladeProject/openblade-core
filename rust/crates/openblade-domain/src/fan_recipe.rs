@@ -12,7 +12,7 @@ pub struct FanIntent {
 }
 impl FanIntent {
     pub fn checked(mode: u8, rpm: u16) -> Option<Self> {
-        if !matches!(mode, 0 | 1 | 3) || !(2000..=5400).contains(&rpm) || rpm % 100 != 0 {
+        if !matches!(mode, 0 | 1 | 3) || !(2000..=5400).contains(&rpm) || !rpm.is_multiple_of(100) {
             return None;
         }
         Some(Self {

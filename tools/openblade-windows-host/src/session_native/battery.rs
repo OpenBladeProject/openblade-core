@@ -1,5 +1,6 @@
 //! Selected installed Battery.v1 endpoint. No fixture scenarios enter this composition.
 use openblade_platform_windows::battery_report::{self, Failure};
+use openblade_windows_host::json_object;
 use openblade_windows_host::pipe::Endpoint;
 use std::{
     future::Future,
@@ -188,7 +189,8 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     // Read first: impersonation must use the current message token, not a cached peer.
     verify().map_err(|error| ServeError::Fatal(diagnostics::origin(error)))?;
     authorize(pipe)?;
-    let request: Request = serde_json::from_slice(&body)
+    let request: Request = json_object::public_tokens(&body)
+        .and_then(|()| serde_json::from_slice(&body))
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     verify().map_err(|error| ServeError::Fatal(diagnostics::origin(error)))?;
     if *stop.borrow() {

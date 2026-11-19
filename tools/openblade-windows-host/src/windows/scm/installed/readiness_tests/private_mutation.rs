@@ -16,6 +16,12 @@ use windows_sys::Win32::{
     Security::Authorization::ConvertStringSidToSidW, Security::GetLengthSid,
     Storage::FileSystem::FILE_ALL_ACCESS,
 };
+// No runner prepares these roots (build/NativeWindowsFixtureManifest.json lists no
+// case here), so every test is ignored rather than passing without running. To run
+// them, set OPENBLADE_THERMAL_FIXTURE_ROOT and OPENBLADE_THERMAL_FIXTURE_SID, create
+// each leaf PrivateRoot::open names with an own-user-only ACL on NTFS and an empty
+// writer.lock in it (plus a thermal-history directory where a case seeds segments
+// directly), then pass --ignored.
 struct PrivateRoot {
     path: PathBuf,
     root: File,
@@ -157,6 +163,7 @@ fn reservation(epoch: char) -> Record {
     }
 }
 #[test]
+#[ignore = "needs prepared private fixture roots; see the note above PrivateRoot"]
 fn private_owner_store_first_reservation_clean_retirement_and_restart_fence() {
     let fixture = PrivateRoot::open("owner-history");
     let mut store = fixture.owner().unwrap();
@@ -184,6 +191,7 @@ fn private_owner_store_first_reservation_clean_retirement_and_restart_fence() {
     assert!(!fixture.path.join("owner-00000000000000000007.bin").exists());
 }
 #[test]
+#[ignore = "needs prepared private fixture roots; see the note above PrivateRoot"]
 fn private_protected_override_and_submission_journal_survive_restart_and_share_conflict() {
     use openblade_domain::thermal_mutation::{Preset, Progress};
     use sha2::{Digest, Sha256};
@@ -318,6 +326,7 @@ fn private_protected_override_and_submission_journal_survive_restart_and_share_c
 }
 
 #[test]
+#[ignore = "needs prepared private fixture roots; see the note above PrivateRoot"]
 fn private_foreign_confirmed_journal_owner_is_refused_without_rewriting_history() {
     use sha2::{Digest, Sha256};
     let fixture = PrivateRoot::open("owner-journal-foreign");
@@ -368,6 +377,7 @@ fn private_foreign_confirmed_journal_owner_is_refused_without_rewriting_history(
 }
 
 #[test]
+#[ignore = "needs prepared private fixture roots; see the note above PrivateRoot"]
 fn private_prepared_settlement_authenticates_owner_prefix_and_reopens_terminal_history() {
     use openblade_domain::thermal_mutation::{Preset, Progress};
     use sha2::{Digest, Sha256};
@@ -496,6 +506,7 @@ fn private_prepared_settlement_authenticates_owner_prefix_and_reopens_terminal_h
 }
 
 #[test]
+#[ignore = "needs prepared private fixture roots; see the note above PrivateRoot"]
 fn private_pending_terminal_file_preserves_intact_original_owner_custody() {
     use openblade_domain::thermal_mutation::{Preset, Progress};
     use sha2::{Digest, Sha256};
@@ -598,6 +609,7 @@ fn private_pending_terminal_file_preserves_intact_original_owner_custody() {
 }
 
 #[test]
+#[ignore = "needs prepared private fixture roots; see the note above PrivateRoot"]
 fn history_growth_real_storage_reserves_before_prepared_across_original_owners() {
     use crate::thermal_history::{self as history, Entry};
     use openblade_domain::thermal_mutation::{Preset, Progress};
@@ -764,6 +776,7 @@ fn history_growth_real_storage_reserves_before_prepared_across_original_owners()
 }
 
 #[test]
+#[ignore = "needs prepared private fixture roots; see the note above PrivateRoot"]
 fn history_protected_publication_cuts_recover_only_matched_metadata_and_preserve_every_byte() {
     let vector: Value = serde_json::from_str(include_str!(
         "../../../../../tests/data/thermal-history-v1.json"
@@ -841,6 +854,7 @@ fn history_protected_publication_cuts_recover_only_matched_metadata_and_preserve
 }
 
 #[test]
+#[ignore = "needs prepared private fixture roots; see the note above PrivateRoot"]
 fn history_orphan_rollover_staging_without_directory_is_never_empty_native_history() {
     let machine = PrivateRoot::open("owner-journal-foreign");
     let mut owner = machine.owner().unwrap();
@@ -860,6 +874,7 @@ fn history_orphan_rollover_staging_without_directory_is_never_empty_native_histo
 
 #[cfg(feature = "service-fan-mutation-v2")]
 #[test]
+#[ignore = "needs prepared private fixture roots; see the note above PrivateRoot"]
 fn fan_v2_real_protected_history_retains_owned_fence_across_reload_and_rollover() {
     verify_fan_protected_history(
         serde_json::from_str(include_str!(
@@ -871,6 +886,7 @@ fn fan_v2_real_protected_history_retains_owned_fence_across_reload_and_rollover(
 }
 #[cfg(feature = "service-fan-mutation-v2")]
 #[test]
+#[ignore = "needs prepared private fixture roots; see the note above PrivateRoot"]
 fn fan_v3_observed_auto_protected_history_reloads_and_rolls_losslessly() {
     verify_fan_protected_history(
         serde_json::from_str(include_str!(
@@ -919,6 +935,7 @@ fn verify_fan_protected_history(vector: Value, terminal: &str) {
 
 #[cfg(feature = "service-battery-policy-v1")]
 #[test]
+#[ignore = "needs prepared private fixture roots; see the note above PrivateRoot"]
 fn battery_v1_protected_history_requires_original_producer_and_retains_interleaved_release() {
     let vector: Value = serde_json::from_str(include_str!(
         "../../../../../tests/data/battery-history-v1.json"
@@ -983,6 +1000,7 @@ fn battery_v1_protected_history_requires_original_producer_and_retains_interleav
 
 #[cfg(feature = "service-battery-policy-v1")]
 #[test]
+#[ignore = "needs prepared private fixture roots; see the note above PrivateRoot"]
 fn battery_correction_protected_complete_rehashed_active_and_archived_inputs() {
     let vector: Value = serde_json::from_str(include_str!(
         "../../../../../tests/data/battery-history-v1.json"
@@ -1082,6 +1100,7 @@ fn battery_correction_protected_complete_rehashed_active_and_archived_inputs() {
 
 #[cfg(feature = "service-temporary-charge-v1")]
 #[test]
+#[ignore = "needs prepared private fixture roots; see the note above PrivateRoot"]
 fn tfc_v1_protected_original_producer_is_checked_for_each_required_family() {
     let vector: Value = serde_json::from_str(include_str!(
         "../../../../../tests/data/temporary-charge-history-v1.json"

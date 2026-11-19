@@ -278,11 +278,7 @@ fn metadata_lifecycle_refreshes_fresh_evidence_and_drains_on_service_stop() {
             phases,
             [
                 (SERVICE_START_PENDING, 0, NO_ERROR),
-                (
-                    SERVICE_RUNNING,
-                    SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN,
-                    NO_ERROR
-                ),
+                (SERVICE_RUNNING, EXPECTED_RUNNING_CONTROLS, NO_ERROR),
                 (SERVICE_STOP_PENDING, 0, NO_ERROR),
                 (SERVICE_STOPPED, 0, NO_ERROR),
             ]
@@ -310,7 +306,7 @@ async fn check_status(path: &str, verified: bool, revision: &mut i64) {
 
 async fn request(path: &str, mut payload: Value) -> Value {
     let mut pipe = open_pipe(path).await;
-    payload["version"] = 79.into();
+    payload["version"] = 80.into();
     payload["requestId"] = "11111111-2222-4333-8444-555555555555".into();
     let payload = serde_json::to_vec(&payload).unwrap();
     pipe.write_i32_le(payload.len() as i32).await.unwrap();
@@ -321,6 +317,6 @@ async fn request(path: &str, mut payload: Value) -> Value {
     pipe.read_exact(&mut payload).await.unwrap();
     let response: Value = serde_json::from_slice(&payload).unwrap();
     assert_eq!(response["frame"], "response");
-    assert_eq!(response["version"], 79);
+    assert_eq!(response["version"], 80);
     response
 }

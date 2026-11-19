@@ -8,6 +8,7 @@
 //! Begin/Complete/Resume mirror `DisplayAutomationCoordinator`. The native
 //! Agent has no automation, so no transition is scheduled after a resume.
 use super::observation::Snapshot;
+use openblade_windows_host::json_object::scan;
 use serde_json::{Map, Value, json};
 use std::{
     fs::{self, File, OpenOptions},
@@ -428,8 +429,10 @@ fn parse(bytes: &[u8]) -> Loaded {
     // nesting inside members neither reader binds or a shadowed duplicate. The
     // scan runs on the raw tokens because a parsed map keeps only the last one.
     // It also refuses serde_json's private number/raw-value tokens, which this
-    // crate's arbitrary_precision/raw_value features would read as typed values.
-    if !scan(bytes).is_some_and(|depth| depth <= MAXIMUM_DEPTH) {
+    // crate's arbitrary_precision/raw_value features would read as typed values,
+    // and an integer "-0": serde_json reads it as 0, System.Text.Json refuses it
+    // for the unsigned Byte member, so refuse it anywhere (stricter).
+    if !scan(bytes).is_some_and(|scan| !scan.negative_zero && scan.depth <= MAXIMUM_DEPTH) {
         return Loaded::Invalid;
     }
     // The managed readers type-check every occurrence of a bound member, so a
@@ -459,84 +462,6 @@ fn parse(bytes: &[u8]) -> Loaded {
 }
 
 const MAXIMUM_DEPTH: usize = 64;
-
-/// serde_json's private map keys for arbitrary-precision numbers and raw
-/// values. Managed reads such an object as an object.
-const PRIVATE_TOKEN: &[u8] = b"$serde_json::private::";
-
-/// Maximum container nesting of the raw document (the root object is 1),
-/// ignoring brackets inside strings, or `None` when any decoded string starts
-/// with a serde_json private token, or for an integer "-0" (not an exponent).
-/// Malformed input is left to the parser.
-fn scan(bytes: &[u8]) -> Option<usize> {
-    let (mut current, mut deepest) = (0usize, 0usize);
-    let mut index = 0;
-    while let Some(&byte) = bytes.get(index) {
-        index += 1;
-        match byte {
-            b'"' => {
-                // Decode only as far as needed to compare an ASCII prefix;
-                // a non-ASCII or malformed escape cannot spell the token.
-                let mut prefix = Vec::with_capacity(PRIVATE_TOKEN.len());
-                let mut matching = true;
-                while let Some(&byte) = bytes.get(index) {
-                    index += 1;
-                    let decoded = match byte {
-                        b'"' => break,
-                        b'\\' => {
-                            let escape = bytes.get(index).copied();
-                            index += 1;
-                            match escape {
-                                Some(b'u') => {
-                                    let hex = bytes.get(index..index + 4);
-                                    index += 4;
-                                    hex.and_then(|hex| std::str::from_utf8(hex).ok())
-                                        .and_then(|hex| u8::from_str_radix(hex, 16).ok())
-                                        .filter(u8::is_ascii)
-                                }
-                                Some(b'b') => Some(0x08),
-                                Some(b'f') => Some(0x0C),
-                                Some(b'n') => Some(0x0A),
-                                Some(b'r') => Some(0x0D),
-                                Some(b't') => Some(0x09),
-                                Some(other) => Some(other),
-                                None => None,
-                            }
-                        }
-                        other => Some(other),
-                    };
-                    if matching && prefix.len() < PRIVATE_TOKEN.len() {
-                        match decoded {
-                            Some(decoded) if decoded == PRIVATE_TOKEN[prefix.len()] => {
-                                prefix.push(decoded)
-                            }
-                            _ => matching = false,
-                        }
-                    }
-                }
-                if matching && prefix.len() == PRIVATE_TOKEN.len() {
-                    return None;
-                }
-            }
-            // serde_json reads an integer "-0" as 0; System.Text.Json refuses
-            // it for the unsigned Byte member. Refuse it anywhere (stricter).
-            // A sign after an exponent marker (`1e-05`) is not a number start.
-            b'-' if bytes.get(index) == Some(&b'0')
-                && !matches!(bytes.get(index + 1), Some(b'.' | b'e' | b'E'))
-                && !matches!(index.checked_sub(2).map(|at| bytes[at]), Some(b'e' | b'E')) =>
-            {
-                return None;
-            }
-            b'[' | b'{' => {
-                current += 1;
-                deepest = deepest.max(current);
-            }
-            b']' | b'}' => current = current.saturating_sub(1),
-            _ => {}
-        }
-    }
-    Some(deepest)
-}
 
 /// Typed System.Text.Json default semantics: case-sensitive names, missing
 /// members default, unknown members ignored, and a wrong type rejects the

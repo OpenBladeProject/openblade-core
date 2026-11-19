@@ -13,7 +13,7 @@ impl FanPair {
         Self::new(ids, 2, |i| ([1, i + 1, selector, u8::from(manual)], 4))
     }
     pub fn target(ids: [u8; 2], rpm: u16) -> Option<Self> {
-        if !(2000..=5400).contains(&rpm) || rpm % 100 != 0 {
+        if !(2000..=5400).contains(&rpm) || !rpm.is_multiple_of(100) {
             return None;
         }
         Self::new(ids, 1, |i| ([1, i + 1, (rpm / 100) as u8, 0], 3))

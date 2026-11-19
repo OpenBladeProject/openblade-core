@@ -4,19 +4,39 @@ using System.Text.Json;
 
 namespace OpenBlade.Deployment.Tests;
 
-// Explicitly supplied private-root/SID closure. No token, product discovery,
-// service process, pipe, firmware, helper or default-root supplier is executed.
+// Private-root/SID closure: the fixture runner supplies both values; a plain run uses a
+// fresh own-user temp root. No product discovery, service process, pipe, firmware,
+// helper or default-root supplier is executed.
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public sealed class NativeThermalHistoryTests : IDisposable
 {
+    private readonly string? ownedRoot;
     public NativeThermalHistoryTests()
     {
-        string root = Environment.GetEnvironmentVariable("OPENBLADE_HISTORY_MANAGED_FIXTURE_ROOT") ?? throw new InvalidOperationException("Explicit fixture root required.");
-        string sid = Environment.GetEnvironmentVariable("OPENBLADE_THERMAL_FIXTURE_SID") ?? throw new InvalidOperationException("Explicit supplied own SID required.");
+        string? root = Environment.GetEnvironmentVariable("OPENBLADE_HISTORY_MANAGED_FIXTURE_ROOT");
+        string? sid = Environment.GetEnvironmentVariable("OPENBLADE_THERMAL_FIXTURE_SID");
+        if (root is null && sid is null)
+        {
+            // Plain lane: the fixture creates its own protected own-user directory below this root.
+            ownedRoot = root = Directory.CreateTempSubdirectory("obh").FullName;
+            using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+            sid = identity.User!.Value;
+        }
+        if (root is null) { throw new InvalidOperationException("Explicit fixture root required."); }
+        if (sid is null) { throw new InvalidOperationException("Explicit supplied own SID required."); }
         if (!Path.IsPathFullyQualified(root)) { throw new InvalidOperationException("Absolute fixture root required."); }
         WindowsNativeEpochFiles.FixtureFactoryForTests.Value = () => WindowsNativeEpochFiles.CreateSuppliedPrivateFixture(Path.Combine(root, "OpenBlade.NativeEpochFixture-" + Guid.NewGuid().ToString("N")), sid);
     }
-    public void Dispose() => WindowsNativeEpochFiles.FixtureFactoryForTests.Value = null;
+    public void Dispose()
+    {
+        WindowsNativeEpochFiles.FixtureFactoryForTests.Value = null;
+        if (ownedRoot is null) { return; }
+        // Fixture views a test did not dispose still pin directories until finalized.
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        try { Directory.Delete(ownedRoot, recursive: true); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+    }
     private static byte[] Bytes(string text) => Encoding.UTF8.GetBytes(text);
     private static byte[] Rows(string nonce, int first, int count, bool confirmed = false)
     {

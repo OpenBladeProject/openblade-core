@@ -1,4 +1,6 @@
+// Shared test helpers also serve feature-gated host tests.
 #[cfg(any(windows, test))]
+#[cfg_attr(test, allow(dead_code, unused_imports))]
 mod discovery;
 
 #[cfg(not(test))]

@@ -218,22 +218,21 @@ fn rows_from(
         // Legacy absence remains valid; a battery payload requires fan_owner,
         // with explicit null representing no owned fan.
         let shape: Value = serde_json::from_slice(line).map_err(|_| deny())?;
-        if let Some(battery) = shape.get("battery") {
-            if !battery.is_object() || battery.get("fan_owner").is_none() {
-                return Err(deny());
-            }
+        if let Some(battery) = shape.get("battery")
+            && (!battery.is_object() || battery.get("fan_owner").is_none())
+        {
+            return Err(deny());
         }
-        if let Some(tfc) = shape.get("tfc") {
-            if !tfc.is_object()
+        if let Some(tfc) = shape.get("tfc")
+            && (!tfc.is_object()
                 || shape.get("fan").is_some()
                 || shape.get("battery").is_some()
                 || shape.get("requested") != Some(&Value::Null)
                 || ["policy", "cancel_ids", "origin", "fan_owner"]
                     .iter()
-                    .any(|k| tfc.get(k).is_none())
-            {
-                return Err(deny());
-            }
+                    .any(|k| tfc.get(k).is_none()))
+        {
+            return Err(deny());
         }
         let entry: Entry = serde_json::from_slice(line).map_err(|_| deny())?;
         if let Some(tfc) = &entry.tfc {
@@ -307,16 +306,15 @@ fn rows_from(
             if b.fan_owner != expected {
                 return Err(deny());
             }
-            if let Some(f) = owned.as_ref().and_then(|o| o.fan.as_ref()) {
-                if f.preflight
+            if let Some(f) = owned.as_ref().and_then(|o| o.fan.as_ref())
+                && f.preflight
                     .iter()
                     .chain(f.ids.iter())
                     .chain(f.cleanup.iter())
                     .flatten()
                     .any(|id| b.ids.contains(id))
-                {
-                    return Err(deny());
-                }
+            {
+                return Err(deny());
             }
         }
         if let Some(t) = &entry.tfc {
@@ -337,8 +335,8 @@ fn rows_from(
             if t.fan_owner != owned.as_ref().map(battery_fan_binding).transpose()? {
                 return Err(deny());
             }
-            if let Some(f) = owned.as_ref().and_then(|o| o.fan.as_ref()) {
-                if f.preflight
+            if let Some(f) = owned.as_ref().and_then(|o| o.fan.as_ref())
+                && f.preflight
                     .iter()
                     .chain(f.ids.iter())
                     .chain(f.cleanup.iter())
@@ -347,9 +345,8 @@ fn rows_from(
                         t.ids.contains(id)
                             || t.cancel_ids.as_ref().is_some_and(|ids| ids.contains(id))
                     })
-                {
-                    return Err(deny());
-                }
+            {
+                return Err(deny());
             }
         }
         let resumed_release = matches!(entry.progress, 31 | 51)
@@ -411,10 +408,10 @@ fn rows_from(
                 owned = None;
             }
         }
-        if let Some(t) = &entry.tfc {
-            if matches!(entry.progress, 72 | 73) {
-                temporary_owner = t.desired.temporary.then(|| entry.clone());
-            }
+        if let Some(t) = &entry.tfc
+            && matches!(entry.progress, 72 | 73)
+        {
+            temporary_owner = t.desired.temporary.then(|| entry.clone());
         }
         visit(&entry, line)?;
         count = count.checked_add(1).ok_or_else(deny)?;
@@ -433,7 +430,7 @@ fn parse<'a>(bytes: &'a [u8], header: &str, n: usize) -> io::Result<Vec<&'a str>
         .map_err(|_| deny())?
         .split('\n')
         .collect();
-    if f.len() != n + 2 || f[0] != header || f[n + 1] != "" {
+    if f.len() != n + 2 || f[0] != header || !f[n + 1].is_empty() {
         return Err(deny());
     }
     Ok(f[1..=n].to_vec())
