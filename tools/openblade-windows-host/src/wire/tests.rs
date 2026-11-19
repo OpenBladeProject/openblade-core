@@ -11,7 +11,8 @@ const REPLAY: &str =
     include_str!("../../../../tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service.json");
 const RUNTIME: &str =
     include_str!("../../../../tests/OpenBlade.Service.Tests/WindowsReplay/v1/service-runtime.json");
-// Frozen IPC79 managed dispatch: the current host must reject every one of these.
+// Frozen IPC79 managed requests: the current host must close every one unanswered.
+const IPC79_REPLAY: &str = include_str!("../../tests/data/ipc79/service.json");
 const IPC79_RUNTIME: &str = include_str!("../../tests/data/ipc79/service-runtime.json");
 const LEGACY_REQUEST: &str =
     include_str!("../../../../rust/crates/openblade-status-cli/fixtures/request.json");
@@ -110,18 +111,29 @@ async fn replays_managed_v80_reads_and_the_full_status_event() {
 }
 
 #[tokio::test]
-async fn rejects_frozen_ipc79_status_reads_without_reply() {
+async fn rejects_frozen_ipc79_requests_without_reply() {
     let runtime: Value = serde_json::from_str(IPC79_RUNTIME).unwrap();
+    let replay: Value = serde_json::from_str(IPC79_REPLAY).unwrap();
     let status = Arc::new(Status::fixture().unwrap());
     let slots = Arc::new(Semaphore::new(1));
     let mut checked = 0;
-    for entry in runtime["dispatch"].as_array().unwrap() {
-        if !matches!(
-            entry["input"]["operation"].as_str(),
-            Some("getStatus" | "subscribeStatus")
-        ) {
-            continue;
-        }
+    // Status reads from the dispatch replay, plus every request the v79 codec accepted.
+    let reads = runtime["dispatch"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| {
+            matches!(
+                entry["input"]["operation"].as_str(),
+                Some("getStatus" | "subscribeStatus")
+            )
+        });
+    let accepted = replay["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry.get("output").is_some());
+    for entry in reads.chain(accepted) {
         assert_eq!(entry["input"]["version"], 79);
         let (mut client, server) = connect(status.clone(), slots.clone(), Session::Active, 128);
         send(&mut client, &serde_json::to_vec(&entry["input"]).unwrap()).await;
