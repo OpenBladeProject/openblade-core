@@ -231,9 +231,11 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
     }
     internal static string[] ParseRetirement(byte[] proof)
     {
-        bool v3 = proof.AsSpan().StartsWith("OpenBlade.NativeRetirementProof.v3\n"u8);
-        var fields = NativeCanonical.ParseLines(proof, v3 ? "OpenBlade.NativeRetirementProof.v3" : "OpenBlade.NativeRetirementProof.v2", v3 ? 9 : 8);
-        if (v3 && !NativeCanonical.IsHex(fields[7], 64)) { throw new IOException("Thermal settlement commitment differs."); }
+        // v4 adds the handback commitment after v3's thermal generation.
+        bool v4 = proof.AsSpan().StartsWith("OpenBlade.NativeRetirementProof.v4\n"u8);
+        bool v3 = v4 || proof.AsSpan().StartsWith("OpenBlade.NativeRetirementProof.v3\n"u8);
+        var fields = NativeCanonical.ParseLines(proof, v4 ? "OpenBlade.NativeRetirementProof.v4" : v3 ? "OpenBlade.NativeRetirementProof.v3" : "OpenBlade.NativeRetirementProof.v2", v4 ? 10 : v3 ? 9 : 8);
+        if (v3 && !NativeCanonical.IsHex(fields[7], 64) || v4 && !NativeCanonical.IsHex(fields[8], 64)) { throw new IOException("Thermal settlement commitment differs."); }
         return fields;
     }
     internal void RequirePreservedResolution(ManagedMailboxSelection transfer, NativeEpochRecord? epoch, byte[] proof, string disposition)
@@ -244,19 +246,19 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
         if (epoch is null) { return; }
         var generation = generations[epoch.Epoch];
         var fresh = ParseRetirement(generation.Proof);
-        // Fresh v3 admission independently proves the complete original history.
-        // A preserved v2 may survive only when that generation has no thermal
-        // rows; it never supplies a thermal-settlement guarantee.
-        bool legacyEmpty = retained.Retirement!.Length == 7 && fresh.Length == 8
-            && fresh[7] == WindowsNativeThermalHistory.Empty(generation.Record.Installation, generation.Record.Epoch, generation.Record.ServiceId);
-        bool sameThermal = retained.Retirement.Length == fresh.Length
-            && (fresh.Length != 8 || retained.Retirement[7] == fresh[7]);
         // Owner history can advance; today's owner is independently fenced.
         if (retained.Record != generation.Record || retained.Reservation != NativeCanonical.Digest(generation.Reservation)
             || !retained.Retirement![..6].SequenceEqual(fresh[..6])
-            || !(sameThermal || legacyEmpty))
+            || !ThermalMatches(retained.Retirement, fresh, WindowsNativeThermalHistory.Empty(generation.Record.Installation, generation.Record.Epoch, generation.Record.ServiceId)))
         { throw new IOException("Preserved generation/attempt/reservation proof differs from fresh custody."); }
     }
+    // Fresh v3/v4 admission independently proves the complete original history.
+    // A preserved v2 may survive only beside a fresh v3 with no thermal rows; it
+    // never supplies a settlement or handback guarantee. v3 and v4 compare every
+    // thermal field, so a retained v3 never matches a fresh v4, nor the reverse.
+    internal static bool ThermalMatches(string[] retained, string[] fresh, string emptyThermal) =>
+        retained.Length == fresh.Length && retained[7..].SequenceEqual(fresh[7..])
+        || retained.Length == 7 && fresh.Length == 8 && fresh[7] == emptyThermal;
     internal (NativeEpochRecord Epoch, byte[] Projection, string Source) RequireLegacyBinding(byte[] mapping)
     {
         var f = NativeCanonical.ParseLines(mapping, "OpenBlade.ManagedMailboxEpoch.v1", 7);

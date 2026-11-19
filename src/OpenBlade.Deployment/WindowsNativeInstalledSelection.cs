@@ -140,11 +140,11 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
         WindowsNativeEpochFiles.RequireExact(held, selected);
         if (Path.GetFileName(frontier) != $"selection-{Record.Ordinal:D20}-{(int)Record.Phase}.bin") { throw new IOException("Native cleanup frontier differs."); }
     }
-    internal void RetireAfterStatusDrain(uint pid, long created)
+    internal void RetireAfterStatusDrain(uint pid, long created, WindowsNativeHandbackWriter? handback = null)
     {
         RequireCurrent();
         if (package!.Service.HasStartupCustody)
-        { RetireRecoverableSelection(pid, created); return; }
+        { RetireRecoverableSelection(pid, created, handback); return; }
         string directory = Path.Combine(files.Root, Record.Epoch);
         using var drain = files.OpenFile(Path.Combine(directory, $"status-drain-{pid}-{created}.bin"));
         WindowsNativeEpochFiles.RequireExact(drain, NativeCanonical.Lines("OpenBlade.NativeStatusDrain.v1", Record.Epoch,
@@ -157,7 +157,9 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
         if (owner.Thermal.Epochs.Contains(Record.Epoch, StringComparer.Ordinal)) { throw new IOException("Legacy producer cannot attest thermal settlement."); }
         Recover(NativeRecoveryReason.RetirementPublicationFailed, () => { PublishRetirement(directory, owner); return true; });
     }
-    internal void RetireRecoverableSelection(uint? expectedPid = null, long? expectedCreated = null)
+    // handback receives a crashed generation's unsettled obligations before its
+    // retirement proof commits to them. Without it such history stays fenced.
+    internal void RetireRecoverableSelection(uint? expectedPid = null, long? expectedCreated = null, WindowsNativeHandbackWriter? handback = null)
     {
         RequireCurrent();
         if (Record.Phase == NativeEpochPhase.Retired)
@@ -179,10 +181,18 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
         });
         RequireCurrent();
         using var originals = AcquireThermalPredecessors();
-        using var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
+        // Only a thermal producer journals every firmware write it may have
+        // submitted, so only its exit can hand an unretired owner to managed.
+        using var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files, exitedUnderCustody: package.Service.ThermalMutation ? Record.Epoch : null);
         originals.RequireDrained(files, owner, Record.Epoch);
         byte[] proof = Recover(NativeRecoveryReason.UnknownAttemptHistory,
             () => WindowsNativeAttemptHistory.RequireDrained(files, Record, directory, package.Service, owner, expectedPid, expectedCreated));
+        if (owner.Thermal.Handback is { IsEmpty: false } inherited && inherited.Epoch == Record.Epoch)
+        {
+            if (handback is null)
+            { throw new NativeRecoveryException(NativeRecoveryReason.FirmwareOwnerUnresolved, "Native history has unsettled obligations and no managed handback destination; history was preserved."); }
+            Recover(NativeRecoveryReason.RetirementPublicationFailed, () => { handback.Persist(inherited); return true; });
+        }
         Recover(NativeRecoveryReason.RetirementPublicationFailed, () =>
         {
             PublishProofSnapshot(directory, proof);
@@ -297,11 +307,12 @@ internal sealed class WindowsNativeInstalledSelection : IDisposable
                 continue;
             }
             byte[] bytes = WindowsNativeEpochFiles.ReadBounded(held, 2048);
-            bool v3 = bytes.AsSpan().StartsWith("OpenBlade.NativeRetirementProof.v3\n"u8);
+            bool v4 = bytes.AsSpan().StartsWith("OpenBlade.NativeRetirementProof.v4\n"u8);
+            bool v3 = v4 || bytes.AsSpan().StartsWith("OpenBlade.NativeRetirementProof.v3\n"u8);
             bool v2 = v3 || bytes.AsSpan().StartsWith("OpenBlade.NativeRetirementProof.v2\n"u8);
-            string[] fields = NativeCanonical.ParseLines(bytes, v3 ? "OpenBlade.NativeRetirementProof.v3" : v2 ? "OpenBlade.NativeRetirementProof.v2" : "OpenBlade.NativeRetirementProof.v1", v3 ? 9 : v2 ? 8 : 7);
+            string[] fields = NativeCanonical.ParseLines(bytes, v4 ? "OpenBlade.NativeRetirementProof.v4" : v3 ? "OpenBlade.NativeRetirementProof.v3" : v2 ? "OpenBlade.NativeRetirementProof.v2" : "OpenBlade.NativeRetirementProof.v1", v4 ? 10 : v3 ? 9 : v2 ? 8 : 7);
             if (Path.GetFileName(existing) != NativeCanonical.Digest(bytes) + ".bin" || fields[0] != Record.Epoch
-                || !IsDigest(fields[1]) || !IsDigest(fields[2]) || !IsDigest(fields[5]) || v2 && !IsDigest(fields[6]) || v3 && !IsDigest(fields[7])
+                || !IsDigest(fields[1]) || !IsDigest(fields[2]) || !IsDigest(fields[5]) || v2 && !IsDigest(fields[6]) || v3 && !IsDigest(fields[7]) || v4 && !IsDigest(fields[8])
                 || fields[3] is not ("submission-retained" or "never-submitted")
                 || fields[4] is not ("no-admitted-metadata-attempt" or "all-metadata-attempts-drained") && !(v2 && fields[4] == "metadata-attempts-classified"))
             { throw new InvalidDataException("Native retirement snapshot is malformed or differs from its content address."); }

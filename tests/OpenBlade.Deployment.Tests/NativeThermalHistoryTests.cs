@@ -95,8 +95,6 @@ public sealed class NativeThermalHistoryTests : IDisposable
         Thermal(files, WindowsNativeThermalHistory.Envelope(1, NativeCanonical.Digest(Bytes(v.GetProperty("checkpoint").GetString()!)), []));
         Assert.Equal(legacy.Generation(record, service, [original], launches), segmented.Generation(record, service, [original], launches));
         Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, []));
-        // Actual previous reader's refusal boundary is retained explicitly.
-        Assert.Throws<IOException>(() => WindowsNativeTrustLifecycle.RequireNoThermalJournal("thermal-mutation.journal"));
         foreach (var bad in v.GetProperty("rejectedRows").EnumerateArray())
         {
             using var badFiles = ManagedMailboxCorrectionTests.Bootstrap(); Thermal(badFiles, Bytes(bad.GetString()!));

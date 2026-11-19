@@ -100,7 +100,9 @@ public static class WindowsNativeTrustLifecycle
     }
     // Global order: epoch writer -> original service custody -> owner writer.
     // Native Origin retains custody before Store::open and never takes epoch writer.
-    internal static OwnerLease AcquireRetiredOwner(WindowsNativeEpochFiles files)
+    // exitedUnderCustody names the epoch whose exact service custody the caller
+    // holds. Only that caller may record the terminal owner process's exit.
+    internal static OwnerLease AcquireRetiredOwner(WindowsNativeEpochFiles files, string? exitedUnderCustody = null)
     {
         WindowsNativeEpochFiles.DirectoryLease? directory = null;
         FileStream? writer = null;
@@ -109,8 +111,8 @@ public static class WindowsNativeTrustLifecycle
             directory = files.RetainDirectory(Path.Combine(files.Root, "owner"));
             writer = files.AcquireOwnerWriter();
             var references = new List<OwnerReference>();
-            string ownerCommitment = RequireOwnerRetiredCore(files, references);
-            var thermal = WindowsNativeThermalHistory.Read(files, references);
+            (string ownerCommitment, OwnerReference? exited) = RequireOwnerRetiredCore(files, references, exitedUnderCustody);
+            var thermal = WindowsNativeThermalHistory.Read(files, references, exited);
             string commitment = thermal.Present ? NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.NativeOwnerHistory.v2", ownerCommitment, thermal.Commitment)) : ownerCommitment;
             return new OwnerLease(directory, writer, commitment, references.ToImmutableArray(), thermal);
         }
@@ -134,12 +136,7 @@ public static class WindowsNativeTrustLifecycle
             && ulong.TryParse(parts[1], out ulong created) && created > 0
             && value == pid.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + created.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
-    internal static void RequireNoThermalJournal(string name)
-    {
-        if (name is "thermal-mutation.journal" or "thermal-mutation.journal.pending")
-        { throw new IOException("Native thermal submission history is preserved; transport retirement alone cannot authorize managed recovery or cleanup."); }
-    }
-    private static string RequireOwnerRetiredCore(WindowsNativeEpochFiles files, List<OwnerReference> references)
+    private static (string Commitment, OwnerReference? Exited) RequireOwnerRetiredCore(WindowsNativeEpochFiles files, List<OwnerReference> references, string? exitedUnderCustody)
     {
         string owner = Path.Combine(files.Root, "owner");
         using var directory = files.RetainDirectory(owner);
@@ -176,11 +173,39 @@ public static class WindowsNativeTrustLifecycle
             }
             previous = bytes; priorFields = f;
         }
+        // A crashed native process cannot retire its own owner. Its later-acquired
+        // exact custody proves exit; managed then inherits the unsettled history.
+        OwnerReference? exited = null;
         if (priorFields is not null && priorFields[0] != "Retired")
-        { throw new IOException("Native ownership drain remains unresolved; enrollment was preserved."); }
-        return NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.NativeOwnerHistory.v1",
-            count.ToString(System.Globalization.CultureInfo.InvariantCulture), previous is null ? "known-empty" : NativeCanonical.Digest(previous)));
+        {
+            exited = references.LastOrDefault(r => r.Nonce == priorFields[7]);
+            if (exited is null || !RequireExited(files, exited, publish: exited.Epoch == exitedUnderCustody))
+            { throw new IOException("Native ownership drain remains unresolved; enrollment was preserved."); }
+        }
+        return (NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.NativeOwnerHistory.v1",
+            count.ToString(System.Globalization.CultureInfo.InvariantCulture), previous is null ? "known-empty" : NativeCanonical.Digest(previous))), exited);
 
+    }
+    private static bool RequireExited(WindowsNativeEpochFiles files, OwnerReference owner, bool publish)
+    {
+        string attempts = Path.Combine(files.Root, owner.Epoch, "attempts");
+        string key = owner.Process.Replace(':', '-') + ".bin";
+        byte[]? launch = ManagedMailboxRecovery.ReadOptional(files, Path.Combine(attempts, "launch-" + key));
+        // A drained process retires its own owner; drain plus Active is unknown.
+        if (launch is null || ManagedMailboxRecovery.ReadOptional(files, Path.Combine(attempts, "drain-" + key)) is not null) { return false; }
+        string[] process = owner.Process.Split(':');
+        byte[] expected = WindowsNativeAttemptHistory.Exited(owner.Epoch, launch, process[0], process[1]);
+        string marker = Path.Combine(attempts, "exited-" + key);
+        byte[]? existing = ManagedMailboxRecovery.ReadOptional(files, marker);
+        if (existing is null)
+        {
+            if (!publish) { return false; }
+            files.Publish(marker, expected);
+            using var held = files.OpenFile(marker);
+            WindowsNativeEpochFiles.RequireExact(held, expected);
+            return true;
+        }
+        return existing.AsSpan().SequenceEqual(expected);
     }
 
 }

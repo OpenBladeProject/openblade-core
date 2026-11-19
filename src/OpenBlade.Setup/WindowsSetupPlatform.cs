@@ -102,10 +102,11 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private async Task ConfirmNativeStopAsync(WindowsSetupRetainedNativeLaunch? original, TimeSpan budget, CancellationToken token)
     {
         if (priorNativeSelection is null || priorNativeSelection.Record.Phase == NativeEpochPhase.Retired) { return; }
-        if (original is null) { priorNativeSelection.RetireRecoverableSelection(); return; }
+        var handback = new WindowsNativeHandbackWriter(paths.MachineDataDirectory);
+        if (original is null) { priorNativeSelection.RetireRecoverableSelection(handback: handback); return; }
         await original.WaitForExitAsync(budget, token).ConfigureAwait(false);
         token.ThrowIfCancellationRequested();
-        priorNativeSelection!.RetireAfterStatusDrain(original.Launch.ProcessId, original.Launch.CreationFileTimeUtc);
+        priorNativeSelection!.RetireAfterStatusDrain(original.Launch.ProcessId, original.Launch.CreationFileTimeUtc, handback);
     }
 
 

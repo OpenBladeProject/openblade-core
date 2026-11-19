@@ -453,17 +453,6 @@ public sealed class WindowsNativeEpochTests
     }
 
     [Fact]
-    public void ThermalSubmissionHistoryRequiresSeparateRecoveryEvenAfterTransportRetirement()
-    {
-        foreach (string name in new[] { "thermal-mutation.journal", "thermal-mutation.journal.pending" })
-        {
-            IOException error = Assert.Throws<IOException>(() => WindowsNativeTrustLifecycle.RequireNoThermalJournal(name));
-            Assert.Contains("transport retirement alone", error.Message, StringComparison.Ordinal);
-        }
-        WindowsNativeTrustLifecycle.RequireNoThermalJournal("owner-00000000000000000004.bin");
-    }
-
-    [Fact]
     public void SameSourceBuildsHaveDistinctArtifactIdentities()
     {
         var a = NativeArtifact.Inspect([.. Image("service", 'b')], "service", new string('a', 40));

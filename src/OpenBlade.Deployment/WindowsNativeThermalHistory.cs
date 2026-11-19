@@ -25,7 +25,9 @@ internal sealed class WindowsNativeThermalHistory
         return n;
     }
     private static IOException Denied() => new("Thermal history is incomplete, unsettled, unsupported or differs from its original producer.");
-    internal static WindowsNativeThermalHistory Read(WindowsNativeEpochFiles files, IReadOnlyList<WindowsNativeTrustLifecycle.OwnerReference> owners)
+    // exited is the terminal owner whose process exit was proven under custody.
+    // Only its own unsettled tail and never-renamed staging are handed back.
+    internal static WindowsNativeThermalHistory Read(WindowsNativeEpochFiles files, IReadOnlyList<WindowsNativeTrustLifecycle.OwnerReference> owners, WindowsNativeTrustLifecycle.OwnerReference? exited = null)
     {
         var result = new WindowsNativeThermalHistory();
         string owner = Path.Combine(files.Root, "owner");
@@ -38,7 +40,10 @@ internal sealed class WindowsNativeThermalHistory
             using var held = files.OpenFile(path);
             return WindowsNativeEpochFiles.ReadBounded(held, max);
         }
-        if (Read("thermal-mutation.journal.pending", SegmentBytes + 2048) is not null || Read("thermal-mutation.journal.rollover", SegmentBytes + 2048) is not null) { throw Denied(); }
+        // journal_replace renames .pending before its caller submits, so staging
+        // is never-submitted evidence. Rollover recovery remains unsupported.
+        byte[]? staged = Read("thermal-mutation.journal.pending", SegmentBytes + 2048);
+        if (staged is not null && exited is null || Read("thermal-mutation.journal.rollover", SegmentBytes + 2048) is not null) { throw Denied(); }
         byte[]? physical = Read("thermal-mutation.journal", SegmentBytes + 2048);
         byte[] tail = physical ?? [];
         ulong sequence = 0;
@@ -72,7 +77,8 @@ internal sealed class WindowsNativeThermalHistory
             previous = NativeCanonical.Digest(descriptor);
         }
         if (head != previous) { throw Denied(); }
-        _ = result.Rows(tail, owners, requireSettled: true);
+        _ = result.Rows(tail, owners, requireSettled: exited is null);
+        if (exited is not null) { result.Handback = result.Classify(exited, staged is null ? null : NativeCanonical.Digest(staged)); }
         if (hasDirectory)
         {
             ulong count = 0;
@@ -94,6 +100,34 @@ internal sealed class WindowsNativeThermalHistory
     }
     private Row? frontier;
     private Row? ownedFan;
+    private Row? liveTemporary;
+    internal WindowsNativeHandback? Handback { get; private set; }
+    private WindowsNativeHandback Classify(WindowsNativeTrustLifecycle.OwnerReference exited, string? staged)
+    {
+        // Chronology admits at most one unsettled row, always the last one.
+        Row? open = frontier is { Progress: not (5 or 6 or 30 or 50 or 51 or 62 or 63 or 72 or 73) } last ? last : null;
+        if (open is not null && open.Owner != exited.Nonce || ownedFan is not null && ownedFan.Owner != exited.Nonce) { throw Denied(); }
+        return new(exited.Epoch, open is { Progress: not 0 } ? Item(open) : null, ownedFan is null ? null : Item(ownedFan),
+            liveTemporary is not null && liveTemporary.Owner == exited.Nonce ? Item(liveTemporary) : null, open is { Progress: 0 } ? Item(open) : null, staged);
+    }
+    private static NativeHandbackItem Item(Row row)
+    {
+        if ((row.Temporary ?? row.Battery) is { } family)
+        {
+            using var document = JsonDocument.Parse(family);
+            var desired = document.RootElement.GetProperty("desired");
+            return new(row.Request, row.Temporary is null ? "battery" : "temporaryCharge", row.Progress, row.Sid, null, null,
+                new(desired.GetProperty("limit").GetInt32(), desired.GetProperty("protection").GetBoolean(), desired.GetProperty("temporary").GetBoolean()));
+        }
+        if (row.Fan is { } fan)
+        {
+            using var document = JsonDocument.Parse(fan);
+            // Release preparation and release setters target firmware Automatic.
+            int mode = row.Progress is 31 or (>= 40 and <= 43) ? 0 : document.RootElement.GetProperty("intent").GetProperty("mode").GetInt32();
+            return new(row.Request, "fan", row.Progress, row.Sid, null, mode switch { 0 => "Automatic", 1 => "Fixed", 3 => "Maximum", _ => throw Denied() }, null);
+        }
+        return new(row.Request, "performance", row.Progress, row.Sid, row.Destination == 1 ? "Balanced" : "Performance", null, null);
+    }
     private readonly HashSet<string> batteryGenerations = new(StringComparer.Ordinal);
     private readonly HashSet<string> fanGenerations = new(StringComparer.Ordinal);
     private readonly HashSet<string> temporaryGenerations = new(StringComparer.Ordinal);
@@ -171,6 +205,7 @@ internal sealed class WindowsNativeThermalHistory
         }
         if (requireSettled && (ownedFan is not null || last is not null && last.Progress is not (5 or 6 or 50 or 51 or 62 or 63 or 72 or 73))) { throw Denied(); }
         frontier = last;
+        liveTemporary = temporaryOwner;
         return count;
     }
     internal static string Empty(string installation, string epoch, string service) => NativeCanonical.Digest(NativeCanonical.Lines("OpenBlade.ThermalGeneration.v1", installation, epoch, service));
