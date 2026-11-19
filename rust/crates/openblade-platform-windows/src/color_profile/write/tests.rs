@@ -590,6 +590,30 @@ fn readbacks_that_do_not_reidentify_the_panel_are_unverified_without_restoration
 }
 
 #[test]
+fn a_readback_under_unknown_hdr_reads_no_profile_state() {
+    // Every scope or association read after the setters would fail (the
+    // transaction confirms the default itself), so reading the snapshot before
+    // the advanced-color state is known would become a restorable `Read`.
+    for read in [ProfileRead::Scope, ProfileRead::Associations] {
+        let mut wcs = Wcs::empty();
+        wcs.topologies.push_back(sdr());
+        wcs.topologies
+            .push_back(Ok(InternalDisplayTopology::Single(panel(None))));
+        wcs.fail_read = Some((read, 3));
+        assert_eq!(
+            set(&mut wcs, NATIVE),
+            Err(ColorFailure::Unverified(Unverified::HdrUnknown)),
+            "{read:?}"
+        );
+        assert_eq!(
+            wcs.log.writes(),
+            ["add:Native_CTR.icm", "scope:true", "default:Native_CTR.icm"],
+            "{read:?}"
+        );
+    }
+}
+
+#[test]
 fn unlisted_hdr_and_unreadable_requests_submit_nothing() {
     let quiet = |wcs: &Wcs| {
         assert!(wcs.log.entries().is_empty(), "{:?}", wcs.log.entries());
