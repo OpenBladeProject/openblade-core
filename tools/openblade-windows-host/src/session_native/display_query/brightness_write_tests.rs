@@ -400,6 +400,39 @@ fn checkpoint_failure_before_submission_blocks_without_device_interaction() {
 }
 
 #[test]
+fn refusals_answer_with_the_reply_query_state() {
+    let state = |rig: &Rig| {
+        let read = fixture_query_owned(rig.owner.clone(), &AtomicBool::new(false)).unwrap();
+        serde_json::to_value(read).unwrap()
+    };
+
+    // Checkpoint refusal: one reply query, and its state is the answer.
+    let file = Memory::legacy(1);
+    file.allow.store(0, Ordering::SeqCst);
+    let rig = Rig::new(25, Mode::Apply, file);
+    let mut host = Host::admitted(1);
+    let refused = rig.set(&mut host, 1, 75).unwrap();
+    assert_eq!(refused.error, Some(CHECKPOINT));
+    assert_eq!(host.queries, 1);
+    assert_eq!(refused.state.brightness(), Some(25));
+    assert_eq!(serde_json::to_value(&refused.state).unwrap(), state(&rig));
+
+    // Gate refusal after a possible submission: likewise.
+    let rig = Rig::new(25, Mode::Timeout, Memory::default());
+    let mut host = Host::admitted(2);
+    assert_eq!(
+        rig.set(&mut host, 2, 75).unwrap().status,
+        Status::Indeterminate
+    );
+    let queries = host.queries;
+    let refused = rig.set(&mut host, 2, 75).unwrap();
+    assert_eq!(refused.error, Some(PAUSED));
+    assert_eq!(host.queries, queries + 1);
+    assert!(refused.state.brightness().is_some());
+    assert_eq!(serde_json::to_value(&refused.state).unwrap(), state(&rig));
+}
+
+#[test]
 fn possible_submission_pauses_without_replay_across_restart_until_explicit_read() {
     for mode in [Mode::Timeout, Mode::Ignore] {
         let rig = Rig::new(25, mode, Memory::default());

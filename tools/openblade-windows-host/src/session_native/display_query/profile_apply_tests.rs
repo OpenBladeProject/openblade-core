@@ -1033,6 +1033,20 @@ fn no_later_field_is_decided_from_an_unavailable_reply() {
     assert_eq!(writes(&host), FULL_WRITES[..2]);
     assert_eq!(rig.unresolved(), Fields::REFRESH);
 
+    // A stage the unavailable snapshot's defaults would skip (it reads as
+    // HDR unsupported) still fails with that snapshot's message.
+    let panel = Panel {
+        hdr: true,
+        ..Panel::default()
+    };
+    let rig = fresh();
+    let mut host = Scripted::new(panel, &[Outcome::Unchanged]);
+    host.unavailable_query = Some((2, Some(GONE)));
+    let settings = only(Fields::REFRESH.include(Fields::HDR));
+    let outcome = apply(&rig, &mut host, settings).unwrap();
+    assert_eq!(result(&outcome), (Status::Failed, Some(GONE)));
+    assert_eq!(writes(&host), ["refresh fixed-120"]);
+
     // An unavailable reply after the last configured field is the final
     // match, not a selection.
     let rig = fresh();
