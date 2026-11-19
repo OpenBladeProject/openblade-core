@@ -172,7 +172,7 @@ impl Supplier for OwnedSupplier {
         &mut self,
         _request: SetHdr,
         _canceled: Arc<AtomicBool>,
-    ) -> io::Result<CcdWriteOutcome> {
+    ) -> io::Result<ManualWriteOutcome> {
         unreachable!("query-only test supplier received a write")
     }
     #[cfg(feature = "agent-display-refresh-write-v1")]
@@ -180,7 +180,7 @@ impl Supplier for OwnedSupplier {
         &mut self,
         _request: SetRefreshRate,
         _canceled: Arc<AtomicBool>,
-    ) -> io::Result<CcdWriteOutcome> {
+    ) -> io::Result<ManualWriteOutcome> {
         unreachable!("query-only test supplier received a write")
     }
     async fn drain(&mut self) -> io::Result<()> {
@@ -191,7 +191,7 @@ impl Supplier for OwnedSupplier {
         &mut self,
         _request: SetColorProfile,
         _canceled: Arc<AtomicBool>,
-    ) -> io::Result<CcdWriteOutcome> {
+    ) -> io::Result<ManualWriteOutcome> {
         unreachable!("test supplier received setColorProfile")
     }
 }

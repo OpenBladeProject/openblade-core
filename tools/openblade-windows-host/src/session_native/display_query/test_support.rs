@@ -1,7 +1,7 @@
 //! Test doubles shared by the display write tests: an in-memory managed
-//! checkpoint and, for the CCD writes, the brightness owner and recovery
-//! state, power, fence and reply query they run against. No Windows file,
-//! WMI or CCD call is used.
+//! checkpoint and, for the manual HDR, refresh and color writes, the
+//! brightness owner and recovery state, power, fence and reply query they run
+//! against. No Windows file, WMI, CCD or WCS call is used.
 use super::recovery::CheckpointFile;
 use std::{
     io,
@@ -63,15 +63,15 @@ impl Memory {
         ))
     }
 }
-#[cfg(openblade_display_ccd_write)]
-pub(super) use ccd::{FencedTopology, Host, Rig, TestPanel, flag, result};
+#[cfg(openblade_display_manual_write)]
+pub(super) use manual::{FencedTopology, Host, Rig, TestPanel, flag, result};
 
-#[cfg(openblade_display_ccd_write)]
-mod ccd {
+#[cfg(openblade_display_manual_write)]
+mod manual {
     use super::Memory;
     use crate::session_native::{
         display_query::{
-            ccd_write::{self, CcdHost, CcdRequest, CcdWriteOutcome},
+            manual_write::{self, ManualHost, ManualRequest, ManualWriteOutcome},
             observation::{BrightnessOwner, SharedBrightness, Snapshot},
             recovery::{Fields, Recovery, Status},
             write::explicit_read,
@@ -98,7 +98,7 @@ mod ccd {
     /// A scripted CCD panel and the request type it serves.
     pub(in super::super) trait TestPanel: Sized {
         type Value;
-        type Request: CcdRequest<Host<Self>>;
+        type Request: ManualRequest<Host<Self>>;
         fn request(expected_power_source: u8, value: Self::Value) -> Self::Request;
         /// The fence's fresh topology for the panel's current state.
         fn fenced(&self) -> FencedTopology;
@@ -141,7 +141,7 @@ mod ccd {
         }
     }
 
-    impl<P: TestPanel> CcdHost for Host<P> {
+    impl<P: TestPanel> ManualHost for Host<P> {
         type Native = P;
 
         fn power(&self) -> Option<PowerContext> {
@@ -230,13 +230,13 @@ mod ccd {
             explicit_read(&self.owner, &self.recovery, state).unwrap();
         }
 
-        /// The complete manual request through the shared CCD frame.
+        /// The complete manual request through the shared manual-write frame.
         pub(in super::super) fn set<P: TestPanel>(
             &self,
             host: &mut Host<P>,
             expected: u8,
             value: P::Value,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             self.set_canceled(host, expected, value, &AtomicBool::new(false))
         }
 
@@ -246,13 +246,13 @@ mod ccd {
             expected: u8,
             value: P::Value,
             canceled: &AtomicBool,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             let request = P::request(expected, value);
-            ccd_write::run(host, &self.owner, &self.recovery, &request, canceled)
+            manual_write::run(host, &self.owner, &self.recovery, &request, canceled)
         }
     }
 
-    pub(in super::super) fn result(outcome: &CcdWriteOutcome) -> (Status, Option<&str>) {
+    pub(in super::super) fn result(outcome: &ManualWriteOutcome) -> (Status, Option<&str>) {
         (outcome.status, outcome.error.as_deref())
     }
 

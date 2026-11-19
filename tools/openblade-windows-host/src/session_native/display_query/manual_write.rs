@@ -1,6 +1,6 @@
 //! The manual-operation frame shared by the synchronous display writes
-//! (`setHdr`, `setRefreshRate` and `setColorProfile`). The name predates the
-//! WCS color-profile write, which needs the same frame.
+//! (`setHdr` and `setRefreshRate` through CCD, `setColorProfile` through WCS).
+//! Brightness owns its operation order (`brightness_write`).
 //!
 //! Mirrors managed `DisplayAutomationCoordinator.BeginManualOperation`, the
 //! applier's `RunExpectedAsync`/`ValidateExpectedAsync` power admission and
@@ -72,8 +72,8 @@ pub(super) fn unreadable(error: DisplayReadError) -> Cow<'static, str> {
     }
 }
 
-/// One managed `SessionDisplayResponse` body for a CCD write.
-pub(super) struct CcdWriteOutcome {
+/// One managed `SessionDisplayResponse` body for a manual display write.
+pub(super) struct ManualWriteOutcome {
     pub(super) status: Status,
     pub(super) error: Option<Cow<'static, str>>,
     pub(super) state: Snapshot,
@@ -82,7 +82,7 @@ pub(super) struct CcdWriteOutcome {
 /// Injected OS boundary. Production reads the trusted power context and the
 /// full display snapshot and owns the real native; the fence re-verifies
 /// topology, the loaded Origin, the active console session and power.
-pub(super) trait CcdHost {
+pub(super) trait ManualHost {
     type Native: ?Sized;
     fn power(&self) -> Option<PowerContext>;
     fn fence(&self, admitted: PowerContext) -> Arc<dyn SubmissionFence>;
@@ -95,18 +95,18 @@ pub(super) trait CcdHost {
 }
 
 /// Production host: the shared admission state and one real native.
-pub(super) struct WindowsCcdHost<N> {
+pub(super) struct WindowsManualHost<N> {
     host: WindowsHost,
     native: N,
 }
 
-impl<N> WindowsCcdHost<N> {
+impl<N> WindowsManualHost<N> {
     pub(super) fn new(host: WindowsHost, native: N) -> Self {
         Self { host, native }
     }
 }
 
-impl<N> CcdHost for WindowsCcdHost<N> {
+impl<N> ManualHost for WindowsManualHost<N> {
     type Native = N;
 
     fn power(&self) -> Option<PowerContext> {
@@ -158,8 +158,9 @@ pub(super) enum Attempt {
     Done(Status, Cow<'static, str>),
 }
 
-/// One CCD write request: its field and the parts that differ per setter.
-pub(super) trait CcdRequest<H: CcdHost> {
+/// One manual display write request: its field and the parts that differ per
+/// setter.
+pub(super) trait ManualRequest<H: ManualHost> {
     const FIELD: Field;
     fn expected_power_source(&self) -> u8;
     /// The native attempt, after the checkpoint and power admission.
@@ -169,13 +170,13 @@ pub(super) trait CcdRequest<H: CcdHost> {
 }
 
 /// The complete admitted manual operation.
-pub(super) fn run<F: CheckpointFile, H: CcdHost, R: CcdRequest<H>>(
+pub(super) fn run<F: CheckpointFile, H: ManualHost, R: ManualRequest<H>>(
     host: &mut H,
     brightness: &SharedBrightness,
     recovery: &Mutex<Recovery<F>>,
     request: &R,
     canceled: &AtomicBool,
-) -> io::Result<CcdWriteOutcome> {
+) -> io::Result<ManualWriteOutcome> {
     let field = R::FIELD;
     let lock = || {
         recovery
@@ -195,7 +196,7 @@ pub(super) fn run<F: CheckpointFile, H: CcdHost, R: CcdRequest<H>>(
         if let Some(error) = refused {
             drop(recovery);
             // Not admitted: managed returns Blocked without completing.
-            return Ok(CcdWriteOutcome {
+            return Ok(ManualWriteOutcome {
                 status: Status::Blocked,
                 error: Some(Cow::Borrowed(error)),
                 state: refreshed(host.query(brightness, canceled))?,
@@ -240,7 +241,7 @@ pub(super) fn run<F: CheckpointFile, H: CcdHost, R: CcdRequest<H>>(
     lock()?.complete(status, &state);
     match fatal {
         Some(error) => Err(error),
-        None => Ok(CcdWriteOutcome {
+        None => Ok(ManualWriteOutcome {
             status,
             error,
             state,

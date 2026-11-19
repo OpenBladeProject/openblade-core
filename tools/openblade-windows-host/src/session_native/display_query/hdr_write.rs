@@ -1,14 +1,16 @@
 //! Selected manual `setHdr` through the shared Rust HDR writer.
 //!
 //! Order mirrors the managed dispatcher, applier and controller: the shared
-//! CCD manual-operation frame (`ccd_write::run`) checkpoints the HDR field and
-//! admits power, then one fenced SET_HDR_STATE submission whose fence
+//! manual-operation frame (`manual_write::run`) checkpoints the HDR field
+//! and admits power, then one fenced SET_HDR_STATE submission whose fence
 //! re-checks topology, Origin, session and power generation, then an
 //! independent readback. Every admitted operation records its certainty
 //! before returning, even when the client, deadline or Stop has already
 //! abandoned the reply.
 use super::{
-    ccd_write::{Attempt, CcdHost, CcdRequest, Field, MULTIPLE, NO_INTERNAL, unreadable, win32},
+    manual_write::{
+        Attempt, Field, MULTIPLE, ManualHost, ManualRequest, NO_INTERNAL, unreadable, win32,
+    },
     observation::Snapshot,
     recovery::{Fields, Status},
 };
@@ -47,7 +49,7 @@ pub(super) struct SetHdr {
     pub(super) enabled: bool,
 }
 
-impl<H: CcdHost<Native: HdrNative>> CcdRequest<H> for SetHdr {
+impl<H: ManualHost<Native: HdrNative>> ManualRequest<H> for SetHdr {
     const FIELD: Field = Field {
         fields: Fields::HDR,
         paused: PAUSED,

@@ -2,8 +2,8 @@
 //!
 //! Order mirrors managed `DisplayProfileApplier.SetColorProfileAsync` and
 //! `WindowsDisplaySettingsController.PrepareColorProfile`: the shared
-//! manual-operation frame (`ccd_write::run`) checkpoints the color field and
-//! admits power; then one observation selects the listed profile, the
+//! manual-operation frame (`manual_write::run`) checkpoints the color field
+//! and admits power; then one observation selects the listed profile, the
 //! current-user baseline and the monitor device key are read, the fence
 //! (topology, Origin, session and power generation) runs immediately before the
 //! first WCS setter, and managed `ColorProfileMutationTransaction` associates,
@@ -11,7 +11,7 @@
 //! operation records its certainty before returning, even when the client,
 //! deadline or Stop has already abandoned the reply.
 use super::{
-    ccd_write::{Attempt, CcdHost, CcdRequest, Field, MULTIPLE, NO_INTERNAL, unreadable},
+    manual_write::{Attempt, Field, MULTIPLE, ManualHost, ManualRequest, NO_INTERNAL, unreadable},
     observation::{HDR_UNKNOWN, Snapshot},
     recovery::{Fields, Status},
 };
@@ -55,7 +55,7 @@ pub(super) struct SetColorProfile {
     pub(super) key: String,
 }
 
-impl<H: CcdHost<Native: ColorProfileNative>> CcdRequest<H> for SetColorProfile {
+impl<H: ManualHost<Native: ColorProfileNative>> ManualRequest<H> for SetColorProfile {
     const FIELD: Field = Field {
         fields: Fields::COLOR,
         paused: PAUSED,

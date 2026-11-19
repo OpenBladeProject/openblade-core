@@ -35,7 +35,7 @@ impl Supplier for Script {
         &mut self,
         _request: SetHdr,
         _canceled: Arc<AtomicBool>,
-    ) -> io::Result<CcdWriteOutcome> {
+    ) -> io::Result<ManualWriteOutcome> {
         self.calls += 1;
         Err(io::Error::other(
             "query-only test supplier received a write",
@@ -46,7 +46,7 @@ impl Supplier for Script {
         &mut self,
         _request: SetRefreshRate,
         _canceled: Arc<AtomicBool>,
-    ) -> io::Result<CcdWriteOutcome> {
+    ) -> io::Result<ManualWriteOutcome> {
         self.calls += 1;
         Err(io::Error::other(
             "query-only test supplier received a write",
@@ -57,7 +57,7 @@ impl Supplier for Script {
         &mut self,
         _request: SetColorProfile,
         _canceled: Arc<AtomicBool>,
-    ) -> io::Result<CcdWriteOutcome> {
+    ) -> io::Result<ManualWriteOutcome> {
         self.calls += 1;
         Err(io::Error::other(
             "query-only test supplier received a write",
@@ -347,7 +347,7 @@ impl Supplier for Blocker {
         &mut self,
         _request: SetHdr,
         _canceled: Arc<AtomicBool>,
-    ) -> io::Result<CcdWriteOutcome> {
+    ) -> io::Result<ManualWriteOutcome> {
         unreachable!("query-only test supplier received a write")
     }
     #[cfg(feature = "agent-display-refresh-write-v1")]
@@ -355,7 +355,7 @@ impl Supplier for Blocker {
         &mut self,
         _request: SetRefreshRate,
         _canceled: Arc<AtomicBool>,
-    ) -> io::Result<CcdWriteOutcome> {
+    ) -> io::Result<ManualWriteOutcome> {
         unreachable!("query-only test supplier received a write")
     }
     #[cfg(feature = "agent-display-color-write-v1")]
@@ -363,7 +363,7 @@ impl Supplier for Blocker {
         &mut self,
         _request: SetColorProfile,
         _canceled: Arc<AtomicBool>,
-    ) -> io::Result<CcdWriteOutcome> {
+    ) -> io::Result<ManualWriteOutcome> {
         unreachable!("test supplier received setColorProfile")
     }
 }
@@ -920,7 +920,7 @@ mod brightness_writes {
             &mut self,
             _request: SetHdr,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             unreachable!("brightness test supplier received setHdr")
         }
         #[cfg(feature = "agent-display-refresh-write-v1")]
@@ -928,7 +928,7 @@ mod brightness_writes {
             &mut self,
             _request: SetRefreshRate,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             unreachable!("brightness test supplier received setRefreshRate")
         }
         #[cfg(feature = "agent-display-color-write-v1")]
@@ -936,7 +936,7 @@ mod brightness_writes {
             &mut self,
             _request: SetColorProfile,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             unreachable!("test supplier received setColorProfile")
         }
     }
@@ -1101,7 +1101,7 @@ mod brightness_writes {
             &mut self,
             _request: SetHdr,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             unreachable!("brightness test supplier received setHdr")
         }
         #[cfg(feature = "agent-display-refresh-write-v1")]
@@ -1109,7 +1109,7 @@ mod brightness_writes {
             &mut self,
             _request: SetRefreshRate,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             unreachable!("brightness test supplier received setRefreshRate")
         }
         #[cfg(feature = "agent-display-color-write-v1")]
@@ -1117,7 +1117,7 @@ mod brightness_writes {
             &mut self,
             _request: SetColorProfile,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             unreachable!("test supplier received setColorProfile")
         }
     }
@@ -1221,8 +1221,8 @@ mod brightness_writes {
 #[cfg(feature = "agent-display-hdr-write-v1")]
 mod hdr_writes {
     use super::*;
-    use ccd_write::{MULTIPLE, NO_INTERNAL};
     use hdr_write::{CANCELED, NOT_SUPPORTED, PANEL_CHANGED, PAUSED, STALE, UNCONFIRMED, rejected};
+    use manual_write::{MULTIPLE, NO_INTERNAL};
     use recovery::Status;
     use std::borrow::Cow;
     use write::{CHANGED_POWER, CHECKPOINT, STALE_AFTER, UNCONFIRMED_POWER};
@@ -1261,10 +1261,10 @@ mod hdr_writes {
             &mut self,
             request: SetHdr,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             self.received.push(request);
             let (status, error, state) = self.outcome.take().expect("one write");
-            Ok(CcdWriteOutcome {
+            Ok(ManualWriteOutcome {
                 status,
                 error,
                 state,
@@ -1275,7 +1275,7 @@ mod hdr_writes {
             &mut self,
             _request: SetRefreshRate,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             unreachable!("HDR test supplier received setRefreshRate")
         }
         #[cfg(feature = "agent-display-color-write-v1")]
@@ -1283,7 +1283,7 @@ mod hdr_writes {
             &mut self,
             _request: SetColorProfile,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             unreachable!("test supplier received setColorProfile")
         }
     }
@@ -1488,7 +1488,7 @@ mod hdr_writes {
             &mut self,
             _request: SetHdr,
             canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             let gate = self.gate.clone();
             let seen = self.canceled.clone();
             let recorded = self.recorded.clone();
@@ -1502,7 +1502,7 @@ mod hdr_writes {
                 }
                 seen.store(canceled.load(Ordering::Acquire), Ordering::Release);
                 recorded.store(true, Ordering::Release);
-                Ok(CcdWriteOutcome {
+                Ok(ManualWriteOutcome {
                     status: Status::Indeterminate,
                     error: Some(Cow::Borrowed(UNCONFIRMED)),
                     state: Snapshot::unavailable("recorded"),
@@ -1516,7 +1516,7 @@ mod hdr_writes {
             &mut self,
             _request: SetRefreshRate,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             unreachable!("HDR test supplier received setRefreshRate")
         }
         #[cfg(feature = "agent-display-color-write-v1")]
@@ -1524,7 +1524,7 @@ mod hdr_writes {
             &mut self,
             _request: SetColorProfile,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             unreachable!("test supplier received setColorProfile")
         }
     }
@@ -1621,7 +1621,7 @@ mod hdr_writes {
 #[cfg(feature = "agent-display-refresh-write-v1")]
 mod refresh_writes {
     use super::*;
-    use ccd_write::{MULTIPLE, NO_INTERNAL};
+    use manual_write::{MULTIPLE, NO_INTERNAL};
     use recovery::Status;
     use refresh_write::{
         CANCELED, PANEL_CHANGED, PAUSED, STALE, UNAVAILABLE, UNCONFIRMED, apply_failed,
@@ -1665,7 +1665,7 @@ mod refresh_writes {
             &mut self,
             _request: SetHdr,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             self.others += 1;
             Err(io::Error::other("refresh test supplier received setHdr"))
         }
@@ -1673,10 +1673,10 @@ mod refresh_writes {
             &mut self,
             request: SetRefreshRate,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             self.received.push(request);
             let (status, error, state) = self.outcome.take().expect("one write");
-            Ok(CcdWriteOutcome {
+            Ok(ManualWriteOutcome {
                 status,
                 error,
                 state,
@@ -1687,7 +1687,7 @@ mod refresh_writes {
             &mut self,
             _request: SetColorProfile,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             unreachable!("test supplier received setColorProfile")
         }
     }
@@ -1968,14 +1968,14 @@ mod refresh_writes {
             &mut self,
             _request: SetHdr,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             unreachable!("refresh test supplier received setHdr")
         }
         async fn set_refresh_rate(
             &mut self,
             _request: SetRefreshRate,
             canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             let gate = self.gate.clone();
             let seen = self.canceled.clone();
             let recorded = self.recorded.clone();
@@ -1989,7 +1989,7 @@ mod refresh_writes {
                 }
                 seen.store(canceled.load(Ordering::Acquire), Ordering::Release);
                 recorded.store(true, Ordering::Release);
-                Ok(CcdWriteOutcome {
+                Ok(ManualWriteOutcome {
                     status: Status::Indeterminate,
                     error: Some(Cow::Borrowed(UNCONFIRMED)),
                     state: Snapshot::unavailable("recorded"),
@@ -2003,7 +2003,7 @@ mod refresh_writes {
             &mut self,
             _request: SetColorProfile,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             unreachable!("test supplier received setColorProfile")
         }
     }
@@ -2060,8 +2060,8 @@ mod refresh_writes {
 #[cfg(feature = "agent-display-color-write-v1")]
 mod color_writes {
     use super::*;
-    use ccd_write::{MULTIPLE, NO_INTERNAL};
     use color_write::{CANCELED, HDR_ON, PANEL_CHANGED, PAUSED, STALE, UNAVAILABLE, UNCONFIRMED};
+    use manual_write::{MULTIPLE, NO_INTERNAL};
     use recovery::Status;
     use std::borrow::Cow;
     use write::{CHANGED_POWER, CHECKPOINT, STALE_AFTER, UNCONFIRMED_POWER};
@@ -2108,7 +2108,7 @@ mod color_writes {
             &mut self,
             _request: SetHdr,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             self.others += 1;
             Err(io::Error::other("color test supplier received setHdr"))
         }
@@ -2117,7 +2117,7 @@ mod color_writes {
             &mut self,
             _request: SetRefreshRate,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             self.others += 1;
             Err(io::Error::other(
                 "color test supplier received setRefreshRate",
@@ -2127,10 +2127,10 @@ mod color_writes {
             &mut self,
             request: SetColorProfile,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             self.received.push(request);
             let (status, error, state) = self.outcome.take().expect("one write");
-            Ok(CcdWriteOutcome {
+            Ok(ManualWriteOutcome {
                 status,
                 error,
                 state,
@@ -2421,7 +2421,7 @@ mod color_writes {
             &mut self,
             _request: SetHdr,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             unreachable!("color test supplier received setHdr")
         }
         #[cfg(feature = "agent-display-refresh-write-v1")]
@@ -2429,14 +2429,14 @@ mod color_writes {
             &mut self,
             _request: SetRefreshRate,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             unreachable!("color test supplier received setRefreshRate")
         }
         async fn set_color_profile(
             &mut self,
             _request: SetColorProfile,
             canceled: Arc<AtomicBool>,
-        ) -> io::Result<CcdWriteOutcome> {
+        ) -> io::Result<ManualWriteOutcome> {
             let gate = self.gate.clone();
             let seen = self.canceled.clone();
             let recorded = self.recorded.clone();
@@ -2450,7 +2450,7 @@ mod color_writes {
                 }
                 seen.store(canceled.load(Ordering::Acquire), Ordering::Release);
                 recorded.store(true, Ordering::Release);
-                Ok(CcdWriteOutcome {
+                Ok(ManualWriteOutcome {
                     status: Status::Indeterminate,
                     error: Some(Cow::Borrowed(UNCONFIRMED)),
                     state: Snapshot::unavailable("recorded"),

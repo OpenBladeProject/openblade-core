@@ -22,12 +22,12 @@ use tokio::{
 };
 #[cfg(feature = "agent-display-brightness-write-v1")]
 mod brightness_write;
-#[cfg(openblade_display_ccd_write)]
-mod ccd_write;
 #[cfg(feature = "agent-display-color-write-v1")]
 mod color_write;
 #[cfg(feature = "agent-display-hdr-write-v1")]
 mod hdr_write;
+#[cfg(openblade_display_manual_write)]
+mod manual_write;
 mod observation;
 #[cfg(openblade_display_write)]
 mod recovery;
@@ -37,12 +37,12 @@ mod refresh_write;
 mod write;
 #[cfg(feature = "agent-display-brightness-write-v1")]
 use brightness_write::{SetBrightness, WriteOutcome};
-#[cfg(openblade_display_ccd_write)]
-use ccd_write::CcdWriteOutcome;
 #[cfg(feature = "agent-display-color-write-v1")]
 use color_write::SetColorProfile;
 #[cfg(feature = "agent-display-hdr-write-v1")]
 use hdr_write::SetHdr;
+#[cfg(openblade_display_manual_write)]
+use manual_write::ManualWriteOutcome;
 use observation::Snapshot;
 #[cfg(feature = "agent-display-refresh-write-v1")]
 use refresh_write::SetRefreshRate;
@@ -273,21 +273,21 @@ trait Supplier {
         &mut self,
         request: SetHdr,
         canceled: Arc<AtomicBool>,
-    ) -> impl Future<Output = io::Result<CcdWriteOutcome>>;
+    ) -> impl Future<Output = io::Result<ManualWriteOutcome>>;
     /// The same custody contract as `set_brightness`.
     #[cfg(feature = "agent-display-refresh-write-v1")]
     fn set_refresh_rate(
         &mut self,
         request: SetRefreshRate,
         canceled: Arc<AtomicBool>,
-    ) -> impl Future<Output = io::Result<CcdWriteOutcome>>;
+    ) -> impl Future<Output = io::Result<ManualWriteOutcome>>;
     /// The same custody contract as `set_brightness`.
     #[cfg(feature = "agent-display-color-write-v1")]
     fn set_color_profile(
         &mut self,
         request: SetColorProfile,
         canceled: Arc<AtomicBool>,
-    ) -> impl Future<Output = io::Result<CcdWriteOutcome>>;
+    ) -> impl Future<Output = io::Result<ManualWriteOutcome>>;
     async fn drain(&mut self) -> io::Result<()> {
         Ok(())
     }
@@ -332,7 +332,7 @@ impl Supplier for WindowsSupplier {
         &mut self,
         request: SetHdr,
         canceled: Arc<AtomicBool>,
-    ) -> io::Result<CcdWriteOutcome> {
+    ) -> io::Result<ManualWriteOutcome> {
         let brightness = self.brightness.clone();
         let writer = self.writer.clone();
         tokio::task::spawn_blocking(move || writer.set_hdr(&brightness, request, &canceled))
@@ -344,7 +344,7 @@ impl Supplier for WindowsSupplier {
         &mut self,
         request: SetRefreshRate,
         canceled: Arc<AtomicBool>,
-    ) -> io::Result<CcdWriteOutcome> {
+    ) -> io::Result<ManualWriteOutcome> {
         let brightness = self.brightness.clone();
         let writer = self.writer.clone();
         tokio::task::spawn_blocking(move || {
@@ -358,7 +358,7 @@ impl Supplier for WindowsSupplier {
         &mut self,
         request: SetColorProfile,
         canceled: Arc<AtomicBool>,
-    ) -> io::Result<CcdWriteOutcome> {
+    ) -> io::Result<ManualWriteOutcome> {
         let brightness = self.brightness.clone();
         let writer = self.writer.clone();
         tokio::task::spawn_blocking(move || {
@@ -530,8 +530,8 @@ enum Reply {
     Query(Snapshot),
     #[cfg(feature = "agent-display-brightness-write-v1")]
     Write(WriteOutcome),
-    #[cfg(openblade_display_ccd_write)]
-    Ccd(CcdWriteOutcome),
+    #[cfg(openblade_display_manual_write)]
+    Manual(ManualWriteOutcome),
 }
 
 /// Every started blocking operation is awaited, including on deadline,
@@ -581,17 +581,19 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
                     .await
                     .map(Reply::Write),
                 #[cfg(feature = "agent-display-hdr-write-v1")]
-                Operation::SetHdr(request) => supplier.set_hdr(request, flag).await.map(Reply::Ccd),
+                Operation::SetHdr(request) => {
+                    supplier.set_hdr(request, flag).await.map(Reply::Manual)
+                }
                 #[cfg(feature = "agent-display-refresh-write-v1")]
                 Operation::SetRefreshRate(request) => supplier
                     .set_refresh_rate(request, flag)
                     .await
-                    .map(Reply::Ccd),
+                    .map(Reply::Manual),
                 #[cfg(feature = "agent-display-color-write-v1")]
                 Operation::SetColorProfile(request) => supplier
                     .set_color_profile(request, flag)
                     .await
-                    .map(Reply::Ccd),
+                    .map(Reply::Manual),
             }
         };
         tokio::pin!(work);
@@ -637,8 +639,8 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
             outcome.error,
             outcome.state,
         )?,
-        #[cfg(openblade_display_ccd_write)]
-        Reply::Ccd(outcome) => frame(
+        #[cfg(openblade_display_manual_write)]
+        Reply::Manual(outcome) => frame(
             &request.request_id,
             outcome.status as u8,
             outcome.error.as_deref(),

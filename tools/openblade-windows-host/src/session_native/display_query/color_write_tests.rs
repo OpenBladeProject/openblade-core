@@ -4,7 +4,7 @@
 //! monitor enumeration call or hardware is used.
 use super::*;
 use crate::session_native::display_query::{
-    ccd_write::CHANGING,
+    manual_write::CHANGING,
     observation::fixture_query,
     test_support::{FencedTopology, Host, Memory, Rig, TestPanel, flag, result},
     write::{CHANGED_POWER, CHECKPOINT, STALE_AFTER, UNCONFIRMED_POWER},
@@ -1047,7 +1047,7 @@ fn faults_compose_the_managed_transaction_messages() {
         expected_power_source: 1,
         key: SRGB.into(),
     };
-    let shown = |state: &Snapshot| CcdRequest::<Host<Panel>>::shown_by(&request, state);
+    let shown = |state: &Snapshot| ManualRequest::<Host<Panel>>::shown_by(&request, state);
     assert!(shown(&snapshot(false, Some(r"C:\color\SRGB_CTR.ICM"))));
     assert!(!shown(&snapshot(false, Some(NATIVE))));
     assert!(!shown(&snapshot(false, None)));

@@ -368,7 +368,7 @@ impl BrightnessOwner {
     }
 
     /// A test owner that never starts a worker, for writes that read no brightness.
-    #[cfg(all(test, openblade_display_ccd_write))]
+    #[cfg(all(test, openblade_display_manual_write))]
     pub(super) fn inert() -> Self {
         Self {
             worker: None,

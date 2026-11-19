@@ -3,7 +3,7 @@
 //! One managed recovery checkpoint, one trusted power admission and one
 //! submission fence serve manual `setBrightness`, `setHdr`, `setRefreshRate` and
 //! `setColorProfile`. Brightness owns its operation order (`brightness_write`);
-//! the other writes share the manual-operation frame of `ccd_write`, and each
+//! the other writes share the manual-operation frame of `manual_write`, and each
 //! supplies only its native attempt and reply predicate.
 use super::{
     observation::{SharedBrightness, Snapshot},
@@ -141,9 +141,9 @@ impl Writer {
         brightness: &SharedBrightness,
         request: super::hdr_write::SetHdr,
         canceled: &std::sync::atomic::AtomicBool,
-    ) -> io::Result<super::ccd_write::CcdWriteOutcome> {
-        super::ccd_write::run(
-            &mut super::ccd_write::WindowsCcdHost::new(
+    ) -> io::Result<super::manual_write::ManualWriteOutcome> {
+        super::manual_write::run(
+            &mut super::manual_write::WindowsManualHost::new(
                 self.host.clone(),
                 openblade_platform_windows::display::hdr::WindowsHdrNative::current_user(),
             ),
@@ -161,9 +161,9 @@ impl Writer {
         brightness: &SharedBrightness,
         request: &super::refresh_write::SetRefreshRate,
         canceled: &std::sync::atomic::AtomicBool,
-    ) -> io::Result<super::ccd_write::CcdWriteOutcome> {
-        super::ccd_write::run(
-            &mut super::ccd_write::WindowsCcdHost::new(
+    ) -> io::Result<super::manual_write::ManualWriteOutcome> {
+        super::manual_write::run(
+            &mut super::manual_write::WindowsManualHost::new(
                 self.host.clone(),
                 openblade_platform_windows::display::refresh_write::WindowsRefreshNative::current_user(),
             ),
@@ -181,9 +181,9 @@ impl Writer {
         brightness: &SharedBrightness,
         request: &super::color_write::SetColorProfile,
         canceled: &std::sync::atomic::AtomicBool,
-    ) -> io::Result<super::ccd_write::CcdWriteOutcome> {
-        super::ccd_write::run(
-            &mut super::ccd_write::WindowsCcdHost::new(
+    ) -> io::Result<super::manual_write::ManualWriteOutcome> {
+        super::manual_write::run(
+            &mut super::manual_write::WindowsManualHost::new(
                 self.host.clone(),
                 openblade_platform_windows::color_profile::write::WindowsColorProfileNative::current_user(),
             ),

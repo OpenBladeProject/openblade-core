@@ -3,7 +3,7 @@
 //! No Windows supplier, endpoint, CCD call or hardware is used.
 use super::*;
 use crate::session_native::display_query::{
-    ccd_write::CHANGING,
+    manual_write::CHANGING,
     observation::fixture_query,
     test_support::{FencedTopology, Host, Memory, Rig, TestPanel, flag, result},
     write::{CHANGED_POWER, CHECKPOINT, STALE_AFTER, UNCONFIRMED_POWER},

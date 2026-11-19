@@ -1,16 +1,18 @@
 //! Selected manual `setRefreshRate` through the shared Rust refresh writer.
 //!
 //! Order mirrors managed `DisplayProfileApplier.SetRefreshRateAsync` and
-//! `WindowsDisplaySettingsController.SetRefreshAsync`: the shared CCD
-//! manual-operation frame (`ccd_write::run`) checkpoints the refresh field and
-//! admits power; then one observation classifies the request and prepares the
+//! `WindowsDisplaySettingsController.SetRefreshAsync`: the shared
+//! manual-operation frame (`manual_write::run`) checkpoints the refresh field
+//! and admits power; then one observation classifies the request and prepares the
 //! CCD configuration, `SDC_VALIDATE` checks it, the fence (topology, Origin,
 //! session and power generation) runs immediately before the one `SDC_APPLY`,
 //! and an independent readback confirms it. Every admitted operation records
 //! its certainty before returning, even when the client, deadline or Stop has
 //! already abandoned the reply.
 use super::{
-    ccd_write::{Attempt, CcdHost, CcdRequest, Field, MULTIPLE, NO_INTERNAL, unreadable, win32},
+    manual_write::{
+        Attempt, Field, MULTIPLE, ManualHost, ManualRequest, NO_INTERNAL, unreadable, win32,
+    },
     observation::Snapshot,
     recovery::{Fields, Status},
 };
@@ -97,7 +99,7 @@ pub(super) struct SetRefreshRate {
     pub(super) key: String,
 }
 
-impl<H: CcdHost<Native: RefreshNative>> CcdRequest<H> for SetRefreshRate {
+impl<H: ManualHost<Native: RefreshNative>> ManualRequest<H> for SetRefreshRate {
     const FIELD: Field = Field {
         fields: Fields::REFRESH,
         paused: PAUSED,
