@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts.Tests;
 
 public sealed class NativeThermalMutationResponseTests
 {
-    [Fact]
+    [NativeThermalEdgeFact]
     public async Task ActualNativeMutationResponsesUseManagedV80CodecAndOutcomes()
     {
         // The evidence runner extracts actual emitted Rust test replies into a
@@ -100,7 +100,7 @@ public sealed class NativeThermalMutationResponseTests
         Assert.Contains(ControlOperationStatus.Blocked, seen);
     }
 
-    [Fact]
+    [NativeThermalEdgeFact]
     public async Task ActualNativeBatteryResponsesKeepConfirmedPolicyDesiredLimitAndUnknownTemporarySeparate()
     {
         string path = Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_BATTERY_RESPONSES") ?? throw new InvalidOperationException("Explicit actual native battery responses required.");
@@ -121,7 +121,7 @@ public sealed class NativeThermalMutationResponseTests
         Assert.Contains(ControlOperationStatus.Applied, outcomes); Assert.Contains(ControlOperationStatus.Blocked, outcomes);
     }
 
-    [Fact]
+    [NativeThermalEdgeFact]
     public async Task ActualNativeBatteryPublicationsKeepUnavailableGroupsAndUnknownTemporaryCompatible()
     {
         string path = Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_BATTERY_PUBLICATIONS")
@@ -165,7 +165,7 @@ public sealed class NativeThermalMutationResponseTests
         Assert.True(eventSeen);
     }
 
-    [Fact]
+    [NativeThermalEdgeFact]
     public async Task ActualNativeTemporaryChargeCorrectionFramesKeepStrictManagedCodec()
     {
         string path = Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_TFC_CORRECTION_FRAMES")

@@ -16,6 +16,12 @@ use windows_sys::Win32::{
     Security::Authorization::ConvertStringSidToSidW, Security::GetLengthSid,
     Storage::FileSystem::FILE_ALL_ACCESS,
 };
+// Like the managed NativeThermalEdgeFact, these cases run only under the fixture
+// runner's explicit opt-in. Once selected, missing root or SID inputs still fail.
+fn private_fixtures_selected() -> bool {
+    std::env::var_os("OPENBLADE_NATIVE_EDGE_FIXTURES").is_some_and(|value| value == "1")
+}
+
 struct PrivateRoot {
     path: PathBuf,
     root: File,
@@ -158,6 +164,9 @@ fn reservation(epoch: char) -> Record {
 }
 #[test]
 fn private_owner_store_first_reservation_clean_retirement_and_restart_fence() {
+    if !private_fixtures_selected() {
+        return;
+    }
     let fixture = PrivateRoot::open("owner-history");
     let mut store = fixture.owner().unwrap();
     assert!(fixture.owner().is_err());
@@ -185,6 +194,9 @@ fn private_owner_store_first_reservation_clean_retirement_and_restart_fence() {
 }
 #[test]
 fn private_protected_override_and_submission_journal_survive_restart_and_share_conflict() {
+    if !private_fixtures_selected() {
+        return;
+    }
     use openblade_domain::thermal_mutation::{Preset, Progress};
     use sha2::{Digest, Sha256};
     let fixture = PrivateRoot::open("protected-storage");
@@ -319,6 +331,9 @@ fn private_protected_override_and_submission_journal_survive_restart_and_share_c
 
 #[test]
 fn private_foreign_confirmed_journal_owner_is_refused_without_rewriting_history() {
+    if !private_fixtures_selected() {
+        return;
+    }
     use sha2::{Digest, Sha256};
     let fixture = PrivateRoot::open("owner-journal-foreign");
     let mut owner = fixture.owner().unwrap();
@@ -369,6 +384,9 @@ fn private_foreign_confirmed_journal_owner_is_refused_without_rewriting_history(
 
 #[test]
 fn private_prepared_settlement_authenticates_owner_prefix_and_reopens_terminal_history() {
+    if !private_fixtures_selected() {
+        return;
+    }
     use openblade_domain::thermal_mutation::{Preset, Progress};
     use sha2::{Digest, Sha256};
     // Actual worker retirement is covered by the injected outer composition.
@@ -497,6 +515,9 @@ fn private_prepared_settlement_authenticates_owner_prefix_and_reopens_terminal_h
 
 #[test]
 fn private_pending_terminal_file_preserves_intact_original_owner_custody() {
+    if !private_fixtures_selected() {
+        return;
+    }
     use openblade_domain::thermal_mutation::{Preset, Progress};
     use sha2::{Digest, Sha256};
     let user = PrivateRoot::open("protected-storage");
@@ -599,6 +620,9 @@ fn private_pending_terminal_file_preserves_intact_original_owner_custody() {
 
 #[test]
 fn history_growth_real_storage_reserves_before_prepared_across_original_owners() {
+    if !private_fixtures_selected() {
+        return;
+    }
     use crate::thermal_history::{self as history, Entry};
     use openblade_domain::thermal_mutation::{Preset, Progress};
     let user = PrivateRoot::open("protected-storage");
@@ -765,6 +789,9 @@ fn history_growth_real_storage_reserves_before_prepared_across_original_owners()
 
 #[test]
 fn history_protected_publication_cuts_recover_only_matched_metadata_and_preserve_every_byte() {
+    if !private_fixtures_selected() {
+        return;
+    }
     let vector: Value = serde_json::from_str(include_str!(
         "../../../../../tests/data/thermal-history-v1.json"
     ))
@@ -842,6 +869,9 @@ fn history_protected_publication_cuts_recover_only_matched_metadata_and_preserve
 
 #[test]
 fn history_orphan_rollover_staging_without_directory_is_never_empty_native_history() {
+    if !private_fixtures_selected() {
+        return;
+    }
     let machine = PrivateRoot::open("owner-journal-foreign");
     let mut owner = machine.owner().unwrap();
     owner.activate_injected(reservation('4')).unwrap();
@@ -861,6 +891,9 @@ fn history_orphan_rollover_staging_without_directory_is_never_empty_native_histo
 #[cfg(feature = "service-fan-mutation-v2")]
 #[test]
 fn fan_v2_real_protected_history_retains_owned_fence_across_reload_and_rollover() {
+    if !private_fixtures_selected() {
+        return;
+    }
     verify_fan_protected_history(
         serde_json::from_str(include_str!(
             "../../../../../tests/data/fan-history-v2.json"
@@ -872,6 +905,9 @@ fn fan_v2_real_protected_history_retains_owned_fence_across_reload_and_rollover(
 #[cfg(feature = "service-fan-mutation-v2")]
 #[test]
 fn fan_v3_observed_auto_protected_history_reloads_and_rolls_losslessly() {
+    if !private_fixtures_selected() {
+        return;
+    }
     verify_fan_protected_history(
         serde_json::from_str(include_str!(
             "../../../../../tests/data/fan-history-v3.json"
@@ -920,6 +956,9 @@ fn verify_fan_protected_history(vector: Value, terminal: &str) {
 #[cfg(feature = "service-battery-policy-v1")]
 #[test]
 fn battery_v1_protected_history_requires_original_producer_and_retains_interleaved_release() {
+    if !private_fixtures_selected() {
+        return;
+    }
     let vector: Value = serde_json::from_str(include_str!(
         "../../../../../tests/data/battery-history-v1.json"
     ))
@@ -984,6 +1023,9 @@ fn battery_v1_protected_history_requires_original_producer_and_retains_interleav
 #[cfg(feature = "service-battery-policy-v1")]
 #[test]
 fn battery_correction_protected_complete_rehashed_active_and_archived_inputs() {
+    if !private_fixtures_selected() {
+        return;
+    }
     let vector: Value = serde_json::from_str(include_str!(
         "../../../../../tests/data/battery-history-v1.json"
     ))
@@ -1083,6 +1125,9 @@ fn battery_correction_protected_complete_rehashed_active_and_archived_inputs() {
 #[cfg(feature = "service-temporary-charge-v1")]
 #[test]
 fn tfc_v1_protected_original_producer_is_checked_for_each_required_family() {
+    if !private_fixtures_selected() {
+        return;
+    }
     let vector: Value = serde_json::from_str(include_str!(
         "../../../../../tests/data/temporary-charge-history-v1.json"
     ))
