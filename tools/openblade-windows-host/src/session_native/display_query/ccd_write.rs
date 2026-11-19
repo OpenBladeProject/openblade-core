@@ -145,10 +145,15 @@ pub(super) enum Attempt {
     Unchanged,
     /// The independent readback confirmed the request.
     Confirmed,
-    /// Managed `PrepareHdr` failure without a possible submission, resolved by
-    /// `ResolveHdrMutationResult` over the reply snapshot.
-    #[cfg(feature = "agent-display-hdr-write-v1")]
-    Prepare(Cow<'static, str>),
+    /// The setter failed before any possible submission. When `reply_resolves`,
+    /// the managed flow reconciles the failure with the reply snapshot
+    /// (`ResolveHdrMutationResult` for a failed `PrepareHdr`), so a reply that
+    /// shows the request succeeds.
+    Failed {
+        error: Cow<'static, str>,
+        reply_resolves: bool,
+    },
+    /// A Blocked refusal, or an Indeterminate result after a possible submission.
     Done(Status, Cow<'static, str>),
 }
 
@@ -216,10 +221,11 @@ pub(super) fn run<F: CheckpointFile, H: CcdHost, R: CcdRequest<H>>(
             Status::Indeterminate,
             Some(Cow::Borrowed(field.unconfirmed)),
         ),
-        #[cfg(feature = "agent-display-hdr-write-v1")]
-        Attempt::Prepare(_) if request.shown_by(&state) => (Status::Succeeded, None),
-        #[cfg(feature = "agent-display-hdr-write-v1")]
-        Attempt::Prepare(error) => (Status::Failed, Some(error)),
+        Attempt::Failed {
+            reply_resolves: true,
+            ..
+        } if request.shown_by(&state) => (Status::Succeeded, None),
+        Attempt::Failed { error, .. } => (Status::Failed, Some(error)),
         Attempt::Done(status, error) => (status, Some(error)),
     };
     // Managed ExecuteSetterAsync.EnsureCurrent after a successful setter,

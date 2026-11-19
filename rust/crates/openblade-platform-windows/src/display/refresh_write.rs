@@ -20,14 +20,16 @@ pub use super::refresh_packet::PrepareError;
 use super::{
     ActiveInternalDisplay, DisplayReadError, InternalDisplayRefresh, InternalDisplayTopology,
     PATH_BOOST_REFRESH_RATE, RefreshRate, SubmissionFence, Topology,
+    fence::PanelIdentity,
     refresh::{RefreshApi, edid, observe_refresh},
     refresh_packet::RefreshPacket,
 };
 use windows_sys::Win32::Devices::Display::DISPLAYCONFIG_TARGET_MODE;
 
 /// One fresh refresh observation for mutation, retaining the CCD frame and
-/// timing evidence of the same bracketed read (managed `BuildSnapshot` with
-/// a requested key over the original `QueryTopology`).
+/// timing evidence of the same bracketed read: managed `BuildSnapshot` with
+/// the requested key over the original `QueryTopology`, so an exact requested
+/// Dynamic maximum is offered besides the default one (`AddDynamicRefreshOptions`).
 pub struct RefreshObservation {
     reading: InternalDisplayRefresh,
     evidence: Option<Evidence>,
@@ -40,9 +42,12 @@ struct Evidence {
 }
 
 impl RefreshObservation {
-    pub(super) fn observe_with(api: &mut impl RefreshApi) -> Result<Self, DisplayReadError> {
+    pub(super) fn observe_with(
+        api: &mut impl RefreshApi,
+        key: &str,
+    ) -> Result<Self, DisplayReadError> {
         let mut evidence = None;
-        let reading = observe_refresh(api, true, |topology, preferred, timings| {
+        let reading = observe_refresh(api, Some(key), |topology, preferred, timings| {
             evidence = Some(Evidence {
                 topology,
                 preferred,
@@ -82,8 +87,8 @@ impl RefreshPlan {
 
 /// Current-user Windows boundary for one refresh request.
 pub trait RefreshNative {
-    /// A fresh bracketed observation for mutation.
-    fn observe(&mut self) -> Result<RefreshObservation, DisplayReadError>;
+    /// A fresh bracketed observation for mutation to `key`.
+    fn observe(&mut self, key: &str) -> Result<RefreshObservation, DisplayReadError>;
 
     /// `SetDisplayConfig(SDC_VALIDATE)`; never applies. Returns the Win32
     /// status (0 is ERROR_SUCCESS).
@@ -159,7 +164,7 @@ pub fn set_internal_refresh<N: RefreshNative + ?Sized>(
         submission_may_have_occurred: false,
     };
     let observation = native
-        .observe()
+        .observe(key)
         .map_err(|error| refused(RefreshError::Topology(error)))?;
     let snapshot = match observation.reading {
         InternalDisplayRefresh::Single(snapshot) => snapshot,
@@ -203,7 +208,8 @@ pub fn set_internal_refresh<N: RefreshNative + ?Sized>(
         return Err(refused(RefreshError::Cancelled));
     }
     // The fence reads immediately before the submission. The plan carries
-    // this frame's arrays, so any change to the observed panel refuses it.
+    // this frame's arrays, so the fenced panel must equal the observed one
+    // (identity, rates and flags), not just be the same panel.
     let fenced = fence.topology();
     if !matches!(&fenced, Ok(InternalDisplayTopology::Single(fresh)) if *fresh == snapshot.display)
     {
@@ -246,28 +252,13 @@ fn confirm(
             return Err(Readback::NoInternalDisplay);
         }
     };
-    if !same_panel(admitted, &after.display) {
+    if !PanelIdentity::of(admitted).same_as(&after.display) {
         return Err(Readback::PanelChanged);
     }
     if after.current_refresh_key.as_deref() != Some(key) {
         return Err(Readback::Mismatch);
     }
     Ok(())
-}
-
-/// Same CCD endpoints and monitor path. The rates are expected to change.
-fn same_panel(before: &ActiveInternalDisplay, after: &ActiveInternalDisplay) -> bool {
-    let path = |display: &ActiveInternalDisplay| {
-        display
-            .monitor_name
-            .as_ref()
-            .ok()
-            .and_then(|name| name.device_path.clone())
-    };
-    before.source == after.source
-        && before.target == after.target
-        && before.source_name == after.source_name
-        && path(before) == path(after)
 }
 
 /// Production native boundary: the CCD/GDI/EDID reader and the one real
@@ -288,8 +279,8 @@ impl WindowsRefreshNative {
 
 #[cfg(not(test))]
 impl RefreshNative for WindowsRefreshNative {
-    fn observe(&mut self) -> Result<RefreshObservation, DisplayReadError> {
-        RefreshObservation::observe_with(&mut super::native::WindowsDisplay)
+    fn observe(&mut self, key: &str) -> Result<RefreshObservation, DisplayReadError> {
+        RefreshObservation::observe_with(&mut super::native::WindowsDisplay, key)
     }
 
     fn validate(&mut self, plan: &RefreshPlan) -> u32 {

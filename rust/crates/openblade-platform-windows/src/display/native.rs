@@ -140,6 +140,53 @@ fn hdr_setter_packet_and_linkage() {
     }
 }
 
+// The one production SetDisplayConfig call site (SDC_VALIDATE and the single
+// SDC_APPLY), reachable only through `refresh_write::WindowsRefreshNative`.
+// Unit-test builds exclude it so no test can validate or apply a configuration.
+#[cfg(all(feature = "display-refresh-write", not(test)))]
+pub(super) fn set_display_config(
+    paths: &[DISPLAYCONFIG_PATH_INFO],
+    modes: &[DISPLAYCONFIG_MODE_INFO],
+    flags: u32,
+) -> u32 {
+    // Both arrays come from one bounded query (at most MAX_ENTRIES each).
+    let (path_count, mode_count) = (paths.len() as u32, modes.len() as u32);
+    // SAFETY: Both arrays are initialized and live for the whole synchronous
+    // input-only call; the counts are their lengths.
+    (unsafe {
+        windows_sys::Win32::Devices::Display::SetDisplayConfig(
+            path_count,
+            paths.as_ptr(),
+            mode_count,
+            modes.as_ptr(),
+            flags,
+        )
+    }) as u32
+}
+
+#[cfg(all(
+    test,
+    any(feature = "scripted-display", feature = "display-refresh-write")
+))]
+#[test]
+fn refresh_setter_flags_and_linkage() {
+    // Retain the SDK import without calling it; this build has no route to
+    // the production call site.
+    let _ = std::hint::black_box(
+        windows_sys::Win32::Devices::Display::SetDisplayConfig
+            as unsafe extern "system" fn(
+                u32,
+                *const DISPLAYCONFIG_PATH_INFO,
+                u32,
+                *const DISPLAYCONFIG_MODE_INFO,
+                u32,
+            ) -> i32,
+    );
+    // Managed ValidateTopology and ApplyTopology flags.
+    assert_eq!(super::refresh_packet::VALIDATE, 0x28060);
+    assert_eq!(super::refresh_packet::APPLY, 0x282a0);
+}
+
 pub(super) struct WindowsDisplay;
 
 impl DisplayApi for WindowsDisplay {

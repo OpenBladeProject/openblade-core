@@ -70,6 +70,46 @@ fn raw_request(body: &[u8]) -> Vec<u8> {
 fn query() -> Vec<u8> {
     request(json!({"version":2,"requestId":ID,"operation":"query"}))
 }
+
+/// Managed `SessionDisplayRequestDispatcher`: 5 s for a query and the 30 s
+/// `MutationDispatchTimeout` for every selected write.
+#[test]
+fn every_selected_write_has_the_managed_mutation_deadline() {
+    let deadline = |body: Value| {
+        Request::parse(&request(body)[4..])
+            .unwrap()
+            .operation
+            .deadline()
+    };
+    let common = |operation: &str| {
+        let mut body = json!({"version":2,"requestId":ID,"operation":operation});
+        body["expectedPowerSource"] = 0.into();
+        body
+    };
+    assert_eq!(
+        deadline(json!({"version":2,"requestId":ID,"operation":"query"})),
+        Duration::from_secs(5)
+    );
+    let mut writes: Vec<Value> = Vec::new();
+    if cfg!(feature = "agent-display-brightness-write-v1") {
+        let mut body = common("setBrightness");
+        body["percent"] = 50.into();
+        writes.push(body);
+    }
+    if cfg!(feature = "agent-display-hdr-write-v1") {
+        let mut body = common("setHdr");
+        body["enabled"] = true.into();
+        writes.push(body);
+    }
+    if cfg!(feature = "agent-display-refresh-write-v1") {
+        let mut body = common("setRefreshRate");
+        body["refreshRateKey"] = "fixed-240".into();
+        writes.push(body);
+    }
+    for body in writes {
+        assert_eq!(deadline(body.clone()), Duration::from_secs(30), "{body}");
+    }
+}
 async fn exchange(
     script: &mut impl Supplier,
     bytes: &[u8],
@@ -1641,6 +1681,9 @@ mod refresh_writes {
                 Status::Failed,
                 Some(validation_rejected(87)),
             ),
+            // Deliberate deviation: managed PrepareRefresh throws before
+            // PrepareRefreshAfterSnapshot and its dispatcher reports Indeterminate;
+            // nothing can have been submitted, so the native writer reports Failed.
             (
                 "refresh-write-failed-no-panel",
                 Status::Failed,

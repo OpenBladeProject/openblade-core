@@ -8,12 +8,9 @@
 //! before returning, even when the client, deadline or Stop has already
 //! abandoned the reply.
 use super::{
-    ccd_write::{
-        self, Attempt, CcdHost, CcdRequest, CcdWriteOutcome, Field, MULTIPLE, NO_INTERNAL,
-        unreadable, win32,
-    },
-    observation::{SharedBrightness, Snapshot},
-    recovery::{CheckpointFile, Fields, Recovery, Status},
+    ccd_write::{Attempt, CcdHost, CcdRequest, Field, MULTIPLE, NO_INTERNAL, unreadable, win32},
+    observation::Snapshot,
+    recovery::{Fields, Status},
 };
 use crate::session_native::power_admission::PowerContext;
 use openblade_platform_windows::display::hdr::{
@@ -21,11 +18,7 @@ use openblade_platform_windows::display::hdr::{
 };
 use std::{
     borrow::Cow,
-    io,
-    sync::{
-        Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 /// Native-only write gate (no managed equivalent).
@@ -54,16 +47,6 @@ pub(super) struct SetHdr {
     pub(super) enabled: bool,
 }
 
-pub(super) fn set_hdr<F: CheckpointFile, H: CcdHost<Native: HdrNative>>(
-    host: &mut H,
-    brightness: &SharedBrightness,
-    recovery: &Mutex<Recovery<F>>,
-    request: SetHdr,
-    canceled: &AtomicBool,
-) -> io::Result<CcdWriteOutcome> {
-    ccd_write::run(host, brightness, recovery, &request, canceled)
-}
-
 impl<H: CcdHost<Native: HdrNative>> CcdRequest<H> for SetHdr {
     const FIELD: Field = Field {
         fields: Fields::HDR,
@@ -77,6 +60,10 @@ impl<H: CcdHost<Native: HdrNative>> CcdRequest<H> for SetHdr {
 
     fn attempt(&self, host: &mut H, admitted: PowerContext, canceled: &AtomicBool) -> Attempt {
         let done = |status, error: &'static str| Attempt::Done(status, Cow::Borrowed(error));
+        let resolved = |error| Attempt::Failed {
+            error,
+            reply_resolves: true,
+        };
         let target = match host.native().topology() {
             Ok(topology) => HdrTarget::from_topology(topology),
             Err(error) => Err(HdrError::Topology(error)),
@@ -108,10 +95,16 @@ impl<H: CcdHost<Native: HdrNative>> CcdRequest<H> for SetHdr {
                 ..
             }) => done(Status::Indeterminate, UNCONFIRMED),
             Err(HdrFailure { reason, .. }) => match reason {
-                HdrError::Topology(error) => Attempt::Prepare(unreadable(error)),
-                HdrError::NoInternalDisplay => Attempt::Prepare(Cow::Borrowed(NO_INTERNAL)),
-                HdrError::MultipleInternalDisplays => Attempt::Prepare(Cow::Borrowed(MULTIPLE)),
-                HdrError::NotSupported => done(Status::Failed, NOT_SUPPORTED),
+                // Managed `PrepareHdr` throws; `ResolveHdrMutationResult`
+                // reconciles the exception with the reply snapshot.
+                HdrError::Topology(error) => resolved(unreadable(error)),
+                HdrError::NoInternalDisplay => resolved(Cow::Borrowed(NO_INTERNAL)),
+                HdrError::MultipleInternalDisplays => resolved(Cow::Borrowed(MULTIPLE)),
+                // Managed `PrepareHdrCore` returns this failure directly.
+                HdrError::NotSupported => Attempt::Failed {
+                    error: Cow::Borrowed(NOT_SUPPORTED),
+                    reply_resolves: false,
+                },
                 HdrError::PanelChanged => done(Status::Blocked, PANEL_CHANGED),
                 HdrError::AdmissionDenied => done(Status::Blocked, STALE),
                 HdrError::Cancelled => done(Status::Blocked, CANCELED),

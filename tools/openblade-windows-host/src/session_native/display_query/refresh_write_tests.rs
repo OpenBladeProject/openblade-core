@@ -6,20 +6,15 @@ use super::*;
 use crate::session_native::display_query::{
     ccd_write::CHANGING,
     observation::fixture_query,
-    test_support::{Memory, Rig},
+    test_support::{FencedTopology, Host, Memory, Rig, TestPanel, flag, result},
     write::{CHANGED_POWER, CHECKPOINT, STALE_AFTER, UNCONFIRMED_POWER},
 };
-use openblade_platform_windows::display::SubmissionFence;
 use openblade_platform_windows::display::{
-    DisplayReadError, InternalDisplayRefresh, InternalDisplayTopology, Operation, RefreshRate,
-    refresh_write::{RefreshObservation, RefreshPlan},
+    DisplayReadError, InternalDisplayRefresh, Operation, RefreshRate,
+    refresh_write::{PrepareError, RefreshObservation, RefreshPlan},
     scripted::{RefreshTiming, Scenario},
 };
-use std::{
-    cell::Cell,
-    collections::VecDeque,
-    sync::{Arc, atomic::AtomicUsize},
-};
+use std::{collections::VecDeque, sync::Arc};
 
 /// What one APPLY does to the scripted panel, whatever status it returns.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -55,6 +50,8 @@ struct Panel {
     applied: Vec<Option<u32>>,
     /// Set after the submission boundary (cancellation racing a write).
     cancel_on_apply: Option<Arc<AtomicBool>>,
+    /// The reply query shows this refresh key instead of the panel's.
+    reply_key: Option<Option<&'static str>>,
 }
 
 impl Panel {
@@ -71,10 +68,10 @@ impl Panel {
 }
 
 impl RefreshNative for Panel {
-    fn observe(&mut self) -> Result<RefreshObservation, DisplayReadError> {
+    fn observe(&mut self, key: &str) -> Result<RefreshObservation, DisplayReadError> {
         self.observations += 1;
         self.observe_script.pop_front().unwrap_or_else(|| {
-            Scenario::Available.observe_refresh(true, self.timing(), self.replaced)
+            Scenario::Available.observe_refresh(true, self.timing(), self.replaced, key)
         })
     }
 
@@ -109,76 +106,55 @@ impl RefreshNative for Panel {
     }
 }
 
-struct TestFence {
-    timing: RefreshTiming,
-    changed: bool,
-    admit: bool,
-    checks: Arc<AtomicUsize>,
-}
+impl TestPanel for Panel {
+    type Value = &'static str;
+    type Request = SetRefreshRate;
 
-impl SubmissionFence for TestFence {
-    fn topology(&self) -> Result<InternalDisplayTopology, DisplayReadError> {
-        self.checks.fetch_add(1, Ordering::SeqCst);
-        if self.changed {
-            return Ok(InternalDisplayTopology::NoInternalDisplay);
+    fn request(expected_power_source: u8, key: &'static str) -> SetRefreshRate {
+        SetRefreshRate {
+            expected_power_source,
+            key: key.into(),
         }
-        Scenario::Available.topology_with_hdr(true, self.timing, false)
     }
 
-    fn admit(&self) -> bool {
-        self.admit
+    fn fenced(&self) -> FencedTopology {
+        let timing = self.timing();
+        Box::new(move || Scenario::Available.topology_with_hdr(true, timing, false))
+    }
+
+    fn reply(&self) -> Snapshot {
+        let key = match self.reply_key {
+            Some(key) => key.map(String::from),
+            None => self.key(),
+        };
+        snapshot(key.as_deref())
     }
 }
 
-struct Host {
-    panel: Panel,
-    power: Option<PowerContext>,
-    /// Power reported by every capture after the first (post-success drift).
-    later: Option<Option<PowerContext>>,
-    captures: Cell<usize>,
-    changed: bool,
-    admit: bool,
-    fence_checks: Arc<AtomicUsize>,
-    queries: usize,
-    /// The reply query shows this refresh key instead of the panel's.
-    reply_key: Option<Option<&'static str>>,
-    /// The reply query fails fatally.
-    fail_query: bool,
-}
-
-impl Host {
-    fn admitted(source: u8, desktop: u32, physical: u32) -> Self {
-        Self {
-            panel: Panel {
-                desktop,
-                physical,
-                replaced: false,
-                observe_script: VecDeque::new(),
-                read_script: VecDeque::new(),
-                validate_status: 0,
-                apply_status: 0,
-                effect: Effect::Plan,
-                observations: 0,
-                reads: 0,
-                validated: Vec::new(),
-                applied: Vec::new(),
-                cancel_on_apply: None,
-            },
-            power: Some(PowerContext {
-                source,
-                generation: 7,
-            }),
-            later: None,
-            captures: Cell::new(0),
-            changed: false,
-            admit: true,
-            fence_checks: Arc::default(),
-            queries: 0,
+/// An admitted host over a panel at these desktop and signal rates.
+fn admitted(source: u8, desktop: u32, physical: u32) -> Host<Panel> {
+    Host::admitted(
+        source,
+        Panel {
+            desktop,
+            physical,
+            replaced: false,
+            observe_script: VecDeque::new(),
+            read_script: VecDeque::new(),
+            validate_status: 0,
+            apply_status: 0,
+            effect: Effect::Plan,
+            observations: 0,
+            reads: 0,
+            validated: Vec::new(),
+            applied: Vec::new(),
+            cancel_on_apply: None,
             reply_key: None,
-            fail_query: false,
-        }
-    }
+        },
+    )
+}
 
+impl Host<Panel> {
     fn submissions(&self) -> usize {
         self.panel.applied.len()
     }
@@ -194,52 +170,6 @@ impl Host {
     }
 }
 
-impl CcdHost for Host {
-    type Native = Panel;
-
-    fn power(&self) -> Option<PowerContext> {
-        let capture = self.captures.get();
-        self.captures.set(capture + 1);
-        match self.later {
-            Some(later) if capture > 0 => later,
-            _ => self.power,
-        }
-    }
-
-    fn fence(&self, admitted: PowerContext) -> Arc<dyn SubmissionFence> {
-        assert_eq!(
-            Some(admitted),
-            self.power,
-            "fence binds the captured context"
-        );
-        Arc::new(TestFence {
-            timing: self.panel.timing(),
-            changed: self.changed,
-            admit: self.admit,
-            checks: self.fence_checks.clone(),
-        })
-    }
-
-    fn native(&mut self) -> &mut Panel {
-        &mut self.panel
-    }
-
-    fn query(&mut self, _: &SharedBrightness, canceled: &AtomicBool) -> io::Result<Snapshot> {
-        self.queries += 1;
-        if self.fail_query {
-            return Err(io::Error::other("injected reply query failure"));
-        }
-        if canceled.load(Ordering::SeqCst) {
-            return Err(io::ErrorKind::Interrupted.into());
-        }
-        let key = match self.reply_key {
-            Some(key) => key.map(String::from),
-            None => self.panel.key(),
-        };
-        Ok(snapshot(key.as_deref()))
-    }
-}
-
 /// A reply query with the given classified refresh option.
 fn snapshot(key: Option<&str>) -> Snapshot {
     let mut value = serde_json::to_value(fixture_query("available")).unwrap();
@@ -247,56 +177,11 @@ fn snapshot(key: Option<&str>) -> Snapshot {
     serde_json::from_value(value).unwrap()
 }
 
-/// The manual request through the shared rig.
-trait Set {
-    fn set(&self, host: &mut Host, expected: u8, key: &str) -> io::Result<CcdWriteOutcome>;
-    fn set_canceled(
-        &self,
-        host: &mut Host,
-        expected: u8,
-        key: &str,
-        canceled: &AtomicBool,
-    ) -> io::Result<CcdWriteOutcome>;
-}
-
-impl Set for Rig {
-    fn set(&self, host: &mut Host, expected: u8, key: &str) -> io::Result<CcdWriteOutcome> {
-        self.set_canceled(host, expected, key, &AtomicBool::new(false))
-    }
-
-    fn set_canceled(
-        &self,
-        host: &mut Host,
-        expected: u8,
-        key: &str,
-        canceled: &AtomicBool,
-    ) -> io::Result<CcdWriteOutcome> {
-        set_refresh_rate(
-            host,
-            &self.owner,
-            &self.recovery,
-            &SetRefreshRate {
-                expected_power_source: expected,
-                key: key.into(),
-            },
-            canceled,
-        )
-    }
-}
-
-fn result(outcome: &CcdWriteOutcome) -> (Status, Option<&str>) {
-    (outcome.status, outcome.error.as_deref())
-}
-
-fn flag(record: &serde_json::Value, name: &str) -> bool {
-    record[name].as_bool().unwrap()
-}
-
 #[test]
 fn requested_option_is_validated_fenced_applied_once_and_recorded() {
     let rig = Rig::new(Memory::default());
     // Issue #884: a 60 Hz desktop over a 240 Hz signal classifies no option.
-    let mut host = Host::admitted(1, 60, 240);
+    let mut host = admitted(1, 60, 240);
     assert_eq!(host.panel.key(), None);
     let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
     assert_eq!(result(&outcome), (Status::Succeeded, None));
@@ -322,7 +207,7 @@ fn requested_option_is_validated_fenced_applied_once_and_recorded() {
 #[test]
 fn current_option_submits_nothing_like_managed() {
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, 240, 240);
+    let mut host = admitted(1, 240, 240);
     let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
     assert_eq!(result(&outcome), (Status::Succeeded, None));
     // Managed PrepareRefresh returns Success(before) without validation.
@@ -347,7 +232,7 @@ fn explicit_target_timing_is_submitted_when_known_and_omitted_only_otherwise() {
     // known while a 240 Hz one is active: Windows must select it, and that
     // request still has to validate first.
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(0, 240, 240);
+    let mut host = admitted(0, 240, 240);
     let outcome = rig.set(&mut host, 0, "fixed-60").unwrap();
     assert_eq!(result(&outcome), (Status::Succeeded, None));
     assert_eq!(host.panel.validated, [None]);
@@ -355,7 +240,7 @@ fn explicit_target_timing_is_submitted_when_known_and_omitted_only_otherwise() {
     assert_eq!((host.panel.desktop, host.panel.physical), (60, 60));
 
     // From the split timing the active 240 Hz signal is known and supplied.
-    let mut host = Host::admitted(0, 60, 240);
+    let mut host = admitted(0, 60, 240);
     let outcome = rig.set(&mut host, 0, "fixed-240").unwrap();
     assert_eq!(result(&outcome), (Status::Succeeded, None));
     assert_eq!(host.panel.validated, [Some(240)]);
@@ -366,7 +251,7 @@ fn explicit_target_timing_is_submitted_when_known_and_omitted_only_otherwise() {
 fn unknown_or_unavailable_keys_fail_without_validation() {
     let rig = Rig::new(Memory::default());
     for key in ["fixed-75", "dynamic-60-240", "Fixed-240", "fixed-240 "] {
-        let mut host = Host::admitted(1, 60, 240);
+        let mut host = admitted(1, 60, 240);
         let outcome = rig.set(&mut host, 1, key).unwrap();
         assert_eq!(
             result(&outcome),
@@ -384,7 +269,7 @@ fn unknown_or_unavailable_keys_fail_without_validation() {
 #[test]
 fn refused_validation_fails_without_apply() {
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, 60, 240);
+    let mut host = admitted(1, 60, 240);
     host.panel.validate_status = 87;
     let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
     assert_eq!(
@@ -407,11 +292,21 @@ fn refused_validation_fails_without_apply() {
 fn observation_failures_fail_without_validation() {
     let cases: [(Result<RefreshObservation, DisplayReadError>, &str); 4] = [
         (
-            Scenario::Unavailable.observe_refresh(true, RefreshTiming::default(), false),
+            Scenario::Unavailable.observe_refresh(
+                true,
+                RefreshTiming::default(),
+                false,
+                "fixed-240",
+            ),
             NO_INTERNAL,
         ),
         (
-            Scenario::NativeError.observe_refresh(true, RefreshTiming::default(), false),
+            Scenario::NativeError.observe_refresh(
+                true,
+                RefreshTiming::default(),
+                false,
+                "fixed-240",
+            ),
             "Windows could not read the active display configuration: Win32 error 5.",
         ),
         (Err(DisplayReadError::TopologyChanging), CHANGING),
@@ -425,7 +320,7 @@ fn observation_failures_fail_without_validation() {
     ];
     for (observation, expected) in cases {
         let rig = Rig::new(Memory::default());
-        let mut host = Host::admitted(1, 60, 240);
+        let mut host = admitted(1, 60, 240);
         host.panel.observe_script.push_back(observation);
         let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
         assert_eq!(result(&outcome), (Status::Failed, Some(expected)));
@@ -439,7 +334,7 @@ fn denied_admission_and_fence_refusals_never_submit() {
     let rig = Rig::new(Memory::legacy(0));
 
     // Unconfirmed power: blocked after a durable manual hold, never observed.
-    let mut host = Host::admitted(0, 60, 240);
+    let mut host = admitted(0, 60, 240);
     host.power = None;
     let outcome = rig.set(&mut host, 0, "fixed-240").unwrap();
     assert_eq!(result(&outcome), (Status::Blocked, Some(UNCONFIRMED_POWER)));
@@ -449,34 +344,34 @@ fn denied_admission_and_fence_refusals_never_submit() {
     assert!(!flag(&record, "AutomaticWritesPaused") && !flag(&record, "UncertainRefreshRate"));
 
     // Changed power source.
-    let mut host = Host::admitted(1, 60, 240);
+    let mut host = admitted(1, 60, 240);
     let outcome = rig.set(&mut host, 2, "fixed-240").unwrap();
     assert_eq!(result(&outcome), (Status::Blocked, Some(CHANGED_POWER)));
     assert_eq!(host.panel.observations, 0);
 
     // Origin, session, power generation or Stop changed after validation.
-    let mut host = Host::admitted(1, 60, 240);
+    let mut host = admitted(1, 60, 240);
     host.admit = false;
     let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
     assert_eq!(result(&outcome), (Status::Blocked, Some(STALE)));
     assert_eq!(host.interactions(), (1, 1, 0));
 
     // The fence's fresh topology no longer shows the observed panel.
-    let mut host = Host::admitted(1, 60, 240);
+    let mut host = admitted(1, 60, 240);
     host.changed = true;
     let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
     assert_eq!(result(&outcome), (Status::Blocked, Some(PANEL_CHANGED)));
     assert_eq!(host.interactions(), (1, 1, 0));
 
     // The observed panel was replaced before the fence's fresh read.
-    let mut host = Host::admitted(1, 60, 240);
+    let mut host = admitted(1, 60, 240);
     host.panel.replaced = true;
     let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
     assert_eq!(result(&outcome), (Status::Blocked, Some(PANEL_CHANGED)));
     assert_eq!(host.submissions(), 0);
 
     // Canceled before submission (client loss, deadline or Stop).
-    let mut host = Host::admitted(1, 60, 240);
+    let mut host = admitted(1, 60, 240);
     let outcome = rig
         .set_canceled(&mut host, 1, "fixed-240", &AtomicBool::new(true))
         .unwrap();
@@ -487,7 +382,7 @@ fn denied_admission_and_fence_refusals_never_submit() {
     let record = rig.file.record();
     assert!(!flag(&record, "AutomaticWritesPaused") && !flag(&record, "UncertainRefreshRate"));
     assert!(!rig.unresolved().refresh);
-    let mut host = Host::admitted(1, 60, 240);
+    let mut host = admitted(1, 60, 240);
     assert_eq!(
         rig.set(&mut host, 1, "fixed-240").unwrap().status,
         Status::Succeeded
@@ -499,7 +394,7 @@ fn checkpoint_failure_before_submission_blocks_without_device_interaction() {
     let file = Memory::legacy(1);
     file.allow.store(0, Ordering::SeqCst);
     let rig = Rig::new(file);
-    let mut host = Host::admitted(1, 60, 240);
+    let mut host = admitted(1, 60, 240);
     let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
     assert_eq!(result(&outcome), (Status::Blocked, Some(CHECKPOINT)));
     assert_eq!(host.panel.observations, 0);
@@ -507,7 +402,7 @@ fn checkpoint_failure_before_submission_blocks_without_device_interaction() {
 
     // No prior checkpoint and no confirmed source: nothing can be saved.
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, 60, 240);
+    let mut host = admitted(1, 60, 240);
     host.power = None;
     assert_eq!(
         rig.set(&mut host, 1, "fixed-240").unwrap().error.as_deref(),
@@ -520,7 +415,7 @@ fn checkpoint_failure_before_submission_blocks_without_device_interaction() {
 fn apply_error_is_uncertain_and_pauses_without_replay_across_restart_until_explicit_read() {
     for effect in [Effect::Nothing, Effect::Plan] {
         let rig = Rig::new(Memory::default());
-        let mut host = Host::admitted(2, 60, 240);
+        let mut host = admitted(2, 60, 240);
         host.panel.apply_status = 1610;
         host.panel.effect = effect;
         let outcome = rig.set(&mut host, 2, "fixed-240").unwrap();
@@ -542,11 +437,17 @@ fn apply_error_is_uncertain_and_pauses_without_replay_across_restart_until_expli
         assert!(!flag(&record, "UncertainHdr") && !flag(&record, "UncertainBrightness"));
         assert_eq!(rig.unresolved(), Fields::REFRESH);
 
-        // Same process: refused before any device interaction, never replayed.
+        // Same process: refused before any device interaction, never replayed,
+        // with the reply query's snapshot.
         host.panel.apply_status = 0;
-        let observations = host.panel.observations;
+        let (observations, queries) = (host.panel.observations, host.queries);
         let blocked = rig.set(&mut host, 2, "fixed-240").unwrap();
         assert_eq!(result(&blocked), (Status::Blocked, Some(PAUSED)));
+        assert_eq!(host.queries, queries + 1);
+        assert_eq!(
+            serde_json::to_value(&blocked.state).unwrap(),
+            serde_json::to_value(host.panel.reply()).unwrap()
+        );
         assert_eq!(
             (host.submissions(), host.panel.observations),
             (1, observations)
@@ -559,25 +460,33 @@ fn apply_error_is_uncertain_and_pauses_without_replay_across_restart_until_expli
         assert_eq!(result(&blocked), (Status::Blocked, Some(PAUSED)));
         assert_eq!(host.submissions(), 1);
 
-        // A read without a classified option keeps the gate; one with it reopens.
+        // An unavailable read observed nothing: the gate stays closed.
         restarted.explicit_read(&Snapshot::unavailable("gone"));
-        restarted.explicit_read(&snapshot(None));
         assert!(restarted.unresolved().refresh);
-        restarted.explicit_read(&snapshot(Some("fixed-60")));
+        // The panel's own read reopens the native gate even when its mode
+        // matches no option (issue #884: still 60 Hz over 240 Hz); the managed
+        // pause resumes only once a read classifies the mode.
+        let classified = host.panel.key().is_some();
+        assert_eq!(classified, effect == Effect::Plan);
+        restarted.explicit_read(&host.panel.reply());
         assert!(!restarted.unresolved().refresh);
         let record = restarted.file.record();
-        assert!(!flag(&record, "AutomaticWritesPaused") && !flag(&record, "UncertainRefreshRate"));
+        assert_eq!(flag(&record, "AutomaticWritesPaused"), !classified);
+        assert_eq!(flag(&record, "UncertainRefreshRate"), !classified);
+        // The repairing request is admitted; its confirmed result resumes.
         host.panel.effect = Effect::Plan;
-        let outcome = restarted.set(&mut host, 2, "fixed-60").unwrap();
+        let outcome = restarted.set(&mut host, 2, "fixed-240").unwrap();
         assert_eq!(result(&outcome), (Status::Succeeded, None));
-        assert_eq!(host.submissions(), 2);
+        assert_eq!(host.submissions(), if classified { 1 } else { 2 });
+        let record = restarted.file.record();
+        assert!(!flag(&record, "AutomaticWritesPaused") && !flag(&record, "UncertainRefreshRate"));
     }
 }
 
 #[test]
-fn desktop_match_without_the_signal_is_uncertain() {
+fn desktop_only_apply_is_uncertain_and_an_unclassified_read_admits_the_repair() {
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, 240, 240);
+    let mut host = admitted(1, 240, 240);
     host.panel.effect = Effect::DesktopOnly;
     let outcome = rig.set(&mut host, 1, "fixed-60").unwrap();
     assert_eq!((host.panel.desktop, host.panel.physical), (60, 240));
@@ -585,6 +494,31 @@ fn desktop_match_without_the_signal_is_uncertain() {
     assert_eq!(host.submissions(), 1);
     assert!(rig.unresolved().refresh);
     assert!(flag(&rig.file.record(), "UncertainRefreshRate"));
+
+    // The gate survives a restart and refuses without device interaction.
+    let restarted = Rig::new(rig.file.clone());
+    let observations = host.panel.observations;
+    let blocked = restarted.set(&mut host, 1, "fixed-60").unwrap();
+    assert_eq!(result(&blocked), (Status::Blocked, Some(PAUSED)));
+    assert_eq!(host.panel.observations, observations);
+
+    // The 60 Hz desktop over the 240 Hz signal classifies no option, but an
+    // explicit read observed it: the gate reopens, the managed pause stays.
+    let read = host.panel.reply();
+    assert_eq!(read.refresh_key(), None);
+    restarted.explicit_read(&read);
+    assert!(!restarted.unresolved().refresh);
+    let record = restarted.file.record();
+    assert!(flag(&record, "AutomaticWritesPaused") && flag(&record, "UncertainRefreshRate"));
+
+    // The repairing request runs and its confirmation resumes automation.
+    host.panel.effect = Effect::Plan;
+    let outcome = restarted.set(&mut host, 1, "fixed-60").unwrap();
+    assert_eq!(result(&outcome), (Status::Succeeded, None));
+    assert_eq!(host.submissions(), 2);
+    assert_eq!((host.panel.desktop, host.panel.physical), (60, 60));
+    let record = restarted.file.record();
+    assert!(!flag(&record, "AutomaticWritesPaused") && !flag(&record, "UncertainRefreshRate"));
 }
 
 #[test]
@@ -616,7 +550,7 @@ fn readback_failures_after_apply_are_uncertain_with_managed_texts() {
     ];
     for (read, expected) in cases {
         let rig = Rig::new(Memory::default());
-        let mut host = Host::admitted(1, 60, 240);
+        let mut host = admitted(1, 60, 240);
         host.panel.read_script.push_back(read);
         let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
         assert_eq!(result(&outcome), (Status::Indeterminate, Some(expected)));
@@ -628,8 +562,8 @@ fn readback_failures_after_apply_are_uncertain_with_managed_texts() {
 #[test]
 fn reply_that_does_not_show_a_confirmed_change_is_indeterminate() {
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, 60, 240);
-    host.reply_key = Some(Some("fixed-60"));
+    let mut host = admitted(1, 60, 240);
+    host.panel.reply_key = Some(Some("fixed-60"));
     let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
     assert_eq!(result(&outcome), (Status::Indeterminate, Some(UNCONFIRMED)));
     assert_eq!(host.submissions(), 1);
@@ -644,7 +578,7 @@ fn power_change_after_a_successful_change_is_indeterminate() {
     });
     for (desktop, submitted) in [(60, true), (240, false)] {
         let rig = Rig::new(Memory::default());
-        let mut host = Host::admitted(1, desktop, 240);
+        let mut host = admitted(1, desktop, 240);
         host.later = Some(drifted);
         let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
         // Managed ExecuteSetterAsync.EnsureCurrent, applied to a submitted
@@ -658,7 +592,7 @@ fn power_change_after_a_successful_change_is_indeterminate() {
 
     // Lost confirmation after success is also stale.
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, 60, 240);
+    let mut host = admitted(1, 60, 240);
     host.later = Some(None);
     let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
     assert_eq!(result(&outcome), (Status::Indeterminate, Some(STALE_AFTER)));
@@ -667,7 +601,7 @@ fn power_change_after_a_successful_change_is_indeterminate() {
 #[test]
 fn cancellation_after_submission_is_recorded_without_replay() {
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, 60, 240);
+    let mut host = admitted(1, 60, 240);
     let canceled = Arc::new(AtomicBool::new(false));
     host.panel.cancel_on_apply = Some(canceled.clone());
     let outcome = rig
@@ -688,7 +622,7 @@ fn cancellation_after_submission_is_recorded_without_replay() {
 #[test]
 fn fatal_reply_query_records_certainty_before_returning() {
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, 60, 240);
+    let mut host = admitted(1, 60, 240);
     host.fail_query = true;
     let error = rig
         .set(&mut host, 1, "fixed-240")
@@ -705,7 +639,7 @@ fn fatal_reply_query_records_certainty_before_returning() {
 fn refresh_uncertainty_gates_only_refresh_and_other_gates_never_block_it() {
     // A refresh Indeterminate leaves HDR and brightness writable.
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, 60, 240);
+    let mut host = admitted(1, 60, 240);
     host.panel.effect = Effect::Nothing;
     let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
     assert_eq!(outcome.status, Status::Indeterminate);
@@ -727,7 +661,7 @@ fn refresh_uncertainty_gates_only_refresh_and_other_gates_never_block_it() {
         ..Fields::default()
     };
     assert_eq!(rig.unresolved(), both);
-    let mut host = Host::admitted(1, 60, 240);
+    let mut host = admitted(1, 60, 240);
     let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
     assert_eq!(result(&outcome), (Status::Succeeded, None));
     assert_eq!(host.submissions(), 1);
@@ -742,7 +676,7 @@ fn refresh_uncertainty_gates_only_refresh_and_other_gates_never_block_it() {
     );
     let rig = Rig::new(file);
     assert_eq!(
-        rig.set(&mut Host::admitted(1, 60, 240), 1, "fixed-240")
+        rig.set(&mut admitted(1, 60, 240), 1, "fixed-240")
             .unwrap()
             .error
             .as_deref(),
@@ -751,4 +685,75 @@ fn refresh_uncertainty_gates_only_refresh_and_other_gates_never_block_it() {
     rig.explicit_read(&snapshot(Some("fixed-240")));
     assert_eq!(rig.unresolved(), Fields::BRIGHTNESS);
     assert!(flag(&rig.file.record(), "AutomaticWritesPaused"));
+}
+
+/// Every writer refusal before APPLY, with its managed status and text.
+#[test]
+fn refusals_map_to_managed_statuses_and_texts() {
+    let attempt = |reason| match refused(reason) {
+        Attempt::Failed {
+            error,
+            reply_resolves,
+        } => {
+            // Managed refresh never reconciles a failure with the reply.
+            assert!(!reply_resolves);
+            (Status::Failed, error.into_owned())
+        }
+        Attempt::Done(status, error) => (status, error.into_owned()),
+        Attempt::Unchanged | Attempt::Confirmed => panic!("a refusal is not a result"),
+    };
+    let prepared = "The refresh-rate configuration could not be prepared: ";
+    for (reason, status, text) in [
+        (
+            RefreshError::Prepare(PrepareError::PathChanged),
+            Status::Failed,
+            format!(
+                "{prepared}The internal display path changed before the refresh-rate setting \
+                 could be applied."
+            ),
+        ),
+        (
+            RefreshError::Prepare(PrepareError::DynamicTimingUnavailable),
+            Status::Failed,
+            format!(
+                "{prepared}Windows no longer reports the requested Dynamic refresh-rate timing."
+            ),
+        ),
+        (
+            RefreshError::Prepare(PrepareError::InvalidOption),
+            Status::Failed,
+            format!("{prepared}Arithmetic operation resulted in an overflow."),
+        ),
+        (
+            RefreshError::ValidationRejected(87),
+            Status::Failed,
+            format!(
+                "{prepared}Windows rejected the requested display configuration: Win32 error 87."
+            ),
+        ),
+        (
+            RefreshError::MultipleInternalDisplays,
+            Status::Failed,
+            MULTIPLE.into(),
+        ),
+        (
+            RefreshError::NoInternalDisplay,
+            Status::Failed,
+            NO_INTERNAL.into(),
+        ),
+        (
+            RefreshError::OptionUnavailable,
+            Status::Failed,
+            UNAVAILABLE.into(),
+        ),
+        (
+            RefreshError::PanelChanged,
+            Status::Blocked,
+            PANEL_CHANGED.into(),
+        ),
+        (RefreshError::AdmissionDenied, Status::Blocked, STALE.into()),
+        (RefreshError::Cancelled, Status::Blocked, CANCELED.into()),
+    ] {
+        assert_eq!(attempt(reason), (status, text));
+    }
 }

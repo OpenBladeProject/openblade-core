@@ -139,9 +139,9 @@ impl RefreshPacket {
     }
 }
 
-// The production SetDisplayConfig call sites, reachable only through
-// `refresh_write::WindowsRefreshNative`. Unit-test builds exclude them so no
-// test can validate or apply a configuration.
+// The production submissions, through the one `native::set_display_config`
+// call site. Unit-test builds exclude them so no test can validate or apply
+// a configuration.
 #[cfg(all(feature = "display-refresh-write", not(test)))]
 impl RefreshPacket {
     /// `SDC_VALIDATE`: Windows checks the supplied configuration only.
@@ -155,20 +155,7 @@ impl RefreshPacket {
     }
 
     fn set_display_config(&self, flags: u32) -> u32 {
-        let (paths, modes) = (&self.topology.paths, &self.topology.modes);
-        // Both arrays are bounded by MAX_ENTRIES when queried.
-        let (path_count, mode_count) = (paths.len() as u32, modes.len() as u32);
-        // SAFETY: Both arrays are initialized, owned by this packet and live
-        // for the whole synchronous input-only call; the counts are their lengths.
-        (unsafe {
-            windows_sys::Win32::Devices::Display::SetDisplayConfig(
-                path_count,
-                paths.as_ptr(),
-                mode_count,
-                modes.as_ptr(),
-                flags,
-            )
-        }) as u32
+        native::set_display_config(&self.topology.paths, &self.topology.modes, flags)
     }
 }
 
@@ -221,23 +208,4 @@ fn detailed_mode(
     Some(DISPLAYCONFIG_TARGET_MODE {
         targetVideoSignalInfo: signal,
     })
-}
-
-#[test]
-fn setter_linkage_and_flags() {
-    // This unit test retains the SDK import without calling it. The fixture
-    // executable only sees the scripted effects.
-    use windows_sys::Win32::Devices::Display::SetDisplayConfig;
-    std::hint::black_box(
-        SetDisplayConfig
-            as unsafe extern "system" fn(
-                u32,
-                *const DISPLAYCONFIG_PATH_INFO,
-                u32,
-                *const DISPLAYCONFIG_MODE_INFO,
-                u32,
-            ) -> i32,
-    );
-    assert_eq!(VALIDATE, 0x28060);
-    assert_eq!(APPLY, 0x282a0);
 }

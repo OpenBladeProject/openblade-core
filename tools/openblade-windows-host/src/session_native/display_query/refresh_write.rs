@@ -10,12 +10,9 @@
 //! its certainty before returning, even when the client, deadline or Stop has
 //! already abandoned the reply.
 use super::{
-    ccd_write::{
-        self, Attempt, CcdHost, CcdRequest, CcdWriteOutcome, Field, MULTIPLE, NO_INTERNAL,
-        unreadable, win32,
-    },
-    observation::{SharedBrightness, Snapshot},
-    recovery::{CheckpointFile, Fields, Recovery, Status},
+    ccd_write::{Attempt, CcdHost, CcdRequest, Field, MULTIPLE, NO_INTERNAL, unreadable, win32},
+    observation::Snapshot,
+    recovery::{Fields, Status},
 };
 use crate::session_native::power_admission::PowerContext;
 use openblade_platform_windows::display::refresh_write::{
@@ -24,11 +21,7 @@ use openblade_platform_windows::display::refresh_write::{
 };
 use std::{
     borrow::Cow,
-    io,
-    sync::{
-        Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 /// Native-only write gate (no managed equivalent).
@@ -104,16 +97,6 @@ pub(super) struct SetRefreshRate {
     pub(super) key: String,
 }
 
-pub(super) fn set_refresh_rate<F: CheckpointFile, H: CcdHost<Native: RefreshNative>>(
-    host: &mut H,
-    brightness: &SharedBrightness,
-    recovery: &Mutex<Recovery<F>>,
-    request: &SetRefreshRate,
-    canceled: &AtomicBool,
-) -> io::Result<CcdWriteOutcome> {
-    ccd_write::run(host, brightness, recovery, request, canceled)
-}
-
 impl<H: CcdHost<Native: RefreshNative>> CcdRequest<H> for SetRefreshRate {
     const FIELD: Field = Field {
         fields: Fields::REFRESH,
@@ -162,19 +145,24 @@ fn uncertain(reason: RefreshError) -> Cow<'static, str> {
 }
 
 /// A refusal before `SDC_APPLY`: nothing was submitted.
+///
+/// Deliberate deviation: a failed observation (`Topology`, no or several
+/// internal displays) is Failed here. Managed `PrepareRefresh` throws before
+/// `PrepareRefreshAfterSnapshot`, so its dispatcher's generic catch reports
+/// Indeterminate, although nothing could have been submitted.
 fn refused(reason: RefreshError) -> Attempt {
     let done = |status, error: &'static str| Attempt::Done(status, Cow::Borrowed(error));
+    let failed = |error| Attempt::Failed {
+        error,
+        reply_resolves: false,
+    };
     match reason {
-        RefreshError::Topology(error) => Attempt::Done(Status::Failed, unreadable(error)),
-        RefreshError::NoInternalDisplay => done(Status::Failed, NO_INTERNAL),
-        RefreshError::MultipleInternalDisplays => done(Status::Failed, MULTIPLE),
-        RefreshError::OptionUnavailable => done(Status::Failed, UNAVAILABLE),
-        RefreshError::Prepare(error) => {
-            Attempt::Done(Status::Failed, not_prepared(prepare_error(error)))
-        }
-        RefreshError::ValidationRejected(status) => {
-            Attempt::Done(Status::Failed, validation_rejected(status))
-        }
+        RefreshError::Topology(error) => failed(unreadable(error)),
+        RefreshError::NoInternalDisplay => failed(Cow::Borrowed(NO_INTERNAL)),
+        RefreshError::MultipleInternalDisplays => failed(Cow::Borrowed(MULTIPLE)),
+        RefreshError::OptionUnavailable => failed(Cow::Borrowed(UNAVAILABLE)),
+        RefreshError::Prepare(error) => failed(not_prepared(prepare_error(error))),
+        RefreshError::ValidationRejected(status) => failed(validation_rejected(status)),
         RefreshError::PanelChanged => done(Status::Blocked, PANEL_CHANGED),
         RefreshError::AdmissionDenied => done(Status::Blocked, STALE),
         RefreshError::Cancelled => done(Status::Blocked, CANCELED),

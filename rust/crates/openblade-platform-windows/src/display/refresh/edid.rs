@@ -30,22 +30,30 @@ fn ratio_fits(numerator: u64, denominator: u64) -> bool {
     rational(numerator, denominator).is_some()
 }
 
+/// Managed `DisplayConfigRational.FromRatio`: a ratio is reduced only when a
+/// term exceeds the native u32 bounds, so a representable EDID ratio is
+/// submitted with its own terms.
 pub(in crate::display) fn rational(
     numerator: u64,
     denominator: u64,
 ) -> Option<DISPLAYCONFIG_RATIONAL> {
+    // Native-only refusal of a zero term. The parser cannot produce one: its
+    // pixel rate is at least 1 kHz and every total at least 2.
     if numerator == 0 || denominator == 0 {
         return None;
     }
-    // Match DisplayConfigRational.FromRatio, including reduction before the
-    // native u32 numerator/denominator bounds are checked.
-    let (mut a, mut b) = (numerator, denominator);
-    while b != 0 {
-        (a, b) = (b, a % b);
+    let (mut numerator, mut denominator) = (numerator, denominator);
+    if numerator > u64::from(u32::MAX) || denominator > u64::from(u32::MAX) {
+        let (mut divisor, mut remainder) = (numerator, denominator);
+        while remainder != 0 {
+            (divisor, remainder) = (remainder, divisor % remainder);
+        }
+        numerator /= divisor;
+        denominator /= divisor;
     }
     Some(DISPLAYCONFIG_RATIONAL {
-        Numerator: u32::try_from(numerator / a).ok()?,
-        Denominator: u32::try_from(denominator / a).ok()?,
+        Numerator: u32::try_from(numerator).ok()?,
+        Denominator: u32::try_from(denominator).ok()?,
     })
 }
 

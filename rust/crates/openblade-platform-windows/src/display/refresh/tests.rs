@@ -90,7 +90,7 @@ fn assert_key(
     assert_eq!(actual, (expected != "-").then_some(expected), "{case}");
 }
 
-fn write_timing(
+pub(in crate::display) fn write_timing(
     bytes: &mut [u8],
     width: u64,
     height: u64,
@@ -110,11 +110,11 @@ fn write_timing(
     }
 }
 
-fn set_checksum(block: &mut [u8]) {
+pub(in crate::display) fn set_checksum(block: &mut [u8]) {
     block[127] = 0_u8.wrapping_sub(block[..127].iter().copied().fold(0_u8, u8::wrapping_add));
 }
 
-fn type7_edid(count: usize) -> Vec<u8> {
+pub(in crate::display) fn type7_edid(count: usize) -> Vec<u8> {
     assert!(count <= 5);
     let mut bytes = vec![0; 256];
     bytes[..8].copy_from_slice(&[0, 255, 255, 255, 255, 255, 255, 0]);
@@ -213,6 +213,7 @@ fn managed_refresh_fixture_matches_rust() {
                     preferred,
                     &timings(edid),
                     range,
+                    None,
                 );
                 let fixed_rates: Vec<_> = options
                     .iter()
@@ -341,4 +342,33 @@ fn range_requires_a_valid_edid_header_checksum_and_bounds() {
     assert_eq!(edid::vertical_range(&edid), None);
     set_checksum(&mut edid[..128]);
     assert_eq!(edid::vertical_range(&edid), None);
+}
+
+#[test]
+fn rational_keeps_representable_terms_and_reduces_only_on_overflow() {
+    let terms = |ratio: Option<DISPLAYCONFIG_RATIONAL>| {
+        ratio.map(|ratio| (ratio.Numerator, ratio.Denominator))
+    };
+    // Issue #884 panel timing: both ratios fit, so neither is reduced.
+    assert_eq!(
+        terms(edid::rational(268_620_000, 2720 * 1646)),
+        Some((268_620_000, 4_477_120))
+    );
+    assert_eq!(
+        terms(edid::rational(268_620_000, 2720)),
+        Some((268_620_000, 2720))
+    );
+    // A term above u32::MAX is reduced by the greatest common divisor first.
+    assert_eq!(
+        terms(edid::rational(10_000_000_000, 4_000)),
+        Some((2_500_000, 1))
+    );
+    assert_eq!(
+        terms(edid::rational(8_589_934_590, 4)),
+        Some((4_294_967_295, 2))
+    );
+    // Still too large after reduction, or a zero term.
+    assert_eq!(terms(edid::rational(4_294_967_297, 2)), None);
+    assert_eq!(terms(edid::rational(0, 1)), None);
+    assert_eq!(terms(edid::rational(1, 0)), None);
 }

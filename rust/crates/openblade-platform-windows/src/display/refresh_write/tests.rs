@@ -4,11 +4,10 @@
 use super::*;
 use crate::display::{
     AdvancedColorState, EndpointId, MonitorName, RefreshOption, RefreshSnapshot, TimingEvidence,
-    native, refresh::classify, refresh_packet,
+    native, refresh::classify,
 };
 use std::{
     collections::VecDeque,
-    hint::black_box,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -222,6 +221,8 @@ struct Native {
     log: Log,
     validated: Vec<(Option<RefreshRate>, bool, Option<RefreshRate>)>,
     applied: Vec<(Option<RefreshRate>, bool, Option<RefreshRate>)>,
+    /// The target mode of the last applied plan.
+    submitted: Option<DISPLAYCONFIG_TARGET_MODE>,
 }
 
 impl Native {
@@ -239,6 +240,7 @@ impl Native {
             log: Log::default(),
             validated: Vec::new(),
             applied: Vec::new(),
+            submitted: None,
         }
     }
 
@@ -252,7 +254,7 @@ fn describe(plan: &RefreshPlan) -> (Option<RefreshRate>, bool, Option<RefreshRat
 }
 
 impl RefreshNative for Native {
-    fn observe(&mut self) -> Result<RefreshObservation, DisplayReadError> {
+    fn observe(&mut self, _: &str) -> Result<RefreshObservation, DisplayReadError> {
         self.log.lock().unwrap().push("observe");
         let reading = match self.observed.take() {
             Some(reading) => reading?,
@@ -275,6 +277,7 @@ impl RefreshNative for Native {
     fn apply(&mut self, plan: &RefreshPlan) -> u32 {
         self.log.lock().unwrap().push("apply");
         self.applied.push(describe(plan));
+        self.submitted = plan.0.selected_mode();
         let path = plan.0.selected_path();
         match self.effect {
             Effect::Plan => {
@@ -389,10 +392,23 @@ fn fixed_rate_submits_the_panel_timing_and_requires_both_rates_to_read_back() {
         run(&mut native, "fixed-60", &fence),
         Ok(RefreshOutcome::Confirmed)
     );
-    let vsync = edid::rational(268_620_000, 2720 * 1646).unwrap();
+    // Managed DisplayConfigRational.FromRatio keeps the representable EDID
+    // terms unreduced for both the vertical and the horizontal rate.
+    let vsync = rate(268_620_000, 4_477_120);
     let expected = (observed(vsync), false, observed(vsync));
     assert_eq!(native.validated, [expected]);
     assert_eq!(native.applied, [expected]);
+    let signal = native.submitted.unwrap().targetVideoSignalInfo;
+    assert_eq!(
+        (signal.hSyncFreq.Numerator, signal.hSyncFreq.Denominator),
+        (268_620_000, 2720)
+    );
+    assert_eq!(
+        (signal.vSyncFreq.Numerator, signal.vSyncFreq.Denominator),
+        (268_620_000, 4_477_120)
+    );
+    assert_eq!(signal.pixelRate, 268_620_000);
+    assert_eq!((signal.totalSize.cx, signal.totalSize.cy), (2720, 1646));
     assert_eq!(native.calls(), FULL);
 }
 
@@ -656,22 +672,8 @@ fn readback_must_show_the_same_panel_with_both_rates() {
 }
 
 #[test]
-fn packet_encoding_and_setter_linkage() {
-    // Retain the SDK import without calling it; this build cannot reach
-    // the production call site.
-    black_box(
-        windows_sys::Win32::Devices::Display::SetDisplayConfig
-            as unsafe extern "system" fn(
-                u32,
-                *const DISPLAYCONFIG_PATH_INFO,
-                u32,
-                *const DISPLAYCONFIG_MODE_INFO,
-                u32,
-            ) -> i32,
-    );
-    assert_eq!(refresh_packet::VALIDATE, 0x28060);
-    assert_eq!(refresh_packet::APPLY, 0x282a0);
-
+fn packet_encoding_keeps_the_frame_indices_it_does_not_change() {
+    // The setter linkage and flags are pinned once, in `native`.
     let words = |plan: &RefreshPlan| plan.0.index_words();
     let plan = |panel: Panel, option: RefreshOption, timings: Vec<edid::DetailedTiming>| {
         RefreshPacket::prepare(panel.topology(), &panel.display(), &option, None, &timings)
@@ -710,4 +712,99 @@ fn packet_encoding_and_setter_linkage() {
         ),
         Err(PrepareError::PathChanged)
     ));
+}
+
+fn prepare(
+    panel: Panel,
+    topology: Topology,
+    option: RefreshOption,
+    preferred: Option<DISPLAYCONFIG_TARGET_MODE>,
+) -> Result<RefreshPlan, PrepareError> {
+    RefreshPacket::prepare(topology, &panel.display(), &option, preferred, &[]).map(RefreshPlan)
+}
+
+#[test]
+fn active_timing_precedes_preferred_unless_dynamic_needs_a_progressive_one() {
+    // Managed PrepareRefreshTopology: an active signal at the requested
+    // maximum is kept even when Windows prefers another timing for it.
+    let panel = Panel::split();
+    let preferred = signal(rate(240_000, 1_001));
+    let plan = prepare(panel, panel.topology(), fixed(240), Some(preferred)).unwrap();
+    assert_eq!(plan.target_rate(), observed(hz(240)));
+
+    // Dynamic accepts the active signal only when it is progressive.
+    let mut interlaced = Panel::split();
+    interlaced.physical.targetVideoSignalInfo.scanLineOrdering = 2;
+    let option = dynamic(48, 240, 60);
+    let plan = prepare(
+        interlaced,
+        interlaced.topology(),
+        option.clone(),
+        Some(preferred),
+    )
+    .unwrap();
+    assert_eq!(plan.target_rate(), observed(rate(240_000, 1_001)));
+    assert!(plan.boost());
+    let progressive = prepare(panel, panel.topology(), option, Some(preferred)).unwrap();
+    assert_eq!(progressive.target_rate(), observed(hz(240)));
+}
+
+#[test]
+fn frame_must_hold_exactly_one_admitted_path_with_its_source_mode() {
+    let panel = Panel::split();
+    // A duplicate active path for the same endpoints is ambiguous.
+    let mut duplicated = panel.topology();
+    duplicated.paths.push(duplicated.paths[0]);
+    assert!(matches!(
+        prepare(panel, duplicated, fixed(240), None),
+        Err(PrepareError::PathChanged)
+    ));
+    // An inactive duplicate is not a candidate.
+    let mut inactive = panel.topology();
+    let mut idle = inactive.paths[0];
+    idle.flags &= !DISPLAYCONFIG_PATH_ACTIVE;
+    inactive.paths.push(idle);
+    assert!(prepare(panel, inactive, fixed(240), None).is_ok());
+
+    // The source index must name this source's mode in the same frame.
+    let mut invalid = panel.topology();
+    invalid.paths[0].sourceInfo.Anonymous.modeInfoIdx = 0xffff_ffff;
+    let mut wrong_type = panel.topology();
+    wrong_type.paths[0].sourceInfo.Anonymous.modeInfoIdx = 1 << 16 | 0xffff;
+    let mut other_source = panel.topology();
+    other_source.modes[0].id = 4;
+    let mut out_of_range = panel.topology();
+    out_of_range.paths[0].sourceInfo.Anonymous.modeInfoIdx = 9 << 16 | 0xffff;
+    for topology in [invalid, wrong_type, other_source, out_of_range] {
+        assert!(matches!(
+            prepare(panel, topology, fixed(240), None),
+            Err(PrepareError::PathChanged)
+        ));
+    }
+}
+
+#[test]
+fn dynamic_requires_a_virtual_mode_path_even_with_an_admitted_timing() {
+    let mut legacy = Panel::split();
+    legacy.virtual_mode = false;
+    let preferred = signal(rate(240_000, 1_001));
+    assert!(matches!(
+        prepare(
+            legacy,
+            legacy.topology(),
+            dynamic(48, 240, 60),
+            Some(preferred)
+        ),
+        Err(PrepareError::DynamicTimingUnavailable)
+    ));
+    let panel = Panel::split();
+    assert!(
+        prepare(
+            panel,
+            panel.topology(),
+            dynamic(48, 240, 60),
+            Some(preferred)
+        )
+        .is_ok()
+    );
 }

@@ -5,19 +5,14 @@ use super::*;
 use crate::session_native::display_query::{
     ccd_write::CHANGING,
     observation::fixture_query,
-    test_support::{Memory, Rig},
+    test_support::{FencedTopology, Host, Memory, Rig, TestPanel, flag, result},
     write::{CHANGED_POWER, CHECKPOINT, STALE_AFTER, UNCONFIRMED_POWER},
 };
-use openblade_platform_windows::display::SubmissionFence;
 use openblade_platform_windows::display::{
     DisplayReadError, EndpointId, InternalDisplayTopology, Operation,
     scripted::{RefreshTiming, Scenario},
 };
-use std::{
-    cell::Cell,
-    collections::VecDeque,
-    sync::{Arc, atomic::AtomicUsize},
-};
+use std::{collections::VecDeque, sync::Arc};
 
 fn topology(
     supported: bool,
@@ -54,6 +49,8 @@ struct Panel {
     submissions: Vec<bool>,
     /// Set after the submission boundary (cancellation racing a write).
     cancel_on_submit: Option<Arc<AtomicBool>>,
+    /// The reply query shows the opposite HDR state.
+    stale_reply: bool,
 }
 
 impl HdrNative for Panel {
@@ -76,176 +73,56 @@ impl HdrNative for Panel {
     }
 }
 
-struct TestFence {
-    panel: (bool, bool, bool),
-    changed: bool,
-    admit: bool,
-    checks: Arc<AtomicUsize>,
-}
+impl TestPanel for Panel {
+    type Value = bool;
+    type Request = SetHdr;
 
-impl SubmissionFence for TestFence {
-    fn topology(&self) -> Result<InternalDisplayTopology, DisplayReadError> {
-        self.checks.fetch_add(1, Ordering::SeqCst);
-        if self.changed {
-            return Ok(InternalDisplayTopology::NoInternalDisplay);
+    fn request(expected_power_source: u8, enabled: bool) -> SetHdr {
+        SetHdr {
+            expected_power_source,
+            enabled,
         }
-        let (supported, enabled, replaced) = self.panel;
-        topology(supported, enabled, replaced)
     }
 
-    fn admit(&self) -> bool {
-        self.admit
+    fn fenced(&self) -> FencedTopology {
+        let (supported, enabled, replaced) = (self.supported, self.enabled, self.replaced);
+        Box::new(move || topology(supported, enabled, replaced))
+    }
+
+    fn reply(&self) -> Snapshot {
+        snapshot(self.supported, self.enabled != self.stale_reply)
     }
 }
 
-struct Host {
-    panel: Panel,
-    power: Option<PowerContext>,
-    /// Power reported by every capture after the first (post-success drift).
-    later: Option<Option<PowerContext>>,
-    captures: Cell<usize>,
-    changed: bool,
-    admit: bool,
-    fence_checks: Arc<AtomicUsize>,
-    queries: usize,
-    /// The reply query shows the opposite HDR state.
-    stale_reply: bool,
-    /// The reply query fails fatally.
-    fail_query: bool,
-}
-
-impl Host {
-    fn admitted(source: u8, enabled: bool) -> Self {
-        Self {
-            panel: Panel {
-                supported: true,
-                enabled,
-                replaced: false,
-                script: VecDeque::new(),
-                status: 0,
-                apply: true,
-                reads: 0,
-                submissions: Vec::new(),
-                cancel_on_submit: None,
-            },
-            power: Some(PowerContext {
-                source,
-                generation: 7,
-            }),
-            later: None,
-            captures: Cell::new(0),
-            changed: false,
-            admit: true,
-            fence_checks: Arc::default(),
-            queries: 0,
+/// An admitted host over a supported panel in the given HDR state.
+fn admitted(source: u8, enabled: bool) -> Host<Panel> {
+    Host::admitted(
+        source,
+        Panel {
+            supported: true,
+            enabled,
+            replaced: false,
+            script: VecDeque::new(),
+            status: 0,
+            apply: true,
+            reads: 0,
+            submissions: Vec::new(),
+            cancel_on_submit: None,
             stale_reply: false,
-            fail_query: false,
-        }
-    }
+        },
+    )
+}
 
+impl Host<Panel> {
     fn submissions(&self) -> usize {
         self.panel.submissions.len()
     }
 }
 
-impl CcdHost for Host {
-    type Native = Panel;
-
-    fn power(&self) -> Option<PowerContext> {
-        let capture = self.captures.get();
-        self.captures.set(capture + 1);
-        match self.later {
-            Some(later) if capture > 0 => later,
-            _ => self.power,
-        }
-    }
-
-    fn fence(&self, admitted: PowerContext) -> Arc<dyn SubmissionFence> {
-        assert_eq!(
-            Some(admitted),
-            self.power,
-            "fence binds the captured context"
-        );
-        Arc::new(TestFence {
-            panel: (
-                self.panel.supported,
-                self.panel.enabled,
-                self.panel.replaced,
-            ),
-            changed: self.changed,
-            admit: self.admit,
-            checks: self.fence_checks.clone(),
-        })
-    }
-
-    fn native(&mut self) -> &mut Panel {
-        &mut self.panel
-    }
-
-    fn query(&mut self, _: &SharedBrightness, canceled: &AtomicBool) -> io::Result<Snapshot> {
-        self.queries += 1;
-        if self.fail_query {
-            return Err(io::Error::other("injected reply query failure"));
-        }
-        if canceled.load(Ordering::SeqCst) {
-            return Err(io::ErrorKind::Interrupted.into());
-        }
-        Ok(snapshot(
-            self.panel.supported,
-            self.panel.enabled != self.stale_reply,
-        ))
-    }
-}
-
-/// The manual request through the shared rig.
-trait Set {
-    fn set(&self, host: &mut Host, expected: u8, enabled: bool) -> io::Result<CcdWriteOutcome>;
-    fn set_canceled(
-        &self,
-        host: &mut Host,
-        expected: u8,
-        enabled: bool,
-        canceled: &AtomicBool,
-    ) -> io::Result<CcdWriteOutcome>;
-}
-
-impl Set for Rig {
-    fn set(&self, host: &mut Host, expected: u8, enabled: bool) -> io::Result<CcdWriteOutcome> {
-        self.set_canceled(host, expected, enabled, &AtomicBool::new(false))
-    }
-
-    fn set_canceled(
-        &self,
-        host: &mut Host,
-        expected: u8,
-        enabled: bool,
-        canceled: &AtomicBool,
-    ) -> io::Result<CcdWriteOutcome> {
-        set_hdr(
-            host,
-            &self.owner,
-            &self.recovery,
-            SetHdr {
-                expected_power_source: expected,
-                enabled,
-            },
-            canceled,
-        )
-    }
-}
-
-fn result(outcome: &CcdWriteOutcome) -> (Status, Option<&str>) {
-    (outcome.status, outcome.error.as_deref())
-}
-
-fn flag(record: &serde_json::Value, name: &str) -> bool {
-    record[name].as_bool().unwrap()
-}
-
 #[test]
 fn requested_state_is_submitted_once_confirmed_and_recorded() {
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     let outcome = rig.set(&mut host, 1, true).unwrap();
     assert_eq!(result(&outcome), (Status::Succeeded, None));
     assert_eq!(outcome.state.hdr(), Some(true));
@@ -278,7 +155,7 @@ fn denied_admission_and_fence_refusals_never_submit() {
     let rig = Rig::new(Memory::legacy(0));
 
     // Unconfirmed power: blocked after a durable manual hold, never read.
-    let mut host = Host::admitted(0, false);
+    let mut host = admitted(0, false);
     host.power = None;
     let outcome = rig.set(&mut host, 0, true).unwrap();
     assert_eq!(result(&outcome), (Status::Blocked, Some(UNCONFIRMED_POWER)));
@@ -288,13 +165,13 @@ fn denied_admission_and_fence_refusals_never_submit() {
     assert!(!flag(&record, "AutomaticWritesPaused") && !flag(&record, "UncertainHdr"));
 
     // Changed power source.
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     let outcome = rig.set(&mut host, 2, true).unwrap();
     assert_eq!(result(&outcome), (Status::Blocked, Some(CHANGED_POWER)));
     assert_eq!(host.panel.reads, 0);
 
     // Origin, session, power generation or Stop changed after preparation.
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     host.admit = false;
     let outcome = rig.set(&mut host, 1, true).unwrap();
     assert_eq!(result(&outcome), (Status::Blocked, Some(STALE)));
@@ -302,14 +179,14 @@ fn denied_admission_and_fence_refusals_never_submit() {
     assert_eq!(host.submissions(), 0);
 
     // The fence's fresh topology no longer shows the admitted panel.
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     host.changed = true;
     let outcome = rig.set(&mut host, 1, true).unwrap();
     assert_eq!(result(&outcome), (Status::Blocked, Some(PANEL_CHANGED)));
     assert_eq!(host.submissions(), 0);
 
     // The panel was replaced between target selection and the fresh read.
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     host.panel.script.push_back(topology(true, false, false));
     host.panel.replaced = true;
     let outcome = rig.set(&mut host, 1, true).unwrap();
@@ -318,7 +195,7 @@ fn denied_admission_and_fence_refusals_never_submit() {
     assert_eq!(host.submissions(), 0);
 
     // Canceled before submission (client loss, deadline or Stop).
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     let outcome = rig
         .set_canceled(&mut host, 1, true, &AtomicBool::new(true))
         .unwrap();
@@ -329,7 +206,7 @@ fn denied_admission_and_fence_refusals_never_submit() {
     let record = rig.file.record();
     assert!(!flag(&record, "AutomaticWritesPaused") && !flag(&record, "UncertainHdr"));
     assert!(!rig.unresolved().hdr);
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     assert_eq!(
         rig.set(&mut host, 1, true).unwrap().status,
         Status::Succeeded
@@ -366,7 +243,7 @@ fn preparation_failures_fail_unless_a_fresh_read_shows_the_request() {
     ];
     for (read, expected) in cases {
         let rig = Rig::new(Memory::default());
-        let mut host = Host::admitted(1, false);
+        let mut host = admitted(1, false);
         host.panel.script.push_back(read());
         let outcome = rig.set(&mut host, 1, true).unwrap();
         assert_eq!(result(&outcome), (Status::Failed, Some(expected)));
@@ -379,7 +256,7 @@ fn preparation_failures_fail_unless_a_fresh_read_shows_the_request() {
         assert!(!rig.unresolved().hdr);
 
         // Managed ResolveHdrMutationResult: the reply already shows the request.
-        let mut host = Host::admitted(1, false);
+        let mut host = admitted(1, false);
         host.panel.script.push_back(read());
         let outcome = rig.set(&mut host, 1, false).unwrap();
         assert_eq!(result(&outcome), (Status::Succeeded, None));
@@ -388,7 +265,7 @@ fn preparation_failures_fail_unless_a_fresh_read_shows_the_request() {
 
     // The fresh pre-submission read is unreadable after target selection.
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     host.panel.script.push_back(topology(true, false, false));
     host.panel.script.push_back(Err(native(31)));
     let outcome = rig.set(&mut host, 1, true).unwrap();
@@ -405,7 +282,7 @@ fn preparation_failures_fail_unless_a_fresh_read_shows_the_request() {
 #[test]
 fn unsupported_panel_fails_without_submission() {
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     host.panel.supported = false;
     for enabled in [true, false] {
         let outcome = rig.set(&mut host, 1, enabled).unwrap();
@@ -424,7 +301,7 @@ fn checkpoint_failure_before_submission_blocks_without_device_interaction() {
     let file = Memory::legacy(1);
     file.allow.store(0, Ordering::SeqCst);
     let rig = Rig::new(file);
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     let outcome = rig.set(&mut host, 1, true).unwrap();
     assert_eq!(result(&outcome), (Status::Blocked, Some(CHECKPOINT)));
     assert_eq!(host.panel.reads, 0);
@@ -433,7 +310,7 @@ fn checkpoint_failure_before_submission_blocks_without_device_interaction() {
 
     // No prior checkpoint and no confirmed source: nothing can be saved.
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     host.power = None;
     assert_eq!(
         rig.set(&mut host, 1, true).unwrap().error.as_deref(),
@@ -449,7 +326,7 @@ fn possible_submission_pauses_without_replay_across_restart_until_explicit_read(
         (87, "Windows could not change HDR: Win32 error 87."),
     ] {
         let rig = Rig::new(Memory::default());
-        let mut host = Host::admitted(2, false);
+        let mut host = admitted(2, false);
         host.panel.apply = false;
         host.panel.status = status;
         let outcome = rig.set(&mut host, 2, true).unwrap();
@@ -492,7 +369,7 @@ fn possible_submission_pauses_without_replay_across_restart_until_explicit_read(
 #[test]
 fn rejected_submission_whose_readback_matches_succeeds() {
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     host.panel.status = 31;
     let outcome = rig.set(&mut host, 1, true).unwrap();
     assert_eq!(result(&outcome), (Status::Succeeded, None));
@@ -504,8 +381,8 @@ fn rejected_submission_whose_readback_matches_succeeds() {
 #[test]
 fn reply_that_does_not_show_a_confirmed_change_is_indeterminate() {
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, false);
-    host.stale_reply = true;
+    let mut host = admitted(1, false);
+    host.panel.stale_reply = true;
     let outcome = rig.set(&mut host, 1, true).unwrap();
     assert_eq!(result(&outcome), (Status::Indeterminate, Some(UNCONFIRMED)));
     assert_eq!(host.submissions(), 1);
@@ -521,7 +398,7 @@ fn power_change_after_a_successful_change_is_indeterminate() {
     });
     for initial in [false, true] {
         let rig = Rig::new(Memory::default());
-        let mut host = Host::admitted(1, initial);
+        let mut host = admitted(1, initial);
         host.later = Some(drifted);
         let outcome = rig.set(&mut host, 1, true).unwrap();
         // Managed ExecuteSetterAsync.EnsureCurrent, applied to a submitted
@@ -535,7 +412,7 @@ fn power_change_after_a_successful_change_is_indeterminate() {
 
     // Lost confirmation after success is also stale.
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     host.later = Some(None);
     let outcome = rig.set(&mut host, 1, true).unwrap();
     assert_eq!(result(&outcome), (Status::Indeterminate, Some(STALE_AFTER)));
@@ -544,7 +421,7 @@ fn power_change_after_a_successful_change_is_indeterminate() {
 #[test]
 fn cancellation_after_submission_is_recorded_without_replay() {
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     let canceled = Arc::new(AtomicBool::new(false));
     host.panel.cancel_on_submit = Some(canceled.clone());
     let outcome = rig.set_canceled(&mut host, 1, true, &canceled).unwrap();
@@ -567,7 +444,7 @@ fn cancellation_after_submission_is_recorded_without_replay() {
 #[test]
 fn unchanged_request_is_never_uncertain_even_if_the_reply_read_is_interrupted() {
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, true);
+    let mut host = admitted(1, true);
     let outcome = rig
         .set_canceled(&mut host, 1, true, &AtomicBool::new(true))
         .unwrap();
@@ -580,7 +457,7 @@ fn unchanged_request_is_never_uncertain_even_if_the_reply_read_is_interrupted() 
 #[test]
 fn fatal_reply_query_records_certainty_before_returning() {
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     host.fail_query = true;
     let error = rig
         .set(&mut host, 1, true)
@@ -601,7 +478,7 @@ fn fatal_reply_query_records_certainty_before_returning() {
 #[test]
 fn uncertain_completion_persistence_latches_the_hdr_gate() {
     let rig = Rig::new(Memory::default());
-    let mut host = Host::admitted(0, false);
+    let mut host = admitted(0, false);
     // Begin persists; the completion write then fails after a confirmed change.
     rig.file.allow.store(1, Ordering::SeqCst);
     let outcome = rig.set(&mut host, 0, true).unwrap();
@@ -625,7 +502,7 @@ fn hdr_and_brightness_write_gates_are_independent() {
     );
     let rig = Rig::new(file);
     assert_eq!(rig.unresolved(), Fields::BRIGHTNESS);
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     let outcome = rig.set(&mut host, 1, true).unwrap();
     assert_eq!(result(&outcome), (Status::Succeeded, None));
     assert_eq!(host.submissions(), 1);
@@ -641,7 +518,7 @@ fn hdr_and_brightness_write_gates_are_independent() {
         r#"{"SchemaVersion":4,"LastReconciledPowerSource":1,"ManualHold":true,"AutomaticWritesPaused":true,"UncertainHdr":true,"UncertainBrightness":true}"#,
     );
     let rig = Rig::new(file);
-    let mut host = Host::admitted(1, false);
+    let mut host = admitted(1, false);
     assert_eq!(
         rig.set(&mut host, 1, true).unwrap().error.as_deref(),
         Some(PAUSED)

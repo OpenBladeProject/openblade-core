@@ -10,17 +10,12 @@
 
 use super::{
     ActiveInternalDisplay, AdvancedColorState, DisplayReadError, EndpointId,
-    InternalDisplayTopology, SubmissionFence,
+    InternalDisplayTopology, SubmissionFence, fence::PanelIdentity,
 };
-use std::ffi::OsString;
 
 /// CCD identity of the internal display admitted for one HDR request.
 #[derive(Debug)]
-pub struct HdrTarget {
-    source: EndpointId,
-    target: EndpointId,
-    path: Option<OsString>,
-}
+pub struct HdrTarget(PanelIdentity);
 
 impl HdrTarget {
     /// Managed `GetSingleInternalTarget`: exactly one active internal path.
@@ -37,38 +32,12 @@ impl HdrTarget {
     }
 
     pub fn from_display(display: &ActiveInternalDisplay) -> Self {
-        Self {
-            source: display.source,
-            target: display.target,
-            path: device_path(display).cloned(),
-        }
+        Self(PanelIdentity::of(display))
     }
 
-    /// Same CCD endpoints and the same monitor device path (ASCII case-
-    /// insensitive, or both unreadable). Endpoint IDs alone can be reused.
     fn same_as(&self, display: &ActiveInternalDisplay) -> bool {
-        self.source == display.source
-            && self.target == display.target
-            && match (self.path.as_ref(), device_path(display)) {
-                (None, None) => true,
-                (Some(left), Some(right)) => {
-                    left == right
-                        || left
-                            .to_str()
-                            .zip(right.to_str())
-                            .is_some_and(|(left, right)| left.eq_ignore_ascii_case(right))
-                }
-                _ => false,
-            }
+        self.0.same_as(display)
     }
-}
-
-fn device_path(display: &ActiveInternalDisplay) -> Option<&OsString> {
-    display
-        .monitor_name
-        .as_ref()
-        .ok()
-        .and_then(|name| name.device_path.as_ref())
 }
 
 /// Current-user Windows boundary for one HDR request.
@@ -165,7 +134,7 @@ pub fn set_internal_hdr<N: HdrNative + ?Sized>(
 
     // From here Windows may have applied the change. Caller cancellation no
     // longer applies; the readback always runs.
-    let status = native.submit(admitted.target, enabled);
+    let status = native.submit(admitted.0.target(), enabled);
     let confirmed = matches!(
         native.topology(),
         Ok(InternalDisplayTopology::Single(after))

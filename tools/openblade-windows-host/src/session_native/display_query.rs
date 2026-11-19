@@ -105,6 +105,21 @@ enum Operation {
     #[cfg(feature = "agent-display-refresh-write-v1")]
     SetRefreshRate(SetRefreshRate),
 }
+impl Operation {
+    /// Managed `SessionDisplayRequestDispatcher`: a query has the ordinary
+    /// dispatch deadline and every mutation `MutationDispatchTimeout`.
+    fn deadline(&self) -> Duration {
+        match self {
+            Self::Query => DISPATCH_TIMEOUT,
+            #[cfg(feature = "agent-display-brightness-write-v1")]
+            Self::SetBrightness(_) => MUTATION_DISPATCH_TIMEOUT,
+            #[cfg(feature = "agent-display-hdr-write-v1")]
+            Self::SetHdr(_) => MUTATION_DISPATCH_TIMEOUT,
+            #[cfg(feature = "agent-display-refresh-write-v1")]
+            Self::SetRefreshRate(_) => MUTATION_DISPATCH_TIMEOUT,
+        }
+    }
+}
 struct Request {
     request_id: String,
     operation: Operation,
@@ -489,15 +504,7 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     }
     let canceled = Cancellation(Arc::new(AtomicBool::new(false)));
     let operation = request.operation;
-    let deadline = match &operation {
-        Operation::Query => DISPATCH_TIMEOUT,
-        #[cfg(feature = "agent-display-brightness-write-v1")]
-        Operation::SetBrightness(_) => MUTATION_DISPATCH_TIMEOUT,
-        #[cfg(feature = "agent-display-hdr-write-v1")]
-        Operation::SetHdr(_) => MUTATION_DISPATCH_TIMEOUT,
-        #[cfg(feature = "agent-display-refresh-write-v1")]
-        Operation::SetRefreshRate(_) => MUTATION_DISPATCH_TIMEOUT,
-    };
+    let deadline = operation.deadline();
     enum End {
         Complete(io::Result<Reply>),
         Retire,

@@ -888,10 +888,12 @@ fn selected_partial_display_query_capability_is_exact_and_composes_with_battery(
 }
 
 #[test]
-fn selected_partial_display_brightness_write_capability_is_exact_and_read_only_builds_cannot_claim_it() {
+fn selected_partial_display_brightness_write_capability_is_exact_and_read_only_builds_cannot_claim_it()
+ {
     let write = "session-display-query-partial-v1,session-display-brightness-write-partial-v1";
     let battery_write = "agent-battery-report-v1,session-display-query-partial-v1,session-display-brightness-write-partial-v1";
-    let selected = "agent-display-brightness-write-v1,agent-display-query-v1,native-agent-entry-compile-check";
+    let selected =
+        "agent-display-brightness-write-v1,agent-display-query-v1,native-agent-entry-compile-check";
     assert!(capabilities(2, "agent", selected, write).is_ok());
     assert!(capabilities(1, "agent", selected, write).is_err());
     assert!(
@@ -1025,7 +1027,8 @@ fn selected_partial_display_refresh_write_capability_is_exact_and_other_builds_c
     const BATTERY: &str = "agent-battery-report-v1";
     let entry = "native-agent-entry-compile-check";
     for selection in 0..8 {
-        let (battery, brightness, hdr) = (selection & 1 != 0, selection & 2 != 0, selection & 4 != 0);
+        let (battery, brightness, hdr) =
+            (selection & 1 != 0, selection & 2 != 0, selection & 4 != 0);
         let mut features = vec![
             "agent-display-query-v1",
             "agent-display-refresh-write-v1",
@@ -1048,7 +1051,10 @@ fn selected_partial_display_refresh_write_capability_is_exact_and_other_builds_c
         features.sort();
         let selected = features.join(",");
         let expected = markers.join(",");
-        assert!(capabilities(2, "agent", &selected, &expected).is_ok(), "{expected}");
+        assert!(
+            capabilities(2, "agent", &selected, &expected).is_ok(),
+            "{expected}"
+        );
         assert!(capabilities(1, "agent", &selected, &expected).is_err());
         assert!(capabilities(2, "service", &selected, &expected).is_err());
         // The write needs both the display query and the native entry.
@@ -1100,5 +1106,21 @@ fn selected_partial_display_refresh_write_capability_is_exact_and_other_builds_c
         let mut claimed = markers.clone();
         claimed.push(REFRESH);
         assert!(capabilities(2, "agent", features, &claimed.join(",")).is_err());
+    }
+    // The refresh write requires the display query: a build without it
+    // cannot claim the refresh marker alone under either schema.
+    for battery in [false, true] {
+        let mut features = vec!["agent-display-refresh-write-v1", entry];
+        let mut markers = vec![REFRESH];
+        if battery {
+            features.insert(0, "agent-battery-report-v1");
+            markers.insert(0, BATTERY);
+        }
+        for schema in [1, 2] {
+            assert!(
+                capabilities(schema, "agent", &features.join(","), &markers.join(",")).is_err(),
+                "{schema} {battery}"
+            );
+        }
     }
 }

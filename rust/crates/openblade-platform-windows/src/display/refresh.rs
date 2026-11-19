@@ -12,7 +12,7 @@ use windows_sys::Win32::{
 
 pub(super) mod edid;
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 const MAX_DRIVER_MODES: u32 = 4096;
 
@@ -131,14 +131,18 @@ pub(super) trait RefreshApi: DisplayApi {
 pub(super) fn read_refresh_with(
     api: &mut impl RefreshApi,
 ) -> Result<InternalDisplayRefresh, DisplayReadError> {
-    observe_refresh(api, false, |_, _, _| {})
+    observe_refresh(api, None, |_, _, _| {})
 }
 
 // Supplies the last CCD frame and the timing evidence from the bracketed read.
 // Mutation preparation uses those arrays together, never an index from another query.
+// `requested` is the key of a mutation observation (managed `BuildSnapshot`
+// with a requested key) and `None` for an ordinary read. A mutation also reads
+// the preferred timing on a non-virtual path, as managed `FindFixedTargetMode`
+// does, and offers an exact requested Dynamic maximum besides the default one.
 pub(super) fn observe_refresh(
     api: &mut impl RefreshApi,
-    for_mutation: bool,
+    requested: Option<&str>,
     evidence: impl FnOnce(Topology, Option<DISPLAYCONFIG_TARGET_MODE>, Vec<edid::DetailedTiming>),
 ) -> Result<InternalDisplayRefresh, DisplayReadError> {
     let display = match read_with(api)? {
@@ -163,8 +167,8 @@ pub(super) fn observe_refresh(
     }
     let driver_rates = driver_rates(api, &source, current)?;
     let active = display.active_signal;
-    let preferred =
-        (display.supports_virtual_mode || for_mutation).then(|| api.preferred_mode(display.target));
+    let preferred = (display.supports_virtual_mode || requested.is_some())
+        .then(|| api.preferred_mode(display.target));
     let preferred_mode = preferred.and_then(Result::ok).filter(|mode| {
         accept_preferred(active, native::signal_timing(mode.targetVideoSignalInfo)).is_some()
     });
@@ -210,6 +214,7 @@ pub(super) fn observe_refresh(
         preferred_timing,
         &timings,
         range,
+        requested,
     );
     let current_refresh_key = classify(&display, &refresh_options).map(|option| option.key.clone());
 
@@ -265,6 +270,7 @@ fn build_options(
     preferred: Option<SignalTiming>,
     timings: &[edid::DetailedTiming],
     range: Option<VerticalRange>,
+    requested: Option<&str>,
 ) -> Vec<RefreshOption> {
     // Mirrors the ordinary read path in BuildRefreshOptions. GDI's current
     // frequency can support visibility, but cannot classify the CCD pair.
@@ -314,12 +320,23 @@ fn build_options(
             .rev()
             .filter(|rate| Some(*rate) != current_maximum),
     );
+    // Managed AddDynamicRefreshOptions: one default Dynamic choice, plus an
+    // exact requested one while its timing is still supported.
+    let mut added_default = false;
     for maximum in candidates {
-        if let Some(&desktop) = fixed.iter().find(|&&rate| rate >= 60 && rate < maximum) {
-            let minimum = range
-                .filter(|range| i32::from(range.maximum_hertz) >= maximum)
-                .map_or(desktop, |range| i32::from(range.minimum_hertz));
-            options.push(RefreshOption::dynamic(minimum, maximum, desktop));
+        let Some(&desktop) = fixed.iter().find(|&&rate| rate >= 60 && rate < maximum) else {
+            continue;
+        };
+        let minimum = range
+            .filter(|range| i32::from(range.maximum_hertz) >= maximum)
+            .map_or(desktop, |range| i32::from(range.minimum_hertz));
+        let option = RefreshOption::dynamic(minimum, maximum, desktop);
+        let matched = requested == Some(option.key.as_str());
+        if !added_default || matched {
+            options.push(option);
+            added_default = true;
+        }
+        if matched || requested.is_none() {
             break;
         }
     }

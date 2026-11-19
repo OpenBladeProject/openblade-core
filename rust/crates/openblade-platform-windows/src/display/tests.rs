@@ -871,3 +871,242 @@ fn refresh_distinguishes_missing_lookup_from_an_empty_timing_read() {
     assert_eq!(snapshot.edid_range, TimingEvidence::Unavailable);
     assert_eq!(snapshot.preferred_rate, TimingEvidence::Unavailable);
 }
+
+/// The production mutation observation over a scripted CCD/GDI/EDID read,
+/// through the plan that SDC_VALIDATE would receive. Validation is refused
+/// so nothing past it runs; no Windows call is made.
+#[cfg(feature = "display-refresh-write")]
+mod mutation {
+    use super::*;
+    use crate::display::{
+        refresh::tests::{set_checksum, type7_edid, write_timing},
+        refresh_write::{
+            RefreshError, RefreshFailure, RefreshNative, RefreshObservation, RefreshPlan,
+            set_internal_refresh,
+        },
+    };
+    use windows_sys::Win32::Devices::Display::DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE;
+
+    const PANEL: &str = r"\\?\DISPLAY#PANEL#INSTANCE#{fixture}";
+
+    /// One validated plan: desktop rate, boost and the explicit target signal.
+    type Planned = (
+        Option<RefreshRate>,
+        bool,
+        Option<DISPLAYCONFIG_VIDEO_SIGNAL_INFO>,
+    );
+
+    struct Validating {
+        api: Script,
+        validated: Vec<Planned>,
+    }
+
+    impl RefreshNative for Validating {
+        fn observe(&mut self, key: &str) -> Result<RefreshObservation, DisplayReadError> {
+            RefreshObservation::observe_with(&mut self.api, key)
+        }
+
+        fn validate(&mut self, plan: &RefreshPlan) -> u32 {
+            self.validated.push((
+                plan.desktop_rate(),
+                plan.boost(),
+                plan.0
+                    .selected_mode()
+                    .map(|mode| mode.targetVideoSignalInfo),
+            ));
+            ERROR_NOT_SUPPORTED
+        }
+
+        fn apply(&mut self, _: &RefreshPlan) -> u32 {
+            unreachable!("validation is refused")
+        }
+
+        fn read(&mut self) -> Result<InternalDisplayRefresh, DisplayReadError> {
+            unreachable!("validation is refused")
+        }
+    }
+
+    struct NoFence;
+
+    impl SubmissionFence for NoFence {
+        fn topology(&self) -> Result<InternalDisplayTopology, DisplayReadError> {
+            unreachable!("validation is refused")
+        }
+
+        fn admit(&self) -> bool {
+            unreachable!("validation is refused")
+        }
+    }
+
+    /// A 60 Hz desktop over a 239.76 Hz signal with a valid source mode, as
+    /// a writable frame needs (the read path does not check the source mode).
+    fn writable(flags: u32) -> Script {
+        let virtual_mode = flags & DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE != 0;
+        let mut path = path(
+            if virtual_mode { (1 << 16) | 0xffff } else { 1 },
+            DISPLAYCONFIG_PATH_ACTIVE | flags,
+        );
+        path.sourceInfo.Anonymous.modeInfoIdx = if virtual_mode { 0xffff } else { 0 };
+        let source = DISPLAYCONFIG_MODE_INFO {
+            infoType: DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE,
+            id: 3,
+            adapterId: SOURCE,
+            ..Default::default()
+        };
+        let mut target = target_mode();
+        target.Anonymous.targetMode = DISPLAYCONFIG_TARGET_MODE {
+            targetVideoSignalInfo: DISPLAYCONFIG_VIDEO_SIGNAL_INFO {
+                activeSize: DISPLAYCONFIG_2DREGION { cx: 2560, cy: 1600 },
+                scanLineOrdering: 1,
+                vSyncFreq: DISPLAYCONFIG_RATIONAL {
+                    Numerator: 240_000,
+                    Denominator: 1001,
+                },
+                ..Default::default()
+            },
+        };
+        let mut script = Script::new([
+            Frame::success(vec![path], vec![source, target]),
+            Frame::success(vec![path], vec![source, target]),
+        ]);
+        script.current_mode = Some(mode_at(60));
+        script.monitor_path = Some(PANEL);
+        script
+    }
+
+    fn preferred(numerator: u32, denominator: u32) -> Option<Result<SignalTiming, u32>> {
+        Some(Ok(SignalTiming {
+            width: 2560,
+            height: 1600,
+            scanline_ordering: 1,
+            rate: Some(RefreshRate {
+                numerator,
+                denominator,
+            }),
+        }))
+    }
+
+    fn validate(api: Script, key: &str) -> (Result<(), RefreshFailure>, Validating) {
+        let mut native = Validating {
+            api,
+            validated: Vec::new(),
+        };
+        let result = set_internal_refresh(&mut native, key, &NoFence, &|| false).map(|_| ());
+        (result, native)
+    }
+
+    fn refused(reason: RefreshError) -> Result<(), RefreshFailure> {
+        Err(RefreshFailure {
+            reason,
+            submission_may_have_occurred: false,
+        })
+    }
+
+    fn rate(numerator: u32, denominator: u32) -> Option<RefreshRate> {
+        Some(RefreshRate {
+            numerator,
+            denominator,
+        })
+    }
+
+    fn terms(rational: DISPLAYCONFIG_RATIONAL) -> (u32, u32) {
+        (rational.Numerator, rational.Denominator)
+    }
+
+    const REJECTED: RefreshError = RefreshError::ValidationRejected(ERROR_NOT_SUPPORTED);
+
+    #[test]
+    fn real_edid_timing_reaches_the_plan_with_unreduced_terms() {
+        // Issue #884: the panel's 60 Hz DisplayID Type 7 timing.
+        let mut edid = type7_edid(1);
+        write_timing(&mut edid[136..156], 2560, 1600, 268_620_000, 2720, 1646);
+        set_checksum(&mut edid[..128]);
+        set_checksum(&mut edid[128..]);
+        let mut api = writable(DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE);
+        api.indexed_modes = [mode_at(60), mode_at(240)].into();
+        api.preferred = Some(Err(ERROR_NOT_SUPPORTED));
+        api.edid = Some(Ok(edid));
+        let (result, native) = validate(api, "fixed-60");
+        assert_eq!(result, refused(REJECTED));
+        let [(desktop, boost, Some(signal))] = native.validated[..] else {
+            panic!("expected one explicit-timing plan");
+        };
+        // FromRatio keeps both representable ratios as the EDID states them.
+        assert_eq!(terms(signal.vSyncFreq), (268_620_000, 4_477_120));
+        assert_eq!(terms(signal.hSyncFreq), (268_620_000, 2720));
+        assert_eq!(signal.pixelRate, 268_620_000);
+        assert_eq!((signal.totalSize.cx, signal.totalSize.cy), (2720, 1646));
+        assert_eq!(desktop, rate(268_620_000, 4_477_120));
+        assert!(!boost);
+    }
+
+    #[test]
+    fn mutation_reads_the_preferred_timing_on_a_non_virtual_path() {
+        let script = || {
+            let mut api = writable(0);
+            api.indexed_modes = [mode_at(60), mode_at(240)].into();
+            api.preferred = preferred(60_000, 1001);
+            api.edid = Some(Err(ERROR_ACCESS_DENIED));
+            api
+        };
+        // The ordinary read of a non-virtual path never asks for it.
+        let mut read = script();
+        assert!(matches!(
+            refresh::read_refresh_with(&mut read),
+            Ok(InternalDisplayRefresh::Single(_))
+        ));
+        assert_eq!(read.preferred_calls, 0);
+
+        // Managed FindFixedTargetMode: the preferred 60 Hz timing is exact.
+        let (result, native) = validate(script(), "fixed-60");
+        assert_eq!(result, refused(REJECTED));
+        assert_eq!(native.api.preferred_calls, 1);
+        let [(desktop, false, Some(signal))] = native.validated[..] else {
+            panic!("expected one fixed explicit-timing plan");
+        };
+        assert_eq!(terms(signal.vSyncFreq), (60_000, 1001));
+        assert_eq!(desktop, rate(60_000, 1001));
+    }
+
+    #[test]
+    fn requested_dynamic_maximum_is_offered_beside_the_default_one() {
+        // Active 239.76 Hz and preferred 165 Hz: both are Dynamic maxima.
+        let script = || {
+            let mut api = writable(DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE);
+            api.indexed_modes = [mode_at(60), mode_at(165), mode_at(240)].into();
+            api.preferred = preferred(165, 1);
+            api.edid = Some(Err(ERROR_ACCESS_DENIED));
+            api
+        };
+        // An ordinary read keeps one Dynamic choice, the highest maximum.
+        let InternalDisplayRefresh::Single(read) =
+            refresh::read_refresh_with(&mut script()).unwrap()
+        else {
+            panic!("expected refresh snapshot");
+        };
+        let keys: Vec<_> = read
+            .refresh_options
+            .iter()
+            .map(|option| option.key.as_str())
+            .collect();
+        assert_eq!(
+            keys,
+            ["fixed-60", "fixed-165", "fixed-240", "dynamic-60-240"]
+        );
+
+        // Managed AddDynamicRefreshOptions also offers the exact request, so
+        // its admitted 165 Hz timing is applied with boost at 60 Hz.
+        let (result, native) = validate(script(), "dynamic-60-165");
+        assert_eq!(result, refused(REJECTED));
+        let [(desktop, true, Some(signal))] = native.validated[..] else {
+            panic!("expected one boosted plan");
+        };
+        assert_eq!(desktop, rate(60, 1));
+        assert_eq!(terms(signal.vSyncFreq), (165, 1));
+
+        // A Dynamic key that no maximum produces is still unavailable.
+        let (result, native) = validate(script(), "dynamic-60-200");
+        assert_eq!(result, refused(RefreshError::OptionUnavailable));
+        assert!(native.validated.is_empty());
+    }
+}

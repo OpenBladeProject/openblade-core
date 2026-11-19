@@ -67,7 +67,7 @@ impl Scenario {
         let mut evidence = None;
         let reading = refresh::observe_refresh(
             &mut self.script(enabled, timing, replaced),
-            true,
+            Some(key),
             |topology, preferred, timings| evidence = Some((topology, preferred, timings)),
         )?;
         let packet = match (&reading, evidence) {
@@ -100,9 +100,11 @@ impl Scenario {
         enabled: bool,
         timing: RefreshTiming,
         replaced: bool,
+        key: &str,
     ) -> Result<super::refresh_write::RefreshObservation, DisplayReadError> {
         super::refresh_write::RefreshObservation::observe_with(
             &mut self.script(enabled, timing, replaced),
+            key,
         )
     }
 

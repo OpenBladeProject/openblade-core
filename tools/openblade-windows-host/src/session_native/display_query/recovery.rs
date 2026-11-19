@@ -137,9 +137,10 @@ impl Fields {
         }
     }
 
-    /// Each field set on `self` that this snapshot independently reads back.
-    fn confirmed_by(self, state: &Snapshot) -> Self {
-        let read = |selected: bool, field: Self| selected && state.confirms(field);
+    /// Each field set on `self` whose current state this snapshot observed:
+    /// the native write gate's reopening rule (`Snapshot::observes`).
+    fn observed_by(self, state: &Snapshot) -> Self {
+        let read = |selected: bool, field: Self| selected && state.observes(field);
         Self {
             refresh: read(
                 self.refresh,
@@ -205,7 +206,8 @@ pub(super) struct Recovery<F> {
     operation: Fields,
     /// Native-only per-field manual write gate. A field is set while a
     /// submission to it may be unresolved, including after restart; each is
-    /// cleared only by an explicit read that independently observes it.
+    /// cleared only by an explicit read that observed its current state
+    /// (`Snapshot::observes`). The durable managed pause is separate.
     unresolved: Fields,
 }
 
@@ -322,9 +324,10 @@ impl<F: CheckpointFile> Recovery<F> {
     }
 
     /// `ResumeAfterSuccessfulExplicitRead`, plus the native per-field gate:
-    /// the read clears exactly the unresolved fields it independently observes.
+    /// the read clears exactly the unresolved fields whose state it observed.
+    /// The managed pause still resumes only on a complete readback.
     pub(super) fn explicit_read(&mut self, state: &Snapshot) -> bool {
-        self.unresolved = self.unresolved.without(self.unresolved.confirmed_by(state));
+        self.unresolved = self.unresolved.without(self.unresolved.observed_by(state));
         if !self.paused || self.last.is_none() || !state.confirms(self.uncertain) {
             return false;
         }

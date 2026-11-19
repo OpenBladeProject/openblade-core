@@ -1,8 +1,10 @@
 //! Production state shared by the selected partial display writes.
 //!
 //! One managed recovery checkpoint, one trusted power admission and one
-//! submission fence serve manual `setBrightness`, `setHdr` and `setRefreshRate`;
-//! each write module owns its own operation order and injected native boundary.
+//! submission fence serve manual `setBrightness`, `setHdr` and `setRefreshRate`.
+//! Brightness owns its operation order (`brightness_write`); the CCD writes share
+//! the manual-operation frame of `ccd_write`, and each supplies only its native
+//! attempt and reply predicate.
 use super::{
     observation::{SharedBrightness, Snapshot},
     recovery::{CheckpointFile, Recovery, WindowsCheckpointFile},
@@ -140,14 +142,14 @@ impl Writer {
         request: super::hdr_write::SetHdr,
         canceled: &std::sync::atomic::AtomicBool,
     ) -> io::Result<super::ccd_write::CcdWriteOutcome> {
-        super::hdr_write::set_hdr(
+        super::ccd_write::run(
             &mut super::ccd_write::WindowsCcdHost::new(
                 self.host.clone(),
                 openblade_platform_windows::display::hdr::WindowsHdrNative::current_user(),
             ),
             brightness,
             &self.recovery,
-            request,
+            &request,
             canceled,
         )
     }
@@ -160,7 +162,7 @@ impl Writer {
         request: &super::refresh_write::SetRefreshRate,
         canceled: &std::sync::atomic::AtomicBool,
     ) -> io::Result<super::ccd_write::CcdWriteOutcome> {
-        super::refresh_write::set_refresh_rate(
+        super::ccd_write::run(
             &mut super::ccd_write::WindowsCcdHost::new(
                 self.host.clone(),
                 openblade_platform_windows::display::refresh_write::WindowsRefreshNative::current_user(),

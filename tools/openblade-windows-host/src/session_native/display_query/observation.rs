@@ -150,6 +150,24 @@ impl Snapshot {
                     && !self.supported_brightness_levels.is_empty())
     }
 
+    /// The native write gate's reopening rule: whether this snapshot observed
+    /// the current state of `fields`. Refresh needs only an available snapshot,
+    /// which always carries a complete refresh read even when the mode matches
+    /// no option (issue #884: a 60 Hz desktop over a 240 Hz signal, or a
+    /// desktop-only apply); managed has no such gate and a manual change is the
+    /// way out of that state. HDR and brightness keep `HasCompleteReadback`:
+    /// an available snapshot always observed HDR and setHdr is refused while
+    /// it is unsupported, and brightness without a reading was not observed,
+    /// so neither gate can trap a request that could succeed.
+    #[cfg(openblade_display_write)]
+    pub(super) fn observes(&self, fields: super::recovery::Fields) -> bool {
+        let rest = super::recovery::Fields {
+            refresh: false,
+            ..fields
+        };
+        (!fields.refresh || self.is_available) && self.confirms(rest)
+    }
+
     #[cfg(feature = "agent-display-brightness-write-v1")]
     pub(super) fn brightness(&self) -> Option<u8> {
         self.brightness_percent

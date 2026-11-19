@@ -591,7 +591,7 @@ fn hdr_operation_gates_only_hdr_and_explicit_reads_clear_only_observed_fields() 
 }
 
 #[test]
-fn refresh_operation_gates_only_refresh_and_reopens_on_a_classified_read() {
+fn refresh_operation_gates_only_refresh_and_reopens_on_any_observed_refresh_state() {
     let (mut recovery, file) = from_fixture("battery-minimal");
     assert!(recovery.begin(Fields::REFRESH, None));
     let stored = file.stored();
@@ -611,15 +611,28 @@ fn refresh_operation_gates_only_refresh_and_reopens_on_a_classified_read() {
     };
     assert_eq!(recovery.unresolved(), both);
 
-    // Restart restores both gates; a read without a classified option keeps
-    // the refresh gate, and one with it clears refresh and HDR.
+    // Restart restores both gates. An unavailable read observes nothing.
     let mut restarted = Recovery::load(file.clone());
     assert_eq!(restarted.unresolved(), both);
+    assert!(!restarted.explicit_read(&Snapshot::unavailable("gone")));
+    assert_eq!(restarted.unresolved(), both);
+
+    // An available read whose mode matches no option (issue #884) observed
+    // the refresh state, so the native gate reopens for the repairing
+    // request. The managed pause keeps HasCompleteReadback: it persists.
     let mut value = serde_json::to_value(without_brightness()).unwrap();
     value["currentRefreshKey"] = serde_json::Value::Null;
     let unclassified: Snapshot = serde_json::from_value(value).unwrap();
     assert!(!restarted.explicit_read(&unclassified));
-    assert_eq!(restarted.unresolved(), Fields::REFRESH);
+    assert_eq!(restarted.unresolved(), Fields::default());
+    assert_eq!(restarted.flags(), (true, true, both));
+    assert_eq!(file.stored()["AutomaticWritesPaused"], true);
+    assert_eq!(file.stored()["UncertainRefreshRate"], true);
+    let mut restarted = Recovery::load(file.clone());
+    assert!(!restarted.explicit_read(&unclassified));
+    assert_eq!(restarted.flags(), (true, true, both));
+
+    // Only a complete readback resumes managed automation.
     assert!(restarted.explicit_read(&without_brightness()));
     assert_eq!(restarted.unresolved(), Fields::default());
     assert_eq!(restarted.flags(), (false, false, Fields::default()));
