@@ -245,6 +245,25 @@ jobs:
           dotnet test ../tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj --filter 'FullyQualifiedName~RustBatteryParity|FullyQualifiedName~RustPerformanceParity|FullyQualifiedName~RustFanParity'
           dotnet test ../tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj --filter FullyQualifiedName~RustFanParity
 
+      # The default test run builds neither candidate. Run the shared-fixture
+      # IPC decoder tests in the Service build that admits every request and
+      # in the Agent build that reads Service status events.
+      - name: Test the candidates' object-only IPC decoders
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $manifest = '../tools/openblade-windows-host/Cargo.toml'
+          foreach ($candidate in @(
+              @('openblade-windows-service-candidate', 'service-temporary-charge-v1'),
+              @('openblade-windows-agent-candidate', 'agent-display-query-v1'))) {
+            $output = cargo test --locked --manifest-path $manifest --target ${{ matrix.target }} --bin $candidate[0] --features $candidate[1] -- service_status::object_tests
+            $output
+            if (-not ($output -match '^test result: ok\. [1-9]')) {
+              throw "No object-only decoder tests ran in $($candidate[0])."
+            }
+          }
+
       - name: Verify the Windows configuration writer against the managed store
         if: runner.os == 'Windows'
         run: |
