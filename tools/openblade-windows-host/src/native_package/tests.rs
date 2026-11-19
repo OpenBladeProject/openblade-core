@@ -1371,6 +1371,13 @@ fn the_real_agent_import_descriptors_pass_artifact_inspection() {
                      bcryptprimitives.dll,combase.dll,kernel32.dll,mscms.dll,ntdll.dll,\
                      ole32.dll,oleaut32.dll,shell32.dll,user32.dll,webservices.dll,wtsapi32.dll";
     inspect_artifact(&agent_record(&v, &image, canonical), &image, "agent", &r).unwrap();
+    // The same descriptors without the all-zero terminator in the table.
+    let mut unterminated = image.clone();
+    let size = u32::from_le_bytes(image[60..64].try_into().unwrap()) as usize + 24 + 124;
+    let descriptors = u32::try_from(20 * REAL_AGENT_IMPORTS.len()).unwrap();
+    unterminated[size..size + 4].copy_from_slice(&descriptors.to_le_bytes());
+    let record = agent_record(&v, &unterminated, canonical);
+    assert!(inspect_artifact(&record, &unterminated, "agent", &r).is_err());
     let (fewer, _) = canonical.rsplit_once(',').unwrap();
     assert!(inspect_artifact(&agent_record(&v, &image, fewer), &image, "agent", &r).is_err());
 
