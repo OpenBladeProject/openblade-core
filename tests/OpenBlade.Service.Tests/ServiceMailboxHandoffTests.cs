@@ -40,6 +40,14 @@ public sealed class ServiceMailboxHandoffTests
 #endif
 
     [Fact]
+    public void ProductionConstructionAcquiresNothingAndRefusesTransportUntilOpened()
+    {
+        // DI resolution must not touch the machine store; Open does, from the startup service.
+        var coordinator = new ServiceMailboxHandoff();
+        Assert.Throws<IOException>(() => coordinator.Lifetime.Reserve());
+    }
+
+    [Fact]
     public async Task StoredFirmwareUncertaintyDoesNotReplaceRealResourceDrain()
     {
         var run = new InjectedRun();
