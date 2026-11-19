@@ -223,9 +223,10 @@ internal static class NativeCanonical
     internal static int FieldMaximum(string header, int index) => (header, index) switch
     {
         ("OpenBlade.NativeStartupOwner.v2" or "OpenBlade.NativeServiceLaunch.v1" or "OpenBlade.NativeReadiness.v2" or "OpenBlade.ManagedNativeResolution.v2", _) => 10924,
-        // Features: the sorted Cargo feature list is most of a compiled identity.
+        // Features and Capabilities, the identity lines without a tighter check
+        // in Inspect, share the identity bound. Imports is not identity content.
         // build.rs emits only v2 identities, so v1 records keep 2048.
-        ("OpenBlade.NativeArtifactRecord.v2", 4) => NativeArtifact.MaximumIdentityBytes,
+        ("OpenBlade.NativeArtifactRecord.v2", 4 or 10) => NativeArtifact.MaximumIdentityBytes,
         // The Service and Agent artifact records, as base64.
         ("OpenBlade.NativePackage.v2", 8 or 9) => NativeArtifact.MaximumRecordBase64,
         _ => 2048,

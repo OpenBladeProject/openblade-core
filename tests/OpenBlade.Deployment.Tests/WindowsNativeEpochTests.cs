@@ -499,18 +499,26 @@ public sealed class WindowsNativeEpochTests
         Assert.All(f[8..10], field => Assert.InRange(field.Length, 2049, NativeArtifact.MaximumRecordBase64));
     }
 
-    // Each widened field admits its limit and refuses one character more. The
-    // other fields of the same records keep 2048, and v1 artifact records are
-    // not widened.
+    // Every field of the artifact and package records, with the limit it must
+    // have: the widened fields named here, 2048 for all others, and no
+    // widening of v1 artifact records.
+    public static TheoryData<string, int, int, int> RecordFieldLimits()
+    {
+        var rows = new TheoryData<string, int, int, int>();
+        foreach (var (header, count, widened) in new (string, int, Dictionary<int, int>)[]
+        {
+            ("OpenBlade.NativeArtifactRecord.v2", 11, new() { [4] = NativeArtifact.MaximumIdentityBytes, [10] = NativeArtifact.MaximumIdentityBytes }),
+            ("OpenBlade.NativeArtifactRecord.v1", 10, new()),
+            ("OpenBlade.NativePackage.v2", 12, new() { [8] = NativeArtifact.MaximumRecordBase64, [9] = NativeArtifact.MaximumRecordBase64 }),
+        })
+        {
+            for (int index = 0; index < count; index++) { rows.Add(header, count, index, widened.GetValueOrDefault(index, 2048)); }
+        }
+        return rows;
+    }
+
     [Theory]
-    [InlineData("OpenBlade.NativeArtifactRecord.v2", 11, 4, NativeArtifact.MaximumIdentityBytes)]
-    [InlineData("OpenBlade.NativeArtifactRecord.v2", 11, 9, 2048)]
-    [InlineData("OpenBlade.NativeArtifactRecord.v2", 11, 10, 2048)]
-    [InlineData("OpenBlade.NativeArtifactRecord.v1", 10, 4, 2048)]
-    [InlineData("OpenBlade.NativePackage.v2", 12, 8, NativeArtifact.MaximumRecordBase64)]
-    [InlineData("OpenBlade.NativePackage.v2", 12, 9, NativeArtifact.MaximumRecordBase64)]
-    [InlineData("OpenBlade.NativePackage.v2", 12, 7, 2048)]
-    [InlineData("OpenBlade.NativePackage.v2", 12, 10, 2048)]
+    [MemberData(nameof(RecordFieldLimits))]
     public void RecordFieldsAdmitTheirLimitAndNoMore(string header, int count, int index, int limit)
     {
         string[] Fields(int length)
@@ -538,6 +546,10 @@ public sealed class WindowsNativeEpochTests
         byte[] record = atBound.Encode();
         Assert.Equal(NativeArtifact.MaximumRecordBytes, record.Length);
         Assert.Equal(NativeArtifact.MaximumRecordBase64, Convert.ToBase64String(record).Length);
+        // The limit is the longest record whose base64 the package field admits:
+        // 8191 to 8193 bytes all encode to the same 10924 characters.
+        Assert.Equal(NativeArtifact.MaximumRecordBase64, Convert.ToBase64String(new byte[NativeArtifact.MaximumRecordBytes]).Length);
+        Assert.True(Convert.ToBase64String(new byte[NativeArtifact.MaximumRecordBytes + 1]).Length > NativeArtifact.MaximumRecordBase64);
         var refused = Assert.Throws<InvalidDataException>(() => (atBound with { Capabilities = atBound.Capabilities + "c" }).Encode());
         Assert.Equal("Native artifact record exceeds the package bound.", refused.Message);
     }
