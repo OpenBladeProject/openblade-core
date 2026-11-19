@@ -66,11 +66,13 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         bool agentHdr = features.Contains("agent-display-hdr-write-v1", StringComparer.Ordinal);
         bool agentRefresh = features.Contains("agent-display-refresh-write-v1", StringComparer.Ordinal);
         bool agentColor = features.Contains("agent-display-color-write-v1", StringComparer.Ordinal);
+        bool agentProfile = features.Contains("agent-display-profile-apply-v1", StringComparer.Ordinal);
         if (agentWrite && !agentDisplay) { throw new InvalidDataException("Brightness write requires the display query contract."); }
         if (agentHdr && !agentDisplay) { throw new InvalidDataException("HDR write requires the display query contract."); }
         if (agentRefresh && !agentDisplay) { throw new InvalidDataException("Refresh-rate write requires the display query contract."); }
         if (agentColor && !agentDisplay) { throw new InvalidDataException("Color-profile write requires the display query contract."); }
-        if ((agentBattery || agentDisplay || agentWrite || agentHdr || agentRefresh || agentColor) && !features.Contains("native-agent-entry-compile-check", StringComparer.Ordinal)) { throw new InvalidDataException("Selected Agent queries require the native Agent entry."); }
+        if (agentProfile && !(agentWrite && agentHdr && agentRefresh && agentColor)) { throw new InvalidDataException("Display profile apply requires every display write it composes."); }
+        if ((agentBattery || agentDisplay || agentWrite || agentHdr || agentRefresh || agentColor || agentProfile) && !features.Contains("native-agent-entry-compile-check", StringComparer.Ordinal)) { throw new InvalidDataException("Selected Agent queries require the native Agent entry."); }
         if (temporary && !battery) { throw new InvalidDataException("Temporary charge requires shared battery custody."); }
         if (battery && !fan) { throw new InvalidDataException("Battery mutation requires shared fan custody."); }
         if (fan && !mutation) { throw new InvalidDataException("Fan mutation requires the thermal custody contract."); }
@@ -78,7 +80,7 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         if (observation && (!hardware || metadata)) { throw new InvalidDataException("Mailbox observation requires its exclusive acquisition composition."); }
         if (schema == 1)
         {
-            if (metadata || hardware || agentBattery || agentDisplay || agentWrite || agentHdr || agentRefresh || agentColor) { throw new InvalidDataException("Legacy artifacts cannot assert v2 composition."); }
+            if (metadata || hardware || agentBattery || agentDisplay || agentWrite || agentHdr || agentRefresh || agentColor || agentProfile) { throw new InvalidDataException("Legacy artifacts cannot assert v2 composition."); }
             return;
         }
         string expected = "none";
@@ -94,7 +96,8 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         }
         if (role == "agent")
         {
-            // Each selected Agent contract in fixed order; every write requires the display query.
+            // Each selected Agent contract in fixed order; every write requires the display query,
+            // and the profile apply every write.
             string[] selected = [.. new (bool Selected, string Marker)[]
             {
                 (agentBattery, "agent-battery-report-v1"),
@@ -103,6 +106,7 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
                 (agentHdr, "session-display-hdr-write-partial-v1"),
                 (agentRefresh, "session-display-refresh-write-partial-v1"),
                 (agentColor, "session-display-color-write-partial-v1"),
+                (agentProfile, "session-display-profile-apply-partial-v1"),
             }.Where(entry => entry.Selected).Select(entry => entry.Marker)];
             expected = selected.Length == 0 ? "none" : string.Join(',', selected);
         }

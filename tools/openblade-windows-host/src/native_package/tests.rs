@@ -1240,6 +1240,97 @@ fn selected_partial_display_color_write_capability_is_exact_and_other_builds_can
     }
 }
 
+#[test]
+fn selected_partial_display_profile_capability_requires_every_write_and_is_exact() {
+    const QUERY: &str = "session-display-query-partial-v1";
+    const BRIGHTNESS: &str = "session-display-brightness-write-partial-v1";
+    const HDR: &str = "session-display-hdr-write-partial-v1";
+    const REFRESH: &str = "session-display-refresh-write-partial-v1";
+    const COLOR: &str = "session-display-color-write-partial-v1";
+    const PROFILE: &str = "session-display-profile-apply-partial-v1";
+    const BATTERY: &str = "agent-battery-report-v1";
+    let entry = "native-agent-entry-compile-check";
+    let writes = [
+        "agent-display-brightness-write-v1",
+        "agent-display-hdr-write-v1",
+        "agent-display-refresh-write-v1",
+        "agent-display-color-write-v1",
+    ];
+    for battery in [false, true] {
+        let mut features = vec![
+            "agent-display-query-v1",
+            "agent-display-profile-apply-v1",
+            entry,
+        ];
+        features.extend(writes);
+        let mut markers = vec![QUERY, BRIGHTNESS, HDR, REFRESH, COLOR, PROFILE];
+        if battery {
+            features.push("agent-battery-report-v1");
+            markers.insert(0, BATTERY);
+        }
+        features.sort();
+        let selected = features.join(",");
+        let expected = markers.join(",");
+        assert!(
+            capabilities(2, "agent", &selected, &expected).is_ok(),
+            "{expected}"
+        );
+        assert!(capabilities(1, "agent", &selected, &expected).is_err());
+        assert!(capabilities(2, "service", &selected, &expected).is_err());
+        // The profile needs the query, every write it composes and the entry.
+        for missing in writes
+            .iter()
+            .copied()
+            .chain(["agent-display-query-v1", entry])
+        {
+            let partial: Vec<_> = features.iter().copied().filter(|f| *f != missing).collect();
+            let claimed: Vec<_> = markers
+                .iter()
+                .copied()
+                .filter(|marker| {
+                    !(missing.contains("brightness") && *marker == BRIGHTNESS
+                        || missing.contains("hdr") && *marker == HDR
+                        || missing.contains("refresh") && *marker == REFRESH
+                        || missing.contains("color") && *marker == COLOR)
+                })
+                .collect();
+            for schema in [1, 2] {
+                assert!(
+                    capabilities(schema, "agent", &partial.join(","), &claimed.join(",")).is_err(),
+                    "{missing}"
+                );
+            }
+        }
+        let without_profile: Vec<_> = markers.iter().copied().filter(|m| *m != PROFILE).collect();
+        let reordered = {
+            let mut reordered = markers.clone();
+            let profile = reordered.pop().unwrap();
+            reordered.insert(reordered.len() - 1, profile);
+            reordered.join(",")
+        };
+        for forged in [
+            "none".to_owned(),
+            without_profile.join(","),
+            PROFILE.to_owned(),
+            format!("{expected},{PROFILE}"),
+            reordered,
+        ] {
+            assert!(
+                capabilities(2, "agent", &selected, &forged).is_err(),
+                "{forged}"
+            );
+        }
+    }
+    // A build with every write but no profile cannot claim its marker.
+    let mut features = vec!["agent-display-query-v1", entry];
+    features.extend(writes);
+    features.sort();
+    let markers = [QUERY, BRIGHTNESS, HDR, REFRESH, COLOR];
+    assert!(capabilities(2, "agent", &features.join(","), &markers.join(",")).is_ok());
+    let claimed = format!("{},{PROFILE}", markers.join(","));
+    assert!(capabilities(2, "agent", &features.join(","), &claimed).is_err());
+}
+
 /// The import descriptors of a real bound Agent (static CRT, every Agent
 /// feature), read from the image without executing it; the
 /// managed `WindowsNativeEpochTests.RealAgentImports` pins the same set.

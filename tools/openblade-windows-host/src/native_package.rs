@@ -682,10 +682,21 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     let agent_hdr = has("agent-display-hdr-write-v1");
     let agent_refresh = has("agent-display-refresh-write-v1");
     let agent_color = has("agent-display-color-write-v1");
+    let agent_profile = has("agent-display-profile-apply-v1");
     if (agent_write || agent_hdr || agent_refresh || agent_color) && !agent_display {
         return Err(deny());
     }
-    if (agent_battery || agent_display || agent_write || agent_hdr || agent_refresh || agent_color)
+    // The profile composes every reviewed display write.
+    if agent_profile && !(agent_write && agent_hdr && agent_refresh && agent_color) {
+        return Err(deny());
+    }
+    if (agent_battery
+        || agent_display
+        || agent_write
+        || agent_hdr
+        || agent_refresh
+        || agent_color
+        || agent_profile)
         && !has("native-agent-entry-compile-check")
     {
         return Err(deny());
@@ -714,6 +725,7 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
             || agent_hdr
             || agent_refresh
             || agent_color
+            || agent_profile
         {
             Err(deny())
         } else {
@@ -737,7 +749,7 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         return Err(deny());
     }
     // Each selected Agent contract in fixed order; the write features already
-    // require the display query above.
+    // require the display query above, and the profile every write.
     let agent = [
         (agent_battery, "agent-battery-report-v1"),
         (agent_display, "session-display-query-partial-v1"),
@@ -745,6 +757,7 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
         (agent_hdr, "session-display-hdr-write-partial-v1"),
         (agent_refresh, "session-display-refresh-write-partial-v1"),
         (agent_color, "session-display-color-write-partial-v1"),
+        (agent_profile, "session-display-profile-apply-partial-v1"),
     ]
     .into_iter()
     .filter_map(|(selected, marker)| selected.then_some(marker))

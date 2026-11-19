@@ -13,7 +13,7 @@ public sealed class WindowsNativeEpochTests
 {
     private const string Features = "installed-service-candidate,native-agent-entry-compile-check,startup-custody-v1";
 
-    private static string AgentCapabilities(bool battery, bool display, bool brightness, bool hdr, bool refresh = false, bool color = false)
+    private static string AgentCapabilities(bool battery, bool display, bool brightness, bool hdr, bool refresh = false, bool color = false, bool profile = false)
     {
         string[] markers = [.. new (bool Selected, string Marker)[]
         {
@@ -23,11 +23,12 @@ public sealed class WindowsNativeEpochTests
             (hdr, "session-display-hdr-write-partial-v1"),
             (refresh, "session-display-refresh-write-partial-v1"),
             (color, "session-display-color-write-partial-v1"),
+            (profile, "session-display-profile-apply-partial-v1"),
         }.Where(entry => entry.Selected).Select(entry => entry.Marker)];
         return markers.Length == 0 ? "none" : string.Join(',', markers);
     }
 
-    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1, int schema = 1, string? capabilities = null, bool mailbox = false, string? sourceRevision = null, bool mutation = false, bool fan = false, bool battery = false, bool temporary = false, bool agentBattery = false, bool agentDisplay = false, bool agentWrite = false, bool agentHdr = false, bool agentRefresh = false, bool agentColor = false, string[]? imports = null)
+    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1, int schema = 1, string? capabilities = null, bool mailbox = false, string? sourceRevision = null, bool mutation = false, bool fan = false, bool battery = false, bool temporary = false, bool agentBattery = false, bool agentDisplay = false, bool agentWrite = false, bool agentHdr = false, bool agentRefresh = false, bool agentColor = false, string[]? imports = null, bool agentProfile = false)
     {
         byte[] bytes = new byte[imports is null ? 0xA00 : 0xC00];
         void U16(int n, ushort v) => BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(n), v);
@@ -43,12 +44,13 @@ public sealed class WindowsNativeEpochTests
         if (temporary) { fields[4] = "controller-admission-compile-check,firmware-performance-compile-check,installed-service-candidate,native-agent-entry-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1"; }
         if (agentRefresh) { fields[4] = "agent-display-refresh-write-v1," + fields[4]; }
         if (agentDisplay) { fields[4] = "agent-display-query-v1," + fields[4]; }
+        if (agentProfile) { fields[4] = "agent-display-profile-apply-v1," + fields[4]; }
         if (agentHdr) { fields[4] = "agent-display-hdr-write-v1," + fields[4]; }
         if (agentColor) { fields[4] = "agent-display-color-write-v1," + fields[4]; }
         if (agentWrite) { fields[4] = "agent-display-brightness-write-v1," + fields[4]; }
         if (agentBattery) { fields[4] = "agent-battery-report-v1," + fields[4]; }
-        if (role == "agent" && (agentDisplay || agentWrite || agentHdr || agentRefresh || agentColor) && capabilities is null)
-        { capabilities = AgentCapabilities(agentBattery, display: true, agentWrite, agentHdr, agentRefresh, agentColor); }
+        if (role == "agent" && (agentDisplay || agentWrite || agentHdr || agentRefresh || agentColor || agentProfile) && capabilities is null)
+        { capabilities = AgentCapabilities(agentBattery, display: true, agentWrite, agentHdr, agentRefresh, agentColor, agentProfile); }
         byte[] metadata = NativeCanonical.Lines($"OpenBlade.NativeArtifact.v{schema}", schema == 1 ? fields
             : [.. fields, capabilities ?? (role == "service" ? temporary ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1" : battery ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1" : fan ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2" : mutation ? "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1" : mailbox ? "private-service-custody-v1,service-mailbox-observation-v1" : "private-service-custody-v1,service-metadata-only-v1" : agentBattery ? "agent-battery-report-v1" : "none")]);
         int section = 0x98 + 240;
@@ -386,6 +388,53 @@ public sealed class WindowsNativeEpochTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PartialDisplayProfileCapabilityIsExactAndOtherBuildsCannotClaimIt(bool agentBattery)
+    {
+        string source = new('a', 40);
+        const string profile = "session-display-profile-apply-partial-v1";
+        string expected = AgentCapabilities(agentBattery, display: true, brightness: true, hdr: true, refresh: true, color: true, profile: true);
+        byte[] Agent(int schema = 2, string? capabilities = null, bool agentProfile = true) => Image("agent", schema: schema, capabilities: capabilities,
+            agentBattery: agentBattery, agentDisplay: true, agentWrite: true, agentHdr: true, agentRefresh: true, agentColor: true, agentProfile: agentProfile);
+        var agent = NativeArtifact.Inspect([.. Agent()], "agent", source);
+        Assert.Equal(expected, agent.Capabilities);
+        Assert.Contains("agent-display-profile-apply-v1", agent.Features.Split(','));
+        Assert.False(agent.PrivateCustody);
+        Assert.False(agent.MetadataOnly);
+        string withoutProfile = AgentCapabilities(agentBattery, display: true, brightness: true, hdr: true, refresh: true, color: true);
+        foreach (string forged in new[] { "none", withoutProfile, profile, expected + "," + profile, profile + "," + withoutProfile })
+        {
+            Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect([.. Agent(capabilities: forged)], "agent", source));
+        }
+        // A build with every write but without the profile cannot claim its marker.
+        Assert.Equal(withoutProfile, NativeArtifact.Inspect([.. Agent(agentProfile: false)], "agent", source).Capabilities);
+        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect([.. Agent(capabilities: expected, agentProfile: false)], "agent", source));
+        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect([.. Agent(schema: 1)], "agent", source));
+        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, capabilities: expected, agentBattery: agentBattery, agentDisplay: true, agentWrite: true, agentHdr: true, agentRefresh: true, agentColor: true, agentProfile: true)], "service", source));
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(0, 2)]
+    [InlineData(1, 2)]
+    [InlineData(2, 2)]
+    [InlineData(3, 1)]
+    [InlineData(3, 2)]
+    public void ProfileApplyRequiresEveryDisplayWriteItComposes(int missing, int schema)
+    {
+        // A build selecting the profile without one of its four writes is
+        // refused whatever it claims, even the markers it would have.
+        string source = new('a', 40);
+        bool[] writes = [missing != 0, missing != 1, missing != 2, missing != 3];
+        string claimed = AgentCapabilities(battery: false, display: true, writes[0], writes[1], writes[2], writes[3], profile: true);
+        var error = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("agent", schema: schema, capabilities: claimed, agentDisplay: true, agentWrite: writes[0], agentHdr: writes[1], agentRefresh: writes[2], agentColor: writes[3], agentProfile: true)], "agent", source));
+        Assert.Equal("Display profile apply requires every display write it composes.", error.Message);
+    }
+
     [Fact]
     public void ExplicitThermalMutationRoleRequiresSignedCapabilityAndMailboxCustody()
     {
@@ -670,7 +719,8 @@ public sealed class WindowsNativeEpochTests
         bool agentHdr = b.Features.Split(',').Contains("agent-display-hdr-write-v1", StringComparer.Ordinal);
         bool agentRefresh = b.Features.Split(',').Contains("agent-display-refresh-write-v1", StringComparer.Ordinal);
         bool agentColor = b.Features.Split(',').Contains("agent-display-color-write-v1", StringComparer.Ordinal);
-        string expectedAgentCapabilities = AgentCapabilities(agentBattery, agentDisplay, agentWrite, agentHdr, agentRefresh, agentColor);
+        bool agentProfile = b.Features.Split(',').Contains("agent-display-profile-apply-v1", StringComparer.Ordinal);
+        string expectedAgentCapabilities = AgentCapabilities(agentBattery, agentDisplay, agentWrite, agentHdr, agentRefresh, agentColor, agentProfile);
         Assert.Equal(expectedAgentCapabilities, b.Capabilities); Assert.False(b.PrivateCustody); Assert.False(b.MetadataOnly);
         if (Environment.GetEnvironmentVariable("OPENBLADE_NATIVE_COMPOSITION") == "combined")
         { Assert.Equal(a.Features, b.Features); Assert.Contains("service-metadata-only-v1", b.Features); }
