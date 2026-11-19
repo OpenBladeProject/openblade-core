@@ -1,0 +1,141 @@
+{
+  "model": "RZ09-0530",
+  "usbIdentity": "1532:02C5",
+  "component": "PI4110 keyboard MCU 1.04.00",
+  "carrierSha256": "aed7039be5cc4ec3f166a2728b0c1b90839bae72c8a04150056654f64f20581f",
+  "hexSha256": "4787f3c382d57c165dd2de099147b678070d0251e0febb5b6cc5a7902048bcd3",
+  "decodedBytes": 52612,
+  "decodedSha256": "1ac3f05486d0bca5fbbb1a4a52b874943ad491a00afd298b8d6b857a49d98f11",
+  "scope": "Static source evidence only; no live firmware attestation, physical readback or hardware validation",
+  "semantics": {
+    "get": "0F/82 selector1,5 selects persistent keyboard state; writes mode, direction and speed at payload2,3,4 while retaining request DataSize",
+    "getDirectionForm": "DataSize4 payload01 05 00 00 reveals direction within declared response; all90 transport bytes are transferred",
+    "getSpeedForm": "DataSize5 also includes speed; Wave SET defaults stored speed to40, so expect nonzero28",
+    "set": "0F/02 Wave consumes payload3 unconditionally; omission is not preserve-current-direction semantics",
+    "shortSet": "A zero-padded three-byte SET supplies wire direction0 from padding; do not use omission as unknown direction",
+    "preserveSet": "Retain reviewed four-byte01 05 04 01 destination; no speed byte required by this image",
+    "admission": "No DataSize comparison occurs along the reviewed fixed90-byte receive, class dispatch and Wave GET/SET paths",
+    "alternateDirectionReadback": "Wire2 has an explicit cyclic phase branch opposite to admittedwire1. Treat it as a known alternate read-only baseline; this evidence adds no write2 or physical orientation claim. Other raw values remain outside the bounded application admission."
+  },
+  "proofSites": [
+    {
+      "offset": "0x27CA",
+      "byteCount": 18,
+      "meaning": "USB SET_REPORT copies all 90 bytes into frame 0x10001740; no payload DataSize test"
+    },
+    {
+      "offset": "0x26DC",
+      "byteCount": 16,
+      "meaning": "USB GET_REPORT copies all 90 bytes from response frame"
+    },
+    {
+      "offset": "0x8FCE",
+      "byteCount": 42,
+      "meaning": "Class dispatch reads frame byte6 and selects class0F"
+    },
+    {
+      "offset": "0x9044",
+      "byteCount": 6,
+      "meaning": "Class0F dispatch calls handler0x8678"
+    },
+    {
+      "offset": "0x8FFC",
+      "byteCount": 28,
+      "meaning": "Response path XORs bytes2 through87 and sets successful status; preserves DataSize"
+    },
+    {
+      "offset": "0x8678",
+      "byteCount": 92,
+      "meaning": "Effect handler reads frame command7 and selectors8/9; no header DataSize read before GET/SET dispatch"
+    },
+    {
+      "offset": "0x876E",
+      "byteCount": 42,
+      "meaning": "GET82 validates LED, clears payload2..11, normalizes storage, selects state, reads state effect+5"
+    },
+    {
+      "offset": "0x87A4",
+      "byteCount": 18,
+      "meaning": "GET effect compact switch and inline table"
+    },
+    {
+      "offset": "0x8818",
+      "byteCount": 28,
+      "meaning": "Wave GET stores effect4 at payload2, direction state+10 at payload3, speed at payload4; returns without DataSize change"
+    },
+    {
+      "offset": "0x88E8",
+      "byteCount": 36,
+      "meaning": "SET selects stored/volatile state and switches on payload2"
+    },
+    {
+      "offset": "0x8AA2",
+      "byteCount": 58,
+      "meaning": "Wave SET validates LED and compares actual payload3 with current direction"
+    },
+    {
+      "offset": "0x8AE8",
+      "byteCount": 36,
+      "meaning": "Wave SET stores effect4 and actual payload3; hardcodes speed40; does not read speed argument"
+    },
+    {
+      "offset": "0x6248",
+      "byteCount": 52,
+      "meaning": "State selector returns matching LED bank pointer"
+    },
+    {
+      "offset": "0x22A8",
+      "byteCount": 36,
+      "meaning": "Unaligned little endian32-bit read/write helpers"
+    },
+    {
+      "offset": "0x46EC",
+      "byteCount": 26,
+      "meaning": "Compact switch helper validates count and doubles destination offsets"
+    },
+    {
+      "offset": "0x87B6",
+      "byteCount": 98,
+      "meaning": "Off, Breathing and Spectrum GET branches never write payload3 after common clearing; return fourth byte zero"
+    },
+    {
+      "offset": "0x31C8",
+      "byteCount": 48,
+      "meaning": "Wave renderer dispatch indexes active-state effect byte5"
+    },
+    {
+      "offset": "0x3296",
+      "byteCount": 28,
+      "meaning": "Wave case loads direction state+0A into argument1 and callsA780"
+    },
+    {
+      "offset": "0xA780",
+      "byteCount": 96,
+      "meaning": "Wave consumer explicitly increments cyclic phase for wire2; decrements for other values including admittedwire1"
+    }
+  ],
+  "source": {
+    "carrierUrl": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282025%29%20%7C%20RZ09-0530/PI4110-MCUv01.04.00.exe",
+    "carrierBytes": 1439888,
+    "extractedHexName": "PI4110_keyboard_FW_v1.04.00_20250918.hex",
+    "trustBasis": "Exact package SHA256 and Razer USA Ltd. signature reviewed separately; verifier checks hashes only"
+  },
+  "assertions": "Passed",
+  "switches": [
+    {
+      "call": "0x87a6",
+      "index": 4,
+      "target": "0x8818"
+    },
+    {
+      "call": "0x88fc",
+      "index": 4,
+      "target": "0x8aa2"
+    },
+    {
+      "call": "0x31ec",
+      "index": 4,
+      "target": "0x3296"
+    }
+  ]
+}

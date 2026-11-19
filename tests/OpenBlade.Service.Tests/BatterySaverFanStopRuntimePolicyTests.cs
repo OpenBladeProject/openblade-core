@@ -15,14 +15,19 @@ public sealed class BatterySaverFanStopRuntimePolicyTests
             lowPowerFanCleanupAdmission: static () => true));
 
     [Theory]
-    [InlineData(null, true, false)]
-    [InlineData(56, true, false)]
-    [InlineData(45, false, false)]
-    [InlineData(55, true, true)]
-    [InlineData(45, true, true)]
-    public void CoolingAdmissionRequiresKnownCoolCpuAndConfirmedInactiveGpu(
-        int? cpu, bool inactiveGpu, bool admitted) =>
-        Assert.Equal(admitted, BatterySaverFanStopRuntimePolicy.IsCool(new(cpu, null, inactiveGpu)));
+    [InlineData(null, null, true, true, false)]
+    [InlineData(56, null, true, true, false)]
+    [InlineData(45, 40, false, false, false)]
+    [InlineData(55, null, true, true, true)]
+    [InlineData(45, 55, true, false, true)]
+    [InlineData(45, 10, true, false, true)]
+    [InlineData(45, 85, true, false, false)]
+    [InlineData(45, 9, true, false, false)]
+    [InlineData(45, null, true, false, false)]
+    public void CoolingAdmissionRequiresKnownCoolCpuAndInactiveGpuWithThermalEvidence(
+        int? cpu, int? gpu, bool inactiveGpu, bool poweredDownGpu, bool admitted) =>
+        Assert.Equal(admitted, BatterySaverFanStopRuntimePolicy.IsCool(
+            new(cpu, gpu, inactiveGpu, GpuPoweredDown: poweredDownGpu)));
 
     [Fact]
     public void OwnedStopReleasesToAutomaticAndLatchesUntilScopeExit()

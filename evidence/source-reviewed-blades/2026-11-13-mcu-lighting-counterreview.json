@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "decision": "PASS",
+  "scope": "Independent source and Protocol review of seven exact MCU builtin paths; no hardware",
+  "reviewedModernSourceSha256": "82F8FF18B7F12B332BA9F63C7E9C1EE3A81CC099E6749F147C9CABEF408E13C1",
+  "modernInstructionWindowsVerified": 71,
+  "initialSourceWindowsPreviouslyVerified": 192,
+  "rz090301InstructionWindowsSeparatelyVerified": 56,
+  "verified": [
+    "Whole-image hashes and selected exact-model vendor Leftward1/Rightward2 mapping",
+    "Actual RGB/count renderer consumers; hidden Static palette exclusions028A/02B7",
+    "Legacy unconditional color copies and saved-to-active brightness side effect",
+    "Modern conditional same-count color bridges; KI8100 Static bridge; KI8110 Static direct",
+    "Fresh admission at every bridge and destination; ambiguity stops without replay",
+    "LightingFieldsOnly recovery cannot narrow another obligation; mixed scopes becomeAll",
+    "Known custom8 remains unknown pixels; strict builtin confirmation rejectscustom8"
+  ],
+  "customGetBranches": {
+    "KI8110": "963A..9648",
+    "KI8100": "998C..9996",
+    "CH580": "9EB0..9EBA",
+    "RZ090301": "9238..9242",
+    "DI780": "96B8..96C2",
+    "SO6100": "A2F0..A2FA",
+    "PI480": "9710..971A"
+  },
+  "productionFiles": [
+    {
+      "path": "src/OpenBlade.Protocol/ExperimentalBladePort.McuLighting.cs",
+      "sha256": "EDE58ED1491512A3463DF88B3EF7CFA4CC4274C328DDF27C92B5CE9B2BFC45B6"
+    },
+    {
+      "path": "src/OpenBlade.Protocol/ExperimentalBladePort.Lighting.cs",
+      "sha256": "895C49B3EE0AFD3218AA6EC528F15F382A3D4DA07C8705B80F2D169D889CE93B"
+    },
+    {
+      "path": "src/OpenBlade.Protocol/ExperimentalBladePort.SourceReviewedLighting.cs",
+      "sha256": "A8BFC9525065D3C8C39BF635A8F14D4F216B82E9B05BEA90895ABD07E00D2A08"
+    },
+    {
+      "path": "src/OpenBlade.Protocol/ExperimentalBladePort.IndependentLighting.cs",
+      "sha256": "878929DD5E44519AE0B4A75A7D0AFFC0F35D588DCE7D3FB5958C285012233850"
+    },
+    {
+      "path": "src/OpenBlade.Protocol/ExperimentalBladeModels.cs",
+      "sha256": "96FE8643335245AA2350BA54D5459313353A18801F4E40DEED68F00E24348292"
+    },
+    {
+      "path": "src/OpenBlade.Protocol/ExperimentalBladePort.cs",
+      "sha256": "44E8977C7919485B33705A2C4AC068C89FF4CBCFE0E40B0FE115DE163E593C9D"
+    }
+  ],
+  "excluded": "Concurrent shared Contract/Service/Tray integration and software Fire require separate review",
+  "physicalValidationPerformed": false,
+  "customAtZeroBrightness": "Validated custom8 is unknown pixels at every brightness; return null before the representable-builtin zero gate. Independent fields remain observable; malformed replies and strict builtin confirmation are unchanged.",
+  "independentFields": "All seven exact MCU profiles admit existing active-storage brightness and available logo operations independently of unknown effects; 028A rejects logo. No effect GET is required for a field-only edit."
+}

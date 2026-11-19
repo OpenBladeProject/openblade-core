@@ -18,8 +18,11 @@ internal sealed class BatterySaverFanStopRuntimePolicy
         thermallyLatched = false;
     }
 
+    // Workload inactivity is required, but cannot establish that an awake GPU
+    // has cooled. Reuse the cooling policy's 55 C upper bound for actual GPU data.
     internal static bool IsCool(FanTemperatureReadings readings) =>
-        readings.CpuCelsius is >= 0 and <= 55 && readings.GpuInactive;
+        readings.CpuCelsius is >= 0 and <= 55 && readings.GpuInactive
+        && (readings.GpuPoweredDown || readings.GpuCelsius is >= 10 and <= 55);
 
     internal static bool IsInScope(bool requested, DeviceCapabilities? capabilities,
         PowerSource powerSource, PerformancePreset performance) =>

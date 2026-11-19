@@ -5,6 +5,8 @@ using OpenBlade.Setup;
 
 namespace OpenBlade.Setup.Tests;
 
+// This class captures process-wide Trace output; other collections must not emit into its log.
+[Collection(nameof(SetupDiagnosticTraceCollection))]
 public sealed class WindowsSetupPlatformServiceTests
 {
     [Theory]
@@ -230,6 +232,28 @@ public sealed class WindowsSetupPlatformServiceTests
             await Server.DisposeAsync();
             Deadline.Dispose();
         }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ServiceShutdownPaths_WaitForProcessExitBeforeCompletingOrDeleting(bool remove)
+    {
+        SetupPaths paths = UserPaths();
+        ServiceExitProcess process = new(Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe"));
+        ServiceExitControl control = new(SetupServiceState.Running);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            serviceControl: control, processOperations: new ServiceExitProcesses(process), paths: paths);
+        Task operation = remove
+            ? platform.RemoveServiceAsync(CancellationToken.None)
+            : platform.RestoreServiceInstallStateAsync(new SetupServiceInstallState(true, false), CancellationToken.None);
+        await process.WaitStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(operation.IsCompleted);
+        Assert.False(control.Deleted);
+        process.Exit.SetResult();
+        await operation;
+        Assert.Equal(remove, control.Deleted);
+        Assert.True(process.Disposed);
     }
 
     [Fact]
@@ -1263,6 +1287,12 @@ public sealed class WindowsSetupPlatformServiceTests
         public Task<SetupServiceState?> GetStateAsync(string serviceName, CancellationToken cancellationToken) =>
             Task.FromResult(State ?? (Exists ? SetupServiceState.Running : null));
 
+        public async Task<SetupServiceStatus?> GetStatusAsync(string serviceName, CancellationToken cancellationToken)
+        {
+            SetupServiceState? state = await GetStateAsync(serviceName, cancellationToken);
+            return state is null ? null : new(state.Value, state == SetupServiceState.Running ? 123 : null);
+        }
+
         public Task RunAsync(
             IReadOnlyList<string> arguments,
             IReadOnlyCollection<int> toleratedExitCodes,
@@ -1478,6 +1508,7 @@ public sealed class WindowsSetupPlatformServiceTests
 
     private sealed class RecordingProcessOperations(params ISetupProcess[] processes) : ISetupProcessOperations
     {
+        public ISetupProcess GetProcessById(int processId) => Assert.Single(processes, process => process.Id == processId);
         public List<string> Operations { get; } = [];
         public bool SignalResult { get; init; } = true;
 
@@ -1496,6 +1527,8 @@ public sealed class WindowsSetupPlatformServiceTests
 
     private sealed class RecordingProcess(string executablePath) : ISetupProcess
     {
+        public int Id => 123;
+        public bool TryRetainLifetime() => true;
         public string? ExecutablePath => executablePath;
         public bool Disposed { get; private set; }
         public bool WaitedForExit { get; private set; }
@@ -1509,3 +1542,6 @@ public sealed class WindowsSetupPlatformServiceTests
         public void Dispose() => Disposed = true;
     }
 }
+
+[CollectionDefinition(nameof(SetupDiagnosticTraceCollection), DisableParallelization = true)]
+public sealed class SetupDiagnosticTraceCollection;

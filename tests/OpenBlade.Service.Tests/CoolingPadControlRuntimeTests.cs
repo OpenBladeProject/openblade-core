@@ -229,6 +229,22 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.Equal(1500, runtime.Status.ConfirmedTargetRpm);
     }
 
+    [Theory]
+    [InlineData(CoolingPadTemperatureSource.Cpu, true, false)]
+    [InlineData(CoolingPadTemperatureSource.Gpu, false, true)]
+    [InlineData(CoolingPadTemperatureSource.Both, true, true)]
+    public async Task HostCurveRequestsCoolingSamplesForOnlyItsSelectedSensors(
+        CoolingPadTemperatureSource selection, bool cpu, bool gpu)
+    {
+        var temperatures = new Temperatures();
+        var runtime = await CreateAsync(new Provider(), temperatures: temperatures);
+        var settings = Fixed with { FanMode = CoolingPadFanMode.HostCurve, TemperatureSource = selection };
+
+        Assert.Equal(ControlOperationStatus.Applied, (await runtime.ApplyAsync(settings, () => true, default)).Status);
+        Assert.Equal((cpu, gpu), temperatures.LastCurveSelection);
+        Assert.Equal(0, temperatures.BackgroundReads);
+    }
+
     [Fact]
     public async Task StaleTemperatureCannotReachNativeSubmission()
     {
@@ -541,7 +557,22 @@ public sealed class CoolingPadControlRuntimeTests
     private sealed class Temperatures : IFanTemperatureSource
     {
         internal FanTemperatureReadings Reading = new(65, 60);
-        public ValueTask<FanTemperatureReadings> ReadAsync(CancellationToken token) => ValueTask.FromResult(Reading);
+        internal (bool Cpu, bool Gpu)? LastCurveSelection;
+        internal int BackgroundReads;
+        public ValueTask<FanTemperatureReadings> ReadAsync(CancellationToken token)
+        {
+            BackgroundReads++;
+            return ValueTask.FromResult(Reading);
+        }
+        public ValueTask<FanTemperatureReadings> ReadForFanCurveAsync(bool includeCpu, bool includeGpu, CancellationToken token)
+        {
+            LastCurveSelection = (includeCpu, includeGpu);
+            return ValueTask.FromResult(new FanTemperatureReadings(
+                includeCpu ? Reading.CpuCelsius : null,
+                includeGpu ? Reading.GpuCelsius : null,
+                includeGpu && Reading.GpuInactive,
+                includeGpu && Reading.GpuPoweredDown));
+        }
     }
     private sealed class Provider : ICoolingPadDeviceProvider
     {

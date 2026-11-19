@@ -99,6 +99,11 @@ public static class ProfilePresentationFactory
     {
         FanControlSettings settings = profile.FanControl
             ?? FanControlSettings.FromLegacy(profile.Fans);
+        if (profile.Fans == FanMode.Maximum
+            && settings is { Mode: FanMode.Fixed, FixedSpeedRpm: FanControlSettings.MaximumSpeedRpm })
+        {
+            return FanModePresentation.Label(FanMode.Maximum);
+        }
         return settings.Mode switch
         {
             FanMode.Fixed =>

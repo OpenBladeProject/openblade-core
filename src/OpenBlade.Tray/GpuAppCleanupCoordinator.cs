@@ -244,7 +244,7 @@ internal sealed class GpuAppCleanupCoordinator
                 GpuAppProcessIdentity forceTarget = ToIdentity(app);
                 forceOutcome.Approve(forceTarget);
                 SessionGpuResponse forcedApp = await closeAsync(
-                    [app],
+                    (SessionGpuApp[])[app],
                     true,
                     actionToken);
                 TraceResponseDiagnostics("force close", forcedApp);

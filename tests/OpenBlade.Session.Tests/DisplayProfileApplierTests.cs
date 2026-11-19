@@ -6,6 +6,143 @@ namespace OpenBlade.Session.Tests;
 
 public sealed class DisplayProfileApplierTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FirstClassifiedApplicationCannotOverwriteSuccessfulUnclassifiedManualHdr(bool recovered)
+    {
+        var context = new DisplayPowerContextState();
+        var controller = new FakeDisplayController(SessionDisplayIpcCodecTests.Snapshot("fixed-60", false, "native"));
+        using var applier = new DisplayProfileApplier(controller, context);
+        DisplayAutomationRecoveryState? checkpoint = null;
+        await using var coordinator = new DisplayAutomationCoordinator(context, applier,
+            recordRecoveryState: value => { checkpoint = value; return true; });
+        Guid applicationId = Guid.NewGuid();
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            ApplicationProfiles =
+            [
+                new(applicationId, "Opposite HDR", ApplicationProfileDefinition.NormalizeExecutablePath(@"C:/Games/display.exe"),
+                    ApplicationActivationMode.Foreground, new ApplicationProfileOverrideSet
+                    {
+                        PluggedIn = new ApplicationPowerProfileOverride { Display = new(null, false, null) },
+                    }),
+            ],
+        };
+        ServiceStatusSnapshot unknown = UnclassifiedStatus() with
+        {
+            ExternalPowerPresent = true,
+            Profiles = profiles,
+            ActiveApplicationProfileId = applicationId,
+        };
+        coordinator.Observe(unknown);
+        Assert.True(coordinator.BeginManualOperation(new(null, true, null)));
+        SessionDisplayExecutionResult manual = await applier.SetHdrAsync(PowerSource.ExternalUnknown, true);
+        Assert.True(manual.Succeeded);
+        coordinator.CompleteManualOperation(manual.Status, manual.State);
+        Assert.True(checkpoint!.ManualHold);
+        Assert.False(checkpoint.AutomaticWritesPaused);
+        ServiceStatusSnapshot classified = unknown with { ActivePowerSource = PowerSource.PluggedIn, Revision = 2 };
+        if (recovered)
+        {
+            var recoveredContext = new DisplayPowerContextState();
+            using var recoveredApplier = new DisplayProfileApplier(controller, recoveredContext);
+            await using var restarted = new DisplayAutomationCoordinator(recoveredContext, recoveredApplier,
+                recoveryState: checkpoint);
+            Assert.Equal(DisplayAutomationObservation.BaselineEstablished, restarted.Observe(classified));
+            await restarted.WhenIdleAsync();
+        }
+        else
+        {
+            Assert.Equal(DisplayAutomationObservation.BaselineEstablished, coordinator.Observe(classified));
+            await coordinator.WhenIdleAsync();
+        }
+        Assert.True((await controller.QueryAsync()).HdrEnabled);
+        Assert.Equal(["hdr:True"], controller.Calls.Where(call => call.StartsWith("hdr:", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task FirstClassifiedApplicationStillAppliesWhenThereIsNoManualHold()
+    {
+        var context = new DisplayPowerContextState();
+        var controller = new FakeDisplayController(SessionDisplayIpcCodecTests.Snapshot("fixed-60", true, "native"));
+        using var applier = new DisplayProfileApplier(controller, context);
+        await using var coordinator = new DisplayAutomationCoordinator(context, applier);
+        Guid applicationId = Guid.NewGuid();
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            ApplicationProfiles =
+            [
+                new(applicationId, "Startup HDR", ApplicationProfileDefinition.NormalizeExecutablePath(@"C:/Games/startup-display.exe"),
+                    ApplicationActivationMode.Foreground, new ApplicationProfileOverrideSet
+                    {
+                        PluggedIn = new ApplicationPowerProfileOverride { Display = new(null, false, null) },
+                    }),
+            ],
+        };
+        coordinator.Observe(UnclassifiedStatus() with { ExternalPowerPresent = true });
+        Assert.Equal(DisplayAutomationObservation.TransitionScheduled, coordinator.Observe(UnclassifiedStatus() with
+        {
+            ActivePowerSource = PowerSource.PluggedIn,
+            Profiles = profiles,
+            ActiveApplicationProfileId = applicationId,
+        }));
+        await coordinator.WhenIdleAsync();
+        Assert.False((await controller.QueryAsync()).HdrEnabled);
+        Assert.Equal(["hdr:False"], controller.Calls.Where(call => call.StartsWith("hdr:", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task UnclassifiedExternalManualSetterRequiresPositiveContextAndKeepsProfilesDeferred()
+    {
+        var context = new DisplayPowerContextState();
+        var controller = new FakeDisplayController(SessionDisplayIpcCodecTests.Snapshot("fixed-60", false, "native"));
+        using var applier = new DisplayProfileApplier(controller, context);
+        await using var coordinator = new DisplayAutomationCoordinator(context, applier);
+        ServiceStatusSnapshot status = UnclassifiedStatus();
+        coordinator.Observe(status);
+        Assert.Equal(SessionDisplayOperationStatus.Blocked,
+            (await applier.SetHdrAsync(PowerSource.ExternalUnknown, true)).Status);
+        Assert.DoesNotContain(controller.Calls, call => call.StartsWith("hdr:", StringComparison.Ordinal));
+        coordinator.Observe(status with { ExternalPowerPresent = true });
+        Assert.False(context.Capture().IsConfirmed);
+        Assert.True(coordinator.BeginManualOperation(new(null, true, null)));
+        SessionDisplayExecutionResult applied = await applier.SetHdrAsync(PowerSource.ExternalUnknown, true);
+        coordinator.CompleteManualOperation(applied.Status, applied.State);
+        Assert.True(applied.Succeeded);
+        Assert.Equal(PowerSource.ExternalUnknown, context.Capture().PowerSource);
+        Assert.Equal(SessionDisplayOperationStatus.Blocked,
+            (await applier.ApplyProfileAsync(PowerSource.ExternalUnknown, new(null, false, null))).Status);
+        coordinator.MarkUnavailable();
+        Assert.Equal(SessionDisplayOperationStatus.Blocked,
+            (await applier.SetHdrAsync(PowerSource.ExternalUnknown, false)).Status);
+    }
+
+    [Fact]
+    public async Task UnclassifiedPresenceLossAfterSubmissionCancelsAndNeverReplays()
+    {
+        var context = new DisplayPowerContextState();
+        var controller = new FakeDisplayController(SessionDisplayIpcCodecTests.Snapshot("fixed-60", false, "native"));
+        using var applier = new DisplayProfileApplier(controller, context);
+        await using var coordinator = new DisplayAutomationCoordinator(context, applier);
+        coordinator.Observe(UnclassifiedStatus() with { ExternalPowerPresent = true });
+        controller.AfterRefresh = () => coordinator.MarkUnavailable();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            applier.SetRefreshRateAsync(PowerSource.ExternalUnknown, "fixed-240"));
+        Assert.Single(controller.Calls, call => call.StartsWith("refresh:", StringComparison.Ordinal));
+    }
+
+    private static ServiceStatusSnapshot UnclassifiedStatus()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        return new(1, true, false, [], null, [], "Unclassified external power", null, null, profiles,
+            new(new(PerformancePreset.Balanced, SettingValueSource.ConfirmedFirmwareState),
+                new(FanMode.Automatic, SettingValueSource.ConfirmedFirmwareState),
+                new(profiles.PluggedIn.Lighting, SettingValueSource.ConfirmedFirmwareState),
+                new(profiles.BatteryPolicy, true, false)),
+            PowerSource.ExternalUnknown, null, null, null, null, false);
+    }
+
     [Fact]
     public async Task ApplyProfile_SequencesQueryRefreshHdrColorAndConfirmsReadback()
     {

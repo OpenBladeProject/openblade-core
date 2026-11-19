@@ -351,7 +351,10 @@ public sealed class ManualFanCurve : IEquatable<ManualFanCurve>
 public sealed record FanControlSettings
 {
     public const int MinimumSpeedRpm = 2000;
+    // Preserve the standard range and legacy Maximum target independently of
+    // the largest value representable by an exact-model capability.
     public const int MaximumSpeedRpm = 5400;
+    public const int MaximumSupportedSpeedRpm = 5500;
     public const int SpeedStepRpm = 100;
 
     public FanControlSettings(
@@ -391,17 +394,17 @@ public sealed record FanControlSettings
             speedRpm / (double)SpeedStepRpm,
             MidpointRounding.AwayFromZero) * SpeedStepRpm,
         MinimumSpeedRpm,
-        MaximumSpeedRpm);
+        MaximumSupportedSpeedRpm);
 
     internal static void ValidateSpeed(int speedRpm, string parameterName)
     {
-        if (speedRpm is < MinimumSpeedRpm or > MaximumSpeedRpm
+        if (speedRpm is < MinimumSpeedRpm or > MaximumSupportedSpeedRpm
             || speedRpm % SpeedStepRpm != 0)
         {
             throw new ArgumentOutOfRangeException(
                 parameterName,
                 speedRpm,
-                $"Fan speed must be from {MinimumSpeedRpm} to {MaximumSpeedRpm} RPM in {SpeedStepRpm} RPM steps.");
+                $"Fan speed must be from {MinimumSpeedRpm} to {MaximumSupportedSpeedRpm} RPM in {SpeedStepRpm} RPM steps.");
         }
     }
 }
@@ -485,10 +488,12 @@ public enum KeyboardBrightnessDirection
 public readonly record struct RgbColor(byte Red, byte Green, byte Blue);
 
 /// <summary>Only the requested independent fields are changed; null leaves a field alone.</summary>
-public sealed record IndependentLightingSettings(byte? Brightness = null, LogoLightingMode? LogoMode = null)
+public sealed record IndependentLightingSettings(byte? Brightness = null, LogoLightingMode? LogoMode = null,
+    bool? VaporChamberLightingEnabled = null, bool? TouchpadStatusIndicatorEnabled = null)
 {
     [System.Text.Json.Serialization.JsonIgnore]
-    public bool IsWellFormed => (Brightness.HasValue || LogoMode.HasValue)
+    public bool IsWellFormed => (Brightness.HasValue || LogoMode.HasValue
+            || VaporChamberLightingEnabled.HasValue || TouchpadStatusIndicatorEnabled.HasValue)
         && Brightness is not > 100
         && (LogoMode is null || Enum.IsDefined(LogoMode.Value));
 }
@@ -511,6 +516,12 @@ public sealed record LightingSettings(
     // Effect remains saved intent; it is never synthesized as confirmed state.
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IndependentLightingSettings? IndependentControls { get; init; }
+
+    // Explicit full-effect intent on a backend that also supports independent
+    // fields. Missing keeps older unmanaged wrappers non-destructive. This is
+    // user intent, never a value reported or confirmed by firmware.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ControlsKeyboardEffect { get; init; }
 }
 
 public sealed record PowerProfile(

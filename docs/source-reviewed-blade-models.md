@@ -1,6 +1,12 @@
 # Source-reviewed additional Blade models
 
-OpenBlade officially supports the eleven exact-model profiles below using reviewed
+The later [CPU undervolting review](cpu-undervolting.md) adds live Voltage Optimizer control for the exact 2023 and 2024 Blade 14 profiles through their reviewed, already running AMD stack.
+
+The later [performance and fan review](source-reviewed-thermal-967.md) expands manual fan admission and adds exact presets. Fan exclusions below describe the original admission.
+
+The later [lighting review](source-reviewed-lighting.md) adds bounded lighting controls to these profiles. Lighting exclusions below describe the original admission.
+
+OpenBlade officially supports the additional exact-model profiles below using reviewed
 Synapse definitions. Physical validation is a separate evidence status and remains
 pending for these implementations. Source review does not establish measured fan
 behavior, successful restoration on a laptop, or another model's capabilities.
@@ -29,6 +35,14 @@ Charge protection offers 50, 55, 60, 65, 70, 75 and 80 percent. The application'
 100% selection disables protection; it does not admit enabled thresholds from
 81% through 100% or intermediate one-percent values. Readback and restoration
 retain the actual saved threshold and protection flag separately.
+
+A successful charge-policy acknowledgment may be empty or contain one returned
+state byte; it need not echo the request. Only an independent GET of the exact
+requested raw byte confirms the change. If the exact pre-write byte persists,
+OpenBlade allows up to nine reads, 250 ms apart, without repeating the SET.
+Other mismatches or failed, invalid or canceled reads pause writes. The same
+confirmation policy applies to the three 2022 limiter profiles below; firmware
+latency on these models remains physically unverified.
 
 Maximum Fans is available only on products 694, 695 and 696, in Custom. Its
 whole-byte Power Mode Control write requires all other settings to be clear.
@@ -102,11 +116,26 @@ manual target restoration is unestablished. The 2019 Base's HID Gaming preset
 does not grant the vendor native-library GPU overclock side effect.
 
 Fixed fans, curves, charge limits, Maximum Fans, HyperBoost, lighting and driver
-integration are not admitted. Physical validation remains pending. RZ09-0313,
-RZ09-0314 and RZ09-0329 were reviewed as candidates but lack a pinned exact Windows
+integration are not admitted. Physical validation remains pending. RZ09-0313
+and RZ09-0329 were reviewed as candidates but lack a pinned exact Windows
 product name and remain excluded. No sibling or Studio identity is inferred.
 See the [2019/2020 source review](source-reviewed-blades-2019-2020.md) and its
 [admission manifest](../evidence/source-reviewed-blades/2026-11-07-models-2019-2020.json).
+
+## Issue 949 and the 2019 Blade Pro 17
+
+| Laptop | Exact Windows product name | USB identity | Synapse product | Initial controls |
+| --- | --- | --- | --- | --- |
+| Blade 15 Advanced (Mid 2021), RZ09-0409 | `Blade 15 Advanced Model (Mid 2021) - RZ09-0409` | `1532:0276` | 630 | Full-power AC Balanced/Custom, CPU 0–3 including Boost, GPU 0–2, Automatic fans |
+| Blade Pro 17 (2019), RZ09-0287 | `Blade Pro 17 (2019)` | `1532:0234` | 564 | Full-power AC Balanced/Custom, CPU/GPU 0–2, Automatic fans |
+| Blade Pro 17 (Late 2019), RZ09-0314 | `Blade Pro 17 (Fall 2019)` | `1532:024C` | 588 | Full-power AC Balanced/Custom, CPU/GPU 0–2, Automatic fans |
+
+All three use thermal query/write profile 1 and raw modes 0 (Balanced) and 4
+(Custom). Battery Automatic handback preserves Balanced raw 0. Their initial
+controls do not include charge limits, manual fan targets, lighting, Maximum
+Fans, HyperBoost or driver/audio integration. Physical validation is pending.
+See the [exact-model review](source-reviewed-blades-issue-949.md) for source pins,
+identity evidence, including the primary report for the late-2019 variant.
 
 ## Admission and recovery
 

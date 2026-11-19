@@ -26,7 +26,7 @@ internal sealed class So6120ServiceSafetySampler : IDisposable
     private readonly FanStopThermalPolicy policy;
     private readonly CancellationTokenSource stop = new();
     private readonly SemaphoreSlim wake = new(0, 1);
-    private readonly Func<CancellationToken, Task>? waitNext;
+    private readonly Func<TimeSpan, CancellationToken, Task> waitNext;
     private readonly TaskCompletionSource initial = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource ownedInitial = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Task worker;
@@ -37,14 +37,14 @@ internal sealed class So6120ServiceSafetySampler : IDisposable
 
     internal So6120ServiceSafetySampler(IFanTemperatureSource source, FanStopSettings settings,
         TimeProvider clock, Func<So6120ServiceVolatileAdmission> observeAdmission,
-        Func<CancellationToken, Task>? waitNext = null)
+        Func<TimeSpan, CancellationToken, Task>? waitNext = null)
     {
         this.source = source;
         this.settings = settings;
         this.clock = clock;
         this.observeAdmission = observeAdmission;
         policy = new(settings, clock);
-        this.waitNext = waitNext;
+        this.waitNext = waitNext ?? wake.WaitAsync;
         worker = Task.Run(RunAsync);
     }
 
@@ -182,17 +182,14 @@ internal sealed class So6120ServiceSafetySampler : IDisposable
                     try { await pending.ConfigureAwait(false); } catch (Exception) { }
                 }
                 if (Current.EndReason != FanStopEndReason.None) { break; }
-                if (waitNext is not null) { await waitNext(stop.Token).ConfigureAwait(false); }
-                else
-                {
-                    // Target start-to-start cadence. Adding a whole second
-                    // after a healthy nonzero-duration read creates an expired
-                    // proof window while the next read is still in progress.
-                    // Overdue reads run immediately, never concurrently; actual
-                    // freshness and missing-interval checks remain unchanged.
-                    TimeSpan remaining = PollInterval - clock.GetElapsedTime(started);
-                    await wake.WaitAsync(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, stop.Token).ConfigureAwait(false);
-                }
+                // Target start-to-start cadence. Adding a whole second
+                // after a healthy nonzero-duration read creates an expired
+                // proof window while the next read is still in progress.
+                // Overdue reads run immediately, never concurrently; actual
+                // freshness and missing-interval checks remain unchanged.
+                TimeSpan remaining = PollInterval - clock.GetElapsedTime(started);
+                TimeSpan delay = remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+                await waitNext(delay, stop.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (stop.IsCancellationRequested) { }

@@ -91,9 +91,16 @@ internal sealed class CpuTuningController
             CpuTuningBackendAvailability.Unavailable);
         DeviceIdentity? identity = source.ReadIdentity();
         token.ThrowIfCancellationRequested();
-        if (identity is null)
+        var contract = CpuLiveCurveContract.ForIdentity(identity);
+        if (contract is null || identity is null)
         {
             return (new(null, null, unavailable, unavailable, CpuTuningPendingBoot.Unknown, false), null, null);
+        }
+        if (contract.UsesPhoenixProtocol)
+        {
+            var installed = source.InspectInstalled(identity, useInstalledBackend) with { Access = DeviceFeatureAccess.ObservedOnly };
+            token.ThrowIfCancellationRequested();
+            return (new(null, null, unavailable, installed, CpuTuningPendingBoot.Unknown, false), identity, null);
         }
 
         SavedCpuFirmwareReadResult saved = source.ReadSaved(identity);
@@ -528,9 +535,7 @@ internal sealed class CpuTuningController
     }
 
     private static bool CompatibleContexts(CpuLiveCurveContext curve, CpuLivePowerContext power) =>
-        CpuHardwareIdentity.Same(curve.Identity, power.Identity) && curve.Backend == power.Backend && curve.BootSequence == power.BootSequence
-        && curve.RuntimeLifetime == power.RuntimeLifetime
-        && curve.EnabledCoreMask == power.EnabledCoreMask && curve.PmVersion == power.PmVersion && curve.PmTableLength == power.PmTableLength;
+        curve.MatchesHardwareContext(power.ToCurveContext());
 
     private async Task<(bool Blocked, CpuTuningFeatures Features)> ReadLiveOwnershipAsync(CancellationToken token)
     {
@@ -561,8 +566,9 @@ internal sealed class CpuTuningController
         var unavailable = new CpuTuningBackendStatus(DeviceFeatureAccess.ObservedOnly, CpuTuningBackendAvailability.Unavailable);
         // Publish only the independently observed families. Raw fast/slow limits
         // do not establish effective watts or any CO values.
-        CpuLiveState? live = curve is null && power is null ? null : new(power is null ? null
-            : new(null, power.Fast.Milliwatts, power.Slow.Milliwatts),
+        CpuLivePowerLimits? limits = power is null || (power.Fast.Milliwatts is null && power.Slow.Milliwatts is null)
+            ? null : new(null, power.Fast.Milliwatts, power.Slow.Milliwatts);
+        CpuLiveState? live = curve is null && limits is null ? null : new(limits,
             curve?.CoreOffsets.Select(core => new CpuCoreCurveOptimizerValue(core.PhysicalCoreId, core.Offset)).ToArray() ?? []);
         return new(null, live, unavailable, unavailable with
         {
@@ -718,16 +724,7 @@ internal sealed class CpuTuningController
 
 internal sealed class WindowsCpuTuningObservationSource : ICpuTuningObservationSource
 {
-    public DeviceIdentity? ReadIdentity()
-    {
-        var registry = new WindowsRegistryValueSource();
-        HostIdentityReadResult host = new WindowsHostIdentitySource(registry,
-            new RuntimeWindowsPlatformEvidenceSource(registry),
-            WindowsHostIdentitySource.Rz090528Identity, compatibilityPolicy: null).ReadExactIdentity();
-        return host is { Failure: null, Evidence: { } evidence }
-            ? new("RZ09-0528", 0x1532, 0x02C6, evidence.BiosVersion ?? "Unknown")
-            : null;
-    }
+    public DeviceIdentity? ReadIdentity() => CpuVoltageModelIdentity.ReadIdentity();
 
     public SavedCpuFirmwareReadResult ReadSaved(DeviceIdentity identity)
     {
@@ -770,7 +767,9 @@ internal sealed class WindowsCpuTuningObservationSource : ICpuTuningObservationS
     }
 
     public CpuTuningBackendStatus InspectInstalled(DeviceIdentity identity, bool useInstalledBackend) =>
-        new Rz090528InstalledCpuBackendInspector().Inspect(useInstalledBackend, identity);
+        CpuLiveCurveContract.ForIdentity(identity) is { } contract
+            ? new Rz090528InstalledCpuBackendInspector(CpuInstalledBackendProfile.ForContract(contract)).Inspect(useInstalledBackend, identity)
+            : new(DeviceFeatureAccess.ObservedOnly, CpuTuningBackendAvailability.Unavailable);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Luid { public uint Low; public int High; }

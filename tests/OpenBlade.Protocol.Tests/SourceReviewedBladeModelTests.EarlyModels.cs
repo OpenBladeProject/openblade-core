@@ -4,7 +4,11 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed partial class SourceReviewedBladeModelTests
 {
-    public static TheoryData<int> EarlyProducts => new() { 0x0270, 0x028C, 0x028A, 0x028B };
+    private static readonly int[] EarlyAcOnlyProductIds = [0x0270, 0x0276];
+
+    private static bool IsEarlyAcOnly(int product) => EarlyAcOnlyProductIds.Contains(product);
+
+    public static TheoryData<int> EarlyProducts => new() { 0x0270, 0x0276, 0x028C, 0x028A, 0x028B };
     public static TheoryData<int> EarlyBatteryProducts => new() { 0x028C, 0x028A, 0x028B };
 
     [Theory]
@@ -13,24 +17,37 @@ public sealed partial class SourceReviewedBladeModelTests
     {
         ExperimentalBladeModel model = Model(product);
         DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(model, true);
-        PerformancePreset[] expected = product == 0x0270
+        PerformancePreset[] expected = IsEarlyAcOnly(product)
             ? [PerformancePreset.Balanced, PerformancePreset.Custom]
             : [PerformancePreset.Balanced, PerformancePreset.Custom, PerformancePreset.Silent, PerformancePreset.BatteryBalanced];
         Assert.Equal(expected.Order(), capabilities.PerformancePresets.Order());
-        Assert.Equal(new[] { FanMode.Automatic }, capabilities.FanModes);
-        Assert.Null(capabilities.FanSpeedRange);
-        Assert.Empty(capabilities.FanSpeedRangesByPerformancePreset);
+        Assert.Equal(new[] { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve }.Order(), capabilities.FanModes.Order());
+        Assert.NotNull(capabilities.FanSpeedRange);
+        Assert.NotEmpty(capabilities.FanSpeedRangesByPerformancePreset);
         Assert.False(capabilities.SupportsDirectManualFanTransitions);
-        Assert.False(capabilities.ReportsPerformanceWithManualFans);
-        Assert.Empty(capabilities.LightingEffects);
-        Assert.Empty(capabilities.LogoLightingModes);
+        Assert.True(capabilities.ReportsPerformanceWithManualFans);
+        LightingEffect[] expectedLighting = IsEarlyAcOnly(product)
+            ? []
+            : product == 0x028A
+            ? [LightingEffect.Off, LightingEffect.Breathing, LightingEffect.Spectrum, LightingEffect.Wave]
+            : [LightingEffect.Off, LightingEffect.Static, LightingEffect.Breathing, LightingEffect.Spectrum, LightingEffect.Wave];
+        Assert.Equal(expectedLighting.Order(), capabilities.LightingEffects.Order());
+        LogoLightingMode[] expectedLogo = product == 0x028A
+            ? []
+            : [LogoLightingMode.Off, LogoLightingMode.Static, LogoLightingMode.Breathing];
+        Assert.Equal(expectedLogo.Order(), capabilities.LogoLightingModes.Order());
+        Assert.True(capabilities.SupportsIndependentLightingControls);
+        Assert.False(capabilities.SupportsBreathingColorSelection);
+        Assert.Equal((IsEarlyAcOnly(product) ? [BreathingColorMode.Random] : Enum.GetValues<BreathingColorMode>()).Order(),
+            capabilities.SupportedBreathingColorModes!.Order());
+        Assert.Equal(!IsEarlyAcOnly(product), capabilities.SupportsWaveDirectionSelection);
         Assert.Empty(capabilities.OneShotLaptopControls);
         Assert.Empty(capabilities.HostManagedLaptopControls);
         Assert.Null(capabilities.HyperBoostAccess);
         Assert.Null(capabilities.ThxAudio);
-        Assert.False(capabilities.SupportsKeyboardBrightness);
+        Assert.True(capabilities.SupportsKeyboardBrightness);
         Assert.False(capabilities.SupportsUniformLightingFrames);
-        Assert.Equal(product == 0x0270 ? Array.Empty<int>() : [50, 55, 60, 65, 70, 75, 80, 100], capabilities.ChargeLimits.Order());
+        Assert.Equal(IsEarlyAcOnly(product) ? Array.Empty<int>() : [50, 55, 60, 65, 70, 75, 80, 100], capabilities.ChargeLimits.Order());
         CustomPerformanceCapabilities custom = Assert.IsType<CustomPerformanceCapabilities>(capabilities.CustomPerformance);
         Assert.Equal(12, custom.AllowedCombinations.Count);
         Assert.False(custom.SupportsMaximumFans);
@@ -39,7 +56,7 @@ public sealed partial class SourceReviewedBladeModelTests
             Assert.InRange((int)pair.Cpu, 0, 3);
             Assert.InRange((int)pair.Gpu, 0, 2);
         });
-        Assert.Equal(product == 0x0270 ? "NotEstablished" : "SynapseSourceBackedWithoutPhysicalValidation",
+        Assert.Equal(IsEarlyAcOnly(product) ? "NotEstablished" : "SynapseSourceBackedWithoutPhysicalValidation",
             Assert.Single(ExperimentalBladeModels.FeatureEvidenceFor(model), feature => feature.Feature == "ChargeLimits50To80Step5AndOff").Basis);
     }
 
@@ -74,7 +91,7 @@ public sealed partial class SourceReviewedBladeModelTests
         {
             await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetPerformanceAsync(preset, default));
         }
-        if (product == 0x0270)
+        if (IsEarlyAcOnly(product))
         {
             await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetPerformanceAsync(PerformancePreset.Silent, default));
             await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetPerformanceAsync(PerformancePreset.BatteryBalanced, default));
@@ -82,8 +99,8 @@ public sealed partial class SourceReviewedBladeModelTests
             await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetChargeLimitAsync(80, default));
             await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetProtectionOffAsync(default));
         }
-        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanTargetsAsync(4300, 4300, default));
-        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanModeAsync(FanMode.ManualCurve, default));
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanTargetsAsync(1000, 1000, default));
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanModeAsync(FanMode.Maximum, default));
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetCustomPerformanceAsync(
             new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High) { MaximumFans = true }, default));
         Assert.Empty(session.Commands);
@@ -93,7 +110,7 @@ public sealed partial class SourceReviewedBladeModelTests
     [MemberData(nameof(EarlyProducts))]
     public async Task EarlyUnsupportedRawMode_DoesNotBecomeTurboOrSilent(int product)
     {
-        foreach (byte mode in product == 0x0270 ? new byte[] { 1, 2, 3, 5, 6, 7 } : new byte[] { 1, 2, 3, 7 })
+        foreach (byte mode in IsEarlyAcOnly(product) ? new byte[] { 1, 2, 3, 5, 6, 7 } : new byte[] { 1, 2, 3, 7 })
         {
             var session = new Session { Mode = mode };
             await using var port = Create(product, session);
@@ -138,11 +155,13 @@ public sealed partial class SourceReviewedBladeModelTests
         AssertFreshAdapterBeforeSetters(session);
     }
 
-    [Fact]
-    public async Task EarlyBlade14BatteryHandback_PreservesRawZeroAndUnknownBatteryState()
+    [Theory]
+    [InlineData(0x0270)]
+    [InlineData(0x0276)]
+    public async Task EarlyBatteryHandback_PreservesRawZeroAndUnknownBatteryState(int product)
     {
         var session = new Session { Mode = 0, Manual = 1, Adapter = [0, 0x11] };
-        await using var port = Create(0x0270, session, power: () => PowerSource.Battery);
+        await using var port = Create(product, session, power: () => PowerSource.Battery);
         await port.SetFanModeAsync(FanMode.Automatic, default);
         ConfirmedDeviceState state = await port.ReadRecoveryStateAsync(default);
         Assert.Equal(PerformancePreset.Balanced, state.Performance);

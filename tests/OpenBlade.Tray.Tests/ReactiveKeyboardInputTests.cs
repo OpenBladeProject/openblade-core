@@ -236,7 +236,7 @@ public sealed class ReactiveKeyboardInputTests
     public void Pulse_RejectsSlotsOutsideCapturedMatrix()
     {
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => new ReactiveKeyPulse(102));
+            () => new ReactiveKeyPulse(114));
     }
 
     [Fact]

@@ -3,7 +3,6 @@
 These metadata-only fixtures are copied from
 [blade-driver-catalog commit 60adc8e](https://github.com/OpenBladeProject/blade-driver-catalog/tree/60adc8e510097344f34244fd113dd4be949a9d81):
 
-- `DriverCatalogApplicability.json`: `catalog/applicability.json`
 - `ThxNativeComponentCatalog.json`: `components/thx-v4-native/1.1.1.0/component.json`
 - `ThxRznb11StackCatalog.json`: `components/thx-rznb11/4.2.29.1159/stack.json`
 - `ThxRznb12StackCatalog.json`: `components/thx-rznb12/4.2.41.2499/stack.json`
@@ -25,3 +24,8 @@ The prerequisite snapshot pins the complete Intel CopyINF and Realtek base
 closures and every root-INF match. Windows inbox audio files are checked on
 the target machine and are not redistributed. Clean installation remains unvalidated.
 The fixtures contain no vendor binaries and tests make no network requests.
+
+`DriverCatalogApplicability.json` is copied from `catalog/applicability.json` in
+[commit 2a6fa71](https://github.com/OSSBlade/blade-driver-catalog/tree/2a6fa71773cfcddf29011c8e7ed0c9582782fb42)
+for RZ09-0409, RZ09-0287 and RZ09-0314 (22 models, 154 artifact decisions). Other snapshots
+retain the original component pins above.

@@ -135,8 +135,8 @@ public sealed class ServiceCompositionTests
             new RgbColor(12, 34, 56),
             brightness: 70);
 
-        validator.Validate(defaults);
-        validator.Validate(defaults with
+        validator.ValidateStoredCustomIntent(defaults);
+        validator.ValidateStoredCustomIntent(defaults with
         {
             PluggedIn = defaults.PluggedIn with { Lighting = staticLighting },
             Battery = defaults.Battery with { Lighting = staticLighting },
@@ -152,9 +152,9 @@ public sealed class ServiceCompositionTests
             new StubProductionLightingFactory(DeviceCapabilities.Unavailable()));
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         defaults = defaults with { PluggedIn = defaults.PluggedIn with { CustomPerformance = null } };
-        validator.Validate(defaults);
+        validator.ValidateStoredCustomIntent(defaults);
 
-        Assert.Throws<InvalidDataException>(() => validator.Validate(defaults with
+        Assert.Throws<InvalidDataException>(() => validator.ValidateStoredCustomIntent(defaults with
         {
             PluggedIn = defaults.PluggedIn with
             {

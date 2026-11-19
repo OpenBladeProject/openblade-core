@@ -368,7 +368,30 @@ public sealed partial class SetupBackendCutoverTests
         public Task WaitForDeletionAsync(string serviceName, TimeSpan timeout, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
         public IReadOnlyList<ISetupProcess> GetProcessesByName(string processName) => [];
+        // Service quiescence binds the running SCM PID to the installed image
+        // before stop and waits for that process. The fake exits on stop.
+        private const int ServiceProcessId = 4242;
+        public Task<SetupServiceStatus?> GetStatusAsync(string serviceName, CancellationToken cancellationToken) =>
+            Task.FromResult<SetupServiceStatus?>(new(ServiceState,
+                ServiceState == SetupServiceState.Running ? ServiceProcessId : null));
+        public ISetupProcess GetProcessById(int processId) =>
+            processId == ServiceProcessId
+                ? new StoppedServiceProcess(this, Path.Combine(paths.InstallDirectory, ServiceFile))
+                : throw new ArgumentException("No such fake process.", nameof(processId));
         public bool TrySignalEvent(string eventName) => throw new NotSupportedException();
+
+        private sealed class StoppedServiceProcess(OfflineWindows owner, string executablePath) : ISetupProcess
+        {
+            public int Id => ServiceProcessId;
+            public bool TryRetainLifetime() => true;
+            public string? ExecutablePath => executablePath;
+            public Task WaitForExitAsync(CancellationToken cancellationToken)
+            {
+                Assert.Equal(SetupServiceState.Stopped, owner.ServiceState);
+                return Task.CompletedTask;
+            }
+            public void Dispose() { }
+        }
         public Task CreateAsync(ShortcutRequest request, CancellationToken cancellationToken) =>
             File.WriteAllTextAsync(request.ShortcutPath, request.TargetPath, cancellationToken);
         public bool Exists() => false;

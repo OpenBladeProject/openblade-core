@@ -66,7 +66,8 @@ the shared target path, without Automatic or Balanced reset writes.
 
 ## Independent brightness and logo controls
 
-Keyboard brightness uses `03/83 [1,5,0]` and `03/03 [1,5,raw]`. The exact
+Keyboard brightness uses active-bank `03/83 [0,5,0]` and `03/03 [0,5,raw]`,
+established by the later exact MCU review. The exact
 vendor conversion rounds percent-to-raw upward and reports `floor(raw*100/255)`.
 A change reads its prior raw value, applies one bounded value and confirms the
 raw result with a separate getter. It sends no keyboard-effect or Driver-mode
@@ -84,13 +85,27 @@ explicit independent intent do not acquire new brightness or logo writes. A fiel
 edit stores merged profile intent but sends and confirms only the edited fields;
 unrelated readings are preserved.
 
+## MCU effect controls
+
+The [MCU-first lighting pass](source-reviewed-lighting.md) reconstructs an exact
+PID 0245 keyboard image from the official RZ09-03017/03018 updater's resources.
+Its active-bank `0F/82` getter, legacy `03/0A` setters and actual color consumers
+establish Off, Static, Spectrum, random/single/dual-color Breathing and both Wave
+directions. The legacy setter copies the saved LED 5 record into active state,
+including brightness, so effect confirmation is followed by a fresh active
+brightness read and the requested brightness target when necessary.
+
+These controls coexist with independent field editing. Old unmanaged profiles
+remain unmanaged; explicitly selecting an effect records separate keyboard-effect
+intent. That intent is not a firmware observation. The MCU establishes 6×16 row
+bounds, but no custom-frame backend or input-to-light map is admitted here.
+
 ## Remaining source limits and verification
 
-The exact old-matrix effect setter is `03/0A`, with different IDs from the
-newer `0F/02` path. No matching old-matrix effect getter or restorable RGB
-baseline was established. Its inherited generic `0F/82` method does not prove
-that contract. Host-frame row/layout bounds and ownership/restoration are also
-unresolved. Neither keyboard effect nor frame writes are enabled by this review.
+Custom mode 8 is observed without pixel contents. A new typed built-in effect
+can replace it directly, but it cannot supply a framebuffer restoration baseline.
+Host-frame ownership, lifecycle and exact restoration retain their separate
+implementation limits.
 
 Charge limits and temporary full charge remain unadmitted: product 581 does not
 enable the shared battery-optimizer path. Shared helper presence does not prove

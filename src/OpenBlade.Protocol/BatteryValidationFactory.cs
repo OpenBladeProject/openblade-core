@@ -19,21 +19,24 @@ public static class BatteryValidationFactory
 
     internal static IProductionBatteryPortFactory
         CreateWindowsProductionBatteryForService() =>
-        WindowsHostIdentitySource.IsExactRz090528WindowsHost()
-            ? CreateWindowsRz090528ProductionBattery()
-            : ProductionBatteryFactory.CreateWindows();
+        CreateWindowsProductionBatteryForService(capturePowerSource: null);
 
     internal static IProductionBatteryPortFactory
-        CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation() =>
-        CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation(null);
+        CreateWindowsProductionBatteryForService(Func<PowerSource>? capturePowerSource) =>
+        WindowsHostIdentitySource.IsExactRz090528WindowsHost()
+            ? CreateWindowsRz090528ProductionBattery(null, capturePowerSource: capturePowerSource)
+            : ProductionBatteryFactory.CreateWindows(capturePowerSource);
 
-    internal static IProductionBatteryPortFactory CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation(MailboxLifetime? lifetime)
+    internal static IProductionBatteryPortFactory
+        CreateWindowsProductionBatteryForPadlessHyperBoostLifecycleValidation(
+            Func<PowerSource>? capturePowerSource = null, MailboxLifetime? lifetime = null)
     {
         PadlessHyperBoostLifecycleTarget? target = PadlessHyperBoostLifecycleTarget.ForCurrentWindowsHost();
         RequireLifecycleReadiness(target);
         return target!.Model == "RZ09-0528"
-            ? CreateWindowsRz090528ProductionBattery(compatibilityPolicy: null, allowPadlessLifecycleValidation: true, lifetime: lifetime)
-            : ProductionBatteryFactory.CreateWindowsForPadlessHyperBoostLifecycleValidation(lifetime);
+            ? CreateWindowsRz090528ProductionBattery(compatibilityPolicy: null, allowPadlessLifecycleValidation: true,
+                capturePowerSource: capturePowerSource, lifetime: lifetime)
+            : ProductionBatteryFactory.CreateWindowsForPadlessHyperBoostLifecycleValidation(capturePowerSource, lifetime);
     }
 
     internal static void RequireLifecycleReadiness(PadlessHyperBoostLifecycleTarget? target)
@@ -47,13 +50,15 @@ public static class BatteryValidationFactory
 
     internal static IProductionBatteryPortFactory
         CreateWindowsProductionBatteryForService(
-            FirmwareCompatibilityPolicy compatibilityPolicy, MailboxLifetime? lifetime = null)
+            FirmwareCompatibilityPolicy compatibilityPolicy, Func<PowerSource>? capturePowerSource = null,
+            MailboxLifetime? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(compatibilityPolicy);
         return WindowsHostIdentitySource.IsRz090528WindowsHost(
                 allowUntestedFirmware: true)
-            ? CreateWindowsRz090528ProductionBattery(compatibilityPolicy, lifetime: lifetime)
-            : ProductionBatteryFactory.CreateWindows(compatibilityPolicy, lifetime);
+            ? CreateWindowsRz090528ProductionBattery(compatibilityPolicy, capturePowerSource: capturePowerSource,
+                lifetime: lifetime)
+            : ProductionBatteryFactory.CreateWindows(compatibilityPolicy, capturePowerSource, lifetime);
     }
 
     internal static IProductionBatteryPortFactory
@@ -65,7 +70,8 @@ public static class BatteryValidationFactory
             FirmwareCompatibilityPolicy? compatibilityPolicy,
             bool allowPadlessLifecycleValidation = false,
             Func<TimeSpan, IValidationActorFactory>? createActorFactory = null,
-            IHyperBoostEligibilitySource? hyperBoostEligibility = null, MailboxLifetime? lifetime = null)
+            IHyperBoostEligibilitySource? hyperBoostEligibility = null,
+            Func<PowerSource>? capturePowerSource = null, MailboxLifetime? lifetime = null)
     {
         if (allowPadlessLifecycleValidation)
         {
@@ -666,7 +672,9 @@ public static class BatteryValidationFactory
                 ThxAudioProductIds.Rznb11),
             laptopControlRecoveryIdentity: $"{target.Model}|{target.VendorId:X4}:{target.ProductId:X4}",
             hasFanStopSourceEvidence: FanStopModelContract.ForProfile(target.Model, target.ProductId,
-                WindowsHostIdentitySource.Rz090528Identity.ProductName).Count != 0);
+                WindowsHostIdentitySource.Rz090528Identity.ProductName).Count != 0,
+            capturePowerSource: capturePowerSource,
+            supportsOrdinaryThermalControlOnUnclassifiedExternalPower: true);
     }
 
     internal static ProductionBatteryReadEvidence
@@ -706,11 +714,14 @@ public static class BatteryValidationFactory
     private static IProductionLightingPortFactory
         CreateWindowsRz090528ProductionLighting(
             FirmwareCompatibilityPolicy? compatibilityPolicy, MailboxLifetime? lifetime = null)
-        => CreateWindowsRz090528BrightnessLighting(
-            staticEffectAdmitted: true,
-            spectrumEffectAdmitted: true,
-            allSynapseEffectsAdmitted: true,
+    {
+        bool sourceAdmitted = Rz090528RegionalFrameProjection.IsSourceContractApproved();
+        return CreateWindowsRz090528BrightnessLighting(
+            staticEffectAdmitted: sourceAdmitted,
+            spectrumEffectAdmitted: sourceAdmitted,
+            allSynapseEffectsAdmitted: sourceAdmitted,
             compatibilityPolicy: compatibilityPolicy, lifetime: lifetime);
+    }
 
     internal static IProductionLightingPortFactory
         CreateWindowsRz090528BrightnessLighting()

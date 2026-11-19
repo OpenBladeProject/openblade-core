@@ -84,26 +84,50 @@ internal static class WriteConfirmationPolicy
                         ? PendingConfirmationResult.Match
                         : PendingConfirmationResult.Mismatch),
             DeviceSubsystem.Battery => MatchPendingBattery(pending, confirmed.Battery),
-            DeviceSubsystem.Lighting when pending.Target.Lighting.Value.IndependentControls is { } fields =>
-                MatchIndependentLighting(fields, confirmed),
-            DeviceSubsystem.Lighting => confirmed.Lighting is null
-                ? PendingConfirmationResult.Unavailable
-                : confirmed.Lighting == pending.Target.Lighting.Value
-                    ? PendingConfirmationResult.Match
-                    : PendingConfirmationResult.Mismatch,
+            DeviceSubsystem.Lighting => MatchPendingLighting(pending.Target.Lighting.Value, confirmed),
             _ => PendingConfirmationResult.Unavailable,
         };
+
+    private static PendingConfirmationResult MatchPendingLighting(
+        LightingSettings requested,
+        ConfirmedDeviceState confirmed)
+    {
+        PendingConfirmationResult independent = requested.IndependentControls is { } fields
+            ? MatchIndependentLighting(fields, confirmed)
+            : PendingConfirmationResult.Match;
+        if (!requested.ControlsKeyboardEffect && requested.IndependentControls is not null)
+        {
+            return independent;
+        }
+        LogoLightingMode? observedLogo = confirmed.LogoLighting
+            ?? confirmed.IndependentLighting?.LogoMode
+            ?? confirmed.Lighting?.LogoMode;
+        if (confirmed.Lighting is null
+            || requested.LogoMode.HasValue && requested.IndependentControls?.LogoMode is null
+                && !observedLogo.HasValue)
+        {
+            return PendingConfirmationResult.Unavailable;
+        }
+
+        bool keyboardMatches = ControlCoordinator.KeyboardLightingMatches(
+            confirmed with { LogoLighting = observedLogo }, requested);
+        return keyboardMatches ? independent : PendingConfirmationResult.Mismatch;
+    }
 
     private static PendingConfirmationResult MatchIndependentLighting(
         IndependentLightingSettings requested, ConfirmedDeviceState confirmed)
     {
         byte? brightness = confirmed.IndependentLighting?.Brightness;
         LogoLightingMode? logo = confirmed.IndependentLighting?.LogoMode ?? confirmed.LogoLighting;
-        if (requested.Brightness.HasValue && !brightness.HasValue || requested.LogoMode.HasValue && !logo.HasValue)
+        if (requested.Brightness.HasValue && !brightness.HasValue || requested.LogoMode.HasValue && !logo.HasValue
+            || requested.VaporChamberLightingEnabled.HasValue && confirmed.IndependentLighting?.VaporChamberLightingEnabled is null
+            || requested.TouchpadStatusIndicatorEnabled.HasValue && confirmed.IndependentLighting?.TouchpadStatusIndicatorEnabled is null)
         {
             return PendingConfirmationResult.Unavailable;
         }
         return (!requested.Brightness.HasValue || requested.Brightness == brightness)
+            && (!requested.VaporChamberLightingEnabled.HasValue || requested.VaporChamberLightingEnabled == confirmed.IndependentLighting?.VaporChamberLightingEnabled)
+            && (!requested.TouchpadStatusIndicatorEnabled.HasValue || requested.TouchpadStatusIndicatorEnabled == confirmed.IndependentLighting?.TouchpadStatusIndicatorEnabled)
             && (!requested.LogoMode.HasValue || requested.LogoMode == logo)
                 ? PendingConfirmationResult.Match : PendingConfirmationResult.Mismatch;
     }

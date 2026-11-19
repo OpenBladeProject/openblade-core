@@ -35,11 +35,14 @@ public sealed partial class ServiceControlRuntime
                 IndependentLightingSettings? prior = intent.IndependentControls;
                 IndependentLightingSettings fields = new(
                     value.Value.Brightness ?? prior?.Brightness,
-                    value.Value.LogoMode ?? prior?.LogoMode);
+                    value.Value.LogoMode ?? prior?.LogoMode,
+                    value.Value.VaporChamberLightingEnabled ?? prior?.VaporChamberLightingEnabled,
+                    value.Value.TouchpadStatusIndicatorEnabled ?? prior?.TouchpadStatusIndicatorEnabled);
                 // Preserve the saved effect as unmanaged intent. Neither this request
                 // nor its confirmation invents an active keyboard effect.
                 var staged = new ManualOverride<LightingSettings>(intent with
                 {
+                    ControlsKeyboardEffect = false,
                     IndependentControls = fields,
                 }, value.Lifetime);
                 await SetLightingOverrideCoreAsync(staged, cancellationToken).ConfigureAwait(false);
@@ -59,6 +62,7 @@ public sealed partial class ServiceControlRuntime
                 {
                     Value = desired.Lighting.Value with
                     {
+                        ControlsKeyboardEffect = false,
                         IndependentControls = SuppressIndependentBrightness(value.Value, lightingSuppressions.Count > 0),
                     },
                 },

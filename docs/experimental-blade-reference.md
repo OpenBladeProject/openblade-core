@@ -187,9 +187,9 @@ submitted operation pauses writes; recovery rereads both fields. See the
 
 | USB PID | Keyboard contract | Logo contract | Evidence boundary |
 | --- | --- | --- | --- |
-| `029F` | Brightness; Off, Spectrum, random Breathing, Rightward Wave; uniform Static, Ambient Awareness, Audio Meter | Off, Static, Breathing | Exact-model built-ins and 6x16 frame rows are owner-tested; frame color has no getter |
-| `029D` | Brightness; Off, Spectrum, random Breathing, Rightward Wave | Off, Static, Breathing | Keyboard and logo on/off are owner-reported; richer logo modes are explicit extrapolation |
-| `02C5` | Brightness; Off, Spectrum, random Breathing, Rightward Wave | Off, Static, Breathing | Keyboard and logo on/off are owner-reported; richer logo modes are explicit extrapolation |
+| `029F` | Brightness; Off, Spectrum, Breathing, Wave; uniform Static, Ambient Awareness, Audio Meter; Fire, Wheel, Starlight, Tidal | Off, Static, Breathing | Exact-model built-ins and 6x16 frame rows are owner-tested; frame color has no getter |
+| `029D` | Brightness; Off, Spectrum, Breathing, Wave; Static, Ambient Awareness, Audio Meter, Fire, Wheel, Starlight, Tidal | Off, Static, Breathing | Built-ins are owner-reported; frames and software patterns are exact-model source-reviewed without RGB readback |
+| `02C5` | Brightness; Off, Spectrum, Breathing, Wave; Static, Ambient Awareness, Audio Meter, Fire, Wheel, Starlight, Tidal, Reactive, Ripple, imported sequences | Off, Static, Breathing | Built-ins are owner-reported; frames and software patterns are exact-model source-reviewed without RGB readback |
 | `0255` | Brightness; Off, Spectrum, random or single-color Breathing; single-zone Static | None | Single-zone color and its RGB getter are exact-model tested; Wave is excluded |
 | `02A0` | Brightness; Off, Spectrum, random Breathing, Rightward Wave; uniform Static, Ambient Awareness, Audio Meter; Fire, Wheel, Starlight | Off, Static, Breathing | Uniform Static is extrapolated from the same command family and has no color getter |
 
@@ -208,9 +208,11 @@ Single-color Breathing uses `03/0A [03, 01, R, G, B]` and independently reads
 back its mode and RGB through `03/8A`. Random Breathing requires the known
 all-zero standard-effect response; other unrecognized payloads are rejected.
 
-Blade 16 and Blade 18 Static use a uniform frame: six `03/0B` rows with
-`[FF, row, 00, 0F, RGB x 16]`, followed by `03/0A [05, 00]` activation. These
-exchanges confirm only successful command envelopes. Firmware exposes no RGB
+Blade 14, Blade 16 and Blade 18 Static use a uniform frame: six `03/0B` rows with
+`[FF, row, 00, 0F, RGB x 16]`, followed by `03/0A [05, 00]` activation.
+Blade 14 rows include the reviewed 18-byte zero tail (70 bytes total); the
+other two models retain their established 52-byte rows. These exchanges confirm
+only successful command envelopes. Firmware exposes no RGB
 frame getter, so OpenBlade records owned intent as applied without color
 readback. It saves a readable built-in effect and brightness baseline before
 the frame, and restores and confirms that baseline through the built-in getters
@@ -220,11 +222,16 @@ Standby and firmware idle fade can discard the volatile frame. An explicit Stati
 application always repaints all rows; OpenBlade has no idle-input repaint trigger.
 Ambient and Audio Meter continue to repaint while their renderer is active.
 
-The uniform frame is one color across the keyboard. It does not admit a key
-layout, per-key or spatial effects, or the `02E0` shared ambient-frame API.
+The uniform frame is one color across the keyboard. The two Blade 14 models
+and Blade 16 also offer non-key-triggered grid effects and color Breathing,
+using their own 6×16 addresses. See [lighting parity](blade14-lighting-parity.md)
+for the pinned transport and software patterns. These address bounds alone do
+not establish a physical key map or admit the `02E0` shared ambient-frame API.
+Blade 14 (2025) separately uses its [MCU-derived common key map](blade14-keymap.md)
+for Reactive, Ripple and sequence imports; ambiguous regional keys remain unavailable.
 Blade 18 also uses its own recorded frame templates for Fire and Wheel, described
 below, and the shared Starlight software pattern over its 96 RGB addresses.
-Blade 16 and Blade 18 use the typed uniform-frame path for Ambient Awareness and
+Blade 14, Blade 16 and Blade 18 use the typed uniform-frame path for Ambient Awareness and
 Audio Meter. The Session Agent samples a 1×1 screen color or audio-peak intensity
 and sends one color through the service. Blade 18 submits its six SET-only rows,
 activating custom mode only on the first frame of a new effect. The transport

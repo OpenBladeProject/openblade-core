@@ -8,8 +8,8 @@ public sealed partial class ExperimentalThermalExpansionTests
     [Theory]
     [InlineData(0x029F, true, true, true)]
     [InlineData(0x029D, false, false, true)]
-    [InlineData(0x02C5, false, false, false)]
-    [InlineData(0x0255, false, false, false)]
+    [InlineData(0x02C5, false, false, true)]
+    [InlineData(0x0255, false, false, true)]
     [InlineData(0x02A0, true, true, true)]
     public void Capabilities_AdmitOnlyExactModelCommands(int pid, bool boost, bool maximum, bool fixedFans)
     {
@@ -22,7 +22,7 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.Equal(fixedFans, caps.FanModes.Contains(FanMode.Fixed));
         Assert.Equal(fixedFans, caps.ReportsPerformanceWithManualFans);
         Assert.False(caps.SupportsManualFansOnLimitedPower);
-        Assert.Equal(pid == 0x02A0, caps.FanModes.Contains(FanMode.ManualCurve));
+        Assert.True(caps.FanModes.Contains(FanMode.ManualCurve));
         Assert.False(ExperimentalBladePort.CreateCapabilities(Model(pid), false).PerformancePresets.Any());
         Assert.False(ExperimentalBladePort.CreateCapabilities(Model(pid), false).ReportsPerformanceWithManualFans);
     }
@@ -193,18 +193,54 @@ public sealed partial class ExperimentalThermalExpansionTests
     }
 
     [Theory]
-    [InlineData(0x029F)]
-    [InlineData(0x029D)]
-    public async Task FixedFans_RejectUsbCBeforeWriteWithoutExactManualFlagEvidence(int pid)
+    [InlineData(0x029F, PowerSource.UsbC)]
+    [InlineData(0x029D, PowerSource.UsbC)]
+    [InlineData(0x029F, PowerSource.ExternalUnknown)]
+    [InlineData(0x029D, PowerSource.ExternalUnknown)]
+    public async Task FixedFans_LimitedExternalRetainsExistingManualCapabilityBoundary(int pid, PowerSource source)
     {
         var session = new Session { AdapterPowerPayload = [0x07, 0x11] };
-        await using var port = Create(pid, session, power: () => PowerSource.UsbC);
-
-        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+        await using var port = Create(pid, session, power: () => source);
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetFanTargetsAsync(pid == 0x029F ? 2000 : 2200, 5000, CancellationToken.None));
-
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
         Assert.Empty(session.Writes);
+        if (source == PowerSource.UsbC) { Assert.Empty(session.Commands); }
+        else { Assert.Contains(session.Commands, command => command.CommandId == 0x8C); }
+    }
+
+    [Theory]
+    [InlineData(0x029F)]
+    [InlineData(0x029D)]
+    public async Task FixedFans_RawWindowsExternalPresenceUsesFreshFullPowerClassification(int pid)
+    {
+        var session = new Session { AdapterPowerPayload = [0x11, 0x11], Mode = 5 };
+        await using var port = Create(pid, session, power: () => PowerSource.ExternalUnknown);
+        await port.SetFanTargetsAsync(pid == 0x029F ? 2000 : 2200, 5000, default);
+        Assert.Equal(5, session.Mode);
+        Assert.Equal(1, session.Fan);
+        Assert.Equal(4, session.Writes.Count());
+    }
+
+    [Theory]
+    [InlineData(0x029F)]
+    [InlineData(0x02A0)]
+    public async Task LimitedExternal_PreservesAutomaticPresetAndCustomMaximumFansCapabilities(int pid)
+    {
+        var session = new Session { AdapterPowerPayload = [0x02, 0x11] };
+        await using var port = Create(pid, session, power: () => PowerSource.UsbC);
+        await port.SetPerformanceAsync(PerformancePreset.Silent, default);
+        Assert.Equal(5, session.Mode);
+        Assert.Equal(0, session.Fan);
+        await port.SetCustomPerformanceAsync(new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.High)
+        {
+            MaximumFans = true,
+        }, default);
+        Assert.Equal(4, session.Mode);
+        Assert.Equal(0, session.Fan);
+        Assert.True(session.MaximumFans);
+        Assert.False(port.Capabilities.SupportsManualFansOnLimitedPower);
+        Assert.Equal(AdapterPowerState.UsbCPower45W, await port.QueryAdapterPowerStateAsync(default));
     }
 
     [Theory]
@@ -604,6 +640,7 @@ public sealed partial class ExperimentalThermalExpansionTests
         internal HidProtocolValidationFailure? CustomLevelAckProtocolFailure { get; init; }
         internal byte[]? CustomLevelReadbackPayloadOverride { get; init; }
         internal byte[] AdapterPowerPayload { get; set; } = [0x11, 0x11];
+        internal HidSessionResult<ReadOnlyMemory<byte>>? AdapterPowerResult { get; set; }
         internal byte[] HyperBoostFirmware { get; init; } = [1, 5, 0, 0];
         internal bool MaximumFans
         {
@@ -653,16 +690,19 @@ public sealed partial class ExperimentalThermalExpansionTests
             switch ((command.ClassId, command.CommandId))
             {
                 case (0x00, 0x87): payload = HyperBoostFirmware; break;
-                case (0x07, 0x8C): payload = AdapterPowerPayload; break;
+                case (0x07, 0x8C):
+                    if (AdapterPowerResult is { } adapterResult) { return Task.FromResult(adapterResult); }
+                    payload = AdapterPowerPayload;
+                    break;
                 case (0x0D, 0x82):
                     payload = fanModeWriteSeen && FanModeReadbackPayloadOverride is not null
                         ? FanModeReadbackPayloadOverride
-                        : [0, payload[1], Mode, Fan];
+                        : [payload[0], payload[1], Mode, Fan];
                     break;
                 case (0x0D, 0x87):
                     payload = customLevelWriteSeen && CustomLevelReadbackPayloadOverride is not null
                         ? CustomLevelReadbackPayloadOverride
-                        : [0, payload[1], payload[1] == 1 ? Cpu : Gpu];
+                        : [payload[0], payload[1], payload[1] == 1 ? Cpu : Gpu];
                     break;
                 case (0x0D, 0x81):
                     payload = fanTargetWriteSeen && FanTargetReadbackPayloadOverride is not null

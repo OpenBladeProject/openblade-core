@@ -527,6 +527,11 @@ public sealed record ServiceStatusSnapshot(
 
     public DeviceObservationReason ObservationReason { get; init; }
 
+    /// <summary>Positive current Windows AC-online evidence only. False also
+    /// means unavailable/unobserved; this never asserts wattage or a connector
+    /// and never substitutes for fresh per-command power admission.</summary>
+    public bool ExternalPowerPresent { get; init; }
+
     public IReadOnlyList<DeviceSubsystem> UnconfirmedWrites { get; init; } = [];
 
     public FanControlSettings? FanControlOverride { get; init; }

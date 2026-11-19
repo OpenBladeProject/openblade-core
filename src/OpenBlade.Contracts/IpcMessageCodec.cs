@@ -8,8 +8,10 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    // Earlier peers reject the RZ09-0530 layout in capabilities and typed sequences.
-    public const int ProtocolVersion = 80;
+    // Protocol 85 keeps the protocol 84 contracts and also admits confirmed
+    // Custom performance whose levels the firmware did not report. Protocol 84
+    // peers reject that state, so the two versions cannot share a number.
+    public const int ProtocolVersion = 85;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -955,6 +957,7 @@ public static class IpcMessageCodec
             ? null
             : status.Capabilities with
             {
+                FanSpeedRange = ProjectProtocol51FanRange(status.Capabilities.FanSpeedRange),
                 FanModes = status.Capabilities.FanModes.Where(mode => mode != FanMode.Stop).ToHashSet(),
                 PerformancePresets = status.Capabilities.PerformancePresets
                     .Where(IsProtocol51PerformancePreset)
@@ -1000,7 +1003,7 @@ public static class IpcMessageCodec
                     ? null : status.ConfirmedState.Fans,
                 Lighting = status.ConfirmedState.Lighting is { } confirmedLighting
                     && IsProtocol51LightingSetting(confirmedLighting)
-                        ? confirmedLighting with { IndependentControls = null }
+                        ? confirmedLighting with { IndependentControls = null, ControlsKeyboardEffect = false }
                         : null,
             };
 
@@ -1027,9 +1030,9 @@ public static class IpcMessageCodec
                         ? status.BatterySaverFanStopStatus?.NormalFanControl?.Mode ?? FanMode.Automatic
                         : status.DesiredState.Fans.Value,
                 },
-                FanControl = status.DesiredState.FanControl?.Mode == FanMode.Stop
+                FanControl = ProjectProtocol51FanControl(status.DesiredState.FanControl?.Mode == FanMode.Stop
                     ? status.BatterySaverFanStopStatus?.NormalFanControl ?? FanControlSettings.Default
-                    : status.DesiredState.FanControl,
+                    : status.DesiredState.FanControl),
                 Performance = status.DesiredState.Performance with
                 {
                     Value = IsProtocol51PerformancePreset(status.DesiredState.Performance.Value)
@@ -1053,6 +1056,7 @@ public static class IpcMessageCodec
                         status.DesiredState.Lighting.Value),
                 },
             },
+            FanControlOverride = ProjectProtocol51FanControl(status.FanControlOverride),
             PerformanceOverride = status.PerformanceOverride is { } performanceOverride
                 && IsProtocol51PerformancePreset(performanceOverride.Value)
                 ? performanceOverride with
@@ -1106,7 +1110,26 @@ public static class IpcMessageCodec
             CustomPerformance = ProjectProtocol51CustomSettings(profile.CustomPerformance),
             Lighting = ProjectProtocol51LightingSetting(profile.Lighting),
             ThxAudio = null,
+            FanControl = ProjectProtocol51FanControl(profile.FanControl),
         };
+
+    // Values outside v51's closed numeric range are display placeholders only.
+    // Never modify the live intent or manufacture confirmed hardware readback.
+    private static FanSpeedRange? ProjectProtocol51FanRange(FanSpeedRange? range) =>
+        range is null ? null
+            : range.MinimumRpm > FanControlSettings.MaximumSpeedRpm ? null
+            : range with { MaximumRpm = Math.Min(range.MaximumRpm, FanControlSettings.MaximumSpeedRpm) };
+
+    private static FanControlSettings? ProjectProtocol51FanControl(FanControlSettings? settings) =>
+        settings is null ? null : new FanControlSettings(
+            settings.Mode == FanMode.Stop ? FanMode.Automatic : settings.Mode,
+            Math.Min(settings.FixedSpeedRpm, FanControlSettings.MaximumSpeedRpm),
+            new ManualFanCurve(
+                settings.ManualCurve.Cpu.Select(point => new FanCurvePoint(
+                    point.TemperatureCelsius, Math.Min(point.SpeedRpm, FanControlSettings.MaximumSpeedRpm))).ToArray(),
+                settings.ManualCurve.Gpu.Select(point => new FanCurvePoint(
+                    point.TemperatureCelsius, Math.Min(point.SpeedRpm, FanControlSettings.MaximumSpeedRpm))).ToArray(),
+                settings.ManualCurve.UseHigherTemperatureForBoth));
 
     private static bool IsProtocol51LightingLayout(string? layoutId) =>
         layoutId is null
@@ -1121,7 +1144,7 @@ public static class IpcMessageCodec
     // in this read-only projection; unrepresentable confirmed lighting stays unknown.
     private static LightingSettings ProjectProtocol51LightingSetting(LightingSettings settings) =>
         IsProtocol51LightingSetting(settings)
-            ? settings with { IndependentControls = null }
+            ? settings with { IndependentControls = null, ControlsKeyboardEffect = false }
             : LightingSettingsFactory.Off() with { LogoMode = settings.LogoMode };
 
     private static bool ValidThxAudioProfiles(ProfileSet profiles) =>
@@ -1328,6 +1351,9 @@ public static class IpcMessageCodec
                         "observationReason",
                         StringComparison.OrdinalIgnoreCase));
                 observationReason.ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "externalPowerPresent", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
                 JsonPropertyInfo allowExperimentalFeatures = typeInfo.Properties.Single(
                     property => string.Equals(
                         property.Name,
@@ -1383,6 +1409,9 @@ public static class IpcMessageCodec
                     property.Name, "supportsManualFansOnLimitedPower", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "supportsOrdinaryThermalControlOnUnclassifiedExternalPower", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "reportsPerformanceWithManualFans", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
                 JsonPropertyInfo breathingColorModes =
@@ -1403,6 +1432,9 @@ public static class IpcMessageCodec
                     property.Name, "hostManagedLaptopControls", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "observedFanSpeedRangesByPerformancePreset", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "fanSpeedRangesByPerformancePreset", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
@@ -1410,6 +1442,15 @@ public static class IpcMessageCodec
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "thxAudio", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "observedLightingZones", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "supportsVaporChamberLighting", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "supportsTouchpadStatusIndicator", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
             }
 

@@ -1,0 +1,367 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS for bounded exact0245 builtin effect/active parameter contract; offline source review only, implementation and independent integration review still required",
+  "model": "RZ09-0301 (official carrier applicability03017/03018 supplied by scout)",
+  "hid": "1532:0245",
+  "sourceIntelHexSha256": "33f5faa3b57c60f5f0dcb2976066b792953c53d5840e0dd2d75bf60518f5941a",
+  "reconstruction": {
+    "base": 0,
+    "endExclusive": 58892,
+    "fillByte": 255,
+    "sha256": "2b0073e46d07119027a44136f9cc9ca25d8ebd072418193e9a6f36c267720c98",
+    "allIntelHexChecksumsVerified": true
+  },
+  "notes": [
+    "TemplatePID0245 is patched from checksummed configuration; default PID0245; retain fresh exact runtime HID admission.",
+    "GET0F82 request12 [0,5,0x00*10] echoes selector/LED and size; clears responseargs2..11 then fills active state, custom8 explicit, unknownmode actualbyte.",
+    "Legacy03/0A targets saved LED5, clears customflag before earlyreturns, and copies full63B record to active; fresh brightness0 reread after effect confirmation required.",
+    "Basic legacy destinations: Off[0],Static[6,R,G,B],Breath[3,3]random or[3,count,colors]count1/2,Spectrum[4],Wave[1,wireDirection]fixedspeed40.",
+    "0F02 same-effect noops precede RGBchange/flagcleanup: do not use as generic same-effect update.",
+    "Frame0F03 args[0,5,row,start,end,RGB...] bounds6x16; max53payload bytes; storagebyte ignored by rowwriter. Stage frame then activate0F02 [0,5,8]. NoframeRGBgetter.",
+    "Frame restoration only from captured representable builtin baseline;0F02 storage0 direct baseline restore frommode8 clearscustomflag without saved-bankwrite, thenGET0 confirms typed parameters. Unknown/preexistingcustom8 cannotrestorepixels.",
+    "Spectrum getter attests mode only; startup/cycle flag10000264 affects initial palette/phase and is not returned. Noexactphase/pixelrestorationclaim.",
+    "No other model inherits this contract; no hardware used.",
+    "Static consumer verified:6606 loads active+0B..0D RGB;650C stores runtime+1C..1E;tickmode1->7B1E->762C->754C->74BA. No hidden palette override. Record29/2A are interpolation delay/step.",
+    "Breathing77DE count0 uses randompalette;count1/2 branch7834->7878 consumes active+0B+3*index RGB; brightness scales output separately.",
+    "Wave wire2 increments phase;wire1 decrements phase (5802..583C), both wrap22. GET returns actualdirection andfixed40.",
+    "No fullcustomframe backend implementation reviewed here; source suppliesgeometry,activation,consumer andtypedbuiltin restoration chain, but admission must journal baseline and reject unrepresentable preexisting custom output."
+  ],
+  "windows": [
+    {
+      "name": "descriptor-template",
+      "offset": "0xe238",
+      "length": 18,
+      "sha256": "0a3e28adc0ed96f1d644f18d748bd0988e6157532c11810e2ac047825c2b9619"
+    },
+    {
+      "name": "descriptor-served-PID-config-patch",
+      "offset": "0xb1c2",
+      "length": 54,
+      "sha256": "72f62ac60139a68937d390fa2904c7e969770c3fa4db3cfe65c80330e0082eeb"
+    },
+    {
+      "name": "config-load-validation-default",
+      "offset": "0x898e",
+      "length": 88,
+      "sha256": "249247c8a81c73d7feb5718ad0749098a246979631094934ef4a53fdf84d9790"
+    },
+    {
+      "name": "config-default-0245",
+      "offset": "0xe41d",
+      "length": 47,
+      "sha256": "51c5a42f16690ced27a51cf8c29e57b2d91f3b2b029613742dff9a01c1f92739"
+    },
+    {
+      "name": "HID-report-selection",
+      "offset": "0xb27a",
+      "length": 22,
+      "sha256": "ad819a07b957a2bc0dd3442873710aeb2b40e00946f01810b405c89b18ab4c2b"
+    },
+    {
+      "name": "HID-report-table",
+      "offset": "0xe384",
+      "length": 24,
+      "sha256": "4c604680679a91bb9aaeb64230bd358d949458dbe6df5fd5708a2fed08ecba37"
+    },
+    {
+      "name": "interface2-report-descriptor",
+      "offset": "0xe24a",
+      "length": 94,
+      "sha256": "7617239978ffd0d1a82b5d22ee7038ccc51881e019af72cb4d78185db54ad9b4"
+    },
+    {
+      "name": "GET90",
+      "offset": "0xb80c",
+      "length": 80,
+      "sha256": "6f177c1d02b05bd4cccf73204b007d4264e3191e4c8baf679f4b4b8b4f530bac"
+    },
+    {
+      "name": "SET90",
+      "offset": "0xb85c",
+      "length": 136,
+      "sha256": "6b7bd07dc33d14add6f3a9ed81a0184a74df1918cc1bb5a3ce0d6dc74fd4308e"
+    },
+    {
+      "name": "command-dispatch",
+      "offset": "0xacec",
+      "length": 176,
+      "sha256": "fc3397b40e606482f712d5b4e664b894749a17bbb2b358f2458204385c4a9bf5"
+    },
+    {
+      "name": "storage-selector",
+      "offset": "0x7ede",
+      "length": 62,
+      "sha256": "cfdff506d4b133bdc3f6b69b30d97f52f3d61710370b81c2cf72a3e3181d0a84"
+    },
+    {
+      "name": "storage-selector-pointers",
+      "offset": "0x80c0",
+      "length": 16,
+      "sha256": "fe1f2d071944a8b3b0636ee619642042f4f384e220708486e04dc70bb747d2d8"
+    },
+    {
+      "name": "effect-GET-entry-clear",
+      "offset": "0x9082",
+      "length": 66,
+      "sha256": "04abdfb016d41effbf89bc02a23dc6e349f4a1fad65671ff89fb23262574e70f"
+    },
+    {
+      "name": "effect-GET-switch",
+      "offset": "0x90c4",
+      "length": 12,
+      "sha256": "6b4499282e691f5011c8c760d88e851dcf699a96acecdbe5ef6a4686d2fcc16e"
+    },
+    {
+      "name": "effect-GET-Off-Static-Breath-Spectrum-Wave",
+      "offset": "0x90d0",
+      "length": 194,
+      "sha256": "f33cc7288b350131a910b59702fd25295bf31e6cecc1c52a6e362e364b68a1db"
+    },
+    {
+      "name": "effect-GET-other-custom-unknown",
+      "offset": "0x9192",
+      "length": 188,
+      "sha256": "26c3c8e8b132eeaf2c6b2a8fa4d3c9d99728d684883b3dacfdee26b6a6d28fd8"
+    },
+    {
+      "name": "effect-SET-entry",
+      "offset": "0x924e",
+      "length": 104,
+      "sha256": "bf4415b666eb4d3e73c9cbe1d8f04429c83aa825ab580c88347db026d7dd75f2"
+    },
+    {
+      "name": "effect-SET-switch",
+      "offset": "0x92b6",
+      "length": 12,
+      "sha256": "e1670a9325ef81096c334e7b669a4c63e9b4c005b3e0b95dbd64857c10933ba1"
+    },
+    {
+      "name": "effect-SET-Off",
+      "offset": "0x92c2",
+      "length": 74,
+      "sha256": "230218ad2de1904d284a57826f78c73801a271c968c9dea8129bcb724068ff19"
+    },
+    {
+      "name": "effect-SET-Static",
+      "offset": "0x930c",
+      "length": 110,
+      "sha256": "7a189e25f02d147661e274a5feacbeb6ea1c42dac145ad67c0f6886f7cdc01cc"
+    },
+    {
+      "name": "effect-SET-Breathing",
+      "offset": "0x9398",
+      "length": 168,
+      "sha256": "b71440cc44e18ad58c320ebc928e133ab11d6daf8613b918c45d0aa6a2851142"
+    },
+    {
+      "name": "effect-SET-Spectrum",
+      "offset": "0x9440",
+      "length": 110,
+      "sha256": "7bcbc0e733315d65530a77921175ff1567e05731857cb26dfa14b8962f03f8f5"
+    },
+    {
+      "name": "effect-SET-Wave",
+      "offset": "0x94ae",
+      "length": 124,
+      "sha256": "8b39f1184ac58d92b7ecb9df464987a42fdd59f4b09cee2bb5ffb26bec26c4ca"
+    },
+    {
+      "name": "effect-SET-custom",
+      "offset": "0x963e",
+      "length": 116,
+      "sha256": "ab08ae754500b5b839038d89da27861065c5b770738c99b8e5d8d4891dfbce04"
+    },
+    {
+      "name": "effect-SET-completion",
+      "offset": "0x96b2",
+      "length": 126,
+      "sha256": "da4fce7c5e2347e531e04ac24e3d78690715177e97be149a9bdb48b7bcfebf6e"
+    },
+    {
+      "name": "legacy-dispatch",
+      "offset": "0x9f46",
+      "length": 88,
+      "sha256": "b0129071255ba34e8d393a3321e9eb0d655350ce813766249cf7f9bd00003d88"
+    },
+    {
+      "name": "legacy-builtins-entry-Off-Wave",
+      "offset": "0xa430",
+      "length": 178,
+      "sha256": "0b645274062de8767d330d9fa83a94b4f6cb976b07dbeac85a8c5b13b7b373dc"
+    },
+    {
+      "name": "legacy-Breathing",
+      "offset": "0xa512",
+      "length": 128,
+      "sha256": "2bdb59bd597b5c35db87883bb926f12db72a9c5b0923de8167760cabda012f17"
+    },
+    {
+      "name": "legacy-Spectrum",
+      "offset": "0xa592",
+      "length": 62,
+      "sha256": "ed543838d68048e0df1fee68eb7ae67851bd4d66b3bda549befc996cfe39dfa5"
+    },
+    {
+      "name": "legacy-custom",
+      "offset": "0xa5d0",
+      "length": 28,
+      "sha256": "57c1991054095cb9d711bf382dca67f009567f64d474cc8a0ea33df1565468ce"
+    },
+    {
+      "name": "legacy-Static",
+      "offset": "0xa5ec",
+      "length": 72,
+      "sha256": "b3cc74edafbafe10acaab26c21347dc56c764c0ce7520a994b2f970accde0214"
+    },
+    {
+      "name": "legacy-brightnessSET",
+      "offset": "0xa1f8",
+      "length": 130,
+      "sha256": "61bb0bc04e9429ac2aa937333db49aeff12ae273c1cd50a0472ee295d7e21eb1"
+    },
+    {
+      "name": "saved-bank-activation",
+      "offset": "0x801c",
+      "length": 96,
+      "sha256": "bb573abf906cd571c95b28d6cd6a260bf7ad6ba7b4190d3cd23998944c66ff60"
+    },
+    {
+      "name": "renderer-mode-init",
+      "offset": "0x658e",
+      "length": 450,
+      "sha256": "f27e4930249de2482478b85ce95386ec9eb7ae2728754622455a13b87d8a8a7e"
+    },
+    {
+      "name": "renderer-spectrum-palette-finish",
+      "offset": "0x67aa",
+      "length": 36,
+      "sha256": "4d65851d3483018138f98ef1ea2e20d7c74e20592a06cb0ee01e4c9e5ef4c591"
+    },
+    {
+      "name": "spectrum-cycle-flag-clear",
+      "offset": "0x774c",
+      "length": 30,
+      "sha256": "4ac9fa5ba47b5cfaf579166b42ffcbd780080ab36ce8311529791b77daf4d12e"
+    },
+    {
+      "name": "frameSET-entry-bounds",
+      "offset": "0x9730",
+      "length": 148,
+      "sha256": "d9248d65d3db2f6b5cfa02c4e351b3c40c2f4c4395106b7eba58e8fd70a0a38c"
+    },
+    {
+      "name": "frameSET-LED5-RGB",
+      "offset": "0x97c4",
+      "length": 94,
+      "sha256": "1dee5710801cbaa6e852986d4e3af36b6c32459c1e1791cc094fca5e684a6812"
+    },
+    {
+      "name": "frame-staging-pointers",
+      "offset": "0x9bb8",
+      "length": 8,
+      "sha256": "4ad4cb5c5fd466be2ac2f026d4b1b916e6acc75b56f01fdba6fbe92902ff2d6f"
+    },
+    {
+      "name": "custom-output-copy",
+      "offset": "0x6094",
+      "length": 34,
+      "sha256": "f6baf23981996664b62be007eb739cebbe1555b2afb36e597a77f849004b7594"
+    },
+    {
+      "name": "custom-output-source-pointers",
+      "offset": "0x62f8",
+      "length": 32,
+      "sha256": "dec9aae644887f7d690a54b471c47720d00b286bcdcacc9b16e75192095aff6d"
+    },
+    {
+      "name": "active-output-custom-flag",
+      "offset": "0x619c",
+      "length": 42,
+      "sha256": "c484b644a6bdf3dc6eee580292092029c0e04d377e6580c2d428403dc4ee8025"
+    },
+    {
+      "name": "active-output-custom-consumer",
+      "offset": "0x625e",
+      "length": 20,
+      "sha256": "1c11bdae5e23208287d2401a16caf5c18a874641e98fe94f1c122d895eef7220"
+    },
+    {
+      "name": "frame-loop-output",
+      "offset": "0x62ac",
+      "length": 24,
+      "sha256": "83aa60db99aa8e206f60ec674a98e31155234a5d41a5c8259797778b16201801"
+    },
+    {
+      "name": "brightnessGET03-83",
+      "offset": "0xa1d0",
+      "length": 40,
+      "sha256": "2b974b99008ae77b03fe6a097013d1ff03f7d3a9de7b5473628189169f7930e1"
+    },
+    {
+      "name": "StaticRGB-init",
+      "offset": "0x6606",
+      "length": 32,
+      "sha256": "870a693d7a45e618add937654181d412f14f6dcdf070057296e347ef93013467"
+    },
+    {
+      "name": "RGB-runtime-target-store",
+      "offset": "0x650c",
+      "length": 130,
+      "sha256": "c3426a52089cbbd5703c97203e51dabf171535089811469190c12ab91fc6a4a8"
+    },
+    {
+      "name": "render-tick-switch",
+      "offset": "0x7aa4",
+      "length": 54,
+      "sha256": "88078fcb62dabaa3408cdedc0b844b6d681df945066cf4a8b2ca47d0d2cb4800"
+    },
+    {
+      "name": "render-static-breath-spectrum-wave-dispatch",
+      "offset": "0x7b1e",
+      "length": 152,
+      "sha256": "715b490b0893eb1fff2d1f24cf6e2225727cbf8d1164115b63ed0830a261834a"
+    },
+    {
+      "name": "RGB-interpolation-and-output",
+      "offset": "0x762c",
+      "length": 272,
+      "sha256": "f8545dcb135533368a4d466cf2674ce8b6e14456414eb655d080608c3123a872"
+    },
+    {
+      "name": "uniform-RGB-matrix-fill",
+      "offset": "0x74ba",
+      "length": 146,
+      "sha256": "e01f6f616b7e18eec90a6bdf2d38738403f1f38a71680ecd403deff9870459d4"
+    },
+    {
+      "name": "brightness-scaled-RGB-output",
+      "offset": "0x754c",
+      "length": 224,
+      "sha256": "ac0a0ca63a82b5cb15b0401f1840a694a5b6297438148130690ff5d6888a285b"
+    },
+    {
+      "name": "Breathing-color-selector",
+      "offset": "0x77be",
+      "length": 150,
+      "sha256": "7ea95856111ba5f5b18e59da5ab7022e305f79d5c23f7989162d189ee0112442"
+    },
+    {
+      "name": "Breathing-active-RGB-consumer",
+      "offset": "0x7878",
+      "length": 50,
+      "sha256": "914a6ea8af391f75f507d54ab07ba2068ea58b20c54756c34645d8b62aa8b24b"
+    },
+    {
+      "name": "Wave-direction-consumer",
+      "offset": "0x57bc",
+      "length": 130,
+      "sha256": "5309c65fc3b9dccb8114a3ceb4f96c320ef194a1b743d736c91e152fb1d8f2b1"
+    },
+    {
+      "name": "Wave-RGB-translation",
+      "offset": "0x583e",
+      "length": 162,
+      "sha256": "033f5cd81a64b3ea9474e1eef9fcff0c52cda41ebb3081115329c3ac55d6b0d9"
+    }
+  ]
+}

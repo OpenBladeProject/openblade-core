@@ -58,7 +58,7 @@ public sealed partial class ExperimentalThermalExpansionTests
     }
 
     [Fact]
-    public async Task Blade18ManualCurve_RejectsSilentWithoutChangingIt()
+    public async Task Blade18ManualCurve_EntersCurrentSilentAtItsMaximumWithoutPresetReset()
     {
         var session = new Session
         {
@@ -68,13 +68,13 @@ public sealed partial class ExperimentalThermalExpansionTests
         };
         await using var port = Create(0x02A0, session);
 
-        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
-            port.SetFanControlAsync(
-                new FanControlSettings(FanMode.ManualCurve, 4500, ManualFanCurve.Default),
-                CancellationToken.None));
+        await port.SetFanControlAsync(
+            new FanControlSettings(FanMode.ManualCurve, 4500, ManualFanCurve.Default), CancellationToken.None);
 
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
-        Assert.Empty(session.Writes);
         Assert.Equal(5, session.Mode);
+        Assert.Equal(1, session.Fan);
+        Assert.Equal((53, 53), ((int)session.FirstTarget, (int)session.SecondTarget));
+        Assert.All(session.Writes.Where(command => command.CommandId == 0x02),
+            command => Assert.Equal(5, command.Arguments.Span[2]));
     }
 }

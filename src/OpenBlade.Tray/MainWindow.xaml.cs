@@ -107,6 +107,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
     private Action? dashboardCustomizerRefresh;
     private Action? dashboardCustomizerApply;
     private readonly Dictionary<DashboardCardKind, FrameworkElement> dashboardCardPresentations = [];
+    private readonly Dictionary<int, Microsoft.UI.Xaml.Controls.Button> keyboardKeyColorButtons = [];
     private readonly Dictionary<CustomizablePageKind, ObservableCollection<PageSectionOption>>
         pageSections = [];
     private readonly Dictionary<CustomizablePageKind, Microsoft.UI.Xaml.Controls.Panel>
@@ -115,6 +116,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
     private AppAccentColorMode accentColorMode = AppAccentColorMode.RazerGreen;
     private string customAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
     private NotificationPreferences notificationPreferences = NotificationPreferences.Default;
+    private bool keyboardKeyColorGridInitialized;
     private TrayDashboardPreference trayDashboardPreference =
         TrayDashboardPreferenceDefaults.Preference;
     private readonly TrayDashboardPreferenceEditor trayDashboardEditor = new();
@@ -671,7 +673,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
     public ObservableCollection<SpecialKeyBindingViewModel> SpecialKeyBindings { get; } = [];
 
     public IReadOnlyList<AppAccentColorOption> AccentColorOptions { get; } =
-    [
+    (AppAccentColorOption[])[
         new(AppAccentColorMode.RazerGreen, LocalizedResources.Get("MainWindow_Accent_OpenBladeGreen", "OpenBlade green")),
         new(AppAccentColorMode.Windows, LocalizedResources.Get("MainWindow_Accent_Windows", "Windows accent")),
         new(AppAccentColorMode.Custom, LocalizedResources.Get("MainWindow_Accent_Custom", "Custom")),
@@ -1287,12 +1289,14 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             PrimeNotificationObservation();
         }
 
-        DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
-        ThxViewModel.LoadProfile(ViewModel.ActivePowerSource, ViewModel.ActiveSavedThxAudioProfile);
+        DisplayViewModel.ActivePowerSource = ViewModel.ControlPowerSource;
+        DisplayViewModel.ExternalPowerPresent = ViewModel.CanControlHardware && ViewModel.ExternalPowerPresent;
+        ThxViewModel.LoadProfile(ViewModel.ControlPowerSource, ViewModel.ActiveSavedThxAudioProfile);
         ThxViewModel.ProfilePersistenceAvailable = ViewModel.CanSaveThxAudioProfile;
         DisplayViewModel.ActiveProfileSettings = ViewModel.ActiveSavedDisplayProfile;
         DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
-        DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
+        DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware
+            && ViewModel.ControlPowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
         _ = RefreshDisplaySettingsAsync();
     }
 
@@ -1378,14 +1382,16 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             return;
         }
 
-        if (args.PropertyName == nameof(MainViewModel.ActivePowerSource))
+        if (args.PropertyName is nameof(MainViewModel.ControlPowerSource) or nameof(MainViewModel.ExternalPowerPresent)
+            or nameof(MainViewModel.CanControlHardware))
         {
-            DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
+            DisplayViewModel.ActivePowerSource = ViewModel.ControlPowerSource;
+            DisplayViewModel.ExternalPowerPresent = ViewModel.CanControlHardware && ViewModel.ExternalPowerPresent;
         }
 
-        if (args.PropertyName is nameof(MainViewModel.ActivePowerSource) or nameof(MainViewModel.ActiveSavedThxAudioProfile))
+        if (args.PropertyName is nameof(MainViewModel.ControlPowerSource) or nameof(MainViewModel.ActiveSavedThxAudioProfile))
         {
-            ThxViewModel.LoadProfile(ViewModel.ActivePowerSource, ViewModel.ActiveSavedThxAudioProfile);
+            ThxViewModel.LoadProfile(ViewModel.ControlPowerSource, ViewModel.ActiveSavedThxAudioProfile);
         }
 
         if (args.PropertyName == nameof(MainViewModel.CanSaveThxAudioProfile))
@@ -1411,9 +1417,10 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
         }
 
-        if (args.PropertyName == nameof(MainViewModel.CanControlHardware))
+        if (args.PropertyName is nameof(MainViewModel.CanControlHardware) or nameof(MainViewModel.ControlPowerSource))
         {
-            DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
+            DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware
+                && ViewModel.ControlPowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
         }
 
         if (args.PropertyName == nameof(MainViewModel.IsSpecialKeyBindingsEditable))
@@ -1488,12 +1495,22 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
             }
         }
 
+        if (args.PropertyName == nameof(MainViewModel.SupportsRz090529KeyColorEditor))
+        {
+            RefreshKeyboardKeyColorsGrid();
+        }
+
         if (args.PropertyName is nameof(MainViewModel.LightingDraft)
             or nameof(MainViewModel.IsLightingApplyPending)
             or nameof(MainViewModel.LightingPowerPolicyDraft)
             or nameof(MainViewModel.HasUnsavedLightingPowerPolicy)
             or nameof(MainViewModel.CanControlLighting))
         {
+            if (args.PropertyName is nameof(MainViewModel.LightingDraft)
+                or nameof(MainViewModel.CanControlLighting))
+            {
+                RefreshKeyboardKeyColorsGrid();
+            }
             ScheduleLightingCommit();
         }
 
@@ -2552,7 +2569,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
                 LocalizedResources.Get(
                     "MainWindow_GpuApps_ForceConfirmationIntro",
                     "These apps did not close. Force closing can discard unsaved work.\n\n")
-                + FormatGpuApps([app], includeBlockReason: false)),
+                + FormatGpuApps((SessionGpuApp[])[app], includeBlockReason: false)),
             PrimaryButtonText = LocalizedResources.Get(
                 "MainWindow_GpuApps_ForceButton",
                 "Force close"),
@@ -3667,6 +3684,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         UpdateGpuAppObservationState();
         if (destination == "profiles")
         {
+            ViewModel.SelectActiveProfileComparison();
             RefreshApplicationProfiles();
             dispatcherQueue.TryEnqueue(
                 DispatcherQueuePriority.Low,
@@ -5680,8 +5698,18 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         StackPanel? powerSaving = FindDescendant<StackPanel>(
             LightingCard,
             "LightingPowerSavingSection");
+        StackPanel? touchpad = FindDescendant<StackPanel>(
+            LightingCard,
+            "LightingTouchpadSection");
+        StackPanel? underGlass = FindDescendant<StackPanel>(
+            LightingCard,
+            "LightingUnderGlassSection");
+        StackPanel? vaporChamber = FindDescendant<StackPanel>(
+            LightingCard,
+            "LightingVaporChamberSection");
         StackPanel? labControls = FindDescendant<StackPanel>(LightingCard, "LightingLabControls");
-        if (host is null || keyboard is null || logo is null || powerSaving is null || labControls is null)
+        if (host is null || keyboard is null || logo is null || powerSaving is null
+            || touchpad is null || underGlass is null || vaporChamber is null || labControls is null)
         {
             return false;
         }
@@ -5693,6 +5721,10 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         pageSectionPresentations[PageSectionKind.LightingKeyboard] = keyboard;
         pageSectionPresentations[PageSectionKind.LightingLogo] = logo;
         pageSectionPresentations[PageSectionKind.LightingPowerSaving] = powerSaving;
+        pageSectionPresentations[PageSectionKind.LightingTouchpad] = touchpad;
+        pageSectionPresentations[PageSectionKind.LightingUnderGlass] = underGlass;
+        pageSectionPresentations[PageSectionKind.LightingVaporChamber] = vaporChamber;
+        RefreshKeyboardKeyColorsGrid();
         RefreshPageSections(CustomizablePageKind.Lighting);
         return true;
     }
@@ -5788,6 +5820,193 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
                 LocalizedResources.Get("MainWindow_ProfileImport_FailedTitle", "Profiles could not be imported"),
                 LocalizedResources.Format("Common_ErrorWithDetails", "{0}", exception.Message));
         }
+    }
+
+    private void EnsureKeyboardKeyColorsGridInitialized()
+    {
+        if (keyboardKeyColorGridInitialized
+            || !rootLoaded.Task.IsCompleted
+            || !ViewModel.SupportsRz090529KeyColorEditor
+            || !pageSectionPresentations.TryGetValue(PageSectionKind.LightingKeyboard, out FrameworkElement? keyboardSection))
+        {
+            return;
+        }
+
+        Grid? keyboardGrid = FindDescendant<Grid>(keyboardSection, "KeyboardKeyColorsGridHost");
+        if (keyboardGrid is null)
+        {
+            return;
+        }
+
+        for (int column = 0; column < Rz090529KeyboardLightingLayout.Columns; column++)
+        {
+            keyboardGrid.ColumnDefinitions.Add(
+                new ColumnDefinition { Width = GridLength.Auto, MinWidth = 44 });
+        }
+        for (int row = 0; row < Rz090529KeyboardLightingLayout.Rows; row++)
+        {
+            keyboardGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        }
+
+        for (int slot = 0; slot < Rz090529KeyboardLightingLayout.SlotCount; slot++)
+        {
+            if (!Rz090529KeyboardLightingLayout.IsKeySlot(slot))
+            {
+                continue;
+            }
+
+            string label = KeyboardKeyColorEditor.GetKeyLabel(slot);
+            var keyButton = new Microsoft.UI.Xaml.Controls.Button
+            {
+                Style = AppTypography.RequireStyle("AppToolbarButtonStyle"),
+                MinWidth = 44,
+                MinHeight = 40,
+                Padding = new Thickness(1),
+                Content = label,
+                Tag = slot,
+            };
+            AutomationProperties.SetName(keyButton, label);
+            ToolTipService.SetToolTip(keyButton, label);
+            keyButton.Click += OnKeyboardKeyColorKeyClick;
+            Grid.SetRow(keyButton, slot / Rz090529KeyboardLightingLayout.Columns);
+            Grid.SetColumn(keyButton, slot % Rz090529KeyboardLightingLayout.Columns);
+            keyboardGrid.Children.Add(keyButton);
+            keyboardKeyColorButtons.Add(slot, keyButton);
+        }
+
+        keyboardKeyColorGridInitialized = true;
+    }
+
+    private void RefreshKeyboardKeyColorsGrid()
+    {
+        EnsureKeyboardKeyColorsGridInitialized();
+        if (!keyboardKeyColorGridInitialized || !ViewModel.SupportsRz090529KeyColorEditor)
+        {
+            return;
+        }
+
+        try
+        {
+            var editor = KeyboardKeyColorEditor.FromDraft(ViewModel.LightingDraft);
+            var colors = editor.Colors;
+            foreach ((int slot, Microsoft.UI.Xaml.Controls.Button button) in keyboardKeyColorButtons)
+            {
+                SetKeyButtonColor(button, ToWindowsColor(colors[slot]));
+            }
+        }
+        catch (Exception exception)
+        {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "RefreshKeyboardKeyColorsGrid",
+                exception);
+        }
+    }
+
+    private async void OnKeyboardKeyColorKeyClick(object sender, RoutedEventArgs args)
+    {
+        if (sender is not Microsoft.UI.Xaml.Controls.Button { Tag: int slot }
+            || !ViewModel.SupportsRz090529KeyColorEditor)
+        {
+            return;
+        }
+
+        try
+        {
+            PowerSource source = ViewModel.ActivePowerSource;
+            LightingSettings draft = ViewModel.LightingDraft;
+            var editor = KeyboardKeyColorEditor.FromDraft(draft);
+            string label = KeyboardKeyColorEditor.GetKeyLabel(slot);
+            var colorPicker = new ColorPicker
+            {
+                IsAlphaEnabled = false,
+                Color = ToWindowsColor(editor.Colors[slot]),
+                HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
+            };
+            var pickerContent = new StackPanel { Spacing = 12 };
+            bool canApply = ViewModel.CanApplyRz090529KeyColors;
+            if (!canApply)
+            {
+                var unavailableMessage = new TextBlock
+                {
+                    Text = ViewModel.LightingControlUnavailableMessage,
+                    TextWrapping = TextWrapping.Wrap,
+                };
+                AppTypography.Apply(unavailableMessage, AppTypography.Body);
+                pickerContent.Children.Add(unavailableMessage);
+            }
+            pickerContent.Children.Add(colorPicker);
+            var dialog = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = LocalizedResources.Format(
+                    "MainWindow_KeyColorEditor_SelectedKey",
+                    "Selected key: {0}",
+                    label),
+                Content = pickerContent,
+                IsPrimaryButtonEnabled = canApply,
+                PrimaryButtonText = LocalizedResources.Get(
+                    "MainWindow_KeyColorEditor_Apply",
+                    "Apply colors"),
+                CloseButtonText = LocalizedResources.Get("Common_Cancel", "Cancel"),
+                DefaultButton = ContentDialogButton.Primary,
+            };
+            if (await ShowContentDialogAsync(dialog) != ContentDialogResult.Primary)
+            {
+                return;
+            }
+
+            if (ViewModel.ActivePowerSource != source || ViewModel.LightingDraft != draft)
+            {
+                throw new InvalidOperationException(LocalizedResources.Get(
+                    "MainWindow_KeyColorEditor_DraftChanged",
+                    "Lighting settings changed while the picker was open. Open it again to edit the current settings."));
+            }
+
+            RgbColor color = new(colorPicker.Color.R, colorPicker.Color.G, colorPicker.Color.B);
+            if (editor.Colors[slot] == color)
+            {
+                return;
+            }
+
+            editor.SetKeyColor(slot, color);
+            var preset = new KeyboardLightingPreset(
+                Name: LocalizedResources.Get("MainWindow_KeyColorEditor_PresetName", "Custom key colors"),
+                Author: "OpenBlade",
+                Description: null,
+                Revision: 1,
+                Lighting: editor.BuildLightingSettings());
+            if (!ViewModel.CanApplyRz090529KeyColors || !ViewModel.TryImportKeyboardLighting(preset))
+            {
+                throw new InvalidOperationException(LocalizedResources.Get(
+                    "MainWindow_LightingImport_ControlUnavailable",
+                    "Lighting control became unavailable before the preset could be imported."));
+            }
+        }
+        catch (Exception exception)
+        {
+            DiagnosticTrace.TraceException(
+                "OpenBlade.Tray.MainWindow",
+                "EditKeyboardKeyColor",
+                exception);
+            await ShowMessageDialogAsync(
+                LocalizedResources.Get(
+                    "MainWindow_KeyColorEditor_FailedTitle",
+                    "Keyboard colors could not be applied"),
+                LocalizedResources.Format("Common_ErrorWithDetails", "{0}", exception.Message));
+        }
+    }
+
+    private static Windows.UI.Color ToWindowsColor(RgbColor color) =>
+        Windows.UI.Color.FromArgb(255, color.Red, color.Green, color.Blue);
+
+    private static void SetKeyButtonColor(Microsoft.UI.Xaml.Controls.Button button, Windows.UI.Color color)
+    {
+        button.Background = new SolidColorBrush(color);
+        int luminance = (color.R * 299 + color.G * 587 + color.B * 114) / 1000;
+        button.Foreground = new SolidColorBrush(luminance >= 140
+            ? Windows.UI.Color.FromArgb(255, 0, 0, 0)
+            : Windows.UI.Color.FromArgb(255, 255, 255, 255));
     }
 
     private async void OnImportKeyboardLighting(object sender, RoutedEventArgs args)
@@ -6084,6 +6303,10 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Controls.UserControl,
         }
 
         profilesUseCompactLayout = useCompactLayout;
+        if (useCompactLayout)
+        {
+            ViewModel.SelectActiveProfileComparison();
+        }
         comparisonLayout.Visibility = useCompactLayout
             ? Visibility.Collapsed
             : Visibility.Visible;

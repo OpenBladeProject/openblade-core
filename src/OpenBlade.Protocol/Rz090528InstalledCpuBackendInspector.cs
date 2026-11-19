@@ -41,25 +41,34 @@ internal sealed class Rz090528InstalledCpuBackendInspector
         };
 
     private readonly IInstalledCpuBackendSnapshotSource source;
+    private readonly CpuInstalledBackendProfile profile;
 
     internal Rz090528InstalledCpuBackendInspector()
-        : this(new WindowsInstalledCpuBackendSnapshotSource()) { }
+        : this(CpuInstalledBackendProfile.ForContract(CpuLiveCurveContract.Rz090528)) { }
 
-    internal Rz090528InstalledCpuBackendInspector(IInstalledCpuBackendSnapshotSource source) =>
+    internal Rz090528InstalledCpuBackendInspector(CpuInstalledBackendProfile profile)
+        : this(new WindowsInstalledCpuBackendSnapshotSource(profile), profile) { }
+
+    internal Rz090528InstalledCpuBackendInspector(IInstalledCpuBackendSnapshotSource source)
+        : this(source, CpuInstalledBackendProfile.ForContract(CpuLiveCurveContract.Rz090528)) { }
+
+    internal Rz090528InstalledCpuBackendInspector(IInstalledCpuBackendSnapshotSource source, CpuInstalledBackendProfile profile)
+    {
         this.source = source ?? throw new ArgumentNullException(nameof(source));
+        this.profile = profile ?? throw new ArgumentNullException(nameof(profile));
+    }
 
     internal CpuTuningBackendStatus Inspect(bool useInstalledBackend, DeviceIdentity identity)
     {
         // The caller must supply freshly verified exact host identity.
-        if (!useInstalledBackend || identity is null || identity.Model != "RZ09-0528"
-            || identity.VendorId != 0x1532 || identity.ProductId != 0x02C6)
+        if (!useInstalledBackend || CpuLiveCurveContract.ForIdentity(identity) != profile.Contract)
         {
             return Status(CpuTuningBackendAvailability.Unavailable);
         }
 
         try
         {
-            return Evaluate(source.Read());
+            return Evaluate(source.Read(), profile);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
             or System.ComponentModel.Win32Exception or JsonException or InvalidOperationException
@@ -69,21 +78,25 @@ internal sealed class Rz090528InstalledCpuBackendInspector
         }
     }
 
-    internal static CpuTuningBackendStatus Evaluate(InstalledCpuBackendSnapshot snapshot)
+    internal static CpuTuningBackendStatus Evaluate(InstalledCpuBackendSnapshot snapshot) =>
+        Evaluate(snapshot, CpuInstalledBackendProfile.ForContract(CpuLiveCurveContract.Rz090528));
+
+    internal static CpuTuningBackendStatus Evaluate(InstalledCpuBackendSnapshot snapshot, CpuInstalledBackendProfile profile)
     {
-        if (snapshot.Files.Count < ExpectedHashes.Count || !snapshot.ServiceExists)
+        var expectedHashes = profile.ExpectedHashes;
+        if (snapshot.Files.Count < expectedHashes.Count || !snapshot.ServiceExists)
         {
             return Status(CpuTuningBackendAvailability.MissingDependency);
         }
 
-        if (snapshot.Files.Count != ExpectedHashes.Count
-            || ExpectedHashes.Any(expected => snapshot.Files.Count(file =>
+        if (snapshot.Files.Count != expectedHashes.Count
+            || expectedHashes.Any(expected => snapshot.Files.Count(file =>
                 string.Equals(file.Path, expected.Key, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(file.Sha256, expected.Value, StringComparison.OrdinalIgnoreCase)
                 && file.SignatureValid
-                && string.Equals(file.SignerThumbprint, SignerThumbprint, StringComparison.OrdinalIgnoreCase)) != 1)
+                && string.Equals(file.SignerThumbprint, profile.SignerThumbprint, StringComparison.OrdinalIgnoreCase)) != 1)
             || snapshot.ServiceType != 1
-            || !string.Equals(snapshot.ImagePath, @"\??\" + DriverPath, StringComparison.OrdinalIgnoreCase))
+            || !string.Equals(snapshot.ImagePath, @"\??\" + profile.DriverPath, StringComparison.OrdinalIgnoreCase))
         {
             return Status(CpuTuningBackendAvailability.Failed);
         }
@@ -99,10 +112,18 @@ internal sealed class Rz090528InstalledCpuBackendInspector
 
 internal sealed class WindowsInstalledCpuBackendSnapshotSource : IInstalledCpuBackendSnapshotSource
 {
-    internal static IReadOnlyList<CpuBackendFileMetadata> ReadFileMetadata()
+    private readonly CpuInstalledBackendProfile profile;
+    internal WindowsInstalledCpuBackendSnapshotSource()
+        : this(CpuInstalledBackendProfile.ForContract(CpuLiveCurveContract.Rz090528)) { }
+    internal WindowsInstalledCpuBackendSnapshotSource(CpuInstalledBackendProfile profile) => this.profile = profile;
+
+    internal static IReadOnlyList<CpuBackendFileMetadata> ReadFileMetadata() =>
+        ReadFileMetadata(CpuInstalledBackendProfile.ForContract(CpuLiveCurveContract.Rz090528));
+
+    internal static IReadOnlyList<CpuBackendFileMetadata> ReadFileMetadata(CpuInstalledBackendProfile profile)
     {
         var files = new List<CpuBackendFileMetadata>();
-        foreach (string path in Rz090528InstalledCpuBackendInspector.ExpectedHashes.Keys)
+        foreach (string path in profile.ExpectedHashes.Keys)
         {
             if (!File.Exists(path)) { continue; }
             // Reject directory/file redirection before hashing or signature checks.
@@ -116,14 +137,14 @@ internal sealed class WindowsInstalledCpuBackendSnapshotSource : IInstalledCpuBa
         return files.AsReadOnly();
     }
 
-    public InstalledCpuBackendSnapshot Read() => Read(ReadFileMetadata());
+    public InstalledCpuBackendSnapshot Read() => Read(ReadFileMetadata(profile));
 
     // Only the native session's still-held deny-write/delete file pins may
     // supply cached metadata. Service configuration and state remain fresh.
     internal InstalledCpuBackendSnapshot Read(IReadOnlyList<CpuBackendFileMetadata> files)
     {
         using RegistryKey? key = Registry.LocalMachine.OpenSubKey(
-            @"SYSTEM\CurrentControlSet\Services\" + Rz090528InstalledCpuBackendInspector.ServiceName,
+            @"SYSTEM\CurrentControlSet\Services\" + profile.ServiceName,
             writable: false);
         return new(files, key is not null,
             key?.GetValue("ImagePath", null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string,
@@ -174,14 +195,14 @@ internal sealed class WindowsInstalledCpuBackendSnapshotSource : IInstalledCpuBa
             document.RootElement.GetProperty("Thumbprint").GetString() ?? "");
     }
 
-    private static bool IsServiceRunning()
+    private bool IsServiceRunning()
     {
         // SCM access CONNECT; service access QUERY_STATUS. No start/change/delete.
         nint manager = OpenSCManagerW(null, null, 1);
         if (manager == 0) { throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()); }
         try
         {
-            nint service = OpenServiceW(manager, Rz090528InstalledCpuBackendInspector.ServiceName, 4);
+            nint service = OpenServiceW(manager, profile.ServiceName, 4);
             if (service == 0) { throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()); }
             try
             {

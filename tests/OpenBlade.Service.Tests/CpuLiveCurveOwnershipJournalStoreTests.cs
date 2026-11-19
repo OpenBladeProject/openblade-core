@@ -13,6 +13,70 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExplicitAndImplicit0528JournalIdentifiersRetainTheirSchemaDuringRecovery(bool explicitContract)
+    {
+        var implicitContext = CpuLiveCurveTuningTransactionTests.ContextFixture();
+        var contract = CpuLiveCurveContract.Rz090528;
+        var explicitContext = implicitContext with { ContractId = contract.Id, ContractVersion = contract.Version };
+        var context = explicitContract ? explicitContext : implicitContext;
+        var prior = Create(context);
+        Assert.True(implicitContext.MatchesHardwareContext(explicitContext));
+        Assert.True(explicitContext.MatchesHardwareContext(implicitContext));
+
+        var store = new CpuLiveCurveOwnershipJournalStore(JournalPath);
+        Assert.NotNull(await store.TryWriteAsync(null, prior, default));
+        var bytes = await File.ReadAllBytesAsync(JournalPath);
+        var persisted = JsonNode.Parse(bytes)!["context"]!.AsObject();
+        Assert.Equal(explicitContract, persisted.ContainsKey("contractId"));
+        Assert.Equal(explicitContract, persisted.ContainsKey("contractVersion"));
+        var loaded = (await store.LoadAsync(default)).Journal!;
+        Assert.Equal(explicitContract ? 4 : 3, loaded.SchemaVersion);
+        Assert.Equal(prior.Context, loaded.Context);
+        Assert.Same(contract, loaded.ExpectedAt(0).Contract);
+        Assert.Equal(bytes, await File.ReadAllBytesAsync(JournalPath));
+        Assert.Equal(loaded.SchemaVersion, loaded.ArmRestoration().SchemaVersion);
+    }
+
+    [Theory]
+    [InlineData(3, "null-id")]
+    [InlineData(3, "explicit")]
+    [InlineData(4, "missing")]
+    [InlineData(4, "id-only")]
+    [InlineData(4, "version-only")]
+    [InlineData(4, "unknown-id")]
+    [InlineData(4, "other-version")]
+    [InlineData(4, "other-host")]
+    [InlineData(4, "other-backend")]
+    public async Task InvalidContractCannotAdoptOrRewritePendingOwnership(int schema, string fault)
+    {
+        var contract = CpuLiveCurveContract.Rz090528;
+        var pending = Create().Progress(CpuLiveCurveOwnershipState.PossibleSubmission, 0, false);
+        var node = JsonNode.Parse(JsonSerializer.Serialize(pending, JsonOptions))!;
+        node["schemaVersion"] = schema;
+        var context = node["context"]!.AsObject();
+        if (fault is not ("missing" or "version-only")) { context["contractId"] = fault == "null-id" ? null : contract.Id; }
+        if (fault is not ("missing" or "null-id" or "id-only")) { context["contractVersion"] = contract.Version; }
+        if (fault == "unknown-id") { context["contractId"] = "unknown"; }
+        if (fault == "other-version") { context["contractVersion"] = contract.Version + 1; }
+        if (fault == "other-host") { context["identity"]!["model"] = "RZ09-0508"; }
+        if (fault == "other-backend") { context["backend"]!["platformSha256"] = "other"; }
+
+        Directory.CreateDirectory(directory);
+        string json = node.ToJsonString();
+        await File.WriteAllTextAsync(JournalPath, json);
+        var store = new CpuLiveCurveOwnershipJournalStore(JournalPath);
+        Assert.True((await store.LoadAsync(default)).Invalid);
+        var backend = new CpuLiveCurveTuningTransactionTests.FakeBackend(new());
+        var result = await new CpuLiveCurveTuningTransaction(backend, store).RestoreAsync(default);
+        Assert.Equal(CpuLiveCurveBlockReason.InvalidJournal, result.Reason);
+        Assert.Equal(0, backend.Reads);
+        Assert.Empty(backend.Sent);
+        Assert.Equal(json, await File.ReadAllTextAsync(JournalPath));
+    }
+
+    [Theory]
     [InlineData("pending")]
     [InlineData("restoring")]
     [InlineData("owned")]
@@ -20,6 +84,7 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
     [InlineData("blocked")]
     [InlineData("blocked-pending")]
     [InlineData("blocked-restoring")]
+    [InlineData("pending-explicit")]
     public async Task ExplicitPostBootObservationArchivesExactOwnershipBytesAndClosesOnlyVerifiedOriginal(string journalKind)
     {
         var fixture = await RecoveryFixture.CreateAsync(JournalPath, journalKind: journalKind);
@@ -41,6 +106,7 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
         Assert.Empty(fixture.Curve.Sent); Assert.Empty(fixture.Curve.Admissions);
         var settled = await new CpuLiveCurveOwnershipJournalStore(JournalPath).LoadAsync(default);
         Assert.Equal(CpuLiveCurveOwnershipState.Restored, settled.Journal!.State);
+        Assert.Equal(fixture.Prior.SchemaVersion, settled.Journal.SchemaVersion);
         Assert.Equal(fixture.Prior.TransactionId, settled.Journal.TransactionId);
         Assert.Equal(fixture.Prior.Context, settled.Journal.Context);
         Assert.Equal(fixture.Prior.OriginalBaseline, settled.Journal.OriginalBaseline);
@@ -55,6 +121,53 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
         Assert.True(receipt.Observation.Matches(fixture.Prior));
         Assert.Equal(fixture.Boot, receipt.Observation.Context.BootSequence);
         Assert.NotEqual(fixture.Prior.Context.RuntimeLifetime, receipt.Observation.Context.RuntimeLifetime);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PhoenixPostBootReceiptRequiresBitIdenticalObservedPowerAndArchivesOriginal(bool blade2023)
+    {
+        var contract = blade2023 ? CpuLiveCurveContract.Rz090482 : CpuLiveCurveContract.Rz090508;
+        var backend = CpuLiveCurveTuningTransactionTests.Blade14Fixture(new(), contract);
+        var context = backend.Context with { RuntimeLifetime = new(Guid.NewGuid(), 0, 1) };
+        var snapshot = CpuLiveCurveSnapshot.TryCreate(contract,
+            new(context.EnabledCoreMask, context.PmVersion, context.PmTableLength, backend.Values))!;
+        var plan = Rz090528CpuLiveCurvePlan.CreateSelectiveFromSnapshot(snapshot, [new(0, -2)], (_, _) => true).Plan!;
+        var prior = CpuLiveCurveOwnershipJournal.Prepare(context, plan).Progress(CpuLiveCurveOwnershipState.PossibleSubmission, 0, false);
+        var store = new CpuLiveCurveOwnershipJournalStore(JournalPath);
+        var hash = (await store.TryWriteAsync(null, prior, default))!;
+        byte[] previous = await File.ReadAllBytesAsync(JournalPath);
+        var current = context with
+        {
+            RuntimeLifetime = new(Guid.NewGuid(), 0, 1),
+            BootSequence = new(CpuLiveCurveBootSequenceSource.WindowsKuserSharedData, 43),
+        };
+        var pair = new CpuLivePowerStoredPair(new(54000, BitConverter.SingleToUInt32Bits(54f)),
+            new(45000, BitConverter.SingleToUInt32Bits(45f)), 0);
+        var evidence = new CpuLiveCurvePostBootObservation(current, backend.Values, CpuLivePowerContext.FromCurveContext(current),
+            pair, pair, DateTimeOffset.UtcNow);
+        foreach (var changed in new[]
+        {
+            pair with { StapmRawBits = 0x80000000 },
+            pair with { Fast = pair.Fast with { RawBits = pair.Fast.RawBits + 1 } },
+            pair with { Slow = pair.Slow with { RawBits = pair.Slow.RawBits + 1 } },
+            pair with { Fast = pair.Fast with { Milliwatts = 54001 } },
+        })
+        {
+            var drift = evidence with { PowerAfter = changed };
+            Assert.False(drift.Matches(prior));
+            Assert.Null(await store.TryReconcileAfterBootAsync(hash, drift, () => Task.FromResult(true), default));
+        }
+        Assert.Equal(previous, await File.ReadAllBytesAsync(JournalPath));
+        Assert.NotNull(await store.TryReconcileAfterBootAsync(hash, evidence, () => Task.FromResult(true), default));
+        string archive = Assert.Single(Directory.GetDirectories(directory, "live-co.json.post-boot-*"));
+        Assert.Equal(previous, await File.ReadAllBytesAsync(Path.Combine(archive, "original.json")));
+        var receipt = JsonSerializer.Deserialize<CpuLiveCurvePostBootReceipt>(
+            await File.ReadAllTextAsync(Path.Combine(archive, "receipt.json")), JsonOptions)!;
+        Assert.Equal(pair, receipt.Observation.PowerBefore);
+        Assert.Equal(pair, receipt.Observation.PowerAfter);
+        Assert.True(receipt.Observation.Matches(prior));
     }
 
     [Theory]
@@ -372,8 +485,10 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
         private RecoveryFixture(string path, bool enabled, string journalKind)
         {
             Store = new(path);
-            Prior = Create(CpuLiveCurveTuningTransactionTests.ContextFixture() with
-            { RuntimeLifetime = new(Guid.NewGuid(), 0, 1) }).Progress(CpuLiveCurveOwnershipState.PossibleSubmission, 0, false);
+            var context = CpuLiveCurveTuningTransactionTests.ContextFixture() with { RuntimeLifetime = new(Guid.NewGuid(), 0, 1) };
+            if (journalKind == "pending-explicit")
+            { context = context with { ContractId = CpuLiveCurveContract.Rz090528.Id, ContractVersion = CpuLiveCurveContract.Rz090528.Version }; }
+            Prior = Create(context).Progress(CpuLiveCurveOwnershipState.PossibleSubmission, 0, false);
             if (journalKind is "restoring" or "restoring-start" or "blocked-restoring")
             {
                 var originals = CpuLiveCurveTuningTransactionTests.ValuesFixture().Select(core => new CpuLiveCoreOffset(core.PhysicalCoreId, -1)).ToArray();
@@ -384,7 +499,7 @@ public sealed class CpuLiveCurveOwnershipJournalStoreTests : IDisposable
             }
             Prior = journalKind switch
             {
-                "pending" or "restoring" or "restoring-start" => Prior,
+                "pending" or "pending-explicit" or "restoring" or "restoring-start" => Prior,
                 "owned" => Prior.Progress(CpuLiveCurveOwnershipState.OwnedVerified, Prior.Steps.Count, false),
                 "blocked" => Prior.Progress(CpuLiveCurveOwnershipState.Blocked, Prior.Steps.Count, false),
                 "blocked-pending" => Prior.Progress(CpuLiveCurveOwnershipState.Blocked, 0, false),

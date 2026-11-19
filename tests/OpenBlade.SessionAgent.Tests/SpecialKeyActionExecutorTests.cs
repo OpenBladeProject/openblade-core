@@ -230,6 +230,44 @@ public sealed class SpecialKeyActionExecutorTests
         Assert.Null(client.MicrophoneMuteIndicator);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task ExecuteAsync_CycleLightingExplicitlyRequestsEffect(bool independentBrightness, bool independentLogo)
+    {
+        var client = new RecordingServiceClient
+        {
+            LightingCapabilities = DeviceCapabilities.Unavailable() with
+            {
+                SupportsIndependentLightingControls = independentBrightness || independentLogo,
+                LightingEffects = new HashSet<LightingEffect> { LightingEffect.Static, LightingEffect.Wave },
+            },
+            CurrentLighting = LightingSettingsFactory.Static(new(10, 20, 30), 65) with
+            {
+                LogoMode = LogoLightingMode.Static,
+                IndependentControls = independentBrightness || independentLogo
+                    ? new(independentBrightness ? (byte)70 : null,
+                        independentLogo ? LogoLightingMode.Breathing : null)
+                    : null,
+            },
+        };
+        var executor = new SpecialKeyActionExecutor(
+            new FixedBindings(SpecialKeySlot.M1, new(SpecialKeyActionKind.CycleLightingEffect)),
+            client,
+            new RecordingInputSender());
+
+        await executor.ExecuteAsync(SpecialKeySlot.M1, CancellationToken.None);
+
+        LightingSettings requested = Assert.IsType<LightingSettings>(client.LightingOverride?.Value);
+        Assert.Equal(LightingEffect.Wave, requested.Effect);
+        Assert.True(requested.ControlsKeyboardEffect);
+        Assert.Null(requested.IndependentControls);
+        Assert.Equal(independentBrightness ? 70 : 65, requested.Brightness);
+        Assert.Equal(independentLogo ? LogoLightingMode.Breathing : LogoLightingMode.Static, requested.LogoMode);
+    }
+
     private static SpecialKeyActionExecutor CreateExecutor(
         SpecialKeyActionKind action,
         RecordingInputSender input,
@@ -295,6 +333,9 @@ public sealed class SpecialKeyActionExecutorTests
         public int GamingModeWrites { get; private set; }
         public bool? GamingModeEnabled { get; set; }
         public bool? MicrophoneMuteIndicator { get; private set; }
+        public DeviceCapabilities? LightingCapabilities { get; init; }
+        public LightingSettings? CurrentLighting { get; init; }
+        public ManualOverride<LightingSettings>? LightingOverride { get; private set; }
 
         public override Task<ControlOperationResult> CyclePerformanceShortcutAsync(
             PerformanceShortcutSource source,
@@ -307,7 +348,15 @@ public sealed class SpecialKeyActionExecutorTests
         }
 
         public override Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) =>
-            Task.FromResult(CreateStatus(GamingModeEnabled));
+            Task.FromResult(CreateStatus(GamingModeEnabled, LightingCapabilities, CurrentLighting));
+
+        public override Task<ControlOperationResult> SetLightingOverrideAsync(
+            ManualOverride<LightingSettings>? value,
+            CancellationToken token)
+        {
+            LightingOverride = value;
+            return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Applied, "Applied."));
+        }
 
         public override Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
             ApplyOneShotLaptopControl value,
@@ -330,7 +379,8 @@ public sealed class SpecialKeyActionExecutorTests
                 "Applied."));
         }
 
-        private static ServiceStatusSnapshot CreateStatus(bool? gamingModeEnabled)
+        private static ServiceStatusSnapshot CreateStatus(bool? gamingModeEnabled,
+            DeviceCapabilities? lightingCapabilities = null, LightingSettings? currentLighting = null)
         {
             ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
             return new ServiceStatusSnapshot(
@@ -341,7 +391,7 @@ public sealed class SpecialKeyActionExecutorTests
                 ControllerDetectionWarning: null,
                 ExternalChanges: [],
                 Message: "Ready",
-                Capabilities: DeviceCapabilities.Unavailable(),
+                Capabilities: lightingCapabilities ?? DeviceCapabilities.Unavailable(),
                 ConfirmedState: null,
                 Profiles: profiles,
                 DesiredState: new DesiredDeviceState(
@@ -352,7 +402,7 @@ public sealed class SpecialKeyActionExecutorTests
                         profiles.PluggedIn.Fans,
                         SettingValueSource.PowerProfile),
                     new ResolvedSetting<LightingSettings>(
-                        profiles.PluggedIn.Lighting,
+                        currentLighting ?? profiles.PluggedIn.Lighting,
                         SettingValueSource.PowerProfile),
                     new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
                 ActivePowerSource: PowerSource.PluggedIn,

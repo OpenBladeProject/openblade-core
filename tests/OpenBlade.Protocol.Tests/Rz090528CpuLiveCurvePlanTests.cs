@@ -8,6 +8,30 @@ public sealed class Rz090528CpuLiveCurvePlanTests
 {
     private static readonly int[] PhysicalIds = [0, 2, 4, 6, 8, 9, 10, 11, 12, 13, 14, 15];
 
+    [Fact]
+    public void HistoricalSelectorResolvesOnlyExact0528AndPreservesContractThroughEachStep()
+    {
+        var identity = new DeviceIdentity("RZ09-0528", 0x1532, 0x02C6, "provenance");
+        var contract = CpuLiveCurveContract.Rz090528;
+        Assert.Same(contract, CpuLiveCurveContract.Resolve(null, null, identity));
+        Assert.Same(contract, CpuLiveCurveContract.Resolve(contract.Id, contract.Version, identity with { BiosVersion = "" }));
+        Assert.Null(CpuLiveCurveContract.Resolve(null, null, identity with { Model = "RZ09-0508", ProductId = 0x02B6 }));
+        Assert.Null(CpuLiveCurveContract.Resolve(contract.Id, contract.Version, identity with { VendorId = 0xFFFF }));
+        Assert.Null(CpuLiveCurveContract.Resolve(contract.Id, contract.Version, identity with { ProductId = 0x02B6 }));
+        Assert.Null(CpuLiveCurveContract.Resolve(contract.Id, null, identity));
+        Assert.Null(CpuLiveCurveContract.Resolve(null, contract.Version, identity));
+        Assert.Null(CpuLiveCurveContract.Resolve(contract.Id, contract.Version + 1, identity));
+
+        var snapshot = CpuLiveCurveSnapshot.TryCreate(contract, Observation())!;
+        var plan = Rz090528CpuLiveCurvePlan.CreateSelectiveFromSnapshot(snapshot, [new(8, -2)], AdmitAll).Plan!;
+        var step = Assert.Single(plan.Steps);
+        Assert.Same(contract, step.Command.Contract);
+        Assert.Same(contract, step.RestoreCommand.Contract);
+        Assert.Same(contract, step.Before.Contract);
+        Assert.Same(contract, step.After.Contract);
+        Assert.Throws<ArgumentException>(() => snapshot.WithOffset(default));
+    }
+
     [Theory]
     [InlineData(0, -1, 0x0000FFFFu)]
     [InlineData(0, 0, 0x00000000u)]

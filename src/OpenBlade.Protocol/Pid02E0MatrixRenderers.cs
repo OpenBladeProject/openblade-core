@@ -48,7 +48,8 @@ internal sealed class Pid02E0ReactiveFrame
 
         foreach (int hole in Pid02E0MatrixLayout.CapturedHoleSlots)
         {
-            if (slots[hole] != MatrixRgb.Black)
+            if (!OpenBlade.Contracts.Blade16KeyboardLightingLayout.IsCanvasPulseSlot(hole)
+                && slots[hole] != MatrixRgb.Black)
             {
                 throw new ArgumentException(
                     $"Captured layout-hole slot {hole} must remain black.",
@@ -62,7 +63,7 @@ internal sealed class Pid02E0ReactiveFrame
     internal MatrixRgb this[int slot] => matrix[slot];
 
     internal Pid02E0MatrixFrame ToMatrixFrame() =>
-        new(matrix.ToArray());
+        new(matrix.ToArray(), logicalKeyColors: true);
 
     internal static Pid02E0ReactiveFrame BlackIdle() =>
         new(new MatrixRgb[Pid02E0MatrixFrame.SlotCount]);

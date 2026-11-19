@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Security.Principal;
 using OpenBlade.DeploymentClient;
+using OpenBlade.ProcessArguments;
 
 namespace OpenBlade.DeploymentClient.Tests;
 
@@ -9,6 +10,124 @@ public sealed class InstalledProcessInventoryTests
     private static readonly InstalledPayloadPaths Paths = new(@"C:\Program Files\OpenBlade",
         @"C:\Program Files\OpenBlade\OpenBlade.SessionAgent.exe", @"C:\Program Files\OpenBlade\OpenBlade.Tray.exe");
     private const string Owner = "S-1-5-21-123";
+
+    [Theory]
+    [InlineData("--snap-tap-input", "razer-driver", "function-row")]
+    [InlineData("--snap-tap-input", "razer-driver", "snap-tap-and-function-row")]
+    public void SharedGrammar_ParsesRuntimeAndProcessCommandLinesIdentically(string mode, string backend, string features)
+    {
+        string[] runtime = [mode, "10", backend, features];
+        Assert.True(InputHelperCommandLine.TryParse(runtime, out var fromRuntime));
+        Assert.True(InputHelperCommandLine.TryParse([Paths.SessionAgentExecutable, .. runtime], out var fromProcess, startIndex: 1));
+        Assert.Equal(fromRuntime, fromProcess);
+        Assert.False(InputHelperCommandLine.TryParse(runtime, out _, startIndex: -1));
+        Assert.False(InputHelperCommandLine.TryParse(runtime, out _, startIndex: runtime.Length + 1));
+    }
+
+    [Fact]
+    public void WindowsSnapTapAndDriverFunctionRow_AreOneCoherentFamily()
+    {
+        InstalledProcessObservation windows = Agent(11, "--snap-tap-input", "10", "windows-hook")
+            with
+        { ParentProcessId = 10 };
+        InstalledProcessObservation driver = Agent(12, "--snap-tap-input", "10", "razer-driver", "function-row")
+            with
+        { ParentProcessId = 10 };
+        InstalledProcessObservation worker = Agent(13, "--snap-tap-driver-worker", "12", "function-row")
+            with
+        { ParentProcessId = 12 };
+        InstalledProcessInventory result = Evaluate([Agent(10), windows, driver, worker]);
+        Assert.True(result.HasOnlySessionAgent);
+        Assert.Equal(3, result.SessionAgentHelperCount);
+        Assert.True(Evaluate([Agent(10), windows, driver, worker, Tray()]).HasExactFinalState);
+        Assert.False(Evaluate([Agent(10), windows, driver, worker,
+            driver with { ProcessId = 14 }]).IsUnambiguous);
+        Assert.False(Evaluate([Agent(10), windows, driver with
+        {
+            Arguments = [Paths.SessionAgentExecutable, "--snap-tap-input", "10", "razer-driver", "snap-tap"],
+        }]).IsUnambiguous);
+    }
+
+    [Theory]
+    [InlineData("windows-hook", null)]
+    [InlineData("razer-driver", null)]
+    [InlineData("razer-driver", "snap-tap")]
+    [InlineData("razer-driver", "function-row")]
+    [InlineData("razer-driver", "snap-tap-and-function-row")]
+    public void CurrentInputHelperArguments_PreserveOnePrimary(string backend, string? features)
+    {
+        string[] args = features is null
+            ? ["--snap-tap-input", "10", backend]
+            : ["--snap-tap-input", "10", backend, features];
+        InstalledProcessObservation helper = Agent(11, args) with { ParentProcessId = 10 };
+        InstalledProcessInventory result = Evaluate([Agent(10), helper]);
+        Assert.True(result.HasOnlySessionAgent);
+        Assert.Equal(1, result.SessionAgentCount);
+        Assert.Equal(1, result.SessionAgentHelperCount);
+        Assert.False(result.IsEmpty);
+        Assert.True(Evaluate([Agent(10), helper, Tray()]).HasExactFinalState);
+    }
+
+    [Theory]
+    [InlineData("snap-tap")]
+    [InlineData("function-row")]
+    [InlineData("snap-tap-and-function-row")]
+    public void DriverWorker_MustInheritSupervisorBackendAndFeatures(string features)
+    {
+        InstalledProcessObservation input = Agent(11, "--snap-tap-input", "10", "razer-driver", features)
+            with
+        { ParentProcessId = 10 };
+        InstalledProcessObservation worker = Agent(12, "--snap-tap-driver-worker", "11", features)
+            with
+        { ParentProcessId = 11 };
+        InstalledProcessInventory result = Evaluate([Agent(10), input, worker]);
+        Assert.True(result.HasOnlySessionAgent);
+        Assert.Equal(2, result.SessionAgentHelperCount);
+        string different = features == "snap-tap" ? "function-row" : "snap-tap";
+        Assert.False(Evaluate([Agent(10), input, worker with
+        {
+            Arguments = [Paths.SessionAgentExecutable, "--snap-tap-driver-worker", "11", different],
+        }]).IsUnambiguous);
+        Assert.False(Evaluate([Agent(10), input with
+        {
+            Arguments = [Paths.SessionAgentExecutable, "--snap-tap-input", "10", "windows-hook"],
+        }, worker]).IsUnambiguous);
+    }
+
+    [Theory]
+    [InlineData("unknown", "snap-tap")]
+    [InlineData("Razer-Driver", "snap-tap")]
+    [InlineData("razer-driver", "unknown")]
+    [InlineData("razer-driver", "Snap-Tap")]
+    [InlineData("razer-driver", "")]
+    [InlineData("windows-hook", "snap-tap")]
+    [InlineData("windows-hook", "function-row")]
+    public void UnsupportedBackendOrFeatureArguments_StayUntrusted(string backend, string features)
+    {
+        InstalledProcessObservation helper = Agent(11, "--snap-tap-input", "10", backend, features)
+            with
+        { ParentProcessId = 10 };
+        Assert.False(Evaluate([Agent(10), helper]).IsUnambiguous);
+    }
+
+    [Fact]
+    public void CurrentHelpers_RetainIdentityAndUniqueSupervisorAdmission()
+    {
+        InstalledProcessObservation helper = Agent(11, "--snap-tap-input", "10", "razer-driver", "snap-tap")
+            with
+        { ParentProcessId = 10 };
+        foreach (InstalledProcessObservation invalid in new[]
+        {
+            helper with { OwnerSid = "S-1-5-21-456" }, helper with { OwnerSid = null },
+            helper with { SessionId = 2 }, helper with { IsNormalIntegrity = false },
+            helper with { ParentProcessId = 99 }, helper with { CreationTime = 10 },
+            helper with { Arguments = [Paths.SessionAgentExecutable, "--snap-tap-input", "10", "razer-driver", "snap-tap", "extra"] },
+        })
+        {
+            Assert.False(Evaluate([Agent(10), invalid]).IsUnambiguous);
+        }
+        Assert.False(Evaluate([Agent(10), helper, helper with { ProcessId = 12 }]).IsUnambiguous);
+    }
 
     [Theory]
     [InlineData(false, false)]

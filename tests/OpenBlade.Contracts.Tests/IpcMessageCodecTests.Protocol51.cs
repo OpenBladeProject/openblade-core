@@ -8,6 +8,44 @@ namespace OpenBlade.Contracts.Tests;
 public sealed partial class IpcMessageCodecTests
 {
     [Theory]
+    [InlineData(FanMode.Fixed)]
+    [InlineData(FanMode.ManualCurve)]
+    public async Task Protocol51Projects5500RpmIntentIntoFrozenNumericBounds(FanMode mode)
+    {
+        ServiceStatusSnapshot baseline = CreateProtocol51PresetStatus(PerformancePreset.Balanced);
+        var points = new[] { new FanCurvePoint(40, 4300), new FanCurvePoint(90, 5500) };
+        var settings = new FanControlSettings(mode, 5500, new(points, points, true));
+        var range = new FanSpeedRange(4300, 5500, 100);
+        ServiceStatusSnapshot status = baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                FanSpeedRange = range,
+                ObservedFanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+                { [PerformancePreset.Balanced] = range },
+            },
+            Profiles = baseline.Profiles with
+            {
+                PluggedIn = baseline.Profiles.PluggedIn with { Fans = mode, FanControl = settings },
+                Battery = baseline.Profiles.Battery with { Fans = mode, FanControl = settings },
+                UsbC = baseline.Profiles.UsbC with { Fans = mode, FanControl = settings },
+            },
+            DesiredState = baseline.DesiredState with { Fans = new(mode, SettingValueSource.PowerProfile), FanControl = settings },
+            FanControlOverride = settings,
+        };
+        using MemoryStream stream = new();
+        await IpcMessageCodec.WriteProtocol51ReadOnlyServerFrameAsync(stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status), CancellationToken.None);
+        Assert.True(ReadFrozenProtocol51Frame(stream).Status!.WritesBlocked);
+        string json = FramedJsonObject(stream).ToJsonString();
+        Assert.DoesNotContain("5500", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("observedFanSpeedRangesByPerformancePreset", json, StringComparison.Ordinal);
+        Assert.Contains("5400", json, StringComparison.Ordinal);
+        Assert.Equal(5500, status.DesiredState.FanControl!.FixedSpeedRpm);
+        Assert.Equal(5500, status.Profiles.PluggedIn.FanControl!.ManualCurve.Cpu[^1].SpeedRpm);
+    }
+
+    [Theory]
     [InlineData(PerformancePreset.Turbo, false)]
     [InlineData(PerformancePreset.MaximumPower, false)]
     [InlineData(PerformancePreset.Gaming, false)]

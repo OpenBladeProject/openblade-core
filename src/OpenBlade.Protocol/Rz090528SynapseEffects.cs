@@ -387,7 +387,7 @@ internal sealed class Rz090528ReactiveEffect : IRz090528KeyTriggeredLightingEffe
         {
             throw new ArgumentOutOfRangeException(nameof(slot));
         }
-        if (Rz090528MatrixFrame.IsHole(slot))
+        if (!Blade16AmdKeyboardLightingLayout.IsCanvasPulseSlot(slot))
         {
             throw new ArgumentException(
                 $"Captured layout-hole slot {slot} cannot receive a Reactive pulse.",
@@ -416,7 +416,7 @@ internal sealed class Rz090528ReactiveEffect : IRz090528KeyTriggeredLightingEffe
                 color,
                 Rz090528LightingMath.ToByte(remaining * 255));
         }
-        return Rz090528MatrixFrame.FromOwnedSlots(slots);
+        return Rz090528MatrixFrame.FromOwnedSlots(slots, logicalKeyColors: true);
     }
 }
 
@@ -577,7 +577,7 @@ internal sealed class Rz090528RippleEffect : IRz090528KeyTriggeredLightingEffect
         {
             throw new ArgumentOutOfRangeException(nameof(slot));
         }
-        if (Rz090528MatrixFrame.IsHole(slot))
+        if (!Blade16AmdKeyboardLightingLayout.IsCanvasPulseSlot(slot))
         {
             throw new ArgumentException(
                 $"Captured layout-hole slot {slot} cannot receive a Ripple pulse.",
@@ -613,7 +613,7 @@ internal sealed class Rz090528RippleEffect : IRz090528KeyTriggeredLightingEffect
 
         ApplyMask(slots, lowerSlots, offset: 0);
         ApplyMask(slots, upperSlots, offset: 64);
-        return Rz090528MatrixFrame.FromOwnedSlots(slots);
+        return Rz090528MatrixFrame.FromOwnedSlots(slots, logicalKeyColors: true);
     }
 
     private bool HasActivePulse(TimeSpan elapsed) =>
@@ -641,7 +641,7 @@ internal sealed class Rz090528RippleEffect : IRz090528KeyTriggeredLightingEffect
             new RippleSlotMask[Rz090528MatrixFrame.SlotCount * Bands.Length];
         for (int origin = 0; origin < Rz090528MatrixFrame.SlotCount; origin++)
         {
-            if (Rz090528MatrixFrame.IsHole(origin))
+            if (!Blade16AmdKeyboardLightingLayout.IsCanvasPulseSlot(origin))
             {
                 continue;
             }
@@ -650,7 +650,7 @@ internal sealed class Rz090528RippleEffect : IRz090528KeyTriggeredLightingEffect
             int originColumn = origin % Rz090528MatrixFrame.ColumnCount;
             for (int slot = 0; slot < Rz090528MatrixFrame.SlotCount; slot++)
             {
-                if (Rz090528MatrixFrame.IsHole(slot))
+                if (!Blade16AmdKeyboardLightingLayout.IsCanvasPulseSlot(slot))
                 {
                     continue;
                 }

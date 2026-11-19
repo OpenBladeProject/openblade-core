@@ -8,6 +8,78 @@ namespace OpenBlade.Setup.Tests;
 public sealed class SetupPayloadTransactionTests
 {
     [Fact]
+    public async Task RecoveryDetails_DescribeExactTransactionPathsAndCurrentState()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.txt", [1]);
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform().StagePayloadAsync(CancellationToken.None);
+        SetupPayloadRecoveryDetails staged = Assert.IsType<SetupPayloadRecoveryDetails>(transaction.RecoveryDetails);
+        Assert.Equal(tree.Install, staged.ActiveDirectory);
+        Assert.Equal(transaction.StagedPayloadDirectory, staged.StagingDirectory);
+        Assert.Equal("Staged", staged.State);
+        string suffix = Path.GetFileName(staged.StagingDirectory)["OpenBlade.installing.".Length..];
+        Assert.Equal(Path.Combine(tree.ProgramFiles, "OpenBlade.rollback." + suffix), staged.BackupDirectory);
+        Assert.Equal(Path.Combine(tree.ProgramFiles, "OpenBlade.failed." + suffix), staged.FailedDirectory);
+
+        await transaction.ActivateAsync(CancellationToken.None);
+        SetupPayloadRecoveryDetails active = Assert.IsType<SetupPayloadRecoveryDetails>(transaction.RecoveryDetails);
+        Assert.Equal(staged with { State = "Active" }, active);
+        Assert.True(File.Exists(Path.Combine(active.BackupDirectory, "old.txt")));
+        Assert.False(Directory.Exists(active.StagingDirectory));
+        Assert.False(Directory.Exists(active.FailedDirectory));
+        // Reading the descriptor does not initiate recovery or move payloads.
+        Assert.Equal(active, transaction.RecoveryDetails);
+        Assert.True(File.Exists(Path.Combine(active.BackupDirectory, "old.txt")));
+        await transaction.RollbackAsync(CancellationToken.None);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ServiceProcessExit_GatesInstallDirectoryRename(bool cancel)
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.txt", [1]);
+        ServiceExitProcess process = new(Path.Combine(tree.Install, "OpenBlade.Service.exe"));
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            paths: tree.Paths, payloadDirectory: tree.Payload,
+            serviceControl: new ServiceExitControl(SetupServiceState.Running),
+            processOperations: new ServiceExitProcesses(process));
+        await using ISetupPayloadTransaction transaction = await platform.StagePayloadAsync(CancellationToken.None);
+        using CancellationTokenSource cancellation = new();
+        async Task PrepareAndActivateAsync()
+        {
+            await platform.PrepareServiceForInstallAsync(cancellation.Token);
+            await transaction.ActivateAsync(cancellation.Token);
+        }
+        Task activation = PrepareAndActivateAsync();
+        await Task.WhenAny(process.WaitStarted.Task, activation).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(File.Exists(Path.Combine(tree.Install, "old.txt")));
+        Assert.False(activation.IsCompleted);
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+        if (cancel)
+        {
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => activation);
+            process.Exit.SetResult();
+            Assert.True(File.Exists(Path.Combine(tree.Install, "old.txt")));
+            Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+        }
+        else
+        {
+            process.Exit.SetResult();
+            await activation;
+            string backup = Assert.Single(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+            Assert.True(File.Exists(Path.Combine(backup, "old.txt")));
+            await transaction.RollbackAsync(CancellationToken.None);
+        }
+        Assert.True(process.Disposed);
+    }
+
+    [Fact]
     public async Task GuardianAppearancePreventsActivationAndRetainsStagedFiles()
     {
         using TestTree tree = new();
@@ -866,6 +938,38 @@ public sealed class SetupPayloadTransactionTests
 
         Assert.Contains("changed while staging", failure.Message, StringComparison.OrdinalIgnoreCase);
         Assert.True(File.Exists(Path.Combine(tree.Install, "old.bin")));
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StagePayload_PostCopyVerificationFailure_ReportsVerificationInsteadOfLastCopy(bool changeSource)
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        var recorded = new RecordingSetupProgressReporter();
+        using var progress = new LoggingSetupProgressReporter(recorded, new SetupLog(null));
+        DelegatingPayloadFileSystem files = new()
+        {
+            AfterCopy = (source, destination) =>
+            {
+                if (Path.GetFileName(source) == "OpenBlade.Tray.dll")
+                {
+                    File.AppendAllText(changeSource ? source : destination, "changed");
+                }
+            },
+        };
+
+        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
+            () => tree.CreatePlatform(files, progress).StagePayloadAsync(CancellationToken.None));
+        progress.ReportFailure(error);
+
+        SetupProgressEvent failure = recorded.Events.Last();
+        Assert.Equal(SetupProgressCode.Failure, failure.Code);
+        Assert.Equal("VerifyPayload", failure.Arguments[0]);
+        Assert.Empty(failure.Arguments[1]);
+        Assert.Contains("OpenBlade.Tray.dll", failure.Arguments[2], StringComparison.Ordinal);
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
     }
 

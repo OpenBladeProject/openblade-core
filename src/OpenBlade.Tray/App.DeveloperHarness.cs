@@ -793,7 +793,7 @@ public partial class App
             }
             IEnumerable<string> destinations = captureProfilesVariant || captureFeatureSnapshot || captureSnapTap
                 || captureDischargeSettings || captureFanStop || captureLabsTarget || captureGlobalSearch
-                ? [requestedPage!]
+                ? (string[])[requestedPage!]
                 : string.IsNullOrWhiteSpace(requestedPage)
                     ? mainDestinations
                     : mainDestinations.Where(destination => string.Equals(
@@ -926,6 +926,11 @@ public partial class App
                     }
                     string? controlSnapshot = Environment.GetEnvironmentVariable(
                         "OPENBLADE_CONTROL_AVAILABILITY_SNAPSHOT_STATE");
+                    if (destination == "lighting" && controlSnapshot == "rz0529-lighting")
+                    {
+                        snapshotMainWindow.ShowRz090529LightingZonesSnapshot();
+                        await WaitForSnapshotLayoutAsync();
+                    }
                     if (destination == "laptop" && (controlSnapshot?.StartsWith(
                             "one-shot-", StringComparison.Ordinal) == true
                         || controlSnapshot == "blade18-function-row"))
@@ -1066,6 +1071,10 @@ public partial class App
                             await SaveSnapshotAsync(
                                 snapshotMainWindow.Content,
                                 Path.Combine(resolvedDirectory, $"main-{destination}.png"));
+                        }
+                        if (destination is "profiles-wide" or "profiles-narrow")
+                        {
+                            await snapshotMainWindow.VerifyProfileNavigationAsync(destination == "profiles-narrow");
                         }
                         if (captureGlobalSearch)
                         {
@@ -1694,7 +1703,7 @@ public partial class App
             Guid.NewGuid(),
             SessionGpuOperationStatus.Succeeded,
             null,
-            [app],
+            (SessionGpuApp[])[app],
             []);
         var coordinator = new GpuAppCleanupCoordinator(
             _ => Task.FromResult(scan),
@@ -1729,7 +1738,7 @@ public partial class App
             await SaveSnapshotAsync(host, reportPath + ".gpu-empty.png");
         }
 
-        scan = scan with { Apps = [app] };
+        scan = scan with { Apps = (SessionGpuApp[])[app] };
         await coordinator.ObserveAsync(CancellationToken.None);
         await WaitForSnapshotLayoutAsync();
         RequireResponsiveSelector(
@@ -1764,14 +1773,19 @@ public partial class App
             ApplyDirectFanStopSnapshotState(window, state);
             return;
         }
-        if (state is "source-reviewed-presets" or "source-reviewed-base")
+        if (state is "source-reviewed-presets" or "source-reviewed-base" or "source-reviewed-unclassified")
         {
-            ApplySourceReviewedPresetsSnapshotState(window, legacyBase: state == "source-reviewed-base");
+            ApplySourceReviewedPresetsSnapshotState(window, legacyBase: state != "source-reviewed-presets",
+                unclassified: state == "source-reviewed-unclassified");
             return;
         }
-        if (state == "experimental-custom")
+        if (state is "experimental-custom" or "experimental-custom-usbc"
+            or "hyperboost-usbc" or "hyperboost-usbc-blocked")
         {
-            ApplyExperimentalCustomSnapshotState(window);
+            ApplyExperimentalCustomSnapshotState(window,
+                usbC: state != "experimental-custom",
+                hyperBoostActive: state == "hyperboost-usbc",
+                controllerBlocked: state == "hyperboost-usbc-blocked");
             return;
         }
         if (state == "blade18-paused")
@@ -1782,6 +1796,18 @@ public partial class App
         if (state is "blade18-battery" or "blade18-battery-off")
         {
             ApplyExperimentalBatterySnapshotState(window, state == "blade18-battery-off");
+            return;
+        }
+        if (state == "rz0529-lighting")
+        {
+            ApplyRz0301IndependentLightingSnapshotState(window, populated: true, paused: false,
+                hybrid: true, fullEffect: true, rz090529: true);
+            return;
+        }
+        if (state is "rz0301-hybrid-lighting-unknown" or "rz0301-hybrid-lighting-static")
+        {
+            ApplyRz0301IndependentLightingSnapshotState(window, populated: true, paused: false,
+                hybrid: true, fullEffect: state == "rz0301-hybrid-lighting-static");
             return;
         }
         if (state is "rz0301-lighting-unknown" or "rz0301-lighting-populated" or "rz0301-lighting-paused")
@@ -1795,7 +1821,7 @@ public partial class App
             ApplyExperimentalLightingSnapshotState(window, state == "blade18-wave");
             return;
         }
-        if (state is not ("read-failure" or "battery" or "unsupported"
+        if (state is not ("read-failure" or "controller-blocked" or "battery" or "unsupported"
             or "direct-manual" or "battery-drift" or "keyboard" or "labs-lighting"
             or "one-shot-unavailable" or "one-shot-checking" or "one-shot-confirmed" or "blade18-function-row"))
         {
@@ -1812,7 +1838,8 @@ public partial class App
         bool driftedBattery = state == "battery-drift";
         bool fullPower = directManual || driftedBattery || keyboard;
         bool unsupported = state == "unsupported";
-        bool blocked = state == "read-failure" || unsupported;
+        bool controllerBlocked = state == "controller-blocked";
+        bool blocked = state == "read-failure" || controllerBlocked || unsupported;
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         if (hostFunctionRow)
         {
@@ -1825,8 +1852,10 @@ public partial class App
             };
         }
         ServiceStatusSnapshot status = new(
-            1, !unsupported, blocked, [], null, [], "Control availability snapshot",
-            unsupported
+            1, !unsupported && !controllerBlocked, blocked,
+            controllerBlocked ? (string[])["RazerAppEngine", "razerwdl"] : [],
+            null, [], "Control availability snapshot",
+            unsupported || controllerBlocked
                 ? DeviceCapabilities.Unavailable()
                 : DeviceCapabilities.SafeTargetDefaults() with
                 {
@@ -1924,7 +1953,8 @@ public partial class App
         refreshCards.Invoke(window, null);
     }
 
-    private static void ApplySourceReviewedPresetsSnapshotState(MainWindow window, bool legacyBase = false)
+    private static void ApplySourceReviewedPresetsSnapshotState(MainWindow window, bool legacyBase = false,
+        bool unclassified = false)
     {
         // Disconnected RZ09-0529 / 711 or RZ09-0300 / 582 fixture. Match the
         // reviewed production capability set; this never connects to the service.
@@ -1947,13 +1977,24 @@ public partial class App
                 PerformancePreset.MaximumPower, PerformancePreset.Custom,
                 PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver,
             },
-            new HashSet<FanMode> { FanMode.Automatic },
+            legacyBase ? new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve }
+                : new HashSet<FanMode> { FanMode.Automatic },
             new HashSet<LightingEffect>(),
             legacyBase ? new HashSet<int>() : Enumerable.Range(10, 7).Select(value => value * 5).Append(100).ToHashSet(),
             SupportsBatteryProtectionOff: !legacyBase,
             SupportsTemporaryFullCharge: false)
         {
             CustomPerformance = legacyBase ? null : new(combinations) { SupportsMaximumFans = false },
+            FanSpeedRange = legacyBase ? new FanSpeedRange(3500, 5500, 100) : null,
+            FanSpeedRangesByPerformancePreset = legacyBase
+                ? new Dictionary<PerformancePreset, FanSpeedRange>
+                {
+                    [PerformancePreset.Balanced] = new(3500, 5500, 100),
+                    [PerformancePreset.Gaming] = new(3900, 5500, 100),
+                    [PerformancePreset.Creator] = new(3900, 5500, 100),
+                } : new Dictionary<PerformancePreset, FanSpeedRange>(),
+            ReportsPerformanceWithManualFans = legacyBase,
+            SupportsOrdinaryThermalControlOnUnclassifiedExternalPower = unclassified,
             SupportsBreathingColorSelection = false,
             SupportsWaveDirectionSelection = false,
         };
@@ -1961,11 +2002,23 @@ public partial class App
         PerformancePreset[] expected = legacyBase
             ? [PerformancePreset.Balanced, PerformancePreset.Gaming, PerformancePreset.Creator]
             : [PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Turbo,
-                PerformancePreset.MaximumPower, PerformancePreset.Custom];
+                PerformancePreset.MaximumPower, PerformancePreset.Custom,
+                PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver];
+        FanControlSettings fanControl = legacyBase
+            ? new(FanMode.ManualCurve, 5500, new ManualFanCurve(
+                (FanCurvePoint[])[new(40, 3900), new(50, 3900), new(60, 4200), new(70, 4600), new(80, 5000), new(90, 5500)],
+                (FanCurvePoint[])[new(40, 3900), new(50, 3900), new(60, 4300), new(70, 4700), new(80, 5100), new(90, 5500)],
+                true))
+            : FanControlSettings.Default;
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         profiles = profiles with
         {
-            PluggedIn = profiles.PluggedIn with { Performance = selected },
+            PluggedIn = profiles.PluggedIn with
+            {
+                Performance = selected,
+                Fans = fanControl.Mode,
+                FanControl = legacyBase ? fanControl : profiles.PluggedIn.FanControl,
+            },
             WindowsPowerModes = profiles.WindowsPowerModes with
             {
                 Turbo = WindowsPowerMode.BestPerformance,
@@ -1977,15 +2030,27 @@ public partial class App
         var status = new ServiceStatusSnapshot(
             1, true, false, [], null, [],
             legacyBase ? "Source-reviewed RZ09-0300 preset preview" : "Source-reviewed RZ09-0529 preset preview", capabilities,
-            new ConfirmedDeviceState(selected, FanMode.Automatic,
+            new ConfirmedDeviceState(selected, legacyBase ? FanMode.Fixed : FanMode.Automatic,
                 legacyBase ? null : new ConfirmedBatteryState(true, 80, null), null), profiles,
             new DesiredDeviceState(
-                new ResolvedSetting<PerformancePreset>(selected, SettingValueSource.PowerProfile),
-                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
-                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
-                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
-            PowerSource.PluggedIn, null, null, null, null, false)
+                new ResolvedSetting<PerformancePreset>(selected, unclassified
+                    ? SettingValueSource.ConfirmedFirmwareState : SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(fanControl.Mode, unclassified
+                    ? SettingValueSource.TemporaryOverride : SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, unclassified
+                    ? SettingValueSource.ConfirmedFirmwareState : SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false))
+            { FanControl = legacyBase ? fanControl : null },
+            unclassified ? PowerSource.ExternalUnknown : PowerSource.PluggedIn,
+            LiveReadings: null,
+            PerformanceOverride: null,
+            FanOverride: unclassified
+                ? new ManualOverride<FanMode>(fanControl.Mode, OverrideLifetime.UntilPowerSourceChange) : null,
+            LightingOverride: null,
+            FullChargeOverride: false)
         {
+            ExternalPowerPresent = unclassified,
+            FanControlOverride = unclassified ? fanControl : null,
             IsExperimentalDevice = true,
             AllowExperimentalFeatures = true,
             ExperimentalSupportSource = legacyBase ? "SynapseSourceBacked:RZ09-0300:582" : "SynapseSourceBacked:RZ09-0529:711",
@@ -1999,22 +2064,33 @@ public partial class App
         {
             throw new InvalidOperationException("The source-reviewed preset preview is incomplete.");
         }
+        if (legacyBase && (window.ViewModel.SelectedFanMode != FanMode.ManualCurve
+            || window.ViewModel.FixedFanSpeedMinimumRpm != 3900
+            || window.ViewModel.FixedFanSpeedMaximumRpm != 5500
+            || window.ViewModel.CpuFanCurveEditorPoints[^1].SpeedRpm != 5500
+            || window.ViewModel.GpuFanCurveEditorPoints[^1].SpeedRpm != 5500))
+        {
+            throw new InvalidOperationException("The source-reviewed Creator curve preview lost its reviewed 5500-RPM intent.");
+        }
     }
 
-    private static void ApplyExperimentalCustomSnapshotState(MainWindow window)
+    private static void ApplyExperimentalCustomSnapshotState(
+        MainWindow window,
+        bool usbC = false,
+        bool hyperBoostActive = false,
+        bool controllerBlocked = false)
     {
         // Disconnected preview only: no service connection or hardware operations.
         var custom = new CustomPerformanceSettings(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High)
         { MaximumFans = true };
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
-        profiles = profiles with
+        PowerSource source = usbC ? PowerSource.UsbC : PowerSource.PluggedIn;
+        PowerProfile profile = (usbC ? profiles.UsbC : profiles.PluggedIn) with
         {
-            PluggedIn = profiles.PluggedIn with
-            {
-                Performance = PerformancePreset.Custom,
-                CustomPerformance = custom,
-            },
+            Performance = PerformancePreset.Custom,
+            CustomPerformance = custom,
         };
+        profiles = usbC ? profiles with { UsbC = profile } : profiles with { PluggedIn = profile };
         var combinations = new HashSet<CustomPerformanceCombination>();
         foreach (CustomPerformanceLevel cpu in Enum.GetValues<CustomPerformanceLevel>())
         {
@@ -2030,22 +2106,30 @@ public partial class App
                 { PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Performance, PerformancePreset.Custom },
             CustomPerformance = new(combinations) { SupportsMaximumFans = true },
             FanModes = new HashSet<FanMode> { FanMode.Automatic },
+            HyperBoostAccess = usbC ? DeviceFeatureAccess.ReadWrite : null,
+            HyperBoostWithoutCoolingPadAccess = usbC ? DeviceFeatureAccess.ReadWrite : null,
+            HyperBoostBaseModes = usbC ? new HyperBoostBaseModeCapabilities(
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ReadWrite,
+                DeviceFeatureAccess.ReadWrite) : null,
         };
         var status = new ServiceStatusSnapshot(
-            1, true, false, [], null, [], "Experimental Custom preview", capabilities,
+            1, true, false, controllerBlocked ? (string[])["RazerAppEngine"] : [], null, [],
+            "Experimental Custom preview", capabilities,
             new ConfirmedDeviceState(PerformancePreset.Custom, FanMode.Automatic, null, null)
-            { CustomPerformance = custom }, profiles,
+            { CustomPerformance = custom, HyperBoostActive = hyperBoostActive }, profiles,
             new DesiredDeviceState(
                 new ResolvedSetting<PerformancePreset>(PerformancePreset.Custom, SettingValueSource.PowerProfile),
                 new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
-                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profile.Lighting, SettingValueSource.PowerProfile),
                 new DesiredBatteryState(profiles.BatteryPolicy, false, false))
             { CustomPerformance = custom },
-            PowerSource.PluggedIn, null, null, null, null, false)
+            source, null, null, null, null, false)
         {
             IsExperimentalDevice = true,
             AllowExperimentalFeatures = true,
             ExperimentalSupportSource = "UpstreamDerived",
+            PadlessHyperBoostEligibility = PadlessHyperBoostEligibilityState.CoolingPadAbsent,
         };
         System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
             "ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
@@ -2054,6 +2138,13 @@ public partial class App
         if (!window.ViewModel.IsCustomMaximumFansVisible)
         {
             throw new InvalidOperationException("The experimental Maximum Fans preview is unavailable.");
+        }
+        if (usbC && (window.ViewModel.ActivePowerSource != PowerSource.UsbC
+                || window.ViewModel.HyperBoostActive != hyperBoostActive
+                || controllerBlocked != window.ViewModel.HasHyperBoostUnavailableReason
+                || controllerBlocked == window.ViewModel.CanToggleHyperBoost))
+        {
+            throw new InvalidOperationException("The disconnected USB-C performance preview is incomplete.");
         }
         System.Reflection.FieldInfo changingCards = typeof(MainWindow).GetField(
             "changingDashboardCards", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
@@ -2222,29 +2313,54 @@ public partial class App
     }
 
     private static void ApplyRz0301IndependentLightingSnapshotState(
-        MainWindow window, bool populated, bool paused)
+        MainWindow window, bool populated, bool paused, bool hybrid = false, bool fullEffect = false, bool rz090529 = false)
     {
         // Synthetic observations only. Snapshot windows never start the service
         // client or native integration, and this fixture cannot access hardware.
         IndependentLightingSettings? controls = populated ? new(65, LogoLightingMode.Static) : null;
+        if (rz090529)
+        {
+            controls = new(65, LogoLightingMode.Static, true, false);
+        }
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
-        LightingSettings lighting = profiles.PluggedIn.Lighting with { IndependentControls = controls };
+        LightingSettings lighting = fullEffect
+            ? LightingSettingsFactory.Static(new RgbColor(40, 170, 240), 65) with
+            {
+                ControlsKeyboardEffect = true,
+                LogoMode = LogoLightingMode.Static,
+            }
+            : profiles.PluggedIn.Lighting with { IndependentControls = hybrid ? null : controls };
         profiles = profiles with { PluggedIn = profiles.PluggedIn with { Lighting = lighting } };
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
         {
             PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Balanced },
             FanModes = new HashSet<FanMode> { FanMode.Automatic },
-            LightingEffects = new HashSet<LightingEffect>(),
+            LightingEffects = hybrid
+                ? new HashSet<LightingEffect> { LightingEffect.Off, LightingEffect.Static, LightingEffect.Spectrum, LightingEffect.Breathing, LightingEffect.Wave }
+                : new HashSet<LightingEffect>(),
+            SupportedBreathingColorModes = new HashSet<BreathingColorMode> { BreathingColorMode.Single, BreathingColorMode.Dual, BreathingColorMode.Random },
+            SupportsWaveDirectionSelection = hybrid,
             SupportsKeyboardBrightness = true,
             SupportsIndependentLightingControls = true,
             LogoLightingModes = new HashSet<LogoLightingMode>
                 { LogoLightingMode.Off, LogoLightingMode.Static, LogoLightingMode.Breathing },
         };
+        if (rz090529)
+        {
+            capabilities = capabilities with
+            {
+                LightingEffects = Enum.GetValues<LightingEffect>().Where(effect => effect != LightingEffect.Sequence).ToHashSet(),
+                SupportsVaporChamberLighting = true,
+                SupportsTouchpadStatusIndicator = true,
+                ObservedLightingZones = new HashSet<ObservedLightingZone> { ObservedLightingZone.Touchpad, ObservedLightingZone.UnderGlass },
+            };
+        }
         ServiceStatusSnapshot status = new(
-            1, true, paused, [], null, [], "Source-reviewed RZ09-0301 independent lighting preview",
+            1, true, paused, [], null, [], rz090529
+                ? "Source-reviewed RZ09-0529 lighting preview" : "Source-reviewed RZ09-0301 independent lighting preview",
             capabilities,
             new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, null, null)
-            { IndependentLighting = controls }, profiles,
+            { IndependentLighting = controls, Lighting = fullEffect ? lighting with { ControlsKeyboardEffect = false } : null, LogoLighting = controls?.LogoMode }, profiles,
             new DesiredDeviceState(
                 new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
                 new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
@@ -2254,7 +2370,8 @@ public partial class App
         {
             IsExperimentalDevice = true,
             AllowExperimentalFeatures = true,
-            ExperimentalSupportSource = "SynapseSourceBacked:RZ09-0301:581",
+            ExperimentalSupportSource = rz090529
+                ? "SynapseSourceBacked:RZ09-0529:711" : "SynapseSourceBacked:RZ09-0301:581",
             ExperimentalWritesPaused = paused,
         };
         System.Reflection.MethodInfo applyStatus = typeof(MainViewModel).GetMethod(
@@ -2279,7 +2396,10 @@ public partial class App
         applyStatus.Invoke(window.ViewModel, [status, false]);
         if (window.ViewModel.LightingBrightnessValueText != (populated ? "65" : "—")
             || window.ViewModel.SelectedLogoLightingModeOption?.Mode != controls?.LogoMode
-            || window.ViewModel.IsKeyboardEffectSelectionVisible
+            || window.ViewModel.IsKeyboardEffectSelectionVisible != hybrid
+            || window.ViewModel.UsesIndependentLightingControls == fullEffect
+            || window.ViewModel.LightingShowsPrimaryColor != fullEffect
+            || window.ViewModel.IsKeyboardEffectUnconfirmed == fullEffect
             || window.ViewModel.IsLightingApplyPending || window.ViewModel.CanControlLighting == paused)
         {
             throw new InvalidOperationException("The independent lighting preview state is incomplete.");
@@ -2362,7 +2482,7 @@ public partial class App
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         ServiceStatusSnapshot status = new(
             1, true, false,
-            ["Razer Chroma SDK Service", "RazerAppEngine", "Razer Gaming Services Updater", "razerwdl"],
+            (string[])["Razer Chroma SDK Service", "RazerAppEngine", "Razer Gaming Services Updater", "razerwdl"],
             null, [], "Ready",
             DeviceCapabilities.SafeTargetDefaults() with
             {
@@ -2445,7 +2565,7 @@ public partial class App
         applyStatus.Invoke(window.ViewModel, [status with
         {
             Revision = 2,
-            PotentialControllers = ["Razer Chroma SDK Service"],
+            PotentialControllers = (string[])["Razer Chroma SDK Service"],
         }, false]);
         await WaitForSnapshotLayoutAsync();
         RequireResponsiveSelector(

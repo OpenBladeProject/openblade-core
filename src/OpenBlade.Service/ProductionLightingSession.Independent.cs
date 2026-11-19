@@ -38,7 +38,9 @@ internal sealed partial class ProductionLightingSession
         ArgumentNullException.ThrowIfNull(value);
         if (!value.IsWellFormed || !lightingFactory.Capabilities.SupportsIndependentLightingControls
             || value.Brightness.HasValue && !lightingFactory.Capabilities.SupportsKeyboardBrightness
-            || value.LogoMode is { } logo && !lightingFactory.Capabilities.LogoLightingModes.Contains(logo))
+            || value.LogoMode is { } logo && !lightingFactory.Capabilities.LogoLightingModes.Contains(logo)
+            || value.VaporChamberLightingEnabled.HasValue && !lightingFactory.Capabilities.SupportsVaporChamberLighting
+            || value.TouchpadStatusIndicatorEnabled.HasValue && !lightingFactory.Capabilities.SupportsTouchpadStatusIndicator)
         {
             throw new CapabilityUnavailableException("The requested independent lighting fields are not admitted.");
         }

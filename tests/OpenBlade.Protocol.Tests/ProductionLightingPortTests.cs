@@ -87,6 +87,7 @@ public sealed partial class ProductionLightingPortTests
                 LightingEffect.AmbientAwareness,
                 LightingEffect.AudioMeter,
                 LightingEffect.Sequence,
+                LightingEffect.Fire,
             }.Order(),
             factory.Capabilities.LightingEffects.Order());
         Assert.Equal(
@@ -526,7 +527,7 @@ public sealed partial class ProductionLightingPortTests
     }
 
     [Fact]
-    public async Task Rz090528Reactive_PulseWakeRendersWithPostWakeTime()
+    public async Task Rz090528Reactive_RejectsWiderPulsesAndValidPulseRendersWithPostWakeTime()
     {
         var time = new ManualTimeProvider();
         var session = new LightingSession(initialBrightness: 128);
@@ -545,6 +546,12 @@ public sealed partial class ProductionLightingPortTests
                 ReactiveLightingDuration.Medium),
             default);
 
+        foreach (byte slot in new byte[] { Rz090528MatrixFrame.SlotCount, ReactiveKeyPulse.MaximumMatrixSlot })
+        {
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+                port.PulseReactiveKeyAsync(new ReactiveKeyPulse(slot), default));
+        }
+        await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(94), default); // Legacy no-op.
         time.Advance(TimeSpan.FromMilliseconds(100));
         await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(59), default);
         for (int attempt = 0;
@@ -1938,9 +1945,9 @@ public sealed partial class ProductionLightingPortTests
         Assert.Equal(
             [
                 (0x03, 0x83, "010500"),
+                (0x00, 0x86, "000000"),
                 (0x03, 0x03, "0105C5"),
                 (0x03, 0x83, "010500"),
-                (0x00, 0x86, "000000"),
                 (0x00, 0x84, "0000"),
                 (0x03, 0x0A, "0500"),
             ],
@@ -2028,7 +2035,7 @@ public sealed partial class ProductionLightingPortTests
     }
 
     [Fact]
-    public async Task TransitionFailureReportsSanitizedCommandAndValidationCategory()
+    public async Task LayoutReadFailureReportsSanitizedCommandAndValidationCategory()
     {
         var session = new LightingSession(initialBrightness: 0xC5)
         {
@@ -2050,14 +2057,15 @@ public sealed partial class ProductionLightingPortTests
         var writer = new MatrixWriter();
         await using var port = CreatePort(session, writer, admitted: true);
 
-        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+        IOException error = await Assert.ThrowsAnyAsync<IOException>(() =>
             port.SetLightingAsync(
                 LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 77),
                 default));
 
-        Assert.Equal(
-            "The lighting command 00/86 failed (ProtocolFailure, PayloadValidator).",
-            error.Message);
+        Assert.Contains("00/86", error.Message);
+        Assert.Empty(writer.Reports);
+        Assert.DoesNotContain(session.Commands,
+            command => command.ClassId == 0x03 && command.CommandId is 0x03 or 0x0A);
     }
 
     [Theory]
@@ -2507,6 +2515,25 @@ public sealed partial class ProductionLightingPortTests
 
         await port.SetPlaybackMuteIndicatorAsync(muted: true, default);
         Assert.Equal(new MatrixRgb(0xFF, 0, 0), writer.Reports[^1].Frame[2]);
+    }
+
+    [Fact]
+    public async Task ReactivePulse_RejectsWiderLayoutBeforeQueueingAndKeepsRendererUsable()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        await port.SetLightingAsync(LightingSettingsFactory.Reactive(
+            new RgbColor(0x12, 0x34, 0x56), 100, ReactiveLightingDuration.Medium), default);
+        foreach (byte slot in new byte[] { 102, 113 })
+        {
+            BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+                port.PulseReactiveKeyAsync(new ReactiveKeyPulse(slot), default));
+            Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        }
+        await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(19), default);
+        await writer.WaitForWriteCountAsync(2, TimeSpan.FromSeconds(2));
+        Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[19]);
     }
 
     [Fact]
@@ -3584,6 +3611,8 @@ public sealed partial class ProductionLightingPortTests
 
         internal byte[]? Transition84Response { get; set; }
 
+        internal byte[] Transition86Response { get; set; } = [0x01, 0x00, 0x00];
+
         internal byte[]? BrightnessResponse { get; set; }
 
         internal Exception? DisposeFailure { get; init; }
@@ -3699,7 +3728,7 @@ public sealed partial class ProductionLightingPortTests
                     [command.Arguments.Span[0], 0x04, LogoEffect],
                 (0x03, 0x00) => SetLogoState(command.Arguments.Span),
                 (0x03, 0x02) => SetLogoEffect(command.Arguments.Span),
-                (0x00, 0x86) => [0x01, 0x00, 0x00],
+                (0x00, 0x86) => Transition86Response,
                 (0x00, 0x04) => SetDeviceMode(command.Arguments.Span),
                 (0x00, 0x84) => Transition84Response
                     ?? DeviceModeProtocol.CreateSetArguments(

@@ -80,6 +80,48 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task DesiredStateAppliesExplicitKeyboardEffectBeforeIndependentFields()
+    {
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsIndependentLightingControls = true,
+            SupportsKeyboardBrightness = true,
+            SupportsVaporChamberLighting = true,
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+                LightingEffect.Spectrum,
+            },
+        };
+        device.State = device.State with
+        {
+            IndependentLighting = new(50, null, VaporChamberLightingEnabled: false),
+        };
+        LightingSettings requested = LightingSettingsFactory.SpectrumCycling(70) with
+        {
+            ControlsKeyboardEffect = true,
+            IndependentControls = new(65, null, VaporChamberLightingEnabled: true),
+        };
+        DesiredDeviceState desired = CreateDesiredState() with
+        {
+            Lighting = new ResolvedSetting<LightingSettings>(requested, SettingValueSource.PowerProfile),
+        };
+
+        FullTransitionApplyOutcome outcome = await new ControlCoordinator(device)
+            .ApplyDesiredStateOutcomeAsync(desired, default);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Lighting.Status);
+        Assert.Contains("SetLighting", device.Calls);
+        Assert.Contains("SetIndependentLighting", device.Calls);
+        Assert.True(device.Calls.IndexOf("SetLighting") < device.Calls.IndexOf("SetIndependentLighting"));
+        Assert.Equal(requested.Effect, device.State.Lighting!.Effect);
+        Assert.Equal<byte?>(65, device.State.IndependentLighting!.Brightness);
+        Assert.True(device.State.IndependentLighting.VaporChamberLightingEnabled);
+    }
+
+    [Fact]
     public async Task FixedFans_PostSetterReadFailure_KeepsValidatedWriteApplied()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
@@ -1140,7 +1182,7 @@ public sealed class ControlCoordinatorTests
 
     [Theory]
     [InlineData(PerformancePreset.Custom, FanMode.Fixed)]
-    [InlineData(PerformancePreset.Silent, FanMode.ManualCurve)]
+    [InlineData(PerformancePreset.Custom, FanMode.ManualCurve)]
     public async Task PresetRangedFans_RejectUnadmittedPerformanceModePair(
         PerformancePreset performance,
         FanMode mode)
@@ -1164,6 +1206,130 @@ public sealed class ControlCoordinatorTests
             CancellationToken.None);
 
         Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.Empty(device.FanControlWrites);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Silent, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Silent, FanMode.Fixed)]
+    [InlineData(PerformancePreset.Custom, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Custom, FanMode.Fixed)]
+    public async Task PresetRangedCurveEntry_PreservesConfirmedPresetWithoutDefaultWrites(
+        PerformancePreset performance, FanMode previous)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            ReportsPerformanceWithManualFans = true,
+            SupportsDirectManualFanTransitions = false,
+            FanSpeedRange = new(2200, 3800, 100),
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2200, 3800, 100),
+                [performance] = new(3700, 5300, 100),
+            },
+        };
+        device.State = device.State with
+        {
+            Performance = performance,
+            Fans = previous,
+            HyperBoostActive = false,
+        };
+        var coordinator = new ControlCoordinator(device);
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlTransitionOutcomeAsync(
+            new(previous, 5300, ManualFanCurve.Default),
+            new(FanMode.ManualCurve, 5300, ManualFanCurve.Default),
+            performance, null, default);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.Equal([FanMode.ManualCurve], device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
+        Assert.Equal(performance, device.State.Performance);
+    }
+
+    [Theory]
+    [InlineData(0x029D, PerformancePreset.Balanced)]
+    [InlineData(0x029D, PerformancePreset.Silent)]
+    [InlineData(0x029D, PerformancePreset.Custom)]
+    [InlineData(0x029F, PerformancePreset.Balanced)]
+    [InlineData(0x029F, PerformancePreset.Silent)]
+    [InlineData(0x029F, PerformancePreset.Custom)]
+    [InlineData(0x029F, PerformancePreset.Performance)]
+    public async Task GlobalSourceCurveEntryKeepsExistingFixedPresets(int productId, PerformancePreset performance)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
+        device.Capabilities = ExperimentalBladePort.CreateCapabilities(model, enabled: true);
+        device.State = device.State with
+        {
+            Performance = performance,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        device.State = device.State with
+        {
+            CustomPerformance = performance == PerformancePreset.Custom ? CustomPerformanceSettings.Default : null,
+        };
+        var coordinator = new ControlCoordinator(device);
+        ScopedApplyOutcome curve = await coordinator.ApplyFanControlTransitionOutcomeAsync(
+            FanControlSettings.FromLegacy(FanMode.Automatic),
+            new(FanMode.ManualCurve, 5000, ManualFanCurve.Default), performance,
+            device.State.CustomPerformance, default);
+        Assert.Equal(ControlResultStatus.Applied, curve.Result.Status);
+        Assert.Empty(device.PerformanceWrites);
+        Assert.Equal(performance == PerformancePreset.Custom ? CustomPerformanceSettings.Default : null,
+            device.State.CustomPerformance);
+        Assert.Equal([FanMode.ManualCurve], device.FanControlWrites);
+        device.State = device.State with { Fans = FanMode.Automatic };
+        ScopedApplyOutcome fixedResult = await coordinator.ApplyFanControlOutcomeAsync(
+            new(FanMode.Fixed, 5000, ManualFanCurve.Default), default);
+        Assert.Equal(ControlResultStatus.Applied, fixedResult.Result.Status);
+        Assert.Equal(performance, device.State.Performance);
+    }
+
+    [Theory]
+    [InlineData(0x029D)]
+    [InlineData(0x029F)]
+    public async Task GlobalSourceCurveEntryRejectsRequestedPresetDriftBeforeAnyWrite(int productId)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = ExperimentalBladePort.CreateCapabilities(
+            ExperimentalBladeModels.All.Single(item => item.ProductId == productId), enabled: true);
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Silent,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        ScopedApplyOutcome outcome = await new ControlCoordinator(device).ApplyFanControlTransitionOutcomeAsync(
+            FanControlSettings.FromLegacy(FanMode.Automatic),
+            new(FanMode.ManualCurve, 5000, ManualFanCurve.Default),
+            PerformancePreset.Balanced, null, default);
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.False(outcome.WriteAttempted);
+        Assert.Empty(device.FanControlWrites);
+        Assert.Empty(device.PerformanceWrites);
+        Assert.Equal(PerformancePreset.Silent, device.State.Performance);
+    }
+
+    [Theory]
+    [InlineData(0x029D)]
+    [InlineData(0x029F)]
+    public async Task GlobalSourceCurveMaintenanceRejectsFreshUnexpectedPreset(int productId)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
+        device.Capabilities = ExperimentalBladePort.CreateCapabilities(model, enabled: true);
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Silent,
+            Fans = FanMode.Fixed,
+            HyperBoostActive = false,
+        };
+        ScopedApplyOutcome outcome = await new ControlCoordinator(device).ApplyFanTargetsOutcomeAsync(
+            PerformancePreset.Balanced, 4000, 4000, default);
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.False(outcome.WriteAttempted);
         Assert.Empty(device.FanControlWrites);
     }
 
@@ -3275,6 +3441,8 @@ public sealed class ControlCoordinatorTests
 
         public int LightingSetCalls { get; private set; }
 
+        public int IndependentLightingSetCalls { get; private set; }
+
         public int StateReadCalls { get; private set; }
 
         public int LightingStateReadCalls { get; private set; }
@@ -3649,6 +3817,29 @@ public sealed class ControlCoordinatorTests
             if (ShouldConfirm(DeviceSubsystem.Lighting))
             {
                 State = State with { Lighting = value };
+            }
+
+            AfterSetter?.Invoke(DeviceSubsystem.Lighting);
+            return Task.CompletedTask;
+        }
+
+        public Task SetIndependentLightingAsync(
+            IndependentLightingSettings value,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls.Add("SetIndependentLighting");
+            IndependentLightingSetCalls++;
+            if (ShouldConfirm(DeviceSubsystem.Lighting))
+            {
+                State = State with
+                {
+                    IndependentLighting = new(
+                        value.Brightness ?? State.IndependentLighting?.Brightness,
+                        value.LogoMode ?? State.IndependentLighting?.LogoMode,
+                        value.VaporChamberLightingEnabled ?? State.IndependentLighting?.VaporChamberLightingEnabled,
+                        value.TouchpadStatusIndicatorEnabled ?? State.IndependentLighting?.TouchpadStatusIndicatorEnabled),
+                };
             }
 
             AfterSetter?.Invoke(DeviceSubsystem.Lighting);

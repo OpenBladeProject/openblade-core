@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "model": "RZ09-0330",
+  "scope": "Offline, read-only exact BIOS 1.06 and CH551 EC 1.01 inspection; no device access or updater execution",
+  "inputs": [
+    {
+      "bytes": 9157776,
+      "sha256": "56fec28b559b735d6e366a23f9e4e8b4ef3a2d4ac7af3370b538a791b101702e",
+      "file": "RZ09-0330-BIOS.exe",
+      "sourceUrl": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%E2%80%9D%20Advanced%20%282020%29%20%7C%20RZ09-0330x/RazerUpdater_v1.1.1.2_CH551-BIOSv0106.exe"
+    },
+    {
+      "bytes": 598032,
+      "sha256": "3ba19f72e3a53d88d2a8d1c2aa5c6e9a4b907e85e61a0b2803d5b9ca6cb78d44",
+      "file": "RZ09-0330-EC.exe",
+      "sourceUrl": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20Advanced%20%282020%29%20/RazerUpdater_v1.1.1.2_CH551-ECv0101.exe"
+    },
+    {
+      "bytes": 16777216,
+      "sha256": "f670055d9c6bf9b5f02afe323cd4e313b71e433bfdcd6ef994f026a26a028744",
+      "file": "Charlotte5_0106.bin"
+    },
+    {
+      "bytes": 2965504,
+      "sha256": "b1c0fdee5a5a6961e51b06ebff73dfef003c1d34bfba83bf2e6c9c41ffed69d8",
+      "file": "Charlotte5_0106_FWU.bin"
+    },
+    {
+      "bytes": 262144,
+      "sha256": "0487bd1357b6ac6c2c18b8e514b6a1098cb8e198b534e588045770a8c7140689",
+      "file": "CH551_EC_01_01.bin"
+    }
+  ],
+  "conclusion": "The reviewed BIOS/EC do not yet establish a keyboard-effect getter or embedded keyboard-MCU payload. EC firmware does contain a real Razer USB command implementation, but its reviewed descriptor is 1532:F003; its class 03 branch echoes the staged report with success status without reading lighting state. This cannot supply independent readback for the admitted keyboard 1532:0253.",
+  "bios": {
+    "extraction": "83 raw/freeform or relevant ACPI/EC FFS GUIDs, 231 extracted section binaries; full UEFI report retained. Initial recursive extraction exceeded Windows path length, so selected FFS bodies were extracted into flat GUID-numbered folders.",
+    "acpi_tables": 75,
+    "dsdt": {
+      "file": "DSDT_5a3b57f83800.aml",
+      "bytes": 281877,
+      "sha256": "5a3b57f8380093de8b91a58dce2f67f227b897fd9c37e999002c568fd4019593"
+    },
+    "ec_access": "DSDT lines 62244-62375: SystemIO 0x300/0x301 mailbox and 0x302/0x303 secondary pair; BMCR/BMRD/BMWD, RECR/RECW indirect EC operations. No established lighting effect/color state semantics.",
+    "razer_acpi_module": {
+      "guid": "48E0B361-F517-41E2-870C-73C84475B52C",
+      "bytes": 9216,
+      "sha256": "2a91b45b011c34f4a1a26cb46b144afacc30c6a2880f9db99fdf8d28b02f9820",
+      "analysis": "RazerAcpiDxe.c: function 0x14C0 initialization reads EC mailbox and transfers bounded data into allocated ACPI/NVS-related storage. No keyboard-lighting effect command or independent getter established."
+    },
+    "update_components": "FlashAFUWin.bat calls AFU on Charlotte5_0106.bin and FWUpdLcl on Charlotte5_0106_FWU.bin; latter is separate Intel ME update. No keyboard-MCU updater target identified in reviewed package metadata/script."
+  },
+  "ec": {
+    "architecture": "Andes NDS32, little-endian data, big-endian instruction encoding; base/file offset zero; GP set to 0x80000 at 0x3002/0x3006",
+    "identity_string": {
+      "offset": "0x8E",
+      "text": "UUITE8390EC-V01.01"
+    },
+    "usb_descriptor": {
+      "offset": "0x26B38",
+      "vid": "1532",
+      "pid": "F003",
+      "consumer": "0x7454 loads descriptor address"
+    },
+    "report_ingress": {
+      "function": "0x6EEC",
+      "set_path": "0x6F6C-0x6F9C: Feature report length >=90, copy 90 bytes to GP+0x1410, mark GP+0x1326 pending, call 0xF7E8",
+      "get_path": "0x6F06-0x6F44: return 90 bytes from same GP+0x1410 buffer; while busy returns error"
+    },
+    "dispatch": {
+      "function": "0xF7E8",
+      "class_offset": "report[6], GP+0x1416",
+      "table_offset": "0xF830",
+      "class_00": "0xF83E -> 0xF5C4",
+      "class_0d": "0xF844 -> 0xF6E2 (fan/performance-related bodies)",
+      "class_03": "0xF850, no command-specific handler; preassigned status 2 is preserved, checksum recomputed and pending cleared",
+      "class_0f": "outside class<0x0E admission; status 3",
+      "implication": "03/0A, 03/8A, 03/83 etc on this reviewed EC route have no effect-state load/store established; success-looking response would be staged request echo, not independent lighting readback"
+    },
+    "indicator_string": "0x267C0 keyboard led ,usb_Indicators=%d is consumed by ordinary one-byte HID OUTPUT report at 0x6F54-0x6F66, not evidence of RGB effect state.",
+    "mailbox": "0x2198 dispatches mapped A0/A1 at 0x2374 onwards; generic peripheral transfers from 0x22B8->0x56E0 and 0x22D4->0x5500 exist but exact keyboard downstream identity/address/lighting schema is not established.",
+    "payload_scan": "No validated embedded keyboard MCU image identified; heuristic found no plausible aligned Cortex-M vector table in EC. This is architecture-specific screening, not proof of payload absence.",
+    "hid_report_descriptor": {
+      "offset": "0x26D48",
+      "bytes": 263,
+      "featureReportId": "0x80",
+      "declaredFeatureBytes": 1,
+      "featureDeclaration": "0x26E35..0x26E4E",
+      "boundary": "A raw 90-byte firmware control handler does not establish the Windows 91-byte keyboard HID feature descriptor."
+    },
+    "local_controller_ownership": {
+      "calls": [
+        "0x7314",
+        "0x7242",
+        "0x71D2"
+      ],
+      "registerRegion": "0xF02F40",
+      "meaning": "Local EC USB controller, not an established keyboard 0253 endpoint"
+    }
+  },
+  "limitations": [
+    "Descriptor/source review does not prove current live enumeration, bytes or keyboard controller wiring.",
+    "User diagnostic reports EC1.00, whereas inspected released image is EC1.01; BIOS1.06 metadata is not image attestation.",
+    "Selected raw/freeform sections and ACPI tables were inspected, not every machine instruction or every possible packed/encrypted payload. Dynamic ACPI data transfer exists in RazerAcpiDxe.",
+    "No exact 1532:0253 effect/color readback consumer or keyboard-MCU bridge contract has been found in this bounded review.",
+    "Do not infer that a missing standalone MCU download makes full keyboard support impossible; missing exact getter/target evidence remains the concrete gap."
+  ],
+  "reviewedAt": "2026-11-13",
+  "independentReview": "Separate source review confirmed the consumed 1532:F003 descriptor, descriptor geometry, class03 echo path, class0F rejection and local EC USB ownership. No hardware access."
+}

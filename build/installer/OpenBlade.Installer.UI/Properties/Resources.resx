@@ -246,17 +246,8 @@
   <data name="Setup failed" xml:space="preserve">
     <value>Setup failed</value>
   </data>
-  <data name="Setup failed with 0x{0:X8}." xml:space="preserve">
-    <value>Setup failed with 0x{0:X8}.</value>
-  </data>
-  <data name="Setup failed: {0}" xml:space="preserve">
-    <value>Setup failed: {0}</value>
-  </data>
   <data name="Setup progress" xml:space="preserve">
     <value>Setup progress</value>
-  </data>
-  <data name="Setup was cancelled and the previous state was restored." xml:space="preserve">
-    <value>Setup was cancelled and the previous state was restored.</value>
   </data>
   <data name="Show _details" xml:space="preserve">
     <value>Show _details</value>
@@ -314,5 +305,32 @@
   </data>
   <data name="Setup completed successfully. Restart Windows to finish driver setup. CPU temperature sensing may remain unavailable until then." xml:space="preserve">
     <value>Setup completed successfully. Restart Windows to finish driver setup. CPU temperature sensing may remain unavailable until then.</value>
+  </data>
+  <data name="Checking the CPU temperature driver…" xml:space="preserve">
+    <value>Checking the CPU temperature driver…</value>
+  </data>
+  <data name="Setup was cancelled. See the setup log for the final installation state." xml:space="preserve">
+    <value>Setup was cancelled. See the setup log for the final installation state.</value>
+  </data>
+  <data name="Error code: 0x{0:X8}" xml:space="preserve">
+    <value>Error code: 0x{0:X8}</value>
+  </data>
+  <data name="Failed step: {0}" xml:space="preserve">
+    <value>Failed step: {0}</value>
+  </data>
+  <data name="Setup failed while running {0}." xml:space="preserve">
+    <value>Setup failed while running {0}.</value>
+  </data>
+  <data name="Setup failed: {0}" xml:space="preserve">
+    <value>Setup failed: {0}</value>
+  </data>
+  <data name="Additional cleanup or recovery error: {0}" xml:space="preserve">
+    <value>Additional cleanup or recovery error: {0}</value>
+  </data>
+  <data name="Preparing setup…" xml:space="preserve">
+    <value>Preparing setup…</value>
+  </data>
+  <data name="Verifying OpenBlade files…" xml:space="preserve">
+    <value>Verifying OpenBlade files…</value>
   </data>
 </root>

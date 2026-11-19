@@ -114,7 +114,14 @@ internal sealed record ProductionLightingSemanticAdmissionEvidence(
     ProductionLightingLogoEvidence Logo,
     ProductionLightingMatrixEvidence Matrix,
     LightingEffect[] SupportedEffects,
-    LightingRefreshRate[] SupportedRefreshRates);
+    LightingRefreshRate[] SupportedRefreshRates,
+    ProductionLightingSoftwareEffectEvidence[] SoftwareEffects);
+
+internal sealed record ProductionLightingSoftwareEffectEvidence(
+    LightingEffect Effect,
+    string Basis,
+    string PhysicalValidation,
+    string Implementation);
 
 internal sealed record ProductionLightingControlEnvelopeEvidence(
     int ReportLength,
@@ -143,6 +150,8 @@ internal sealed record ProductionLightingMatrixEvidence(
     int FeatureReportLength,
     int SlotCount,
     int[] HoleSlots,
+    string SourceLayoutSha256,
+    string RegionalProjectionSha256,
     byte KnownAnswerTransactionId,
     string KnownAnswerColor,
     string KnownAnswerFeatureReportSha256);
@@ -162,7 +171,7 @@ internal static class ProductionLightingEvidenceSource
         "5177FA9F6F91D96C9C34C5506CDA8EDC0A86EE5B5EEFA5F4322F4E4633C23521";
 
     private const string ApprovedSemanticAdmissionFixtureSha256 =
-        "96A2768F91726EA6C5C149423AD5E7538E1A9083FD6A0760711C30D9E398E858";
+        "9F70CE8889361D153D50BDAA14E414A71CEDEF54BD3D5FE4B6EE612BE3DEED31";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -275,6 +284,8 @@ internal static class ProductionLightingEvidenceSource
                 Pid02E0MatrixReportCodec.FeatureReportBufferLength,
                 Pid02E0MatrixFrame.SlotCount,
                 Pid02E0MatrixLayout.CapturedHoleSlots.ToArray(),
+                Blade16KeyboardLightingLayout.SourceFixtureSha256,
+                Pid02E0RegionalFrameProjection.SemanticFingerprint(),
                 transactionId,
                 $"{knownColor.Red:X2}{knownColor.Green:X2}{knownColor.Blue:X2}",
                 Convert.ToHexString(SHA256.HashData(knownReport))),
@@ -290,10 +301,17 @@ internal static class ProductionLightingEvidenceSource
                 LightingEffect.Wheel,
                 LightingEffect.Ripple,
                 LightingEffect.AmbientAwareness,
+                // Host-software Fire reuses the same exact-model frame contract.
+                // The original physical-capture action list remains unchanged.
+                LightingEffect.Fire,
             ],
             [
                 LightingRefreshRate.ThirtyHz,
                 LightingRefreshRate.SixtyHz,
+            ],
+            [
+                new(LightingEffect.Fire, "SoftwarePatternWithoutPhysicalValidation",
+                    "Pending", nameof(SoftwareFirePattern)),
             ]);
     }
 
@@ -316,11 +334,14 @@ internal static class ProductionLightingEvidenceSource
         && approved.Matrix.FeatureReportLength == current.Matrix.FeatureReportLength
         && approved.Matrix.SlotCount == current.Matrix.SlotCount
         && approved.Matrix.HoleSlots.SequenceEqual(current.Matrix.HoleSlots)
+        && approved.Matrix.SourceLayoutSha256 == current.Matrix.SourceLayoutSha256
+        && approved.Matrix.RegionalProjectionSha256 == current.Matrix.RegionalProjectionSha256
         && approved.Matrix.KnownAnswerTransactionId == current.Matrix.KnownAnswerTransactionId
         && approved.Matrix.KnownAnswerColor == current.Matrix.KnownAnswerColor
         && approved.Matrix.KnownAnswerFeatureReportSha256
             == current.Matrix.KnownAnswerFeatureReportSha256
         && approved.SupportedEffects.SequenceEqual(current.SupportedEffects)
+        && approved.SoftwareEffects.SequenceEqual(current.SoftwareEffects)
         && approved.SupportedRefreshRates.SequenceEqual(
             current.SupportedRefreshRates);
 

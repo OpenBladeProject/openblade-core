@@ -6,6 +6,16 @@ public sealed partial class SourceReviewedBladeModelTests
 {
     public static TheoryData<int> Products => new() { 0x02B6, 0x02B7, 0x02B8, 0x02C7 };
 
+    [Fact]
+    public void ThermalCommandEvidence_IsIncludedInTheModelSourcePins()
+    {
+        foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All.Where(model => model.ThermalPolicy is not null))
+        {
+            SourceReviewedThermalPolicy policy = model.ThermalPolicy!;
+            Assert.Contains(policy.CommandEvidenceSource, policy.EvidenceSources);
+        }
+    }
+
     private static ExperimentalBladeModel Model(int product) =>
         ExperimentalBladeModels.All.Single(model => model.ProductId == product);
 
@@ -20,15 +30,29 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Equal(product == 0x02C7, capabilities.PerformancePresets.Contains(PerformancePreset.MaximumPower));
         Assert.Equal(product == 0x02C7, capabilities.PerformancePresets.Contains(PerformancePreset.BatterySaver));
         Assert.DoesNotContain(PerformancePreset.Performance, capabilities.PerformancePresets);
-        Assert.Equal(new[] { FanMode.Automatic }, capabilities.FanModes);
-        Assert.Null(capabilities.FanSpeedRange);
+        Assert.Equal(new[] { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve }.Order(), capabilities.FanModes.Order());
+        Assert.NotNull(capabilities.FanSpeedRange);
         Assert.Equal(product == 0x02B7, capabilities.HasFanStopSourceEvidence);
         Assert.False(capabilities.HasFanStopTrialEvidence);
         Assert.False(capabilities.SupportsFanStop); // The live guardian projects fresh availability.
-        Assert.Empty(capabilities.LightingEffects);
-        Assert.Empty(capabilities.LogoLightingModes);
-        Assert.False(capabilities.SupportsKeyboardBrightness);
-        Assert.False(capabilities.SupportsUniformLightingFrames);
+        if (product == 0x02B6)
+        {
+            Assert.Empty(capabilities.LightingEffects);
+        }
+        else
+        {
+            LightingEffect[] effects = product == 0x02C7
+                ? Enum.GetValues<LightingEffect>()
+                : product == 0x02B7
+                ? [LightingEffect.Off, LightingEffect.Breathing, LightingEffect.Wave]
+                : [LightingEffect.Off, LightingEffect.Static, LightingEffect.Breathing, LightingEffect.Wave];
+            Assert.Equal(effects.Order(),
+                capabilities.LightingEffects.Order());
+        }
+        Assert.Equal(3, capabilities.LogoLightingModes.Count);
+        Assert.True(capabilities.SupportsKeyboardBrightness);
+        Assert.True(capabilities.SupportsIndependentLightingControls);
+        Assert.Equal(product == 0x02C7, capabilities.SupportsUniformLightingFrames);
         Assert.Null(capabilities.HyperBoostAccess);
         Assert.Null(capabilities.ThxAudio);
         Assert.Empty(capabilities.OneShotLaptopControls);
@@ -297,12 +321,12 @@ public sealed partial class SourceReviewedBladeModelTests
         await using var port = Create(product, session);
         BladeWriteException preset = await Assert.ThrowsAsync<BladeWriteException>(
             () => port.SetPerformanceAsync(PerformancePreset.Turbo, default));
-        Assert.Contains("dynamic fan ranges", preset.Message);
+        Assert.Contains("fresh range", preset.Message);
         Assert.Equal(WriteSubmissionState.KnownNotApplied, preset.SubmissionState);
         await Assert.ThrowsAsync<BladeWriteException>(
             () => port.SetCustomPerformanceAsync(new(CustomPerformanceLevel.High, CustomPerformanceLevel.High), default));
         Assert.DoesNotContain(session.Commands, command => command.CommandId < 0x80);
-        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanTargetsAsync(4500, 4500, default));
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanTargetsAsync(1000, 1000, default));
     }
 
     [Theory]
@@ -347,12 +371,23 @@ public sealed partial class SourceReviewedBladeModelTests
         await using var port = Create(product, session);
         ConfirmedDeviceState recovered = await port.ReadRecoveryStateAsync(default);
         Assert.Null(recovered.Lighting);
-        Assert.Null(recovered.LogoLighting);
+        if (product == 0x02B6)
+        {
+            Assert.Null(recovered.LogoLighting);
+            Assert.Equal(new IndependentLightingSettings(50, LogoLightingMode.Static), recovered.IndependentLighting);
+        }
+        else
+        {
+            Assert.Equal(LogoLightingMode.Static, recovered.LogoLighting);
+        }
         Assert.NotNull(recovered.Battery);
         Assert.Null(recovered.Battery.TemporaryFullCharge);
         Assert.All(session.Commands, command =>
             Assert.True(command.ClassId == 0x0D && command.CommandId is 0x82 or 0x87
-                || command.ClassId == 0x07 && command.CommandId is 0x92 or 0x8F));
+                || command.ClassId == 0x07 && command.CommandId is 0x92 or 0x8F
+                || command.ClassId == 0x03 && command.CommandId is 0x80 or 0x82 or 0x83
+                || product == 0x02C7 && command.ClassId == 0 && command.CommandId == 0xD9
+                || command.ClassId == 0x0F && command.CommandId == 0x82));
         if (product == 0x02C7)
         {
             Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x8F);
@@ -361,7 +396,7 @@ public sealed partial class SourceReviewedBladeModelTests
 
     [Theory]
     [MemberData(nameof(Products))]
-    public async Task LostIdentityAndLimitedAdapter_BlockBeforeSubmission(int product)
+    public async Task LostIdentityAndContradictoryBatteryAdapter_BlockBeforeSubmission(int product)
     {
         var session = new Session { Mode = 0 };
         await using (var port = Create(product, session, identity: () => false))
@@ -438,9 +473,10 @@ public sealed partial class SourceReviewedBladeModelTests
     }
 
     private static ExperimentalBladePort Create(int product, Session session,
-        ExperimentalFeaturesPolicy? policy = null, Func<bool>? identity = null, Func<PowerSource>? power = null) =>
+        ExperimentalFeaturesPolicy? policy = null, Func<bool>? identity = null, Func<PowerSource>? power = null,
+        Func<TimeSpan, CancellationToken, Task>? confirmationDelay = null) =>
         new(session, new(), Model(product), policy ?? new(Model(product)), identity ?? (() => true),
-            power ?? (() => PowerSource.PluggedIn));
+            power ?? (() => PowerSource.PluggedIn), confirmationDelay ?? ((_, _) => Task.CompletedTask));
 
     private static void AssertFreshAdapterBeforeSetters(Session session)
     {
@@ -459,16 +495,25 @@ public sealed partial class SourceReviewedBladeModelTests
     {
         internal byte Mode;
         internal byte Manual;
+        internal byte SecondManual;
+        internal bool IndependentFanModeFlags;
         internal byte Cpu;
         internal byte Gpu;
         internal byte Flags;
         internal byte Brightness = 128;
         internal byte LogoOn = 1;
         internal byte LogoEffect;
+        internal byte[] McuLighting = [0, 5, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        internal bool EchoLightingAck;
+        internal bool EchoThermalAck;
+        internal byte SavedBrightness = 128;
+        internal bool McuCustomOverlay;
+        internal bool McuStaticEqualityShortcut;
         internal bool RejectLightingQuery;
         internal bool RetireOnQueryFailure;
         private RazerCommandSessionDisposition disposition;
         internal bool RejectLogoQuery;
+        internal bool RejectVaporChamberQuery;
         internal byte Fan1 = 45;
         internal byte Fan2 = 45;
         internal byte[] DynamicFanRange = [0, 0, 0, 0, 0, 0, 37, 0, 45, 0, 53, 0];
@@ -477,9 +522,16 @@ public sealed partial class SourceReviewedBladeModelTests
         internal byte[] Adapter = [0x11, 0x11];
         internal bool IgnoreWrites;
         internal bool EmptyBatteryAck;
+        internal byte[]? BatteryAck;
+        internal Queue<byte[]> BatteryReadbacks = new();
         internal bool RejectBatteryQuery;
         internal bool RejectAdapterQuery;
+        internal HidSessionResult<ReadOnlyMemory<byte>>? AdapterResult;
+        internal bool AdapterResponseAvailable;
         internal Action<RazerCommandSpec>? BeforeSubmission;
+        internal List<(byte ClassId, byte CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
+        public void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome) =>
+            RetainedQueryFailures.Add((classId, commandId, outcome));
         internal List<RazerCommandSpec> Commands { get; } = [];
         internal List<int> Transactions { get; } = [];
         public RazerCommandSessionDisposition Disposition => disposition;
@@ -497,11 +549,17 @@ public sealed partial class SourceReviewedBladeModelTests
             }
             Commands.Add(command);
             Transactions.Add(assignTransactionId().TransactionId);
+            if (command.ClassId == 0x07 && command.CommandId == 0x8C && AdapterResult is { } adapterResult)
+            {
+                return Task.FromResult(adapterResult);
+            }
             if (RejectBatteryQuery && command.ClassId == 0x07 && command.CommandId == 0x92
                 || RejectAdapterQuery && command.ClassId == 0x07 && command.CommandId == 0x8C
                 || RejectDynamicFanRange && command.ClassId == 0x0D && command.CommandId == 0x83
                 || RejectLightingQuery && command.ClassId == 0x03 && command.CommandId >= 0x80
-                || RejectLogoQuery && command.ClassId == 0x03 && command.CommandId is 0x80 or 0x82)
+                || RejectLogoQuery && command.ClassId == 0x03 && command.CommandId is 0x80 or 0x82
+                || RejectVaporChamberQuery && command.ClassId == 0x03 && command.CommandId == 0x80
+                    && command.Arguments.Span[1] == 38)
             {
                 if (RetireOnQueryFailure)
                 {
@@ -512,18 +570,23 @@ public sealed partial class SourceReviewedBladeModelTests
             byte[] arguments = command.Arguments.ToArray();
             byte[] payload = (command.ClassId, command.CommandId) switch
             {
-                (0x03, 0x83) => [1, 5, Brightness],
-                (0x03, 0x80) => [0, 4, LogoOn],
+                (0x03, 0x83) => [arguments[0], 5, Brightness],
+                (0x03, 0x80) => arguments[1] == 38 ? [0, 38, 1] : [0, 4, LogoOn],
+                (0x00, 0xD9) => [0, 1, 1],
                 (0x03, 0x82) => [0, 4, LogoEffect],
-                (0x03, 0x00) or (0x03, 0x02) or (0x03, 0x03) => [],
+                (0x03, 0x00) or (0x03, 0x02) or (0x03, 0x03) => EchoLightingAck ? arguments : [],
+                (0x0F, 0x82) => McuLighting.ToArray(),
+                (0x0F, 0x02) => arguments,
+                (0x03, 0x0A) or (0x03, 0x0B) => [],
                 (0x07, 0x8C) => Adapter,
                 (0x07, 0x8F) => [Flags],
-                (0x07, 0x92) => [Battery],
-                (0x0D, 0x82) => [1, arguments[1], Mode, Manual],
-                (0x0D, 0x87) => [1, arguments[1], arguments[1] == 1 ? Cpu : Gpu],
+                (0x07, 0x92) => BatteryReadbacks.TryDequeue(out byte[]? readback) ? readback : [Battery],
+                (0x07, 0x12) => BatteryAck ?? arguments,
+                (0x0D, 0x82) => [arguments[0], arguments[1], Mode, IndependentFanModeFlags && arguments[1] == 2 ? SecondManual : Manual],
+                (0x0D, 0x87) => [arguments[0], arguments[1], arguments[1] == 1 ? Cpu : Gpu],
                 (0x0D, 0x81) => [arguments[0], arguments[1], arguments[1] == 1 ? Fan1 : Fan2],
                 (0x0D, 0x83) => DynamicFanRange,
-                (0x07, 0x12) or (0x07, 0x0F) or (0x0D, 0x02) or (0x0D, 0x07) or (0x0D, 0x01) => arguments,
+                (0x07, 0x0F) or (0x0D, 0x02) or (0x0D, 0x07) or (0x0D, 0x01) => arguments,
                 _ => throw new InvalidOperationException($"Unexpected command {command.ClassId:X2}/{command.CommandId:X2}"),
             };
             if (!IgnoreWrites)
@@ -533,9 +596,56 @@ public sealed partial class SourceReviewedBladeModelTests
                     case (0x03, 0x03): Brightness = arguments[2]; break;
                     case (0x03, 0x02): LogoEffect = arguments[2]; break;
                     case (0x03, 0x00): LogoOn = arguments[2]; break;
+                    case (0x03, 0x0A):
+                        byte mode = arguments[0] switch { 0 => 0, 6 => 1, 4 => 3, 3 => 2, 1 => 4, _ => throw new InvalidOperationException() };
+                        McuLighting = [0, 5, mode, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+                        if (mode == 1)
+                        {
+                            McuLighting[5] = 1;
+                            arguments.AsSpan(1, 3).CopyTo(McuLighting.AsSpan(6));
+                        }
+                        if (mode == 2 && arguments[1] is 1 or 2)
+                        {
+                            McuLighting[5] = arguments[1];
+                            arguments.AsSpan(2).CopyTo(McuLighting.AsSpan(6));
+                        }
+                        if (mode == 4)
+                        {
+                            McuLighting[3] = arguments[1];
+                            McuLighting[4] = 40;
+                        }
+                        Brightness = SavedBrightness;
+                        McuCustomOverlay = false;
+                        break;
+                    case (0x0F, 0x02):
+                        if (arguments[2] == 0 && McuLighting[2] == 0)
+                        {
+                            break; // Exact newer MCU shortcut precedes overlay cleanup.
+                        }
+                        McuCustomOverlay = arguments[2] == 8;
+                        if (McuStaticEqualityShortcut && arguments[2] == 1 && McuLighting[2] == 1
+                            || arguments[2] == 2 && McuLighting[2] == 2 && McuLighting[5] == arguments[5])
+                        {
+                            break; // RGB is not copied by these firmware equality branches.
+                        }
+                        McuLighting = [arguments[0], 5, arguments[2], 0, 0, 0, 0, 0, 0, 0, 0, 0];
+                        if (arguments[2] is 1 or 2)
+                        {
+                            arguments.AsSpan(3).CopyTo(McuLighting.AsSpan(3));
+                        }
+                        if (arguments[2] == 4)
+                        {
+                            McuLighting[3] = arguments[3];
+                            McuLighting[4] = 40;
+                        }
+                        break;
                     case (0x07, 0x12): Battery = arguments[0]; break;
                     case (0x07, 0x0F): Flags = arguments[0]; break;
-                    case (0x0D, 0x02): Mode = arguments[2]; Manual = arguments[3]; break;
+                    case (0x0D, 0x02):
+                        Mode = arguments[2];
+                        if (IndependentFanModeFlags && arguments[1] == 2) { SecondManual = arguments[3]; }
+                        else { Manual = arguments[3]; }
+                        break;
                     case (0x0D, 0x01):
                         if (arguments[1] == 1) { Fan1 = arguments[2]; }
                         else { Fan2 = arguments[2]; }
@@ -553,14 +663,45 @@ public sealed partial class SourceReviewedBladeModelTests
                 }
             }
             // Exact Synapse thermal helpers accept successful status-only ACKs.
-            if (command.ClassId == 0x0D && command.CommandId < 0x80
+            if (!EchoThermalAck && command.ClassId == 0x0D && command.CommandId < 0x80
                 || EmptyBatteryAck && command.ClassId == 0x07 && command.CommandId == 0x12)
             {
                 payload = [];
             }
-            return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(payload, null));
+            return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(payload, null)
+            {
+                UnclassifiedAdapterResponseAvailable = command.ClassId == 0x07 && command.CommandId == 0x8C && AdapterResponseAvailable,
+            });
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+    [Theory]
+    [MemberData(nameof(Products))]
+    public async Task LimitedExternal_TurboAndCustomKeepRequestedModesAndFreshAdapterChecks(int product)
+    {
+        var session = new Session { Adapter = [2, 17] };
+        await using var port = Create(product, session, power: () => PowerSource.UsbC);
+        await port.SetPerformanceAsync(PerformancePreset.Turbo, default);
+        Assert.Equal((byte)1, session.Mode);
+        await port.SetCustomPerformanceAsync(new(CustomPerformanceLevel.High, CustomPerformanceLevel.High), default);
+        Assert.Equal((byte)4, session.Mode);
+        Assert.Equal((byte)2, session.Cpu);
+        Assert.Equal((byte)2, session.Gpu);
+        AssertFreshAdapterBeforeSetters(session);
+        Assert.Equal(AdapterPowerState.UsbCPower45W, await port.QueryAdapterPowerStateAsync(default));
+    }
+
+    [Theory]
+    [MemberData(nameof(Products))]
+    [MemberData(nameof(EarlyBatteryProducts))]
+    public async Task LimitedExternal_AdmitsModelSupportedBatteryBalanced(int product)
+    {
+        var session = new Session { Adapter = [7, 17] };
+        await using var port = Create(product, session, power: () => PowerSource.UsbC);
+        await port.SetPerformanceAsync(PerformancePreset.BatteryBalanced, default);
+        Assert.Equal((byte)6, session.Mode);
+        Assert.Equal(PerformancePreset.BatteryBalanced, (await port.QueryPerformanceFanStateAsync(default)).Performance);
+        AssertFreshAdapterBeforeSetters(session);
     }
 }

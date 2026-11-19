@@ -12,16 +12,15 @@ internal sealed class CpuLiveCurveNativeRequest
     {
         ArgumentNullException.ThrowIfNull(scope);
         ArgumentNullException.ThrowIfNull(expectedBefore);
-        if (!Enum.IsDefined(purpose)
-            || !CpuLiveCurveCommand.TryDecode(CpuLiveCurveCommand.Message, command.EncodeArgument(),
-                CpuLiveCurveSnapshot.SupportedMask, out var decoded) || decoded != command
+        if (!Enum.IsDefined(purpose) || command.Contract != expectedBefore.Contract
+            || !CpuLiveCurveCommand.TryCreate(expectedBefore.Contract, command.PhysicalCoreId, command.Offset,
+                out var decoded) || decoded != command
             || purpose == CpuLiveCurveCommandPurpose.Forward && command.Offset is < -30 or > 0)
         { throw new ArgumentException("Invalid exact curve operation."); }
         Scope = scope; Command = command; Purpose = purpose; Before = expectedBefore; PowerPeer = powerPeer;
         After = expectedBefore.WithOffset(command);
         short previous = expectedBefore.CoreOffsets.Single(core => core.PhysicalCoreId == command.PhysicalCoreId).Offset;
-        if (!CpuLiveCurveCommand.TryCreate(command.PhysicalCoreId, previous,
-            CpuLiveCurveSnapshot.SupportedMask, out var reverse))
+        if (!CpuLiveCurveCommand.TryCreate(expectedBefore.Contract, command.PhysicalCoreId, previous, out var reverse))
         { throw new ArgumentException("Invalid exact reverse operation."); }
         ImmediateReverse = reverse;
     }
@@ -34,7 +33,7 @@ internal sealed class CpuLiveCurveNativeRequest
     internal CpuLiveCurveSnapshot Before { get; }
     internal CpuLiveCurveSnapshot After { get; }
     internal static bool Equal(CpuLiveCurveSnapshot? left, CpuLiveCurveSnapshot? right) =>
-        left is not null && right is not null && left.CoreOffsets.SequenceEqual(right.CoreOffsets);
+        left is not null && right is not null && left.Contract == right.Contract && left.CoreOffsets.SequenceEqual(right.CoreOffsets);
 }
 
 // Independently obtained fresh metadata for CO selector5000A, in NEGATED offset
@@ -51,9 +50,17 @@ internal sealed record CpuLiveCurveTrustedRange(uint Selector, int MinimumMagnit
     internal bool AllowsOperation(CpuLiveCurveNativeRequest request) => Allows(request.Command)
         && (request.Purpose == CpuLiveCurveCommandPurpose.Restore || Allows(request.ImmediateReverse));
 
-    internal bool Allows(CpuLiveCurveCommand command) => Supported && Selector == 0x5000A
-        && MinimumMagnitude >= 0 && MaximumMagnitude <= 50 && MinimumMagnitude <= MaximumMagnitude
-        && Step == 1 && -(int)command.Offset >= MinimumMagnitude && -(int)command.Offset <= MaximumMagnitude;
+    internal bool Allows(CpuLiveCurveCommand command)
+    {
+        bool legacy = command.Contract == CpuLiveCurveContract.Rz090528;
+        bool metadata = legacy ? MaximumMagnitude <= 50 && Step == 1
+            : command.Contract?.UsesPhoenixProtocol == true && MaximumMagnitude <= 32768 && Step > 0;
+        int magnitude = -(int)command.Offset;
+        return Supported && Selector == 0x5000A && metadata
+            && MinimumMagnitude >= 0 && MinimumMagnitude <= MaximumMagnitude
+            && magnitude >= MinimumMagnitude && magnitude <= MaximumMagnitude
+            && (magnitude - MinimumMagnitude) % Step == 0;
+    }
 }
 
 // A trusted provider must bind this exact immutable request/scope to independently admitted forward
@@ -114,6 +121,15 @@ internal abstract class CpuLiveCurveWriteProof(CpuLiveCurveNativeRequest request
     // and every differing first-original restore against fresh range/caps.
     // It must not invoke a backend observer or acquire another native lease.
     internal virtual bool AdmitPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability, CpuLivePowerFusedCap cap) => false;
+    // The reviewed Phoenix CO setter has no PPT fused-ceiling prerequisite.
+    // This distinct proof still requires independently measured unchanged peers;
+    // a missing old-model cap never selects this route.
+    internal virtual bool AdmitUncappedPowerPeer(CpuLiveCurveNativeRequest exactRequest, uint capability) => false;
+    internal bool UncappedFinalCheckpointCurrent(CpuLiveCurveNativeRequest exactRequest, uint capability) =>
+        Volatile.Read(ref disposed) == 0 && admitted && ReferenceEquals(request, exactRequest)
+        && Stopwatch.GetElapsedTime(created) < TimeSpan.FromMinutes(2)
+        && IsUncappedFinalCheckpointCurrent(exactRequest, capability);
+    internal virtual bool IsUncappedFinalCheckpointCurrent(CpuLiveCurveNativeRequest exactRequest, uint capability) => false;
     internal abstract bool IsCurrent(CpuLiveCurveNativeRequest exactRequest);
     internal abstract CpuLiveCurveTrustedRange? ReadFreshRange(CpuLiveCurveNativeRequest exactRequest);
     public void Dispose()

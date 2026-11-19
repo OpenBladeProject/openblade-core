@@ -284,7 +284,9 @@ public sealed class Pid02E0LightingEffectsTests
         Assert.Equal(MatrixRgb.Black, expanded[53]);
         Assert.Equal(Green, expanded[36]);
         Assert.Equal(Green, expanded[55]);
-        AssertHolesBlack(expanded);
+        // The logical pulse canvas includes regional identities. The ANSI
+        // wire output still preserves every captured hole.
+        AssertHolesBlack(Pid02E0RegionalFrameProjection.Project(expanded, 1));
     }
 
     [Theory]

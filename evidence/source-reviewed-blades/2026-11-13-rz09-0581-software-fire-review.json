@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "decision": "PASS",
+  "scope": "Independent exact RZ09-0581 source-backed software Fire review",
+  "sourceBasis": "SoftwarePatternWithoutPhysicalValidation",
+  "physicalValidation": "Pending",
+  "implementation": "SoftwareFirePattern",
+  "captureOracleSha256": "5177FA9F6F91D96C9C34C5506CDA8EDC0A86EE5B5EEFA5F4322F4E4633C23521",
+  "wireKnownAnswerSha256": "7AFEE96E76C0547BE237465CAA2149E9254BD71DC1DE8D3EC17E5F2F0976C98F",
+  "files": [
+    {
+      "path": "src/OpenBlade.Protocol/ExperimentalGridLightingEffect.cs",
+      "bytes": 10653,
+      "sha256": "08D64E02D239598F8CB88F34AEF7C892BF6B577F048CA662067599B6CE6A9F32",
+      "lineEndings": "LF"
+    },
+    {
+      "path": "src/OpenBlade.Protocol/SoftwareFirePattern.cs",
+      "bytes": 1148,
+      "sha256": "7D9E56E3291DE13EAA149A8288E784C7EF1C2C3944BC1E277FF7B7C8F6BB2ACC",
+      "lineEndings": "LF"
+    },
+    {
+      "path": "src/OpenBlade.Protocol/Pid02E0FireEffect.cs",
+      "bytes": 1182,
+      "sha256": "3E789D9B4FDB48497485F712C3B147BA6980BF5A030013D1AEA09E05FEDADEDF",
+      "lineEndings": "LF"
+    },
+    {
+      "path": "src/OpenBlade.Protocol/ProductionLightingPort.cs",
+      "bytes": 80214,
+      "sha256": "2DF8B5398860D829179B4F5246305128510567046C6094CF3297CF27E6042479",
+      "lineEndings": "LF"
+    },
+    {
+      "path": "src/OpenBlade.Protocol/ProductionLightingEvidence.cs",
+      "bytes": 33377,
+      "sha256": "82DDD46490ACAEEEAF5976B846252CF76BF933291FCA18A7C73CCEA27019A100",
+      "lineEndings": "LF"
+    },
+    {
+      "path": "src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_3_01_LightingSemanticAdmission.json",
+      "bytes": 1754,
+      "sha256": "9F70CE8889361D153D50BDAA14E414A71CEDEF54BD3D5FE4B6EE612BE3DEED31",
+      "lineEndings": "LF"
+    },
+    {
+      "path": "tests/OpenBlade.Protocol.Tests/Pid02E0FireEffectTests.cs",
+      "bytes": 3165,
+      "sha256": "F61CD5A37FC336B67C7F98253A53ABCF11BEB2D4E6F5FA7812B01CC70900EE1D",
+      "lineEndings": "CRLF"
+    },
+    {
+      "path": "tests/OpenBlade.Protocol.Tests/ProductionLightingPortTests.Fire.cs",
+      "bytes": 5943,
+      "sha256": "A01B5B9BEB68B6E303BF8941BE2C0C469647A0427D102BF56ABA3B82E55AB7DD",
+      "lineEndings": "CRLF"
+    },
+    {
+      "path": "tests/OpenBlade.Protocol.Tests/ProductionLightingPortTests.cs",
+      "bytes": 162380,
+      "sha256": "748384793FFA6DA68726E1911CA62C40AB4AD5C1EB881DD2E0F4D8CA941695A5",
+      "lineEndings": "CRLF"
+    }
+  ],
+  "verified": [
+    "Prior6x16 Fire arithmetic byte-equivalent",
+    "Own0581 6x17 canvas, hole mask and SO6120 regional projection",
+    "Existing transport, native admission, ownership, cadence, dark wake and cleanup unchanged",
+    "Typed software evidence metadata compared fail-closed; historical capture and wire evidence unchanged"
+  ],
+  "focusedTestsPassed": 215,
+  "hardwareActionsPerformed": false
+}

@@ -258,17 +258,8 @@
   <data name="Setup failed" xml:space="preserve">
     <value>操作失败</value>
   </data>
-  <data name="Setup failed with 0x{0:X8}." xml:space="preserve">
-    <value>操作失败，错误代码为 0x{0:X8}。</value>
-  </data>
-  <data name="Setup failed: {0}" xml:space="preserve">
-    <value>操作失败：{0}</value>
-  </data>
   <data name="Setup progress" xml:space="preserve">
     <value>操作进度</value>
-  </data>
-  <data name="Setup was cancelled and the previous state was restored." xml:space="preserve">
-    <value>操作已取消，之前的安装状态已恢复。</value>
   </data>
   <data name="Show _details" xml:space="preserve">
     <value>显示详细信息(_D)</value>
@@ -314,5 +305,32 @@
   </data>
   <data name="Setup completed successfully. Restart Windows to finish driver setup. CPU temperature sensing may remain unavailable until then." xml:space="preserve">
     <value>安装已成功完成。请重新启动 Windows 以完成驱动程序设置。在此之前，CPU 温度监测可能仍不可用。</value>
+  </data>
+  <data name="Setup was cancelled. See the setup log for the final installation state." xml:space="preserve">
+    <value>安装已取消。请查看安装日志以了解最终安装状态。</value>
+  </data>
+  <data name="Checking the CPU temperature driver…" xml:space="preserve">
+    <value>正在检查 CPU 温度驱动程序…</value>
+  </data>
+  <data name="Failed step: {0}" xml:space="preserve">
+    <value>失败步骤：{0}</value>
+  </data>
+  <data name="Error code: 0x{0:X8}" xml:space="preserve">
+    <value>错误代码：0x{0:X8}</value>
+  </data>
+  <data name="Setup failed while running {0}." xml:space="preserve">
+    <value>运行 {0} 时安装失败。</value>
+  </data>
+  <data name="Setup failed: {0}" xml:space="preserve">
+    <value>安装失败：{0}</value>
+  </data>
+  <data name="Additional cleanup or recovery error: {0}" xml:space="preserve">
+    <value>清理或恢复时还发生了错误：{0}</value>
+  </data>
+  <data name="Preparing setup…" xml:space="preserve">
+    <value>正在准备安装程序…</value>
+  </data>
+  <data name="Verifying OpenBlade files…" xml:space="preserve">
+    <value>正在验证 OpenBlade 文件…</value>
   </data>
 </root>

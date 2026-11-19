@@ -24,6 +24,7 @@ public sealed class IpcWireShapeManifestTests
             "property vbiosGpuName:System.String default=\"Unavailable\"",
             manifest,
             StringComparison.Ordinal);
+        Assert.Contains("property controlsKeyboardEffect:System.Boolean member ignore=WhenWritingDefault", manifest, StringComparison.Ordinal);
         Assert.Contains("property supportsBreathingColorSelection:System.Boolean member", manifest, StringComparison.Ordinal);
         Assert.Contains("property supportsWaveDirectionSelection:System.Boolean member", manifest, StringComparison.Ordinal);
         Assert.Contains("property blade18KeyboardLayoutId:System.Byte? member", manifest, StringComparison.Ordinal);
@@ -81,6 +82,16 @@ public sealed class IpcWireShapeManifestTests
             79 => "9CCDE658405F2DA4E58E6D4FF00D5B2A9F5562974BE2AF74DDE53E848B45431D",
             // Protocol 80 admits the RZ09-0530 layout string; JSON fields and types are unchanged.
             80 => "9CCDE658405F2DA4E58E6D4FF00D5B2A9F5562974BE2AF74DDE53E848B45431D",
+            // Protocol 81 adds explicit keyboard-effect intent for hybrid lighting controls.
+            81 => "E4913F08C67EFFEF1B442726373F4957D1A8B982375F793C9E4F015505ED503F",
+            // Protocol 82 admits 5500-RPM intent and separates observed per-preset limits.
+            82 => "D9ECA197B716E9ADE515C854380082D06DB12ED0B7BC1F3716148B8AEFA894E2",
+            // Protocol 83 separates positive Windows AC presence from adapter classification.
+            83 => "C29F478A17D06E6EDD3F69F1A6EAC11FAAEA3B89186B043F7ABB95761C294EC6",
+            // Protocol 84 combines RZ09-0529 lighting zones with current-main contracts.
+            84 => "7698A5B8C9679FCDE35762221E1DBD8A31E92086588511320CB0D5D87473D306",
+            // Protocol 85 admits confirmed Custom with unreported levels; JSON fields and types are unchanged.
+            85 => "7698A5B8C9679FCDE35762221E1DBD8A31E92086588511320CB0D5D87473D306",
             _ => null,
         };
 

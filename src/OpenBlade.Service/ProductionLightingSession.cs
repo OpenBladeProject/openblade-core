@@ -75,6 +75,13 @@ internal sealed partial class ProductionLightingSession
         this.releaseHardwareOperation = releaseHardwareOperation;
     }
 
+    // The retained admitted backend owns this implementation distinction. Reading
+    // it neither opens a session nor submits firmware commands. A missing backend
+    // keeps the conservative existing renderer requirement.
+    internal bool RequiresLightingRendererOwnership(LightingSettings settings) =>
+        Volatile.Read(ref lightingPort)?.RequiresLightingRendererOwnership(settings)
+            ?? settings.Effect != LightingEffect.Off;
+
     internal bool HasOwnedKeyTriggeredRenderer =>
         Volatile.Read(ref lightingPort)?.OwnershipState is
             LightingRendererOwnershipState.Reactive or

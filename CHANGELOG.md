@@ -5,6 +5,64 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Add keyboard-only host-rendered lighting effects and per-key color editing on Blade 18 (2025, RZ09-0529). Keep Vapor Chamber RGB unavailable until its prior state can be restored; no touchpad RGB zone is claimed. ([#977](https://github.com/OpenBladeProject/openblade-core/pull/977))
+
+## [0.64.2-nightly.116] - 2026-11-16
+
+### Added
+
+- Add source-reviewed CPU Voltage Optimizer support for Blade 14 (2024, 8945HS) and Blade 14 (2023, 7940HS), with complete per-core readback and restoration. Share live voltage planning and recovery with Blade 16 (2025). ([#973](https://github.com/OpenBladeProject/openblade-core/pull/973))
+
+### Fixed
+
+- Avoid rejecting a valid PawnIO CPU temperature driver because Windows reports its path differently. Include the registered path and package checks in installer logs. ([#975](https://github.com/OSSBlade/openblade-core/pull/975))
+- Wait for the installed service process to exit before replacing or removing OpenBlade files, including broker installs, and retain actionable recovery paths if shutdown or restoration cannot be confirmed. ([#974](https://github.com/OpenBladeProject/openblade-core/pull/974))
+
+## [0.63.2-nightly.115] - 2026-11-14
+
+### Added
+
+- Offer all model-supported performance modes, including Custom and HyperBoost, on sufficient and limited external adapters. Preserve separate profiles, firmware power management and battery-drain notifications. ([#964](https://github.com/OSSBlade/openblade-core/pull/964))
+- Expand source-reviewed fixed fan speeds and host curves with per-preset firmware limits, add full-power AC host curves in the existing fixed-fan presets on RZ09-0482/RZ09-0483, add Creator on RZ09-0328 and Maximum Power on RZ09-0530, and preserve saved fan settings when live limits change. ([#968](https://github.com/OpenBladeProject/openblade-core/pull/968))
+
+### Fixed
+
+- Finish local broker installations by recognizing supported input helpers and waiting for startup inventory to settle before opening OpenBlade. ([#966](https://github.com/OSSBlade/openblade-core/pull/966))
+- Keep HyperBoost recovery bound to the confirmed power source after an upgrade, and prevent shared native build caches from reusing stale code or release metadata. ([#964](https://github.com/OSSBlade/openblade-core/pull/964))
+- Accept a valid PawnIO CPU temperature driver when uninstall/reinstall leaves disconnected device registrations. Report the present-device count when the binding remains missing or ambiguous. ([#970](https://github.com/OSSBlade/openblade-core/pull/970))
+- Keep source-supported ordinary controls available when Windows confirms external power but adapter wattage cannot be read, without guessing charger type or changing the reported power classification. ([#967](https://github.com/OpenBladeProject/openblade-core/issues/967))
+- Avoid rejecting supported battery-setting replies and allow a short confirmation window on source-reviewed Blade models. ([#965](https://github.com/OSSBlade/openblade-core/pull/965))
+
+## [0.61.1-nightly.114] - 2026-11-13
+
+### Added
+
+- Expand source-reviewed lighting with independent brightness and available logo controls on 15 Blade profiles, MCU-backed keyboard effects on seven models, and software Fire on Blade 16 RZ09-0581. Existing field-only profiles keep their behavior. ([#960](https://github.com/OSSBlade/openblade-core/pull/960))
+
+### Fixed
+
+- Open the matching settings page and scroll to its card when selecting a profile summary, including cards hidden in Customize. Show the active profile first in the compact view. ([#961](https://github.com/OSSBlade/openblade-core/pull/961))
+- Show the failing installer step and underlying error, including separate cleanup or recovery failures, instead of only a generic error code. Include Setup diagnostics in the main installer log so a single shared log contains the failure details. ([#952](https://github.com/OSSBlade/openblade-core/pull/952))
+- Fix unlit ISO and Japanese keys in keyboard lighting on Blade 16 RZ09-0581 and RZ09-0528. ([#958](https://github.com/OSSBlade/openblade-core/pull/958))
+- Explain unavailable startup and lighting controls when another Razer app is running or cannot be checked. ([#954](https://github.com/OSSBlade/openblade-core/pull/954))
+
+## [0.60.0-nightly.113] - 2026-11-12
+
+### Added
+
+- Add Static, Ambient Awareness, Audio Meter, and software lighting effects on Blade 14 (2023/2025) and Blade 16 (2023). ([#953](https://github.com/OSSBlade/openblade-core/pull/953))
+- Add Reactive, Ripple, and Keyboard `.chroma` imports on Blade 14 (2025) using its firmware-derived key map. ([#953](https://github.com/OSSBlade/openblade-core/pull/953))
+- Support Blade 15 Advanced (Mid 2021) RZ09-0409 and both 2019 Blade Pro 17 variants, RZ09-0287 and RZ09-0314, with source-reviewed Balanced/Custom performance and Automatic fan handback. Physical validation remains pending. ([#951](https://github.com/OSSBlade/openblade-core/pull/951))
+
+## [0.58.7-nightly.112] - 2026-11-12
+
+### Fixed
+
+- Fix keyboard and logo controls blocked by Wave readback, and prevent unnecessary lighting retries on source-reviewed models. ([#947](https://github.com/OpenBladeProject/openblade-core/pull/947))
+- Keep laptop and cooling-pad fan curves responsive to hot, idle GPUs while skipping temperature reads for GPUs reported powered down. Require GPU cooling evidence before Battery Saver fan stop. ([#946](https://github.com/OpenBladeProject/openblade-core/pull/946))
+
 ## [0.58.5-nightly.111] - 2026-11-10
 
 ### Fixed
@@ -2388,7 +2446,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.58.5-nightly.111...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.64.2-nightly.116...HEAD
+[0.64.2-nightly.116]: https://github.com/OSSBlade/openblade-core/compare/v0.63.2-nightly.115...v0.64.2-nightly.116
+[0.63.2-nightly.115]: https://github.com/OSSBlade/openblade-core/compare/v0.61.1-nightly.114...v0.63.2-nightly.115
+[0.61.1-nightly.114]: https://github.com/OSSBlade/openblade-core/compare/v0.60.0-nightly.113...v0.61.1-nightly.114
+[0.60.0-nightly.113]: https://github.com/OSSBlade/openblade-core/compare/v0.58.7-nightly.112...v0.60.0-nightly.113
+[0.58.7-nightly.112]: https://github.com/OSSBlade/openblade-core/compare/v0.58.5-nightly.111...v0.58.7-nightly.112
 [0.58.5-nightly.111]: https://github.com/OSSBlade/openblade-core/compare/v0.58.4...v0.58.5-nightly.111
 [0.58.4]: https://github.com/OSSBlade/openblade-core/compare/v0.58.2-nightly.110...v0.58.4
 [0.58.2-nightly.110]: https://github.com/OSSBlade/openblade-core/compare/v0.58.1...v0.58.2-nightly.110

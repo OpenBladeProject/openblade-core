@@ -42,12 +42,14 @@ public sealed partial class ServiceControlRuntimeTests
     }
 
     [Theory]
-    [InlineData(null, true)]
-    [InlineData(56, true)]
-    [InlineData(45, false)]
-    public async Task BatterySaverFanStop_UnsafeInitialSampleStoresWithoutFanWrite(int? cpu, bool inactiveGpu)
+    [InlineData(null, null, true)]
+    [InlineData(56, null, true)]
+    [InlineData(45, null, false)]
+    [InlineData(45, null, true)]
+    [InlineData(45, 85, true)]
+    public async Task BatterySaverFanStop_UnsafeInitialSampleStoresWithoutFanWrite(int? cpu, int? gpu, bool inactiveGpu)
     {
-        var temperatures = new BatterySaverTestTemperatureSource(new(cpu, null, inactiveGpu));
+        var temperatures = new BatterySaverTestTemperatureSource(new(cpu, gpu, inactiveGpu));
         TestContext context = await CreateBatterySaverFanStopContextAsync(temperatures);
         using ServiceControlRuntime runtime = context.Runtime;
         int writes = context.Device.FanSetCalls;
@@ -60,10 +62,14 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.False(runtime.GetStatus().BatterySaverFanStopStatus!.Applied);
     }
 
-    [Fact]
-    public async Task BatterySaverFanStop_OwnedWarmReleaseLatchesAndExplicitCycleReenables()
+    [Theory]
+    [InlineData(56, null, true)]
+    [InlineData(45, 85, false)]
+    [InlineData(45, null, false)]
+    public async Task BatterySaverFanStop_OwnedUnsafeReleaseLatchesAndExplicitCycleReenables(
+        int cpu, int? gpu, bool poweredDown)
     {
-        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true));
+        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true, GpuPoweredDown: true));
         TestContext context = await CreateBatterySaverFanStopContextAsync(temperatures);
         using ServiceControlRuntime runtime = context.Runtime;
         ProfileSet normal = runtime.GetStatus().Profiles;
@@ -72,13 +78,13 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(FanMode.Stop, context.Device.ConfirmedState.Fans);
         Assert.True(runtime.GetStatus().BatterySaverFanStopStatus!.Applied);
 
-        temperatures.Readings = new(56, null, true);
+        temperatures.Readings = new(cpu, gpu, true, GpuPoweredDown: poweredDown);
         await runtime.MaintainFanCurveAsync(default);
         Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
         Assert.True(runtime.GetStatus().BatterySaverFanStopStatus!.ThermallySuspended);
         Assert.False(runtime.GetStatus().BatterySaverFanStopStatus!.Applied);
         int writes = context.Device.FanSetCalls;
-        temperatures.Readings = new(45, null, true);
+        temperatures.Readings = new(45, null, true, GpuPoweredDown: true);
         await runtime.MaintainFanCurveAsync(default);
         Assert.Equal(writes, context.Device.FanSetCalls);
         Assert.Equal(normal.Battery.FanControl, runtime.GetStatus().Profiles.Battery.FanControl);
@@ -89,10 +95,27 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.False(runtime.GetStatus().BatterySaverFanStopStatus!.ThermallySuspended);
     }
 
+    [Theory]
+    [InlineData(40, false)]
+    [InlineData(null, true)]
+    public async Task BatterySaverFanStop_ConfirmedCoolOrPoweredDownGpuCanEngage(int? gpu, bool poweredDown)
+    {
+        var temperatures = new BatterySaverTestTemperatureSource(new(45, gpu, true, GpuPoweredDown: poweredDown));
+        TestContext context = await CreateBatterySaverFanStopContextAsync(temperatures);
+        using ServiceControlRuntime runtime = context.Runtime;
+
+        ControlOperationResult result = await runtime.SetBatterySaverFanStopAsync(true, default);
+
+        Assert.True(result.Status == ControlOperationStatus.Applied, result.Message);
+        Assert.Equal(FanMode.Stop, context.Device.ConfirmedState.Fans);
+        Assert.True(runtime.GetStatus().BatterySaverFanStopStatus!.Applied);
+        Assert.True(temperatures.FanStopReads > 0);
+    }
+
     [Fact]
     public async Task BatterySaverFanStop_MatchingObservationNeverOwnsButExplicitVerifiedWriteDoes()
     {
-        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true));
+        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true, GpuPoweredDown: true));
         TestContext context = await CreateBatterySaverFanStopContextAsync(temperatures);
         using ServiceControlRuntime runtime = context.Runtime;
         context.Device.ConfirmedState = context.Device.ConfirmedState with { Fans = FanMode.Stop };
@@ -131,7 +154,7 @@ public sealed partial class ServiceControlRuntimeTests
     [Fact]
     public async Task BatterySaverFanStop_DisableRestoresCurrentNormalOverrideAndPreservesSavedFans()
     {
-        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true));
+        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true, GpuPoweredDown: true));
         TestContext context = await CreateBatterySaverFanStopContextAsync(temperatures);
         using ServiceControlRuntime runtime = context.Runtime;
         PowerProfile saved = runtime.GetStatus().Profiles.Battery;
@@ -153,7 +176,7 @@ public sealed partial class ServiceControlRuntimeTests
     [Fact]
     public async Task BatterySaverFanStop_EffectivePerformanceScopeLeavesAndReturnsWithoutChangingPreference()
     {
-        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true));
+        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true, GpuPoweredDown: true));
         TestContext context = await CreateBatterySaverFanStopContextAsync(temperatures);
         using ServiceControlRuntime runtime = context.Runtime;
         await runtime.SetBatterySaverFanStopAsync(true, default);
@@ -173,7 +196,7 @@ public sealed partial class ServiceControlRuntimeTests
     public async Task BatterySaverFanStop_NativeAdmissionExpiresAndClosesAtLifecycleBoundary()
     {
         var clock = new ManualTimeProvider();
-        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true));
+        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true, GpuPoweredDown: true));
         TestContext context = await CreateBatterySaverFanStopContextAsync(temperatures, clock);
         using ServiceControlRuntime runtime = context.Runtime;
         await runtime.SetBatterySaverFanStopAsync(true, default);
@@ -196,7 +219,7 @@ public sealed partial class ServiceControlRuntimeTests
     [Fact]
     public async Task BatterySaverFanStop_ConfirmedLowPowerHandsBackAutomaticWithoutNormalRestore()
     {
-        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true));
+        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true, GpuPoweredDown: true));
         TestContext context = await CreateBatterySaverFanStopContextAsync(temperatures);
         using ServiceControlRuntime runtime = context.Runtime;
         await runtime.SetBatterySaverFanStopAsync(true, default);
@@ -219,7 +242,7 @@ public sealed partial class ServiceControlRuntimeTests
     [InlineData(false)]
     public async Task BatterySaverFanStop_LowPowerRefusesControllerOrStaleBoundary(bool competingController)
     {
-        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true));
+        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true, GpuPoweredDown: true));
         TestContext context = await CreateBatterySaverFanStopContextAsync(temperatures);
         using ServiceControlRuntime runtime = context.Runtime;
         await runtime.SetBatterySaverFanStopAsync(true, default);
@@ -239,7 +262,7 @@ public sealed partial class ServiceControlRuntimeTests
     [Fact]
     public async Task BatterySaverFanStop_LowPowerAmbiguousHandbackNeverReplays()
     {
-        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true));
+        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true, GpuPoweredDown: true));
         TestContext context = await CreateBatterySaverFanStopContextAsync(temperatures);
         using ServiceControlRuntime runtime = context.Runtime;
         await runtime.SetBatterySaverFanStopAsync(true, default);
@@ -264,7 +287,7 @@ public sealed partial class ServiceControlRuntimeTests
     [Fact]
     public async Task BatterySaverFanStop_AmbiguousWriteAndPreferenceSaveDoNotReplay()
     {
-        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true));
+        var temperatures = new BatterySaverTestTemperatureSource(new(45, null, true, GpuPoweredDown: true));
         TestContext context = await CreateBatterySaverFanStopContextAsync(temperatures);
         using ServiceControlRuntime runtime = context.Runtime;
         context.Device.AfterSetter = subsystem =>
@@ -310,6 +333,12 @@ public sealed partial class ServiceControlRuntimeTests
     private sealed class BatterySaverTestTemperatureSource(FanTemperatureReadings readings) : IFanTemperatureSource
     {
         internal FanTemperatureReadings Readings { get; set; } = readings;
+        internal int FanStopReads { get; private set; }
+        public ValueTask<FanTemperatureReadings> ReadForFanStopAsync(CancellationToken cancellationToken)
+        {
+            FanStopReads++;
+            return ReadAsync(cancellationToken);
+        }
         public ValueTask<FanTemperatureReadings> ReadAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();

@@ -181,9 +181,10 @@ public sealed class SpecialKeyActionExecutor : ISpecialKeyActionExecutor
         LightingEffect effect,
         LightingSettings current)
     {
-        byte brightness = current.Brightness == 0
+        byte currentBrightness = current.IndependentControls?.Brightness ?? current.Brightness;
+        byte brightness = currentBrightness == 0
             ? (byte)50
-            : current.Brightness;
+            : currentBrightness;
         RgbColor color = current.Color == default
             ? LightingSettingsFactory.DefaultVisibleColor
             : current.Color;
@@ -223,7 +224,11 @@ public sealed class SpecialKeyActionExecutor : ISpecialKeyActionExecutor
             LightingEffect.Fire => LightingSettingsFactory.Fire(brightness),
             _ => throw new InvalidOperationException("The lighting effect is unsupported."),
         };
-        return next with { LogoMode = current.LogoMode };
+        return next with
+        {
+            LogoMode = current.IndependentControls?.LogoMode ?? current.LogoMode,
+            ControlsKeyboardEffect = true,
+        };
     }
 
     private static string RequireValue(SpecialKeyAction action) =>

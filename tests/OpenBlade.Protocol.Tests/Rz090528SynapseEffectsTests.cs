@@ -255,7 +255,7 @@ public sealed class Rz090528SynapseEffectsTests
         var color = new RgbColor(0x47, 0xE1, 0x0C);
         for (int origin = 0; origin < Rz090528MatrixFrame.SlotCount; origin++)
         {
-            if (Rz090528MatrixFrame.IsHole(origin))
+            if (!Blade16AmdKeyboardLightingLayout.IsCanvasPulseSlot(origin))
             {
                 continue;
             }
@@ -439,7 +439,7 @@ public sealed class Rz090528SynapseEffectsTests
 
     private static bool IsInReferenceRippleBand(int origin, int slot, int band)
     {
-        if (Rz090528MatrixFrame.IsHole(slot))
+        if (!Blade16AmdKeyboardLightingLayout.IsCanvasPulseSlot(slot))
         {
             return false;
         }

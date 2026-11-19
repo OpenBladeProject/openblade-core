@@ -1306,6 +1306,15 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_TextBlockLighting.Text" xml:space="preserve">
     <value>Lighting</value>
   </data>
+  <data name="MainWindow_TextBlockLightingObservedOnly.Text" xml:space="preserve">
+    <value>Observed only</value>
+  </data>
+  <data name="MainWindow_TextBlockEffectsListedInSynapse.Text" xml:space="preserve">
+    <value>Effects listed in Synapse</value>
+  </data>
+  <data name="MainWindow_TextBlockLightingObservedOnlyDescription.Text" xml:space="preserve">
+    <value>This zone was reported on this model. OpenBlade cannot control it yet.</value>
+  </data>
   <data name="MainWindow_TextBlockLightingBrightness.Text" xml:space="preserve">
     <value>Lighting brightness</value>
   </data>
@@ -1582,6 +1591,9 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_TextBlockTouchpadFirmware.Text" xml:space="preserve">
     <value>Touchpad</value>
   </data>
+  <data name="MainWindow_TextBlockTouchpadLighting.Text" xml:space="preserve">
+    <value>Touchpad</value>
+  </data>
   <data name="MainWindow_TextBlockTrayDashboard.Text" xml:space="preserve">
     <value>Tray dashboard</value>
   </data>
@@ -1590,6 +1602,9 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_TextBlockUnsaved.Text" xml:space="preserve">
     <value>Unsaved</value>
+  </data>
+  <data name="MainWindow_TextBlockUnderGlassLighting.Text" xml:space="preserve">
+    <value>Under-glass lighting</value>
   </data>
   <data name="MainWindow_TextBlockUpdateChannel.Text" xml:space="preserve">
     <value>Update channel</value>
@@ -3093,5 +3108,47 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_CoolingPadDemandToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Allow apps to request more cooling</value>
+  </data>
+  <data name="MainWindow_TextBlockChangesTheEnabledStateSleepSettingsStay.Text" xml:space="preserve">
+    <value>Changes the enabled state. Sleep settings stay unchanged.</value>
+  </data>
+  <data name="MainWindow_TextBlockChangesTheFirmwareIndicatorNotTheWindows.Text" xml:space="preserve">
+    <value>Changes the firmware indicator, not the Windows touchpad setting.</value>
+  </data>
+  <data name="MainWindow_TextBlockTouchpadStatusIndicator.Text" xml:space="preserve">
+    <value>Touchpad status indicator</value>
+  </data>
+  <data name="MainWindow_TextBlockVaporChamberLighting.Text" xml:space="preserve">
+    <value>Vapor chamber lighting</value>
+  </data>
+  <data name="MainWindow_TextBlockVaporChamberLighting2.Text" xml:space="preserve">
+    <value>Vapor chamber lighting</value>
+  </data>
+  <data name="MainWindow_TouchpadStatusIndicatorControlText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Touchpad status indicator</value>
+  </data>
+  <data name="MainWindow_VaporChamberLightingControlText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Vapor chamber lighting</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseAColorForEachKeyboardKey.Text" xml:space="preserve">
+    <value>Choose a color for each key on this laptop.</value>
+  </data>
+  <data name="MainWindow_TextBlockEditKeyboardKeyColors.Text" xml:space="preserve">
+    <value>Edit keyboard key colors</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_Apply" xml:space="preserve">
+    <value>Apply colors</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_DraftChanged" xml:space="preserve">
+    <value>Lighting settings changed while the picker was open. Open it again to edit the current settings.</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_FailedTitle" xml:space="preserve">
+    <value>Keyboard colors could not be applied</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_PresetName" xml:space="preserve">
+    <value>Custom key colors</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_SelectedKey" xml:space="preserve">
+    <value>Selected key: {0}</value>
   </data>
 </root>

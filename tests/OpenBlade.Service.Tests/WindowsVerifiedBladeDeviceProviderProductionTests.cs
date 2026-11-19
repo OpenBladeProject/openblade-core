@@ -647,7 +647,7 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
                 PerformancePreset.Balanced,
                 FanMode.Automatic));
         var gpu = new FakeGpuClockOffsetController();
-        var activity = new BlockingGpuActivitySource();
+        using var activity = new BlockingGpuActivitySource();
         using var provider = ReadyProvider(
             new FakeProductionFactory(capabilities, port),
             gpu,
@@ -661,17 +661,20 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
             new GpuClockOffsetSettings(125, 500),
             default);
         Task<ConfirmedDeviceState> read = Task.Run(() => device.ReadStateAsync(cancellation.Token));
-        Assert.True(activity.Entered.Wait(TimeSpan.FromSeconds(5)));
-        Task<GpuClockOffsetManagementState> stateRead = Task.Run(
-            () => managedDevice.GpuClockOffsetManagementState);
-
         try
         {
-            Task completed = await Task.WhenAny(stateRead, Task.Delay(100));
-            Assert.Same(stateRead, completed);
+            Assert.True(activity.Entered.Wait(TimeSpan.FromSeconds(5)));
+            // Probe and property access must overlap; thread-pool queue latency
+            // is not part of the management-lock contract.
+            Task<GpuClockOffsetManagementState> stateRead = Task.Factory.StartNew(
+                () => managedDevice.GpuClockOffsetManagementState,
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
             Assert.Equal(
                 GpuClockOffsetManagementState.Managed,
-                await stateRead);
+                await stateRead.WaitAsync(TimeSpan.FromSeconds(2)));
+            Assert.False(read.IsCompleted);
         }
         finally
         {
@@ -2538,6 +2541,64 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task TypedCurveTargetsPropagateExpectedPresetAndConfirmedAppliedTuple()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Silent },
+            new HashSet<FanMode> { FanMode.ManualCurve }) with
+        {
+            FanSpeedRange = new(2200, 5200, 100),
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Silent] = new(3700, 5300, 100),
+            },
+        };
+        var port = new FakeProductionPort(capabilities, BatteryValidationSetting.Limit80, temporary: null)
+        {
+            CurveAppliedTargets = (5000, 4900),
+        };
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        var applied = await device.SetCurveFanTargetsAsync(PerformancePreset.Silent, 5300, 5200, default);
+        Assert.Equal((5000, 4900), applied);
+        Assert.Equal(PerformancePreset.Silent, port.LastCurveExpectedPerformance);
+        Assert.Equal(5300, port.LastFan1TargetRpm);
+        Assert.Equal(5200, port.LastFan2TargetRpm);
+        Assert.Equal(1, factory.OpenCount);
+    }
+
+    [Fact]
+    public async Task TypedCurveTargetsRetainPreSubmissionFailureWithoutFreshSessionRetry()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.ManualCurve }) with
+        {
+            FanSpeedRange = new(2200, 5200, 100),
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+            {
+                [PerformancePreset.Balanced] = new(2200, 5200, 100),
+            },
+        };
+        BladeWriteException firstFailure = ThermalPreWriteReadFailure();
+        var firstPort = new FakeProductionPort(capabilities, BatteryValidationSetting.Limit80, temporary: null)
+        {
+            WriteFailure = firstFailure,
+        };
+        var secondPort = new FakeProductionPort(capabilities, BatteryValidationSetting.Limit80, temporary: null);
+        var factory = new FakeProductionFactory(capabilities, firstPort, secondPort);
+        using var provider = ReadyProvider(factory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetCurveFanTargetsAsync(PerformancePreset.Balanced, 3200, 3300, default));
+        Assert.Same(firstFailure, error);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, firstPort.SetFanTargetsCount);
+        Assert.Equal(0, secondPort.SetFanTargetsCount);
+    }
+
+    [Fact]
     public async Task SingleAttemptFanTargetsRetainsPreSubmissionFailureWithoutRetry()
     {
         DeviceCapabilities capabilities = ThermalCapabilities(
@@ -3543,6 +3604,8 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
         public bool SupportsRz090581CapabilityDiagnosticsQuery =>
             rz090581CapabilityDiagnostics is not null;
         public BladeWriteException? WriteFailure { get; set; }
+        public (int Fan1Rpm, int Fan2Rpm)? CurveAppliedTargets { get; init; }
+        public PerformancePreset? LastCurveExpectedPerformance { get; private set; }
         public Exception? ProtectionFailure { get; init; }
         public Exception? TemporaryFailure { get; init; }
         public Exception? PerformanceFanFailure { get; init; }
@@ -3715,6 +3778,15 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
             return SetFanModeAsync(value.Mode, cancellationToken);
         }
 
+        public async Task<(int Fan1Rpm, int Fan2Rpm)> SetCurveFanTargetsAsync(
+            PerformancePreset expectedPerformance, int fan1Rpm, int fan2Rpm,
+            CancellationToken cancellationToken)
+        {
+            LastCurveExpectedPerformance = expectedPerformance;
+            await SetFanTargetsAsync(fan1Rpm, fan2Rpm, cancellationToken);
+            return CurveAppliedTargets ?? (fan1Rpm, fan2Rpm);
+        }
+
         public Task SetFanTargetsAsync(
             int fan1Rpm,
             int fan2Rpm,
@@ -3860,10 +3932,7 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
         public ValueTask<bool?> IsActiveAsync(CancellationToken cancellationToken = default)
         {
             Entered.Set();
-            if (!Release.Wait(TimeSpan.FromSeconds(5), cancellationToken))
-            {
-                throw new TimeoutException("GPU activity probe was not released.");
-            }
+            Release.Wait(cancellationToken);
             return new(true);
         }
 

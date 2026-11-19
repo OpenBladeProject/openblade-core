@@ -4,8 +4,12 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed partial class SourceReviewedBladeModelTests
 {
-    public static TheoryData<int> LegacyProducts => new() { 0x0245, 0x0246, 0x0253, 0x0268 };
-    public static TheoryData<int> LegacyAdvancedProducts => new() { 0x0245, 0x0253 };
+    private static readonly int[] LegacyAdvancedProductIds = [0x0234, 0x024C, 0x0245, 0x0253];
+
+    private static bool IsLegacyAdvanced(int product) => LegacyAdvancedProductIds.Contains(product);
+
+    public static TheoryData<int> LegacyProducts => new() { 0x024C, 0x0234, 0x0245, 0x0246, 0x0253, 0x0268 };
+    public static TheoryData<int> LegacyAdvancedProducts => new() { 0x024C, 0x0234, 0x0245, 0x0253 };
     public static TheoryData<int> LegacyBaseProducts => new() { 0x0246, 0x0268 };
 
     [Theory]
@@ -13,33 +17,37 @@ public sealed partial class SourceReviewedBladeModelTests
     public void LegacyCapabilities_ExposeOnlyExactThermalFeatures(int product)
     {
         DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(Model(product), true);
-        PerformancePreset[] expected = product is 0x0245 or 0x0253
+        PerformancePreset[] expected = IsLegacyAdvanced(product)
             ? [PerformancePreset.Balanced, PerformancePreset.Custom]
             : [PerformancePreset.Balanced, PerformancePreset.Gaming, PerformancePreset.Creator];
         Assert.Equal(expected.Order(), capabilities.PerformancePresets.Order());
+        Assert.Equal(new[] { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve }.Order(), capabilities.FanModes.Order());
+        Assert.NotNull(capabilities.FanSpeedRange);
+        Assert.NotNull(capabilities.GetFanSpeedRange(PerformancePreset.Balanced));
+        Assert.Null(capabilities.GetFanSpeedRange(PerformancePreset.Custom));
+        Assert.False(capabilities.SupportsDirectManualFanTransitions);
+        Assert.Empty(capabilities.ChargeLimits);
         if (product == 0x0245)
         {
-            Assert.Equal(new[] { FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve }.Order(), capabilities.FanModes.Order());
-            Assert.Equal(new FanSpeedRange(3700, 5300, 100), capabilities.FanSpeedRange);
-            Assert.Equal(new FanSpeedRange(3700, 5300, 100), capabilities.GetFanSpeedRange(PerformancePreset.Balanced));
-            Assert.Null(capabilities.GetFanSpeedRange(PerformancePreset.Custom));
-            Assert.False(capabilities.SupportsDirectManualFanTransitions);
+            Assert.Equal(new[] { LightingEffect.Off, LightingEffect.Static, LightingEffect.Spectrum,
+                LightingEffect.Breathing, LightingEffect.Wave }.Order(), capabilities.LightingEffects.Order());
         }
-        else
-        {
-            Assert.Equal(new[] { FanMode.Automatic }, capabilities.FanModes);
-            Assert.Null(capabilities.FanSpeedRange);
-        }
-        Assert.Empty(capabilities.ChargeLimits);
-        Assert.Empty(capabilities.LightingEffects);
-        Assert.Equal(product == 0x0245 ? 3 : 0, capabilities.LogoLightingModes.Count);
+        else { Assert.Empty(capabilities.LightingEffects); }
+        LogoLightingMode[] expectedLogo = IsLegacyAdvanced(product)
+            ? [LogoLightingMode.Off, LogoLightingMode.Static, LogoLightingMode.Breathing]
+            : [];
+        Assert.Equal(expectedLogo.Order(), capabilities.LogoLightingModes.Order());
+        Assert.True(capabilities.SupportsIndependentLightingControls);
+        Assert.False(capabilities.SupportsBreathingColorSelection);
+        Assert.Equal((product == 0x0245 ? Enum.GetValues<BreathingColorMode>() : [BreathingColorMode.Random]).Order(), capabilities.SupportedBreathingColorModes!.Order());
+        Assert.Equal(product == 0x0245, capabilities.SupportsWaveDirectionSelection);
         Assert.Empty(capabilities.OneShotLaptopControls);
         Assert.Empty(capabilities.HostManagedLaptopControls);
         Assert.Null(capabilities.HyperBoostAccess);
         Assert.Null(capabilities.ThxAudio);
-        Assert.Equal(product == 0x0245, capabilities.SupportsKeyboardBrightness);
+        Assert.True(capabilities.SupportsKeyboardBrightness);
         Assert.False(capabilities.SupportsUniformLightingFrames);
-        if (product is 0x0245 or 0x0253)
+        if (IsLegacyAdvanced(product))
         {
             CustomPerformanceCapabilities custom = Assert.IsType<CustomPerformanceCapabilities>(capabilities.CustomPerformance);
             Assert.Equal(9, custom.AllowedCombinations.Count);
@@ -56,6 +64,22 @@ public sealed partial class SourceReviewedBladeModelTests
             Assert.Contains(ExperimentalBladeModels.FeatureEvidenceFor(Model(product)),
                 item => item.Feature == "ThermalPresetsOnlyBalancedGamingCreator");
         }
+    }
+
+    [Theory]
+    [MemberData(nameof(LegacyAdvancedProducts))]
+    public async Task LegacyAdvanced_UnconfirmedPreset_PausesWithoutReplay(int product)
+    {
+        var session = new Session { Mode = 4, IgnoreWrites = true };
+        var policy = new ExperimentalFeaturesPolicy(Model(product));
+        await using var port = Create(product, session, policy);
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetPerformanceAsync(PerformancePreset.Balanced, default));
+        Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.False(policy.WritesAllowed);
+        Assert.Equal(2, session.Commands.Count(command => command.CommandId == 0x02));
+        int before = session.Commands.Count;
+        await Assert.ThrowsAsync<BladeWriteException>(() => port.SetPerformanceAsync(PerformancePreset.Balanced, default));
+        Assert.Equal(before, session.Commands.Count);
     }
 
     [Theory]
@@ -124,18 +148,15 @@ public sealed partial class SourceReviewedBladeModelTests
             new(CustomPerformanceLevel.Boost, CustomPerformanceLevel.High), default));
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetCustomPerformanceAsync(
             new(CustomPerformanceLevel.High, CustomPerformanceLevel.High) { MaximumFans = true }, default));
-        if (product is not (0x0245 or 0x0253))
+        if (!IsLegacyAdvanced(product))
         {
             await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetCustomPerformanceAsync(
                 new(CustomPerformanceLevel.High, CustomPerformanceLevel.High), default));
         }
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.QueryProtectionAsync(default));
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetChargeLimitAsync(80, default));
-        if (product != 0x0245)
-        {
-            await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanTargetsAsync(4000, 4000, default));
-            await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanModeAsync(FanMode.ManualCurve, default));
-        }
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanTargetsAsync(1000, 1000, default));
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() => port.SetFanModeAsync(FanMode.Maximum, default));
         Assert.Empty(session.Commands);
     }
 
@@ -159,7 +180,7 @@ public sealed partial class SourceReviewedBladeModelTests
     [MemberData(nameof(LegacyProducts))]
     public async Task LegacyUnknownModeAndStrictRecovery_DoNotInventState(int product)
     {
-        byte[] unsupported = product is 0x0245 or 0x0253 ? [1, 2, 3, 5, 6, 7] : [3, 4, 5, 6, 7];
+        byte[] unsupported = IsLegacyAdvanced(product) ? [1, 2, 3, 5, 6, 7] : [3, 4, 5, 6, 7];
         foreach (byte mode in unsupported)
         {
             var session = new Session { Mode = mode };
@@ -167,13 +188,21 @@ public sealed partial class SourceReviewedBladeModelTests
             await Assert.ThrowsAsync<RazerProtocolException>(() => port.ReadRecoveryStateAsync(default));
             Assert.DoesNotContain(session.Commands, command => command.CommandId < 0x80);
         }
-        var supported = new Session { Mode = product is 0x0245 or 0x0253 ? (byte)4 : (byte)2 };
+        var supported = new Session { Mode = IsLegacyAdvanced(product) ? (byte)4 : (byte)2 };
         await using var supportedPort = Create(product, supported);
         ConfirmedDeviceState recovered = await supportedPort.ReadRecoveryStateAsync(default);
-        Assert.Equal(product is 0x0245 or 0x0253 ? PerformancePreset.Custom : PerformancePreset.Creator, recovered.Performance);
+        Assert.Equal(IsLegacyAdvanced(product) ? PerformancePreset.Custom : PerformancePreset.Creator, recovered.Performance);
         Assert.Null(recovered.Battery);
-        Assert.Null(recovered.Lighting);
-        Assert.Null(recovered.LogoLighting);
+        if (product == 0x0245)
+        {
+            Assert.Equal(LightingSettingsFactory.SpectrumCycling(50), recovered.Lighting);
+            Assert.Equal(LogoLightingMode.Static, recovered.LogoLighting);
+        }
+        else
+        {
+            Assert.Null(recovered.Lighting);
+            Assert.Null(recovered.LogoLighting);
+        }
         Assert.DoesNotContain(supported.Commands, command => command.CommandId is 0x92 or 0x8F);
     }
 
@@ -186,7 +215,7 @@ public sealed partial class SourceReviewedBladeModelTests
             var session = new Session { Adapter = adapter };
             var policy = new ExperimentalFeaturesPolicy(Model(product));
             await using var port = Create(product, session, policy);
-            BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => product is 0x0245 or 0x0253
+            BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => IsLegacyAdvanced(product)
                 ? port.SetCustomPerformanceAsync(new(CustomPerformanceLevel.High, CustomPerformanceLevel.High), default)
                 : port.SetPerformanceAsync(PerformancePreset.Gaming, default));
             Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
@@ -195,7 +224,7 @@ public sealed partial class SourceReviewedBladeModelTests
         }
         var failedGetter = new Session { RejectAdapterQuery = true };
         await using var rejectedPort = Create(product, failedGetter);
-        await Assert.ThrowsAsync<BladeWriteException>(() => product is 0x0245 or 0x0253
+        await Assert.ThrowsAsync<BladeWriteException>(() => IsLegacyAdvanced(product)
             ? rejectedPort.SetCustomPerformanceAsync(new(CustomPerformanceLevel.High, CustomPerformanceLevel.High), default)
             : rejectedPort.SetPerformanceAsync(PerformancePreset.Gaming, default));
         Assert.DoesNotContain(failedGetter.Commands, command => command.CommandId < 0x80);
@@ -248,7 +277,7 @@ public sealed partial class SourceReviewedBladeModelTests
     [MemberData(nameof(LegacyProducts))]
     public async Task LegacyNativeIdentityRevocation_BlocksFirstSetterWithoutPausing(int product)
     {
-        var session = new Session { Mode = product is 0x0245 or 0x0253 ? (byte)4 : (byte)1 };
+        var session = new Session { Mode = IsLegacyAdvanced(product) ? (byte)4 : (byte)1 };
         bool identity = true;
         session.BeforeSubmission = command =>
         {
@@ -285,7 +314,7 @@ public sealed partial class SourceReviewedBladeModelTests
     [Fact]
     public async Task GamingAndCreator_DoNotBroadenPreviouslyAdmittedModels()
     {
-        foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All.Where(model => model.ProductId is not (0x0246 or 0x0268)))
+        foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All.Where(model => model.ProductId is not (0x0246 or 0x0268 or 0x0255)))
         {
             var session = new Session();
             await using var port = Create(model.ProductId, session);

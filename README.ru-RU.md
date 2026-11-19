@@ -44,11 +44,14 @@ Razer Blade. Оно позволяет настраивать производи
 | Razer Blade 15 (2022) | `RZ09-0421` |
 | Razer Blade 17 (2022) | `RZ09-0423` |
 | Razer Blade 14 (2021) | `RZ09-0370` |
+| Razer Blade 15 Advanced (середина 2021 года) | `RZ09-0409` |
 | Razer Blade 15 Base (начало 2020 года) | `RZ09-0328` |
 | Razer Blade 15 Advanced (начало 2020 года) | `RZ09-0330` |
 | Razer Blade 15 Base (конец 2020 года) | `RZ09-0351` |
 | Razer Blade 15 Advanced (середина 2019 года) | `RZ09-0301` |
 | Razer Blade 15 Base (2019) | `RZ09-0300` |
+| Razer Blade Pro 17 (2019) | `RZ09-0287` |
+| Razer Blade Pro 17 (конец 2019 года) | `RZ09-0314` |
 
 OpenBlade показывает доступные для вашей модели настройки.
 Сведения о совместимости приведены в [руководстве пользователя](https://openblade.sh/ru-RU/),

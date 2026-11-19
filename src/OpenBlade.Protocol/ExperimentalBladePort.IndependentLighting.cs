@@ -5,7 +5,7 @@ namespace OpenBlade.Protocol;
 internal sealed partial class ExperimentalBladePort
 {
     public Task<IndependentLightingSettings?> ReadIndependentLightingAsync(CancellationToken token) =>
-        ReadAvailableIndependentLightingAsync(includeBrightness: true, includeLogo: true, token);
+        ReadAvailableIndependentLightingAsync(true, true, true, true, token);
 
     public Task<IndependentLightingSettings?> ReadIndependentLightingAsync(
         IndependentLightingSettings fields, CancellationToken token)
@@ -15,13 +15,14 @@ internal sealed partial class ExperimentalBladePort
         {
             throw new ArgumentOutOfRangeException(nameof(fields));
         }
-        return ReadAvailableIndependentLightingAsync(fields.Brightness.HasValue, fields.LogoMode.HasValue, token);
+        return ReadAvailableIndependentLightingAsync(fields.Brightness.HasValue, fields.LogoMode.HasValue,
+            fields.VaporChamberLightingEnabled.HasValue, fields.TouchpadStatusIndicatorEnabled.HasValue, token);
     }
 
     private async Task<IndependentLightingSettings?> ReadAvailableIndependentLightingAsync(
-        bool includeBrightness, bool includeLogo, CancellationToken token)
+        bool includeBrightness, bool includeLogo, bool includeVaporChamber, bool includeTouchpadIndicator, CancellationToken token)
     {
-        if (model.ProductId != 0x0245)
+        if (!SupportsIndependentLighting(model))
         {
             return null;
         }
@@ -41,7 +42,7 @@ internal sealed partial class ExperimentalBladePort
                     RecordQuery("KeyboardBrightness", "Unavailable", failure: exception.GetType().Name);
                 }
             }
-            if (includeLogo)
+            if (includeLogo && SupportsExperimentalLogo(model))
             {
                 try
                 {
@@ -52,7 +53,12 @@ internal sealed partial class ExperimentalBladePort
                     RecordQuery("LogoLighting", "Unavailable", failure: exception.GetType().Name);
                 }
             }
-            return brightness.HasValue || logo.HasValue ? new(brightness, logo) : null;
+            bool? vaporChamber = includeVaporChamber && SupportsRz090529Zones
+                ? await ReadOptionalRz090529ZoneAsync(false, token).ConfigureAwait(false) : null;
+            bool? touchpadIndicator = includeTouchpadIndicator && SupportsRz090529Zones
+                ? await ReadOptionalRz090529ZoneAsync(true, token).ConfigureAwait(false) : null;
+            return brightness.HasValue || logo.HasValue || vaporChamber.HasValue || touchpadIndicator.HasValue
+                ? new(brightness, logo, vaporChamber, touchpadIndicator) : null;
         }
         finally
         {
@@ -61,13 +67,18 @@ internal sealed partial class ExperimentalBladePort
     }
     private async Task<IndependentLightingSettings> ReadIndependentLightingCoreAsync(CancellationToken token) => new(
         checked((byte)(await ReadBrightnessAsync(token).ConfigureAwait(false) * 100 / 255)),
-        await ReadLogoAsync(token).ConfigureAwait(false));
+        SupportsExperimentalLogo(model) ? await ReadLogoAsync(token).ConfigureAwait(false) : null,
+        SupportsRz090529Zones ? await ReadOptionalRz090529ZoneAsync(false, token).ConfigureAwait(false) : null,
+        SupportsRz090529Zones ? await ReadOptionalRz090529ZoneAsync(true, token).ConfigureAwait(false) : null);
 
     public async Task SetIndependentLightingAsync(IndependentLightingSettings value, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(value);
         recoveryWriteGate.ThrowIfBlocked();
-        if (model.ProductId != 0x0245 || !value.IsWellFormed)
+        if (!SupportsIndependentLighting(model) || !value.IsWellFormed
+            || value.LogoMode.HasValue && !SupportsExperimentalLogo(model)
+            || (value.VaporChamberLightingEnabled.HasValue || value.TouchpadStatusIndicatorEnabled.HasValue)
+                && !SupportsRz090529Zones)
         {
             throw new CapabilityUnavailableException("The independent lighting request is outside this model's reviewed contract.");
         }
@@ -78,14 +89,15 @@ internal sealed partial class ExperimentalBladePort
             RequireWriteAdmission();
             if (value.Brightness is { } percent)
             {
-                // Exact product581 uses ceil(percent * 255 / 100), with floor on
+                // Each admitted product uses ceil(percent * 255 / 100), with floor on
                 // readback. Retain the actual raw baseline, never an inferred effect.
-                byte raw = checked((byte)((percent * 255 + 99) / 100));
+                byte raw = LightingBrightnessProtocol.PercentToRaw(percent);
                 byte baseline = await ReadBrightnessAsync(cancellationToken).ConfigureAwait(false);
                 if (baseline != raw)
                 {
                     RequireWriteAdmission();
-                    await WriteIndependentLightingCommandAsync(0x03, [1, 5, raw], cancellationToken).ConfigureAwait(false);
+                    await WriteIndependentLightingCommandAsync(0x03,
+                        [SupportsReviewedMcuLighting(model) ? (byte)0 : (byte)1, 5, raw], cancellationToken).ConfigureAwait(false);
                     submitted = true;
                     if (await ReadBrightnessAsync(cancellationToken).ConfigureAwait(false) != raw)
                     {
@@ -117,6 +129,14 @@ internal sealed partial class ExperimentalBladePort
                 {
                     throw new IOException("Independent logo readback did not confirm the requested mode.");
                 }
+            }
+            if (value.VaporChamberLightingEnabled is { } vaporChamber)
+            {
+                await SetRz090529ZoneAsync(false, vaporChamber, () => submitted = true, cancellationToken).ConfigureAwait(false);
+            }
+            if (value.TouchpadStatusIndicatorEnabled is { } touchpadIndicator)
+            {
+                await SetRz090529ZoneAsync(true, touchpadIndicator, () => submitted = true, cancellationToken).ConfigureAwait(false);
             }
             policy.Record("IndependentLighting", "Readback", "Confirmed", submitted,
                 requested: $"Brightness={value.Brightness};Logo={value.LogoMode}",

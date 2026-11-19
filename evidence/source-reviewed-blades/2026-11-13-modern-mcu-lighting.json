@@ -1,0 +1,2747 @@
+{
+  "schemaVersion": 3,
+  "status": "Static exact-model source review; no installed-firmware attestation or physical validation",
+  "reviewedAt": "2026-11-13",
+  "transport": {
+    "reportBytes": 90,
+    "checksum": "XOR report bytes2..87 at88;status successful2;DataSize unchanged on bounded effect GET/SET",
+    "transaction": "Synapse monotonically cycles1..31; response preserves transaction"
+  },
+  "effectContract": {
+    "getId": 130,
+    "setId": 10,
+    "storage": 0,
+    "keyboardLed": 5,
+    "getArguments": [
+      0,
+      5,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "getOff": "payload2=0,3..11=0",
+    "getStatic": "payload2=1,3=4=0,5=1,RGB6..8,9..11=0",
+    "getBreathing": "payload2=2,3=4=0,count5=0/1/2;count RGB triples6..11;unused bytes zero",
+    "getSpectrum": "payload2=3,3..11=0",
+    "getWave": "payload2=4,direction3,speed low byte4,5..11=0; reject an unadmitted speed instead of guessing default",
+    "setOff": [
+      0
+    ],
+    "setBreathingRandom": [
+      3,
+      3
+    ],
+    "setSpectrum": [
+      4
+    ],
+    "setWaveRightward": [
+      1,
+      1
+    ],
+    "waveSpeed": "SET stores40; GET low byte40. No speed argument admitted. Existing alternate Wave baselines require preserved direction, never guessed Rightward.",
+    "confirmation": "GET0 reads the same active bank consumed by rendering. It establishes software-selected state, not emitted pixels. Explicit operations cannot skip solely on equal readback because GET82 does not expose overlay flag. Fresh admission and stop-on-ambiguity apply to every submitted intermediate/destination.",
+    "readbackExamples": {
+      "Off": [
+        0,
+        5,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "StaticRed": [
+        0,
+        5,
+        1,
+        0,
+        0,
+        1,
+        255,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "BreathingRandom": [
+        0,
+        5,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "BreathingSingleRed": [
+        0,
+        5,
+        2,
+        0,
+        0,
+        1,
+        255,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "BreathingDualRedBlue": [
+        0,
+        5,
+        2,
+        0,
+        0,
+        2,
+        255,
+        0,
+        0,
+        0,
+        0,
+        255
+      ],
+      "Spectrum": [
+        0,
+        5,
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "WaveWire1Speed40": [
+        0,
+        5,
+        4,
+        1,
+        40,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "parameterKnowledge": "Read full12 from bank0. Reject unknown modes/counts/trailing parameters. Mode8 exposes custom-frame selection but not RGB pixels. Static and colored Breathing are read-only provenance; no RGB/frame restoration is admitted for this family.",
+    "getClass": 15,
+    "setClass": 3,
+    "setterTransport": "Model-specific reviewed destinations:650/651/652 legacy03/0A;695/696/711 typed0F/02 selector0 LED5 only. All confirmation uses GET0. No new6 frame or color writes.",
+    "savedBankWarning": "Selector1 is SAVED configuration, not actual/active selection. A prior0FSET1 can early-return against saved state while custom output remains. Neither effect GET1 nor brightness GET1 may independently confirm active state.",
+    "brightness": {
+      "getClass": 3,
+      "getId": 131,
+      "setId": 3,
+      "storage": 0,
+      "led": 5,
+      "queryArguments": [
+        0,
+        5,
+        0
+      ],
+      "setterArguments": "[0,5,raw]",
+      "meaning": "Active-bank raw brightness; saved-bank equality may otherwise bypass active application."
+    },
+    "reviewedButUnadmitted0FSetter": "650/651/6520F setters are retained as negative evidence for saved-state and custom-overlay aliasing; writes use exact Synapse legacy setters.695/696/711 admit0FSET0 Off/randomBreathing/Wave only under the specific transition contract.",
+    "offBridgeReason": "695/696/711 Off setter checks active effect0 before clearing overlay. When captured active mode is already Off, first select randomBreathing(whose setter clears overlay unconditionally), confirm it, then select Off and confirm; this is a concrete MCU contract, not a generic entry requirement.",
+    "newModelArguments": {
+      "Off": [
+        0,
+        5,
+        0
+      ],
+      "BreathingRandom": [
+        0,
+        5,
+        2,
+        0,
+        0,
+        0
+      ],
+      "WaveWire1": [
+        0,
+        5,
+        4,
+        1
+      ]
+    },
+    "legacyModelArguments": {
+      "Off": [
+        0
+      ],
+      "BreathingRandom": [
+        3,
+        3
+      ],
+      "Spectrum": [
+        4
+      ],
+      "WaveWire1": [
+        1,
+        1
+      ]
+    }
+  },
+  "models": [
+    {
+      "model": "RZ09-0421",
+      "product": 650,
+      "usbIdentity": "1532:028A",
+      "family": "CH580",
+      "firmwareVersion": "1.03.00",
+      "firmware": {
+        "carrierUrl": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20%282022%29%20%7C%20RZ09-0421x/RazerUpdater_v1.1.1.3_CH580_EC_0103_MCU_010300_v2.exe",
+        "carrierSha256": "6fcfd96615c514c6cd25944405980b6b39d8a2b0458f8cabce299dac37728118",
+        "hexName": "CH580_keyboard_FW_v1.03.00_20230614.hex",
+        "hexSha256": "ebc8d502d3f1e3d5b38e73042fc37aefc3faa51b1f21cea82553899bc67caf1d",
+        "decodedBytes": 63424,
+        "decodedSha256": "ddf1aee97889dac39dca74076362d1d4bad8b59810c881279a41f60a0cbdbe57",
+        "nsisHexBlock": 7,
+        "carrierBytes": 1516336
+      },
+      "admittedEffects": [
+        "Off",
+        "BreathingRandom",
+        "WaveWire1",
+        "Spectrum"
+      ],
+      "logoSourceReviewed": false,
+      "dispatch": {
+        "tableOffset": "0xBBBE",
+        "classSubtract": 0,
+        "class15Destination": "0xBBFA",
+        "class15Handler": "0x9C10"
+      },
+      "effectSwitches": {
+        "get": {
+          "tableOffset": "0x9D3C",
+          "count": 9,
+          "cases": {
+            "0": "0x9D48",
+            "1": "0x9D5A",
+            "2": "0x9D7A",
+            "3": "0x9DD8",
+            "4": "0x9DEC"
+          }
+        },
+        "set": {
+          "tableOffset": "0x9F2E",
+          "count": 9,
+          "cases": {
+            "0": "0x9F3A",
+            "1": "0x9F84",
+            "2": "0xA010",
+            "3": "0xA0B8",
+            "4": "0xA126"
+          }
+        }
+      },
+      "sites": [
+        {
+          "name": "effectHandler",
+          "offset": "0x9C10",
+          "byteCount": 3072,
+          "sha256": "47930d73dc23a7df03bbffff60f229468747340c29daeb69b259d0a9db53e4de",
+          "meaning": "Class0F command selector, GET clearing and typed effect arms, SET state selection and persistence followup; no DataSize comparison on these paths"
+        },
+        {
+          "name": "classDispatchAndResponse",
+          "offset": "0xBB9C",
+          "byteCount": 224,
+          "sha256": "816e66a1008bf18d763e1a85fc86befa761d9ee8fcd9e2354e267c2dc8fc5105",
+          "meaning": "Fresh command class dispatch followed by reply checksum/status completion"
+        },
+        {
+          "name": "stateSelector",
+          "offset": "0x8908",
+          "byteCount": 64,
+          "sha256": "c4d0a4803ed9a9ad8cef9c71dc3cef3598574c22d653b3ff744353b7b2cf5fab",
+          "meaning": "Matching exact LED bank, selector0 volatile and1 persistent; same helper used for GET and SET"
+        },
+        {
+          "name": "legacyLedHandler",
+          "offset": "0xADD6",
+          "byteCount": 1536,
+          "sha256": "699090888eb1a0c39422b3f7892242d0e620de080ed2098a1483e0b806ee65bb",
+          "meaning": "Class03 LED access dispatch, brightness and logo fields"
+        },
+        {
+          "name": "brightnessGet",
+          "offset": "0xB046",
+          "byteCount": 40,
+          "sha256": "942fc46b379f8124fdf61fb5c57001bfed2a053a1dd98367140cf613e8397361",
+          "meaning": "GET03/83 loads selected state+2 to payload2"
+        },
+        {
+          "name": "brightnessSet",
+          "offset": "0xB06E",
+          "byteCount": 256,
+          "sha256": "f681e7c01ba790435fac84e39ce1cada16587b49190684bc675ef9ea18e250ca",
+          "meaning": "SET03/03 compares and stores raw payload2 into selected state+2; independent readback required"
+        },
+        {
+          "name": "usbGetReport",
+          "offset": "0xC85A",
+          "byteCount": 32,
+          "sha256": "67a2c96eb08cd0642d0485f7a7479219374e5258b2264fc9ec22b105caf2cf19",
+          "meaning": "USB GET_REPORT copies exactly90 frame bytes into USB transfer buffer"
+        },
+        {
+          "name": "usbSetReport",
+          "offset": "0xC8DC",
+          "byteCount": 32,
+          "sha256": "651e57e6113223cdecb7a85e7bd26c8b4b349eaa61fee57503bb6937b065fa85",
+          "meaning": "USB SET_REPORT copies exactly90 USB transfer-buffer bytes into command frame"
+        },
+        {
+          "name": "usbDeviceDescriptor",
+          "offset": "0xF34C",
+          "byteCount": 18,
+          "sha256": "cf078f974e6901d1be243d0ac80c7928f3a5138de2a44087ddbf4bb0ed9e5ca7",
+          "meaning": "Descriptor VID1532 and exact product ID; keyboard MCU product matches reviewed exact model"
+        },
+        {
+          "name": "getEffectSwitch",
+          "offset": "0x9D34",
+          "byteCount": 19,
+          "sha256": "d8c9fedb7c8c69ed844524aa457668055308cf937274440def9d6a0d6e8e226d",
+          "meaning": "Effect switch helper call and compact byte-offset table for exact mode0/1/2/3/4 entries"
+        },
+        {
+          "name": "getEffect0",
+          "offset": "0x9D48",
+          "byteCount": 48,
+          "sha256": "c09fb9cfa77e7247932695dba9ece023743a61f9798e73bb29a21b3845ed3caa",
+          "meaning": "Reviewed effect0 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect1",
+          "offset": "0x9D5A",
+          "byteCount": 48,
+          "sha256": "d95ce82559e3da0cc187cd43d49319cf64b721c75918c48c2997dd23a364818f",
+          "meaning": "Reviewed effect1 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect2",
+          "offset": "0x9D7A",
+          "byteCount": 48,
+          "sha256": "77f6f0ca7e38889253c9fe38cb8c1ae6fa41a4ff4ef5b02ce0c4659e3fb6d157",
+          "meaning": "Reviewed effect2 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect3",
+          "offset": "0x9DD8",
+          "byteCount": 48,
+          "sha256": "e8405337392d664670fa5f6b1cf1f5bd7906d8b131232499baf47518899cbca3",
+          "meaning": "Reviewed effect3 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect4",
+          "offset": "0x9DEC",
+          "byteCount": 48,
+          "sha256": "806da18295e26a75ea2890cb5a889267047d854defdb8cbf891900e049c8e950",
+          "meaning": "Reviewed effect4 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffectSwitch",
+          "offset": "0x9F26",
+          "byteCount": 19,
+          "sha256": "0c5256e1fa930801448612d3dda271406ec5f4b60e7ae2467d94a2894a6a94d1",
+          "meaning": "Effect switch helper call and compact byte-offset table for exact mode0/1/2/3/4 entries"
+        },
+        {
+          "name": "setEffect0",
+          "offset": "0x9F3A",
+          "byteCount": 48,
+          "sha256": "37d570db37baf74b792846039aa5ad35dbd16f271e55e548cb396de4d3d42e3a",
+          "meaning": "Reviewed effect0 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect1",
+          "offset": "0x9F84",
+          "byteCount": 48,
+          "sha256": "2be3f129685b58f3c1e16a11e24f5810f9ab4236a7a65f01cb1b6abef831afa1",
+          "meaning": "Reviewed effect1 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect2",
+          "offset": "0xA010",
+          "byteCount": 48,
+          "sha256": "77862b07d08cb125475ea17fe335453ddcdee195c32f18a517a06269c6c1d377",
+          "meaning": "Reviewed effect2 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect3",
+          "offset": "0xA0B8",
+          "byteCount": 48,
+          "sha256": "3bdc20630c7051e095acfd3a1cef0daebfd4489995d60370b95923445d609c68",
+          "meaning": "Reviewed effect3 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect4",
+          "offset": "0xA126",
+          "byteCount": 48,
+          "sha256": "7d0cb5a35f8f03ddbfbf29562f3c71a4d18108bf72d6dca84c396e4527a89f95",
+          "meaning": "Reviewed effect4 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "staticSameEffectEarlyReturn",
+          "offset": "0x9F84",
+          "byteCount": 128,
+          "sha256": "55bd4984b7129b10644daaec4b8c3ad956a2dd298e91630278effaccae915cff",
+          "meaning": "Existing effect1 returns before RGB copy; new Static color controls are not admitted"
+        },
+        {
+          "name": "breathingSameCountEarlyReturn",
+          "offset": "0xA010",
+          "byteCount": 64,
+          "sha256": "ce717741f3cd4782ad3b64f974377dcff193728dc4d5b907d53569dc1f48e978",
+          "meaning": "Existing effect2 with equal payload5 color count returns before RGB copy; same-count color updates not admitted"
+        },
+        {
+          "name": "activeConsumer",
+          "offset": "0x6fbe",
+          "byteCount": 128,
+          "sha256": "7f1784734a6c54b8ad481124cba168b7a696ab7a36ed52a596c3ff9ba3aff384",
+          "meaning": "Renderer transition consumer derives the same bank0 state base used by GET0; not saved1"
+        },
+        {
+          "name": "legacyActivationHelper",
+          "offset": "0x8a78",
+          "byteCount": 88,
+          "sha256": "23af5813e9e195083208c9520f73ebbe536ec9ef8e00f348d08700ef4ec746ef",
+          "meaning": "Copies saved64-byte record to active0 and calls renderer transition even when saved mode already equals request"
+        },
+        {
+          "name": "legacyEffectSetter",
+          "offset": "0xb2dc",
+          "byteCount": 672,
+          "sha256": "42839bf84168bd0a0675e16d4ffb9db4122a79198e36a00f99dd7293421abd76",
+          "meaning": "Exact legacy03/0A effect dispatch, overlay flag cleanup, saved record mutation and activation completion"
+        },
+        {
+          "name": "legacyOffCleanup",
+          "offset": "0xb312",
+          "byteCount": 48,
+          "sha256": "a38b4aa994208397005cfe183e1dfbf14c5facffd45663e61639b9f8f1c46d52",
+          "meaning": "Overlay cleared before effect equality test; activation runs even when saved effect already Off"
+        },
+        {
+          "name": "legacyWaveCleanup",
+          "offset": "0xb338",
+          "byteCount": 76,
+          "sha256": "8cfe85fa31607ba22f192e849afa2129a5269a0854f8942e49e1bcd153db0123",
+          "meaning": "Overlay cleared before same-effect/direction equality test; then activation"
+        },
+        {
+          "name": "legacyBreathingCleanup",
+          "offset": "0xb3be",
+          "byteCount": 48,
+          "sha256": "6af2ba4064c66bc02630d948704a2d467479fad8925e7780d59256f67a5c182a",
+          "meaning": "Overlay cleared and effect/count fields updated; wire3 color mode maps to random count0"
+        },
+        {
+          "name": "legacySpectrumCleanupOrPolicy",
+          "offset": "0xb43e",
+          "byteCount": 72,
+          "sha256": "123889c22a0c70254c01cbde12ef909a0b59d0de6cc342643536f1e0147f9263",
+          "meaning": "Older3 clear overlay before equality and activate; newer3 policy can bypass cleanup and are excluded"
+        },
+        {
+          "name": "class03Call",
+          "offset": "0xbbdc",
+          "byteCount": 4,
+          "sha256": "a117f39bfa20c4383d10f70ca07c4039ad851c9f69c97dfde267e4cc8bbe5fa8",
+          "meaning": "Exact class03 dispatch branch reaches reviewed legacy LED handler"
+        }
+      ],
+      "synapseSources": [
+        {
+          "url": "https://apps.razer.com/synapse/products/650/mw/main.3650e97f35689328d442.js",
+          "sha256": "270D5D4E4AF9674D2219EFBE609294DC46E1BAF4E08A14AF32306D4495CB5A98"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25.33bbbe9e1d2d72bdf1a1.js",
+          "sha256": "CEF5D482E96F2833C84998E2FE998D0A41AA7CA4483E4E69156424F76475D513"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/650/mw/6737.1cc98c1e1650ffce7912.js",
+          "sha256": "8B31CFB0033A9C75F5E6E69D914A3A36BAE0A4944886B5CC6D076329434D1DF9"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrix.e196c7f06b29ad9b9887.js",
+          "sha256": "2594338071860022682DA7363407B8CD204AF8C6196FE979D00AE1BE1F9557BD"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrixBladeWattage.a715fa3adc2631c080dc.js",
+          "sha256": "70687428706956400D3CB5227E35BB03EFFB13D75E70429E06A94A7369202306"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrixBlade2.71032c5b3b3df82a387d.js",
+          "sha256": "E19A44993E93CAC2E79FB0FF9242CCC735A8283344CCDFA57E8E42180B29601E"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrixBlade.a041b7342ce44c78ec3b.js",
+          "sha256": "F0E34A36BC2A09A953835DE05F83C545CF18B11F139C86D0A0055942F8FBEA32"
+        }
+      ],
+      "baselineReadback": [
+        "Off",
+        "StaticRgb",
+        "BreathingRandom",
+        "BreathingSingleRgb",
+        "BreathingDualRgb",
+        "SpectrumModeOnly",
+        "WaveDirectionAndSpeed",
+        "CustomFrameModeOnly"
+      ],
+      "effectSetterLimitations": "Only exact legacy03/0A Off/randomBreathing/Spectrum/Wave. Do not skip explicit equal effect; fresh brightness0 after legacy activation prevents saved brightness alias. No RGB/frame writes.",
+      "activeStateProof": {
+        "activeBase": "0x1000137e",
+        "savedBase": "0x10001732",
+        "selectorActiveLiteralInstruction": "0x8916",
+        "selectorSavedLiteralInstruction": "0x892e",
+        "selectorSavedLiteralAdd": 0,
+        "consumerEntry": "0x6fbe",
+        "consumerActiveLiteralInstruction": "0x6fce",
+        "consumerActiveLiteralAdd": 0,
+        "bank0SetCompletionCall": "0xa33a",
+        "legacySetterEntry": "0xb2dc",
+        "legacySetterSavedSelectorCall": "0xb2e0",
+        "legacyActivationHelper": "0x8a78",
+        "legacyActivationConsumerCall": "0x8abc",
+        "class03HandlerCall": "0xbbdc",
+        "class03Handler": "0xadd6",
+        "brightnessStorage": 0,
+        "effectReadStorage": 0,
+        "alwaysSubmitExplicitLegacyEffect": true,
+        "skipEqualReadbackForbidden": true
+      },
+      "intrinsicLegacySideEffect": "Vendor legacy effect setter selects keyboard LED5.",
+      "writeContract": {
+        "backend": "SynapseLegacy03Matrix",
+        "commandClass": 3,
+        "commandId": 10,
+        "effectReadStorage": 0,
+        "brightnessStorage": 0,
+        "explicitDestinationAlwaysSubmitted": true,
+        "sameOffBridgeRequired": false,
+        "sameOffBridgeEffect": null,
+        "colorWritesAdmitted": false,
+        "frameWritesAdmitted": false,
+        "firmwareSavedBankConfirmationPermitted": false,
+        "readBrightnessAfterEffect": true,
+        "reason": "Legacy clears overlay first, activates saved64-byte record into bank0 and may restore saved brightness; refresh raw brightness0 before applying requested target."
+      }
+    },
+    {
+      "model": "RZ09-0423",
+      "product": 651,
+      "usbIdentity": "1532:028B",
+      "family": "DI780",
+      "firmwareVersion": "1.02.00",
+      "firmware": {
+        "carrierUrl": "https://dl.razerzone.com/drivers/Razer%20Blade%2017%22%20%282022%29%20%7C%20RZ09-0423x/RazerUpdater_v1.1.1.3_DI780-ECv0105_MCUv010200_VBIOS_v3.exe",
+        "carrierSha256": "3f096851bed1679a83630fa588daf0d977f0944634075e75493658cfad03c554",
+        "hexName": "DI780_Keyboard_FW_v1.02.00_20230614.hex",
+        "hexSha256": "86fd0e0c85fd7d70c5bc2fbf8922108a1b81870728342465a880df56bdd401c1",
+        "decodedBytes": 58840,
+        "decodedSha256": "abe4b5db22faa2d73d7da390fc6b00844ab48d4e957519dcf62d666dd22bb350",
+        "nsisHexBlock": 7,
+        "carrierBytes": 7556096
+      },
+      "admittedEffects": [
+        "Off",
+        "BreathingRandom",
+        "WaveWire1",
+        "Spectrum"
+      ],
+      "logoSourceReviewed": true,
+      "dispatch": {
+        "tableOffset": "0xB000",
+        "classSubtract": 2,
+        "class15Destination": "0xB034",
+        "class15Handler": "0x9418"
+      },
+      "effectSwitches": {
+        "get": {
+          "tableOffset": "0x9544",
+          "count": 9,
+          "cases": {
+            "0": "0x9550",
+            "1": "0x9562",
+            "2": "0x9582",
+            "3": "0x95E0",
+            "4": "0x95F4"
+          }
+        },
+        "set": {
+          "tableOffset": "0x9736",
+          "count": 9,
+          "cases": {
+            "0": "0x9742",
+            "1": "0x978C",
+            "2": "0x9818",
+            "3": "0x98C0",
+            "4": "0x992E"
+          }
+        }
+      },
+      "sites": [
+        {
+          "name": "effectHandler",
+          "offset": "0x9418",
+          "byteCount": 3072,
+          "sha256": "9ac752a4bd9b5213f4d7c12176296f9189eae969067da93e89b3cba72184b78a",
+          "meaning": "Class0F command selector, GET clearing and typed effect arms, SET state selection and persistence followup; no DataSize comparison on these paths"
+        },
+        {
+          "name": "classDispatchAndResponse",
+          "offset": "0xAFD6",
+          "byteCount": 224,
+          "sha256": "7053d3543e52ecf4e592f663fa5f235504b2f5e9c3a612a28ddfad5b27eaf0c8",
+          "meaning": "Fresh command class dispatch followed by reply checksum/status completion"
+        },
+        {
+          "name": "stateSelector",
+          "offset": "0x82A8",
+          "byteCount": 64,
+          "sha256": "7eecb8bf0d358ebebf21f7e139baa0f9889c1ac4e08c8ca2c55267640aefaef7",
+          "meaning": "Matching exact LED bank, selector0 volatile and1 persistent; same helper used for GET and SET"
+        },
+        {
+          "name": "legacyLedHandler",
+          "offset": "0xA6A6",
+          "byteCount": 1536,
+          "sha256": "59541f149f3821a5cd7bd2ff593a513b07b43884ee415bbf67daf90640064c96",
+          "meaning": "Class03 LED access dispatch, brightness and logo fields"
+        },
+        {
+          "name": "brightnessGet",
+          "offset": "0xA93E",
+          "byteCount": 40,
+          "sha256": "be680899ea6c1cf1cce234d783427857ec0e8e2202bfebff70dcf1051c14617b",
+          "meaning": "GET03/83 loads selected state+2 to payload2"
+        },
+        {
+          "name": "brightnessSet",
+          "offset": "0xA966",
+          "byteCount": 256,
+          "sha256": "560cc519dee208687f016c82108929881a891b571caece88658e65015078cc4a",
+          "meaning": "SET03/03 compares and stores raw payload2 into selected state+2; independent readback required"
+        },
+        {
+          "name": "usbGetReport",
+          "offset": "0xC152",
+          "byteCount": 32,
+          "sha256": "67a2c96eb08cd0642d0485f7a7479219374e5258b2264fc9ec22b105caf2cf19",
+          "meaning": "USB GET_REPORT copies exactly90 frame bytes into USB transfer buffer"
+        },
+        {
+          "name": "usbSetReport",
+          "offset": "0xC1D4",
+          "byteCount": 32,
+          "sha256": "651e57e6113223cdecb7a85e7bd26c8b4b349eaa61fee57503bb6937b065fa85",
+          "meaning": "USB SET_REPORT copies exactly90 USB transfer-buffer bytes into command frame"
+        },
+        {
+          "name": "usbDeviceDescriptor",
+          "offset": "0xE164",
+          "byteCount": 18,
+          "sha256": "a87316b346641f25057013d5aa2a0a4ad04177682883bf4e84c811f9dc77042b",
+          "meaning": "Descriptor VID1532 and exact product ID; keyboard MCU product matches reviewed exact model"
+        },
+        {
+          "name": "getEffectSwitch",
+          "offset": "0x953C",
+          "byteCount": 19,
+          "sha256": "f7f86b10414f7d63c4dd89f54be0ffb105b345358494c48903303c736c09f3e7",
+          "meaning": "Effect switch helper call and compact byte-offset table for exact mode0/1/2/3/4 entries"
+        },
+        {
+          "name": "getEffect0",
+          "offset": "0x9550",
+          "byteCount": 48,
+          "sha256": "c09fb9cfa77e7247932695dba9ece023743a61f9798e73bb29a21b3845ed3caa",
+          "meaning": "Reviewed effect0 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect1",
+          "offset": "0x9562",
+          "byteCount": 48,
+          "sha256": "d95ce82559e3da0cc187cd43d49319cf64b721c75918c48c2997dd23a364818f",
+          "meaning": "Reviewed effect1 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect2",
+          "offset": "0x9582",
+          "byteCount": 48,
+          "sha256": "77f6f0ca7e38889253c9fe38cb8c1ae6fa41a4ff4ef5b02ce0c4659e3fb6d157",
+          "meaning": "Reviewed effect2 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect3",
+          "offset": "0x95E0",
+          "byteCount": 48,
+          "sha256": "4ccf06ab622b8dc4d2f08208ac3be3a5468c90539db224ec00dda94ac174ab62",
+          "meaning": "Reviewed effect3 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect4",
+          "offset": "0x95F4",
+          "byteCount": 48,
+          "sha256": "0bd101cadfb2e941afeadfd26c460aeba2ab5f80940763e32f551b90696bd440",
+          "meaning": "Reviewed effect4 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffectSwitch",
+          "offset": "0x972E",
+          "byteCount": 19,
+          "sha256": "d0e32ebc1c567f3f74d997408f4e6c3d111872b192ee22d8b194de8e5d1dc559",
+          "meaning": "Effect switch helper call and compact byte-offset table for exact mode0/1/2/3/4 entries"
+        },
+        {
+          "name": "setEffect0",
+          "offset": "0x9742",
+          "byteCount": 48,
+          "sha256": "32230a2086a5836df72ff523a3aafc48bcac65e7edfc35d8146b6572e89acf03",
+          "meaning": "Reviewed effect0 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect1",
+          "offset": "0x978C",
+          "byteCount": 48,
+          "sha256": "2be3f129685b58f3c1e16a11e24f5810f9ab4236a7a65f01cb1b6abef831afa1",
+          "meaning": "Reviewed effect1 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect2",
+          "offset": "0x9818",
+          "byteCount": 48,
+          "sha256": "77862b07d08cb125475ea17fe335453ddcdee195c32f18a517a06269c6c1d377",
+          "meaning": "Reviewed effect2 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect3",
+          "offset": "0x98C0",
+          "byteCount": 48,
+          "sha256": "3bdc20630c7051e095acfd3a1cef0daebfd4489995d60370b95923445d609c68",
+          "meaning": "Reviewed effect3 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect4",
+          "offset": "0x992E",
+          "byteCount": 48,
+          "sha256": "7d0cb5a35f8f03ddbfbf29562f3c71a4d18108bf72d6dca84c396e4527a89f95",
+          "meaning": "Reviewed effect4 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "staticSameEffectEarlyReturn",
+          "offset": "0x978C",
+          "byteCount": 128,
+          "sha256": "fcc693635540aa4a2bffd92211fc0d2264a156dfa64fd22bd6644b178f0039e9",
+          "meaning": "Existing effect1 returns before RGB copy; new Static color controls are not admitted"
+        },
+        {
+          "name": "breathingSameCountEarlyReturn",
+          "offset": "0x9818",
+          "byteCount": 64,
+          "sha256": "27d564cb099930481717799528cc47c24982ab7b1dcbc3b2898662f3f4d56eb7",
+          "meaning": "Existing effect2 with equal payload5 color count returns before RGB copy; same-count color updates not admitted"
+        },
+        {
+          "name": "activeConsumer",
+          "offset": "0x696a",
+          "byteCount": 128,
+          "sha256": "f517c9288e16ab88c53e05847a744bab6cdba21cfefae6638010e236ac2e72c1",
+          "meaning": "Renderer transition consumer derives the same bank0 state base used by GET0; not saved1"
+        },
+        {
+          "name": "legacyActivationHelper",
+          "offset": "0x83cc",
+          "byteCount": 88,
+          "sha256": "9e307272b281c3e8fef91e0b6b7fae1dba8db8004fb40dc8273393ddd823a1f3",
+          "meaning": "Copies saved64-byte record to active0 and calls renderer transition even when saved mode already equals request"
+        },
+        {
+          "name": "legacyEffectSetter",
+          "offset": "0xabaa",
+          "byteCount": 672,
+          "sha256": "0d6c025155516f521ef3ec8fc42611d15d775060014167109c3d89df9f430233",
+          "meaning": "Exact legacy03/0A effect dispatch, overlay flag cleanup, saved record mutation and activation completion"
+        },
+        {
+          "name": "legacyOffCleanup",
+          "offset": "0xabe0",
+          "byteCount": 48,
+          "sha256": "57cd928c4eac5ffb1e1ddc2d8b66462006f33ce539bd04f9d577e3a5938229ca",
+          "meaning": "Overlay cleared before effect equality test; activation runs even when saved effect already Off"
+        },
+        {
+          "name": "legacyWaveCleanup",
+          "offset": "0xac06",
+          "byteCount": 76,
+          "sha256": "14bdb2996dfcb1d0278ae70140c808abe44f6bc78bd51216fcbc832d1475edbc",
+          "meaning": "Overlay cleared before same-effect/direction equality test; then activation"
+        },
+        {
+          "name": "legacyBreathingCleanup",
+          "offset": "0xac8c",
+          "byteCount": 48,
+          "sha256": "cb7afb02324228bcca80e91d9f25a4915aa6476cf4e52ba02d20cb156f2e1947",
+          "meaning": "Overlay cleared and effect/count fields updated; wire3 color mode maps to random count0"
+        },
+        {
+          "name": "legacySpectrumCleanupOrPolicy",
+          "offset": "0xad30",
+          "byteCount": 72,
+          "sha256": "13b0743c10562c6ee14f1b2309170a9de8b00de13ebdae0d0435be53d4c3cb1c",
+          "meaning": "Older3 clear overlay before equality and activate; newer3 policy can bypass cleanup and are excluded"
+        },
+        {
+          "name": "class03Call",
+          "offset": "0xb016",
+          "byteCount": 4,
+          "sha256": "78b26f2c7adc384eed3624c166dfece58029b68e1aabe65c00ce855bb53c1c72",
+          "meaning": "Exact class03 dispatch branch reaches reviewed legacy LED handler"
+        }
+      ],
+      "synapseSources": [
+        {
+          "url": "https://apps.razer.com/synapse/products/651/mw/main.8378c0c79039a3f2ba23.js",
+          "sha256": "F227CBA8959DFEE0B898077D4CC77651066B7BFFF8CAA20910E9B3946E026AC4"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25.7ffcfe7d1ddb6103ac44.js",
+          "sha256": "A9442C86AB7D8F0549E18016324462A52A040E5578410F296BDF72884A383962"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/651/mw/6737.003892ae34f5de0292c0.js",
+          "sha256": "E8A2CFF2F19A59B8F425E7EC70BFF5873551479560005435E1B04B34F9CC7454"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrixBladeWattage.d708c5b081c8f56a50b6.js",
+          "sha256": "204DB11C43D4ECFC33EC476A770AC246FB19085A001140582A08831CBE77689D"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrix.91ecd705f076a69cb74b.js",
+          "sha256": "40237B74FDC3A2F05F47C05501117EF1E97131C88055614D9A9ED58DAB96EF31"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrixBlade2.82d68898207246f09200.js",
+          "sha256": "C92ED2B6966AEEEE991819C291A5E054F9EC04B72D8202C1435A76DBC8219945"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrixBlade.3d7a6466eb25ba2e5f2d.js",
+          "sha256": "66A45A45F7B471426FE41875D2C84E7F0EFD62CCB1066CF3657949B02A163C27"
+        }
+      ],
+      "baselineReadback": [
+        "Off",
+        "StaticRgb",
+        "BreathingRandom",
+        "BreathingSingleRgb",
+        "BreathingDualRgb",
+        "SpectrumModeOnly",
+        "WaveDirectionAndSpeed",
+        "CustomFrameModeOnly"
+      ],
+      "effectSetterLimitations": "Only exact legacy03/0A Off/randomBreathing/Spectrum/Wave. Do not skip explicit equal effect; fresh brightness0 after legacy activation prevents saved brightness alias. No RGB/frame writes.",
+      "activeStateProof": {
+        "activeBase": "0x100012f2",
+        "savedBase": "0x100016a6",
+        "selectorActiveLiteralInstruction": "0x82b6",
+        "selectorSavedLiteralInstruction": "0x82ce",
+        "selectorSavedLiteralAdd": 0,
+        "consumerEntry": "0x696a",
+        "consumerActiveLiteralInstruction": "0x697a",
+        "consumerActiveLiteralAdd": 0,
+        "bank0SetCompletionCall": "0x9b42",
+        "legacySetterEntry": "0xabaa",
+        "legacySetterSavedSelectorCall": "0xabae",
+        "legacyActivationHelper": "0x83cc",
+        "legacyActivationConsumerCall": "0x8410",
+        "class03HandlerCall": "0xb016",
+        "class03Handler": "0xa6a6",
+        "brightnessStorage": 0,
+        "effectReadStorage": 0,
+        "alwaysSubmitExplicitLegacyEffect": true,
+        "skipEqualReadbackForbidden": true
+      },
+      "intrinsicLegacySideEffect": "Vendor legacy effect setter selects keyboard LED5.",
+      "writeContract": {
+        "backend": "SynapseLegacy03Matrix",
+        "commandClass": 3,
+        "commandId": 10,
+        "effectReadStorage": 0,
+        "brightnessStorage": 0,
+        "explicitDestinationAlwaysSubmitted": true,
+        "sameOffBridgeRequired": false,
+        "sameOffBridgeEffect": null,
+        "colorWritesAdmitted": false,
+        "frameWritesAdmitted": false,
+        "firmwareSavedBankConfirmationPermitted": false,
+        "readBrightnessAfterEffect": true,
+        "reason": "Legacy clears overlay first, activates saved64-byte record into bank0 and may restore saved brightness; refresh raw brightness0 before applying requested target."
+      }
+    },
+    {
+      "model": "RZ09-0427",
+      "product": 652,
+      "usbIdentity": "1532:028C",
+      "family": "PI480",
+      "firmwareVersion": "1.01.00",
+      "firmware": {
+        "carrierUrl": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%20%282022%29%20%E2%80%93%20RZ09-0427/RazerUpdater_v1.1.1.3_PI480-MCUv010100-PDv11-BIOSv3.06v1-ECv0106.exe",
+        "carrierSha256": "6dc6495a1bdebf7aea343f2a5f1e82e5565aece7d1fbf50cbd2e450cc18b04ef",
+        "hexName": "PI480_keyboard_FW_v1.01.00_20221228.hex",
+        "hexSha256": "057f6ca432804b4f923ac524886e99815a30011fcfc10a76e4b0f27ad27d5f5f",
+        "decodedBytes": 58556,
+        "decodedSha256": "74872fba317899dd3e1bb6a2b5b517b3c1863087f810fdc97d79883e1a90dc17",
+        "nsisHexBlock": 13,
+        "carrierBytes": 6715752
+      },
+      "admittedEffects": [
+        "Off",
+        "BreathingRandom",
+        "WaveWire1",
+        "Spectrum"
+      ],
+      "logoSourceReviewed": true,
+      "dispatch": {
+        "tableOffset": "0xB41E",
+        "classSubtract": 0,
+        "class15Destination": "0xB45A",
+        "class15Handler": "0x9470"
+      },
+      "effectSwitches": {
+        "get": {
+          "tableOffset": "0x959C",
+          "count": 9,
+          "cases": {
+            "0": "0x95A8",
+            "1": "0x95BA",
+            "2": "0x95DA",
+            "3": "0x9638",
+            "4": "0x964C"
+          }
+        },
+        "set": {
+          "tableOffset": "0x978E",
+          "count": 9,
+          "cases": {
+            "0": "0x979A",
+            "1": "0x97E4",
+            "2": "0x9870",
+            "3": "0x9918",
+            "4": "0x9986"
+          }
+        }
+      },
+      "sites": [
+        {
+          "name": "effectHandler",
+          "offset": "0x9470",
+          "byteCount": 3072,
+          "sha256": "18e81731d50b4e0609348a5431abcc3a64921932d9ae372a88a26fc15da1d5ce",
+          "meaning": "Class0F command selector, GET clearing and typed effect arms, SET state selection and persistence followup; no DataSize comparison on these paths"
+        },
+        {
+          "name": "classDispatchAndResponse",
+          "offset": "0xB3F0",
+          "byteCount": 224,
+          "sha256": "a54d14315f6a6890556e6173806f828067d7e84c78050ce779a6c335c847467b",
+          "meaning": "Fresh command class dispatch followed by reply checksum/status completion"
+        },
+        {
+          "name": "stateSelector",
+          "offset": "0x8268",
+          "byteCount": 64,
+          "sha256": "7eecb8bf0d358ebebf21f7e139baa0f9889c1ac4e08c8ca2c55267640aefaef7",
+          "meaning": "Matching exact LED bank, selector0 volatile and1 persistent; same helper used for GET and SET"
+        },
+        {
+          "name": "legacyLedHandler",
+          "offset": "0xA636",
+          "byteCount": 1536,
+          "sha256": "b59043f3cd06ae159309b70996c1ff2e47933bbfd8acaaadcb3ed35d89739736",
+          "meaning": "Class03 LED access dispatch, brightness and logo fields"
+        },
+        {
+          "name": "brightnessGet",
+          "offset": "0xA8A6",
+          "byteCount": 40,
+          "sha256": "0b0dc7a0e325a011d851894a74e6ae68357e16929761deb495f6e9aaef72d98a",
+          "meaning": "GET03/83 loads selected state+2 to payload2"
+        },
+        {
+          "name": "brightnessSet",
+          "offset": "0xA8CE",
+          "byteCount": 256,
+          "sha256": "ad23373c7317c069013241ab1586e28d88d54ed90c10a3e52fa2298e6355f9f5",
+          "meaning": "SET03/03 compares and stores raw payload2 into selected state+2; independent readback required"
+        },
+        {
+          "name": "usbGetReport",
+          "offset": "0xC0BA",
+          "byteCount": 32,
+          "sha256": "ab4fcc81a19e886364d591125a1e1ad52af181285baa487d73be40997d0b5b2a",
+          "meaning": "USB GET_REPORT copies exactly90 frame bytes into USB transfer buffer"
+        },
+        {
+          "name": "usbSetReport",
+          "offset": "0xC13C",
+          "byteCount": 32,
+          "sha256": "2757978d180764eece01aed54779776ddf81939d4c513238c2334cfcfc058d66",
+          "meaning": "USB SET_REPORT copies exactly90 USB transfer-buffer bytes into command frame"
+        },
+        {
+          "name": "usbDeviceDescriptor",
+          "offset": "0xE048",
+          "byteCount": 18,
+          "sha256": "5600028eb7c701d986502e518c9b80d7271db57ba63436bc3782797a84106c4b",
+          "meaning": "Descriptor VID1532 and exact product ID; keyboard MCU product matches reviewed exact model"
+        },
+        {
+          "name": "getEffectSwitch",
+          "offset": "0x9594",
+          "byteCount": 19,
+          "sha256": "bd0c7cfd84d636cc819d5611bc17c319a582421f611b2ba8c8fd0e7763515484",
+          "meaning": "Effect switch helper call and compact byte-offset table for exact mode0/1/2/3/4 entries"
+        },
+        {
+          "name": "getEffect0",
+          "offset": "0x95A8",
+          "byteCount": 48,
+          "sha256": "c09fb9cfa77e7247932695dba9ece023743a61f9798e73bb29a21b3845ed3caa",
+          "meaning": "Reviewed effect0 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect1",
+          "offset": "0x95BA",
+          "byteCount": 48,
+          "sha256": "d95ce82559e3da0cc187cd43d49319cf64b721c75918c48c2997dd23a364818f",
+          "meaning": "Reviewed effect1 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect2",
+          "offset": "0x95DA",
+          "byteCount": 48,
+          "sha256": "77f6f0ca7e38889253c9fe38cb8c1ae6fa41a4ff4ef5b02ce0c4659e3fb6d157",
+          "meaning": "Reviewed effect2 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect3",
+          "offset": "0x9638",
+          "byteCount": 48,
+          "sha256": "f92f771bf20bb2b2021a321b85a8bf78eef511715ef92102149874c737f7df20",
+          "meaning": "Reviewed effect3 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect4",
+          "offset": "0x964C",
+          "byteCount": 48,
+          "sha256": "dff0309fa4313c537318b9a8016b07f892eb919055373ba1fcee17bf18e02a8f",
+          "meaning": "Reviewed effect4 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffectSwitch",
+          "offset": "0x9786",
+          "byteCount": 19,
+          "sha256": "f0e385de712591a8e05ff9f7c86a4a16b48180685f8beb94d4606bdbf10fadad",
+          "meaning": "Effect switch helper call and compact byte-offset table for exact mode0/1/2/3/4 entries"
+        },
+        {
+          "name": "setEffect0",
+          "offset": "0x979A",
+          "byteCount": 48,
+          "sha256": "6df7ac65c771bd1b236a5c4a3ffccc0594e8ae416799bb893e13ca93a744690b",
+          "meaning": "Reviewed effect0 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect1",
+          "offset": "0x97E4",
+          "byteCount": 48,
+          "sha256": "2be3f129685b58f3c1e16a11e24f5810f9ab4236a7a65f01cb1b6abef831afa1",
+          "meaning": "Reviewed effect1 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect2",
+          "offset": "0x9870",
+          "byteCount": 48,
+          "sha256": "77862b07d08cb125475ea17fe335453ddcdee195c32f18a517a06269c6c1d377",
+          "meaning": "Reviewed effect2 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect3",
+          "offset": "0x9918",
+          "byteCount": 48,
+          "sha256": "3bdc20630c7051e095acfd3a1cef0daebfd4489995d60370b95923445d609c68",
+          "meaning": "Reviewed effect3 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect4",
+          "offset": "0x9986",
+          "byteCount": 48,
+          "sha256": "7d0cb5a35f8f03ddbfbf29562f3c71a4d18108bf72d6dca84c396e4527a89f95",
+          "meaning": "Reviewed effect4 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "staticSameEffectEarlyReturn",
+          "offset": "0x97E4",
+          "byteCount": 128,
+          "sha256": "c99144423401a40481619a47d3ee8fcc2eee9d10b971f5a9818e31f4bb2dd432",
+          "meaning": "Existing effect1 returns before RGB copy; new Static color controls are not admitted"
+        },
+        {
+          "name": "breathingSameCountEarlyReturn",
+          "offset": "0x9870",
+          "byteCount": 64,
+          "sha256": "35170f2592eb2ea74a3cf4a2b85c81252681c2d25da2fe8b9be50ff049430dee",
+          "meaning": "Existing effect2 with equal payload5 color count returns before RGB copy; same-count color updates not admitted"
+        },
+        {
+          "name": "activeConsumer",
+          "offset": "0x6928",
+          "byteCount": 128,
+          "sha256": "a8ab104c090642f7af1d6ffda5c948e6aed24998d3422bbc6397dd8f0199b47d",
+          "meaning": "Renderer transition consumer derives the same bank0 state base used by GET0; not saved1"
+        },
+        {
+          "name": "legacyActivationHelper",
+          "offset": "0x838c",
+          "byteCount": 88,
+          "sha256": "db3edaaf46148ef3ced5cbbd0dc9b717a3920a361286b950fe029f8b7c352b1b",
+          "meaning": "Copies saved64-byte record to active0 and calls renderer transition even when saved mode already equals request"
+        },
+        {
+          "name": "legacyEffectSetter",
+          "offset": "0xab3c",
+          "byteCount": 672,
+          "sha256": "f4e70e0341aae6c0cec8af89c38907676358956f4d70e6fce787a74cdddcbda6",
+          "meaning": "Exact legacy03/0A effect dispatch, overlay flag cleanup, saved record mutation and activation completion"
+        },
+        {
+          "name": "legacyOffCleanup",
+          "offset": "0xab72",
+          "byteCount": 48,
+          "sha256": "85a591ac7a9d7ba38224d68b02e37348262fcf8bb3c01cec1ef0b76a90ba2bc1",
+          "meaning": "Overlay cleared before effect equality test; activation runs even when saved effect already Off"
+        },
+        {
+          "name": "legacyWaveCleanup",
+          "offset": "0xab98",
+          "byteCount": 76,
+          "sha256": "9aa95c000bffba48fdb4d49e49ffb8dcae36d4fa733ddc39c2a19a7a1d30a953",
+          "meaning": "Overlay cleared before same-effect/direction equality test; then activation"
+        },
+        {
+          "name": "legacyBreathingCleanup",
+          "offset": "0xac1e",
+          "byteCount": 48,
+          "sha256": "17951e26e05ed8fffedcea486a9092c29a1d80b945792b6de45801d4e191b6ff",
+          "meaning": "Overlay cleared and effect/count fields updated; wire3 color mode maps to random count0"
+        },
+        {
+          "name": "legacySpectrumCleanupOrPolicy",
+          "offset": "0xac9e",
+          "byteCount": 72,
+          "sha256": "f3cbdedc566cd2acb082f7311ddcb60bc73c3cc88bbfb7b06de09a4b9e5b1177",
+          "meaning": "Older3 clear overlay before equality and activate; newer3 policy can bypass cleanup and are excluded"
+        },
+        {
+          "name": "class03Call",
+          "offset": "0xb43c",
+          "byteCount": 4,
+          "sha256": "a117f39bfa20c4383d10f70ca07c4039ad851c9f69c97dfde267e4cc8bbe5fa8",
+          "meaning": "Exact class03 dispatch branch reaches reviewed legacy LED handler"
+        }
+      ],
+      "synapseSources": [
+        {
+          "url": "https://apps.razer.com/synapse/products/652/mw/main.825dec01b9aefa0b84ac.js",
+          "sha256": "77AD6A8F51278C2950D07AAB3CA4E98EC67001527067F4118F50AF00954EABA1"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25.ceef38d32121535173d9.js",
+          "sha256": "D94B40BB4B1AEDD17C0028A625C28D00D8BC14B26361CBF25133A3CE4E5B0C67"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/652/mw/6737.4b526d5a88f50676de59.js",
+          "sha256": "B1A181C2F4A95C1871A5AEEDC5F820DBC991A61A067CB060BAC9ABEBF04EE488"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrixBlade.af4e2a8f0926c1f15907.js",
+          "sha256": "DD844382088CD971CD0D831D06221F9F05230083503271BC52C1C5BD9F5BE626"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrixBladeWattage.2c379fa5a66007f7b183.js",
+          "sha256": "9B07B08CEFCAE9288DCF37BBD65D28B4DEBFCB92F14FE7BC08172F1BD7634447"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrix.b6323801c081b7493b2b.js",
+          "sha256": "9D59660DEE9014DDFFC0EDEE828B402F906320232C37559DFFEA1B5DB1947519"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrixBlade2.032e7086bcdb3c4d6e9d.js",
+          "sha256": "96F6D3F024A5217FDCF7C6604D3EDC324CA1C7D0D0DBCF390851CD3B2AC45CC2"
+        }
+      ],
+      "baselineReadback": [
+        "Off",
+        "StaticRgb",
+        "BreathingRandom",
+        "BreathingSingleRgb",
+        "BreathingDualRgb",
+        "SpectrumModeOnly",
+        "WaveDirectionAndSpeed",
+        "CustomFrameModeOnly"
+      ],
+      "effectSetterLimitations": "Only exact legacy03/0A Off/randomBreathing/Spectrum/Wave. Do not skip explicit equal effect; fresh brightness0 after legacy activation prevents saved brightness alias. No RGB/frame writes.",
+      "activeStateProof": {
+        "activeBase": "0x1000137e",
+        "savedBase": "0x10001732",
+        "selectorActiveLiteralInstruction": "0x8276",
+        "selectorSavedLiteralInstruction": "0x828e",
+        "selectorSavedLiteralAdd": 0,
+        "consumerEntry": "0x6928",
+        "consumerActiveLiteralInstruction": "0x6938",
+        "consumerActiveLiteralAdd": 0,
+        "bank0SetCompletionCall": "0x9b9a",
+        "legacySetterEntry": "0xab3c",
+        "legacySetterSavedSelectorCall": "0xab40",
+        "legacyActivationHelper": "0x838c",
+        "legacyActivationConsumerCall": "0x83d0",
+        "class03HandlerCall": "0xb43c",
+        "class03Handler": "0xa636",
+        "brightnessStorage": 0,
+        "effectReadStorage": 0,
+        "alwaysSubmitExplicitLegacyEffect": true,
+        "skipEqualReadbackForbidden": true
+      },
+      "intrinsicLegacySideEffect": "Vendor legacy effect setter selects keyboard LED5.",
+      "writeContract": {
+        "backend": "SynapseLegacy03Matrix",
+        "commandClass": 3,
+        "commandId": 10,
+        "effectReadStorage": 0,
+        "brightnessStorage": 0,
+        "explicitDestinationAlwaysSubmitted": true,
+        "sameOffBridgeRequired": false,
+        "sameOffBridgeEffect": null,
+        "colorWritesAdmitted": false,
+        "frameWritesAdmitted": false,
+        "firmwareSavedBankConfirmationPermitted": false,
+        "readBrightnessAfterEffect": true,
+        "reason": "Legacy clears overlay first, activates saved64-byte record into bank0 and may restore saved brightness; refresh raw brightness0 before applying requested target."
+      }
+    },
+    {
+      "model": "RZ09-0510",
+      "product": 695,
+      "usbIdentity": "1532:02B7",
+      "family": "SO6100",
+      "firmwareVersion": "1.03.00",
+      "firmware": {
+        "carrierUrl": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282024%29%20%7C%20RZ09-0510/RazerUpdater_v1.1.1.3_SO6100_EC_0102_MCU_010300_VBIOS.exe",
+        "carrierSha256": "2912408c872d57176e42d2da09b68566cecf9b723f51cce4ae4e717a9e98e295",
+        "hexName": "SO6100_keyboard_FW_v1.03.00_20241101.hex",
+        "hexSha256": "40a8521909829caa7afcf129366670c66f7ab2170de961c88f1f67ecd0aa5b74",
+        "decodedBytes": 68808,
+        "decodedSha256": "9d45e49450445dae72eb1631bc2459883fbe19149acb131da2861c15e5b4fe42",
+        "nsisHexBlock": 19,
+        "carrierBytes": 6946120
+      },
+      "admittedEffects": [
+        "Off",
+        "BreathingRandom",
+        "WaveWire1"
+      ],
+      "logoSourceReviewed": true,
+      "dispatch": {
+        "tableOffset": "0xC32E",
+        "classSubtract": 0,
+        "class15Destination": "0xC36A",
+        "class15Handler": "0xA02C"
+      },
+      "effectSwitches": {
+        "get": {
+          "tableOffset": "0xA17C",
+          "count": 9,
+          "cases": {
+            "0": "0xA188",
+            "1": "0xA19A",
+            "2": "0xA1BA",
+            "3": "0xA218",
+            "4": "0xA22C"
+          }
+        },
+        "set": {
+          "tableOffset": "0xA398",
+          "count": 10,
+          "cases": {
+            "0": "0xA3A4",
+            "1": "0xA3FC",
+            "2": "0xA498",
+            "3": "0xA54C",
+            "4": "0xA584"
+          }
+        }
+      },
+      "sites": [
+        {
+          "name": "effectHandler",
+          "offset": "0xA02C",
+          "byteCount": 3072,
+          "sha256": "eb6d50b7b5e8904e1fcae35391d2fe0ec87959fa2c0632ac739bb7643ea0fa6b",
+          "meaning": "Class0F command selector, GET clearing and typed effect arms, SET state selection and persistence followup; no DataSize comparison on these paths"
+        },
+        {
+          "name": "classDispatchAndResponse",
+          "offset": "0xC300",
+          "byteCount": 224,
+          "sha256": "9ed250337d1784fb907219ffb41994989b6a6705134135f298ecdb359c724c09",
+          "meaning": "Fresh command class dispatch followed by reply checksum/status completion"
+        },
+        {
+          "name": "stateSelector",
+          "offset": "0x8CBE",
+          "byteCount": 64,
+          "sha256": "231831827af715a20716c8fcdcf853475cc0aea6911529544f49f6492b0d41eb",
+          "meaning": "Matching exact LED bank, selector0 volatile and1 persistent; same helper used for GET and SET"
+        },
+        {
+          "name": "legacyLedHandler",
+          "offset": "0xB49E",
+          "byteCount": 1536,
+          "sha256": "e6ea4e4d45a4624c7fc5febff53f935ce1e2900a00fccdfab9bf6e13bf7f5bc7",
+          "meaning": "Class03 LED access dispatch, brightness and logo fields"
+        },
+        {
+          "name": "brightnessGet",
+          "offset": "0xB70E",
+          "byteCount": 40,
+          "sha256": "d619ed6057162314fc56d3560b8e03e8d3847913e9ad32116dabf1e09373ad19",
+          "meaning": "GET03/83 loads selected state+2 to payload2"
+        },
+        {
+          "name": "brightnessSet",
+          "offset": "0xB736",
+          "byteCount": 256,
+          "sha256": "84c0e403e1382bafe91ea4d57b672152b3bfeb69a72fb04c3490c622bf5c5095",
+          "meaning": "SET03/03 compares and stores raw payload2 into selected state+2; independent readback required"
+        },
+        {
+          "name": "usbGetReport",
+          "offset": "0xD072",
+          "byteCount": 32,
+          "sha256": "d06cd0ed08dcafbdab5a5c38a93075a4bfa9fd8e2c8c7f6b2153e7c3552b2ed8",
+          "meaning": "USB GET_REPORT copies exactly90 frame bytes into USB transfer buffer"
+        },
+        {
+          "name": "usbSetReport",
+          "offset": "0xD122",
+          "byteCount": 32,
+          "sha256": "20cd78a9bb772296017c2087d4d3398edbcdb7745d4646f79b73d53b06993782",
+          "meaning": "USB SET_REPORT copies exactly90 USB transfer-buffer bytes into command frame"
+        },
+        {
+          "name": "usbDeviceDescriptor",
+          "offset": "0x100F0",
+          "byteCount": 18,
+          "sha256": "033c7073ef3012a67370584af666ca0206e16c957b7e68bcdf80f615d375ffc7",
+          "meaning": "Descriptor VID1532 and exact product ID; keyboard MCU product matches reviewed exact model"
+        },
+        {
+          "name": "getEffectSwitch",
+          "offset": "0xA174",
+          "byteCount": 19,
+          "sha256": "aea60aca941ab07d09630b6d9dc30c55db6e92a5385987ac94832890b3206b91",
+          "meaning": "Effect switch helper call and compact byte-offset table for exact mode0/1/2/3/4 entries"
+        },
+        {
+          "name": "getEffect0",
+          "offset": "0xA188",
+          "byteCount": 48,
+          "sha256": "c09fb9cfa77e7247932695dba9ece023743a61f9798e73bb29a21b3845ed3caa",
+          "meaning": "Reviewed effect0 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect1",
+          "offset": "0xA19A",
+          "byteCount": 48,
+          "sha256": "d95ce82559e3da0cc187cd43d49319cf64b721c75918c48c2997dd23a364818f",
+          "meaning": "Reviewed effect1 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect2",
+          "offset": "0xA1BA",
+          "byteCount": 48,
+          "sha256": "77f6f0ca7e38889253c9fe38cb8c1ae6fa41a4ff4ef5b02ce0c4659e3fb6d157",
+          "meaning": "Reviewed effect2 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect3",
+          "offset": "0xA218",
+          "byteCount": 48,
+          "sha256": "82a14c165c3538ceda32f6634eb3dcca754ad50177818ea11e749273622c2cfd",
+          "meaning": "Reviewed effect3 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect4",
+          "offset": "0xA22C",
+          "byteCount": 48,
+          "sha256": "35e228505c416f32150c0f465b358a25f0796598d3b81a37fce782a33e237368",
+          "meaning": "Reviewed effect4 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffectSwitch",
+          "offset": "0xA390",
+          "byteCount": 20,
+          "sha256": "4419d9a5062b09a83ef6222861dd3ed0a344be5870025003c470adc8006e722f",
+          "meaning": "Effect switch helper call and compact byte-offset table for exact mode0/1/2/3/4 entries"
+        },
+        {
+          "name": "setEffect0",
+          "offset": "0xA3A4",
+          "byteCount": 48,
+          "sha256": "c9134909a3479e0e3590c554e795b0407aca93b671eb863960bb62ba1954a8d0",
+          "meaning": "Reviewed effect0 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect1",
+          "offset": "0xA3FC",
+          "byteCount": 48,
+          "sha256": "b6fe82e1ac31a4266e818272a429f3460f10914da67b80fa7dc793775a58b913",
+          "meaning": "Reviewed effect1 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect2",
+          "offset": "0xA498",
+          "byteCount": 48,
+          "sha256": "bd5973e35c02676fda460416a377c8a3bcd704181b77eb07215a1acd5d1434f1",
+          "meaning": "Reviewed effect2 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect3",
+          "offset": "0xA54C",
+          "byteCount": 48,
+          "sha256": "5ca04fe94d31235d785c56bf104ae75e3aa95e4ed66aed6a116d094ff9be38ad",
+          "meaning": "Reviewed effect3 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect4",
+          "offset": "0xA584",
+          "byteCount": 48,
+          "sha256": "ee0ed4b74b6ec0f91ad57f89f246347a9cc429403255fa0f3d32579983e27e3f",
+          "meaning": "Reviewed effect4 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "spectrumPolicyNoOp",
+          "offset": "0xA58C",
+          "byteCount": 20,
+          "sha256": "e0d55f44baa97a19b9bdc148d7d3d3ed763ca8c5156e50044958b327b6b9235a",
+          "meaning": "Spectrum update can skip state store when an additional firmware policy flag is not1; application confirmation is mandatory, no replay or invented prerequisite"
+        },
+        {
+          "name": "activeConsumer",
+          "offset": "0x7250",
+          "byteCount": 128,
+          "sha256": "e3c575b15f441f28b34a09b82e0548319d97ea3998f5ccc1526f4ac4555b21d4",
+          "meaning": "Renderer transition consumer derives the same bank0 state base used by GET0; not saved1"
+        },
+        {
+          "name": "legacyActivationHelper",
+          "offset": "0x8e52",
+          "byteCount": 88,
+          "sha256": "8ef70231ada40f90941e9148f4ef5199010a7341ec2421ba51a6267f89a4a4ec",
+          "meaning": "Copies saved64-byte record to active0 and calls renderer transition even when saved mode already equals request"
+        },
+        {
+          "name": "legacyEffectSetter",
+          "offset": "0xb9ae",
+          "byteCount": 672,
+          "sha256": "e1c014a5cbac4a93b2c377b8ef3ed9f929b6b007cd6934f48d077f401b083e78",
+          "meaning": "Exact legacy03/0A effect dispatch, overlay flag cleanup, saved record mutation and activation completion"
+        },
+        {
+          "name": "legacyOffCleanup",
+          "offset": "0xb9e4",
+          "byteCount": 48,
+          "sha256": "b111a66d3c9fd5ea029753824ddb4438ee962de1832505b325277b4f7b6763d2",
+          "meaning": "Overlay cleared before effect equality test; activation runs even when saved effect already Off"
+        },
+        {
+          "name": "legacyWaveCleanup",
+          "offset": "0xba0a",
+          "byteCount": 76,
+          "sha256": "fb82e2f8b5618c969482feb2d1ea8a91b5fda743bf80b2e6d9ea96162614035f",
+          "meaning": "Overlay cleared before same-effect/direction equality test; then activation"
+        },
+        {
+          "name": "legacyBreathingCleanup",
+          "offset": "0xba90",
+          "byteCount": 48,
+          "sha256": "22f20ababb912102785c521f966905209f6afd6e457eb82fa68d7aa7806effeb",
+          "meaning": "Overlay cleared and effect/count fields updated; wire3 color mode maps to random count0"
+        },
+        {
+          "name": "legacySpectrumCleanupOrPolicy",
+          "offset": "0xbb10",
+          "byteCount": 72,
+          "sha256": "406cbe2769846cba8ff2e45291802de6f1b01116cb652e4dd94e7ada1f716b11",
+          "meaning": "Older3 clear overlay before equality and activate; newer3 policy can bypass cleanup and are excluded"
+        },
+        {
+          "name": "class03Call",
+          "offset": "0xc34c",
+          "byteCount": 4,
+          "sha256": "f992b1aa2d006a3c849a0352f8550ba8f72981f2d0a5d33d27c3c1f761d831b2",
+          "meaning": "Exact class03 dispatch branch reaches reviewed legacy LED handler"
+        },
+        {
+          "name": "volatileOffNoOpBeforeOverlayClear",
+          "offset": "0xa3a4",
+          "byteCount": 128,
+          "sha256": "62edd3704dd574f618e5c10229a371844bd185f826960151dab4e24487f9e196",
+          "meaning": "Equal active Off bypasses overlay clear, requiring the precise conditional randomBreathing->Off bridge"
+        },
+        {
+          "name": "volatileBreathingClearBeforeNoOp",
+          "offset": "0xa498",
+          "byteCount": 96,
+          "sha256": "887ef48749fdd08ec22a7537085158beb0b65c9a61a0daab68b59f95f93f1665",
+          "meaning": "LED5 branch clears custom overlay before comparing active Breathing/count"
+        },
+        {
+          "name": "volatileWaveClearBeforeNoOp",
+          "offset": "0xa5ee",
+          "byteCount": 160,
+          "sha256": "b0b28a6b44bc93a2aa1bba30e9f2f367ef924ffedee9a31645c717bc6f641994",
+          "meaning": "LED5 branch clears custom overlay before comparing active Wave/direction; noLED38 branch for LED5"
+        }
+      ],
+      "synapseSources": [
+        {
+          "url": "https://apps.razer.com/synapse/products/695/mw/main.27df2e7ddab0b6bc34cc.js",
+          "sha256": "A12CD7047CC1CF093DBB458D703BA4D18CFE77110F47391B180EA5B33BA5E379"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25.60bfcef58690c8bb715d.js",
+          "sha256": "2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/695/mw/6737.7ec91e479ef65c194b6c.js",
+          "sha256": "22D359EB7EDA08A9D2F4766EB6898A875A5F009EDB666BA4CD5A0425491AD1DA"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25LedMatrix.76e9ad52d76940bbf7be.js",
+          "sha256": "9F2DE3A4CD127BF010E4AAD81C02A1D0D207B6F5CB7334D7F3822177A5B8A923"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25LedMatrixBlade2.d7fc499124d26b637274.js",
+          "sha256": "EC3F8BCA0656F5BBB0872358ACAC387F7A2DFED42C9F5636D651DF1E85F1FF28"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25LedMatrixBladeWattage.8339706f4c96d35087e4.js",
+          "sha256": "BF2C42A139F3AC092A7DF913EBEC56684EE14C07241C6B56A0B276E54B3AD0F5"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25LedMatrixBlade.29566ed5280fbcc73b83.js",
+          "sha256": "8DF7DC371EECE383F791C206D7E44CBFB0EC98A2500337F634DF3A4A5C39EB93"
+        }
+      ],
+      "baselineReadback": [
+        "Off",
+        "StaticRgb",
+        "BreathingRandom",
+        "BreathingSingleRgb",
+        "BreathingDualRgb",
+        "SpectrumModeOnly",
+        "WaveDirectionAndSpeed",
+        "CustomFrameModeOnly"
+      ],
+      "effectSetterLimitations": "Only0FSET0 LED5 Off/randomBreathing/Wave; conditional same-Off randomBreathing bridge required. Spectrum,RGB,frames and combinedregion writes not admitted.",
+      "additionalPolicyUncertainty": "Spectrum update is conditional on a firmware policy flag. Its general real-world state semantics are not established here. Successful acknowledgement alone must not confirm requested Spectrum.",
+      "activeStateProof": {
+        "activeBase": "0x100014ae",
+        "savedBase": "0x10001862",
+        "selectorActiveLiteralInstruction": "0x8ccc",
+        "selectorSavedLiteralInstruction": "0x8ce4",
+        "selectorSavedLiteralAdd": 0,
+        "consumerEntry": "0x7250",
+        "consumerActiveLiteralInstruction": "0x7260",
+        "consumerActiveLiteralAdd": 0,
+        "bank0SetCompletionCall": "0xa8ec",
+        "legacySetterEntry": "0xb9ae",
+        "legacySetterSavedSelectorCall": "0xb9b2",
+        "legacyActivationHelper": "0x8e52",
+        "legacyActivationConsumerCall": "0x8e96",
+        "class03HandlerCall": "0xc34c",
+        "class03Handler": "0xb49e",
+        "brightnessStorage": 0,
+        "effectReadStorage": 0,
+        "alwaysSubmitExplicitLegacyEffect": false,
+        "skipEqualReadbackForbidden": true
+      },
+      "spectrumUnavailableReason": "Exact legacy Spectrum checks unreadable policy before clearing custom overlay; active mode alone can falsely confirm cleanup. No invented bridge/reset or broad prerequisite.",
+      "intrinsicLegacySideEffect": "Legacy03/0A is not admitted for this model in this change; selected0FLED5 path excludes combinedLED0 andVCLED38 writes.",
+      "writeContract": {
+        "backend": "Volatile0FTyped",
+        "commandClass": 15,
+        "commandId": 2,
+        "effectReadStorage": 0,
+        "brightnessStorage": 0,
+        "explicitDestinationAlwaysSubmitted": true,
+        "sameOffBridgeRequired": true,
+        "sameOffBridgeEffect": "BreathingRandom",
+        "colorWritesAdmitted": false,
+        "frameWritesAdmitted": false,
+        "firmwareSavedBankConfirmationPermitted": false,
+        "readBrightnessAfterEffect": true,
+        "reason": "NewOff can early-return before clearing overlay; randomBreathing/Wave clear overlay before no-op tests."
+      }
+    },
+    {
+      "model": "RZ09-0509",
+      "product": 696,
+      "usbIdentity": "1532:02B8",
+      "family": "KI8100",
+      "firmwareVersion": "1.01.00",
+      "firmware": {
+        "carrierUrl": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0509/RazerUpdater_v1.1.1.3_KI8100_EC_1.02_MCU_010100v2.exe",
+        "carrierSha256": "6e06d131e1a77a733fbf5c37e5ba95ccda2e496257a7bb4747b1e274dda74c38",
+        "hexName": "KI8100_keyboard_FW_v1.01.00_20240422.hex",
+        "hexSha256": "20158e4d7374a21d3a0c57ab44601e34a9796aedd119b21500825828b3fa55f0",
+        "decodedBytes": 63600,
+        "decodedSha256": "32bb690b242b524be8432e838e587e1ffd495df413eafb93341d4479d750fc1f",
+        "nsisHexBlock": 8,
+        "carrierBytes": 1494160
+      },
+      "admittedEffects": [
+        "Off",
+        "BreathingRandom",
+        "WaveWire1"
+      ],
+      "logoSourceReviewed": true,
+      "dispatch": {
+        "tableOffset": "0xB51E",
+        "classSubtract": 2,
+        "class15Destination": "0xB552",
+        "class15Handler": "0x96C8"
+      },
+      "effectSwitches": {
+        "get": {
+          "tableOffset": "0x9818",
+          "count": 9,
+          "cases": {
+            "0": "0x9824",
+            "1": "0x9836",
+            "2": "0x9856",
+            "3": "0x98B4",
+            "4": "0x98C8"
+          }
+        },
+        "set": {
+          "tableOffset": "0x9A34",
+          "count": 10,
+          "cases": {
+            "0": "0x9A40",
+            "1": "0x9A98",
+            "2": "0x9B34",
+            "3": "0x9BE8",
+            "4": "0x9C20"
+          }
+        }
+      },
+      "sites": [
+        {
+          "name": "effectHandler",
+          "offset": "0x96C8",
+          "byteCount": 3072,
+          "sha256": "c6e13618ea55fd50c67e120c6c713db31c7d5fc8372171870471f587064c94c8",
+          "meaning": "Class0F command selector, GET clearing and typed effect arms, SET state selection and persistence followup; no DataSize comparison on these paths"
+        },
+        {
+          "name": "classDispatchAndResponse",
+          "offset": "0xB4F4",
+          "byteCount": 224,
+          "sha256": "fe2976131445ccc496768d9aeccc5e04d033b7880eb632c62e396d71e67465ec",
+          "meaning": "Fresh command class dispatch followed by reply checksum/status completion"
+        },
+        {
+          "name": "stateSelector",
+          "offset": "0x850E",
+          "byteCount": 64,
+          "sha256": "8e49deb0b029fbd5c247b0fa142aa3b8a2a0f66745df6db41232831170104e16",
+          "meaning": "Matching exact LED bank, selector0 volatile and1 persistent; same helper used for GET and SET"
+        },
+        {
+          "name": "legacyLedHandler",
+          "offset": "0xABC0",
+          "byteCount": 1536,
+          "sha256": "a1cba16afb4af41888f8dd563adde90b313e2f93a73a83ffcedcb545d4d1a565",
+          "meaning": "Class03 LED access dispatch, brightness and logo fields"
+        },
+        {
+          "name": "brightnessGet",
+          "offset": "0xAE30",
+          "byteCount": 40,
+          "sha256": "c40109c4d7248db507911f8a99a74231697b1e3b155bbeece23e70d409397a3e",
+          "meaning": "GET03/83 loads selected state+2 to payload2"
+        },
+        {
+          "name": "brightnessSet",
+          "offset": "0xAE58",
+          "byteCount": 256,
+          "sha256": "1f50937b528e6be23f35d2c7f8ad123c3d10a5d8775a361c8722d46384689d3e",
+          "meaning": "SET03/03 compares and stores raw payload2 into selected state+2; independent readback required"
+        },
+        {
+          "name": "usbGetReport",
+          "offset": "0xC6FE",
+          "byteCount": 32,
+          "sha256": "d06cd0ed08dcafbdab5a5c38a93075a4bfa9fd8e2c8c7f6b2153e7c3552b2ed8",
+          "meaning": "USB GET_REPORT copies exactly90 frame bytes into USB transfer buffer"
+        },
+        {
+          "name": "usbSetReport",
+          "offset": "0xC7AE",
+          "byteCount": 32,
+          "sha256": "20cd78a9bb772296017c2087d4d3398edbcdb7745d4646f79b73d53b06993782",
+          "meaning": "USB SET_REPORT copies exactly90 USB transfer-buffer bytes into command frame"
+        },
+        {
+          "name": "usbDeviceDescriptor",
+          "offset": "0xEC9C",
+          "byteCount": 18,
+          "sha256": "2df24ba4c2b5e309da6556c6b9e4dcc9eba3a0d17c7cda97132f7f17ef20a2a7",
+          "meaning": "Descriptor VID1532 and exact product ID; keyboard MCU product matches reviewed exact model"
+        },
+        {
+          "name": "getEffectSwitch",
+          "offset": "0x9810",
+          "byteCount": 19,
+          "sha256": "cd12759774f34f426e577c48b75fdba8cd7f1540ebcb55e49beb3c73dbf12e64",
+          "meaning": "Effect switch helper call and compact byte-offset table for exact mode0/1/2/3/4 entries"
+        },
+        {
+          "name": "getEffect0",
+          "offset": "0x9824",
+          "byteCount": 48,
+          "sha256": "c09fb9cfa77e7247932695dba9ece023743a61f9798e73bb29a21b3845ed3caa",
+          "meaning": "Reviewed effect0 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect1",
+          "offset": "0x9836",
+          "byteCount": 48,
+          "sha256": "d95ce82559e3da0cc187cd43d49319cf64b721c75918c48c2997dd23a364818f",
+          "meaning": "Reviewed effect1 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect2",
+          "offset": "0x9856",
+          "byteCount": 48,
+          "sha256": "77f6f0ca7e38889253c9fe38cb8c1ae6fa41a4ff4ef5b02ce0c4659e3fb6d157",
+          "meaning": "Reviewed effect2 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect3",
+          "offset": "0x98B4",
+          "byteCount": 48,
+          "sha256": "6d79422a75aff0f80633651090e0533d6a60d740be7c8bc92e150f74e0f8e10b",
+          "meaning": "Reviewed effect3 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect4",
+          "offset": "0x98C8",
+          "byteCount": 48,
+          "sha256": "6563f3acd531a758ec1e3be08df1f26899a9cc19037245401fc3b2259a63ac1e",
+          "meaning": "Reviewed effect4 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffectSwitch",
+          "offset": "0x9A2C",
+          "byteCount": 20,
+          "sha256": "b92d9e5f4c642433189ad43b987e27bff68c562085a4a4334af376ceea7a9dba",
+          "meaning": "Effect switch helper call and compact byte-offset table for exact mode0/1/2/3/4 entries"
+        },
+        {
+          "name": "setEffect0",
+          "offset": "0x9A40",
+          "byteCount": 48,
+          "sha256": "a88472f248770fc77e9146f663fb9c2630282c000d47f1ad184000a2a3245ae5",
+          "meaning": "Reviewed effect0 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect1",
+          "offset": "0x9A98",
+          "byteCount": 48,
+          "sha256": "57c1d8fe55bfbf2b0e63c644d1eb3973ceb720e3999056abffc2577791c38156",
+          "meaning": "Reviewed effect1 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect2",
+          "offset": "0x9B34",
+          "byteCount": 48,
+          "sha256": "bd5973e35c02676fda460416a377c8a3bcd704181b77eb07215a1acd5d1434f1",
+          "meaning": "Reviewed effect2 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect3",
+          "offset": "0x9BE8",
+          "byteCount": 48,
+          "sha256": "5ca04fe94d31235d785c56bf104ae75e3aa95e4ed66aed6a116d094ff9be38ad",
+          "meaning": "Reviewed effect3 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect4",
+          "offset": "0x9C20",
+          "byteCount": 48,
+          "sha256": "ee0ed4b74b6ec0f91ad57f89f246347a9cc429403255fa0f3d32579983e27e3f",
+          "meaning": "Reviewed effect4 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "spectrumPolicyNoOp",
+          "offset": "0x9C28",
+          "byteCount": 20,
+          "sha256": "e0d55f44baa97a19b9bdc148d7d3d3ed763ca8c5156e50044958b327b6b9235a",
+          "meaning": "Spectrum update can skip state store when an additional firmware policy flag is not1; application confirmation is mandatory, no replay or invented prerequisite"
+        },
+        {
+          "name": "activeConsumer",
+          "offset": "0x6b70",
+          "byteCount": 128,
+          "sha256": "8e3d554ed17c0eb13a0c07e478e29bfb7c3df9fc42f853df9bf25c507fa7be9c",
+          "meaning": "Renderer transition consumer derives the same bank0 state base used by GET0; not saved1"
+        },
+        {
+          "name": "legacyActivationHelper",
+          "offset": "0x8674",
+          "byteCount": 88,
+          "sha256": "471ee10cebaf3b3131a95fbcc40a73636e6f5a7ad251d223acce1ab168403128",
+          "meaning": "Copies saved64-byte record to active0 and calls renderer transition even when saved mode already equals request"
+        },
+        {
+          "name": "legacyEffectSetter",
+          "offset": "0xb0c8",
+          "byteCount": 672,
+          "sha256": "7bf1d1ab02690b29fcbba15f05850c679b3feb04d809f5f4f0e36ba76ced8888",
+          "meaning": "Exact legacy03/0A effect dispatch, overlay flag cleanup, saved record mutation and activation completion"
+        },
+        {
+          "name": "legacyOffCleanup",
+          "offset": "0xb0fe",
+          "byteCount": 48,
+          "sha256": "f771b158e6bbee4b8327f104600a43f630bc3991eb698bfc54ec0b0b23bb849d",
+          "meaning": "Overlay cleared before effect equality test; activation runs even when saved effect already Off"
+        },
+        {
+          "name": "legacyWaveCleanup",
+          "offset": "0xb124",
+          "byteCount": 76,
+          "sha256": "a9da41e8a0ac2172be6e21daf4bbd632494960655fdfe354d6ddbe74d5b0c32b",
+          "meaning": "Overlay cleared before same-effect/direction equality test; then activation"
+        },
+        {
+          "name": "legacyBreathingCleanup",
+          "offset": "0xb1aa",
+          "byteCount": 48,
+          "sha256": "753ebb7d4d136ef883a6a0e38bdf1f62570614351a6f6b52582cc02860c54bb5",
+          "meaning": "Overlay cleared and effect/count fields updated; wire3 color mode maps to random count0"
+        },
+        {
+          "name": "legacySpectrumCleanupOrPolicy",
+          "offset": "0xb22a",
+          "byteCount": 72,
+          "sha256": "5e1ab2b1968ef76ae59a06e34a68c0573596853d565d1e6f1a96aeca036faa4d",
+          "meaning": "Older3 clear overlay before equality and activate; newer3 policy can bypass cleanup and are excluded"
+        },
+        {
+          "name": "class03Call",
+          "offset": "0xb534",
+          "byteCount": 4,
+          "sha256": "d3a09e079dd5c0f33c5d063047114ea90769b9bea5b0986c7a946d6d411c3bf7",
+          "meaning": "Exact class03 dispatch branch reaches reviewed legacy LED handler"
+        },
+        {
+          "name": "volatileOffNoOpBeforeOverlayClear",
+          "offset": "0x9a40",
+          "byteCount": 128,
+          "sha256": "a489b5bcca4870c58a287e77264b8a0cde6f085e0374cf23a3f4dcf61de0f601",
+          "meaning": "Equal active Off bypasses overlay clear, requiring the precise conditional randomBreathing->Off bridge"
+        },
+        {
+          "name": "volatileBreathingClearBeforeNoOp",
+          "offset": "0x9b34",
+          "byteCount": 96,
+          "sha256": "48901900e1f56965ea10024eefefa89660eaab6270c4fc67b0aac268b2bf296e",
+          "meaning": "LED5 branch clears custom overlay before comparing active Breathing/count"
+        },
+        {
+          "name": "volatileWaveClearBeforeNoOp",
+          "offset": "0x9c8a",
+          "byteCount": 160,
+          "sha256": "ffd700980fd2f3ad6b162bd90ac4e99a3076bb88cd0e69c1a86be33cbc7f5c57",
+          "meaning": "LED5 branch clears custom overlay before comparing active Wave/direction; noLED38 branch for LED5"
+        }
+      ],
+      "synapseSources": [
+        {
+          "url": "https://apps.razer.com/synapse/products/696/mw/main.ded18de8aee09a8f8238.js",
+          "sha256": "1A9CC3E1E8E28BB827AD17A720A03E6C62BA7A37F27774E8FA1B1B8E827E281F"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25.6339454cb5b2fe587300.js",
+          "sha256": "8780AA380D11665A2D551174D162C7278404465772219D0530A29B09E297BC81"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/696/mw/6737.2463f7361e4d145671a2.js",
+          "sha256": "4EF6AFB6402DD50CD6DE07CA96E191F475797903507C82CAE194F0AF63E32ECC"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25LedMatrixBladeWattage.522f5c0abf239227310d.js",
+          "sha256": "F99EAF5D64598CA475E5700602243520790C8E8E2F7ADCA4C78C85584FF14886"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25LedMatrix.9b4ab2e4321a6a556e6f.js",
+          "sha256": "8459713BCE0AA2D8F34A5A7C8382AA56DB65384570C12C02ACDBDD554FED40D6"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25LedMatrixBlade.d8b6805b3fb6452e52ce.js",
+          "sha256": "2F26EA7DA86C0504119A4C15C47430048E4C9A581BEB52F85A0847DB264FE4EA"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25LedMatrixBlade2.4a271d921402284f66f0.js",
+          "sha256": "2CF06F137FDC7AFD550D1D6CC8229A37C05CE96D9A9F4223F90E02BC456FF0E5"
+        }
+      ],
+      "baselineReadback": [
+        "Off",
+        "StaticRgb",
+        "BreathingRandom",
+        "BreathingSingleRgb",
+        "BreathingDualRgb",
+        "SpectrumModeOnly",
+        "WaveDirectionAndSpeed",
+        "CustomFrameModeOnly"
+      ],
+      "effectSetterLimitations": "Only0FSET0 LED5 Off/randomBreathing/Wave; conditional same-Off randomBreathing bridge required. Spectrum,RGB,frames and combinedregion writes not admitted.",
+      "additionalPolicyUncertainty": "Spectrum update is conditional on a firmware policy flag. Its general real-world state semantics are not established here. Successful acknowledgement alone must not confirm requested Spectrum.",
+      "activeStateProof": {
+        "activeBase": "0x1000141a",
+        "savedBase": "0x100017ce",
+        "selectorActiveLiteralInstruction": "0x851c",
+        "selectorSavedLiteralInstruction": "0x8534",
+        "selectorSavedLiteralAdd": 0,
+        "consumerEntry": "0x6b70",
+        "consumerActiveLiteralInstruction": "0x6b80",
+        "consumerActiveLiteralAdd": 0,
+        "bank0SetCompletionCall": "0x9f88",
+        "legacySetterEntry": "0xb0c8",
+        "legacySetterSavedSelectorCall": "0xb0cc",
+        "legacyActivationHelper": "0x8674",
+        "legacyActivationConsumerCall": "0x86b8",
+        "class03HandlerCall": "0xb534",
+        "class03Handler": "0xabc0",
+        "brightnessStorage": 0,
+        "effectReadStorage": 0,
+        "alwaysSubmitExplicitLegacyEffect": false,
+        "skipEqualReadbackForbidden": true
+      },
+      "spectrumUnavailableReason": "Exact legacy Spectrum checks unreadable policy before clearing custom overlay; active mode alone can falsely confirm cleanup. No invented bridge/reset or broad prerequisite.",
+      "intrinsicLegacySideEffect": "Legacy03/0A is not admitted for this model in this change; selected0FLED5 path excludes combinedLED0 andVCLED38 writes.",
+      "writeContract": {
+        "backend": "Volatile0FTyped",
+        "commandClass": 15,
+        "commandId": 2,
+        "effectReadStorage": 0,
+        "brightnessStorage": 0,
+        "explicitDestinationAlwaysSubmitted": true,
+        "sameOffBridgeRequired": true,
+        "sameOffBridgeEffect": "BreathingRandom",
+        "colorWritesAdmitted": false,
+        "frameWritesAdmitted": false,
+        "firmwareSavedBankConfirmationPermitted": false,
+        "readBrightnessAfterEffect": true,
+        "reason": "NewOff can early-return before clearing overlay; randomBreathing/Wave clear overlay before no-op tests."
+      }
+    },
+    {
+      "model": "RZ09-0529",
+      "product": 711,
+      "usbIdentity": "1532:02C7",
+      "family": "KI8110",
+      "firmwareVersion": "1.07.00",
+      "firmware": {
+        "carrierUrl": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0529/KI8110-MCUv01.07.00.exe",
+        "carrierSha256": "30c06ba3d2d057593bbf3c812249d4edd020d17fc157a8cc7c29264a9e72f9dc",
+        "hexName": "KI8110_keyboard_FW_v1.07.00_20250918.hex",
+        "hexSha256": "18392850b5e0145cbb689dc941d77fed6d8ba666f71cef9bbdaeccf4987a60e8",
+        "decodedBytes": 64408,
+        "decodedSha256": "c0ebb3b40d3ac763a50d7301457d73f1a84a3e2c951730454d848b13ca3f3578",
+        "nsisHexBlock": 7,
+        "carrierBytes": 1446744
+      },
+      "admittedEffects": [
+        "Off",
+        "BreathingRandom",
+        "WaveWire1"
+      ],
+      "logoSourceReviewed": true,
+      "dispatch": {
+        "compareOffset": "0xA20C",
+        "branchOffset": "0xA260",
+        "class15Handler": "0x9400"
+      },
+      "effectSwitches": {
+        "get": {
+          "tableOffset": "0x9524",
+          "count": 9,
+          "cases": {
+            "0": "0x9530",
+            "1": "0x954E",
+            "2": "0x9564",
+            "3": "0x959E",
+            "4": "0x95B0"
+          }
+        },
+        "set": {
+          "tableOffset": "0x96B2",
+          "count": 10,
+          "cases": {
+            "0": "0x9700",
+            "1": "0x976A",
+            "2": "0x9858",
+            "3": "0x9890",
+            "4": "0x988E"
+          }
+        }
+      },
+      "sites": [
+        {
+          "name": "effectHandler",
+          "offset": "0x9400",
+          "byteCount": 3072,
+          "sha256": "d4d8e646c5da8a604f30557862315159bf8e002c1253ed6e96fb82f054779310",
+          "meaning": "Class0F command selector, GET clearing and typed effect arms, SET state selection and persistence followup; no DataSize comparison on these paths"
+        },
+        {
+          "name": "classDispatchAndResponse",
+          "offset": "0xA1D0",
+          "byteCount": 166,
+          "sha256": "3a5a79b6000b1b97fddbc56b8c6a7034210cab090c176fda4dd4951273967842",
+          "meaning": "Fresh command class dispatch followed by reply checksum/status completion"
+        },
+        {
+          "name": "stateSelector",
+          "offset": "0x65B4",
+          "byteCount": 64,
+          "sha256": "7d152da2ace2c1df53a82425d1154e9043e172c48cab7220f82f638ec84acf2d",
+          "meaning": "Matching exact LED bank, selector0 volatile and1 persistent; same helper used for GET and SET"
+        },
+        {
+          "name": "legacyLedHandler",
+          "offset": "0x896C",
+          "byteCount": 2336,
+          "sha256": "12f55addcb238d009c00794ea144549a4def1d8096fb8f528c6877a86f081ef8",
+          "meaning": "Class03 LED access dispatch, brightness and logo fields"
+        },
+        {
+          "name": "brightnessGet",
+          "offset": "0x8B92",
+          "byteCount": 40,
+          "sha256": "52753afa7e655e38b4c473075bb88811b5c03566aa2b85a623bf17ea2749ddb9",
+          "meaning": "GET03/83 loads selected state+2 to payload2"
+        },
+        {
+          "name": "brightnessSet",
+          "offset": "0x8BA8",
+          "byteCount": 256,
+          "sha256": "c4c0989452030bb6701d1c7f2e418960c0399de24d76010a5006badac1933ae9",
+          "meaning": "SET03/03 compares and stores raw payload2 into selected state+2; independent readback required"
+        },
+        {
+          "name": "usbGetReport",
+          "offset": "0x23E8",
+          "byteCount": 32,
+          "sha256": "d09213d069851a32368c08cc26d4fac057a5ecfe4f4ca73058a87535cf49b95b",
+          "meaning": "USB GET_REPORT copies exactly90 frame bytes into USB transfer buffer"
+        },
+        {
+          "name": "usbSetReport",
+          "offset": "0x24CE",
+          "byteCount": 32,
+          "sha256": "741df52060db38eddaf7a317565a7b95648a36beefebf1fdffa0f32c2aa3b343",
+          "meaning": "USB SET_REPORT copies exactly90 USB transfer-buffer bytes into command frame"
+        },
+        {
+          "name": "usbDeviceDescriptor",
+          "offset": "0xECE4",
+          "byteCount": 18,
+          "sha256": "f72f7a06f0008c9ded7b986db9d1a15228c9ccce18ce6d775284a6596edf0b35",
+          "meaning": "Descriptor VID1532 and exact product ID; keyboard MCU product matches reviewed exact model"
+        },
+        {
+          "name": "getEffectSwitch",
+          "offset": "0x951C",
+          "byteCount": 19,
+          "sha256": "eb0434e32f2aa9e74b1ac3399377bc7f48765c5b92d172df72293ed5edff93c2",
+          "meaning": "Effect switch helper call and compact byte-offset table for exact mode0/1/2/3/4 entries"
+        },
+        {
+          "name": "getEffect0",
+          "offset": "0x9530",
+          "byteCount": 48,
+          "sha256": "879969f7e5c33cada1524c1b9ab4e45f3450c3a69a374055f03e7955fd432c45",
+          "meaning": "Reviewed effect0 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect1",
+          "offset": "0x954E",
+          "byteCount": 48,
+          "sha256": "f24919be44002dfaf954a4b836e879add201d056d384d7c4929bdbed8041a1d0",
+          "meaning": "Reviewed effect1 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect2",
+          "offset": "0x9564",
+          "byteCount": 48,
+          "sha256": "3b350cb10ac9e848aaebe491c3c962f903647c3f4f4f5d7f245f90c373c26f29",
+          "meaning": "Reviewed effect2 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect3",
+          "offset": "0x959E",
+          "byteCount": 48,
+          "sha256": "28c8cb0655b92623953303dd07427f9659ec81e15819e04fe34c1895a279c8e6",
+          "meaning": "Reviewed effect3 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "getEffect4",
+          "offset": "0x95B0",
+          "byteCount": 48,
+          "sha256": "e3f0ad1ac8eee2330fd3a2ac85cbbfbccdfa5b65e1ee9a75ff292766f8dfd621",
+          "meaning": "Reviewed effect4 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffectSwitch",
+          "offset": "0x96AA",
+          "byteCount": 20,
+          "sha256": "26f0bab504341476f4f39874f4da5d3cfba630d1b3489e9585a6bed99ba2a86c",
+          "meaning": "Effect switch helper call and compact byte-offset table for exact mode0/1/2/3/4 entries"
+        },
+        {
+          "name": "setEffect0",
+          "offset": "0x9700",
+          "byteCount": 48,
+          "sha256": "308bf62662a9651e75ca190116f1dfb68f5f173cee0c88cdd78e798bc37be92e",
+          "meaning": "Reviewed effect0 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect1",
+          "offset": "0x976A",
+          "byteCount": 48,
+          "sha256": "983118e517862c7abd1ec56a37032918d3e146e0deed3af129d7d70861b15584",
+          "meaning": "Reviewed effect1 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect2",
+          "offset": "0x9858",
+          "byteCount": 48,
+          "sha256": "b73441d1c3377b8ea81cb70dbda55f4bdc70a6557571d436544d83a30a0632be",
+          "meaning": "Reviewed effect2 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect3",
+          "offset": "0x9890",
+          "byteCount": 48,
+          "sha256": "6782efe7ff65edb3c5c776f32a3e6ca3a2bb116dc5dc2975acc1f6efbe83bb00",
+          "meaning": "Reviewed effect3 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "setEffect4",
+          "offset": "0x988E",
+          "byteCount": 48,
+          "sha256": "f27498550c1968095f7a0d2c89500951f859018bb91de3f9c441f2346f63b08c",
+          "meaning": "Reviewed effect4 branch entry; full handler window retains out-of-line paths"
+        },
+        {
+          "name": "spectrumPolicyNoOp",
+          "offset": "0x9996",
+          "byteCount": 20,
+          "sha256": "8d16193dd583c0f5be9b7939cc76539cc11412fbc325f3e7ff940b9edcf5629b",
+          "meaning": "Spectrum update can skip state store when an additional firmware policy flag is not1; application confirmation is mandatory, no replay or invented prerequisite"
+        },
+        {
+          "name": "activeConsumer",
+          "offset": "0x2630",
+          "byteCount": 128,
+          "sha256": "6e5bbccb90fe529d58b74cbc995adfa53272cd95e83b83fcd16b04e2a8f7de1a",
+          "meaning": "Renderer transition consumer derives the same bank0 state base used by GET0; not saved1"
+        },
+        {
+          "name": "legacyActivationHelper",
+          "offset": "0x4bf4",
+          "byteCount": 88,
+          "sha256": "0dac5faa8fb9f237f267512516e6f5ebf5b6ae6ec9473e42858d5e872d83228e",
+          "meaning": "Copies saved64-byte record to active0 and calls renderer transition even when saved mode already equals request"
+        },
+        {
+          "name": "legacyEffectSetter",
+          "offset": "0x8d88",
+          "byteCount": 1344,
+          "sha256": "729f1afe4a5cf5b8e7e7168f5504be9f4a12f69de4d4d54fe03f58a22196f123",
+          "meaning": "Exact legacy03/0A effect dispatch, overlay flag cleanup, saved record mutation and activation completion"
+        },
+        {
+          "name": "legacyOffCleanup",
+          "offset": "0x8e00",
+          "byteCount": 48,
+          "sha256": "97fec9b7a2506f8aff824df21f6b7819409617fd4034ce49c7a5cbdc078f9e8d",
+          "meaning": "Overlay cleared before effect equality test; activation runs even when saved effect already Off"
+        },
+        {
+          "name": "legacyWaveCleanup",
+          "offset": "0x8e36",
+          "byteCount": 76,
+          "sha256": "d7f47654c1750f82b91bdc38a8ac913de8f58679114b1cc35c35b27336922ca8",
+          "meaning": "Overlay cleared before same-effect/direction equality test; then activation"
+        },
+        {
+          "name": "legacyBreathingCleanup",
+          "offset": "0x8db6",
+          "byteCount": 48,
+          "sha256": "89831ef4ff76f31dc4c0f778cccbf20ab9857820920cde52a1d162e59c70a0f1",
+          "meaning": "Overlay cleared and effect/count fields updated; wire3 color mode maps to random count0"
+        },
+        {
+          "name": "legacySpectrumCleanupOrPolicy",
+          "offset": "0x8f60",
+          "byteCount": 72,
+          "sha256": "220d4052c1fc16ef5985f080d9e9af77d01bf2831456ed3a3e6db8a18b8f5659",
+          "meaning": "Older3 clear overlay before equality and activate; newer3 policy can bypass cleanup and are excluded"
+        },
+        {
+          "name": "class03Call",
+          "offset": "0xa242",
+          "byteCount": 4,
+          "sha256": "d38d5ba96853a512a17365c5c02a89f4e9e189d73411e8e4992745b12a99246d",
+          "meaning": "Exact class03 dispatch branch reaches reviewed legacy LED handler"
+        },
+        {
+          "name": "volatileOffNoOpBeforeOverlayClear",
+          "offset": "0x9700",
+          "byteCount": 128,
+          "sha256": "30a30ea27fe6849963ccb565fa6b41736ec515f4b99d94f1654f3e920547a728",
+          "meaning": "Equal active Off bypasses overlay clear, requiring the precise conditional randomBreathing->Off bridge"
+        },
+        {
+          "name": "volatileBreathingClearBeforeNoOp",
+          "offset": "0x9858",
+          "byteCount": 96,
+          "sha256": "26555a185d634f752335084110da303489a974d1fa3f4bd5ad0db357faad6ea7",
+          "meaning": "LED5 branch clears custom overlay before comparing active Breathing/count"
+        },
+        {
+          "name": "volatileWaveClearBeforeNoOp",
+          "offset": "0x9a82",
+          "byteCount": 160,
+          "sha256": "ca58de13461f9df01b4254568853ebfd1cb94cafc5623e085d1fe75dcfb3a4ee",
+          "meaning": "LED5 branch clears custom overlay before comparing active Wave/direction; noLED38 branch for LED5"
+        }
+      ],
+      "synapseSources": [
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js",
+          "sha256": "C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js",
+          "sha256": "02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js",
+          "sha256": "3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrixBladeWattage.eb36277c35277a49ce09.js",
+          "sha256": "D48002486906EFA165DBC5219F37D810658010EDB5C7B9E61D945EE36A361E97"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrix.69e3b36effe3a85ab0de.js",
+          "sha256": "65C1FD97AD41460B8AFE33B08C0F8051D990CAF15DCF40D23930583DBC85664F"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrixBlade.1ac7639291bd0bca2295.js",
+          "sha256": "CFD5529379EDE7C7EE0AA9C82A2726840DBB5B0B718C45024D8B7AD7486B7B85"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrixBlade2.d678cb5b99e6382aebe0.js",
+          "sha256": "62356152B59E6D172AF8D07677534EBA0BF9DBFEBA973AFE51BEC8437D031FD8"
+        }
+      ],
+      "baselineReadback": [
+        "Off",
+        "StaticRgb",
+        "BreathingRandom",
+        "BreathingSingleRgb",
+        "BreathingDualRgb",
+        "SpectrumModeOnly",
+        "WaveDirectionAndSpeed",
+        "CustomFrameModeOnly"
+      ],
+      "effectSetterLimitations": "Only0FSET0 LED5 Off/randomBreathing/Wave; conditional same-Off randomBreathing bridge required. Spectrum,RGB,frames and combinedregion writes not admitted.",
+      "additionalPolicyUncertainty": "Spectrum update is conditional on a firmware policy flag. Its general real-world state semantics are not established here. Successful acknowledgement alone must not confirm requested Spectrum.",
+      "activeStateProof": {
+        "activeBase": "0x100015d6",
+        "savedBase": "0x10001a92",
+        "selectorActiveLiteralInstruction": "0x65ba",
+        "selectorSavedLiteralInstruction": "0x65ce",
+        "selectorSavedLiteralAdd": 15,
+        "consumerEntry": "0x2630",
+        "consumerActiveLiteralInstruction": "0x2636",
+        "consumerActiveLiteralAdd": 96,
+        "bank0SetCompletionCall": "0x9e84",
+        "legacySetterEntry": "0x8d88",
+        "legacySetterSavedSelectorCall": "0x8d8c",
+        "legacyActivationHelper": "0x4bf4",
+        "legacyActivationConsumerCall": "0x4c2c",
+        "class03HandlerCall": "0xa242",
+        "class03Handler": "0x896c",
+        "brightnessStorage": 0,
+        "effectReadStorage": 0,
+        "alwaysSubmitExplicitLegacyEffect": false,
+        "skipEqualReadbackForbidden": true
+      },
+      "spectrumUnavailableReason": "Exact legacy Spectrum checks unreadable policy before clearing custom overlay; active mode alone can falsely confirm cleanup. No invented bridge/reset or broad prerequisite.",
+      "intrinsicLegacySideEffect": "Legacy03/0A is not admitted for this model in this change; selected0FLED5 path excludes combinedLED0 andVCLED38 writes.",
+      "writeContract": {
+        "backend": "Volatile0FTyped",
+        "commandClass": 15,
+        "commandId": 2,
+        "effectReadStorage": 0,
+        "brightnessStorage": 0,
+        "explicitDestinationAlwaysSubmitted": true,
+        "sameOffBridgeRequired": true,
+        "sameOffBridgeEffect": "BreathingRandom",
+        "colorWritesAdmitted": false,
+        "frameWritesAdmitted": false,
+        "firmwareSavedBankConfirmationPermitted": false,
+        "readBrightnessAfterEffect": true,
+        "reason": "NewOff can early-return before clearing overlay; randomBreathing/Wave clear overlay before no-op tests."
+      }
+    }
+  ],
+  "unresolved": [
+    {
+      "model": "RZ09-0370",
+      "product": 624,
+      "gap": "Reviewed package0370-bios contains no keyboard MCU. Synapse brightness/logo known; new0F command family not established for this model."
+    },
+    {
+      "model": "RZ09-0508",
+      "product": 694,
+      "gap": "Reviewed standard Firmware package contains BIOS PI4100_106.rom but no keyboard MCU. Synapse brightness/logo known; new0F command family not established for this model."
+    }
+  ],
+  "synapseAuditCoverage": [
+    {
+      "model": "RZ09-0370",
+      "product": 624,
+      "selectedClass": "rzDevice25LedMatrixBladeWattage",
+      "selectedLightingBase": "rzDevice25LedMatrix",
+      "legacySetter": "03/0A, separate03/0B frames; no matching matrix getter in selected Synapse chain",
+      "logoModes": [
+        "Static",
+        "Breathing",
+        "Off"
+      ],
+      "sources": [
+        {
+          "url": "https://apps.razer.com/synapse/products/624/mw/rzDevice25.1672779ed3e58b9415ca.js",
+          "sha256": "F696504C78559A2E04E503F8CF7B069D87F1298BFB767677912CD649EEB49456"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/624/mw/main.c661207b6abe5eb319cb.js",
+          "sha256": "50DFF3488639F22BD3890596A047378D14CB52334A49EDDCEDDAFC7EAF0669C2"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/624/ui/static/js/main.2709843a.js",
+          "sha256": "48359BAFE13C56156017A81A72E82CEDB3F44BAD5A52BB921D4FBE96E1F1A1FE"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/624/mw/6737.6b47e5cb8059a1bdacfb.js",
+          "sha256": "C36EFB8BD1F15DC65F8C235895EFA5F20A59D71D45BC6D22BF92D88C9C8D79F7"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/624/mw/rzDevice25LedMatrix.41a9a87e480e7e8e752a.js",
+          "sha256": "9BBA49FAE78CF93BB397A4EE76BDD147234C83DA5BFE63FF412A25E2143125CE"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/624/mw/rzDevice25LedMatrixBlade.c61a8d4fcda5f10441ea.js",
+          "sha256": "9293920B3D6B4065F4539972C8A69E87FF3C79354309F6BA214FA4D8BD430CAF"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/624/mw/rzDevice25LedMatrixBladeWattage.42a7744269064ea241c2.js",
+          "sha256": "A83F5FE396DABF9D5FB1AA1DAF77CC65E0927BE2D23EDDD4CC3A19633AC002F5"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/624/mw/rzDevice25LedMatrixBlade2.58b0677575a642f3900f.js",
+          "sha256": "1D0A0B7FDB95DE34A8D14BB9F3E8C20B3D84E9F68A5D8470BEA5FA8621CEE958"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0427",
+      "product": 652,
+      "selectedClass": "rzDevice25LedMatrixBlade",
+      "selectedLightingBase": "rzDevice25LedMatrix",
+      "legacySetter": "03/0A, separate03/0B frames; no matching matrix getter in selected Synapse chain",
+      "logoModes": [
+        "Static",
+        "Breathing",
+        "Off"
+      ],
+      "sources": [
+        {
+          "url": "https://apps.razer.com/synapse/products/652/mw/main.825dec01b9aefa0b84ac.js",
+          "sha256": "77AD6A8F51278C2950D07AAB3CA4E98EC67001527067F4118F50AF00954EABA1"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25.ceef38d32121535173d9.js",
+          "sha256": "D94B40BB4B1AEDD17C0028A625C28D00D8BC14B26361CBF25133A3CE4E5B0C67"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/652/mw/6737.4b526d5a88f50676de59.js",
+          "sha256": "B1A181C2F4A95C1871A5AEEDC5F820DBC991A61A067CB060BAC9ABEBF04EE488"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/652/ui/static/js/main.ca1e43bb.js",
+          "sha256": "9C640FF7F3359DFB8F8D7AA005DB01336F5C05A4EFB25C219550BA6D05A6C407"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrixBlade.af4e2a8f0926c1f15907.js",
+          "sha256": "DD844382088CD971CD0D831D06221F9F05230083503271BC52C1C5BD9F5BE626"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrixBladeWattage.2c379fa5a66007f7b183.js",
+          "sha256": "9B07B08CEFCAE9288DCF37BBD65D28B4DEBFCB92F14FE7BC08172F1BD7634447"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrix.b6323801c081b7493b2b.js",
+          "sha256": "9D59660DEE9014DDFFC0EDEE828B402F906320232C37559DFFEA1B5DB1947519"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/652/mw/rzDevice25LedMatrixBlade2.032e7086bcdb3c4d6e9d.js",
+          "sha256": "96F6D3F024A5217FDCF7C6604D3EDC324CA1C7D0D0DBCF390851CD3B2AC45CC2"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0421",
+      "product": 650,
+      "selectedClass": "rzDevice25LedMatrixBlade",
+      "selectedLightingBase": "rzDevice25LedMatrix",
+      "legacySetter": "03/0A, separate03/0B frames; no matching matrix getter in selected Synapse chain",
+      "logoModes": [],
+      "sources": [
+        {
+          "url": "https://apps.razer.com/synapse/products/650/mw/main.3650e97f35689328d442.js",
+          "sha256": "270D5D4E4AF9674D2219EFBE609294DC46E1BAF4E08A14AF32306D4495CB5A98"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25.33bbbe9e1d2d72bdf1a1.js",
+          "sha256": "CEF5D482E96F2833C84998E2FE998D0A41AA7CA4483E4E69156424F76475D513"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/650/ui/static/js/main.90e358d5.js",
+          "sha256": "06C52972C023B65B11DDF1C379671526E96C68B46105FC3EDCC714F0EF4944B0"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/650/mw/6737.1cc98c1e1650ffce7912.js",
+          "sha256": "8B31CFB0033A9C75F5E6E69D914A3A36BAE0A4944886B5CC6D076329434D1DF9"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrix.e196c7f06b29ad9b9887.js",
+          "sha256": "2594338071860022682DA7363407B8CD204AF8C6196FE979D00AE1BE1F9557BD"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrixBladeWattage.a715fa3adc2631c080dc.js",
+          "sha256": "70687428706956400D3CB5227E35BB03EFFB13D75E70429E06A94A7369202306"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrixBlade2.71032c5b3b3df82a387d.js",
+          "sha256": "E19A44993E93CAC2E79FB0FF9242CCC735A8283344CCDFA57E8E42180B29601E"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/650/mw/rzDevice25LedMatrixBlade.a041b7342ce44c78ec3b.js",
+          "sha256": "F0E34A36BC2A09A953835DE05F83C545CF18B11F139C86D0A0055942F8FBEA32"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0423",
+      "product": 651,
+      "selectedClass": "rzDevice25LedMatrixBlade",
+      "selectedLightingBase": "rzDevice25LedMatrix",
+      "legacySetter": "03/0A, separate03/0B frames; no matching matrix getter in selected Synapse chain",
+      "logoModes": [
+        "Static",
+        "Breathing",
+        "Off"
+      ],
+      "sources": [
+        {
+          "url": "https://apps.razer.com/synapse/products/651/mw/main.8378c0c79039a3f2ba23.js",
+          "sha256": "F227CBA8959DFEE0B898077D4CC77651066B7BFFF8CAA20910E9B3946E026AC4"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25.7ffcfe7d1ddb6103ac44.js",
+          "sha256": "A9442C86AB7D8F0549E18016324462A52A040E5578410F296BDF72884A383962"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/651/mw/6737.003892ae34f5de0292c0.js",
+          "sha256": "E8A2CFF2F19A59B8F425E7EC70BFF5873551479560005435E1B04B34F9CC7454"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/651/ui/static/js/main.8fce5f78.js",
+          "sha256": "FF4ACE62F536DAD8E14A674177638FAC74ED462C74FECC7A42D66B2F3616C254"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrixBladeWattage.d708c5b081c8f56a50b6.js",
+          "sha256": "204DB11C43D4ECFC33EC476A770AC246FB19085A001140582A08831CBE77689D"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrix.91ecd705f076a69cb74b.js",
+          "sha256": "40237B74FDC3A2F05F47C05501117EF1E97131C88055614D9A9ED58DAB96EF31"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrixBlade2.82d68898207246f09200.js",
+          "sha256": "C92ED2B6966AEEEE991819C291A5E054F9EC04B72D8202C1435A76DBC8219945"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/651/mw/rzDevice25LedMatrixBlade.3d7a6466eb25ba2e5f2d.js",
+          "sha256": "66A45A45F7B471426FE41875D2C84E7F0EFD62CCB1066CF3657949B02A163C27"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0508",
+      "product": 694,
+      "selectedClass": "rzDevice25LedMatrixBlade2",
+      "selectedLightingBase": "rzDevice25LedMatrix",
+      "legacySetter": "03/0A, separate03/0B frames; no matching matrix getter in selected Synapse chain",
+      "logoModes": [
+        "Static",
+        "Breathing",
+        "Off"
+      ],
+      "sources": [
+        {
+          "url": "https://apps.razer.com/synapse/products/694/mw/rzDevice25.06135650b7453937e0e8.js",
+          "sha256": "0E5BD5C21DD610E5D889F608B2EBB1D80BFC7CA90237FBBC3A292ADBAF06EF90"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/694/mw/6737.63910b6756fd6d249dc6.js",
+          "sha256": "488D72368F0EBFB2A4DD80BE68E8C2BAB8020CBBCC65CA786757FEA79507B997"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/694/mw/main.1b1b68e07824e5af9833.js",
+          "sha256": "F1AEEAFF4BBDB631B4E66BF8B2B6415FB0EADDF24343A146787B091F89AA7BDC"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/694/ui/static/js/main.415cc878.js",
+          "sha256": "C22750AAD6E54EE86E04B3D7F7D7DA520636293C209734358FC26A744D84F6B1"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/694/mw/rzDevice25LedMatrixBladeWattage.a4b526ca0148004c643a.js",
+          "sha256": "B808AC85FBFBA3B2BF7C8A0593DD38520DF005D309E66C80A28B7D7122D95EB4"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/694/mw/rzDevice25LedMatrix.0f011b08f1cdafea199c.js",
+          "sha256": "E60132332EC11942F9FAB607ECC7085220157EE6E701FC03C7FAA4BC40A1B98E"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/694/mw/rzDevice25LedMatrixBlade2.f195d8975ab02884ce66.js",
+          "sha256": "2C67D03295574A782387614E2BE285D16976A325A70AF1C4227E054DE83510ED"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/694/mw/rzDevice25LedMatrixBlade.b65ad2e4cc7347193091.js",
+          "sha256": "2D630C25A05AD475E2E382CB653FC281A972DCAD6C2465ECAE387800A4EA0AA2"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0510",
+      "product": 695,
+      "selectedClass": "rzDevice25LedMatrixBlade2",
+      "selectedLightingBase": "rzDevice25LedMatrix",
+      "legacySetter": "03/0A, separate03/0B frames; no matching matrix getter in selected Synapse chain",
+      "logoModes": [
+        "Static",
+        "Breathing",
+        "Off"
+      ],
+      "sources": [
+        {
+          "url": "https://apps.razer.com/synapse/products/695/mw/main.27df2e7ddab0b6bc34cc.js",
+          "sha256": "A12CD7047CC1CF093DBB458D703BA4D18CFE77110F47391B180EA5B33BA5E379"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25.60bfcef58690c8bb715d.js",
+          "sha256": "2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/695/ui/static/js/main.65ed4ee5.js",
+          "sha256": "74ECA71816B57B4C9BE3F83D3E5D894F95A2050D88FB2DF4B63A5AFFF5271612"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/695/mw/6737.7ec91e479ef65c194b6c.js",
+          "sha256": "22D359EB7EDA08A9D2F4766EB6898A875A5F009EDB666BA4CD5A0425491AD1DA"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25LedMatrix.76e9ad52d76940bbf7be.js",
+          "sha256": "9F2DE3A4CD127BF010E4AAD81C02A1D0D207B6F5CB7334D7F3822177A5B8A923"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25LedMatrixBlade2.d7fc499124d26b637274.js",
+          "sha256": "EC3F8BCA0656F5BBB0872358ACAC387F7A2DFED42C9F5636D651DF1E85F1FF28"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25LedMatrixBladeWattage.8339706f4c96d35087e4.js",
+          "sha256": "BF2C42A139F3AC092A7DF913EBEC56684EE14C07241C6B56A0B276E54B3AD0F5"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25LedMatrixBlade.29566ed5280fbcc73b83.js",
+          "sha256": "8DF7DC371EECE383F791C206D7E44CBFB0EC98A2500337F634DF3A4A5C39EB93"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0509",
+      "product": 696,
+      "selectedClass": "rzDevice25LedMatrixBlade2",
+      "selectedLightingBase": "rzDevice25LedMatrix",
+      "legacySetter": "03/0A, separate03/0B frames; no matching matrix getter in selected Synapse chain",
+      "logoModes": [
+        "Static",
+        "Breathing",
+        "Off"
+      ],
+      "sources": [
+        {
+          "url": "https://apps.razer.com/synapse/products/696/mw/main.ded18de8aee09a8f8238.js",
+          "sha256": "1A9CC3E1E8E28BB827AD17A720A03E6C62BA7A37F27774E8FA1B1B8E827E281F"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25.6339454cb5b2fe587300.js",
+          "sha256": "8780AA380D11665A2D551174D162C7278404465772219D0530A29B09E297BC81"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/696/ui/static/js/main.cb24c0fc.js",
+          "sha256": "C882F2130FC41DC73EDA31A141BA82F8786B84F45992C490CC0DC5AC3EC28DCD"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/696/mw/6737.2463f7361e4d145671a2.js",
+          "sha256": "4EF6AFB6402DD50CD6DE07CA96E191F475797903507C82CAE194F0AF63E32ECC"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25LedMatrixBladeWattage.522f5c0abf239227310d.js",
+          "sha256": "F99EAF5D64598CA475E5700602243520790C8E8E2F7ADCA4C78C85584FF14886"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25LedMatrix.9b4ab2e4321a6a556e6f.js",
+          "sha256": "8459713BCE0AA2D8F34A5A7C8382AA56DB65384570C12C02ACDBDD554FED40D6"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25LedMatrixBlade.d8b6805b3fb6452e52ce.js",
+          "sha256": "2F26EA7DA86C0504119A4C15C47430048E4C9A581BEB52F85A0847DB264FE4EA"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/696/mw/rzDevice25LedMatrixBlade2.4a271d921402284f66f0.js",
+          "sha256": "2CF06F137FDC7AFD550D1D6CC8229A37C05CE96D9A9F4223F90E02BC456FF0E5"
+        }
+      ]
+    },
+    {
+      "model": "RZ09-0529",
+      "product": 711,
+      "selectedClass": "rzDevice25LedMatrixBlade2",
+      "selectedLightingBase": "rzDevice25LedMatrix",
+      "legacySetter": "03/0A, separate03/0B frames; no matching matrix getter in selected Synapse chain",
+      "logoModes": [
+        "Static",
+        "Breathing",
+        "Off"
+      ],
+      "sources": [
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js",
+          "sha256": "C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js",
+          "sha256": "02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/ui/static/js/892.12b29c32.chunk.js",
+          "sha256": "FE1298AD9FAAE66301E76B439311F19393E4A46E1F8C5EB42B65350DA88F9100"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/ui/static/js/main.a649ed49.js",
+          "sha256": "4B42EF4995470865B7D02587B85724247B886BDF2376EB6A78DA38BB9B6CBF99"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js",
+          "sha256": "3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrixBladeWattage.eb36277c35277a49ce09.js",
+          "sha256": "D48002486906EFA165DBC5219F37D810658010EDB5C7B9E61D945EE36A361E97"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrix.69e3b36effe3a85ab0de.js",
+          "sha256": "65C1FD97AD41460B8AFE33B08C0F8051D990CAF15DCF40D23930583DBC85664F"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrixBlade.1ac7639291bd0bca2295.js",
+          "sha256": "CFD5529379EDE7C7EE0AA9C82A2726840DBB5B0B718C45024D8B7AD7486B7B85"
+        },
+        {
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25LedMatrixBlade2.d678cb5b99e6382aebe0.js",
+          "sha256": "62356152B59E6D172AF8D07677534EBA0BF9DBFEBA973AFE51BEC8437D031FD8"
+        }
+      ]
+    }
+  ],
+  "corrections": [
+    "Revision1 incorrectly treated selector1 readback as active confirmation. Revision2 separates saved1 from active0 and uses exact legacy setter completion to clear overlay and activate bank0.",
+    "Legacy Spectrum on695/696/711 checks an unexposed firmware policy before clearing overlay. It is not admitted: bank0 alone cannot reject every stale-overlay success when the selected mode is already Spectrum."
+  ]
+}

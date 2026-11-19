@@ -169,6 +169,9 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 
     public string? CommitWarning { get; private set; }
 
+    public SetupPayloadRecoveryDetails RecoveryDetails => new(
+        paths.InstallDirectory, stagingDirectory, backupDirectory, failedDirectory, state.ToString());
+
     public static async Task<ISetupPayloadTransaction> StageAsync(
         SetupPaths paths,
         string payloadDirectory,
@@ -214,6 +217,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
                 files.CopyFile(source, destination);
                 cancellationToken.ThrowIfCancellationRequested();
 
+                progressReporter.Report(SetupProgressCode.VerifyPayload);
                 PayloadEntry currentSource = ReadEntry(payloadRoot, source, files);
                 if (!entry.ContentEquals(currentSource))
                 {
@@ -222,6 +226,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
                 }
             }
 
+            progressReporter.Report(SetupProgressCode.VerifyPayload);
             IReadOnlyDictionary<string, PayloadEntry> stagedManifest =
                 BuildManifest(staging, files, cancellationToken);
             RequireExactManifest(sourceManifest, stagedManifest);

@@ -9,6 +9,7 @@ internal static class ServiceStatusSnapshotComparer
         left.CoolingPad == right.CoolingPad
         && left.DeviceVerified == right.DeviceVerified
         && left.WritesBlocked == right.WritesBlocked
+        && left.ExternalPowerPresent == right.ExternalPowerPresent
         && left.PotentialControllers.SequenceEqual(
             right.PotentialControllers,
             StringComparer.Ordinal)
@@ -112,6 +113,8 @@ internal static class ServiceStatusSnapshotComparer
             && left.WritableSpecialKeySlots == right.WritableSpecialKeySlots
             && left.LampArrayLightingAccess == right.LampArrayLightingAccess
             && left.SupportsIndependentLightingControls == right.SupportsIndependentLightingControls
+            && left.SupportsVaporChamberLighting == right.SupportsVaporChamberLighting
+            && left.SupportsTouchpadStatusIndicator == right.SupportsTouchpadStatusIndicator
             && left.ObservedPowerSourceBehaviors.SequenceEqual(
                 right.ObservedPowerSourceBehaviors)
             && left.FanModes.SetEquals(right.FanModes)
@@ -123,14 +126,22 @@ internal static class ServiceStatusSnapshotComparer
                     entry.Key,
                     out FanSpeedRange? rightRange)
                 && entry.Value == rightRange)
+            && left.ObservedFanSpeedRangesByPerformancePreset.Count
+                == right.ObservedFanSpeedRangesByPerformancePreset.Count
+            && left.ObservedFanSpeedRangesByPerformancePreset.All(entry =>
+                right.ObservedFanSpeedRangesByPerformancePreset.TryGetValue(entry.Key, out FanSpeedRange? observed)
+                && entry.Value == observed)
             && left.SupportsBatterySaverFanStop == right.SupportsBatterySaverFanStop
             && left.HasFanStopTrialEvidence == right.HasFanStopTrialEvidence
             && left.HasFanStopSourceEvidence == right.HasFanStopSourceEvidence
             && left.SupportsFanStop == right.SupportsFanStop
             && left.ReportsPerformanceWithManualFans == right.ReportsPerformanceWithManualFans
             && left.SupportsManualFansOnLimitedPower == right.SupportsManualFansOnLimitedPower
+            && left.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower
+                == right.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower
             && left.LightingEffects.SetEquals(right.LightingEffects)
             && left.ObservedLightingEffects.SetEquals(right.ObservedLightingEffects)
+            && left.ObservedLightingZones.SetEquals(right.ObservedLightingZones)
             && left.SupportedLightingRefreshRates.SetEquals(
                 right.SupportedLightingRefreshRates)
             && left.LogoLightingModes.SetEquals(right.LogoLightingModes)

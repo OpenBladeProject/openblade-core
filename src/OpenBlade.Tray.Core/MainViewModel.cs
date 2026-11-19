@@ -423,7 +423,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
         CpuTuning = new CpuTuningViewModel(serviceClient,
             () => CanControlHardware && CanMutate
-                && ActivePowerSource == PowerSource.PluggedIn
+                && ActivePowerSource == PowerSource.PluggedIn && !IsPowerClassificationUnavailable
                 && !IsPerformanceOperationInProgress && !IsHyperBoostOperationInProgress
                 && !HyperBoostActive && !HasUnconfirmedWrites
                 && !HasControllerDetectionWarning && latestStatus?.PotentialControllers.Count == 0,
@@ -479,7 +479,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             parameter => parameter is LightingSettings value
                 && !IsLightingOperationInProgress
                 && CanMutate
-                && HasConfirmedPowerSource
+                && HasManualPowerContext
                 && CanSubmitLightingDraft(value));
         SetChargeLimitCommand = CreateCommand(
             SetChargeLimitAsync,
@@ -688,8 +688,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    public bool CanRequestHardwareControl => CanControlHardware
-        || IsRetainedPowerSourceRecheck(latestStatus);
+    public bool CanRequestHardwareControl => CanControlHardware;
 
     public string UnsupportedLaptopMessage => TrayText.Get(
         "Save a short identity report, then follow the Synapse Observer guide to help add support for this laptop.");
@@ -731,7 +730,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
             if (latestStatus?.DeviceVerified != true)
             {
-                return TrayText.Get("OpenBlade could not verify this laptop. Open Troubleshooting in About to check the detected model and connection.");
+                return HasUnverifiedControllerAdvisory
+                    ? LaptopSettingsReadUnavailableMessage
+                    : TrayText.Get("OpenBlade could not verify this laptop. Open Troubleshooting in About to check the detected model and connection.");
             }
             if (latestStatus.HyperBoostRestorePending)
             {
@@ -749,7 +750,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 return latestStatus.ConfirmedState is null
                     or { Performance: null, Fans: null, Battery: null, Lighting: null }
-                    ? TrayText.Get("OpenBlade couldn’t read the laptop’s current settings. Close Synapse if it is running, then select Check current state. If controls stay unavailable, export diagnostics.")
+                    ? LaptopSettingsReadUnavailableMessage
                     : TrayText.Get("OpenBlade cannot apply changes right now. Select Check current state. If controls stay unavailable, export diagnostics.");
             }
             return string.Empty;
@@ -1041,10 +1042,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             Notify(nameof(ActivePowerSource));
-            if (value is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
-            {
-                SelectedProfileComparisonOption = ComparisonOptions.First(option => option.Source == value);
-            }
+            Notify(nameof(ProfileComparisonOptions));
+            SelectActiveProfileComparison();
             NotifySelectedProfilePresentation();
             Notify(nameof(IsPluggedInProfileActive));
             Notify(nameof(IsBatteryProfileActive));
@@ -1097,7 +1096,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ? SaveToActiveProfileLabel
         : TrayText.Get("Save profile changes");
 
-    public IReadOnlyList<ProfileComparisonOption> ProfileComparisonOptions => ComparisonOptions;
+    public IReadOnlyList<ProfileComparisonOption> ProfileComparisonOptions => ComparisonOptions
+        .OrderBy(option => option.Source == ActivePowerSource ? 0 : 1)
+        .ToArray();
+
+    public void SelectActiveProfileComparison()
+    {
+        if (ActivePowerSource is PowerSource.PluggedIn or PowerSource.UsbC or PowerSource.Battery)
+        {
+            SelectedProfileComparisonOption = ComparisonOptions.First(option => option.Source == ActivePowerSource);
+        }
+    }
 
     public ProfileComparisonOption SelectedProfileComparisonOption
     {
@@ -1117,7 +1126,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string ActivePerformanceLabel => IsConnected
         ? HyperBoostActive
             ? TrayText.Get("HyperBoost")
-            : PerformancePresetPresentation.Label(SelectedPerformance)
+            : PerformancePresetPresentation.Label(SelectedPerformance, ActivePowerSource)
         : UnavailableLabel;
 
     public string ActiveFanModeLabel => IsConnected
@@ -1140,29 +1149,30 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 ? UnavailableLaptopReason
                 : ActivePowerSource == PowerSource.ExternalUnknown
                     ? PowerSourcePresentation.Label(ActivePowerSource)
-                    : CanControlHardware || IsRetainedPowerSourceRecheck(latestStatus)
+                    : CanControlHardware
                         ? TrayText.Get("Ready")
                         : TrayText.Get("Controls unavailable");
 
     public bool IsReadinessReady => IsConnected
         && latestStatus?.DeviceVerified == true
         && !IsCheckingLaptopConnection(latestStatus)
-        && (CanControlHardware || IsRetainedPowerSourceRecheck(latestStatus));
+        && CanControlHardware;
 
     public bool IsReadinessChecking => IsConnected
         && IsCheckingLaptopConnection(latestStatus);
 
     public bool IsReadinessWarning => IsConnected
         && (IsFirmwareAdmissionBlocked
+            || HasUnverifiedControllerAdvisory
             || latestStatus?.DeviceVerified == true
                 && !IsCheckingLaptopConnection(latestStatus)
-                && !IsRetainedPowerSourceRecheck(latestStatus)
                 && !CanControlHardware);
 
     public bool IsReadinessError => !IsConnected
         || (!IsCheckingLaptopConnection(latestStatus)
             && latestStatus?.DeviceVerified != true
-            && !IsFirmwareAdmissionBlocked);
+            && !IsFirmwareAdmissionBlocked
+            && !HasUnverifiedControllerAdvisory);
 
     public string PerformanceSourceLabel
     {
@@ -1346,9 +1356,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             ControlAccess: SessionControlAccess.Active,
             DeviceVerified: true,
-            ActivePowerSource: PowerSource.PluggedIn,
             ControllerDetectionWarning: null,
         }
+        && PowerSourcePolicy.IsExternal(latestStatus.ActivePowerSource)
         && !HasBlockingHyperBoostController(latestStatus)
         && !IsHyperBoostRestoreRecoveryInProgress;
 
@@ -1544,7 +1554,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanReapplyChangedSettings => (HasExternalChanges
         || ThermalConvergenceExplicitReapplyRequired)
         && !HasUnconfirmedWrites
-        && CanControlHardware
+        && CanControlHardware && HasConfirmedPowerSource
         && (HasReapplicableExternalChanges || ThermalConvergenceExplicitReapplyRequired)
         && !IsReapplyChangedSettingsOperationInProgress;
 
@@ -2109,7 +2119,25 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ? TrayText.Get("Laptop not supported")
         : IsFirmwareAdmissionBlocked
         ? TrayText.Get("Incompatible firmware")
+        : HasUnverifiedControllerAdvisory
+        ? TrayText.Get("Controls unavailable")
         : TrayText.Get("Laptop not found");
+
+    // Controllers can block the first verification before HID enumeration.
+    // Their presence does not establish whether the laptop is connected.
+    private bool HasUnverifiedControllerAdvisory => latestStatus is
+    {
+        DeviceVerified: false,
+        WritesBlocked: true,
+        UnsupportedLaptop: false,
+    }
+        && (latestStatus.PotentialControllers.Count > 0
+            || !string.IsNullOrWhiteSpace(latestStatus.ControllerDetectionWarning))
+        && !IsFirmwareAdmissionBlocked
+        && !IsCheckingLaptopConnection(latestStatus);
+
+    private static string LaptopSettingsReadUnavailableMessage => TrayText.Get(
+        "OpenBlade couldn’t read the laptop’s current settings. Close Synapse if it is running, then select Check current state. If controls stay unavailable, export diagnostics.");
 
     private bool IsFirmwareAdmissionBlocked =>
         latestStatus?.FirmwareCompatibility
@@ -2239,12 +2267,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public IReadOnlyList<PerformancePresetOption> AvailableActivePerformanceOptions =>
-        ActivePowerSource switch
+        ControlPowerSource switch
         {
             PowerSource.PluggedIn => AvailablePluggedInPerformanceOptions,
             PowerSource.Battery => AvailableBatteryPerformanceOptions,
             PowerSource.UsbC => AvailableUsbCPerformanceOptions,
-            PowerSource.ExternalUnknown => [],
+            PowerSource.ExternalUnknown => HasUnclassifiedOrdinaryThermalControl
+                ? PerformancePresetPresentation.CreateOrdinaryManualOptions(CommandCapabilities.PerformancePresets) : [],
             _ => [],
         };
 
@@ -2289,10 +2318,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         SelectedWindowsPowerModeOption.Value is null
             ? TrayText.Format(
                 "Leaves the Windows setting unchanged whenever {0} is selected.",
-                PerformancePresetPresentation.Label(SelectedPerformance))
+                PerformancePresetPresentation.Label(SelectedPerformance, ActivePowerSource))
             : TrayText.Format(
                 "Used whenever {0} is selected. {1}",
-                PerformancePresetPresentation.Label(SelectedPerformance),
+                PerformancePresetPresentation.Label(SelectedPerformance, ActivePowerSource),
                 SelectedWindowsPowerModeOption.Description);
 
     public bool CanEditWindowsPowerMode =>
@@ -2311,23 +2340,23 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public IReadOnlyList<FanMode> AvailableActiveFanModes =>
-        ActivePowerSource switch
+        ControlPowerSource switch
         {
             PowerSource.PluggedIn => AvailableFanModes,
             PowerSource.Battery => AvailableFanModes
                 .Where(mode => FanControlPowerPolicy.IsAvailable(PowerSource.Battery, mode)).ToArray(),
             PowerSource.UsbC => AvailableUsbCFanModes,
-            PowerSource.ExternalUnknown => [],
+            PowerSource.ExternalUnknown => HasUnclassifiedOrdinaryThermalControl ? AvailableFanModes : [],
             _ => [],
         };
 
     public IReadOnlyList<FanModeOption> AvailableActiveFanModeOptions =>
-        ActivePowerSource switch
+        ControlPowerSource switch
         {
             PowerSource.PluggedIn => availableFanModeOptions,
             PowerSource.Battery => availableBatteryFanModeOptions,
             PowerSource.UsbC => availableUsbCFanModeOptions,
-            PowerSource.ExternalUnknown => [],
+            PowerSource.ExternalUnknown => HasUnclassifiedOrdinaryThermalControl ? availableFanModeOptions : [],
             _ => [],
         };
 
@@ -2386,6 +2415,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && HasLightingCapability
         && (UsesIndependentLightingControls || !UseWindowsDynamicLighting);
 
+    public bool SupportsRz090529KeyColorEditor =>
+        Capabilities.KeyboardLightingLayoutId == KeyboardLightingLayoutIds.Rz09_0529
+        && Capabilities.LightingEffects.Contains(LightingEffect.Sequence);
+
+    public bool CanApplyRz090529KeyColors => SupportsRz090529KeyColorEditor
+        && CanControlLighting
+        && CommandCapabilities.LightingEffects.Contains(LightingEffect.Sequence);
+
     public bool IsLightingControlUnavailable =>
         !CanControlLighting && !IsCheckingLaptopConnection(latestStatus);
 
@@ -2408,7 +2445,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             if (latestStatus?.DeviceVerified != true)
             {
-                return IsFirmwareAdmissionBlocked
+                return HasUnverifiedControllerAdvisory
+                    ? LaptopSettingsReadUnavailableMessage
+                    : IsFirmwareAdmissionBlocked
                     ? TrayText.Get("OpenBlade found a supported laptop with incompatible firmware, so lighting controls are unavailable unless you enable the firmware override.")
                     : TrayText.Get("OpenBlade can’t find a supported laptop, so lighting controls are unavailable.");
             }
@@ -2476,7 +2515,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(CanEditFanControl));
             Notify(nameof(CanChangeFanMode));
             NotifyFanControlEditorChanges(
-                fanControlEditor.Load(CurrentFanControlSettings, ActiveFanSpeedRange));
+                fanControlEditor.Load(CurrentFanControlSettings, FanControlEditorSpeedRange));
             Notify(nameof(FixedFanSpeedMinimumRpm));
             Notify(nameof(FixedFanSpeedMaximumRpm));
             Notify(nameof(FixedFanSpeedStepRpm));
@@ -2491,7 +2530,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool IsPerformanceSelected => SelectedPerformance == PerformancePreset.Performance;
 
     public bool IsCustomPerformanceVisible =>
-        ActivePowerSource == PowerSource.PluggedIn
+        PowerSourcePolicy.IsExternal(ActivePowerSource)
         && SelectedPerformance == PerformancePreset.Custom
         && AvailablePerformancePresets.Contains(PerformancePreset.Custom);
 
@@ -2539,7 +2578,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     public bool IsGpuClockTuningVisible =>
-        ActivePowerSource == PowerSource.PluggedIn
+        PowerSourcePolicy.IsExternal(ActivePowerSource)
         && (AvailablePerformancePresets.Contains(PerformancePreset.Custom)
             || Capabilities.GpuOverclock is { Access: DeviceFeatureAccess.ReadWrite });
 
@@ -2708,14 +2747,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         get => fanControlEditor.FixedSpeedRpm;
         set => NotifyFanControlEditorChanges(
-            fanControlEditor.SetFixedSpeed(value, ActiveFanSpeedRange));
+            fanControlEditor.SetFixedSpeed(value, FanControlEditorSpeedRange));
     }
 
-    public int FixedFanSpeedMinimumRpm => ActiveFanSpeedRange.MinimumRpm;
+    public int FixedFanSpeedMinimumRpm => FanControlEditorSpeedRange.MinimumRpm;
 
-    public int FixedFanSpeedMaximumRpm => ActiveFanSpeedRange.MaximumRpm;
+    public int FixedFanSpeedMaximumRpm => FanControlEditorSpeedRange.MaximumRpm;
 
-    public int FixedFanSpeedStepRpm => ActiveFanSpeedRange.StepRpm;
+    public int FixedFanSpeedStepRpm => FanControlEditorSpeedRange.StepRpm;
+
+    private FanSpeedRange FanControlEditorSpeedRange =>
+        Capabilities.GetFanIntentSpeedRange(SelectedPerformance) is { IsWellFormed: true } range
+            ? range
+            : FanSpeedRange.Standard;
 
     private FanSpeedRange ActiveFanSpeedRange =>
         Capabilities.GetFanSpeedRange(SelectedPerformance) is { IsWellFormed: true } range
@@ -2811,7 +2855,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
     public bool CanEditFanControl =>
-        !FanStopOwnsControl &&
+        HasOrdinaryThermalPowerContext && !FanStopOwnsControl &&
         !(IsBatterySaverFanStopVisible && BatterySaverFanStopRequested) &&
         CanRequestHardwareControl
         && !IsFanControlOperationInProgress
@@ -2845,7 +2889,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                         : string.Empty;
 
     public bool CanEditPerformance =>
-        CanRequestHardwareControl
+        HasOrdinaryThermalPowerContext && CanRequestHardwareControl
         && !IsPerformanceOperationInProgress
         && !HyperBoostActive
         && !IsThermalStateUnknown;
@@ -2864,10 +2908,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && IsGpuClockTuningAvailable;
 
     public bool CanToggleGpuClockTuning =>
-        (HyperBoostActive
+        !IsPowerClassificationUnavailable
+        && (HyperBoostActive
             ? CanMutate
-                && ActivePowerSource == PowerSource.PluggedIn
-                && !IsRetainedPowerSourceRecheck(latestStatus)
+                && PowerSourcePolicy.IsExternal(ActivePowerSource)
                 && !IsPerformanceOperationInProgress
                 && !IsHyperBoostOperationInProgress
                 && !HasPendingHyperBoostRestore
@@ -2989,7 +3033,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public void UpdateFanCurvePoint(FanCurveEditorPoint point, int speedRpm) =>
         NotifyFanControlEditorChanges(
-            fanControlEditor.UpdatePoint(point, speedRpm, ActiveFanSpeedRange));
+            fanControlEditor.UpdatePoint(point, speedRpm, FanControlEditorSpeedRange));
 
     public LightingSettings SelectedLighting
     {
@@ -3022,7 +3066,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             DeviceCapabilities capabilities = CommandCapabilities;
             if (IsChargeLimitOperationInProgress
                 || !CanMutate
-                || !HasConfirmedPowerSource
+                || !HasManualPowerContext
                 || latestStatus?.ConfirmedState?.Battery is not { } confirmed
                 || confirmed.TemporaryFullCharge is true
                 || confirmed.TemporaryFullCharge is null && capabilities.SupportsTemporaryFullCharge)
@@ -3165,7 +3209,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             observation = observation with { Capabilities = value };
             Notify(nameof(Capabilities));
             RefreshCustomPerformanceOptions();
-            if (fanControlEditor.SetFixedSpeed(FixedFanSpeedRpm, ActiveFanSpeedRange)
+            if (fanControlEditor.SetFixedSpeed(FixedFanSpeedRpm, FanControlEditorSpeedRange)
                 != FanControlEditorChanges.None)
             {
                 Notify(nameof(FixedFanSpeedRpm));
@@ -3193,6 +3237,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsSpecialKeyBindingsEditable));
             Notify(nameof(IsWindowsDynamicLightingAvailable));
             Notify(nameof(CanControlLighting));
+            Notify(nameof(SupportsRz090529KeyColorEditor));
+            Notify(nameof(ShowObservedOnlyLightingEffects));
+            Notify(nameof(ObservedOnlyLightingEffectsText));
+            Notify(nameof(ShowObservedTouchpadLighting));
+            Notify(nameof(ShowObservedUnderGlassLighting));
+            Notify(nameof(ShowVaporChamberLighting));
             Notify(nameof(SupportsSixtyHzLighting));
             Notify(nameof(CanSetLightingRefreshRate));
             NotifyGamingModeKeyPolicy();
@@ -3310,16 +3360,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool CanToggleHyperBoost =>
         CanMutate
         && !IsThermalStateUnknown
-        && !IsRetainedPowerSourceRecheck(latestStatus)
+        && !IsPowerClassificationUnavailable
         && IsHyperBoostWritable
         && !IsHyperBoostOperationInProgress
         && !IsPerformanceOperationInProgress
         && !HasControllerDetectionWarning
         && !HasBlockingHyperBoostController(latestStatus)
         && (HyperBoostActive
-            || ActivePowerSource == PowerSource.PluggedIn
+            || PowerSourcePolicy.IsExternal(ActivePowerSource)
                 && PerformancePresetPresentation.IsAvailable(
-                    PowerSource.PluggedIn,
+                    ActivePowerSource,
                     SelectedPerformance)
                 && Capabilities.PerformancePresets.Contains(SelectedPerformance)
                 && Capabilities.FanModes.Contains(SelectedFanMode)
@@ -3340,7 +3390,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 || CanToggleHyperBoost
                 || IsHyperBoostOperationInProgress
                 || IsPerformanceOperationInProgress
-                || latestStatus?.ActivePowerSource is PowerSource.Battery or PowerSource.UsbC)
+                || latestStatus?.ActivePowerSource is PowerSource.Battery)
             {
                 return string.Empty;
             }
@@ -4215,25 +4265,32 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         get => lightingEditor.Effect;
         set
         {
-            if (UsesIndependentLightingControls)
+            if (!PrepareFullLightingEffect(value))
             {
                 return;
             }
 
-            lightingEditor.Effect = value;
+            if (Capabilities.SupportsIndependentLightingControls)
+            {
+                lightingEditor.SelectEffect(value);
+            }
+            else
+            {
+                lightingEditor.Effect = value;
+            }
             ApplyLightingParameterDefaults();
         }
     }
 
     public LightingEffectOption? SelectedLightingEffectOption
     {
-        get => lightingEditor.IsEffectUnconfirmed
+        get => IsKeyboardEffectUnconfirmed
             ? null
             : AvailableLightingEffectOptions.FirstOrDefault(
                 option => option.Effect == LightingEffectEditor);
         set
         {
-            if (value is not null && !UsesIndependentLightingControls)
+            if (value is not null && PrepareFullLightingEffect(value.Effect))
             {
                 lightingEditor.SelectEffect(value.Effect);
                 ApplyLightingParameterDefaults();
@@ -4243,7 +4300,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool IsKeyboardEffectUnconfirmed => UsesIndependentLightingControls || lightingEditor.IsEffectUnconfirmed;
 
-    public string KeyboardEffectDescription => lightingEditor.IsEffectUnconfirmed
+    public string KeyboardEffectDescription => IsKeyboardEffectUnconfirmed
         ? TrayText.Get("The active effect was set outside OpenBlade and cannot be read from firmware.")
         : TrayText.Get("Choose a supported keyboard lighting effect.");
 
@@ -4480,6 +4537,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool IsLogoLightingVisible => AvailableLogoLightingModeOptions.Count > 0;
 
+    public bool ShowObservedTouchpadLighting =>
+        Capabilities.ObservedLightingZones.Contains(ObservedLightingZone.Touchpad);
+
+    public bool ShowObservedUnderGlassLighting =>
+        Capabilities.ObservedLightingZones.Contains(ObservedLightingZone.UnderGlass);
+
     public bool LightingShowsBrightness => UsesIndependentLightingControls || LightingEffectEditor != LightingEffect.Off;
 
     public bool LightingShowsBreathingColorMode =>
@@ -4532,7 +4595,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool LightingShowsAudioMeterControls =>
         !UsesIndependentLightingControls && (LightingEffectEditor == LightingEffect.AudioMeter);
 
-    public LightingSettings LightingDraft => UsesIndependentLightingControls ? IndependentLightingDraft : lightingEditor.ToSettings();
+    public LightingSettings LightingDraft => UsesIndependentLightingControls ? IndependentLightingDraft
+        : lightingEditor.ToSettings() with { ControlsKeyboardEffect = controlsKeyboardEffect };
 
     public bool IsLightingApplyPending => UsesIndependentLightingControls ? independentLightingDelta is not null : lightingEditor.IsDirty;
 
@@ -4899,7 +4963,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Capabilities: not null,
             ControlAccess: SessionControlAccess.Active,
         }
-        && (!latestStatus.WritesBlocked || IsRetainedPowerSourceRecheck(latestStatus))
+        && !latestStatus.WritesBlocked
         && !IsCheckingLaptopConnection(latestStatus);
 
     private static bool HasBlockingHyperBoostController(ServiceStatusSnapshot? status) =>
@@ -4912,8 +4976,36 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && option.Policy != thermalConvergence?.Policy
         && CanChangeThermalControlPolicy;
 
-    private bool HasConfirmedPowerSource => ActivePowerSource is
-        PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
+    private bool CanPresentUnclassifiedExternalPower(ServiceStatusSnapshot? status) =>
+        status is
+        {
+            ExternalPowerPresent: true, DeviceVerified: true, WritesBlocked: false,
+            ControlAccess: SessionControlAccess.Active, HyperBoostRestorePending: false
+        }
+        && !IsCheckingLaptopConnection(status) && !IsThermalStateUnknown
+        && status.UnconfirmedWrites.Count == 0 && status.PotentialControllers.Count == 0
+        && status.ControllerDetectionWarning is null;
+
+    public bool ExternalPowerPresent => latestStatus?.ExternalPowerPresent == true;
+
+    // A retained source is a presentation value, not a current adapter classification.
+    public PowerSource ControlPowerSource => IsPowerClassificationUnavailable
+        ? PowerSource.ExternalUnknown : latestStatus?.ActivePowerSource ?? ActivePowerSource;
+
+    private bool IsPowerClassificationUnavailable => (latestStatus?.ActivePowerSource ?? ActivePowerSource) == PowerSource.ExternalUnknown
+        || latestStatus?.ObservationReason == DeviceObservationReason.RetainedPowerSource;
+
+    private bool HasManualPowerContext => HasConfirmedPowerSource
+        || IsPowerClassificationUnavailable && ExternalPowerPresent;
+
+    private bool HasUnclassifiedOrdinaryThermalControl => IsPowerClassificationUnavailable
+        && ExternalPowerPresent && CommandCapabilities.SupportsOrdinaryThermalControlOnUnclassifiedExternalPower
+        && !HyperBoostActive && !IsThermalStateUnknown;
+
+    private bool HasOrdinaryThermalPowerContext => HasConfirmedPowerSource || HasUnclassifiedOrdinaryThermalControl;
+
+    private bool HasConfirmedPowerSource => !IsPowerClassificationUnavailable
+        && ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
 
     private DeviceCapabilities CommandCapabilities =>
         IsRetainedPowerSourceRecheck(latestStatus)
@@ -4927,9 +5019,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && !HyperBoostActive
         && !IsThermalStateUnknown
         && CanMutate
-        && HasConfirmedPowerSource
+        && HasOrdinaryThermalPowerContext
         && CommandCapabilities.PerformancePresets.Contains(value)
-        && PerformancePresetPresentation.IsAvailable(ActivePowerSource, value);
+        && (HasUnclassifiedOrdinaryThermalControl
+            ? PerformancePresetPresentation.IsOrdinaryPreset(value)
+            : PerformancePresetPresentation.IsAvailable(ActivePowerSource, value));
 
     private bool CanSetCustomPerformance(object? parameter) =>
         parameter is CustomPerformanceSettings value
@@ -4941,7 +5035,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && !HyperBoostActive
         && !IsThermalStateUnknown
         && CanMutate
-        && HasConfirmedPowerSource;
+        && HasOrdinaryThermalPowerContext
+        && (!HasUnclassifiedOrdinaryThermalControl || value.GpuClockOffsets is null);
 
     private bool SupportsCustomPerformance(
         CustomPerformanceLevel cpu,
@@ -5014,18 +5109,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             || (IsBatterySaverFanStopVisible && BatterySaverFanStopRequested)
             || HyperBoostActive
             || !CanMutate
-            || !HasConfirmedPowerSource
+            || !HasOrdinaryThermalPowerContext
             || !CommandCapabilities.FanModes.Contains(value))
         {
             return false;
         }
 
-        return ProfileAdmissionPolicy.FanModeAvailable(ActivePowerSource, value, CommandCapabilities)
-            && (value is not (FanMode.Fixed or FanMode.Maximum)
-                || CommandCapabilities.GetFanSpeedRange(SelectedPerformance) is not null)
+        return (HasUnclassifiedOrdinaryThermalControl
+                ? value is FanMode.Automatic or FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
+                : ProfileAdmissionPolicy.FanModeAvailable(ActivePowerSource, value, CommandCapabilities))
             && (value != FanMode.ManualCurve
-                || CommandCapabilities.FanSpeedRangesByPerformancePreset.Count == 0
-                || SelectedPerformance == PerformancePreset.Balanced)
+                || ProfileAdmissionPolicy.ManualCurvePresetSupported(SelectedPerformance, CommandCapabilities))
+            && (value is not (FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum)
+                || CommandCapabilities.GetFanSpeedRange(SelectedPerformance) is not null)
             && (value == FanMode.Automatic || SelectedPerformance != PerformancePreset.Custom || !SelectedCustomMaximumFans);
     }
 
@@ -5095,7 +5191,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ServiceStatusSnapshot? status = latestStatus;
         if (IsFullChargeOperationInProgress
             || !CanMutate
-            || !HasConfirmedPowerSource
+            || !HasManualPowerContext
             || !ProfileAdmissionPolicy.HasBatteryCapability(capabilities)
             || !capabilities.SupportsTemporaryFullCharge
             || status?.ConfirmedState?.Battery is not
@@ -5113,7 +5209,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ? requested
             : !temporaryFullCharge;
         return enable != temporaryFullCharge
-            && (!enable || ActivePowerSource is PowerSource.PluggedIn or PowerSource.UsbC);
+            && (!enable || ActivePowerSource is PowerSource.PluggedIn or PowerSource.UsbC
+                || ActivePowerSource == PowerSource.ExternalUnknown && ExternalPowerPresent);
     }
 
     private bool CanToggleBatteryProtection(object? parameter)
@@ -5123,7 +5220,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (parameter is not null
             || IsBatteryProtectionOperationInProgress
             || !CanMutate
-            || !HasConfirmedPowerSource
+            || !HasManualPowerContext
             || !ProfileAdmissionPolicy.HasBatteryCapability(capabilities)
             || status?.ConfirmedState?.Battery is not { } confirmed
             || confirmed.TemporaryFullCharge is true
@@ -5469,9 +5566,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    private void ApplyStatus(
+    private void ApplyStatus(ServiceStatusSnapshot status, bool trayOnly = false) =>
+        ApplyStatusWithPresentation(status, trayOnly, forcePresentation: false);
+
+    private void ApplyStatusWithPresentation(
         ServiceStatusSnapshot status,
-        bool trayOnly = false)
+        bool trayOnly,
+        bool forcePresentation)
     {
         if (trayOnly && TryApplyTrayLiveReadingsOnly(status))
         {
@@ -5483,7 +5584,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool presentationApplied;
         try
         {
-            presentationApplied = ApplyStatusCore(status);
+            presentationApplied = ApplyStatusCore(status, forcePresentation);
         }
         finally
         {
@@ -5505,7 +5606,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
-    private bool ApplyStatusCore(ServiceStatusSnapshot status)
+    private bool ApplyStatusCore(ServiceStatusSnapshot status, bool forcePresentation = false)
     {
         if (status.Revision < latestAcceptedRevision)
         {
@@ -5521,6 +5622,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         CoolingPad.ApplyStatus(status.CoolingPad, status.ControlAccess == SessionControlAccess.Active);
         NotifyComputed(nameof(ActiveApplicationProfileName), ActiveApplicationProfileName);
         if (IsConnected
+            && !forcePresentation
             && previousStatus is not null
             && !performanceHoldReleased
             && !fanControlHoldReleased
@@ -5555,11 +5657,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ServiceStatusSnapshot status,
         bool checkingLaptopConnection)
     {
-        if (status.Capabilities?.SupportsIndependentLightingControls == true)
+        if (ShouldPresentIndependentLighting(status))
         {
             ApplyIndependentLightingPresentation(status, checkingLaptopConnection);
             return;
         }
+        independentLightingEditorActive = false;
         ConfirmedDeviceState? confirmed = status.ConfirmedState;
         lightingEditor.PrepareForPowerSource(status.ActivePowerSource);
         if (!checkingLaptopConnection
@@ -5575,6 +5678,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                     LightingRendererOwnershipState.Faulted);
         }
         SelectedLighting = confirmed?.Lighting ?? status.DesiredState.Lighting.Value;
+        if (status.Capabilities?.SupportsIndependentLightingControls == true)
+        {
+            LightingSettings intent = status.LightingOverride?.Value ?? status.DesiredState.Lighting.Value;
+            // The keyboard readback carries only the effect and brightness.
+            // Preserve configured zone intent separately from the current observations.
+            SelectedLighting = SelectedLighting with
+            {
+                ControlsKeyboardEffect = intent.ControlsKeyboardEffect,
+                IndependentControls = intent.IndependentControls,
+            };
+        }
         if (confirmed?.LogoLighting is { } confirmedLogo)
         {
             SelectedLighting = SelectedLighting with { LogoMode = confirmedLogo };
@@ -5632,7 +5746,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 { Performance: PerformancePreset.Custom, CustomPerformance: { } observed }
                 ? observed
                 : status.DesiredState.CustomPerformance
-                    ?? status.Profiles.PluggedIn.CustomPerformance
+                    ?? (status.ActivePowerSource == PowerSource.UsbC
+                        ? status.Profiles.UsbC.CustomPerformance
+                        : status.Profiles.PluggedIn.CustomPerformance)
                     ?? CustomPerformanceSettings.Default;
         SelectedCustomCpuLevel = customPerformance.Cpu;
         SelectedCustomGpuLevel = customPerformance.Gpu;
@@ -5641,7 +5757,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ?? status.DesiredState.GpuClockTuning;
         PerformancePreset gpuTuningPerformance = pendingPerformance?.Requested.Value
             ?? status.DesiredState.Performance.Value;
-        if (status.ActivePowerSource == PowerSource.PluggedIn
+        if (PowerSourcePolicy.IsExternal(status.ActivePowerSource)
             && gpuTuningPerformance == PerformancePreset.Custom
             && gpuClockTuning is null
             && customPerformance.GpuClockOffsets is { } legacyOffsets)
@@ -5667,7 +5783,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             status.DeviceVerified,
             status.ActivePowerSource,
             SelectedPerformance,
-            HyperBoostActive);
+            HyperBoostActive, externalPowerPresent: CanPresentUnclassifiedExternalPower(status));
         ApplyLiveReadings(status);
         PerformanceOverride = status.PerformanceOverride;
         FanOverride = status.FanOverride;
@@ -5713,7 +5829,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && !checkingLaptopConnection;
         IsReadOnly = !controllable;
         CanControlHardware = controllable
-            && status.ActivePowerSource != PowerSource.ExternalUnknown;
+            && (!IsPowerClassificationUnavailable || status.ExternalPowerPresent);
+        NotifyComputed(nameof(ExternalPowerPresent), ExternalPowerPresent);
+        NotifyComputed(nameof(ControlPowerSource), ControlPowerSource);
         ConnectionStatus = status.Message;
         ControlAccessStatus = FormatControlAccessStatus(status);
         HasControllerAdvisory = status.PotentialControllers.Count > 0;
@@ -5942,7 +6060,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             AvailableLightingEffects.Count > 0
                 ? AvailableLightingEffects
                 : capabilities.SupportsIndependentLightingControls ? Array.Empty<LightingEffect>() : KnownLightingEffects;
-        if (!capabilities.SupportsIndependentLightingControls && LightingEffectEditor == LightingEffect.Sequence
+        if (IsKeyboardEffectSelectionVisible && LightingEffectEditor == LightingEffect.Sequence
             && !presentedLightingEffects.Contains(LightingEffect.Sequence))
         {
             presentedLightingEffects =
@@ -5964,7 +6082,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SelectedLightingEffectOption));
         }
         LightingSettings[] lightingSettings = AvailableLightingEffects
-            .Select(effect => LightingEditorState.CreateChoice(effect, SelectedLighting))
+            .Select(effect => LightingEditorState.CreateChoice(effect, SelectedLighting) with
+            {
+                ControlsKeyboardEffect = capabilities.SupportsIndependentLightingControls,
+            })
             .ToArray();
         if (!AvailableLightingSettings.SequenceEqual(lightingSettings))
         {
@@ -6078,14 +6199,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void RefreshLaptopPerformanceOptions()
     {
-        IReadOnlyList<PerformancePresetOption> presets = ActivePowerSource switch
-        {
-            PowerSource.PluggedIn => AvailablePluggedInPerformanceOptions,
-            PowerSource.Battery => AvailableBatteryPerformanceOptions,
-            PowerSource.UsbC => AvailableUsbCPerformanceOptions,
-            PowerSource.ExternalUnknown => [],
-            _ => [],
-        };
+        IReadOnlyList<PerformancePresetOption> presets = AvailableActivePerformanceOptions;
         bool includeHyperBoost = IsHyperBoostVisible
             && (HyperBoostActive
                 || IsHyperBoostOperationInProgress
@@ -6243,6 +6357,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ArgumentNullException.ThrowIfNull(preset);
         return CanControlLighting
             && LightingSettingsValidation.IsWellFormed(preset.Lighting)
+            && ProfileAdmissionPolicy.LightingSupported(preset.Lighting with
+            {
+                ControlsKeyboardEffect = Capabilities.SupportsIndependentLightingControls || preset.Lighting.ControlsKeyboardEffect,
+            }, CommandCapabilities)
             && preset.Lighting.LogoMode is null
             && Capabilities.LightingEffects.Contains(preset.Lighting.Effect)
             && (preset.Lighting.Parameters is not SequenceLightingParameters sequence
@@ -6262,7 +6380,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         lightingEditor.SetEffectUnconfirmed(false);
         EnsureImportedSequenceOption(preset.Lighting);
-        LoadLightingEditor(preset.Lighting with { LogoMode = LogoLightingModeEditor });
+        LoadLightingEditor(preset.Lighting with
+        {
+            LogoMode = LogoLightingModeEditor,
+            IndependentControls = MergeIndependentLighting(LightingDraft.IndependentControls, preset.Lighting.IndependentControls),
+            ControlsKeyboardEffect = Capabilities.SupportsIndependentLightingControls || preset.Lighting.ControlsKeyboardEffect,
+        });
         lightingEditor.SetDirty(true);
         Notify(nameof(LightingDraft));
         NotifyCommands();
@@ -6362,7 +6485,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ServiceStatusSnapshot? status = latestStatus;
         if (IsChargeLimitOperationInProgress
             || !CanMutate
-            || !HasConfirmedPowerSource
+            || !HasManualPowerContext
             || status?.ConfirmedState?.Battery is not { } confirmed
             || confirmed.TemporaryFullCharge is true
             || confirmed.TemporaryFullCharge is null && capabilities.SupportsTemporaryFullCharge)
@@ -6424,9 +6547,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 requested,
                 OverrideLifetime.UntilPowerSourceChange,
                 requested == PerformancePreset.Custom
-                    ? GetActiveProfileCustomPerformance()
+                    ? HasUnclassifiedOrdinaryThermalControl ? CurrentCustomPerformanceSettings : GetActiveProfileCustomPerformance()
                     : null,
-                GetActiveProfileGpuClockTuning()),
+                HasUnclassifiedOrdinaryThermalControl ? null : GetActiveProfileGpuClockTuning()),
             token);
     }
 
@@ -6438,7 +6561,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 PerformancePreset.Custom,
                 OverrideLifetime.UntilPowerSourceChange,
                 requested,
-                GetActiveProfileGpuClockTuning()),
+                HasUnclassifiedOrdinaryThermalControl ? null : GetActiveProfileGpuClockTuning()),
             token);
     }
 
@@ -6569,7 +6692,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                             latestStatus?.DeviceVerified is true,
                             ActivePowerSource,
                             SelectedPerformance,
-                            HyperBoostActive);
+                            HyperBoostActive, externalPowerPresent: CanPresentUnclassifiedExternalPower(latestStatus));
                     }
                 });
         }
@@ -6839,7 +6962,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private async Task SetLightingAsync(object? parameter, CancellationToken token)
     {
         LightingSettings requested = (LightingSettings)parameter!;
-        if (UsesIndependentLightingControls)
+        if (requested.IndependentControls is not null
+            && (!requested.ControlsKeyboardEffect
+                || UsesIndependentLightingControls && requested == IndependentLightingDraft))
         {
             await SetIndependentLightingAsync(requested, token);
             return;
@@ -6882,7 +7007,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             await dispatcher.InvokeAsync(
                 () =>
                 {
-                    if (!lightingEditor.ClearDirtyIfUnchanged(requested))
+                    if (!lightingEditor.ClearDirtyIfUnchanged(requested with { ControlsKeyboardEffect = false }))
                     {
                         return;
                     }
@@ -7138,7 +7263,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             await ClearOverrideAsync(
                 TrayText.Get("Fragment.Performance", "performance"),
-                cancellationToken => serviceClient.SetPerformanceOverrideAsync(null, cancellationToken),
+                ClearPerformanceOverrideAsync,
                 hardwareNotApplied,
                 token).ConfigureAwait(false);
         }
@@ -7625,7 +7750,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : profileEditorsDirty && TryGetSupportedProfileDraft(parameter, out _));
 
     private bool CanSaveActiveProfileDraft(ProfileDraftGroup group) =>
-        CanMutate
+        CanMutate && HasConfirmedPowerSource
         && (group != ProfileDraftGroup.Lighting || CanControlLighting)
         && (HasActiveProfileDraftFor(group)
             && activeProfileDraft.Source == ActivePowerSource
@@ -7873,6 +7998,40 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
     }
 
+    private async Task<ControlOperationResult> ClearPerformanceOverrideAsync(CancellationToken token)
+    {
+        PendingPerformanceHold? supersededHold = pendingPerformance;
+        long revisionBeforeClear = latestAcceptedRevision;
+        PowerSource sourceBeforeClear = ActivePowerSource;
+        ControlOperationResult result = await serviceClient.SetPerformanceOverrideAsync(null, token);
+        if (result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored)
+        {
+            await dispatcher.InvokeAsync(() =>
+            {
+                if (!ReferenceEquals(pendingPerformance, supersededHold))
+                {
+                    return;
+                }
+                // An accepted clear supersedes the old optimistic edit, even
+                // when the watch stream coalesced its override echo.
+                pendingPerformance = null;
+                if (supersededHold is not null
+                    && latestStatus is { PerformanceOverride: null } observed
+                    && observed.Revision > revisionBeforeClear
+                    && observed.ActivePowerSource == sourceBeforeClear
+                    && observed.ConfirmedState is { Performance: { } performance } confirmed
+                    && (performance != PerformancePreset.Custom || confirmed.CustomPerformance is not null))
+                {
+                    // The final observation may precede the clear response.
+                    // Re-present that actual readback, bypassing the metadata
+                    // shortcut; never substitute the saved profile or baseline.
+                    ApplyStatusWithPresentation(observed, trayOnly: false, forcePresentation: true);
+                }
+            }, token);
+        }
+        return result;
+    }
+
     private async Task<bool> ClearActiveProfileHardwareOverridesAsync(
         CancellationToken token,
         ProfileDraftGroup? group = null,
@@ -7883,9 +8042,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             && (force || activeProfileDraft.Performance is not null))
         {
             restored &= await RunOperationAsync(
-                cancellationToken => serviceClient.SetPerformanceOverrideAsync(
-                    null,
-                    cancellationToken),
+                ClearPerformanceOverrideAsync,
                 token);
         }
         if ((group is null or ProfileDraftGroup.Thermal or ProfileDraftGroup.Laptop)
@@ -8178,6 +8335,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         bool startUnconfirmedEffectAtDefaultBrightness = false)
     {
         InvalidatePendingLightingHold();
+        controlsKeyboardEffect = value.ControlsKeyboardEffect;
+        independentLightingEditorActive = Capabilities.SupportsIndependentLightingControls
+            && (!value.ControlsKeyboardEffect || Capabilities.LightingEffects.Count == 0);
         if (UsesIndependentLightingControls)
         {
             LoadIndependentLightingEditor(value, value.IndependentControls
@@ -8186,7 +8346,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         EnsureImportedSequenceOption(value);
+        independentLightingDelta = null;
         lightingEditor.Load(value, startUnconfirmedEffectAtDefaultBrightness);
+        NotifyIndependentLightingPresentation();
         NotifyLightingParameterPresentation();
         NotifyComputed(nameof(SelectedLightingEffectOption), SelectedLightingEffectOption);
         NotifyComputed(nameof(SelectedLogoLightingModeOption), SelectedLogoLightingModeOption);
@@ -8284,14 +8446,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     };
 
     private CustomPerformanceSettings GetActiveProfileCustomPerformance() =>
-        ActivePowerSource is PowerSource.PluggedIn
-            ? GetPresentedProfile(PowerSource.PluggedIn).CustomPerformance
+        PowerSourcePolicy.IsExternal(ActivePowerSource)
+            ? GetPresentedProfile(ActivePowerSource).CustomPerformance
                 ?? CustomPerformanceSettings.Default
             : CustomPerformanceSettings.Default;
 
     private GpuClockTuningSettings? GetActiveProfileGpuClockTuning()
     {
-        if (ActivePowerSource is not PowerSource.PluggedIn)
+        if (!PowerSourcePolicy.IsExternal(ActivePowerSource))
         {
             return null;
         }
@@ -8341,6 +8503,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Profiles.UsbC with
         {
             Performance = UsbCPerformanceEditor,
+            CustomPerformance = Profiles.UsbC.CustomPerformance
+                ?? (UsbCPerformanceEditor == PerformancePreset.Custom
+                    ? CustomPerformanceSettings.Default
+                    : null),
             Fans = UsbCFanModeEditor,
             Lighting = UsbCLightingEditor,
         },
@@ -8499,7 +8665,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return activeProfileDraft.Lighting is not null
                     ? savedControls != currentControls
                     : ConfiguredValueDiffers(savedControls?.Brightness, independentBrightness)
-                        || ConfiguredValueDiffers(savedControls?.LogoMode, independentLogo);
+                        || ConfiguredValueDiffers(savedControls?.LogoMode, independentLogo)
+                        || ConfiguredValueDiffers(savedControls?.VaporChamberLightingEnabled, independentVaporChamber)
+                        || ConfiguredValueDiffers(savedControls?.TouchpadStatusIndicatorEnabled, independentTouchpadIndicator);
             }
             bool keyboardDiffers = (activeProfileDraft.Lighting is not null
                     || !IsKeyboardEffectUnconfirmed)
@@ -9161,11 +9329,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             return PowerSourcePresentation.Label(status.ActivePowerSource);
         }
 
-        if (IsRetainedPowerSourceRecheck(status))
-        {
-            return TrayText.Get("Ready");
-        }
-
         return status.WritesBlocked
             ? TrayText.Get("Controls unavailable")
             : TrayText.Get("Ready");
@@ -9646,7 +9809,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     }
 
     private void LoadFanControlEditor(FanControlSettings value) =>
-        NotifyFanControlEditorChanges(fanControlEditor.Load(value, ActiveFanSpeedRange));
+        NotifyFanControlEditorChanges(fanControlEditor.Load(value, FanControlEditorSpeedRange));
 
     private void NotifyFanControlEditorChanges(FanControlEditorChanges changes)
     {

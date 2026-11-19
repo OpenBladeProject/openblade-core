@@ -69,10 +69,13 @@ Assert-ModelNumber -Model 'RZ09-0427' -Expected '`RZ09-0427`'
 Assert-ModelNumber -Model 'RZ09-0421' -Expected '`RZ09-0421`'
 Assert-ModelNumber -Model 'RZ09-0423' -Expected '`RZ09-0423`'
 Assert-ModelNumber -Model 'RZ09-0484' -Expected '`RZ09-0484`'
+Assert-ModelNumber -Model 'RZ09-0409' -Expected '`RZ09-0409`'
+Assert-ModelNumber -Model 'RZ09-0287' -Expected '`RZ09-0287`'
+Assert-ModelNumber -Model 'RZ09-0314' -Expected '`RZ09-0314`'
 
 $supportedRows = @($readme | Where-Object { $_ -match '^\| .*`RZ09-\d{4}`.*\|$' })
-if ($supportedRows.Count -ne 19) {
-    throw 'README must list all nineteen reviewed supported models.'
+if ($supportedRows.Count -ne 22) {
+    throw 'README must list all twenty-two reviewed supported models.'
 }
 $supportText = $readme -join "`n"
 # Keep the introduction brief; detailed evidence and validation status belong
@@ -120,5 +123,8 @@ Assert-UsbIdentity -Model 'RZ09-0427' -Expected '1532:028C'
 Assert-UsbIdentity -Model 'RZ09-0421' -Expected '1532:028A'
 Assert-UsbIdentity -Model 'RZ09-0423' -Expected '1532:028B'
 Assert-UsbIdentity -Model 'RZ09-0484' -Expected '1532:02A0'
+Assert-UsbIdentity -Model 'RZ09-0409' -Expected '1532:0276'
+Assert-UsbIdentity -Model 'RZ09-0287' -Expected '1532:0234'
+Assert-UsbIdentity -Model 'RZ09-0314' -Expected '1532:024C'
 
 Write-Host 'README hardware-support tests passed.'

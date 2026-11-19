@@ -1,0 +1,398 @@
+{
+  "projects": 19,
+  "initialRun": {
+    "passed": 17403,
+    "failed": 1,
+    "skipped": 0,
+    "exitCode": 1,
+    "results": [
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 40,
+        "skipped": 0,
+        "total": 40,
+        "duration": "255 ms",
+        "assembly": "OpenBlade.Deployment.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 53,
+        "skipped": 0,
+        "total": 53,
+        "duration": "869 ms",
+        "assembly": "OpenBlade.DevelopmentDeployment.Setup.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 128,
+        "skipped": 0,
+        "total": 128,
+        "duration": "712 ms",
+        "assembly": "OpenBlade.Session.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 100,
+        "skipped": 0,
+        "total": 100,
+        "duration": "397 ms",
+        "assembly": "OpenBlade.Display.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 14,
+        "skipped": 0,
+        "total": 14,
+        "duration": "735 ms",
+        "assembly": "OpenBlade.CpuTemperature.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 14,
+        "skipped": 0,
+        "total": 14,
+        "duration": "1 s",
+        "assembly": "OpenBlade.LocalDevDeployment.Tool.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 837,
+        "skipped": 0,
+        "total": 837,
+        "duration": "1 s",
+        "assembly": "OpenBlade.Contracts.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Failed!",
+        "failed": 1,
+        "passed": 163,
+        "skipped": 0,
+        "total": 164,
+        "duration": "4 s",
+        "assembly": "OpenBlade.Platform.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 210,
+        "skipped": 0,
+        "total": 210,
+        "duration": "7 s",
+        "assembly": "OpenBlade.DeploymentClient.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 23,
+        "skipped": 0,
+        "total": 23,
+        "duration": "194 ms",
+        "assembly": "OpenBlade.LibreHardwareMonitor.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 1374,
+        "skipped": 0,
+        "total": 1374,
+        "duration": "8 s",
+        "assembly": "OpenBlade.SessionAgent.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 3,
+        "skipped": 0,
+        "total": 3,
+        "duration": "18 s",
+        "assembly": "OpenBlade.Architecture.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 207,
+        "skipped": 0,
+        "total": 207,
+        "duration": "27 s",
+        "assembly": "OpenBlade.DeploymentBroker.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 4671,
+        "skipped": 0,
+        "total": 4671,
+        "duration": "24 s",
+        "assembly": "OpenBlade.Protocol.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 460,
+        "skipped": 0,
+        "total": 460,
+        "duration": "39 s",
+        "assembly": "OpenBlade.Setup.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 3933,
+        "skipped": 0,
+        "total": 3933,
+        "duration": "2 m 12 s",
+        "assembly": "OpenBlade.Service.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 313,
+        "skipped": 0,
+        "total": 313,
+        "duration": "2 m 25 s",
+        "assembly": "OpenBlade.FirmwareSmoke.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 1902,
+        "skipped": 0,
+        "total": 1902,
+        "duration": "3 m 15 s",
+        "assembly": "OpenBlade.Capture.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 2958,
+        "skipped": 0,
+        "total": 2958,
+        "duration": "3 m 8 s",
+        "assembly": "OpenBlade.Tray.Tests.dll (net10.0)"
+      }
+    ]
+  },
+  "platformRerun": {
+    "passed": 164,
+    "failed": 0,
+    "skipped": 0,
+    "exitCode": 0
+  },
+  "uniqueTestsPassedAcrossVerification": 17407,
+  "note": "The integrated baseline predates the separately recorded legacy-curve addendum and post-review fixes. An earlier unbounded-parallel run hit an unchanged 100ms Platform fake-reader deadline; the unchanged Platform project and complete bounded baseline run passed. No test timeout or production reader code was changed. Final exact-head integration and hosted gates are recorded in PR 968.",
+  "build": {
+    "warnings": 0,
+    "errors": 0,
+    "exitCode": 0,
+    "nativeDevelopmentBuild": false,
+    "nativePayloadNote": "Matching0.62.0 payload was built once using the shared Cargo target with a storage lease. Managed builds disable the unchanged legacy helper because it overrides that target."
+  },
+  "nativePayload": {
+    "relativePath": "src/OpenBlade.Core.Native/obj/native/Debug/openblade_ffi.dll",
+    "sha256": "4c1774174faaba28f9fbcefc14d0429b7cfbea33abe76299bb58d2035d543f0a"
+  },
+  "noHardwareActions": true,
+  "baselineCommit": "a7067e89f0d55e173d5b0c092dc6f7b7c9e49283",
+  "baselineRun": {
+    "exitCode": 0,
+    "maxBuildParallelism": 4,
+    "projects": 19,
+    "passed": 17407,
+    "failed": 0,
+    "skipped": 0,
+    "results": [
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 14,
+        "skipped": 0,
+        "total": 14,
+        "duration": "164 ms",
+        "assembly": "OpenBlade.CpuTemperature.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 837,
+        "skipped": 0,
+        "total": 837,
+        "duration": "1 s",
+        "assembly": "OpenBlade.Contracts.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 40,
+        "skipped": 0,
+        "total": 40,
+        "duration": "367 ms",
+        "assembly": "OpenBlade.Deployment.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 3,
+        "skipped": 0,
+        "total": 3,
+        "duration": "10 s",
+        "assembly": "OpenBlade.Architecture.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 210,
+        "skipped": 0,
+        "total": 210,
+        "duration": "5 s",
+        "assembly": "OpenBlade.DeploymentClient.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 53,
+        "skipped": 0,
+        "total": 53,
+        "duration": "826 ms",
+        "assembly": "OpenBlade.DevelopmentDeployment.Setup.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 100,
+        "skipped": 0,
+        "total": 100,
+        "duration": "334 ms",
+        "assembly": "OpenBlade.Display.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 207,
+        "skipped": 0,
+        "total": 207,
+        "duration": "9 s",
+        "assembly": "OpenBlade.DeploymentBroker.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 14,
+        "skipped": 0,
+        "total": 14,
+        "duration": "1 s",
+        "assembly": "OpenBlade.LocalDevDeployment.Tool.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 164,
+        "skipped": 0,
+        "total": 164,
+        "duration": "2 s",
+        "assembly": "OpenBlade.Platform.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 4674,
+        "skipped": 0,
+        "total": 4674,
+        "duration": "21 s",
+        "assembly": "OpenBlade.Protocol.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 128,
+        "skipped": 0,
+        "total": 128,
+        "duration": "463 ms",
+        "assembly": "OpenBlade.Session.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 1374,
+        "skipped": 0,
+        "total": 1374,
+        "duration": "5 s",
+        "assembly": "OpenBlade.SessionAgent.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 460,
+        "skipped": 0,
+        "total": 460,
+        "duration": "22 s",
+        "assembly": "OpenBlade.Setup.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 313,
+        "skipped": 0,
+        "total": 313,
+        "duration": "2 m 25 s",
+        "assembly": "OpenBlade.FirmwareSmoke.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 23,
+        "skipped": 0,
+        "total": 23,
+        "duration": "247 ms",
+        "assembly": "OpenBlade.LibreHardwareMonitor.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 3933,
+        "skipped": 0,
+        "total": 3933,
+        "duration": "2 m 36 s",
+        "assembly": "OpenBlade.Service.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 1902,
+        "skipped": 0,
+        "total": 1902,
+        "duration": "3 m 28 s",
+        "assembly": "OpenBlade.Capture.Tests.dll (net10.0)"
+      },
+      {
+        "outcome": "Passed!",
+        "failed": 0,
+        "passed": 2958,
+        "skipped": 0,
+        "total": 2958,
+        "duration": "4 m 4 s",
+        "assembly": "OpenBlade.Tray.Tests.dll (net10.0)"
+      }
+    ]
+  },
+  "addendumVerification": {
+    "sourceRecords": 5,
+    "sourceExcerpts": 12,
+    "sourceVerificationFailures": 0,
+    "protocolTestsPassed": 4719,
+    "protocolTestsFailed": 0,
+    "protocolTestsSkipped": 0,
+    "trayFocusedTestsPassed": 97,
+    "trayFocusedTestsFailed": 0,
+    "independentReview": "PASS: final owned fan-only handoff and Claude post-review admission/preservation fixes; no remaining concrete finding.",
+    "serviceTestsPassed": 3971,
+    "serviceTestsFailed": 0,
+    "serviceTestsSkipped": 0
+  }
+}

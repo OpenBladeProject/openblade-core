@@ -11,6 +11,29 @@ public sealed class ProductionLightingSessionTests
     private static readonly TimeSpan TestDeadlockGuard = TimeSpan.FromSeconds(5);
 
     [Fact]
+    public async Task RendererRequirement_UsesRetainedBackendWithoutOpeningOrWriting()
+    {
+        var port = new FakeLightingPort { LightingRequiresRendererOwnership = false };
+        var factory = new FakeLightingFactory(port);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()), UnavailableFanRpmFactory(), factory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        LightingSettings wave = LightingSettingsFactory.Wave(LightingDirection.Rightward, 50);
+        Assert.True(device.RequiresLightingRendererOwnership(wave));
+        Assert.Equal(0, factory.OpenCount);
+
+        await device.ReadLightingStateAsync(CancellationToken.None);
+        int opens = factory.OpenCount;
+        Assert.False(device.RequiresLightingRendererOwnership(wave));
+        port.LightingRequiresRendererOwnership = true;
+        Assert.True(device.RequiresLightingRendererOwnership(wave));
+        Assert.False(device.RequiresLightingRendererOwnership(LightingSettingsFactory.Off()));
+        Assert.Equal(opens, factory.OpenCount);
+        Assert.Empty(port.Writes);
+    }
+
+    [Fact]
     public async Task ClosedExperimentalPort_RemainsRetainedUntilNativeDrainCompletes()
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);

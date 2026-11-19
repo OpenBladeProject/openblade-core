@@ -117,6 +117,13 @@ public static class Rz09_0581ReactiveKeyMap
             return true;
         }
 
+        if (Blade16RegionalInputMap.TryMap(makeCode, isExtended, out byte regionalSlot))
+        {
+            primary = new ReactiveKeyPulse(regionalSlot);
+            secondary = null;
+            return true;
+        }
+
         IReadOnlyDictionary<ushort, byte> map = isExtended
             ? ExtendedScanCodes
             : StandardScanCodes;
@@ -244,6 +251,13 @@ public static class Rz09_0528ReactiveKeyMap
         out ReactiveKeyPulse primary,
         out ReactiveKeyPulse? secondary)
     {
+        if (Blade16RegionalInputMap.TryMap(makeCode, isExtended, out byte regionalSlot))
+        {
+            primary = new ReactiveKeyPulse(regionalSlot);
+            secondary = null;
+            return true;
+        }
+
         IReadOnlyDictionary<ushort, byte> map = isExtended
             ? ExtendedScanCodes
             : StandardScanCodes;
@@ -306,6 +320,10 @@ public static class ReactiveRawKeyboardInput
                     out secondary),
             RazerBladeInputDeviceKind.Rz09_0484 =>
                 TryCreateBlade18Pulse(blade18KeyboardLayoutId, makeCode, isExtended, out primary, out secondary),
+            RazerBladeInputDeviceKind.Rz09_0530 =>
+                TryCreateBlade14Pulse(makeCode, isExtended, out primary, out secondary),
+            RazerBladeInputDeviceKind.Rz09_0529 =>
+                TryCreateRz090529Pulse(makeCode, isExtended, out primary, out secondary),
             RazerBladeInputDeviceKind.Rz09_0528 =>
                 Rz09_0528ReactiveKeyMap.TryMap(
                     makeCode,
@@ -314,6 +332,32 @@ public static class ReactiveRawKeyboardInput
                     out secondary),
             _ => ReturnUnsupported(out primary, out secondary),
         };
+    }
+
+    private static bool TryCreateBlade14Pulse(
+        ushort makeCode, bool extended, out ReactiveKeyPulse primary, out ReactiveKeyPulse? secondary)
+    {
+        secondary = null;
+        if (Blade14KeyboardLightingLayout.TryMapScanCode(makeCode, extended, out byte slot))
+        {
+            primary = new(slot);
+            return true;
+        }
+        primary = default;
+        return false;
+    }
+
+    private static bool TryCreateRz090529Pulse(
+        ushort makeCode, bool extended, out ReactiveKeyPulse primary, out ReactiveKeyPulse? secondary)
+    {
+        secondary = null;
+        if (Rz090529KeyboardLightingLayout.TryMapScanCode(makeCode, extended, out byte slot))
+        {
+            primary = new(slot);
+            return true;
+        }
+        primary = default;
+        return false;
     }
 
     private static bool TryCreateBlade18Pulse(
@@ -488,12 +532,28 @@ public enum RazerBladeInputDeviceKind
     Rz09_0581,
     Rz09_0528,
     Rz09_0484,
+    Rz09_0530,
+    Rz09_0529,
 }
 
 public static class RazerBladeReactiveInputDevice
 {
     public static RazerBladeInputDeviceKind ClassifyPath(string? path)
     {
+        if (!string.IsNullOrWhiteSpace(path) && HasIdentity(path, "VID_1532&PID_02C7"))
+        {
+            // KI8110's own active descriptors: MI00 is one keyboard TLC;
+            // MI01's first TLC is keyboard. MI02 is mouse/vendor control and
+            // MI03 is vendor-feature-only despite its keyboard protocol byte.
+            // See the exact image/descriptor pins in the 0529 frame review.
+            return IsLightingKeyboardPath(path, "VID_1532&PID_02C7")
+                ? RazerBladeInputDeviceKind.Rz09_0529 : RazerBladeInputDeviceKind.Unsupported;
+        }
+        if (!string.IsNullOrWhiteSpace(path) && HasIdentity(path, "VID_1532&PID_02C5"))
+        {
+            return IsBlade14LightingKeyboardPath(path)
+                ? RazerBladeInputDeviceKind.Rz09_0530 : RazerBladeInputDeviceKind.Unsupported;
+        }
         // Product 672's SYSTEM report geometry does not inherit MI_01.
         if (!string.IsNullOrWhiteSpace(path) && HasIdentity(path, "VID_1532&PID_02A0"))
         {
@@ -524,8 +584,42 @@ public static class RazerBladeReactiveInputDevice
                 RazerBladeInputDeviceKind.Rz09_0528,
             RazerBladeModelCatalog.Rz090484ModelNumber =>
                 RazerBladeInputDeviceKind.Rz09_0484,
+            "RZ09-0530" =>
+                RazerBladeInputDeviceKind.Rz09_0530,
+            "RZ09-0529" =>
+                RazerBladeInputDeviceKind.Rz09_0529,
             _ => RazerBladeInputDeviceKind.Unsupported,
         };
+
+    private static bool IsBlade14LightingKeyboardPath(string path)
+    {
+        // PI4110 MCU image SHA256 1ac3f05486d0bca5fbbb1a4a52b874943
+        // ad491a00afd298b8d6b857a49d98f11: USB configuration at 0xC474,
+        // MI00 report descriptor 0xC2CF is a single keyboard TLC; MI01's
+        // descriptor at 0xC230 has keyboard as its first TLC. MI03 is vendor
+        // input despite its keyboard interface protocol and is not admitted.
+        return IsLightingKeyboardPath(path, "VID_1532&PID_02C5");
+    }
+
+    private static bool IsLightingKeyboardPath(string path, string exactIdentity)
+    {
+        int start = path.IndexOf(exactIdentity, StringComparison.OrdinalIgnoreCase);
+        int end = path.IndexOfAny(['#', '\\'], start);
+        string identity = end < 0 ? path[start..] : path[start..end];
+        string[] fields = identity.Split('&');
+        string[] interfaces = fields.Where(field => field.StartsWith("MI_", StringComparison.OrdinalIgnoreCase)).ToArray();
+        string[] collections = fields.Where(field => field.StartsWith("COL", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (interfaces.Length != 1 || collections.Length > 1)
+        {
+            return false;
+        }
+        bool firstCollection = collections.Length == 1
+            && string.Equals(collections[0], "COL01", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(interfaces[0], "MI_00", StringComparison.OrdinalIgnoreCase)
+            && (collections.Length == 0 || firstCollection)
+            || string.Equals(interfaces[0], "MI_01", StringComparison.OrdinalIgnoreCase)
+                && firstCollection;
+    }
 
     private static bool HasIdentity(string path, string identity)
     {
@@ -552,4 +646,25 @@ public static class Rz09_0528ReactiveInputDevice
     public static bool IsTargetPath(string? path) =>
         RazerBladeReactiveInputDevice.ClassifyPath(path)
             == RazerBladeInputDeviceKind.Rz09_0528;
+}
+
+// Standard USB keyboard usages from each model's pinned regional descriptors.
+// Windows HidP_TranslateUsagesToI8042ScanCodes independently verifies these
+// scan-code bindings; physical output is selected by each admitted backend.
+internal static class Blade16RegionalInputMap
+{
+    internal static bool TryMap(ushort makeCode, bool extended, out byte slot)
+    {
+        slot = makeCode switch
+        {
+            0x56 => 70, // HID 64: OEM102
+            0x73 => 82, // HID 87: Ro
+            0x70 => 64, // HID 88: Katakana/Hiragana
+            0x7D => 31, // HID 89: Yen
+            0x79 => 93, // HID 8A: Convert
+            0x7B => 48, // HID 8B: Non-convert
+            _ => 0,
+        };
+        return !extended && slot != 0;
+    }
 }

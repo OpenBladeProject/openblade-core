@@ -1,0 +1,589 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-14",
+  "scope": "Read-only firmware-gap audit across all22 supported profiles for issue967; source/code admission distinct from physical validation. Independent Synapse audits are outside this subtask.",
+  "hardwareActionsPerformed": false,
+  "updatersExecuted": false,
+  "sources": [
+    {
+      "path": "evidence/source-reviewed-blades/2026-11-07-models.json",
+      "sha256": "6d1212456e9d185b77640876d5bfd67fe22ed6e192a4e913e1217601e18d6fcf"
+    },
+    {
+      "path": "evidence/source-reviewed-blades/2026-11-07-models-2019-2020.json",
+      "sha256": "56b956517245766d91041ccdbe76b6cfa1626884fd4e0884a92c9f363f29ee79"
+    },
+    {
+      "path": "evidence/source-reviewed-blades/2026-11-07-models-2021-2022.json",
+      "sha256": "9b55f3dc394ae7426a37448488d60580b07f22606aa642e75dce4f02922f265c"
+    },
+    {
+      "path": "evidence/source-reviewed-blades/2026-11-12-issue-949-models.json",
+      "sha256": "04e466ba5f815905e93a58ea98e1bc566fd9efabac82a49216e40a42381fd6ac"
+    },
+    {
+      "path": "evidence/source-reviewed-blades/2026-11-13-mcu-availability.json",
+      "sha256": "cc8de2208077f6f335f9d7b35784544920e60160fe0c5f4ac3c81cdb65740606"
+    },
+    {
+      "path": "evidence/source-reviewed-blades/2026-11-13-modern-mcu-lighting.json",
+      "sha256": "dd15b258c78a6c07a7476fb3bb430425286ea19f495bce0d1bbe710e3eb82fa2"
+    },
+    {
+      "path": "evidence/source-reviewed-blades/2026-11-13-rz09-0330-bios-ec-lighting.json",
+      "sha256": "46a5eca0a3fa5294cb77a500362a6ae431cae561806774d5cb606a75ca470452"
+    },
+    {
+      "path": "evidence/firmware-source-review/2026-11-07-blade16.json",
+      "sha256": "70bc94e0e3aabf70158c68e191f1b73307ec2060dc40404a609d8fac0fa0b991"
+    }
+  ],
+  "models": [
+    {
+      "model": "RZ09-0581",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0581",
+          "component": "BIOS",
+          "version": "4.01",
+          "sha256": "29687c5465c12c2023b6c30f3cd8f818f9c5258ca5d01944d3782c3c9e28b839",
+          "bytes": 9900296,
+          "source": "evidence/firmware-source-review/2026-11-07-blade16.json",
+          "pointer": "/models/0/packages/0",
+          "url": "https://mysupport.razer.com/app/answers/detail/a_id/20847"
+        },
+        {
+          "model": "RZ09-0581",
+          "component": "EC",
+          "version": "1.04",
+          "sha256": "e6e105ca059b96c7dd0ae0bc2fbc0e259b29250b97f09447044624f2447cdae7",
+          "bytes": 652560,
+          "source": "evidence/firmware-source-review/2026-11-07-blade16.json",
+          "pointer": "/models/0/packages/1",
+          "url": "https://mysupport.razer.com/app/answers/detail/a_id/20850"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "Reuse exact prior EC thermal and charging corroboration. Factory table/internal mailbox are distinct from admitted HID commands; no manual-range expansion. Constant ACPI TZRZ_TMP cannot establish CPU temperature."
+    },
+    {
+      "model": "RZ09-0528",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0528",
+          "component": "BIOS",
+          "version": "2.02",
+          "sha256": "4e39e3f7bc9e7c09bd60d04ade0aa38f63a7d23fd497934ffaa25c4fea7e592f",
+          "bytes": 6967384,
+          "source": "evidence/firmware-source-review/2026-11-07-blade16.json",
+          "pointer": "/models/1/packages/0",
+          "url": "https://mysupport.razer.com/app/answers/detail/a_id/15235"
+        },
+        {
+          "model": "RZ09-0528",
+          "component": "EC",
+          "version": "1.09",
+          "sha256": "3bf4dbec9555de4f784e9602b2fe982ec439924b946c412f46db4c53a769832b",
+          "bytes": 9110504,
+          "source": "evidence/firmware-source-review/2026-11-07-blade16.json",
+          "pointer": "/models/1/packages/1",
+          "url": "https://mysupport.razer.com/app/answers/detail/a_id/21226"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "Reuse exact prior EC thermal and charging corroboration. Factory table/internal mailbox are distinct from admitted HID commands; no manual-range expansion. Constant ACPI TZRZ_TMP cannot establish CPU temperature."
+    },
+    {
+      "model": "RZ09-0483",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0483",
+          "component": "BIOS",
+          "version": "1.06",
+          "sha256": "b0dd869eba7716de5f6322e9eca3dc038973ee4932a75c7524a668be9b1ed3dc",
+          "bytes": 8006512,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/initialFiveModelFirmwareReview/packages/3",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20Automobili%20Lamborghini%20Edition%20%282023%29%20/SO690_Lamborghini_BIOSv0106.exe"
+        },
+        {
+          "model": "RZ09-0483",
+          "component": "EC",
+          "version": "1.01",
+          "sha256": "6f6d2240b401ca117293f8565ecbf41458fb7ec0450351af20564f70214c7d84",
+          "bytes": 666472,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/initialFiveModelFirmwareReview/packages/4",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282023%29%20%7C%20RZ09-0483/S9Lamborghini_EC_0101.exe"
+        },
+        {
+          "model": "RZ09-0483",
+          "component": "BIOS",
+          "version": "2.05",
+          "sha256": "1aace6ddc728b8bd5365eec76875cd3cc6c73f467f511c9216a9e5ed8f30e591",
+          "bytes": 8036744,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/initialFiveModelFirmwareReview/packages/5",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282023%29%20%7C%20RZ09-0483/SO690_BIOSv0205.exe"
+        },
+        {
+          "model": "RZ09-0483",
+          "component": "EC",
+          "version": "2.01",
+          "sha256": "a8693bebfcfdd3999f5fce53bc41d77a382d44cb3c368fd928de613488cbab15",
+          "bytes": 1503488,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/initialFiveModelFirmwareReview/packages/6",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282023%29%20%7C%20RZ09-0483/SO690_EC_0201.exe"
+        },
+        {
+          "model": "RZ09-0483",
+          "component": "MCU",
+          "version": "1.06.00",
+          "sha256": "552518c8ed1f590ea0d58e57de27e2ed0c1985a5b61faece69f984d25aab1935",
+          "bytes": 1503488,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/initialFiveModelFirmwareReview/packages/7",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282023%29%20%7C%20RZ09-0483/SO690_MCU_010600.exe"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No additional firmware-only host control established in this bounded review; use the exact Synapse typed control audit for candidate contracts. Firmware tables and generic EC fields do not independently supply production ownership/readback/restoration."
+    },
+    {
+      "model": "RZ09-0482",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0482",
+          "component": "BIOS",
+          "version": "02.00",
+          "sha256": "83d3b1c29573f3e0e8f20a8ba1700a43c20ec3590604f162a1d201f4481abd13",
+          "bytes": 5830056,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/initialFiveModelFirmwareReview/packages/1",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282023%29%20%7C%20RZ09-0482x/RazerUpdater_v1.1.1.3_PI490-BIOSv02.00.exe"
+        },
+        {
+          "model": "RZ09-0482",
+          "component": "MCU",
+          "version": "1.04",
+          "sha256": "9653d899701a889f3e533e8e4a6733869ca3b4bc5c66942b6512d3d848c40e51",
+          "bytes": 1330264,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/initialFiveModelFirmwareReview/packages/2",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282023%29%20%7C%20RZ09-0482x/RazerUpdater_v1.1.1.3_PI490-MCUv010400v2.exe"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No additional firmware-only host control established in this bounded review; use the exact Synapse typed control audit for candidate contracts. Firmware tables and generic EC fields do not independently supply production ownership/readback/restoration."
+    },
+    {
+      "model": "RZ09-0530",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0530",
+          "component": "BIOS",
+          "version": "0106",
+          "sha256": "47dd6c2e29d4fcf2c7ae4d29c0711d25ea722bcf7df0a91b97875f0014767628",
+          "bytes": 6987592,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/initialFiveModelFirmwareReview/packages/10",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282025%29%20%7C%20RZ09-0530/PI4110-BIOSv0106.exe"
+        },
+        {
+          "model": "RZ09-0530",
+          "component": "EC",
+          "version": "0103",
+          "sha256": "c260bd7596aef0f4a9630aecd47bbf6cc49accfd2a03eb0c9642643aac46b7f8",
+          "bytes": 1465984,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/initialFiveModelFirmwareReview/packages/11",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282025%29%20%7C%20RZ09-0530/PI4110-ECv0103.exe"
+        },
+        {
+          "model": "RZ09-0530",
+          "component": "MCU",
+          "version": "01.04.00",
+          "sha256": "aed7039be5cc4ec3f166a2728b0c1b90839bae72c8a04150056654f64f20581f",
+          "bytes": 1439888,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/initialFiveModelFirmwareReview/packages/12",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282025%29%20%7C%20RZ09-0530/PI4110-MCUv01.04.00.exe"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No additional firmware-only host control established in this bounded review; use the exact Synapse typed control audit for candidate contracts. Firmware tables and generic EC fields do not independently supply production ownership/readback/restoration."
+    },
+    {
+      "model": "RZ09-0328",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0328",
+          "component": "BIOS",
+          "version": "1.06",
+          "sha256": "4c51547f99e13c164b1d0d5ddf1f164b31e6f1e4a98717f21f866ddfeef8b703",
+          "bytes": 8958488,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/initialFiveModelFirmwareReview/packages/0",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%E2%80%9D%20Base%20%282020%29%20%7C%20RZ09-0328x/RazerUpdater_v1.1.1.2_DA550-BIOSv0106.exe"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No additional firmware-only host control established in this bounded review; use the exact Synapse typed control audit for candidate contracts. Firmware tables and generic EC fields do not independently supply production ownership/readback/restoration."
+    },
+    {
+      "model": "RZ09-0484",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0484",
+          "component": "BIOS",
+          "version": "2.09",
+          "sha256": "ea6b01417b8b868a60c7f85dc194aaa8e8ec0d117dedaa6f3689ff09fbde9741",
+          "bytes": 8054624,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/initialFiveModelFirmwareReview/packages/8",
+          "url": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0484/KI890-BIOSv0209.exe"
+        },
+        {
+          "model": "RZ09-0484",
+          "component": "EC-MCU",
+          "version": "EC1.07-MCU1.04",
+          "sha256": "6e383e9ea40ac5d45be0dbd38cba9c8f92368317d4ad06ad8da1d411e7edb2d7",
+          "bytes": 16927128,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/initialFiveModelFirmwareReview/packages/9",
+          "url": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0484/RazerUpdater_v1.1.1.3_KI890_EC_0107_MCU_010400_TP_VBIOS_v5%201.exe"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No additional firmware-only host control established in this bounded review; use the exact Synapse typed control audit for candidate contracts. Firmware tables and generic EC fields do not independently supply production ownership/readback/restoration."
+    },
+    {
+      "model": "RZ09-0508",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0508",
+          "component": "Firmware",
+          "version": "BIOS1.06",
+          "sha256": "ec121d3fd773d3d48ca5a6b145315269d21d1ee2fa5114c3eb79fa9538a824b4",
+          "bytes": 5852096,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/newModelFirmwareReview/packages/0",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282024%29%20%7C%20RZ09-0508/RazerUpdater_v1.1.1.3_PI4100-BIOSv01.06.exe"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No additional firmware-only host control established in this bounded review; use the exact Synapse typed control audit for candidate contracts. Firmware tables and generic EC fields do not independently supply production ownership/readback/restoration."
+    },
+    {
+      "model": "RZ09-0510",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0510",
+          "component": "BIOS",
+          "version": "1.08",
+          "sha256": "36b541c764b2730f3a52a2b4e74f9da2715deb08e8d708ac538238ee3d4ce8a2",
+          "bytes": 8472408,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/newModelFirmwareReview/packages/3",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282024%29%20%7C%20RZ09-0510/SO6100-BIOSv0108.exe"
+        },
+        {
+          "model": "RZ09-0510",
+          "component": "EC-MCU",
+          "version": "EC1.02-MCU1.03",
+          "sha256": "2912408c872d57176e42d2da09b68566cecf9b723f51cce4ae4e717a9e98e295",
+          "bytes": 6946120,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/newModelFirmwareReview/packages/4",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282024%29%20%7C%20RZ09-0510/RazerUpdater_v1.1.1.3_SO6100_EC_0102_MCU_010300_VBIOS.exe"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No additional firmware-only host control established in this bounded review; use the exact Synapse typed control audit for candidate contracts. Firmware tables and generic EC fields do not independently supply production ownership/readback/restoration."
+    },
+    {
+      "model": "RZ09-0509",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0509",
+          "component": "BIOS",
+          "version": "1.06-or-1.04",
+          "sha256": "a34b83e3b7404040b29c82ae557927a1db2afc522dee1eaf38159e47e57175eb",
+          "bytes": 16168624,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/newModelFirmwareReview/packages/1",
+          "url": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0509/KI8100-BIOSv0106MB1_v0104MB2.exe"
+        },
+        {
+          "model": "RZ09-0509",
+          "component": "EC-MCU",
+          "version": "EC1.02-MCU1.01",
+          "sha256": "6e06d131e1a77a733fbf5c37e5ba95ccda2e496257a7bb4747b1e274dda74c38",
+          "bytes": 1494160,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/newModelFirmwareReview/packages/2",
+          "url": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0509/RazerUpdater_v1.1.1.3_KI8100_EC_1.02_MCU_010100v2.exe"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No additional firmware-only host control established in this bounded review; use the exact Synapse typed control audit for candidate contracts. Firmware tables and generic EC fields do not independently supply production ownership/readback/restoration."
+    },
+    {
+      "model": "RZ09-0529",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0529",
+          "component": "BIOS",
+          "version": "4.01",
+          "sha256": "b000c22be0a10971a812b6fe728125e34ec033c89c06151671ce450314431a1d",
+          "bytes": 9468152,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/newModelFirmwareReview/packages/5",
+          "url": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0529/KI8110-BIOSv0401.exe"
+        },
+        {
+          "model": "RZ09-0529",
+          "component": "EC",
+          "version": "1.06",
+          "sha256": "922f1ae0b9c8bcac3563d9cb884c34e31128f5b51ac8fe75e48c0fcdac30933d",
+          "bytes": 651520,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/newModelFirmwareReview/packages/6",
+          "url": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0529/KI8110-ECv0106.exe"
+        },
+        {
+          "model": "RZ09-0529",
+          "component": "MCU",
+          "version": "1.07",
+          "sha256": "30c06ba3d2d057593bbf3c812249d4edd020d17fc157a8cc7c29264a9e72f9dc",
+          "bytes": 1446744,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models.json",
+          "pointer": "/newModelFirmwareReview/packages/7",
+          "url": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0529/KI8110-MCUv01.07.00.exe"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No additional firmware-only host control established in this bounded review; use the exact Synapse typed control audit for candidate contracts. Firmware tables and generic EC fields do not independently supply production ownership/readback/restoration."
+    },
+    {
+      "model": "RZ09-0427",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0427",
+          "component": "BIOS/EC/MCU/PD",
+          "version": "BIOS3.06 EC1.06 MCU1.01.00 PD11",
+          "sha256": "6dc6495a1bdebf7aea343f2a5f1e82e5565aece7d1fbf50cbd2e450cc18b04ef",
+          "bytes": 6715752,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models-2021-2022.json",
+          "pointer": "/firmwareReview/packages/1",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%20%282022%29%20%E2%80%93%20RZ09-0427/RazerUpdater_v1.1.1.3_PI480-MCUv010100-PDv11-BIOSv3.06v1-ECv0106.exe"
+        },
+        {
+          "model": "RZ09-0427",
+          "component": "EC",
+          "version": "1.03",
+          "sha256": "0cfbb2516a93ac94a94a1ff220c81d210138cc37e44c3ef073effc684073ad2e",
+          "bytes": 599792,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models-2021-2022.json",
+          "pointer": "/firmwareReview/packages/2",
+          "url": "https://dl.razerzone.com/drivers/RazerUpdater_v1.1.1.3_PI480-ECv0103.exe"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No additional firmware-only host control established in this bounded review; use the exact Synapse typed control audit for candidate contracts. Firmware tables and generic EC fields do not independently supply production ownership/readback/restoration."
+    },
+    {
+      "model": "RZ09-0421",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0421",
+          "component": "BIOS",
+          "version": "2.06",
+          "sha256": "34cd35d840cf25a72b3cb614b6975c83c9342a3b725d0c76d69774c3e89aa35f",
+          "bytes": 8048824,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models-2021-2022.json",
+          "pointer": "/firmwareReview/packages/3",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20%282022%29%20%7C%20RZ09-0421x/RazerUpdater_v1.1.1.3_CH580-BIOSv0206.exe"
+        },
+        {
+          "model": "RZ09-0421",
+          "component": "EC/MCU",
+          "version": "EC1.03 MCU1.03.00",
+          "sha256": "6fcfd96615c514c6cd25944405980b6b39d8a2b0458f8cabce299dac37728118",
+          "bytes": 1516336,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models-2021-2022.json",
+          "pointer": "/firmwareReview/packages/4",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20%282022%29%20%7C%20RZ09-0421x/RazerUpdater_v1.1.1.3_CH580_EC_0103_MCU_010300_v2.exe"
+        },
+        {
+          "model": "RZ09-0421",
+          "component": "Optional Thunderbolt NVM",
+          "version": "43.03 updater field / 43.3 NVM",
+          "sha256": "edafed4fe873f67d1ed8c113d388c9ef2b3c9df4c3d78102e02af4e3d8dc0ae9",
+          "bytes": 940920,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models-2021-2022.json",
+          "pointer": "/firmwareReview/packages/7",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20%282022%29%20%7C%20RZ09-0421x/RazerUpdater_v1.1.1.3_CH580_NVM_v43.03.exe"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No additional firmware-only host control established in this bounded review; use the exact Synapse typed control audit for candidate contracts. Firmware tables and generic EC fields do not independently supply production ownership/readback/restoration."
+    },
+    {
+      "model": "RZ09-0423",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0423",
+          "component": "BIOS",
+          "version": "2.01",
+          "sha256": "4e514c68dfc36497167431f9c01fb62f7a71175c7678de6a5255510eb03b786f",
+          "bytes": 8123664,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models-2021-2022.json",
+          "pointer": "/firmwareReview/packages/5",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2017%22%20%282022%29%20%7C%20RZ09-0423x/RazerUpdater_v1.1.1.3_DI780-BIOSv0201.exe"
+        },
+        {
+          "model": "RZ09-0423",
+          "component": "EC/MCU/VBIOS",
+          "version": "EC1.05 MCU1.02.00; variant-specific VBIOS",
+          "sha256": "3f096851bed1679a83630fa588daf0d977f0944634075e75493658cfad03c554",
+          "bytes": 7556096,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models-2021-2022.json",
+          "pointer": "/firmwareReview/packages/6",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2017%22%20%282022%29%20%7C%20RZ09-0423x/RazerUpdater_v1.1.1.3_DI780-ECv0105_MCUv010200_VBIOS_v3.exe"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No additional firmware-only host control established in this bounded review; use the exact Synapse typed control audit for candidate contracts. Firmware tables and generic EC fields do not independently supply production ownership/readback/restoration."
+    },
+    {
+      "model": "RZ09-0370",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0370",
+          "component": "BIOS",
+          "version": "1.08_v3",
+          "sha256": "4477f0c16b6bf98cbc81152a90e734ae3a1b250b46a98422aae6aeb09c236bfa",
+          "bytes": 5152624,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models-2021-2022.json",
+          "pointer": "/firmwareReview/packages/0",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%22%20%282021%29%20%7C%20RZ09-0370/PI410_PI411-BIOSv0108_v3.exe"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No additional firmware-only host control established in this bounded review; use the exact Synapse typed control audit for candidate contracts. Firmware tables and generic EC fields do not independently supply production ownership/readback/restoration."
+    },
+    {
+      "model": "RZ09-0330",
+      "pinnedPackageRecords": [
+        {
+          "model": "RZ09-0330",
+          "component": "BIOS",
+          "version": null,
+          "sha256": "56fec28b559b735d6e366a23f9e4e8b4ef3a2d4ac7af3370b538a791b101702e",
+          "bytes": 9157776,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models-2019-2020.json",
+          "pointer": "/firmware/0",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%E2%80%9D%20Advanced%20%282020%29%20%7C%20RZ09-0330x/RazerUpdater_v1.1.1.2_CH551-BIOSv0106.exe"
+        },
+        {
+          "model": "RZ09-0330",
+          "component": "EC",
+          "version": null,
+          "sha256": "3ba19f72e3a53d88d2a8d1c2aa5c6e9a4b907e85e61a0b2803d5b9ca6cb78d44",
+          "bytes": 598032,
+          "source": "evidence/source-reviewed-blades/2026-11-07-models-2019-2020.json",
+          "pointer": "/firmware/1",
+          "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20Advanced%20%282020%29%20/RazerUpdater_v1.1.1.2_CH551-ECv0101.exe"
+        }
+      ],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "CPU Custom Boost raw3 requires EC1.01 under exact vendor variant applicability. Current boot metadata is diagnostic, no normal0253 typed EC query established. F003 EC00/81 returns literal02/00, not EC1.01. F00307 class rejects; this is not proof of0253 behavior. No new EC floor admission."
+    },
+    {
+      "model": "RZ09-0351",
+      "pinnedPackageRecords": [],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No exact public model BIOS/EC carrier found in reviewed vendor listing; ME updater is not EC semantics. No generic register route."
+    },
+    {
+      "model": "RZ09-0301",
+      "pinnedPackageRecords": [],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No additional firmware-only host control established in this bounded review; use the exact Synapse typed control audit for candidate contracts. Firmware tables and generic EC fields do not independently supply production ownership/readback/restoration."
+    },
+    {
+      "model": "RZ09-0300",
+      "pinnedPackageRecords": [],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "Reviewed03009 BIOS1.03 shortlink redirected404; no exact BIOS/EC carrier established. Gaming/Creator thermal semantics stay exact source-reviewed; no generic register route."
+    },
+    {
+      "model": "RZ09-0409",
+      "pinnedPackageRecords": [],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "No additional firmware-only host control established in this bounded review; use the exact Synapse typed control audit for candidate contracts. Firmware tables and generic EC fields do not independently supply production ownership/readback/restoration."
+    },
+    {
+      "model": "RZ09-0287",
+      "pinnedPackageRecords": [],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "New BIOS1.04/DSDT proves AC presence only. Normal0234 HID07/8C translation and failed adapter-response status meaning remain unresolved; no sufficient-power fallback. No standalone EC/keyboard MCU was located in reviewed index. Manual fan admission needs exact normal-controller getter/setter contract, not BIOS CFAN stubs."
+    },
+    {
+      "model": "RZ09-0314",
+      "pinnedPackageRecords": [],
+      "firmwareOnlyAdmissionDecision": "none-new",
+      "concreteBoundary": "Exact0314 appears in official0287 BIOS article but downloaded carrier torden.ini only names02876/7/8; do not assign its bytes automatically. No standalone EC/keyboard MCU located in reviewed index. Adapter/fan changes need exact typed source."
+    }
+  ],
+  "rz090287": {
+    "article": "https://mysupport.razer.com/app/answers/detail/a_id/2800",
+    "resolvedUrl": "https://dl.razerzone.com/drivers/Razer%20Blade%20Pro%2017%22%20%282019%29/RazerUpdater_v1.1.1.2_D17-2-BIOSv0104.exe",
+    "carrierBytes": 8724896,
+    "carrierSha256": "3838558ed5e4b03be50f8638269ca8956ae6169e138033571d4c63a51da503c4",
+    "signature": "Valid RazerUSA Ltd.",
+    "biosFile": "Dana17_2_0104.bin",
+    "biosBytes": 16777216,
+    "biosSha256": "fbd607c5a3a1b6a3e5db6c8a2abf443125700666b7089fa17399a110020daeb6",
+    "ssid": "1A583000",
+    "carrierCases": [
+      "RZ09-02876",
+      "RZ09-02877",
+      "RZ09-02878"
+    ],
+    "ecVerAndEcExec": "blank",
+    "dsdt": {
+      "bytes": 256847,
+      "sha256": "961e8a2948e16ee02f08b71b42ecfde1a4a3612e8eff35a94d777f2265a5afad",
+      "checksum": 0,
+      "ECVR_name": "0x3e1f7",
+      "ACTP_name": "0x3e292",
+      "BMCR_name": "0x3e68c",
+      "RECR_name": "0x3e742",
+      "AC0_PSR_name": "0x3e825",
+      "AC0_PSR": "PSTA bit0 only; no rated wattage decoder.",
+      "dslLines": "57200..57253,57468..57647",
+      "ACTP_consumer": "none in reviewed DSDT; declaration alone not semantics."
+    },
+    "razerAcpiDxe": {
+      "bytes": 9728,
+      "sha256": "0d6e31d0a43e9bd2fd07b414ce33a38d222f416a6aac2550f3cab51c904c418f",
+      "analysis": "extracted only; no claimed decompiled semantic conclusion"
+    }
+  },
+  "rz090330": {
+    "ecImageSha256": "0487bd1357b6ac6c2c18b8e514b6a1098cb8e198b534e588045770a8c7140689",
+    "image": "CH551_EC_01_01.bin",
+    "route": "1532:F003 per prior exact reviewed descriptor; normal1532:0253 remains separate",
+    "decode": "NDS32 LE data/BE instruction, GP80000",
+    "class00_81": "0xF5EC branch to0xF668 then0xF69E emits literal02/00; not EC1.01 version",
+    "class00_83": "0xF69C emits01/00",
+    "class07": "dispatcher0xF820 table class07 routes0xF84A status3; not normal0253 proof",
+    "class0D": "handler0xF6E2 includes request/target/tachometry fields; no normal0253 bridge established",
+    "derivedProof": "ec0330-selected.txt",
+    "typedEcFloorAdmission": "not established"
+  },
+  "implementationRecommendation": "Shared numeric response-status diagnostic retention after full correlation validation; preserve failed/unknown adapter admission instead of fabricating power sufficiency."
+}

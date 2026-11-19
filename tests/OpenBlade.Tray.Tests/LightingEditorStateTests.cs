@@ -62,6 +62,63 @@ public sealed class LightingEditorStateTests
     }
 
     [Fact]
+    public void EditingKeyboardBrightnessAndLogoKeepsOnlyUnrelatedIndependentFields()
+    {
+        var editor = new LightingEditorState();
+        editor.Load(LightingSettingsFactory.Static(new(1, 2, 3), 50) with
+        {
+            LogoMode = LogoLightingMode.Static,
+            IndependentControls = new(65, LogoLightingMode.Breathing, TouchpadStatusIndicatorEnabled: false),
+        });
+
+        editor.Brightness = 75;
+
+        LightingSettings brightnessEdit = editor.ToSettings();
+        Assert.Equal(75, brightnessEdit.Brightness);
+        Assert.Equal(new IndependentLightingSettings(LogoMode: LogoLightingMode.Breathing, TouchpadStatusIndicatorEnabled: false),
+            brightnessEdit.IndependentControls);
+
+        editor.LogoMode = LogoLightingMode.Off;
+
+        LightingSettings logoEdit = editor.ToSettings();
+        Assert.Equal(LogoLightingMode.Off, logoEdit.LogoMode);
+        Assert.Equal(new IndependentLightingSettings(TouchpadStatusIndicatorEnabled: false), logoEdit.IndependentControls);
+    }
+
+    [Theory]
+    [InlineData(72, 72, false)]
+    [InlineData(72, 72, true)]
+    [InlineData(0, 50, false)]
+    [InlineData(0, 50, true)]
+    public void EffectSelection_UsesPositiveIndependentBrightnessAndReplacesDarkTarget(
+        int inheritedBrightness, int visibleBrightness, bool startAtDefault)
+    {
+        var editor = new LightingEditorState();
+        var fields = new IndependentLightingSettings(
+            Brightness: (byte)inheritedBrightness, TouchpadStatusIndicatorEnabled: false);
+        editor.SetEffectUnconfirmed(startAtDefault);
+        editor.Load(LightingSettingsFactory.Off() with { IndependentControls = fields },
+            startUnconfirmedEffectAtDefaultBrightness: startAtDefault);
+        LightingSettings? lastPublishedDraft = null;
+        editor.Changed += change =>
+        {
+            if (change is { Kind: LightingEditorChangeKind.ValueChanged, Value: LightingEditorValue.Draft })
+            {
+                lastPublishedDraft = editor.ToSettings();
+            }
+        };
+
+        editor.SelectEffect(LightingEffect.Static);
+
+        LightingSettings draft = editor.ToSettings();
+        Assert.Equal(LightingEffect.Static, draft.Effect);
+        Assert.Equal(visibleBrightness, editor.Brightness);
+        Assert.Equal(visibleBrightness, draft.Brightness);
+        Assert.Equal(fields with { Brightness = (byte)visibleBrightness }, draft.IndependentControls);
+        Assert.Equal(draft, lastPublishedDraft);
+    }
+
+    [Fact]
     public void EffectSelection_PublishesDirtyBeforeAssignmentAndEachVisibleDefaultInOrder()
     {
         var editor = new LightingEditorState();

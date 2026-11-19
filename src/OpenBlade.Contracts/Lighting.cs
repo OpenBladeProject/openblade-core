@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace OpenBlade.Contracts;
@@ -329,8 +331,46 @@ public static class LightingSettingsFactory
             && settings.Effect == LightingEffect.Off
             && settings.Color == default
             && settings.Brightness == 0
-                ? Off() with { LogoMode = settings.LogoMode, IndependentControls = settings.IndependentControls }
+                ? settings with { Parameters = Off().Parameters }
                 : settings;
+    }
+
+    // Older schemas applied only the independent fields on hybrid devices.
+    // Keep their saved effect as context without granting it write authority.
+    [return: NotNullIfNotNull(nameof(settings))]
+    public static LightingSettings? PreserveLegacyIndependentIntent(LightingSettings? settings) =>
+        settings is { ControlsKeyboardEffect: true, IndependentControls: not null }
+            ? settings with { ControlsKeyboardEffect = false }
+            : settings;
+
+    public static ProfileSet PreserveLegacyIndependentProfileIntent(ProfileSet profiles)
+    {
+        static PowerProfile PreservePowerProfile(PowerProfile profile) =>
+            profile with { Lighting = PreserveLegacyIndependentIntent(profile.Lighting) };
+
+        static ApplicationPowerProfileOverride? PreserveOverride(ApplicationPowerProfileOverride? profile) =>
+            profile is { Lighting: { } lighting }
+                ? profile with { Lighting = PreserveLegacyIndependentIntent(lighting) }
+                : profile;
+
+        return profiles with
+        {
+            PluggedIn = PreservePowerProfile(profiles.PluggedIn),
+            Battery = PreservePowerProfile(profiles.Battery),
+            UsbC = PreservePowerProfile(profiles.UsbC),
+            ApplicationProfiles = profiles.ApplicationProfiles?.Select(application =>
+                application is { Overrides: { } overrides }
+                    ? application with
+                    {
+                        Overrides = overrides with
+                        {
+                            PluggedIn = PreserveOverride(overrides.PluggedIn),
+                            Battery = PreserveOverride(overrides.Battery),
+                            UsbC = PreserveOverride(overrides.UsbC),
+                        },
+                    }
+                    : application).ToArray()!,
+        };
     }
 
     public static LightingSettings NormalizeLegacyInvisibleEffect(
@@ -345,7 +385,7 @@ public static class LightingSettingsFactory
         RgbColor visibleColor = settings.Color == default
             ? DefaultVisibleColor
             : settings.Color;
-        return settings.Parameters switch
+        LightingSettings normalized = settings.Parameters switch
         {
             StaticLightingParameters => Static(visibleColor, DefaultVisibleBrightness),
             SpectrumCyclingLightingParameters => SpectrumCycling(DefaultVisibleBrightness),
@@ -436,6 +476,15 @@ public static class LightingSettingsFactory
             },
             _ => settings,
         };
+        // Retain control authority and independent fields while normalizing
+        // effect data. Cloning the input also preserves future intent metadata.
+        return ReferenceEquals(normalized, settings) ? settings : settings with
+        {
+            Effect = normalized.Effect,
+            Color = normalized.Color,
+            Brightness = normalized.Brightness,
+            Parameters = normalized.Parameters,
+        };
     }
 
     public static LightingSettings NormalizeAudioMeterDecay(
@@ -465,6 +514,30 @@ public static class LightingSettingsFactory
 
 public static class LightingSettingsValidation
 {
+    // Historical profile/override documents must not opt in to newly added
+    // hardware fields, even inside an application override later discarded by migration.
+    public static bool ContainsZoneControlIntent(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty property in element.EnumerateObject())
+            {
+                if ((property.Name.Equals("vaporChamberLightingEnabled", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("touchpadStatusIndicatorEnabled", StringComparison.OrdinalIgnoreCase))
+                    && property.Value.ValueKind != JsonValueKind.Null
+                    || ContainsZoneControlIntent(property.Value))
+                {
+                    return true;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            return element.EnumerateArray().Any(ContainsZoneControlIntent);
+        }
+        return false;
+    }
+
     public static bool IsWellFormed(LightingSettings? settings)
     {
         if (settings is null

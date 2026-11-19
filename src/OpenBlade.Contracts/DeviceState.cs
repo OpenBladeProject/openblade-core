@@ -15,7 +15,7 @@ public sealed record FanSpeedRange(
 {
     public bool IsWellFormed =>
         MinimumRpm >= FanControlSettings.MinimumSpeedRpm
-        && MaximumRpm <= FanControlSettings.MaximumSpeedRpm
+        && MaximumRpm <= FanControlSettings.MaximumSupportedSpeedRpm
         && MinimumRpm <= MaximumRpm
         && StepRpm == FanControlSettings.SpeedStepRpm
         && MinimumRpm % StepRpm == 0
@@ -241,12 +241,19 @@ public sealed record DeviceCapabilities(
     /// Omitted capabilities retain Automatic-only admission on that source.</summary>
     public bool SupportsManualFansOnLimitedPower { get; init; }
 
+    /// <summary>Exact-model source admits ordinary thermal commands on fresh
+    /// Windows external presence when adapter wattage cannot be classified.
+    /// This does not admit HyperBoost, voltage, native overclocking, or FullPower.</summary>
+    public bool SupportsOrdinaryThermalControlOnUnclassifiedExternalPower { get; init; }
+
     public bool SupportsKeyboardBrightness { get; init; }
 
     // Independent fields have their own typed path and do not imply that an
     // effect or RGB restoration baseline can be read. Older frames default off.
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     public bool SupportsIndependentLightingControls { get; init; }
+    public bool SupportsVaporChamberLighting { get; init; }
+    public bool SupportsTouchpadStatusIndicator { get; init; }
 
     // Older/full implementations support the complete parameter pickers by default.
     public bool SupportsBreathingColorSelection { get; init; } = true;
@@ -274,7 +281,25 @@ public sealed record DeviceCapabilities(
         init;
     } = new Dictionary<PerformancePreset, FanSpeedRange>();
 
-    public FanSpeedRange? GetFanSpeedRange(PerformancePreset performance) =>
+    /// <summary>Latest independently confirmed firmware limits, bounded by reviewed intent.</summary>
+    public IReadOnlyDictionary<PerformancePreset, FanSpeedRange> ObservedFanSpeedRangesByPerformancePreset
+    {
+        get;
+        init;
+    } = new Dictionary<PerformancePreset, FanSpeedRange>();
+
+    public FanSpeedRange? GetFanSpeedRange(PerformancePreset performance)
+    {
+        FanSpeedRange? intent = GetFanIntentSpeedRange(performance);
+        return intent is not null
+            && ObservedFanSpeedRangesByPerformancePreset.TryGetValue(performance, out FanSpeedRange? observed)
+            && observed is { IsWellFormed: true }
+            && intent.Supports(observed.MinimumRpm) && intent.Supports(observed.MaximumRpm)
+                ? observed : intent;
+    }
+
+    /// <summary>Reviewed envelope for saved settings, independent of transient firmware observations.</summary>
+    public FanSpeedRange? GetFanIntentSpeedRange(PerformancePreset performance) =>
         FanSpeedRangesByPerformancePreset.Count == 0
             ? FanSpeedRange
             : FanSpeedRangesByPerformancePreset.TryGetValue(performance, out FanSpeedRange? range)
@@ -318,6 +343,10 @@ public sealed record DeviceCapabilities(
     public IReadOnlySet<LightingEffect> ObservedLightingEffects { get; init; } =
         new HashSet<LightingEffect>();
 
+    /// <summary>Owner-reported regions with no admitted lighting read/write contract.</summary>
+    public IReadOnlySet<ObservedLightingZone> ObservedLightingZones { get; init; } =
+        new HashSet<ObservedLightingZone>();
+
     public IReadOnlyList<PowerSourceBehaviorObservation> ObservedPowerSourceBehaviors
     {
         get;
@@ -347,6 +376,13 @@ public sealed record DeviceCapabilities(
             Enum.IsDefined(entry.Key)
             && PerformancePresets.Contains(entry.Key)
             && entry.Value is { IsWellFormed: true })
+        && ObservedFanSpeedRangesByPerformancePreset is not null
+        && ObservedFanSpeedRangesByPerformancePreset.Count <= PerformancePresets.Count
+        && ObservedFanSpeedRangesByPerformancePreset.All(entry =>
+            PerformancePresets.Contains(entry.Key)
+            && entry.Value is { IsWellFormed: true }
+            && GetFanIntentSpeedRange(entry.Key) is { } intent
+            && intent.Supports(entry.Value.MinimumRpm) && intent.Supports(entry.Value.MaximumRpm))
         && (!FanModes.Any(IsManualFanMode) || FanSpeedRange is not null)
         && (CustomPerformance is null || CustomPerformance.IsWellFormed)
         && (CpuPowerLimit is null || CpuPowerLimit.IsWellFormed)
@@ -373,13 +409,13 @@ public sealed record DeviceCapabilities(
         && (ThxAudio is null || ThxAudio.IsWellFormed)
         && (Blade18KeyboardLayoutId is null
             || Blade18KeyboardLightingLayout.IsKnownLayout(Blade18KeyboardLayoutId.Value))
-        && (KeyboardLightingLayoutId is null
-            ? !LightingEffects.Contains(LightingEffect.Sequence)
-            : KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutId)
-                && LightingEffects.Contains(LightingEffect.Sequence))
+        && (KeyboardLightingLayoutId is null || KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutId))
+        && (!LightingEffects.Contains(LightingEffect.Sequence)
+            || KeyboardLightingLayoutId is not null)
         && (!ChargeLimits.Contains(100) || SupportsBatteryProtectionOff)
         && IsValidEnumSet(SupportedLightingRefreshRates)
         && IsValidEnumSet(ObservedLightingEffects)
+        && IsValidEnumSet(ObservedLightingZones)
         && IsValidEnumSet(LogoLightingModes)
         && IsValidEnumSet(HostManagedLaptopControls)
         && HostManagedLaptopControls.All(control => control is

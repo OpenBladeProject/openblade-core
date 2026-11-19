@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "decision": "PASS",
+  "scope": "Independent static source review of exact 1532:0245 basic built-in lighting. No production edits, hardware operations, updater execution or new frame admission.",
+  "reviewedReportSha256": "49FE34D4807F6BC17853A72161B904F796DFCBEC1BF1FBC8CDC26303F8E93216",
+  "sourceIntelHexSha256": "33f5faa3b57c60f5f0dcb2976066b792953c53d5840e0dd2d75bf60518f5941a",
+  "reconstruction": {
+    "base": 0,
+    "endExclusive": 58892,
+    "fillByte": 255,
+    "sha256": "2b0073e46d07119027a44136f9cc9ca25d8ebd072418193e9a6f36c267720c98",
+    "allIntelHexChecksumsVerified": true
+  },
+  "checks": {
+    "strictHexReconstructionMatchedActualBinary": true,
+    "all56WindowHashesMatchedActualImage": true,
+    "actualRawDisassemblyReviewed": true,
+    "mutablePidConfigDefault0245Confirmed": true,
+    "featureDescriptor90BytesConfirmed": true,
+    "activeSelector0Confirmed": true,
+    "full12ByteGetterClearAndTypedParametersConfirmed": true,
+    "legacyOverlayClearBeforeShortcutsConfirmed": true,
+    "full63ByteSavedToActiveCopyConfirmed": true,
+    "staticActiveRgbConsumerConfirmed": true,
+    "breathingCount1And2ActiveRgbConsumerConfirmed": true,
+    "randomBreathingCount0UsesPaletteConfirmed": true,
+    "waveBothDirectionsConsumerConfirmed": true
+  },
+  "criticalWindows": [
+    {
+      "name": "Served descriptor PID patch",
+      "offset": "0xB1C2",
+      "length": 54
+    },
+    {
+      "name": "Checksummed configuration/default",
+      "offset": "0x898E",
+      "length": 88
+    },
+    {
+      "name": "Feature descriptor",
+      "offset": "0xE24A",
+      "length": 94
+    },
+    {
+      "name": "Active/saved record selection",
+      "offset": "0x7EDE",
+      "length": 62
+    },
+    {
+      "name": "GET response clear and active bank",
+      "offset": "0x9082",
+      "length": 66
+    },
+    {
+      "name": "GET basic mode/count/RGB/direction/speed",
+      "offset": "0x90D0",
+      "length": 194
+    },
+    {
+      "name": "Saved-to-active record copy and renderer initialization",
+      "offset": "0x801C",
+      "length": 96
+    },
+    {
+      "name": "Legacy Off/Wave overlay clear",
+      "offset": "0xA430",
+      "length": 178
+    },
+    {
+      "name": "Legacy colored/random Breathing",
+      "offset": "0xA512",
+      "length": 128
+    },
+    {
+      "name": "Legacy Static RGB",
+      "offset": "0xA5EC",
+      "length": 72
+    },
+    {
+      "name": "Static active RGB consumer",
+      "offset": "0x6606",
+      "length": 32
+    },
+    {
+      "name": "Breathing active RGB consumer",
+      "offset": "0x7878",
+      "length": 50
+    },
+    {
+      "name": "Wave direction and wrap",
+      "offset": "0x57BC",
+      "length": 130
+    }
+  ],
+  "requiredImplementationBoundaries": [
+    "Keep fresh exact runtime HID 1532:0245 and exact host admission; the source PID can be patched from persistent configuration.",
+    "Use active selector 0 and a 12-byte GET payload. Reject unknown modes, unsupported color counts, invalid direction/speed and inconsistent unused bytes.",
+    "Use the reviewed legacy 03/0A basic setters; do not substitute the same-effect-shortcut 0F/02 path.",
+    "After any legacy effect write, independently confirm the typed effect and reread active brightness before deciding whether a brightness setter is necessary. The setter activates a complete saved record, including brightness.",
+    "For Static, require count 1 and one RGB triple. For Breathing, admit only count 0 random or count 1/2 with corresponding RGB triples.",
+    "Wave accepts only reviewed wire directions 1 and 2, both consumed by the renderer, with fixed speed 40. Do not infer exact physical direction naming without the existing command contract.",
+    "Spectrum confirmation establishes its typed effect mode, not palette, pixel contents or exact phase restoration.",
+    "Do not admit custom frames or arbitrary RGB restoration from this basic-controls review."
+  ],
+  "limitations": [
+    "The actual carrier extraction/applicability provenance is reused from the separate scout/source record; this review independently checks the derived HEX, image, identity path and command/consumer semantics.",
+    "Static source review is not attestation of installed MCU bytes or physical output.",
+    "No blocking source-contract issue found within the requested basic-controls scope."
+  ]
+}

@@ -24,6 +24,7 @@ internal sealed class CpuLiveCurveVerifiedReadback
     internal static CpuLiveCurveVerifiedReadback? Create(CpuLiveCurveSubmissionCall call, CpuLiveCurveContext context,
         CpuLiveCurveNativeRequest request, CpuLiveCurveNativeResult result) =>
         context.IsWellFormed && call.Context.MatchesHardwareContext(context)
+        && call.Before.Contract == context.Contract && call.Command.Contract == context.Contract
         && request.Command == call.Command && request.Purpose == call.Purpose && request.PowerPeer == call.Peer
         && CpuLiveCurveNativeRequest.Equal(request.Before, call.Before)
         && CpuLiveCurveNativeRequest.Equal(request.After, call.Before.WithOffset(call.Command))
@@ -55,7 +56,7 @@ internal interface ICpuLiveCurveBackend
     async Task<bool> CheckPlanAdmissionAsync(CpuLiveCurveContext context,
         IReadOnlyList<CpuLiveCurveAdmissionCheck> checks, CancellationToken token)
     {
-        if (checks.Count is < 1 or > 36) { return false; }
+        if (context.Contract is not { } contract || checks.Count < 1 || checks.Count > 3 * contract.CoreCount) { return false; }
         foreach (var check in checks)
         {
             token.ThrowIfCancellationRequested();
@@ -221,10 +222,10 @@ internal sealed class CpuLiveCurveTuningTransaction
         internal bool Closed { get; private set; }
         internal CpuLiveCurvePeerState PeerState => new(Expected,
             Journal is { State: not CpuLiveCurveOwnershipState.Restored } journal
-                ? CpuLiveCurveOwnershipJournal.Snapshot(journal.OriginalBaseline) : null);
+                ? journal.Snapshot(journal.OriginalBaseline) : null);
         internal void Close() => Closed = true;
         internal void Update(CpuLiveCurveOwnershipJournal value, string next)
-        { Journal = value; Hash = next; Expected = CpuLiveCurveOwnershipJournal.Snapshot(value.Expected)!; }
+        { Journal = value; Hash = next; Expected = value.Snapshot(value.Expected)!; }
     }
     internal sealed record Preparation(CpuLiveCurveTransactionResult Result, PreparedOperation? Operation);
 
@@ -265,13 +266,13 @@ internal sealed class CpuLiveCurveTuningTransaction
 
     internal Task<CpuLiveCurveTransactionResult> ApplySelectiveAsync(IReadOnlyList<CpuLiveCurveTarget>? targets, CancellationToken token)
     {
-        if (targets is { Count: > 12 }) { return Task.FromResult(Blocked(CpuLiveCurveBlockReason.InvalidTarget)); }
+        if (targets is not null && targets.Count > CpuLiveCurveContract.MaximumCoreCount) { return Task.FromResult(Blocked(CpuLiveCurveBlockReason.InvalidTarget)); }
         var copy = targets?.ToArray() ?? [];
         return ApplyAsync(_ => copy, token);
     }
 
     private async Task<CpuLiveCurveTransactionResult> ApplyAsync(
-        Func<Rz090528CpuLiveObservation, IReadOnlyList<CpuLiveCurveTarget>?> getTargets, CancellationToken token,
+        Func<CpuLiveCurveSnapshot, IReadOnlyList<CpuLiveCurveTarget>?> getTargets, CancellationToken token,
         Action<PreparedOperation>? prepared = null)
     {
         await gate.WaitAsync(token).ConfigureAwait(false);
@@ -290,11 +291,15 @@ internal sealed class CpuLiveCurveTuningTransaction
             if (owned is not null && !Matches(owned, observed, owned.Expected, out baseline))
             { return await BlockJournalAsync(owned, loaded.Sha256!, MismatchReason(owned, observed), baseline).ConfigureAwait(false); }
             var context = observed!.Context!;
-            var frozen = new Rz090528CpuLiveObservation(CpuLiveCurveSnapshot.SupportedMask,
-                CpuLiveCurveSnapshot.SupportedPmVersion, CpuLiveCurveSnapshot.SupportedPmLength, baseline!.CoreOffsets);
-            var targets = getTargets(frozen);
+            var targets = getTargets(baseline!);
             if (targets is null) { return Blocked(CpuLiveCurveBlockReason.InvalidTarget, baseline); }
-            var shape = Rz090528CpuLiveCurvePlan.CreateSelective(frozen, targets, null);
+            // Collect the exact planned commands for the asynchronous backend preflight.
+            var checks = new List<CpuLiveCurveAdmissionCheck>();
+            var shape = Rz090528CpuLiveCurvePlan.CreateSelectiveFromSnapshot(baseline!, targets, (command, purpose) =>
+            {
+                checks.Add(new(command, purpose));
+                return true;
+            });
             if (shape.Status == CpuLiveCurvePlanStatus.Unchanged)
             {
                 if (prepared is not null)
@@ -302,24 +307,7 @@ internal sealed class CpuLiveCurveTuningTransaction
                 return new(CpuLiveCurveOutcome.Unchanged, owned is null ? CpuLiveCurveRecovery.None : CpuLiveCurveRecovery.RestoreReady,
                     CpuLiveCurveBlockReason.None, baseline);
             }
-            if (shape.Status != CpuLiveCurvePlanStatus.AdmissionDenied) { return Blocked(CpuLiveCurveBlockReason.InvalidTarget, baseline); }
-
-            var plannedCoverage = new HashSet<(CpuLiveCurveCommand, CpuLiveCurveCommandPurpose)>();
-            var checks = new List<CpuLiveCurveAdmissionCheck>();
-            foreach (var target in targets)
-            {
-                short prior = baseline!.CoreOffsets.Single(core => core.PhysicalCoreId == target.PhysicalCoreId).Offset;
-                if (prior == target.Offset) { continue; }
-                _ = CpuLiveCurveCommand.TryCreate(target.PhysicalCoreId, target.Offset, CpuLiveCurveSnapshot.SupportedMask, out var forward);
-                _ = CpuLiveCurveCommand.TryCreate(target.PhysicalCoreId, prior, CpuLiveCurveSnapshot.SupportedMask, out var reverse);
-                checks.Add(new(forward, CpuLiveCurveCommandPurpose.Forward));
-                checks.Add(new(reverse, CpuLiveCurveCommandPurpose.Restore));
-                plannedCoverage.Add((forward, CpuLiveCurveCommandPurpose.Forward));
-                plannedCoverage.Add((reverse, CpuLiveCurveCommandPurpose.Restore));
-            }
-            var plan = Rz090528CpuLiveCurvePlan.CreateSelective(frozen, targets,
-                (command, purpose) => plannedCoverage.Contains((command, purpose))).Plan;
-            if (plan is null) { return Blocked(CpuLiveCurveBlockReason.AdmissionDenied, baseline); }
+            if (shape.Plan is not { } plan) { return Blocked(CpuLiveCurveBlockReason.InvalidTarget, baseline); }
             // The immediate reverse is not necessarily the original restore.
             // Admit originals for prior owned cores and every newly changed
             // core, including a core whose target happens to be its original.
@@ -328,8 +316,8 @@ internal sealed class CpuLiveCurveTuningTransaction
             {
                 if (baseline!.CoreOffsets.Single(core => core.PhysicalCoreId == original.PhysicalCoreId).Offset == original.Offset
                     && !plan.Steps.Any(step => step.Command.PhysicalCoreId == original.PhysicalCoreId)) { continue; }
-                _ = CpuLiveCurveCommand.TryCreate(original.PhysicalCoreId, original.Offset,
-                    CpuLiveCurveSnapshot.SupportedMask, out var restore);
+                if (!CpuLiveCurveCommand.TryCreate(plan.Baseline.Contract, original.PhysicalCoreId, original.Offset, out var restore))
+                { return Blocked(CpuLiveCurveBlockReason.AdmissionDenied, baseline); }
                 checks.Add(new(restore, CpuLiveCurveCommandPurpose.Restore));
             }
             if (!await AdmitPlanAsync(context, checks, token).ConfigureAwait(false))
@@ -370,7 +358,7 @@ internal sealed class CpuLiveCurveTuningTransaction
             var checks = new List<CpuLiveCurveAdmissionCheck>();
             foreach (var step in restoration.Steps.Reverse())
             {
-                checks.Add(new(step.Command(true), CpuLiveCurveCommandPurpose.Restore));
+                checks.Add(new(restoration.Command(step, true), CpuLiveCurveCommandPurpose.Restore));
             }
             if (!await AdmitPlanAsync(journal.Context, checks, token).ConfigureAwait(false))
             { return Blocked(CpuLiveCurveBlockReason.AdmissionDenied, snapshot); }
@@ -503,15 +491,16 @@ internal sealed class CpuLiveCurveTuningTransaction
         var checks = new List<CpuLiveCurveAdmissionCheck>();
         foreach (var step in remaining)
         {
-            checks.Add(new(step.Command(journal.Restoring), journal.Restoring
+            checks.Add(new(journal.Command(step, journal.Restoring), journal.Restoring
                 ? CpuLiveCurveCommandPurpose.Restore : CpuLiveCurveCommandPurpose.Forward));
-            if (!journal.Restoring) { checks.Add(new(step.Command(true), CpuLiveCurveCommandPurpose.Restore)); }
+            if (!journal.Restoring) { checks.Add(new(journal.Command(step, true), CpuLiveCurveCommandPurpose.Restore)); }
         }
         foreach (var original in journal.OriginalBaseline)
         {
             if (journal.Expected.Single(core => core.PhysicalCoreId == original.PhysicalCoreId).Offset == original.Offset
                 && !remaining.Any(step => step.PhysicalCoreId == original.PhysicalCoreId)) { continue; }
-            _ = CpuLiveCurveCommand.TryCreate(original.PhysicalCoreId, original.Offset, CpuLiveCurveSnapshot.SupportedMask, out var command);
+            if (journal.Context.Contract is not { } contract
+                || !CpuLiveCurveCommand.TryCreate(contract, original.PhysicalCoreId, original.Offset, out var command)) { return false; }
             checks.Add(new(command, CpuLiveCurveCommandPurpose.Restore));
         }
         return await AdmitPlanAsync(journal.Context, checks, token).ConfigureAwait(false);
@@ -546,8 +535,8 @@ internal sealed class CpuLiveCurveTuningTransaction
                 if (!Valid(observed, out snapshot)) { return Blocked(CpuLiveCurveBlockReason.ObservationUnavailable); }
                 if (!Matches(journal, observed, journal.Expected, out snapshot))
                 { return await BlockJournalAsync(journal, hash, MismatchReason(journal, observed), snapshot).ConfigureAwait(false); }
-                if (!await AdmitAsync(journal.Context, step.Command(restoring), purpose, token).ConfigureAwait(false)
-                    || !restoring && !await AdmitAsync(journal.Context, step.Command(true), CpuLiveCurveCommandPurpose.Restore, token).ConfigureAwait(false))
+                if (!await AdmitAsync(journal.Context, journal.Command(step, restoring), purpose, token).ConfigureAwait(false)
+                    || !restoring && !await AdmitAsync(journal.Context, journal.Command(step, true), CpuLiveCurveCommandPurpose.Restore, token).ConfigureAwait(false))
                 { return Blocked(CpuLiveCurveBlockReason.AdmissionDenied, snapshot); }
                 if (!await AdmitRemainingAsync(journal, execute: true, token).ConfigureAwait(false))
                 { return Blocked(CpuLiveCurveBlockReason.AdmissionDenied, snapshot); }
@@ -556,7 +545,7 @@ internal sealed class CpuLiveCurveTuningTransaction
             string? pendingHash = await WriteAsync(hash, pending, token).ConfigureAwait(false);
             if (pendingHash is null) { return Blocked(CpuLiveCurveBlockReason.JournalUnavailable, snapshot); }
             operation?.Update(pending, pendingHash);
-            var call = new CpuLiveCurveSubmissionCall(journal.Context, step.Command(restoring), purpose, snapshot!, peer);
+            var call = new CpuLiveCurveSubmissionCall(journal.Context, journal.Command(step, restoring), purpose, snapshot!, peer);
             CpuLiveCurveSubmissionResult submission;
             Task<CpuLiveCurveSubmissionResult>? actualSubmission = null;
             try
@@ -714,8 +703,12 @@ internal sealed class CpuLiveCurveTuningTransaction
 
     private static bool Valid(CpuLiveCurveBackendObservation? observed, out CpuLiveCurveSnapshot? snapshot)
     {
-        snapshot = CpuLiveCurveSnapshot.TryCreate(observed?.Observation);
-        return observed?.Context is { IsWellFormed: true } && snapshot is not null;
+        snapshot = null;
+        if (observed?.Context is not { IsWellFormed: true, Contract: { } contract } context
+            || observed.Observation is not { } observation || context.EnabledCoreMask != observation.EnabledCoreMask
+            || context.PmVersion != observation.PmVersion || context.PmTableLength != observation.PmTableLength) { return false; }
+        snapshot = CpuLiveCurveSnapshot.TryCreate(contract, observation);
+        return snapshot is not null;
     }
     private static bool Matches(CpuLiveCurveOwnershipJournal journal, CpuLiveCurveBackendObservation? observed,
         IReadOnlyList<CpuLiveCoreOffset> expected, out CpuLiveCurveSnapshot? snapshot) =>

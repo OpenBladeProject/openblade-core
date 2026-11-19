@@ -12,6 +12,23 @@ namespace OpenBlade.Installer.UI.Tests;
 
 public sealed class InstallerProgressPipeTests
 {
+    [Theory]
+    [InlineData("\u001b")]
+    [InlineData("\t")]
+    [InlineData("\u2028")]
+    [InlineData("\u2029")]
+    public void DecodedDiagnosticCannotInjectLogControlCharacters(string separator)
+    {
+        string wire = "v1|CopyFile|" + Convert.ToBase64String(
+            Encoding.UTF8.GetBytes("first" + separator + "last.dll"));
+        Assert.True(InstallerSetupProgress.TryParse(wire, out InstallerSetupProgress? progress));
+
+        string line = OpenBladeBootstrapperApplication.FormatPipeDiagnostic(progress!);
+
+        Assert.Contains("first last.dll", line);
+        Assert.DoesNotContain(separator, line);
+    }
+
     [Fact]
     public void AdministratorsCanReadAndWriteProgressPipe()
     {

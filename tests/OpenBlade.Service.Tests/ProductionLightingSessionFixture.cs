@@ -114,7 +114,9 @@ internal static class ProductionLightingSessionFixture
             bool supportsKeyboardBrightness = true,
             string keyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0581,
             IReadOnlySet<LightingRefreshRate>? supportedLightingRefreshRates = null,
-            bool supportsUniformLightingFrames = false)
+            bool supportsUniformLightingFrames = false,
+            IReadOnlySet<ObservedLightingZone>? observedLightingZones = null,
+            bool supportsZoneFields = false)
         {
             Capabilities = new DeviceCapabilities(
                 new HashSet<PerformancePreset>(),
@@ -137,11 +139,20 @@ internal static class ProductionLightingSessionFixture
                     new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },
                 SupportedLightingRefreshRates = supportedLightingRefreshRates
                     ?? new HashSet<LightingRefreshRate>(),
+                ObservedLightingZones = observedLightingZones
+                    ?? new HashSet<ObservedLightingZone>(),
                 SupportsUniformLightingFrames = supportsUniformLightingFrames,
+                SupportsVaporChamberLighting = supportsZoneFields,
+                SupportsTouchpadStatusIndicator = supportsZoneFields,
             };
         }
 
         public DeviceCapabilities Capabilities { get; }
+
+        public bool LightingRequiresRendererOwnership { get; set; } = true;
+
+        public bool RequiresLightingRendererOwnership(LightingSettings settings) =>
+            LightingRequiresRendererOwnership && settings.Effect != LightingEffect.Off;
 
         public Func<bool>? RecoveryWriteAdmission { get; private set; }
 

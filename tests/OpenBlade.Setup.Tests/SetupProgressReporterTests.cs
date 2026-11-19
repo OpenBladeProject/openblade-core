@@ -32,7 +32,7 @@ public sealed class SetupProgressReporterTests
         Assert.Equal(2, lines.Length);
         Assert.Equal("v1|InspectPayload", lines[0]);
         Assert.Equal(
-            "v1|CopyFile|cGF5bG9hZA0Kd2l0aCBmb3JnZWQgbGluZQ==",
+            "v1|CopyFile|cGF5bG9hZCAgd2l0aCBmb3JnZWQgbGluZQ==",
             lines[1]);
     }
 
@@ -50,6 +50,7 @@ public sealed class SetupProgressReporterTests
     [Theory]
     [InlineData(SetupProgressCode.CopyFile)]
     [InlineData(SetupProgressCode.InstallService, "unexpected")]
+    [InlineData(SetupProgressCode.Failure, "InstallService", "", "error")]
     public void ProgressEvent_RejectsTheWrongArgumentCount(
         SetupProgressCode code,
         params string[] arguments)
@@ -80,6 +81,35 @@ public sealed class SetupProgressReporterTests
         reporter.Dispose();
 
         Assert.True(ownedResource.WasDisposed);
+    }
+
+    [Fact]
+    public void Failure_SerializesFourBoundedBase64Arguments()
+    {
+        string longMessage = new string('\u4e2d', 600);
+        SetupProgressEvent progress = SetupProgressEvent.Create(
+            SetupProgressCode.Failure, "CopyFile", "payload.dll", longMessage, "rollback failed");
+
+        string serialized = SetupProgressWireProtocol.Serialize(progress);
+        string[] fields = serialized.Split('|');
+
+        Assert.Equal(6, fields.Length);
+        Assert.Equal("v1", fields[0]);
+        Assert.Equal("Failure", fields[1]);
+        Assert.Equal(progress.Arguments, fields.Skip(2).Select(field => Encoding.UTF8.GetString(Convert.FromBase64String(field))));
+        Assert.InRange(serialized.Length, 1, 8192);
+        Assert.Equal(512, progress.Arguments[2].Length);
+    }
+
+    [Theory]
+    [InlineData("Failure", "")]
+    [InlineData("unknown", "")]
+    [InlineData("1", "")]
+    [InlineData("InstallService", "unexpected")]
+    public void Failure_RejectsInvalidOriginalStep(string step, string argument)
+    {
+        Assert.Throws<ArgumentException>(() => SetupProgressEvent.Create(
+            SetupProgressCode.Failure, step, argument, "error", ""));
     }
 
     private sealed class ThrowingDisposeWriter : TextWriter

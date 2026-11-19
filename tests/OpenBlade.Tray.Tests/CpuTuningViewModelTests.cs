@@ -14,6 +14,24 @@ public sealed class CpuTuningViewModelTests
         new(DeviceFeatureAccess.ReadWrite, CpuTuningBackendAvailability.Available), CpuTuningPendingBoot.Unknown, false);
 
     [Fact]
+    public async Task DiscoveredOptimizerWithoutBackendIsVisibleWithoutSendingRefreshOrApply()
+    {
+        var client = new Client();
+        var vm = new CpuTuningViewModel(client, () => true, () => true);
+        vm.UpdateStatus(null, Caps(DeviceFeatureAccess.ObservedOnly));
+        Assert.True(vm.IsVisible);
+        Assert.False(vm.CanRefresh);
+        Assert.False(vm.CanApply);
+        Assert.False(vm.CanRestore);
+        await vm.RefreshCommand.ExecuteAsync(null);
+        await vm.ApplyCommand.ExecuteAsync(null);
+        Assert.Equal(0, client.ObserveRequests);
+        Assert.Null(client.Settings);
+        vm.UpdateStatus(null, Caps(DeviceFeatureAccess.ReadOnly));
+        Assert.True(vm.CanRefresh);
+    }
+
+    [Fact]
     public void MissingLiveReadbackNeverUsesSavedValues()
     {
         var vm = new CpuTuningViewModel(new Client(), () => true, () => true);

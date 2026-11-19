@@ -4,7 +4,8 @@ namespace OpenBlade.Tray;
 
 /// <summary>
 /// Admits profile edits against current capabilities while preserving unchanged
-/// settings. Low-power thermal restrictions still apply to unchanged profiles.
+/// settings. New thermal intent requires current capability and power admission;
+/// retaining an unchanged saved tuple never grants execution authority.
 /// </summary>
 internal static class ProfileAdmissionPolicy
 {
@@ -48,14 +49,12 @@ internal static class ProfileAdmissionPolicy
         && (capabilities.PerformancePresets.Contains(draft.Performance)
             || draft.Performance == current.Performance)
         && (PerformancePresetPresentation.IsAvailable(powerSource, draft.Performance)
-            || (powerSource != PowerSource.UsbC
-                && draft.Performance == current.Performance))
+            || draft.Performance == current.Performance)
         && Enum.IsDefined(draft.Fans)
         && (capabilities.FanModes.Contains(draft.Fans)
             || draft.Fans == current.Fans)
         && (FanModeAvailable(powerSource, draft.Fans, capabilities)
-            || (powerSource != PowerSource.UsbC
-                && draft.Fans == current.Fans))
+            || RetainsThermalIntent(draft, current))
         && (draft.Performance != PerformancePreset.Custom
             || CustomPerformanceSettings.IsWellFormed(draft.CustomPerformance))
         && (draft.Performance != PerformancePreset.Custom
@@ -64,46 +63,72 @@ internal static class ProfileAdmissionPolicy
             || draft.CustomPerformance == current.CustomPerformance
             || capabilities.CustomPerformance?.Supports(draft.CustomPerformance) == true)
         && (ThermalCombinationSupported(draft.Performance, draft.Fans, capabilities)
-            || (draft.Fans == current.Fans
-                && !capabilities.FanModes.Contains(draft.Fans)))
+            || RetainsThermalIntent(draft, current))
         && (capabilities.SupportsIndependentLightingControls
+            && (!draft.Lighting.ControlsKeyboardEffect || capabilities.LightingEffects.Count == 0)
             ? LightingSupported(draft.Lighting, capabilities)
-                && (draft.Lighting with { IndependentControls = null })
-                    == (current.Lighting with { IndependentControls = null })
+                && (!draft.Lighting.ControlsKeyboardEffect || current.Lighting.ControlsKeyboardEffect)
+                && ((draft.Lighting with { IndependentControls = null, ControlsKeyboardEffect = false })
+                    == (current.Lighting with { IndependentControls = null, ControlsKeyboardEffect = false })
+                    || !draft.Lighting.ControlsKeyboardEffect
+                        && LightingSupported(draft.Lighting with { ControlsKeyboardEffect = true }, capabilities))
             : LightingSupported(draft.Lighting, capabilities) || draft.Lighting == current.Lighting);
+
+    private static bool RetainsThermalIntent(PowerProfile draft, PowerProfile current) =>
+        draft.Performance == current.Performance && draft.Fans == current.Fans
+        && draft.FanControl == current.FanControl && draft.CustomPerformance == current.CustomPerformance;
 
     private static bool ThermalCombinationSupported(
         PerformancePreset performance,
         FanMode fans,
         DeviceCapabilities capabilities) =>
         fans == FanMode.Automatic
-        || (fans == FanMode.Fixed
-            && capabilities.FanSpeedRangesByPerformancePreset.Count > 0
-            && capabilities.GetFanSpeedRange(performance) is not null)
-        || ((capabilities.SupportsDirectManualFanTransitions
-                || performance is PerformancePreset.Balanced
-                    or PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced)
-            && fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum);
+        || (capabilities.FanModes.Contains(fans)
+            && fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
+            && (fans != FanMode.ManualCurve || ManualCurvePresetSupported(performance, capabilities))
+            && (capabilities.FanSpeedRangesByPerformancePreset.Count > 0
+                ? capabilities.GetFanSpeedRange(performance) is not null
+                : capabilities.SupportsDirectManualFanTransitions
+                    || performance is PerformancePreset.Balanced
+                        or PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced));
+
+    internal static bool ManualCurvePresetSupported(PerformancePreset performance, DeviceCapabilities capabilities) =>
+        capabilities.GetFanIntentSpeedRange(performance) is { IsWellFormed: true }
+        && capabilities.FanModes.Contains(FanMode.ManualCurve)
+        && (!capabilities.ReportsPerformanceWithManualFans
+            || capabilities.PerformancePresets.Contains(performance));
 
     internal static bool FanModeAvailable(PowerSource powerSource, FanMode fans,
         DeviceCapabilities capabilities) =>
         FanControlPowerPolicy.IsAvailable(powerSource, fans,
-            capabilities.SupportsManualFansOnLimitedPower);
+            capabilities.SupportsManualFansOnLimitedPower)
+        && (fans != FanMode.ManualCurve || !capabilities.ReportsPerformanceWithManualFans
+            || powerSource == PowerSource.PluggedIn);
 
     internal static bool LightingSupported(
         LightingSettings lighting,
         DeviceCapabilities capabilities)
     {
-        if (capabilities.SupportsIndependentLightingControls)
+        if (lighting.IndependentControls is { } independent
+            && (!capabilities.SupportsIndependentLightingControls
+                || !independent.IsWellFormed
+                || independent.Brightness is not null && !capabilities.SupportsKeyboardBrightness
+                || independent.VaporChamberLightingEnabled is not null && !capabilities.SupportsVaporChamberLighting
+                || independent.TouchpadStatusIndicatorEnabled is not null && !capabilities.SupportsTouchpadStatusIndicator
+                || independent.LogoMode is { } mode && !capabilities.LogoLightingModes.Contains(mode)))
         {
-            return LightingSettingsValidation.IsWellFormed(lighting)
-                && (lighting.IndependentControls is null || lighting.IndependentControls.IsWellFormed)
-                && (lighting.IndependentControls?.LogoMode is not { } logo
-                    || capabilities.LogoLightingModes.Contains(logo));
+            return false;
         }
-        if (lighting.IndependentControls is not null
-            || !Enum.IsDefined(lighting.Effect)
+        if (capabilities.SupportsIndependentLightingControls && !lighting.ControlsKeyboardEffect)
+        {
+            // Field-only intent may retain a well-formed unsupported effect;
+            // full-effect authority below must pass the actual effect admission.
+            return LightingSettingsValidation.IsWellFormed(lighting);
+        }
+        if (!Enum.IsDefined(lighting.Effect)
             || !capabilities.LightingEffects.Contains(lighting.Effect)
+            || lighting.Parameters is SequenceLightingParameters sequence
+                && sequence.LayoutId != capabilities.KeyboardLightingLayoutId
             || !LightingSettingsValidation.IsWellFormed(lighting))
         {
             return false;

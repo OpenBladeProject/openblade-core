@@ -1,0 +1,993 @@
+{
+  "schemaVersion": 1,
+  "status": "offline-source-review-only; no hardware actions",
+  "basis": "extends evidence/source-reviewed-blades/2026-11-13-modern-mcu-lighting.json, preserves historical192windows",
+  "transport": "same exact90byte transport, txn/model pins and checksum proof as existing committed evidence",
+  "models": [
+    {
+      "product": 650,
+      "model": "RZ09-0421",
+      "usbIdentity": "1532:028A",
+      "firmware": {
+        "carrierUrl": "https://dl.razerzone.com/drivers/Razer%20Blade%2015%22%20%282022%29%20%7C%20RZ09-0421x/RazerUpdater_v1.1.1.3_CH580_EC_0103_MCU_010300_v2.exe",
+        "carrierSha256": "6fcfd96615c514c6cd25944405980b6b39d8a2b0458f8cabce299dac37728118",
+        "hexName": "CH580_keyboard_FW_v1.03.00_20230614.hex",
+        "hexSha256": "ebc8d502d3f1e3d5b38e73042fc37aefc3faa51b1f21cea82553899bc67caf1d",
+        "decodedBytes": 63424,
+        "decodedSha256": "ddf1aee97889dac39dca74076362d1d4bad8b59810c881279a41f60a0cbdbe57",
+        "nsisHexBlock": 7,
+        "carrierBytes": 1516336
+      },
+      "mcuSha256": "ddf1aee97889dac39dca74076362d1d4bad8b59810c881279a41f60a0cbdbe57",
+      "windows": [
+        {
+          "name": "legacyStatic",
+          "offset": "0xb498",
+          "byteCount": 98,
+          "sha256": "1a3b50c9fe8af0e4b18f735baaebaf00c3fe2c8da852f8d8e334a178f7521812"
+        },
+        {
+          "name": "legacyBreathing",
+          "offset": "0xb3be",
+          "byteCount": 128,
+          "sha256": "77f8e3938d89a96ba0b441b9430d22c7ff039bfccfd62338a52d1cdded681633"
+        },
+        {
+          "name": "staticHiddenPalette",
+          "offset": "0x7034",
+          "byteCount": 70,
+          "sha256": "023fdb9d516256a62cfa4bee18c94a5e775e7211c94ba5a360bea42705c6b9b2"
+        },
+        {
+          "name": "breathingTick",
+          "offset": "0x8210",
+          "byteCount": 196,
+          "sha256": "b27a8787e059e6bcc864f5ac92f69ffc63e4f4b42bfe9af46f8a7d4aa35452e0"
+        },
+        {
+          "name": "frameBoundsKeyboardCopy",
+          "offset": "0xa41a",
+          "byteCount": 128,
+          "sha256": "e7b5be5531754cc717a8815445d7d2d077a02336239aa38fac8478d18493b922"
+        },
+        {
+          "name": "waveSetter",
+          "offset": "0xb338",
+          "byteCount": 88,
+          "sha256": "bec3e3709ec684b53002054c695dd13eaa3701e900158706d9d787236b72c455"
+        },
+        {
+          "name": "waveGetter",
+          "offset": "0x9dec",
+          "byteCount": 32,
+          "sha256": "9aa79dbb231ce59372b5242f1615991937c6c14e9d6c540b1e9add91bd10d669"
+        },
+        {
+          "name": "waveDirectionConsumer",
+          "offset": "0x5f76",
+          "byteCount": 146,
+          "sha256": "4b7d1b55cd09590486d68f412de31b13d1d9e67cf776ad9de5be3a7951d29d30"
+        },
+        {
+          "name": "activeWaveDispatch",
+          "offset": "0x84cc",
+          "byteCount": 52,
+          "sha256": "0040e70cf6bb5ad5790cf62bc88cb6bdcfb93f77d460a5d342a08361657a440b"
+        },
+        {
+          "name": "activeWaveDirectionCall",
+          "offset": "0x85e8",
+          "byteCount": 16,
+          "sha256": "3cdd17898ea7add562af6f3d3ffc751be2724bb372330348c23ce17484b1c333"
+        }
+      ],
+      "static": "withheld: hidden palette selector==3 forces magenta in Static consumer; GET82 omits selector",
+      "breathing": "source-backed single/dual count1/2; direct legacy on650/651/652; modern0F02 on695/696/711 with random-count0 bridge only for samecount changedRGB",
+      "frames": "MCU writer bounds established for keyboard LED5:6x16",
+      "frameLimit": "not admitted: GET82 mode8 reports selection only, no framebuffer RGB; active custom flag/frame ownership and exact restoration admission remain incomplete",
+      "keyMap": "unreviewed: no exact HID input-to-light mapping proved in this pass",
+      "wave": "source-backed Leftward=wire1,Rightward=wire2,exact selected model LeftRight UI and protocol translator; MCUphase2increases/1decreases confirms distinct directions",
+      "waveVendorReferences": [
+        {
+          "sourcePath": "sources/650/6737.1cc98c1e1650ffce7912.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/6737.1cc98c1e1650ffce7912.js",
+          "sha256": "8b31cfb0033a9c75f5e6e69d914a3a36bae0a4944886b5cc6d076329434d1df9",
+          "fragments": [
+            {
+              "characterOffset": 500629,
+              "excerpt": "WAVE_DIRECTION.RIGHT:i=2;break;default:i=1"
+            }
+          ]
+        },
+        {
+          "sourcePath": "sources/650/main.3650e97f35689328d442.js",
+          "url": "https://apps.razer.com/synapse/products/650/mw/main.3650e97f35689328d442.js",
+          "sha256": "270d5d4e4af9674d2219efbe609294dc46e1baf4e08a14af32306d4495cb5a98",
+          "fragments": [
+            {
+              "characterOffset": 142861,
+              "excerpt": "WAVE_DIRECTION:\"LeftRight\""
+            }
+          ]
+        },
+        {
+          "sourcePath": "sources/650/main.90e358d5.js",
+          "url": "https://apps.razer.com/synapse/products/650/ui/static/js/main.90e358d5.js",
+          "sha256": "06c52972c023b65b11ddf1c379671526e96c68b46105fc3edcc714f0ef4944b0",
+          "fragments": [
+            {
+              "characterOffset": 692389,
+              "excerpt": "default:E.direction=\"left\"===e.Direction?1:2"
+            },
+            {
+              "characterOffset": 4825157,
+              "excerpt": "WAVE_DIRECTION:\"LeftRight\""
+            }
+          ]
+        }
+      ],
+      "staticOverrideProof": "7034..707A: hidden selector loaded7036+6,cmp3 forcesmagenta703E..7056; default705C..7074 uses RGB. Getteromitsselector.",
+      "colorConsumerProof": "mode2tick8210..82D4",
+      "waveActiveDispatchProof": {
+        "entry": "0x84cc",
+        "table": "0x84f8",
+        "tableCase4": "0x85e8",
+        "rendererCall": "0x85f4",
+        "argument": "active state+0xA direction passed asr1; LED5 selected renderer only",
+        "activeBaseLiteralLoad": "0x84de",
+        "activeBase": "0x1000137e"
+      }
+    },
+    {
+      "product": 651,
+      "model": "RZ09-0423",
+      "usbIdentity": "1532:028B",
+      "firmware": {
+        "carrierUrl": "https://dl.razerzone.com/drivers/Razer%20Blade%2017%22%20%282022%29%20%7C%20RZ09-0423x/RazerUpdater_v1.1.1.3_DI780-ECv0105_MCUv010200_VBIOS_v3.exe",
+        "carrierSha256": "3f096851bed1679a83630fa588daf0d977f0944634075e75493658cfad03c554",
+        "hexName": "DI780_Keyboard_FW_v1.02.00_20230614.hex",
+        "hexSha256": "86fd0e0c85fd7d70c5bc2fbf8922108a1b81870728342465a880df56bdd401c1",
+        "decodedBytes": 58840,
+        "decodedSha256": "abe4b5db22faa2d73d7da390fc6b00844ab48d4e957519dcf62d666dd22bb350",
+        "nsisHexBlock": 7,
+        "carrierBytes": 7556096
+      },
+      "mcuSha256": "abe4b5db22faa2d73d7da390fc6b00844ab48d4e957519dcf62d666dd22bb350",
+      "windows": [
+        {
+          "name": "legacyStatic",
+          "offset": "0xad8a",
+          "byteCount": 72,
+          "sha256": "b68ba8459f1cfb9866d96b86067456ccd54148bc990e80c064c2dee6ddba0eb0"
+        },
+        {
+          "name": "legacyBreathing",
+          "offset": "0xac8c",
+          "byteCount": 164,
+          "sha256": "fbe9a9eac88cc75315423fa0aabe2cb57752b1aa803a166b178471b80373c82a"
+        },
+        {
+          "name": "staticRgbConsumer",
+          "offset": "0x69e0",
+          "byteCount": 32,
+          "sha256": "b4938649c5850d1ad958446ca4909ba20151afb15eacddb096661f007bc5f0ab"
+        },
+        {
+          "name": "breathingTick",
+          "offset": "0x7b86",
+          "byteCount": 196,
+          "sha256": "ce45224cca502be8d40be11f96801455996d8ae9daddb525fc0a332396528d78"
+        },
+        {
+          "name": "frameBoundsKeyboardCopy",
+          "offset": "0x9c22",
+          "byteCount": 128,
+          "sha256": "e7b5be5531754cc717a8815445d7d2d077a02336239aa38fac8478d18493b922"
+        },
+        {
+          "name": "waveSetter",
+          "offset": "0xac06",
+          "byteCount": 88,
+          "sha256": "2022b53b41a3614b86324c1b1f75ac8dadf6a17cdb1f4ce7aaec4d285115942b"
+        },
+        {
+          "name": "waveGetter",
+          "offset": "0x95f4",
+          "byteCount": 32,
+          "sha256": "3475b058e660496558f286f3cc141aad3fac250bf24418a61f0420002a06ad32"
+        },
+        {
+          "name": "waveDirectionConsumer",
+          "offset": "0x5b94",
+          "byteCount": 146,
+          "sha256": "ae0fd18008cfb8a5ac42a2cb577ecff9364a8a072870fc42626825754e16291f"
+        },
+        {
+          "name": "activeWaveDispatch",
+          "offset": "0x7e66",
+          "byteCount": 52,
+          "sha256": "53c9818b89c61d82827e3b98114d7f54e5916ff5440f5a320d8ca766ac8e7263"
+        },
+        {
+          "name": "activeWaveDirectionCall",
+          "offset": "0x7f52",
+          "byteCount": 16,
+          "sha256": "727f448d8c9c1e8ac57ac876a48829f2365d5a61658619bc32daa72480145070"
+        }
+      ],
+      "static": "source-backed direct legacy Static [6,R,G,B]",
+      "breathing": "source-backed single/dual count1/2; direct legacy on650/651/652; modern0F02 on695/696/711 with random-count0 bridge only for samecount changedRGB",
+      "frames": "MCU writer bounds established for keyboard LED5:6x16",
+      "frameLimit": "not admitted: GET82 mode8 reports selection only, no framebuffer RGB; active custom flag/frame ownership and exact restoration admission remain incomplete",
+      "keyMap": "unreviewed: no exact HID input-to-light mapping proved in this pass",
+      "wave": "source-backed Leftward=wire1,Rightward=wire2,exact selected model LeftRight UI and protocol translator; MCUphase2increases/1decreases confirms distinct directions",
+      "waveVendorReferences": [
+        {
+          "sourcePath": "sources/651/6737.003892ae34f5de0292c0.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/6737.003892ae34f5de0292c0.js",
+          "sha256": "e8a2cff2f19a59b8f425e7ec70bff5873551479560005435e1b04b34f9cc7454",
+          "fragments": [
+            {
+              "characterOffset": 1806037,
+              "excerpt": "WAVE_DIRECTION.RIGHT:i=2;break;default:i=1"
+            }
+          ]
+        },
+        {
+          "sourcePath": "sources/651/main.8378c0c79039a3f2ba23.js",
+          "url": "https://apps.razer.com/synapse/products/651/mw/main.8378c0c79039a3f2ba23.js",
+          "sha256": "f227cba8959dfee0b898077d4cc77651066b7bfff8caa20910e9b3946e026ac4",
+          "fragments": [
+            {
+              "characterOffset": 25852,
+              "excerpt": "WAVE_DIRECTION:\"LeftRight\""
+            }
+          ]
+        },
+        {
+          "sourcePath": "sources/651/main.8fce5f78.js",
+          "url": "https://apps.razer.com/synapse/products/651/ui/static/js/main.8fce5f78.js",
+          "sha256": "ff4ace62f536dad8e14a674177638fac74ed462c74fecc7a42d66b2f3616c254",
+          "fragments": [
+            {
+              "characterOffset": 692114,
+              "excerpt": "default:E.direction=\"left\"===e.Direction?1:2"
+            },
+            {
+              "characterOffset": 4824856,
+              "excerpt": "WAVE_DIRECTION:\"LeftRight\""
+            }
+          ]
+        }
+      ],
+      "colorConsumerProof": "mode2tick7B86..7C4A",
+      "waveActiveDispatchProof": {
+        "entry": "0x7e66",
+        "table": "0x7e92",
+        "tableCase4": "0x7f52",
+        "rendererCall": "0x7f5e",
+        "argument": "active state+0xA direction passed asr1; LED5 selected renderer only",
+        "activeBaseLiteralLoad": "0x7e78",
+        "activeBase": "0x100012f2"
+      }
+    },
+    {
+      "product": 652,
+      "model": "RZ09-0427",
+      "usbIdentity": "1532:028C",
+      "firmware": {
+        "carrierUrl": "https://dl.razerzone.com/drivers/Razer%20Blade%2014%20%282022%29%20%E2%80%93%20RZ09-0427/RazerUpdater_v1.1.1.3_PI480-MCUv010100-PDv11-BIOSv3.06v1-ECv0106.exe",
+        "carrierSha256": "6dc6495a1bdebf7aea343f2a5f1e82e5565aece7d1fbf50cbd2e450cc18b04ef",
+        "hexName": "PI480_keyboard_FW_v1.01.00_20221228.hex",
+        "hexSha256": "057f6ca432804b4f923ac524886e99815a30011fcfc10a76e4b0f27ad27d5f5f",
+        "decodedBytes": 58556,
+        "decodedSha256": "74872fba317899dd3e1bb6a2b5b517b3c1863087f810fdc97d79883e1a90dc17",
+        "nsisHexBlock": 13,
+        "carrierBytes": 6715752
+      },
+      "mcuSha256": "74872fba317899dd3e1bb6a2b5b517b3c1863087f810fdc97d79883e1a90dc17",
+      "windows": [
+        {
+          "name": "legacyStatic",
+          "offset": "0xacf8",
+          "byteCount": 98,
+          "sha256": "8840c78fc77b6a0cea62b11bdbd219c81e8be91ad9c9508f9b3740f5094fb9b7"
+        },
+        {
+          "name": "legacyBreathing",
+          "offset": "0xac1e",
+          "byteCount": 128,
+          "sha256": "0b7c3faebad26ff3afc7a8765b77faeb86fda84682b9dc5aea668b359b473485"
+        },
+        {
+          "name": "staticRgbConsumer",
+          "offset": "0x699e",
+          "byteCount": 32,
+          "sha256": "44d14dc78f425c368b3b09479381de0b302453cf70ba107676f5e7bc02e6e3cf"
+        },
+        {
+          "name": "breathingTick",
+          "offset": "0x7b46",
+          "byteCount": 196,
+          "sha256": "d9400efc77273b8ed26b9c5c14afd2b687e984d55bd247ade6099bfeedbee556"
+        },
+        {
+          "name": "frameBoundsKeyboardCopy",
+          "offset": "0x9c7a",
+          "byteCount": 128,
+          "sha256": "e7b5be5531754cc717a8815445d7d2d077a02336239aa38fac8478d18493b922"
+        },
+        {
+          "name": "waveSetter",
+          "offset": "0xab98",
+          "byteCount": 88,
+          "sha256": "f5a9a51a4bc2d3eef605b1ab6fcd901ee0aeea0b5b99a42a0bb1f686cdd14ea1"
+        },
+        {
+          "name": "waveGetter",
+          "offset": "0x964c",
+          "byteCount": 32,
+          "sha256": "45cee00c0810518d16e422be7054fcc351eb38a7855fad36b547b7c844dfd445"
+        },
+        {
+          "name": "waveDirectionConsumer",
+          "offset": "0x5b62",
+          "byteCount": 146,
+          "sha256": "69e360cf45fb0df43a4d316cb85909b79f4d33a2d92488a037234ce71e4fdc37"
+        },
+        {
+          "name": "activeWaveDispatch",
+          "offset": "0x7e26",
+          "byteCount": 52,
+          "sha256": "b6917ad149601daf80785c110c3c08675d26c6c5a0117f711b84602a6e378427"
+        },
+        {
+          "name": "activeWaveDirectionCall",
+          "offset": "0x7f12",
+          "byteCount": 16,
+          "sha256": "aafe1a487d8e9d01fe3a65b383d9f43eda5329bb36d544063b7eafa1917f6c33"
+        }
+      ],
+      "static": "source-backed direct legacy Static [6,R,G,B]",
+      "breathing": "source-backed single/dual count1/2; direct legacy on650/651/652; modern0F02 on695/696/711 with random-count0 bridge only for samecount changedRGB",
+      "frames": "MCU writer bounds established for keyboard LED5:6x16",
+      "frameLimit": "not admitted: GET82 mode8 reports selection only, no framebuffer RGB; active custom flag/frame ownership and exact restoration admission remain incomplete",
+      "keyMap": "unreviewed: no exact HID input-to-light mapping proved in this pass",
+      "wave": "source-backed Leftward=wire1,Rightward=wire2,exact selected model LeftRight UI and protocol translator; MCUphase2increases/1decreases confirms distinct directions",
+      "waveVendorReferences": [
+        {
+          "sourcePath": "sources/652/6737.4b526d5a88f50676de59.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/6737.4b526d5a88f50676de59.js",
+          "sha256": "b1a181c2f4a95c1871a5aeedc5f820dbc991a61a067cb060bac9abebf04ee488",
+          "fragments": [
+            {
+              "characterOffset": 500660,
+              "excerpt": "WAVE_DIRECTION.RIGHT:i=2;break;default:i=1"
+            }
+          ]
+        },
+        {
+          "sourcePath": "sources/652/main.825dec01b9aefa0b84ac.js",
+          "url": "https://apps.razer.com/synapse/products/652/mw/main.825dec01b9aefa0b84ac.js",
+          "sha256": "77ad6a8f51278c2950d07aab3ca4e98ec67001527067f4118f50af00954eaba1",
+          "fragments": [
+            {
+              "characterOffset": 142954,
+              "excerpt": "WAVE_DIRECTION:\"LeftRight\""
+            }
+          ]
+        },
+        {
+          "sourcePath": "sources/652/main.ca1e43bb.js",
+          "url": "https://apps.razer.com/synapse/products/652/ui/static/js/main.ca1e43bb.js",
+          "sha256": "9c640ff7f3359dfb8f8d7aa005db01336f5c05a4efb25c219550ba6d05a6c407",
+          "fragments": [
+            {
+              "characterOffset": 605196,
+              "excerpt": "default:E.direction=\"left\"===e.Direction?1:2"
+            },
+            {
+              "characterOffset": 4748720,
+              "excerpt": "WAVE_DIRECTION:\"LeftRight\""
+            }
+          ]
+        }
+      ],
+      "colorConsumerProof": "mode2tick7B46..7C0A",
+      "waveActiveDispatchProof": {
+        "entry": "0x7e26",
+        "table": "0x7e52",
+        "tableCase4": "0x7f12",
+        "rendererCall": "0x7f1e",
+        "argument": "active state+0xA direction passed asr1; LED5 selected renderer only",
+        "activeBaseLiteralLoad": "0x7e38",
+        "activeBase": "0x1000137e"
+      }
+    },
+    {
+      "product": 695,
+      "model": "RZ09-0510",
+      "usbIdentity": "1532:02B7",
+      "firmware": {
+        "carrierUrl": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282024%29%20%7C%20RZ09-0510/RazerUpdater_v1.1.1.3_SO6100_EC_0102_MCU_010300_VBIOS.exe",
+        "carrierSha256": "2912408c872d57176e42d2da09b68566cecf9b723f51cce4ae4e717a9e98e295",
+        "hexName": "SO6100_keyboard_FW_v1.03.00_20241101.hex",
+        "hexSha256": "40a8521909829caa7afcf129366670c66f7ab2170de961c88f1f67ecd0aa5b74",
+        "decodedBytes": 68808,
+        "decodedSha256": "9d45e49450445dae72eb1631bc2459883fbe19149acb131da2861c15e5b4fe42",
+        "nsisHexBlock": 19,
+        "carrierBytes": 6946120
+      },
+      "mcuSha256": "9d45e49450445dae72eb1631bc2459883fbe19149acb131da2861c15e5b4fe42",
+      "windows": [
+        {
+          "name": "staticSetter",
+          "offset": "0xa3fc",
+          "byteCount": 156,
+          "sha256": "24eb8ee8f2077744b3082efbb0006b0860a9f991e86fd31aea624dc054093914"
+        },
+        {
+          "name": "breathingSetter",
+          "offset": "0xa498",
+          "byteCount": 180,
+          "sha256": "18b1b4ae8ea826ee45a6b3f26aa99c7ac85b1d3f4a5fc83e956306efec103fed"
+        },
+        {
+          "name": "activeSetCompletion",
+          "offset": "0xa8da",
+          "byteCount": 132,
+          "sha256": "7860d98ed4983f71195cb7435dde6e9add2944fd1c19928c1703957e14cac85e"
+        },
+        {
+          "name": "staticHiddenPalette",
+          "offset": "0x72c6",
+          "byteCount": 228,
+          "sha256": "6d5870ddbbb02d79742c55b7efa16810cb370452ff652174456fe278d9e5731d"
+        },
+        {
+          "name": "breathingInit",
+          "offset": "0x73aa",
+          "byteCount": 120,
+          "sha256": "259aa93603da03913da9946c6fe459340cc37d2223691294bc4f287b0af8962f"
+        },
+        {
+          "name": "breathingTick",
+          "offset": "0x85cc",
+          "byteCount": 194,
+          "sha256": "03a0d0e614c50922725170e9b6796f7e7f3d4b2fca73e68a38ecc4bc25a705eb"
+        },
+        {
+          "name": "frameBoundsKeyboardCopy",
+          "offset": "0xa9b4",
+          "byteCount": 128,
+          "sha256": "1cdba3f8af4bb1fd3f9055512b9d8fc118451a39a83b4837e5500a7a18814c08"
+        },
+        {
+          "name": "waveSetter",
+          "offset": "0xa5ee",
+          "byteCount": 142,
+          "sha256": "502a348ca6d3c0ea768a1d6713fd0c3770227db920e56d6feb00d8dad2fd2610"
+        },
+        {
+          "name": "waveGetter",
+          "offset": "0xa22c",
+          "byteCount": 32,
+          "sha256": "175582b448a98de1d0e50cade9d78d4c637aca0d69f4864daaddbe7b21c7da70"
+        },
+        {
+          "name": "waveDirectionConsumer",
+          "offset": "0x611c",
+          "byteCount": 146,
+          "sha256": "60c4e449f76d22bf2a863f5b21d47ade7c02c9cdc1ff1c8973b8eeb1c0ef0d3f"
+        },
+        {
+          "name": "activeWaveDispatch",
+          "offset": "0x8888",
+          "byteCount": 52,
+          "sha256": "c7c759e359f1da8c45657b6167c8cccad302976ddfc116145b6fc8c65cf62850"
+        },
+        {
+          "name": "activeWaveDirectionCall",
+          "offset": "0x8974",
+          "byteCount": 16,
+          "sha256": "c40fe023994a23534fcda9eb52e7452302b0329ac86339b69e40966d9195aa54"
+        }
+      ],
+      "static": "withheld: hidden palette selector values0..4 override Static RGB; GET82 omits selector",
+      "breathing": "source-backed single/dual count1/2; direct legacy on650/651/652; modern0F02 on695/696/711 with random-count0 bridge only for samecount changedRGB",
+      "frames": "MCU writer bounds established for keyboard LED5:6x16",
+      "frameLimit": "not admitted: GET82 mode8 reports selection only, no framebuffer RGB; active custom flag/frame ownership and exact restoration admission remain incomplete",
+      "keyMap": "unreviewed: no exact HID input-to-light mapping proved in this pass",
+      "wave": "source-backed Leftward=wire1,Rightward=wire2,exact selected model LeftRight UI and protocol translator; MCUphase2increases/1decreases confirms distinct directions",
+      "waveVendorReferences": [
+        {
+          "sourcePath": "sources/695/6737.7ec91e479ef65c194b6c.js",
+          "url": "https://apps.razer.com/synapse/products/695/mw/6737.7ec91e479ef65c194b6c.js",
+          "sha256": "22d359eb7eda08a9d2f4766eb6898a875a5f009edb666ba4cd5a0425491ad1da",
+          "fragments": [
+            {
+              "characterOffset": 515750,
+              "excerpt": "WAVE_DIRECTION.RIGHT:i=2;break;default:i=1"
+            }
+          ]
+        },
+        {
+          "sourcePath": "sources/695/main.27df2e7ddab0b6bc34cc.js",
+          "url": "https://apps.razer.com/synapse/products/695/mw/main.27df2e7ddab0b6bc34cc.js",
+          "sha256": "a12cd7047cc1cf093dbb458d703ba4d18cfe77110f47391b180ea5b33ba5e379",
+          "fragments": [
+            {
+              "characterOffset": 141385,
+              "excerpt": "WAVE_DIRECTION:\"LeftRight\""
+            }
+          ]
+        },
+        {
+          "sourcePath": "sources/695/main.65ed4ee5.js",
+          "url": "https://apps.razer.com/synapse/products/695/ui/static/js/main.65ed4ee5.js",
+          "sha256": "74eca71816b57b4c9be3f83d3e5d894f95a2050d88fb2df4b63a5afff5271612",
+          "fragments": [
+            {
+              "characterOffset": 2055559,
+              "excerpt": "default:t.direction=\"left\"===e.Direction?1:2"
+            },
+            {
+              "characterOffset": 4183332,
+              "excerpt": "WAVE_DIRECTION:\"LeftRight\""
+            }
+          ]
+        }
+      ],
+      "staticOverrideProof": "72C6..73A8:10001824+6 values0..4 force fixedcolors;else738C..73A4 usesRGB. SetterandGET82omitselector.",
+      "colorConsumerProof": "mode2tick85CC..8688",
+      "waveActiveDispatchProof": {
+        "entry": "0x8888",
+        "table": "0x88b4",
+        "tableCase4": "0x8974",
+        "rendererCall": "0x8980",
+        "argument": "active state+0xA direction passed asr1; LED5 selected renderer only",
+        "activeBaseLiteralLoad": "0x889a",
+        "activeBase": "0x100014ae"
+      }
+    },
+    {
+      "product": 696,
+      "model": "RZ09-0509",
+      "usbIdentity": "1532:02B8",
+      "firmware": {
+        "carrierUrl": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0509/RazerUpdater_v1.1.1.3_KI8100_EC_1.02_MCU_010100v2.exe",
+        "carrierSha256": "6e06d131e1a77a733fbf5c37e5ba95ccda2e496257a7bb4747b1e274dda74c38",
+        "hexName": "KI8100_keyboard_FW_v1.01.00_20240422.hex",
+        "hexSha256": "20158e4d7374a21d3a0c57ab44601e34a9796aedd119b21500825828b3fa55f0",
+        "decodedBytes": 63600,
+        "decodedSha256": "32bb690b242b524be8432e838e587e1ffd495df413eafb93341d4479d750fc1f",
+        "nsisHexBlock": 8,
+        "carrierBytes": 1494160
+      },
+      "mcuSha256": "32bb690b242b524be8432e838e587e1ffd495df413eafb93341d4479d750fc1f",
+      "windows": [
+        {
+          "name": "staticSetter",
+          "offset": "0x9a98",
+          "byteCount": 156,
+          "sha256": "2bd3f152aa37f961f455161e8e789438f5f8b718f8c845790d7b167ab6114809"
+        },
+        {
+          "name": "breathingSetter",
+          "offset": "0x9b34",
+          "byteCount": 180,
+          "sha256": "c3ed91eb6392b810f017d491d94e3ecb1a380caa7377c4ded97494f8e0abf8fe"
+        },
+        {
+          "name": "activeSetCompletion",
+          "offset": "0x9f76",
+          "byteCount": 132,
+          "sha256": "7023c2deb3d4183eee69b00ce05ab951f347e03d5e10647708e00d61a489240f"
+        },
+        {
+          "name": "staticRgbConsumer",
+          "offset": "0x6be6",
+          "byteCount": 32,
+          "sha256": "5fb3866827cfd8517ddc2ecb29127a9b2af3d900ad16fbba3c4e130bfce62546"
+        },
+        {
+          "name": "breathingInit",
+          "offset": "0x6c06",
+          "byteCount": 120,
+          "sha256": "3ef1c1abb5a0b7d2ca7b0d5039a4ba28daabca6d6057809f4ece6d5c48a0c153"
+        },
+        {
+          "name": "breathingTick",
+          "offset": "0x7e1c",
+          "byteCount": 196,
+          "sha256": "f9e4e2dab53a1e46529916db4bafde4d917d9691a6d2784a8f225a2c2ff0f004"
+        },
+        {
+          "name": "frameBoundsKeyboardCopy",
+          "offset": "0xa050",
+          "byteCount": 128,
+          "sha256": "1cdba3f8af4bb1fd3f9055512b9d8fc118451a39a83b4837e5500a7a18814c08"
+        },
+        {
+          "name": "waveSetter",
+          "offset": "0x9c8a",
+          "byteCount": 142,
+          "sha256": "ccb321dc3441e4e598d9946af4201f11693037a503d881d607dbfc2e7d3418e4"
+        },
+        {
+          "name": "waveGetter",
+          "offset": "0x98c8",
+          "byteCount": 32,
+          "sha256": "1a4796472be3df9dc2fc55c1d4aed38ee7a52fc486820ece09ae19e8bfb02a9e"
+        },
+        {
+          "name": "waveDirectionConsumer",
+          "offset": "0x5ce6",
+          "byteCount": 146,
+          "sha256": "a5da2770e6034f61d09fe2245717289582a1361ed74e19436776e8ec35126534"
+        },
+        {
+          "name": "activeWaveDispatch",
+          "offset": "0x80d8",
+          "byteCount": 52,
+          "sha256": "e6d7449f2c537d6af20f2dccd7f348f11dfda768eeae2974705fe42526b2b5d7"
+        },
+        {
+          "name": "activeWaveDirectionCall",
+          "offset": "0x81c4",
+          "byteCount": 16,
+          "sha256": "b90a56b008025f73d1150a5a8c69fbdcae9db376dace158b964134180a307125"
+        }
+      ],
+      "static": "source-backed 0F02 Static; conditional randomBreathing bridge when activeStatic RGB differs",
+      "breathing": "source-backed single/dual count1/2; direct legacy on650/651/652; modern0F02 on695/696/711 with random-count0 bridge only for samecount changedRGB",
+      "frames": "MCU writer bounds established for keyboard LED5:6x16",
+      "frameLimit": "not admitted: GET82 mode8 reports selection only, no framebuffer RGB; active custom flag/frame ownership and exact restoration admission remain incomplete",
+      "keyMap": "unreviewed: no exact HID input-to-light mapping proved in this pass",
+      "wave": "source-backed Leftward=wire1,Rightward=wire2,exact selected model LeftRight UI and protocol translator; MCUphase2increases/1decreases confirms distinct directions",
+      "waveVendorReferences": [
+        {
+          "sourcePath": "sources/696/6737.2463f7361e4d145671a2.js",
+          "url": "https://apps.razer.com/synapse/products/696/mw/6737.2463f7361e4d145671a2.js",
+          "sha256": "4ef6afb6402dd50cd6de07ca96e191f475797903507c82cae194f0af63e32ecc",
+          "fragments": [
+            {
+              "characterOffset": 515748,
+              "excerpt": "WAVE_DIRECTION.RIGHT:i=2;break;default:i=1"
+            }
+          ]
+        },
+        {
+          "sourcePath": "sources/696/main.cb24c0fc.js",
+          "url": "https://apps.razer.com/synapse/products/696/ui/static/js/main.cb24c0fc.js",
+          "sha256": "c882f2130fc41dc73eda31a141ba82f8786b84f45992c490cc0dc5ac3ec28dcd",
+          "fragments": [
+            {
+              "characterOffset": 3541606,
+              "excerpt": "default:t.direction=\"left\"===e.Direction?1:2"
+            },
+            {
+              "characterOffset": 4942140,
+              "excerpt": "WAVE_DIRECTION:\"LeftRight\""
+            }
+          ]
+        },
+        {
+          "sourcePath": "sources/696/main.ded18de8aee09a8f8238.js",
+          "url": "https://apps.razer.com/synapse/products/696/mw/main.ded18de8aee09a8f8238.js",
+          "sha256": "1a9cc3e1e8e28bb827ad17a720a03e6c62ba7a37f27774e8fa1b1b8e827e281f",
+          "fragments": [
+            {
+              "characterOffset": 145658,
+              "excerpt": "WAVE_DIRECTION:\"LeftRight\""
+            }
+          ]
+        }
+      ],
+      "colorConsumerProof": "mode2tick7E1C..7EE0",
+      "waveActiveDispatchProof": {
+        "entry": "0x80d8",
+        "table": "0x8104",
+        "tableCase4": "0x81c4",
+        "rendererCall": "0x81d0",
+        "argument": "active state+0xA direction passed asr1; LED5 selected renderer only",
+        "activeBaseLiteralLoad": "0x80ea",
+        "activeBase": "0x1000141a"
+      }
+    },
+    {
+      "product": 711,
+      "model": "RZ09-0529",
+      "usbIdentity": "1532:02C7",
+      "firmware": {
+        "carrierUrl": "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0529/KI8110-MCUv01.07.00.exe",
+        "carrierSha256": "30c06ba3d2d057593bbf3c812249d4edd020d17fc157a8cc7c29264a9e72f9dc",
+        "hexName": "KI8110_keyboard_FW_v1.07.00_20250918.hex",
+        "hexSha256": "18392850b5e0145cbb689dc941d77fed6d8ba666f71cef9bbdaeccf4987a60e8",
+        "decodedBytes": 64408,
+        "decodedSha256": "c0ebb3b40d3ac763a50d7301457d73f1a84a3e2c951730454d848b13ca3f3578",
+        "nsisHexBlock": 7,
+        "carrierBytes": 1446744
+      },
+      "mcuSha256": "c0ebb3b40d3ac763a50d7301457d73f1a84a3e2c951730454d848b13ca3f3578",
+      "windows": [
+        {
+          "name": "staticSetter",
+          "offset": "0x976a",
+          "byteCount": 238,
+          "sha256": "7924fb28d02bac7510dcff978f379cb83faa81627cf96a052e8fa482ce6d585e"
+        },
+        {
+          "name": "breathingSetterEntry",
+          "offset": "0x9858",
+          "byteCount": 44,
+          "sha256": "7eed0c37b2792a7d0f57611d2ae01b7aaecb2bc68e04f05008f42b91f89de926"
+        },
+        {
+          "name": "breathingSetterCopy",
+          "offset": "0x9932",
+          "byteCount": 80,
+          "sha256": "d0dc0478e3797a34ea4adcd24995383d25e7dd21f50bb6fc20342901f647f129"
+        },
+        {
+          "name": "staticCopyTail",
+          "offset": "0x9e34",
+          "byteCount": 16,
+          "sha256": "13662043f9835a144717ae5e66a114d935ebeee138b31ab1467a57240bac36aa"
+        },
+        {
+          "name": "activeSetCompletion",
+          "offset": "0x9d68",
+          "byteCount": 26,
+          "sha256": "768c1161d2cbacc3d86d5ba330a5a54c1981d0e562ee9f18458908c43828e742"
+        },
+        {
+          "name": "activeConsumerCompletion",
+          "offset": "0x9e44",
+          "byteCount": 82,
+          "sha256": "b586f9b4268dda162980cecaaa46d5d9841494a1ee611682238ce195fa92c7e4"
+        },
+        {
+          "name": "staticRgbConsumer",
+          "offset": "0x26e6",
+          "byteCount": 24,
+          "sha256": "44a1993a74ffc75327c3eda14edbd15fb3e07579907d32bd005c683979d3b5ad"
+        },
+        {
+          "name": "breathingInit",
+          "offset": "0x26fe",
+          "byteCount": 102,
+          "sha256": "18987a009ae16fa3f620cc8d2f6b27fd2740194ec044ddb63f1715c15413692e"
+        },
+        {
+          "name": "breathingTickDispatch",
+          "offset": "0x302e",
+          "byteCount": 44,
+          "sha256": "10583a909e43f89cabf968c010de43c9cc23b33743419024e1f1075ac898d136"
+        },
+        {
+          "name": "breathingTimerCallback",
+          "offset": "0x4a6c",
+          "byteCount": 70,
+          "sha256": "dd1dd4f3608bfca29253a1989b22f21aa06d1438e21ff694143aae6d71d60d2d"
+        },
+        {
+          "name": "breathingTick",
+          "offset": "0xbba4",
+          "byteCount": 138,
+          "sha256": "6b0bcb7e3da7f8cd1b844f97518e91b529b96932ce3793748d2bd3717390d899"
+        },
+        {
+          "name": "frameBoundsKeyboardCopy",
+          "offset": "0x9f6c",
+          "byteCount": 68,
+          "sha256": "25982521604a269f65b3530a0f511f1dbec4eb470cd85a6222d6341ffa654224"
+        },
+        {
+          "name": "waveSetter",
+          "offset": "0x9a82",
+          "byteCount": 248,
+          "sha256": "4b2942ebd5b9e0fbed67dac56ef459275a2040bc0cec1999f9fff2dbae8a8f05"
+        },
+        {
+          "name": "waveGetter",
+          "offset": "0x95b0",
+          "byteCount": 24,
+          "sha256": "e5e9398b9898a748c863b777d09052f46d97827b9cd84e2189a276d5ae845c44"
+        },
+        {
+          "name": "waveDirectionConsumer",
+          "offset": "0xbe08",
+          "byteCount": 110,
+          "sha256": "d99092279fa16838f17be71e2b2176132cfd0071cf59bde793a7d1d231d1b94b"
+        },
+        {
+          "name": "activeWaveDispatch",
+          "offset": "0x2f98",
+          "byteCount": 48,
+          "sha256": "01686065842e9aa8d27565e182a7fa3c6720137c781487af0a95cd228a6d86ea"
+        },
+        {
+          "name": "activeWaveDirectionCall",
+          "offset": "0x3070",
+          "byteCount": 36,
+          "sha256": "4fda8551f1e6b7271bec3a5d4ecda76e06dfa6abdb2272a7084485b7706ee170"
+        }
+      ],
+      "static": "source-backed direct 0F02 Static; equality branch still reaches unconditional RGB copy",
+      "breathing": "source-backed single/dual count1/2; direct legacy on650/651/652; modern0F02 on695/696/711 with random-count0 bridge only for samecount changedRGB",
+      "frames": "MCU writer bounds established for keyboard LED5:6x19",
+      "frameLimit": "not admitted: GET82 mode8 reports selection only, no framebuffer RGB; active custom flag/frame ownership and exact restoration admission remain incomplete",
+      "keyMap": "unreviewed: no exact HID input-to-light mapping proved in this pass",
+      "wave": "source-backed Leftward=wire1,Rightward=wire2,exact selected model LeftRight UI and protocol translator; MCUphase2increases/1decreases confirms distinct directions",
+      "waveVendorReferences": [
+        {
+          "sourcePath": "sources/711/6737.c63928b0e4fd1b7673b4.js",
+          "url": "https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js",
+          "sha256": "3ef16c0beb5e8399cdee51e9995a717e029cdf2125324735440b68a34d2d7b88",
+          "fragments": [
+            {
+              "characterOffset": 500855,
+              "excerpt": "WAVE_DIRECTION.RIGHT:i=2;break;default:i=1"
+            }
+          ]
+        },
+        {
+          "sourcePath": "sources/711/main.1f8e0c604f19af3ea24c.js",
+          "url": "https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js",
+          "sha256": "c8c0c794d6d01867cd9c6020869808428b81cb98ae297e46ec700f3b935bff7e",
+          "fragments": [
+            {
+              "characterOffset": 141664,
+              "excerpt": "WAVE_DIRECTION:\"LeftRight\""
+            }
+          ]
+        },
+        {
+          "sourcePath": "sources/711/main.a649ed49.js",
+          "url": "https://apps.razer.com/synapse/products/711/ui/static/js/main.a649ed49.js",
+          "sha256": "4b42ef4995470865b7d02587b85724247b886bdf2376eb6a78da38bb9b6cbf99",
+          "fragments": [
+            {
+              "characterOffset": 97008,
+              "excerpt": "default:t.direction=\"left\"===e.Direction?1:2"
+            },
+            {
+              "characterOffset": 656321,
+              "excerpt": "WAVE_DIRECTION:\"LeftRight\""
+            }
+          ]
+        }
+      ],
+      "colorConsumerProof": "mode2dispatch302E->304E calls4974;timer4AAC callsBBA4;BBA4..BBF2 consumes countandRGB",
+      "waveActiveDispatchProof": {
+        "entry": "0x2f98",
+        "table": "0x2fc0",
+        "tableCase4": "0x3070",
+        "rendererCall": "0x3090",
+        "argument": "active state+0xA direction passed asr1; LED5 selected renderer only"
+      }
+    }
+  ],
+  "arguments": {
+    "legacyStatic": [
+      6,
+      "R",
+      "G",
+      "B"
+    ],
+    "legacySingleBreathing": [
+      3,
+      1,
+      "R",
+      "G",
+      "B"
+    ],
+    "legacyDualBreathing": [
+      3,
+      2,
+      "R",
+      "G",
+      "B",
+      "R2",
+      "G2",
+      "B2"
+    ],
+    "modernStatic": [
+      0,
+      5,
+      1,
+      0,
+      0,
+      1,
+      "R",
+      "G",
+      "B"
+    ],
+    "modernSingleBreathing": [
+      0,
+      5,
+      2,
+      0,
+      0,
+      1,
+      "R",
+      "G",
+      "B"
+    ],
+    "modernDualBreathing": [
+      0,
+      5,
+      2,
+      0,
+      0,
+      2,
+      "R",
+      "G",
+      "B",
+      "R2",
+      "G2",
+      "B2"
+    ],
+    "modernBridgeRandomBreathing": [
+      0,
+      5,
+      2,
+      0,
+      0,
+      0
+    ],
+    "readback": [
+      0,
+      5,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "confirmation": "Every destination and necessary intermediate independently GET0/0F82 full12; compare complete count/RGB; ambiguity stops further writes. Never use SAVED1 as actual confirmation.",
+  "brightness": {
+    "legacy": "Always activates saved64B including brightness: freshGET03/83 active0 after effect then apply desiredraw if needed. Color writes and zero31-byte color clear begin atstate+B, notbrightness+2.",
+    "modern": "Storage0 completion calls activeconsumer directly; does not call saved activation. Color setter writes effect+5,count+B,RGB+C onward, neverbrightness+2. Transition/fade helper has separate state. Retain final brightness0 verification; no physical emitted-pixel claim."
+  },
+  "shortcuts": {
+    "696Static": "mode1 equality9ADA..9ADE ->9B32 skipsRGB9B1E..9B28: bridge random0 only when activeStatic RGB differs",
+    "711Static": "mode1 equality9792->984A->9E34, STILL copiesRGB9E36..9E40: no bridge",
+    "695Breathing": "mode2/count equalityA4C4..A4D0->A54A skipsRGB; clearoverlayA4B6..A4BA precedes comparison",
+    "696Breathing": "mode2/count equality9B60..9B6C->9BE6 skipsRGB; clearoverlay9B52..9B56 precedes comparison",
+    "711Breathing": "mode2 at987C..9882 ->9932,count equality9938->9930 skipsRGB; clearoverlay986C..986E precedes comparison"
+  },
+  "ownership": "Do not skip explicit writes on equalreadback: custom-overlay flag is not returned. Old3legacy clear before equality and activate; modernStatic/Breathing clear before comparisons. New0F paths restrictstorage0LED5, avoid combinedLED0/logo4/VC38.",
+  "restoration": "Known representable complete builtins only; withheldStatic650/695 has unreadablepalette provenance, unknown customRGB cannot be recreated. No unknownframe baseline restoration claim.",
+  "frameContract": "0F/03 arguments [0,5,row,start,end,RGBtriples...], row0..5; col0..15 old5,0..18KI8110;start<=end; RGB copied atbase+row*stride+3col. Frame dataSize5+3*(end-start+1). Do not admit FE/FE/FEclear sentinel or row6otherregion.",
+  "requiredFollowup": [
+    "Independently verify new hashes and branch/consumer assertions before implementation admission.",
+    "Add exact-argument fixtures, color comparison and conditionalbridge tests, failure/ambiguity recovery and per-write freshadmission.",
+    "Frames require remaining customactivation/consumer topology, ownership lifecycle and durableknownbaseline restoration review; no exact physicalkeymap claim."
+  ],
+  "trailSavingsCurrentPass": 4561,
+  "waveContract": {
+    "legacyArguments": [
+      1,
+      "direction1or2"
+    ],
+    "modernArguments": [
+      0,
+      5,
+      4,
+      "direction1or2"
+    ],
+    "get": "payload2=4,payload3=direction1or2,payload4=40,5..11zero",
+    "direct": "All setters clearoverlay before same-mode/direction shortcut; changed direction updates directly; no intermediate required. Old3legacy then freshbrightness0 read as before.",
+    "orientation": "Affirmed for all6exact selected same-product sources: UI LeftRight, leftDirection=>1/right=>2 translation and getEffectFlag RIGHT=>2/default=>1. Correct new6unreleased application label mapping toLeftward1/Rightward2; do not change unrelated model contracts.",
+    "remaining": "Independent verifier should assert newwindows, exact per-image active-wave case4dispatch and BLtarget, numericdirection branches and selected vendor label mapping before admission. Complete call edges now recorded all6."
+  },
+  "parameterDecodeLimit": "Static650/695 must remain unrepresentable/null completeSettings despite RGB getter, since unreadablepalette overrides output. Unknowncustomframe mode8 likewise has no completeSettings."
+}

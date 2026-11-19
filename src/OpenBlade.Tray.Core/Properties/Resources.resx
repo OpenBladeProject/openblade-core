@@ -771,6 +771,9 @@
   <data name="Lighting brightness" xml:space="preserve">
     <value>Lighting brightness</value>
   </data>
+  <data name="Synapse lists these effects for this model; OpenBlade cannot control them yet: {0}" xml:space="preserve">
+    <value>Synapse lists these effects for this model; OpenBlade cannot control them yet: {0}</value>
+  </data>
   <data name="Lighting color" xml:space="preserve">
     <value>Lighting color</value>
   </data>
@@ -1133,6 +1136,18 @@
   </data>
   <data name="Switch off lighting" xml:space="preserve">
     <value>Switch off lighting</value>
+  </data>
+  <data name="Touchpad lighting" xml:space="preserve">
+    <value>Touchpad lighting</value>
+  </data>
+  <data name="Show Touchpad lighting when the laptop reports this zone." xml:space="preserve">
+    <value>Show Touchpad lighting when the laptop reports this zone.</value>
+  </data>
+  <data name="Under-glass lighting" xml:space="preserve">
+    <value>Under-glass lighting</value>
+  </data>
+  <data name="Show Under-glass lighting when the laptop reports this zone." xml:space="preserve">
+    <value>Show Under-glass lighting when the laptop reports this zone.</value>
   </data>
   <data name="Temperatures" xml:space="preserve">
     <value>Temperatures</value>
@@ -1862,4 +1877,6 @@ Details: {1}</value>
   <data name="Both" xml:space="preserve">
     <value>Both</value>
   </data>
+  <data name="Vapor chamber lighting" xml:space="preserve"><value>Vapor chamber lighting</value></data>
+  <data name="Touchpad status indicator" xml:space="preserve"><value>Touchpad status indicator</value></data>
 </root>

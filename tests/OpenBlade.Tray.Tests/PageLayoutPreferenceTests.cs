@@ -26,6 +26,25 @@ public sealed class PageLayoutPreferenceTests
         Assert.True(normalized[0].IsVisible);
         Assert.False(normalized[1].IsVisible);
     }
+
+    [Fact]
+    public void ExistingLightingLayoutAddsObservedZoneSectionsVisible()
+    {
+        IReadOnlyList<PageSectionPreference> normalized =
+            PageLayoutPreferenceDefaults.NormalizePage(
+                CustomizablePageKind.Lighting,
+                [new(PageSectionKind.LightingKeyboard, false)]);
+
+        Assert.Contains(normalized, section =>
+            section is { Kind: PageSectionKind.LightingTouchpad, IsVisible: true });
+        Assert.Contains(normalized, section =>
+            section is { Kind: PageSectionKind.LightingUnderGlass, IsVisible: true });
+        Assert.Contains(normalized, section =>
+            section is { Kind: PageSectionKind.LightingVaporChamber, IsVisible: true });
+        Assert.False(normalized.Single(section =>
+            section.Kind == PageSectionKind.LightingKeyboard).IsVisible);
+    }
+
     [Fact]
     public void DefaultsCoverEveryCustomizablePageWithVisibleSections()
     {
@@ -224,6 +243,9 @@ public sealed class PageLayoutPreferenceTests
                      "LightingKeyboardSection",
                      "LightingLogoSection",
                      "LightingPowerSavingSection",
+                     "LightingTouchpadSection",
+                     "LightingUnderGlassSection",
+                     "LightingVaporChamberSection",
                      "SettingsSectionHost",
                      "SettingsBehaviorSection",
                      "SettingsAppearanceSection",

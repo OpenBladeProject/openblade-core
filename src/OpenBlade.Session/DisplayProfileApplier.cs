@@ -82,7 +82,7 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
                 operationToken => controller.SetRefreshAsync(
                     refreshRateKey,
                     operationToken)),
-            cancellationToken);
+            cancellationToken, allowUnclassifiedExternal: true);
     }
 
     public Task<SessionDisplayExecutionResult> SetHdrAsync(
@@ -95,7 +95,7 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
                 context,
                 token,
                 operationToken => controller.SetHdrAsync(enabled, operationToken)),
-            cancellationToken);
+            cancellationToken, allowUnclassifiedExternal: true);
 
     public Task<SessionDisplayExecutionResult> SetColorProfileAsync(
         PowerSource expectedPowerSource,
@@ -111,7 +111,7 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
                 operationToken => controller.SetColorProfileAsync(
                     colorProfileKey,
                     operationToken)),
-            cancellationToken);
+            cancellationToken, allowUnclassifiedExternal: true);
     }
 
     public Task<SessionDisplayExecutionResult> SetBrightnessAsync(
@@ -149,7 +149,7 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
                         submissionMayHaveOccurred: true)
                     : result;
             },
-            cancellationToken);
+            cancellationToken, allowUnclassifiedExternal: true);
     }
 
     public Task<SessionDisplayExecutionResult> ApplyProfileAsync(
@@ -195,7 +195,7 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
         PowerSource expectedPowerSource,
         Func<DisplayPowerContext, CancellationToken, Task<SessionDisplayExecutionResult>> operation,
         CancellationToken cancellationToken,
-        bool allowUnconfiguredNoOp = false) =>
+        bool allowUnconfiguredNoOp = false, bool allowUnclassifiedExternal = false) =>
         RunSerializedAsync(
             async token =>
             {
@@ -205,7 +205,7 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
                     SessionDisplayExecutionResult? blocked = await ValidateExpectedAsync(
                         expectedPowerSource,
                         context,
-                        token).ConfigureAwait(false);
+                        token, allowUnclassifiedExternal).ConfigureAwait(false);
                     if (blocked is not null)
                     {
                         return blocked;
@@ -373,12 +373,13 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
     private async Task<SessionDisplayExecutionResult?> ValidateExpectedAsync(
         PowerSource expectedPowerSource,
         DisplayPowerContext expectedContext,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool allowUnclassifiedExternal = false)
     {
         DisplayPowerContext current = powerContext.Capture();
-        if (expectedPowerSource is not (
-                PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
-            || !current.IsConfirmed
+        bool manualExternal = allowUnclassifiedExternal
+            && expectedPowerSource == PowerSource.ExternalUnknown && current.ManualExternalPowerPresent;
+        if ((!manualExternal && (!current.IsConfirmed || expectedPowerSource is not (
+                PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)))
             || current.PowerSource != expectedPowerSource
             || current.Generation != expectedContext.Generation)
         {
@@ -399,7 +400,7 @@ public sealed class DisplayProfileApplier : IDisplayProfileApplier, IDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
         DisplayPowerContext current = powerContext.Capture();
-        if (!current.IsConfirmed
+        if ((!current.IsConfirmed && !current.ManualExternalPowerPresent)
             || current.PowerSource != expected.PowerSource
             || current.Generation != expected.Generation)
         {

@@ -114,12 +114,19 @@ internal static class SilentLowFanValidationCommand
                 // cannot manufacture a fresh thermal admission at completion.
                 thermalTimestamp = Stopwatch.GetTimestamp();
                 coolAndGpuInactive = false;
-                var reading = await temperatures.ReadAsync(includeCpu: true, includeGpu: true, token);
-                coolAndGpuInactive = reading.CpuCelsius is >= 10 and <= 55 && reading.GpuInactive;
-                Append(new { phase = "thermalAdmission", reading.CpuCelsius, reading.GpuInactive });
+                var reading = await temperatures.ReadForFanStopAsync(token);
+                coolAndGpuInactive = IsThermallySafe(reading);
+                Append(new
+                {
+                    phase = "thermalAdmission",
+                    reading.CpuCelsius,
+                    reading.GpuCelsius,
+                    reading.GpuInactive,
+                    reading.GpuPoweredDown,
+                });
                 if (!coolAndGpuInactive || Stopwatch.GetElapsedTime(thermalTimestamp) > TimeSpan.FromSeconds(2))
                 {
-                    return "FreshCpu10To55CAndConfirmedGpuInactiveRequired";
+                    return "FreshCpu10To55CAndInactiveGpuPoweredDownOr10To55CRequired";
                 }
             }
             return null;
@@ -147,6 +154,11 @@ internal static class SilentLowFanValidationCommand
         await output.WriteLineAsync(JsonSerializer.Serialize(result, JsonOptions));
         return result.Success ? 0 : 2;
     }
+
+    internal static bool IsThermallySafe(FanTemperatureReadings reading) =>
+        reading.CpuCelsius is >= 10 and <= 55 && reading.GpuInactive
+        && (reading.GpuPoweredDown || reading.GpuCelsius is >= 10 and <= 55);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct SystemPowerStatus
     {

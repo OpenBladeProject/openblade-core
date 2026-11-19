@@ -188,7 +188,7 @@ RZ09-0482 (`1532:029D`), RZ09-0530 (`1532:02C5`), RZ09-0328 (`1532:0255`),
 RZ09-0484 (`1532:02A0`), RZ09-0508 (`1532:02B6`), RZ09-0510 (`1532:02B7`),
 RZ09-0509 (`1532:02B8`), RZ09-0529 (`1532:02C7`), RZ09-0427 (`1532:028C`),
 RZ09-0421 (`1532:028A`), RZ09-0423 (`1532:028B`), RZ09-0370 (`1532:0270`),
-RZ09-0330 (`1532:0253`), RZ09-0351 (`1532:0268`), RZ09-0301 (`1532:0245`), and RZ09-0300 (`1532:0246`).
+RZ09-0330 (`1532:0253`), RZ09-0351 (`1532:0268`), RZ09-0301 (`1532:0245`), RZ09-0300 (`1532:0246`), RZ09-0409 (`1532:0276`), RZ09-0287 (`1532:0234`), and RZ09-0314 (`1532:024C`).
 Their available controls are enabled automatically
 when the exact profile is recognized, without a Settings opt-in or release-channel
 gate. See [source-reviewed support](docs/experimental-blade-support.md) for the
@@ -507,8 +507,14 @@ See [UI typography](docs/ui-typography.md) for the semantic scale and table use.
    validated. This exception admits no other laptop or API contract family. Keep
    standalone native/audio validation separate from simulated tests; see
    [THX audio](docs/thx-audio.md).
-   CPU Voltage Optimizer on RZ09-0528 is live-only through its reviewed,
-   signed, already installed AMD stack. Availability checks and reads must not
+   CPU Voltage Optimizer is live-only through each exact model's reviewed,
+   signed, already installed AMD stack: V31 on RZ09-0528 and V22 on RZ09-0508
+   (8945HS) and RZ09-0482 (7940HS). Keep each closed contract's own CPU,
+   topology, measured getter, PM peer layout and fresh range admission.
+   RZ09-0530 remains observed-only until its own ten-core contract is reviewed.
+   Existing schema 3 voltage journals retain their original V31 meaning;
+   new model journals use explicit schema 4 contract identity. See
+   [CPU undervolting](docs/cpu-undervolting.md). Availability checks and reads must not
    provision or start a driver. New saved-setting requests are retired; retain
    saved observations and exact-original journal recovery for compatibility.
    Firmware shadows must never substitute for measured running offsets.

@@ -82,3 +82,9 @@ tools/openblade-windows-host/tests/fixtures/app-fans-*.json -text whitespace=cr-
 .trail/learnings/2026-11-14-own-targeted-agent-brightness-reads-through-jack.md text eol=lf
 .trail/learnings/2026-11-14-scope-native-brightness-trail-matches-to-jack.md text eol=lf
 .trail/learnings/2026-11-14-keep-partial-display-replies-available-while-jack.md text eol=lf
+
+# Keyboard lighting layout fixtures and source-reviewed frame evidence from main.
+src/OpenBlade.Contracts/Fixtures/Blade16KeyboardLightingLayout.json text eol=crlf
+src/OpenBlade.Contracts/Fixtures/Blade16AmdKeyboardLightingLayout.json text eol=lf
+src/OpenBlade.Contracts/Fixtures/Rz090529KeyboardLightingLayout.json text eol=crlf
+evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json text eol=crlf

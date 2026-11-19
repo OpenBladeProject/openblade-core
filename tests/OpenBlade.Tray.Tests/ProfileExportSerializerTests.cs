@@ -7,6 +7,27 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class ProfileExportSerializerTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ZoneFieldsRequireCurrentExportSchemaAndRoundTripWithoutKeyboardIntent(bool touchpad)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        IndependentLightingSettings fields = touchpad ? new(null, null, null, true) : new(null, null, false);
+        ProfileSet source = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Lighting = defaults.PluggedIn.Lighting with { IndependentControls = fields },
+            },
+        };
+        string json = ProfileExportSerializer.Serialize(source, "0.62.0", DateTimeOffset.UtcNow);
+        Assert.Equal(fields, ProfileExportSerializer.Deserialize(json).PluggedIn.Lighting.IndependentControls);
+        JsonNode historical = JsonNode.Parse(json)!;
+        historical["schemaVersion"] = 17;
+        Assert.Throws<InvalidDataException>(() => ProfileExportSerializer.Deserialize(historical.ToJsonString()));
+    }
+
     [Fact]
     public void CurrentSchema_RoundTripsPartialIndependentLightingWithoutChangingEffectWrapper()
     {
@@ -17,7 +38,7 @@ public sealed class ProfileExportSerializerTests
         };
         ProfileSet source = defaults with { PluggedIn = defaults.PluggedIn with { Lighting = lighting } };
         string json = ProfileExportSerializer.Serialize(source, "1.0.0", DateTimeOffset.UtcNow);
-        Assert.Equal(16, JsonNode.Parse(json)!["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(18, JsonNode.Parse(json)!["schemaVersion"]!.GetValue<int>());
         Assert.Equal(lighting, ProfileExportSerializer.Deserialize(json).PluggedIn.Lighting);
     }
 

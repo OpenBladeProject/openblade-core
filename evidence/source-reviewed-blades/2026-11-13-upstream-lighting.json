@@ -1,0 +1,1029 @@
+{
+  "schemaVersion": 1,
+  "reviewDate": "2026-11-13",
+  "issue": "https://github.com/OpenBladeProject/openblade-core/issues/959",
+  "scope": "Pinned upstream source review for the nine independent-control profiles, including RZ09-0330; no hardware access",
+  "physicalValidationPerformed": false,
+  "runtimeCapabilitiesAddedByThisReview": false,
+  "openRazer": {
+    "schemaVersion": 1,
+    "repository": "openrazer/openrazer",
+    "commit": "477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d",
+    "reviewScope": "Read-only review of current upstream exact USB identities, lighting commands, geometry and state confirmation. No hardware access or production changes.",
+    "sources": [
+      {
+        "path": "driver/razerkbd_driver.c",
+        "sha256": "767C46EAB2955983A2ED3D37F699166F8BF893319D06F8BB6AF1C92D4DE54EB3",
+        "bytes": 301949,
+        "rawUrl": "https://raw.githubusercontent.com/openrazer/openrazer/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerkbd_driver.c",
+        "immutableUrl": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerkbd_driver.c"
+      },
+      {
+        "path": "driver/razerkbd_driver.h",
+        "sha256": "F9ECB9D39ACB3753BC875F7BD6FBACAEB2D8D48A74DE6F1ECE6F8F59D6C79434",
+        "bytes": 8773,
+        "rawUrl": "https://raw.githubusercontent.com/openrazer/openrazer/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerkbd_driver.h",
+        "immutableUrl": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerkbd_driver.h"
+      },
+      {
+        "path": "driver/razerchromacommon.c",
+        "sha256": "23BC58CF7A1D8C91A6F397087B55FF897340C68D76BE48E01F2E2B9274D8C9BF",
+        "bytes": 54401,
+        "rawUrl": "https://raw.githubusercontent.com/openrazer/openrazer/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerchromacommon.c",
+        "immutableUrl": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerchromacommon.c"
+      },
+      {
+        "path": "daemon/openrazer_daemon/hardware/keyboards.py",
+        "sha256": "C3F94A18B86C0371D23A53D5A1303775EB4C5E2E26919AA1A6175933CB7BDC03",
+        "bytes": 109650,
+        "rawUrl": "https://raw.githubusercontent.com/openrazer/openrazer/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/keyboards.py",
+        "immutableUrl": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/keyboards.py"
+      },
+      {
+        "path": "daemon/openrazer_daemon/hardware/device_base.py",
+        "sha256": "7DCECE1E1D9AFB84D672F3995ACD0CB5F24E8E908F212DBA2601A50F4FAB362D",
+        "bytes": 50515,
+        "rawUrl": "https://raw.githubusercontent.com/openrazer/openrazer/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/device_base.py",
+        "immutableUrl": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/device_base.py"
+      }
+    ],
+    "models": [
+      {
+        "usbVid": "1532",
+        "usbPid": "0234",
+        "openBladeModel": "RZ09-0287",
+        "upstreamClass": "RazerBladePro2019",
+        "sourcePath": "daemon/openrazer_daemon/hardware/keyboards.py",
+        "startLine": 1874,
+        "endLine": 1889,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/keyboards.py#L1874-L1889",
+        "exactPidMatch": true,
+        "upstreamMatches": "USB identity and upstream model label; does not independently establish Windows DMI admission",
+        "matrixDimensions": [
+          6,
+          16
+        ],
+        "customFrameSetter": true,
+        "waveSetter": true,
+        "logoActiveMethods": true,
+        "builtinEffectSetter": true,
+        "independentMatrixEffectReadbackEstablished": false
+      },
+      {
+        "usbVid": "1532",
+        "usbPid": "0245",
+        "openBladeModel": "RZ09-0301",
+        "upstreamClass": "RazerBladeMid2019Mercury",
+        "sourcePath": "daemon/openrazer_daemon/hardware/keyboards.py",
+        "startLine": 1737,
+        "endLine": 1751,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/keyboards.py#L1737-L1751",
+        "exactPidMatch": true,
+        "upstreamMatches": "USB identity and upstream model label; does not independently establish Windows DMI admission",
+        "matrixDimensions": [
+          6,
+          16
+        ],
+        "customFrameSetter": true,
+        "waveSetter": true,
+        "logoActiveMethods": true,
+        "builtinEffectSetter": true,
+        "independentMatrixEffectReadbackEstablished": false
+      },
+      {
+        "usbVid": "1532",
+        "usbPid": "0246",
+        "openBladeModel": "RZ09-0300",
+        "upstreamClass": "RazerBlade2019Base",
+        "sourcePath": "daemon/openrazer_daemon/hardware/keyboards.py",
+        "startLine": 1756,
+        "endLine": 1765,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/keyboards.py#L1756-L1765",
+        "exactPidMatch": true,
+        "upstreamMatches": "USB identity and upstream model label; does not independently establish Windows DMI admission",
+        "matrixDimensions": null,
+        "customFrameSetter": false,
+        "waveSetter": false,
+        "logoActiveMethods": false,
+        "builtinEffectSetter": true,
+        "independentMatrixEffectReadbackEstablished": false
+      },
+      {
+        "usbVid": "1532",
+        "usbPid": "024C",
+        "openBladeModel": "RZ09-0314",
+        "upstreamClass": "RazerBladeProLate2019",
+        "sourcePath": "daemon/openrazer_daemon/hardware/keyboards.py",
+        "startLine": 1800,
+        "endLine": 1814,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/keyboards.py#L1800-L1814",
+        "exactPidMatch": true,
+        "upstreamMatches": "USB identity and upstream model label; does not independently establish Windows DMI admission",
+        "matrixDimensions": [
+          6,
+          16
+        ],
+        "customFrameSetter": true,
+        "waveSetter": true,
+        "logoActiveMethods": true,
+        "builtinEffectSetter": true,
+        "independentMatrixEffectReadbackEstablished": false
+      },
+      {
+        "usbVid": "1532",
+        "usbPid": "0253",
+        "openBladeModel": "RZ09-0330",
+        "upstreamClass": "RazerBlade15Advanced2020",
+        "sourcePath": "daemon/openrazer_daemon/hardware/keyboards.py",
+        "startLine": 1894,
+        "endLine": 1908,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/keyboards.py#L1894-L1908",
+        "exactPidMatch": true,
+        "upstreamMatches": "USB identity and upstream model label; does not independently establish Windows DMI admission",
+        "matrixDimensions": [
+          6,
+          16
+        ],
+        "customFrameSetter": true,
+        "waveSetter": true,
+        "logoActiveMethods": true,
+        "builtinEffectSetter": true,
+        "independentMatrixEffectReadbackEstablished": false
+      },
+      {
+        "usbVid": "1532",
+        "usbPid": "0268",
+        "openBladeModel": "RZ09-0351",
+        "upstreamClass": "RazerBladeLate2020Base",
+        "sourcePath": "daemon/openrazer_daemon/hardware/keyboards.py",
+        "startLine": 1785,
+        "endLine": 1795,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/keyboards.py#L1785-L1795",
+        "exactPidMatch": true,
+        "upstreamMatches": "USB identity and upstream model label; does not independently establish Windows DMI admission",
+        "matrixDimensions": null,
+        "customFrameSetter": false,
+        "waveSetter": false,
+        "logoActiveMethods": false,
+        "builtinEffectSetter": true,
+        "independentMatrixEffectReadbackEstablished": false
+      },
+      {
+        "usbVid": "1532",
+        "usbPid": "0270",
+        "openBladeModel": "RZ09-0370",
+        "upstreamClass": "RazerBlade142021",
+        "sourcePath": "daemon/openrazer_daemon/hardware/keyboards.py",
+        "startLine": 1951,
+        "endLine": 1965,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/keyboards.py#L1951-L1965",
+        "exactPidMatch": true,
+        "upstreamMatches": "USB identity and upstream model label; does not independently establish Windows DMI admission",
+        "matrixDimensions": [
+          6,
+          16
+        ],
+        "customFrameSetter": true,
+        "waveSetter": true,
+        "logoActiveMethods": true,
+        "builtinEffectSetter": true,
+        "independentMatrixEffectReadbackEstablished": false
+      },
+      {
+        "usbVid": "1532",
+        "usbPid": "0276",
+        "openBladeModel": "RZ09-0409",
+        "upstreamClass": "RazerBlade15Advanced2021",
+        "sourcePath": "daemon/openrazer_daemon/hardware/keyboards.py",
+        "startLine": 1913,
+        "endLine": 1927,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/keyboards.py#L1913-L1927",
+        "exactPidMatch": true,
+        "upstreamMatches": "USB identity and upstream model label; does not independently establish Windows DMI admission",
+        "matrixDimensions": [
+          6,
+          16
+        ],
+        "customFrameSetter": true,
+        "waveSetter": true,
+        "logoActiveMethods": true,
+        "builtinEffectSetter": true,
+        "independentMatrixEffectReadbackEstablished": false
+      },
+      {
+        "usbVid": "1532",
+        "usbPid": "02B6",
+        "openBladeModel": "RZ09-0508",
+        "upstreamClass": "RazerBlade142024",
+        "sourcePath": "daemon/openrazer_daemon/hardware/keyboards.py",
+        "startLine": 2221,
+        "endLine": 2235,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/keyboards.py#L2221-L2235",
+        "exactPidMatch": true,
+        "upstreamMatches": "USB identity and upstream model label; does not independently establish Windows DMI admission",
+        "matrixDimensions": [
+          6,
+          16
+        ],
+        "customFrameSetter": true,
+        "waveSetter": true,
+        "logoActiveMethods": true,
+        "builtinEffectSetter": true,
+        "independentMatrixEffectReadbackEstablished": false
+      }
+    ],
+    "findings": [
+      {
+        "id": "0253-exact-definition",
+        "claim": "RazerBlade15Advanced2020 declares USB1532:0253, a6x16 matrix, built-in setters, custom effect/frame methods, logo active methods and software ripple. Setter availability does not establish independent firmware confirmation.",
+        "sourcePath": "daemon/openrazer_daemon/hardware/keyboards.py",
+        "startLine": 1894,
+        "endLine": 1908,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/keyboards.py#L1894-L1908"
+      },
+      {
+        "id": "0253-kernel-admission",
+        "claim": "Exact0253 kernel branch creates builtin effect, custom effect/frame and logo-state sysfs files.",
+        "sourcePath": "driver/razerkbd_driver.c",
+        "startLine": 5891,
+        "endLine": 5929,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerkbd_driver.c#L5891-L5929"
+      },
+      {
+        "id": "legacy-setter",
+        "claim": "Standard matrix-effect helpers encode03/0A. Wave direction is bounded to1 or2; this is setter source evidence.",
+        "sourcePath": "driver/razerchromacommon.c",
+        "startLine": 208,
+        "endLine": 248,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerchromacommon.c#L208-L248"
+      },
+      {
+        "id": "0253-standard-path",
+        "claim": "Exact0253 is in the standard legacy Wave setter branch, using transactionFF rather than a newer0F matrix API.",
+        "sourcePath": "driver/razerkbd_driver.c",
+        "startLine": 2550,
+        "endLine": 2580,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerkbd_driver.c#L2550-L2580"
+      },
+      {
+        "id": "breathing-setters",
+        "claim": "Legacy03/0A Breathing carries type3 random,type1 single,type2 dual plus RGB fields.",
+        "sourcePath": "driver/razerchromacommon.c",
+        "startLine": 351,
+        "endLine": 379,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerchromacommon.c#L351-L379"
+      },
+      {
+        "id": "custom-frame-geometry",
+        "claim": "Standard custom-row helper encodes03/0B with frameFF,row,start/end inclusive and RGB bytes. Exact0253 selects that helper. Geometry evidence is separate from region-specific key mapping.",
+        "sourcePath": "driver/razerchromacommon.c",
+        "startLine": 450,
+        "endLine": 471,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerchromacommon.c#L450-L471"
+      },
+      {
+        "id": "0253-custom-frame-path",
+        "claim": "Exact0253 selects the standard custom-frame row helper and transactionFF.",
+        "sourcePath": "driver/razerkbd_driver.c",
+        "startLine": 4651,
+        "endLine": 4682,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerkbd_driver.c#L4651-L4682"
+      },
+      {
+        "id": "effect-write-only",
+        "claim": "Builtin matrix effects and custom effect/frame attributes have no read callback. The separately readable pulsate attribute does not establish a0253 matrix-effect getter.",
+        "sourcePath": "driver/razerkbd_driver.c",
+        "startLine": 4936,
+        "endLine": 4947,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerkbd_driver.c#L4936-L4947"
+      },
+      {
+        "id": "cached-effect-getters",
+        "claim": "D-Bus getEffect,getEffectColors,getEffectSpeed return daemon zone cache; they do not query firmware.",
+        "sourcePath": "daemon/openrazer_daemon/hardware/device_base.py",
+        "startLine": 550,
+        "endLine": 581,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/device_base.py#L550-L581"
+      },
+      {
+        "id": "initial-cache",
+        "claim": "Zone state begins with configured defaults, including Spectrum and remembered RGB fields.",
+        "sourcePath": "daemon/openrazer_daemon/hardware/device_base.py",
+        "startLine": 95,
+        "endLine": 106,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/device_base.py#L95-L106"
+      },
+      {
+        "id": "persistent-cache",
+        "claim": "The daemon loads remembered effect and brightness from its persistence store.",
+        "sourcePath": "daemon/openrazer_daemon/hardware/device_base.py",
+        "startLine": 269,
+        "endLine": 294,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/device_base.py#L269-L294"
+      },
+      {
+        "id": "restore-replays-cache",
+        "claim": "restore_effect selects a setter from the cached/persisted effect and replays cached colors,speed and direction. It cannot recover an arbitrary independently read firmware baseline.",
+        "sourcePath": "daemon/openrazer_daemon/hardware/device_base.py",
+        "startLine": 453,
+        "endLine": 520,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/daemon/openrazer_daemon/hardware/device_base.py#L453-L520"
+      },
+      {
+        "id": "submission-ack",
+        "claim": "Transport checks report length,remaining packets,class and command,accepts success or busy,and may retry. This is command-response handling,not independent effect readback; OpenBlade must retain its own stop-on-ambiguity semantics.",
+        "sourcePath": "driver/razerkbd_driver.c",
+        "startLine": 438,
+        "endLine": 494,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerkbd_driver.c#L438-L494"
+      },
+      {
+        "id": "alternate-brightness-contract",
+        "claim": "OpenRazer defines Blade brightness set0E/04 args[1,brightness] and get0E/84 args[1,0]. This differs from the separately reviewed Synapse03/03 and03/83 LED path. No replacement is needed.",
+        "sourcePath": "driver/razerchromacommon.c",
+        "startLine": 993,
+        "endLine": 1013,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerchromacommon.c#L993-L1013"
+      },
+      {
+        "id": "0253-brightness-setter-path",
+        "claim": "Exact0253 routes brightness writes through the Blade-specific helper.",
+        "sourcePath": "driver/razerkbd_driver.c",
+        "startLine": 4220,
+        "endLine": 4259,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerkbd_driver.c#L4220-L4259"
+      },
+      {
+        "id": "0253-brightness-getter-path",
+        "claim": "Exact0253 routes brightness reads through the Blade-specific helper; brightness is independently queried.",
+        "sourcePath": "driver/razerkbd_driver.c",
+        "startLine": 4391,
+        "endLine": 4452,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerkbd_driver.c#L4391-L4452"
+      },
+      {
+        "id": "logo-read-separate",
+        "claim": "Blade logo active state uses a separate legacy LED-state query; this is not keyboard matrix-effect readback.",
+        "sourcePath": "driver/razerkbd_driver.c",
+        "startLine": 3812,
+        "endLine": 3837,
+        "url": "https://github.com/openrazer/openrazer/blob/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d/driver/razerkbd_driver.c#L3812-L3837"
+      }
+    ],
+    "conclusion": {
+      "additionalSetterAndGeometryEvidence": true,
+      "independentKeyboardEffectBaselineEstablished": false,
+      "arbitraryFirmwareRestorationEstablished": false,
+      "currentMissingBackendGapResolved": false,
+      "recommendedScope": "Retain admitted independent brightness/logo controls. Upstream setters and daemon cache do not justify effect/frame writes requiring independent baseline and confirmation. No new commands or capabilities are admitted by this audit.",
+      "physicalValidationPerformed": false
+    }
+  },
+  "openRgb": {
+    "schemaVersion": 1,
+    "repository": "CalcProgrammer1/OpenRGB",
+    "commit": "4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6",
+    "commitDate": "2026-11-12T06:11:26Z",
+    "commitUrl": "https://github.com/CalcProgrammer1/OpenRGB/commit/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6",
+    "scope": "Read-only exact0253 and other8 brightness-only profiles; no hardware, install, production edit or commit",
+    "files": [
+      {
+        "path": "Controllers/RazerController/RazerDevices.h",
+        "sha256": "310730c0cc54858e5187fa466aced6f4aec666fbbc7ed65d4d025eccb13f653f",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerDevices.h"
+      },
+      {
+        "path": "Controllers/RazerController/RazerDevices.cpp",
+        "sha256": "5f3be274002f061deb73e94c98e46ff01fe5d4adb8924baa17ed54bd8e7bb994",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerDevices.cpp"
+      },
+      {
+        "path": "Controllers/RazerController/RazerControllerDetect.cpp",
+        "sha256": "611c4aefc919cddc94718de6b6824e74d4e6edac5dc35a7b12d2c875e4eb4845",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerControllerDetect.cpp"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RazerController.h",
+        "sha256": "625e1b12688447cebd9daa34de103b93c8b136e020988f4ed76e6b431a81615a",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RazerController.h"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RazerController.cpp",
+        "sha256": "fc1ab3292189e8c437a9f34aafc58115fae390b519c5653d0d3b9fa48905bccb",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RazerController.cpp"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RGBController_Razer.h",
+        "sha256": "500b15a0d81e372a76a3d3756085625a25501f5f9237d0fbd68fa6de3ba4f5a1",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RGBController_Razer.h"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RGBController_Razer.cpp",
+        "sha256": "1e47a62f581ad92eda5a2fba266b1af5036e47465c598eb7ba266a348b07e944",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RGBController_Razer.cpp"
+      },
+      {
+        "path": "RGBController/RGBController.cpp",
+        "sha256": "ff49c49cc2e7891b5b6f15ab7aa80520ac03179aef982581ba0f33a7c0d72158",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/RGBController/RGBController.cpp"
+      },
+      {
+        "path": "RGBController/RGBController.h",
+        "sha256": "8df3c7d7b86029e2e93c76bbc69f03ffcda95819d53ab5289c756cf8dceccc98",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/RGBController/RGBController.h"
+      }
+    ],
+    "models": [
+      {
+        "model": "RZ09-0330",
+        "usbIdentity": "1532:0253",
+        "exactPidFound": true,
+        "definitions": [
+          "RAZER_BLADE_2020_ADVANCED_PID"
+        ],
+        "deviceRecords": [
+          {
+            "symbol": "blade_15_2020_advanced_device",
+            "geometry": [
+              6,
+              16
+            ],
+            "standard": true,
+            "transaction": "0x3F",
+            "source": {
+              "path": "Controllers/RazerController/RazerDevices.cpp",
+              "lines": [
+                3579,
+                3598
+              ],
+              "symbol": "blade_15_2020_advanced_device",
+              "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerDevices.cpp#L3579-L3598"
+            }
+          }
+        ],
+        "detectors": [
+          {
+            "path": "Controllers/RazerController/RazerControllerDetect.cpp",
+            "lines": [
+              327,
+              327
+            ],
+            "symbol": "exact HID detector",
+            "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerControllerDetect.cpp#L327-L327"
+          }
+        ],
+        "conclusion": "Exact PID routes to shared standard legacy setters, not an independent effect getter"
+      },
+      {
+        "model": "RZ09-0287",
+        "usbIdentity": "1532:0234",
+        "exactPidFound": true,
+        "definitions": [
+          "RAZER_BLADE_PRO_2019_PID"
+        ],
+        "deviceRecords": [
+          {
+            "symbol": "blade_pro_2019_device",
+            "geometry": [
+              6,
+              16
+            ],
+            "standard": true,
+            "transaction": "0x3F",
+            "source": {
+              "path": "Controllers/RazerController/RazerDevices.cpp",
+              "lines": [
+                4118,
+                4137
+              ],
+              "symbol": "blade_pro_2019_device",
+              "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerDevices.cpp#L4118-L4137"
+            }
+          }
+        ],
+        "detectors": [
+          {
+            "path": "Controllers/RazerController/RazerControllerDetect.cpp",
+            "lines": [
+              337,
+              337
+            ],
+            "symbol": "exact HID detector",
+            "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerControllerDetect.cpp#L337-L337"
+          }
+        ],
+        "conclusion": "Exact PID routes to shared standard legacy setters, not an independent effect getter"
+      },
+      {
+        "model": "RZ09-0314",
+        "usbIdentity": "1532:024C",
+        "exactPidFound": true,
+        "definitions": [
+          "RAZER_BLADE_PRO_LATE_2019_PID"
+        ],
+        "deviceRecords": [
+          {
+            "symbol": "blade_pro_late_2019_device",
+            "geometry": [
+              6,
+              16
+            ],
+            "standard": true,
+            "transaction": "0x3F",
+            "source": {
+              "path": "Controllers/RazerController/RazerDevices.cpp",
+              "lines": [
+                4154,
+                4173
+              ],
+              "symbol": "blade_pro_late_2019_device",
+              "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerDevices.cpp#L4154-L4173"
+            }
+          }
+        ],
+        "detectors": [
+          {
+            "path": "Controllers/RazerController/RazerControllerDetect.cpp",
+            "lines": [
+              338,
+              338
+            ],
+            "symbol": "exact HID detector",
+            "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerControllerDetect.cpp#L338-L338"
+          }
+        ],
+        "conclusion": "Exact PID routes to shared standard legacy setters, not an independent effect getter"
+      },
+      {
+        "model": "RZ09-0409",
+        "usbIdentity": "1532:0276",
+        "exactPidFound": true,
+        "definitions": [
+          "RAZER_BLADE_LATE_2021_ADVANCED_PID"
+        ],
+        "deviceRecords": [
+          {
+            "symbol": "blade_15_late_2021_advanced_device",
+            "geometry": [
+              6,
+              16
+            ],
+            "standard": true,
+            "transaction": "0x3F",
+            "source": {
+              "path": "Controllers/RazerController/RazerDevices.cpp",
+              "lines": [
+                3795,
+                3814
+              ],
+              "symbol": "blade_15_late_2021_advanced_device",
+              "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerDevices.cpp#L3795-L3814"
+            }
+          }
+        ],
+        "detectors": [
+          {
+            "path": "Controllers/RazerController/RazerControllerDetect.cpp",
+            "lines": [
+              331,
+              331
+            ],
+            "symbol": "exact HID detector",
+            "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerControllerDetect.cpp#L331-L331"
+          }
+        ],
+        "conclusion": "Exact PID routes to shared standard legacy setters, not an independent effect getter"
+      },
+      {
+        "model": "RZ09-0301",
+        "usbIdentity": "1532:0245",
+        "exactPidFound": true,
+        "definitions": [
+          "RAZER_BLADE_2019_MERCURY_PID"
+        ],
+        "deviceRecords": [
+          {
+            "symbol": "blade_15_2019_mercury_device",
+            "geometry": [
+              6,
+              16
+            ],
+            "standard": true,
+            "transaction": "0x3F",
+            "source": {
+              "path": "Controllers/RazerController/RazerDevices.cpp",
+              "lines": [
+                3507,
+                3526
+              ],
+              "symbol": "blade_15_2019_mercury_device",
+              "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerDevices.cpp#L3507-L3526"
+            }
+          }
+        ],
+        "detectors": [
+          {
+            "path": "Controllers/RazerController/RazerControllerDetect.cpp",
+            "lines": [
+              325,
+              325
+            ],
+            "symbol": "exact HID detector",
+            "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerControllerDetect.cpp#L325-L325"
+          }
+        ],
+        "conclusion": "Exact PID routes to shared standard legacy setters, not an independent effect getter"
+      },
+      {
+        "model": "RZ09-0300",
+        "usbIdentity": "1532:0246",
+        "exactPidFound": true,
+        "definitions": [
+          "RAZER_BLADE_2019_BASE_PID"
+        ],
+        "deviceRecords": [
+          {
+            "symbol": "blade_15_2019_base_device",
+            "geometry": [
+              1,
+              1
+            ],
+            "standard": true,
+            "transaction": "0x3F",
+            "source": {
+              "path": "Controllers/RazerController/RazerDevices.cpp",
+              "lines": [
+                3471,
+                3490
+              ],
+              "symbol": "blade_15_2019_base_device",
+              "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerDevices.cpp#L3471-L3490"
+            }
+          }
+        ],
+        "detectors": [
+          {
+            "path": "Controllers/RazerController/RazerControllerDetect.cpp",
+            "lines": [
+              324,
+              324
+            ],
+            "symbol": "exact HID detector",
+            "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerControllerDetect.cpp#L324-L324"
+          }
+        ],
+        "conclusion": "Exact PID routes to shared standard legacy setters, not an independent effect getter"
+      },
+      {
+        "model": "RZ09-0351",
+        "usbIdentity": "1532:0268",
+        "exactPidFound": true,
+        "definitions": [
+          "RAZER_BLADE_LATE_2020_PID"
+        ],
+        "deviceRecords": [
+          {
+            "symbol": "blade_late_2020_device",
+            "geometry": [
+              6,
+              16
+            ],
+            "standard": true,
+            "transaction": "0x3F",
+            "source": {
+              "path": "Controllers/RazerController/RazerDevices.cpp",
+              "lines": [
+                3651,
+                3670
+              ],
+              "symbol": "blade_late_2020_device",
+              "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerDevices.cpp#L3651-L3670"
+            }
+          }
+        ],
+        "detectors": [
+          {
+            "path": "Controllers/RazerController/RazerControllerDetect.cpp",
+            "lines": [
+              329,
+              329
+            ],
+            "symbol": "exact HID detector",
+            "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerControllerDetect.cpp#L329-L329"
+          }
+        ],
+        "conclusion": "Exact PID routes to shared standard legacy setters, not an independent effect getter"
+      },
+      {
+        "model": "RZ09-0370",
+        "usbIdentity": "1532:0270",
+        "exactPidFound": true,
+        "definitions": [
+          "RAZER_BLADE_14_2021_PID"
+        ],
+        "deviceRecords": [
+          {
+            "symbol": "blade_14_2021_device",
+            "geometry": [
+              6,
+              16
+            ],
+            "standard": true,
+            "transaction": "0x3F",
+            "source": {
+              "path": "Controllers/RazerController/RazerDevices.cpp",
+              "lines": [
+                3831,
+                3850
+              ],
+              "symbol": "blade_14_2021_device",
+              "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerDevices.cpp#L3831-L3850"
+            }
+          }
+        ],
+        "detectors": [
+          {
+            "path": "Controllers/RazerController/RazerControllerDetect.cpp",
+            "lines": [
+              316,
+              316
+            ],
+            "symbol": "exact HID detector",
+            "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerControllerDetect.cpp#L316-L316"
+          }
+        ],
+        "conclusion": "Exact PID routes to shared standard legacy setters, not an independent effect getter"
+      },
+      {
+        "model": "RZ09-0508",
+        "usbIdentity": "1532:02B6",
+        "exactPidFound": false,
+        "definitions": [],
+        "deviceRecords": [],
+        "detectors": [],
+        "conclusion": "No exact PID/device entry in pinned Razer source; no inferred support from nearby models"
+      }
+    ],
+    "exact0253": {
+      "exactIdentity": "Header PID0253 and detector interface2,usagepage1,usage2; source names Blade15(2020Advanced), not exact Windows DMI. Existing OpenBlade identity remains authoritative.",
+      "geometry": "6x16 standard keyboard matrix,transaction3F,LED5; layout pointerNULL. Geometry is upstream source evidence, not physical validation or an exact input-to-key map.",
+      "effects": "Direct,Off,Static,Breathing1/2/random,Spectrum,Wave are offered. Breathing support defaults true; Wave includes explicit0253 fallback. Reactive/Starlight/Ripple/Fire need extended effect enumeration, which standard0253 never performs.",
+      "setters": {
+        "Off": {
+          "class": 3,
+          "id": 10,
+          "size": 1,
+          "payload": [
+            0
+          ]
+        },
+        "Static": {
+          "class": 3,
+          "id": 10,
+          "size": 4,
+          "payload": "[6,R,G,B]"
+        },
+        "BreathingRandom": {
+          "class": 3,
+          "id": 10,
+          "size": 8,
+          "payload": [
+            3,
+            3,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "BreathingSingle": {
+          "class": 3,
+          "id": 10,
+          "size": 8,
+          "payload": "[3,1,R,G,B,0,0,0]"
+        },
+        "BreathingDual": {
+          "class": 3,
+          "id": 10,
+          "size": 8,
+          "payload": "[3,2,R,G,B,R2,G2,B2]"
+        },
+        "Spectrum": {
+          "class": 3,
+          "id": 10,
+          "size": 1,
+          "payload": [
+            4
+          ]
+        },
+        "Wave": {
+          "class": 3,
+          "id": 10,
+          "size": 2,
+          "payload": "[1,direction1or2]"
+        },
+        "Brightness": {
+          "class": 3,
+          "id": 3,
+          "size": 3,
+          "payload": "[0,5,raw]"
+        }
+      },
+      "frames": {
+        "rowCommand": "03/0B,DataSize4+3*columns,[FF,row,start,end,RGB...]",
+        "rows": 6,
+        "columns": 16,
+        "sequence": "SetLEDs sends rows0..5 columns0..15 with1ms delays then03/0A[5,0] custom activation. No independently read RGB or frame state."
+      },
+      "currentState": "Generic GetActiveMode returns own active_mode memory; GetColor returns own colors vector. Razer constructor does not snapshot current lighting. No0F/82 or03/8A effect query exists in reviewed Razer files. get_device_mode reads hardware/software mode00/84, not lighting effect.",
+      "ack": "Normal controller wait_for_response=false; SET uses hid_send_feature_report. Optional receiver polling checks transaction,class,id,status-complete but does not read independently applied effect;0253does not use receiver polling.",
+      "restoration": "Razer destructor stops keepalive if present,closes HID and deletes guard. RGB Shutdown stops threads/signals; neither captures/restores preexisting firmware lighting or RGB. Direct is an output mode backed by own colors, not borrowed-state restoration.",
+      "driverMode": "Constructor requests software device mode only for three named accessories, not0253.0253 does not inherit the0270/028C keepalive thread.",
+      "implication": "Corroborates exact0253 legacy setter contracts and6x16 frame addressing. Does not close independent active-effect confirmation, firmware baseline, RGB readback, durable ownership/restoration or ambiguous-output recovery gaps. OpenBlade must retain its own MCU/lifecycle proof and must not treat upstream application intent as readback."
+    },
+    "references": [
+      {
+        "path": "Controllers/RazerController/RazerDevices.h",
+        "lines": [
+          65,
+          94
+        ],
+        "symbol": "Blade PID definitions",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerDevices.h#L65-L94"
+      },
+      {
+        "path": "Controllers/RazerController/RazerControllerDetect.cpp",
+        "lines": [
+          316,
+          340
+        ],
+        "symbol": "exact Blade HID registrations",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerControllerDetect.cpp#L316-L340"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RazerController.cpp",
+        "lines": [
+          20,
+          123
+        ],
+        "symbol": "constructor and destructor",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RazerController.cpp#L20-L123"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RazerController.cpp",
+        "lines": [
+          207,
+          257
+        ],
+        "symbol": "SetLEDs",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RazerController.cpp#L207-L257"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RazerController.cpp",
+        "lines": [
+          730,
+          739
+        ],
+        "symbol": "razer_create_brightness_standard_report",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RazerController.cpp#L730-L739"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RazerController.cpp",
+        "lines": [
+          812,
+          828
+        ],
+        "symbol": "razer_create_custom_frame_standard_matrix_report",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RazerController.cpp#L812-L828"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RazerController.cpp",
+        "lines": [
+          860,
+          896
+        ],
+        "symbol": "single and random breathing report constructors",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RazerController.cpp#L860-L896"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RazerController.cpp",
+        "lines": [
+          915,
+          951
+        ],
+        "symbol": "dual breathing and custom activation constructors",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RazerController.cpp#L915-L951"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RazerController.cpp",
+        "lines": [
+          963,
+          991
+        ],
+        "symbol": "Off and Spectrum constructors",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RazerController.cpp#L963-L991"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RazerController.cpp",
+        "lines": [
+          1008,
+          1018
+        ],
+        "symbol": "Static report constructor",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RazerController.cpp#L1008-L1018"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RazerController.cpp",
+        "lines": [
+          1058,
+          1067
+        ],
+        "symbol": "Wave report constructor",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RazerController.cpp#L1058-L1067"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RazerController.cpp",
+        "lines": [
+          1104,
+          1117
+        ],
+        "symbol": "get_device_mode",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RazerController.cpp#L1104-L1117"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RazerController.cpp",
+        "lines": [
+          1197,
+          1210
+        ],
+        "symbol": "supported-effect enumeration excludes standard matrices",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RazerController.cpp#L1197-L1210"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RazerController.cpp",
+        "lines": [
+          2084,
+          2128
+        ],
+        "symbol": "USB send and optional completion polling",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RazerController.cpp#L2084-L2128"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RGBController_Razer.cpp",
+        "lines": [
+          57,
+          124
+        ],
+        "symbol": "UI mode offerings",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RGBController_Razer.cpp#L57-L124"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RGBController_Razer.cpp",
+        "lines": [
+          197,
+          202
+        ],
+        "symbol": "Razer RGB destructor",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RGBController_Razer.cpp#L197-L202"
+      },
+      {
+        "path": "Controllers/RazerController/RazerController/RGBController_Razer.cpp",
+        "lines": [
+          343,
+          350
+        ],
+        "symbol": "Direct mode output guarded by own active_mode",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/Controllers/RazerController/RazerController/RGBController_Razer.cpp#L343-L350"
+      },
+      {
+        "path": "RGBController/RGBController.cpp",
+        "lines": [
+          1438,
+          1454
+        ],
+        "symbol": "GetActiveMode reads application memory",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/RGBController/RGBController.cpp#L1438-L1454"
+      },
+      {
+        "path": "RGBController/RGBController.cpp",
+        "lines": [
+          1575,
+          1592
+        ],
+        "symbol": "GetColor reads application memory",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/RGBController/RGBController.cpp#L1575-L1592"
+      },
+      {
+        "path": "RGBController/RGBController.cpp",
+        "lines": [
+          1973,
+          2002
+        ],
+        "symbol": "Shutdown stops threads and signals",
+        "url": "https://github.com/CalcProgrammer1/OpenRGB/blob/4e7aa49d68aca6c959eb2a9b48a6d6fc35f744a6/RGBController/RGBController.cpp#L1973-L2002"
+      }
+    ]
+  }
+}

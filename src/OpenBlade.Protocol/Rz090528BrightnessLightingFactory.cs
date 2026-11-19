@@ -132,6 +132,7 @@ internal sealed class Rz090528BrightnessLightingFactory : IProductionLightingPor
 internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort, ILightingRecoveryWriteAdmission
 {
     private readonly LightingRecoveryWriteGate recoveryWriteGate = new();
+    private byte? keyboardLayoutId;
 
     public void SetRecoveryWriteAdmission(Func<bool> admission) => recoveryWriteGate.Set(admission);
 
@@ -643,6 +644,14 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort, 
                 : await QueryLogoCoreAsync(cancellationToken).ConfigureAwait(false);
             byte requestedRaw = LightingBrightnessProtocol.PercentToRaw(
                 settings.Brightness);
+            if (settings.Effect != LightingEffect.Off && keyboardLayoutId is null)
+            {
+                ReadOnlyMemory<byte> layout = await ExecuteCoreAsync(
+                    KeyboardLayoutProtocol.CreateQuery(), write: false,
+                    cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                keyboardLayoutId = layout.Span[0];
+            }
             (IRz090528LightingEffect? Effect, LightingSettings? Settings,
                 long StartedTimestamp, LightingRendererOwnershipState Ownership) previous =
                 CaptureOwnedEffectCore();
@@ -925,12 +934,24 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort, 
             ObjectDisposedException.ThrowIf(
                 closing || Volatile.Read(ref disposed) != 0,
                 this);
+            if (pulse.MatrixSlot >= Rz090528MatrixFrame.SlotCount)
+            {
+                return Task.FromException(new CapabilityUnavailableException(
+                    "The key is outside the reviewed PID 02C6 keyboard map."));
+            }
             lock (effectSync)
             {
                 if (activeEffect is not IRz090528KeyTriggeredLightingEffect triggered)
                 {
                     return Task.FromException(new CapabilityUnavailableException(
                         "PID 02C6 key-triggered lighting is not currently active."));
+                }
+
+                // Older clients could submit this unowned canvas cell. Keep it
+                // a harmless no-op; Right Alt remains the legacy identity at 91.
+                if (pulse.MatrixSlot == 94)
+                {
+                    return Task.CompletedTask;
                 }
 
                 TimeSpan elapsed = timeProvider.GetElapsedTime(
@@ -1232,6 +1253,9 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort, 
         CancellationToken cancellationToken,
         bool expectResponse = true)
     {
+        frame = Rz090528RegionalFrameProjection.Project(frame, keyboardLayoutId
+            ?? throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                "The keyboard layout has not been read."));
         if (!expectResponse)
         {
             await SubmitMatrixFrameCoreAsync(frame, cancellationToken)

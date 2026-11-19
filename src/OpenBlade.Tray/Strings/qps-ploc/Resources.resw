@@ -1306,6 +1306,15 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockLighting.Text" xml:space="preserve">
     <value>[!! Líghtíng ~~~ !!]</value>
   </data>
+  <data name="MainWindow_TextBlockLightingObservedOnly.Text" xml:space="preserve">
+    <value>[!! Óbsérvéd ónlý ~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockEffectsListedInSynapse.Text" xml:space="preserve">
+    <value>[!! Éffécts lístéd ín Sýnápsé ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockLightingObservedOnlyDescription.Text" xml:space="preserve">
+    <value>[!! Thís zóné wás répórtéd ón thís módél. OpenBlade cánnót cóntról ít ýét. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="MainWindow_TextBlockLightingBrightness.Text" xml:space="preserve">
     <value>[!! Líghtíng bríghtnéss ~~~~~~~ !!]</value>
   </data>
@@ -1582,6 +1591,9 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   <data name="MainWindow_TextBlockTouchpadFirmware.Text" xml:space="preserve">
     <value>[!! Tóúchpád ~~~ !!]</value>
   </data>
+  <data name="MainWindow_TextBlockTouchpadLighting.Text" xml:space="preserve">
+    <value>[!! Tóúchpád ~~~ !!]</value>
+  </data>
   <data name="MainWindow_TextBlockTrayDashboard.Text" xml:space="preserve">
     <value>[!! Tráý dáshbóárd ~~~~~ !!]</value>
   </data>
@@ -1590,6 +1602,9 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockUnsaved.Text" xml:space="preserve">
     <value>[!! Únsávéd ~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockUnderGlassLighting.Text" xml:space="preserve">
+    <value>[!! Úndér-gláss líghtíng ~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_TextBlockUpdateChannel.Text" xml:space="preserve">
     <value>[!! Úpdáté chánnél ~~~~~ !!]</value>
@@ -3093,5 +3108,47 @@ OpenBlade díd nót rétrý áný stóp réqúést. ~~~~~~~~~ !!]</value>
   </data>
   <data name="MainWindow_CoolingPadDemandToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>[!! Állów ápps tó réqúést móré cóólíng ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockChangesTheEnabledStateSleepSettingsStay.Text" xml:space="preserve">
+    <value>[!! Chángés thé énábléd státé. Sléép séttíngs stáý únchángéd. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockChangesTheFirmwareIndicatorNotTheWindows.Text" xml:space="preserve">
+    <value>[!! Chángés thé fírmwáré índícátór, nót thé Windows tóúchpád séttíng. ~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockTouchpadStatusIndicator.Text" xml:space="preserve">
+    <value>[!! Tóúchpád státús índícátór ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockVaporChamberLighting.Text" xml:space="preserve">
+    <value>[!! Vápór chámbér líghtíng ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockVaporChamberLighting2.Text" xml:space="preserve">
+    <value>[!! Vápór chámbér líghtíng ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TouchpadStatusIndicatorControlText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Tóúchpád státús índícátór ~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_VaporChamberLightingControlText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>[!! Vápór chámbér líghtíng ~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockChooseAColorForEachKeyboardKey.Text" xml:space="preserve">
+    <value>[!! Chóósé á cólór fór éách kéý ón thís láptóp. ~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_TextBlockEditKeyboardKeyColors.Text" xml:space="preserve">
+    <value>[!! Édít kéýbóárd kéý cólórs ~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_Apply" xml:space="preserve">
+    <value>[!! Ápplý cólórs ~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_DraftChanged" xml:space="preserve">
+    <value>[!! Líghtíng séttíngs chángéd whílé thé píckér wás ópén. Ópén ít ágáín tó édít thé cúrrént séttíngs. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_FailedTitle" xml:space="preserve">
+    <value>[!! Kéýbóárd cólórs cóúld nót bé ápplíéd ~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_PresetName" xml:space="preserve">
+    <value>[!! Cústóm kéý cólórs ~~~~~~ !!]</value>
+  </data>
+  <data name="MainWindow_KeyColorEditor_SelectedKey" xml:space="preserve">
+    <value>[!! Séléctéd kéý: {0} ~~~~ !!]</value>
   </data>
 </root>

@@ -260,15 +260,18 @@ public sealed partial class MainWindow
             .ToArray();
     }
 
+    private bool IsGlobalSearchPageAvailable(GlobalSearchResult result) =>
+        result.Navigation is { Visibility: Visibility.Visible }
+        && result.Page is { } page
+        && (!ReferenceEquals(page, LightingPage) || localizationSnapshotMode || ViewModel.IsLightingVisible);
+
     private bool IsGlobalSearchResultAvailable(GlobalSearchResult result)
     {
-        if (result.Navigation is not { Visibility: Visibility.Visible }
-            || result.Page is not { } page
-            || (ReferenceEquals(page, LightingPage) && !localizationSnapshotMode && !ViewModel.IsLightingVisible)
-            || result.IsExposed?.Invoke() == false)
+        if (!IsGlobalSearchPageAvailable(result) || result.IsExposed?.Invoke() == false)
         {
             return false;
         }
+        XamlScrollViewer page = result.Page!;
         if (result.Anchor is not { } anchor)
         {
             return true;
@@ -360,6 +363,13 @@ public sealed partial class MainWindow
 
     private void OpenGlobalSearchResult(GlobalSearchResult result)
     {
+        // Admit the page before selecting it, so a hidden destination cannot blank
+        // the window. Card admission stays after layout: explicit links such as the
+        // Labs guides may reveal or realize their destination while opening its page.
+        if (!IsGlobalSearchPageAvailable(result))
+        {
+            return;
+        }
         NavigationViewItem navigation = result.Navigation!;
         XamlScrollViewer page = result.Page!;
         if (ReferenceEquals(navigation, SettingsNavigationItem) && trayDashboardCustomizationActive)

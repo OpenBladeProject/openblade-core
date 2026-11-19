@@ -1,8 +1,9 @@
 namespace OpenBlade.Contracts;
 
 /// <summary>
-/// One locally sampled 6 by 17 RGB keyboard frame. It carries colors only;
-/// the service remains the sole owner of the HID report envelope and handle.
+/// One locally sampled 6 by 17 logical RGB canvas. Its frozen hole positions
+/// belong to the serialized format; each backend supplies its physical layout.
+/// The service owns the HID report envelope and handle.
 /// </summary>
 public sealed record AmbientLightingFrame(IReadOnlyList<RgbColor> Slots)
 {

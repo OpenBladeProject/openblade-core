@@ -1,0 +1,203 @@
+{
+  "schemaVersion": 1,
+  "audit": "Full-AC host curves over already-admitted exact-model Fixed commands and ordinary presets",
+  "reviewDate": "2026-11-14",
+  "coordinates": "zero-based UTF8 byte ranges, end exclusive",
+  "scope": {
+    "models": [
+      "RZ09-0482/1532:029D",
+      "RZ09-0483/1532:029F"
+    ],
+    "curvePower": "Fresh successful known Full firmware adapter before every flag/target SET; original Windows power source pinned through native submission",
+    "existingFixedScope": "Model-wide Fixed ranges and existing battery Fixed paths remain unchanged",
+    "newFirmwareCommands": false,
+    "newPhysicalValidation": false,
+    "curvePresets": {
+      "RZ09-0482": [
+        "Balanced",
+        "Silent",
+        "Custom"
+      ],
+      "RZ09-0483": [
+        "Balanced",
+        "Silent",
+        "Performance",
+        "Custom"
+      ]
+    },
+    "scopeReason": "These are the existing end-to-end admitted Fixed presets with identical model-wide bounds and independent preset/manual readback. No source or command-contract difference establishes a Balanced-only prerequisite."
+  },
+  "models": [
+    {
+      "model": "RZ09-0483",
+      "productId": "029F",
+      "fixedMinimumRpm": 2000,
+      "fixedMaximumRpm": 5000,
+      "stepRpm": 100,
+      "rangeBasis": "Pinned upstream exact-model descriptor; upstream owner measured2000 floor. Do not infer OpenBlade curve physical validation or every-SKU physical coverage.",
+      "curveBasis": "OpenBlade-owned bounded software loop over already-admitted typed Fixed target operations",
+      "curvePhysicalValidation": "Not performed",
+      "curvePresets": [
+        "Balanced",
+        "Silent",
+        "Performance",
+        "Custom"
+      ]
+    },
+    {
+      "model": "RZ09-0482",
+      "productId": "029D",
+      "fixedMinimumRpm": 2200,
+      "fixedMaximumRpm": 5000,
+      "stepRpm": 100,
+      "rangeBasis": "Pinned upstream exact-model descriptor transcribes bounds; existing OpenBlade source-backed extrapolation, not a measurement from029F.",
+      "curveBasis": "OpenBlade-owned bounded software loop over already-admitted typed Fixed target operations",
+      "curvePhysicalValidation": "Not performed",
+      "curvePresets": [
+        "Balanced",
+        "Silent",
+        "Custom"
+      ]
+    }
+  ],
+  "softwareContract": [
+    "No Automatic or Balanced initialization write is manufactured; curve entry preserves the current confirmed admitted ordinary preset.",
+    "Explicit manual entry submits target SETs before service ownership can be established; matching manual state alone grants no ownership.",
+    "Typed maintenance requires already-owned intent in the service and expected ordinary preset/manual paired-state confirmation in the backend.",
+    "Each SET retains exact host/controller/session admission, fresh successful Full adapter admission, independent target readback and stop-on-ambiguity behavior.",
+    "0D81 target readback is not0D88 tachometer readback.",
+    "No0D83 metadata command is added; these backends retain their separately admitted static Fixed envelopes."
+  ],
+  "sources": [
+    {
+      "name": "librazer/src/descriptor.rs",
+      "url": "https://github.com/sqmagellan/razer-ctl/blob/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a/librazer/src/descriptor.rs",
+      "bytes": 14230,
+      "sha256": "8E246B097A4202752BDFF6593C5CA64C30E53752ADD44BE20BD714F143A49E87",
+      "revision": "9c66e7055a0e31f5ec25c16185e66fde1f50cf4a"
+    },
+    {
+      "name": "librazer/src/command.rs",
+      "url": "https://github.com/sqmagellan/razer-ctl/blob/9c66e7055a0e31f5ec25c16185e66fde1f50cf4a/librazer/src/command.rs",
+      "bytes": 32631,
+      "sha256": "4814A2D5A0C030391703F2477A3CB59C915E83600466248B0A41E12DDF3D33EC",
+      "revision": "9c66e7055a0e31f5ec25c16185e66fde1f50cf4a"
+    },
+    {
+      "name": "product-671-policy-6737.e123a2b3f0516116025b.js",
+      "url": "https://apps.razer.com/synapse/products/671/mw/6737.e123a2b3f0516116025b.js",
+      "bytes": 1953339,
+      "sha256": "54D3A9BBEC83568B02342AA54FF47A94EE55A48ECA85B5D9F28D60D01A0B1A9A"
+    },
+    {
+      "name": "product-669-policy-6737.439ff1a12463933a6346.js",
+      "url": "https://apps.razer.com/synapse/products/669/mw/6737.439ff1a12463933a6346.js",
+      "bytes": 1957041,
+      "sha256": "D1AC2212AED5491D3EAB69ABAFA270B963A2336E859DF6BFBF9ED9A455E3791B"
+    },
+    {
+      "name": "product-671-base-rzDevice25.5e330aa9fdf6f29eec62.js",
+      "url": "https://apps.razer.com/synapse/products/671/mw/rzDevice25.5e330aa9fdf6f29eec62.js",
+      "bytes": 270411,
+      "sha256": "41E7758114AD3605B5B3EE0E65E79AF3055124F775904902BA3285F710AF55C9"
+    }
+  ],
+  "proofs": [
+    {
+      "source": "librazer/src/descriptor.rs",
+      "claim": "Upstream explicitly distinguishes029F measured floor from transcribed rows; not OpenBlade curve validation",
+      "startByte": 921,
+      "endByte": 1551,
+      "segmentSha256": "C0CB789CD1E26AD3C14F7C8C501C6AA7C14FCFB2D99500F566315FD1A87AC4D2",
+      "text": "/// PROVENANCE, which differs per row and matters: `0x029F` is **measured on hardware**\n    /// (2026-08-15, raw `0x0d01` sweep, floor confirmed at 2000 -- the details are on\n    /// [`SUPPORTED`]). Every other row is transcribed from\n    /// Vader89/razer-laptop-control-16-2023's per-model `laptops.json`, which lists 2200 for\n    /// the 2023+ Blades -- including the one chassis we have now measured at 2000. Treat the\n    /// un-measured floors as upper bounds on the truth, not as facts.\n    pub fan_rpm_range: (u16, u16),\n}\n\n/// Why `0x029F`'s floor is 2000 and what a future prober should expect, recorded here\n/// because"
+    },
+    {
+      "source": "librazer/src/descriptor.rs",
+      "claim": "Exact029F descriptor and already-admitted2000..5000 Fixed envelope",
+      "startByte": 2918,
+      "endByte": 3718,
+      "segmentSha256": "134CAC77E31E7028E04F53396FD3BC230A5B80892BBA55A1122E88D56B29DCE5",
+      "text": "model_number_prefix: \"RZ09-0483T\",\n        name: \"Razer Blade 16 (2023) Black\",\n        pid: 0x029f,\n        features: &[\n            \"battery-care\",\n            \"fan\",\n            \"kbd-backlight\",\n            \"kbd-lighting\",\n            \"lid-logo\",\n            \"lights-always-on\",\n            \"perf\",\n            // Not \"fn-lock\": 0x0206/0x0286 [0, 0|1] round-trips here, but neither value\n            // changes the F-row (F1-F12 primary, media on Fn; key-tested 2026-09-23).\n        ],\n        init_cmds: &[],\n        fan_rpm_range: (2000, 5000), // MEASURED 2026-08-15, not transcribed\n    },\n    Descriptor {\n        model_number_prefix: \"RZ09-0482X\",\n        name: \"Razer Blade 14 (2023) Mercury\",\n        pid: 0x029d,\n        features: &[\n            \"battery-care\",\n            \"fan\",\n       "
+    },
+    {
+      "source": "librazer/src/descriptor.rs",
+      "claim": "Exact029D descriptor and already-admitted2200..5000 source-extrapolated Fixed envelope",
+      "startByte": 3540,
+      "endByte": 3970,
+      "segmentSha256": "380F08BFD9BB41FD66610B93453EC5651E9B6B3D7F8F20418E3E1B47E56B07A8",
+      "text": "model_number_prefix: \"RZ09-0482X\",\n        name: \"Razer Blade 14 (2023) Mercury\",\n        pid: 0x029d,\n        features: &[\n            \"battery-care\",\n            \"fan\",\n            \"kbd-backlight\",\n            \"kbd-lighting\",\n            \"lights-always-on\",\n            \"perf\",\n        ],\n        init_cmds: &[],\n        fan_rpm_range: (2200, 5000),\n    },\n    Descriptor {\n        model_number_prefix: \"RZ09-0483U\",\n        nam"
+    },
+    {
+      "source": "librazer/src/command.rs",
+      "claim": "Paired0D02 encodes independent performance and fan mode",
+      "startByte": 1764,
+      "endByte": 2204,
+      "segmentSha256": "EAC875240F4ADA3E729A0364F772F4EF5AE9025727441B4294DD4CB32C13DDA4",
+      "text": "fn _set_perf_mode(\n    device: &impl HidTransport,\n    perf_mode: PerfMode,\n    fan_mode: FanMode,\n) -> Result<()> {\n    [1, 2].into_iter().try_for_each(|zone| {\n        _send_command(\n            device,\n            0x0d02,\n            &[0x01, zone, perf_mode as u8, fan_mode as u8],\n        )\n        .map(|_| ())\n    })\n}\n\nfn _set_boost(device: &impl HidTransport, cluster: Cluster, boost: u8) -> Result<()> {\n    let args = &[0x01, clus"
+    },
+    {
+      "source": "librazer/src/command.rs",
+      "claim": "0D82 reads independent preset byte2/manual byte3 while manual",
+      "startByte": 3375,
+      "endByte": 3935,
+      "segmentSha256": "47E738ACD9E83D112AFD3226A38389607EF283352AB8BD918D32D4246640CD8B",
+      "text": "pub fn get_perf_mode(device: &impl HidTransport) -> Result<(PerfMode, FanMode)> {\n    fn read_zones(\n        device: &impl HidTransport,\n    ) -> Result<((PerfMode, FanMode), (PerfMode, FanMode))> {\n        let [r1, r2]: [Result<(PerfMode, FanMode)>; 2] = [1, 2].map(|zone| {\n            let response = device.send(Packet::new(0x0d82, &[0, zone, 0, 0]))?;\n            Ok((\n                PerfMode::try_from(response.get_args()[2])?,\n                FanMode::try_from(response.get_args()[3])?,\n            ))\n        });\n\n        ensure!(\n            r1.is_ok("
+    },
+    {
+      "source": "librazer/src/command.rs",
+      "claim": "Existing target SET encodes RPM/100; no curve-specific command",
+      "startByte": 7572,
+      "endByte": 7732,
+      "segmentSha256": "B10D9F56F6A63C07756489EF913B9D0FB9F61FF6A0704F6290876E2DB36E2E8A",
+      "text": "_send_command(device, 0x0d01, &[0, zone as u8, (rpm / 100) as u8]).map(|_| ())\n        })\n}\n\npub fn get_fan_rpm(device: &impl HidTransport, fan_zone: FanZone) -"
+    },
+    {
+      "source": "librazer/src/command.rs",
+      "claim": "0D81 independently reads stored target, separately from0D88 actual RPM",
+      "startByte": 7665,
+      "endByte": 8115,
+      "segmentSha256": "7C8F3518B3B7468F1236F11FA020A08B60904A34D8871053938AEE11521011E3",
+      "text": "pub fn get_fan_rpm(device: &impl HidTransport, fan_zone: FanZone) -> Result<u16> {\n    let response = device.send(Packet::new(0x0d81, &[0, fan_zone as u8, 0]))?;\n    ensure!(response.get_args()[1] == fan_zone as u8);\n    Ok(response.get_args()[2] as u16 * 100)\n}\n\npub fn get_fan_actual_rpm(device: &impl HidTransport, fan_zone: FanZone) -> Result<u16> {\n    let response = device.send(Packet::new(0x0d88, &[0, fan_zone as u8, 0]))?;\n    ensure!(respo"
+    },
+    {
+      "source": "librazer/src/command.rs",
+      "claim": "Fan flag transitions preserve reported performance",
+      "startByte": 8836,
+      "endByte": 8996,
+      "segmentSha256": "88FAAF78188467DFABCBC12D5CC6C825B199C7841007B37FF83A70423AE2CDBD",
+      "text": "pub fn set_fan_mode(device: &impl HidTransport, mode: FanMode) -> Result<()> {\n    _set_perf_mode(device, get_perf_mode(device)?.0, mode)\n}\n\npub fn custom_comma"
+    },
+    {
+      "source": "product-671-policy-6737.e123a2b3f0516116025b.js",
+      "claim": "Exact product policy helper maps host curve to existing manual flag1 and class1 RPM/100 targets; helper presence alone does not assert UI feature activation",
+      "startByte": 972463,
+      "endByte": 972868,
+      "segmentSha256": "4B9F3EDC6BBA978C38929EEF7C930A8184F6DE07FFE8826DC197708A8ADB3393",
+      "text": "const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},51147:(e,t"
+    },
+    {
+      "source": "product-669-policy-6737.439ff1a12463933a6346.js",
+      "claim": "Exact product policy helper maps host curve to existing manual flag1 and class1 RPM/100 targets; helper presence alone does not assert UI feature activation",
+      "startByte": 1873787,
+      "endByte": 1874192,
+      "segmentSha256": "92252DC42BA3C6CA834D1B7CD254BC7E47CA7145C001BEDF2B07B9F482859557",
+      "text": "const o={auto:0,manual:1,smartFanCurve:1};class r{static getPerformanceFanModeProfile(e,t,i,r=1){return{profileId:r,thermalId:e,fanMode:(0,n.P5)(t),fanModeValue:o[i]}}static getPerformanceFanSpeedProfile(e,t,i=1){return{classId:i,thermalId:e,thermalFanSpeed:t/100}}static getAdvFanMode(e,t=1){return{thermalId:e,profileId:t}}static getAdvFanModeWattage(e,t=1){return{thermalId:e,profileId:t}}}},25434:(e,t"
+    },
+    {
+      "source": "product-671-base-rzDevice25.5e330aa9fdf6f29eec62.js",
+      "claim": "Pinned exact671 target decoder retains class/zone/target units",
+      "startByte": 2211,
+      "endByte": 2401,
+      "segmentSha256": "6300B43D0DA29AE52DF0F5EF375F669C1A74CD7819715DA13B7B73E73A1EA157",
+      "text": "thermalFanSpeed:t.data[2]})},l=(t,n,e)=>s(void 0,void 0,void 0,function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw new d.jl({error:o.ERROR_INVALID_INPUT_VALUE,commandClass:i.Ny[1"
+    },
+    {
+      "source": "product-671-base-rzDevice25.5e330aa9fdf6f29eec62.js",
+      "claim": "Pinned exact671 mode decoder reports independent performance/manual bytes",
+      "startByte": 3068,
+      "endByte": 3243,
+      "segmentSha256": "BCFFFB9A004031356A43992AD7F4B1D2336244D181D495C32BC1E814447670E3",
+      "text": "fanMode:t.data[2],fanModeEnum:a.np(r.IH,t.data[2]),fanModeValue:t.data[3]})},S=(t,n,e)=>s(void 0,void 0,void 0,function*(){if(void 0===n||void 0===e||isNaN(n)||isNaN(e))throw "
+    }
+  ]
+}

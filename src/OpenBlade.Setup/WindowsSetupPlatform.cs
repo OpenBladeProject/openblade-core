@@ -45,8 +45,8 @@ public sealed record WindowsSetupPlatformOptions(
 public sealed class WindowsSetupPlatform : ISetupPlatform
 {
     private const string ServiceName = OpenBladeWindowsService.Name;
-    private const int ServiceDoesNotExist = 1060;
     private const int ServiceNotActive = 1062;
+    private const int ServiceDoesNotExist = 1060;
     private static readonly TimeSpan ServiceHealthTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan CandidateServiceHealthTimeout = TimeSpan.FromSeconds(10);
     private readonly SetupPaths paths;
@@ -265,18 +265,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             ? await CaptureManagedMailboxStopAsync(state, cancellationToken)
             : null;
 
-        if (state == SetupServiceState.Running)
-        {
-            await serviceControl.RunAsync(
-                ["stop", ServiceName],
-                [ServiceNotActive],
-                cancellationToken);
-            await serviceControl.WaitForStateAsync(
-                ServiceName,
-                SetupServiceState.Stopped,
-                TimeSpan.FromSeconds(30),
-                cancellationToken);
-        }
+        await StopPredecessorServiceAsync(nativeStop, [ServiceNotActive], cancellationToken);
         guardianQuiescenceGuard.EnsureClear();
         if (managedStop is not null)
         {
@@ -381,18 +370,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             return;
         }
 
-        if (current == SetupServiceState.Running)
-        {
-            await serviceControl.RunAsync(
-                ["stop", ServiceName],
-                [ServiceNotActive],
-                cancellationToken);
-            await serviceControl.WaitForStateAsync(
-                ServiceName,
-                SetupServiceState.Stopped,
-                TimeSpan.FromSeconds(30),
-                cancellationToken);
-        }
+        await StopServiceAndWaitForExitAsync(cancellationToken);
         if (current is null || selectedNativeTransaction is not null)
         {
             // Configuration may already name the incoming native image even
@@ -794,6 +772,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     {
         long stopStarted = System.Diagnostics.Stopwatch.GetTimestamp();
         using var nativeStop = await CaptureNativeStopAsync(cancellationToken);
+        await StopPredecessorServiceAsync(nativeStop, [ServiceDoesNotExist, ServiceNotActive], cancellationToken);
         if (!await serviceControl.ExistsAsync(ServiceName, cancellationToken))
         {
             guardianQuiescenceGuard.EnsureClear();
@@ -801,16 +780,33 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             return;
         }
 
-        await serviceControl.RunAsync(["stop", ServiceName], [ServiceDoesNotExist, ServiceNotActive], cancellationToken);
+        guardianQuiescenceGuard.EnsureClear();
+        await ConfirmNativeStopAsync(nativeStop, TimeSpan.FromSeconds(30) - System.Diagnostics.Stopwatch.GetElapsedTime(stopStarted), cancellationToken).ConfigureAwait(false);
+        await serviceControl.RunAsync(["delete", ServiceName], [ServiceDoesNotExist], cancellationToken);
+        await serviceControl.WaitForDeletionAsync(ServiceName, TimeSpan.FromSeconds(30), cancellationToken);
+    }
+
+    private Task StopServiceAndWaitForExitAsync(CancellationToken cancellationToken) =>
+        SetupServiceQuiescence.StopAsync(serviceControl, processOperations,
+            paths.InstallDirectory, TimeSpan.FromSeconds(30), cancellationToken);
+
+    // The managed quiescence above admits only the installed managed executable,
+    // so it refuses a running native predecessor. That predecessor's exact
+    // retained launch confirms its own exit later in ConfirmNativeStopAsync.
+    private async Task StopPredecessorServiceAsync(
+        WindowsSetupRetainedNativeLaunch? nativeStop, int[] acceptedStopErrors, CancellationToken cancellationToken)
+    {
+        if (nativeStop is null)
+        {
+            await StopServiceAndWaitForExitAsync(cancellationToken);
+            return;
+        }
+        await serviceControl.RunAsync(["stop", ServiceName], acceptedStopErrors, cancellationToken);
         await serviceControl.WaitForStateAsync(
             ServiceName,
             SetupServiceState.Stopped,
             TimeSpan.FromSeconds(30),
             cancellationToken);
-        guardianQuiescenceGuard.EnsureClear();
-        await ConfirmNativeStopAsync(nativeStop, TimeSpan.FromSeconds(30) - System.Diagnostics.Stopwatch.GetElapsedTime(stopStarted), cancellationToken).ConfigureAwait(false);
-        await serviceControl.RunAsync(["delete", ServiceName], [ServiceDoesNotExist], cancellationToken);
-        await serviceControl.WaitForDeletionAsync(ServiceName, TimeSpan.FromSeconds(30), cancellationToken);
     }
 
     public Task StopTrayAsync(CancellationToken cancellationToken)
