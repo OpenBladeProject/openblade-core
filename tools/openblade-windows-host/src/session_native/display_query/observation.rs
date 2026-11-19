@@ -152,25 +152,35 @@ impl Snapshot {
     }
 
     /// The native write gate's reopening rule: whether this snapshot observed
-    /// the current state of `fields`. Refresh and color need only an available
-    /// snapshot. It always carries a complete refresh read even when the mode
-    /// matches no option (issue #884: a 60 Hz desktop over a 240 Hz signal, or
-    /// a desktop-only apply); managed has no such gate and a manual change is
-    /// the way out of that state. Likewise it always completed the WCS read
-    /// (an unreadable scope, association list or default makes it
-    /// unavailable), and under confirmed SDR with no listed default it shows
-    /// no active profile, which only a color write can change. With HDR on,
-    /// `HasCompleteReadback` already accepts the color field and setColorProfile
-    /// is refused before any submission. HDR and brightness keep
-    /// `HasCompleteReadback`: an available snapshot always observed HDR and
-    /// setHdr is refused while it is unsupported, and brightness without a
-    /// reading was not observed, so neither gate can trap a request that could
-    /// succeed. `confirms` already requires an available snapshot, so dropping
-    /// its refresh-key and color conditions is the whole rule.
+    /// the current state of `fields`. Refresh, HDR and color need only an
+    /// available snapshot. It always carries a complete refresh read even
+    /// when the mode matches no option (issue #884: a 60 Hz desktop over a
+    /// 240 Hz signal, or a desktop-only apply); managed has no such gate and a
+    /// manual change is the way out of that state. It always completed the
+    /// advanced-color read (an unreadable one makes it unavailable), so it
+    /// observed whether HDR is supported and its enabled state. An unsupported
+    /// panel is a definitive observation too: setHdr is refused before any
+    /// submission while its own read shows HDR unsupported, and applyProfile
+    /// then skips HDR, so no HDR write can follow until a fresh read shows
+    /// support. Requiring support instead would refuse forever a profile that
+    /// holds an HDR setting on such a panel and that managed applies. It also
+    /// always completed the WCS read (an unreadable scope, association list
+    /// or default makes it unavailable), and under confirmed SDR with no
+    /// listed default it shows no active profile, which only a color write can
+    /// change. With HDR on, `HasCompleteReadback` already accepts the color
+    /// field and setColorProfile is refused before any submission. Brightness
+    /// keeps `HasCompleteReadback`: a snapshot without a reading did not
+    /// observe it, and while it is unreadable every request that writes
+    /// brightness fails in managed too (setBrightness and applyProfile
+    /// "Display brightness is unavailable."), so no gate here holds a request
+    /// that could succeed. `confirms` already requires an available snapshot,
+    /// so dropping its refresh-key, HDR-support and color conditions is the
+    /// whole rule.
     #[cfg(openblade_display_write)]
     pub(super) fn observes(&self, fields: super::recovery::Fields) -> bool {
         self.confirms(super::recovery::Fields {
             refresh: false,
+            hdr: false,
             color: false,
             ..fields
         })

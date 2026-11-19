@@ -325,10 +325,24 @@ fn possible_submission_pauses_without_replay_across_restart_until_explicit_read(
         assert_eq!(result(&blocked), (Status::Blocked, Some(PAUSED)));
         assert_eq!(host.submissions(), 1);
 
-        // A read that cannot observe HDR keeps the gate; one that does reopens it.
+        // A read that cannot observe HDR keeps the gate.
         restarted.explicit_read(&Snapshot::unavailable("gone"));
-        restarted.explicit_read(&snapshot(false, false));
         assert!(restarted.unresolved().hdr);
+        // An available read observed HDR even while it reports no support:
+        // the native gate reopens, the managed pause keeps HasCompleteReadback.
+        restarted.explicit_read(&snapshot(false, false));
+        assert!(!restarted.unresolved().hdr);
+        let record = restarted.file.record();
+        assert!(flag(&record, "AutomaticWritesPaused") && flag(&record, "UncertainHdr"));
+        // Nothing can stack on that state: while its own read shows HDR
+        // unsupported, setHdr is refused before any device submission.
+        host.panel.supported = false;
+        let refused = restarted.set(&mut host, 2, true).unwrap();
+        assert_eq!(result(&refused), (Status::Failed, Some(NOT_SUPPORTED)));
+        assert_eq!(host.submissions(), 1);
+        assert!(!restarted.unresolved().hdr);
+        host.panel.supported = true;
+        // A complete readback also resumes the managed pause.
         restarted.explicit_read(&snapshot(true, false));
         assert!(!restarted.unresolved().hdr);
         let record = restarted.file.record();

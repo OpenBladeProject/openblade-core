@@ -601,14 +601,20 @@ fn hdr_operation_gates_only_hdr_and_explicit_reads_clear_only_observed_fields() 
     assert_eq!(restarted.unresolved(), Fields::BRIGHTNESS);
     assert_eq!(file.stored()["AutomaticWritesPaused"], true);
 
-    // Brightness without HDR support clears brightness and resumes nothing
-    // until every uncertain field reads back.
+    // An available read that reports HDR unsupported observed HDR too, so
+    // with brightness it reopens the whole native gate. Managed
+    // HasCompleteReadback requires HDR support, so the pause stays and a
+    // restart reloads both gates.
     let mut restarted = Recovery::load(file.clone());
     let mut value = serde_json::to_value(with_brightness()).unwrap();
     value["hdrSupported"] = false.into();
     let no_hdr: Snapshot = serde_json::from_value(value).unwrap();
+    assert!(no_hdr.observes(both) && !no_hdr.confirms(Fields::HDR));
     assert!(!restarted.explicit_read(&no_hdr));
-    assert_eq!(restarted.unresolved(), Fields::HDR);
+    assert_eq!(restarted.unresolved(), Fields::default());
+    assert_eq!(restarted.flags(), (true, true, both));
+    let mut restarted = Recovery::load(file.clone());
+    assert_eq!(restarted.unresolved(), both);
 
     // A read observing both resumes managed automation as before.
     assert!(restarted.explicit_read(&with_brightness()));
