@@ -1,4 +1,6 @@
 using System.Security.Principal;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using OpenBlade.Contracts;
 using OpenBlade.Deployment;
 using OpenBlade.Protocol;
@@ -41,20 +43,23 @@ public sealed partial class ServiceControlRuntimeTests
         handbackFixtures.Clear();
     }
 
-    // A protected fixture holding the Setup-written records.
+    // A private fixture standing in for the native epoch namespace. Each record
+    // sits in its generation's directory, as Setup writes it.
     private WindowsNativeEpochFiles HandbackFiles(params WindowsNativeHandback[] records)
     {
         WindowsNativeEpochFiles files = WindowsNativeEpochFiles.CreatePrivateFixture();
         handbackFixtures.Add(files);
         foreach (WindowsNativeHandback record in records)
         {
+            Directory.CreateDirectory(Path.Combine(files.Root, record.Epoch));
             files.Publish(WindowsNativeHandbackStorage.RecordPath(files, record.Epoch), record.Serialize([]));
         }
         return files;
     }
 
+    // The binding this start's fresh native custody admitted.
     private static NativeHandbackStore StoreFor(WindowsNativeEpochFiles? files, IReadOnlyDictionary<string, string> authenticated) =>
-        new(() => files?.RetainView(), () => authenticated);
+        new(() => new NativeHandbackBinding(authenticated, files is null ? null : files.RetainView));
 
     // The history commitments this start's fresh native custody computed.
     private static Dictionary<string, string> Bound(params WindowsNativeHandback[] records) =>
@@ -88,12 +93,13 @@ public sealed partial class ServiceControlRuntimeTests
         return context;
     }
 
-    // Production composition: a user configuration repository is present, so
-    // unexpected-exit recovery waits for an authorized active user. This is the
-    // ServiceStartupCoordinator sequence after NativeHandbackRecoveryPending.
+    // Production composition: the real ServiceStartupCoordinator over the
+    // runtime, with a user configuration repository present, so unexpected-exit
+    // recovery waits for an authorized active user. A managed run marker is
+    // left behind first when recoveringManagedRun is set.
     private async Task<(TestContext Context, FixedUserConfigurationRepository Repository)> StartProductionHandbackAsync(
         NativeHandbackStore? store, ConfirmedDeviceState confirmed, PowerSource powerSource = PowerSource.PluggedIn,
-        bool recoveringManagedRun = false)
+        bool recoveringManagedRun = false, Action<TestContext>? arrange = null)
     {
         var repository = new FixedUserConfigurationRepository(
             new BatteryConfiguration(
@@ -110,19 +116,20 @@ public sealed partial class ServiceControlRuntimeTests
             userConfigurationRepository: repository,
             initialPowerSource: powerSource,
             nativeHandbackStore: store);
-        BatteryConfiguration machineConfiguration = await context.Store.LoadAsync(CancellationToken.None);
         context.Device.Capabilities = HandbackCapabilities;
         context.Device.ConfirmedState = confirmed;
         context.Device.FanTargetsAvailable = true;
-        Assert.Equal(store is not null, context.Runtime.NativeHandbackRecoveryPending);
-        context.Runtime.Initialize(machineConfiguration, powerSource, PersistentOverrideState.Empty,
-            recoveringUnexpectedExit: true, recoveringManagedRun);
-        await context.Runtime.ObserveAsync(CancellationToken.None);
-        await context.Runtime.MaintainDriverModeAsync(CancellationToken.None);
-        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
-        await context.Runtime.PrepareManualFanCurveRecoveryAsync(CancellationToken.None);
-        await context.Runtime.MaintainFanCurveAsync(CancellationToken.None);
-        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+        arrange?.Invoke(context);
+        string marker = Path.Combine(directory, "service-running.json");
+        if (recoveringManagedRun) { await new ServiceRunMarkerStore(marker).BeginRunAsync(CancellationToken.None); }
+        var coordinator = new ServiceStartupCoordinator(
+            new MachineProfileBootstrapper(context.Store),
+            new PersistentOverrideStore(Path.Combine(directory, "manual-overrides.json")),
+            new ServiceRunMarkerStore(marker),
+            context.Runtime,
+            context.Telemetry,
+            NullLogger.Instance);
+        Assert.True(await coordinator.InitializeAsync(CancellationToken.None));
         return (context, repository);
     }
 
@@ -265,8 +272,9 @@ public sealed partial class ServiceControlRuntimeTests
     }
 
     // Native sets the two thermal channels in turn. A crash between them leaves
-    // a pair that never reads as one state; it resolves as a mismatch for an
-    // explicit reapply. Any other thermal read failure keeps waiting.
+    // a pair that never reads as one state; a second fresh observation of the
+    // same disagreement resolves it as a mismatch. Any other thermal read
+    // failure keeps waiting.
     [Theory]
     [InlineData("performance", true)]
     [InlineData("fan", true)]
@@ -325,6 +333,7 @@ public sealed partial class ServiceControlRuntimeTests
     public async Task NativeHandback_UnreadableRecordBlocksWithoutGuessing()
     {
         WindowsNativeEpochFiles files = HandbackFiles();
+        Directory.CreateDirectory(Path.Combine(files.Root, HandbackEpoch));
         files.Publish(WindowsNativeHandbackStorage.RecordPath(files, HandbackEpoch), "{"u8.ToArray());
         TestContext context = await StartWithHandbackAsync(StoreFor(files, new Dictionary<string, string> { [HandbackEpoch] = new string('a', 64) }),
             new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, ConfirmedBattery(80), null));
@@ -427,8 +436,8 @@ public sealed partial class ServiceControlRuntimeTests
     [InlineData("fan", "pending", "matched")]
     [InlineData("fan-release", "pending", "matched")]
     [InlineData("battery", "pending", "matched")]
-    [InlineData("temporary-charge", "pending", "matched")]
-    [InlineData("live-temporary-charge", "liveTemporaryCharge", "matched")]
+    [InlineData("temporary-charge", "pending", "continuing")]
+    [InlineData("live-temporary-charge", "liveTemporaryCharge", "continuing")]
     [InlineData("owned-fan", "ownedFan", "reported")]
     [InlineData("prepared", "abandonedPrepared", "reported")]
     public async Task NativeHandback_ProductionRecoveryResolvesBeforeUserAndCompletesAtActivation(string family, string? key, string? outcome)
@@ -541,7 +550,7 @@ public sealed partial class ServiceControlRuntimeTests
             new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, new ConfirmedBatteryState(true, 80, true), LightingSettingsFactory.Off()),
             powerSource);
 
-        Assert.Equal("matched", Outcome(files, "liveTemporaryCharge"));
+        Assert.Equal(NativeHandbackStore.Continuing, Outcome(files, "liveTemporaryCharge"));
         Assert.True(HistoryHas(context,
             "Temporary full charge started by the previous native service is still active. OpenBlade continues it for the user who started it when they sign in."));
         Assert.False(context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
@@ -549,6 +558,7 @@ public sealed partial class ServiceControlRuntimeTests
         await ActivateAndTickAsync(context, activeSid);
 
         Assert.True(HistoryHas(context, message), Describe(context));
+        Assert.Equal(inherits ? "matched" : "reported", Outcome(files, "liveTemporaryCharge"));
         Assert.Equal(inherits, context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
         Assert.Equal(0, context.Device.BatterySetCalls);
         AssertNoHardwareWrite(context);
@@ -583,17 +593,16 @@ public sealed partial class ServiceControlRuntimeTests
     }
 
     // The Service adopts a record only when this start's fresh native custody
-    // computed the same history commitment for that generation.
+    // computed the same history commitment for that generation. Custody itself
+    // refuses a record beside a generation it does not hand back.
     [Theory]
-    [InlineData("unbound")]
     [InlineData("other-history")]
     [InlineData("missing-record")]
-    [InlineData("missing-directory")]
+    [InlineData("missing-view")]
     [InlineData("two-generations")]
     [InlineData("foreign-resolution")]
-    [InlineData("orphan-resolution")]
     [InlineData("resolution-for-absent-item")]
-    [InlineData("unknown-entry")]
+    [InlineData("continuing-without-a-charge")]
     public void NativeHandback_StoreRefusesUnboundOrUnknownEvidence(string fault)
     {
         WindowsNativeHandback record = PendingHandback(HandbackItem("performance", 2, performance: "Balanced"));
@@ -601,55 +610,58 @@ public sealed partial class ServiceControlRuntimeTests
         WindowsNativeEpochFiles files = fault == "two-generations" ? HandbackFiles(record, later) : HandbackFiles(record);
         IReadOnlyDictionary<string, string> bound = fault switch
         {
-            "unbound" => new Dictionary<string, string>(),
             "other-history" => new Dictionary<string, string> { [HandbackEpoch] = later.Commitment },
             "missing-record" or "two-generations" => Bound(record, later),
             _ => Bound(record),
         };
-        switch (fault)
+        string? resolution = fault switch
         {
-            case "foreign-resolution":
-                files.Publish(WindowsNativeHandbackStorage.ResolutionPath(files, HandbackEpoch), NativeCanonical.Lines(
-                    "OpenBlade.NativeHandbackResolution.v1", HandbackEpoch, new string('b', 64), "matched", "-", "-", "-"));
-                break;
-            case "orphan-resolution":
-                files.Publish(WindowsNativeHandbackStorage.ResolutionPath(files, LaterHandbackEpoch), NativeCanonical.Lines(
-                    "OpenBlade.NativeHandbackResolution.v1", LaterHandbackEpoch, new string('b', 64), "matched", "-", "-", "-"));
-                break;
+            "foreign-resolution" => new string('b', 64) + ",matched,-,-,-",
             // The record holds only a pending item; an outcome for its owned fan is unknown.
-            case "resolution-for-absent-item":
-                files.Publish(WindowsNativeHandbackStorage.ResolutionPath(files, HandbackEpoch), NativeCanonical.Lines(
-                    "OpenBlade.NativeHandbackResolution.v1", HandbackEpoch, record.RecordCommitment([]), "-", "reported", "-", "-"));
-                break;
-            case "unknown-entry":
-                files.Publish(Path.Combine(files.Root, "notes.txt"), "x"u8.ToArray());
-                break;
+            "resolution-for-absent-item" => record.RecordCommitment([]) + ",-,reported,-,-",
+            // Only a temporary full charge can wait for its owner's sign-in.
+            "continuing-without-a-charge" => record.RecordCommitment([]) + ",continuing,-,-,-",
+            _ => null,
+        };
+        if (resolution is not null)
+        {
+            files.Publish(WindowsNativeHandbackStorage.ResolutionPath(files, HandbackEpoch), NativeCanonical.Lines(
+                "OpenBlade.NativeHandbackResolution.v1", [HandbackEpoch, .. resolution.Split(',')]));
         }
 
-        NativeHandbackAdoption adoption = StoreFor(fault == "missing-directory" ? null : files, bound).Load();
+        NativeHandbackAdoption adoption = StoreFor(fault == "missing-view" ? null : files, bound).Load();
 
         Assert.NotNull(adoption.Failure);
         Assert.Empty(adoption.Obligations);
         Assert.True(adoption.RequiresRecovery);
     }
 
+    // A custody refusal, or an admission that never opened, is not "no
+    // handback": it propagates instead of becoming a handback failure.
     [Fact]
-    public void NativeHandback_StoreAdmitsBoundRecordsAndResolvedHistory()
+    public void NativeHandback_StoreLetsACustodyFailurePropagate()
     {
-        WindowsNativeHandback earlier = PendingHandback(HandbackItem("battery", 60, battery: new(80, true, false)), LaterHandbackEpoch);
-        WindowsNativeHandback current = PendingHandback(HandbackItem("performance", 2, performance: "Balanced"));
-        WindowsNativeEpochFiles files = HandbackFiles(earlier);
-        NativeHandbackStore first = StoreFor(files, Bound(earlier));
-        NativeHandbackObligation obligation = Assert.Single(first.Load().Obligations);
-        Assert.True(first.TryResolve(new(obligation.Epoch, obligation.RecordCommitment, [obligation.Key], null, false), "matched"));
-        files.Publish(WindowsNativeHandbackStorage.RecordPath(files, current.Epoch), current.Serialize([]));
+        IOException refused = new("Native startup custody is unresolved; managed operation remains fenced.");
+        Assert.Same(refused, Assert.Throws<IOException>(() => new NativeHandbackStore(() => throw refused).Load()));
+        Assert.Throws<InvalidOperationException>(() => new NativeHandbackStore(
+            () => throw new InvalidOperationException("Native custody admission is not open.")).Load());
+        Assert.Same(NativeHandbackAdoption.None, StoreFor(null, new Dictionary<string, string>()).Load());
+    }
 
-        // A later generation is bound now; the earlier one is fully resolved.
-        NativeHandbackAdoption adoption = StoreFor(files, Bound(current)).Load();
+    [Fact]
+    public void NativeHandback_StoreAdmitsABoundResolvedRecord()
+    {
+        WindowsNativeHandback record = PendingHandback(HandbackItem("battery", 60, battery: new(80, true, false)));
+        WindowsNativeEpochFiles files = HandbackFiles(record);
+        NativeHandbackStore store = StoreFor(files, Bound(record));
+        NativeHandbackObligation obligation = Assert.Single(store.Load().Obligations);
+        Assert.True(store.TryResolve(new(obligation.Epoch, obligation.RecordCommitment, [obligation.Key], null, false), "matched"));
+
+        NativeHandbackAdoption adoption = StoreFor(files, Bound(record)).Load();
 
         Assert.Null(adoption.Failure);
-        Assert.Equal(HandbackEpoch, Assert.Single(adoption.Obligations).Epoch);
-        Assert.False(StoreFor(null, new Dictionary<string, string>()).Load().RequiresRecovery);
+        Assert.Empty(adoption.Obligations);
+        Assert.False(adoption.RequiresRecovery);
     }
 
     // A resolution is written only for the exact record it was read from.
@@ -670,5 +682,171 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.True(store.TryResolve(new(HandbackEpoch, obligation.RecordCommitment, ["pending"], null, false), "matched"));
         Assert.Equal("mismatched", Outcome(files, "pending"));
         Assert.Null(StoreFor(files, Bound(record)).Load().Failure);
+    }
+    // The production path from startup admission: ServiceMailboxHandoff carries
+    // custody's binding, ServiceComposition builds the store over it, and the
+    // real ServiceStartupCoordinator resolves the record before any user.
+    [Fact]
+    public async Task NativeHandback_ProductionCompositionReadsTheAdmittedBinding()
+    {
+        WindowsNativeHandback record = PendingHandback(HandbackItem("performance", 2, performance: "Balanced"));
+        WindowsNativeEpochFiles files = HandbackFiles(record);
+        var handoff = new ServiceMailboxHandoff(new ManagedMailboxStartup.Admission(null, null, null,
+            new NativeHandbackBinding(Bound(record), files.RetainView)));
+        using ServiceProvider provider = new ServiceCollection().AddSingleton(handoff).BuildServiceProvider();
+        NativeHandbackStore store = ServiceComposition.CreateNativeHandbackStore(provider);
+
+        var (context, repository) = await StartProductionHandbackAsync(store,
+            new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, ConfirmedBattery(80), LightingSettingsFactory.Off()));
+
+        Assert.Equal("matched", Outcome(files, "pending"));
+        Assert.Equal(0, repository.LoadCount);
+        await ActivateAndTickAsync(context);
+        Assert.True(HistoryContains(context, RecoveryCompleted), Describe(context));
+        AssertNoHardwareWrite(context);
+        // Without an admission there is no evidence of "no handback".
+        Assert.Throws<InvalidOperationException>(() => new ServiceMailboxHandoff(new NoMailboxRun()).NativeHandbacks);
+    }
+
+    private sealed class NoMailboxRun : IManagedMailboxRun
+    {
+        public void PublishQuiescent() { }
+        public void Dispose() { }
+    }
+
+    // Uninstall-and-purge deletes OpenBlade's machine data but never the native
+    // namespace that holds the record beside the history binding it. A start
+    // after purge and reinstall finds the resolved record and starts normally.
+    [Fact]
+    public async Task NativeHandback_StartAfterUninstallAndPurgeKeepsTheResolvedRecord()
+    {
+        WindowsNativeHandback record = PendingHandback(HandbackItem("performance", 2, performance: "Balanced"));
+        WindowsNativeEpochFiles files = HandbackFiles(record);
+        await StartWithHandbackAsync(StoreFor(files, Bound(record)),
+            new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, ConfirmedBattery(80), null));
+        Assert.Equal("matched", Outcome(files, "pending"));
+        Assert.Equal(Path.Combine(files.Root, HandbackEpoch), Path.GetDirectoryName(WindowsNativeHandbackStorage.RecordPath(files, HandbackEpoch)));
+
+        foreach (string entry in Directory.EnumerateFileSystemEntries(directory))
+        {
+            if (Directory.Exists(entry)) { Directory.Delete(entry, recursive: true); } else { File.Delete(entry); }
+        }
+        TestContext context = CreateContext(providerAvailable: true, initialize: false, nativeHandbackStore: StoreFor(files, Bound(record)));
+        context.Device.ConfirmedState = new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, ConfirmedBattery(80), null);
+
+        Assert.False(context.Runtime.NativeHandbackRecoveryPending);
+        context.Runtime.Initialize(await context.Store.LoadAsync(CancellationToken.None), PowerSource.PluggedIn, PersistentOverrideState.Empty);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked, Describe(context));
+    }
+
+    // A confirmed live charge stays continuing until its owner signs in. After
+    // a Service restart before that sign-in, a fresh read confirms it again,
+    // because it may have ended in between: an active charge still continues
+    // for its owner, and an ended one is reported. Neither writes the battery.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task NativeHandback_TemporaryChargeIsConfirmedAgainAfterAServiceRestartBeforeSignIn(bool stillActive)
+    {
+        WindowsNativeHandback record = new(HandbackEpoch, null, null, HandbackItem("temporaryCharge", 72, battery: new(80, true, true)), null, null);
+        WindowsNativeEpochFiles files = HandbackFiles(record);
+        var confirmed = new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, new ConfirmedBatteryState(true, 80, true), LightingSettingsFactory.Off());
+        await StartProductionHandbackAsync(StoreFor(files, Bound(record)), confirmed);
+        Assert.Equal(NativeHandbackStore.Continuing, Outcome(files, "liveTemporaryCharge"));
+
+        // Second Service process after a clean stop, which ends the managed run.
+        File.Delete(Path.Combine(directory, "service-running.json"));
+        NativeHandbackStore restarted = StoreFor(files, Bound(record));
+        Assert.True(restarted.Load().RequiresRecovery);
+        var (context, _) = await StartProductionHandbackAsync(restarted,
+            confirmed with { Battery = new ConfirmedBatteryState(true, 80, stillActive) });
+        Assert.Equal(stillActive ? NativeHandbackStore.Continuing : "reported", Outcome(files, "liveTemporaryCharge"));
+
+        await ActivateAndTickAsync(context);
+
+        Assert.Equal(stillActive, context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+        Assert.Equal(stillActive ? "matched" : "reported", Outcome(files, "liveTemporaryCharge"));
+        Assert.True(HistoryHas(context, stillActive
+            ? "Temporary full charge started by the previous native service continues for the signed-in user."
+            : "Temporary full charge started by the previous native service has ended."), Describe(context));
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        AssertNoHardwareWrite(context);
+    }
+
+    // One disagreeing observation is not yet a resolution; channels that agree
+    // on the next fresh read resolve normally.
+    [Fact]
+    public async Task NativeHandback_TransientChannelDisagreementStaysPending()
+    {
+        WindowsNativeHandback record = PendingHandback(HandbackItem("performance", 2, performance: "Balanced"));
+        NativeHandbackStore store = HandbackStore(record, out WindowsNativeEpochFiles files);
+        var state = new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, ConfirmedBattery(80), null);
+        TestContext context = CreateContext(providerAvailable: true, initialize: false, nativeHandbackStore: store);
+        context.Device.ConfirmedState = state;
+        context.Device.ReadStateFailure = ThermalRejection(DeviceStateQuery.ThermalChannelAgreement, state);
+        context.Runtime.Initialize(await context.Store.LoadAsync(CancellationToken.None), PowerSource.PluggedIn,
+            PersistentOverrideState.Empty, recoveringUnexpectedExit: true, recoveringManagedRun: false);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Null(Outcome(files, "pending"));
+        Assert.Contains(DeviceSubsystem.Performance, context.Runtime.GetStatus().UnconfirmedWrites);
+
+        context.Device.ReadStateFailure = null;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal("matched", Outcome(files, "pending"));
+        Assert.DoesNotContain(DeviceSubsystem.Performance, context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    // After a persistent disagreement resolves, neither Reapply nor an explicit
+    // thermal setting writes over a pair that still disagrees.
+    [Fact]
+    public async Task NativeHandback_StillDisagreeingChannelsAreNeverWrittenBlind()
+    {
+        WindowsNativeHandback record = PendingHandback(HandbackItem("performance", 2, performance: "Balanced"));
+        NativeHandbackStore store = HandbackStore(record, out WindowsNativeEpochFiles files);
+        var state = new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, ConfirmedBattery(80), null);
+        TestContext context = CreateContext(providerAvailable: true, initialize: false, nativeHandbackStore: store);
+        context.Device.Capabilities = HandbackCapabilities;
+        context.Device.ConfirmedState = state;
+        context.Device.ReadStateFailure = ThermalRejection(DeviceStateQuery.ThermalChannelAgreement, state);
+        context.Runtime.Initialize(await context.Store.LoadAsync(CancellationToken.None), PowerSource.PluggedIn,
+            PersistentOverrideState.Empty, recoveringUnexpectedExit: true, recoveringManagedRun: false);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ReconcileUnexpectedExitAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal("mismatched", Outcome(files, "pending"));
+
+        await context.Runtime.ReapplyChangedSettingsAsync(CancellationToken.None);
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(PerformancePreset.Performance, OverrideLifetime.UntilPowerSourceChange), CancellationToken.None);
+        await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange), CancellationToken.None);
+
+        Assert.True(context.Device.PerformanceSetCalls == 0 && context.Device.FanWrites.Count == 0 && context.Device.FanTargets.Count == 0,
+            "Blind thermal write: " + Describe(context));
+    }
+
+    // A persistent disagreement in the production composition resolves before
+    // any user, and deferred recovery then completes at activation.
+    [Fact]
+    public async Task NativeHandback_ProductionDisagreementResolvesAndRecoveryCompletes()
+    {
+        WindowsNativeHandback record = PendingHandback(HandbackItem("performance", 2, performance: "Balanced"));
+        WindowsNativeEpochFiles files = HandbackFiles(record);
+        var state = new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, ConfirmedBattery(80), LightingSettingsFactory.Off());
+        var (context, _) = await StartProductionHandbackAsync(StoreFor(files, Bound(record)), state,
+            arrange: context => context.Device.ReadStateFailure = ThermalRejection(DeviceStateQuery.ThermalChannelAgreement, state));
+        Assert.Null(Outcome(files, "pending"));
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal("mismatched", Outcome(files, "pending"));
+        Assert.True(HistoryHas(context, "The laptop's two thermal channels still report different states after the previous native service stopped while changing Performance. OpenBlade left them unchanged; thermal changes cannot be applied until both channels report the same state."));
+        await ActivateAndTickAsync(context);
+        AssertNoHardwareWrite(context);
+        Assert.True(HistoryContains(context, RecoveryCompleted), Describe(context));
     }
 }

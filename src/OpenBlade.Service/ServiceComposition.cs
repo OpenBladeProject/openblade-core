@@ -72,14 +72,17 @@ internal static class ServiceComposition
                 cpuTuningController: provider.GetRequiredService<CpuTuningController>(),
                 coolingPadDeviceProvider: new WindowsCoolingPadDeviceProvider(),
                 coolingPadStateDirectory: Path.Combine(machineDataDirectory, "cooling-pad"),
-                nativeHandbackStore: new NativeHandbackStore(
-                    () => OpenBlade.Deployment.WindowsNativeHandbackStorage.OpenExisting(machineDataDirectory),
-                    () => provider.GetRequiredService<ServiceMailboxHandoff>().NativeHandbacks));
+                nativeHandbackStore: CreateNativeHandbackStore(provider));
             return runtime;
         });
         services.AddSingleton<ServiceSessionPowerTransitionCoordinator>();
         return services;
     }
+
+    // The store reads this start's native custody binding through the same
+    // handoff that owns startup admission.
+    internal static NativeHandbackStore CreateNativeHandbackStore(IServiceProvider provider) =>
+        new(() => provider.GetRequiredService<ServiceMailboxHandoff>().NativeHandbacks);
 
     internal static IServiceCollection AddDiagnostics(this IServiceCollection services)
     {

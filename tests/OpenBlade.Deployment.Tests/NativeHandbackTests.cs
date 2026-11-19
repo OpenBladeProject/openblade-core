@@ -253,15 +253,16 @@ public sealed class NativeHandbackTests : IDisposable
     {
         internal required WindowsNativeEpochFiles Epochs { get; init; }
         internal required WindowsNativeEpochFiles Managed { get; init; }
-        internal required WindowsNativeEpochFiles Handback { get; init; }
         internal required ManagedMailboxCorrectionTests.SignedPair Packages { get; init; }
         internal required IDisposable Transfer { get; init; }
         internal required NativeEpochRecord Record { get; init; }
         internal required WindowsNativeHandbackWriter Writer { get; init; }
         internal string Attempts => Path.Combine(Epochs.Root, Record.Epoch, "attempts");
-        internal string RecordPath => Path.Combine(Handback.Root, Record.Epoch + ".json");
+        internal string RecordPath => Path.Combine(Epochs.Root, Record.Epoch, "handback.json");
+        internal string ResolutionPath => Path.Combine(Epochs.Root, Record.Epoch, "handback.resolved");
+        internal string Generation => Path.Combine(Epochs.Root, Record.Epoch);
         internal string Proofs => Path.Combine(Epochs.Root, Record.Epoch, "retirement-proofs");
-        public void Dispose() { Transfer.Dispose(); Packages.Dispose(); Handback.Dispose(); Managed.Dispose(); Epochs.Dispose(); }
+        public void Dispose() { Transfer.Dispose(); Packages.Dispose(); Managed.Dispose(); Epochs.Dispose(); }
     }
 
     private static string[] Snapshot(string directory) => [.. Directory.EnumerateFiles(directory).Order(StringComparer.Ordinal)
@@ -272,7 +273,6 @@ public sealed class NativeHandbackTests : IDisposable
     private static async Task<Crash> Crashed(int progress, string terminal = "Active")
     {
         var epochs = ManagedMailboxCorrectionTests.Bootstrap(); var managed = ManagedMailboxCorrectionTests.Handoff();
-        var handback = WindowsNativeEpochFiles.CreatePrivateFixture();
         var packages = await ManagedMailboxCorrectionTests.Packages(mutation: true);
         var run = new ManagedMailboxRun(new string('1', 32), "17:100", new string('2', 64), new string('3', 64), new string('4', 32));
         var transfer = ManagedMailboxCorrectionTests.SignedTransfer(managed, packages, run, '6');
@@ -292,11 +292,10 @@ public sealed class NativeHandbackTests : IDisposable
         {
             Epochs = epochs,
             Managed = managed,
-            Handback = handback,
             Packages = packages,
             Transfer = transfer,
             Record = record,
-            Writer = new WindowsNativeHandbackWriter(() => handback.RetainFixtureView(), null),
+            Writer = new WindowsNativeHandbackWriter(null),
         };
     }
 
@@ -351,13 +350,22 @@ public sealed class NativeHandbackTests : IDisposable
         byte[] terminalProof = File.ReadAllBytes(ManagedMailboxRecovery.PathFor(crash.Managed, transfer, "native-proof"));
         using (var native = ManagedMailboxNativeCustody.AcquireForTests(crash.Epochs.RetainFixtureView()))
         { native.RequirePreservedResolution(transfer, retired, terminalProof, "consumed-and-retired"); }
+        // Production startup admission hands the Service this binding and a view
+        // of the namespace that holds the record, after native custody ends.
+        using (var startup = ManagedMailboxStartup.Open(() => ManagedMailboxNativeCustody.AcquireForTests(crash.Epochs.RetainFixtureView()),
+            _ => null, _ => null, _ => null))
+        {
+            Assert.Equal(handback.Commitment, Assert.Single(startup.NativeHandbacks.Commitments, pair => pair.Key == crash.Record.Epoch).Value);
+            using var view = startup.NativeHandbacks.Open!();
+            Assert.Equal(record, ManagedMailboxRecovery.Read(view, WindowsNativeHandbackStorage.RecordPath(view, crash.Record.Epoch)));
+        }
     }
 
     // Every refusal leaves native attempt history byte-identical: a marker
     // written before refusal would stop the still-selected generation starting.
     [Theory]
     [InlineData("no-destination", "FirmwareOwnerUnresolved")]
-    [InlineData("destination-unavailable", "RetirementPublicationFailed")]
+    [InlineData("record-path-occupied", "RetirementPublicationFailed")]
     [InlineData("different-record", "RetirementPublicationFailed")]
     [InlineData("rollover", "FirmwareOwnerUnresolved")]
     [InlineData("second-undrained-launch", "MissingAttemptDrain")]
@@ -371,9 +379,9 @@ public sealed class NativeHandbackTests : IDisposable
         switch (fault)
         {
             case "no-destination": writer = null; break;
-            case "destination-unavailable": writer = new WindowsNativeHandbackWriter(() => throw new IOException("Destination unavailable."), null); break;
+            case "record-path-occupied": Directory.CreateDirectory(crash.RecordPath); break;
             case "different-record":
-                crash.Writer.Persist(new WindowsNativeHandback(crash.Record.Epoch, Item("performance", 3, performance: "Balanced"), null, null, null, null));
+                crash.Writer.Persist(crash.Epochs, new WindowsNativeHandback(crash.Record.Epoch, Item("performance", 3, performance: "Balanced"), null, null, null, null));
                 break;
             case "rollover":
                 File.WriteAllBytes(Path.Combine(crash.Epochs.Root, "owner", "thermal-mutation.journal.rollover"), "partial"u8.ToArray());
@@ -392,12 +400,12 @@ public sealed class NativeHandbackTests : IDisposable
                 break;
         }
         string[] attempts = Snapshot(crash.Attempts);
-        string[] records = Snapshot(crash.Handback.Root);
+        string[] records = Snapshot(crash.Generation);
         using var selection = await WindowsNativeInstalledSelection.OpenAsync(crash.Epochs.RetainFixtureView(), default);
         Assert.Equal(Enum.Parse<NativeRecoveryReason>(refusal), Assert.Throws<NativeRecoveryException>(() => selection.RetireRecoverableSelection(17, 1, writer)).Reason);
         Assert.NotEqual(NativeEpochPhase.Retired, selection.Record.Phase);
         Assert.Equal(attempts, Snapshot(crash.Attempts));
-        Assert.Equal(records, Snapshot(crash.Handback.Root));
+        Assert.Equal(records, Snapshot(crash.Generation));
         Assert.False(Directory.Exists(crash.Proofs));
     }
 
@@ -444,7 +452,7 @@ public sealed class NativeHandbackTests : IDisposable
         using (var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(crash.Epochs, exitedUnderCustody: crash.Record.Epoch))
         {
             expected = owner.Thermal.Handback!;
-            crash.Writer.Persist(expected);
+            crash.Writer.Persist(crash.Epochs, expected);
             if (completed is "proof" or "marker")
             {
                 byte[] proof = WindowsNativeAttemptHistory.RequireDrained(crash.Epochs, current, Path.Combine(crash.Epochs.Root, crash.Record.Epoch), crash.Packages.Native.Service, owner);
@@ -467,7 +475,7 @@ public sealed class NativeHandbackTests : IDisposable
     {
         using var crash = await Crashed(3);
         var pending = new NativeHandbackItem("aaaaaaaa-bbbb-cccc-dddd-000000000001", "performance", 3, "S-1-5-21-111-222-333-1002", "Balanced", null, null);
-        crash.Writer.Persist(new WindowsNativeHandback(crash.Record.Epoch, pending, null, null, null, null));
+        crash.Writer.Persist(crash.Epochs, new WindowsNativeHandback(crash.Record.Epoch, pending, null, null, null, null));
         byte[] before = File.ReadAllBytes(crash.RecordPath);
         using var selection = await WindowsNativeInstalledSelection.OpenAsync(crash.Epochs.RetainFixtureView(), default);
         selection.RetireRecoverableSelection(17, 1, crash.Writer);
@@ -479,7 +487,7 @@ public sealed class NativeHandbackTests : IDisposable
     public async Task ResolutionThatPredatesItsRecordIsNeverAdopted()
     {
         using var crash = await Crashed(2);
-        crash.Handback.Publish(Path.Combine(crash.Handback.Root, crash.Record.Epoch + ".resolved"), "planted"u8.ToArray());
+        crash.Epochs.Publish(crash.ResolutionPath, "planted"u8.ToArray());
         using var selection = await WindowsNativeInstalledSelection.OpenAsync(crash.Epochs.RetainFixtureView(), default);
         Assert.Equal(NativeRecoveryReason.RetirementPublicationFailed, Assert.Throws<NativeRecoveryException>(() => selection.RetireRecoverableSelection(17, 1, crash.Writer)).Reason);
         Assert.False(File.Exists(crash.RecordPath));
@@ -494,7 +502,26 @@ public sealed class NativeHandbackTests : IDisposable
         selection.RetireRecoverableSelection(17, 1);
         string proof = Assert.Single(Directory.GetFiles(crash.Proofs));
         Assert.StartsWith("OpenBlade.NativeRetirementProof.v3\n", File.ReadAllText(proof), StringComparison.Ordinal);
-        Assert.Empty(Directory.EnumerateFileSystemEntries(crash.Handback.Root));
+        Assert.False(File.Exists(crash.RecordPath));
+        Assert.False(File.Exists(crash.ResolutionPath));
+    }
+
+    // Setup writes a record only for the generation its history hands back. A
+    // record or resolution beside any other generation fences native custody.
+    [Theory]
+    [InlineData("handback.json")]
+    [InlineData("handback.resolved")]
+    public async Task RecordForAGenerationItsHistoryDoesNotHandBackFencesCustody(string name)
+    {
+        using var crash = await Crashed(5);
+        using (var selection = await WindowsNativeInstalledSelection.OpenAsync(crash.Epochs.RetainFixtureView(), default)) { selection.RetireRecoverableSelection(17, 1); }
+        using (var native = ManagedMailboxNativeCustody.AcquireForTests(crash.Epochs.RetainFixtureView()))
+        {
+            Assert.Empty(native.Handbacks);
+            Assert.Same(NativeHandbackBinding.None, native.HandbackBinding);
+        }
+        crash.Epochs.Publish(Path.Combine(crash.Generation, name), "planted"u8.ToArray());
+        Assert.Throws<IOException>(() => ManagedMailboxNativeCustody.AcquireForTests(crash.Epochs.RetainFixtureView()));
     }
 
     [Fact]
@@ -514,7 +541,6 @@ public sealed class NativeHandbackTests : IDisposable
     public async Task HandbackOfALaterGenerationKeepsTheEarlierGenerationProof()
     {
         using var epochs = ManagedMailboxCorrectionTests.Bootstrap(); using var managed = ManagedMailboxCorrectionTests.Handoff();
-        using var handbackFiles = WindowsNativeEpochFiles.CreatePrivateFixture();
         using var packages = await ManagedMailboxCorrectionTests.Packages(mutation: true);
         var storage = new ManagedMailboxStorage(() => false, () => throw new InvalidOperationException("No legacy root"), () => managed.RetainFixtureView());
         var run = new ManagedMailboxRun(new string('1', 32), "17:100", new string('2', 64), new string('3', 64), new string('4', 32));
@@ -554,7 +580,7 @@ public sealed class NativeHandbackTests : IDisposable
         }
         Thermal(epochs, [.. Performance(firstNonce, 5), .. Performance(secondNonce, 2, "aaaaaaaa-bbbb-cccc-dddd-000000000002")]);
         using (var selection = await WindowsNativeInstalledSelection.OpenAsync(epochs.RetainFixtureView(), default))
-        { selection.RetireRecoverableSelection(18, 2, new WindowsNativeHandbackWriter(() => handbackFiles.RetainFixtureView(), null)); }
+        { selection.RetireRecoverableSelection(18, 2, new WindowsNativeHandbackWriter(null)); }
         using (var owner = WindowsNativeTrustLifecycle.AcquireRetiredOwner(epochs))
         {
             Assert.Equal(second.Epoch, owner.Thermal.Handback!.Epoch);

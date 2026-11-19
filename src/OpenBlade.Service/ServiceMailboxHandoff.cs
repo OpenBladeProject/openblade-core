@@ -14,10 +14,11 @@ internal sealed class ServiceMailboxHandoff : IDisposable
     private Func<Task>? retainedOwnerClose;
     private Action? retainedGuardianProof;
     internal MailboxLifetime Lifetime { get; } = new();
-    // Fresh native custody computed these handback history commitments at
-    // this start; the Service adopts only a record bound to one of them.
-    internal IReadOnlyDictionary<string, string> NativeHandbacks =>
-        startup?.NativeHandbacks ?? new Dictionary<string, string>(StringComparer.Ordinal);
+    // Fresh native custody computed this handback binding at this start; the
+    // Service adopts only a record bound to it. Without an admission there is
+    // no evidence of "no handback", so this refuses instead of reading empty.
+    internal NativeHandbackBinding NativeHandbacks =>
+        startup?.NativeHandbacks ?? throw new InvalidOperationException("Native custody admission is not open.");
     public ServiceMailboxHandoff()
     {
         startup = ManagedMailboxStartup.Open(ManagedMailboxNativeCustody.Acquire,
@@ -32,6 +33,8 @@ internal sealed class ServiceMailboxHandoff : IDisposable
         run = startup.Run;
     }
     internal ServiceMailboxHandoff(IManagedMailboxRun run) { this.run = run; }
+    // An admission produced by ManagedMailboxStartup.Open over injected storage.
+    internal ServiceMailboxHandoff(ManagedMailboxStartup.Admission startup) { this.startup = startup; run = startup.Run; }
 
     internal Task CompleteAsync(IVerifiedBladeDeviceProvider provider, IServiceControlRuntime runtime, bool intentionalStop, CancellationToken token)
     {

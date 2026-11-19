@@ -11,6 +11,9 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
     internal bool IsPrivateFixture => files?.IsPrivateFixture == true;
     // Epoch to history commitment of each native handback, freshly derived.
     internal IReadOnlyDictionary<string, string> Handbacks { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
+    // The binding the Service adopts records with. Its view reopens the namespace
+    // custody authenticated; custody itself ends with startup admission.
+    internal NativeHandbackBinding HandbackBinding => files is null || Handbacks.Count == 0 ? NativeHandbackBinding.None : new(Handbacks, HandbackView(files));
     private FileStream? writer;
     private readonly List<IDisposable> held = [];
     private readonly Dictionary<string, Generation> generations = new(StringComparer.Ordinal);
@@ -123,6 +126,12 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
             ownerCommitment = owner.Commitment;
             // A crashed generation hands back only what this fresh read derives.
             if (owner.Thermal.Handback is { IsEmpty: false } handback) { Handbacks = new Dictionary<string, string>(StringComparer.Ordinal) { [handback.Epoch] = handback.Commitment }; }
+            // Setup writes a record only for the generation its history hands back.
+            foreach (var item in authenticated.Where(item => !Handbacks.ContainsKey(item.Record.Epoch)))
+            {
+                WindowsNativeEpochFiles.RequireAbsent(WindowsNativeHandbackStorage.RecordPath(files, item.Record.Epoch));
+                WindowsNativeEpochFiles.RequireAbsent(WindowsNativeHandbackStorage.ResolutionPath(files, item.Record.Epoch));
+            }
             // A complete owner chain is not proof that its native generations
             // survived. Never reset ordinal/predecessor against retained owners.
             if (firstPreparation && (!owner.IsKnownEmpty || authenticated.Count == 0
@@ -163,6 +172,14 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
                 ownerCommitment, NativeCanonical.Digest(System.Text.Encoding.ASCII.GetBytes(string.Join(",", commitments.Order(StringComparer.Ordinal)))));
         }
         catch { Dispose(); throw; }
+    }
+    private static Func<WindowsNativeEpochFiles> HandbackView(WindowsNativeEpochFiles source)
+    {
+#if OPENBLADE_NATIVE_PACKAGE_TESTS
+        if (source.IsPrivateFixture) { return source.RetainFixtureView; }
+#endif
+        string root = source.Root;
+        return () => WindowsNativeEpochFiles.OpenProtected(root);
     }
     internal void ReleaseWriter() { writer?.Dispose(); writer = null; }
     internal void RequireSafe()

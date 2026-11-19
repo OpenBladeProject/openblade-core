@@ -24,72 +24,49 @@ internal sealed record NativeHandbackClaim(string Epoch, string RecordCommitment
     internal bool LiveTemporaryChargeOnly => Keys is ["liveTemporaryCharge"];
 }
 
-// Setup writes immutable records into the protected native-handback
-// directory. This store reads them and keeps managed's write-ahead resolution
-// for each generation beside its record; records are never deleted. A record
-// with unresolved items is adopted only when this start's fresh native custody
-// computed the same history commitment for its generation. Unreadable or
-// unbound evidence, or a missing record, is a failure, never "resolved".
-internal sealed class NativeHandbackStore(
-    Func<WindowsNativeEpochFiles?> open,
-    Func<IReadOnlyDictionary<string, string>> authenticated)
+// Setup writes an immutable record into the handed-back generation's directory
+// of the native namespace. This store reads it and keeps managed's write-ahead
+// resolution beside it; records are never deleted. The binding comes from this
+// start's fresh native custody, which refuses a record for any generation it
+// does not hand back. An unreadable or missing record for a bound generation
+// is a failure, never "resolved". An unopened or refused custody admission is
+// not caught here: it is the custody failure it is, never "no handback".
+internal sealed class NativeHandbackStore(Func<NativeHandbackBinding> binding)
 {
+    internal const string Continuing = "continuing";
     internal static readonly string[] Keys = ["pending", "ownedFan", "liveTemporaryCharge", "abandonedPrepared"];
-    internal static readonly string[] Outcomes = ["matched", "mismatched", "reported"];
+    // continuing: a temporary full charge confirmed while its owner had not
+    // signed in. A later start confirms it again by a fresh read, because it
+    // may have ended in between; only then is it continued or reported.
+    internal static readonly string[] Outcomes = ["matched", "mismatched", "reported", Continuing];
     private const string ResolutionHeader = "OpenBlade.NativeHandbackResolution.v1";
     private const string Unresolved = "-";
-    private const int MaximumRecords = 64;
-    private const int MaximumEntries = 2 * MaximumRecords + 8;
     private readonly object gate = new();
 
     internal NativeHandbackAdoption Load()
     {
         lock (gate)
         {
+            NativeHandbackBinding bound = binding();
+            if (bound.Commitments.Count == 0) { return NativeHandbackAdoption.None; }
             try
             {
-                IReadOnlyDictionary<string, string> bound = authenticated();
-                using WindowsNativeEpochFiles? files = open();
-                if (files is null)
-                {
-                    return bound.Count == 0 ? NativeHandbackAdoption.None
-                        : throw new InvalidDataException("A native handback record is missing for its generation.");
-                }
-
-                string[] names = [.. Directory.EnumerateFileSystemEntries(files.Root).Take(MaximumEntries + 1)
-                    .Select(path => Path.GetFileName(path))];
-                if (names.Length > MaximumEntries) { throw new InvalidDataException("Native handback evidence exceeds its bound."); }
-                var records = new SortedSet<string>(StringComparer.Ordinal);
-                var resolutions = new HashSet<string>(StringComparer.Ordinal);
-                foreach (string name in names)
-                {
-                    // An interrupted protected publication leaves only its receipt.
-                    if (name.StartsWith("receipt-", StringComparison.Ordinal) && name.EndsWith(".tmp", StringComparison.Ordinal)) { continue; }
-                    if (Epoch(name, ".json") is { } record) { records.Add(record); }
-                    else if (Epoch(name, ".resolved") is { } resolved) { resolutions.Add(resolved); }
-                    else { throw new InvalidDataException("Unknown native handback evidence was preserved."); }
-                }
-                if (records.Count > MaximumRecords) { throw new InvalidDataException("Native handback records exceed their bound."); }
-                if (resolutions.Any(epoch => !records.Contains(epoch)) || bound.Keys.Any(epoch => !records.Contains(epoch)))
-                { throw new InvalidDataException("A native handback record is missing for its generation."); }
-
+                using WindowsNativeEpochFiles files = (bound.Open
+                    ?? throw new InvalidDataException("A native handback record is missing for its generation."))();
                 var obligations = new List<NativeHandbackObligation>();
-                foreach (string epoch in records)
+                foreach ((string epoch, string history) in bound.Commitments.OrderBy(pair => pair.Key, StringComparer.Ordinal))
                 {
-                    (WindowsNativeHandback handback, _, string commitment) = WindowsNativeHandback.Parse(Read(files, epoch + ".json"));
-                    if (handback.Epoch != epoch) { throw new InvalidDataException("Native handback record name differs from its generation."); }
-                    bool authenticatedHistory = bound.TryGetValue(epoch, out string? history);
-                    if (authenticatedHistory && history != handback.Commitment)
+                    (WindowsNativeHandback handback, string commitment) = ReadRecord(files, epoch);
+                    if (history != handback.Commitment)
                     { throw new InvalidDataException("A native handback record differs from its native history."); }
                     Dictionary<string, string> outcomes = ReadResolution(files, epoch, commitment);
-                    string[] present = [.. Items(handback).Select(i => i.Key)];
-                    if (Keys.Any(key => outcomes[key] != Unresolved && !present.Contains(key)))
+                    (string Key, NativeHandbackItem Item)[] items = [.. Items(handback)];
+                    if (Keys.Any(key => outcomes[key] != Unresolved && !items.Any(i => i.Key == key)))
                     { throw new InvalidDataException("A native handback resolution names an item its record lacks."); }
-                    NativeHandbackObligation[] unresolved = [.. Items(handback).Where(i => outcomes[i.Key] == Unresolved)
-                        .Select(i => new NativeHandbackObligation(epoch, commitment, i.Key, i.Item))];
-                    if (unresolved.Length > 0 && !authenticatedHistory)
-                    { throw new InvalidDataException("An unresolved native handback record is not bound to native history."); }
-                    obligations.AddRange(unresolved);
+                    if (items.Any(i => outcomes[i.Key] == Continuing && i.Item.Battery is not { Temporary: true }))
+                    { throw new InvalidDataException("A native handback resolution continues a change that is not a temporary charge."); }
+                    obligations.AddRange(items.Where(i => outcomes[i.Key] is Unresolved or Continuing)
+                        .Select(i => new NativeHandbackObligation(epoch, commitment, i.Key, i.Item)));
                 }
                 // Only one crashed generation can hand back; more is unknown history.
                 if (obligations.Select(o => o.Epoch).Distinct().Count() > 1)
@@ -104,22 +81,28 @@ internal sealed class NativeHandbackStore(
         }
     }
 
-    // Write-ahead: the caller acts only after this returns true.
+    // Write-ahead: the caller acts only after this returns true. An outcome is
+    // never replaced, except that a continuing charge reaches its final outcome.
     internal bool TryResolve(NativeHandbackClaim claim, string outcome)
     {
         if (!claim.Resolvable || !Outcomes.Contains(outcome)) { return false; }
         lock (gate)
         {
+            NativeHandbackBinding bound = binding();
+            if (!bound.Commitments.ContainsKey(claim.Epoch) || bound.Open is null) { return false; }
             try
             {
-                using WindowsNativeEpochFiles? files = open();
-                if (files is null) { return false; }
-                (WindowsNativeHandback handback, _, string commitment) = WindowsNativeHandback.Parse(Read(files, claim.Epoch + ".json"));
-                if (handback.Epoch != claim.Epoch || commitment != claim.RecordCommitment) { return false; }
+                using WindowsNativeEpochFiles files = bound.Open();
+                (WindowsNativeHandback handback, string commitment) = ReadRecord(files, claim.Epoch);
+                if (commitment != claim.RecordCommitment) { return false; }
                 string[] present = [.. Items(handback).Select(i => i.Key)];
                 if (claim.Keys.Count == 0 || claim.Keys.Any(key => !present.Contains(key))) { return false; }
                 Dictionary<string, string> outcomes = ReadResolution(files, claim.Epoch, commitment);
-                foreach (string key in claim.Keys.Where(key => outcomes[key] == Unresolved)) { outcomes[key] = outcome; }
+                foreach (string key in claim.Keys.Where(key => outcomes[key] == Unresolved
+                    || outcomes[key] == Continuing && outcome != Continuing))
+                {
+                    outcomes[key] = outcome;
+                }
                 files.Publish(WindowsNativeHandbackStorage.ResolutionPath(files, claim.Epoch),
                     NativeCanonical.Lines(ResolutionHeader, [claim.Epoch, commitment, .. Keys.Select(key => outcomes[key])]), replace: true);
                 return true;
@@ -140,14 +123,13 @@ internal sealed class NativeHandbackStore(
         if (handback.AbandonedPrepared is { } prepared) { yield return ("abandonedPrepared", prepared); }
     }
 
-    private static string? Epoch(string name, string suffix) =>
-        name.EndsWith(suffix, StringComparison.Ordinal) && NativeCanonical.IsHex(name[..^suffix.Length], 32)
-            ? name[..^suffix.Length] : null;
-
-    private static byte[] Read(WindowsNativeEpochFiles files, string name)
+    private static (WindowsNativeHandback Handback, string RecordCommitment) ReadRecord(WindowsNativeEpochFiles files, string epoch)
     {
-        using FileStream held = files.OpenFile(Path.Combine(files.Root, name));
-        return WindowsNativeEpochFiles.ReadBounded(held, WindowsNativeHandback.MaximumBytes);
+        byte[] bytes = ManagedMailboxRecovery.ReadOptional(files, WindowsNativeHandbackStorage.RecordPath(files, epoch))
+            ?? throw new InvalidDataException("A native handback record is missing for its generation.");
+        (WindowsNativeHandback handback, _, string commitment) = WindowsNativeHandback.Parse(bytes);
+        if (handback.Epoch != epoch) { throw new InvalidDataException("Native handback record differs from its generation."); }
+        return (handback, commitment);
     }
 
     // One outcome per key, or "-" while unresolved. A resolution written for a

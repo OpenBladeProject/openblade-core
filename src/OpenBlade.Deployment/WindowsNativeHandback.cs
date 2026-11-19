@@ -1,7 +1,5 @@
 using System.Globalization;
-using System.Security.AccessControl;
 using System.Security.Cryptography;
-using System.Security.Principal;
 using System.Text.Json;
 
 namespace OpenBlade.Deployment;
@@ -164,61 +162,39 @@ internal sealed record WindowsNativeHandback(string Epoch, NativeHandbackItem? P
     private static InvalidDataException Invalid() => new("Native handback record is unsupported or inconsistent.");
 }
 
-// Records and managed resolutions live in a protected child of the
-// installer-protected machine-data directory. Every access uses the exact-path,
-// non-reparse, trusted-ACL checks of WindowsNativeEpochFiles.
+// The record and managed's resolutions live in the handed-back generation's
+// own directory of the native epoch namespace, beside the history that binds
+// them, so record and binding share one lifetime. Uninstall-and-purge removes
+// OpenBlade's machine data but never the native namespace. Every access uses
+// the exact-path, non-reparse, trusted-ACL checks of WindowsNativeEpochFiles.
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 internal static class WindowsNativeHandbackStorage
 {
-    internal const string DirectoryName = "native-handback";
-    internal static string RecordPath(WindowsNativeEpochFiles files, string epoch) => Path.Combine(files.Root, epoch + ".json");
-    internal static string ResolutionPath(WindowsNativeEpochFiles files, string epoch) => Path.Combine(files.Root, epoch + ".resolved");
+    internal const string RecordName = "handback.json";
+    internal const string ResolutionName = "handback.resolved";
+    internal static string RecordPath(WindowsNativeEpochFiles files, string epoch) => Path.Combine(files.Root, epoch, RecordName);
+    internal static string ResolutionPath(WindowsNativeEpochFiles files, string epoch) => Path.Combine(files.Root, epoch, ResolutionName);
+}
 
-    // Setup only. The anchor must already be protected; a missing child is
-    // created with an explicit private DACL, as the managed handoff child is.
-    internal static WindowsNativeEpochFiles CreateOrOpen(string machineDataDirectory)
-    {
-        string anchor = Path.GetFullPath(machineDataDirectory);
-        string child = Path.Combine(anchor, DirectoryName);
-        using (WindowsNativeEpochFiles.OpenProtected(anchor))
-        {
-            if (!WindowsNativeEpochFiles.IsPresentDirectory(child))
-            {
-                var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
-                var security = new DirectorySecurity();
-                security.SetOwner(administrators);
-                security.SetAccessRuleProtection(true, false);
-                foreach (var sid in new[] { administrators, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) })
-                {
-                    security.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl,
-                        InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
-                }
-                new DirectoryInfo(child).Create(security);
-            }
-        }
-        return WindowsNativeEpochFiles.OpenProtected(child);
-    }
-
-    // Service. Absence is only explicit not-found evidence; a reparse point or
-    // an untrusted ACL refuses instead of reading as absent.
-    internal static WindowsNativeEpochFiles? OpenExisting(string machineDataDirectory)
-    {
-        string child = Path.Combine(Path.GetFullPath(machineDataDirectory), DirectoryName);
-        return WindowsNativeEpochFiles.IsPresentDirectory(child) ? WindowsNativeEpochFiles.OpenProtected(child) : null;
-    }
+// Fresh native custody's handback binding: the history commitment of each
+// handed-back generation, and a view of the namespace that holds its record.
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+internal sealed record NativeHandbackBinding(IReadOnlyDictionary<string, string> Commitments, Func<WindowsNativeEpochFiles>? Open)
+{
+    internal static readonly NativeHandbackBinding None = new(new Dictionary<string, string>(StringComparer.Ordinal), null);
 }
 
 // Setup-owned writer. The record is immutable: a rerun keeps a record with the
-// same history commitment and refuses a different one.
+// same epoch and history commitment and refuses a different one.
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-internal sealed class WindowsNativeHandbackWriter(Func<WindowsNativeEpochFiles> open, string? usersDirectory)
+internal sealed class WindowsNativeHandbackWriter(string? usersDirectory)
 {
     internal static WindowsNativeHandbackWriter ForMachineData(string machineDataDirectory) =>
-        new(() => WindowsNativeHandbackStorage.CreateOrOpen(machineDataDirectory), Path.Combine(Path.GetFullPath(machineDataDirectory), "users"));
+        new(Path.Combine(Path.GetFullPath(machineDataDirectory), "users"));
 
-    internal void Persist(WindowsNativeHandback handback)
+    // files is the native namespace whose epoch custody the caller holds.
+    internal void Persist(WindowsNativeEpochFiles files, WindowsNativeHandback handback)
     {
-        using var files = open();
         string path = WindowsNativeHandbackStorage.RecordPath(files, handback.Epoch);
         if (ManagedMailboxRecovery.ReadOptional(files, path) is { } existing)
         {

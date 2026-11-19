@@ -595,9 +595,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private readonly PendingWriteConfirmationTracker pendingWriteConfirmations = new();
     private readonly NativeHandbackStore? nativeHandbackStore;
     private NativeHandbackAdoption? nativeHandbackAdoption;
-    // The user who started a confirmed native temporary full charge, until
-    // that user's configuration or another user's becomes active.
-    private string? nativeTemporaryChargeOwner;
+    // A confirmed native temporary full charge awaiting the user who started
+    // it. Its resolution stays "continuing" until a user's configuration is
+    // active; a Service restart before that sign-in confirms it again by a
+    // fresh read and then still continues it, or reports that it ended.
+    private NativeHandbackClaim? nativeTemporaryCharge;
+    // Subsystems whose handback confirmation saw disagreeing thermal channels
+    // once; a second consecutive observation resolves them.
+    private readonly HashSet<DeviceSubsystem> nativeHandbackDisagreements = [];
     private volatile PendingTransitionContinuation? pendingTransitionContinuation;
     private volatile PendingResumePerformanceDrift? pendingResumePerformanceDrift;
     private long resumePowerSourceTransitionGeneration = -1;
@@ -18142,6 +18147,23 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 : null;
             PendingConfirmationResult result = pending.Match(
                 subsystem, confirmed, powerSource, Automation, managementState, thermalChannelsDisagree);
+            // Thermal channels that still disagree resolve a handback only when a
+            // later fresh observation reports the same disagreement: each read
+            // retries once, and the second observation rules out a transition
+            // still in progress. Any other result restarts the count.
+            bool disagreement = handback is not null && thermalChannelsDisagree
+                && result == PendingConfirmationResult.Mismatch
+                && (subsystem == DeviceSubsystem.Performance ? confirmed.Performance is null
+                    : subsystem == DeviceSubsystem.Fans && confirmed.Fans is null);
+            if (!disagreement)
+            {
+                nativeHandbackDisagreements.Remove(subsystem);
+            }
+            else if (nativeHandbackDisagreements.Add(subsystem))
+            {
+                continue;
+            }
+
             if (result == PendingConfirmationResult.Unavailable)
             {
                 continue;
@@ -18156,7 +18178,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     && result == PendingConfirmationResult.Mismatch
                     && confirmed.Battery is { TemporaryFullCharge: false };
                 bool matched = result == PendingConfirmationResult.Match;
-                if (!nativeHandbackStore!.TryResolve(handback, matched ? "matched" : ended ? "reported" : "mismatched"))
+                string outcome = matched
+                    ? handback.EnablesTemporaryFullCharge ? NativeHandbackStore.Continuing : "matched"
+                    : ended ? "reported" : "mismatched";
+                if (!nativeHandbackStore!.TryResolve(handback, outcome))
                 {
                     continue;
                 }
@@ -18165,10 +18190,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     ? (ControlOperationStatus.Stored, $"Confirmed the {subsystem} change the previous native service was making.")
                     : ended
                         ? (ControlOperationStatus.Stored, "Temporary full charge started by the previous native service has ended.")
-                        : (ControlOperationStatus.Blocked, $"The {subsystem} state differs from the change the previous native service was making. OpenBlade left it unchanged; reapply your setting to change it.");
+                        : disagreement
+                            ? (ControlOperationStatus.Blocked, $"The laptop's two thermal channels still report different states after the previous native service stopped while changing {subsystem}. OpenBlade left them unchanged; thermal changes cannot be applied until both channels report the same state.")
+                            : (ControlOperationStatus.Blocked, $"The {subsystem} state differs from the change the previous native service was making. OpenBlade left it unchanged; reapply your setting to change it.");
                 if (matched && handback.EnablesTemporaryFullCharge)
                 {
-                    nativeTemporaryChargeOwner = handback.UserSid;
+                    nativeTemporaryCharge = handback;
                     report = InheritNativeTemporaryFullChargeCore()
                         ?? (ControlOperationStatus.Stored, "Temporary full charge started by the previous native service is still active. OpenBlade continues it for the user who started it when they sign in.");
                 }
@@ -18228,20 +18255,25 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     // no user's configuration is active.
     private (ControlOperationStatus Status, string Message)? InheritNativeTemporaryFullChargeCore()
     {
-        if (nativeTemporaryChargeOwner is not { } owner
+        if (nativeTemporaryCharge is not { } charge
             || Volatile.Read(ref activeUserSid) is not { } active)
         {
             return null;
         }
 
-        nativeTemporaryChargeOwner = null;
-        if (!string.Equals(active, owner, StringComparison.OrdinalIgnoreCase))
+        nativeTemporaryCharge = null;
+        // Changing desired state is not a firmware write, so this decision is
+        // not write-ahead. If its outcome cannot be saved, the next start makes
+        // the same decision for the same evidence.
+        if (!string.Equals(active, charge.UserSid, StringComparison.OrdinalIgnoreCase))
         {
+            nativeHandbackStore?.TryResolve(charge, "reported");
             return (ControlOperationStatus.Stored,
                 "Temporary full charge started by the previous native service is still active for another user.");
         }
 
         Automation.EnableTemporaryFullCharge();
+        nativeHandbackStore?.TryResolve(charge, Automation.DesiredBattery.TemporaryFullCharge ? "matched" : "reported");
         return Automation.DesiredBattery.TemporaryFullCharge
             ? (ControlOperationStatus.Stored,
                 "Temporary full charge started by the previous native service continues for the signed-in user.")
