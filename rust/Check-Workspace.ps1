@@ -54,10 +54,7 @@ try {
         'serde', 'serde_core', 'serde_derive', 'serde_json', 'itoa', 'memchr', 'zmij',
         'proc-macro2', 'quote', 'syn', 'unicode-ident', 'bytes', 'errno', 'libc',
         'mio', 'pin-project-lite', 'signal-hook-registry', 'socket2', 'tokio',
-        'tokio-macros', 'wasi', 'windows-link', 'windows-sys',
-        # sha2 closure for openblade-domain's optional thermal-history grammar.
-        'block-buffer', 'cfg-if', 'cpufeatures', 'crypto-common', 'digest', 'generic-array',
-        'typenum', 'version_check'
+        'tokio-macros', 'wasi', 'windows-link', 'windows-sys'
     )
     # Sorted as Sort-Object orders them. The two Wdk_ features plus Security_Authorization,
     # System_IO, System_JobObjects and UI_Shell back the battery report provider (27e6f725).
@@ -93,14 +90,10 @@ try {
     if ($localPackages.Count -ne $expectedDependencies.Count) {
         throw 'Only the seven reviewed local packages are admitted.'
     }
+    # Local packages, including their optional roots and features, are checked before
+    # external names: an enabled thermal-history feature must fail as a feature error.
     foreach ($package in $metadata.packages) {
-        if ($null -ne $package.source) {
-            if ($package.name -notin $allowedExternal -or
-                $package.source -cne 'registry+https://github.com/rust-lang/crates.io-index') {
-                throw "Unreviewed external package: $($package.name)"
-            }
-            continue
-        }
+        if ($null -ne $package.source) { continue }
         if (-not $expectedDependencies.ContainsKey($package.name) -or
             $package.id -notin $metadata.workspace_members) {
             throw "Unreviewed workspace package: $($package.name)"
@@ -280,6 +273,15 @@ try {
         } else { '' }
         if ((@($tests | Sort-Object) -join ',') -cne $expectedTestNames) {
             throw "Reviewed integration tests are missing: $($package.name)"
+        }
+    }
+    # Default-feature metadata lists only activated packages. The feature checks above
+    # keep thermal-history off, so its sha2 closure never reaches this name check.
+    foreach ($package in $metadata.packages) {
+        if ($null -eq $package.source) { continue }
+        if ($package.name -notin $allowedExternal -or
+            $package.source -cne 'registry+https://github.com/rust-lang/crates.io-index') {
+            throw "Unreviewed external package: $($package.name)"
         }
     }
     Write-Output 'Workspace boundaries passed: four local libraries with inward production edges, isolated status CLI, Windows adapter with inward reporter and domain edges, reviewed parsing/runtime roots, compiler policies and MSRV.'
