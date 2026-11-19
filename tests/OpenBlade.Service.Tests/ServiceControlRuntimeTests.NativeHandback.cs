@@ -884,11 +884,14 @@ public sealed partial class ServiceControlRuntimeTests
     }
     // A temporary charge confirmed before sign-in is an active charge, not a
     // request. If it ended before a restart, either slot reports it ended,
-    // with no external-change latch and no battery write.
+    // with no external-change latch and no battery write. One still active
+    // with a different limit has not ended: it is a mismatch with the latch.
     [Theory]
-    [InlineData("live")]
-    [InlineData("pending-enable")]
-    public async Task NativeHandback_ContinuingChargeThatEndedBeforeARestartIsReportedEnded(string kind)
+    [InlineData("live", 80, false, "reported")]
+    [InlineData("pending-enable", 80, false, "reported")]
+    [InlineData("live", 60, true, "mismatched")]
+    [InlineData("pending-enable", 60, true, "mismatched")]
+    public async Task NativeHandback_ContinuingChargeAtARestartIsReportedOnlyWhenEnded(string kind, int limit, bool temporary, string expected)
     {
         WindowsNativeHandback record = kind == "live"
             ? new(HandbackEpoch, null, null, HandbackItem("temporaryCharge", 72, battery: new(80, true, true)), null, null)
@@ -901,18 +904,43 @@ public sealed partial class ServiceControlRuntimeTests
 
         File.Delete(Path.Combine(directory, "service-running.json"));
         var (context, _) = await StartProductionHandbackAsync(StoreFor(files, Bound(record)),
-            active with { Battery = new ConfirmedBatteryState(true, 80, false) });
+            active with { Battery = new ConfirmedBatteryState(true, limit, temporary) });
 
-        Assert.Equal("reported", Outcome(files, key));
-        Assert.DoesNotContain(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
-        Assert.True(HistoryHas(context, "Temporary full charge started by the previous native service has ended."), Describe(context));
+        Assert.Equal(expected, Outcome(files, key));
+        bool ended = expected == "reported";
+        Assert.Equal(!ended, context.Runtime.GetStatus().ExternalChanges.Contains(DeviceSubsystem.Battery));
+        Assert.Equal(ended, HistoryHas(context, "Temporary full charge started by the previous native service has ended."));
         await ActivateAndTickAsync(context);
-        Assert.Equal("reported", Outcome(files, key));
-        Assert.DoesNotContain(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
-        Assert.False(context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
-        Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        Assert.Equal(expected, Outcome(files, key));
+        if (ended)
+        {
+            Assert.DoesNotContain(DeviceSubsystem.Battery, context.Runtime.GetStatus().ExternalChanges);
+            Assert.False(context.Runtime.GetStatus().DesiredState.Battery.TemporaryFullCharge);
+            Assert.Empty(context.Runtime.GetStatus().UnconfirmedWrites);
+        }
         Assert.Equal(0, context.Device.BatterySetCalls);
         AssertNoHardwareWrite(context);
+    }
+
+    // A pending temporary-charge cancel beside the live charge it was ending is
+    // not an active charge alone: whatever the fresh read shows, both items
+    // resolve together, and only a read matching the cancel is "matched".
+    [Theory]
+    [InlineData(60, false, "mismatched")]
+    [InlineData(80, true, "mismatched")]
+    [InlineData(80, false, "matched")]
+    public async Task NativeHandback_PendingCancelBesideALiveChargeResolvesTogether(int limit, bool temporary, string expected)
+    {
+        WindowsNativeHandback record = new(HandbackEpoch,
+            HandbackItem("temporaryCharge", 71, battery: new(80, true, false)), null,
+            HandbackItem("temporaryCharge", 72, battery: new(80, true, true)), null, null);
+        NativeHandbackStore store = HandbackStore(record, out WindowsNativeEpochFiles files);
+        TestContext context = await StartWithHandbackAsync(store,
+            new ConfirmedDeviceState(PerformancePreset.Balanced, FanMode.Automatic, new ConfirmedBatteryState(true, limit, temporary), null));
+        Assert.Equal(expected, Outcome(files, "pending"));
+        Assert.Equal(expected, Outcome(files, "liveTemporaryCharge"));
+        Assert.Equal(expected == "mismatched", context.Runtime.GetStatus().ExternalChanges.Contains(DeviceSubsystem.Battery));
+        Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 
     // Any result between two disagreeing observations restarts the count, so
@@ -966,8 +994,9 @@ public sealed partial class ServiceControlRuntimeTests
 
     // The production registration: AddServiceControlRuntime registers the
     // store over the handoff binding, and the runtime factory first requests
-    // that registered store. The probe stops at that request, so no backend
-    // is constructed.
+    // that registered store. The probe stops at that first request and does
+    // not run the rest of the factory; the runtime constructor requires the
+    // store, so the factory cannot omit it.
     [Fact]
     public void NativeHandback_ServiceControlRuntimeRegistrationUsesTheRegisteredStore()
     {
@@ -1019,6 +1048,37 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Same(binding, handoff.NativeHandbacks);
         handoff.Lifetime.Reserve().Dispose();
         Assert.Throws<IOException>(() => handoff.Open());
+        Assert.Equal(1, opens);
+    }
+
+    // Admission runs before the transport lifetime is admitted: while custody
+    // is being acquired no reservation succeeds, and a refused admission
+    // leaves the lifetime refusing, exposes no binding and is never retried.
+    [Fact]
+    public void NativeHandback_CustodyAdmissionPrecedesTheTransportLifetime()
+    {
+        WindowsNativeHandback record = PendingHandback(HandbackItem("performance", 2, performance: "Balanced"));
+        WindowsNativeEpochFiles files = HandbackFiles(record);
+        var admission = new ManagedMailboxStartup.Admission(new NoMailboxRun(), null, null,
+            new NativeHandbackBinding(Bound(record), files.ReopenLater()));
+        ServiceMailboxHandoff? admitted = null;
+        bool reservedDuringAdmission = true;
+        admitted = new ServiceMailboxHandoff(() =>
+        {
+            try { admitted!.Lifetime.Reserve().Dispose(); }
+            catch (IOException) { reservedDuringAdmission = false; }
+            return admission;
+        });
+        admitted.Open();
+        Assert.False(reservedDuringAdmission);
+        admitted.Lifetime.Reserve().Dispose();
+
+        int opens = 0;
+        var refused = new ServiceMailboxHandoff(() => { opens++; throw new IOException("custody refused"); });
+        Assert.Throws<IOException>(() => new ServiceMailboxCustodyStartup(refused));
+        Assert.Throws<IOException>(() => refused.Lifetime.Reserve());
+        Assert.Throws<InvalidOperationException>(() => refused.NativeHandbacks);
+        Assert.Throws<IOException>(() => refused.Open());
         Assert.Equal(1, opens);
     }
 }

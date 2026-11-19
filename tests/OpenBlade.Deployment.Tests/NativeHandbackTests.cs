@@ -215,18 +215,28 @@ public sealed class NativeHandbackTests : IDisposable
     // start and compares it with the record. A change to classification, to
     // the commitment lines or to the record encoding would therefore block
     // every handed-back machine, so the format is pinned by a checked-in vector.
-    [Fact]
-    public void HandbackFormatMatchesItsKnownAnswerVector()
+    // fromJournal classifies native history; fromRecord covers the remaining
+    // slots, a battery policy whose two flags differ and a staged journal.
+    [Theory]
+    [InlineData("fromJournal")]
+    [InlineData("fromRecord")]
+    public void HandbackFormatMatchesItsKnownAnswerVector(string name)
     {
-        JsonElement v = Vector("native-handback-record-v1.json");
-        string[] owner = [.. v.GetProperty("ownerReference").EnumerateArray().Select(e => e.GetString()!)];
-        var reference = new WindowsNativeTrustLifecycle.OwnerReference(owner[0], owner[1], owner[2], owner[3], owner[4], owner[5]);
-        Assert.Equal(Original, reference);
-        using var files = ManagedMailboxCorrectionTests.Bootstrap();
-        Thermal(files, Bytes(string.Join('\n', v.GetProperty("journal").EnumerateArray().Select(e => e.GetString())) + "\n"));
-        var handback = WindowsNativeThermalHistory.Read(files, [reference], reference).Handback!;
+        JsonElement v = Vector("native-handback-record-v1.json").GetProperty(name);
         NativeHandbackEvidence[] evidence = [.. v.GetProperty("pendingOverrides").EnumerateArray()
             .Select(e => new NativeHandbackEvidence(e.GetProperty("userSid").GetString()!, e.GetProperty("sha256").GetString()!))];
+        var (parsed, overrides, commitment) = WindowsNativeHandback.Parse(Bytes(v.GetProperty("record").GetString()!));
+        WindowsNativeHandback handback = parsed;
+        if (v.TryGetProperty("journal", out JsonElement journal))
+        {
+            string[] owner = [.. v.GetProperty("ownerReference").EnumerateArray().Select(e => e.GetString()!)];
+            var reference = new WindowsNativeTrustLifecycle.OwnerReference(owner[0], owner[1], owner[2], owner[3], owner[4], owner[5]);
+            Assert.Equal(Original, reference);
+            using var files = ManagedMailboxCorrectionTests.Bootstrap();
+            Thermal(files, Bytes(string.Join('\n', journal.EnumerateArray().Select(e => e.GetString())) + "\n"));
+            handback = WindowsNativeThermalHistory.Read(files, [reference], reference).Handback!;
+            Assert.Equal(handback, parsed);
+        }
 
         // The literal commitment lines and their digests, independent of the code under test.
         byte[] historyLines = Bytes(v.GetProperty("historyLines").GetString()!);
@@ -239,8 +249,6 @@ public sealed class NativeHandbackTests : IDisposable
         byte[] record = handback.Serialize(evidence);
         Assert.Equal(v.GetProperty("record").GetString(), Encoding.UTF8.GetString(record));
         Assert.Equal(v.GetProperty("recordSha256").GetString(), Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(record)));
-        var (parsed, overrides, commitment) = WindowsNativeHandback.Parse(Bytes(v.GetProperty("record").GetString()!));
-        Assert.Equal(handback, parsed);
         Assert.Equal(evidence, overrides);
         Assert.Equal(v.GetProperty("commitment").GetString(), commitment);
     }
@@ -279,6 +287,37 @@ public sealed class NativeHandbackTests : IDisposable
         var shared = Descriptor(usersRead: true);
         Assert.False(WindowsNativeEpochFiles.AcceptsPrivateCustody(shared));
         WindowsNativeEpochFiles.RequireProtectedEntry(shared);
+    }
+
+    // Product trust for an ordinary entry: a trusted owner and no untrusted
+    // write access. Accepted: the private recipe, the namespace's inherited
+    // Users read, a TrustedInstaller owner, a deny entry and an inherit-only
+    // untrusted write. Refused: an untrusted owner, no DACL, and each
+    // unprivileged write right.
+    [Theory]
+    [InlineData("O:BAG:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)", null)]
+    [InlineData("O:BAG:BAD:(A;ID;FA;;;SY)(A;ID;FA;;;BA)(A;ID;0x1200a9;;;BU)", null)]
+    [InlineData("O:S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464G:BAD:P(A;;FA;;;SY)(A;;0x1200a9;;;BU)", null)]
+    [InlineData("O:BAG:BAD:P(D;;FA;;;BU)(A;;FA;;;SY)", null)]
+    [InlineData("O:BAG:BAD:P(A;OICIIO;FA;;;BU)(A;;FA;;;SY)", null)]
+    [InlineData("O:BUG:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)", "Native epoch owner or DACL is untrusted.")]
+    [InlineData("O:BAG:BA", "Native epoch owner or DACL is untrusted.")]
+    [InlineData("O:BAG:BAD:P(A;;FA;;;SY)(A;;0x1301bf;;;BU)", "Native epoch permits unprivileged mutation.")]
+    [InlineData("O:BAG:BAD:P(A;;FA;;;SY)(A;;0x2;;;BU)", "Native epoch permits unprivileged mutation.")]
+    [InlineData("O:BAG:BAD:P(A;;FA;;;SY)(A;;0x4;;;AU)", "Native epoch permits unprivileged mutation.")]
+    [InlineData("O:BAG:BAD:P(A;;FA;;;SY)(A;;0x10;;;WD)", "Native epoch permits unprivileged mutation.")]
+    [InlineData("O:BAG:BAD:P(A;;FA;;;SY)(A;;0x40;;;BU)", "Native epoch permits unprivileged mutation.")]
+    [InlineData("O:BAG:BAD:P(A;;FA;;;SY)(A;;0x100;;;BU)", "Native epoch permits unprivileged mutation.")]
+    [InlineData("O:BAG:BAD:P(A;;FA;;;SY)(A;;0x10000;;;BU)", "Native epoch permits unprivileged mutation.")]
+    [InlineData("O:BAG:BAD:P(A;;FA;;;SY)(A;;0x40000;;;BU)", "Native epoch permits unprivileged mutation.")]
+    [InlineData("O:BAG:BAD:P(A;;FA;;;SY)(A;;0x80000;;;BU)", "Native epoch permits unprivileged mutation.")]
+    [InlineData("O:BAG:BAD:P(A;;FA;;;SY)(A;;GW;;;BU)", "Native epoch permits unprivileged mutation.")]
+    [InlineData("O:BAG:BAD:P(A;;FA;;;SY)(A;;GA;;;BU)", "Native epoch permits unprivileged mutation.")]
+    public void ProductTrustOrdinaryEntryDescriptors(string sddl, string? refusal)
+    {
+        var descriptor = new System.Security.AccessControl.RawSecurityDescriptor(sddl);
+        if (refusal is null) { WindowsNativeEpochFiles.RequireProtectedEntry(descriptor); return; }
+        Assert.Equal(refusal, Assert.Throws<UnauthorizedAccessException>(() => WindowsNativeEpochFiles.RequireProtectedEntry(descriptor)).Message);
     }
 
     private static System.Security.AccessControl.RawSecurityDescriptor DescriptorOf(string path) =>
