@@ -19,7 +19,7 @@ use crate::session_native::power_admission::PowerContext;
 use openblade_platform_windows::color_profile::{
     MonitorKeyError, ProfileRead, ProfileReadError, profiles_match,
     write::{
-        ColorFailure, ColorOutcome, ColorProfileNative, ColorRefusal, Fault, Readback,
+        ColorFailure, ColorOutcome, ColorProfileNative, ColorRefusal, Fault, Readback, Unverified,
         set_internal_color_profile,
     },
 };
@@ -49,6 +49,10 @@ pub(super) const UNCONFIRMED: &str = "Windows did not confirm the requested colo
 /// advanced-color state, so managed `Restore` was not attempted and the
 /// field stays unresolved like [`PAUSED`].
 pub(super) const UNVERIFIED: &str = "Windows applied the color profile, but OpenBlade could not confirm it on the internal display. Color-profile changes are paused until a display read confirms it.";
+/// Native-only: the readback found another panel. The fence texts say
+/// "before ... submitted", which is false once a setter ran.
+pub(super) const PANEL_CHANGED_AFTER: &str =
+    "The internal display changed during the color-profile change.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct SetColorProfile {
@@ -79,9 +83,10 @@ impl<H: ManualHost<Native: ColorProfileNative>> ManualRequest<H> for SetColorPro
             Err(ColorFailure::Uncertain { fault, restoration }) => {
                 Attempt::Done(Status::Indeterminate, uncertain(fault, restoration))
             }
-            Err(ColorFailure::Unverified(_)) => {
-                Attempt::Done(Status::Indeterminate, Cow::Borrowed(UNVERIFIED))
-            }
+            Err(ColorFailure::Unverified(reason)) => Attempt::Done(
+                Status::Indeterminate,
+                Cow::Owned(format!("{UNVERIFIED} {}", unverified_text(reason))),
+            ),
         }
     }
 
@@ -153,6 +158,18 @@ fn readback_text(readback: Readback) -> &'static str {
     match readback {
         Readback::Read(error) => read_text(error),
         Readback::Mismatch => UNCONFIRMED,
+    }
+}
+
+/// Why the readback could not re-identify the panel. The reply text is the
+/// only record of it, so each reason keeps its own clause.
+fn unverified_text(reason: Unverified) -> Cow<'static, str> {
+    match reason {
+        Unverified::Topology(error) => unreadable(error),
+        Unverified::NoInternalDisplay => Cow::Borrowed(NO_INTERNAL),
+        Unverified::MultipleInternalDisplays => Cow::Borrowed(MULTIPLE),
+        Unverified::PanelChanged => Cow::Borrowed(PANEL_CHANGED_AFTER),
+        Unverified::HdrUnknown => Cow::Borrowed(HDR_UNKNOWN),
     }
 }
 

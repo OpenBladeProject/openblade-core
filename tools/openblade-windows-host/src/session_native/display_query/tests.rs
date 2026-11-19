@@ -2041,7 +2041,10 @@ mod color_writes {
             (
                 "color-write-indeterminate-unverified",
                 Status::Indeterminate,
-                text(color_write::UNVERIFIED),
+                Some(Cow::Owned(format!(
+                    "{} {MULTIPLE}",
+                    color_write::UNVERIFIED
+                ))),
             ),
             (
                 "color-write-indeterminate-stale",

@@ -643,9 +643,12 @@ fn readback_that_does_not_confirm_is_uncertain_and_restored() {
 #[test]
 fn readback_that_does_not_reidentify_the_panel_is_indeterminate_without_restoration() {
     // Another panel, then no internal panel: neither is restored against.
-    for readback in [
-        Scenario::Available.topology_with_hdr(false, RefreshTiming::default(), true),
-        Scenario::Unavailable.topology(false),
+    for (readback, reason) in [
+        (
+            Scenario::Available.topology_with_hdr(false, RefreshTiming::default(), true),
+            PANEL_CHANGED_AFTER,
+        ),
+        (Scenario::Unavailable.topology(false), NO_INTERNAL),
     ] {
         let rig = Rig::new(Memory::default());
         let mut host = admitted(1);
@@ -653,7 +656,11 @@ fn readback_that_does_not_reidentify_the_panel_is_indeterminate_without_restorat
         host.panel.topology_script.push_back(observed);
         host.panel.topology_script.push_back(readback);
         let outcome = rig.set(&mut host, 1, SRGB).unwrap();
-        assert_eq!(result(&outcome), (Status::Indeterminate, Some(UNVERIFIED)));
+        let expected = format!("{UNVERIFIED} {reason}");
+        assert_eq!(
+            result(&outcome),
+            (Status::Indeterminate, Some(expected.as_str()))
+        );
         assert_eq!(
             host.panel.writes,
             ["add:sRGB_CTR.icm", "scope:true", "default:sRGB_CTR.icm"]
@@ -863,6 +870,30 @@ fn refusals_map_to_managed_statuses_and_texts() {
         (ColorRefusal::Cancelled, Status::Blocked, CANCELED),
     ] {
         assert_eq!(attempt(reason), (status, text.to_owned()));
+    }
+}
+
+/// Every unverified readback keeps its reason after the plain sentence.
+#[test]
+fn unverified_readbacks_name_their_reason() {
+    for (reason, text) in [
+        (
+            Unverified::Topology(DisplayReadError::TopologyChanging),
+            CHANGING,
+        ),
+        (
+            Unverified::Topology(DisplayReadError::Native {
+                operation: Operation::ActivePaths,
+                status: 31,
+            }),
+            "Windows could not read the active display configuration: Win32 error 31.",
+        ),
+        (Unverified::NoInternalDisplay, NO_INTERNAL),
+        (Unverified::MultipleInternalDisplays, MULTIPLE),
+        (Unverified::PanelChanged, PANEL_CHANGED_AFTER),
+        (Unverified::HdrUnknown, HDR_UNKNOWN),
+    ] {
+        assert_eq!(unverified_text(reason), text);
     }
 }
 
