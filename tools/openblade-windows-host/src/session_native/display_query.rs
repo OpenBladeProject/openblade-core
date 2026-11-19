@@ -44,8 +44,11 @@ use refresh_write::SetRefreshRate;
 
 const MAX_FRAME: i32 = 65_536;
 const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
+/// Managed `SessionDisplayPipeServer.QueryDispatchTimeout`
+/// (SessionDisplayPipeServer.cs:9).
 const DISPATCH_TIMEOUT: Duration = Duration::from_secs(5);
-/// Managed `SessionDisplayRequestDispatcher.MutationDispatchTimeout`.
+/// Managed `SessionDisplayPipeServer.MutationDispatchTimeout`
+/// (SessionDisplayPipeServer.cs:10).
 #[cfg(openblade_display_write)]
 const MUTATION_DISPATCH_TIMEOUT: Duration = Duration::from_secs(30);
 const ORIGIN_POLL: Duration = Duration::from_millis(250);
@@ -106,8 +109,9 @@ enum Operation {
     SetRefreshRate(SetRefreshRate),
 }
 impl Operation {
-    /// Managed `SessionDisplayRequestDispatcher`: a query has the ordinary
-    /// dispatch deadline and every mutation `MutationDispatchTimeout`.
+    /// Managed `SessionDisplayPipeServer` (SessionDisplayPipeServer.cs:9-10):
+    /// `QueryDispatchTimeout` for a query, `MutationDispatchTimeout` for
+    /// every mutation.
     fn deadline(&self) -> Duration {
         match self {
             Self::Query => DISPATCH_TIMEOUT,

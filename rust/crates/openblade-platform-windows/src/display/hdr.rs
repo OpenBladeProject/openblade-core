@@ -38,6 +38,10 @@ impl HdrTarget {
     fn same_as(&self, display: &ActiveInternalDisplay) -> bool {
         self.0.same_as(display)
     }
+
+    fn target(&self) -> EndpointId {
+        self.0.target()
+    }
 }
 
 /// Current-user Windows boundary for one HDR request.
@@ -134,7 +138,7 @@ pub fn set_internal_hdr<N: HdrNative + ?Sized>(
 
     // From here Windows may have applied the change. Caller cancellation no
     // longer applies; the readback always runs.
-    let status = native.submit(admitted.0.target(), enabled);
+    let status = native.submit(admitted.target(), enabled);
     let confirmed = matches!(
         native.topology(),
         Ok(InternalDisplayTopology::Single(after))

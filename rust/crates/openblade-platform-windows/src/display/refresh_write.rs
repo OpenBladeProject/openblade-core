@@ -56,10 +56,6 @@ impl RefreshObservation {
         })?;
         Ok(Self { reading, evidence })
     }
-
-    pub fn reading(&self) -> &InternalDisplayRefresh {
-        &self.reading
-    }
 }
 
 /// A complete SetDisplayConfig request built from one observation's frame.

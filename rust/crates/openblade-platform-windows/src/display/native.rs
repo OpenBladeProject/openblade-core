@@ -140,11 +140,28 @@ fn hdr_setter_packet_and_linkage() {
     }
 }
 
-// The one production SetDisplayConfig call site (SDC_VALIDATE and the single
-// SDC_APPLY), reachable only through `refresh_write::WindowsRefreshNative`.
-// Unit-test builds exclude it so no test can validate or apply a configuration.
+// The one production SetDisplayConfig call site, reachable only through
+// `refresh_write::WindowsRefreshNative` and only with the managed
+// ValidateTopology or ApplyTopology flags. Unit-test builds exclude it so no
+// test can validate or apply a configuration.
 #[cfg(all(feature = "display-refresh-write", not(test)))]
-pub(super) fn set_display_config(
+pub(super) fn validate_display_config(
+    paths: &[DISPLAYCONFIG_PATH_INFO],
+    modes: &[DISPLAYCONFIG_MODE_INFO],
+) -> u32 {
+    set_display_config(paths, modes, super::refresh_packet::VALIDATE)
+}
+
+#[cfg(all(feature = "display-refresh-write", not(test)))]
+pub(super) fn apply_display_config(
+    paths: &[DISPLAYCONFIG_PATH_INFO],
+    modes: &[DISPLAYCONFIG_MODE_INFO],
+) -> u32 {
+    set_display_config(paths, modes, super::refresh_packet::APPLY)
+}
+
+#[cfg(all(feature = "display-refresh-write", not(test)))]
+fn set_display_config(
     paths: &[DISPLAYCONFIG_PATH_INFO],
     modes: &[DISPLAYCONFIG_MODE_INFO],
     flags: u32,

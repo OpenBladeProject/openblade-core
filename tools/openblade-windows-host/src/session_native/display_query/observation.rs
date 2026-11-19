@@ -158,14 +158,15 @@ impl Snapshot {
     /// way out of that state. HDR and brightness keep `HasCompleteReadback`:
     /// an available snapshot always observed HDR and setHdr is refused while
     /// it is unsupported, and brightness without a reading was not observed,
-    /// so neither gate can trap a request that could succeed.
+    /// so neither gate can trap a request that could succeed. `confirms`
+    /// already requires an available snapshot, so dropping its refresh-key
+    /// condition is the whole rule.
     #[cfg(openblade_display_write)]
     pub(super) fn observes(&self, fields: super::recovery::Fields) -> bool {
-        let rest = super::recovery::Fields {
+        self.confirms(super::recovery::Fields {
             refresh: false,
             ..fields
-        };
-        (!fields.refresh || self.is_available) && self.confirms(rest)
+        })
     }
 
     #[cfg(feature = "agent-display-brightness-write-v1")]

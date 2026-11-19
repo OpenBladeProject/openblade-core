@@ -66,3 +66,54 @@ fn device_path(display: &super::ActiveInternalDisplay) -> Option<&std::ffi::OsSt
         .ok()
         .and_then(|name| name.device_path.as_ref())
 }
+
+#[cfg(all(
+    test,
+    any(feature = "display-hdr-write", feature = "display-refresh-write")
+))]
+mod tests {
+    use super::*;
+    use crate::display::{ActiveInternalDisplay, MonitorName};
+
+    const PATH: &str = r"\?\DISPLAY#SYN0001#FIXTURE#{guid}";
+
+    fn panel() -> ActiveInternalDisplay {
+        ActiveInternalDisplay::brightness_fixture(PATH, 2)
+    }
+
+    #[test]
+    fn both_endpoints_are_part_of_the_identity() {
+        let identity = PanelIdentity::of(&panel());
+        assert!(identity.same_as(&panel()));
+        let mut source = panel();
+        source.source.id = 4;
+        assert!(!identity.same_as(&source));
+        let mut adapter = panel();
+        adapter.source.adapter_low = 13;
+        assert!(!identity.same_as(&adapter));
+        assert!(!identity.same_as(&ActiveInternalDisplay::brightness_fixture(PATH, 3)));
+    }
+
+    #[test]
+    fn unreadable_device_paths_match_only_each_other() {
+        let mut failed = panel();
+        failed.monitor_name = Err(50);
+        let mut missing = panel();
+        missing.monitor_name = Ok(MonitorName {
+            friendly_name: None,
+            device_path: None,
+        });
+        let identity = PanelIdentity::of(&failed);
+        assert!(identity.same_as(&failed));
+        assert!(identity.same_as(&missing));
+        assert!(!identity.same_as(&panel()));
+        assert!(!PanelIdentity::of(&panel()).same_as(&missing));
+    }
+
+    #[test]
+    fn the_gdi_source_name_is_not_part_of_the_identity() {
+        let mut renamed = panel();
+        renamed.source_name = r"\.\DISPLAY7".into();
+        assert!(PanelIdentity::of(&panel()).same_as(&renamed));
+    }
+}

@@ -139,23 +139,19 @@ impl RefreshPacket {
     }
 }
 
-// The production submissions, through the one `native::set_display_config`
-// call site. Unit-test builds exclude them so no test can validate or apply
-// a configuration.
+// The production submissions, through the one native SetDisplayConfig call
+// site. Unit-test builds exclude them so no test can validate or apply a
+// configuration.
 #[cfg(all(feature = "display-refresh-write", not(test)))]
 impl RefreshPacket {
     /// `SDC_VALIDATE`: Windows checks the supplied configuration only.
     pub(super) fn validate(&self) -> u32 {
-        self.set_display_config(VALIDATE)
+        native::validate_display_config(&self.topology.paths, &self.topology.modes)
     }
 
     /// The one `SDC_APPLY | SDC_SAVE_TO_DATABASE` submission.
     pub(super) fn apply(&self) -> u32 {
-        self.set_display_config(APPLY)
-    }
-
-    fn set_display_config(&self, flags: u32) -> u32 {
-        native::set_display_config(&self.topology.paths, &self.topology.modes, flags)
+        native::apply_display_config(&self.topology.paths, &self.topology.modes)
     }
 }
 

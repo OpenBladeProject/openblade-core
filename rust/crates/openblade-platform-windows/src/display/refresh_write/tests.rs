@@ -808,3 +808,37 @@ fn dynamic_requires_a_virtual_mode_path_even_with_an_admitted_timing() {
         .is_ok()
     );
 }
+
+/// The readback uses the shared panel identity: a renamed GDI source on the
+/// same endpoints and device path still confirms (managed refresh has no
+/// identity check), while another source endpoint is a changed panel.
+#[test]
+fn readback_identity_ignores_the_gdi_source_name_only() {
+    let panel = Panel {
+        desktop: hz(240),
+        ..Panel::split()
+    };
+    let options = [fixed(60), fixed(240)];
+    let admitted = panel.display();
+    let mut renamed = panel.snapshot(&options);
+    assert_eq!(renamed.current_refresh_key.as_deref(), Some("fixed-240"));
+    renamed.display.source_name = r"\.\DISPLAY7".into();
+    assert!(
+        confirm(
+            Ok(InternalDisplayRefresh::Single(Box::new(renamed))),
+            &admitted,
+            "fixed-240"
+        )
+        .is_ok()
+    );
+    let mut moved = panel.snapshot(&options);
+    moved.display.source.id = 4;
+    assert!(matches!(
+        confirm(
+            Ok(InternalDisplayRefresh::Single(Box::new(moved))),
+            &admitted,
+            "fixed-240"
+        ),
+        Err(Readback::PanelChanged)
+    ));
+}

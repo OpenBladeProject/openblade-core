@@ -1109,4 +1109,26 @@ mod mutation {
         assert_eq!(result, refused(RefreshError::OptionUnavailable));
         assert!(native.validated.is_empty());
     }
+
+    #[test]
+    fn a_non_virtual_preferred_rate_selects_a_timing_but_offers_no_option() {
+        // Preferred 165 Hz differs from the 60 Hz current mode. On a
+        // non-virtual path it only supplies FindFixedTargetMode's timing;
+        // managed BuildRefreshOptions does not advertise it as a rate.
+        let script = || {
+            let mut api = writable(0);
+            api.indexed_modes = [mode_at(60), mode_at(165), mode_at(240)].into();
+            api.preferred = preferred(165, 1);
+            api.edid = Some(Err(ERROR_ACCESS_DENIED));
+            api
+        };
+        let (result, native) = validate(script(), "fixed-165");
+        assert_eq!(result, refused(RefreshError::OptionUnavailable));
+        assert_eq!(native.api.preferred_calls, 1);
+        assert!(native.validated.is_empty());
+        // The admitted fixed rates still validate.
+        let (result, native) = validate(script(), "fixed-240");
+        assert_eq!(result, refused(REJECTED));
+        assert_eq!(native.validated.len(), 1);
+    }
 }

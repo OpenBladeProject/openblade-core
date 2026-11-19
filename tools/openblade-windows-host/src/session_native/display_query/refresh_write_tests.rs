@@ -290,42 +290,52 @@ fn refused_validation_fails_without_apply() {
 
 #[test]
 fn observation_failures_fail_without_validation() {
-    let cases: [(Result<RefreshObservation, DisplayReadError>, &str); 4] = [
-        (
-            Scenario::Unavailable.observe_refresh(
-                true,
-                RefreshTiming::default(),
-                false,
-                "fixed-240",
+    let cases = || -> [(Result<RefreshObservation, DisplayReadError>, &str); 4] {
+        [
+            (
+                Scenario::Unavailable.observe_refresh(
+                    true,
+                    RefreshTiming::default(),
+                    false,
+                    "fixed-240",
+                ),
+                NO_INTERNAL,
             ),
-            NO_INTERNAL,
-        ),
-        (
-            Scenario::NativeError.observe_refresh(
-                true,
-                RefreshTiming::default(),
-                false,
-                "fixed-240",
+            (
+                Scenario::NativeError.observe_refresh(
+                    true,
+                    RefreshTiming::default(),
+                    false,
+                    "fixed-240",
+                ),
+                "Windows could not read the active display configuration: Win32 error 5.",
             ),
-            "Windows could not read the active display configuration: Win32 error 5.",
-        ),
-        (Err(DisplayReadError::TopologyChanging), CHANGING),
-        (
-            Err(DisplayReadError::Native {
-                operation: Operation::BufferSizes,
-                status: 31,
-            }),
-            "Windows could not size the active display configuration: Win32 error 31.",
-        ),
-    ];
-    for (observation, expected) in cases {
-        let rig = Rig::new(Memory::default());
-        let mut host = admitted(1, 60, 240);
-        host.panel.observe_script.push_back(observation);
-        let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
-        assert_eq!(result(&outcome), (Status::Failed, Some(expected)));
-        assert_eq!(host.interactions(), (0, 0, 0));
-        assert!(!rig.unresolved().refresh);
+            (Err(DisplayReadError::TopologyChanging), CHANGING),
+            (
+                Err(DisplayReadError::Native {
+                    operation: Operation::BufferSizes,
+                    status: 31,
+                }),
+                "Windows could not size the active display configuration: Win32 error 31.",
+            ),
+        ]
+    };
+    // Managed refresh never reconciles a refusal with the reply: it fails
+    // even when the panel already shows the request (240/240).
+    for desktop in [60, 240] {
+        for (observation, expected) in cases() {
+            let rig = Rig::new(Memory::default());
+            let mut host = admitted(1, desktop, 240);
+            assert_eq!(
+                host.panel.reply().refresh_key() == Some("fixed-240"),
+                desktop == 240
+            );
+            host.panel.observe_script.push_back(observation);
+            let outcome = rig.set(&mut host, 1, "fixed-240").unwrap();
+            assert_eq!(result(&outcome), (Status::Failed, Some(expected)));
+            assert_eq!(host.interactions(), (0, 0, 0));
+            assert!(!rig.unresolved().refresh);
+        }
     }
 }
 

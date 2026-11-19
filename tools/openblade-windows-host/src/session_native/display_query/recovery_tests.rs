@@ -720,3 +720,23 @@ fn brightness_indeterminate_does_not_gate_hdr() {
     assert_eq!(recovery.unresolved(), Fields::BRIGHTNESS);
     assert!(!recovery.unresolved().hdr);
 }
+
+/// Managed `CompleteManualOperation` resumes only on `HasCompleteReadback`.
+/// A Succeeded refresh write whose reply mode is unclassified (issue #884)
+/// keeps the durable pause; only the native gate uses the weaker rule.
+#[test]
+fn refresh_succeeded_with_an_unclassified_reply_keeps_the_managed_pause() {
+    let (mut recovery, file) = from_fixture("battery-minimal");
+    assert!(recovery.begin(Fields::REFRESH, Some(0)));
+    let mut value = serde_json::to_value(without_brightness()).unwrap();
+    value["currentRefreshKey"] = serde_json::Value::Null;
+    let unclassified: Snapshot = serde_json::from_value(value).unwrap();
+    recovery.complete(Status::Succeeded, &unclassified);
+    assert_eq!(recovery.unresolved(), Fields::default());
+    assert_eq!(recovery.flags(), (true, true, Fields::REFRESH));
+    assert_eq!(file.stored()["AutomaticWritesPaused"], true);
+    assert_eq!(file.stored()["UncertainRefreshRate"], true);
+    // A classified reply is the complete readback that resumes it.
+    assert!(recovery.explicit_read(&without_brightness()));
+    assert_eq!(recovery.flags(), (false, false, Fields::default()));
+}

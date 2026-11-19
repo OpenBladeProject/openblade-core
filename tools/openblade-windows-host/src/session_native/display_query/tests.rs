@@ -71,8 +71,9 @@ fn query() -> Vec<u8> {
     request(json!({"version":2,"requestId":ID,"operation":"query"}))
 }
 
-/// Managed `SessionDisplayRequestDispatcher`: 5 s for a query and the 30 s
-/// `MutationDispatchTimeout` for every selected write.
+/// Managed `SessionDisplayPipeServer` (SessionDisplayPipeServer.cs:9-10): the
+/// 5 s `QueryDispatchTimeout` for a query and the 30 s `MutationDispatchTimeout`
+/// for every selected write.
 #[test]
 fn every_selected_write_has_the_managed_mutation_deadline() {
     let deadline = |body: Value| {

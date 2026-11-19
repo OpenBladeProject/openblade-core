@@ -294,6 +294,18 @@ fn unsupported_panel_fails_without_submission() {
         (0, 0)
     );
     assert!(!rig.unresolved().hdr);
+
+    // Managed PrepareHdrCore returns NotSupported directly; unlike a topology
+    // refusal it is not reconciled with a reply that shows the request.
+    let mut host = admitted(1, false);
+    // Target selection and the writer's own read both see it unsupported.
+    host.panel.script.push_back(topology(false, false, false));
+    host.panel.script.push_back(topology(false, false, false));
+    assert_eq!(host.panel.reply().hdr(), Some(false));
+    let outcome = rig.set(&mut host, 1, false).unwrap();
+    assert_eq!(result(&outcome), (Status::Failed, Some(NOT_SUPPORTED)));
+    assert_eq!(outcome.state.hdr(), Some(false));
+    assert_eq!(host.submissions(), 0);
 }
 
 #[test]
