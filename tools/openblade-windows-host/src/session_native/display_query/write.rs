@@ -1,8 +1,8 @@
 //! Production state shared by the selected partial display writes.
 //!
 //! One managed recovery checkpoint, one trusted power admission and one
-//! submission fence serve manual `setBrightness` and `setHdr`; each write
-//! module owns its own operation order and injected native boundary.
+//! submission fence serve manual `setBrightness`, `setHdr` and `setRefreshRate`;
+//! each write module owns its own operation order and injected native boundary.
 use super::{
     observation::{SharedBrightness, Snapshot},
     recovery::{CheckpointFile, Recovery, WindowsCheckpointFile},
@@ -34,6 +34,17 @@ pub(super) const UNREFRESHED: &str = "Display state could not be refreshed.";
 pub(super) const STALE_AFTER: &str =
     "The display operation became stale after the power source changed.";
 
+/// Managed `TryQueryFailureAsync`: report the reply query's snapshot, or an
+/// unavailable one when the read itself is interrupted.
+pub(super) fn refreshed(query: io::Result<Snapshot>) -> io::Result<Snapshot> {
+    match query {
+        Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+            Ok(Snapshot::unavailable(UNREFRESHED))
+        }
+        result => result,
+    }
+}
+
 /// Managed `ResumeAfterSuccessfulExplicitRead`, plus the native write gates.
 ///
 /// The brightness worker keeps its own in-process pause after a possible
@@ -43,8 +54,9 @@ pub(super) const STALE_AFTER: &str =
 /// the same worker, observed brightness, which means the worker finished every
 /// pending call. Before reopening, positively join and drop that worker so the
 /// next write starts a fresh one: the same boundary an Agent restart provides.
-/// A failed join keeps the gate closed and stops the feature. HDR submissions
-/// are synchronous, so the read itself is the only reopening condition.
+/// A failed join keeps the gate closed and stops the feature. HDR and
+/// refresh-rate submissions are synchronous, so the read itself is the only
+/// reopening condition.
 pub(super) fn explicit_read<F: CheckpointFile>(
     brightness: &SharedBrightness,
     recovery: &Mutex<Recovery<F>>,
@@ -127,9 +139,32 @@ impl Writer {
         brightness: &SharedBrightness,
         request: super::hdr_write::SetHdr,
         canceled: &std::sync::atomic::AtomicBool,
-    ) -> io::Result<super::hdr_write::HdrWriteOutcome> {
+    ) -> io::Result<super::ccd_write::CcdWriteOutcome> {
         super::hdr_write::set_hdr(
-            &mut super::hdr_write::WindowsHdrHost::new(self.host.clone()),
+            &mut super::ccd_write::WindowsCcdHost::new(
+                self.host.clone(),
+                openblade_platform_windows::display::hdr::WindowsHdrNative::current_user(),
+            ),
+            brightness,
+            &self.recovery,
+            request,
+            canceled,
+        )
+    }
+
+    /// Blocking: the complete admitted refresh-rate operation, including its record.
+    #[cfg(feature = "agent-display-refresh-write-v1")]
+    pub(super) fn set_refresh_rate(
+        &self,
+        brightness: &SharedBrightness,
+        request: &super::refresh_write::SetRefreshRate,
+        canceled: &std::sync::atomic::AtomicBool,
+    ) -> io::Result<super::ccd_write::CcdWriteOutcome> {
+        super::refresh_write::set_refresh_rate(
+            &mut super::ccd_write::WindowsCcdHost::new(
+                self.host.clone(),
+                openblade_platform_windows::display::refresh_write::WindowsRefreshNative::current_user(),
+            ),
             brightness,
             &self.recovery,
             request,

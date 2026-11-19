@@ -34,6 +34,7 @@ fn selected(case: &str) -> bool {
         "query" => true,
         "setBrightness" => cfg!(feature = "agent-display-brightness-write-v1"),
         "setHdr" => cfg!(feature = "agent-display-hdr-write-v1"),
+        "setRefreshRate" => cfg!(feature = "agent-display-refresh-write-v1"),
         _ => false,
     }
 }

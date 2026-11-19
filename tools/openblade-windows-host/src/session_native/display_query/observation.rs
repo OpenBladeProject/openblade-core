@@ -70,7 +70,8 @@ fn bounded(value: &str, limit: usize) -> bool {
     value.encode_utf16().take(limit + 1).count() <= limit
 }
 
-fn valid_key(key: &str) -> bool {
+/// Managed `SessionDisplayIpcCodec.ValidKey`.
+pub(super) fn valid_key(key: &str) -> bool {
     bounded(key, MAX_KEY)
         && !key.is_empty()
         && key.trim() == key
@@ -159,6 +160,14 @@ impl Snapshot {
     #[cfg(feature = "agent-display-hdr-write-v1")]
     pub(super) fn hdr(&self) -> Option<bool> {
         (self.is_available && self.hdr_supported).then_some(self.hdr_enabled)
+    }
+
+    /// The classified current refresh option of this available snapshot.
+    #[cfg(feature = "agent-display-refresh-write-v1")]
+    pub(super) fn refresh_key(&self) -> Option<&str> {
+        self.current_refresh_key
+            .as_deref()
+            .filter(|_| self.is_available)
     }
 }
 
@@ -324,7 +333,7 @@ impl BrightnessOwner {
     }
 
     /// A test owner that never starts a worker, for writes that read no brightness.
-    #[cfg(all(test, feature = "agent-display-hdr-write-v1"))]
+    #[cfg(all(test, openblade_display_ccd_write))]
     pub(super) fn inert() -> Self {
         Self {
             worker: None,

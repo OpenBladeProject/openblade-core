@@ -172,7 +172,15 @@ impl Supplier for OwnedSupplier {
         &mut self,
         _request: SetHdr,
         _canceled: Arc<AtomicBool>,
-    ) -> io::Result<HdrWriteOutcome> {
+    ) -> io::Result<CcdWriteOutcome> {
+        unreachable!("query-only test supplier received a write")
+    }
+    #[cfg(feature = "agent-display-refresh-write-v1")]
+    async fn set_refresh_rate(
+        &mut self,
+        _request: SetRefreshRate,
+        _canceled: Arc<AtomicBool>,
+    ) -> io::Result<CcdWriteOutcome> {
         unreachable!("query-only test supplier received a write")
     }
     async fn drain(&mut self) -> io::Result<()> {

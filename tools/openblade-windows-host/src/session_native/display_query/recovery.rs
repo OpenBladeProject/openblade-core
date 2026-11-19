@@ -110,6 +110,22 @@ impl Fields {
         color: false,
         brightness: false,
     };
+    #[cfg(any(test, feature = "agent-display-refresh-write-v1"))]
+    pub(super) const REFRESH: Self = Self {
+        refresh: true,
+        hdr: false,
+        color: false,
+        brightness: false,
+    };
+
+    /// Whether any field is set on both.
+    #[cfg(openblade_display_ccd_write)]
+    pub(super) fn overlaps(self, other: Self) -> bool {
+        (self.refresh && other.refresh)
+            || (self.hdr && other.hdr)
+            || (self.color && other.color)
+            || (self.brightness && other.brightness)
+    }
 
     /// Managed `DisplayOwnedSettings.Include`.
     fn include(self, other: Self) -> Self {

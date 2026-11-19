@@ -14,7 +14,7 @@ pub(super) use super::write::{
 use super::{
     observation::{SharedBrightness, Snapshot},
     recovery::{CheckpointFile, Fields, Recovery, Status},
-    write::WindowsHost,
+    write::{WindowsHost, refreshed},
 };
 use crate::session_native::power_admission::PowerContext;
 use openblade_platform_windows::{
@@ -95,7 +95,7 @@ pub(super) fn set_brightness<F: CheckpointFile>(
             return Ok(WriteOutcome {
                 status: Status::Blocked,
                 error: Some(error),
-                state: refreshed(host, brightness, canceled)?,
+                state: refreshed(host.query(brightness, canceled))?,
             });
         }
     }
@@ -117,7 +117,7 @@ pub(super) fn set_brightness<F: CheckpointFile>(
     // first, as for HDR (a Confirmed level it cannot show is Indeterminate).
     let (state, fatal) = match fatal {
         Some(error) => (Snapshot::unavailable(UNREFRESHED), Some(error)),
-        None => match refreshed(host, brightness, canceled) {
+        None => match refreshed(host.query(brightness, canceled)) {
             Ok(state) => (state, None),
             Err(error) => (Snapshot::unavailable(UNREFRESHED), Some(error)),
         },
@@ -239,22 +239,6 @@ impl WriteHost for WindowsHost {
         canceled: &AtomicBool,
     ) -> io::Result<Snapshot> {
         WindowsHost::query(self, brightness, canceled)
-    }
-}
-
-/// Managed `TryQueryFailureAsync`: report the current snapshot, or an
-/// unavailable one when the read itself is interrupted.
-fn refreshed(
-    host: &mut impl WriteHost,
-    brightness: &SharedBrightness,
-    canceled: &AtomicBool,
-) -> io::Result<Snapshot> {
-    match host.query(brightness, canceled) {
-        Ok(state) => Ok(state),
-        Err(error) if error.kind() == io::ErrorKind::Interrupted => {
-            Ok(Snapshot::unavailable(UNREFRESHED))
-        }
-        Err(error) => Err(error),
     }
 }
 

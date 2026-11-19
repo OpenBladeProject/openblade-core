@@ -3,6 +3,7 @@
 //! durable storage. No Windows supplier, endpoint or hardware is used.
 use super::*;
 use crate::session_native::display_query::observation::{BrightnessOwner, fixture_query_owned};
+use crate::session_native::display_query::test_support::Memory;
 use openblade_platform_windows::{
     brightness::{
         Acknowledgement, CallBudget, MethodRow, ReadingRow, Submission, TopologyFailure,
@@ -217,49 +218,6 @@ impl WriteHost for Host {
     ) -> io::Result<Snapshot> {
         self.queries += 1;
         fixture_query_owned(brightness.clone(), canceled)
-    }
-}
-
-/// Shared bytes survive a simulated Agent restart; writes can be refused.
-#[derive(Clone)]
-struct Memory {
-    bytes: Arc<Mutex<Option<Vec<u8>>>>,
-    /// Successful writes beyond this count fail (persistence fault).
-    allow: Arc<AtomicUsize>,
-    writes: Arc<AtomicUsize>,
-}
-impl Default for Memory {
-    fn default() -> Self {
-        Self {
-            bytes: Arc::default(),
-            allow: Arc::new(AtomicUsize::new(usize::MAX)),
-            writes: Arc::default(),
-        }
-    }
-}
-impl CheckpointFile for Memory {
-    fn read(&mut self) -> io::Result<Option<Vec<u8>>> {
-        Ok(self.bytes.lock().unwrap().clone())
-    }
-    fn replace(&mut self, bytes: &[u8]) -> io::Result<()> {
-        if self.writes.load(Ordering::SeqCst) >= self.allow.load(Ordering::SeqCst) {
-            return Err(io::Error::other("injected checkpoint failure"));
-        }
-        self.writes.fetch_add(1, Ordering::SeqCst);
-        *self.bytes.lock().unwrap() = Some(bytes.to_vec());
-        Ok(())
-    }
-}
-impl Memory {
-    fn record(&self) -> serde_json::Value {
-        serde_json::from_slice(self.bytes.lock().unwrap().as_deref().unwrap()).unwrap()
-    }
-    /// A prior managed legacy checkpoint supplies the last reconciled source.
-    fn legacy(source: u8) -> Self {
-        let file = Self::default();
-        *file.bytes.lock().unwrap() =
-            Some(format!(r#"{{"SchemaVersion":1,"LastReconciledPowerSource":{source}}}"#).into());
-        file
     }
 }
 

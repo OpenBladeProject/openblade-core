@@ -35,7 +35,18 @@ impl Supplier for Script {
         &mut self,
         _request: SetHdr,
         _canceled: Arc<AtomicBool>,
-    ) -> io::Result<HdrWriteOutcome> {
+    ) -> io::Result<CcdWriteOutcome> {
+        self.calls += 1;
+        Err(io::Error::other(
+            "query-only test supplier received a write",
+        ))
+    }
+    #[cfg(feature = "agent-display-refresh-write-v1")]
+    async fn set_refresh_rate(
+        &mut self,
+        _request: SetRefreshRate,
+        _canceled: Arc<AtomicBool>,
+    ) -> io::Result<CcdWriteOutcome> {
         self.calls += 1;
         Err(io::Error::other(
             "query-only test supplier received a write",
@@ -279,7 +290,15 @@ impl Supplier for Blocker {
         &mut self,
         _request: SetHdr,
         _canceled: Arc<AtomicBool>,
-    ) -> io::Result<HdrWriteOutcome> {
+    ) -> io::Result<CcdWriteOutcome> {
+        unreachable!("query-only test supplier received a write")
+    }
+    #[cfg(feature = "agent-display-refresh-write-v1")]
+    async fn set_refresh_rate(
+        &mut self,
+        _request: SetRefreshRate,
+        _canceled: Arc<AtomicBool>,
+    ) -> io::Result<CcdWriteOutcome> {
         unreachable!("query-only test supplier received a write")
     }
 }
@@ -836,8 +855,16 @@ mod brightness_writes {
             &mut self,
             _request: SetHdr,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<HdrWriteOutcome> {
+        ) -> io::Result<CcdWriteOutcome> {
             unreachable!("brightness test supplier received setHdr")
+        }
+        #[cfg(feature = "agent-display-refresh-write-v1")]
+        async fn set_refresh_rate(
+            &mut self,
+            _request: SetRefreshRate,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<CcdWriteOutcome> {
+            unreachable!("brightness test supplier received setRefreshRate")
         }
     }
     fn set(expected: Value, percent: Value) -> Vec<u8> {
@@ -923,14 +950,17 @@ mod brightness_writes {
             ),
             request(json!({"version":2,"requestId":ID,"operation":"query","percent":50})),
             request(
-                json!({"version":2,"requestId":ID,"operation":"setRefreshRate",
-                "expectedPowerSource":0,"refreshRateKey":"fixed-240"}),
-            ),
-            request(
                 json!({"version":2,"requestId":ID,"operation":"applyProfile",
                 "expectedPowerSource":0,"settings":{}}),
             ),
         ];
+        // Builds without the refresh-rate write refuse it entirely.
+        if !cfg!(feature = "agent-display-refresh-write-v1") {
+            inputs.push(request(
+                json!({"version":2,"requestId":ID,"operation":"setRefreshRate",
+            "expectedPowerSource":0,"refreshRateKey":"fixed-240"}),
+            ));
+        }
         inputs.push(raw_request(
             format!(
                 r#"{{"operation":"setBrightness","version":2,"requestId":"{ID}","expectedPowerSource":0,"percent":50,"percent":60}}"#
@@ -938,11 +968,12 @@ mod brightness_writes {
             .as_bytes(),
         ));
         // A valid setHdr reaches no brightness-only supplier.
-        #[cfg(not(feature = "agent-display-hdr-write-v1"))]
-        inputs.push(request(
-            json!({"version":2,"requestId":ID,"operation":"setHdr",
+        if !cfg!(feature = "agent-display-hdr-write-v1") {
+            inputs.push(request(
+                json!({"version":2,"requestId":ID,"operation":"setHdr",
             "expectedPowerSource":0,"enabled":true}),
-        ));
+            ));
+        }
         for input in inputs {
             let mut supplier = Writes::new(Status::Succeeded, None, Snapshot::unavailable("x"));
             let (result, bytes, _) = exchange(&mut supplier, &input).await;
@@ -997,8 +1028,16 @@ mod brightness_writes {
             &mut self,
             _request: SetHdr,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<HdrWriteOutcome> {
+        ) -> io::Result<CcdWriteOutcome> {
             unreachable!("brightness test supplier received setHdr")
+        }
+        #[cfg(feature = "agent-display-refresh-write-v1")]
+        async fn set_refresh_rate(
+            &mut self,
+            _request: SetRefreshRate,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<CcdWriteOutcome> {
+            unreachable!("brightness test supplier received setRefreshRate")
         }
     }
 
@@ -1101,13 +1140,11 @@ mod brightness_writes {
 #[cfg(feature = "agent-display-hdr-write-v1")]
 mod hdr_writes {
     use super::*;
-    use hdr_write::{
-        CANCELED, MULTIPLE, NO_INTERNAL, NOT_SUPPORTED, PANEL_CHANGED, PAUSED, STALE, STALE_AFTER,
-        UNCONFIRMED, rejected,
-    };
+    use ccd_write::{MULTIPLE, NO_INTERNAL};
+    use hdr_write::{CANCELED, NOT_SUPPORTED, PANEL_CHANGED, PAUSED, STALE, UNCONFIRMED, rejected};
     use recovery::Status;
     use std::borrow::Cow;
-    use write::{CHANGED_POWER, CHECKPOINT, UNCONFIRMED_POWER};
+    use write::{CHANGED_POWER, CHECKPOINT, STALE_AFTER, UNCONFIRMED_POWER};
 
     struct Writes {
         outcome: Option<(Status, Option<Cow<'static, str>>, Snapshot)>,
@@ -1143,14 +1180,22 @@ mod hdr_writes {
             &mut self,
             request: SetHdr,
             _canceled: Arc<AtomicBool>,
-        ) -> io::Result<HdrWriteOutcome> {
+        ) -> io::Result<CcdWriteOutcome> {
             self.received.push(request);
             let (status, error, state) = self.outcome.take().expect("one write");
-            Ok(HdrWriteOutcome {
+            Ok(CcdWriteOutcome {
                 status,
                 error,
                 state,
             })
+        }
+        #[cfg(feature = "agent-display-refresh-write-v1")]
+        async fn set_refresh_rate(
+            &mut self,
+            _request: SetRefreshRate,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<CcdWriteOutcome> {
+            unreachable!("HDR test supplier received setRefreshRate")
         }
     }
     fn set(expected: Value, enabled: Value) -> Vec<u8> {
@@ -1280,8 +1325,6 @@ mod hdr_writes {
                 "expectedPowerSource":0,"enabled":true})),
             request(json!({"version":2,"requestId":ID,"operation":"setBrightness",
                 "expectedPowerSource":0,"percent":50,"enabled":false})),
-            request(json!({"version":2,"requestId":ID,"operation":"setRefreshRate",
-                "expectedPowerSource":0,"refreshRateKey":"fixed-240"})),
             request(json!({"version":2,"requestId":ID,"operation":"setColorProfile",
                 "expectedPowerSource":0,"colorProfileKey":"x"})),
             request(json!({"version":2,"requestId":ID,"operation":"applyProfile",
@@ -1293,12 +1336,20 @@ mod hdr_writes {
                 .as_bytes(),
             ),
         ];
+        // Builds without the refresh-rate write refuse it entirely.
+        if !cfg!(feature = "agent-display-refresh-write-v1") {
+            inputs.push(request(
+                json!({"version":2,"requestId":ID,"operation":"setRefreshRate",
+            "expectedPowerSource":0,"refreshRateKey":"fixed-240"}),
+            ));
+        }
         // An HDR-only build has no brightness mutation at all.
-        #[cfg(not(feature = "agent-display-brightness-write-v1"))]
-        inputs.push(request(
-            json!({"version":2,"requestId":ID,"operation":"setBrightness",
+        if !cfg!(feature = "agent-display-brightness-write-v1") {
+            inputs.push(request(
+                json!({"version":2,"requestId":ID,"operation":"setBrightness",
             "expectedPowerSource":0,"percent":50}),
-        ));
+            ));
+        }
         for input in inputs {
             let mut supplier = Writes::new(Status::Succeeded, None, Snapshot::unavailable("x"));
             let (result, bytes, _) = exchange(&mut supplier, &input).await;
@@ -1343,7 +1394,7 @@ mod hdr_writes {
             &mut self,
             _request: SetHdr,
             canceled: Arc<AtomicBool>,
-        ) -> io::Result<HdrWriteOutcome> {
+        ) -> io::Result<CcdWriteOutcome> {
             let gate = self.gate.clone();
             let seen = self.canceled.clone();
             let recorded = self.recorded.clone();
@@ -1357,7 +1408,7 @@ mod hdr_writes {
                 }
                 seen.store(canceled.load(Ordering::Acquire), Ordering::Release);
                 recorded.store(true, Ordering::Release);
-                Ok(HdrWriteOutcome {
+                Ok(CcdWriteOutcome {
                     status: Status::Indeterminate,
                     error: Some(Cow::Borrowed(UNCONFIRMED)),
                     state: Snapshot::unavailable("recorded"),
@@ -1365,6 +1416,14 @@ mod hdr_writes {
             })
             .await
             .unwrap()
+        }
+        #[cfg(feature = "agent-display-refresh-write-v1")]
+        async fn set_refresh_rate(
+            &mut self,
+            _request: SetRefreshRate,
+            _canceled: Arc<AtomicBool>,
+        ) -> io::Result<CcdWriteOutcome> {
+            unreachable!("HDR test supplier received setRefreshRate")
         }
     }
 

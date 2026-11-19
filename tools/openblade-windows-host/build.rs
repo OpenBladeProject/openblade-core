@@ -3,6 +3,7 @@ use std::{env, fs, path::PathBuf, process::Command};
 fn main() {
     println!("cargo::rustc-check-cfg=cfg(openblade_metadata_acquisition_probe)");
     println!("cargo::rustc-check-cfg=cfg(openblade_display_write)");
+    println!("cargo::rustc-check-cfg=cfg(openblade_display_ccd_write)");
     for name in ["OPENBLADE_NATIVE_BUILD_NONCE", "OPENBLADE_NATIVE_SOURCE"] {
         println!("cargo:rerun-if-env-changed={name}");
     }
@@ -91,6 +92,10 @@ fn main() {
         || has("agent-display-refresh-write-v1")
     {
         println!("cargo::rustc-cfg=openblade_display_write");
+    }
+    // The manual-operation frame shared by the CCD writes (HDR, refresh rate).
+    if has("agent-display-hdr-write-v1") || has("agent-display-refresh-write-v1") {
+        println!("cargo::rustc-cfg=openblade_display_ccd_write");
     }
     for (role, name) in [
         ("service", "service_identity.rs"),

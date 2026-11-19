@@ -2,12 +2,22 @@
 //! boundary, with injected power, fence, reply query and durable storage.
 //! No Windows supplier, endpoint, CCD call or hardware is used.
 use super::*;
-use crate::session_native::display_query::observation::{BrightnessOwner, fixture_query};
+use crate::session_native::display_query::{
+    ccd_write::CHANGING,
+    observation::fixture_query,
+    test_support::{Memory, Rig},
+    write::{CHANGED_POWER, CHECKPOINT, STALE_AFTER, UNCONFIRMED_POWER},
+};
+use openblade_platform_windows::display::SubmissionFence;
 use openblade_platform_windows::display::{
-    EndpointId, InternalDisplayTopology, Operation,
+    DisplayReadError, EndpointId, InternalDisplayTopology, Operation,
     scripted::{RefreshTiming, Scenario},
 };
-use std::{cell::Cell, collections::VecDeque, sync::atomic::AtomicUsize};
+use std::{
+    cell::Cell,
+    collections::VecDeque,
+    sync::{Arc, atomic::AtomicUsize},
+};
 
 fn topology(
     supported: bool,
@@ -138,7 +148,9 @@ impl Host {
     }
 }
 
-impl HdrHost for Host {
+impl CcdHost for Host {
+    type Native = Panel;
+
     fn power(&self) -> Option<PowerContext> {
         let capture = self.captures.get();
         self.captures.set(capture + 1);
@@ -166,7 +178,7 @@ impl HdrHost for Host {
         })
     }
 
-    fn native(&mut self) -> &mut dyn HdrNative {
+    fn native(&mut self) -> &mut Panel {
         &mut self.panel
     }
 
@@ -185,75 +197,20 @@ impl HdrHost for Host {
     }
 }
 
-/// Shared bytes survive a simulated Agent restart; writes can be refused.
-#[derive(Clone)]
-struct Memory {
-    bytes: Arc<Mutex<Option<Vec<u8>>>>,
-    /// Successful writes beyond this count fail (persistence fault).
-    allow: Arc<AtomicUsize>,
-    writes: Arc<AtomicUsize>,
+/// The manual request through the shared rig.
+trait Set {
+    fn set(&self, host: &mut Host, expected: u8, enabled: bool) -> io::Result<CcdWriteOutcome>;
+    fn set_canceled(
+        &self,
+        host: &mut Host,
+        expected: u8,
+        enabled: bool,
+        canceled: &AtomicBool,
+    ) -> io::Result<CcdWriteOutcome>;
 }
 
-impl Default for Memory {
-    fn default() -> Self {
-        Self {
-            bytes: Arc::default(),
-            allow: Arc::new(AtomicUsize::new(usize::MAX)),
-            writes: Arc::default(),
-        }
-    }
-}
-
-impl CheckpointFile for Memory {
-    fn read(&mut self) -> io::Result<Option<Vec<u8>>> {
-        Ok(self.bytes.lock().unwrap().clone())
-    }
-
-    fn replace(&mut self, bytes: &[u8]) -> io::Result<()> {
-        if self.writes.load(Ordering::SeqCst) >= self.allow.load(Ordering::SeqCst) {
-            return Err(io::Error::other("injected checkpoint failure"));
-        }
-        self.writes.fetch_add(1, Ordering::SeqCst);
-        *self.bytes.lock().unwrap() = Some(bytes.to_vec());
-        Ok(())
-    }
-}
-
-impl Memory {
-    fn with(bytes: &str) -> Self {
-        let file = Self::default();
-        *file.bytes.lock().unwrap() = Some(bytes.into());
-        file
-    }
-
-    fn record(&self) -> serde_json::Value {
-        serde_json::from_slice(self.bytes.lock().unwrap().as_deref().unwrap()).unwrap()
-    }
-
-    /// A prior managed legacy checkpoint supplies the last reconciled source.
-    fn legacy(source: u8) -> Self {
-        Self::with(&format!(
-            r#"{{"SchemaVersion":1,"LastReconciledPowerSource":{source}}}"#
-        ))
-    }
-}
-
-struct Rig {
-    owner: SharedBrightness,
-    file: Memory,
-    recovery: Mutex<Recovery<Memory>>,
-}
-
-impl Rig {
-    fn new(file: Memory) -> Self {
-        Self {
-            owner: Arc::new(Mutex::new(BrightnessOwner::inert())),
-            recovery: Mutex::new(Recovery::load(file.clone())),
-            file,
-        }
-    }
-
-    fn set(&self, host: &mut Host, expected: u8, enabled: bool) -> io::Result<HdrWriteOutcome> {
+impl Set for Rig {
+    fn set(&self, host: &mut Host, expected: u8, enabled: bool) -> io::Result<CcdWriteOutcome> {
         self.set_canceled(host, expected, enabled, &AtomicBool::new(false))
     }
 
@@ -263,7 +220,7 @@ impl Rig {
         expected: u8,
         enabled: bool,
         canceled: &AtomicBool,
-    ) -> io::Result<HdrWriteOutcome> {
+    ) -> io::Result<CcdWriteOutcome> {
         set_hdr(
             host,
             &self.owner,
@@ -275,17 +232,9 @@ impl Rig {
             canceled,
         )
     }
-
-    fn unresolved(&self) -> Fields {
-        self.recovery.lock().unwrap().unresolved()
-    }
-
-    fn explicit_read(&self, state: &Snapshot) {
-        super::super::write::explicit_read(&self.owner, &self.recovery, state).unwrap();
-    }
 }
 
-fn result(outcome: &HdrWriteOutcome) -> (Status, Option<&str>) {
+fn result(outcome: &CcdWriteOutcome) -> (Status, Option<&str>) {
     (outcome.status, outcome.error.as_deref())
 }
 

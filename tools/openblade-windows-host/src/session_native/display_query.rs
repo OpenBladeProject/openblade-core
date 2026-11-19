@@ -1,7 +1,7 @@
 //! Selected installed Display.v2 endpoint. The real supplier performs
 //! coherent CCD/refresh/HDR/WCS and targeted, owned WMI brightness reads.
-//! Separately selected builds add manual `setBrightness` and/or manual
-//! `setHdr`; every other mutation stays outside this endpoint.
+//! Separately selected builds add manual `setBrightness`, `setHdr` and/or
+//! `setRefreshRate`; every other mutation stays outside this endpoint.
 use super::diagnostics;
 use openblade_windows_host::pipe::Endpoint;
 use serde::Deserialize;
@@ -21,18 +21,26 @@ use tokio::{
 };
 #[cfg(feature = "agent-display-brightness-write-v1")]
 mod brightness_write;
+#[cfg(openblade_display_ccd_write)]
+mod ccd_write;
 #[cfg(feature = "agent-display-hdr-write-v1")]
 mod hdr_write;
 mod observation;
 #[cfg(openblade_display_write)]
 mod recovery;
+#[cfg(feature = "agent-display-refresh-write-v1")]
+mod refresh_write;
 #[cfg(openblade_display_write)]
 mod write;
 #[cfg(feature = "agent-display-brightness-write-v1")]
 use brightness_write::{SetBrightness, WriteOutcome};
+#[cfg(openblade_display_ccd_write)]
+use ccd_write::CcdWriteOutcome;
 #[cfg(feature = "agent-display-hdr-write-v1")]
-use hdr_write::{HdrWriteOutcome, SetHdr};
+use hdr_write::SetHdr;
 use observation::Snapshot;
+#[cfg(feature = "agent-display-refresh-write-v1")]
+use refresh_write::SetRefreshRate;
 
 const MAX_FRAME: i32 = 65_536;
 const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
@@ -58,6 +66,9 @@ struct Envelope {
     #[cfg(feature = "agent-display-hdr-write-v1")]
     #[serde(default, deserialize_with = "present")]
     enabled: Option<bool>,
+    #[cfg(feature = "agent-display-refresh-write-v1")]
+    #[serde(default, deserialize_with = "present")]
+    refresh_rate_key: Option<String>,
 }
 /// The managed discriminator is a JSON string. serde's externally tagged form
 /// (`{"setHdr":null}`) would otherwise also select a unit variant.
@@ -82,14 +93,17 @@ enum Name {
     SetBrightness,
     #[cfg(feature = "agent-display-hdr-write-v1")]
     SetHdr,
+    #[cfg(feature = "agent-display-refresh-write-v1")]
+    SetRefreshRate,
 }
-#[derive(Clone, Copy)]
 enum Operation {
     Query,
     #[cfg(feature = "agent-display-brightness-write-v1")]
     SetBrightness(SetBrightness),
     #[cfg(feature = "agent-display-hdr-write-v1")]
     SetHdr(SetHdr),
+    #[cfg(feature = "agent-display-refresh-write-v1")]
+    SetRefreshRate(SetRefreshRate),
 }
 struct Request {
     request_id: String,
@@ -130,19 +144,26 @@ impl Request {
         let enabled = envelope.enabled;
         #[cfg(all(openblade_display_write, not(feature = "agent-display-hdr-write-v1")))]
         let enabled: Option<bool> = None;
+        #[cfg(feature = "agent-display-refresh-write-v1")]
+        let key = envelope.refresh_rate_key;
+        #[cfg(all(
+            openblade_display_write,
+            not(feature = "agent-display-refresh-write-v1")
+        ))]
+        let key: Option<String> = None;
         // Each operation accepts exactly its own managed members.
         let operation = match envelope.operation {
             #[cfg(not(openblade_display_write))]
             Name::Query => Operation::Query,
             #[cfg(openblade_display_write)]
-            Name::Query => match (power, percent, enabled) {
-                (None, None, None) => Operation::Query,
+            Name::Query => match (power, percent, enabled, key) {
+                (None, None, None, None) => Operation::Query,
                 _ => return Err(invalid("invalid Display query members")),
             },
             // Managed IsConfirmed (PluggedIn, Battery, UsbC) and byte percent <= 100.
             #[cfg(feature = "agent-display-brightness-write-v1")]
-            Name::SetBrightness => match (power, percent, enabled) {
-                (Some(source @ 0..=2), Some(percent @ 0..=100), None) => {
+            Name::SetBrightness => match (power, percent, enabled, key) {
+                (Some(source @ 0..=2), Some(percent @ 0..=100), None, None) => {
                     Operation::SetBrightness(SetBrightness {
                         expected_power_source: source as u8,
                         percent: percent as u8,
@@ -152,12 +173,24 @@ impl Request {
             },
             // Managed IsConfirmed and a required JSON Boolean.
             #[cfg(feature = "agent-display-hdr-write-v1")]
-            Name::SetHdr => match (power, percent, enabled) {
-                (Some(source @ 0..=2), None, Some(enabled)) => Operation::SetHdr(SetHdr {
+            Name::SetHdr => match (power, percent, enabled, key) {
+                (Some(source @ 0..=2), None, Some(enabled), None) => Operation::SetHdr(SetHdr {
                     expected_power_source: source as u8,
                     enabled,
                 }),
                 _ => return Err(invalid("invalid Display setHdr members")),
+            },
+            // Managed IsConfirmed and ValidKey (non-blank, trimmed, at most
+            // 1024 UTF-16 units, no control characters).
+            #[cfg(feature = "agent-display-refresh-write-v1")]
+            Name::SetRefreshRate => match (power, percent, enabled, key) {
+                (Some(source @ 0..=2), None, None, Some(key)) if observation::valid_key(&key) => {
+                    Operation::SetRefreshRate(SetRefreshRate {
+                        expected_power_source: source as u8,
+                        key,
+                    })
+                }
+                _ => return Err(invalid("invalid Display setRefreshRate members")),
             },
         };
         Ok(Self {
@@ -186,7 +219,14 @@ trait Supplier {
         &mut self,
         request: SetHdr,
         canceled: Arc<AtomicBool>,
-    ) -> impl Future<Output = io::Result<HdrWriteOutcome>>;
+    ) -> impl Future<Output = io::Result<CcdWriteOutcome>>;
+    /// The same custody contract as `set_brightness`.
+    #[cfg(feature = "agent-display-refresh-write-v1")]
+    fn set_refresh_rate(
+        &mut self,
+        request: SetRefreshRate,
+        canceled: Arc<AtomicBool>,
+    ) -> impl Future<Output = io::Result<CcdWriteOutcome>>;
     async fn drain(&mut self) -> io::Result<()> {
         Ok(())
     }
@@ -231,12 +271,26 @@ impl Supplier for WindowsSupplier {
         &mut self,
         request: SetHdr,
         canceled: Arc<AtomicBool>,
-    ) -> io::Result<HdrWriteOutcome> {
+    ) -> io::Result<CcdWriteOutcome> {
         let brightness = self.brightness.clone();
         let writer = self.writer.clone();
         tokio::task::spawn_blocking(move || writer.set_hdr(&brightness, request, &canceled))
             .await
             .map_err(|_| io::Error::other("display write worker failed"))?
+    }
+    #[cfg(feature = "agent-display-refresh-write-v1")]
+    async fn set_refresh_rate(
+        &mut self,
+        request: SetRefreshRate,
+        canceled: Arc<AtomicBool>,
+    ) -> io::Result<CcdWriteOutcome> {
+        let brightness = self.brightness.clone();
+        let writer = self.writer.clone();
+        tokio::task::spawn_blocking(move || {
+            writer.set_refresh_rate(&brightness, &request, &canceled)
+        })
+        .await
+        .map_err(|_| io::Error::other("display write worker failed"))?
     }
     async fn drain(&mut self) -> io::Result<()> {
         observation::drain_brightness(self.brightness.clone()).await
@@ -401,8 +455,8 @@ enum Reply {
     Query(Snapshot),
     #[cfg(feature = "agent-display-brightness-write-v1")]
     Write(WriteOutcome),
-    #[cfg(feature = "agent-display-hdr-write-v1")]
-    Hdr(HdrWriteOutcome),
+    #[cfg(openblade_display_ccd_write)]
+    Ccd(CcdWriteOutcome),
 }
 
 /// Every started blocking operation is awaited, including on deadline,
@@ -435,12 +489,14 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     }
     let canceled = Cancellation(Arc::new(AtomicBool::new(false)));
     let operation = request.operation;
-    let deadline = match operation {
+    let deadline = match &operation {
         Operation::Query => DISPATCH_TIMEOUT,
         #[cfg(feature = "agent-display-brightness-write-v1")]
         Operation::SetBrightness(_) => MUTATION_DISPATCH_TIMEOUT,
         #[cfg(feature = "agent-display-hdr-write-v1")]
         Operation::SetHdr(_) => MUTATION_DISPATCH_TIMEOUT,
+        #[cfg(feature = "agent-display-refresh-write-v1")]
+        Operation::SetRefreshRate(_) => MUTATION_DISPATCH_TIMEOUT,
     };
     enum End {
         Complete(io::Result<Reply>),
@@ -458,7 +514,12 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
                     .await
                     .map(Reply::Write),
                 #[cfg(feature = "agent-display-hdr-write-v1")]
-                Operation::SetHdr(request) => supplier.set_hdr(request, flag).await.map(Reply::Hdr),
+                Operation::SetHdr(request) => supplier.set_hdr(request, flag).await.map(Reply::Ccd),
+                #[cfg(feature = "agent-display-refresh-write-v1")]
+                Operation::SetRefreshRate(request) => supplier
+                    .set_refresh_rate(request, flag)
+                    .await
+                    .map(Reply::Ccd),
             }
         };
         tokio::pin!(work);
@@ -504,8 +565,8 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
             outcome.error,
             outcome.state,
         )?,
-        #[cfg(feature = "agent-display-hdr-write-v1")]
-        Reply::Hdr(outcome) => frame(
+        #[cfg(openblade_display_ccd_write)]
+        Reply::Ccd(outcome) => frame(
             &request.request_id,
             outcome.status as u8,
             outcome.error.as_deref(),
@@ -531,5 +592,8 @@ fn operation_first(body: &[u8]) -> bool {
 #[cfg(test)]
 #[path = "display_query/request_parity_tests.rs"]
 mod request_parity_tests;
+#[cfg(all(test, openblade_display_write))]
+#[path = "display_query/test_support.rs"]
+mod test_support;
 #[cfg(test)]
 mod tests;
