@@ -430,7 +430,11 @@ fn emits_native_rows_for_the_managed_oracle() {
         &Snapshot::unavailable("unknown"),
         Fields::HDR,
     );
-    row("native-profile-after-partial-indeterminate", &profile, &file);
+    row(
+        "native-profile-after-partial-indeterminate",
+        &profile,
+        &file,
+    );
 
     let (mut cleared, file) = from_fixture("pluggedin-owned-all-with-profile-full-baseline");
     assert!(cleared.begin(Fields::BRIGHTNESS, None));
