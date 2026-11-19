@@ -159,8 +159,12 @@ Any .rollover file still refuses retirement.
 The record lives in the handed-back generation's own directory of the native
 namespace, ProgramData\OpenBlade.NativeEpochs\EPOCH\handback.json, beside the
 history it is bound to, and shares that history's lifetime. Setup writes it
-through the same epoch-files view that holds custody, so it inherits the
-namespace's protected DACL and its exact-path, non-reparse, trusted-ACL checks.
+through the same epoch-files view that holds custody, with that view's
+exact-path, non-reparse, trusted-ACL checks. Because it names user SIDs,
+requested settings and override digests, the record and its resolution are
+published with the private-custody recipe: a protected DACL granting only SYSTEM
+and Administrators, owned by Administrators, rather than the namespace's
+inherited read access for Users. Ordinary reads accept that descriptor.
 Uninstall and purge removes ProgramData\OpenBlade but not the native namespace,
 so a start after purge still finds the record and its resolution together with
 the history that binds them. The record holds schema 1, the
@@ -178,7 +182,12 @@ fields, only for the generation whose record is non-empty; other generations kee
 byte-identical v3 proofs. Retained and fresh proofs compare every thermal field
 and must have the same version. The only cross-version match is the existing v2
 to v3 empty-thermal case. The record commitment additionally covers the
-pending-override digests (OpenBlade.NativeHandbackRecord.v1).
+pending-override digests (OpenBlade.NativeHandbackRecord.v1). Custody recomputes
+the history commitment at every start, so a change to classification, to these
+lines or to the record encoding would block every handed-back machine. The
+known-answer vector tests/Fixtures/Parity/native-handback-record-v1.json pins a
+journal, both sets of commitment lines, their digests and the exact record bytes;
+change that format only with a new versioned header.
 
 At every start, the Service's mandatory native custody gate reacquires the
 retired owner and recomputes the handback from native history. Custody refuses
@@ -225,7 +234,9 @@ configuration is active. It then continues as managed's temporary full charge
 only for the user who started it, when that user's battery settings include it,
 and becomes "matched"; otherwise it is "reported". A restart before that
 sign-in seeds a continuing charge again, and a fresh read confirms it before it
-continues, because it may have ended in between. One that has ended is reported
+continues, because it may have ended in between; this holds whether the charge
+was confirmed from the live slot or from a pending enable request. One that has
+ended is reported
 without an external change, and no case writes the battery. Owned fans and
 unsent preparations are reported only. Forced recovery from a handback alone,
 without a managed run marker, arms no manual-fan safety floor, curve recovery or
