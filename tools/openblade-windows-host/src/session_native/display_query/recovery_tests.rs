@@ -561,8 +561,8 @@ fn nested_duplicates_private_tokens_and_negative_zero_are_invalid() {
         let recovery = Recovery::load(Mem::with(bytes.as_bytes()));
         assert_eq!(recovery.flags(), (false, true, Fields::ALL), "{name}");
     }
-    // The token text inside an ordinary value that does not start with it.
-    let benign = "{\"SchemaVersion\":1,\"Note\":\"see $serde_json::private::\"}";
+    // A member name that contains the token text without starting with it.
+    let benign = "{\"SchemaVersion\":1,\"see $serde_json::private::\":1}";
     assert!(!Recovery::load(Mem::with(benign.as_bytes())).flags().1);
     // serde_json reinterprets only member names. A saved Display key is text a
     // user can choose, so a key value with the token prefix still loads.

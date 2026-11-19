@@ -211,7 +211,7 @@ async fn status_event_arrays_are_refused_at_every_object_position() {
         }
         checked += 1;
     }
-    assert_eq!(checked, 20);
+    assert_eq!(checked, 24);
 }
 
 /// The ObserveState confirmation pass reads members that the snapshot keeps

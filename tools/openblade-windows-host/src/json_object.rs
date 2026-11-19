@@ -454,6 +454,23 @@ mod tests {
     }
 
     #[test]
+    fn input_ending_inside_an_escape_does_not_panic() {
+        // An escape advances past the end of the input, and the member-name
+        // check then looks at the bytes after the string.
+        for bytes in [
+            vec![b'"', b'\\'],
+            vec![b'"', b'\\', b'u'],
+            vec![b'"', b'\\', b'u', b'0', b'0'],
+        ] {
+            let _ = scan(&bytes);
+            assert!(
+                from_slice::<serde_json::Value>(&bytes).is_err(),
+                "{bytes:?}"
+            );
+        }
+    }
+
+    #[test]
     fn buffered_non_integer_numbers_are_not_objects() {
         for number in ["1.5", "1e2", "-0.0", "123456789012345678901234567890"] {
             let frame = format!(r#"{{"operation":"set","readings":{number}}}"#);

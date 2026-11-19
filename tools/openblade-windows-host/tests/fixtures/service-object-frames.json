@@ -87,7 +87,11 @@
       { "case": "controllerDetectionWarning with the private prefix", "base": "get-status", "valid": true, "path": ["status", "controllerDetectionWarning"], "value": "\"$serde_json::private::game\"" },
       { "case": "status event with an unknown member", "base": "status-event", "valid": false, "path": ["extra"], "value": "1" },
       { "case": "status event frame as StatusEvent", "base": "status-event", "valid": false, "path": ["frame"], "value": "\"StatusEvent\"" },
-      { "case": "status event version as -0", "base": "status-event", "valid": false, "path": ["version"], "value": "-0", "nativeError": "Service status event version mismatch", "managedError": "versionMismatch" }
+      { "case": "status event version as -0", "base": "status-event", "valid": false, "path": ["version"], "value": "-0", "nativeError": "Service status event version mismatch", "managedError": "versionMismatch" },
+      { "case": "status event version as 80.0", "base": "status-event", "valid": false, "path": ["version"], "value": "80.0" },
+      { "case": "status event version as -0.0", "base": "status-event", "valid": false, "path": ["version"], "value": "-0.0" },
+      { "case": "status event version as 2^32 + 80", "base": "status-event", "valid": false, "path": ["version"], "value": "4294967376" },
+      { "case": "status event version as a private number token", "base": "status-event", "valid": false, "path": ["version"], "value": "{\"$serde_json::private::Number\":\"80\"}" }
     ]
   }
 }
