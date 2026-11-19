@@ -18,7 +18,7 @@ use windows_sys::Win32::{
 
 use super::*;
 use crate::battery_runtime::{ProfileReplay, ProfileSaveBarrier};
-use crate::scm_host::{Phase, RUNNING_CONTROLS, control};
+use crate::scm_host::{Phase, control};
 use crate::windows::{
     PREFIX,
     pipe::Endpoint,
@@ -27,6 +27,15 @@ use crate::windows::{
 };
 
 mod metadata_lifecycle;
+
+// Spelled out instead of reusing scm_host's mask, so a production change fails here.
+// STOP (0x1) | SHUTDOWN (0x4), plus POWEREVENT (0x40) | SESSIONCHANGE (0x80) when
+// the thermal composition is compiled.
+const EXPECTED_RUNNING_CONTROLS: u32 = if cfg!(feature = "service-thermal-mutation-v1") {
+    0xC5
+} else {
+    0x05
+};
 
 fn phase(status: &SERVICE_STATUS) -> (u32, u32, u32) {
     (
@@ -189,7 +198,7 @@ fn scripted_controls_wait_for_both_the_accepted_save_and_owned_renderer() {
             phases,
             [
                 (SERVICE_START_PENDING, 0, NO_ERROR),
-                (SERVICE_RUNNING, RUNNING_CONTROLS, NO_ERROR),
+                (SERVICE_RUNNING, EXPECTED_RUNNING_CONTROLS, NO_ERROR),
                 (SERVICE_STOP_PENDING, 0, NO_ERROR),
                 (SERVICE_STOPPED, 0, NO_ERROR),
             ]
