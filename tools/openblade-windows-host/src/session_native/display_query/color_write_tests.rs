@@ -559,6 +559,7 @@ fn rejected_first_setter_is_uncertain_and_pauses_across_restart_until_explicit_r
     host.panel.add_status = 0;
     host.panel.add_effect = true;
     let (topologies, queries) = (host.panel.topologies, host.queries);
+    let (checkpoint, record) = (rig.file.writes.load(Ordering::SeqCst), rig.file.record());
     let blocked = rig.set(&mut host, 2, SRGB).unwrap();
     assert_eq!(result(&blocked), (Status::Blocked, Some(PAUSED)));
     assert_eq!(host.queries, queries + 1);
@@ -570,6 +571,9 @@ fn rejected_first_setter_is_uncertain_and_pauses_across_restart_until_explicit_r
         (host.panel.writes.len(), host.panel.topologies),
         (1, topologies)
     );
+    // The gate precedes Begin: the paused record is not rewritten.
+    assert_eq!(rig.file.writes.load(Ordering::SeqCst), checkpoint);
+    assert_eq!(rig.file.record(), record);
 
     // Restart: the durable checkpoint restores the gate.
     let restarted = Rig::new(rig.file.clone());
@@ -1049,4 +1053,37 @@ fn faults_compose_the_managed_transaction_messages() {
     assert!(!shown(&snapshot(false, None)));
     assert!(!shown(&snapshot(true, Some(SRGB))));
     assert!(!shown(&Snapshot::unavailable("gone")));
+}
+
+/// A managed checkpoint that owns a color baseline and paused writes after an
+/// uncertain color change.
+const OWNED_PAUSED: &str = r#"{"SchemaVersion":4,"LastReconciledPowerSource":1,"ApplicationProfileId":"9f876742-1234-4321-abcd-d3ea3e1cf102","Baseline":{"RefreshRateKey":"fixed-60","HdrEnabled":null,"ColorProfileKey":"Native_CTR.icm","BrightnessPercent":40},"OwnedRefreshRate":true,"OwnedColorProfile":true,"ManualHold":false,"AutomaticWritesPaused":true,"UncertainColorProfile":true}"#;
+
+#[test]
+fn the_pause_gate_precedes_the_checkpoint_begin() {
+    // A paused request is refused before Begin: the managed record, with its
+    // baseline and ownership, stays byte for byte and nothing is written.
+    let file = Memory::with(OWNED_PAUSED);
+    let rig = Rig::new(file);
+    assert_eq!(rig.unresolved(), Fields::COLOR);
+    let mut host = admitted(1);
+    for _ in 0..2 {
+        let blocked = rig.set(&mut host, 1, SRGB).unwrap();
+        assert_eq!(result(&blocked), (Status::Blocked, Some(PAUSED)));
+        assert_eq!(rig.file.writes.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            rig.file.bytes.lock().unwrap().as_deref(),
+            Some(OWNED_PAUSED.as_bytes())
+        );
+        assert_eq!(host.interactions(), (0, 0));
+        assert_eq!(host.panel.topologies, 0);
+    }
+    // After the reopening read, the admitted request begins like managed
+    // Begin: it clears the baseline and ownership, then resumes on success.
+    rig.explicit_read(&host.panel.reply());
+    let outcome = rig.set(&mut host, 1, SRGB).unwrap();
+    assert_eq!(result(&outcome), (Status::Succeeded, None));
+    let record = rig.file.record();
+    assert!(record["Baseline"].is_null());
+    assert!(!flag(&record, "OwnedColorProfile") && !flag(&record, "AutomaticWritesPaused"));
 }
