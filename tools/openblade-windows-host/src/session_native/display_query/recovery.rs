@@ -126,7 +126,6 @@ impl Fields {
     };
 
     /// Whether any field is set on both.
-    #[cfg(openblade_display_manual_write)]
     pub(super) fn overlaps(self, other: Self) -> bool {
         (self.refresh && other.refresh)
             || (self.hdr && other.hdr)

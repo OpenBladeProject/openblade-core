@@ -8,7 +8,7 @@
 //! attempt and reply predicate. `profile_apply` composes those attempts.
 use super::{
     observation::{SharedBrightness, Snapshot},
-    recovery::{CheckpointFile, Recovery, WindowsCheckpointFile},
+    recovery::{CheckpointFile, Fields, Recovery, WindowsCheckpointFile},
 };
 use crate::{
     loaded_origin::Origin,
@@ -22,7 +22,7 @@ use openblade_platform_windows::display::{
 };
 use std::{
     io,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
 };
 use tokio::sync::watch;
 
@@ -48,6 +48,50 @@ pub(super) fn refreshed(query: io::Result<Snapshot>) -> io::Result<Snapshot> {
     }
 }
 
+pub(super) fn lock<F>(recovery: &Mutex<Recovery<F>>) -> io::Result<MutexGuard<'_, Recovery<F>>> {
+    recovery
+        .lock()
+        .map_err(|_| io::Error::other("display recovery state failed"))
+}
+
+/// A manual request that was not admitted: managed returns Blocked without
+/// completing the operation, with a fresh reply snapshot.
+pub(super) struct Refused {
+    pub(super) error: &'static str,
+    pub(super) state: Snapshot,
+}
+
+/// Managed `BeginManualOperation`, after the native write gate, for every
+/// manual display write: a request touching an unresolved field is refused
+/// with `paused`, then the durable checkpoint for `fields` precedes any device
+/// interaction. A refusal is answered by `query`; `None` admits the
+/// operation, which must then be completed.
+pub(super) fn begin<F: CheckpointFile>(
+    recovery: &Mutex<Recovery<F>>,
+    fields: Fields,
+    paused: &'static str,
+    power: Option<PowerContext>,
+    query: impl FnOnce() -> io::Result<Snapshot>,
+) -> io::Result<Option<Refused>> {
+    let refused = {
+        let mut recovery = lock(recovery)?;
+        if recovery.unresolved().overlaps(fields) {
+            Some(paused)
+        } else if !recovery.begin(fields, power.map(|power| power.source)) {
+            Some(CHECKPOINT)
+        } else {
+            None
+        }
+    };
+    let Some(error) = refused else {
+        return Ok(None);
+    };
+    Ok(Some(Refused {
+        error,
+        state: refreshed(query())?,
+    }))
+}
+
 /// Managed `ResumeAfterSuccessfulExplicitRead`, plus the native write gates.
 ///
 /// The brightness worker keeps its own in-process pause after a possible
@@ -65,13 +109,8 @@ pub(super) fn explicit_read<F: CheckpointFile>(
     recovery: &Mutex<Recovery<F>>,
     state: &Snapshot,
 ) -> io::Result<()> {
-    let lock = || {
-        recovery
-            .lock()
-            .map_err(|_| io::Error::other("display recovery state failed"))
-    };
     #[cfg(feature = "agent-display-brightness-write-v1")]
-    if lock()?.unresolved().brightness && state.brightness().is_some() {
+    if lock(recovery)?.unresolved().brightness && state.brightness().is_some() {
         brightness
             .lock()
             .map_err(|_| io::Error::other("brightness owner state failed"))?
@@ -79,7 +118,7 @@ pub(super) fn explicit_read<F: CheckpointFile>(
     }
     #[cfg(not(feature = "agent-display-brightness-write-v1"))]
     let _ = brightness;
-    lock()?.explicit_read(state);
+    lock(recovery)?.explicit_read(state);
     Ok(())
 }
 
@@ -144,10 +183,7 @@ impl Writer {
         canceled: &std::sync::atomic::AtomicBool,
     ) -> io::Result<super::manual_write::ManualWriteOutcome> {
         super::manual_write::run(
-            &mut super::manual_write::WindowsManualHost::new(
-                self.host.clone(),
-                openblade_platform_windows::display::hdr::WindowsHdrNative::current_user(),
-            ),
+            &mut self.host.hdr_writer(),
             brightness,
             &self.recovery,
             &request,
@@ -164,10 +200,7 @@ impl Writer {
         canceled: &std::sync::atomic::AtomicBool,
     ) -> io::Result<super::manual_write::ManualWriteOutcome> {
         super::manual_write::run(
-            &mut super::manual_write::WindowsManualHost::new(
-                self.host.clone(),
-                openblade_platform_windows::display::refresh_write::WindowsRefreshNative::current_user(),
-            ),
+            &mut self.host.refresh_writer(),
             brightness,
             &self.recovery,
             request,
@@ -184,10 +217,7 @@ impl Writer {
         canceled: &std::sync::atomic::AtomicBool,
     ) -> io::Result<super::manual_write::ManualWriteOutcome> {
         super::manual_write::run(
-            &mut super::manual_write::WindowsManualHost::new(
-                self.host.clone(),
-                openblade_platform_windows::color_profile::write::WindowsColorProfileNative::current_user(),
-            ),
+            &mut self.host.color_writer(),
             brightness,
             &self.recovery,
             request,
@@ -242,6 +272,46 @@ impl WindowsHost {
         canceled: &std::sync::atomic::AtomicBool,
     ) -> io::Result<Snapshot> {
         super::observation::query(canceled, brightness.clone())
+    }
+
+    /// The setHdr host: this admission state and the real HDR native.
+    #[cfg(feature = "agent-display-hdr-write-v1")]
+    pub(super) fn hdr_writer(
+        &self,
+    ) -> super::manual_write::WindowsManualHost<
+        openblade_platform_windows::display::hdr::WindowsHdrNative,
+    > {
+        super::manual_write::WindowsManualHost::new(
+            self.clone(),
+            openblade_platform_windows::display::hdr::WindowsHdrNative::current_user(),
+        )
+    }
+
+    /// The setRefreshRate host: this admission state and the real CCD native.
+    #[cfg(feature = "agent-display-refresh-write-v1")]
+    pub(super) fn refresh_writer(
+        &self,
+    ) -> super::manual_write::WindowsManualHost<
+        openblade_platform_windows::display::refresh_write::WindowsRefreshNative,
+    > {
+        super::manual_write::WindowsManualHost::new(
+            self.clone(),
+            openblade_platform_windows::display::refresh_write::WindowsRefreshNative::current_user(
+            ),
+        )
+    }
+
+    /// The setColorProfile host: this admission state and the real WCS native.
+    #[cfg(feature = "agent-display-color-write-v1")]
+    pub(super) fn color_writer(
+        &self,
+    ) -> super::manual_write::WindowsManualHost<
+        openblade_platform_windows::color_profile::write::WindowsColorProfileNative,
+    > {
+        super::manual_write::WindowsManualHost::new(
+            self.clone(),
+            openblade_platform_windows::color_profile::write::WindowsColorProfileNative::current_user(),
+        )
     }
 }
 

@@ -687,6 +687,40 @@ fn hdr_succeeded_without_hdr_readback_keeps_the_pause_but_not_the_gate() {
 }
 
 #[test]
+fn complete_with_gates_exactly_the_given_fields_beside_the_managed_record() {
+    let profile = Fields::REFRESH.include(Fields::HDR).include(Fields::COLOR);
+
+    // Indeterminate: the durable record keeps every field of the operation
+    // uncertain, while the native gate gains only the given ones.
+    let (mut recovery, file) = from_fixture("battery-minimal");
+    assert!(recovery.begin(profile, Some(1)));
+    recovery.complete_with(Status::Indeterminate, &without_brightness(), Fields::HDR);
+    assert_eq!(recovery.unresolved(), Fields::HDR);
+    assert_eq!(recovery.flags(), (true, true, profile));
+    assert_eq!(file.stored()["UncertainColorProfile"], true);
+    assert_eq!(Recovery::load(file.clone()).unresolved(), profile);
+
+    // Succeeded with a complete readback resumes the managed pause, and the
+    // given fields are still gated in this Agent.
+    let (mut recovery, file) = from_fixture("battery-minimal");
+    assert!(recovery.begin(profile, Some(1)));
+    recovery.complete_with(Status::Succeeded, &without_brightness(), Fields::COLOR);
+    assert_eq!(recovery.flags(), (true, false, Fields::default()));
+    assert_eq!(file.stored()["AutomaticWritesPaused"], false);
+    assert_eq!(recovery.unresolved(), Fields::COLOR);
+
+    // Failed restores the inherited state and keeps earlier gates.
+    let (mut recovery, file) = from_fixture("battery-minimal");
+    assert!(recovery.begin(Fields::BRIGHTNESS, Some(1)));
+    recovery.complete(Status::Indeterminate, &Snapshot::unavailable("unknown"));
+    assert!(recovery.begin(profile, Some(1)));
+    recovery.complete_with(Status::Failed, &without_brightness(), Fields::default());
+    assert_eq!(recovery.unresolved(), Fields::BRIGHTNESS);
+    assert_eq!(recovery.flags(), (true, true, Fields::BRIGHTNESS));
+    assert_eq!(file.stored()["UncertainRefreshRate"], false);
+}
+
+#[test]
 fn only_a_paused_load_restores_the_hdr_gate() {
     // Managed uncertainty without a pause (an in-flight hold) gates nothing.
     let (recovery, _) = from_fixture("battery-owned-brightness-uncertain-hdr-hold");

@@ -4,8 +4,9 @@
 //! (`profile_apply`) composes the same admission, attempts and reconciliation
 //! over several fields.
 //!
-//! Mirrors managed `DisplayAutomationCoordinator.BeginManualOperation`, the
-//! applier's `RunExpectedAsync`/`ValidateExpectedAsync` power admission and
+//! Mirrors managed `DisplayAutomationCoordinator.BeginManualOperation` (the
+//! shared `write::begin`), the applier's
+//! `RunExpectedAsync`/`ValidateExpectedAsync` power admission and
 //! `ExecuteSetterAsync`, and `CompleteManualOperation`: a durable manual-hold
 //! checkpoint for the written field precedes any device interaction, the
 //! trusted power source must match the request, the reply comes from a fresh
@@ -15,8 +16,8 @@ use super::{
     observation::{SharedBrightness, Snapshot},
     recovery::{CheckpointFile, Fields, Recovery, Status},
     write::{
-        CHANGED_POWER, CHECKPOINT, STALE_AFTER, UNCONFIRMED_POWER, UNREFRESHED, WindowsHost,
-        refreshed,
+        CHANGED_POWER, Refused, STALE_AFTER, UNCONFIRMED_POWER, UNREFRESHED, WindowsHost, begin,
+        lock, refreshed,
     },
 };
 use crate::session_native::power_admission::PowerContext;
@@ -79,6 +80,16 @@ pub(super) struct ManualWriteOutcome {
     pub(super) status: Status,
     pub(super) error: Option<Cow<'static, str>>,
     pub(super) state: Snapshot,
+}
+
+impl From<Refused> for ManualWriteOutcome {
+    fn from(refused: Refused) -> Self {
+        Self {
+            status: Status::Blocked,
+            error: Some(Cow::Borrowed(refused.error)),
+            state: refused.state,
+        }
+    }
 }
 
 /// Injected OS boundary. Production reads the trusted power context and the
@@ -193,46 +204,6 @@ impl Attempt {
     }
 }
 
-pub(super) fn lock<F>(
-    recovery: &Mutex<Recovery<F>>,
-) -> io::Result<std::sync::MutexGuard<'_, Recovery<F>>> {
-    recovery
-        .lock()
-        .map_err(|_| io::Error::other("display recovery state failed"))
-}
-
-/// Managed `BeginManualOperation`, after the native write gate: a request
-/// touching an unresolved field is refused with `paused`, then the durable
-/// checkpoint for `fields` precedes any device interaction. A refusal is not
-/// admitted (managed returns Blocked without completing) and is answered by
-/// `query`; `None` admits the operation, which must then be completed.
-pub(super) fn begin<F: CheckpointFile>(
-    recovery: &Mutex<Recovery<F>>,
-    fields: Fields,
-    paused: &'static str,
-    power: Option<PowerContext>,
-    query: impl FnOnce() -> io::Result<Snapshot>,
-) -> io::Result<Option<ManualWriteOutcome>> {
-    let refused = {
-        let mut recovery = lock(recovery)?;
-        if recovery.unresolved().overlaps(fields) {
-            Some(paused)
-        } else if !recovery.begin(fields, power.map(|power| power.source)) {
-            Some(CHECKPOINT)
-        } else {
-            None
-        }
-    };
-    let Some(error) = refused else {
-        return Ok(None);
-    };
-    Ok(Some(ManualWriteOutcome {
-        status: Status::Blocked,
-        error: Some(Cow::Borrowed(error)),
-        state: refreshed(query())?,
-    }))
-}
-
 /// Managed `ValidateExpectedAsync`: the trusted power source is confirmed and
 /// is the one the request expects, or the Blocked refusal.
 pub(super) fn admit_power(
@@ -264,7 +235,7 @@ pub(super) fn run<F: CheckpointFile, H: ManualHost, R: ManualRequest<H>>(
     if let Some(refused) = begin(recovery, field.fields, field.paused, power, || {
         host.query(brightness, canceled)
     })? {
-        return Ok(refused);
+        return Ok(refused.into());
     }
 
     // Admitted manual operation: whatever happens next, record its certainty.

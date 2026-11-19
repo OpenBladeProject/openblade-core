@@ -7,14 +7,14 @@
 //! operation records its certainty before returning, even when the client,
 //! deadline or Stop has already abandoned the reply.
 #[cfg(test)]
+pub(super) use super::write::CHECKPOINT;
+#[cfg(test)]
 use super::write::explicit_read;
-pub(super) use super::write::{
-    CHANGED_POWER, CHECKPOINT, STALE_AFTER, UNCONFIRMED_POWER, UNREFRESHED,
-};
+pub(super) use super::write::{CHANGED_POWER, STALE_AFTER, UNCONFIRMED_POWER, UNREFRESHED};
 use super::{
     observation::{SharedBrightness, Snapshot},
     recovery::{CheckpointFile, Fields, Recovery, Status},
-    write::{WindowsHost, refreshed},
+    write::{WindowsHost, begin, lock, refreshed},
 };
 use crate::session_native::power_admission::PowerContext;
 use openblade_platform_windows::{
@@ -74,30 +74,15 @@ pub(super) fn set_brightness<F: CheckpointFile>(
     request: SetBrightness,
     canceled: &AtomicBool,
 ) -> io::Result<WriteOutcome> {
-    let lock = || {
-        recovery
-            .lock()
-            .map_err(|_| io::Error::other("display recovery state failed"))
-    };
     let power = host.power();
-    {
-        let mut recovery = lock()?;
-        let refused = if recovery.unresolved().brightness {
-            Some(PAUSED)
-        } else if !recovery.begin(Fields::BRIGHTNESS, power.map(|power| power.source)) {
-            Some(CHECKPOINT)
-        } else {
-            None
-        };
-        if let Some(error) = refused {
-            drop(recovery);
-            // Not admitted: managed returns Blocked without completing.
-            return Ok(WriteOutcome {
-                status: Status::Blocked,
-                error: Some(error),
-                state: refreshed(host.query(brightness, canceled))?,
-            });
-        }
+    if let Some(refused) = begin(recovery, Fields::BRIGHTNESS, PAUSED, power, || {
+        host.query(brightness, canceled)
+    })? {
+        return Ok(WriteOutcome {
+            status: Status::Blocked,
+            error: Some(refused.error),
+            state: refused.state,
+        });
     }
 
     // Admitted manual operation: whatever happens next, record its certainty.
@@ -143,7 +128,7 @@ pub(super) fn set_brightness<F: CheckpointFile>(
         }
         _ => (status, error),
     };
-    lock()?.complete(status, &state);
+    lock(recovery)?.complete(status, &state);
     match fatal {
         Some(error) => Err(error),
         None => Ok(WriteOutcome {

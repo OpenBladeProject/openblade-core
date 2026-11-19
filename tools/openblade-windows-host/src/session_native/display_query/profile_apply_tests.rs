@@ -18,6 +18,7 @@ const REFUSED: &str = "The scripted write was refused.";
 const FAILED: &str = "The scripted write failed.";
 const UNCERTAIN: &str = "The scripted write may have been submitted.";
 const CANCELED: &str = "The scripted write was canceled.";
+const GONE: &str = "The scripted display read was unavailable.";
 
 /// The scripted panel, as the reply query reports it.
 #[derive(Clone)]
@@ -120,6 +121,9 @@ struct Scripted {
     queries: usize,
     /// The query with this 1-based number fails fatally.
     fail_query: Option<usize>,
+    /// The query with this 1-based number reports an unavailable snapshot
+    /// with this message.
+    unavailable_query: Option<(usize, Option<&'static str>)>,
     /// Cancellation arrives while the query with this number runs.
     cancel_in_query: Option<usize>,
     cancel: Arc<AtomicBool>,
@@ -142,6 +146,7 @@ impl Scripted {
             log: Vec::new(),
             queries: 0,
             fail_query: None,
+            unavailable_query: None,
             cancel_in_query: None,
             cancel: Arc::default(),
             checkpoint: None,
@@ -245,6 +250,17 @@ impl ProfileHost for Scripted {
         }
         if self.cancel_in_query == Some(self.queries) {
             self.cancel.store(true, Ordering::SeqCst);
+        }
+        if let Some((_, message)) = self
+            .unavailable_query
+            .filter(|(query, _)| *query == self.queries)
+        {
+            let gone = Panel {
+                available: false,
+                message,
+                ..self.panel.clone()
+            };
+            return Ok(gone.snapshot());
         }
         Ok(self.panel.snapshot())
     }
@@ -412,6 +428,27 @@ fn a_full_profile_writes_each_field_once_in_the_managed_order() {
         (false, Some("dci-p3"))
     );
     assert_eq!(state.brightness, Some(50));
+}
+
+#[test]
+fn a_single_field_profile_writes_only_that_field() {
+    // HDR is off for the color profile, which is satisfied under HDR.
+    for (field, hdr, write) in [
+        (Fields::REFRESH, true, "refresh fixed-120"),
+        (Fields::HDR, true, "hdr false"),
+        (Fields::COLOR, false, "color dci-p3"),
+        (Fields::BRIGHTNESS, true, "brightness 50"),
+    ] {
+        let rig = fresh();
+        let panel = Panel {
+            hdr,
+            ..Panel::default()
+        };
+        let mut host = Scripted::new(panel, &[Outcome::Applies]);
+        let outcome = apply(&rig, &mut host, only(field)).unwrap();
+        assert_eq!(result(&outcome), (Status::Succeeded, None), "{write}");
+        assert_eq!(writes(&host), [write]);
+    }
 }
 
 #[test]
@@ -881,6 +918,260 @@ fn a_fatal_brightness_worker_is_recorded_before_it_is_returned() {
         let record = rig.file.record();
         assert!(flag(&record, "AutomaticWritesPaused") && flag(&record, "UncertainBrightness"));
     }
+
+    // Without a reply query the final state is unavailable, so it shows none
+    // of the earlier confirmed steps and each is gated.
+    let rig = fresh();
+    let mut host = Scripted::new(
+        Panel::default(),
+        &[
+            Outcome::Applies,
+            Outcome::Applies,
+            Outcome::Applies,
+            Outcome::Fatal { possible: false },
+        ],
+    );
+    assert!(apply(&rig, &mut host, full()).is_err());
+    assert_eq!(writes(&host), FULL_WRITES);
+    assert_eq!(
+        rig.unresolved(),
+        Fields::REFRESH.include(Fields::HDR).include(Fields::COLOR)
+    );
+}
+
+#[test]
+fn a_fatal_reply_query_after_a_step_that_submitted_nothing_is_returned() {
+    // A no-op step, then a step that failed before any submission.
+    for (script, failing, written) in [
+        (vec![Outcome::Unchanged], 2, 1),
+        (
+            vec![
+                Outcome::Applies,
+                Outcome::Failed {
+                    reply_resolves: false,
+                    applied: false,
+                },
+            ],
+            3,
+            2,
+        ),
+    ] {
+        let rig = fresh();
+        let mut host = Scripted::new(Panel::default(), &script);
+        host.fail_query = Some(failing);
+        assert!(apply(&rig, &mut host, full()).is_err());
+        assert_eq!(writes(&host), FULL_WRITES[..written]);
+        let record = rig.file.record();
+        assert!(flag(&record, "AutomaticWritesPaused"));
+        assert_eq!(uncertain(&record), all_fields());
+    }
+}
+
+#[test]
+fn a_fatal_query_is_returned_for_an_unconfigured_or_power_refused_profile() {
+    // Unconfigured: recorded Succeeded, so the durable record keeps the
+    // pause only because the unavailable reply cannot confirm it.
+    let rig = fresh();
+    let mut host = Scripted::new(Panel::default(), &[]);
+    host.fail_query = Some(1);
+    assert!(apply(&rig, &mut host, Settings::default()).is_err());
+    assert_eq!(host.log, ["query"]);
+    assert_eq!(rig.unresolved(), Fields::default());
+
+    // Power refused: recorded Blocked, which restores the inherited state.
+    let rig = fresh();
+    let mut host = Scripted::new(Panel::default(), &[]);
+    host.fail_query = Some(1);
+    assert!(apply_expecting(&rig, &mut host, 2, full()).is_err());
+    assert_eq!(host.log, ["query"]);
+    let record = rig.file.record();
+    assert!(!flag(&record, "AutomaticWritesPaused"));
+    assert_eq!(uncertain(&record), Fields::default());
+    assert_eq!(rig.unresolved(), Fields::default());
+}
+
+#[test]
+fn no_later_field_is_decided_from_an_unavailable_reply() {
+    // The reviewer's case: HDR is supported and off, the refresh step is a
+    // no-op (the writer's own read already showed it), and its reply query
+    // is unavailable. An unavailable snapshot reports no HDR support and SDR,
+    // so deciding from it would skip HDR and write the color profile.
+    let settings = Settings {
+        hdr_enabled: Some(true),
+        brightness_percent: None,
+        ..full()
+    };
+    let panel = Panel {
+        hdr: false,
+        ..Panel::default()
+    };
+    let rig = fresh();
+    let mut host = Scripted::new(panel.clone(), &[Outcome::Unchanged]);
+    host.unavailable_query = Some((2, Some(GONE)));
+    let outcome = apply(&rig, &mut host, settings.clone()).unwrap();
+    // Managed Failure(state.Message ?? ...) with nothing submitted.
+    assert_eq!(result(&outcome), (Status::Failed, Some(GONE)));
+    assert!(!outcome.state.observed().available);
+    assert_eq!(writes(&host), ["refresh fixed-120"]);
+    assert_eq!(rig.unresolved(), Fields::default());
+    assert!(!flag(&rig.file.record(), "AutomaticWritesPaused"));
+
+    // Without a message, the managed default text.
+    let rig = fresh();
+    let mut host = Scripted::new(panel, &[Outcome::Unchanged]);
+    host.unavailable_query = Some((2, None));
+    let outcome = apply(&rig, &mut host, settings).unwrap();
+    assert_eq!(result(&outcome), (Status::Failed, Some(UNAVAILABLE)));
+
+    // After a submission the same stop is Indeterminate, and the confirmed
+    // write that the unavailable reply no longer shows is gated.
+    let rig = fresh();
+    let mut host = Scripted::new(Panel::default(), &[Outcome::Applies, Outcome::Unchanged]);
+    host.unavailable_query = Some((3, Some(GONE)));
+    let outcome = apply(&rig, &mut host, full()).unwrap();
+    assert_eq!(result(&outcome), (Status::Indeterminate, Some(GONE)));
+    assert_eq!(writes(&host), FULL_WRITES[..2]);
+    assert_eq!(rig.unresolved(), Fields::REFRESH);
+
+    // An unavailable reply after the last configured field is the final
+    // match, not a selection.
+    let rig = fresh();
+    let mut host = Scripted::new(Panel::default(), &[Outcome::Unchanged]);
+    host.unavailable_query = Some((2, Some(GONE)));
+    let outcome = apply(&rig, &mut host, only(Fields::REFRESH)).unwrap();
+    assert_eq!(result(&outcome), (Status::Failed, Some(UNCONFIRMED)));
+}
+
+#[test]
+fn a_brightness_no_op_is_not_a_submission() {
+    // The worker's own read already showed a level the reply does not: the
+    // step succeeds and only the final match fails, before any submission.
+    let rig = fresh();
+    let mut host = Scripted::new(Panel::default(), &[Outcome::Unchanged]);
+    let outcome = apply(&rig, &mut host, only(Fields::BRIGHTNESS)).unwrap();
+    assert_eq!(result(&outcome), (Status::Failed, Some(UNCONFIRMED)));
+    assert_eq!(writes(&host), ["brightness 50"]);
+    assert_eq!(rig.unresolved(), Fields::default());
+}
+
+#[test]
+fn each_unshown_step_reports_its_own_writer_text() {
+    for (index, text) in [
+        refresh_write::UNCONFIRMED,
+        hdr_write::UNCONFIRMED,
+        color_write::UNCONFIRMED,
+        brightness_write::UNCONFIRMED,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut script = vec![Outcome::Applies; index];
+        script.push(Outcome::Unshown);
+        let rig = fresh();
+        let mut host = Scripted::new(Panel::default(), &script);
+        let outcome = apply(&rig, &mut host, full()).unwrap();
+        assert_eq!(result(&outcome), (Status::Indeterminate, Some(text)));
+        assert_eq!(writes(&host), FULL_WRITES[..=index]);
+    }
+}
+
+#[test]
+fn a_refused_profile_answers_with_an_interrupted_reply_as_unavailable() {
+    let rig = fresh();
+    rig.recovery.lock().unwrap().begin(Fields::HDR, Some(1));
+    rig.recovery
+        .lock()
+        .unwrap()
+        .complete(Status::Indeterminate, &Snapshot::unavailable("unknown"));
+    let mut host = Scripted::new(Panel::default(), &[]);
+    host.cancel.store(true, Ordering::SeqCst);
+    let outcome = apply(&rig, &mut host, full()).unwrap();
+    assert_eq!(result(&outcome), (Status::Blocked, Some(PAUSED)));
+    assert_eq!(outcome.state.observed().message, Some(UNREFRESHED));
+    assert_eq!(host.log, ["query"]);
+}
+
+#[test]
+fn an_unsupported_hdr_read_reopens_the_gate_after_a_restart() {
+    // A panel that reports HDR as unsupported and a profile holding "HDR off"
+    // (managed applies it and skips HDR). Managed HasCompleteReadback never
+    // accepts the HDR field on this panel, so the durable pause stays.
+    let sdr_only = Panel {
+        hdr_supported: false,
+        hdr: false,
+        ..Panel::default()
+    };
+    let settings = only(Fields::REFRESH.include(Fields::HDR));
+    for first in [Outcome::Applies, Outcome::Unshown] {
+        let rig = fresh();
+        let mut host = Scripted::new(sdr_only.clone(), &[first]);
+        apply(&rig, &mut host, settings.clone()).unwrap();
+        let record = rig.file.record();
+        assert!(flag(&record, "AutomaticWritesPaused") && flag(&record, "UncertainHdr"));
+
+        // After a restart the gate reloads both fields; an unavailable read
+        // observes neither, and an available one observes both.
+        let restarted = Rig::new(rig.file.clone());
+        assert_eq!(restarted.unresolved(), Fields::REFRESH.include(Fields::HDR));
+        restarted.explicit_read(&Snapshot::unavailable("gone"));
+        let mut host = Scripted::new(sdr_only.clone(), &[]);
+        let blocked = apply(&restarted, &mut host, settings.clone()).unwrap();
+        assert_eq!(result(&blocked), (Status::Blocked, Some(PAUSED)));
+        restarted.explicit_read(&sdr_only.snapshot());
+        assert_eq!(restarted.unresolved(), Fields::default());
+        assert!(flag(&restarted.file.record(), "AutomaticWritesPaused"));
+
+        // The profile applies again, without an HDR write.
+        let mut panel = sdr_only.clone();
+        panel.refresh = Some("fixed-240".into());
+        let mut host = Scripted::new(panel, &[Outcome::Applies]);
+        let outcome = apply(&restarted, &mut host, settings.clone()).unwrap();
+        assert_eq!(result(&outcome), (Status::Succeeded, None));
+        assert_eq!(writes(&host), ["refresh fixed-120"]);
+    }
+}
+
+#[test]
+fn unreadable_brightness_gates_only_requests_that_cannot_succeed() {
+    // Managed fails too: the refresh rate is written, then brightness is
+    // unavailable ("Display brightness is unavailable.").
+    let panel = Panel {
+        brightness: None,
+        levels: Vec::new(),
+        ..Panel::default()
+    };
+    let settings = only(Fields::REFRESH.include(Fields::BRIGHTNESS));
+    let rig = fresh();
+    let mut host = Scripted::new(panel.clone(), &[Outcome::Applies]);
+    let outcome = apply(&rig, &mut host, settings.clone()).unwrap();
+    assert_eq!(
+        result(&outcome),
+        (Status::Indeterminate, Some(brightness_write::UNAVAILABLE))
+    );
+
+    // After a restart a read without brightness reopens only the refresh
+    // rate. The profile stays refused while brightness is unreadable, which
+    // no request writing brightness could survive anyway.
+    let restarted = Rig::new(rig.file.clone());
+    restarted.explicit_read(&host.panel.snapshot());
+    assert_eq!(restarted.unresolved(), Fields::BRIGHTNESS);
+    let mut host = Scripted::new(host.panel.clone(), &[]);
+    let blocked = apply(&restarted, &mut host, settings.clone()).unwrap();
+    assert_eq!(result(&blocked), (Status::Blocked, Some(PAUSED)));
+    let refresh_only = apply(&restarted, &mut host, only(Fields::REFRESH)).unwrap();
+    assert_eq!(result(&refresh_only), (Status::Succeeded, None));
+
+    // A read that observes brightness reopens it, and the profile applies.
+    let readable = Panel {
+        refresh: Some("fixed-120".into()),
+        ..Panel::default()
+    };
+    restarted.explicit_read(&readable.snapshot());
+    assert_eq!(restarted.unresolved(), Fields::default());
+    let mut host = Scripted::new(readable, &[Outcome::Applies]);
+    let outcome = apply(&restarted, &mut host, settings).unwrap();
+    assert_eq!(result(&outcome), (Status::Succeeded, None));
+    assert_eq!(writes(&host), ["brightness 50"]);
 }
 
 #[test]
@@ -1077,4 +1368,29 @@ fn color_ids_compare_ordinally_ignoring_case() {
     assert!(same_id(Some("DCI-P3"), "dci-p3"));
     assert!(!same_id(Some("dci-p3 "), "dci-p3"));
     assert!(!same_id(None, "dci-p3"));
+    // Whole IDs: managed DisplayProfileApplier has no file-name equivalence.
+    assert!(!same_id(Some(r"C:\Profiles\dci-p3"), "dci-p3"));
+
+    // So a path whose file name matches the key is still written.
+    let rig = fresh();
+    let panel = Panel {
+        color: Some(r"C:\Profiles\dci-p3".into()),
+        ..Panel::default()
+    };
+    let settings = Settings {
+        hdr_enabled: Some(false),
+        color_profile_key: Some("dci-p3".into()),
+        ..Settings::default()
+    };
+    let mut host = Scripted::new(panel, &[Outcome::Applies, Outcome::Applies]);
+    let outcome = apply(&rig, &mut host, settings).unwrap();
+    assert_eq!(result(&outcome), (Status::Succeeded, None));
+    assert_eq!(writes(&host), ["hdr false", "color dci-p3"]);
+}
+
+#[test]
+fn the_nearest_level_ignores_levels_above_100() {
+    assert_eq!(nearest(100, &[90, 101]), Some(90));
+    assert_eq!(nearest(100, &[101]), None);
+    assert_eq!(nearest(60, &[50, 70]), Some(50));
 }

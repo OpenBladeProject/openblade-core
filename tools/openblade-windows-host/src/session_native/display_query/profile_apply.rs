@@ -6,20 +6,22 @@
 //! covers every configured field (`BeginManualOperation`) before any device
 //! interaction. An unconfigured profile is answered by one query, without
 //! power admission. Otherwise the trusted power source must match the
-//! request, and one query selects the steps in the managed order and with the
-//! managed conditions: refresh rate (the current key differs), HDR (supported
-//! and different), color profile (SDR, and the active ID differs ignoring
-//! case) and brightness (the nearest supported level differs). Each step is
-//! the reviewed single-field attempt (`refresh_write`, `hdr_write`,
-//! `color_write`, `brightness_write`), with its own fence (topology, Origin,
-//! session, power generation and cancellation) immediately before its one
-//! possible submission, followed by one reply query; a successful step whose
-//! power context changed is stale. The first step that does not succeed ends
-//! the operation, so no later field is written after a refused or ambiguous
-//! step and nothing is replayed. Finally the reply must show every requested
-//! setting (managed `ProfileMatches`). Every admitted operation records its
-//! certainty before returning, even when the client, deadline or Stop has
-//! already abandoned the reply.
+//! request, and the fields are taken in the managed order with the managed
+//! conditions: refresh rate (the current key differs), HDR (supported and
+//! different), color profile (SDR, and the active ID differs ignoring case)
+//! and brightness (the nearest supported level differs). The selecting query
+//! decides the first field; each later field is decided from the reply query
+//! of the step before it, and is never decided from an unavailable snapshot.
+//! Each step is the reviewed single-field attempt (`refresh_write`,
+//! `hdr_write`, `color_write`, `brightness_write`), with its own fence
+//! (topology, Origin, session, power generation and cancellation) immediately
+//! before its one possible submission, followed by one reply query; a
+//! successful step whose power context changed is stale. The first step that
+//! does not succeed ends the operation, so no later field is written after a
+//! refused or ambiguous step and nothing is replayed. Finally the reply must
+//! show every requested setting (managed `ProfileMatches`). Every admitted
+//! operation records its certainty before returning, even when the client,
+//! deadline or Stop has already abandoned the reply.
 //!
 //! Certainty is recorded per field. The durable managed record keeps the
 //! managed semantics: an Indeterminate profile leaves every configured field
@@ -29,40 +31,52 @@
 //! power context went stale, and a confirmed step that the operation's final
 //! reply does not show (an unavailable final reply shows none). A field
 //! that submitted nothing is never gated.
-//! A fatal reply query or brightness worker failure is recorded the way the
-//! managed dispatcher records an exception (Indeterminate), then stops the
-//! feature. Across an Agent restart the gate reloads the durable uncertain
-//! fields, which for an Indeterminate profile are all of its fields.
+//! A fatal reply query or brightness worker failure stops the feature after
+//! the operation is recorded with the status it had reached: Succeeded for
+//! an unconfigured profile, the Blocked refusal for a power source that does
+//! not match, and Indeterminate once the selecting query is reached. Across
+//! an Agent restart the gate reloads the durable uncertain fields, which for
+//! an Indeterminate profile are all of its fields.
 //!
-//! Deliberate deviations from managed, each toward fewer writes or less
-//! claimed certainty:
-//! - Managed counts every successful setter, a controller no-op included, as
-//!   a possible submission of the profile; native counts only steps that
-//!   submitted or may have, so a later failure before any submission is
-//!   Failed or Blocked rather than Indeterminate.
-//! - Managed continues after a confirmed step that its reply does not show
-//!   and reports the mismatch at the end; native stops at that step
-//!   (Indeterminate), before writing any later field.
-//! - A writer's fence refusal (power changed before submission, panel
-//!   changed, cancellation) is Blocked while nothing was submitted; managed's
-//!   stale check before a setter is reported Indeterminate by its dispatcher.
-//! - The native gate refuses the whole profile while any configured field is
-//!   unresolved, like each single-field write.
-//! - A selecting read interrupted by cancellation is an unavailable snapshot,
-//!   so the profile fails before any write; managed reports a canceled
-//!   operation Indeterminate.
-//! - Each writer's own deviations apply to its step.
+//! Deliberate deviations from managed. None writes a field that managed would
+//! not write on the same true display state. Deviations 1, 3, 5 and 6 report
+//! more certainty than managed (Failed or Blocked where managed reports
+//! Indeterminate), each only when nothing was submitted:
+//! 1. Managed counts every successful setter, a controller no-op included, as
+//!    a possible submission of the profile; native counts only steps that
+//!    submitted or may have, so a later failure before any submission is
+//!    Failed or Blocked rather than Indeterminate.
+//! 2. Managed continues after a confirmed step that its reply does not show
+//!    and reports the mismatch at the end; native stops at that step
+//!    (Indeterminate), before writing any later field.
+//! 3. A writer's fence refusal (power changed before submission, panel
+//!    changed, cancellation) is Blocked while nothing was submitted; managed's
+//!    stale check before a setter is reported Indeterminate by its dispatcher.
+//! 4. The native gate refuses the whole profile while any configured field is
+//!    unresolved, like each single-field write.
+//! 5. A selecting read interrupted by cancellation is an unavailable snapshot,
+//!    so the profile fails before any write; managed reports a canceled
+//!    operation Indeterminate.
+//! 6. A fatal query of an unconfigured or power-refused profile is recorded
+//!    Succeeded or Blocked; managed records every dispatcher exception
+//!    Indeterminate.
+//! 7. State source: managed decides each later field from the setter's own
+//!    result snapshot (`result.State ?? QueryAsync`); native decides it from
+//!    its fresh reply query, which is also the snapshot that confirms the
+//!    step. When the two differ, native follows the managed rule on the
+//!    current display state, and a configured later field facing an
+//!    unavailable reply fails (managed `Failure(state.Message ?? ...)`,
+//!    Indeterminate after a submission) instead of being decided from it.
+//! 8. Each writer's own deviations apply to its step.
 use super::{
     brightness_write,
     color_write::{self, SetColorProfile},
     hdr_write::{self, SetHdr},
-    manual_write::{
-        Attempt, ManualRequest, ManualWriteOutcome, WindowsManualHost, admit_power, begin, lock,
-    },
+    manual_write::{Attempt, ManualRequest, ManualWriteOutcome, admit_power},
     observation::{Observed, SharedBrightness, Snapshot},
     recovery::{CheckpointFile, Fields, Recovery, Status},
     refresh_write::{self, SetRefreshRate},
-    write::{STALE_AFTER, UNREFRESHED, WindowsHost, refreshed},
+    write::{STALE_AFTER, UNREFRESHED, WindowsHost, begin, lock, refreshed},
 };
 use crate::session_native::power_admission::PowerContext;
 use openblade_platform_windows::color_profile::profile_ids_equal;
@@ -199,23 +213,11 @@ impl ProfileHost for WindowsHost {
         admitted: PowerContext,
         canceled: &AtomicBool,
     ) -> Attempt {
-        let native =
-            openblade_platform_windows::display::refresh_write::WindowsRefreshNative::current_user(
-            );
-        request.attempt(
-            &mut WindowsManualHost::new(self.clone(), native),
-            admitted,
-            canceled,
-        )
+        request.attempt(&mut self.refresh_writer(), admitted, canceled)
     }
 
     fn hdr(&mut self, request: &SetHdr, admitted: PowerContext, canceled: &AtomicBool) -> Attempt {
-        let native = openblade_platform_windows::display::hdr::WindowsHdrNative::current_user();
-        request.attempt(
-            &mut WindowsManualHost::new(self.clone(), native),
-            admitted,
-            canceled,
-        )
+        request.attempt(&mut self.hdr_writer(), admitted, canceled)
     }
 
     fn color(
@@ -224,13 +226,7 @@ impl ProfileHost for WindowsHost {
         admitted: PowerContext,
         canceled: &AtomicBool,
     ) -> Attempt {
-        let native =
-            openblade_platform_windows::color_profile::write::WindowsColorProfileNative::current_user();
-        request.attempt(
-            &mut WindowsManualHost::new(self.clone(), native),
-            admitted,
-            canceled,
-        )
+        request.attempt(&mut self.color_writer(), admitted, canceled)
     }
 
     fn brightness(
@@ -241,6 +237,80 @@ impl ProfileHost for WindowsHost {
         canceled: &AtomicBool,
     ) -> brightness_write::Attempt {
         brightness_write::admitted(self, brightness, percent, admitted, canceled)
+    }
+}
+
+/// The profile's fields in the managed `ApplyProfileCoreAsync` order.
+#[derive(Clone, Copy)]
+enum Stage {
+    Refresh,
+    Hdr,
+    Color,
+    Brightness,
+}
+
+impl Stage {
+    const ORDER: [Self; 4] = [Self::Refresh, Self::Hdr, Self::Color, Self::Brightness];
+
+    fn configured(self, settings: &Settings) -> bool {
+        match self {
+            Self::Refresh => settings.refresh_rate_key.is_some(),
+            Self::Hdr => settings.hdr_enabled.is_some(),
+            Self::Color => settings.color_profile_key.is_some(),
+            Self::Brightness => settings.brightness_percent.is_some(),
+        }
+    }
+
+    /// Managed `ApplyProfileCoreAsync`'s condition for this field against an
+    /// available snapshot: the step to write, `None` when the field is not
+    /// configured or the snapshot already satisfies it, or the managed
+    /// failure when brightness is configured without a supported level.
+    fn select(
+        self,
+        request: &ApplyProfile,
+        state: &Observed<'_>,
+    ) -> Result<Option<Step>, &'static str> {
+        let settings = &request.settings;
+        let expected_power_source = request.expected_power_source;
+        Ok(match self {
+            Self::Refresh => settings
+                .refresh_rate_key
+                .as_ref()
+                .filter(|key| state.refresh_key != Some(key.as_str()))
+                .map(|key| {
+                    Step::Refresh(SetRefreshRate {
+                        expected_power_source,
+                        key: key.clone(),
+                    })
+                }),
+            Self::Hdr => settings
+                .hdr_enabled
+                .filter(|enabled| state.hdr_supported && state.hdr_enabled != *enabled)
+                .map(|enabled| {
+                    Step::Hdr(SetHdr {
+                        expected_power_source,
+                        enabled,
+                    })
+                }),
+            Self::Color => settings
+                .color_profile_key
+                .as_ref()
+                .filter(|key| !state.hdr_enabled && !same_id(state.color_profile, key))
+                .map(|key| {
+                    Step::Color(SetColorProfile {
+                        expected_power_source,
+                        key: key.clone(),
+                    })
+                }),
+            Self::Brightness => match settings.brightness_percent {
+                None => None,
+                Some(percent) => {
+                    let level =
+                        nearest(percent, state.levels).ok_or(brightness_write::UNAVAILABLE)?;
+                    (state.brightness != Some(level)).then_some(Step::Brightness(level))
+                }
+            },
+        })
     }
 }
 
@@ -309,52 +379,6 @@ impl Step {
             }
         })
     }
-}
-
-/// Managed `ApplyProfileCoreAsync`'s condition for step `index` (refresh,
-/// HDR, color, brightness) against the current snapshot, or `Err` when
-/// brightness is configured but the snapshot reports no supported level.
-fn select(index: usize, request: &ApplyProfile, state: &Observed<'_>) -> Result<Option<Step>, ()> {
-    let settings = &request.settings;
-    let expected_power_source = request.expected_power_source;
-    Ok(match index {
-        0 => settings
-            .refresh_rate_key
-            .as_ref()
-            .filter(|key| state.refresh_key != Some(key.as_str()))
-            .map(|key| {
-                Step::Refresh(SetRefreshRate {
-                    expected_power_source,
-                    key: key.clone(),
-                })
-            }),
-        1 => settings
-            .hdr_enabled
-            .filter(|enabled| state.hdr_supported && state.hdr_enabled != *enabled)
-            .map(|enabled| {
-                Step::Hdr(SetHdr {
-                    expected_power_source,
-                    enabled,
-                })
-            }),
-        2 => settings
-            .color_profile_key
-            .as_ref()
-            .filter(|key| !state.hdr_enabled && !same_id(state.color_profile, key))
-            .map(|key| {
-                Step::Color(SetColorProfile {
-                    expected_power_source,
-                    key: key.clone(),
-                })
-            }),
-        _ => match settings.brightness_percent {
-            None => None,
-            Some(percent) => {
-                let level = nearest(percent, state.levels).ok_or(())?;
-                (state.brightness != Some(level)).then_some(Step::Brightness(level))
-            }
-        },
-    })
 }
 
 /// Whether an attempt submitted, or may have.
@@ -439,7 +463,7 @@ pub(super) fn run<F: CheckpointFile, H: ProfileHost>(
     if let Some(refused) = begin(recovery, request.settings.fields(), PAUSED, power, || {
         host.query(brightness, canceled)
     })? {
-        return Ok(refused);
+        return Ok(refused.into());
     }
 
     // Admitted manual operation: whatever happens next, record its certainty.
@@ -457,9 +481,9 @@ pub(super) fn run<F: CheckpointFile, H: ProfileHost>(
     }
 }
 
-/// The reply query: an interrupted read is an unavailable snapshot, and any
-/// other failure is fatal after the operation is recorded.
-fn reply(
+/// One query: an interrupted read is an unavailable snapshot, and any other
+/// failure is fatal after the operation is recorded.
+fn read(
     host: &mut impl ProfileHost,
     brightness: &SharedBrightness,
     canceled: &AtomicBool,
@@ -480,32 +504,39 @@ fn apply(
 ) -> Ending {
     // Managed applies no power check to an unconfigured profile.
     if !request.settings.configured() {
-        let (state, fatal) = reply(host, brightness, canceled);
+        let (state, fatal) = read(host, brightness, canceled);
         return progress.end(Status::Succeeded, None, state, fatal);
     }
     let admitted = match admit_power(power, request.expected_power_source) {
         Ok(admitted) => admitted,
         Err(refused) => {
-            let (state, fatal) = reply(host, brightness, canceled);
+            let (state, fatal) = read(host, brightness, canceled);
             let (status, error) = refused.resolve(false, UNCONFIRMED);
             return progress.end(status, error, state, fatal);
         }
     };
-    let (mut state, fatal) = reply(host, brightness, canceled);
+    let (mut state, fatal) = read(host, brightness, canceled);
     if fatal.is_some() {
         return progress.end(Status::Indeterminate, None, state, fatal);
     }
-    if !state.observed().available {
-        let error = state.observed().message.unwrap_or(UNAVAILABLE).to_owned();
-        return progress.end(Status::Failed, Some(Cow::Owned(error)), state, None);
-    }
-    for index in 0..4 {
-        let Ok(step) = select(index, request, &state.observed()) else {
-            let error = Cow::Borrowed(brightness_write::UNAVAILABLE);
-            return progress.end(Status::Failed, Some(error), state, None);
-        };
-        let Some(mut step) = step else {
+    for stage in Stage::ORDER {
+        if !stage.configured(&request.settings) {
             continue;
+        }
+        // Managed checks availability once, on the selecting query, and then
+        // decides from each setter's own snapshot. Native decides from each
+        // reply query, so it repeats the check before every decision.
+        let observed = state.observed();
+        if !observed.available {
+            let error = Cow::Owned(observed.message.unwrap_or(UNAVAILABLE).to_owned());
+            return progress.end(Status::Failed, Some(error), state, None);
+        }
+        let mut step = match stage.select(request, &observed) {
+            Ok(Some(step)) => step,
+            Ok(None) => continue,
+            Err(error) => {
+                return progress.end(Status::Failed, Some(Cow::Borrowed(error)), state, None);
+            }
         };
         let attempt = match step.attempt(host, brightness, admitted, canceled) {
             Ok(attempt) => attempt,
@@ -519,7 +550,7 @@ fn apply(
             }
         };
         let possible = submitted(&attempt);
-        let (reply, fatal) = reply(host, brightness, canceled);
+        let (reply, fatal) = read(host, brightness, canceled);
         let (status, error) = attempt.resolve(step.shown(&reply), step.unconfirmed());
         // Managed EnsureCurrent after a successful setter, including a no-op.
         let (status, error) = if status == Status::Succeeded && host.power() != Some(admitted) {

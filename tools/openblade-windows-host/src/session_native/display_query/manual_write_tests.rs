@@ -8,6 +8,7 @@ use crate::session_native::display_query::{
     observation::fixture_query,
     recovery::Fields,
     test_support::{FencedTopology, Host, Memory, Rig, TestPanel, flag, result},
+    write::CHECKPOINT,
 };
 use openblade_platform_windows::display::InternalDisplayTopology;
 use std::sync::atomic::Ordering;
