@@ -470,16 +470,23 @@ impl Runtime {
         } else if permit.storage.pending() {
             Outcome::blocked(permit.storage.pending_reason()?)
         } else if accepted {
-            Outcome {
-                status: 0,
-                message: format!(
-                    "Performance intent stored. {}",
-                    permit
-                        .cause
-                        .lock()
-                        .map_err(|_| io::ErrorKind::Other)?
-                        .message()
-                ),
+            let cause = permit.cause.lock().map_err(|_| io::ErrorKind::Other)?;
+            if matches!(*cause, Cause::ManualDeferred) {
+                // Managed also reports Stored only for this manual-fan deferral
+                // (ServiceControlRuntime.DeferredPerformanceIntentMessage).
+                Outcome {
+                    status: 0,
+                    message: format!("Performance intent stored. {}", cause.message()),
+                }
+            } else {
+                // Saved but unapplied: Blocked, prefixed as ExecuteScopedMutationAsync
+                // prefixes the hardware result after committing managed intent.
+                let committed = if permit.value.is_none() {
+                    "Performance override was cleared."
+                } else {
+                    "Performance override intent was stored."
+                };
+                Outcome::blocked(format!("{committed} Hardware result: {}", cause.message()))
             }
         } else {
             Outcome::blocked(

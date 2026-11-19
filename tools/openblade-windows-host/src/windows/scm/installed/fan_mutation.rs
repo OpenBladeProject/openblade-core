@@ -479,19 +479,24 @@ impl Runtime {
             && (permit.owned.load(Ordering::Acquire)
                 || !permit.prepared.load(Ordering::Acquire)
                 || permit.storage.progress() == Some(50));
-        let status = if permit.storage.pending() || !permit.accepted.load(Ordering::Acquire) {
-            2
-        } else if applied {
-            1
-        } else {
-            0
-        };
+        // Saved but unapplied fan intent is Blocked, as managed reports it: managed
+        // has no fan deferral that returns Stored.
+        let status =
+            if !permit.storage.pending() && permit.accepted.load(Ordering::Acquire) && applied {
+                1
+            } else {
+                2
+            };
         let message = if status == 1 {
             "Fan setters completed and independent mode was confirmed. Target RPM and rotation are not readable on this backend."
         } else if permit.storage.pending() {
             "Fan submission or owned release remains unresolved; further writes are fenced."
         } else if permit.accepted.load(Ordering::Acquire) {
-            "Fan intent stored. This source or observed mode needs a native recipe that is not yet implemented, or admission/transaction capacity did not complete. No applied target is claimed."
+            if permit.value.is_none() {
+                "Fan override was cleared. Hardware result: This source or observed mode needs a native recipe that is not yet implemented, or admission/transaction capacity did not complete. No applied target is claimed."
+            } else {
+                "Fan override intent was stored. Hardware result: This source or observed mode needs a native recipe that is not yet implemented, or admission/transaction capacity did not complete. No applied target is claimed."
+            }
         } else {
             "Fan intent was not accepted; fresh admission or persistence did not complete."
         };

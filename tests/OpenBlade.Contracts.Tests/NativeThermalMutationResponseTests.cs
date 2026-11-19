@@ -19,6 +19,7 @@ public sealed class NativeThermalMutationResponseTests
         var seen = new HashSet<ControlOperationStatus>();
         bool sawConfirmedPreset = false;
         bool sawPartialCustom = false;
+        bool sawManualDeferral = false, sawGpuIncomplete = false, sawCapacityRefusal = false, sawPowerChanged = false;
         var decodeErrors = new List<string>();
         int index = 0;
         foreach (JsonElement element in document.RootElement.EnumerateArray())
@@ -89,7 +90,30 @@ public sealed class NativeThermalMutationResponseTests
             {
                 Assert.Contains("GPU", result.Message, StringComparison.Ordinal);
             }
+            // Managed's only Stored-without-apply performance reply is its manual-fan
+            // deferral; any other saved but unapplied override is Blocked with the
+            // committed-intent prefix of ExecuteScopedMutationAsync.
+            if (result.Status == ControlOperationStatus.Stored)
+            {
+                Assert.StartsWith("Performance intent stored. Performance is saved, not applied.", result.Message, StringComparison.Ordinal);
+                sawManualDeferral = true;
+            }
+            const string committed = "Performance override intent was stored. Hardware result: ";
+            if (result.Status == ControlOperationStatus.Blocked && result.Message.StartsWith(committed, StringComparison.Ordinal))
+            {
+                string cause = result.Message[committed.Length..];
+                sawGpuIncomplete |= cause.StartsWith("GPU clock handling is incomplete", StringComparison.Ordinal);
+                sawCapacityRefusal |= cause.Contains("capacity refused before publication", StringComparison.Ordinal);
+                sawPowerChanged |= cause.StartsWith("The independently observed power source changed", StringComparison.Ordinal);
+            }
+            if (result.Status != ControlOperationStatus.Blocked)
+            {
+                Assert.DoesNotContain("Hardware result:", result.Message, StringComparison.Ordinal);
+            }
         }
+        Assert.True(sawManualDeferral, "Manual-fan deferral is the native Stored reply, as in managed.");
+        Assert.True(sawGpuIncomplete && sawCapacityRefusal && sawPowerChanged,
+            "Saved but unapplied GPU, capacity and power-change replies are Blocked with the managed prefix.");
         Assert.True(decodeErrors.Count == 0, string.Join(Environment.NewLine, decodeErrors));
         Assert.True(sawPartialCustom, "Actual CustomManual observation must retain known selectors and unknown settings.");
         using var requestedFrame = FrameJson("""{"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":5,"lifetime":1,"customPerformance":null,"gpuClockTuning":null}}""");
