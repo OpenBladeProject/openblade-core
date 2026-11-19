@@ -42,8 +42,15 @@ internal static class ServiceComposition
             readRecoveryBoot: new WindowsCpuBootSequenceReader().Read,
             recoveryWorkerIdle: () => CpuNativeWorkerCoordinator.ForSession(WindowsRz090528CpuQueryAdapter.GetInstalledNativeSession()).Status
                 is { WorkerOutstanding: false, Invalid: false }));
+        // Its own registration, so composition tests resolve the production store
+        // without constructing the runtime and its hardware backends. The store
+        // reads the handoff binding lazily, never at construction.
+        services.AddSingleton(CreateNativeHandbackStore);
         services.AddSingleton<IServiceControlRuntime>(provider =>
         {
+            // Resolved first: composition tests pin this request without
+            // constructing the backends below.
+            NativeHandbackStore nativeHandbackStore = provider.GetRequiredService<NativeHandbackStore>();
             ServiceControlRuntime? runtime = null;
             var guardian = new GuardianFanStopBackend(new WindowsFanStopGuardianClient(
                 machineDataDirectory, token => runtime!.ReadFanStopServiceAdmissionAsync(token),
@@ -72,7 +79,7 @@ internal static class ServiceComposition
                 cpuTuningController: provider.GetRequiredService<CpuTuningController>(),
                 coolingPadDeviceProvider: new WindowsCoolingPadDeviceProvider(),
                 coolingPadStateDirectory: Path.Combine(machineDataDirectory, "cooling-pad"),
-                nativeHandbackStore: CreateNativeHandbackStore(provider));
+                nativeHandbackStore: nativeHandbackStore);
             return runtime;
         });
         services.AddSingleton<ServiceSessionPowerTransitionCoordinator>();

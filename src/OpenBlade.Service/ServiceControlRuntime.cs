@@ -1177,7 +1177,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 BatteryConfirmation: primary.Item.Family == "battery" && !desired.Temporary
                     ? BatteryConfirmationScope.PolicyOnly : BatteryConfirmationScope.All,
                 NativeHandback: new(primary.Epoch, primary.RecordCommitment, [.. battery.Select(o => o.Key)],
-                    primary.Item.UserSid, EnablesTemporaryFullCharge: desired.Temporary)));
+                    primary.Item.UserSid, EnablesTemporaryFullCharge: desired.Temporary,
+                    ConfirmedCharge: battery.All(o => o.Confirmed || o.Key == "liveTemporaryCharge"))));
         }
     }
 
@@ -18172,9 +18173,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             // Write-ahead: an unpersisted resolution keeps the subsystem blocked.
             if (handback is not null)
             {
-                // A live charge that has since ended leaves nothing outstanding
-                // and nothing to reapply.
-                bool ended = handback.LiveTemporaryChargeOnly
+                // An active charge (the live slot, or one an earlier start
+                // confirmed) that has since ended leaves nothing outstanding and
+                // nothing to reapply.
+                bool ended = handback.ActiveChargeOnly
                     && result == PendingConfirmationResult.Mismatch
                     && confirmed.Battery is { TemporaryFullCharge: false };
                 bool matched = result == PendingConfirmationResult.Match;

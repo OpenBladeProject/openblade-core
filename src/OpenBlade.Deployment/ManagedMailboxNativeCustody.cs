@@ -13,7 +13,7 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
     internal IReadOnlyDictionary<string, string> Handbacks { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
     // The binding the Service adopts records with. Its view reopens the namespace
     // custody authenticated; custody itself ends with startup admission.
-    internal NativeHandbackBinding HandbackBinding => files is null || Handbacks.Count == 0 ? NativeHandbackBinding.None : new(Handbacks, HandbackView(files));
+    internal NativeHandbackBinding HandbackBinding => files is null || Handbacks.Count == 0 ? NativeHandbackBinding.None : new(Handbacks, files.ReopenLater());
     private FileStream? writer;
     private readonly List<IDisposable> held = [];
     private readonly Dictionary<string, Generation> generations = new(StringComparer.Ordinal);
@@ -172,14 +172,6 @@ internal sealed class ManagedMailboxNativeCustody : IDisposable
                 ownerCommitment, NativeCanonical.Digest(System.Text.Encoding.ASCII.GetBytes(string.Join(",", commitments.Order(StringComparer.Ordinal)))));
         }
         catch { Dispose(); throw; }
-    }
-    private static Func<WindowsNativeEpochFiles> HandbackView(WindowsNativeEpochFiles source)
-    {
-#if OPENBLADE_NATIVE_PACKAGE_TESTS
-        if (source.IsPrivateFixture) { return source.RetainFixtureView; }
-#endif
-        string root = source.Root;
-        return () => WindowsNativeEpochFiles.OpenProtected(root);
     }
     internal void ReleaseWriter() { writer?.Dispose(); writer = null; }
     internal void RequireSafe()

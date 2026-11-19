@@ -22,17 +22,26 @@ internal sealed class ServiceMailboxHandoff : IDisposable
     // no evidence of "no handback", so this refuses instead of reading empty.
     internal NativeHandbackBinding NativeHandbacks =>
         startup?.NativeHandbacks ?? throw new InvalidOperationException("Native custody admission is not open.");
+    private readonly Func<ManagedMailboxStartup.Admission> admit = OpenProductAdmission;
     public ServiceMailboxHandoff()
     {
         Lifetime = new(admitted: false);
     }
+    // Tests inject the admission that the hosted startup's Open acquires.
+    internal ServiceMailboxHandoff(Func<ManagedMailboxStartup.Admission> admit) : this() => this.admit = admit;
 
     // Called once by ServiceMailboxCustodyStartup, which the host constructs before Worker.
     internal void Open()
     {
         if (Interlocked.Exchange(ref openAttempted, 1) != 0)
         { throw new IOException("Service mailbox custody is never reacquired."); }
-        startup = ManagedMailboxStartup.Open(ManagedMailboxNativeCustody.Acquire,
+        startup = admit();
+        run = startup.Run;
+        Lifetime.Admit();
+    }
+
+    private static ManagedMailboxStartup.Admission OpenProductAdmission() =>
+        ManagedMailboxStartup.Open(ManagedMailboxNativeCustody.Acquire,
             WindowsManagedMailboxRun.AcquireLegacyExclusion,
             native =>
             {
@@ -41,9 +50,6 @@ internal sealed class ServiceMailboxHandoff : IDisposable
                     .OpenManagedCurrentAsync(CancellationToken.None).GetAwaiter().GetResult();
                 return WindowsManagedMailboxRun.Start(upgrade, native);
             }, WindowsManagedMailboxRun.AcquireUnenrolledExclusion);
-        run = startup.Run;
-        Lifetime.Admit();
-    }
     internal ServiceMailboxHandoff(IManagedMailboxRun run) { this.run = run; }
     // An admission produced by ManagedMailboxStartup.Open over injected storage.
     internal ServiceMailboxHandoff(ManagedMailboxStartup.Admission startup) { this.startup = startup; run = startup.Run; }

@@ -206,7 +206,9 @@ internal sealed class WindowsNativeHandbackWriter(string? usersDirectory)
         // Resolutions follow their record. One that predates it was not written
         // for this record and is never adopted.
         WindowsNativeEpochFiles.RequireAbsent(WindowsNativeHandbackStorage.ResolutionPath(files, handback.Epoch));
-        files.Publish(path, handback.Serialize(PendingOverrides()));
+        // Private custody: the record names user SIDs, requested settings and
+        // override digests, so it must not inherit the namespace's Users read.
+        files.Publish(path, handback.Serialize(PendingOverrides()), privateCustody: true);
     }
 
     // manual-overrides.json.pending is preserved for review; only its digest is recorded.

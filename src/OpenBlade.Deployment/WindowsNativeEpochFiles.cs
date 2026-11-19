@@ -306,6 +306,27 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         return view;
     }
 
+    // Opens a later view of this same root in this same trust mode, after this
+    // instance may be disposed. It repeats the original open's exact-path,
+    // non-reparse and NTFS checks, so tests and the product run one path.
+    internal Func<WindowsNativeEpochFiles> ReopenLater()
+    {
+        string root = Root;
+        SecurityIdentifier? trust = owner;
+        return () =>
+        {
+            var view = new WindowsNativeEpochFiles(root, trust);
+            try
+            {
+                var lease = view.PinDirectory(root);
+                view.retained.Add(lease);
+                RequireNtfs(lease);
+                return view;
+            }
+            catch { view.Dispose(); throw; }
+        };
+    }
+
     internal static bool AcceptsPublicRoot(RawSecurityDescriptor descriptor)
     {
         if (descriptor.Owner?.Value != "S-1-5-32-544" || !descriptor.ControlFlags.HasFlag(ControlFlags.DiscretionaryAclProtected)
@@ -554,7 +575,9 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
             RequireExact(retained, bytes);
             AtBoundary(NativeFileBoundary.Verified);
             // Publish the verified object itself while its handle and the
-            // containing directory are retained. Only current.bin may replace.
+            // containing directory are retained. Only a caller that passes
+            // replace (a current or selection pointer, or a handback
+            // resolution) may replace an existing name.
             PublishByHandle(retained.SafeFileHandle, path, replace);
             created = false;
             AtBoundary(NativeFileBoundary.Renamed);
@@ -739,6 +762,26 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         return true;
     }
 
+    // Product trust mode for an ordinary entry: a trusted owner and no write
+    // access for any untrusted principal. Private-custody entries pass too.
+    internal static void RequireProtectedEntry(RawSecurityDescriptor descriptor)
+    {
+        static bool Trusted(SecurityIdentifier? sid) => sid?.Value is "S-1-5-18" or "S-1-5-32-544"
+            or "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464";
+        if (!Trusted(descriptor.Owner) || descriptor.DiscretionaryAcl is null)
+        { throw new UnauthorizedAccessException("Native epoch owner or DACL is untrusted."); }
+        const int writes = 0x40000000 | 0x10000000 | 0x000D0156;
+        foreach (GenericAce entry in descriptor.DiscretionaryAcl)
+        {
+            if (entry is not CommonAce ace || ace.IsCallback
+                || ace.AceQualifier is not (AceQualifier.AccessAllowed or AceQualifier.AccessDenied))
+            { throw new UnauthorizedAccessException("Unsupported native epoch ACL."); }
+            if (ace.AceQualifier == AceQualifier.AccessAllowed && (ace.AceFlags & AceFlags.InheritOnly) == 0
+                && (ace.AccessMask & writes) != 0 && !Trusted(ace.SecurityIdentifier))
+            { throw new UnauthorizedAccessException("Native epoch permits unprivileged mutation."); }
+        }
+    }
+
     private void VerifyAccess(SafeFileHandle handle, bool directory, bool isRoot, string path, bool privateCustody, bool legacyCustody = false)
     {
         var descriptor = new RawSecurityDescriptor(
@@ -757,20 +800,7 @@ internal sealed class WindowsNativeEpochFiles : IDisposable
         }
         if (owner is null)
         {
-            static bool Trusted(SecurityIdentifier? sid) => sid?.Value is "S-1-5-18" or "S-1-5-32-544"
-                or "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464";
-            if (!Trusted(descriptor.Owner) || descriptor.DiscretionaryAcl is null)
-            { throw new UnauthorizedAccessException("Native epoch owner or DACL is untrusted."); }
-            const int writes = 0x40000000 | 0x10000000 | 0x000D0156;
-            foreach (GenericAce entry in descriptor.DiscretionaryAcl)
-            {
-                if (entry is not CommonAce ace || ace.IsCallback
-                    || ace.AceQualifier is not (AceQualifier.AccessAllowed or AceQualifier.AccessDenied))
-                { throw new UnauthorizedAccessException("Unsupported native epoch ACL."); }
-                if (ace.AceQualifier == AceQualifier.AccessAllowed && (ace.AceFlags & AceFlags.InheritOnly) == 0
-                    && (ace.AccessMask & writes) != 0 && !Trusted(ace.SecurityIdentifier))
-                { throw new UnauthorizedAccessException("Native epoch permits unprivileged mutation."); }
-            }
+            RequireProtectedEntry(descriptor);
             return;
         }
         if (descriptor.Owner != owner || descriptor.DiscretionaryAcl is not { Count: >= 1 and <= 2 } acl

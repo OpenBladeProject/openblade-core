@@ -5,7 +5,10 @@ namespace OpenBlade.Service;
 
 // One handback item that managed has not resolved yet. Key is pending,
 // ownedFan, liveTemporaryCharge or abandonedPrepared.
-internal sealed record NativeHandbackObligation(string Epoch, string RecordCommitment, string Key, NativeHandbackItem Item);
+// Confirmed marks a temporary charge an earlier start already confirmed as
+// active ("continuing"); it is no longer a request native may have sent.
+internal sealed record NativeHandbackObligation(string Epoch, string RecordCommitment, string Key, NativeHandbackItem Item,
+    bool Confirmed = false);
 
 internal sealed record NativeHandbackAdoption(IReadOnlyList<NativeHandbackObligation> Obligations, string? Failure)
 {
@@ -16,12 +19,14 @@ internal sealed record NativeHandbackAdoption(IReadOnlyList<NativeHandbackObliga
 // Identifies the items a pending confirmation resolves. An unresolvable claim
 // stands for unreadable evidence and keeps its subsystem blocked.
 internal sealed record NativeHandbackClaim(string Epoch, string RecordCommitment, IReadOnlyList<string> Keys, string? UserSid,
-    bool EnablesTemporaryFullCharge, bool Resolvable = true)
+    bool EnablesTemporaryFullCharge, bool Resolvable = true, bool ConfirmedCharge = false)
 {
     internal static readonly NativeHandbackClaim Unresolvable = new("", "", [], null, false, Resolvable: false);
 
-    // Only an active override is claimed; nothing native sent is outstanding.
-    internal bool LiveTemporaryChargeOnly => Keys is ["liveTemporaryCharge"];
+    // Only an active charge is claimed, either the live slot or a charge an
+    // earlier start confirmed; nothing native sent is outstanding, so its end
+    // is reported rather than treated as a mismatch.
+    internal bool ActiveChargeOnly => Keys is ["liveTemporaryCharge"] || ConfirmedCharge;
 }
 
 // Setup writes an immutable record into the handed-back generation's directory
@@ -66,7 +71,7 @@ internal sealed class NativeHandbackStore(Func<NativeHandbackBinding> binding)
                     if (items.Any(i => outcomes[i.Key] == Continuing && i.Item.Battery is not { Temporary: true }))
                     { throw new InvalidDataException("A native handback resolution continues a change that is not a temporary charge."); }
                     obligations.AddRange(items.Where(i => outcomes[i.Key] is Unresolved or Continuing)
-                        .Select(i => new NativeHandbackObligation(epoch, commitment, i.Key, i.Item)));
+                        .Select(i => new NativeHandbackObligation(epoch, commitment, i.Key, i.Item, outcomes[i.Key] == Continuing)));
                 }
                 // Only one crashed generation can hand back; more is unknown history.
                 if (obligations.Select(o => o.Epoch).Distinct().Count() > 1)
@@ -104,7 +109,8 @@ internal sealed class NativeHandbackStore(Func<NativeHandbackBinding> binding)
                     outcomes[key] = outcome;
                 }
                 files.Publish(WindowsNativeHandbackStorage.ResolutionPath(files, claim.Epoch),
-                    NativeCanonical.Lines(ResolutionHeader, [claim.Epoch, commitment, .. Keys.Select(key => outcomes[key])]), replace: true);
+                    NativeCanonical.Lines(ResolutionHeader, [claim.Epoch, commitment, .. Keys.Select(key => outcomes[key])]),
+                    replace: true, privateCustody: true);
                 return true;
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException
