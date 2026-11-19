@@ -95,12 +95,12 @@ pub enum ColorFailure {
         fault: Fault,
         restoration: Result<(), Fault>,
     },
-    /// A setter was called and the independent observation did not re-identify
-    /// the same single panel with a readable advanced-color state, so the
-    /// managed `Restore` was not attempted: it would write to a stale target
-    /// or under an unknown state. Deliberate deviation: managed restores
-    /// after every `verifyApplied` failure.
-    Unverified(Readback),
+    /// Every setter succeeded and was read back, but the independent
+    /// observation did not re-identify the same single panel under a known
+    /// advanced-color state, so the managed `Restore` was not attempted: it
+    /// would write to a stale target or under an unknown state. Deliberate
+    /// deviation: managed restores after every `verifyApplied` failure.
+    Unverified(Unverified),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -164,27 +164,28 @@ pub enum Fault {
     RestorationUnconfirmed,
 }
 
-/// Why the independent observation (managed `verifyApplied`) did not confirm.
+/// Why the independent observation (managed `verifyApplied`) did not confirm
+/// although it re-identified the same single panel under a known
+/// advanced-color state. Only these failures run managed `Restore`.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Readback {
-    Topology(DisplayReadError),
-    NoInternalDisplay,
-    MultipleInternalDisplays,
     Read(ProfileReadError),
-    /// Another panel (endpoints or monitor path) was read back.
-    PanelChanged,
-    /// The panel's advanced-color read failed.
-    HdrUnknown,
     /// HDR on, or a different or no active profile.
     Mismatch,
 }
 
-impl Readback {
-    /// Whether the readback re-identified the same single panel under a
-    /// known advanced-color state, the condition for running `Restore`.
-    fn identifies_the_panel(&self) -> bool {
-        matches!(self, Self::Read(_) | Self::Mismatch)
-    }
+/// Why the independent observation could not re-identify the same single
+/// panel under a known advanced-color state. None of these runs `Restore`;
+/// a new reason belongs here unless restoring against it is safe.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Unverified {
+    Topology(DisplayReadError),
+    NoInternalDisplay,
+    MultipleInternalDisplays,
+    /// Another panel (endpoints or monitor path) was read back.
+    PanelChanged,
+    /// The panel's advanced-color read failed.
+    HdrUnknown,
 }
 
 /// Select the listed profile matching `key` (managed `ProfilesMatch`) as the
@@ -258,9 +259,7 @@ pub fn set_internal_color_profile<N: ColorProfileNative + ?Sized>(
     match transaction.execute(&requested.id, &baseline) {
         Ok(()) => Ok(ColorOutcome::Confirmed),
         Err(Stop::Refused(reason)) => Err(refused(reason)),
-        Err(Stop::Fault(Fault::Readback(readback))) if !readback.identifies_the_panel() => {
-            Err(ColorFailure::Unverified(readback))
-        }
+        Err(Stop::Unverified(reason)) => Err(ColorFailure::Unverified(reason)),
         Err(Stop::Fault(fault)) => Err(ColorFailure::Uncertain {
             fault,
             restoration: transaction.restore(&requested.id, &baseline),
@@ -281,6 +280,8 @@ enum Stop {
     Refused(ColorRefusal),
     /// After a possible submission.
     Fault(Fault),
+    /// After every setter: the observation did not re-identify the panel.
+    Unverified(Unverified),
 }
 
 impl From<Fault> for Stop {
@@ -324,7 +325,7 @@ impl<N: ColorProfileNative + ?Sized> Transaction<'_, N> {
         self.admit()?;
         self.make_default(requested)?;
         self.require_default(requested)?;
-        self.verify(requested).map_err(Fault::Readback)?;
+        self.verify(requested)?;
         Ok(())
     }
 
@@ -491,33 +492,39 @@ impl<N: ColorProfileNative + ?Sized> Transaction<'_, N> {
         Ok(())
     }
 
-    /// Managed `verifyApplied`: a fresh observation of the same panel under
-    /// confirmed SDR shows the requested profile active. Another panel or an
-    /// unreadable advanced-color state is reported apart from a mismatch:
-    /// neither confirms, and neither may be restored against.
-    fn verify(&mut self, requested: &OsStr) -> Result<(), Readback> {
-        let after = match self.native.topology().map_err(Readback::Topology)? {
+    /// Managed `verifyApplied`: a fresh observation of the same panel shows
+    /// the requested profile active. Not re-identifying the panel under a
+    /// known advanced-color state stops as [`Unverified`]; a failed profile
+    /// read or a mismatch is a [`Readback`] fault, which `Restore` follows.
+    fn verify(&mut self, requested: &OsStr) -> Result<(), Stop> {
+        let (after, hdr) = self.reidentify().map_err(Stop::Unverified)?;
+        // With HDR on no default is read, so nothing is selected.
+        let observed: ColorProfileSnapshot = snapshot(self.native, &after, hdr)
+            .map_err(|error| Fault::Readback(Readback::Read(error)))?;
+        match observed.selected.as_deref() {
+            Some(active) if profiles_match(active, requested) => Ok(()),
+            _ => Err(Fault::Readback(Readback::Mismatch).into()),
+        }
+    }
+
+    /// The observation's single panel, the same as the prepared one, and its
+    /// known HDR state. Nothing about profiles is read before this holds.
+    fn reidentify(&mut self) -> Result<(ActiveInternalDisplay, HdrState), Unverified> {
+        let after = match self.native.topology().map_err(Unverified::Topology)? {
             InternalDisplayTopology::Single(after) => after,
             InternalDisplayTopology::MultipleInternalDisplays => {
-                return Err(Readback::MultipleInternalDisplays);
+                return Err(Unverified::MultipleInternalDisplays);
             }
             InternalDisplayTopology::Empty | InternalDisplayTopology::NoInternalDisplay => {
-                return Err(Readback::NoInternalDisplay);
+                return Err(Unverified::NoInternalDisplay);
             }
         };
         if !self.panel.same_as(&after) {
-            return Err(Readback::PanelChanged);
+            return Err(Unverified::PanelChanged);
         }
-        let hdr = HdrState::of(&after);
-        if hdr == HdrState::Unknown {
-            return Err(Readback::HdrUnknown);
-        }
-        // With HDR on no default is read, so nothing is selected.
-        let observed: ColorProfileSnapshot =
-            snapshot(self.native, &after, hdr).map_err(Readback::Read)?;
-        match observed.selected.as_deref() {
-            Some(active) if profiles_match(active, requested) => Ok(()),
-            _ => Err(Readback::Mismatch),
+        match HdrState::of(&after) {
+            HdrState::Unknown => Err(Unverified::HdrUnknown),
+            hdr => Ok((after, hdr)),
         }
     }
 }

@@ -134,7 +134,7 @@ fn fault_text(fault: Fault) -> Cow<'static, str> {
         Fault::ScopeUnconfirmed => {
             text("Windows did not confirm the requested color-profile scope.")
         }
-        Fault::Readback(readback) => readback_text(readback),
+        Fault::Readback(readback) => text(readback_text(readback)),
         Fault::AssociationsChanged => text(
             "The current-user color-profile associations changed unexpectedly; restoration stopped without altering them.",
         ),
@@ -147,18 +147,12 @@ fn fault_text(fault: Fault) -> Cow<'static, str> {
     }
 }
 
-/// Managed `verifyApplied` reads with `QueryCore`, whose exception ends
-/// `Execute` like any other. Another panel and an unreadable advanced-color
-/// state are native-only distinctions that report the managed mismatch.
-fn readback_text(readback: Readback) -> Cow<'static, str> {
+/// Managed `verifyApplied` on the re-identified panel: a failed profile read
+/// ends `Execute` with its exception, anything else is the managed mismatch.
+fn readback_text(readback: Readback) -> &'static str {
     match readback {
-        Readback::Topology(error) => unreadable(error),
-        Readback::NoInternalDisplay => Cow::Borrowed(NO_INTERNAL),
-        Readback::MultipleInternalDisplays => Cow::Borrowed(MULTIPLE),
-        Readback::Read(error) => Cow::Borrowed(read_text(error)),
-        Readback::PanelChanged | Readback::HdrUnknown | Readback::Mismatch => {
-            Cow::Borrowed(UNCONFIRMED)
-        }
+        Readback::Read(error) => read_text(error),
+        Readback::Mismatch => UNCONFIRMED,
     }
 }
 

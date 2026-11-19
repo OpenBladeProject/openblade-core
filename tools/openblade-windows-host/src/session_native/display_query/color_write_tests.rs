@@ -911,15 +911,6 @@ fn faults_compose_the_managed_transaction_messages() {
             "Windows did not confirm the requested color-profile scope.",
         ),
         (
-            Fault::Readback(Readback::Topology(DisplayReadError::TopologyChanging)),
-            CHANGING,
-        ),
-        (Fault::Readback(Readback::NoInternalDisplay), NO_INTERNAL),
-        (
-            Fault::Readback(Readback::MultipleInternalDisplays),
-            MULTIPLE,
-        ),
-        (
             Fault::Readback(Readback::Read(read)),
             "Windows could not enumerate display color profiles",
         ),

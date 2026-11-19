@@ -542,39 +542,39 @@ fn readbacks_that_do_not_reidentify_the_panel_are_unverified_without_restoration
     });
     let mut moved_source = panel(Some(false));
     moved_source.source.id = 13;
-    for (topology, readback) in [
+    for (topology, reason) in [
         (
             Ok(InternalDisplayTopology::Single(panel(None))),
-            Readback::HdrUnknown,
+            Unverified::HdrUnknown,
         ),
         (
             Ok(InternalDisplayTopology::Single(moved_path)),
-            Readback::PanelChanged,
+            Unverified::PanelChanged,
         ),
         (
             Ok(InternalDisplayTopology::Single(moved_source)),
-            Readback::PanelChanged,
+            Unverified::PanelChanged,
         ),
         (
             Ok(InternalDisplayTopology::MultipleInternalDisplays),
-            Readback::MultipleInternalDisplays,
+            Unverified::MultipleInternalDisplays,
         ),
         (
             Ok(InternalDisplayTopology::NoInternalDisplay),
-            Readback::NoInternalDisplay,
+            Unverified::NoInternalDisplay,
         ),
         (
             Err(DisplayReadError::TopologyChanging),
-            Readback::Topology(DisplayReadError::TopologyChanging),
+            Unverified::Topology(DisplayReadError::TopologyChanging),
         ),
     ] {
         let mut wcs = Wcs::empty();
         wcs.topologies.push_back(sdr());
         wcs.topologies.push_back(topology);
-        let label = format!("{readback:?}");
+        let label = format!("{reason:?}");
         assert_eq!(
             set(&mut wcs, NATIVE),
-            Err(ColorFailure::Unverified(readback)),
+            Err(ColorFailure::Unverified(reason)),
             "{label}"
         );
         // Neither confirmed nor rolled back: no restoration write, and the
