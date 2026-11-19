@@ -499,6 +499,49 @@ public sealed class WindowsNativeEpochTests
         Assert.All(f[8..10], field => Assert.InRange(field.Length, 2049, NativeArtifact.MaximumRecordBase64));
     }
 
+    // Each widened field admits its limit and refuses one character more. The
+    // other fields of the same records keep 2048, and v1 artifact records are
+    // not widened.
+    [Theory]
+    [InlineData("OpenBlade.NativeArtifactRecord.v2", 11, 4, NativeArtifact.MaximumIdentityBytes)]
+    [InlineData("OpenBlade.NativeArtifactRecord.v2", 11, 9, 2048)]
+    [InlineData("OpenBlade.NativeArtifactRecord.v2", 11, 10, 2048)]
+    [InlineData("OpenBlade.NativeArtifactRecord.v1", 10, 4, 2048)]
+    [InlineData("OpenBlade.NativePackage.v2", 12, 8, NativeArtifact.MaximumRecordBase64)]
+    [InlineData("OpenBlade.NativePackage.v2", 12, 9, NativeArtifact.MaximumRecordBase64)]
+    [InlineData("OpenBlade.NativePackage.v2", 12, 7, 2048)]
+    [InlineData("OpenBlade.NativePackage.v2", 12, 10, 2048)]
+    public void RecordFieldsAdmitTheirLimitAndNoMore(string header, int count, int index, int limit)
+    {
+        string[] Fields(int length)
+        {
+            string[] fields = [.. Enumerable.Repeat("x", count)];
+            fields[index] = new string('x', length);
+            return fields;
+        }
+        Assert.Equal(header.Length + 1 + 2 * (count - 1) + limit + 1, NativeCanonical.Lines(header, Fields(limit)).Length);
+        var refused = Assert.Throws<InvalidDataException>(() => NativeCanonical.Lines(header, Fields(limit + 1)));
+        Assert.Equal("Canonical native records require bounded ASCII fields.", refused.Message);
+    }
+
+    // Encode never produces a record whose base64 the package field must refuse.
+    [Fact]
+    public void EncoderRefusesARecordThePackageCannotCarry()
+    {
+        var artifact = NativeArtifact.Inspect([.. Image("agent", schema: 2, agentBattery: true)], "agent", new string('a', 40)) with
+        {
+            Features = new string('f', NativeArtifact.MaximumIdentityBytes),
+            Imports = new string('i', 2048),
+            Capabilities = "",
+        };
+        var atBound = artifact with { Capabilities = new string('c', NativeArtifact.MaximumRecordBytes - artifact.Encode().Length) };
+        byte[] record = atBound.Encode();
+        Assert.Equal(NativeArtifact.MaximumRecordBytes, record.Length);
+        Assert.Equal(NativeArtifact.MaximumRecordBase64, Convert.ToBase64String(record).Length);
+        var refused = Assert.Throws<InvalidDataException>(() => (atBound with { Capabilities = atBound.Capabilities + "c" }).Encode());
+        Assert.Equal("Native artifact record exceeds the package bound.", refused.Message);
+    }
+
     [Fact]
     public async Task ProvisionalOwnerLossPersistsDeniedPhaseAndRequiresExplicitRecovery()
     {
