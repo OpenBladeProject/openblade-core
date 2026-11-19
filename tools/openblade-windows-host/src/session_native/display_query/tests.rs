@@ -1,4 +1,57 @@
 use super::*;
+/// A setter a test supplier does not script. The endpoint awaits its supplier
+/// inline, so the panic fails the test at the unexpected call.
+#[cfg(openblade_display_write)]
+fn unscripted(operation: &str) -> ! {
+    panic!("test supplier received unscripted {operation}")
+}
+/// The stubs of the setters a test supplier does not script, each behind its
+/// own feature, so every supplier refuses unexpected writes the same way.
+macro_rules! unscripted_writes {
+    ($($setter:ident),+) => {
+        $(unscripted_writes!(@ $setter);)+
+    };
+    (@ set_brightness) => {
+        #[cfg(feature = "agent-display-brightness-write-v1")]
+        async fn set_brightness(
+            &mut self,
+            _: SetBrightness,
+            _: Arc<AtomicBool>,
+        ) -> io::Result<WriteOutcome> {
+            unscripted("setBrightness")
+        }
+    };
+    (@ set_hdr) => {
+        #[cfg(feature = "agent-display-hdr-write-v1")]
+        async fn set_hdr(
+            &mut self,
+            _: SetHdr,
+            _: Arc<AtomicBool>,
+        ) -> io::Result<ManualWriteOutcome> {
+            unscripted("setHdr")
+        }
+    };
+    (@ set_refresh_rate) => {
+        #[cfg(feature = "agent-display-refresh-write-v1")]
+        async fn set_refresh_rate(
+            &mut self,
+            _: SetRefreshRate,
+            _: Arc<AtomicBool>,
+        ) -> io::Result<ManualWriteOutcome> {
+            unscripted("setRefreshRate")
+        }
+    };
+    (@ set_color_profile) => {
+        #[cfg(feature = "agent-display-color-write-v1")]
+        async fn set_color_profile(
+            &mut self,
+            _: SetColorProfile,
+            _: Arc<AtomicBool>,
+        ) -> io::Result<ManualWriteOutcome> {
+            unscripted("setColorProfile")
+        }
+    };
+}
 #[path = "brightness_lifetime_tests.rs"]
 mod brightness_lifetime;
 use serde_json::{Value, json};
@@ -19,50 +72,7 @@ impl Supplier for Script {
             .take()
             .expect("unexpected repeated display query"))
     }
-    #[cfg(feature = "agent-display-brightness-write-v1")]
-    async fn set_brightness(
-        &mut self,
-        _request: SetBrightness,
-        _canceled: Arc<AtomicBool>,
-    ) -> io::Result<WriteOutcome> {
-        self.calls += 1;
-        Err(io::Error::other(
-            "query-only test supplier received a write",
-        ))
-    }
-    #[cfg(feature = "agent-display-hdr-write-v1")]
-    async fn set_hdr(
-        &mut self,
-        _request: SetHdr,
-        _canceled: Arc<AtomicBool>,
-    ) -> io::Result<ManualWriteOutcome> {
-        self.calls += 1;
-        Err(io::Error::other(
-            "query-only test supplier received a write",
-        ))
-    }
-    #[cfg(feature = "agent-display-refresh-write-v1")]
-    async fn set_refresh_rate(
-        &mut self,
-        _request: SetRefreshRate,
-        _canceled: Arc<AtomicBool>,
-    ) -> io::Result<ManualWriteOutcome> {
-        self.calls += 1;
-        Err(io::Error::other(
-            "query-only test supplier received a write",
-        ))
-    }
-    #[cfg(feature = "agent-display-color-write-v1")]
-    async fn set_color_profile(
-        &mut self,
-        _request: SetColorProfile,
-        _canceled: Arc<AtomicBool>,
-    ) -> io::Result<ManualWriteOutcome> {
-        self.calls += 1;
-        Err(io::Error::other(
-            "query-only test supplier received a write",
-        ))
-    }
+    unscripted_writes!(set_brightness, set_hdr, set_refresh_rate, set_color_profile);
 }
 /// Encode like the managed codec: the `operation` discriminator first (the
 /// json! map would otherwise sort it after `expectedPowerSource`).
@@ -334,38 +344,7 @@ impl Supplier for Blocker {
             }
         }
     }
-    #[cfg(feature = "agent-display-brightness-write-v1")]
-    async fn set_brightness(
-        &mut self,
-        _request: SetBrightness,
-        _canceled: Arc<AtomicBool>,
-    ) -> io::Result<WriteOutcome> {
-        unreachable!("query-only test supplier received a write")
-    }
-    #[cfg(feature = "agent-display-hdr-write-v1")]
-    async fn set_hdr(
-        &mut self,
-        _request: SetHdr,
-        _canceled: Arc<AtomicBool>,
-    ) -> io::Result<ManualWriteOutcome> {
-        unreachable!("query-only test supplier received a write")
-    }
-    #[cfg(feature = "agent-display-refresh-write-v1")]
-    async fn set_refresh_rate(
-        &mut self,
-        _request: SetRefreshRate,
-        _canceled: Arc<AtomicBool>,
-    ) -> io::Result<ManualWriteOutcome> {
-        unreachable!("query-only test supplier received a write")
-    }
-    #[cfg(feature = "agent-display-color-write-v1")]
-    async fn set_color_profile(
-        &mut self,
-        _request: SetColorProfile,
-        _canceled: Arc<AtomicBool>,
-    ) -> io::Result<ManualWriteOutcome> {
-        unreachable!("test supplier received setColorProfile")
-    }
+    unscripted_writes!(set_brightness, set_hdr, set_refresh_rate, set_color_profile);
 }
 async fn wait_flag(flag: &AtomicBool) {
     timeout(Duration::from_secs(5), async {
@@ -915,30 +894,7 @@ mod brightness_writes {
                 state,
             })
         }
-        #[cfg(feature = "agent-display-hdr-write-v1")]
-        async fn set_hdr(
-            &mut self,
-            _request: SetHdr,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            unreachable!("brightness test supplier received setHdr")
-        }
-        #[cfg(feature = "agent-display-refresh-write-v1")]
-        async fn set_refresh_rate(
-            &mut self,
-            _request: SetRefreshRate,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            unreachable!("brightness test supplier received setRefreshRate")
-        }
-        #[cfg(feature = "agent-display-color-write-v1")]
-        async fn set_color_profile(
-            &mut self,
-            _request: SetColorProfile,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            unreachable!("test supplier received setColorProfile")
-        }
+        unscripted_writes!(set_hdr, set_refresh_rate, set_color_profile);
     }
     fn set(expected: Value, percent: Value) -> Vec<u8> {
         request(json!({
@@ -1096,30 +1052,7 @@ mod brightness_writes {
             .await
             .unwrap()
         }
-        #[cfg(feature = "agent-display-hdr-write-v1")]
-        async fn set_hdr(
-            &mut self,
-            _request: SetHdr,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            unreachable!("brightness test supplier received setHdr")
-        }
-        #[cfg(feature = "agent-display-refresh-write-v1")]
-        async fn set_refresh_rate(
-            &mut self,
-            _request: SetRefreshRate,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            unreachable!("brightness test supplier received setRefreshRate")
-        }
-        #[cfg(feature = "agent-display-color-write-v1")]
-        async fn set_color_profile(
-            &mut self,
-            _request: SetColorProfile,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            unreachable!("test supplier received setColorProfile")
-        }
+        unscripted_writes!(set_hdr, set_refresh_rate, set_color_profile);
     }
 
     #[tokio::test]
@@ -1231,7 +1164,6 @@ mod hdr_writes {
         outcome: Option<(Status, Option<Cow<'static, str>>, Snapshot)>,
         received: Vec<SetHdr>,
         queries: usize,
-        brightness: usize,
     }
     impl Writes {
         fn new(status: Status, error: Option<Cow<'static, str>>, state: Snapshot) -> Self {
@@ -1239,7 +1171,6 @@ mod hdr_writes {
                 outcome: Some((status, error, state)),
                 received: Vec::new(),
                 queries: 0,
-                brightness: 0,
             }
         }
     }
@@ -1248,15 +1179,7 @@ mod hdr_writes {
             self.queries += 1;
             Ok(Snapshot::unavailable("unused"))
         }
-        #[cfg(feature = "agent-display-brightness-write-v1")]
-        async fn set_brightness(
-            &mut self,
-            _request: SetBrightness,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<WriteOutcome> {
-            self.brightness += 1;
-            Err(io::Error::other("HDR test supplier received setBrightness"))
-        }
+        unscripted_writes!(set_brightness, set_refresh_rate, set_color_profile);
         async fn set_hdr(
             &mut self,
             request: SetHdr,
@@ -1269,22 +1192,6 @@ mod hdr_writes {
                 error,
                 state,
             })
-        }
-        #[cfg(feature = "agent-display-refresh-write-v1")]
-        async fn set_refresh_rate(
-            &mut self,
-            _request: SetRefreshRate,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            unreachable!("HDR test supplier received setRefreshRate")
-        }
-        #[cfg(feature = "agent-display-color-write-v1")]
-        async fn set_color_profile(
-            &mut self,
-            _request: SetColorProfile,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            unreachable!("test supplier received setColorProfile")
         }
     }
     fn set(expected: Value, enabled: Value) -> Vec<u8> {
@@ -1369,7 +1276,7 @@ mod hdr_writes {
                 exchange(&mut supplier, &set(json!(2), json!(enabled))).await;
             result.unwrap();
             assert_eq!(admissions, 2);
-            assert_eq!((supplier.queries, supplier.brightness), (0, 0));
+            assert_eq!(supplier.queries, 0);
             assert_eq!(
                 supplier.received,
                 [SetHdr {
@@ -1450,7 +1357,7 @@ mod hdr_writes {
             assert!(matches!(result, Err(ServeError::Connection(_))));
             assert!(bytes.is_empty());
             assert!(supplier.received.is_empty());
-            assert_eq!((supplier.queries, supplier.brightness), (0, 0));
+            assert_eq!(supplier.queries, 0);
         }
     }
 
@@ -1476,14 +1383,7 @@ mod hdr_writes {
         async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
             unreachable!("write test received a query")
         }
-        #[cfg(feature = "agent-display-brightness-write-v1")]
-        async fn set_brightness(
-            &mut self,
-            _request: SetBrightness,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<WriteOutcome> {
-            unreachable!("HDR test supplier received setBrightness")
-        }
+        unscripted_writes!(set_brightness, set_refresh_rate, set_color_profile);
         async fn set_hdr(
             &mut self,
             _request: SetHdr,
@@ -1510,22 +1410,6 @@ mod hdr_writes {
             })
             .await
             .unwrap()
-        }
-        #[cfg(feature = "agent-display-refresh-write-v1")]
-        async fn set_refresh_rate(
-            &mut self,
-            _request: SetRefreshRate,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            unreachable!("HDR test supplier received setRefreshRate")
-        }
-        #[cfg(feature = "agent-display-color-write-v1")]
-        async fn set_color_profile(
-            &mut self,
-            _request: SetColorProfile,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            unreachable!("test supplier received setColorProfile")
         }
     }
 
@@ -1633,42 +1517,23 @@ mod refresh_writes {
     struct Writes {
         outcome: Option<(Status, Option<Cow<'static, str>>, Snapshot)>,
         received: Vec<SetRefreshRate>,
-        others: usize,
+        queries: usize,
     }
     impl Writes {
         fn new(status: Status, error: Option<Cow<'static, str>>, state: Snapshot) -> Self {
             Self {
                 outcome: Some((status, error, state)),
                 received: Vec::new(),
-                others: 0,
+                queries: 0,
             }
         }
     }
     impl Supplier for Writes {
         async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
-            self.others += 1;
+            self.queries += 1;
             Ok(Snapshot::unavailable("unused"))
         }
-        #[cfg(feature = "agent-display-brightness-write-v1")]
-        async fn set_brightness(
-            &mut self,
-            _request: SetBrightness,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<WriteOutcome> {
-            self.others += 1;
-            Err(io::Error::other(
-                "refresh test supplier received setBrightness",
-            ))
-        }
-        #[cfg(feature = "agent-display-hdr-write-v1")]
-        async fn set_hdr(
-            &mut self,
-            _request: SetHdr,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            self.others += 1;
-            Err(io::Error::other("refresh test supplier received setHdr"))
-        }
+        unscripted_writes!(set_brightness, set_hdr, set_color_profile);
         async fn set_refresh_rate(
             &mut self,
             request: SetRefreshRate,
@@ -1681,14 +1546,6 @@ mod refresh_writes {
                 error,
                 state,
             })
-        }
-        #[cfg(feature = "agent-display-color-write-v1")]
-        async fn set_color_profile(
-            &mut self,
-            _request: SetColorProfile,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            unreachable!("test supplier received setColorProfile")
         }
     }
     fn set(expected: Value, key: Value) -> Vec<u8> {
@@ -1808,7 +1665,7 @@ mod refresh_writes {
                 exchange(&mut supplier, &set(json!(2), json!(key))).await;
             result.unwrap();
             assert_eq!(admissions, 2);
-            assert_eq!(supplier.others, 0);
+            assert_eq!(supplier.queries, 0);
             assert_eq!(
                 supplier.received,
                 [SetRefreshRate {
@@ -1939,7 +1796,7 @@ mod refresh_writes {
             assert!(matches!(result, Err(ServeError::Connection(_))));
             assert!(bytes.is_empty());
             assert!(supplier.received.is_empty());
-            assert_eq!(supplier.others, 0);
+            assert_eq!(supplier.queries, 0);
         }
     }
 
@@ -1955,22 +1812,7 @@ mod refresh_writes {
         async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
             unreachable!("write test received a query")
         }
-        #[cfg(feature = "agent-display-brightness-write-v1")]
-        async fn set_brightness(
-            &mut self,
-            _request: SetBrightness,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<WriteOutcome> {
-            unreachable!("refresh test supplier received setBrightness")
-        }
-        #[cfg(feature = "agent-display-hdr-write-v1")]
-        async fn set_hdr(
-            &mut self,
-            _request: SetHdr,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            unreachable!("refresh test supplier received setHdr")
-        }
+        unscripted_writes!(set_brightness, set_hdr, set_color_profile);
         async fn set_refresh_rate(
             &mut self,
             _request: SetRefreshRate,
@@ -1997,14 +1839,6 @@ mod refresh_writes {
             })
             .await
             .unwrap()
-        }
-        #[cfg(feature = "agent-display-color-write-v1")]
-        async fn set_color_profile(
-            &mut self,
-            _request: SetColorProfile,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            unreachable!("test supplier received setColorProfile")
         }
     }
 
@@ -2076,53 +1910,23 @@ mod color_writes {
     struct Writes {
         outcome: Option<(Status, Option<Cow<'static, str>>, Snapshot)>,
         received: Vec<SetColorProfile>,
-        others: usize,
+        queries: usize,
     }
     impl Writes {
         fn new(status: Status, error: Option<Cow<'static, str>>, state: Snapshot) -> Self {
             Self {
                 outcome: Some((status, error, state)),
                 received: Vec::new(),
-                others: 0,
+                queries: 0,
             }
         }
     }
     impl Supplier for Writes {
         async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
-            self.others += 1;
+            self.queries += 1;
             Ok(Snapshot::unavailable("unused"))
         }
-        #[cfg(feature = "agent-display-brightness-write-v1")]
-        async fn set_brightness(
-            &mut self,
-            _request: SetBrightness,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<WriteOutcome> {
-            self.others += 1;
-            Err(io::Error::other(
-                "color test supplier received setBrightness",
-            ))
-        }
-        #[cfg(feature = "agent-display-hdr-write-v1")]
-        async fn set_hdr(
-            &mut self,
-            _request: SetHdr,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            self.others += 1;
-            Err(io::Error::other("color test supplier received setHdr"))
-        }
-        #[cfg(feature = "agent-display-refresh-write-v1")]
-        async fn set_refresh_rate(
-            &mut self,
-            _request: SetRefreshRate,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            self.others += 1;
-            Err(io::Error::other(
-                "color test supplier received setRefreshRate",
-            ))
-        }
+        unscripted_writes!(set_brightness, set_hdr, set_refresh_rate);
         async fn set_color_profile(
             &mut self,
             request: SetColorProfile,
@@ -2270,7 +2074,7 @@ mod color_writes {
                 exchange(&mut supplier, &set(json!(1), json!(key))).await;
             result.unwrap();
             assert_eq!(admissions, 2);
-            assert_eq!(supplier.others, 0);
+            assert_eq!(supplier.queries, 0);
             assert_eq!(
                 supplier.received,
                 [SetColorProfile {
@@ -2392,7 +2196,7 @@ mod color_writes {
             assert!(matches!(result, Err(ServeError::Connection(_))));
             assert!(bytes.is_empty());
             assert!(supplier.received.is_empty());
-            assert_eq!(supplier.others, 0);
+            assert_eq!(supplier.queries, 0);
         }
     }
 
@@ -2408,30 +2212,7 @@ mod color_writes {
         async fn acquire(&mut self, _canceled: Arc<AtomicBool>) -> io::Result<Snapshot> {
             unreachable!("write test received a query")
         }
-        #[cfg(feature = "agent-display-brightness-write-v1")]
-        async fn set_brightness(
-            &mut self,
-            _request: SetBrightness,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<WriteOutcome> {
-            unreachable!("color test supplier received setBrightness")
-        }
-        #[cfg(feature = "agent-display-hdr-write-v1")]
-        async fn set_hdr(
-            &mut self,
-            _request: SetHdr,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            unreachable!("color test supplier received setHdr")
-        }
-        #[cfg(feature = "agent-display-refresh-write-v1")]
-        async fn set_refresh_rate(
-            &mut self,
-            _request: SetRefreshRate,
-            _canceled: Arc<AtomicBool>,
-        ) -> io::Result<ManualWriteOutcome> {
-            unreachable!("color test supplier received setRefreshRate")
-        }
+        unscripted_writes!(set_brightness, set_hdr, set_refresh_rate);
         async fn set_color_profile(
             &mut self,
             _request: SetColorProfile,

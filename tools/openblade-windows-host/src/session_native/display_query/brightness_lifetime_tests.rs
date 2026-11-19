@@ -159,40 +159,9 @@ impl Supplier for OwnedSupplier {
             .await
             .unwrap()
     }
-    #[cfg(feature = "agent-display-brightness-write-v1")]
-    async fn set_brightness(
-        &mut self,
-        _request: SetBrightness,
-        _canceled: Arc<AtomicBool>,
-    ) -> io::Result<WriteOutcome> {
-        unreachable!("query-only test supplier received a write")
-    }
-    #[cfg(feature = "agent-display-hdr-write-v1")]
-    async fn set_hdr(
-        &mut self,
-        _request: SetHdr,
-        _canceled: Arc<AtomicBool>,
-    ) -> io::Result<ManualWriteOutcome> {
-        unreachable!("query-only test supplier received a write")
-    }
-    #[cfg(feature = "agent-display-refresh-write-v1")]
-    async fn set_refresh_rate(
-        &mut self,
-        _request: SetRefreshRate,
-        _canceled: Arc<AtomicBool>,
-    ) -> io::Result<ManualWriteOutcome> {
-        unreachable!("query-only test supplier received a write")
-    }
+    unscripted_writes!(set_brightness, set_hdr, set_refresh_rate, set_color_profile);
     async fn drain(&mut self) -> io::Result<()> {
         observation::drain_brightness(self.owner.clone()).await
-    }
-    #[cfg(feature = "agent-display-color-write-v1")]
-    async fn set_color_profile(
-        &mut self,
-        _request: SetColorProfile,
-        _canceled: Arc<AtomicBool>,
-    ) -> io::Result<ManualWriteOutcome> {
-        unreachable!("test supplier received setColorProfile")
     }
 }
 type Incoming = Arc<tokio::sync::Mutex<tokio::sync::mpsc::Receiver<tokio::io::DuplexStream>>>;
