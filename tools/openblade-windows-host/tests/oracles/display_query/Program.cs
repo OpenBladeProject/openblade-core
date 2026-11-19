@@ -379,6 +379,9 @@ static async Task<int> EmitRequestsAsync(string outPath)
     AddInvalid("applyProfile-missing-power-source", Op("applyProfile", ",\"settings\":" + Settings(brightness: "50")));
     AddInvalid("applyProfile-missing-settings", Op("applyProfile", ",\"expectedPowerSource\":0"));
     AddInvalid("applyProfile-settings-array", Profile("[]"));
+    // Five members in order: serde's derive would bind them positionally.
+    AddInvalid("applyProfile-settings-five-element-array", Profile("[null,true,null,null,true]"));
+    AddInvalid("applyProfile-settings-configured-array", Profile("[\"fixed-120\",false,\"sRGB.icm\",50,true]"));
     AddInvalid("applyProfile-blank-refresh-key", Profile(Settings(refresh: "\"   \"")));
     AddInvalid("applyProfile-refresh-key-1025", Profile(Settings(refresh: JsonSerializer.Serialize(new string('r', 1025)))));
     AddInvalid("applyProfile-padded-color-key", Profile(Settings(color: "\" sRGB.icm \"")));
@@ -397,6 +400,7 @@ static async Task<int> EmitRequestsAsync(string outPath)
         // check; native requires the written shape.
         ("applyProfile-missing-brightnessPercent", Profile("{\"refreshRateKey\":null,\"hdrEnabled\":true,\"colorProfileKey\":null,\"isConfigured\":true}")),
         ("applyProfile-missing-isConfigured", Profile("{\"refreshRateKey\":null,\"hdrEnabled\":true,\"colorProfileKey\":null,\"brightnessPercent\":null}")),
+        ("applyProfile-all-null-missing-isConfigured", Profile("{\"refreshRateKey\":null,\"hdrEnabled\":null,\"colorProfileKey\":null,\"brightnessPercent\":null}")),
         ("applyProfile-inconsistent-isConfigured", Profile(Settings(hdr: "true", configured: "false"))),
         ("applyProfile-pascal-case-settings", Profile("{\"RefreshRateKey\":null,\"HdrEnabled\":true,\"ColorProfileKey\":null,\"BrightnessPercent\":null,\"IsConfigured\":true}")),
         ("applyProfile-brightness-as-string", Profile(Settings(brightness: "\"50\""))),

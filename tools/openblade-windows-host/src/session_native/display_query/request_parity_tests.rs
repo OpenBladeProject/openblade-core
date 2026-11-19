@@ -64,7 +64,7 @@ fn managed_request_frames_parse_exactly_for_selected_operations() {
         );
         checked += 1;
     }
-    assert_eq!(checked, 69, "every fixture row is checked");
+    assert_eq!(checked, 71, "every fixture row is checked");
 }
 
 #[test]
@@ -120,10 +120,33 @@ fn managed_lenient_profile_settings_are_refused() {
         r#"{"refreshRateKey":null,"hdrEnabled":true,"colorProfileKey":null,"brightnessPercent":null,"isConfigured":false}"#,
         r#"{"RefreshRateKey":null,"HdrEnabled":true,"ColorProfileKey":null,"BrightnessPercent":null,"IsConfigured":true}"#,
         r#"{"refreshRateKey":null,"hdrEnabled":null,"colorProfileKey":null,"brightnessPercent":"50","isConfigured":true}"#,
+        // Unconfigured, so a defaulted `isConfigured` would equal the computed one.
+        r#"{"refreshRateKey":null,"hdrEnabled":null,"colorProfileKey":null,"brightnessPercent":null}"#,
     ] {
         assert!(
             Request::parse(profile(settings).as_bytes()).is_err(),
             "{settings}"
         );
+    }
+}
+
+/// Managed System.Text.Json rejects a JSON array for an object type; the
+/// serde derive alone would bind the members positionally.
+#[cfg(feature = "agent-display-profile-apply-v1")]
+#[test]
+fn positional_settings_arrays_are_refused_like_managed() {
+    use super::{Object, WireSettings};
+    let array = r#"[null,true,null,null,true]"#;
+    assert!(serde_json::from_str::<WireSettings>(array).is_ok());
+    assert!(serde_json::from_str::<Object<WireSettings>>(array).is_err());
+    let object = r#"{"refreshRateKey":null,"hdrEnabled":true,"colorProfileKey":null,"brightnessPercent":null,"isConfigured":true}"#;
+    assert!(serde_json::from_str::<Object<WireSettings>>(object).is_ok());
+
+    let id = "9f876742-1234-4321-abcd-d3ea3e1cf102";
+    for settings in [array, r#"["fixed-120",false,"sRGB.icm",50,true]"#] {
+        let frame = format!(
+            r#"{{"operation":"applyProfile","version":2,"requestId":"{id}","expectedPowerSource":0,"settings":{settings}}}"#
+        );
+        assert!(Request::parse(frame.as_bytes()).is_err(), "{settings}");
     }
 }

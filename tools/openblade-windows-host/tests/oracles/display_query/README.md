@@ -32,8 +32,9 @@ Modes:
   The managed reader accepts duplicate members (last wins) and applyProfile
   settings it never writes (a missing `brightnessPercent` or `isConfigured`,
   an inconsistent `isConfigured`, PascalCase names, a string percent), so those
-  cases are printed as observations and are not fixture rows; it rejects `operation`
-  when it is not the first member.
+  cases are printed as observations and are not fixture rows. It rejects `operation`
+  when it is not the first member, and applyProfile settings given as a JSON array
+  (fixture rows; a serde-derived struct alone would bind the members by position).
 - `requests-verify <in.jsonl>`: decodes every valid row with `ReadRequestAsync`,
   requires the managed re-encode to equal the row bytes, and requires every
   invalid row to be rejected.

@@ -87,12 +87,43 @@ struct Envelope {
     color_profile_key: Option<String>,
     #[cfg(feature = "agent-display-profile-apply-v1")]
     #[serde(default, deserialize_with = "present")]
-    settings: Option<WireSettings>,
+    settings: Option<Object<WireSettings>>,
 }
-/// Managed `DisplayProfileSettings` exactly as its codec writes it: every
-/// member present, the setting members nullable, and the computed
-/// `isConfigured` (managed ignores it on read; native requires the written
-/// value). Stricter than managed only for encodings it never writes.
+/// A request struct nested in a Session endpoint request, read only from a
+/// JSON object. A serde-derived struct also accepts a positional JSON array
+/// (`[null, true, null, null, true]`), which the managed System.Text.Json
+/// codec rejects for an object type. Every nested derived request struct
+/// goes through this; top-level requests are objects by their own checks
+/// (`operation_first` here, the hand-written map visitor of Battery.v1).
+#[cfg(feature = "agent-display-profile-apply-v1")]
+struct Object<T>(T);
+#[cfg(feature = "agent-display-profile-apply-v1")]
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Object<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Members<T>(std::marker::PhantomData<T>);
+        impl<'de, T: Deserialize<'de>> serde::de::Visitor<'de> for Members<T> {
+            type Value = T;
+
+            fn expecting(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                out.write_str("a JSON object")
+            }
+
+            fn visit_map<M: serde::de::MapAccess<'de>>(self, map: M) -> Result<T, M::Error> {
+                T::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+            }
+        }
+        deserializer
+            .deserialize_map(Members(std::marker::PhantomData))
+            .map(Object)
+    }
+}
+/// Managed `DisplayProfileSettings` exactly as its codec writes it: an
+/// object with every member present, the setting members nullable, and the
+/// computed `isConfigured` (managed ignores it on read; native requires the
+/// written value). Stricter than managed only for encodings it never writes:
+/// a missing `brightnessPercent` or `isConfigured` (managed requires the
+/// other members too), an inconsistent `isConfigured`, PascalCase names and a
+/// string percent. A positional array is refused like managed (`Object`).
 #[cfg(feature = "agent-display-profile-apply-v1")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -251,7 +282,7 @@ impl Request {
         #[cfg(all(openblade_display_write, not(feature = "agent-display-color-write-v1")))]
         let color: Option<String> = None;
         #[cfg(feature = "agent-display-profile-apply-v1")]
-        let settings = envelope.settings;
+        let settings = envelope.settings.map(|Object(settings)| settings);
         #[cfg(all(
             openblade_display_write,
             not(feature = "agent-display-profile-apply-v1")
