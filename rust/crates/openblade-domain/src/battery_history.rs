@@ -44,7 +44,8 @@ impl Desired {
         if !self.protection {
             return Some(0x50);
         }
-        ((50..=80).contains(&self.limit) && self.limit % 5 == 0).then_some(self.limit | 0x80)
+        ((50..=80).contains(&self.limit) && self.limit.is_multiple_of(5))
+            .then_some(self.limit | 0x80)
     }
     pub fn requested(self, request: &Request) -> Self {
         let mut v = self;
@@ -86,7 +87,7 @@ impl BatteryRecord {
             || !(self.baseline == 0x50
                 || self.baseline & 0x80 != 0
                     && (50..=80).contains(&(self.baseline & 0x7f))
-                    && (self.baseline & 0x7f) % 5 == 0)
+                    && (self.baseline & 0x7f).is_multiple_of(5))
         {
             return Err(deny());
         }

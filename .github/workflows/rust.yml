@@ -201,6 +201,15 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
 
+      # The workspace build leaves openblade-domain's thermal-history feature off;
+      # it carries the history grammar that tools/openblade-windows-host enables.
+      - name: Test and lint the domain thermal-history feature
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          cargo test --locked -p openblade-domain --features thermal-history --target ${{ matrix.target }}
+          cargo clippy --locked -p openblade-domain --features thermal-history --all-targets --target ${{ matrix.target }} -- -D warnings
+
       - name: Test the macOS discovery pilot
         if: runner.os == 'macOS'
         run: |
