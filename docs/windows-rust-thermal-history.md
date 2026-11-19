@@ -185,9 +185,10 @@ to v3 empty-thermal case. The record commitment additionally covers the
 pending-override digests (OpenBlade.NativeHandbackRecord.v1). Custody recomputes
 the history commitment at every start, so a change to classification, to these
 lines or to the record encoding would block every handed-back machine. The
-known-answer vector tests/Fixtures/Parity/native-handback-record-v1.json pins a
-journal, both sets of commitment lines, their digests and the exact record bytes;
-change that format only with a new versioned header.
+known-answer vector tests/Fixtures/Parity/native-handback-record-v1.json pins,
+for a classified journal and for a record using the other slots and a staged
+journal, both sets of commitment lines, their digests and the exact record
+bytes; change that format only with a new versioned header.
 
 At every start, the Service's mandatory native custody gate reacquires the
 retired owner and recomputes the handback from native history. Custody refuses
