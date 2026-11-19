@@ -73,14 +73,14 @@ class FixtureContracts(unittest.TestCase):
 
     def test_exact_command_recorder(self):
         manifest = f.load_manifest(REPO)
-        self.assertEqual([len(c['cases']) for c in manifest['corpora']], [3, 2, 2, 10, 2])
+        self.assertEqual([len(c['cases']) for c in manifest['corpora']], [7, 2, 2, 10, 2])
         recorded = []
         for features in f.TUPLES:
             recorded.append(f.native_build_command(REPO, features))
         for corpus in manifest['corpora']:
             for case in corpus['cases']:
                 recorded.append(f.native_test_command(Path('test.exe'), case['name'], manifest))
-        self.assertEqual(len(recorded), 21)
+        self.assertEqual(len(recorded), 25)
         for command in recorded[:2]:
             self.assertIn('--offline', command)
             self.assertIn('--locked', command)
