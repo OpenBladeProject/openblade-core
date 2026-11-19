@@ -155,8 +155,11 @@ changed panel before any submission. It adds a missing association, selects the
 current-user scope and sets the default, confirming each step by a separate
 read. After a submitted step fails it reconciles, then restores the default,
 removes the added association and restores the scope, in the managed order,
-without repeating the failed setter. The host fence admits the first setter;
-a later failure pauses display writes until an explicit read. Platform unit
+without retrying the failed setter. The host fence admits the first setter,
+and also requires confirmed SDR there. A failure after it pauses
+color-profile writes only, until an explicit display read; a readback that
+cannot re-identify the panel or read its HDR state is reported without
+restoration writes. Platform unit
 tests retain the WCS imports without calling them; production builds with
 `display-color-write` call them only from `set_internal_color_profile`, so a
 dependent must not call `ColorProfileNative` outside that sequence.

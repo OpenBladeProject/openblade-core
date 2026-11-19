@@ -9,9 +9,13 @@ Modes:
 - `DisplayQueryParity <frames.jsonl>`: each row holds one native response frame.
   Rows with 4 members (case, expectedStatus, expectedState, frame) are read-only
   queries and must be Succeeded. Rows with 5 members add expectedError and cover
-  setBrightness results (0 Succeeded, 1 Blocked, 2 Failed, 3 Indeterminate).
-  Each frame must decode with `SessionDisplayIpcCodec`, match status, error and
-  state exactly, and survive a managed roundtrip.
+  setBrightness, setHdr, setRefreshRate and setColorProfile results
+  (0 Succeeded, 1 Blocked, 2 Failed, 3 Indeterminate). Each frame must decode
+  with `SessionDisplayIpcCodec`, match status, error and state exactly, and
+  survive a managed roundtrip. The expected texts come from the Rust test
+  tables, checked by hand against the managed controller source: this mode
+  proves the codec round-trip of those frames, not that managed would produce
+  the same text for the same failure.
 - `checkpoints-emit <out.jsonl>`: writes exact checkpoint bytes using the
   production `DisplayAutomationCheckpointStore` (schema 4 and one legacy schema 1)
   with the expected state. Output is committed as

@@ -12,8 +12,9 @@
 //! independent observation. Any failure after the first setter runs managed
 //! `Restore` exactly: reconcile first and stop if the associations changed
 //! unexpectedly; otherwise restore the default, remove an association this
-//! transaction added, restore the scope and confirm the baseline. No call is
-//! replayed.
+//! transaction added, restore the scope and confirm the baseline. No failed
+//! call is retried; like managed `Restore`, restoration calls the default
+//! and scope setters again, with their baseline values.
 //!
 //! The native layer adds the host fence immediately before the first setter.
 //! From that setter on Windows may have changed state, so every later failure
