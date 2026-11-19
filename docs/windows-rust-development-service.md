@@ -340,9 +340,13 @@ Recovery authenticates the old artifact and holds epoch writer, original
 exclusive custody and the same independent owner/writer.lock in that order,
 through proof and retirement publication. Only authenticated v2 metadata artifacts
 can classify valid unmatched launches as abandoned metadata. Paired drains stay
-distinct. Malformed evidence and unresolved owner history refuse retirement.
-Immutable v2 proof snapshots bind the complete attempt-set dispositions and
-independently validated owner chain. Public readers may still block legacy
+distinct. Malformed evidence refuses retirement, and so does unresolved owner
+history, except a crashed thermal producer whose exit the reacquired custody
+proves; that generation is handed to managed, as
+[thermal history](windows-rust-thermal-history.md#native-to-managed-handback)
+describes. Immutable proof snapshots (v2, v3 with thermal history, v4 with a
+handback) bind the complete attempt-set dispositions and independently
+validated owner chain. Public readers may still block legacy
 custody. Recovery preserves descriptors, launches, drains, counters, snapshots
 and partial staging evidence. The separate endpoint seam
 requires the installed ACL, caller admission, and a successful correlated v79

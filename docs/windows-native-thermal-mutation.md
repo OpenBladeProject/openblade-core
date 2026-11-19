@@ -142,9 +142,11 @@ request. Unresolved owner history cannot be repaired by guessing retirement.
 Managed recovery accepts thermal journal history through the native-to-managed
 handback described in [thermal history](windows-rust-thermal-history.md#native-to-managed-handback):
 Setup records each unsettled or owned obligation of a crashed generation, and the
-managed Service resolves it by fresh reads without replay. Transport retirement
-alone is not firmware reconciliation. Inherited manual-fan ownership and an
-interrupted journal rollover remain unresolved and are not taken over.
+managed Service resolves it by fresh reads without replay. The handback is
+one-way: no later native generation can own firmware state after it. Transport
+retirement alone is not firmware reconciliation. Inherited manual-fan ownership
+is reported, not adopted, and an interrupted journal rollover still refuses
+retirement.
 
 A separate read-parity gap remains: native observed HyperBoost combined with a
 null broad capability snapshot does not satisfy the managed decoder's capability
