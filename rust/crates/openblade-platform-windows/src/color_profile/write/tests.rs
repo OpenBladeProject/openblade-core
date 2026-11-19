@@ -745,6 +745,47 @@ fn a_read_failure_before_any_setter_is_a_refusal_without_restoration() {
 }
 
 #[test]
+fn a_read_failure_after_the_first_setter_is_uncertain_and_restored() {
+    // Not associated: Execute's scope read follows the association, so the
+    // same failure is now possibly submitted and the managed Restore runs.
+    let mut wcs = Wcs::empty();
+    wcs.unknown_scope_at = Some(3);
+    assert_eq!(
+        set(&mut wcs, NATIVE),
+        uncertain(Fault::Read(ProfileReadError::UnknownScope(9)), Ok(()))
+    );
+    assert_eq!(
+        wcs.log.writes(),
+        ["add:Native_CTR.icm", "remove:Native_CTR.icm"]
+    );
+    assert!(wcs.user.is_empty());
+}
+
+#[test]
+fn the_fence_precedes_whichever_setter_comes_first() {
+    // Each baseline starts the transaction with a different setter.
+    for (scope, user) in [
+        (ProfileScope::SystemWide, &[][..]),
+        (ProfileScope::SystemWide, &[NATIVE][..]),
+        (ProfileScope::CurrentUser, &[NATIVE][..]),
+    ] {
+        let mut wcs = Wcs::new(scope, None, user);
+        let mut denied = fence(&wcs);
+        denied.admit = false;
+        assert_eq!(
+            set_internal_color_profile(&mut wcs, NATIVE, &denied, &|| false),
+            refused(ColorRefusal::AdmissionDenied),
+            "{scope:?} {user:?}"
+        );
+        assert_eq!(
+            wcs.log.entries(),
+            ["monitors", "fence"],
+            "{scope:?} {user:?}"
+        );
+    }
+}
+
+#[test]
 fn a_default_only_preexisting_association_cannot_restore_a_null_default() {
     // Associated before the transaction, so it is never added or removed.
     let mut wcs = Wcs::new(ProfileScope::SystemWide, None, &[NATIVE]);
