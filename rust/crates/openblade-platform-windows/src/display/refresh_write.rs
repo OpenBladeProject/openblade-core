@@ -135,6 +135,16 @@ pub enum RefreshError {
     Unconfirmed(Readback),
 }
 
+impl From<FenceRefusal> for RefreshError {
+    fn from(refusal: FenceRefusal) -> Self {
+        match refusal {
+            FenceRefusal::Cancelled => Self::Cancelled,
+            FenceRefusal::PanelChanged => Self::PanelChanged,
+            FenceRefusal::AdmissionDenied => Self::AdmissionDenied,
+        }
+    }
+}
+
 /// Why a readback after a successful APPLY did not confirm the request.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Readback {
@@ -203,22 +213,13 @@ pub fn set_internal_refresh<N: RefreshNative + ?Sized>(
     // The fence reads immediately before the submission. The plan carries
     // this frame's arrays, so the fenced panel must equal the observed one
     // (identity, rates and flags), not just be the same panel.
-    admit_submission(
-        fence,
-        cancelled,
-        |fresh| {
-            if *fresh == snapshot.display {
-                Ok(())
-            } else {
-                Err(RefreshError::PanelChanged)
-            }
-        },
-        |refusal| match refusal {
-            FenceRefusal::Cancelled => RefreshError::Cancelled,
-            FenceRefusal::PanelChanged => RefreshError::PanelChanged,
-            FenceRefusal::AdmissionDenied => RefreshError::AdmissionDenied,
-        },
-    )
+    admit_submission(fence, cancelled, |fresh| {
+        if *fresh == snapshot.display {
+            Ok(())
+        } else {
+            Err(RefreshError::PanelChanged)
+        }
+    })
     .map_err(refused)?;
 
     // From here Windows may have applied the configuration. Caller

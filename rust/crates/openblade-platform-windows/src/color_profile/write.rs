@@ -127,6 +127,16 @@ pub enum ColorRefusal {
     AdmissionDenied,
 }
 
+impl From<FenceRefusal> for ColorRefusal {
+    fn from(refusal: FenceRefusal) -> Self {
+        match refusal {
+            FenceRefusal::Cancelled => Self::Cancelled,
+            FenceRefusal::PanelChanged => Self::PanelChanged,
+            FenceRefusal::AdmissionDenied => Self::AdmissionDenied,
+        }
+    }
+}
+
 /// The managed exception that ended `Execute` or `Restore`.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Fault {
@@ -389,11 +399,6 @@ impl<N: ColorProfileNative + ?Sized> Transaction<'_, N> {
                     HdrState::On => Err(ColorRefusal::HdrEnabled),
                     HdrState::Unknown => Err(ColorRefusal::HdrUnknown),
                 }
-            },
-            |refusal| match refusal {
-                FenceRefusal::Cancelled => ColorRefusal::Cancelled,
-                FenceRefusal::PanelChanged => ColorRefusal::PanelChanged,
-                FenceRefusal::AdmissionDenied => ColorRefusal::AdmissionDenied,
             },
         )
         .map_err(Stop::Refused)?;

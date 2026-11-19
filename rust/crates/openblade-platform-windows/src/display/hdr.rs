@@ -90,6 +90,16 @@ pub enum HdrError {
     Unconfirmed,
 }
 
+impl From<FenceRefusal> for HdrError {
+    fn from(refusal: FenceRefusal) -> Self {
+        match refusal {
+            FenceRefusal::Cancelled => Self::Cancelled,
+            FenceRefusal::PanelChanged => Self::PanelChanged,
+            FenceRefusal::AdmissionDenied => Self::AdmissionDenied,
+        }
+    }
+}
+
 /// Set the internal display's HDR user preference. Every refusal before the
 /// submission reports `submission_may_have_occurred: false`.
 pub fn set_internal_hdr<N: HdrNative + ?Sized>(
@@ -123,22 +133,13 @@ pub fn set_internal_hdr<N: HdrNative + ?Sized>(
     if current == enabled {
         return Ok(HdrOutcome::Unchanged);
     }
-    admit_submission(
-        fence,
-        cancelled,
-        |fresh| {
-            if admitted.same_as(fresh) {
-                Ok(())
-            } else {
-                Err(HdrError::PanelChanged)
-            }
-        },
-        |refusal| match refusal {
-            FenceRefusal::Cancelled => HdrError::Cancelled,
-            FenceRefusal::PanelChanged => HdrError::PanelChanged,
-            FenceRefusal::AdmissionDenied => HdrError::AdmissionDenied,
-        },
-    )
+    admit_submission(fence, cancelled, |fresh| {
+        if admitted.same_as(fresh) {
+            Ok(())
+        } else {
+            Err(HdrError::PanelChanged)
+        }
+    })
     .map_err(refused)?;
 
     // From here Windows may have applied the change. Caller cancellation no
