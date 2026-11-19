@@ -7,7 +7,7 @@ use std::{
     collections::VecDeque,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 
@@ -93,11 +93,16 @@ struct Wcs {
     default_failure: Option<Hook>,
     scope_failure: Option<ScopeHook>,
     remove_has_effect: bool,
+    /// Runs after the managed fake's own removal effect.
+    remove_effect: Option<fn(&mut Wcs, &OsStr)>,
+    remove_status: i32,
     /// Fail this read whenever at least this many writes were made.
     fail_read: Option<(ProfileRead, usize)>,
     /// Report an unknown scope on this (one-based) scope read.
     unknown_scope_at: Option<usize>,
     scope_reads: usize,
+    /// Before this (one-based) scope read, select this scope.
+    scope_change_at: Option<(usize, ProfileScope)>,
     cancel_on_write: Option<Arc<AtomicBool>>,
 }
 
@@ -119,9 +124,12 @@ impl Wcs {
             default_failure: None,
             scope_failure: None,
             remove_has_effect: true,
+            remove_effect: None,
+            remove_status: 0,
             fail_read: None,
             unknown_scope_at: None,
             scope_reads: 0,
+            scope_change_at: None,
             cancel_on_write: None,
         }
     }
@@ -155,6 +163,11 @@ impl ProfileReads for Wcs {
     fn scope(&mut self, display: &ActiveInternalDisplay) -> Result<ProfileScope, ProfileReadError> {
         assert_eq!(display.target, panel(None).target);
         self.scope_reads += 1;
+        if let Some((read, scope)) = self.scope_change_at
+            && read == self.scope_reads
+        {
+            self.scope = scope;
+        }
         if self.unknown_scope_at == Some(self.scope_reads) {
             return Err(ProfileReadError::UnknownScope(9));
         }
@@ -233,7 +246,10 @@ impl ColorProfileNative for Wcs {
                 self.user_default = None;
             }
         }
-        0
+        if let Some(effect) = self.remove_effect {
+            effect(self, profile);
+        }
+        self.remove_status
     }
 
     fn set_default(&mut self, _: &ActiveInternalDisplay, profile: &OsStr) -> i32 {
@@ -264,6 +280,7 @@ struct Fence {
     log: Log,
     topology: fn() -> Result<InternalDisplayTopology, DisplayReadError>,
     admit: bool,
+    admissions: AtomicUsize,
 }
 
 impl SubmissionFence for Fence {
@@ -273,6 +290,7 @@ impl SubmissionFence for Fence {
     }
 
     fn admit(&self) -> bool {
+        self.admissions.fetch_add(1, Ordering::SeqCst);
         self.admit
     }
 }
@@ -282,6 +300,7 @@ fn fence(wcs: &Wcs) -> Fence {
         log: wcs.log.clone(),
         topology: sdr,
         admit: true,
+        admissions: AtomicUsize::new(0),
     }
 }
 
@@ -926,4 +945,363 @@ fn a_positive_hresult_is_success_like_managed() {
     let mut wcs = Wcs::empty();
     wcs.add_status = 1;
     assert_eq!(set(&mut wcs, NATIVE), Ok(ColorOutcome::Confirmed));
+    let mut wcs = Wcs::empty();
+    wcs.default_failure = Some(|wcs, profile| {
+        wcs.user_default = Some(profile.into());
+        1
+    });
+    assert_eq!(set(&mut wcs, NATIVE), Ok(ColorOutcome::Confirmed));
+}
+
+// Windows may report a profile written by full path back by its bare file
+// name, in another case. Every comparison is managed `ProfilesMatch`.
+
+const PRESET_PATH: &str = r"C:\Windows\System32\spool\drivers\color\Native_CTR.icm";
+
+/// The listed profile is a full path; WCS reads its association back as a
+/// bare, lower-case file name.
+fn respelled() -> Wcs {
+    let mut wcs = Wcs::empty();
+    wcs.presets = names(&[PRESET_PATH]);
+    wcs.add_effect = Some(|wcs, profile| {
+        wcs.user.retain(|id| id != profile);
+        wcs.user.push("native_ctr.icm".into());
+    });
+    wcs
+}
+
+#[test]
+fn step_readbacks_and_the_observation_confirm_a_respelled_profile() {
+    let mut wcs = respelled();
+    wcs.default_failure = Some(|wcs, _| {
+        wcs.user_default = Some("NATIVE_CTR.ICM".into());
+        0
+    });
+    assert_eq!(set(&mut wcs, NATIVE), Ok(ColorOutcome::Confirmed));
+    assert_eq!(
+        wcs.log.writes(),
+        [
+            format!("add:{PRESET_PATH}"),
+            "scope:true".to_owned(),
+            format!("default:{PRESET_PATH}"),
+        ]
+    );
+}
+
+#[test]
+fn restoration_owns_and_removes_a_respelled_association() {
+    let mut wcs = respelled();
+    wcs.scope_failure = Some(rejected_scope);
+    assert_eq!(
+        set(&mut wcs, NATIVE),
+        uncertain(Fault::ScopeRejected(5), Ok(()))
+    );
+    assert_eq!(
+        wcs.log.writes(),
+        [
+            format!("add:{PRESET_PATH}"),
+            "scope:true".to_owned(),
+            format!("remove:{PRESET_PATH}"),
+        ]
+    );
+    assert!(wcs.user.is_empty());
+}
+
+#[test]
+fn a_respelled_default_from_the_added_association_is_cleared_by_its_removal() {
+    // The default reads back respelled and the scope reverts, so the
+    // observation shows the factory profile and restoration runs.
+    let mut wcs = respelled();
+    wcs.default_failure = Some(|wcs, _| {
+        wcs.user_default = Some("NATIVE_CTR.ICM".into());
+        wcs.scope = ProfileScope::SystemWide;
+        0
+    });
+    assert_eq!(
+        set(&mut wcs, NATIVE),
+        uncertain(Fault::Readback(Readback::Mismatch), Ok(()))
+    );
+    assert_eq!(
+        wcs.log.writes(),
+        [
+            format!("add:{PRESET_PATH}"),
+            "scope:true".to_owned(),
+            format!("default:{PRESET_PATH}"),
+            format!("remove:{PRESET_PATH}"),
+        ]
+    );
+    assert_eq!(wcs.user_default, None);
+    assert!(wcs.user.is_empty());
+}
+
+#[test]
+fn a_respelled_active_default_is_a_no_op() {
+    let mut wcs = Wcs::new(
+        ProfileScope::CurrentUser,
+        Some("NATIVE_CTR.ICM"),
+        &["native_ctr.icm"],
+    );
+    wcs.presets = names(&[PRESET_PATH]);
+    assert_eq!(set(&mut wcs, NATIVE), Ok(ColorOutcome::Unchanged));
+    assert!(wcs.log.entries().is_empty());
+}
+
+/// Admits once, then cancels the caller: cancellation that arrives during
+/// the host admission still precedes the first setter.
+struct RacingFence {
+    log: Log,
+    cancel: Arc<AtomicBool>,
+}
+
+impl SubmissionFence for RacingFence {
+    fn topology(&self) -> Result<InternalDisplayTopology, DisplayReadError> {
+        self.log.push("fence");
+        sdr()
+    }
+
+    fn admit(&self) -> bool {
+        self.cancel.store(true, Ordering::SeqCst);
+        true
+    }
+}
+
+#[test]
+fn cancellation_during_the_host_admission_submits_nothing() {
+    let cancel = Arc::new(AtomicBool::new(false));
+    let mut wcs = Wcs::empty();
+    let fence = RacingFence {
+        log: wcs.log.clone(),
+        cancel: cancel.clone(),
+    };
+    assert_eq!(
+        set_internal_color_profile(&mut wcs, NATIVE, &fence, &|| cancel.load(Ordering::SeqCst)),
+        refused(ColorRefusal::Cancelled)
+    );
+    assert!(wcs.log.writes().is_empty());
+}
+
+/// Admits once; the host authority then lapses.
+struct LapsingFence {
+    log: Log,
+    admissions: AtomicUsize,
+}
+
+impl SubmissionFence for LapsingFence {
+    fn topology(&self) -> Result<InternalDisplayTopology, DisplayReadError> {
+        self.log.push("fence");
+        sdr()
+    }
+
+    fn admit(&self) -> bool {
+        self.admissions.fetch_add(1, Ordering::SeqCst) == 0
+    }
+}
+
+#[test]
+fn restoration_is_not_fenced_again_after_the_admission_lapses() {
+    // Like managed RunMutationAsync, the transaction keeps ownership through
+    // restoration once Windows may have changed state.
+    let mut wcs = Wcs::empty();
+    wcs.scope_failure = Some(rejected_scope);
+    let fence = LapsingFence {
+        log: wcs.log.clone(),
+        admissions: AtomicUsize::new(0),
+    };
+    assert_eq!(
+        set_internal_color_profile(&mut wcs, NATIVE, &fence, &|| false),
+        uncertain(Fault::ScopeRejected(5), Ok(()))
+    );
+    assert_eq!(fence.admissions.load(Ordering::SeqCst), 1);
+    assert_eq!(wcs.log.fences(), 1);
+    assert_eq!(
+        wcs.log.writes(),
+        ["add:Native_CTR.icm", "scope:true", "remove:Native_CTR.icm"]
+    );
+}
+
+#[test]
+fn a_baseline_association_visible_only_as_the_default_is_neither_added_nor_removed() {
+    let mut wcs = Wcs::new(ProfileScope::SystemWide, Some(NATIVE), &[]);
+    wcs.scope_failure = Some(rejected_scope);
+    assert_eq!(
+        set(&mut wcs, NATIVE),
+        uncertain(Fault::ScopeRejected(5), Ok(()))
+    );
+    assert_eq!(wcs.log.writes(), ["scope:true"]);
+    assert_eq!(wcs.user_default.as_deref(), Some(OsStr::new(NATIVE)));
+}
+
+#[test]
+fn restoration_stops_without_writes_when_a_baseline_association_vanished() {
+    let mut wcs = Wcs::new(ProfileScope::CurrentUser, Some(FACTORY), &[FACTORY, SRGB]);
+    wcs.default_failure = Some(|wcs, profile| {
+        wcs.user_default = Some(profile.into());
+        wcs.user.retain(|id| id != SRGB);
+        ACCESS_DENIED
+    });
+    assert_eq!(
+        set(&mut wcs, NATIVE),
+        uncertain(
+            Fault::DefaultRejected(ACCESS_DENIED),
+            Err(Fault::AssociationsChanged)
+        )
+    );
+    assert_eq!(
+        wcs.log.writes(),
+        ["add:Native_CTR.icm", "default:Native_CTR.icm"]
+    );
+}
+
+#[test]
+fn restoration_stops_when_the_restored_default_is_not_read_back() {
+    let mut wcs = Wcs::new(ProfileScope::CurrentUser, Some(FACTORY), &[FACTORY]);
+    wcs.default_failure = Some(|wcs, profile| {
+        wcs.user_default = Some(profile.into());
+        // The restoring default call then reports success without effect.
+        wcs.default_failure = Some(|_, _| 0);
+        ACCESS_DENIED
+    });
+    assert_eq!(
+        set(&mut wcs, NATIVE),
+        uncertain(
+            Fault::DefaultRejected(ACCESS_DENIED),
+            Err(Fault::DefaultUnconfirmed)
+        )
+    );
+    assert_eq!(
+        wcs.log.writes(),
+        [
+            "add:Native_CTR.icm",
+            "default:Native_CTR.icm",
+            "default:Blade.icm"
+        ]
+    );
+}
+
+#[test]
+fn restoration_stops_when_the_restored_scope_is_not_read_back() {
+    let mut wcs = Wcs::empty();
+    wcs.scope_failure = Some(|wcs, _| {
+        wcs.scope = ProfileScope::CurrentUser;
+        // The restoring scope call then reports success without effect.
+        wcs.scope_failure = Some(|_, _| Ok(()));
+        Ok(())
+    });
+    wcs.default_failure = Some(|_, _| ACCESS_DENIED);
+    let fence = fence(&wcs);
+    assert_eq!(
+        set_internal_color_profile(&mut wcs, NATIVE, &fence, &|| false),
+        uncertain(
+            Fault::DefaultRejected(ACCESS_DENIED),
+            Err(Fault::ScopeUnconfirmed)
+        )
+    );
+    assert_eq!(
+        wcs.log.writes(),
+        [
+            "add:Native_CTR.icm",
+            "scope:true",
+            "default:Native_CTR.icm",
+            "remove:Native_CTR.icm",
+            "scope:false",
+        ]
+    );
+    // One admission for the whole transaction, restoration included.
+    assert_eq!(fence.admissions.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn restoration_needs_no_unneeded_default_write_or_removal() {
+    // The add reports success without effect; the baseline default is intact.
+    let mut wcs = Wcs::new(ProfileScope::CurrentUser, Some(FACTORY), &[FACTORY]);
+    wcs.add_effect = Some(|wcs, profile| wcs.user.retain(|id| id != profile));
+    assert_eq!(
+        set(&mut wcs, NATIVE),
+        uncertain(Fault::AssociationUnconfirmed, Ok(()))
+    );
+    assert_eq!(wcs.log.writes(), ["add:Native_CTR.icm"]);
+}
+
+/// A current-user baseline with the factory default; the default call is
+/// rejected without effect, so restoration only removes the association.
+fn rejected_default() -> Wcs {
+    let mut wcs = Wcs::new(ProfileScope::CurrentUser, Some(FACTORY), &[FACTORY]);
+    wcs.default_failure = Some(|_, _| ACCESS_DENIED);
+    wcs
+}
+
+#[test]
+fn the_final_restoration_readback_checks_default_scope_and_associations() {
+    let unconfirmed = || {
+        uncertain(
+            Fault::DefaultRejected(ACCESS_DENIED),
+            Err(Fault::RestorationUnconfirmed),
+        )
+    };
+    let steps = [
+        "add:Native_CTR.icm",
+        "default:Native_CTR.icm",
+        "remove:Native_CTR.icm",
+    ];
+
+    // The removal also clears the baseline default.
+    let mut wcs = rejected_default();
+    wcs.remove_effect = Some(|wcs, _| wcs.user_default = None);
+    assert_eq!(set(&mut wcs, NATIVE), unconfirmed());
+    assert_eq!(wcs.log.writes(), steps);
+
+    // The removal also drops a baseline association.
+    let mut wcs = rejected_default();
+    wcs.remove_effect = Some(|wcs, _| wcs.user.retain(|id| id != FACTORY));
+    assert_eq!(set(&mut wcs, NATIVE), unconfirmed());
+    assert_eq!(wcs.log.writes(), steps);
+
+    // The scope changes after its restoration check: the observation, the
+    // baseline, Execute and restoration read it before the final readback.
+    let mut wcs = rejected_default();
+    wcs.scope_change_at = Some((5, ProfileScope::SystemWide));
+    assert_eq!(set(&mut wcs, NATIVE), unconfirmed());
+    assert_eq!(wcs.log.writes(), steps);
+}
+
+#[test]
+fn removal_results_follow_managed_hresult_rules() {
+    // A positive HRESULT is success; a negative one stops restoration.
+    let removal = |status| {
+        let mut wcs = Wcs::empty();
+        wcs.scope_failure = Some(rejected_scope);
+        wcs.remove_status = status;
+        let result = set(&mut wcs, NATIVE);
+        assert_eq!(
+            wcs.log.writes(),
+            ["add:Native_CTR.icm", "scope:true", "remove:Native_CTR.icm"]
+        );
+        result
+    };
+    assert_eq!(removal(1), uncertain(Fault::ScopeRejected(5), Ok(())));
+    assert_eq!(
+        removal(ACCESS_DENIED),
+        uncertain(
+            Fault::ScopeRejected(5),
+            Err(Fault::RemoveRejected(ACCESS_DENIED))
+        )
+    );
+}
+
+#[test]
+fn a_blank_monitor_path_is_refused_before_the_monitor_lookup() {
+    let mut wcs = Wcs::empty();
+    let mut blank = panel(Some(false));
+    blank.monitor_name = Ok(crate::display::MonitorName {
+        friendly_name: None,
+        device_path: Some("  ".into()),
+    });
+    wcs.topologies
+        .push_back(Ok(InternalDisplayTopology::Single(blank)));
+    wcs.monitors = vec![("  ", KEY, true)];
+    assert_eq!(
+        set(&mut wcs, NATIVE),
+        refused(ColorRefusal::Monitor(MonitorKeyError::NoDevicePath))
+    );
+    assert!(wcs.log.entries().is_empty());
 }
