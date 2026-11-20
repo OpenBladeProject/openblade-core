@@ -83,10 +83,17 @@ impl MemoryFiles {
         serde_json::from_slice(self.bytes.lock().unwrap().get(name).unwrap()).unwrap()
     }
     fn profiles(&self, performance: i32) {
+        self.profiles_with(performance, None);
+    }
+    /// `usb_c` replaces the fixture's limited-adapter preset (Balanced).
+    fn profiles_with(&self, performance: i32, usb_c: Option<i32>) {
         let fixture:Value=serde_json::from_str(include_str!("../../../../../../../tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-aggregate.json")).unwrap();
         let profile: Value = serde_json::from_str(fixture["prior"][0].as_str().unwrap()).unwrap();
         let mut profiles = profile["profiles"].clone();
         profiles["pluggedIn"]["performance"] = json!(performance);
+        if let Some(usb_c) = usb_c {
+            profiles["usbC"]["performance"] = json!(usb_c);
+        }
         profiles["pluggedIn"]["gpuClockTuning"] = Value::Null;
         profiles["applicationProfiles"] = json!([{ "id":"11111111-2222-3333-4444-555555555555","name":"Game","executablePath":"C:\\Games\\Game.exe","activationMode":0,"enabled":true,"overrides":{"pluggedIn":{"performance":2}}}]);
         self.put(
@@ -2077,7 +2084,18 @@ async fn edge_manual_stored_requires_new_explicit_request_after_automatic() {
     let stored = rig.set(91, value(1, 1)).await;
     assert_eq!(stored["result"]["status"], 0);
     let message = stored["result"]["message"].as_str().unwrap();
-    assert!(message.contains("saved, not applied") && message.contains("new performance request"));
+    // With the fan composition a fan request that returns the fans to Automatic
+    // applies it; observing firmware back in Automatic never does.
+    if cfg!(feature = "service-fan-mutation-v2") {
+        assert_eq!(
+            message,
+            "Performance intent was stored and will be applied when fans return to Automatic."
+        );
+    } else {
+        assert!(
+            message.contains("saved, not applied") && message.contains("new performance request")
+        );
+    }
     {
         let mut port = rig.port.state.lock().unwrap();
         port.selectors = [2, 2];
@@ -3811,8 +3829,15 @@ fn fan_request(n: u32, mode: Option<u8>, rpm: u16) -> Value {
 }
 #[cfg(feature = "service-fan-mutation-v2")]
 fn fan_rig(selector: u8, manual: u8) -> Rig {
+    // The saved preset matches the observed selector on both external classes,
+    // so a return to Automatic keeps it. Handback-preset tests use `handback_rig`.
+    let preset = if selector == 2 { 2 } else { 1 };
+    fan_rig_with(selector, manual, preset)
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+fn fan_rig_with(selector: u8, manual: u8, preset: i32) -> Rig {
     let files = MemoryFiles::default();
-    files.profiles(1);
+    files.profiles_with(preset, Some(preset));
     let rig = Rig::new(files);
     *rig.custody.origin_for_fan.lock().unwrap() = Some(rig.origin.clone());
     {
@@ -4319,7 +4344,7 @@ async fn fan_v2_owned_limited_source_performance_is_stored_without_consuming_rel
     assert_eq!(perf["result"]["status"], 0);
     assert_eq!(
         perf["result"]["message"],
-        "Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans."
+        "Performance intent was stored and will be applied when fans return to Automatic."
     );
     assert_eq!(fan_rows(&r).len(), before);
     assert_eq!(r.port.state.lock().unwrap().writes, 4);
@@ -4346,7 +4371,7 @@ async fn fan_v2_ac_manual_deferral_is_stored_but_cleared_fan_handback_blocks() {
     assert_eq!(deferred["result"]["status"], 0);
     assert_eq!(
         deferred["result"]["message"],
-        "Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans."
+        "Performance intent was stored and will be applied when fans return to Automatic."
     );
     r.origin.stop();
     r.stop().await;
@@ -4389,6 +4414,369 @@ async fn fan_v2_ac_manual_deferral_is_stored_but_cleared_fan_handback_blocks() {
     r.port.state.lock().unwrap().selectors = [0, 0];
     r.origin.stop();
     assert!(r.source.lock().await.drain().await.is_ok());
+}
+
+// Apply-on-handback. Managed leaves manual fans through the saved preset's own
+// 0D/02 pair (ApplyDirectAutomaticFanTransitionOutcomeAsync), so the stored
+// performance intent is applied by the fan request that returns the fans to
+// Automatic, in one pair, with the fan journal and per-setter admission.
+#[cfg(feature = "service-fan-mutation-v2")]
+const DEFERRED: &str =
+    "Performance intent was stored and will be applied when fans return to Automatic.";
+/// OpenBlade-owned Fixed fans under `selector`, then a `preset` override that
+/// managed defers on external power. Four entry setters, no deferral write.
+#[cfg(feature = "service-fan-mutation-v2")]
+async fn handback_rig(selector: u8, actual: u8, preset: i32) -> Rig {
+    let r = fan_rig(selector, 0);
+    r.port.state.lock().unwrap().actual = actual;
+    r.get().await;
+    let owned = r.request(fan_request(230, Some(1), 3700)).await;
+    assert_eq!(owned["result"]["status"], 1, "{owned}");
+    let deferred = r.set(231, value(preset, 1)).await;
+    assert_eq!(deferred["result"]["status"], 0, "{deferred}");
+    assert_eq!(deferred["result"]["message"], DEFERRED);
+    assert_eq!(r.port.state.lock().unwrap().writes, 4);
+    assert!(r.storage.outstanding_fan());
+    r
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+fn request_rows(r: &Rig, n: u32) -> Vec<Value> {
+    let id = format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}");
+    fan_rows(r)
+        .into_iter()
+        .filter(|row| row["request"] == id)
+        .collect()
+}
+/// The thermal-mode setters a request sent, in order.
+#[cfg(feature = "service-fan-mutation-v2")]
+fn mode_setters(r: &Rig, from: usize) -> Vec<Vec<u8>> {
+    r.port.state.lock().unwrap().sent[from..]
+        .iter()
+        .filter(|(class, command, _, _)| (*class, *command) == (13, 2))
+        .map(|(_, _, payload, _)| payload.clone())
+        .collect()
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_handback_applies_the_deferred_preset_on_full_and_limited_adapters() {
+    for (actual, source) in [(15, 0), (10, 2)] {
+        for (selector, preset, name) in [(0, 2, "Performance"), (2, 1, "Balanced")] {
+            let r = handback_rig(selector, actual, preset).await;
+            let destination = if preset == 2 { 2 } else { 0 };
+            let sent = r.port.state.lock().unwrap().sent.len();
+            let out = r.request(fan_request(232, None, 0)).await;
+            assert_eq!(out["result"]["status"], 1, "{out}");
+            assert_eq!(
+                out["result"]["message"],
+                format!(
+                    "Fans returned to Automatic with {name} performance, confirmed by independent paired readback."
+                )
+            );
+            // One direct pair: the saved preset with Automatic fans, no fan pair first.
+            assert_eq!(
+                mode_setters(&r, sent),
+                [[1, 1, destination, 0], [1, 2, destination, 0]]
+            );
+            let state = r.port.state.lock().unwrap();
+            assert_eq!(
+                (state.writes, state.selectors, state.fans),
+                (6, [destination; 2], [0; 2])
+            );
+            // A fresh 07/8C read precedes each setter.
+            let commands: Vec<_> = state.sent[sent..].iter().map(|s| (s.0, s.1)).collect();
+            for (index, command) in commands.iter().enumerate() {
+                if *command == (13, 2) {
+                    assert_eq!(commands[index - 1], (7, 0x8c));
+                }
+            }
+            drop(state);
+            let rows = request_rows(&r, 232);
+            let progress: Vec<_> = rows.iter().map(|row| row["progress"].clone()).collect();
+            assert_eq!(progress, [0, 10, 11, 12, 13, 50]);
+            for row in &rows {
+                assert_eq!(row["fan"]["selector"], destination);
+                assert_eq!(row["fan"]["source"], source);
+                assert_eq!(row["fan"]["intent"]["mode"], 0);
+            }
+            assert!(!r.storage.outstanding_fan());
+            assert!(!r.storage.pending());
+            assert_eq!(
+                r.files.document("manual-overrides.json")["overrides"]["performance"],
+                preset
+            );
+            let observed = fresh_observe(&r).await;
+            assert_eq!(observed["status"]["confirmedState"]["performance"], preset);
+            assert_eq!(observed["status"]["confirmedState"]["fans"], 0);
+            // Nothing is left to hand back at Stop.
+            r.origin.stop();
+            r.stop().await;
+            assert_eq!(r.port.state.lock().unwrap().writes, 6);
+        }
+    }
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_handback_power_class_change_before_or_between_setters_stops_without_replay() {
+    for (actual, changed) in [(15, 10), (10, 15), (15, 0)] {
+        for between in [false, true] {
+            let r = handback_rig(0, actual, 2).await;
+            let reads = r.port.state.lock().unwrap().power_reads;
+            // One read resolves the source and the destination, then one per setter.
+            r.port.state.lock().unwrap().change_power =
+                Some((reads + if between { 3 } else { 2 }, changed));
+            let out = r.request(fan_request(232, None, 0)).await;
+            assert_eq!(out["result"]["status"], 2, "{out}");
+            let rows = request_rows(&r, 232);
+            // The destination preset is journaled before any possible submission.
+            assert_eq!(rows[0]["progress"], 0);
+            assert_eq!(rows[0]["fan"]["selector"], 2);
+            let writes = r.port.state.lock().unwrap().writes;
+            if between {
+                assert_eq!(writes, 5);
+                assert_eq!(rows.last().unwrap()["progress"], 11);
+                assert!(r.storage.pending());
+                assert_eq!(
+                    out["result"]["message"],
+                    "Fan submission or owned release remains unresolved; further writes are fenced."
+                );
+                // The possibly submitted pair is never replayed or replaced.
+                assert_eq!(
+                    r.request(fan_request(233, None, 0)).await["result"]["status"],
+                    2
+                );
+                assert_eq!(r.set(234, value(2, 1)).await["result"]["status"], 2);
+                assert_eq!(r.port.state.lock().unwrap().writes, 5);
+                r.origin.stop();
+                assert!(r.source.lock().await.drain().await.is_err());
+                assert_eq!(r.port.state.lock().unwrap().writes, 5);
+            } else {
+                assert_eq!(writes, 4);
+                assert_eq!(rows.last().unwrap()["progress"], 6);
+                assert!(!r.storage.pending());
+                assert!(r.storage.outstanding_fan());
+                let state = r.port.state.lock().unwrap();
+                assert_eq!((state.selectors, state.fans), ([0; 2], [1; 2]));
+                drop(state);
+                // Stop hands the owner back through its own selector, never the
+                // saved preset: shutdown does not apply saved settings.
+                r.port.state.lock().unwrap().actual = actual;
+                r.origin.stop();
+                r.stop().await;
+                let state = r.port.state.lock().unwrap();
+                assert_eq!(
+                    (state.writes, state.selectors, state.fans),
+                    (6, [0; 2], [0; 2])
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_handback_readback_mismatch_or_bad_echo_fences_without_replay() {
+    for mismatch in [true, false] {
+        let r = handback_rig(0, 15, 2).await;
+        {
+            let mut state = r.port.state.lock().unwrap();
+            if mismatch {
+                state.mismatch_after = Some(6);
+            } else {
+                state.corrupt_ack = Some(5);
+            }
+        }
+        let sent = r.port.state.lock().unwrap().sent.len();
+        let out = r.request(fan_request(232, None, 0)).await;
+        assert_eq!(out["result"]["status"], 2, "{out}");
+        assert_eq!(
+            out["result"]["message"],
+            "Fan submission or owned release remains unresolved; further writes are fenced."
+        );
+        let setters = mode_setters(&r, sent);
+        assert_eq!(setters[0], [1, 1, 2, 0]);
+        assert_eq!(setters.len(), if mismatch { 2 } else { 1 });
+        let rows = request_rows(&r, 232);
+        assert_eq!(
+            rows.last().unwrap()["progress"],
+            if mismatch { 13 } else { 10 }
+        );
+        assert!(rows.iter().all(|row| row["fan"]["selector"] == 2));
+        assert!(r.storage.pending());
+        let writes = r.port.state.lock().unwrap().writes;
+        assert_eq!(writes, if mismatch { 6 } else { 5 });
+        assert_eq!(
+            r.request(fan_request(233, None, 0)).await["result"]["status"],
+            2
+        );
+        assert_eq!(r.set(234, value(2, 1)).await["result"]["status"], 2);
+        assert_eq!(r.port.state.lock().unwrap().writes, writes);
+        r.origin.stop();
+        assert!(r.source.lock().await.drain().await.is_err());
+        assert_eq!(r.port.state.lock().unwrap().writes, writes);
+    }
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_handback_canceled_mid_pair_then_stop_retains_ambiguity() {
+    let r = handback_rig(0, 15, 2).await;
+    let held = Arc::new(AtomicBool::new(false));
+    r.port.state.lock().unwrap().held_write = Some((5, held.clone()));
+    let sent = r.port.state.lock().unwrap().sent.len();
+    let request = crate::service_status::StatusRequest::decode(
+        &serde_json::to_vec(&fan_request(232, None, 0)).unwrap(),
+    )
+    .unwrap();
+    let mut mutation = r.source.lock().await.mutate(
+        USER,
+        SID.into(),
+        request,
+        Instant::now() + Duration::from_secs(3),
+    );
+    let end = Instant::now() + Duration::from_secs(2);
+    while r.port.state.lock().unwrap().writes == 4 {
+        assert!(Instant::now() < end);
+        tokio::select! {result=&mut mutation=>panic!("held handback completed early: {}",result.is_ok()),_=tokio::time::sleep(Duration::from_millis(5))=>{}}
+    }
+    drop(mutation);
+    r.origin.stop();
+    let mut source = r.source.lock().await;
+    let mut draining = source.drain();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), &mut draining)
+            .await
+            .is_err()
+    );
+    assert!(!r.custody.retired.load(Ordering::Acquire));
+    held.store(true, Ordering::Release);
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), draining)
+            .await
+            .unwrap()
+            .is_err()
+    );
+    drop(source);
+    let state = r.port.state.lock().unwrap();
+    assert_eq!(state.opened, state.retired);
+    assert_eq!(state.writes, 5);
+    drop(state);
+    assert_eq!(mode_setters(&r, sent), [[1, 1, 2, 0]]);
+    let rows = request_rows(&r, 232);
+    assert_eq!(rows.last().unwrap()["progress"], 10);
+    assert_eq!(rows.last().unwrap()["fan"]["selector"], 2);
+    assert!(r.storage.pending());
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_handback_rechecks_the_saved_preset_before_each_setter() {
+    // The profile's Performance preset is the saved intent; it changes to
+    // Balanced after the first setter, before the second setter's power read.
+    let r = fan_rig_with(0, 0, 2);
+    r.get().await;
+    assert_eq!(
+        r.request(fan_request(230, Some(1), 3700)).await["result"]["status"],
+        1
+    );
+    let reads = r.port.state.lock().unwrap().power_reads;
+    let files = r.files.clone();
+    r.port.state.lock().unwrap().on_power = Some(Arc::new(move |read| {
+        if read == reads + 3 {
+            files.profiles_with(1, Some(1));
+        }
+    }));
+    let out = r.request(fan_request(232, None, 0)).await;
+    assert_eq!(out["result"]["status"], 2, "{out}");
+    assert_eq!(r.port.state.lock().unwrap().writes, 5);
+    let rows = request_rows(&r, 232);
+    assert_eq!(rows.last().unwrap()["progress"], 11);
+    assert!(rows.iter().all(|row| row["fan"]["selector"] == 2));
+    assert!(r.storage.pending());
+    r.origin.stop();
+    assert!(r.source.lock().await.drain().await.is_err());
+    assert_eq!(r.port.state.lock().unwrap().writes, 5);
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_handback_without_a_native_saved_preset_keeps_the_observed_selector() {
+    // Each case also runs with a deferred Performance override as its control.
+    for stored in [false, true] {
+        // A Silent profile has no native pair, so only the override can apply.
+        let r = fan_rig_with(0, 0, 0);
+        r.get().await;
+        assert_eq!(
+            r.request(fan_request(230, Some(1), 3700)).await["result"]["status"],
+            1
+        );
+        if stored {
+            assert_eq!(r.set(231, value(2, 1)).await["result"]["message"], DEFERRED);
+        }
+        let sent = r.port.state.lock().unwrap().sent.len();
+        let out = r.request(fan_request(232, None, 0)).await;
+        assert_eq!(out["result"]["status"], 1, "{out}");
+        let selector = if stored { 2 } else { 0 };
+        assert_eq!(
+            mode_setters(&r, sent),
+            [[1, 1, selector, 0], [1, 2, selector, 0]]
+        );
+        if !stored {
+            assert_eq!(
+                out["result"]["message"],
+                "Fan setters completed and independent mode was confirmed. Target RPM and rotation are not readable on this backend."
+            );
+        }
+        r.origin.stop();
+        r.stop().await;
+
+        // Saved fans were already Automatic: managed applies no preset when the
+        // request does not leave saved manual intent, even over external manual fans.
+        let files = MemoryFiles::default();
+        files.profiles(1);
+        let mut fan = crate::installed::readiness::thermal_storage::legacy_fan(1);
+        fan["fixedSpeedRpm"] = json!(3700);
+        files.put("manual-overrides.json", json!({"schemaVersion":8,"overrides":{"performance":2,"fans":if stored {json!(1)} else {Value::Null},"fanControl":if stored {fan} else {Value::Null},"lighting":null,"customPerformance":null,"gpuClockTuning":null}}));
+        let r = Rig::new(files);
+        *r.custody.origin_for_fan.lock().unwrap() = Some(r.origin.clone());
+        {
+            let mut s = r.port.state.lock().unwrap();
+            s.selectors = [0; 2];
+            s.fans = [1; 2];
+        }
+        r.get().await;
+        let out = r.request(fan_request(240, Some(0), 3700)).await;
+        assert_eq!(out["result"]["status"], 1, "{out}");
+        assert_eq!(
+            mode_setters(&r, 0),
+            [[1, 1, selector, 0], [1, 2, selector, 0]]
+        );
+        r.origin.stop();
+        r.stop().await;
+    }
+
+    // A saved GPU clock effect has no native pair: the fans return under the
+    // observed selector and the reply says the saved preset was not applied.
+    let r = fan_rig(0, 0);
+    r.get().await;
+    assert_eq!(
+        r.request(fan_request(230, Some(1), 3700)).await["result"]["status"],
+        1
+    );
+    let mut desired = value(2, 1);
+    desired["gpuClockTuning"] =
+        json!({"enabled":true,"offsets":{"coreMegahertz":10,"memoryMegahertz":20}});
+    assert_eq!(r.set(231, desired).await["result"]["status"], 2);
+    let sent = r.port.state.lock().unwrap().sent.len();
+    let out = r.request(fan_request(232, None, 0)).await;
+    assert_eq!(out["result"]["status"], 1, "{out}");
+    assert_eq!(mode_setters(&r, sent), [[1, 1, 0, 0], [1, 2, 0, 0]]);
+    assert!(out["result"]["message"].as_str().unwrap().ends_with(
+        " The saved performance intent was not applied: GPU clock handling is incomplete."
+    ));
+    r.origin.stop();
+    r.stop().await;
 }
 
 #[cfg(feature = "service-fan-mutation-v2")]

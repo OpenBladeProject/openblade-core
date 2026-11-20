@@ -95,7 +95,8 @@ public sealed class NativeThermalMutationResponseTests
             // committed-intent prefix of ExecuteScopedMutationAsync.
             if (result.Status == ControlOperationStatus.Stored)
             {
-                Assert.StartsWith("Performance intent stored. Performance is saved, not applied.", result.Message, StringComparison.Ordinal);
+                // ServiceControlRuntime.DeferredPerformanceIntentMessage.
+                Assert.Equal("Performance intent was stored and will be applied when fans return to Automatic.", result.Message);
                 sawManualDeferral = true;
             }
             const string committed = "Performance override intent was stored. Hardware result: ";
@@ -113,9 +114,9 @@ public sealed class NativeThermalMutationResponseTests
                 Assert.DoesNotContain("Hardware result:", result.Message, StringComparison.Ordinal);
             }
         }
-        // Reply parity only: managed applies the deferred intent when fans return
-        // to Automatic on AC; native does not yet.
-        Assert.True(sawManualDeferral, "AC manual-fan deferral is the native Stored reply, matching managed's reply.");
+        // Native, like managed, applies the deferred intent through the fan request
+        // that returns the fans to Automatic; the Rust handback tests cover that pair.
+        Assert.True(sawManualDeferral, "External-power manual-fan deferral is the native Stored reply, matching managed's reply.");
         Assert.True(sawGpuIncomplete && sawCapacityRefusal && sawPowerChanged,
             "Saved but unapplied GPU, capacity and power-change replies are Blocked with the managed prefix.");
         Assert.True(sawCleared, "An unapplied clear is Blocked with managed's cleared prefix.");

@@ -56,8 +56,11 @@ impl<P: Port> Reader<P, ReadAdmission> {
             let plan = Plan::select(baseline, FanIntent::checked(0, 3700)?, source)?;
             (plan, r.clone(), r.cleanup[2..].to_vec())
         } else {
-            let intent = permit.resolve_fan(source, baseline).ok()??;
-            let plan = Plan::select(baseline, intent, source)?;
+            // Owned Stop cleanup above keeps the owner's selector: shutdown hands
+            // back to firmware without applying saved settings. An explicit
+            // return to Automatic applies the saved preset in the same pair.
+            let (intent, performance) = permit.resolve_fan(source, baseline).ok()??;
+            let plan = Plan::select_toward(baseline, intent, source, performance)?;
             if plan.unchanged {
                 permit.confirm_fan_noop(source, baseline).ok()?;
                 return Some(baseline);

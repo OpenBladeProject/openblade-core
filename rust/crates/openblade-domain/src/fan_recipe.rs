@@ -56,6 +56,24 @@ impl Plan {
             unchanged: !intent.manual() && !manual,
         })
     }
+    /// A return to Automatic that also applies the saved performance preset.
+    /// Managed (`ApplyDirectAutomaticFanTransitionOutcomeAsync`) leaves manual
+    /// fans through that preset's own 0D/02 pair, which carries the Automatic
+    /// fan mode, so it is one direct pair, not a fan pair and then a preset
+    /// pair. Manual intents and `None` keep the observed selector.
+    pub fn select_toward(
+        baseline: O,
+        intent: FanIntent,
+        source: i32,
+        performance: Option<crate::thermal_mutation::Preset>,
+    ) -> Option<Self> {
+        let mut plan = Self::select(baseline, intent, source)?;
+        if let Some(preset) = performance.filter(|_| !intent.manual()) {
+            plan.unchanged &= plan.selector == preset.selector();
+            plan.selector = preset.selector();
+        }
+        Some(plan)
+    }
     pub fn setters(self) -> usize {
         if self.unchanged {
             0
@@ -119,5 +137,53 @@ mod tests {
             .unwrap()
             .unchanged
         );
+    }
+    #[test]
+    fn automatic_return_takes_the_saved_preset_in_one_pair() {
+        use crate::thermal_mutation::Preset;
+        let auto = FanIntent::checked(0, 3700).unwrap();
+        for source in [0, 2] {
+            // Manual fans under either selector leave through the saved preset.
+            for baseline in [O::FixedMaximum, O::PerformanceManual] {
+                for (preset, selector, settled) in [
+                    (Preset::Balanced, 0, O::BalancedAutomatic),
+                    (Preset::Performance, 2, O::PerformanceAutomatic),
+                ] {
+                    let p = Plan::select_toward(baseline, auto, source, Some(preset)).unwrap();
+                    assert_eq!((p.selector, p.setters(), p.pairs()), (selector, 2, 3));
+                    assert!(!p.entry && !p.intermediate && !p.unchanged);
+                    assert!(p.confirms(settled));
+                    assert!(!p.confirms(baseline));
+                }
+            }
+            // Automatic under another preset is a preset pair; the same preset is a no-op.
+            let p = Plan::select_toward(
+                O::BalancedAutomatic,
+                auto,
+                source,
+                Some(Preset::Performance),
+            )
+            .unwrap();
+            assert_eq!((p.selector, p.setters(), p.unchanged), (2, 2, false));
+            let p = Plan::select_toward(
+                O::PerformanceAutomatic,
+                auto,
+                source,
+                Some(Preset::Performance),
+            )
+            .unwrap();
+            assert!(p.unchanged);
+            // Without a saved preset the observed selector is kept.
+            let p = Plan::select_toward(O::PerformanceManual, auto, source, None).unwrap();
+            assert_eq!(p, Plan::select(O::PerformanceManual, auto, source).unwrap());
+            assert_eq!(p.selector, 2);
+        }
+        // A manual intent never takes a preset, and battery stays refused.
+        let fixed = FanIntent::checked(1, 3700).unwrap();
+        assert_eq!(
+            Plan::select_toward(O::PerformanceAutomatic, fixed, 0, Some(Preset::Balanced)),
+            Plan::select(O::PerformanceAutomatic, fixed, 0)
+        );
+        assert!(Plan::select_toward(O::FixedMaximum, auto, 1, Some(Preset::Balanced)).is_none());
     }
 }

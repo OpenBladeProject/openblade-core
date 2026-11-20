@@ -24,6 +24,10 @@ pub(super) struct FanPermit {
     application: Option<String>,
     proof: ReadAdmission,
     selected: Mutex<Option<(i32, Value)>>,
+    // The saved preset this return to Automatic applies (see `handback_preset`).
+    performance: Mutex<Option<Preset>>,
+    // A saved preset was left unapplied because its GPU clock effect is unsupported.
+    performance_gpu: AtomicBool,
     record: Mutex<Option<FanRecord>>,
     accepted: AtomicBool,
     owned: AtomicBool,
@@ -68,6 +72,16 @@ impl FanPermit {
         self.storage
             .record_fan(entry, self.cleanup())
             .inspect_err(|e| remember_failure(&self.fatal, e))
+    }
+    /// The saved preset a return to Automatic applies, resolved as a
+    /// performance request resolves its destination. A configured GPU clock
+    /// effect has no native pair, so then the observed selector is kept.
+    fn handback_preset(&self, power: i32) -> io::Result<Option<Preset>> {
+        let application = self.application.as_deref();
+        if self.storage.gpu_incomplete(power, application)? {
+            return Ok(None);
+        }
+        Ok(self.storage.desired(power, application)?.map(|(p, _)| p))
     }
 }
 impl Permit for FanPermit {
@@ -122,6 +136,13 @@ impl Permit for FanPermit {
                 {
                     return None;
                 }
+                // The preset carried by a return to Automatic is saved policy too:
+                // every setter needs it to remain the current destination.
+                if let Some(preset) = *self.performance.lock().ok()? {
+                    if self.handback_preset(*source).ok()? != Some(preset) {
+                        return None;
+                    }
+                }
             }
         }
         proof
@@ -133,10 +154,15 @@ impl Permit for FanPermit {
         &self,
         power: i32,
         baseline: ObservedPerformance,
-    ) -> io::Result<Option<FanIntent>> {
+    ) -> io::Result<Option<(FanIntent, Option<Preset>)>> {
         if self.authorize().is_none() {
             return Ok(None);
         }
+        // Managed applies the saved preset only when fans leave saved manual
+        // intent (`previousManual` in ApplyFanControlTransitionCoreOutcomeAsync).
+        let leaving_manual = self
+            .storage
+            .desired_manual_fans(power, self.application.as_deref())?;
         self.storage
             .save_fan(self.value.clone(), self.settings.clone(), power)?;
         self.accepted.store(true, Ordering::Release);
@@ -150,8 +176,24 @@ impl Permit for FanPermit {
             settings["mode"].as_u64().unwrap_or(255) as u8,
             settings["fixedSpeedRpm"].as_u64().unwrap_or(0) as u16,
         );
+        let returning = leaving_manual && intent.is_some_and(|i| !i.manual());
+        let performance = if returning {
+            self.handback_preset(power)?
+        } else {
+            None
+        };
+        if returning && performance.is_none() {
+            self.performance_gpu.store(
+                self.storage
+                    .gpu_incomplete(power, self.application.as_deref())?,
+                Ordering::Release,
+            );
+        }
+        *self.performance.lock().map_err(|_| io::ErrorKind::Other)? = performance;
         *self.selected.lock().map_err(|_| io::ErrorKind::Other)? = Some((power, settings));
-        Ok(intent.filter(|i| Plan::select(baseline, *i, power).is_some()))
+        Ok(intent
+            .filter(|i| Plan::select_toward(baseline, *i, power, performance).is_some())
+            .map(|i| (i, performance)))
     }
     fn confirm_fan_noop(&self, source: i32, baseline: ObservedPerformance) -> io::Result<()> {
         self.authorize().ok_or(io::ErrorKind::PermissionDenied)?;
@@ -414,6 +456,8 @@ impl Runtime {
             application,
             proof,
             selected: Mutex::new(None),
+            performance: Mutex::new(None),
+            performance_gpu: AtomicBool::new(false),
             record: Mutex::new(None),
             accepted: AtomicBool::new(false),
             owned: AtomicBool::new(false),
@@ -503,15 +547,28 @@ impl Runtime {
         if result.as_ref().is_err_and(is_fatal_admission) {
             return result.map(|_| unreachable!());
         }
-        let message = if status == 1 && !permit.prepared.load(Ordering::Acquire) {
-            "Automatic mode independently observed; no fan setter was submitted and no ownership was established."
-        } else {
-            message
+        // A return to Automatic that carried the saved preset reports it as managed
+        // does; Debug names match managed's PerformancePreset names.
+        let performance = *permit
+            .performance
+            .lock()
+            .map_err(|_| io::ErrorKind::Other)?;
+        let mut message = match (status, permit.prepared.load(Ordering::Acquire), performance) {
+            (1, false, Some(preset)) => format!(
+                "Fans and {preset:?} performance already matched the requested state; no fan setter was submitted and no ownership was established."
+            ),
+            (1, false, None) => "Automatic mode independently observed; no fan setter was submitted and no ownership was established.".into(),
+            (1, true, Some(preset)) => format!(
+                "Fans returned to Automatic with {preset:?} performance, confirmed by independent paired readback."
+            ),
+            _ => message.into(),
         };
-        let outcome = Outcome {
-            status,
-            message: message.into(),
-        };
+        if status == 1 && permit.performance_gpu.load(Ordering::Acquire) {
+            message.push_str(
+                " The saved performance intent was not applied: GPU clock handling is incomplete.",
+            );
+        }
+        let outcome = Outcome { status, message };
         let snapshot = if permit.accepted.load(Ordering::Acquire) {
             let (power, settings) = permit
                 .selected

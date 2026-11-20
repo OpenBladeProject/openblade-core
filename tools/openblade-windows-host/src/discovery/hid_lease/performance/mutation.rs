@@ -51,11 +51,12 @@ pub(crate) trait Permit: Send + Sync {
     fn is_fan(&self) -> bool {
         false
     }
+    /// The fan intent, plus the saved preset a return to Automatic applies.
     fn resolve_fan(
         &self,
         _power: i32,
         _baseline: ObservedPerformance,
-    ) -> io::Result<Option<openblade_domain::fan_recipe::FanIntent>> {
+    ) -> io::Result<Option<(openblade_domain::fan_recipe::FanIntent, Option<Preset>)>> {
         Ok(None)
     }
     fn confirm_fan_noop(&self, _source: i32, _baseline: ObservedPerformance) -> io::Result<()> {

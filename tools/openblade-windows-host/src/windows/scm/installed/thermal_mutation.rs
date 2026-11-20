@@ -472,13 +472,13 @@ impl Runtime {
         } else if accepted {
             let cause = permit.cause.lock().map_err(|_| io::ErrorKind::Other)?;
             if matches!(*cause, Cause::ManualDeferred) {
-                // Stored matches managed's reply for this AC manual-fan deferral
-                // (ServiceControlRuntime.DeferredPerformanceIntentMessage). Only the
-                // reply matches: managed applies the saved intent when fans return
-                // to Automatic on AC, and native does not yet.
+                // Managed's reply for this external-power manual-fan deferral
+                // (ServiceControlRuntime.DeferredPerformanceIntentMessage). As in
+                // managed, a fan request that returns the fans to Automatic
+                // applies the saved preset in the same pair (FanPermit).
                 Outcome {
                     status: 0,
-                    message: format!("Performance intent stored. {}", cause.message()),
+                    message: cause.message(),
                 }
             } else {
                 // Saved but unapplied: Blocked, prefixed as ExecuteScopedMutationAsync
@@ -568,7 +568,10 @@ impl Cause {
             Self::CurrentAdmission => "Current admission or independent readback did not complete; no successful application is reported.".into(),
             Self::FanHandbackPending => "OpenBlade still owns a fan change that has not been handed back to firmware Automatic; no thermal setter was submitted.".into(),
             Self::Gpu => "GPU clock handling is incomplete; no thermal setter was submitted.".into(),
-            Self::ManualDeferred => "Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.".into(),
+            // Without the fan composition no native request returns the fans,
+            // so that build keeps the explicit resubmission instruction.
+            Self::ManualDeferred if cfg!(feature = "service-fan-mutation-v2") => "Performance intent was stored and will be applied when fans return to Automatic.".into(),
+            Self::ManualDeferred => "Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.".into(),
             Self::NoEligiblePolicy => "No supported performance destination is selected by the current power and profile policy.".into(),
             Self::TransactionCapacity => "Thermal transaction ID capacity is exhausted; no setter was submitted.".into(),
             Self::PowerChanged => "The independently observed power source changed or no longer admits this destination.".into(),
