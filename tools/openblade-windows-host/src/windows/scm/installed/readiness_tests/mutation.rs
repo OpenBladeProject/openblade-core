@@ -3911,7 +3911,8 @@ async fn fan_v2_actual_dispatch_recipes_ownership_stop_timing_and_private_intent
         (0, 1, 1, 4000, 2, 6),
         (2, 1, 0, 3700, 2, 6),
     ] {
-        let r = fan_rig(selector, manual);
+        // A saved preset unlike the owner's selector: Stop must still keep the owner's.
+        let r = fan_rig_with(selector, manual, if selector == 2 { 1 } else { 2 });
         r.get().await;
         let outcome = r.request(fan_request(101, Some(mode), rpm)).await;
         assert_eq!(outcome["result"]["status"], 1, "{outcome}");
