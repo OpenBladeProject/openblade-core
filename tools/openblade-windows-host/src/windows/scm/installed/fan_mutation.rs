@@ -94,8 +94,16 @@ impl FanPermit {
     }
     /// The saved preset a return to Automatic applies, resolved as a
     /// performance request resolves its destination. A configured GPU clock
-    /// effect has no native pair, so then the observed selector is kept.
+    /// effect has no native pair, so then the observed selector is kept, as it
+    /// is for a destination the native fan recipe does not write
+    /// (`thermal_mutation::applies_on_fan_handback`).
     fn handback_preset(&self, power: i32) -> io::Result<Option<Preset>> {
+        Ok(self
+            .saved_preset(power)?
+            .filter(|preset| applies_on_fan_handback(*preset)))
+    }
+    /// The saved preset a performance request would select, unfiltered.
+    fn saved_preset(&self, power: i32) -> io::Result<Option<Preset>> {
         let application = self.application.as_deref();
         // A temporary override kept for another class has expired for both
         // reads (Storage expires it in each), as for a performance request.
@@ -850,7 +858,8 @@ impl Runtime {
                 && settings["mode"].as_u64() == Some(0)
                 && let Some(preset) = match performance {
                     Some(preset) => Some(preset),
-                    None => permit.handback_preset(power)?,
+                    // Name a saved destination the fan recipe does not write too.
+                    None => permit.saved_preset(power)?,
                 }
                 && !openblade_domain::thermal_mutation::confirms(observed, preset)
             {

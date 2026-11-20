@@ -330,7 +330,8 @@ impl Permit for BatteryPermit {
                 "Complete battery transaction budget is unavailable; no setter was submitted."
             }
             Refusal::PowerChanged => "Battery operation source changed before submission.",
-            Refusal::CurrentAdmission | Refusal::UnclassifiedBlocked => {
+            // NoDirectPath is a performance-pair refusal; a battery permit never plans one.
+            Refusal::CurrentAdmission | Refusal::UnclassifiedBlocked | Refusal::NoDirectPath => {
                 "Fresh battery admission is unavailable."
             }
         });

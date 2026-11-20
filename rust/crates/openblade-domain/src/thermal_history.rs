@@ -839,15 +839,40 @@ mod tests {
     fn canonical_shared_grammar_and_original_generation_commitment() {
         let v = vector();
         let segment = v["segment"].as_str().unwrap().as_bytes();
-        for destination in [1, 2, 0] {
+        // Every admitted RZ09-0581 pair destination (Silent, Balanced,
+        // Performance, Battery Saver, Battery Balanced) is a valid row; Custom
+        // and out-of-range values are denied with a valid intent digest.
+        for (key, admitted) in [("admitted", true), ("refused", false)] {
+            for row in v["presetRows"][key].as_array().unwrap() {
+                let text = std::str::from_utf8(segment)
+                    .unwrap()
+                    .replace(
+                        "\"requested\":{\"value\":1,",
+                        &format!("\"requested\":{{\"value\":{},", row["value"]),
+                    )
+                    .replace(
+                        v["intent"].as_str().unwrap(),
+                        row["intent"].as_str().unwrap(),
+                    )
+                    .replace(
+                        "\"destination\":1",
+                        &format!("\"destination\":{}", row["destination"]),
+                    );
+                assert_eq!(text.matches(row["intent"].as_str().unwrap()).count(), 2);
+                assert_eq!(
+                    rows(text.as_bytes(), |_, _| Ok(())).is_ok(),
+                    admitted,
+                    "{row}"
+                );
+            }
+        }
+        // A destination alone still needs its own valid value range.
+        for destination in [5, -1] {
             let text = std::str::from_utf8(segment).unwrap().replace(
                 "\"destination\":1",
                 &format!("\"destination\":{destination}"),
             );
-            assert_eq!(
-                rows(text.as_bytes(), |_, _| Ok(())).is_ok(),
-                destination != 0
-            );
+            assert!(rows(text.as_bytes(), |_, _| Ok(())).is_err());
         }
         let cp = Checkpoint::parse(v["checkpoint"].as_str().unwrap().as_bytes()).unwrap();
         assert_eq!(cp.segment, digest(segment));

@@ -99,12 +99,32 @@ public sealed class NativeThermalHistoryTests : IDisposable
         var service = NativeArtifact.Inspect([.. WindowsNativeEpochTests.Image("service", nonce: '3', schema: 2, mutation: true)], "service", new string('a', 40));
         var launches = new Dictionary<string, byte[]> { ["17-1.bin"] = [] };
         Assert.Equal(v.GetProperty("generation").GetString(), legacy.Generation(record, service, [original], launches));
-        foreach (int destination in new[] { 1, 2, 0 })
+        // Every admitted RZ09-0581 pair destination is a valid row with its own
+        // requested value; Custom and out-of-range values stay denied.
+        string[] names = ["Silent", "Balanced", "Performance", "BatterySaver", "BatteryBalanced"];
+        foreach (var (key, admitted) in new[] { ("admitted", true), ("refused", false) })
         {
-            byte[] candidate = Bytes(Encoding.UTF8.GetString(segment).Replace("\"destination\":1", "\"destination\":" + destination.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal));
-            Thermal(files, candidate);
-            if (destination == 0) { Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [original])); }
-            else { _ = WindowsNativeThermalHistory.Read(files, [original]); }
+            foreach (var row in v.GetProperty("presetRows").GetProperty(key).EnumerateArray())
+            {
+                string value = row.GetProperty("value").GetInt32().ToString(CultureInfo.InvariantCulture);
+                string text = Encoding.UTF8.GetString(segment)
+                    .Replace("\"requested\":{\"value\":1,", "\"requested\":{\"value\":" + value + ",", StringComparison.Ordinal)
+                    .Replace(v.GetProperty("intent").GetString()!, row.GetProperty("intent").GetString()!, StringComparison.Ordinal)
+                    .Replace("\"destination\":1", "\"destination\":" + row.GetProperty("destination").GetInt32().ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+                using (var requested = JsonDocument.Parse(row.GetProperty("requested").GetString()!))
+                {
+                    if (admitted) { Assert.Equal(row.GetProperty("intent").GetString(), NativeCanonical.Digest(WindowsNativeThermalHistory.Intent(requested.RootElement))); }
+                    else { Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Intent(requested.RootElement)); }
+                }
+                Thermal(files, Bytes(text));
+                if (admitted) { _ = WindowsNativeThermalHistory.Read(files, [original]); Assert.Equal(names[row.GetProperty("value").GetInt32()], WindowsNativeThermalHistory.PresetName(row.GetProperty("value").GetInt32())); }
+                else { Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [original])); }
+            }
+        }
+        foreach (int destination in new[] { 5, -1 })
+        {
+            Thermal(files, Bytes(Encoding.UTF8.GetString(segment).Replace("\"destination\":1", "\"destination\":" + destination.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)));
+            Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [original]));
         }
         Thermal(files, segment);
         Roll(files, segment, []);

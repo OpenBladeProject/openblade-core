@@ -128,7 +128,7 @@ internal sealed class WindowsNativeThermalHistory
             int mode = row.Progress is 31 or (>= 40 and <= 43) ? 0 : document.RootElement.GetProperty("intent").GetProperty("mode").GetInt32();
             return new(row.Request, "fan", row.Progress, row.Sid, null, mode switch { 0 => "Automatic", 1 => "Fixed", 3 => "Maximum", _ => throw Denied() }, null);
         }
-        return new(row.Request, "performance", row.Progress, row.Sid, row.Destination == 1 ? "Balanced" : "Performance", null, null);
+        return new(row.Request, "performance", row.Progress, row.Sid, PresetName(row.Destination) ?? throw Denied(), null, null);
     }
     private readonly HashSet<string> batteryGenerations = new(StringComparer.Ordinal);
     private readonly HashSet<string> fanGenerations = new(StringComparer.Ordinal);
@@ -158,7 +158,7 @@ internal sealed class WindowsNativeThermalHistory
             var row = new Row(Text("request"), Text("owner"), Text("user_sid"), e.GetProperty("caller_pid").GetUInt32(), e.GetProperty("session").GetUInt32(), e.GetProperty("destination").GetInt32(), Text("intent"), e.GetProperty("progress").GetByte(), fan is null ? null : Encoding.UTF8.GetString(fan), battery is null ? null : Encoding.UTF8.GetString(battery), temporary is null ? null : Encoding.UTF8.GetString(temporary));
             if (!Guid.TryParseExact(row.Request, "D", out var request) || request == Guid.Empty || !NativeCanonical.IsHex(row.Owner, 64) || !NativeCanonical.IsHex(row.Intent, 64)
                 || !row.Sid.StartsWith("S-1-5-21-", StringComparison.Ordinal) || row.Sid.Any(c => !char.IsAsciiDigit(c) && c is not ('S' or '-'))
-                || row.Pid == 0 || row.Session == 0 || (temporary is not null ? fan is not null || battery is not null || row.Destination != 0 || !WindowsNativeTemporaryChargeHistory.ValidProgress(row.Progress) : battery is not null ? fan is not null || row.Destination != 0 || !WindowsNativeBatteryHistory.ValidProgress(row.Progress) : fan is null ? row.Destination is not (1 or 2) || row.Progress > 6 : row.Destination != 0 || !WindowsNativeFanHistory.ValidProgress(f, row.Progress))) { throw Denied(); }
+                || row.Pid == 0 || row.Session == 0 || (temporary is not null ? fan is not null || battery is not null || row.Destination != 0 || !WindowsNativeTemporaryChargeHistory.ValidProgress(row.Progress) : battery is not null ? fan is not null || row.Destination != 0 || !WindowsNativeBatteryHistory.ValidProgress(row.Progress) : fan is null ? PresetName(row.Destination) is null || row.Progress > 6 : row.Destination != 0 || !WindowsNativeFanHistory.ValidProgress(f, row.Progress))) { throw Denied(); }
             JsonElement requested = e.TryGetProperty("requested", out var v) ? v : default;
             if ((fan is not null || battery is not null || temporary is not null) && requested.ValueKind != JsonValueKind.Null || NativeCanonical.Digest(temporary ?? battery ?? fan ?? Intent(requested)) != row.Intent) { throw Denied(); }
             if (temporary is not null && t.GetProperty("origin").ValueKind != JsonValueKind.Null)
@@ -225,6 +225,17 @@ internal sealed class WindowsNativeThermalHistory
         if (generations.ContainsKey(record.Epoch) && (!service.ThermalMutation || original.Length == 0)) { throw Denied(); }
         return generations.GetValueOrDefault(record.Epoch) ?? Empty(record.Installation, record.Epoch, record.ServiceId);
     }
+    // The native RZ09-0581 pair destinations, by managed PerformancePreset wire
+    // value and name. Custom (5) and the unadmitted presets are not native rows.
+    internal static string? PresetName(int value) => value switch
+    {
+        0 => "Silent",
+        1 => "Balanced",
+        2 => "Performance",
+        3 => "BatterySaver",
+        4 => "BatteryBalanced",
+        _ => null,
+    };
     private static void Members(JsonElement value, string[] allowed)
     {
         if (value.ValueKind != JsonValueKind.Object) { throw Denied(); }
@@ -237,7 +248,7 @@ internal sealed class WindowsNativeThermalHistory
         Members(requested, ["value", "lifetime", "customPerformance", "gpuClockTuning"]);
         int value = requested.GetProperty("value").GetInt32();
         byte lifetime = requested.GetProperty("lifetime").GetByte();
-        if (value is not (1 or 2) || lifetime > 1 || requested.TryGetProperty("customPerformance", out var custom) && custom.ValueKind != JsonValueKind.Null) { throw Denied(); }
+        if (PresetName(value) is null || lifetime > 1 || requested.TryGetProperty("customPerformance", out var custom) && custom.ValueKind != JsonValueKind.Null) { throw Denied(); }
         var gpu = requested.TryGetProperty("gpuClockTuning", out var g) ? g : default;
         if (gpu.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
         {

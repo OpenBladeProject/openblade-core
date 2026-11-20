@@ -126,7 +126,7 @@ internal sealed record WindowsNativeHandback(string Epoch, NativeHandbackItem? P
         bool valid = Guid.TryParseExact(item.Request, "D", out var request) && request != Guid.Empty && IsSid(item.UserSid)
             && item.Family switch
             {
-                "performance" => item.Performance is "Balanced" or "Performance" && item.FanMode is null && battery is null,
+                "performance" => item.Performance is "Silent" or "Balanced" or "Performance" or "BatterySaver" or "BatteryBalanced" && item.FanMode is null && battery is null,
                 "fan" => item.FanMode is "Automatic" or "Fixed" or "Maximum" && item.Performance is null && battery is null,
                 // Managed cannot hold a temporary full charge with protection off.
                 "battery" or "temporaryCharge" => battery is { Limit: >= 50 and <= 99 } && !(battery.Temporary && !battery.Protection)

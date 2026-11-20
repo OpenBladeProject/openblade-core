@@ -6,6 +6,8 @@ mod tfc_corrections;
 #[cfg(feature = "service-temporary-charge-v1")]
 #[path = "temporary_charge_release.rs"]
 mod tfc_release;
+#[path = "thermal_presets.rs"]
+mod thermal_presets;
 #[path = "unclassified_external.rs"]
 mod unclassified_external;
 use crate::discovery::performance::{ReadAdmission, mutation_fixture::Fixture};
@@ -978,10 +980,12 @@ async fn installed_gpu_intent_is_stored_with_explicit_incompleteness_and_no_pair
 
 #[tokio::test]
 async fn installed_source_ineligible_intent_is_stored_and_power_change_stops_partial_pair() {
-    // Battery stores an AC override without a write. Managed offers every
-    // supported preset on both external classes, so a confirmed limited
-    // USB-C adapter applies the saved Performance override with the same
-    // commands, after fresh per-command class admission.
+    // Battery stores an AC override and applies the battery profile's own
+    // Battery Saver pair instead, as managed selects the battery slot there
+    // (`performance_source_eligible`). Managed offers every supported preset
+    // on both external classes, so a confirmed limited USB-C adapter applies
+    // the saved Performance override with the same commands, after fresh
+    // per-command class admission.
     for actual in [0, 1] {
         let files = MemoryFiles::default();
         files.profiles(1);
@@ -992,12 +996,14 @@ async fn installed_source_ineligible_intent_is_stored_and_power_change_stops_par
         assert_eq!(status["status"]["performanceOverride"]["value"], 2);
         let message = result["result"]["message"].as_str().unwrap();
         if actual == 0 {
-            assert_eq!(status["status"]["writesBlocked"], true);
             assert_eq!(result["result"]["status"], 2);
-            assert!(
-                message.starts_with("Performance override intent was stored. Hardware result: ")
+            assert_eq!(
+                message,
+                "Performance override intent was stored. Hardware result: The current power and profile policy selects another performance destination, which is confirmed; the requested value is saved but not applied."
             );
-            assert_eq!(rig.port.state.lock().unwrap().writes, 0)
+            assert_eq!(status["status"]["confirmedState"]["performance"], 3);
+            let s = rig.port.state.lock().unwrap();
+            assert_eq!((s.writes, s.selectors, s.fans), (2, [3, 3], [0, 0]));
         } else {
             assert_eq!(result["result"]["status"], 1, "{message}");
             assert_eq!(status["status"]["confirmedState"]["performance"], 2);
@@ -4938,7 +4944,9 @@ async fn fan_handback_rechecks_the_saved_preset_before_each_setter() {
 async fn fan_handback_without_a_native_saved_preset_keeps_the_observed_selector() {
     // Each case also runs with a deferred Performance override as its control.
     for stored in [false, true] {
-        // A Silent profile has no native pair, so only the override can apply.
+        // A Silent profile has its own pair but no native fan-return pair
+        // (`thermal_mutation::applies_on_fan_handback`), so only the override
+        // can apply; without it the reply names the unapplied Silent intent.
         let r = fan_rig_with(0, 0, 0);
         r.get().await;
         assert_eq!(
@@ -4959,7 +4967,7 @@ async fn fan_handback_without_a_native_saved_preset_keeps_the_observed_selector(
         if !stored {
             assert_eq!(
                 out["result"]["message"],
-                "Fan setters completed and independent mode was confirmed. Target RPM and rotation are not readable on this backend."
+                "Fan setters completed and independent mode was confirmed. Target RPM and rotation are not readable on this backend. The saved Silent performance intent was not applied: submit a new performance request to apply it."
             );
         }
         r.origin.stop();
@@ -5016,20 +5024,13 @@ async fn fan_handback_without_a_native_saved_preset_keeps_the_observed_selector(
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn fan_handback_stored_only_when_a_native_destination_resolves() {
-    // A Silent profile under owned Fixed fans: clearing the override leaves no
-    // Balanced or Performance pair for the fan request to apply, so the reply is
-    // Blocked instead of promising an apply (the codec admits no Silent override).
-    // A Performance override still defers and is applied by the return.
-    const NONE: &str =
-        "No supported performance destination is selected by the current power and profile policy.";
-    for (n, request, reply) in [
-        (
-            231,
-            Value::Null,
-            format!("Performance override was cleared. Hardware result: {NONE}"),
-        ),
-        (233, value(2, 1), DEFERRED.into()),
-    ] {
+    // A Silent profile under owned Fixed fans: clearing the override selects
+    // Silent, which the fan request does not write, so the deferral asks for
+    // a new performance request instead of promising an apply. Managed's fan
+    // return would apply Silent there. A Performance override still defers
+    // and is applied by the return.
+    const RESUBMIT: &str = "Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.";
+    for (n, request, reply) in [(231, Value::Null, RESUBMIT), (233, value(2, 1), DEFERRED)] {
         let r = fan_rig_with(0, 0, 0);
         r.get().await;
         assert_eq!(
@@ -5038,11 +5039,7 @@ async fn fan_handback_stored_only_when_a_native_destination_resolves() {
         );
         let out = r.set(n, request).await;
         assert_eq!(out["result"]["message"], reply, "{out}");
-        assert_eq!(
-            out["result"]["status"],
-            if n == 233 { 0 } else { 2 },
-            "{out}"
-        );
+        assert_eq!(out["result"]["status"], 0, "{out}");
         // No thermal setter beyond the four entry setters.
         assert_eq!(r.port.state.lock().unwrap().writes, 4);
         let sent = r.port.state.lock().unwrap().sent.len();
@@ -5457,20 +5454,21 @@ const POWER_CHANGES: [(u8, u8, [u8; 2]); 6] = [
     (15, 0, [3; 2]),
     (10, 0, [6; 2]),
     (15, 0, [0; 2]),
-    // Silent has no native plan on either adapter.
+    // Firmware Silent is not a fan-return destination on either adapter.
     (15, 15, [5; 2]),
 ];
 /// The exact reply for each `POWER_CHANGES` case. The owner recorded Balanced
 /// and the saved preset is Performance: it is claimed only where Performance is
 /// confirmed, a different firmware selector is named, and the unapplied preset
-/// is reported only where its class has one (battery has none).
+/// is reported where its class selects one: the battery profile's Battery
+/// Saver on battery.
 #[cfg(feature = "service-fan-mutation-v2")]
 const POWER_CHANGE_REPLIES: [&str; 6] = [
     "Fans and Performance performance already matched the requested state; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Performance.",
     "Fans and Performance performance already matched the requested state; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Performance.",
     "Automatic mode independently observed; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Battery Saver.",
-    "Automatic mode independently observed; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Battery Balanced.",
-    "Automatic mode independently observed; no fan setter was submitted and no ownership was established.",
+    "Automatic mode independently observed; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Battery Balanced. The saved BatterySaver performance intent was not applied: submit a new performance request to apply it.",
+    "Automatic mode independently observed; no fan setter was submitted and no ownership was established. The saved BatterySaver performance intent was not applied: submit a new performance request to apply it.",
     "Automatic mode independently observed; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Silent. The saved Performance performance intent was not applied: submit a new performance request to apply it.",
 ];
 #[cfg(feature = "service-fan-mutation-v2")]

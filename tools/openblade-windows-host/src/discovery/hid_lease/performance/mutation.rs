@@ -2,7 +2,7 @@
 use super::*;
 use openblade_domain::{
     automation::UNCLASSIFIED_EXTERNAL,
-    thermal_mutation::{Plan, Preset, Progress, confirms},
+    thermal_mutation::{Plan, Preset, Progress, admits_class, confirms, pins_class},
 };
 use openblade_protocol::thermal_preset::PresetPair;
 use std::sync::Arc;
@@ -116,6 +116,9 @@ pub(crate) enum Refusal {
     /// The adapter query completed without a class and Windows AC presence is
     /// not fresh: managed refuses the request before any intent is stored.
     UnclassifiedBlocked,
+    /// No admitted native sequence reaches the destination from the confirmed
+    /// state (`Plan::NoDirectPath`); nothing was prepared or submitted.
+    NoDirectPath,
 }
 
 impl<P: Port> Reader<P, ReadAdmission> {
@@ -154,16 +157,22 @@ impl<P: Port> Reader<P, ReadAdmission> {
         };
         let power_source = fence.admit(power)?;
         let destination = permit.resolve(power_source, baseline).ok()??;
-        if Plan::from_observation(baseline, destination) == Plan::Unchanged {
-            return Some(baseline);
+        match Plan::from_observation(baseline, destination) {
+            Plan::Unchanged => return Some(baseline),
+            Plan::NoDirectPath => {
+                permit.refused(Refusal::NoDirectPath);
+                return None;
+            }
+            Plan::Direct { .. } => {}
         }
         // Managed `requireExternalPowerOnDirectHyperBoostExit`: a direct exit to
         // a non-Balanced preset needs every command's fresh reading in the same
         // classified external class, so a class change stops it without
         // replay. Managed's Balanced exit applies no class rule.
-        if baseline == ObservedPerformance::HyperBoostObserved && destination != Preset::Balanced {
+        if pins_class(baseline, destination) {
             fence.pin_class();
         }
+        fence.bind_destination(destination);
         // Reserve all remaining commands, including the independent final pair,
         // before journaling/submitting. Exhaustion cannot strand a partial pair.
         let mut reserve = || {
@@ -244,13 +253,19 @@ impl<P: Port> Reader<P, ReadAdmission> {
 /// battery (`allowBattery: true`). The presence a reading was admitted with must hold
 /// at every later checkpoint (managed `OrdinarySourceUnchanged` rechecks the
 /// Windows source at submission), so losing it stops before the next command.
+/// A battery preset's pair is also admitted on battery, read with Windows
+/// battery (`thermal_mutation::admits_class`); that Windows battery reading
+/// must then hold at every later checkpoint in the same way.
 pub(super) struct PowerFence<'a> {
     permit: &'a dyn Permit,
     // Whether Windows battery admits a classified reading with no check: a fan
     // command that carries no performance preset.
     unchecked: AtomicBool,
     external: AtomicBool,
+    battery: AtomicBool,
     pinned: AtomicBool,
+    // A performance pair's resolved destination; fan permits bind none.
+    destination: std::sync::OnceLock<Preset>,
 }
 impl<'a> PowerFence<'a> {
     pub(super) fn new(permit: &'a dyn Permit) -> Self {
@@ -258,16 +273,26 @@ impl<'a> PowerFence<'a> {
             permit,
             unchecked: AtomicBool::new(permit.is_fan()),
             external: AtomicBool::new(false),
+            battery: AtomicBool::new(false),
             pinned: AtomicBool::new(false),
+            destination: std::sync::OnceLock::new(),
         }
     }
     pub(super) fn authorize(&self) -> Option<ReadAdmission> {
         let admission = self.permit.authorize()?;
-        if self.external.load(Ordering::Acquire) && !self.permit.external_presence() {
+        if self.external.load(Ordering::Acquire) && !self.permit.external_presence()
+            || self.battery.load(Ordering::Acquire)
+                && self.permit.windows_on_battery() != Some(true)
+        {
             self.permit.refused(Refusal::PowerChanged);
             return None;
         }
         Some(admission)
+    }
+    /// Setter-time readings are then admitted by the destination's own class
+    /// rule (`thermal_mutation::admits_class`).
+    pub(super) fn bind_destination(&self, destination: Preset) {
+        let _ = self.destination.set(destination);
     }
     /// Every later reading must be in the first reading's class: managed pins
     /// it for a direct HyperBoost exit and for a fan transition that keeps an
@@ -287,23 +312,23 @@ impl<'a> PowerFence<'a> {
         }
         presence
     }
-    /// The admitted class, and whether later checkpoints need presence.
-    fn source(&self, power: Power) -> Option<(i32, bool)> {
+    /// The admitted class and the Windows power kind it was read with.
+    fn source(&self, power: Power) -> Option<(i32, Option<bool>)> {
         let windows = self.permit.windows_on_battery();
         let presence = windows == Some(false);
         let unchecked = self.unchecked.load(Ordering::Acquire) && windows == Some(true);
-        let source = power.thermal_source(presence, unchecked)?;
-        Some((source, presence && source != 1))
+        Some((power.thermal_source(presence, unchecked)?, windows))
     }
     /// The class of the operation's first reading.
     pub(super) fn admit(&self, power: Power) -> Option<i32> {
-        let Some((source, external)) = self.source(power) else {
+        let Some((source, windows)) = self.source(power) else {
             if power == Power::Unclassified {
                 self.permit.refused(Refusal::UnclassifiedBlocked);
             }
             return None;
         };
-        self.external.store(external, Ordering::Release);
+        self.external
+            .store(windows == Some(false) && source != 1, Ordering::Release);
         Some(source)
     }
     /// A setter-time reading against the first reading's class `source`.
@@ -311,21 +336,26 @@ impl<'a> PowerFence<'a> {
     /// presence; a class change between setters, either way between full,
     /// limited and unclassified, continues only while the class is not pinned
     /// and the permit's destination is the same for the new class, so a
-    /// profile that differs there stops the pair. Battery always stops it.
+    /// profile that differs there stops the pair. A change to or from battery
+    /// always stops it. Battery itself admits only a bound battery preset.
     pub(super) fn admits(&self, power: Power, source: i32) -> bool {
-        let Some((current, external)) = self.source(power) else {
+        let Some((current, windows)) = self.source(power) else {
             return false;
         };
-        let admitted = if current == source {
-            source != 1
-        } else {
-            !self.pinned.load(Ordering::Acquire)
-                && current != 1
-                && source != 1
-                && self.permit.destination_holds(current)
+        let class_admitted = match self.destination.get() {
+            Some(destination) => admits_class(*destination, current, windows),
+            None => current != 1,
         };
+        let admitted = class_admitted
+            && (current == source
+                || !self.pinned.load(Ordering::Acquire)
+                    && current != 1
+                    && source != 1
+                    && self.permit.destination_holds(current));
         if admitted {
-            self.external.store(external, Ordering::Release);
+            self.external
+                .store(windows == Some(false) && current != 1, Ordering::Release);
+            self.battery.store(current == 1, Ordering::Release);
         }
         admitted
     }

@@ -18,7 +18,7 @@ use crate::{
 };
 use openblade_domain::{
     automation::UNCLASSIFIED_EXTERNAL,
-    thermal_mutation::{Preset, Progress, confirms},
+    thermal_mutation::{Preset, Progress, applies_on_fan_handback, confirms},
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -570,7 +570,9 @@ impl Runtime {
             let cause = permit.cause.lock().map_err(|_| io::ErrorKind::Other)?;
             if matches!(
                 *cause,
-                Cause::ManualDeferred | Cause::AwaitingClassification
+                Cause::ManualDeferred
+                    | Cause::ManualDeferredResubmit
+                    | Cause::AwaitingClassification
             ) {
                 // Managed's reply for this external-power manual-fan deferral
                 // (ServiceControlRuntime.DeferredPerformanceIntentMessage), or for a
@@ -646,6 +648,52 @@ impl Runtime {
         Ok((outcome, snapshot))
     }
 }
+/// The saved policy's destination for one fresh class, and why it may not be
+/// written now. It stores nothing and submits nothing, so a later automatic
+/// reconciliation of already-saved intent (Stage 4b) can reuse it unchanged.
+struct Selection {
+    desired: Option<(Preset, i32)>,
+    blocked: Option<Cause>,
+}
+fn select(
+    storage: &Storage,
+    power: i32,
+    application: Option<&str>,
+    baseline: ObservedPerformance,
+) -> io::Result<Selection> {
+    let blocked = |cause| Selection {
+        desired: None,
+        blocked: Some(cause),
+    };
+    if storage.gpu_incomplete(power, application)? {
+        return Ok(blocked(Cause::Gpu));
+    }
+    let Some((preset, source)) = storage.desired(power, application)? else {
+        return Ok(blocked(Cause::NoEligiblePolicy));
+    };
+    let desired = Some((preset, source));
+    let blocked = if openblade_domain::thermal_mutation::defer_manual_performance(
+        baseline,
+        power,
+        storage.desired_manual_fans(power, application)?,
+    ) {
+        // Stored promises that the fan request returning the fans applies the
+        // intent. That request writes only Balanced or Performance, so any
+        // other destination asks for a new performance request instead.
+        Some(if applies_on_fan_handback(preset) {
+            Cause::ManualDeferred
+        } else {
+            Cause::ManualDeferredResubmit
+        })
+    } else if storage.outstanding_fan() {
+        // An owned fan row without its handback is not a manual-fan deferral:
+        // the saved fan intent may already be Automatic or cleared.
+        Some(Cause::FanHandbackPending)
+    } else {
+        None
+    };
+    Ok(Selection { desired, blocked })
+}
 struct RequestPermit {
     caller_pid: u32,
     session: u32,
@@ -671,6 +719,10 @@ enum Cause {
     FanHandbackPending,
     Gpu,
     ManualDeferred,
+    // A manual-fan deferral whose destination the native fan return to
+    // Automatic does not write (`thermal_mutation::applies_on_fan_handback`).
+    ManualDeferredResubmit,
+    NoDirectPath,
     NoEligiblePolicy,
     TransactionCapacity,
     PowerChanged,
@@ -689,7 +741,8 @@ impl Cause {
             // Without the fan composition no native request returns the fans,
             // so that build keeps the explicit resubmission instruction.
             Self::ManualDeferred if cfg!(feature = "service-fan-mutation-v2") => "Performance intent was stored and will be applied when fans return to Automatic.".into(),
-            Self::ManualDeferred => "Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.".into(),
+            Self::ManualDeferred | Self::ManualDeferredResubmit => "Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.".into(),
+            Self::NoDirectPath => "Leaving HyperBoost for a battery preset needs the HyperBoost restore sequence, which this build does not submit; no thermal setter was submitted.".into(),
             Self::NoEligiblePolicy => "No supported performance destination is selected by the current power and profile policy.".into(),
             Self::TransactionCapacity => "Thermal transaction ID capacity is exhausted; no setter was submitted.".into(),
             Self::PowerChanged => "The independently observed power source changed or no longer admits this destination.".into(),
@@ -760,12 +813,13 @@ impl Permit for RequestPermit {
                 return Ok(None);
             }
             // Managed `ValidateUnclassifiedPerformanceOverride` rejects native
-            // overclocking there before any intent is stored.
+            // overclocking and the battery presets there before any intent is
+            // stored: ordinary external presence admits neither.
             if unclassified
-                && self
-                    .value
-                    .as_ref()
-                    .is_some_and(|v| v.gpu_clock_tuning.is_some())
+                && self.value.as_ref().is_some_and(|v| {
+                    v.gpu_clock_tuning.is_some()
+                        || Preset::from_wire(v.value).is_some_and(Preset::is_battery)
+                })
             {
                 self.set_cause(Cause::UnclassifiedRejected);
                 return Ok(None);
@@ -782,40 +836,15 @@ impl Permit for RequestPermit {
                 self.set_cause(Cause::AwaitingClassification);
                 return Ok(None);
             }
-            if self
-                .storage
-                .gpu_incomplete(power, self.application.as_deref())?
-            {
-                self.set_cause(Cause::Gpu);
-                return Ok(None);
-            }
-            let desired = self.storage.desired(power, self.application.as_deref())?;
+            let selection = select(&self.storage, power, self.application.as_deref(), baseline)?;
             *self
                 .selected_source
                 .lock()
-                .map_err(|_| io::ErrorKind::Other)? = desired.map(|(_, s)| s);
-            let desired = desired.map(|(p, _)| p);
+                .map_err(|_| io::ErrorKind::Other)? = selection.desired.map(|(_, s)| s);
+            let desired = selection.desired.map(|(p, _)| p);
             *self.destination.lock().map_err(|_| io::ErrorKind::Other)? = desired;
-            // Stored promises that the fan request returning the fans applies the
-            // intent. That request writes only Balanced or Performance, so
-            // without such a destination the intent is reported unapplied.
-            if desired.is_none() {
-                self.set_cause(Cause::NoEligiblePolicy);
-                return Ok(None);
-            }
-            if openblade_domain::thermal_mutation::defer_manual_performance(
-                baseline,
-                power,
-                self.storage
-                    .desired_manual_fans(power, self.application.as_deref())?,
-            ) {
-                self.set_cause(Cause::ManualDeferred);
-                return Ok(None);
-            }
-            // An owned fan row without its handback is not a manual-fan deferral:
-            // the saved fan intent may already be Automatic or cleared.
-            if self.storage.outstanding_fan() {
-                self.set_cause(Cause::FanHandbackPending);
+            if let Some(cause) = selection.blocked {
+                self.set_cause(cause);
                 return Ok(None);
             }
             Ok(desired)
@@ -828,6 +857,7 @@ impl Permit for RequestPermit {
             Refusal::CurrentAdmission => Cause::CurrentAdmission,
             Refusal::PowerChanged => Cause::PowerChanged,
             Refusal::UnclassifiedBlocked => Cause::UnclassifiedBlocked,
+            Refusal::NoDirectPath => Cause::NoDirectPath,
         });
     }
     fn retired(&self) -> io::Result<Settlement> {

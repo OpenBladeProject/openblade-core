@@ -14,5 +14,60 @@
     "{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":{\"value\":1,\"lifetime\":1,\"customPerformance\":null,\"gpuClockTuning\":{\"effectiveOffsets\":{\"coreMegahertz\":0,\"memoryMegahertz\":0},\"enabled\":false,\"offsets\":{\"coreMegahertz\":12,\"memoryMegahertz\":34}}},\"destination\":1,\"intent\":\"fefeef69f359a55aff6836d4aaa022e52c31957f78d0bc910104486bfc217e68\",\"progress\":0}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":{\"value\":1,\"lifetime\":1,\"customPerformance\":null,\"gpuClockTuning\":{\"effectiveOffsets\":{\"coreMegahertz\":0,\"memoryMegahertz\":0},\"enabled\":false,\"offsets\":{\"coreMegahertz\":12,\"memoryMegahertz\":34}}},\"destination\":1,\"intent\":\"fefeef69f359a55aff6836d4aaa022e52c31957f78d0bc910104486bfc217e68\",\"progress\":5}\n",
     "{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":{\"value\":1,\"lifetime\":1,\"customPerformance\":null,\"gpuClockTuning\":{\"effectiveOffsets\":{\"coreMegahertz\":0,\"memoryMegahertz\":0},\"enabled\":false,\"offsets\":{\"coreMegahertz\":12,\"memoryMegahertz\":34}}},\"destination\":1,\"intent\":\"fefeef69f359a55aff6836d4aaa022e52c31957f78d0bc910104486bfc217e68\",\"progress\":0}\n\n",
     "{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":{\"value\":1,\"lifetime\":1,\"customPerformance\":null,\"gpuClockTuning\":{\"effectiveOffsets\":{\"coreMegahertz\":0,\"memoryMegahertz\":0},\"enabled\":false,\"offsets\":{\"coreMegahertz\":12,\"memoryMegahertz\":34}}},\"destination\":1,\"intent\":\"fefeef69f359a55aff6836d4aaa022e52c31957f78d0bc910104486bfc217e68\",\"progress\":0,\"progress\":0}\n"
-  ]
+  ],
+  "presetRows": {
+    "note": "Each admitted RZ09-0581 pair destination (managed PerformancePreset 0..4) with its own requested value; replace the segment's requested value, intent and destination together. Refused values keep a valid digest and must still be denied.",
+    "admitted": [
+      {
+        "value": 0,
+        "destination": 0,
+        "requested": "{\"value\":0,\"lifetime\":1,\"customPerformance\":null,\"gpuClockTuning\":{\"effectiveOffsets\":{\"coreMegahertz\":0,\"memoryMegahertz\":0},\"enabled\":false,\"offsets\":{\"coreMegahertz\":12,\"memoryMegahertz\":34}}}",
+        "intent": "900af2773b1c89af06731a895906a1c15c668d39f56009a08b673d24b1bd5d21"
+      },
+      {
+        "value": 1,
+        "destination": 1,
+        "requested": "{\"value\":1,\"lifetime\":1,\"customPerformance\":null,\"gpuClockTuning\":{\"effectiveOffsets\":{\"coreMegahertz\":0,\"memoryMegahertz\":0},\"enabled\":false,\"offsets\":{\"coreMegahertz\":12,\"memoryMegahertz\":34}}}",
+        "intent": "fefeef69f359a55aff6836d4aaa022e52c31957f78d0bc910104486bfc217e68"
+      },
+      {
+        "value": 2,
+        "destination": 2,
+        "requested": "{\"value\":2,\"lifetime\":1,\"customPerformance\":null,\"gpuClockTuning\":{\"effectiveOffsets\":{\"coreMegahertz\":0,\"memoryMegahertz\":0},\"enabled\":false,\"offsets\":{\"coreMegahertz\":12,\"memoryMegahertz\":34}}}",
+        "intent": "473cb25002e805d997c6e885ac037e9d78071d222b509abc729e5bea3f47f7f1"
+      },
+      {
+        "value": 3,
+        "destination": 3,
+        "requested": "{\"value\":3,\"lifetime\":1,\"customPerformance\":null,\"gpuClockTuning\":{\"effectiveOffsets\":{\"coreMegahertz\":0,\"memoryMegahertz\":0},\"enabled\":false,\"offsets\":{\"coreMegahertz\":12,\"memoryMegahertz\":34}}}",
+        "intent": "2811d501d28e235f51a11901a17ecc81335b3afe137d9b6c384cf55bf060f962"
+      },
+      {
+        "value": 4,
+        "destination": 4,
+        "requested": "{\"value\":4,\"lifetime\":1,\"customPerformance\":null,\"gpuClockTuning\":{\"effectiveOffsets\":{\"coreMegahertz\":0,\"memoryMegahertz\":0},\"enabled\":false,\"offsets\":{\"coreMegahertz\":12,\"memoryMegahertz\":34}}}",
+        "intent": "5386f16ce1f2e4d4f8e1afd4c5dc961ae6d62059c49df3d545563e106aa98522"
+      }
+    ],
+    "refused": [
+      {
+        "value": -1,
+        "destination": -1,
+        "requested": "{\"value\":-1,\"lifetime\":1,\"customPerformance\":null,\"gpuClockTuning\":{\"effectiveOffsets\":{\"coreMegahertz\":0,\"memoryMegahertz\":0},\"enabled\":false,\"offsets\":{\"coreMegahertz\":12,\"memoryMegahertz\":34}}}",
+        "intent": "28686af5414de15858f83343bb3718730ac67a10623c40170f7ea63003b91447"
+      },
+      {
+        "value": 5,
+        "destination": 5,
+        "requested": "{\"value\":5,\"lifetime\":1,\"customPerformance\":null,\"gpuClockTuning\":{\"effectiveOffsets\":{\"coreMegahertz\":0,\"memoryMegahertz\":0},\"enabled\":false,\"offsets\":{\"coreMegahertz\":12,\"memoryMegahertz\":34}}}",
+        "intent": "3101a2cd1359c9065d92c1abfcbb8b9cf8cfa355aa16e3c97fdb8e79d5d9f08c"
+      },
+      {
+        "value": 6,
+        "destination": 6,
+        "requested": "{\"value\":6,\"lifetime\":1,\"customPerformance\":null,\"gpuClockTuning\":{\"effectiveOffsets\":{\"coreMegahertz\":0,\"memoryMegahertz\":0},\"enabled\":false,\"offsets\":{\"coreMegahertz\":12,\"memoryMegahertz\":34}}}",
+        "intent": "2618808cadd7e1dd07c910e4d157bdaa39df4732c346c8948ae04c6de9964058"
+      }
+    ]
+  }
 }
