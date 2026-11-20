@@ -338,12 +338,12 @@ internal sealed partial class ExperimentalBladePort
     }
 
     // Reads LED38 for a host-frame decision. When OpenBlade selected LED38 the read
-    // is required to return it. Otherwise LED38 is optional: a device answer that
-    // fails on a usable session leaves this owner keyboard-only, a poisoned session
-    // still fails the request before any write, and both keep later requests from
-    // probing again. A read that never reached the MCU (shared-gate refusal,
-    // queued cancellation, an unusable session) fails the request before any
-    // write and settles nothing.
+    // is required to return it. Otherwise LED38 is optional: a failed read on a
+    // usable session leaves this owner keyboard-only, and a poisoned session still
+    // fails the request before any write. Only a device answer keeps later
+    // requests from reading again. A read that never reached the MCU (shared-gate
+    // refusal, queued cancellation) leaves just this request keyboard-only, so a
+    // running renderer is replaced normally instead of being faulted.
     private async Task<(LightingSettings? Settings, byte Mode)?> ReadVaporChamberForFramesAsync(
         bool required, CancellationToken token)
     {
@@ -351,19 +351,23 @@ internal sealed partial class ExperimentalBladePort
         {
             return await ReadReviewedVaporChamberEffectAsync(token).ConfigureAwait(false);
         }
-        catch (IOException exception) when (!token.IsCancellationRequested
-            && VaporChamberReadReachedDevice(exception))
+        catch (IOException exception) when (!token.IsCancellationRequested)
         {
             if (required)
             {
                 throw;
             }
-            SettleVaporChamberAvailability(false);
+            bool answered = VaporChamberReadReachedDevice(exception);
+            if (answered)
+            {
+                SettleVaporChamberAvailability(false);
+            }
             if (session.Disposition != RazerCommandSessionDisposition.Healthy)
             {
                 throw;
             }
-            RecordQuery("VaporChamberEffect", "Unavailable", failure: "VaporChamberFramesUnavailable");
+            RecordQuery("VaporChamberEffect", "Unavailable",
+                failure: answered ? "VaporChamberFramesUnavailable" : "VaporChamberReadDeferred");
             return null;
         }
     }

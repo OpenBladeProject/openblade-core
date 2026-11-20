@@ -116,9 +116,9 @@ write. A rejected or malformed reply on a usable session also keeps frames
 keyboard-only. It stops further VC reads for that host and HID identity until
 the service restarts or the identity changes. A failure that leaves the session
 unusable stops the request before any write. A read that never reached the MCU,
-such as a shared command-gate refusal or a cancellation, also stops the request
-before any write, but it records nothing about the VC, so the next request
-reads it again. Opening an RZ09-0529 session makes the same read once for each
+such as a shared command-gate refusal, leaves only that request keyboard-only
+and records nothing about the VC. A running renderer is replaced normally, and
+the next request reads the VC again. Opening an RZ09-0529 session makes the same read once for each
 admitted host and HID identity. A rejection there drains that session and
 opens one fresh session, and later sessions for the identity skip the read and
 stay keyboard-only. A gate refusal or cancellation there settles nothing:
@@ -164,7 +164,10 @@ region-38 command.
 KI8110 1.07.00 also exposes a HID LampArray collection (usage page `0x59`,
 usage `0x01`) at image offset `0xEE30`. Its report handler at `0xA784` serves
 LampArrayAttributes, LampAttributes, LampMultiUpdate, LampRangeUpdate and
-LampArrayControl. AutonomousMode lives at `0x100001C9` and starts at 1. The
+LampArrayControl. AutonomousMode lives at `0x100001C9` and starts at 1.
+LampArrayControl writes it at `0xAA7A`. A keyboard-event branch at `0x7FA8`
+also sets it back to 1 when it is 0, clears custom flags 0 and 2 (keyboard and
+VC) and persists. The
 handler covers LED38 as well as the keyboard: lamps below the count minus 18
 go to the keyboard LampArray buffer at `0x10001264` and the last 18 lamps go to
 the VC LampArray buffer at `0x1000145C`. Neither buffer is the staging buffer
