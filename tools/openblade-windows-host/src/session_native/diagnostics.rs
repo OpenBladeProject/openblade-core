@@ -60,6 +60,14 @@ pub(crate) fn origin(error: io::Error) -> io::Error {
     attach(error, event, false)
 }
 
+// Only the endpoints that serve a pipe claim a listener.
+#[cfg_attr(
+    not(any(
+        feature = "agent-battery-report-v1",
+        feature = "agent-display-query-v1"
+    )),
+    allow(dead_code)
+)]
 pub(super) fn listener(error: io::Error) -> io::Error {
     let event = Event::Listener(error.kind(), error.raw_os_error());
     attach(error, event, false)

@@ -115,6 +115,13 @@ impl SubscriptionInitial {
     }
 }
 
+#[cfg(feature = "agent-application-reporter-v1")]
+impl SubscriptionInitial {
+    pub(crate) fn snapshot(&self) -> &Snapshot {
+        &self.0.snapshot
+    }
+}
+
 pub(crate) enum StatusUpdate {
     Opened(SubscriptionInitial),
     Event(StatusObservation),
@@ -377,6 +384,56 @@ async fn request_on<S: AsyncRead + AsyncWrite + Unpin>(
         () = canceled => Err(io::ErrorKind::Interrupted.into()),
         result = timeout_at(deadline, read) => result?,
     }
+}
+
+/// Managed `ServiceClient.ReportApplicationContextAsync`: one connection per
+/// report, closed after its reply. The Agent additionally proves the installed
+/// Service generation and pipe peer before any byte is sent and again before
+/// the reply is accepted, because the request names the foreground executable.
+/// The whole exchange shares the status budget; dropping the future closes the
+/// pipe, so a canceled report is never replayed.
+#[cfg(feature = "agent-application-reporter-v1")]
+pub(super) async fn report_application_context(
+    authority: Option<&dyn InstalledServiceAuthority>,
+    request: &openblade_application_reporter::ReportApplicationContextRequest,
+) -> io::Result<openblade_application_reporter::ReportOutcome> {
+    report_on(authority, request, connect_installed, |pipe| {
+        server_identity(pipe.as_raw_handle())
+    })
+    .await
+}
+
+#[cfg(feature = "agent-application-reporter-v1")]
+async fn report_on<S: AsyncRead + AsyncWrite + Unpin>(
+    authority: Option<&dyn InstalledServiceAuthority>,
+    request: &openblade_application_reporter::ReportApplicationContextRequest,
+    connect: impl AsyncFnOnce() -> io::Result<S>,
+    peer: impl Fn(&S) -> io::Result<(u32, u32)>,
+) -> io::Result<openblade_application_reporter::ReportOutcome> {
+    use openblade_windows_host::reporter_pipe::{Response, encode, guid_text};
+
+    let deadline = Instant::now() + STATUS_BUDGET;
+    let exchange = async {
+        let authority = require_authority(authority)?;
+        let generation = authority
+            .acquire_generation()
+            .map_err(ServiceAuthorityError::into_io)?;
+        let pid = generation
+            .verify_live_process()
+            .map_err(ServiceAuthorityError::into_io)?;
+        let payload = encode(request)?;
+        let mut stream = connect().await?;
+        verify_peer(generation.as_ref(), pid, &stream, &peer)?;
+        crate::service_frame::write_payload(&mut stream, &payload).await?;
+        let reply = timeout_at(deadline, crate::service_frame::read_payload(&mut stream)).await??;
+        verify_peer(generation.as_ref(), pid, &stream, &peer)?;
+        // Any refusal, including a typed Blocked or Failed result, leaves the
+        // report pending exactly as managed: only Stored and Applied acknowledge.
+        Response::decode(&reply, &guid_text(request.request_id))?
+            .report_outcome()
+            .map(|(outcome, _message)| outcome)
+    };
+    timeout_at(deadline, exchange).await?
 }
 
 fn require_authority(

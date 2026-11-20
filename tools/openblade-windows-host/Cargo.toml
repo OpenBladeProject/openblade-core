@@ -36,6 +36,10 @@ agent-display-profile-apply-v1 = [
     "agent-display-color-write-v1",
 ]
 agent-battery-report-v1 = ["native-agent-entry-compile-check"]
+# Current-user application-context reporter: the foreground watcher reports the
+# profile-matching executable to the Service as managed ApplicationProfileReporter
+# does. Packaging refuses an image that carries it until a stage admits it.
+agent-application-reporter-v1 = ["native-agent-entry-compile-check", "openblade-platform-windows/foreground-watcher"]
 # Session GPU v2 query, close and force close through the production
 # retained-handle backend (identity and integrity recheck on the held handle;
 # an unconfirmed force close is reported in that request only).

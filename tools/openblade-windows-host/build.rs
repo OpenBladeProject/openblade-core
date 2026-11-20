@@ -72,6 +72,10 @@ fn main() {
     // display write it composes.
     let agent = [
         ("agent-battery-report-v1", "agent-battery-report-v1"),
+        (
+            "agent-application-reporter-v1",
+            "session-application-reporter-v1",
+        ),
         ("agent-display-query-v1", "session-display-query-partial-v1"),
         (
             "agent-display-brightness-write-v1",
@@ -100,7 +104,11 @@ fn main() {
     .collect::<Vec<_>>()
     .join(",");
     // Any selected installed Agent endpoint: shared lifetime and diagnostics.
-    if has("agent-battery-report-v1") || has("agent-display-query-v1") || has("agent-gpu-v1") {
+    if has("agent-battery-report-v1")
+        || has("agent-application-reporter-v1")
+        || has("agent-display-query-v1")
+        || has("agent-gpu-v1")
+    {
         println!("cargo::rustc-cfg=openblade_agent_endpoint");
     }
     // Shared write infrastructure (power admission, recovery, fence) for any

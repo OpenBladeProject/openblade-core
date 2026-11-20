@@ -19,7 +19,9 @@ pub enum ActivationMode {
     WhileRunningAfterActivation,
 }
 
-/// The selection fields of a validated ApplicationProfileDefinition.
+/// The selection fields of a validated ApplicationProfileDefinition. Comparable
+/// so a host can skip a snapshot whose selection fields did not change.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ApplicationProfile {
     pub id: Guid,
     pub executable_path: String,

@@ -49,6 +49,11 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
         let power = super::power_admission::PowerAdmission::default();
         #[cfg(openblade_display_write)]
         let _retire = Retire(power.clone());
+        // Managed hands every connected status to the application reporter.
+        // The feed keeps the latest profile selection fields; it grants no
+        // authority and the reporter never reads status for anything else.
+        #[cfg(feature = "agent-application-reporter-v1")]
+        let profiles = super::application::ProfileFeed::new();
         let canceled = async {
             let result = async {
                 loop {
@@ -71,6 +76,20 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
             Some(&authority),
             std::future::pending::<()>(),
             |update| {
+                #[cfg(feature = "agent-application-reporter-v1")]
+                match &update {
+                    service_client::StatusUpdate::Opened(value) => {
+                        super::verify_origin(&origin)?;
+                        value.require_fresh()?;
+                        profiles.observe(value.snapshot());
+                    }
+                    service_client::StatusUpdate::Event(value) => {
+                        super::verify_origin(&origin)?;
+                        value.require_fresh()?;
+                        profiles.observe(&value.snapshot);
+                    }
+                    service_client::StatusUpdate::Reconnecting => {}
+                }
                 #[cfg(openblade_display_write)]
                 let result = (|| {
                     super::verify_origin(&origin)?;
@@ -136,6 +155,15 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
             #[cfg(feature = "agent-battery-report-v1")]
             features.push(feature(|feature_stop| {
                 super::battery::run(origin.clone(), feature_stop)
+            }));
+            #[cfg(feature = "agent-application-reporter-v1")]
+            features.push(feature(|feature_stop| {
+                super::application::run(
+                    origin.clone(),
+                    feature_stop,
+                    profiles.subscribe(),
+                    &authority,
+                )
             }));
             #[cfg(feature = "agent-display-query-v1")]
             features.push(feature(display));

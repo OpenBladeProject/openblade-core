@@ -5,6 +5,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(feature = "agent-application-reporter-v1")]
+#[cfg_attr(test, allow(dead_code, unused_imports))]
+// The production transport is built only by the non-test installed monitor.
+mod application;
 #[cfg(feature = "agent-battery-report-v1")]
 #[cfg_attr(test, allow(dead_code))]
 // The production supplier is built only by the non-test installed monitor.

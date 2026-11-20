@@ -1019,6 +1019,12 @@ impl Snapshot {
             && self.device_verified
             && self.control_access == 0
     }
+    /// The `applicationProfiles` array of the status `profiles` member, as the
+    /// Service published it. The Agent reads only the reporter's selection fields.
+    #[cfg(feature = "agent-application-reporter-v1")]
+    pub(crate) fn application_profiles(&self) -> Option<&Value> {
+        self.profiles.feature_fields.get("applicationProfiles")
+    }
     // Use only for a direct, admitted ObserveState reply. v85 can retain
     // fields during failed observations. Require the managed completion
     // guards and explicit absence of observation or write uncertainty.
@@ -1164,8 +1170,16 @@ pub(crate) async fn exchange<S: AsyncRead + AsyncWrite + Unpin + ?Sized>(
     status
 }
 
-#[allow(unsafe_code)]
 pub(crate) fn request_id() -> io::Result<String> {
+    let [a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p] = random_guid()?;
+    Ok(format!(
+        "{a:02x}{b:02x}{c:02x}{d:02x}-{e:02x}{f:02x}-{g:02x}{h:02x}-{i:02x}{j:02x}-{k:02x}{l:02x}{m:02x}{n:02x}{o:02x}{p:02x}"
+    ))
+}
+
+/// A fresh random GUID in the byte order of its hyphenated text form.
+#[allow(unsafe_code)]
+pub(crate) fn random_guid() -> io::Result<[u8; 16]> {
     use windows_sys::{Win32::System::Com::CoCreateGuid, core::GUID};
 
     let mut id = GUID::from_u128(0);
@@ -1173,11 +1187,12 @@ pub(crate) fn request_id() -> io::Result<String> {
     if unsafe { CoCreateGuid(&mut id) } < 0 {
         return Err(invalid("GetStatus request ID generation failed"));
     }
-    let [a, b, c, d, e, f, g, h] = id.data4;
-    Ok(format!(
-        "{:08x}-{:04x}-{:04x}-{a:02x}{b:02x}-{c:02x}{d:02x}{e:02x}{f:02x}{g:02x}{h:02x}",
-        id.data1, id.data2, id.data3
-    ))
+    let mut bytes = [0; 16];
+    bytes[..4].copy_from_slice(&id.data1.to_be_bytes());
+    bytes[4..6].copy_from_slice(&id.data2.to_be_bytes());
+    bytes[6..8].copy_from_slice(&id.data3.to_be_bytes());
+    bytes[8..].copy_from_slice(&id.data4);
+    Ok(bytes)
 }
 
 pub(crate) use openblade_domain::thermal_history::PerformanceOverride;

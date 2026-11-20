@@ -1,4 +1,6 @@
 mod observation;
+#[cfg(feature = "agent-application-reporter-v1")]
+mod report;
 
 use std::{cell::Cell, future::pending};
 
