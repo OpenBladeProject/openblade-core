@@ -27,7 +27,7 @@ public sealed class NativeThermalEdgeFramesTests
             json.CopyTo(framed, 4);
             using var stream = new MemoryStream(framed, writable: false);
             ServiceServerFrame decoded = await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None);
-            Assert.Equal(80, decoded.Version);
+            Assert.Equal(OpenBladeIpc.ProtocolVersion, decoded.Version);
             Assert.Equal(stream.Length, stream.Position);
             using JsonDocument document = JsonDocument.Parse(raw);
             JsonElement frame = document.RootElement;
