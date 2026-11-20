@@ -439,7 +439,7 @@ public static partial class RazerChromaFileAdapter
         }
         Add(4, 2, 0x56);
         Add(5, 3, 0x38);
-        Add(5, 7, 0x39);
+        // Space (5,7) has no RGB record in any table and stays an unmapped cell.
         Add(5, 11, 0x38, true);
         Add(0, 21, 0x7D);
         Add(4, 13, 0x73);

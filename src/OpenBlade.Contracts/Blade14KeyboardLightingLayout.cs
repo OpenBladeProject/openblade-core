@@ -19,8 +19,10 @@ public static class Blade14KeyboardLightingLayout
         "9356BC177DFBCB458E4C9E465D93AD7E32AF94A61ADBDF7C7E2A7319A7D3E623";
     private const string ApprovedImageSha256 =
         "1ac3f05486d0bca5fbbb1a4a52b874943ad491a00afd298b8d6b857a49d98f11";
+    private const byte UnlitSpaceUsage = 0x2C;
     private static readonly RegionalMap Common;
     private static readonly RegionalMap[] Maps;
+    private static readonly RegionalMap[] MapsByEdition = new RegionalMap[256];
     private static readonly RegionalMap DefaultMap;
     private static readonly HashSet<int> AddressableKeySlots = [];
 
@@ -70,6 +72,14 @@ public static class Blade14KeyboardLightingLayout
                     throw new InvalidOperationException("The Blade 14 lighting layout duplicates a HID usage.");
                 }
             }
+            // Every table's Space record is 2C followed by seven zero bytes, so it
+            // names no LED channel, and active renderer 0x682C skips usage 0x2C
+            // (0x685E CMP r4,#0x2C; BEQ). Space therefore has no RGB slot: it is
+            // excluded from lit, addressable, pulse and import bindings.
+            if (!usageSlots.Remove(UnlitSpaceUsage))
+            {
+                throw new InvalidOperationException("The Blade 14 lighting layout Space record is missing.");
+            }
             var editions = new HashSet<byte>();
             foreach (JsonElement selector in variant.GetProperty("selectorValues").EnumerateArray())
             {
@@ -111,8 +121,12 @@ public static class Blade14KeyboardLightingLayout
         {
             AddressableKeySlots.UnionWith(map.KeySlots);
         }
+        for (int edition = 0; edition < MapsByEdition.Length; edition++)
+        {
+            MapsByEdition[edition] = Maps.FirstOrDefault(map => map.Editions.Contains((byte)edition)) ?? DefaultMap;
+        }
         if (Common.KeySlots.Count != 74 || Common.InputSlots.Count != 71
-            || AddressableKeySlots.Count != 87
+            || AddressableKeySlots.Count != 85
             || !Maps.All(map => Common.KeySlots.IsSubsetOf(map.KeySlots)))
         {
             throw new InvalidOperationException("The Blade 14 common lighting bindings are incomplete.");
@@ -166,8 +180,8 @@ public static class Blade14KeyboardLightingLayout
 
     private static RegionalMap Resolve(byte? edition) => edition is { } value ? Select(value) : Common;
 
-    private static RegionalMap Select(byte edition) =>
-        Maps.FirstOrDefault(map => map.Editions.Contains(edition)) ?? DefaultMap;
+    // Built once: this runs for every pulse and rendered grid-effect slot.
+    private static RegionalMap Select(byte edition) => MapsByEdition[edition];
 
     private static bool TryGetWindowsScanCode(byte usage, out ushort scanCode, out bool extended)
     {

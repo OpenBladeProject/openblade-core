@@ -66,7 +66,7 @@ public sealed class Blade14KeyboardLightingLayoutTests
     }
 
     [Fact]
-    public void SequenceUsesTheThreeTableUnionAndKeepsSharedHolesAndContainerTailDark()
+    public void SequenceUsesTheThreeTableLitUnionAndKeepsHolesSpaceAndContainerTailDark()
     {
         Assert.True(KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutIds.Rz09_0530));
         int key = Enumerable.Range(0, 96).First(slot => Blade14KeyboardLightingLayout.IsKeySlot(slot)
@@ -81,18 +81,41 @@ public sealed class Blade14KeyboardLightingLayoutTests
         string encoded = KeyboardLightingSequenceCodec.Encode([new(100, colors)], KeyboardLightingLayoutIds.Rz09_0530);
         Assert.Equal(colors, Assert.Single(KeyboardLightingSequenceCodec.Decode(encoded, KeyboardLightingLayoutIds.Rz09_0530).Frames).Slots);
         Assert.Throws<InvalidDataException>(() => KeyboardLightingSequenceCodec.Decode(encoded));
-        foreach (int slot in new[] { 0, 16, 32, 48, 62, 64, 77, 80, 90, 96, 97, 98, 99, 100, 101 })
+        // Shared holes, both Space positions and the container tail.
+        foreach (int slot in new[] { 0, 16, 32, 48, 62, 64, 77, 80, 86, 87, 90, 96, 97, 98, 99, 100, 101 })
         {
             var rejected = new RgbColor[AmbientLightingFrame.SlotCount];
             rejected[slot] = new(1, 2, 3);
             Assert.Throws<InvalidDataException>(() => KeyboardLightingSequenceCodec.Encode(
                 [new(100, rejected)], KeyboardLightingLayoutIds.Rz09_0530));
         }
-        Assert.Equal(87, Enumerable.Range(0, 96).Count(Blade14KeyboardLightingLayout.IsAddressableKeySlot));
+        Assert.Equal(85, Enumerable.Range(0, 96).Count(Blade14KeyboardLightingLayout.IsAddressableKeySlot));
     }
 
-    // Slots whose usage differs between the three reviewed tables.
-    private static readonly int[] RegionalSlots = [30, 46, 47, 61, 63, 66, 78, 84, 85, 86, 87, 88, 89];
+    // Lit slots whose usage differs between the three reviewed tables. Slots 86 and
+    // 87 also differ, but they hold only the unlit Space record.
+    private static readonly int[] RegionalSlots = [30, 46, 47, 61, 63, 66, 78, 84, 85, 88, 89];
+
+    [Fact]
+    public void SpaceHasNoLedSlotPulseOrBindingInAnyEdition()
+    {
+        for (int value = 0; value <= byte.MaxValue; value++)
+        {
+            byte edition = (byte)value;
+            Assert.False(Blade14KeyboardLightingLayout.BindsUsage(edition, 0x2C));
+            Assert.False(Blade14KeyboardLightingLayout.TryMapScanCode(edition, 0x39, false, out _));
+            Assert.False(Blade14KeyboardLightingLayout.IsKeySlot(edition, 86));
+            Assert.False(Blade14KeyboardLightingLayout.IsKeySlot(edition, 87));
+            Assert.False(Blade14KeyboardLightingLayout.TryGetKeyPosition(edition, 86, out _, out _));
+        }
+        Assert.False(Blade14KeyboardLightingLayout.TryMapScanCode(null, 0x39, false, out _));
+        Assert.False(Blade14KeyboardLightingLayout.IsAddressableKeySlot(86));
+        Assert.False(Blade14KeyboardLightingLayout.IsAddressableKeySlot(87));
+        // The fixture still records Space; only the lit binding is withheld.
+        Assert.Equal(86, Array.IndexOf(FixtureUsages("map-afe3"), (byte)0x2C));
+        Assert.Equal(87, Array.IndexOf(FixtureUsages("map-b313"), (byte)0x2C));
+        Assert.Equal(86, Array.IndexOf(FixtureUsages("map-b63b"), (byte)0x2C));
+    }
 
     [Fact]
     public void EveryEditionByteSelectsTheFirmwareSwitchTable()
@@ -111,19 +134,21 @@ public sealed class Blade14KeyboardLightingLayoutTests
     }
 
     [Theory]
-    [InlineData(0, "map-afe3", 79, 76)]
-    [InlineData(12, "map-b63b", 83, 80)]
-    [InlineData(2, "map-b313", 80, 77)]
-    public void ConfirmedEditionBindsItsTablesCompleteSlotSet(byte edition, string mapId, int keys, int inputs)
+    [InlineData(0, "map-afe3", 78, 75)]
+    [InlineData(12, "map-b63b", 82, 79)]
+    [InlineData(2, "map-b313", 79, 76)]
+    public void ConfirmedEditionBindsItsTablesCompleteLitSlotSet(byte edition, string mapId, int keys, int inputs)
     {
         byte[] usages = FixtureUsages(mapId);
         int keyCount = 0;
         for (int slot = 0; slot < 96; slot++)
         {
-            Assert.Equal(usages[slot] != 0, Blade14KeyboardLightingLayout.IsKeySlot(edition, slot));
-            Assert.Equal(usages[slot] != 0, Blade14KeyboardLightingLayout.TryGetKeyPosition(edition, slot, out _, out _));
-            Assert.True(!Blade14KeyboardLightingLayout.IsKeySlot(slot) || usages[slot] != 0);
-            keyCount += usages[slot] != 0 ? 1 : 0;
+            // Space's record names no LED channel; every other nonzero record is lit.
+            bool lit = usages[slot] is not (0 or 0x2C);
+            Assert.Equal(lit, Blade14KeyboardLightingLayout.IsKeySlot(edition, slot));
+            Assert.Equal(lit, Blade14KeyboardLightingLayout.TryGetKeyPosition(edition, slot, out _, out _));
+            Assert.True(!Blade14KeyboardLightingLayout.IsKeySlot(slot) || lit);
+            keyCount += lit ? 1 : 0;
         }
         Assert.Equal(keys, keyCount);
         int bound = 0;
@@ -143,7 +168,7 @@ public sealed class Blade14KeyboardLightingLayoutTests
 
     [Theory]
     [InlineData(0x1C, false, 63, 46, 46)] // Enter.
-    [InlineData(0x39, false, 86, 86, 87)] // Space.
+    [InlineData(0x39, false, -1, -1, -1)] // Space has no LED record in any table.
     [InlineData(0x38, false, 85, 84, 85)] // Left Alt.
     [InlineData(0x38, true, 89, -1, 89)] // Right Alt.
     [InlineData(0x2B, false, 47, 61, 61)] // HID 0x31 or Non-US # 0x32.
@@ -188,19 +213,70 @@ public sealed class Blade14KeyboardLightingLayoutTests
     }
 
     [Fact]
-    public void EmbeddedSelectorGroupsMatchThePinnedEvidence()
+    public void EmbeddedSelectorGroupsAndUsagesMatchThePinnedEvidence()
     {
-        using JsonDocument document = JsonDocument.Parse(FixtureBytes());
-        var groups = document.RootElement.GetProperty("variants").EnumerateArray().ToDictionary(
-            variant => variant.GetProperty("id").GetString()!,
-            variant => (variant.GetProperty("selectorValues").EnumerateArray().Select(value => value.GetInt32()).ToArray(),
-                variant.GetProperty("otherByteValues").GetBoolean()));
-        Assert.Equal([0, 1, 5, 8, 9, 11], groups["map-afe3"].Item1);
-        Assert.False(groups["map-afe3"].Item2);
-        Assert.Equal([12], groups["map-b63b"].Item1);
-        Assert.False(groups["map-b63b"].Item2);
-        Assert.Equal([2, 3, 4, 6, 7, 10], groups["map-b313"].Item1);
-        Assert.True(groups["map-b313"].Item2);
+        using JsonDocument fixture = JsonDocument.Parse(FixtureBytes());
+        using JsonDocument evidence = JsonDocument.Parse(File.ReadAllBytes(EvidencePath()));
+        JsonElement proof = evidence.RootElement;
+        Assert.Equal(fixture.RootElement.GetProperty("sourceImageSha256").GetString(),
+            proof.GetProperty("decodedSha256").GetString());
+
+        JsonElement[] variants = fixture.RootElement.GetProperty("variants").EnumerateArray().ToArray();
+        JsonElement[] groups = proof.GetProperty("selectorGroups").EnumerateArray().ToArray();
+        JsonElement[] tables = proof.GetProperty("variants").EnumerateArray().ToArray();
+        Assert.Equal(3, variants.Length);
+        Assert.Equal(variants.Select(Id).Order(StringComparer.Ordinal), groups.Select(LayoutId).Order(StringComparer.Ordinal));
+        Assert.Equal(variants.Select(Id).Order(StringComparer.Ordinal), tables.Select(LayoutId).Order(StringComparer.Ordinal));
+        foreach (JsonElement variant in variants)
+        {
+            string id = Id(variant);
+            JsonElement group = groups.Single(item => LayoutId(item) == id);
+            Assert.Equal(Bytes(group.GetProperty("selectorValues")), Bytes(variant.GetProperty("selectorValues")));
+            Assert.Equal(group.TryGetProperty("otherByteValues", out JsonElement other) && other.GetBoolean(),
+                variant.GetProperty("otherByteValues").GetBoolean());
+            JsonElement table = tables.Single(item => LayoutId(item) == id);
+            Assert.Equal(table.GetProperty("sourceOffset").GetString(), variant.GetProperty("sourceOffset").GetString());
+            Assert.Equal(table.GetProperty("sourceSha256").GetString(), variant.GetProperty("sourceSha256").GetString());
+            Assert.Equal(Bytes(table.GetProperty("slots")), Bytes(variant.GetProperty("hidUsages")));
+        }
+
+        // The runtime selection agrees with the evidence for every listed byte.
+        foreach (JsonElement group in groups)
+        {
+            foreach (byte value in Bytes(group.GetProperty("selectorValues")))
+            {
+                Assert.Equal(LayoutId(group), Blade14KeyboardLightingLayout.GetMapId(value));
+            }
+        }
+        Assert.Equal(proof.GetProperty("commonBindingCount").GetInt32(),
+            Enumerable.Range(0, 96).Count(Blade14KeyboardLightingLayout.IsKeySlot));
+        Assert.Equal(proof.GetProperty("litUnionSlotCount").GetInt32(),
+            Enumerable.Range(0, 96).Count(Blade14KeyboardLightingLayout.IsAddressableKeySlot));
+        JsonElement space = Assert.Single(proof.GetProperty("unlitUsages").EnumerateArray());
+        Assert.Equal(0x2C, space.GetProperty("usage").GetInt32());
+        foreach (JsonElement record in space.GetProperty("records").EnumerateArray())
+        {
+            int slot = record.GetProperty("slot").GetInt32();
+            Assert.Equal(0x2C, FixtureUsages(LayoutId(record))[slot]);
+            Assert.Equal("2c00000000000000", record.GetProperty("recordBytes").GetString());
+            Assert.False(Blade14KeyboardLightingLayout.IsAddressableKeySlot(slot));
+        }
+
+        static string Id(JsonElement item) => item.GetProperty("id").GetString()!;
+        static string LayoutId(JsonElement item) => item.GetProperty("layoutId").GetString()!;
+        static byte[] Bytes(JsonElement array) => array.EnumerateArray().Select(value => value.GetByte()).ToArray();
+    }
+
+    private static string EvidencePath()
+    {
+        const string relativePath = "evidence/source-reviewed-blades/2026-11-12-pi4110-keymap.json";
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, relativePath)))
+        {
+            directory = directory.Parent;
+        }
+        Assert.NotNull(directory);
+        return Path.Combine(directory.FullName, relativePath);
     }
 
     private static byte[] FixtureUsages(string mapId)

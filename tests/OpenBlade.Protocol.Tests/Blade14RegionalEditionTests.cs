@@ -48,15 +48,14 @@ public sealed partial class ExperimentalBladeLightingTests
     }
 
     [Theory]
-    [InlineData(1, false)]
-    [InlineData(3, false)]
-    [InlineData(2, true)]
-    public async Task Blade14Edition_MalformedOrUnavailableReadKeepsCommonMapAndControls(int length, bool fail)
+    [InlineData(1)]
+    [InlineData(3)]
+    public async Task Blade14Edition_MalformedReadKeepsCommonMapAndControls(int length)
     {
         ExperimentalBladeModel model = ModelFor(0x02C5);
         byte[] reply = new byte[length];
         reply[0] = 12;
-        var session = new Session { EditionReply = reply, FailEditionRead = fail };
+        var session = new Session { EditionReply = reply };
         var policy = new ExperimentalFeaturesPolicy(model);
         await using var port = Create(session, policy, model);
 
@@ -67,6 +66,26 @@ public sealed partial class ExperimentalBladeLightingTests
         Assert.Equal((byte)0x86, query.CommandId);
         Assert.True(policy.WritesAllowed);
         Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+    }
+
+    [Fact]
+    public async Task Blade14Edition_UnansweredReadSurfacesThePoisonedSessionForRetirement()
+    {
+        ExperimentalBladeModel model = ModelFor(0x02C5);
+        var session = new Session { FailEditionRead = true, PoisonOnFailedEditionRead = true };
+        var policy = new ExperimentalFeaturesPolicy(model);
+        await using var port = Create(session, policy, model);
+
+        // An unanswered GET retires the session in production. The port reports it
+        // so the factory reopens once; it never treats the session as healthy.
+        await Assert.ThrowsAnyAsync<IOException>(() =>
+            port.InitializeBlade14KeyboardEditionAsync(CancellationToken.None));
+
+        Assert.False(port.IsRecoverySessionHealthy);
+        Assert.Null(port.Capabilities.Blade14KeyboardEdition);
+        RazerCommandSpec query = Assert.Single(session.Commands);
+        Assert.Equal((byte)0x86, query.CommandId);
+        Assert.True(policy.WritesAllowed);
     }
 
     [Fact]
@@ -132,11 +151,13 @@ public sealed partial class ExperimentalBladeLightingTests
     public async Task Blade14UnconfirmedEdition_RejectsRegionalPulse()
     {
         ExperimentalBladeModel model = ModelFor(0x02C5);
-        var session = new Session { FailEditionRead = true, ExpectedFrameTransactionId = 0xFF };
+        // A malformed reply leaves the session healthy and the edition unconfirmed.
+        var session = new Session { EditionReply = [12], ExpectedFrameTransactionId = 0xFF };
         var clock = new AnimationClock();
         await using var port = new ExperimentalBladePort(session, new(), model, new(model),
             () => true, () => PowerSource.PluggedIn, lightingTimeProvider: clock);
         await port.InitializeBlade14KeyboardEditionAsync(CancellationToken.None);
+        Assert.Null(port.Capabilities.Blade14KeyboardEdition);
         await port.SetLightingAsync(LightingSettingsFactory.Reactive(new RgbColor(0, 200, 40), 50,
             ReactiveLightingDuration.Short), CancellationToken.None);
         await clock.WaitForTimerCountAsync(1);
@@ -144,6 +165,31 @@ public sealed partial class ExperimentalBladeLightingTests
         await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
             port.PulseReactiveKeyAsync(new ReactiveKeyPulse(30), CancellationToken.None));
         await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(50), CancellationToken.None);
+        await port.RelinquishRendererAsync(CancellationToken.None);
+    }
+
+    [Theory]
+    [InlineData(0, 86)]
+    [InlineData(2, 87)]
+    [InlineData(12, 86)]
+    public async Task Blade14ConfirmedEdition_RejectsTheUnlitSpaceRecordAsAPulse(byte edition, int spaceSlot)
+    {
+        ExperimentalBladeModel model = ModelFor(0x02C5);
+        var session = new Session { EditionReply = [edition, 0], ExpectedFrameTransactionId = 0xFF };
+        var clock = new AnimationClock();
+        await using var port = new ExperimentalBladePort(session, new(), model, new(model),
+            () => true, () => PowerSource.PluggedIn, lightingTimeProvider: clock);
+        await port.InitializeBlade14KeyboardEditionAsync(CancellationToken.None);
+        await port.SetLightingAsync(LightingSettingsFactory.Reactive(new RgbColor(0, 200, 40), 50,
+            ReactiveLightingDuration.Short), CancellationToken.None);
+        await clock.WaitForTimerCountAsync(1);
+        int before = session.Commands.Count;
+
+        // Renderer 0x682C skips Space's zero-channel record, so it has no RGB slot.
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            port.PulseReactiveKeyAsync(new ReactiveKeyPulse((byte)spaceSlot), CancellationToken.None));
+
+        Assert.Equal(before, session.Commands.Count);
         await port.RelinquishRendererAsync(CancellationToken.None);
     }
 

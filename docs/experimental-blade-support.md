@@ -181,8 +181,9 @@ Battery Saver and Battery Balanced on battery power.
   Reactive, Ripple and imported Keyboard .chroma sequences using its
   [firmware-derived key map](blade14-keymap.md). The keyboard's own edition
   selects the matching firmware map, including regional Enter, backslash, Alt,
-  Space, ISO and Japanese keys. If the edition cannot be read, keys whose
-  addresses differ between firmware maps do not trigger these effects.
+  ISO and Japanese keys. Space is not part of these effects. If the edition
+  cannot be read, keys whose addresses differ between firmware maps do not
+  trigger these effects.
   RZ09-0328 offers random or single-color Breathing. Additional Synapse
   effects observed for the Blade 18 are recorded in diagnostics. Blade 18 also
   offers experimental Fire, clockwise or counterclockwise Wheel, and Starlight.

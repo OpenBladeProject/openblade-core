@@ -530,6 +530,35 @@
   "commonBindingCount": 74,
   "commonBindingPolicy": "When edition is unavailable, use only usage/index pairs identical across all three maps; never choose a guessed regional map",
   "firmwareUsagePolicy": "Reserved/proprietary firmware usage bytes remain separate from standard keyboard-page usages and are not automatically Windows input bindings",
+  "unlitUsages": [
+    {
+      "usage": 44,
+      "name": "Space",
+      "records": [
+        {
+          "layoutId": "map-afe3",
+          "slot": 86,
+          "recordOffset": "0xb293",
+          "recordBytes": "2c00000000000000"
+        },
+        {
+          "layoutId": "map-b313",
+          "slot": 87,
+          "recordOffset": "0xb5cb",
+          "recordBytes": "2c00000000000000"
+        },
+        {
+          "layoutId": "map-b63b",
+          "slot": 86,
+          "recordOffset": "0xb8eb",
+          "recordBytes": "2c00000000000000"
+        }
+      ],
+      "rendererSkip": "0x685e CMP r4,#0x2C; BEQ skips the record inside active renderer 0x682c, which the 0x682c instruction proof pins",
+      "policy": "No lit slot, key pulse or import cell; excluded from the stored-sequence address union"
+    }
+  ],
+  "litUnionSlotCount": 85,
   "commandAddressProof": {
     "customRowHandler": "0x84be",
     "stagedRgbBuffer": "0x10001955",
@@ -551,7 +580,7 @@
     "responseByte0": "Same stored edition byte used by selector; RAM0x10001870",
     "responseByte1": "Adjacent stored byte RAM0x10001871; not assigned a new semantic meaning here",
     "proof": "0x7030 loads settings pointer;0x7034 loads+4;0x7036 stores local;0x71b0/71b2 returns payload0;0x71b4/71b6 returns+5 at payload1",
-    "runtimeUse": "Read once per exact RZ09-0530 device session before port publication; payload0 selects the map through selectorGroups; failure, timeout, malformed reply or unhealthy session keeps the common intersection; the 00/06 setter is never sent"
+    "runtimeUse": "Read once per admitted exact RZ09-0530 host and HID identity before the first port publication; payload0 selects the map through selectorGroups; failure, timeout, malformed reply or unhealthy session keeps the common intersection and is not re-probed until that identity changes; later sessions reuse the result; the 00/06 setter is never sent"
   },
   "usbInputDescriptors": [
     {

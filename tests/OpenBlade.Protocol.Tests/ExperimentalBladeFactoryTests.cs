@@ -529,6 +529,7 @@ public sealed partial class ExperimentalBladeFactoryTests
         private readonly Dictionary<OpenedCandidateHandle, int> handleIndexes = [];
         private int nextHandle = 500;
         internal ushort ProductId { get; init; } = 0x029F;
+        internal ushort VersionNumber { get; set; }
         internal int[] DisposeCounts { get; }
         internal int BoundCount { get; private set; }
         internal List<string> Events { get; } = [];
@@ -565,7 +566,7 @@ public sealed partial class ExperimentalBladeFactoryTests
             {
                 BeforeSecondInterfaceRecheck?.Invoke();
             }
-            return new(0x1532, ProductId, 1, 2, 91);
+            return new(0x1532, ProductId, 1, 2, 91, VersionNumber);
         }
 
         public OpenedHidHandle BindSelected(OpenedCandidateHandle handle)

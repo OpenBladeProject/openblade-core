@@ -21,6 +21,7 @@ IMAGE_SHA256 = "1ac3f05486d0bca5fbbb1a4a52b874943ad491a00afd298b8d6b857a49d98f11
 HEX_SHA256 = "4787f3c382d57c165dd2de099147b678070d0251e0febb5b6cc5a7902048bcd3"
 CARRIER_SHA256 = "aed7039be5cc4ec3f166a2728b0c1b90839bae72c8a04150056654f64f20581f"
 CARRIER_SIZE = 1439888
+SPACE_USAGE = 0x2C
 TABLES = (
     ("map-afe3", 0xAFE3, "1eb8905feeb1f78ee291814df44728143d891928ea2bfb75276499f756a97af1"),
     ("map-b313", 0xB313, "c6f9a2fdf904d40a88a486f3fb5baeb53a19399ec9496c3ffd6335e00b9c9f17"),
@@ -153,6 +154,8 @@ def verify_image(data):
     require(data[0xCD7D] == 1, "Standard frame-source default changed")
     variants = []
     bindings = []
+    unlit_records = []
+    lit_union = set()
     for layout_id, offset, expected_hash in TABLES:
         raw = data[offset:offset + 96 * 8]
         require(sha(raw) == expected_hash, f"{layout_id} descriptor hash mismatch")
@@ -170,6 +173,20 @@ def verify_image(data):
             "nonStandardUsageBytes": sorted(v for v in lookup if 0xA5 <= v <= 0xDF or v > 0xE7),
         })
         bindings.append(lookup)
+        space_slot = lookup.get(SPACE_USAGE)
+        require(space_slot is not None, f"{layout_id} has no Space record")
+        space_record = raw[space_slot * 8:space_slot * 8 + 8]
+        require(space_record == bytes([SPACE_USAGE]) + bytes(7),
+                f"{layout_id} Space record now names LED channels")
+        unlit_records.append({
+            "layoutId": layout_id, "slot": space_slot,
+            "recordOffset": hex(offset + space_slot * 8),
+            "recordBytes": space_record.hex(),
+        })
+        lit_union.update(slot for usage, slot in lookup.items() if usage != SPACE_USAGE)
+    # Thumb CMP r4,#0x2C (2C 2C) then BEQ (Dx with cond 0) inside renderer 0x682C.
+    require(data[0x685E:0x6860] == bytes([0x2C, 0x2C]) and data[0x6861] == 0xD0,
+            "Renderer Space skip changed")
     common = {usage: slot for usage, slot in bindings[0].items()
               if all(other.get(usage) == slot for other in bindings[1:])}
     return {
@@ -209,6 +226,12 @@ def verify_image(data):
         "commonBindingCount": len(common),
         "commonBindingPolicy": "When edition is unavailable, use only usage/index pairs identical across all three maps; never choose a guessed regional map",
         "firmwareUsagePolicy": "Reserved/proprietary firmware usage bytes remain separate from standard keyboard-page usages and are not automatically Windows input bindings",
+        "unlitUsages": [{
+            "usage": SPACE_USAGE, "name": "Space", "records": unlit_records,
+            "rendererSkip": "0x685e CMP r4,#0x2C; BEQ skips the record inside active renderer 0x682c, which the 0x682c instruction proof pins",
+            "policy": "No lit slot, key pulse or import cell; excluded from the stored-sequence address union",
+        }],
+        "litUnionSlotCount": len(lit_union),
         'commandAddressProof': {'customRowHandler': '0x84be',
          'stagedRgbBuffer': '0x10001955',
          'activeRgbBuffer': '0x10000d5a',
@@ -229,7 +252,7 @@ def verify_image(data):
          'responseByte1': 'Adjacent stored byte RAM0x10001871; not assigned a new semantic meaning here',
          'proof': '0x7030 loads settings pointer;0x7034 loads+4;0x7036 stores local;0x71b0/71b2 returns '
           'payload0;0x71b4/71b6 returns+5 at payload1',
-         'runtimeUse': 'Read once per exact RZ09-0530 device session before port publication; payload0 selects the map through selectorGroups; failure, timeout, malformed reply or unhealthy session keeps the common intersection; the 00/06 setter is never sent'},
+         'runtimeUse': 'Read once per admitted exact RZ09-0530 host and HID identity before the first port publication; payload0 selects the map through selectorGroups; failure, timeout, malformed reply or unhealthy session keeps the common intersection and is not re-probed until that identity changes; later sessions reuse the result; the 00/06 setter is never sent'},
         'usbInputDescriptors': [{'interface': 0,
           'reportOffset': '0xc2cf',
           'reportBytes': 61,

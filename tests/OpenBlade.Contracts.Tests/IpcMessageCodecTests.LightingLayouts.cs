@@ -137,10 +137,24 @@ public sealed partial class IpcMessageCodecTests
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
         {
             KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0530,
+            Blade14KeyboardEdition = 12,
         };
-        ServiceStatusSnapshot decoded = await RoundTripStatusAsync(CreateStatus() with { Capabilities = capabilities });
+        using MemoryStream encoded = new();
+        await IpcMessageCodec.WriteServerFrameAsync(encoded,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, CreateStatus() with { Capabilities = capabilities }),
+            CancellationToken.None);
+        JsonObject json = FramedJsonObject(encoded);
+        Assert.Equal(OpenBladeIpc.ProtocolVersion, json["version"]!.GetValue<int>());
+        JsonObject projected = Assert.IsType<JsonObject>(json["status"]!["capabilities"]);
+        // Remove the member itself, as a sender without the field would.
+        Assert.True(projected.Remove("blade14KeyboardEdition"));
 
-        Assert.Null(decoded.Capabilities!.Blade14KeyboardEdition);
+        using MemoryStream frame = FrameJson(json.ToJsonString());
+        ServiceStatusEvent decoded = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(frame, CancellationToken.None));
+
+        Assert.Equal(KeyboardLightingLayoutIds.Rz09_0530, decoded.Status.Capabilities!.KeyboardLightingLayoutId);
+        Assert.Null(decoded.Status.Capabilities.Blade14KeyboardEdition);
     }
 
     [Theory]

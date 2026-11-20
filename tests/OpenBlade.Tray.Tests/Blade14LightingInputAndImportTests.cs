@@ -62,7 +62,7 @@ public sealed class Blade14LightingInputAndImportTests
         canvas[3 * 22 + 4] = 0x00FF0000; // D: blue.
         canvas[5 * 22 + 15] = 0x0000FF00; // Left arrow: green.
         canvas[3 * 22 + 14] = 0x00010203; // Enter is region-dependent.
-        canvas[5 * 22 + 7] = 0x00010203; // Space is region-dependent.
+        canvas[5 * 22 + 7] = 0x00010203; // Space has no RGB slot.
         byte[] file = CreateChroma(canvas);
         KeyboardLightingPreset imported = RazerChromaFileAdapter.Deserialize(file,
             keyboardLayoutId: KeyboardLightingLayoutIds.Rz09_0530);
@@ -82,7 +82,9 @@ public sealed class Blade14LightingInputAndImportTests
     [InlineData(0x1C, 0, 0, 63)] // Enter.
     [InlineData(0x1C, 0, 12, 46)]
     [InlineData(0x1C, 0, 2, 46)]
-    [InlineData(0x39, 0, 2, 87)] // Space.
+    [InlineData(0x39, 0, 0, -1)] // Space has no RGB slot in any table.
+    [InlineData(0x39, 0, 12, -1)]
+    [InlineData(0x39, 0, 2, -1)]
     [InlineData(0x38, 2, 0, 89)] // Right Alt.
     [InlineData(0x38, 2, 12, -1)]
     [InlineData(0x7D, 0, 12, 30)] // International3.
@@ -116,7 +118,6 @@ public sealed class Blade14LightingInputAndImportTests
     [InlineData(0, 2 * 22 + 14, 47)] // HID 0x31 above Enter.
     [InlineData(0, 5 * 22 + 11, 89)] // Right Alt.
     [InlineData(2, 4 * 22 + 2, 66)] // Non-US backslash.
-    [InlineData(2, 5 * 22 + 7, 87)] // Space.
     public void ChromaProjectsRegionalNamedKeysThroughTheConfirmedEditionTable(byte edition, int cell, int slot)
     {
         var canvas = new uint[6 * 22];
@@ -138,6 +139,29 @@ public sealed class Blade14LightingInputAndImportTests
         KeyboardLightingPreset common = RazerChromaFileAdapter.Deserialize(file, null,
             KeyboardLightingLayoutIds.Rz09_0530, null, null);
         Assert.Contains("1 colored source cells", common.ImportWarning);
+    }
+
+    [Theory]
+    [InlineData((byte)0)]
+    [InlineData((byte)2)]
+    [InlineData((byte)12)]
+    [InlineData(null)]
+    public void ChromaReportsSpaceAsAnUnmappedCellInEveryEdition(byte? edition)
+    {
+        var canvas = new uint[6 * 22];
+        canvas[3 * 22 + 2] = 0x000000FF; // A: red, common to every table.
+        canvas[5 * 22 + 7] = 0x00030201; // Space: its record names no LED channel.
+        byte[] file = CreateChroma(canvas);
+
+        KeyboardLightingPreset imported = RazerChromaFileAdapter.Deserialize(file, null,
+            KeyboardLightingLayoutIds.Rz09_0530, null, edition);
+
+        var settings = Assert.IsType<SequenceLightingParameters>(imported.Lighting.Parameters);
+        IReadOnlyList<RgbColor> colors = Assert.Single(KeyboardLightingSequenceCodec.Decode(
+            settings.TimelineBase64, settings.LayoutId).Frames).Slots;
+        Assert.Equal(new RgbColor(255, 0, 0), colors[50]);
+        Assert.Equal(1, colors.Count(color => color != default));
+        Assert.Contains("1 colored source cells", imported.ImportWarning);
     }
 
     private static byte[] CreateChroma(uint[] colors)

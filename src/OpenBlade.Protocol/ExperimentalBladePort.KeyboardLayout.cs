@@ -6,13 +6,45 @@ internal sealed partial class ExperimentalBladePort
 {
     private byte? blade18KeyboardLayoutId;
     private byte? blade14KeyboardEdition;
+    private ExperimentalKeyboardLayoutMetadata? keyboardLayoutMetadata;
+    private ExperimentalKeyboardLayoutMetadata.Key keyboardLayoutMetadataKey;
+
+    // The factory binds its identity-scoped result so that later battery, lighting
+    // and recovery sessions reuse one read, including a completed failure. A
+    // directly constructed port has no binding and always reads.
+    internal void BindKeyboardLayoutMetadata(
+        ExperimentalKeyboardLayoutMetadata metadata, ExperimentalKeyboardLayoutMetadata.Key key)
+    {
+        keyboardLayoutMetadata = metadata;
+        keyboardLayoutMetadataKey = key;
+    }
+
+    private bool TryGetSettledKeyboardLayout(out byte? value)
+    {
+        value = null;
+        return keyboardLayoutMetadata?.TryGetSettled(keyboardLayoutMetadataKey, out value) == true;
+    }
+
+    private void SettleKeyboardLayout(byte? value) =>
+        keyboardLayoutMetadata?.Settle(keyboardLayoutMetadataKey, value);
+
+    // A completed failure is a result for this identity: firmware that rejected the
+    // GET, or poisoned the session, would do so again. Cancellation is not a result.
+    private void SettleFailedKeyboardLayout(CancellationToken cancellationToken)
+    {
+        if (!cancellationToken.IsCancellationRequested)
+        {
+            SettleKeyboardLayout(null);
+        }
+    }
 
     // Exact RZ09-0530 PI4110 1.04.00 image (decoded SHA256 1AC3F054...8F11):
     // evidence/source-reviewed-blades/2026-11-12-pi4110-keymap.json editionGetter.
     // Class 00 command 86 takes two data bytes and returns RAM 0x10001870 at
     // payload 0, the byte selector 0x5D24 uses for the descriptor table. Payload 1
     // stays opaque. This read is optional metadata: any failure keeps the common
-    // map. It never sends a setter, and it runs once before the port is published.
+    // map. It never sends a setter, and it runs at most once for each admitted
+    // device identity, before the first port for that identity is published.
     internal async Task InitializeBlade14KeyboardEditionAsync(CancellationToken cancellationToken)
     {
         if (model.ProductId != 0x02C5)
@@ -27,6 +59,11 @@ internal sealed partial class ExperimentalBladePort
             {
                 throw new CapabilityUnavailableException("The exact Blade 14 is no longer verified.");
             }
+            if (TryGetSettledKeyboardLayout(out byte? settled))
+            {
+                blade14KeyboardEdition = settled;
+                return;
+            }
             ReadOnlyMemory<byte> reply = await ExchangeAsync("KeyboardLayout", 0x00, 0x86,
                 [0, 0], false, cancellationToken,
                 payloadValidator: payload => payload.Length == 2).ConfigureAwait(false);
@@ -34,11 +71,17 @@ internal sealed partial class ExperimentalBladePort
             // Firmware's selector switch classifies every byte, including its default family.
             byte edition = reply.Span[0];
             blade14KeyboardEdition = edition;
+            SettleKeyboardLayout(edition);
             RecordQuery("KeyboardLayout", "Confirmed",
                 $"Edition={edition};Map={Blade14KeyboardLightingLayout.GetMapId(edition)}");
         }
-        catch (IOException) when (session.Disposition == RazerCommandSessionDisposition.Healthy)
+        catch (IOException)
         {
+            SettleFailedKeyboardLayout(cancellationToken);
+            if (session.Disposition != RazerCommandSessionDisposition.Healthy)
+            {
+                throw;
+            }
             cancellationToken.ThrowIfCancellationRequested();
             // Keep unrelated controls and the common map; never guess a regional table.
             RecordQuery("KeyboardLayout", "Unavailable", failure: "RegionalLayoutReadUnavailable");
@@ -68,6 +111,11 @@ internal sealed partial class ExperimentalBladePort
             {
                 throw new CapabilityUnavailableException("The exact Blade 18 is no longer verified.");
             }
+            if (TryGetSettledKeyboardLayout(out byte? settled))
+            {
+                blade18KeyboardLayoutId = settled;
+                return;
+            }
             ReadOnlyMemory<byte> reply = await ExchangeAsync("KeyboardLayout", 0x00, 0x86,
                 [0, 0, 0], false, cancellationToken,
                 payloadValidator: payload => payload.Length == 3).ConfigureAwait(false);
@@ -76,15 +124,23 @@ internal sealed partial class ExperimentalBladePort
             if (Blade18KeyboardLightingLayout.IsKnownLayout(layout))
             {
                 blade18KeyboardLayoutId = layout;
+                SettleKeyboardLayout(layout);
                 RecordQuery("KeyboardLayout", "Confirmed", $"Layout={layout}");
             }
             else
             {
+                // The same firmware reports the same unknown layout on every read.
+                SettleKeyboardLayout(null);
                 RecordQuery("KeyboardLayout", "UnsupportedState", failure: "UnknownRegionalLayout");
             }
         }
-        catch (IOException) when (session.Disposition == RazerCommandSessionDisposition.Healthy)
+        catch (IOException)
         {
+            SettleFailedKeyboardLayout(cancellationToken);
+            if (session.Disposition != RazerCommandSessionDisposition.Healthy)
+            {
+                throw;
+            }
             cancellationToken.ThrowIfCancellationRequested();
             // Do not disable unrelated controls or silently choose the US layout.
             RecordQuery("KeyboardLayout", "Unavailable", failure: "RegionalLayoutReadUnavailable");
