@@ -75,6 +75,10 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         bool agentColor = features.Contains("agent-display-color-write-v1", StringComparer.Ordinal);
         bool agentProfile = features.Contains("agent-display-profile-apply-v1", StringComparer.Ordinal);
         bool agentGpu = features.Contains("agent-gpu-v1", StringComparer.Ordinal);
+        // No packaging stage has admitted a Service that serves updateProfiles. Refuse the
+        // feature and the capability by name, whatever else the record claims.
+        if (features.Contains("service-profiles-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-profiles-v1", StringComparer.Ordinal))
+        { throw new InvalidDataException("Profile serving is not admitted for packaging."); }
         if (agentWrite && !agentDisplay) { throw new InvalidDataException("Brightness write requires the display query contract."); }
         if (agentHdr && !agentDisplay) { throw new InvalidDataException("HDR write requires the display query contract."); }
         if (agentRefresh && !agentDisplay) { throw new InvalidDataException("Refresh-rate write requires the display query contract."); }

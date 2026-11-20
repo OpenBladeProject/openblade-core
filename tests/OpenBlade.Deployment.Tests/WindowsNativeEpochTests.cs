@@ -479,15 +479,26 @@ public sealed class WindowsNativeEpochTests
         const string profiles = temporary + ",service-profiles-v1";
         var refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
             [.. Image("service", schema: 2, features: features, capabilities: profiles)], "service", new string('a', 40)));
-        Assert.Equal("Native capabilities differ from the authenticated role composition.", refused.Message);
+        Assert.Equal("Profile serving is not admitted for packaging.", refused.Message);
+        // Refused by name: an image that keeps the feature but claims only the
+        // temporary-charge capabilities, in either role, is no better.
+        refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, features: features, capabilities: temporary)], "service", new string('a', 40)));
+        Assert.Equal("Profile serving is not admitted for packaging.", refused.Message);
+        // The Agent of the same build carries the Service features beside its own entry.
+        string paired = features.Replace("lifecycle-evidence-compile-check,", "lifecycle-evidence-compile-check,native-agent-entry-compile-check,", StringComparison.Ordinal);
+        refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("agent", schema: 2, features: paired, capabilities: "none")], "agent", new string('a', 40)));
+        Assert.Equal("Profile serving is not admitted for packaging.", refused.Message);
         // The refusal is the profile capability: without it this is the admitted
         // temporary-charge composition, which cannot claim it either.
         string extended = features.Replace("service-profiles-v1,", "", StringComparison.Ordinal);
         var admitted = NativeArtifact.Inspect(
             [.. Image("service", schema: 2, features: extended, capabilities: temporary)], "service", new string('a', 40));
         Assert.Equal("service-temporary-charge-v1", admitted.StartupPolicy);
-        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+        refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
             [.. Image("service", schema: 2, features: extended, capabilities: profiles)], "service", new string('a', 40)));
+        Assert.Equal("Profile serving is not admitted for packaging.", refused.Message);
     }
 
     [Fact]

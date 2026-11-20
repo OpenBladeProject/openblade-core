@@ -701,6 +701,13 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     let agent_color = has("agent-display-color-write-v1");
     let agent_profile = has("agent-display-profile-apply-v1");
     let agent_gpu = has("agent-gpu-v1");
+    // No packaging stage has admitted a Service that serves updateProfiles.
+    // Refuse the feature and the capability by name, whatever else the
+    // record claims, rather than rely on the expected string below.
+    const PROFILES: &str = "service-profiles-v1";
+    if has(PROFILES) || value.split(',').any(|capability| capability == PROFILES) {
+        return Err(deny());
+    }
     if (agent_write || agent_hdr || agent_refresh || agent_color) && !agent_display {
         return Err(deny());
     }

@@ -693,6 +693,17 @@ fn a_profile_serving_service_is_not_admitted_as_any_composition() {
     // reader must refuse the image rather than take it for the
     // temporary-charge composition it extends.
     let features = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-profiles-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
+    // Refused by name: a record that keeps the feature but claims only the
+    // temporary-charge capabilities, in either role or schema, is no better.
+    for role in ["service", "agent"] {
+        for claimed in [
+            "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1",
+            "none",
+        ] {
+            assert!(capabilities(2, role, features, claimed).is_err());
+            assert!(capabilities(1, role, features, claimed).is_err());
+        }
+    }
     let temporary = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1";
     let profiles = format!("{temporary},service-profiles-v1");
     assert!(capabilities(2, "service", features, &profiles).is_err());
