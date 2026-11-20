@@ -401,20 +401,41 @@ A request is handled in managed's order:
    intent is validated against the device. A refusal is managed's `Failed`
    reply, `The requested intent was rejected: <message>`, and nothing is
    written.
-3. The aggregate is replaced in one recorded transaction: an exact backup of
+3. The intended documents are read with the reader this service uses on
+   every later request and when it starts. A set that reader would refuse is
+   answered `Failed` and nothing is written, so the service never stores what
+   it cannot read back.
+4. The aggregate is replaced in one recorded transaction: an exact backup of
    each document, then `battery-configuration.commit.json.recovery-required`,
-   then profile, preferences and marker, then a readback. The preferences
-   bytes are carried over unless reading them migrated something. The record
-   and backups are removed only after the readback.
-4. The reply is `Stored` with
+   then profile, preferences and marker, then managed's verification: the
+   store holds exactly the intended bytes and they read back as the admitted
+   set. The preferences bytes are carried over unless reading them migrated
+   something. The record and backups are removed only after the verification.
+5. The reply is `Stored` with
    `Profiles stored without automatic hardware application.`, and the saved
-   set is published to the owner at the next status revision.
+   set is published to the owner at the next status revision. A save that
+   finished after the frame deadline is answered all the same.
 
-If a replacement fails, the exact prior documents are restored and the reply
-is `Failed`. If the restore or the record removal cannot be confirmed, the
-record and backups stay, the store is quarantined, and later requests are
-`Blocked`. As in managed, nothing recovers a recorded transaction after a
-crash; the record preserves the aggregate until it is reviewed.
+If a replacement or the verification fails, the exact prior documents are
+restored and the reply is `Failed`. If the restore or the record removal
+cannot be confirmed, the record and backups stay, the store is quarantined,
+and later requests are `Blocked`. As in managed, nothing recovers a recorded
+transaction after a crash; the record preserves the aggregate until it is
+reviewed.
+
+A staging file is different from the record: it is never evidence. The
+store's replace writes `<name>.pending` and renames it over the document, and
+leaves that file where the rename fails. The transaction takes the stage of a
+failed write back itself. Before it starts, and only when no record exists, it
+also removes any stage left under a name it is about to write: the three
+documents, the record and its backups. A crash between creating the record's
+stage and renaming it therefore blocks nothing, as in managed, whose stages
+carry the transaction identifier and are only ever deleted. If a leftover
+stage cannot be removed, the reply is `Failed` and says so, nothing is
+written, and the next request tries again. The store's replace itself is
+unchanged: a failed `manual-overrides.json.pending` and a pending journal stay
+on disk as the evidence the handback to managed preserves, and the installed
+store refuses to discard either.
 
 Managed is the reference, and three shared vector files under
 `tools/openblade-windows-host/tests/data` pin it:
@@ -436,18 +457,38 @@ Differences from managed:
   stored set is always answered as stored.
 - Member names are matched exactly. Managed's IPC reader ignores letter case;
   the Tray writes camelCase.
-- Duplicate application executable paths are compared by Unicode upper case
-  when the frame is admitted and by the operating system's ordinal comparison
-  in the validator. A pair only the second finds gets a `Failed` reply where
-  managed closes the connection.
+- Duplicate application executable paths and THX rule names are found by
+  `text::same_ordinal_ignoring_case`, which the vectors pin to managed's
+  `OrdinalIgnoreCase`: one character against one upper-case character, never
+  an expansion (a sharp s is not `SS`) and never an ASCII letter for a
+  character outside ASCII (a dotless i is not `I`). It rests on the Rust
+  standard library's case table, so a letter whose case pair only one of the
+  two tables knows can still differ.
+- The saved aggregate's reader and the match of the foreground application
+  against a saved profile still use the Windows ordinal comparison, as the
+  earlier lanes do. It keeps apart some pairs managed joins (final sigma, the
+  micro sign, title-case digraphs, Cherokee, Georgian and letters outside the
+  basic plane), so an application profile saved under one of those spellings
+  is not matched by the other. A set is refused before it is written if that
+  reader would not accept it.
+- Two `Failed` replies have no managed counterpart: the set this service's
+  reader would refuse, and the leftover staging file that cannot be removed.
+- A request that waits longer than the frame timeout behind another mutation
+  is closed without storing anything. Managed waits.
 - An application override that selects fan Stop without fan settings closes
   the connection. Managed throws a `NativeComponentException` there and sends
   no reply either.
 - A keyboard sequence is checked against the six by seventeen grid only.
   Managed also knows three layouts with their own key maps; a set naming one
   is refused as malformed lighting rather than as a different layout.
-- An executable path with an 8.3 short name that exists on disk is accepted;
-  managed expands it and refuses the path as not normalised.
+- Executable paths follow `Path.GetFullPath` as the vectors record it: a
+  `\\?\` or `\??\` path is stored as written, a `\\.\` device path keeps
+  its prefix and is otherwise normalised like any other. Two cases depend on
+  the machine and are not modelled. A path with an 8.3 short name that exists
+  on disk is accepted; managed expands it and refuses the path as not
+  normalised. A reserved device name such as `NUL.exe` is accepted, as on the
+  Windows 11 build that recorded the vectors; an older Windows maps it to
+  `\\.\NUL` and managed refuses it there.
 - Battery Saver fan stop cannot be newly enabled, because this composition has
   no Fan Stop. Managed allows it once Fan Stop is admitted at run time.
 - A request from another session, or while a thermal submission needs
@@ -457,7 +498,8 @@ Differences from managed:
 - Each document is staged as `<name>.pending` by the store's replace
   primitive instead of a `.stage` file, the transaction identifier is the
   digest of the change instead of a random GUID, and the record lists file
-  names instead of full paths. Only the record's presence is ever read.
+  names instead of full paths. Only the record's presence is ever read. The
+  fixed stage name is why a leftover has to be removed before the next save.
 - A failed transaction is reported in native words. Managed's text comes from
   the .NET I/O exception.
 - The published status carries no `Profiles stored...` message.
@@ -466,9 +508,15 @@ Not done here: the read path still refuses a committed schema 24 or older
 aggregate and the schema-less legacy profile before any request is served, so
 the migration this stage can perform is reachable for schemas 25 and 26 and
 for an absent aggregate, which is materialised from the safe defaults on the
-first save. The artifact capability string does not name
-`service-profiles-v1` yet; a profile-serving image must not be bound until
-the package readers know it.
+first save.
+
+Packaging refuses this composition. `build.rs` gives a build with
+`service-profiles-v1` the temporary-charge capabilities followed by
+`service-profiles-v1`, and neither package reader
+(`native_package.rs`, `WindowsNativePackage.RequireCapabilities`) admits that
+string, so a profile-serving image cannot be packaged, bound or installed as
+the temporary-charge composition it extends. Tests on both sides pin the
+refusal. Admitting it belongs to the packaging stage.
 
 ## Submission, ambiguity and finite transport lifetime
 
@@ -540,7 +588,11 @@ Storage, ReadSource, typed Reader and native worker lifecycle with explicitly
 injected memory-only metadata, caller, custody, files and ports. Separate prelisted
 own-user private-file tests use the actual ProtectedFiles and durable Store,
 including first reservation, atomic journal replacement, exclusive sharing,
-restart and cross-SID refusal. Constructors take those inputs before any default
+restart and cross-SID refusal. The profile transaction also runs on real files:
+`profile_storage_real_tests.rs` drives the actual ProtectedFiles, with only the
+security verifier injected, in a private directory under the temporary directory,
+through a refused rename, leftover and held staging files, a recorded transaction
+and exact-byte deletion. Constructors take those inputs before any default
 root resolution. Real controller/token/session/SCM/HID suppliers are compiled,
 not executed. Managed tests parse emitted native replies with the actual v85 codec
 and inspect explicit artifact capabilities and conservative recovery refusal.
