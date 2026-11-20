@@ -17,6 +17,8 @@ pause curve updates. The shared CPU temperature source currently rejects the
 firmware's constant readings, so CPU and combined CPU/GPU curves remain unavailable
 until a supported changing CPU reading is provided. GPU-only curves can use an
 active GPU's fresh temperature. Stop competing pad controllers before applying settings.
+Any running Razer service blocks pad writes, except Razer Experience Service, a
+model runner that Razer's driver packages install; it has no HID device access.
 
 Lighting supports Off, Static, Breathing, Spectrum and Wave, with brightness and
 colors. Keyboard sync projects OpenBlade's host-rendered keyboard frames onto
@@ -65,6 +67,14 @@ The device descriptor at image offset `0x7928` identifies `1532:0F43`, revision
 Windows adds the zero report-ID prefix for 91 bytes. Report ID 5 belongs to the
 following input descriptors. The carrier and extracted firmware remain outside
 Git. OpenBlade does not run or flash this updater.
+
+Because interface 0 declares exactly one feature report, any other `1532:0F43`
+interface-0 collection without a feature report is input-only and cannot be the
+control channel. An installed Razer driver stack re-exposes such collections
+under its virtual consumer device. Discovery and the control opener skip them
+without opening them for I/O, whatever usage or revision the driver assigns. A
+non-exact interface-0 collection with a feature report, or one that cannot be
+read, still blocks discovery and control.
 
 The updater also contains a generic keyboard `update_config.ini`; its PID02B0
 is not the attached device's identity. Resource/firmware descriptors establish
