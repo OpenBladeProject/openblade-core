@@ -5015,6 +5015,176 @@ async fn fan_correction_fresh_epoch_auto_recovery_and_true_noop_close_original_o
         }
     }
 }
+// Firmware or another controller moved OpenBlade-owned manual fans to Automatic
+// under a selector the owner did not record. Automatic fans are firmware's own
+// handback state, so both an explicit Automatic request and Stop settle the owner
+// with 51 and no setter, as managed clears ownership on confirmed Automatic.
+#[cfg(feature = "service-fan-mutation-v2")]
+async fn foreign_selector_rig(owner: u8, observed: [u8; 2], fans: [u8; 2], actual: u8) -> Rig {
+    // The deferred preset is the observed one, so a return has nothing to apply.
+    let r = handback_rig(owner, actual, if owner == 0 { 2 } else { 1 }).await;
+    let mut s = r.port.state.lock().unwrap();
+    s.selectors = observed;
+    s.fans = fans;
+    drop(s);
+    r
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+fn owner_row(r: &Rig, progress: u8) -> Value {
+    let mut row = request_rows(r, 230).last().unwrap().clone();
+    assert_eq!(row["progress"], 30);
+    row["progress"] = json!(progress);
+    row
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_noop_closes_an_owner_recorded_under_another_selector_without_a_setter() {
+    for (owner, observed, name, recorded) in [
+        (0, 2, "Performance", "Balanced"),
+        (2, 0, "Balanced", "Performance"),
+    ] {
+        for actual in [15, 10] {
+            for explicit in [true, false] {
+                let r = foreign_selector_rig(owner, [observed; 2], [0; 2], actual).await;
+                let closed = owner_row(&r, 51);
+                let request = if explicit {
+                    fan_request(232, Some(0), 3700)
+                } else {
+                    fan_request(232, None, 0)
+                };
+                let out = r.request(request).await;
+                assert_eq!(out["result"]["status"], 1, "{out}");
+                assert_eq!(
+                    out["result"]["message"],
+                    format!(
+                        "Fans and {name} performance already matched the requested state; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under {recorded} was released without a fan setter: firmware already reports Automatic fans under {name}."
+                    )
+                );
+                assert_eq!(r.port.state.lock().unwrap().writes, 4);
+                assert_eq!(*fan_rows(&r).last().unwrap(), closed);
+                assert!(request_rows(&r, 232).is_empty());
+                assert!(!r.storage.outstanding_fan());
+                assert!(!r.storage.pending());
+                // Nothing remains for Stop, and no selector is written back.
+                let journal = r.files.read("thermal-mutation.journal").unwrap();
+                r.origin.stop();
+                r.stop().await;
+                assert_eq!(r.files.read("thermal-mutation.journal").unwrap(), journal);
+                let state = r.port.state.lock().unwrap();
+                assert_eq!(
+                    (state.writes, state.selectors, state.fans),
+                    (4, [observed; 2], [0; 2])
+                );
+            }
+        }
+    }
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_stop_settles_an_owner_already_automatic_under_any_selector_without_a_setter() {
+    for (owner, observed) in [(0, 2), (2, 0), (0, 0), (2, 2)] {
+        for actual in [15, 10] {
+            let r = foreign_selector_rig(owner, [observed; 2], [0; 2], actual).await;
+            let closed = owner_row(&r, 51);
+            r.origin.stop();
+            r.stop().await;
+            assert_eq!(*fan_rows(&r).last().unwrap(), closed);
+            assert!(!r.storage.outstanding_fan());
+            assert!(!r.storage.pending());
+            let state = r.port.state.lock().unwrap();
+            assert_eq!(
+                (state.writes, state.selectors, state.fans),
+                (4, [observed; 2], [0; 2])
+            );
+        }
+    }
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_foreign_selector_close_refuses_an_ambiguous_or_unclassified_readback() {
+    // Disagreeing channels and an unclassified Custom selector prove no
+    // Automatic handback: no row, no setter, the owner stays outstanding.
+    for observed in [[2, 0], [4, 4]] {
+        let r = foreign_selector_rig(0, observed, [0; 2], 15).await;
+        let (owned, closed) = (owner_row(&r, 30), owner_row(&r, 51));
+        let out = r.request(fan_request(232, Some(0), 3700)).await;
+        assert_eq!(out["result"]["status"], 2, "{out}");
+        assert_eq!(r.port.state.lock().unwrap().writes, 4);
+        assert_eq!(*fan_rows(&r).last().unwrap(), owned);
+        assert!(r.storage.outstanding_fan());
+        // A later unambiguous Automatic readback settles it without a setter.
+        r.port.state.lock().unwrap().selectors = [2; 2];
+        let out = r.request(fan_request(233, Some(0), 3700)).await;
+        assert_eq!(out["result"]["status"], 1, "{out}");
+        assert_eq!(*fan_rows(&r).last().unwrap(), closed);
+        assert_eq!(r.port.state.lock().unwrap().writes, 4);
+        r.origin.stop();
+        r.stop().await;
+
+        // Stop keeps its one-shot fail-closed refusal on the same readback.
+        let r = foreign_selector_rig(0, observed, [0; 2], 15).await;
+        let owned = owner_row(&r, 30);
+        r.origin.stop();
+        assert!(r.source.lock().await.drain().await.is_err());
+        assert_eq!(r.port.state.lock().unwrap().writes, 4);
+        assert_eq!(*fan_rows(&r).last().unwrap(), owned);
+        assert!(r.storage.outstanding_fan());
+    }
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_manual_readback_under_another_selector_keeps_its_existing_outcomes() {
+    // Regression guard, unchanged by the no-setter close: manual fans are not
+    // firmware's handback state. Stop refuses a selector it did not record.
+    let r = foreign_selector_rig(0, [2; 2], [1; 2], 15).await;
+    let owned = owner_row(&r, 30);
+    r.origin.stop();
+    assert!(r.source.lock().await.drain().await.is_err());
+    assert_eq!(r.port.state.lock().unwrap().writes, 4);
+    assert_eq!(*fan_rows(&r).last().unwrap(), owned);
+    assert!(r.storage.outstanding_fan());
+    // An explicit return still leaves through the saved preset's own pair.
+    let r = foreign_selector_rig(0, [2; 2], [1; 2], 15).await;
+    let sent = r.port.state.lock().unwrap().sent.len();
+    let out = r.request(fan_request(232, Some(0), 3700)).await;
+    assert_eq!(out["result"]["status"], 1, "{out}");
+    assert_eq!(mode_setters(&r, sent), [[1, 1, 2, 0], [1, 2, 2, 0]]);
+    let progress: Vec<_> = request_rows(&r, 232)
+        .iter()
+        .map(|row| row["progress"].clone())
+        .collect();
+    assert_eq!(progress, [0, 10, 11, 12, 13, 50]);
+    assert!(!r.storage.outstanding_fan());
+    r.origin.stop();
+    r.stop().await;
+    assert_eq!(r.port.state.lock().unwrap().writes, 6);
+}
+/// The journals both no-setter closes produce are the shared vector the domain
+/// reader and managed `WindowsNativeThermalHistory` consume. The v3 contract
+/// is the battery-policy producer's, so this runs in those lanes only.
+#[cfg(feature = "service-battery-policy-v1")]
+#[tokio::test]
+async fn fan_foreign_selector_close_journals_match_the_shared_vector() {
+    let v: Value = serde_json::from_str(include_str!(
+        "../../../../../tests/data/fan-history-v3-foreign-selector-automatic.json"
+    ))
+    .unwrap();
+    let journal = |r: &Rig| {
+        String::from_utf8(r.files.read("thermal-mutation.journal").unwrap().unwrap()).unwrap()
+    };
+    for stop in [false, true] {
+        let r = foreign_selector_rig(0, [2; 2], [0; 2], 15).await;
+        assert_eq!(journal(&r), v["owned"].as_str().unwrap());
+        if !stop {
+            let out = r.request(fan_request(232, Some(0), 3700)).await;
+            assert_eq!(out["result"]["status"], 1, "{out}");
+        }
+        r.origin.stop();
+        r.stop().await;
+        assert_eq!(journal(&r), v["closed"].as_str().unwrap());
+        assert_eq!(r.port.state.lock().unwrap().writes, 4);
+    }
+}
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn fan_correction_cancelled_positive_worker_then_refusal_releases_latest_exact_owner() {

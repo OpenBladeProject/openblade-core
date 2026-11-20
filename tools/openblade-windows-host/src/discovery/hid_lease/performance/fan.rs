@@ -48,6 +48,18 @@ impl<P: Port> Reader<P, ReadAdmission> {
         let source = power.source()?;
         let (plan, record, ids) = if cleanup {
             let r = permit.fan_record()?;
+            // Automatic fans in this fresh 0D/82 readback are firmware's own
+            // handback state under either selector; the selector is performance
+            // state, not the owned manual-fan obligation. Managed writes nothing
+            // then (`OwnedManualFanHandbackBlockReason`: "already uses
+            // firmware-managed Automatic mode") and `ObserveTopology` clears
+            // ownership, so settle with 51 and no setter. An unclassified or
+            // disagreeing readback has no plan and stays fenced.
+            let auto = Plan::select(baseline, FanIntent::checked(0, 3700)?, source)?;
+            if auto.unchanged && auto.confirms(baseline) && source == r.source {
+                permit.record_fan(51).ok()?;
+                return Some(baseline);
+            }
             let owned = Plan::select(baseline, r.intent, source)?;
             // Fresh generic-manual topology retains only this already established owner.
             if !owned.confirms(baseline) || owned.selector != r.selector || source != r.source {

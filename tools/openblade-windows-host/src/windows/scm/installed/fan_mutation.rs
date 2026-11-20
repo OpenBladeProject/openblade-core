@@ -28,6 +28,8 @@ pub(super) struct FanPermit {
     performance: Mutex<Option<Preset>>,
     // A saved preset was left unapplied because its GPU clock effect is unsupported.
     performance_gpu: AtomicBool,
+    // The selector an earlier owner recorded, when this request's no-op closed it.
+    released: Mutex<Option<u8>>,
     record: Mutex<Option<FanRecord>>,
     accepted: AtomicBool,
     owned: AtomicBool,
@@ -92,7 +94,7 @@ impl Permit for FanPermit {
         self.registered.store(true, Ordering::Release);
     }
     fn result_admitted(&self, expected: ReadAdmission) -> bool {
-        if self.cleanup() && self.storage.progress() == Some(50) {
+        if self.cleanup() && matches!(self.storage.progress(), Some(50 | 51)) {
             return verify_retained_failure(&self.fatal).is_ok()
                 && self.fresh.verify_health().is_ok()
                 && self.fresh.authorize_owned_stop() == Some(expected)
@@ -210,6 +212,11 @@ impl Permit for FanPermit {
                 .ok_or(io::ErrorKind::PermissionDenied)?;
             let auto = Plan::select(baseline, FanIntent::checked(0, 3700).unwrap(), source)
                 .ok_or(io::ErrorKind::PermissionDenied)?;
+            // The owner's selector is not compared: Automatic fans are firmware's
+            // own handback state under either selector, and managed's
+            // `ExactFanControlOwnership.ObserveTopology` clears ownership on any
+            // confirmed Automatic. Writing the old selector back first would be
+            // an intermediate write with no firmware reason.
             if !owner.owned.load(Ordering::Acquire)
                 || owner.release.load(Ordering::Acquire)
                 || !matches!(
@@ -217,7 +224,6 @@ impl Permit for FanPermit {
                     CONTRACT | openblade_domain::fan_history::PREVIOUS_CONTRACT
                 )
                 || record.source != source
-                || record.selector != auto.selector
                 || !auto.unchanged
                 || !auto.confirms(baseline)
                 || self.storage.pending()
@@ -228,6 +234,7 @@ impl Permit for FanPermit {
             // 51 is v3's independently observed Automatic proof: no setter ACKs.
             owner.write(51)?;
             owner.owned.store(false, Ordering::Release);
+            *self.released.lock().map_err(|_| io::ErrorKind::Other)? = Some(record.selector);
         }
         prior.take();
         Ok(())
@@ -269,7 +276,8 @@ impl Permit for FanPermit {
             self.prior.lock().map_err(|_| io::ErrorKind::Other)?.take();
             self.owned.store(true, Ordering::Release);
         }
-        if progress == 50 {
+        // 51 is owned Stop cleanup's no-setter Automatic proof (see `apply_fan`).
+        if matches!(progress, 50 | 51) {
             self.prior.lock().map_err(|_| io::ErrorKind::Other)?.take();
             self.owned.store(false, Ordering::Release);
         }
@@ -461,6 +469,7 @@ impl Runtime {
             selected: Mutex::new(None),
             performance: Mutex::new(None),
             performance_gpu: AtomicBool::new(false),
+            released: Mutex::new(None),
             record: Mutex::new(None),
             accepted: AtomicBool::new(false),
             owned: AtomicBool::new(false),
@@ -566,6 +575,26 @@ impl Runtime {
             ),
             _ => message.into(),
         };
+        // A no-op that closed an owner recorded under another selector claims no
+        // return to that selector: name the one firmware reports instead.
+        let released = *permit.released.lock().map_err(|_| io::ErrorKind::Other)?;
+        if status == 1
+            && let (Some(owned), Some(observed)) =
+                (released, result.as_ref().ok().copied().flatten())
+            && let [Some(owned), Some(observed)] = [
+                [Preset::Balanced, Preset::Performance]
+                    .into_iter()
+                    .find(|p| p.selector() == owned),
+                [Preset::Balanced, Preset::Performance]
+                    .into_iter()
+                    .find(|p| openblade_domain::thermal_mutation::confirms(observed, *p)),
+            ]
+            && owned != observed
+        {
+            message.push_str(&format!(
+                " OpenBlade's earlier fan change under {owned:?} was released without a fan setter: firmware already reports Automatic fans under {observed:?}."
+            ));
+        }
         if status == 1 && permit.performance_gpu.load(Ordering::Acquire) {
             message.push_str(
                 " The saved performance intent was not applied: GPU clock handling is incomplete.",
@@ -701,7 +730,7 @@ impl Runtime {
                 Instant::now() + std::time::Duration::from_secs(3),
             )
             .await;
-        if permit.storage.progress() != Some(50) || result?.is_none() {
+        if !matches!(permit.storage.progress(), Some(50 | 51)) || result?.is_none() {
             return Err(io::Error::other(
                 "Automatic fan handback was not independently confirmed; evidence is retained.",
             ));
