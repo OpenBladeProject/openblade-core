@@ -20,6 +20,7 @@
     <None Include="../../tools/openblade-windows-host/tests/data/fan-history-v2.json" Link="fan-history-v2.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/fan-history-v3.json" Link="fan-history-v3.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/fan-history-v3-limited-source.json" Link="fan-history-v3-limited-source.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/fan-history-v3-foreign-selector-automatic.json" Link="fan-history-v3-foreign-selector-automatic.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../tools/openblade-windows-host/tests/data/fan-caller-scope-chains.json" Link="fan-caller-scope-chains.json" CopyToOutputDirectory="PreserveNewest" />
     <InternalsVisibleTo Include="OpenBlade.Setup.Tests" />
   </ItemGroup>

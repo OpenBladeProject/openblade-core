@@ -240,6 +240,33 @@ mod tests {
             assert!(bad.validate().is_err(), "{}", case["name"]);
         }
     }
+    /// The host producer and the managed reader consume the same vector: an
+    /// owner recorded under Balanced closed by 51 while firmware reports
+    /// Automatic fans under Performance. The row carries no observed selector.
+    #[test]
+    fn foreign_selector_automatic_close_settles_the_owner_in_both_readers() {
+        let v: Value = serde_json::from_str(include_str!(
+            "../../../../tools/openblade-windows-host/tests/data/fan-history-v3-foreign-selector-automatic.json"
+        ))
+        .unwrap();
+        let owned = v["owned"].as_str().unwrap().as_bytes();
+        let closed = v["closed"].as_str().unwrap().as_bytes();
+        assert!(crate::thermal_history::rows(owned, |_, _| Ok(())).is_ok());
+        assert!(!crate::thermal_history::handback_complete(owned).unwrap());
+        assert!(crate::thermal_history::handback_complete(closed).unwrap());
+        let mut last = None;
+        crate::thermal_history::rows(closed, |e, _| {
+            last = Some(e.clone());
+            Ok(())
+        })
+        .unwrap();
+        let last = last.unwrap();
+        let r = last.fan.unwrap();
+        assert_eq!(
+            (last.progress, r.selector, r.contract.as_str()),
+            (51, 0, CONTRACT)
+        );
+    }
     #[test]
     fn complete_cross_scope_histories_are_rejected_and_v3_auto_proof_is_exact() {
         let legacy: Value = serde_json::from_str(include_str!(

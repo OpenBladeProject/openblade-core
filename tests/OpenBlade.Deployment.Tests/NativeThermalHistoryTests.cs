@@ -364,6 +364,33 @@ public sealed class NativeThermalHistoryTests : IDisposable
         using var retired = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
     }
 
+    // The Rust host producer writes these exact bytes and the Rust domain reader
+    // consumes the same vector: an owner recorded under Balanced, closed by 51
+    // while firmware reports Automatic fans under Performance.
+    [Fact]
+    public void ForeignSelectorAutomaticCloseSettlesReadClassifyAndRetiredOwner()
+    {
+        using var vector = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fan-history-v3-foreign-selector-automatic.json")));
+        var v = vector.RootElement;
+        string nonce = v.GetProperty("owner").GetString()!;
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        var record = new NativeEpochRecord(NativeEpochPhase.Retired, new string('2', 32), new string('0', 64), 1, new string('1', 32), new string('a', 64), new string('b', 32), new string('3', 64) + "-service", new string('c', 64) + "-agent", new string('0', 64), new string('d', 64));
+        byte[] active = Owner(files, record, nonce);
+        var original = new WindowsNativeTrustLifecycle.OwnerReference(record.Installation, record.Epoch, record.ServiceId, "17:1", nonce, NativeCanonical.Digest(active));
+        // The stuck journal: the owner row at 30 remains a firmware handback obligation.
+        Thermal(files, Bytes(v.GetProperty("owned").GetString()!));
+        var owned = WindowsNativeThermalHistory.Read(files, [original], original).Handback!;
+        Assert.Equal(("fan", 30, "Fixed"), (owned.OwnedFan!.Family, owned.OwnedFan.Progress, owned.OwnedFan.FanMode));
+        Assert.Throws<IOException>(() => WindowsNativeThermalHistory.Read(files, [original]));
+        Assert.Equal(NativeRecoveryReason.FirmwareOwnerUnresolved, Assert.Throws<NativeRecoveryException>(() => WindowsNativeTrustLifecycle.AcquireRetiredOwner(files)).Reason);
+        // Either no-setter close leaves nothing to hand back and no retirement fence.
+        Thermal(files, Bytes(v.GetProperty("closed").GetString()!));
+        Assert.True(WindowsNativeThermalHistory.Read(files, [original], original).Handback!.IsEmpty);
+        var history = WindowsNativeThermalHistory.Read(files, [original]);
+        using var retired = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
+        Assert.Equal(history.Commitment, retired.Thermal.Commitment);
+    }
+
     public static IEnumerable<object[]> RetainedFanCallerScopeCases()
     {
         using var vectors = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fan-caller-scope-chains.json")));
