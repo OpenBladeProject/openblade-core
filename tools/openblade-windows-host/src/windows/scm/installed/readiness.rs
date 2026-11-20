@@ -18,8 +18,8 @@ use crate::{
     scm_host::startup_stopped,
     service_frame::{FRAME_TIMEOUT, encode, read_payload, write_payload},
     service_status::{
-        PIPE_NAME, PROTOCOL_VERSION, Snapshot, StatusRequest, StatusResponse, exchange,
-        production_path, request_id as probe_id,
+        PIPE_NAME, PROTOCOL_VERSION, Snapshot, StatusRequest, StatusResponse, UnservedRequest,
+        exchange, production_path, request_id as probe_id,
     },
 };
 
@@ -412,7 +412,8 @@ async fn serve(
 ) -> Result<Box<dyn Stream>, ExchangeError> {
     use ExchangeError::{Client, Runtime};
     let mut stream = accept.await.map_err(Runtime)?;
-    let (request, caller) = read_request(&mut *stream, true).await?;
+    let (payload, caller) = read_frame(&mut *stream).await?;
+    let request = StatusRequest::decode_get(&payload).map_err(Client)?;
     if let Some((pid, expected)) = probe
         && (caller.pid != Some(pid)
             || caller.logon != Logon::System
@@ -433,7 +434,13 @@ async fn serve_connection(
     publications: Option<watch::Receiver<Arc<Publication>>>,
     subscriptions: Rc<Subscriptions>,
 ) -> Result<(), ExchangeError> {
-    let (request, caller) = read_request(&mut *stream, false).await?;
+    let (request, caller) = match read_request(&mut *stream).await? {
+        (Inbound::Served(request), caller) => (request, caller),
+        (Inbound::Unserved(request), caller) => {
+            let guard = source.lock().await.publication_guard();
+            return serve_unserved(&mut *stream, &request, caller, &*guard).await;
+        }
+    };
     // Receipt precedes waiting for an in-flight observer's source mutex. Its
     // completion can satisfy this GET only when it is newer than this instant.
     let requested = Instant::now();
@@ -556,10 +563,12 @@ async fn serve_observation(
         .map_err(Client)
 }
 
-async fn read_request(
-    stream: &mut dyn Stream,
-    get_only: bool,
-) -> Result<(StatusRequest, Caller), ExchangeError> {
+enum Inbound {
+    Served(StatusRequest),
+    Unserved(UnservedRequest),
+}
+
+async fn read_frame(stream: &mut dyn Stream) -> Result<(Vec<u8>, Caller), ExchangeError> {
     use ExchangeError::Client;
     let payload = timeout(FRAME_TIMEOUT, read_payload(&mut *stream))
         .await
@@ -567,13 +576,37 @@ async fn read_request(
         .map_err(Client)?;
     // Windows impersonation uses the token from the last read on this handle.
     let caller = stream.caller_after_read().map_err(Client)?;
-    let request = if get_only {
-        StatusRequest::decode_get(&payload)
-    } else {
-        StatusRequest::decode(&payload)
-    }
-    .map_err(Client)?;
+    Ok((payload, caller))
+}
+
+// A served operation keeps its typed decoder and its error. Only a request
+// that names another managed operation reaches the unsupported reply.
+async fn read_request(stream: &mut dyn Stream) -> Result<(Inbound, Caller), ExchangeError> {
+    let (payload, caller) = read_frame(stream).await?;
+    let request = match StatusRequest::decode(&payload) {
+        Ok(request) => Inbound::Served(request),
+        Err(error) => UnservedRequest::decode(&payload)
+            .map(Inbound::Unserved)
+            .map_err(|_| ExchangeError::Client(error))?,
+    };
     Ok((request, caller))
+}
+
+// Managed's unsupported-operation reply. It reads no source state, takes no
+// device or storage authority and needs no session control, so any admitted
+// caller receives it; a caller the status endpoint refuses still closes.
+async fn serve_unserved(
+    stream: &mut dyn Stream,
+    request: &UnservedRequest,
+    caller: Caller,
+    guard: &dyn Fn() -> io::Result<()>,
+) -> Result<(), ExchangeError> {
+    use ExchangeError::{Client, Runtime};
+    caller.access().map_err(Client)?;
+    let payload = encode(&StatusResponse::unsupported(request)).map_err(Runtime)?;
+    guard().map_err(Runtime)?;
+    write_payload(stream, &payload).await.map_err(Client)?;
+    guard().map_err(Runtime)
 }
 
 fn resolve_caller(stream: &dyn Stream, mut caller: Caller) -> Result<Caller, ExchangeError> {

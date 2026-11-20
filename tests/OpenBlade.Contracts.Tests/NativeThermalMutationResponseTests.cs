@@ -20,6 +20,7 @@ public sealed class NativeThermalMutationResponseTests
         bool sawConfirmedPreset = false;
         bool sawPartialCustom = false;
         bool sawManualDeferral = false, sawGpuIncomplete = false, sawCapacityRefusal = false, sawPowerChanged = false, sawCleared = false;
+        bool sawUnsupported = false;
         var decodeErrors = new List<string>();
         int index = 0;
         foreach (JsonElement element in document.RootElement.EnumerateArray())
@@ -48,6 +49,9 @@ public sealed class NativeThermalMutationResponseTests
                 Assert.Null(response.Status);
                 Assert.Null(response.Result);
                 Assert.Null(response.Archive);
+                // ControlRequestHandler's fallback for an operation it does not dispatch.
+                sawUnsupported |= response.Error == "IPC request operation is unsupported."
+                    && response.ErrorCode is null;
                 continue;
             }
             Assert.Null(response.Error);
@@ -120,6 +124,7 @@ public sealed class NativeThermalMutationResponseTests
         Assert.True(sawGpuIncomplete && sawCapacityRefusal && sawPowerChanged,
             "Saved but unapplied GPU, capacity and power-change replies are Blocked with the managed prefix.");
         Assert.True(sawCleared, "An unapplied clear is Blocked with managed's cleared prefix.");
+        Assert.True(sawUnsupported, "An unserved managed operation gets managed's unsupported-operation failure.");
         Assert.True(decodeErrors.Count == 0, string.Join(Environment.NewLine, decodeErrors));
         Assert.True(sawPartialCustom, "Actual CustomManual observation must retain known selectors and unknown settings.");
         using var requestedFrame = FrameJson("""{"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":5,"lifetime":1,"customPerformance":null,"gpuClockTuning":null}}""");

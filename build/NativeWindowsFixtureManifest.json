@@ -40,6 +40,10 @@
         {
           "name": "installed::readiness::tests::mutation::installed_cleared_performance_override_keeps_the_managed_prefix",
           "minimumRecords": 1
+        },
+        {
+          "name": "installed::readiness::tests::mutation::installed_unserved_operations_reply_with_the_managed_unsupported_failure",
+          "minimumRecords": 1
         }
       ],
       "wrapper": false,

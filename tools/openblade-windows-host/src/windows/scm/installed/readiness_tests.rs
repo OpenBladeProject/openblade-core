@@ -1,5 +1,7 @@
 #[path = "readiness_tests/observation.rs"]
 mod observation;
+#[path = "readiness_tests/unserved.rs"]
+mod unserved;
 
 use std::{
     cell::{Cell, RefCell},

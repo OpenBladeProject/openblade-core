@@ -987,6 +987,46 @@ async fn installed_cleared_performance_override_keeps_the_managed_prefix() {
     );
     rig.stop().await;
 }
+// Feeds the managed-codec oracle: every operation the composed dispatcher does
+// not serve gets managed's unsupported failure and reaches no port or file.
+#[tokio::test]
+async fn installed_unserved_operations_reply_with_the_managed_unsupported_failure() {
+    let rig = Rig::new(MemoryFiles::default());
+    let files = rig.files.bytes.lock().unwrap().clone();
+    let contract: Value = serde_json::from_str(CONTRACT).unwrap();
+    let mut refused = 0;
+    for operation in contract["operationFamilies"]
+        .as_object()
+        .unwrap()
+        .values()
+        .flat_map(|family| family.as_array().unwrap())
+        .filter_map(Value::as_str)
+        .filter(|operation| !StatusRequest::serves(operation))
+    {
+        refused += 1;
+        let id = format!("eeeeeeee-ffff-4aaa-8bbb-{refused:012}");
+        let response = rig
+            .request(json!({"operation": operation, "version": 85, "requestId": id}))
+            .await;
+        assert_eq!(
+            response,
+            json!({
+                "frame": "response", "version": 85, "requestId": id, "success": false,
+                "error": "IPC request operation is unsupported.", "status": null,
+                "result": null, "archive": null, "errorCode": null,
+            }),
+            "{operation}"
+        );
+    }
+    assert!(refused >= 42);
+    {
+        let port = rig.port.state.lock().unwrap();
+        assert_eq!((port.writes, port.opened, port.power_reads), (0, 0, 0));
+    }
+    assert_eq!(rig.entered.get(), 0);
+    assert_eq!(*rig.files.bytes.lock().unwrap(), files);
+    rig.stop().await;
+}
 #[tokio::test]
 async fn installed_canceled_submission_retains_custody_until_actual_callback_retirement() {
     let rig = Rig::new(MemoryFiles::default());

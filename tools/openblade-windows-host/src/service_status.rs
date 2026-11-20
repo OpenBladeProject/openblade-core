@@ -100,7 +100,60 @@ fn all_live_readings() -> u8 {
     ALL_LIVE_READINGS
 }
 
+#[cfg(feature = "installed-service-candidate")]
+mod unserved;
+#[cfg(feature = "installed-service-candidate")]
+pub(crate) use unserved::UnservedRequest;
+
 impl StatusRequest {
+    /// The discriminator of every variant. `operation` maps each variant to
+    /// its entry, so a new variant cannot be added without listing it here.
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) const OPERATIONS: [&'static str; 9] = [
+        "setBatteryPolicy",
+        "setBatteryProtection",
+        "setFullChargeOverride",
+        "setFanOverride",
+        "setPerformanceOverride",
+        "reportApplicationContext",
+        "getStatus",
+        "subscribeStatus",
+        "observeState",
+    ];
+
+    #[cfg(all(test, feature = "installed-service-candidate"))]
+    pub(crate) fn operation(&self) -> &'static str {
+        Self::OPERATIONS[match self {
+            Self::SetBatteryPolicy { .. } => 0,
+            Self::SetBatteryProtection { .. } => 1,
+            Self::SetFullChargeOverride { .. } => 2,
+            Self::SetFanOverride { .. } => 3,
+            Self::SetPerformanceOverride { .. } => 4,
+            Self::ReportApplicationContext { .. } => 5,
+            Self::GetStatus { .. } => 6,
+            Self::SubscribeStatus { .. } => 7,
+            Self::ObserveState { .. } => 8,
+        }]
+    }
+
+    /// Whether this composition dispatches `operation` through its typed
+    /// decoder, matching the feature checks in `validate`. A served request
+    /// that fails that decoder closes the connection; every other managed
+    /// operation gets the typed unsupported reply.
+    #[cfg(feature = "installed-service-candidate")]
+    pub(crate) fn serves(operation: &str) -> bool {
+        const THERMAL: bool = cfg!(feature = "service-thermal-mutation-v1");
+        const FAN: bool = cfg!(feature = "service-fan-mutation-v2");
+        const BATTERY: bool = cfg!(feature = "service-battery-policy-v1");
+        const COMPILED: [bool; 9] = [
+            BATTERY, BATTERY, BATTERY, FAN, THERMAL, THERMAL, true, true, true,
+        ];
+        Self::OPERATIONS
+            .iter()
+            .zip(COMPILED)
+            .any(|(name, compiled)| compiled && *name == operation)
+    }
+
     pub(crate) fn get(request_id: String) -> io::Result<Self> {
         let request = Self::GetStatus {
             version: PROTOCOL_VERSION,
