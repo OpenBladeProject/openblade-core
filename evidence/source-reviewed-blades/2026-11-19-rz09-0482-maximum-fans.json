@@ -6,7 +6,7 @@
   "feature": "CustomMaximumFans",
   "basis": "SynapseSourceBackedWithoutPhysicalValidation",
   "reviewedOn": "2026-11-19",
-  "method": "Static review of locally cached, hash-verified vendor bundles. Vendor code was not executed, nothing was downloaded and no hardware command was sent.",
+  "method": "Static review of hash-verified vendor bundles: locally cached copies, plus the product-669 device bundle downloaded once from its official URL with user approval. Vendor code was not executed and no hardware command was sent.",
   "offsetUnit": "UTF-8 byte offset into the single-line minified bundle",
   "sources": [
     {
@@ -28,8 +28,7 @@
       "url": "https://apps.razer.com/synapse/products/669/mw/rzDevice25.1094c437ecd0242743f8.js",
       "bytes": 272267,
       "sha256": "D76F0E964537BCF19D517E67B16E9D8AC0160230FA779AFB3640DA78B6201AD3",
-      "verifiedThisReview": false,
-      "note": "Pinned by earlier reviews; no local copy was available for this review. The command bytes are taken from the shared rzDevice25 definition below."
+      "verifiedThisReview": true
     },
     {
       "id": "671-policy",
@@ -108,6 +107,24 @@
       "meaning": "Exported as _w (offset 1874739). Synapse reads Power Mode Control, replaces one field and writes the whole byte."
     },
     {
+      "source": "669-device",
+      "offset": 57848,
+      "text": "j=new Uint8Array([1,7,143]),$=new Uint8Array([1,7,15]),k=\"Get Power Mode Control\",M=\"Set Power Mode Control\"",
+      "meaning": "Exact product-669 binding: Get Power Mode Control is 07/8F and Set Power Mode Control is 07/0F, one data byte. Exported as Uk/Rt (j/k, offsets 56391/56345) and $g/N3 ($/M, offsets 56133/56290)."
+    },
+    {
+      "source": "669-device",
+      "offset": 52661,
+      "text": "L=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={cpuBoost:1&t.data[0],maxFanSpeedMode:2&t.data[0],oneTimeOverride:4&t.data[0],localDimming:8&t.data[0]})}",
+      "meaning": "Exact product-669 decoder: Maximum Fans is bit 0x02. The getter P sends i.Uk and the setter V writes one byte with i.$g; both are exported as Il and _w (offsets 47318/47426)."
+    },
+    {
+      "source": "669-device",
+      "offset": 140939,
+      "text": "getPowerModeControl(){return Ea(this,void 0,void 0,(function*(){return Nn.Il(this)}))}setPowerModeControl(t){return Ea(this,void 0,void 0,(function*(){return Nn._w(this,t)}))}",
+      "meaning": "Public device methods called by the 669 policy read-modify-write helper."
+    },
+    {
       "source": "671-device",
       "offset": 13771,
       "text": "new Uint8Array([1,7,143]),$=new Uint8Array([1,7,15]),k=\"Get Power Mode Control\"",
@@ -127,6 +144,7 @@
   "sharedDeviceDefinition": {
     "pattern": "new Uint8Array([1,7,143]),<id>=new Uint8Array([1,7,15]),<id>=\"Get Power Mode Control\",<id>=\"Set Power Mode Control\" and maxFanSpeedMode:2&t.data[0]",
     "identicalIn": [
+      {"product": 669, "file": "rzDevice25.1094c437ecd0242743f8.js", "sha256": "D76F0E964537BCF19D517E67B16E9D8AC0160230FA779AFB3640DA78B6201AD3"},
       {"product": 671, "file": "rzDevice25.5e330aa9fdf6f29eec62.js", "sha256": "41E7758114AD3605B5B3EE0E65E79AF3055124F775904902BA3285F710AF55C9"},
       {"product": 672, "file": "rzDevice25.85ce8530211c29f3c304.js", "sha256": "DFB3E3612D36B20910AF02E61A17ED64A1FFD3781E09C63BAAEE7CBEFDEBCA24"},
       {"product": 624, "file": "rzDevice25.1672779ed3e58b9415ca.js", "sha256": "F696504C78559A2E04E503F8CF7B069D87F1298BFB767677912CD649EEB49456"},
@@ -141,8 +159,8 @@
     "gate": "src/OpenBlade.Protocol/ExperimentalBladePort.Custom.cs SupportsMaximumFans admits 0x029D with 0x029F and 0x02A0.",
     "commands": "07/8F read; 07/0F [02] enable; guarded 07/0F [00] cleanup before 0D/02 when leaving Custom or entering HyperBoost.",
     "guards": "Fresh whole-byte 07/8F guard before each 07/0F; CPU boost, temporary full charge and local dimming bits block the write. Undefined bits and other lengths are rejected. Fixed fan baselines block enable. Independent readback after each write; uncertain submission pauses writes without replay.",
-    "acknowledgement": "RZ09-0482 keeps its existing echoed set-acknowledgement contract; the status-only acknowledgement admitted for 029F/02A0 is not inherited.",
-    "hyperBoost": "HyperBoost entry clears an active Maximum Fans bit with the same guard instead of refusing. The 1.1.1.3 MCU minimum and cooling-pad admission are unchanged."
+    "acknowledgement": "RZ09-0482 keeps its existing echoed set-acknowledgement contract; the status-only acknowledgement admitted for 029F/02A0 is not inherited. A status-only reply would pause writes as Indeterminate without replay.",
+    "hyperBoost": "HyperBoost entry on 029D clears an active Maximum Fans bit with the same guard instead of refusing. A model without representable Maximum Fans intent still refuses before any write. The 1.1.1.3 MCU minimum and cooling-pad admission are unchanged."
   },
   "physicalValidationPerformed": false
 }

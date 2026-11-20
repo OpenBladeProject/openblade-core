@@ -24,8 +24,11 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.False(root.GetProperty("physicalValidationPerformed").GetBoolean());
         ExperimentalFeatureEvidence feature = Assert.Single(
             ExperimentalBladeModels.FeatureEvidenceFor(Model(0x029D)), item => item.Feature == "MaximumFans");
-        foreach (System.Text.Json.JsonElement source in root.GetProperty("sources").EnumerateArray()
-            .Where(item => item.GetProperty("id").GetString() is "669-main" or "669-policy"))
+        System.Text.Json.JsonElement[] exact = root.GetProperty("sources").EnumerateArray()
+            .Where(item => item.GetProperty("id").GetString() is "669-main" or "669-policy" or "669-device")
+            .ToArray();
+        Assert.Equal(3, exact.Length);
+        foreach (System.Text.Json.JsonElement source in exact)
         {
             Assert.True(source.GetProperty("verifiedThisReview").GetBoolean());
             Assert.Contains($"{source.GetProperty("url").GetString()};SHA256={source.GetProperty("sha256").GetString()}",
