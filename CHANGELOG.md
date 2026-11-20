@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Light the Vapor Chamber on Blade 18 (2025, RZ09-0529) with the keyboard's Spectrum, Fire, Wheel, Starlight, Tidal, Ripple, Ambient Awareness and Audio Meter effects when its current effect is Off, Static, Breathing or Wave, so OpenBlade can put it back afterwards. With any other Vapor Chamber effect, these effects stay on the keyboard. ([#TBD](https://github.com/OpenBladeProject/openblade-core/pull/TBD))
+- Light the Vapor Chamber on Blade 18 (2025, RZ09-0529) with the keyboard's Spectrum, Fire, Wheel, Starlight, Tidal, Ripple, Ambient Awareness and Audio Meter effects when its current effect is Off, Static, Breathing or Wave, so OpenBlade can put it back afterwards. With any other Vapor Chamber effect, these effects stay on the keyboard. ([#985](https://github.com/OpenBladeProject/openblade-core/pull/985))
 
 ### Changed
 
