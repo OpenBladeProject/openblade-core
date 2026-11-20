@@ -5,6 +5,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+## [0.65.1-nightly.117] - 2026-11-20
+
 ### Added
 
 - Add keyboard-only host-rendered lighting effects and per-key color editing on Blade 18 (2025, RZ09-0529). Keep Vapor Chamber RGB unavailable until its prior state can be restored; no touchpad RGB zone is claimed. ([#977](https://github.com/OpenBladeProject/openblade-core/pull/977))
@@ -2450,7 +2452,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands. ([0646f172](https://github.com/OSSBlade/openblade-core/commit/0646f172))
 
-[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.64.2-nightly.116...HEAD
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.65.1-nightly.117...HEAD
+[0.65.1-nightly.117]: https://github.com/OSSBlade/openblade-core/compare/v0.64.2-nightly.116...v0.65.1-nightly.117
 [0.64.2-nightly.116]: https://github.com/OSSBlade/openblade-core/compare/v0.63.2-nightly.115...v0.64.2-nightly.116
 [0.63.2-nightly.115]: https://github.com/OSSBlade/openblade-core/compare/v0.61.1-nightly.114...v0.63.2-nightly.115
 [0.61.1-nightly.114]: https://github.com/OSSBlade/openblade-core/compare/v0.60.0-nightly.113...v0.61.1-nightly.114
