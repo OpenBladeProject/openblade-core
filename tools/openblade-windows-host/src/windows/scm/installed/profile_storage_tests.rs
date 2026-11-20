@@ -865,6 +865,35 @@ fn the_store_finds_duplicate_paths_as_managed_does_whatever_its_reader_compares(
     assert_eq!(model.writes.load(Ordering::Acquire), 0);
 }
 
+#[test]
+fn an_aggregate_with_a_case_pair_managed_keeps_apart_still_saves() {
+    // U+0264 and U+A7CB are a case pair in Unicode 16. Managed's table does
+    // not join them, so it stores both paths; a comparison that did join
+    // them would preserve this aggregate and block every save.
+    let documents = aggregate_with(json!([
+        application(0, "C:\\\u{264}\\Game.exe"),
+        application(1, "C:\\\u{a7cb}\\Game.exe")
+    ]));
+    let installed: fn(&str, &str) -> bool = crate::installed::readiness::thermal_native::same_path;
+    for reader in [installed, str::eq_ignore_ascii_case] {
+        let model = Model::seeded(documents.clone());
+        let storage = Storage::open_with(Box::new(model.clone()), SID, reader).unwrap();
+        let request = requested(&model);
+        assert_eq!(request.application_profiles.len(), 2);
+
+        assert_eq!(
+            storage.save_profiles(&request).unwrap(),
+            ProfileSave::Stored
+        );
+
+        assert!(!storage.pending());
+        let reopened = Storage::open_with(Box::new(model.clone()), SID, reader).unwrap();
+        let saved = requested(&model);
+        assert_eq!(saved.application_profiles, request.application_profiles);
+        assert_eq!(reopened.save_profiles(&saved).unwrap(), ProfileSave::Stored);
+    }
+}
+
 /// A reader that holds a dotless i to be an i, as a different case table
 /// could: coarser than managed's comparison, which keeps the two apart.
 fn coarser(left: &str, right: &str) -> bool {

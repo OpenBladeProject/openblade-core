@@ -13,6 +13,7 @@ pub mod json;
 pub mod lighting;
 pub mod model;
 pub mod normalize;
+mod ordinal_case;
 pub mod policy;
 pub mod preferences;
 pub mod resolve;

@@ -1,6 +1,7 @@
 //! The .NET string and path rules the profile contract depends on, without
 //! the operating system: lengths are UTF-16 code units, as `string.Length` is.
 
+use super::ordinal_case::FOLDS;
 use std::string::String;
 
 /// `string.Length`.
@@ -45,31 +46,31 @@ fn lower_invariant(text: &str) -> String {
         .collect()
 }
 
-/// Managed `StringComparison.OrdinalIgnoreCase` equality, which finds
-/// duplicate executable paths and rule names. Each character is compared by
-/// its one upper-case character: never by an expansion to several, so a sharp
-/// s is not `SS`, and never by an ASCII letter for a character outside ASCII,
-/// so a dotless i is not `I`. The Windows ordinal comparison differs from
-/// managed's for some letters and is not a substitute.
-pub fn same_ordinal_ignoring_case(left: &str, right: &str) -> bool {
-    fn upper(character: char) -> char {
-        let mut mapped = character.to_uppercase();
-        match (mapped.next(), mapped.next()) {
-            (Some(one), None) if character.is_ascii() || !one.is_ascii() => one,
-            // A Greek letter with a subscript iota has a one-character upper
-            // case beside the expansion the standard library returns.
-            _ => match character {
-                '\u{1F80}'..='\u{1F87}' | '\u{1F90}'..='\u{1F97}' | '\u{1FA0}'..='\u{1FA7}' => {
-                    char::from_u32(character as u32 + 8).unwrap_or(character)
-                }
-                '\u{1FB3}' | '\u{1FC3}' | '\u{1FF3}' => {
-                    char::from_u32(character as u32 + 9).unwrap_or(character)
-                }
-                _ => character,
-            },
+/// The character managed `StringComparison.OrdinalIgnoreCase` compares
+/// `character` as: the least member of the set it holds equal. The sets are
+/// managed's own, recorded by a managed test and compiled in as a table, so
+/// this does not follow the case tables of the Rust standard library or of
+/// Windows, which both differ from managed's for some letters.
+pub fn fold_ordinal_case(character: char) -> char {
+    let scalar = character as u32;
+    let index = FOLDS.partition_point(|&(_, last, _, _)| last < scalar);
+    match FOLDS.get(index) {
+        Some(&(first, _, step, folded))
+            if scalar >= first && (scalar - first).is_multiple_of(step) =>
+        {
+            char::from_u32(folded + (scalar - first)).unwrap_or(character)
         }
+        _ => character,
     }
-    left.chars().map(upper).eq(right.chars().map(upper))
+}
+
+/// Managed `StringComparison.OrdinalIgnoreCase` equality, which finds
+/// duplicate executable paths and rule names. Characters are compared one to
+/// one: a sharp s is not `SS`, and a dotless i is not `I`.
+pub fn same_ordinal_ignoring_case(left: &str, right: &str) -> bool {
+    left.chars()
+        .map(fold_ordinal_case)
+        .eq(right.chars().map(fold_ordinal_case))
 }
 
 /// Managed `ThxApplicationAudioRule.NormalizeExecutableName`; `None` where

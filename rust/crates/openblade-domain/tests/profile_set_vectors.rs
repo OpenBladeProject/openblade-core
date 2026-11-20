@@ -23,8 +23,16 @@ const VECTORS: &str = include_str!(
 const CAPABILITIES: &str = include_str!(
     "../../../../tools/openblade-windows-host/tests/data/profile-capabilities-rz09-0581.json"
 );
+const ORDINAL_CASE: &str = include_str!(
+    "../../../../tools/openblade-windows-host/tests/data/profile-ordinal-ignore-case.json"
+);
+/// Set to rewrite the compiled case table from the recorded vector. The
+/// managed tests take the same variable to record the vectors.
+const REGENERATE: &str = "OPENBLADE_REGENERATE_NATIVE_PROFILE_VECTORS";
 
-use openblade_domain::profile_set::text::same_ordinal_ignoring_case as same_path;
+use openblade_domain::profile_set::text::{
+    fold_ordinal_case, same_ordinal_ignoring_case as same_path,
+};
 
 fn member<'a>(value: &'a Json, name: &str) -> &'a Json {
     value.member(name).unwrap_or(&Json::Null)
@@ -467,4 +475,116 @@ fn every_managed_aggregate_loads_and_migrates_alike() {
         failures.join("\n")
     );
     assert!(kept >= 5 && migrations >= 35 && refusals >= 35);
+}
+
+/// The compiled table for `folds`, each character with the one it folds to:
+/// runs of evenly spaced characters that fold by the same distance.
+fn ordinal_case_table(folds: &[(u32, u32)]) -> String {
+    let mut runs: Vec<(u32, u32, u32, u32)> = Vec::new();
+    for &(from, to) in folds {
+        if let Some((first, last, step, folded)) = runs.last_mut() {
+            let gap = from - *last;
+            let aligned = to.wrapping_sub(*folded) == from - *first;
+            let spaced = if first == last {
+                gap <= 2
+            } else {
+                gap == *step
+            };
+            if aligned && spaced {
+                (*last, *step) = (from, gap);
+                continue;
+            }
+        }
+        runs.push((from, from, 1, to));
+    }
+    let mut table = String::from(
+        "//! Managed `StringComparer.OrdinalIgnoreCase` as a table. Generated from\n\
+         //! `tools/openblade-windows-host/tests/data/profile-ordinal-ignore-case.json`,\n\
+         //! which a managed test records. Do not edit it: run the domain vector tests\n\
+         //! with `OPENBLADE_REGENERATE_NATIVE_PROFILE_VECTORS` set to rewrite it.\n\n\
+         /// `(first, last, step, folded)`: every `step`-th character from `first` to\n\
+         /// `last` folds to the character as far from `folded` as it is from `first`.\n\
+         /// Sorted, and no two entries overlap.\n\
+         pub(super) const FOLDS: &[(u32, u32, u32, u32)] = &[\n",
+    );
+    for (first, last, step, folded) in runs {
+        table.push_str(&format!(
+            "    (0x{first:04X}, 0x{last:04X}, {step}, 0x{folded:04X}),\n"
+        ));
+    }
+    table.push_str("];\n");
+    table
+}
+
+#[test]
+fn every_character_compares_as_managed_ordinal_ignore_case_records() {
+    let vector = json::parse(ORDINAL_CASE.as_bytes()).expect("the vector parses");
+    let Json::Array(classes) = member(&vector, "classes") else {
+        panic!("the vector holds classes");
+    };
+    // Each character managed joins to another, with the least of its class.
+    let mut folds: Vec<(u32, u32)> = Vec::new();
+    for class in classes {
+        let members: Vec<u32> = text(class)
+            .expect("a class is text")
+            .split(' ')
+            .map(|scalar| u32::from_str_radix(scalar, 16).expect("a code point"))
+            .collect();
+        assert!(members.len() > 1 && members.is_sorted(), "{members:X?}");
+        folds.extend(members[1..].iter().map(|member| (*member, members[0])));
+    }
+    folds.sort_unstable();
+    assert!(folds.len() > 1400, "{} folds", folds.len());
+
+    if std::env::var_os(REGENERATE).is_some() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/profile_set/ordinal_case.rs"
+        );
+        std::fs::write(path, ordinal_case_table(&folds)).expect("the table is written");
+        return;
+    }
+
+    // Every character there is, not only those in the vector: the table must
+    // join nothing managed keeps apart.
+    let mut recorded = folds.iter().copied().peekable();
+    for character in '\0'..=char::MAX {
+        let scalar = character as u32;
+        let expected = recorded
+            .next_if(|(from, _)| *from == scalar)
+            .map_or(scalar, |(_, to)| to);
+        assert_eq!(
+            fold_ordinal_case(character) as u32,
+            expected,
+            "U+{scalar:04X}"
+        );
+    }
+    assert_eq!(recorded.next(), None);
+
+    for (left, right, same) in [
+        (r"C:\Games\Game.exe", r"c:\GAMES\game.EXE", true),
+        (r"C:\Games\Game.exe", r"C:\Games\Game.ex", false),
+        ("B\u{e4}r", "B\u{c4}R", true),
+        // One character to one: no expansion, no ASCII letter for another.
+        ("Stra\u{df}e", "STRASSE", false),
+        ("\u{131}", "I", false),
+        ("\u{17f}", "S", false),
+        ("\u{212a}", "k", false),
+        ("\u{fb01}", "FI", false),
+        // Joined by managed, kept apart by the Windows comparison.
+        ("\u{3c2}", "\u{3a3}", true),
+        ("\u{b5}", "\u{39c}", true),
+        ("\u{1c5}", "\u{1c6}", true),
+        ("\u{1f80}", "\u{1f88}", true),
+        ("\u{10428}", "\u{10400}", true),
+        // Case pairs newer than managed's table: the Rust standard library
+        // joins them and managed does not.
+        ("\u{264}", "\u{a7cb}", false),
+        ("\u{19b}", "\u{a7dc}", false),
+        ("\u{1c8a}", "\u{1c89}", false),
+        ("\u{16ebb}", "\u{16ea0}", false),
+    ] {
+        assert_eq!(same_path(left, right), same, "{left:?} {right:?}");
+        assert_eq!(same_path(right, left), same, "{right:?} {left:?}");
+    }
 }
