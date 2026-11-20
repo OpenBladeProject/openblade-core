@@ -55,7 +55,9 @@ profile materialization occurs. The native writer retains its own exclusive
 configuration writer handle, protected relative paths, atomic replacement and
 independent byte readback.
 
-Manual overrides at schemas 8, 9 and the current 10 support Balanced/Performance,
+Manual overrides at schemas 8, 9 and the current 10 support Silent, Balanced,
+Performance, Battery Saver and Battery Balanced (see
+[preset recipes](#preset-recipes)),
 Persistent and UntilPowerSourceChange lifetimes, and explicit nullable clear.
 Every save writes schema 10, as managed does. Each setter clears
 the other performance slot as managed setters do. Temporary state saved on
@@ -104,11 +106,84 @@ the managed `WindowsNativeFanHistory` reader both consume
 `tools/openblade-windows-host/tests/data/fan-history-v3-limited-source.json`.
 Battery presets are outside this writer.
 
+### Preset recipes
+
+Each admitted destination is one reviewed exact-RZ09-0581 0D/02 pair
+`[1, channel, selector, 0]`, after managed `ProductionBatteryPort.SetPerformanceAsync`
+(`src/OpenBlade.Protocol/ProductionBatteryPort.cs`) and the captured, applied,
+read-back and restored entries of
+`src/OpenBlade.Protocol/Fixtures/Rz09_0581_02e0_3_01_BatteryProduction.json`:
+
+| Preset (wire value) | Selector | Fixture actions |
+| --- | --- | --- |
+| Silent (0) | 5 | `performance-silent-channel-1/2` |
+| Balanced (1) | 0 | `performance-balanced-channel-1/2` |
+| Performance (2) | 2 | `performance-performance-channel-1/2` |
+| Battery Saver (3) | 3 | `performance-battery-saver-channel-1/2` |
+| Battery Balanced (4) | 6 | `performance-battery-balanced-channel-1/2` |
+
+`InstalledThermalPreset` carries the wire value and selector; a protocol test
+compares every encoded pair with the fixture. Each pair is written directly
+from every confirmed state, manual fans included, with no Balanced or default
+intermediate, and only the destination's own selector with Automatic fans
+confirms it. Power admission follows managed `AdmitOrdinaryThermalCommandAsync`
+(`ProductionBatteryPort.OrdinaryThermalPower.cs`) per destination
+(`thermal_mutation::admits_class`):
+
+- Silent, Balanced and Performance are ordinary commands. Every setter needs an
+  external reading (full, limited or unclassified) that agrees with fresh
+  Windows AC presence. Battery refuses them.
+- Battery Saver and Battery Balanced (`IsBatterySelectorCommand`) are also
+  admitted on battery, read with Windows battery, and on a classified adapter
+  that agrees with Windows AC. Unclassified power refuses them. Managed skips
+  the adapter read on Windows battery; native still reads 07/8C and needs it to
+  read battery. The Windows battery reading must hold at every later
+  checkpoint, as Windows AC must for an external reading.
+
+A class change between setters follows the rules under
+[unclassified external power](#unclassified-external-power); a change to or
+from battery always stops the pair without replay. Saved-intent selection is
+unchanged: battery selects only the battery presets
+(`automation::performance_source_eligible`), so an ordinary override saved on
+battery is stored and not written there.
+
+Managed leaves confirmed HyperBoost for a battery preset through the
+`hyperboost-restore-balanced` pair first (`CanExitHyperBoostDirectlyTo`; the
+RZ09-0581 `HyperBoostBaseModeAdmissionSource` admits direct exits to Silent,
+Balanced, Performance and Custom only). That pair belongs to the separate
+HyperBoost fixture and is not admitted natively, so native stores the intent
+and replies Blocked without preparing a row (`Plan::NoDirectPath`). A direct
+exit to Silent keeps the first reading's classified external class, as the
+Performance exit does.
+
+Custom (5) stays refused at decode. Its 0D/02 selector-4 pair plus the 0D/07
+CPU and GPU level setters (`SetCustomPerformanceAsync`), the saved
+`customPerformance` field and its final 0D/87 read are not part of this slice.
+`select` in the installed thermal runtime resolves the saved destination for a
+fresh class without storing anything; a later automatic reconciliation of saved
+profile intent can reuse it.
+
+Performance rows journal the destination's wire value. The Rust grammar and
+the managed `WindowsNativeThermalHistory` and `WindowsNativeHandback` readers
+admit destinations and requested values 0 to 4 and refuse Custom and every
+other value. Both consume the `presetRows` vectors in
+`tools/openblade-windows-host/tests/data/thermal-history-v1.json`. Readers
+before this change reject a Silent or battery row as invalid history, which
+fences retirement, upgrade and mailbox custody fail-closed, as the earlier
+fan-history extensions do. The row contract string is unchanged.
+
+Status projects a persistent or temporary override as the desired destination
+on battery and for Silent. Status metadata reports every external class as the
+coarse class 3, where a battery preset is not eligible, so a Battery Saver or
+Battery Balanced override on an adapter keeps the default desired slot in
+status, while the saved override and the confirmed firmware selector are
+reported. A clear keeps the default desired slot, as before.
+
 ### Unclassified external power
 
 Native ports managed's ordinary thermal control on unclassified external power
-(`f6502f85`) for the setters it implements: Balanced and Performance, and
-Fixed, Maximum and Automatic fans. Power is unclassified when Windows reports
+(`f6502f85`) for the setters it implements: Silent, Balanced and Performance,
+and Fixed, Maximum and Automatic fans. Power is unclassified when Windows reports
 AC online and the 07/8C query completed without a class: either a correlated
 FAILED (3) or NOT_SUPPORTED (5) rejection with intact single-report geometry
 (`RazerReport::is_completed_rejection`, after managed
@@ -147,8 +222,9 @@ before any intent is stored: `Hardware application was not confirmed. The extern
 adapter could not be classified; overrides and control writes are blocked.`
 
 No power profile or application profile applies there (managed
-`CreateObservedFallbackProfile`). Explicit Balanced and Performance overrides
-apply; a request with GPU clock tuning is rejected before it is stored, Failed,
+`CreateObservedFallbackProfile`). Explicit Silent, Balanced and Performance
+overrides apply; a Battery Saver or Battery Balanced request, or one with GPU
+clock tuning, is rejected before it is stored, Failed,
 `The requested intent was rejected: This request needs classified power or
 includes native overclocking; ordinary external presence does not admit it.`
 A performance or fan clear replies Stored, `Override cleared. Power-profile
@@ -261,20 +337,25 @@ unapplied intent:
 | Native case | Reply |
 | --- | --- |
 | External power (PluggedIn, limited USB-C or unclassified) with current-manual plus desired-manual fans, when a Balanced or Performance destination resolves | Stored, `Performance intent was stored and will be applied when fans return to Automatic.` |
-| The same manual-fan state with no Balanced or Performance destination (for example a clear under a Silent or Custom profile) | Blocked, `Performance override was cleared. Hardware result: No supported performance destination...` |
+| The same manual-fan state when Silent, Battery Saver or Battery Balanced resolves | Stored, `Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.` |
+| The same manual-fan state with no native destination (for example a clear under a Custom profile) | Blocked, `Performance override was cleared. Hardware result: No supported performance destination...` |
+| Confirmed HyperBoost and a Battery Saver or Battery Balanced destination | Blocked, `Performance override intent was stored. Hardware result: Leaving HyperBoost for a battery preset needs the HyperBoost restore sequence, which this build does not submit; no thermal setter was submitted.` |
 | OpenBlade-owned fan row whose handback to Automatic is outstanding, without that manual deferral | Blocked, `Performance override intent was stored. Hardware result: OpenBlade still owns a fan change...` |
 | GPU effect, ineligible policy, power change, admission, capacity, storage or transport cause after the intent was saved | Blocked, `Performance override intent was stored. Hardware result: <cause>` |
 | Saved clear that was not applied | Blocked, `Performance override was cleared. Hardware result: <cause>` |
 | Fan intent saved but not applied | Blocked, `Fan override intent was stored. Hardware result: ...` or `Fan override was cleared. Hardware result: ...` |
 | Performance or fan clear on unclassified external power, with no owned fan change left | Stored, `Override cleared. Power-profile application waits for adapter classification.` |
 | Fan clear on unclassified external power whose owned handback is not confirmed | Blocked, `Fan control could not be handed back to firmware. <cause>` |
-| GPU clock tuning requested on unclassified external power | Failed, `The requested intent was rejected: This request needs classified power or includes native overclocking; ordinary external presence does not admit it.` |
+| GPU clock tuning, Battery Saver or Battery Balanced requested on unclassified external power | Failed, `The requested intent was rejected: This request needs classified power or includes native overclocking; ordinary external presence does not admit it.` |
 | Unclassified 07/8C reading without fresh Windows AC presence, or with confirmed HyperBoost | Blocked, `Hardware application was not confirmed. The external power adapter could not be classified; overrides and control writes are blocked.` |
 
 The Stored text is managed's `DeferredPerformanceIntentMessage`. Native
 returns it only when the later fan request can apply the intent, so the
-no-destination check runs before the manual-fan deferral. Managed defers there
-too, because it can write Silent and Custom. A build
+no-destination check runs before the manual-fan deferral. The fan request
+writes only Balanced or Performance, so a Silent or battery destination gets
+the resubmission text instead (`thermal_mutation::applies_on_fan_handback`).
+Managed promises the apply there too, because its fan return writes every
+preset, and it defers a Custom destination as well. A build
 without `service-fan-mutation-v2` has no native fan request, so it keeps the
 older instruction to submit a new performance request after selecting
 Automatic fans.
@@ -317,15 +398,16 @@ profile (`ServiceStartupCoordinator`), so the saved preset stays unapplied until
 a later explicit request.
 
 The fans keep the observed selector, and the saved intent stays unapplied, when
-the saved fan intent was already Automatic, when no Balanced or Performance
-destination is selected (managed would also write Silent or Custom, which this
-writer does not admit), or when a GPU clock effect is saved; the reply then says
+the saved fan intent was already Automatic, when the selected destination is
+not Balanced or Performance (managed would also write Silent, the battery
+presets or Custom; the fan journal grammar admits selectors 0 and 2 only), or
+when a GPU clock effect is saved; the reply then says
 the GPU effect left it unapplied. The GPU check uses the same class expiry as
 the destination, so a temporary override kept for another class does not count.
 Managed's trigger is the request's saved fan intent, not an outstanding apply:
 after a return refused before any setter (its Automatic intent is already
 saved), a retry keeps the observed selector. When an Automatic request confirms
-a selector other than the saved Balanced or Performance preset, the reply adds
+a selector other than the saved preset, whichever native destination it is, the reply adds
 `The saved <preset> performance intent was not applied: submit a new
 performance request to apply it.` Owned Stop cleanup writes, when it must,
 only through the owner's selector: shutdown reaches the firmware handoff
@@ -625,7 +707,7 @@ Differences from managed:
 ## Submission, ambiguity and finite transport lifetime
 
 The portable typed pair resolves both 0D/02 reports before the first mutation.
-Balanced and Performance use their destination directly when current admission
+Every admitted preset uses its destination directly when current admission
 permits it. Exact0581 external-power current-manual plus effective-desired-manual
 fan policy stores the request without setters; it does not restore per-preset
 fans. The fan request that later returns the fans to Automatic applies it.
