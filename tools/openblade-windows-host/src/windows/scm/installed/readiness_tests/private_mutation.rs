@@ -12,6 +12,9 @@ use crate::{
     windows_protected_path as paths,
 };
 use std::{fs::File, io::Write, path::PathBuf, sync::Arc};
+
+#[cfg(feature = "service-battery-policy-v1")]
+type RecordCheck = Arc<dyn Fn(&Record, bool) -> io::Result<()> + Send + Sync>;
 use windows_sys::Win32::{
     Security::Authorization::ConvertStringSidToSidW, Security::GetLengthSid,
     Storage::FileSystem::FILE_ALL_ACCESS,
@@ -26,7 +29,7 @@ struct PrivateRoot {
     path: PathBuf,
     root: File,
     _ancestors: Vec<File>,
-    verify: Arc<dyn Fn(&File) -> io::Result<()> + Send + Sync>,
+    verify: crate::installed::FileVerifier,
     sid: String,
 }
 impl PrivateRoot {
@@ -68,7 +71,7 @@ impl PrivateRoot {
         let path = base.join(leaf);
         let (root, ancestors, _) = paths::pin_root(&path).unwrap();
         paths::require_ntfs(&root).unwrap();
-        let verify: Arc<dyn Fn(&File) -> io::Result<()> + Send + Sync> = Arc::new(move |file| {
+        let verify: crate::installed::FileVerifier = Arc::new(move |file| {
             paths::verify_descriptor(file, |bytes| private_acl(bytes, &owner))
         });
         verify(&root).unwrap();
@@ -944,19 +947,18 @@ fn battery_v1_protected_history_requires_original_producer_and_retains_interleav
     let machine = PrivateRoot::open("owner-journal");
     let mut owner = machine.owner().unwrap();
     owner.activate_injected(reservation('7')).unwrap();
-    let admitted: Arc<dyn Fn(&Record, bool) -> io::Result<()> + Send + Sync> =
-        Arc::new(|original, temporary| {
-            if !temporary
-                && original.nonce == "7".repeat(64)
-                && original.epoch == "7".repeat(32)
-                && original.installation == "1".repeat(32)
-                && original.artifact == format!("{}-service", "3".repeat(64))
-            {
-                Ok(())
-            } else {
-                Err(io::ErrorKind::PermissionDenied.into())
-            }
-        });
+    let admitted: RecordCheck = Arc::new(|original, temporary| {
+        if !temporary
+            && original.nonce == "7".repeat(64)
+            && original.epoch == "7".repeat(32)
+            && original.installation == "1".repeat(32)
+            && original.artifact == format!("{}-service", "3".repeat(64))
+        {
+            Ok(())
+        } else {
+            Err(io::ErrorKind::PermissionDenied.into())
+        }
+    });
     let mixed = vector["interleaved"].as_str().unwrap().as_bytes();
     let released = vector["released"].as_str().unwrap().as_bytes();
     // Injected Store denies missing supplier before any real path/package resolver.
@@ -1118,14 +1120,13 @@ fn tfc_v1_protected_original_producer_is_checked_for_each_required_family() {
     let machine = PrivateRoot::open("owner-journal");
     let mut owner = machine.owner().unwrap();
     owner.activate_injected(reservation('7')).unwrap();
-    let basic: Arc<dyn Fn(&Record, bool) -> io::Result<()> + Send + Sync> =
-        Arc::new(|original, temporary| {
-            if !temporary && original.nonce == "7".repeat(64) {
-                Ok(())
-            } else {
-                Err(io::ErrorKind::PermissionDenied.into())
-            }
-        });
+    let basic: RecordCheck = Arc::new(|original, temporary| {
+        if !temporary && original.nonce == "7".repeat(64) {
+            Ok(())
+        } else {
+            Err(io::ErrorKind::PermissionDenied.into())
+        }
+    });
     owner.battery_producer_fixture = Some(basic.clone());
     assert!(owner.journal_replace(None, raw).is_err());
     assert!(!machine.path.join("thermal-mutation.journal").exists());

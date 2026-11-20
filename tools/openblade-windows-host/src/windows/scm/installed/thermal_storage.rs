@@ -118,38 +118,6 @@ fn is_release_read_unavailable(error: &io::Error) -> bool {
         .get_ref()
         .is_some_and(|e| e.is::<ReleaseReadUnavailable>())
 }
-#[cfg(test)]
-mod release_read_tests {
-    use super::*;
-    #[test]
-    fn tfc_release_only_exact_read_operations_tag_retryable_errors() {
-        for code in [2, 5, 32, 33, 995, 1117] {
-            let open = release_open_error(io::Error::from_raw_os_error(code));
-            let read = release_bytes_error(io::Error::from_raw_os_error(code));
-            assert_eq!(is_release_read_unavailable(&open), code == 32);
-            assert_eq!(is_release_read_unavailable(&read), code == 33);
-            assert!(
-                !is_release_read_unavailable(&io::Error::from_raw_os_error(code)),
-                "aggregate errors are never tagged by number"
-            );
-        }
-        let tagged = release_open_error(io::Error::from_raw_os_error(32));
-        assert_eq!(
-            tagged
-                .get_ref()
-                .unwrap()
-                .downcast_ref::<ReleaseReadUnavailable>()
-                .unwrap()
-                .0
-                .raw_os_error(),
-            Some(32)
-        );
-        assert!(is_release_deferred(
-            &ReleaseDeferred::unreadable(tagged).into_error()
-        ));
-        assert!(!is_release_deferred(&io::Error::other("unclassified")));
-    }
-}
 const OVERRIDES: &str = "manual-overrides.json";
 const JOURNAL: &str = "thermal-mutation.journal";
 pub(super) trait Files: Send + Sync {
@@ -407,8 +375,10 @@ pub(super) struct Storage {
     files: Box<dyn Files>,
     state: Mutex<State>,
     #[cfg(test)]
-    battery_append_hook: Mutex<Option<Arc<dyn Fn(&str) + Send + Sync>>>,
+    battery_append_hook: Mutex<Option<AppendHook>>,
 }
+#[cfg(test)]
+type AppendHook = Arc<dyn Fn(&str) + Send + Sync>;
 fn pending_reason_locked(s: &State) -> &'static str {
     if s.last
         .as_ref()
@@ -492,11 +462,6 @@ impl Storage {
             !crate::thermal_history::handback_complete(s.journal.as_deref().unwrap_or_default())
                 .unwrap_or(false)
         })
-    }
-    pub(super) fn owned_tail(&self) -> bool {
-        self.state
-            .lock()
-            .map_or(true, |s| s.last.as_ref().is_some_and(|e| e.progress == 30))
     }
     pub(super) fn pending(&self) -> bool {
         self.state.lock().map_or(true, |s| {
@@ -731,13 +696,13 @@ impl Storage {
         power: i32,
     ) -> io::Result<Option<crate::service_status::FanOverride>> {
         let s = self.state.lock().map_err(|_| denied())?;
-        if let Some((v, p)) = &s.temporary_fan {
-            if *p == power {
-                return Ok(Some(crate::service_status::FanOverride {
-                    value: v["mode"].as_u64().ok_or_else(denied)? as u8,
-                    lifetime: 0,
-                }));
-            }
+        if let Some((v, p)) = &s.temporary_fan
+            && *p == power
+        {
+            return Ok(Some(crate::service_status::FanOverride {
+                value: v["mode"].as_u64().ok_or_else(denied)? as u8,
+                lifetime: 0,
+            }));
         }
         Ok(s.document["overrides"]["fans"].as_u64().map(|mode| {
             crate::service_status::FanOverride {
@@ -936,10 +901,10 @@ impl Storage {
         application: Option<&str>,
     ) -> io::Result<bool> {
         let s = self.state.lock().map_err(|_| denied())?;
-        if let Some((v, p)) = &s.temporary_fan {
-            if *p == power {
-                return Ok(v["mode"] != 0);
-            }
+        if let Some((v, p)) = &s.temporary_fan
+            && *p == power
+        {
+            return Ok(v["mode"] != 0);
         }
         if let Some(mode) = s.document["overrides"]["fans"].as_i64() {
             return Ok(mode != 0);
@@ -981,6 +946,8 @@ impl Storage {
     pub(super) fn progress(&self) -> Option<u8> {
         self.state.lock().ok()?.last.as_ref().map(|e| e.progress)
     }
+    // Every caller, including the shared mutation tests, passes the journal fields individually.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn record(
         &self,
         request: &str,
@@ -1266,4 +1233,36 @@ pub(super) fn legacy_fan(mode: u8) -> Value {
             .collect::<Vec<_>>()
     };
     json!({"mode":mode,"fixedSpeedRpm":if mode==3{5400}else{3700},"manualCurve":{"cpu":points([40,50,60,70,80,90],[2000,2100,2600,3400,4400,5400]),"gpu":points([35,45,55,65,75,85],[2000,2100,2700,3600,4500,5400]),"useHigherTemperatureForBoth":true}})
+}
+#[cfg(test)]
+mod release_read_tests {
+    use super::*;
+    #[test]
+    fn tfc_release_only_exact_read_operations_tag_retryable_errors() {
+        for code in [2, 5, 32, 33, 995, 1117] {
+            let open = release_open_error(io::Error::from_raw_os_error(code));
+            let read = release_bytes_error(io::Error::from_raw_os_error(code));
+            assert_eq!(is_release_read_unavailable(&open), code == 32);
+            assert_eq!(is_release_read_unavailable(&read), code == 33);
+            assert!(
+                !is_release_read_unavailable(&io::Error::from_raw_os_error(code)),
+                "aggregate errors are never tagged by number"
+            );
+        }
+        let tagged = release_open_error(io::Error::from_raw_os_error(32));
+        assert_eq!(
+            tagged
+                .get_ref()
+                .unwrap()
+                .downcast_ref::<ReleaseReadUnavailable>()
+                .unwrap()
+                .0
+                .raw_os_error(),
+            Some(32)
+        );
+        assert!(is_release_deferred(
+            &ReleaseDeferred::unreadable(tagged).into_error()
+        ));
+        assert!(!is_release_deferred(&io::Error::other("unclassified")));
+    }
 }

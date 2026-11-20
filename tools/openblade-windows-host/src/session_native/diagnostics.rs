@@ -30,11 +30,11 @@ fn classified(error: &io::Error) -> Option<&Classified> {
         if let Some(cause) = current.downcast_ref::<Classified>() {
             return Some(cause);
         }
-        if let Some(io) = current.downcast_ref::<io::Error>() {
-            if let Some(inner) = io.get_ref() {
-                current = inner;
-                continue;
-            }
+        if let Some(io) = current.downcast_ref::<io::Error>()
+            && let Some(inner) = io.get_ref()
+        {
+            current = inner;
+            continue;
         }
         current = current.source()?;
     }
@@ -65,6 +65,7 @@ pub(super) fn listener(error: io::Error) -> io::Error {
     attach(error, event, false)
 }
 
+#[cfg(feature = "agent-battery-report-v1")]
 pub(super) fn attempted(error: io::Error, event: Event) -> io::Error {
     // This means delivery was attempted, not that persistence or stderr succeeded.
     attach(error, event, true)

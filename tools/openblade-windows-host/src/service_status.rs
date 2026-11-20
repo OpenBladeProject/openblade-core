@@ -834,15 +834,14 @@ impl Snapshot {
             if !battery.public.is_empty() {
                 parts.push(&battery.public);
             }
-            if let Some(request) = &battery.request {
-                if !d.caller_denied
-                    && self.private_user_sid.as_deref() == Some(request.sid.as_str())
-                {
-                    // Ownership is checked first. Only the two already-classified
-                    // battery contributions share this exact duplicate suppression.
-                    if request.message != battery.public {
-                        parts.push(&request.message);
-                    }
+            if let Some(request) = &battery.request
+                && !d.caller_denied
+                && self.private_user_sid.as_deref() == Some(request.sid.as_str())
+            {
+                // Ownership is checked first. Only the two already-classified
+                // battery contributions share this exact duplicate suppression.
+                if request.message != battery.public {
+                    parts.push(&request.message);
                 }
             }
         }
@@ -895,7 +894,7 @@ impl Snapshot {
         unavailable
     }
 
-    #[cfg(feature = "installed-service-candidate")]
+    #[cfg(all(test, feature = "service-mailbox-observation-v1"))]
     pub(crate) fn metadata_only(&self) -> bool {
         self.confirmed_state.is_none()
     }
@@ -908,10 +907,6 @@ impl Snapshot {
         self
     }
 
-    #[cfg(feature = "installed-service-candidate")]
-    pub(crate) fn has_same_thermal(&self, other: &Self) -> bool {
-        self.confirmed_state == other.confirmed_state
-    }
     #[cfg(feature = "installed-service-candidate")]
     pub(crate) fn set_observation_revision(&mut self, revision: i64) {
         self.revision = revision;
@@ -1107,7 +1102,9 @@ pub(crate) fn request_id() -> io::Result<String> {
     ))
 }
 
-pub(crate) use openblade_domain::thermal_history::{PerformanceOverride, validate_gpu_tuning};
+pub(crate) use openblade_domain::thermal_history::PerformanceOverride;
+#[cfg(feature = "service-thermal-mutation-v1")]
+pub(crate) use openblade_domain::thermal_history::validate_gpu_tuning;
 
 #[cfg(feature = "service-thermal-mutation-v1")]
 impl Snapshot {
@@ -1203,14 +1200,13 @@ impl Snapshot {
     pub(crate) fn bind_private_user(mut self, sid: &str) -> Self {
         // An independently owned request diagnostic must never become the next
         // private-data owner's text, or revive after a later binding back.
-        if let Some(battery) = &mut self.diagnostics.battery {
-            if battery
+        if let Some(battery) = &mut self.diagnostics.battery
+            && battery
                 .request
                 .as_ref()
                 .is_some_and(|request| request.sid != sid)
-            {
-                battery.request = None;
-            }
+        {
+            battery.request = None;
         }
         self.private_user_sid = Some(sid.to_owned());
         self.diagnostics.caller_denied = false;

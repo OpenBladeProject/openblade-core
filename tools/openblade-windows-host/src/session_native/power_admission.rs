@@ -112,6 +112,7 @@ impl PowerAdmission {
     }
 
     /// The confirmed context only: automation and profile apply.
+    #[cfg(any(test, feature = "agent-display-profile-apply-v1"))]
     pub(crate) fn capture(&self) -> Option<PowerContext> {
         let state = self.0.lock().ok()?;
         if state.retired {

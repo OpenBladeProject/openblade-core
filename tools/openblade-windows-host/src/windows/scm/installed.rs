@@ -20,6 +20,11 @@ pub(crate) use native::entry;
 mod readiness;
 
 const NAME: &str = "OpenBlade";
+
+// Test seam shared by the durable-owner, thermal-native and private-mutation fixtures.
+#[cfg(all(test, feature = "service-mailbox-observation-v1"))]
+pub(crate) type FileVerifier =
+    std::sync::Arc<dyn Fn(&std::fs::File) -> io::Result<()> + Send + Sync>;
 use crate::service_status::{PIPE_NAME, PROTOCOL_VERSION};
 
 struct ProcessEvidence {

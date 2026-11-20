@@ -177,10 +177,11 @@ impl Port for MemoryPort {
                 let payload = &frame[9..9 + frame[6] as usize];
                 s.sent.push((class, command, payload.to_vec(), id));
                 s.sent_at.push(Instant::now());
-                if class == 7 && matches!(command, 0x92 | 0x8f) {
-                    if let Some(hook) = &s.battery_getter_hook {
-                        hook(command, s.battery_reads);
-                    }
+                if class == 7
+                    && matches!(command, 0x92 | 0x8f)
+                    && let Some(hook) = &s.battery_getter_hook
+                {
+                    hook(command, s.battery_reads);
                 }
                 let response = match (class, command) {
                     (13, 1 | 2) => {
@@ -198,10 +199,10 @@ impl Port for MemoryPort {
                             s.fans[index] = payload[3];
                         }
                         s.writes += 1;
-                        if let Some((number, release)) = &s.held_write {
-                            if *number == s.writes {
-                                self.held = Some(release.clone());
-                            }
+                        if let Some((number, release)) = &s.held_write
+                            && *number == s.writes
+                        {
+                            self.held = Some(release.clone());
                         }
                         if s.fail_write == Some(s.writes) {
                             return Err(io::ErrorKind::Other.into());
@@ -249,10 +250,10 @@ impl Port for MemoryPort {
                         assert!(matches!(payload[0], 0 | 4));
                         s.writes += 1;
                         s.temporary_raw = payload[0];
-                        if let Some((n, release)) = &s.held_write {
-                            if *n == s.writes {
-                                self.held = Some(release.clone());
-                            }
+                        if let Some((n, release)) = &s.held_write
+                            && *n == s.writes
+                        {
+                            self.held = Some(release.clone());
                         }
                         if s.fail_write == Some(s.writes) {
                             return Err(io::ErrorKind::Other.into());
@@ -270,10 +271,10 @@ impl Port for MemoryPort {
                         assert_eq!(payload.len(), 1);
                         s.writes += 1;
                         s.battery_raw = payload[0];
-                        if let Some((number, release)) = &s.held_write {
-                            if *number == s.writes {
-                                self.held = Some(release.clone());
-                            }
+                        if let Some((number, release)) = &s.held_write
+                            && *number == s.writes
+                        {
+                            self.held = Some(release.clone());
                         }
                         if s.fail_write == Some(s.writes) {
                             return Err(io::ErrorKind::Other.into());
@@ -289,10 +290,10 @@ impl Port for MemoryPort {
                         if let Some(hook) = &s.on_power {
                             hook(s.power_reads);
                         }
-                        if let Some((at, actual)) = s.change_power {
-                            if at == s.power_reads {
-                                s.actual = actual;
-                            }
+                        if let Some((at, actual)) = s.change_power
+                            && at == s.power_reads
+                        {
+                            s.actual = actual;
                         }
                         vec![s.actual, s.recommended]
                     }

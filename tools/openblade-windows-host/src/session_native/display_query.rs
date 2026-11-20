@@ -526,6 +526,7 @@ pub(super) async fn run(
 
 #[derive(Debug)]
 enum ServeError {
+    #[allow(dead_code)] // The connection error is carried for Debug output only.
     Connection(io::Error),
     Fatal(io::Error),
 }
@@ -678,6 +679,8 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     let canceled = Cancellation(Arc::new(AtomicBool::new(false)));
     let operation = request.operation;
     let deadline = operation.deadline();
+    // A short-lived local; boxing the reply would add an allocation to every request.
+    #[allow(clippy::large_enum_variant)]
     enum End {
         Complete(io::Result<Reply>),
         Retire,

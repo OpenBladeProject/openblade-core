@@ -7,10 +7,10 @@
 //! operation records its certainty before returning, even when the client,
 //! deadline or Stop has already abandoned the reply.
 #[cfg(test)]
-pub(super) use super::write::CHECKPOINT;
-#[cfg(test)]
 use super::write::explicit_read;
-pub(super) use super::write::{CHANGED_POWER, STALE_AFTER, UNCONFIRMED_POWER, UNREFRESHED};
+#[cfg(test)]
+pub(super) use super::write::{CHANGED_POWER, CHECKPOINT};
+pub(super) use super::write::{STALE_AFTER, UNCONFIRMED_POWER, UNREFRESHED};
 use super::{
     observation::{SharedBrightness, Snapshot},
     recovery::{CheckpointFile, Fields, Recovery, Status},

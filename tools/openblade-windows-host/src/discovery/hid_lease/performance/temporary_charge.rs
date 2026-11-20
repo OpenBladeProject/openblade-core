@@ -15,7 +15,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
     ) -> Option<()> {
         fn reserve<P: Port>(port: &mut P, permit: &dyn Permit) -> Option<[u8; EXCHANGES]> {
             let mut ids = [0; EXCHANGES];
-            for pair in ids.chunks_exact_mut(2) {
+            for pair in ids.as_chunks_mut::<2>().0 {
                 let Some(v) = port.reserve_pair() else {
                     permit.refused(Refusal::TransactionCapacity);
                     return None;

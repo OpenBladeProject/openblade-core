@@ -47,6 +47,7 @@ pub(super) struct BatteryPermit {
     tfc: Mutex<Option<openblade_domain::temporary_charge_history::TemporaryChargeRecord>>,
     reserved_ids: Option<[u8; 8]>,
     origin: Option<openblade_domain::temporary_charge_history::Origin>,
+    #[cfg(feature = "service-temporary-charge-v1")]
     authentication: Option<(u32, i32)>,
     custody: Arc<dyn ReadCustody>,
     pub(super) sid: String,
@@ -336,15 +337,17 @@ impl Permit for BatteryPermit {
         self.joined.store(true, Ordering::Release);
         verify_retained_failure(&self.fatal)?;
         self.fresh.verify_health()?;
-        if self.prepared.load(Ordering::Acquire) && self.storage.progress() == Some(0) {
-            if let Err(e) = self.write(6) {
-                self.storage.quarantine_settlement()?;
-                return Ok(Settlement::Unresolved(e));
-            }
+        if self.prepared.load(Ordering::Acquire)
+            && self.storage.progress() == Some(0)
+            && let Err(e) = self.write(6)
+        {
+            self.storage.quarantine_settlement()?;
+            return Ok(Settlement::Unresolved(e));
         }
         Ok(Settlement::Complete)
     }
 }
+#[cfg(feature = "service-temporary-charge-v1")]
 fn source_request_id(creator: &str, epoch: u64) -> String {
     // Domain-separated service event identity; creator PID/request remain
     // original provenance, never fabricated as a new authenticated pipe caller.
@@ -538,17 +541,18 @@ impl Runtime {
             public_only: true,
         }))
     }
-    #[cfg(test)]
+    #[cfg(all(test, feature = "service-temporary-charge-v1"))]
     pub(in super::super) fn release_hook_for_tests(&self, hook: Rc<dyn Fn()>) {
         *self.release_hook.borrow_mut() = Some(hook);
     }
-    #[cfg(test)]
+    #[cfg(all(test, feature = "service-temporary-charge-v1"))]
     pub(in super::super) fn release_only_for_tests(&self) -> bool {
         self.temporary_owner
             .borrow()
             .as_ref()
             .is_some_and(|p| p.abandoned.load(Ordering::Acquire))
     }
+    #[cfg(feature = "service-temporary-charge-v1")]
     pub(in super::super) fn temporary_event_needed(&self, epoch: u64) -> io::Result<bool> {
         self.reconcile_temporary_owner()?;
         // A current-epoch prospective request cannot hide an older confirmed
@@ -560,6 +564,7 @@ impl Runtime {
             .chain(self.temporary_owner.borrow().iter())
             .any(|p| p.proof.lifecycle != epoch && self.temporary_event.get() != Some(epoch)))
     }
+    #[cfg(feature = "service-temporary-charge-v1")]
     pub(in super::super) fn temporary_event_observed(&self, epoch: u64) {
         self.temporary_event.set(Some(epoch));
     }
@@ -589,6 +594,7 @@ impl Runtime {
             })
             .map(|p| p.storage.clone())
     }
+    #[cfg(feature = "service-temporary-charge-v1")]
     pub(in super::super) async fn battery_source_event(
         &self,
         mailbox: MailboxSource,
@@ -637,65 +643,60 @@ impl Runtime {
                         fresh.verify_health()?;
                         if let Some(proof) = fresh.authorize().filter(|p| {
                             p.lifecycle == epoch && p.generation == original.proof.generation
-                        }) {
-                            if Arc::ptr_eq(&storage, &original.storage)
-                                && Arc::ptr_eq(&original.custody, &reader.custody())
-                                && original.authentication.is_some()
-                                && fresh.authentication() == original.authentication
+                        }) && Arc::ptr_eq(&storage, &original.storage)
+                            && Arc::ptr_eq(&original.custody, &reader.custody())
+                            && original.authentication.is_some()
+                            && fresh.authentication() == original.authentication
+                        {
+                            let permit = Arc::new(BatteryPermit {
+                                tfc: Mutex::new(None),
+                                reserved_ids: record.cancel_ids,
+                                origin: Some(openblade_domain::temporary_charge_history::Origin {
+                                    request: original.request.clone(),
+                                    intent: record.hash()?,
+                                }),
+                                authentication: original.authentication,
+                                custody: original.custody.clone(),
+                                sid: original.sid.clone(),
+                                storage,
+                                fresh,
+                                request: source_request_id(&original.request, epoch),
+                                requested: Request::SetFullChargeOverride { enabled: false },
+                                owner: original.owner.clone(),
+                                caller_pid: original.caller_pid,
+                                session: original.session,
+                                proof,
+                                record: Mutex::new(None),
+                                observation: self.battery_observation.clone(),
+                                prepared: AtomicBool::new(false),
+                                confirmed: AtomicBool::new(false),
+                                joined: AtomicBool::new(false),
+                                registered: AtomicBool::new(false),
+                                abandoned: AtomicBool::new(false),
+                                positive_at: Mutex::new(None),
+                                source: self.battery_source.clone(),
+                                cause: Mutex::new(message.clone()),
+                                fatal: self.fatal.clone(),
+                            });
+                            self.retain_battery_view(&reader, permit.clone());
+                            let awaiting = BatteryAwaitGuard(permit.clone());
+                            let result = reader
+                                .mutate(
+                                    permit.clone(),
+                                    Instant::now() + std::time::Duration::from_secs(4),
+                                )
+                                .await;
+                            drop(awaiting);
+                            attempted = Some(permit.clone());
+                            verify_retained_failure(&self.fatal)?;
+                            if let Err(e) = result
+                                && is_fatal_admission(&e)
                             {
-                                let permit = Arc::new(BatteryPermit {
-                                    tfc: Mutex::new(None),
-                                    reserved_ids: record.cancel_ids,
-                                    origin: Some(
-                                        openblade_domain::temporary_charge_history::Origin {
-                                            request: original.request.clone(),
-                                            intent: record.hash()?,
-                                        },
-                                    ),
-                                    authentication: original.authentication,
-                                    custody: original.custody.clone(),
-                                    sid: original.sid.clone(),
-                                    storage,
-                                    fresh,
-                                    request: source_request_id(&original.request, epoch),
-                                    requested: Request::SetFullChargeOverride { enabled: false },
-                                    owner: original.owner.clone(),
-                                    caller_pid: original.caller_pid,
-                                    session: original.session,
-                                    proof,
-                                    record: Mutex::new(None),
-                                    observation: self.battery_observation.clone(),
-                                    prepared: AtomicBool::new(false),
-                                    confirmed: AtomicBool::new(false),
-                                    joined: AtomicBool::new(false),
-                                    registered: AtomicBool::new(false),
-                                    abandoned: AtomicBool::new(false),
-                                    positive_at: Mutex::new(None),
-                                    source: self.battery_source.clone(),
-                                    cause: Mutex::new(message.clone()),
-                                    fatal: self.fatal.clone(),
-                                });
-                                self.retain_battery_view(&reader, permit.clone());
-                                let awaiting = BatteryAwaitGuard(permit.clone());
-                                let result = reader
-                                    .mutate(
-                                        permit.clone(),
-                                        Instant::now() + std::time::Duration::from_secs(4),
-                                    )
-                                    .await;
-                                drop(awaiting);
-                                attempted = Some(permit.clone());
-                                verify_retained_failure(&self.fatal)?;
-                                if let Err(e) = result {
-                                    if is_fatal_admission(&e) {
-                                        return Err(e);
-                                    }
-                                }
-                                if permit.confirmed.load(Ordering::Acquire)
-                                    && !permit.storage.pending()
-                                {
-                                    message = "Temporary full charge canceled on Battery by independent readback; configured charge policy is retained.".into();
-                                }
+                                return Err(e);
+                            }
+                            if permit.confirmed.load(Ordering::Acquire) && !permit.storage.pending()
+                            {
+                                message = "Temporary full charge canceled on Battery by independent readback; configured charge policy is retained.".into();
                             }
                         }
                     }
@@ -714,12 +715,10 @@ impl Runtime {
             && attempted
                 .as_ref()
                 .is_none_or(|p| p.joined.load(Ordering::Acquire))
+            && let Err(error) = self.finish_temporary_release(original.clone())
+            && !super::super::thermal_storage::is_release_deferred(&error)
         {
-            if let Err(error) = self.finish_temporary_release(original.clone()) {
-                if !super::super::thermal_storage::is_release_deferred(&error) {
-                    return Err(error);
-                }
-            }
+            return Err(error);
         }
         *self
             .battery_warning
@@ -803,11 +802,13 @@ impl Runtime {
                 None,
             ));
         };
+        #[cfg(feature = "service-temporary-charge-v1")]
         let authentication = fresh.authentication();
         let permit = Arc::new(BatteryPermit {
             tfc: Mutex::new(None),
             reserved_ids: None,
             origin: None,
+            #[cfg(feature = "service-temporary-charge-v1")]
             authentication,
             custody: reader.custody().clone(),
             sid: sid.clone(),
@@ -855,10 +856,10 @@ impl Runtime {
         // The worker's outcome is already established. Only subsequent typed
         // capacity-release deferral is presentation/bookkeeping, not a failure
         // of this operation. Fatal/unclassified errors still propagate.
-        if let Err(error) = self.reconcile_temporary_owner() {
-            if !super::super::thermal_storage::is_release_deferred(&error) {
-                return Err(error);
-            }
+        if let Err(error) = self.reconcile_temporary_owner()
+            && !super::super::thermal_storage::is_release_deferred(&error)
+        {
+            return Err(error);
         }
         // Battery uses a typed side channel; the thermal Option result is intentionally
         // empty. Check original live authority and deadline independently here.

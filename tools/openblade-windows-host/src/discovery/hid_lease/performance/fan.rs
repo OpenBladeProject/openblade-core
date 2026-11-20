@@ -160,11 +160,11 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 }
             }
             for (index, command) in group.commands().iter().enumerate() {
-                if group_index == 1 {
-                    if let Some(at) = last_state {
-                        sleep_until(limit.deadline.min(at + Duration::from_millis(210))).await;
-                        limit.check().ok()?;
-                    }
+                if group_index == 1
+                    && let Some(at) = last_state
+                {
+                    sleep_until(limit.deadline.min(at + Duration::from_millis(210))).await;
+                    limit.check().ok()?;
                 }
                 if let Some(at) = last_target {
                     sleep_until(limit.deadline.min(at + Duration::from_millis(65))).await;

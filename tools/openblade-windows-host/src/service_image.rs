@@ -1,16 +1,18 @@
 //! Verification of the retained Service file on disk.
 
-use std::{
-    fs::File,
-    io::{self, Read},
-};
+#[cfg(feature = "scratch-candidate-receipt")]
+use std::fs::File;
+use std::io::{self, Read};
 
 use sha2::{Digest, Sha256};
 
-use crate::windows_protected_path::{FileIdentity, denied, file_identity, handle_information};
+use crate::windows_protected_path::denied;
+#[cfg(feature = "scratch-candidate-receipt")]
+use crate::windows_protected_path::{FileIdentity, file_identity, handle_information};
 
 pub(super) const MAX_IMAGE_BYTES: u64 = 64 * 1024 * 1024;
 
+#[cfg(feature = "scratch-candidate-receipt")]
 pub(super) fn verify(image: &mut File, expected_size: u64, expected: [u8; 32]) -> io::Result<()> {
     let before = snapshot(image)?;
     if before.size != expected_size {
@@ -25,6 +27,7 @@ pub(super) fn verify(image: &mut File, expected_size: u64, expected: [u8; 32]) -
     Ok(())
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 #[derive(PartialEq, Eq)]
 pub(super) struct ImageSnapshot {
     identity: FileIdentity,
@@ -32,6 +35,7 @@ pub(super) struct ImageSnapshot {
     last_write: u64,
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 pub(super) fn snapshot(file: &File) -> io::Result<ImageSnapshot> {
     let info = handle_information(file)?;
     let identity = file_identity(&info);

@@ -16,6 +16,8 @@ pub(super) struct ProcessTokenEvidence {
     pub sid: String,
     pub token_session: u32,
     pub process_session: u32,
+    #[cfg_attr(not(test), allow(dead_code))]
+    // Read only by the sign-in binding check that tests exercise.
     pub logon: (i32, u32),
     pub primary: bool,
     pub elevated: bool,

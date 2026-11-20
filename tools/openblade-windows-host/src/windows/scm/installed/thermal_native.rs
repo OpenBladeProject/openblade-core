@@ -33,6 +33,7 @@ fn deny() -> io::Error {
     )
 }
 
+#[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
 pub(super) struct WindowsGuard {
     origin: Arc<Origin>,
     custody: Arc<dyn ReadCustody>,
@@ -43,6 +44,7 @@ pub(super) struct WindowsGuard {
     controllers:
         Mutex<openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission>,
 }
+#[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
 impl WindowsGuard {
     pub(super) fn on_battery(&self) -> Option<bool> {
         let mut status = SYSTEM_POWER_STATUS::default();
@@ -196,9 +198,9 @@ impl WindowsGuard {
 /// Stop-only admission captured by `WindowsGuard::capture_settle`. It exposes
 /// only the owned-stop proof, never request admission. Test composition
 /// injects its own `Fresh`, so only the native factory constructs it.
-#[cfg_attr(test, allow(dead_code))]
+#[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
 pub(super) struct SettleGuard(WindowsGuard);
-#[cfg_attr(test, allow(dead_code))]
+#[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
 impl SettleGuard {
     pub(super) fn authentication(&self) -> (u32, i32) {
         self.0.authentication
@@ -211,6 +213,7 @@ impl SettleGuard {
     }
 }
 // Exact current-session read; source/compile-only during offline validation.
+#[cfg_attr(test, allow(dead_code))] // Only the native session and path checks call this; tests inject them.
 fn session_unlocked(session: u32) -> bool {
     use windows_sys::Win32::System::RemoteDesktop::{
         WTS_SESSIONSTATE_UNLOCK, WTSActive, WTSFreeMemory, WTSINFOEXW, WTSQuerySessionInformationW,
@@ -251,6 +254,7 @@ fn session_unlocked(session: u32) -> bool {
     }
     valid
 }
+#[cfg_attr(test, allow(dead_code))] // Only the native session and path checks call this; tests inject them.
 fn session_identity(session: u32) -> io::Result<crate::windows_token::Identity> {
     if session == 0 {
         return Err(deny());
@@ -274,10 +278,11 @@ pub(super) struct ProtectedFiles {
     _ancestors: Vec<File>,
     _writer: File,
     #[cfg(test)]
-    verifier: Option<Arc<dyn Fn(&File) -> io::Result<()> + Send + Sync>>,
+    verifier: Option<crate::installed::FileVerifier>,
 }
 impl ProtectedFiles {
     /// No default root, environment resolution or token query occurs here.
+    #[cfg_attr(test, allow(dead_code))] // Only the native factory acquires the protected root, which tests replace.
     pub(super) fn open_at(path: &Path) -> io::Result<Self> {
         let (root, ancestors, _) = paths::pin_root(path)?;
         paths::require_ntfs(&root)?;
@@ -321,10 +326,7 @@ impl ProtectedFiles {
         paths::verify_security(file, policy)
     }
     #[cfg(test)]
-    pub(super) fn injected(
-        root: File,
-        verify: Arc<dyn Fn(&File) -> io::Result<()> + Send + Sync>,
-    ) -> io::Result<Self> {
+    pub(super) fn injected(root: File, verify: crate::installed::FileVerifier) -> io::Result<Self> {
         verify(&root)?;
         let writer = paths::open_relative(
             &root,
@@ -458,6 +460,7 @@ impl Files for CustodialFiles {
     }
 }
 
+#[cfg_attr(test, allow(dead_code))] // Only the native session and path checks call this; tests inject them.
 pub(super) fn same_path(left: &str, right: &str) -> bool {
     let left: Vec<u16> = left.encode_utf16().collect();
     let right: Vec<u16> = right.encode_utf16().collect();

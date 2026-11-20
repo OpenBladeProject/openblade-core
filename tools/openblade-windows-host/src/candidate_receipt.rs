@@ -1,20 +1,20 @@
 //! Bind package records to retained candidate files, with separate startup and commit admission.
 
-use std::{
-    ffi::OsStr,
-    fs::File,
-    io::{self, Read},
-    os::windows::io::AsRawHandle,
-    path::Path,
-};
+use std::io;
+#[cfg(feature = "scratch-candidate-receipt")]
+use std::{ffi::OsStr, fs::File, io::Read, os::windows::io::AsRawHandle, path::Path};
 
+#[cfg(feature = "scratch-candidate-receipt")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "scratch-candidate-receipt")]
 use sha2::{Digest, Sha256};
+#[cfg(feature = "scratch-candidate-receipt")]
 use windows_sys::{
     Wdk::Storage::FileSystem::{FILE_NON_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_REPARSE_POINT},
     Win32::Storage::FileSystem::{FILE_GENERIC_READ, FILE_SHARE_READ, FILE_TYPE_DISK, GetFileType},
 };
 
+#[cfg(feature = "scratch-candidate-receipt")]
 use crate::{
     service_image::{self, MAX_IMAGE_BYTES, snapshot},
     service_install_identity::IMAGE_NAME,
@@ -24,16 +24,23 @@ use crate::{
     },
 };
 
+// The receipt fixtures compile this file standalone; the Service entry also loads it at the crate root.
+#[allow(clippy::duplicate_mod)]
 #[path = "native_package.rs"]
 pub(crate) mod native_package;
 
+#[cfg(feature = "scratch-candidate-receipt")]
 const COMMITTED_NAME: &str = "candidate-package.committed.json";
+#[cfg(feature = "scratch-candidate-receipt")]
 const MAX_RECEIPT_BYTES: u64 = 4096;
+#[cfg(feature = "scratch-candidate-receipt")]
 const EMPTY_GUID: &str = "00000000-0000-0000-0000-000000000000";
+#[cfg(feature = "scratch-candidate-receipt")]
 const AGENT_NAME: &str = "OpenBlade.SessionAgent.exe";
 #[cfg(feature = "scratch-candidate-receipt")]
 pub(super) const SCRATCH_LAUNCH_NAME: &str = "candidate-setup-launch.v3";
 
+#[cfg(feature = "scratch-candidate-receipt")]
 #[derive(Clone, Copy)]
 enum Phase {
     Committed,
@@ -41,6 +48,7 @@ enum Phase {
     Startup,
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 impl Phase {
     fn record(self) -> (&'static str, &'static str) {
         match self {
@@ -54,6 +62,7 @@ impl Phase {
 /// Evidence about files on disk. The process must separately prove that it
 /// loaded this generation before it can open the production endpoint.
 pub(crate) struct CommittedServiceImage {
+    #[cfg(feature = "scratch-candidate-receipt")]
     _files: Option<RetainedRecord>,
     package: Option<native_package::InstalledPackage>,
 }
@@ -67,6 +76,7 @@ impl CommittedServiceImage {
     }
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 struct RetainedRecord {
     _image: File,
     _receipt: File,
@@ -241,15 +251,18 @@ mod scratch_launch_tests {
 }
 
 #[cfg(feature = "installed-service-candidate")]
-#[cfg_attr(test, allow(dead_code))]
+// Reserved constructor for the compile-only native composition; no production caller yet.
+#[allow(dead_code)]
 pub(crate) fn read_installed() -> io::Result<CommittedServiceImage> {
     let package = native_package::read_installed_package()?;
     Ok(CommittedServiceImage {
+        #[cfg(feature = "scratch-candidate-receipt")]
         _files: None,
         package: Some(package),
     })
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 pub(super) fn read(
     install: &Path,
     scope: &str,
@@ -322,9 +335,8 @@ pub(super) fn read_provisional(
 
 #[cfg(feature = "scratch-candidate-receipt")]
 type OptionalStartup = Option<StartupEvidence>;
-#[cfg(not(feature = "scratch-candidate-receipt"))]
-type OptionalStartup = Option<()>;
 
+#[cfg(feature = "scratch-candidate-receipt")]
 fn read_record(
     install: &Path,
     scope: &str,
@@ -529,19 +541,18 @@ fn read_record(
             _install_directory: root,
             _ancestors: ancestors,
         },
-        #[cfg(feature = "scratch-candidate-receipt")]
         startup,
-        #[cfg(not(feature = "scratch-candidate-receipt"))]
-        None,
     ))
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 #[allow(unsafe_code)]
 fn unsafe_disk_type(file: &File) -> u32 {
     // SAFETY: The borrowed file owns a live handle for the call.
     unsafe { GetFileType(file.as_raw_handle()) }
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct Receipt {
@@ -564,6 +575,7 @@ struct Receipt {
     session_agent: RoleImage,
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "PascalCase")]
 struct RoleImage {
@@ -576,6 +588,7 @@ struct RoleImage {
     sha256: String,
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 impl RoleImage {
     fn matches(&self, role: u8, name: &str) -> bool {
         self.role == role
@@ -588,6 +601,7 @@ impl RoleImage {
     }
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 fn parse(bytes: &[u8], scope: &str, expected_phase: &str) -> io::Result<Receipt> {
     let record: Receipt = serde_json::from_slice(bytes).map_err(|_| invalid_receipt())?;
     // Compare the canonical serializer order and spellings, including integer
@@ -622,6 +636,7 @@ fn parse(bytes: &[u8], scope: &str, expected_phase: &str) -> io::Result<Receipt>
     Ok(record)
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 fn invalid_receipt() -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidData,
@@ -629,6 +644,7 @@ fn invalid_receipt() -> io::Error {
     )
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 fn canonical_id(value: &str) -> bool {
     (1..=128).contains(&value.len())
         && value
@@ -636,6 +652,7 @@ fn canonical_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"_.".contains(&byte))
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 pub(super) fn lower_hex(value: &str, len: usize) -> bool {
     value.len() == len
         && value
@@ -643,16 +660,19 @@ pub(super) fn lower_hex(value: &str, len: usize) -> bool {
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 fn guid(value: &str) -> bool {
     value.len() == 36
         && value.split('-').map(str::len).eq([8, 4, 4, 4, 12])
         && value.split('-').all(|part| lower_hex(part, part.len()))
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 fn nonempty_guid(value: &str) -> bool {
     value != EMPTY_GUID && guid(value)
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 fn version(value: &str) -> bool {
     let parts = value.split('.');
     parts.clone().count() == 4
@@ -662,6 +682,7 @@ fn version(value: &str) -> bool {
         })
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 fn utc_timestamp(value: &str) -> bool {
     // System.Text.Json emits UTC DateTimeOffset with +00:00 and up to seven
     // fractional digits, dropping trailing zeroes.
@@ -701,6 +722,7 @@ fn utc_timestamp(value: &str) -> bool {
         && number(17, 19) < 60
 }
 
+#[cfg(feature = "scratch-candidate-receipt")]
 pub(super) fn digest(value: &str) -> io::Result<[u8; 32]> {
     if !lower_hex(value, 64) {
         return Err(invalid_receipt());

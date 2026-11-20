@@ -7,6 +7,16 @@ use openblade_domain::{
     fan_recipe::{FanIntent, automatic_handback},
 };
 use serde_json::{Value, json};
+// One admitted fan request and the status it was read against.
+pub(in super::super) struct FanRequest {
+    pub(in super::super) caller: Caller,
+    pub(in super::super) sid: String,
+    pub(in super::super) request: String,
+    pub(in super::super) value: Option<FanOverride>,
+    pub(in super::super) settings: Option<Value>,
+    pub(in super::super) deadline: Instant,
+    pub(in super::super) status: Snapshot,
+}
 pub(super) struct FanPermit {
     storage: Arc<Storage>,
     fresh: Arc<dyn Fresh>,
@@ -130,24 +140,24 @@ impl Permit for FanPermit {
         if self.cleanup() {
             self.storage.verify_fan_configuration().ok()?;
         }
-        if !self.cleanup() {
-            if let Some((source, settings)) = &*self.selected.lock().ok()? {
-                if self
-                    .storage
-                    .desired_fan(*source, self.application.as_deref())
-                    .ok()?
-                    .as_ref()
-                    != Some(settings)
-                {
-                    return None;
-                }
-                // The preset carried by a return to Automatic is saved policy too:
-                // every setter needs it to remain the current destination.
-                if let Some(preset) = *self.performance.lock().ok()? {
-                    if self.handback_preset(*source).ok()? != Some(preset) {
-                        return None;
-                    }
-                }
+        if !self.cleanup()
+            && let Some((source, settings)) = &*self.selected.lock().ok()?
+        {
+            if self
+                .storage
+                .desired_fan(*source, self.application.as_deref())
+                .ok()?
+                .as_ref()
+                != Some(settings)
+            {
+                return None;
+            }
+            // The preset carried by a return to Automatic is saved policy too:
+            // every setter needs it to remain the current destination.
+            if let Some(preset) = *self.performance.lock().ok()?
+                && self.handback_preset(*source).ok()? != Some(preset)
+            {
+                return None;
             }
         }
         proof
@@ -297,11 +307,12 @@ impl Permit for FanPermit {
     fn retired(&self) -> io::Result<Settlement> {
         verify_retained_failure(&self.fatal)?;
         self.fresh.verify_health()?;
-        if self.prepared.load(Ordering::Acquire) && self.storage.progress() == Some(0) {
-            if let Err(e) = self.write(6) {
-                self.storage.quarantine_settlement()?;
-                return Ok(Settlement::Unresolved(e));
-            }
+        if self.prepared.load(Ordering::Acquire)
+            && self.storage.progress() == Some(0)
+            && let Err(e) = self.write(6)
+        {
+            self.storage.quarantine_settlement()?;
+            return Ok(Settlement::Unresolved(e));
         }
         self.joined.store(true, Ordering::Release);
         Ok(Settlement::Complete)
@@ -498,14 +509,17 @@ impl Runtime {
     pub(in super::super) async fn apply_fan(
         &self,
         mailbox: MailboxSource,
-        caller: Caller,
-        sid: String,
-        request: String,
-        value: Option<FanOverride>,
-        settings: Option<Value>,
-        deadline: Instant,
-        status_snapshot: Snapshot,
+        fan: FanRequest,
     ) -> io::Result<(Outcome, Option<Snapshot>)> {
+        let FanRequest {
+            caller,
+            sid,
+            request,
+            value,
+            settings,
+            deadline,
+            status: status_snapshot,
+        } = fan;
         let _serial = self.gate.lock().await;
         verify_retained_failure(&self.fatal)?;
         if caller.logon != Logon::Interactive

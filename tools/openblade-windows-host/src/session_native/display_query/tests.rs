@@ -844,7 +844,6 @@ async fn owned_private_pipe_unread_admitted_frame_retires_then_normal_peer_recei
 
 #[tokio::test]
 async fn owned_pending_write_cancellation_releases_slot_and_preserves_bounded_write_contract() {
-    use windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION;
     let (endpoint, name) = private_pipe_endpoint();
     let claim = endpoint.claim().unwrap();
     let mut server = endpoint.listen().unwrap();

@@ -28,6 +28,8 @@ fn base64(text: &str) -> Vec<u8> {
 }
 
 /// Operations this build selected; the managed codec supports more.
+// The arms are per-feature cfg! values, so a build that enables every feature folds them to constants.
+#[allow(clippy::match_like_matches_macro)]
 fn selected(case: &str) -> bool {
     let operation = case.split('-').next().unwrap();
     match operation {

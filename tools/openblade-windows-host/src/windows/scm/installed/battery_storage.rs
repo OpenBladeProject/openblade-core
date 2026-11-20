@@ -38,7 +38,7 @@ fn cancellation_capacity(entry: &Entry) -> io::Result<usize> {
     Ok((serde_json::to_vec(&row)?.len() + 1) * 4)
 }
 impl Storage {
-    #[cfg(test)]
+    #[cfg(all(test, feature = "service-temporary-charge-v1"))]
     pub(in super::super) fn temporary_capacity_for_tests(
         &self,
     ) -> (
@@ -88,6 +88,7 @@ impl Storage {
         s.temporary_capacity_origin = None;
         Ok(TemporaryRelease::Released)
     }
+    #[cfg(all(test, feature = "service-temporary-charge-v1"))]
     pub(in super::super) fn temporary_desired(&self) -> bool {
         self.state
             .lock()
@@ -182,10 +183,11 @@ impl Storage {
     pub(in super::super) fn record_battery(&self, mut entry: Entry) -> io::Result<()> {
         entry.user_sid = self.user_sid.clone();
         #[cfg(test)]
-        if entry.battery.is_some() && entry.progress == 0 {
-            if let Some(hook) = self.battery_append_hook.lock().unwrap().clone() {
-                hook("before-prepared");
-            }
+        if entry.battery.is_some()
+            && entry.progress == 0
+            && let Some(hook) = self.battery_append_hook.lock().unwrap().clone()
+        {
+            hook("before-prepared");
         }
         let mut s = self.state.lock().map_err(|_| denied())?;
         if s.quarantined {
@@ -272,13 +274,13 @@ impl Storage {
             return Err(e);
         }
         s.journal = Some(bytes);
-        if entry.progress == 0 && entry.tfc.as_ref().is_some_and(|t| t.origin.is_some()) {
-            if s.temporary_capacity_origin.as_ref()
+        if entry.progress == 0
+            && entry.tfc.as_ref().is_some_and(|t| t.origin.is_some())
+            && s.temporary_capacity_origin.as_ref()
                 == entry.tfc.as_ref().and_then(|t| t.origin.as_ref())
-            {
-                s.temporary_capacity = 0;
-                s.temporary_capacity_origin = None;
-            }
+        {
+            s.temporary_capacity = 0;
+            s.temporary_capacity_origin = None;
         }
         if matches!(entry.progress, 72 | 73) {
             s.temporary_capacity = cancellation_capacity(&entry)?;
@@ -300,15 +302,14 @@ impl Storage {
         #[cfg(test)]
         {
             drop(s);
-            if policy_prepared {
-                if let Some(hook) = self.battery_append_hook.lock().unwrap().clone() {
-                    hook("prepared");
-                }
+            if policy_prepared && let Some(hook) = self.battery_append_hook.lock().unwrap().clone()
+            {
+                hook("prepared");
             }
         }
         Ok(())
     }
-    #[cfg(test)]
+    #[cfg(all(test, feature = "service-temporary-charge-v1"))]
     pub(in super::super) fn battery_append_hook_for_tests(
         &self,
         hook: Arc<dyn Fn(&str) + Send + Sync>,

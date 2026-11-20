@@ -878,6 +878,15 @@ enum MutationPhase {
     Fenced,
 }
 
+#[cfg(feature = "service-thermal-mutation-v1")]
+type PermitRef = Arc<dyn crate::discovery::performance::mutation::Permit>;
+#[cfg(feature = "service-thermal-mutation-v1")]
+type IntentFn = Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>;
+#[cfg(feature = "service-thermal-mutation-v1")]
+type ExpiryFn = Rc<dyn Fn() -> Option<Instant>>;
+#[cfg(feature = "service-thermal-mutation-v1")]
+type MutationLane = (Worker<ReadAdmission>, PermitRef);
+
 #[derive(Clone)]
 pub(super) struct ReadSource {
     // One first-cause record spans reader admission and canceled mutation completion.
@@ -888,31 +897,24 @@ pub(super) struct ReadSource {
     lease: Arc<dyn ReadCustody>,
     worker: Rc<RefCell<Worker<ReadAdmission>>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
-    mutation: Rc<
-        RefCell<
-            Option<(
-                Worker<ReadAdmission>,
-                Arc<dyn crate::discovery::performance::mutation::Permit>,
-            )>,
-        >,
-    >,
+    mutation: Rc<RefCell<Option<MutationLane>>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
     activated: Rc<std::cell::Cell<bool>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
     phase: Rc<std::cell::Cell<MutationPhase>>,
     // Retain original request/owner proof after uncertain settlement; never retry.
     #[cfg(feature = "service-thermal-mutation-v1")]
-    unsettled: Rc<RefCell<Option<Arc<dyn crate::discovery::performance::mutation::Permit>>>>,
+    unsettled: Rc<RefCell<Option<PermitRef>>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
     operation: Rc<tokio::sync::Mutex<()>>,
     #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
     registration_pause: Rc<std::cell::Cell<u8>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
-    intent: Rc<RefCell<Option<Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>>>>,
+    intent: Rc<RefCell<Option<IntentFn>>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
-    battery_intent: Rc<RefCell<Option<Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>>>>,
+    battery_intent: Rc<RefCell<Option<IntentFn>>>,
     #[cfg(feature = "service-thermal-mutation-v1")]
-    battery_expiry: Rc<RefCell<Option<Rc<dyn Fn() -> Option<Instant>>>>>,
+    battery_expiry: Rc<RefCell<Option<ExpiryFn>>>,
     last: Rc<RefCell<Option<(Snapshot, Instant)>>>,
     metadata: Rc<RefCell<Option<Arc<Publication>>>>,
 }
@@ -1173,6 +1175,252 @@ impl ReadSource {
     }
     pub(super) fn confirm_drained(&self) -> io::Result<()> {
         self.lease.confirm_drained()
+    }
+}
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+pub(super) struct MutationFactories {
+    pub(super) read: Box<dyn Fn(Arc<dyn ReadCustody>) -> Worker<ReadAdmission>>,
+    pub(super) write: Box<
+        dyn Fn(Arc<dyn crate::discovery::performance::mutation::Permit>) -> Worker<ReadAdmission>,
+    >,
+}
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+pub(super) fn project_private_policy(
+    value: Snapshot,
+    family: crate::service_status::PrivatePolicyFamily,
+    policy: impl FnOnce(Snapshot) -> io::Result<Snapshot>,
+) -> io::Result<Snapshot> {
+    let value = value.private_policy_reconciling(family);
+    match policy(value.clone()) {
+        Ok(value) => Ok(value),
+        Err(error) if super::thermal_mutation::is_fatal_admission(&error) => Err(error),
+        Err(_) => Ok(value.private_policy_unavailable(family)),
+    }
+}
+
+#[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+impl ReadSource {
+    pub(super) fn injected_mutation(
+        lease: Arc<dyn ReadCustody>,
+        factories: MutationFactories,
+    ) -> Self {
+        let mut source = Self::compose(lease, |custody| (factories.read)(custody));
+        source.factories = Some(Rc::new(factories));
+        source
+    }
+}
+
+#[cfg(all(test, feature = "service-fan-mutation-v2"))]
+#[test]
+fn fan_v2_expected_stop_denies_ordinary_read_without_revoking_original_custody() {
+    let live = crate::origin_lifetime::Lifetime::default();
+    live.stop();
+    let state = AtomicU8::new(0);
+    let p = ReadAdmission {
+        lifecycle: 1,
+        generation: [7; 32],
+    };
+    assert!(authorize_original(&state, live.verify().map(|_| true), || Ok(()), p).is_none());
+    assert_eq!(state.load(Ordering::Acquire), 0);
+    assert!(authorize_original(&state, Ok(true), || live.verify(), p).is_none());
+    assert_eq!(state.load(Ordering::Acquire), 0);
+    live.lose_trust();
+    assert!(authorize_original(&state, live.verify().map(|_| true), || Ok(()), p).is_none());
+    assert_eq!(state.load(Ordering::Acquire), 1);
+}
+
+#[cfg(feature = "service-thermal-mutation-v1")]
+impl ReadSource {
+    pub(super) fn retain_battery_expiry(&self, expiry: Rc<dyn Fn() -> Option<Instant>>) {
+        // A single replaceable callback owns only the fixed public history.
+        // Due/expired entries are excluded by the history to avoid a spin loop.
+        *self.battery_expiry.borrow_mut() = Some(expiry);
+    }
+    pub(super) fn retain_battery_policy(
+        &self,
+        policy: Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>,
+    ) {
+        *self.battery_intent.borrow_mut() = Some(policy);
+    }
+    pub(super) fn retain_policy(&self, policy: Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>) {
+        *self.intent.borrow_mut() = Some(policy);
+    }
+    pub(super) fn retain_mutation(&self, snapshot: &Snapshot) {
+        if snapshot.has_fresh_mailbox_read() {
+            *self.last.borrow_mut() = Some((snapshot.clone(), Instant::now()));
+        }
+    }
+    pub(super) fn custody(&self) -> Arc<dyn ReadCustody> {
+        self.lease.clone()
+    }
+    pub(super) fn current_policy(&self, value: Snapshot) -> io::Result<Snapshot> {
+        self.lease.verify_integrity()?;
+        let value = project_private_policy(
+            value,
+            crate::service_status::PrivatePolicyFamily::Thermal,
+            |base| {
+                self.intent
+                    .borrow()
+                    .as_ref()
+                    .map_or(Ok(base.clone()), |policy| policy(base))
+            },
+        )?;
+        project_private_policy(
+            value,
+            crate::service_status::PrivatePolicyFamily::Battery,
+            |base| {
+                self.battery_intent
+                    .borrow()
+                    .as_ref()
+                    .map_or(Ok(base.clone()), |policy| policy(base))
+            },
+        )
+    }
+    async fn drain_mutation(&self, reconstruct: bool) -> io::Result<()> {
+        let active = self.mutation.borrow().clone();
+        let mut settlement_error = None;
+        if let Some((worker, permit)) = active {
+            // Only positive callback/worker retirement clears active I/O.
+            if let Err(error) = worker.stop().await {
+                permit.failed(&error);
+                return Err(error);
+            }
+            self.mutation.borrow_mut().take();
+            self.phase.set(MutationPhase::ReaderDrain);
+            let settlement = self.lease.verify_integrity().and_then(|_| permit.retired());
+            match settlement {
+                Ok(crate::discovery::performance::mutation::Settlement::Complete) => {}
+                Ok(crate::discovery::performance::mutation::Settlement::Unresolved(error)) => {
+                    *self.unsettled.borrow_mut() = Some(permit);
+                    settlement_error = Some(error);
+                }
+                Err(error) => {
+                    *self.unsettled.borrow_mut() = Some(permit);
+                    self.phase.set(MutationPhase::Fenced);
+                    return Err(error);
+                }
+            }
+        }
+        if reconstruct && self.phase.get() == MutationPhase::Fenced {
+            return Err(deny());
+        }
+        if self.phase.get() == MutationPhase::ReaderDrain {
+            let reader = self.worker.borrow().clone();
+            reader.stop().await?;
+            if reconstruct {
+                if let Err(error) = self.lease.verify_integrity() {
+                    self.phase.set(MutationPhase::Fenced);
+                    return Err(error);
+                }
+                self.lease.authorize().ok_or_else(deny)?;
+                let factory = self.factories.as_ref().ok_or_else(deny)?;
+                *self.worker.borrow_mut() = (factory.read)(self.lease.clone());
+                self.phase.set(MutationPhase::Idle);
+            }
+        }
+        settlement_error.map_or(Ok(()), |error| {
+            Err(io::Error::other(UnresolvedSettlement(error)))
+        })
+    }
+    pub(super) async fn mutate_cleanup(
+        &self,
+        permit: Arc<dyn crate::discovery::performance::mutation::Permit>,
+        deadline: Instant,
+    ) -> io::Result<Option<crate::discovery::performance::ObservedPerformance>> {
+        let _serial = self.operation.lock().await;
+        self.lease.verify_integrity()?;
+        self.drain_mutation(false).await?;
+        let worker = self.worker.borrow().clone();
+        worker.stop().await?;
+        if !self.activated.get()
+            || !permit.cleanup()
+            || permit.authorize().is_none()
+            || permit.authorize() != self.lease.authorize_owned_stop()
+        {
+            return Err(deny());
+        }
+        let factory = self.factories.as_ref().ok_or_else(deny)?;
+        permit.mutation_registered();
+        let worker = (factory.write)(permit.clone());
+        *self.mutation.borrow_mut() = Some((worker.clone(), permit.clone()));
+        self.phase.set(MutationPhase::Active);
+        let result = if permit.is_battery() {
+            worker
+                .observe_with_budget(deadline, None, std::time::Duration::from_secs(6))
+                .await
+        } else {
+            worker.observe(deadline, None).await
+        };
+        let drained = self.drain_mutation(false).await;
+        drained?;
+        result.map(|r| r.map(|r| r.performance))
+    }
+    pub(super) async fn drain_active(&self) -> io::Result<()> {
+        let _serial = self.operation.lock().await;
+        self.drain_mutation(false).await?;
+        let worker = self.worker.borrow().clone();
+        worker.stop().await
+    }
+    pub(super) async fn mutate(
+        &self,
+        permit: Arc<dyn crate::discovery::performance::mutation::Permit>,
+        deadline: Instant,
+    ) -> io::Result<Option<crate::discovery::performance::ObservedPerformance>> {
+        let factory = self.factories.as_ref().ok_or_else(deny)?;
+        let _serial = self.operation.lock().await;
+        #[cfg(test)]
+        if self.registration_pause.get() != 0 {
+            self.registration_pause.set(2);
+            while self.registration_pause.get() != 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            }
+        }
+        self.lease.verify_integrity()?;
+        self.drain_mutation(true).await?;
+        // This phase is retained before the await. Cancellation or suspend cannot
+        // lose the proof that no owner publication was attempted.
+        self.phase.set(MutationPhase::ReaderDrain);
+        let reader = self.worker.borrow().clone();
+        reader.stop().await?;
+        if permit.authorize() != self.lease.authorize() || permit.authorize().is_none() {
+            return Err(deny());
+        }
+        if !self.activated.get() {
+            self.phase.set(MutationPhase::Fenced);
+            if let Err(failure) = self.lease.activate_mutation() {
+                if matches!(&failure, ActivationFailure::KnownUnpublished(_)) {
+                    self.phase.set(MutationPhase::ReaderDrain);
+                }
+                return Err(failure.error());
+            }
+            self.activated.set(true);
+        }
+        permit.mutation_registered();
+        let worker = (factory.write)(permit.clone());
+        *self.mutation.borrow_mut() = Some((worker.clone(), permit.clone()));
+        self.phase.set(MutationPhase::Active);
+        let result = if permit.is_battery() {
+            worker
+                .observe_with_budget(deadline, None, std::time::Duration::from_secs(6))
+                .await
+        } else {
+            worker.observe(deadline, None).await
+        };
+        if let Err(error) = &result {
+            permit.failed(error);
+        }
+        let drained = self.drain_mutation(true).await;
+        // A generic unconfirmed-stop error must not erase the original typed
+        // trust failure. Drain still runs and retains its worker/ownership fence.
+        match result {
+            Err(error) if super::thermal_mutation::is_fatal_admission(&error) => Err(error),
+            result => {
+                drained?;
+                result.map(|reading| reading.map(|reading| reading.performance))
+            }
+        }
     }
 }
 
@@ -1769,248 +2017,5 @@ mod tests {
         assert_eq!(custody.releases.load(Ordering::Acquire), 1);
         source.confirm_drained().unwrap();
         assert!(publisher.borrow().active.metadata_only());
-    }
-}
-
-#[cfg(feature = "service-thermal-mutation-v1")]
-impl ReadSource {
-    pub(super) fn retain_battery_expiry(&self, expiry: Rc<dyn Fn() -> Option<Instant>>) {
-        // A single replaceable callback owns only the fixed public history.
-        // Due/expired entries are excluded by the history to avoid a spin loop.
-        *self.battery_expiry.borrow_mut() = Some(expiry);
-    }
-    pub(super) fn retain_battery_policy(
-        &self,
-        policy: Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>,
-    ) {
-        *self.battery_intent.borrow_mut() = Some(policy);
-    }
-    pub(super) fn retain_policy(&self, policy: Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>>) {
-        *self.intent.borrow_mut() = Some(policy);
-    }
-    pub(super) fn retain_mutation(&self, snapshot: &Snapshot) {
-        if snapshot.has_fresh_mailbox_read() {
-            *self.last.borrow_mut() = Some((snapshot.clone(), Instant::now()));
-        }
-    }
-    pub(super) fn custody(&self) -> Arc<dyn ReadCustody> {
-        self.lease.clone()
-    }
-    pub(super) fn current_policy(&self, value: Snapshot) -> io::Result<Snapshot> {
-        self.lease.verify_integrity()?;
-        let value = project_private_policy(
-            value,
-            crate::service_status::PrivatePolicyFamily::Thermal,
-            |base| {
-                self.intent
-                    .borrow()
-                    .as_ref()
-                    .map_or(Ok(base.clone()), |policy| policy(base))
-            },
-        )?;
-        project_private_policy(
-            value,
-            crate::service_status::PrivatePolicyFamily::Battery,
-            |base| {
-                self.battery_intent
-                    .borrow()
-                    .as_ref()
-                    .map_or(Ok(base.clone()), |policy| policy(base))
-            },
-        )
-    }
-    async fn drain_mutation(&self, reconstruct: bool) -> io::Result<()> {
-        let active = self.mutation.borrow().clone();
-        let mut settlement_error = None;
-        if let Some((worker, permit)) = active {
-            // Only positive callback/worker retirement clears active I/O.
-            if let Err(error) = worker.stop().await {
-                permit.failed(&error);
-                return Err(error);
-            }
-            self.mutation.borrow_mut().take();
-            self.phase.set(MutationPhase::ReaderDrain);
-            let settlement = self.lease.verify_integrity().and_then(|_| permit.retired());
-            match settlement {
-                Ok(crate::discovery::performance::mutation::Settlement::Complete) => {}
-                Ok(crate::discovery::performance::mutation::Settlement::Unresolved(error)) => {
-                    *self.unsettled.borrow_mut() = Some(permit);
-                    settlement_error = Some(error);
-                }
-                Err(error) => {
-                    *self.unsettled.borrow_mut() = Some(permit);
-                    self.phase.set(MutationPhase::Fenced);
-                    return Err(error);
-                }
-            }
-        }
-        if reconstruct && self.phase.get() == MutationPhase::Fenced {
-            return Err(deny());
-        }
-        if self.phase.get() == MutationPhase::ReaderDrain {
-            let reader = self.worker.borrow().clone();
-            reader.stop().await?;
-            if reconstruct {
-                if let Err(error) = self.lease.verify_integrity() {
-                    self.phase.set(MutationPhase::Fenced);
-                    return Err(error);
-                }
-                self.lease.authorize().ok_or_else(deny)?;
-                let factory = self.factories.as_ref().ok_or_else(deny)?;
-                *self.worker.borrow_mut() = (factory.read)(self.lease.clone());
-                self.phase.set(MutationPhase::Idle);
-            }
-        }
-        settlement_error.map_or(Ok(()), |error| {
-            Err(io::Error::other(UnresolvedSettlement(error)))
-        })
-    }
-    pub(super) async fn mutate_cleanup(
-        &self,
-        permit: Arc<dyn crate::discovery::performance::mutation::Permit>,
-        deadline: Instant,
-    ) -> io::Result<Option<crate::discovery::performance::ObservedPerformance>> {
-        let _serial = self.operation.lock().await;
-        self.lease.verify_integrity()?;
-        self.drain_mutation(false).await?;
-        self.worker.borrow().clone().stop().await?;
-        if !self.activated.get()
-            || !permit.cleanup()
-            || permit.authorize().is_none()
-            || permit.authorize() != self.lease.authorize_owned_stop()
-        {
-            return Err(deny());
-        }
-        let factory = self.factories.as_ref().ok_or_else(deny)?;
-        permit.mutation_registered();
-        let worker = (factory.write)(permit.clone());
-        *self.mutation.borrow_mut() = Some((worker.clone(), permit.clone()));
-        self.phase.set(MutationPhase::Active);
-        let result = if permit.is_battery() {
-            worker
-                .observe_with_budget(deadline, None, std::time::Duration::from_secs(6))
-                .await
-        } else {
-            worker.observe(deadline, None).await
-        };
-        let drained = self.drain_mutation(false).await;
-        drained?;
-        result.map(|r| r.map(|r| r.performance))
-    }
-    pub(super) async fn drain_active(&self) -> io::Result<()> {
-        let _serial = self.operation.lock().await;
-        self.drain_mutation(false).await?;
-        self.worker.borrow().clone().stop().await
-    }
-    pub(super) async fn mutate(
-        &self,
-        permit: Arc<dyn crate::discovery::performance::mutation::Permit>,
-        deadline: Instant,
-    ) -> io::Result<Option<crate::discovery::performance::ObservedPerformance>> {
-        let factory = self.factories.as_ref().ok_or_else(deny)?;
-        let _serial = self.operation.lock().await;
-        #[cfg(test)]
-        if self.registration_pause.get() != 0 {
-            self.registration_pause.set(2);
-            while self.registration_pause.get() != 0 {
-                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
-            }
-        }
-        self.lease.verify_integrity()?;
-        self.drain_mutation(true).await?;
-        // This phase is retained before the await. Cancellation or suspend cannot
-        // lose the proof that no owner publication was attempted.
-        self.phase.set(MutationPhase::ReaderDrain);
-        let reader = self.worker.borrow().clone();
-        reader.stop().await?;
-        if permit.authorize() != self.lease.authorize() || permit.authorize().is_none() {
-            return Err(deny());
-        }
-        if !self.activated.get() {
-            self.phase.set(MutationPhase::Fenced);
-            if let Err(failure) = self.lease.activate_mutation() {
-                if matches!(&failure, ActivationFailure::KnownUnpublished(_)) {
-                    self.phase.set(MutationPhase::ReaderDrain);
-                }
-                return Err(failure.error());
-            }
-            self.activated.set(true);
-        }
-        permit.mutation_registered();
-        let worker = (factory.write)(permit.clone());
-        *self.mutation.borrow_mut() = Some((worker.clone(), permit.clone()));
-        self.phase.set(MutationPhase::Active);
-        let result = if permit.is_battery() {
-            worker
-                .observe_with_budget(deadline, None, std::time::Duration::from_secs(6))
-                .await
-        } else {
-            worker.observe(deadline, None).await
-        };
-        if let Err(error) = &result {
-            permit.failed(error);
-        }
-        let drained = self.drain_mutation(true).await;
-        // A generic unconfirmed-stop error must not erase the original typed
-        // trust failure. Drain still runs and retains its worker/ownership fence.
-        match result {
-            Err(error) if super::thermal_mutation::is_fatal_admission(&error) => Err(error),
-            result => {
-                drained?;
-                result.map(|reading| reading.map(|reading| reading.performance))
-            }
-        }
-    }
-}
-
-#[cfg(feature = "service-thermal-mutation-v1")]
-pub(super) struct MutationFactories {
-    pub(super) read: Box<dyn Fn(Arc<dyn ReadCustody>) -> Worker<ReadAdmission>>,
-    pub(super) write: Box<
-        dyn Fn(Arc<dyn crate::discovery::performance::mutation::Permit>) -> Worker<ReadAdmission>,
-    >,
-}
-#[cfg(all(test, feature = "service-thermal-mutation-v1"))]
-impl ReadSource {
-    pub(super) fn injected_mutation(
-        lease: Arc<dyn ReadCustody>,
-        factories: MutationFactories,
-    ) -> Self {
-        let mut source = Self::compose(lease, |custody| (factories.read)(custody));
-        source.factories = Some(Rc::new(factories));
-        source
-    }
-}
-
-#[cfg(all(test, feature = "service-fan-mutation-v2"))]
-#[test]
-fn fan_v2_expected_stop_denies_ordinary_read_without_revoking_original_custody() {
-    let live = crate::origin_lifetime::Lifetime::default();
-    live.stop();
-    let state = AtomicU8::new(0);
-    let p = ReadAdmission {
-        lifecycle: 1,
-        generation: [7; 32],
-    };
-    assert!(authorize_original(&state, live.verify().map(|_| true), || Ok(()), p).is_none());
-    assert_eq!(state.load(Ordering::Acquire), 0);
-    assert!(authorize_original(&state, Ok(true), || live.verify(), p).is_none());
-    assert_eq!(state.load(Ordering::Acquire), 0);
-    live.lose_trust();
-    assert!(authorize_original(&state, live.verify().map(|_| true), || Ok(()), p).is_none());
-    assert_eq!(state.load(Ordering::Acquire), 1);
-}
-
-#[cfg(feature = "service-thermal-mutation-v1")]
-pub(super) fn project_private_policy(
-    value: Snapshot,
-    family: crate::service_status::PrivatePolicyFamily,
-    policy: impl FnOnce(Snapshot) -> io::Result<Snapshot>,
-) -> io::Result<Snapshot> {
-    let value = value.private_policy_reconciling(family);
-    match policy(value.clone()) {
-        Ok(value) => Ok(value),
-        Err(error) if super::thermal_mutation::is_fatal_admission(&error) => Err(error),
-        Err(_) => Ok(value.private_policy_unavailable(family)),
     }
 }

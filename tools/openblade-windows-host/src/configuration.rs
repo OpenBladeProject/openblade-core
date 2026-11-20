@@ -23,6 +23,8 @@ pub enum File<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// The installed Service only observes Missing; the development writer and tests construct the rest.
+#[allow(dead_code)]
 pub enum RecoveryRecord {
     Missing,
     Present,

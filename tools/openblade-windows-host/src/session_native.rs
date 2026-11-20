@@ -1,14 +1,19 @@
+use std::io;
+#[cfg(test)]
 use std::{
     ffi::OsString,
-    io,
     path::{Path, PathBuf},
 };
 
 #[cfg(feature = "agent-battery-report-v1")]
+#[cfg_attr(test, allow(dead_code))]
+// The production supplier is built only by the non-test installed monitor.
 mod battery;
 #[cfg(openblade_agent_endpoint)]
 pub(crate) mod diagnostics;
 #[cfg(feature = "agent-display-query-v1")]
+#[cfg_attr(test, allow(dead_code))]
+// The production suppliers are built only by the non-test installed monitor.
 mod display_query;
 #[cfg(openblade_agent_endpoint)]
 mod feature_lifetime;
@@ -23,6 +28,8 @@ mod scm_peer;
 pub(crate) mod service_client;
 mod token;
 #[cfg(openblade_display_write)]
+#[cfg_attr(test, allow(dead_code))]
+// Only the non-test installed monitor resolves the user environment.
 mod user_environment;
 
 // Preserve the source of installed-origin failures across the monitor and
@@ -62,11 +69,15 @@ pub(crate) fn entry_installed(
     installed_monitor::run(origin)
 }
 
+#[cfg(test)]
 use service_client::SubscriptionInitial;
+#[cfg(test)]
 use token::ProcessTokenEvidence;
 
+#[cfg(test)]
 const SIGN_IN_IMAGE: &str = "OpenBlade.SessionAgent.exe";
 
+#[cfg(test)]
 pub(super) fn entry(mut args: impl Iterator<Item = OsString>) -> io::Result<()> {
     if args.next().is_some() {
         return Err(denied("unexpected Session Agent arguments"));
@@ -84,6 +95,7 @@ pub(super) fn entry(mut args: impl Iterator<Item = OsString>) -> io::Result<()> 
     )
 }
 
+#[cfg(test)]
 struct SignInContext {
     image: PathBuf,
     sid: String,
@@ -91,6 +103,7 @@ struct SignInContext {
     logon: (i32, u32),
 }
 
+#[cfg(test)]
 trait SignInBindings {
     // Independently verified installed action and authorized interactive logon
     // for this session. Process-token evidence alone cannot supply either.
@@ -101,6 +114,7 @@ trait SignInBindings {
     fn claim(&mut self, context: &SignInContext) -> io::Result<Box<dyn AgentLease>>;
 }
 
+#[cfg(test)]
 trait AgentLease {
     fn readiness(&self) -> Readiness;
     // Start the retained watcher with independent Service process authority
@@ -111,6 +125,8 @@ trait AgentLease {
     fn serve_until_stopped(&mut self) -> io::Result<()>;
 }
 
+// Only the sign-in readiness check, which tests exercise, reads every role.
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Clone, Copy, Default)]
 struct Readiness {
     display: bool,
@@ -138,6 +154,7 @@ impl Readiness {
         }
     }
 
+    #[cfg(test)]
     fn require_complete(&self) -> io::Result<()> {
         for (ready, role) in [
             (self.display, "display"),
@@ -159,6 +176,7 @@ impl Readiness {
     }
 }
 
+#[cfg(test)]
 fn run(
     image: &Path,
     working_directory: &Path,

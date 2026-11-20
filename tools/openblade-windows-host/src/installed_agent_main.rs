@@ -1,6 +1,7 @@
 //! Standalone installed sign-in entry. Fixture modules are outside this binary.
 
 #[cfg(windows)]
+#[allow(dead_code)] // Shared with the Service entry, which owns the lifetime ingress.
 pub(crate) mod origin_lifetime;
 
 include!(concat!(env!("OUT_DIR"), "/agent_identity.rs"));
@@ -14,11 +15,13 @@ mod pipe_server_identity;
 #[cfg(windows)]
 mod retained_process;
 #[cfg(windows)]
+#[allow(dead_code)] // Shared with the Service entry, which checks its SCM identity.
 #[path = "windows/scm/identity.rs"]
 mod scm_identity;
 #[cfg(windows)]
 mod service_frame;
 #[cfg(windows)]
+#[allow(dead_code)] // Shared with the Service entry, which resolves its install location.
 mod service_install_identity;
 #[cfg(windows)]
 #[allow(dead_code)] // Also contains producer helpers when both candidates are enabled.
@@ -26,6 +29,7 @@ mod service_status;
 #[cfg(windows)]
 mod session_native;
 #[cfg(windows)]
+#[allow(dead_code)] // Shared with the Service entry and the development writer.
 mod windows_protected_path;
 #[cfg(windows)]
 mod windows_token;

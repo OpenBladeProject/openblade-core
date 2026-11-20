@@ -1,16 +1,19 @@
 //! One installed request composition. No fake or scenario transport is imported.
+#[cfg(not(test))]
+use super::thermal_native::{CustodialFiles, ProtectedFiles};
 use super::{
     Caller, Logon,
     mailbox_read::{MailboxSource, ReadCustody},
-    thermal_native::{CustodialFiles, ProtectedFiles, SettleGuard, WindowsGuard},
+    thermal_native::{SettleGuard, WindowsGuard},
     thermal_storage::{Override, Storage},
 };
+#[cfg(not(test))]
+use crate::loaded_origin::Origin;
 use crate::{
     discovery::performance::{
         ObservedPerformance, ReadAdmission,
         mutation::{Permit, Refusal, Settlement},
     },
-    loaded_origin::Origin,
     service_status::{ReadConfirmation, Snapshot},
 };
 use openblade_domain::thermal_mutation::{Preset, Progress, confirms};
@@ -58,18 +61,19 @@ pub(super) fn remember_failure(fatal: &Mutex<Option<&'static str>>, error: &io::
     if let Some(cause) = error
         .get_ref()
         .and_then(|cause| cause.downcast_ref::<FatalAdmission>())
+        && let Ok(mut retained) = fatal.lock()
     {
-        if let Ok(mut retained) = fatal.lock() {
-            retained.get_or_insert(cause.0);
-        }
+        retained.get_or_insert(cause.0);
     }
 }
 
 #[path = "battery_mutation.rs"]
 mod battery;
+#[cfg(feature = "service-temporary-charge-v1")]
 pub(super) use battery::BatteryUpdate;
 #[path = "fan_mutation.rs"]
 mod fan;
+pub(super) use fan::FanRequest;
 pub(super) trait Fresh: Send + Sync {
     fn on_battery(&self) -> Option<bool> {
         None
@@ -138,6 +142,12 @@ impl Fresh for WindowsGuard {
 }
 type Factory =
     dyn Fn(&str, u32, Arc<dyn ReadCustody>) -> io::Result<(Arc<Storage>, Arc<dyn Fresh>)>;
+type ReleaseNotice = (
+    Arc<battery::BatteryPermit>,
+    Option<super::thermal_storage::ReleasePause>,
+);
+#[cfg(test)]
+type ReleaseHook = Rc<dyn Fn()>;
 #[derive(Clone)]
 pub(super) struct Runtime {
     factory: Rc<Factory>,
@@ -146,16 +156,10 @@ pub(super) struct Runtime {
     temporary_owner: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     temporary_pending: Rc<RefCell<Option<Arc<battery::BatteryPermit>>>>,
     release_deferred: Rc<std::cell::Cell<Option<super::thermal_storage::ReleasePause>>>,
-    release_notice: Rc<
-        RefCell<
-            Option<(
-                Arc<battery::BatteryPermit>,
-                Option<super::thermal_storage::ReleasePause>,
-            )>,
-        >,
-    >,
+    release_notice: Rc<RefCell<Option<ReleaseNotice>>>,
     #[cfg(test)]
-    release_hook: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+    release_hook: Rc<RefCell<Option<ReleaseHook>>>,
+    #[cfg(feature = "service-temporary-charge-v1")]
     temporary_event: Rc<std::cell::Cell<Option<u64>>>,
     fan_pending: Rc<RefCell<Option<Arc<fan::FanPermit>>>>,
     gate: Rc<tokio::sync::Mutex<()>>,
@@ -207,6 +211,7 @@ impl Runtime {
             release_notice: Rc::default(),
             #[cfg(test)]
             release_hook: Rc::default(),
+            #[cfg(feature = "service-temporary-charge-v1")]
             temporary_event: Rc::default(),
             fan_pending: Rc::default(),
             gate: Rc::default(),
@@ -218,6 +223,7 @@ impl Runtime {
             entered: Rc::default(),
         }
     }
+    #[cfg(not(test))]
     pub(super) fn native(origin: Arc<Origin>, mailbox: &MailboxSource) -> Self {
         let stores = RefCell::new(None::<(String, Arc<Storage>)>);
         Self {
@@ -268,6 +274,7 @@ impl Runtime {
             release_notice: Rc::default(),
             #[cfg(test)]
             release_hook: Rc::default(),
+            #[cfg(feature = "service-temporary-charge-v1")]
             temporary_event: Rc::default(),
             fan_pending: Rc::default(),
             gate: Rc::default(),
@@ -324,6 +331,8 @@ impl Runtime {
                 .into(),
         }
     }
+    // Every caller, including the shared mutation tests, passes the admitted request fields individually.
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn apply(
         &self,
         mailbox: MailboxSource,

@@ -28,14 +28,19 @@ mod windows;
 use windows::{Caller, ControlSession, Logon, MAX_CONNECTIONS, Pending, Stream};
 
 #[cfg(any(test, feature = "service-hardware-compile-check"))]
+// The native constructors are compile-checked only; no admitted runtime composes them yet.
+#[allow(dead_code)]
 #[path = "firmware_source.rs"]
 mod firmware_source;
 #[cfg(any(test, feature = "service-hardware-compile-check"))]
 pub(super) use firmware_source::FirmwareSource;
 #[cfg(feature = "service-mailbox-observation-v1")]
+#[cfg_attr(test, allow(dead_code))] // Test builds exclude the native acquisition path.
 #[path = "mailbox_read.rs"]
 mod mailbox_read;
 #[cfg(any(test, feature = "service-hardware-compile-check"))]
+// Native acquisition is compile-checked only; no admitted runtime acquires an owner yet.
+#[allow(dead_code)]
 #[path = "ownership.rs"]
 pub(super) mod ownership;
 

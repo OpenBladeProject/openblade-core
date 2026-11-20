@@ -25,8 +25,11 @@ mod pipe_server_identity;
 #[cfg(windows)]
 mod retained_process;
 #[cfg(windows)]
+#[cfg_attr(test, allow(dead_code))]
+// Only the non-test native entry dispatches through the SCM host.
 mod scm_host;
 #[cfg(windows)]
+#[cfg_attr(test, allow(dead_code))] // Only the non-test native entry reads the SCM identity.
 #[path = "windows/scm/identity.rs"]
 mod scm_identity;
 #[cfg(all(windows, feature = "scratch-candidate-receipt"))]
@@ -37,9 +40,10 @@ mod scratch_receipt_policy;
 mod scratch_receiver_closure;
 #[cfg(windows)]
 mod service_frame;
-#[cfg(windows)]
+#[cfg(all(windows, any(test, feature = "scratch-candidate-receipt")))]
 mod service_image;
 #[cfg(windows)]
+#[cfg_attr(test, allow(dead_code))] // Only the non-test native entry resolves Program Files.
 mod service_install_identity;
 #[cfg(windows)]
 mod service_status;
@@ -49,6 +53,7 @@ mod session_native;
 #[allow(dead_code)] // Shared with the development writer, which is not linked here.
 mod windows_protected_path;
 #[cfg(windows)]
+#[allow(dead_code)] // Shared with the development host, which opens the process token.
 mod windows_token;
 
 #[cfg(not(test))]

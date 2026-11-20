@@ -270,6 +270,7 @@ pub(super) struct WindowsHost {
 impl WindowsHost {
     /// The trusted confirmed power context, if any (automation and profile
     /// apply).
+    #[cfg(feature = "agent-display-profile-apply-v1")]
     pub(super) fn power(&self) -> Option<PowerContext> {
         self.power.capture()
     }

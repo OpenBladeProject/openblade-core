@@ -29,6 +29,11 @@ use windows_sys::{
 #[path = "thermal_history_store.rs"]
 mod thermal_history_store;
 
+#[cfg(all(test, feature = "service-thermal-mutation-v1"))]
+type RecordCheck = Arc<dyn Fn(&Record, bool) -> io::Result<()> + Send + Sync>;
+#[cfg(test)]
+type BoundaryCheck = Arc<dyn Fn(&str) -> io::Result<()> + Send + Sync>;
+
 pub(in crate::installed) struct Store {
     root: File,
     _ancestors: Vec<File>,
@@ -43,13 +48,11 @@ pub(in crate::installed) struct Store {
     battery_producers:
         Mutex<std::collections::BTreeMap<String, crate::native_package::HistoricalBatteryProducer>>,
     #[cfg(all(test, feature = "service-thermal-mutation-v1"))]
-    pub(in crate::installed) battery_producer_fixture:
-        Option<Arc<dyn Fn(&Record, bool) -> io::Result<()> + Send + Sync>>,
+    pub(in crate::installed) battery_producer_fixture: Option<RecordCheck>,
     #[cfg(test)]
-    verifier: Option<Arc<dyn Fn(&File) -> io::Result<()> + Send + Sync>>,
+    verifier: Option<crate::installed::FileVerifier>,
     #[cfg(test)]
-    pub(in crate::installed) history_boundary:
-        Option<Arc<dyn Fn(&str) -> io::Result<()> + Send + Sync>>,
+    pub(in crate::installed) history_boundary: Option<BoundaryCheck>,
 }
 impl Store {
     fn open() -> io::Result<Self> {
@@ -177,7 +180,7 @@ impl Store {
     pub(in crate::installed) fn injected(
         root: File,
         path: PathBuf,
-        verify: Arc<dyn Fn(&File) -> io::Result<()> + Send + Sync>,
+        verify: crate::installed::FileVerifier,
     ) -> io::Result<Self> {
         verify(&root)?;
         let lock = paths::open_relative(

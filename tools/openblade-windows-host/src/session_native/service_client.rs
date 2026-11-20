@@ -191,7 +191,8 @@ async fn watch_monitored<S: AsyncRead + AsyncWrite + Unpin>(
                     let reading = read_status_event(&mut stream);
                     tokio::pin!(reading);
                     let mut check = tokio::time::interval(Duration::from_millis(500));
-                    let event = loop {
+
+                    loop {
                         tokio::select! {
                             result = &mut reading => break result,
                             _ = check.tick() => {
@@ -208,8 +209,7 @@ async fn watch_monitored<S: AsyncRead + AsyncWrite + Unpin>(
                                 if let Err(error) = checked { break Err(error); }
                             }
                         }
-                    };
-                    event
+                    }
                 };
                 let snapshot = match event {
                     Ok(snapshot) => snapshot,

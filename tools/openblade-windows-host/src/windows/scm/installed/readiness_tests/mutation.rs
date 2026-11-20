@@ -193,8 +193,7 @@ impl Files for MemoryFiles {
         if name == "thermal-mutation.journal" {
             let progress = bytes
                 .split(|b| *b == b'\n')
-                .filter(|line| !line.is_empty())
-                .last()
+                .rfind(|line| !line.is_empty())
                 .map(|line| {
                     serde_json::from_slice::<Value>(line).unwrap()["progress"]
                         .as_u64()
@@ -277,8 +276,7 @@ impl Files for MemoryFiles {
             && self.fatal_first_intent.load(Ordering::Acquire)
             && bytes
                 .split(|b| *b == b'\n')
-                .filter(|line| !line.is_empty())
-                .last()
+                .rfind(|line| !line.is_empty())
                 .is_some_and(|line| serde_json::from_slice::<Value>(line).unwrap()["progress"] == 1)
         {
             let prior = self.bytes.lock().unwrap().get(name).cloned().unwrap();
@@ -298,8 +296,7 @@ impl Files for MemoryFiles {
         if name == "thermal-mutation.journal"
             && bytes
                 .split(|b| *b == b'\n')
-                .filter(|line| !line.is_empty())
-                .last()
+                .rfind(|line| !line.is_empty())
                 .is_some_and(|line| serde_json::from_slice::<Value>(line).unwrap()["progress"] == 6)
         {
             self.terminal_attempts.fetch_add(1, Ordering::AcqRel);
@@ -322,8 +319,7 @@ impl Files for MemoryFiles {
             && self.fail_battery_settled.load(Ordering::Acquire)
             && bytes
                 .split(|b| *b == b'\n')
-                .filter(|line| !line.is_empty())
-                .last()
+                .rfind(|line| !line.is_empty())
                 .is_some_and(|line| {
                     matches!(
                         serde_json::from_slice::<Value>(line).unwrap()["progress"].as_u64(),
@@ -591,8 +587,11 @@ impl StatusOrigin for Origin {
     }
 }
 struct Rig {
+    #[cfg(feature = "service-fan-mutation-v2")]
     runtime: Runtime,
+    #[cfg(feature = "service-fan-mutation-v2")]
     factory_calls: Arc<AtomicUsize>,
+    #[cfg(feature = "service-fan-mutation-v2")]
     storage: Arc<Storage>,
     source: Rc<Mutex<Box<dyn StatusSource>>>,
     port: Fixture,
@@ -617,8 +616,7 @@ impl Rig {
             let journal = persisted.read("thermal-mutation.journal").unwrap().unwrap();
             let last = journal
                 .split(|b| *b == b'\n')
-                .filter(|s| !s.is_empty())
-                .last()
+                .rfind(|s| !s.is_empty())
                 .unwrap();
             let entry: Value = serde_json::from_slice(last).unwrap();
             if entry.get("tfc").is_some() {
@@ -635,7 +633,10 @@ impl Rig {
                 assert!(persisted.read("manual-overrides.json").unwrap().is_some());
                 assert_eq!(
                     entry["progress"],
-                    if thermal_writes.fetch_add(1, Ordering::AcqRel) % 2 == 0 {
+                    if thermal_writes
+                        .fetch_add(1, Ordering::AcqRel)
+                        .is_multiple_of(2)
+                    {
                         1
                     } else {
                         3
@@ -654,6 +655,7 @@ impl Rig {
             },
         );
         let storage = Storage::open(Box::new(files.clone()), SID).unwrap();
+        #[cfg(feature = "service-fan-mutation-v2")]
         let retained_storage = storage.clone();
         let fresh = custody.clone();
         let fatal_capture = Arc::new(AtomicBool::new(false));
@@ -695,8 +697,11 @@ impl Rig {
             metadata.clone(),
         );
         Self {
+            #[cfg(feature = "service-fan-mutation-v2")]
             runtime,
+            #[cfg(feature = "service-fan-mutation-v2")]
             factory_calls,
+            #[cfg(feature = "service-fan-mutation-v2")]
             storage: retained_storage,
             source: Rc::new(Mutex::new(source)),
             port,
@@ -813,21 +818,22 @@ async fn installed_dispatcher_direct_pair_persists_before_applied_and_retains_pu
         rig.files.document("manual-overrides.json")["overrides"]["performance"],
         1
     );
-    let sent = rig.port.state.lock().unwrap();
-    let writes: Vec<_> = sent.sent.iter().filter(|r| r.0 == 13 && r.1 == 2).collect();
-    assert_eq!(writes.len(), 2);
-    assert_eq!(writes[0].2, vec![1, 1, 0, 0]);
-    assert_eq!(writes[1].2, vec![1, 2, 0, 0]);
-    assert!(sent.sent.iter().any(|r| r.1 == 0x87));
-    assert_eq!(
-        sent.sent
-            .iter()
-            .map(|r| r.3)
-            .collect::<std::collections::BTreeSet<_>>()
-            .len(),
-        sent.sent.len()
-    );
-    drop(sent);
+    {
+        let sent = rig.port.state.lock().unwrap();
+        let writes: Vec<_> = sent.sent.iter().filter(|r| r.0 == 13 && r.1 == 2).collect();
+        assert_eq!(writes.len(), 2);
+        assert_eq!(writes[0].2, vec![1, 1, 0, 0]);
+        assert_eq!(writes[1].2, vec![1, 2, 0, 0]);
+        assert!(sent.sent.iter().any(|r| r.1 == 0x87));
+        assert_eq!(
+            sent.sent
+                .iter()
+                .map(|r| r.3)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            sent.sent.len()
+        );
+    }
     let mut source = rig.source.lock().await;
     let projected = source.snapshot(USER, Instant::now()).await.unwrap();
     let projected = serde_json::to_value(projected).unwrap();
@@ -1036,17 +1042,18 @@ async fn installed_final_mismatch_uses_reserved_pair_only_and_preserves_unrelate
         rig.files.document("manual-overrides.json")["overrides"]["fanControl"],
         fan
     );
-    let state = rig.port.state.lock().unwrap();
-    let after_last_write = state.sent.iter().rposition(|r| r.1 == 2).unwrap() + 1;
-    assert_eq!(
-        state.sent[after_last_write..]
-            .iter()
-            .filter(|r| r.1 == 0x82)
-            .count(),
-        2
-    );
-    assert!(!state.sent[after_last_write..].iter().any(|r| r.1 == 0x87));
-    drop(state);
+    {
+        let state = rig.port.state.lock().unwrap();
+        let after_last_write = state.sent.iter().rposition(|r| r.1 == 2).unwrap() + 1;
+        assert_eq!(
+            state.sent[after_last_write..]
+                .iter()
+                .filter(|r| r.1 == 0x82)
+                .count(),
+            2
+        );
+        assert!(!state.sent[after_last_write..].iter().any(|r| r.1 == 0x87));
+    }
     rig.stop().await;
 }
 #[test]
@@ -1335,13 +1342,14 @@ async fn installed_later_submission_readback_and_custody_failures_never_publish_
             assert!(status["status"]["performanceOverride"].is_null());
             assert_eq!(rig.get().await["status"]["writesBlocked"], true);
         }
-        let port = rig.port.state.lock().unwrap();
-        assert_eq!(port.writes, writes);
-        assert_eq!(
-            port.opened, port.retired,
-            "actual native callback retirement"
-        );
-        drop(port);
+        {
+            let port = rig.port.state.lock().unwrap();
+            assert_eq!(port.writes, writes);
+            assert_eq!(
+                port.opened, port.retired,
+                "actual native callback retirement"
+            );
+        }
         assert!(!rig.custody.retired.load(Ordering::Acquire));
         rig.stop().await;
         assert!(rig.custody.retired.load(Ordering::Acquire));
@@ -1450,14 +1458,15 @@ async fn correction_clean_activation_refusal_reconstructs_only_after_real_read_d
             .store(refusal, Ordering::Release);
         assert_eq!(rig.set(91, value(1, 1)).await["result"]["status"], 2);
         let observed = fresh_observe(&rig).await;
-        let state = rig.port.state.lock().unwrap();
-        assert_eq!(state.writes, 0);
-        assert_eq!(state.opened, state.retired);
-        assert_eq!(state.opened > before, refusal == 1);
-        if refusal == 1 {
-            assert_eq!(observed["success"], true);
+        {
+            let state = rig.port.state.lock().unwrap();
+            assert_eq!(state.writes, 0);
+            assert_eq!(state.opened, state.retired);
+            assert_eq!(state.opened > before, refusal == 1);
+            if refusal == 1 {
+                assert_eq!(observed["success"], true);
+            }
         }
-        drop(state);
         assert_eq!(rig.custody.activations.load(Ordering::Acquire), 0);
         rig.stop().await;
     }
@@ -1600,10 +1609,11 @@ async fn correction_late_accepted_intent_reconciles_only_with_new_read_without_r
     let observed = fresh_observe(&rig).await;
     assert_eq!(observed["status"]["performanceOverride"]["value"], 1);
     assert_eq!(observed["status"]["confirmedState"]["performance"], 1);
-    let state = rig.port.state.lock().unwrap();
-    assert!(state.sent.len() > count);
-    assert_eq!(state.writes, 2);
-    drop(state);
+    {
+        let state = rig.port.state.lock().unwrap();
+        assert!(state.sent.len() > count);
+        assert_eq!(state.writes, 2);
+    }
     rig.stop().await;
 }
 #[tokio::test]
@@ -2227,11 +2237,12 @@ async fn edge_pre_activation_cancellation_and_suspend_recover_only_after_callbac
             rig.custody.lifecycle.ingress(13, 7);
         }
         assert_eq!(fresh_observe(&rig).await["success"], true);
-        let state = rig.port.state.lock().unwrap();
-        assert_eq!(state.opened, state.retired);
-        assert!(state.opened > 1);
-        assert_eq!(state.writes, 0);
-        drop(state);
+        {
+            let state = rig.port.state.lock().unwrap();
+            assert_eq!(state.opened, state.retired);
+            assert!(state.opened > 1);
+            assert_eq!(state.writes, 0);
+        }
         assert_eq!(rig.custody.activations.load(Ordering::Acquire), 0);
         assert!(
             rig.files
@@ -2657,16 +2668,17 @@ async fn edge_managed_fan_control_only_application_precedence_and_lease_are_comp
             1
         );
         assert_eq!(rig.set(91, value(1, 1)).await["result"]["status"], 1);
-        let port = rig.port.state.lock().unwrap();
-        assert_eq!(port.writes, 2);
-        assert_eq!(
-            port.sent
-                .iter()
-                .filter(|(class, command, _, _)| *class == 13 && *command == 2)
-                .count(),
-            2
-        );
-        drop(port);
+        {
+            let port = rig.port.state.lock().unwrap();
+            assert_eq!(port.writes, 2);
+            assert_eq!(
+                port.sent
+                    .iter()
+                    .filter(|(class, command, _, _)| *class == 13 && *command == 2)
+                    .count(),
+                2
+            );
+        }
         rig.stop().await;
     }
     // Persistent FanControl without Fans is a different, invalid document shape.
@@ -3985,36 +3997,37 @@ async fn fan_v2_actual_dispatch_recipes_ownership_stop_timing_and_private_intent
         assert_eq!(recipe["intent"]["mode"], mode);
         let ids = recipe["ids"].as_array().unwrap();
         assert_eq!(ids.len() * 2, remaining);
-        let state = r.port.state.lock().unwrap();
-        assert_eq!(state.writes, setters);
-        let writes: Vec<_> = state
-            .sent
-            .iter()
-            .zip(&state.sent_at)
-            .filter(|((c, k, _, _), _)| *c == 13 && matches!(*k, 1 | 2))
-            .collect();
-        for pair in writes.windows(2) {
-            let ((_, prior, p, _), at) = pair[0];
-            let ((_, next, _, _), bt) = pair[1];
-            let min = if *prior == 2 && *next == 1 {
-                210
-            } else if *prior == 1 {
-                65
-            } else {
-                10
-            };
-            assert!(
-                *bt - *at >= std::time::Duration::from_millis(min),
-                "{p:?} timing {min}"
-            );
-        }
-        assert!(
-            state
+        {
+            let state = r.port.state.lock().unwrap();
+            assert_eq!(state.writes, setters);
+            let writes: Vec<_> = state
                 .sent
                 .iter()
-                .all(|(c, k, _, _)| !(*c == 13 && *k == 0x81))
-        );
-        drop(state);
+                .zip(&state.sent_at)
+                .filter(|((c, k, _, _), _)| *c == 13 && matches!(*k, 1 | 2))
+                .collect();
+            for pair in writes.windows(2) {
+                let ((_, prior, p, _), at) = pair[0];
+                let ((_, next, _, _), bt) = pair[1];
+                let min = if *prior == 2 && *next == 1 {
+                    210
+                } else if *prior == 1 {
+                    65
+                } else {
+                    10
+                };
+                assert!(
+                    *bt - *at >= std::time::Duration::from_millis(min),
+                    "{p:?} timing {min}"
+                );
+            }
+            assert!(
+                state
+                    .sent
+                    .iter()
+                    .all(|(c, k, _, _)| !(*c == 13 && *k == 0x81))
+            );
+        }
         let public=r.request_as(json!({"operation":"getStatus","version":85,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000077"}),USER,"S-1-5-21-111-222-333-1002").await;
         assert!(public["status"]["fanOverride"].is_null());
         assert!(public["status"]["fanControlOverride"].is_null());
@@ -6164,18 +6177,19 @@ async fn battery_v1_direct_off_limit_and_noop_preserve_configuration_and_separat
     assert!(r.files.read("manual-overrides.json").unwrap().is_none());
     let rows = fan_rows(&r);
     assert_eq!(rows.last().unwrap()["progress"], 63);
-    let s = r.port.state.lock().unwrap();
-    assert_eq!(s.sent.iter().filter(|v| v.0 == 7 && v.1 == 0x12).count(), 3);
-    assert_eq!(s.sent.iter().filter(|v| v.0 == 7 && v.1 == 0x8f).count(), 5);
-    assert_eq!(
-        s.sent
-            .iter()
-            .map(|v| v.3)
-            .collect::<std::collections::BTreeSet<_>>()
-            .len(),
-        s.sent.len()
-    );
-    drop(s);
+    {
+        let s = r.port.state.lock().unwrap();
+        assert_eq!(s.sent.iter().filter(|v| v.0 == 7 && v.1 == 0x12).count(), 3);
+        assert_eq!(s.sent.iter().filter(|v| v.0 == 7 && v.1 == 0x8f).count(), 5);
+        assert_eq!(
+            s.sent
+                .iter()
+                .map(|v| v.3)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            s.sent.len()
+        );
+    }
     r.stop().await;
 }
 #[cfg(feature = "service-battery-policy-v1")]
@@ -6231,20 +6245,21 @@ async fn battery_v1_only_exact_stale_baseline_waits_nine_reads_with_one_setter()
         ))
         .await;
     assert_eq!(result["result"]["status"], 1, "{result}");
-    let s = r.port.state.lock().unwrap();
-    assert_eq!(s.battery_reads, 10);
-    assert_eq!(s.writes, 1);
-    let times: Vec<_> = s
-        .sent
-        .iter()
-        .zip(&s.sent_at)
-        .filter(|(v, _)| v.0 == 7 && v.1 == 0x92)
-        .map(|(_, t)| *t)
-        .collect();
-    for pair in times[1..].windows(2) {
-        assert!(pair[1] - pair[0] >= Duration::from_millis(250));
+    {
+        let s = r.port.state.lock().unwrap();
+        assert_eq!(s.battery_reads, 10);
+        assert_eq!(s.writes, 1);
+        let times: Vec<_> = s
+            .sent
+            .iter()
+            .zip(&s.sent_at)
+            .filter(|(v, _)| v.0 == 7 && v.1 == 0x92)
+            .map(|(_, t)| *t)
+            .collect();
+        for pair in times[1..].windows(2) {
+            assert!(pair[1] - pair[0] >= Duration::from_millis(250));
+        }
     }
-    drop(s);
     r.stop().await;
 }
 #[cfg(feature = "service-battery-policy-v1")]
@@ -6608,7 +6623,7 @@ async fn battery_correction_pending_history_expires_without_hiding_shared_fence(
         status["status"]["message"]
             .as_str()
             .unwrap()
-            .contains(&reason),
+            .contains(reason),
         "{status}"
     );
     assert_eq!(
@@ -6628,7 +6643,7 @@ async fn battery_correction_pending_history_expires_without_hiding_shared_fence(
         later["status"]["message"]
             .as_str()
             .unwrap()
-            .contains(&reason)
+            .contains(reason)
     );
     assert_eq!(r.port.state.lock().unwrap().writes, writes);
     assert!(r.storage.pending());
@@ -6717,7 +6732,6 @@ async fn battery_correction_first_committed_intent_survives_final_authority_loss
 #[cfg(feature = "service-battery-policy-v1")]
 #[tokio::test]
 async fn battery_correction_queued_result_preserves_latest_thermal_metadata_and_witness() {
-    use std::future::Future;
     for expire in [false, true] {
         let r = Rig::new(MemoryFiles::default());
         fresh_observe(&r).await;
@@ -7098,9 +7112,10 @@ async fn battery_publication_valid_third_read_keeps_pending_without_replay() {
         2
     );
     assert_eq!(r.files.read("thermal-mutation.journal").unwrap(), journal);
-    let p = r.port.state.lock().unwrap();
-    assert_eq!((p.writes, p.battery_reads), (writes, reads));
-    drop(p);
+    {
+        let p = r.port.state.lock().unwrap();
+        assert_eq!((p.writes, p.battery_reads), (writes, reads));
+    }
     r.stop().await;
 }
 
@@ -7593,17 +7608,18 @@ async fn tfc_v1_actual_dispatch_enable_cancel_noop_and_private_process_intent() 
         assert_eq!(r.port.state.lock().unwrap().writes, writes);
         assert_eq!(r.storage.desired_battery(0).unwrap().temporary, enabled);
     }
-    let s = r.port.state.lock().unwrap();
-    assert_eq!(
-        s.sent
-            .iter()
-            .filter(|x| x.0 == 7 && x.1 == 0x0f)
-            .map(|x| x.2.clone())
-            .collect::<Vec<_>>(),
-        vec![vec![4], vec![0]]
-    );
-    assert!(!s.sent.iter().any(|x| x.0 == 7 && x.1 == 0x12));
-    drop(s);
+    {
+        let s = r.port.state.lock().unwrap();
+        assert_eq!(
+            s.sent
+                .iter()
+                .filter(|x| x.0 == 7 && x.1 == 0x0f)
+                .map(|x| x.2.clone())
+                .collect::<Vec<_>>(),
+            vec![vec![4], vec![0]]
+        );
+        assert!(!s.sent.iter().any(|x| x.0 == 7 && x.1 == 0x12));
+    }
     assert_eq!(r.files.read("profiles.json").unwrap(), before);
     assert!(r.files.read("manual-overrides.json").unwrap().is_none());
     let restarted = Storage::open(Box::new(r.files.clone()), SID).unwrap();
@@ -7626,15 +7642,16 @@ async fn tfc_v1_cancel_ignores_off_or_unknown_policy_on_battery_and_external() {
             .request(battery_request(710, "setFullChargeOverride", json!(false)))
             .await;
         assert_eq!(response["result"]["status"], 1, "{response}");
-        let s = r.port.state.lock().unwrap();
-        assert_eq!(s.writes, 1);
-        assert_eq!(s.temporary_raw, 0);
-        assert!(
-            !s.sent
-                .iter()
-                .any(|x| x.0 == 7 && matches!(x.1, 0x92 | 0x12))
-        );
-        drop(s);
+        {
+            let s = r.port.state.lock().unwrap();
+            assert_eq!(s.writes, 1);
+            assert_eq!(s.temporary_raw, 0);
+            assert!(
+                !s.sent
+                    .iter()
+                    .any(|x| x.0 == 7 && matches!(x.1, 0x92 | 0x12))
+            );
+        }
         if policy == 0x7f {
             assert!(response["status"]["confirmedState"]["battery"].is_null());
         }

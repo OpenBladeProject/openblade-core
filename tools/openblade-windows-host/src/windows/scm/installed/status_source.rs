@@ -378,6 +378,7 @@ pub(super) fn native_status_source(
         mailbox,
     ))
 }
+#[cfg(any(test, not(feature = "service-thermal-mutation-v1")))]
 fn compose_guarded_status(
     inner: ObservedStatus,
     origin: Arc<dyn StatusOrigin>,
@@ -394,6 +395,8 @@ fn compose_guarded_status(
 }
 
 pub(super) trait StatusOrigin: Send + Sync {
+    // Only the temporary-charge source events read the lifecycle epoch.
+    #[cfg_attr(not(feature = "service-temporary-charge-v1"), allow(dead_code))]
     fn power_epoch(&self) -> Option<u64> {
         None
     }
@@ -405,6 +408,8 @@ pub(super) trait StatusOrigin: Send + Sync {
     fn admit_owned_stop(&self) -> io::Result<()> {
         Err(io::ErrorKind::PermissionDenied.into())
     }
+    // Only the metadata-only composition drains through the origin; the mailbox reader drains otherwise.
+    #[cfg_attr(feature = "service-mailbox-observation-v1", allow(dead_code))]
     fn confirm_metadata_drain(&self) -> io::Result<()>;
     fn confirm_transport_drain(&self) -> io::Result<()>;
 }
@@ -580,13 +585,15 @@ impl StatusSource for GuardedStatus {
                     let (outcome, status) = runtime
                         .apply_fan(
                             mailbox.clone(),
-                            caller,
-                            sid,
-                            request_id,
-                            value,
-                            settings,
-                            deadline,
-                            status,
+                            super::thermal_mutation::FanRequest {
+                                caller,
+                                sid,
+                                request: request_id,
+                                value,
+                                settings,
+                                deadline,
+                                status,
+                            },
                         )
                         .await?;
                     if let Some(status) = status {
@@ -674,7 +681,7 @@ impl StatusSource for GuardedStatus {
             if caller.access().ok() != Some(0) {
                 return Box::pin(async { Ok(None) });
             }
-            return self.inner.publisher.as_ref().map_or_else(
+            self.inner.publisher.as_ref().map_or_else(
                 || Box::pin(async { Ok(None) }) as Observation,
                 |published| {
                     self.mailbox.observe(
@@ -683,7 +690,7 @@ impl StatusSource for GuardedStatus {
                         published.clone(),
                     )
                 },
-            );
+            )
         }
         #[cfg(not(feature = "service-mailbox-observation-v1"))]
         {

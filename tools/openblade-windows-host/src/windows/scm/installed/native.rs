@@ -24,12 +24,12 @@ pub(crate) fn entry(origin: Arc<Origin>) -> io::Result<()> {
     *slot = Some(origin);
     drop(slot);
     crate::scm_host::set_ingress(|code, event| {
-        if let Ok(slot) = ENTRY_ORIGIN.lock() {
-            if let Some(origin) = &*slot {
-                crate::scm_host::installed_ingress(&origin.lifecycle, code, event, || {
-                    origin.revoke_for_stop()
-                });
-            }
+        if let Ok(slot) = ENTRY_ORIGIN.lock()
+            && let Some(origin) = &*slot
+        {
+            crate::scm_host::installed_ingress(&origin.lifecycle, code, event, || {
+                origin.revoke_for_stop()
+            });
         }
     })?;
     dispatch_candidate(process_evidence, || dispatch_named(NAME, service_main))
