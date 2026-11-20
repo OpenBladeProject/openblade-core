@@ -54,8 +54,9 @@
     "logicalCanvasRow": 0,
     "columns": 18,
     "rowCommand": "03/0B",
-    "rowArguments": "FF,6,0,18,RGB*19 (keyboard row encoding; transport column 0 black, columns 1..18 carry logical VC columns 0..17)",
-    "firmwareColumnMapping": "The KI8110 row-6 path copies transport columns 0..17 into the separate VC buffer and drops column 18. OpenBlade follows the Synapse manifest addresses (row 6 columns 1..18) unchanged.",
+    "rowArguments": "FF,6,0,17,RGB*18",
+    "openBladeRowArguments": "FF,6,0,18,RGB*19 (keyboard row encoding; transport column 0 black, columns 1..18 carry logical VC columns 0..17, as in Synapse frames)",
+    "firmwareColumnMapping": "The KI8110 1.07.00 row-6 handler stores transport columns 0..17 in VC slots 0..17 and drops column 18. OpenBlade follows the Synapse manifest addresses (row 6 columns 1..18), so VC slot 0 receives the black column 0 and logical VC column 17 is dropped, exactly as with Synapse frames. Physical validation decides whether the offset is visible.",
     "vendorFramePath": "Selected Product 711 engine iterates every eventData.numRow, sends each row, then selects the CustomFrame effect.",
     "vendorSource": "https://apps.razer.com/synapse/lighting-engine/static/js/3061.282c86b2.chunk.js",
     "knownCombinedSelector": "03/0A [5,0] activates LED5 and LED38.",
@@ -79,13 +80,15 @@
         "Wave [0,38,4,direction] with direction 1 or 2 and speed 40"
       ],
       "unrestorableModes": "Spectrum (3), Starlight (7), Custom (8), mode 9 and inconsistent parameters: the VC stays unchanged and frames remain keyboard-only.",
-      "brightness": "No VC setter changes the record brightness; the baseline brightness is 100.",
-      "restorePrecondition": "Restore only when a fresh 0F/82 region-38 read reports mode 8. Any other mode means another controller changed the VC; OpenBlade leaves it unchanged.",
+      "brightness": "No VC setter changes the record brightness; the baseline brightness is 100. OpenBlade writes no VC brightness and scales VC frame colors by the keyboard brightness percentage.",
+      "restorePrecondition": "Restore only while the selection record exists and a fresh 0F/82 region-38 read reports mode 8. Any other mode means another controller changed the VC; OpenBlade leaves it unchanged and removes the record.",
       "sameModeShortcuts": "The Off, same-count Breathing and same-direction Wave shortcuts compare against the current mode. Restores start from mode 8, so they always write.",
-      "journal": "Durable baseline schema 2 stores the VC baseline; schema 1 remains the keyboard-only format."
+      "journal": "Durable baseline schema 2 stores the VC destination as a write-ahead selection record, saved before [0,38,8] can be submitted and removed after a confirmed restore or an external change. Schema 1 remains the keyboard-only format.",
+      "selection": "LED38 is selected only from a read made under the same operation lock, while it reads mode 8 under the selection record or equals the destination first observed for the keyboard baseline. Ambient Awareness and Audio Meter re-read it with their first sample.",
+      "readFailure": "Only effects that drive the VC read it. A rejected or malformed optional read on a usable session keeps frames keyboard-only; a session-poisoning read stops before any write. The factory probe result is cached per host and HID identity."
     },
     "participatingEffects": ["Spectrum", "Fire", "Wheel", "Starlight", "Tidal", "Ripple", "AmbientAwareness", "AudioMeter"],
-    "excludedEffects": "Reactive and imported or per-key sequences restore the VC before their first frame.",
+    "excludedEffects": "Reactive and imported or per-key sequences never read the VC; they restore a VC that OpenBlade selected before their first frame.",
     "openBladeMutationAdmitted": true,
     "physicalValidation": "Pending"
   },
@@ -235,8 +238,8 @@
     "openBladeRgbMutationAdmitted": false
   },
   "restoration": {
-    "baseline": "Complete independently read Off/Static/Breathing/Wave parameters plus exact raw bank0 brightness, durably saved before possible writes. A restorable VC effect read through 0F/82 region 38 is saved in the same journal entry.",
-    "vaporChamber": "Restore through 0F/02 region 38 with full parameter readback only while the VC reads mode 8; otherwise leave it unchanged. An unrestorable VC baseline keeps frames keyboard-only.",
+    "baseline": "Complete independently read Off/Static/Breathing/Wave parameters plus exact raw bank0 brightness, durably saved before possible writes. A restorable VC effect read through 0F/82 region 38 is saved in the same journal entry before [0,38,8] can be submitted.",
+    "vaporChamber": "Restore through 0F/02 region 38 with full parameter readback only while the selection record exists and the VC reads mode 8; otherwise leave it unchanged. An unrestorable VC baseline keeps frames keyboard-only.",
     "unknownBaseline": "External custom pixels and hidden Spectrum policy remain unknown; block host entry without a complete baseline.",
     "method": "Fresh current bank0 payload, MCU-aware typed built-in setter and full parameter readback; exact raw brightness restored through bank0 with independent readback.",
     "failure": "Stop on ambiguous submission or confirmation; retain durable original baseline. No startup replay or alternative sequence."
