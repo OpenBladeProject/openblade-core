@@ -56,17 +56,30 @@ pub fn progress_follows(prior: u8, next: u8) -> bool {
     (prior < 5 && next == prior + 1) || (prior == 0 && next == 6)
 }
 /// Existing exact0581 performance-only policy; not a firmware prerequisite.
+/// Managed `DeferredPerformanceIntentMessage` defers on every external source
+/// (`PowerSourcePolicy.IsExternal`): full (0) and limited (2) adapters.
 pub fn defer_manual_performance(
     current: ObservedPerformance,
     power: i32,
     desired_manual: bool,
 ) -> bool {
-    power == 0 && desired_manual && current.projection().1 != 0
+    matches!(power, 0 | 2) && desired_manual && current.projection().1 != 0
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn manual_performance_defers_on_both_external_sources_only() {
+        for power in 0..=3 {
+            let external = matches!(power, 0 | 2);
+            let manual = ObservedPerformance::PerformanceManual;
+            assert_eq!(defer_manual_performance(manual, power, true), external);
+            assert!(!defer_manual_performance(manual, power, false));
+            let automatic = ObservedPerformance::PerformanceAutomatic;
+            assert!(!defer_manual_performance(automatic, power, true));
+        }
+    }
     #[test]
     fn direct_presets_keep_custom_unknown_and_need_independent_pair() {
         let unknown = ObservedPerformance::Custom {

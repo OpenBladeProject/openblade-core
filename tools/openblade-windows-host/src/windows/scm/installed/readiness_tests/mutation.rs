@@ -1295,9 +1295,14 @@ async fn fresh_observe(rig: &Rig) -> Value {
 }
 #[tokio::test]
 async fn correction_manual_active0581_stores_without_setters_and_automatic_stays_direct() {
-    for selector in [4, 2, 0] {
+    // Full (15/15) and limited (10/15) adapters both defer, as managed does.
+    for (selector, actual) in [(4, 15), (2, 15), (0, 15), (4, 10), (2, 10), (0, 10)] {
         let rig = Rig::new(manual_files());
-        rig.port.state.lock().unwrap().selectors = [selector, selector];
+        {
+            let mut state = rig.port.state.lock().unwrap();
+            state.selectors = [selector, selector];
+            state.actual = actual;
+        }
         let before = fresh_observe(&rig).await;
         assert_eq!(before["status"]["confirmedState"]["fans"], 3);
         let response = rig.set(91, value(1, 1)).await;
@@ -4301,7 +4306,7 @@ async fn fan_v2_limited_source_keeps_the_performance_selector() {
 
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
-async fn fan_v2_owned_limited_source_performance_is_saved_blocked_without_consuming_release() {
+async fn fan_v2_owned_limited_source_performance_is_stored_without_consuming_release() {
     let r = fan_rig(0, 0);
     r.port.state.lock().unwrap().actual = 10;
     r.get().await;
@@ -4309,12 +4314,12 @@ async fn fan_v2_owned_limited_source_performance_is_saved_blocked_without_consum
     assert_eq!(applied["result"]["status"], 1);
     let before = fan_rows(&r).len();
     let perf = r.set(181, value(1, 1)).await;
-    // Managed defers only on PluggedIn power; an owned fan elsewhere blocks with
-    // the committed-intent prefix instead of the AC deferral's Stored reply.
-    assert_eq!(perf["result"]["status"], 2);
+    // Managed defers on both external sources, so a limited adapter gets the
+    // same Stored deferral as AC while the owned fan row stays outstanding.
+    assert_eq!(perf["result"]["status"], 0);
     assert_eq!(
         perf["result"]["message"],
-        "Performance override intent was stored. Hardware result: OpenBlade still owns a fan change that has not been handed back to firmware Automatic; no thermal setter was submitted."
+        "Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans."
     );
     assert_eq!(fan_rows(&r).len(), before);
     assert_eq!(r.port.state.lock().unwrap().writes, 4);
