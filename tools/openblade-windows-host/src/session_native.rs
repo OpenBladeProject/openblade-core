@@ -27,6 +27,9 @@ mod gpu;
 mod installed_monitor;
 #[cfg(openblade_display_write)]
 mod power_admission;
+#[cfg_attr(test, allow(dead_code))]
+// Only the non-test installed entry registers a restart.
+mod restart;
 #[allow(dead_code)]
 mod scm_peer;
 pub(crate) mod service_client;
@@ -70,7 +73,10 @@ pub(crate) fn entry_installed(
     // supplier starts. Cache failures too; only brightness becomes unavailable.
     #[cfg(feature = "agent-display-query-v1")]
     let _com_security = openblade_platform_windows::brightness::initialize_process_security();
-    installed_monitor::run(origin)
+    // Managed registers the same restart, best effort, before it serves.
+    let mut restart = restart::Registration::new(restart::Windows);
+    let _ = restart.try_register();
+    installed_monitor::run(origin, restart)
 }
 
 #[cfg(test)]

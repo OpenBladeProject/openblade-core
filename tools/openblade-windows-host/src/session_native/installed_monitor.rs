@@ -14,7 +14,10 @@ use windows_sys::Win32::{
     System::Threading::{CreateEventW, WaitForSingleObject},
 };
 
-pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
+pub(super) fn run(
+    origin: Arc<Origin>,
+    mut restart: super::restart::Registration<super::restart::Windows>,
+) -> io::Result<()> {
     super::verify_origin(&origin)?;
     let digest = Sha256::digest(origin.image.to_string_lossy().to_uppercase().as_bytes());
     let hash: String = digest[..16].iter().map(|b| format!("{b:02X}")).collect();
@@ -58,7 +61,11 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
             let result = async {
                 loop {
                     match unsafe { WaitForSingleObject(stop.as_raw_handle(), 0) } {
-                        WAIT_OBJECT_0 => return Ok::<(), io::Error>(()),
+                        WAIT_OBJECT_0 => {
+                            // A deliberate stop must not be restarted.
+                            let _ = restart.try_unregister();
+                            return Ok::<(), io::Error>(());
+                        }
                         WAIT_TIMEOUT => (),
                         _ => return Err(io::Error::last_os_error()),
                     }
