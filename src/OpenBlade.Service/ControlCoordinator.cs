@@ -452,7 +452,7 @@ public sealed class ControlCoordinator
             ? new ScopedApplyOutcome(
                 new ControlResult(
                     ControlResultStatus.Blocked,
-                    "The fan or performance state changed during the request. Nothing was changed; try again."),
+                    UndeclaredThermalComponentMessage),
                 Readback: null,
                 WriteAttempted: false,
                 ReadbackMatched: false,
@@ -468,20 +468,39 @@ public sealed class ControlCoordinator
         && capabilities.FanSpeedRangesByPerformancePreset.Count > 0
         && capabilities.GetFanSpeedRange(PerformancePreset.Custom) is null;
 
-    // A shared manual selector hides the preset while fans are manual, so the
-    // exit to Automatic restores the saved performance intent. Backends that
-    // report the real preset under manual fans keep it across the Automatic
-    // handback, which rewrites only the fan flag and confirms the preset by
-    // readback; a restoration step there would be a redundant performance write
-    // that can also overwrite an external preset change. Unknown capabilities
-    // keep the restoring shape so a declaration stays a superset.
+    internal const string UndeclaredThermalComponentMessage =
+        "The fan or performance state changed during the request; no hardware setting was changed. Try again.";
+
+    // Only a backend that reports the real preset under manual fans and admits
+    // direct manual transitions applies a preset change while fans stay manual.
+    // Every other shape blocks performance writes under manual fans
+    // (PerformanceInitialStateBlockReason), so a preset chosen there waits for
+    // fans to return to Automatic. Unknown capabilities keep the deferring
+    // shape so a declaration stays a superset.
+    internal static bool DefersPerformanceUnderManualFans(
+        DeviceCapabilities? capabilities) =>
+        capabilities is not
+        {
+            ReportsPerformanceWithManualFans: true,
+            SupportsDirectManualFanTransitions: true,
+        };
+
+    // Leaving manual fans applies the deferred performance intent. A backend
+    // that reports the real preset under manual fans can show an external
+    // preset change there; the drift tracker's external-change latch then keeps
+    // that preset (rule 5) instead of overwriting it on the exit. Shared
+    // selectors hide the preset under manual fans, so their drift observation
+    // is no evidence of an external preset change and never skips the restore.
     internal static bool FanExitRestoresPerformance(
         DeviceCapabilities? capabilities,
         FanMode previous,
-        FanMode requested) =>
-        capabilities?.ReportsPerformanceWithManualFans != true
+        FanMode requested,
+        bool performanceChangedExternally = false) =>
+        DefersPerformanceUnderManualFans(capabilities)
         && requested == FanMode.Automatic
-        && DeviceSubsystemOrder.IsManualFanMode(previous);
+        && DeviceSubsystemOrder.IsManualFanMode(previous)
+        && !(performanceChangedExternally
+            && capabilities?.ReportsPerformanceWithManualFans == true);
 
     // Without direct manual transitions, entering or changing a manual mode
     // first establishes Balanced Automatic fans.
@@ -493,10 +512,12 @@ public sealed class ControlCoordinator
         && DeviceSubsystemOrder.IsManualFanMode(requested)
         && (!DeviceSubsystemOrder.IsManualFanMode(previous) || previous != requested);
 
-    // The thermal components a fan-control transition may touch. The request
-    // declares exactly these, and ApplyFanControlTransitionOutcomeAsync runs a
-    // Performance step only through the same two predicates, so the two cannot
-    // drift. Absent or incomplete capabilities declare the wider set.
+    // The thermal components a fan-control transition may touch, from cached
+    // capabilities. This is a superset of what the coordinator decides from its
+    // fresh read through the same predicates: it ignores the external-change
+    // gate and treats absent or incomplete capabilities as the wider shape. A
+    // fresh decision outside it, for example after a capability change, is
+    // caught by UndeclaredThermalComponentOutcome before the first write.
     internal static IReadOnlyList<DeviceSubsystem> FanControlTransitionComponents(
         DeviceCapabilities? capabilities,
         FanMode previous,
@@ -928,7 +949,8 @@ public sealed class ControlCoordinator
         FanControlSettings requested,
         PerformancePreset performanceIntent,
         CustomPerformanceSettings? customPerformanceIntent,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool performanceChangedExternally = false)
     {
         var writeAttempted = new HashSet<DeviceSubsystem>();
         var confirmedCoupledWrites = new HashSet<DeviceSubsystem>();
@@ -941,7 +963,8 @@ public sealed class ControlCoordinator
                 customPerformanceIntent,
                 writeAttempted,
                 confirmedCoupledWrites,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                performanceChangedExternally).ConfigureAwait(false);
             return outcome with
             {
                 ConfirmedCoupledWrites = new HashSet<DeviceSubsystem>(
@@ -974,7 +997,8 @@ public sealed class ControlCoordinator
         CustomPerformanceSettings? customPerformanceIntent,
         HashSet<DeviceSubsystem> writeAttempted,
         HashSet<DeviceSubsystem> confirmedCoupledWrites,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool performanceChangedExternally)
     {
         ArgumentNullException.ThrowIfNull(previous);
         ArgumentNullException.ThrowIfNull(requested);
@@ -1022,7 +1046,8 @@ public sealed class ControlCoordinator
         bool restoresPerformance = FanExitRestoresPerformance(
             transitionCapabilities,
             previous.Mode,
-            requested.Mode);
+            requested.Mode,
+            performanceChangedExternally);
         // Source backends report independent performance and manual state.
         // Scalar-range host curves require the requested preset just as mapped
         // targets do; another supported current preset is not a confirmation.
@@ -1195,7 +1220,18 @@ public sealed class ControlCoordinator
 
         if (!restoresPerformance)
         {
-            return fans;
+            return FanExitRestoresPerformance(
+                    transitionCapabilities,
+                    previous.Mode,
+                    requested.Mode)
+                ? fans with
+                {
+                    Result = fans.Result with
+                    {
+                        Message = $"{fans.Result.Message} The performance mode changed outside OpenBlade and was kept.",
+                    },
+                }
+                : fans;
         }
 
         ScopedApplyOutcome performance = await RunThermalStepAsync(

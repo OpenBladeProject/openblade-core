@@ -2317,7 +2317,18 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             value is null
                 ? "Performance override was cleared."
                 : "Performance override intent was stored.",
-            deferHardwareApply: DeferredPerformanceIntentMessage,
+            // The staged snapshot can still carry the previous desired state, so
+            // the deferral decision reads the requested preset from the override.
+            deferHardwareApply: (powerSource, status) => DeferredPerformanceIntentMessage(
+                powerSource,
+                status,
+                value is null
+                    ? status.DesiredState
+                    : status.DesiredState with
+                    {
+                        Performance = status.DesiredState.Performance with { Value = value.Value },
+                        CustomPerformance = value.CustomPerformance,
+                    }),
             stillControlsSession: stillControlsSession,
             clearsExplicitOverride: value is null,
             thermalComponentResolver: desired =>
@@ -2456,7 +2467,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ControlOperationResult result;
             string? deferredMessage = DeferredPerformanceIntentMessage(
                 powerSource,
-                current);
+                current,
+                current.DesiredState with
+                {
+                    Performance = current.DesiredState.Performance with { Value = next },
+                    CustomPerformance = stagedOverride.CustomPerformance,
+                });
             if (deferredMessage is not null)
             {
                 if (!stillControlsSession())
@@ -2614,7 +2630,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     requested,
                     performanceIntent,
                     customPerformanceIntent,
-                    cancellationToken);
+                    cancellationToken,
+                    performanceChangedExternally: driftTracker.ExternalChanges.Contains(
+                        DeviceSubsystem.Performance));
             },
             token,
             value is null
@@ -18514,13 +18532,22 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         return pendingWriteConfirmations.GetWriteExclusions(exclusions);
     }
 
+    // A preset chosen under confirmed manual fans waits for Automatic on every
+    // shape that blocks performance writes under manual fans. Reporting
+    // backends without direct transitions defer too, except where their Custom
+    // policy first returns fans to Automatic and so applies the request now.
     private static string? DeferredPerformanceIntentMessage(
         PowerSource powerSource,
-        ServiceStatusSnapshot status) =>
+        ServiceStatusSnapshot status,
+        DesiredDeviceState requested) =>
         PowerSourcePolicy.IsExternal(powerSource)
-        && status.Capabilities?.ReportsPerformanceWithManualFans != true
+        && ControlCoordinator.DefersPerformanceUnderManualFans(status.Capabilities)
         && DeviceSubsystemOrder.IsManualFanMode(status.ConfirmedState?.Fans)
-        && DeviceSubsystemOrder.IsManualFanMode(status.DesiredState.Fans.Value)
+        && DeviceSubsystemOrder.IsManualFanMode(requested.Fans.Value)
+        && !(status.Capabilities is { ReportsPerformanceWithManualFans: true } capabilities
+            && requested.Performance.Value == PerformancePreset.Custom
+            && (requested.CustomPerformance?.MaximumFans == true
+                || ControlCoordinator.RequiresAutomaticFansForCustom(requested, capabilities)))
             ? "Performance intent was stored and will be applied when fans return to Automatic."
             : null;
 

@@ -11,7 +11,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Return fans from a fixed speed or fan curve to Automatic on source-reviewed models without stopping the OpenBlade service. The current performance mode stays as it is. ([#989](https://github.com/OpenBladeProject/openblade-core/pull/989))
+- Return fans from a fixed speed or fan curve to Automatic on source-reviewed models without stopping the OpenBlade service. A performance mode chosen while the fans were manual is applied when they return to Automatic. ([#989](https://github.com/OpenBladeProject/openblade-core/pull/989))
 
 ## [0.65.1-nightly.117] - 2026-11-20
 
