@@ -171,7 +171,9 @@ requested levels never become a confirmation. Custom is an ordinary command, so
 battery refuses it, and it leaves HyperBoost directly with the first reading's
 class pinned, as the Performance and Silent exits do. Each setter has its own
 intent and acknowledgement row, so the row runs progress 0, 1-4, 7-10, then 5.
-Prepared reserves that whole chain, the two-digit steps included.
+Prepared reserves that whole chain, the two-digit steps included. Under saved
+manual fans on external power Custom defers, and the fan return to Automatic
+writes the same four setters (see [Apply on fan handback](#apply-on-fan-handback)).
 
 The admitted range is the RZ09-0581 capability
 (`tests/data/profile-capabilities-rz09-0581.json`): CPU and GPU Low, Medium or
@@ -242,8 +244,8 @@ temporary full charge keep their classified-only admission.
 The commands and the fresh 07/8C read before each setter are the same as on the
 classified classes. An unclassified reading needs fresh Windows AC presence. A
 performance setter needs it on every external class (`allowBattery: false`), and
-so does a fan return to Automatic that carries a saved preset, which managed
-applies through `SetPerformanceAsync`. Other fan setters on a classified class
+so does a fan return to Automatic that carries a saved destination, which
+managed applies through `SetPerformanceAsync` or `SetCustomPerformanceAsync`. Other fan setters on a classified class
 need Windows AC that agrees with the reading, or Windows battery, where managed
 admits them unchecked. The presence a reading
 was admitted with must hold at every later checkpoint (managed
@@ -380,8 +382,7 @@ unapplied intent:
 
 | Native case | Reply |
 | --- | --- |
-| External power (PluggedIn, limited USB-C or unclassified) with current-manual plus desired-manual fans, when a Balanced or Performance destination resolves | Stored, `Performance intent was stored and will be applied when fans return to Automatic.` |
-| The same manual-fan state when Silent, Battery Saver, Battery Balanced or Custom resolves | Stored, `Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.` |
+| External power (PluggedIn, limited USB-C or unclassified) with current-manual plus desired-manual fans, when a native destination resolves | Stored, `Performance intent was stored and will be applied when fans return to Automatic.` |
 | The same manual-fan state with no native destination (for example a clear under a High/High Custom profile) | Blocked, `Performance override was cleared. Hardware result: No supported performance destination...` |
 | Confirmed HyperBoost and a Battery Saver or Battery Balanced destination | Blocked, `Performance override intent was stored. Hardware result: Leaving HyperBoost for a battery preset needs the HyperBoost restore sequence, which this build does not submit; no thermal setter was submitted.` |
 | OpenBlade-owned fan row whose handback to Automatic is outstanding, without that manual deferral | Blocked, `Performance override intent was stored. Hardware result: OpenBlade still owns a fan change...` |
@@ -396,10 +397,7 @@ unapplied intent:
 The Stored text is managed's `DeferredPerformanceIntentMessage`. Native
 returns it only when the later fan request can apply the intent, so the
 no-destination check runs before the manual-fan deferral. The fan request
-writes only Balanced or Performance, so a Silent, battery or Custom destination
-gets the resubmission text instead (`thermal_mutation::applies_on_fan_handback`).
-Managed promises the apply there too, because its fan return writes every
-destination. A build
+writes every native destination, as managed's fan return does. A build
 without `service-fan-mutation-v2` has no native fan request, so it keeps the
 older instruction to submit a new performance request after selecting
 Automatic fans.
@@ -410,8 +408,11 @@ Managed applies the saved performance intent when a fan request returns
 manual fans to Automatic. On exact RZ09-0581 (direct manual transitions, no
 performance report under manual fans),
 `ControlCoordinator.ApplyDirectAutomaticFanTransitionOutcomeAsync` writes the
-resolved preset's own 0D/02 pair, which carries the Automatic fan mode. It
-does this when the saved fan intent before the request was manual
+resolved destination through
+`ApplyPerformancePreservingGpuClockManagementOutcomeAsync`: a preset's own
+0D/02 pair, which carries the Automatic fan mode, or for Custom
+`SetCustomPerformanceAsync`'s selector-4 pair and its 0D/07 CPU and GPU
+setters. It does this when the saved fan intent before the request was manual
 (`previousManual`), and replies `Fans returned to Automatic with <preset>
 performance.`
 
@@ -419,21 +420,33 @@ Native does the same in the fan request. When a `setFanOverride` clear or
 Automatic request leaves saved manual fan intent, the fan worker resolves the
 destination as a performance request would (manual override, application
 report, then the profile for the freshly read power class) and returns the fans
-through that preset's pair instead of the observed selector. It is one direct
-pair with the same bytes as the performance writer's pair; there is no fan
-pair first and no reset. The existing fan-path admission applies to each
+through that destination's setters instead of the observed selector: Balanced,
+Performance, Silent, Battery Saver or Battery Balanced as one pair, or Custom
+as its pair and both level setters (see [Custom](#custom)). The setters have
+the same codec and bytes as the performance writer's; there is no fan pair
+first, no reset and no 210 ms delay (`applyMaximumTiming: false`). The existing fan-path admission applies to each
 setter: fresh exact-device, caller, session, controller and lifecycle admission,
 a fresh 07/8C read that agrees with Windows AC presence, and unchanged saved fan
 settings and destination preset, also for a new class between setters. An
 independent final 0D/82 pair must confirm
-the preset with Automatic fans. The reply is `Fans returned to Automatic with
+the destination with Automatic fans, and for Custom the 0D/87 CPU and GPU reads
+must report the requested levels; other or unread levels leave the row
+unsettled. The reply is `Fans returned to Automatic with
 <preset> performance, confirmed by independent paired readback.`
 
-The fan journal row records the destination selector. Its grammar is unchanged:
-selectors 0 and 2 on sources 0 and 2 were already admitted, so the Rust and
-managed fan-history readers need no change. Progress follows the fan chain
-(Prepared, 10 to 13, 50). A power change before the first setter settles as
-KnownNotSubmitted (6). A later stop, cancellation, rejected echo or readback
+The fan journal row records the destination selector. Manual fans keep
+selector 0 or 2. An Automatic row may also carry Silent (5), Battery Saver (3)
+or Battery Balanced (6), the battery pair never on unclassified power (3), or
+Custom (4) with its levels in `custom` (`[cpu, gpu]`, the RZ09-0581 range,
+High/High excluded). `custom` is absent otherwise, so earlier rows keep their
+bytes and digest, and an explicit null is refused. A Custom row reserves its
+four setters, two power readings, the final pair and the level reads. Rust
+`FanRecord` and managed `WindowsNativeFanHistory` share
+`tools/openblade-windows-host/tests/data/fan-history-v3-destination-return.json`;
+readers before this grammar refuse these rows, which fences retirement,
+upgrade and mailbox custody. Progress follows the fan chain (Prepared, 10 to
+13, 50, or 10 to 17 for Custom). A power change before the first setter settles
+as KnownNotSubmitted (6). A later stop, cancellation, rejected echo or readback
 mismatch leaves the row unsettled and fences further writes; nothing is
 replayed. A native-to-managed handback of such a row names the fan family with
 Automatic only. Managed then confirms only whether the fans are manual
@@ -442,10 +455,8 @@ profile (`ServiceStartupCoordinator`), so the saved preset stays unapplied until
 a later explicit request.
 
 The fans keep the observed selector, and the saved intent stays unapplied, when
-the saved fan intent was already Automatic, when the selected destination is
-not Balanced or Performance (managed would also write Silent, the battery
-presets or Custom; the fan journal grammar admits selectors 0 and 2 only), or
-when a GPU clock effect is saved; the reply then says
+the saved fan intent was already Automatic, or when a GPU clock effect is
+saved; the reply then says
 the GPU effect left it unapplied. The GPU check uses the same class expiry as
 the destination, so a temporary override kept for another class does not count.
 Managed's trigger is the request's saved fan intent, not an outstanding apply:

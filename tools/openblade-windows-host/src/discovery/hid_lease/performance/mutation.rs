@@ -2,7 +2,7 @@
 use super::*;
 use openblade_domain::{
     automation::UNCLASSIFIED_EXTERNAL,
-    thermal_mutation::{Destination, Plan, Preset, Progress, admits_class, confirms, pins_class},
+    thermal_mutation::{Destination, Plan, Progress, admits_class, confirms, pins_class},
 };
 use openblade_protocol::{custom_performance::CustomLevelPair, thermal_preset::PresetPair};
 use std::sync::Arc;
@@ -54,12 +54,12 @@ pub(crate) trait Permit: Send + Sync {
     fn is_fan(&self) -> bool {
         false
     }
-    /// The fan intent, plus the saved preset a return to Automatic applies.
+    /// The fan intent, plus the saved destination a return to Automatic applies.
     fn resolve_fan(
         &self,
         _power: i32,
         _baseline: ObservedPerformance,
-    ) -> io::Result<Option<(openblade_domain::fan_recipe::FanIntent, Option<Preset>)>> {
+    ) -> io::Result<Option<(openblade_domain::fan_recipe::FanIntent, Option<Destination>)>> {
         Ok(None)
     }
     fn confirm_fan_noop(&self, _source: i32, _baseline: ObservedPerformance) -> io::Result<()> {
@@ -261,12 +261,13 @@ impl<P: Port> Reader<P, ReadAdmission> {
 }
 /// A destination's reviewed setters in submission order: its 0D/02 pair, then
 /// for Custom the 0D/07 CPU and GPU levels (managed `SetCustomPerformanceAsync`).
-struct Setters {
+/// The fan return to Automatic writes the same setters (`apply_fan`).
+pub(super) struct Setters {
     pair: PresetPair,
     levels: Option<CustomLevelPair>,
 }
 impl Setters {
-    fn new(
+    pub(super) fn new(
         destination: Destination,
         reserve: &mut impl FnMut() -> Option<[u8; 2]>,
     ) -> Option<Self> {
@@ -281,14 +282,14 @@ impl Setters {
             },
         })
     }
-    fn commands(&self) -> impl Iterator<Item = &RazerReport> {
+    pub(super) fn commands(&self) -> impl Iterator<Item = &RazerReport> {
         self.pair
             .commands()
             .iter()
             .chain(self.levels.iter().flat_map(|levels| levels.commands()))
     }
     /// The exact echo of setter `index`.
-    fn acknowledge(&self, index: usize, reply: &[u8]) -> Option<()> {
+    pub(super) fn acknowledge(&self, index: usize, reply: &[u8]) -> Option<()> {
         match (index, &self.levels) {
             (0 | 1, _) => self.pair.acknowledge(index, reply).ok(),
             (2 | 3, Some(levels)) => levels.acknowledge(index - 2, reply).ok(),

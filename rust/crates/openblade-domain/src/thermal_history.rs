@@ -302,7 +302,7 @@ fn rows_from(
         }
         if let Some(fan) = &entry.fan {
             let raw: Value = serde_json::from_slice(line).map_err(|_| deny())?;
-            crate::fan_history::validate_numbers(&raw["fan"])?;
+            crate::fan_history::validate_raw(&raw["fan"])?;
             fan.validate()?;
         }
         if !is_guid(&entry.request)

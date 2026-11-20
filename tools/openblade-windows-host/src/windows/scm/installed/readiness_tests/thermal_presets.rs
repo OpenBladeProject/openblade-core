@@ -316,10 +316,11 @@ async fn saved_profile_presets_apply_when_explicitly_requested() {
 }
 
 #[tokio::test]
-async fn manual_fans_defer_a_destination_the_fan_return_does_not_write() {
-    // Managed defers every preset under saved manual fans on external power.
-    // The native fan return writes only Balanced or Performance, so the reply
-    // asks for a new request instead of promising the return applies it.
+async fn manual_fans_defer_every_destination_to_the_fan_return() {
+    // Managed defers every destination under saved manual fans on external
+    // power, and the native fan return writes each of them. Without the fan
+    // composition no native request returns the fans, so that build asks for
+    // a new performance request.
     for request in [
         value(SILENT.0, 1),
         value(BATTERY_SAVER.0, 1),
@@ -328,7 +329,14 @@ async fn manual_fans_defer_a_destination_the_fan_return_does_not_write() {
         let rig = rig_at(2, 1, FULL, manual_files());
         let result = rig.set(1, request).await;
         assert_eq!(result["result"]["status"], 0, "{result}");
-        assert_eq!(result["result"]["message"], RESUBMIT);
+        assert_eq!(
+            result["result"]["message"],
+            if cfg!(feature = "service-fan-mutation-v2") {
+                "Performance intent was stored and will be applied when fans return to Automatic."
+            } else {
+                RESUBMIT
+            }
+        );
         assert!(setters(&rig).is_empty());
         assert!(rows(&rig).is_empty());
         rig.stop().await;
@@ -337,33 +345,163 @@ async fn manual_fans_defer_a_destination_the_fan_return_does_not_write() {
 
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
-async fn a_fan_return_keeps_the_selector_and_names_an_unwritten_saved_preset() {
-    let r = fan_rig(0, 0);
-    r.get().await;
-    assert_eq!(
-        r.request(fan_request(230, Some(1), 3700)).await["result"]["status"],
-        1
-    );
-    let deferred = r.set(231, value(SILENT.0, 1)).await;
-    assert_eq!(deferred["result"]["status"], 0, "{deferred}");
-    assert_eq!(deferred["result"]["message"], RESUBMIT);
-    let sent = r.port.state.lock().unwrap().sent.len();
+async fn a_fan_return_writes_every_saved_destination_directly() {
+    // Managed `ApplyDirectAutomaticFanTransitionOutcomeAsync` leaves manual fans
+    // through the saved destination's own setters: a preset's pair, or the
+    // Custom pair and its CPU and GPU levels. No fan pair is written first.
+    for (actual, source) in [(FULL, 0), (LIMITED, 2)] {
+        for (request, name, selector, levels) in [
+            (value(SILENT.0, 1), "Silent", SILENT.1, None),
+            (
+                value(BATTERY_SAVER.0, 1),
+                "BatterySaver",
+                BATTERY_SAVER.1,
+                None,
+            ),
+            (
+                value(BATTERY_BALANCED.0, 1),
+                "BatteryBalanced",
+                BATTERY_BALANCED.1,
+                None,
+            ),
+            (custom(2, 1, false), "Custom", 4, Some([2u8, 1])),
+        ] {
+            let r = handback_rig_with(0, actual, request.clone()).await;
+            let sent = r.port.state.lock().unwrap().sent.len();
+            let out = r.request(fan_request(232, None, 0)).await;
+            let case = format!("{name} at {actual}: {out}");
+            assert_eq!(out["result"]["status"], 1, "{case}");
+            assert_eq!(
+                out["result"]["message"],
+                format!(
+                    "Fans returned to Automatic with {name} performance, confirmed by independent paired readback."
+                ),
+                "{case}"
+            );
+            let commands: Vec<_> = r.port.state.lock().unwrap().sent[sent..]
+                .iter()
+                .map(|(class, command, payload, _)| (*class, *command, payload.clone()))
+                .collect();
+            let written: Vec<_> = commands
+                .iter()
+                .filter(|(class, command, _)| *class == 13 && matches!(command, 2 | 7))
+                .map(|(_, command, payload)| (*command, payload.clone()))
+                .collect();
+            let mut expected = vec![(2, vec![1, 1, selector, 0]), (2, vec![1, 2, selector, 0])];
+            if let Some([cpu, gpu]) = levels {
+                expected.extend([(7, vec![1, 1, cpu]), (7, vec![1, 2, gpu])]);
+            }
+            assert_eq!(written, expected, "{case}");
+            // A fresh 07/8C read precedes each setter.
+            for (index, (class, command, _)) in commands.iter().enumerate() {
+                if *class == 13 && matches!(command, 2 | 7) {
+                    assert_eq!((commands[index - 1].0, commands[index - 1].1), (7, 0x8c));
+                }
+            }
+            let rows = request_rows(&r, 232);
+            let progress: Vec<_> = rows.iter().map(|row| row["progress"].clone()).collect();
+            if levels.is_some() {
+                assert_eq!(progress, [0, 10, 11, 12, 13, 14, 15, 16, 17, 50], "{case}");
+            } else {
+                assert_eq!(progress, [0, 10, 11, 12, 13, 50], "{case}");
+            }
+            for row in &rows {
+                assert_eq!(row["fan"]["selector"], selector, "{case}");
+                assert_eq!(row["fan"]["source"], source, "{case}");
+                assert_eq!(row["fan"]["intent"]["mode"], 0, "{case}");
+                assert_eq!(row["fan"]["custom"], json!(levels), "{case}");
+            }
+            assert!(!r.storage.outstanding_fan());
+            assert!(!r.storage.pending());
+            let observed = fresh_observe(&r).await;
+            let confirmed = &observed["status"]["confirmedState"];
+            assert_eq!(confirmed["performance"], request["value"], "{case}");
+            assert_eq!(confirmed["fans"], 0, "{case}");
+            if let Some([cpu, gpu]) = levels {
+                assert_eq!(
+                    confirmed["customPerformance"],
+                    json!({"cpu":cpu,"gpu":gpu,"maximumFans":false})
+                );
+            }
+            r.origin.stop();
+            r.stop().await;
+            assert_eq!(
+                r.port.state.lock().unwrap().writes,
+                4 + expected.len(),
+                "{case}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn a_fan_return_custom_level_mismatch_fences_without_replay() {
+    let r = handback_rig_with(0, FULL, custom(1, 2, false)).await;
+    r.port.state.lock().unwrap().ignore_levels = true;
     let out = r.request(fan_request(232, None, 0)).await;
-    assert_eq!(out["result"]["status"], 1, "{out}");
-    assert_eq!(mode_setters(&r, sent), [[1, 1, 0, 0], [1, 2, 0, 0]]);
-    assert!(
-        out["result"]["message"]
-            .as_str()
-            .unwrap()
-            .ends_with(" The saved Silent performance intent was not applied: submit a new performance request to apply it."),
-        "{out}"
+    assert_eq!(out["result"]["status"], 2, "{out}");
+    assert_eq!(
+        out["result"]["message"],
+        "Fan submission or owned release remains unresolved; further writes are fenced."
     );
-    // The new performance request the reply names applies it directly.
-    let sent = r.port.state.lock().unwrap().sent.len();
-    assert_eq!(r.set(233, value(SILENT.0, 1)).await["result"]["status"], 1);
-    assert_eq!(mode_setters(&r, sent), [[1, 1, 5, 0], [1, 2, 5, 0]]);
+    assert_eq!(request_rows(&r, 232).last().unwrap()["progress"], 17);
+    assert!(r.storage.pending());
+    // Neither the fan return nor a performance request replays a setter.
+    let writes = r.port.state.lock().unwrap().writes;
+    assert_eq!(writes, 8);
+    assert_eq!(
+        r.request(fan_request(233, None, 0)).await["result"]["status"],
+        2
+    );
+    assert_eq!(r.set(234, custom(1, 2, false)).await["result"]["status"], 2);
+    assert_eq!(r.port.state.lock().unwrap().writes, writes);
+    // Stop keeps the unresolved row and submits nothing.
     r.origin.stop();
-    r.stop().await;
+    let sent = r.port.state.lock().unwrap().sent.len();
+    assert!(r.source.lock().await.drain().await.is_err());
+    assert_eq!(r.port.state.lock().unwrap().sent.len(), sent);
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn a_fan_return_class_change_before_a_level_setter_follows_managed() {
+    // A full/limited change keeps the carried Custom destination; battery
+    // stops before the next setter without replay.
+    for (changed, completes) in [(LIMITED, true), (BATTERY, false)] {
+        // Reads after the first resolve the class; four more precede setters.
+        for setter in 1..=4 {
+            let r = handback_rig_with(0, FULL, custom(0, 1, false)).await;
+            let reads = r.port.state.lock().unwrap().power_reads;
+            r.port.state.lock().unwrap().change_power = Some((reads + 1 + setter, changed));
+            let out = r.request(fan_request(232, None, 0)).await;
+            let case = format!("{changed} before setter {setter}: {out}");
+            let writes = r.port.state.lock().unwrap().writes - 4;
+            let last = request_rows(&r, 232).last().unwrap()["progress"].clone();
+            if completes {
+                assert_eq!(out["result"]["status"], 1, "{case}");
+                assert_eq!((writes, last), (4, json!(50)), "{case}");
+            } else {
+                assert_eq!(out["result"]["status"], 2, "{case}");
+                assert_eq!(writes, setter - 1, "{case}");
+                // Before the first setter nothing was submitted (6); later the
+                // acknowledged row stays pending.
+                let expected = if setter == 1 { 6 } else { 9 + 2 * (setter - 1) };
+                assert_eq!(last, expected, "{case}");
+                assert_eq!(r.storage.pending(), setter > 1, "{case}");
+                // Stop claims no release while the fans stay owned under
+                // battery or the acknowledged row is open, and writes nothing.
+                r.origin.stop();
+                let writes = r.port.state.lock().unwrap().writes;
+                let drained = r.source.lock().await.drain().await;
+                assert!(drained.is_err(), "{case}");
+                assert_eq!(r.port.state.lock().unwrap().writes, writes, "{case}");
+                continue;
+            }
+            r.origin.stop();
+            r.stop().await;
+        }
+    }
 }
 
 // Custom on RZ09-0581: managed `ProductionBatteryPort.SetCustomPerformanceAsync`

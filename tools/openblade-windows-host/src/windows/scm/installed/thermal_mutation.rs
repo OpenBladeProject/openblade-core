@@ -18,7 +18,7 @@ use crate::{
 };
 use openblade_domain::{
     automation::UNCLASSIFIED_EXTERNAL,
-    thermal_mutation::{CUSTOM, Destination, Preset, Progress, applies_on_fan_handback, confirms},
+    thermal_mutation::{CUSTOM, Destination, Preset, Progress, confirms},
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -573,9 +573,7 @@ impl Runtime {
             let cause = permit.cause.lock().map_err(|_| io::ErrorKind::Other)?;
             if matches!(
                 *cause,
-                Cause::ManualDeferred
-                    | Cause::ManualDeferredResubmit
-                    | Cause::AwaitingClassification
+                Cause::ManualDeferred | Cause::AwaitingClassification
             ) {
                 // Managed's reply for this external-power manual-fan deferral
                 // (ServiceControlRuntime.DeferredPerformanceIntentMessage), or for a
@@ -680,13 +678,8 @@ fn select(
         storage.desired_manual_fans(power, application)?,
     ) {
         // Stored promises that the fan request returning the fans applies the
-        // intent. That request writes only Balanced or Performance, so any
-        // other destination asks for a new performance request instead.
-        Some(if applies_on_fan_handback(destination) {
-            Cause::ManualDeferred
-        } else {
-            Cause::ManualDeferredResubmit
-        })
+        // intent, as it does for every native destination.
+        Some(Cause::ManualDeferred)
     } else if storage.outstanding_fan() {
         // An owned fan row without its handback is not a manual-fan deferral:
         // the saved fan intent may already be Automatic or cleared.
@@ -721,9 +714,6 @@ enum Cause {
     FanHandbackPending,
     Gpu,
     ManualDeferred,
-    // A manual-fan deferral whose destination the native fan return to
-    // Automatic does not write (`thermal_mutation::applies_on_fan_handback`).
-    ManualDeferredResubmit,
     NoDirectPath,
     NoEligiblePolicy,
     TransactionCapacity,
@@ -744,7 +734,7 @@ impl Cause {
             // Without the fan composition no native request returns the fans,
             // so that build keeps the explicit resubmission instruction.
             Self::ManualDeferred if cfg!(feature = "service-fan-mutation-v2") => "Performance intent was stored and will be applied when fans return to Automatic.".into(),
-            Self::ManualDeferred | Self::ManualDeferredResubmit => "Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.".into(),
+            Self::ManualDeferred => "Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.".into(),
             Self::NoDirectPath => "Leaving HyperBoost for a battery preset needs the HyperBoost restore sequence, which this build does not submit; no thermal setter was submitted.".into(),
             Self::NoEligiblePolicy => "No supported performance destination is selected by the current power and profile policy.".into(),
             Self::TransactionCapacity => "Thermal transaction ID capacity is exhausted; no setter was submitted.".into(),

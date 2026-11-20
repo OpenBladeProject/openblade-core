@@ -24,21 +24,34 @@ pub struct FanRecord {
     pub preflight: [[u8; 2]; 2],
     pub ids: Vec<[u8; 2]>,
     pub cleanup: Vec<[u8; 2]>,
+    /// A return to Automatic that writes Custom: its CPU and GPU levels, set
+    /// by two 0D/07 setters after the selector-4 pair and read back by 0D/87.
+    /// Absent otherwise, so earlier records keep their bytes and hash.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom: Option<[u8; 2]>,
 }
 impl FanRecord {
     pub fn setters(&self) -> usize {
-        if self.entry { 4 } else { 2 }
+        if self.entry || self.custom.is_some() {
+            4
+        } else {
+            2
+        }
     }
     pub fn validate(&self) -> io::Result<()> {
         if !matches!(
             self.contract.as_str(),
             CONTRACT | PREVIOUS_CONTRACT | LEGACY_CONTRACT
         ) || FanIntent::checked(self.intent.mode, self.intent.rpm) != Some(self.intent)
-            || !matches!(self.selector, 0 | 2)
+            || !self.destination_selector()
             // 3 is unclassified external power; readers before it refuse the row.
             || !matches!(self.source, 0 | 2 | crate::automation::UNCLASSIFIED_EXTERNAL)
             || self.entry && !self.intent.manual()
-            || self.ids.len() != self.setters() + 1 + usize::from(self.entry && self.selector == 2)
+            || self.ids.len()
+                != self.setters()
+                    + 1
+                    + usize::from(self.entry && self.selector == 2)
+                    + usize::from(self.custom.is_some())
             || self.cleanup.len() != if self.intent.manual() { 5 } else { 0 }
         {
             return Err(deny());
@@ -68,6 +81,25 @@ impl FanRecord {
         }
         Ok(())
     }
+    /// Manual fans keep the Balanced (0) or Performance (2) selector. A return
+    /// to Automatic may also write Silent (5), Battery Saver (3) or Battery
+    /// Balanced (6), the battery pair never on unclassified power, or Custom (4)
+    /// with admitted levels (`thermal_mutation::Destination`). Readers before
+    /// this grammar refuse those rows.
+    fn destination_selector(&self) -> bool {
+        let automatic = !self.intent.manual();
+        match (self.selector, self.custom) {
+            (0 | 2, None) => true,
+            (5, None) => automatic,
+            (3 | 6, None) => automatic && self.source != crate::automation::UNCLASSIFIED_EXTERNAL,
+            (crate::thermal_mutation::CUSTOM_SELECTOR, Some([cpu, gpu])) => {
+                automatic
+                    && crate::thermal_mutation::Destination::custom(cpu.into(), gpu.into(), false)
+                        .is_some()
+            }
+            _ => false,
+        }
+    }
     pub fn hash(&self) -> io::Result<std::string::String> {
         Ok(digest(&serde_json::to_vec(self)?))
     }
@@ -94,6 +126,14 @@ impl FanRecord {
                     || (matches!(p, 40..=42) && n == p + 1)
                     || (p == 43 && n == 50)))
     }
+}
+/// A raw fan record: nonnegative integer contracts, and `custom` absent rather
+/// than null so both readers bind the same canonical bytes.
+pub fn validate_raw(v: &Value) -> io::Result<()> {
+    if v.get("custom").is_some_and(Value::is_null) {
+        return Err(deny());
+    }
+    validate_numbers(v)
 }
 // Fan fields are nonnegative integer contracts. Preserve lexical agreement with
 // the managed reader, including rejection of negative zero and exponent forms.
@@ -238,6 +278,66 @@ mod tests {
             ),
             3,
         );
+    }
+    /// A return to Automatic that writes the saved destination directly; the
+    /// managed reader consumes the same vector.
+    #[test]
+    fn destination_return_records_match_the_managed_reader() {
+        let v: Value = serde_json::from_str(include_str!(
+            "../../../../tools/openblade-windows-host/tests/data/fan-history-v3-destination-return.json"
+        ))
+        .unwrap();
+        for case in v["cases"].as_array().unwrap() {
+            let name = &case["name"];
+            validate_raw(&case["fan"]).unwrap();
+            let r: FanRecord = serde_json::from_value(case["fan"].clone()).unwrap();
+            r.validate().unwrap();
+            assert_eq!(
+                r.setters(),
+                if r.custom.is_some() { 4 } else { 2 },
+                "{name}"
+            );
+            assert_eq!(
+                serde_json::to_string(&r).unwrap(),
+                case["canonical"].as_str().unwrap(),
+                "{name}"
+            );
+            assert_eq!(r.hash().unwrap(), case["intent"], "{name}");
+            let released = case["released"].as_str().unwrap().as_bytes();
+            assert!(
+                crate::thermal_history::handback_complete(released).unwrap(),
+                "{name}"
+            );
+            let mut last = None;
+            crate::thermal_history::rows(released, |e, _| {
+                last = Some(e.progress);
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(last, Some(50), "{name}");
+        }
+        for case in v["rejected"].as_array().unwrap() {
+            let refused = validate_raw(&case["fan"]).is_err()
+                || serde_json::from_value::<FanRecord>(case["fan"].clone())
+                    .map_err(io::Error::from)
+                    .and_then(|r| r.validate())
+                    .is_err();
+            assert!(refused, "{}", case["name"]);
+        }
+        // An explicit null is refused by the row reader, not only the vector.
+        let mut row: Value = serde_json::from_str(
+            v["cases"][0]["released"]
+                .as_str()
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap(),
+        )
+        .unwrap();
+        let line = |row: &Value| [serde_json::to_vec(row).unwrap(), b"\n".to_vec()].concat();
+        assert!(crate::thermal_history::rows(&line(&row), |_, _| Ok(())).is_ok());
+        row["fan"]["custom"] = Value::Null;
+        assert!(crate::thermal_history::rows(&line(&row), |_, _| Ok(())).is_err());
     }
     fn source_vector_matches_the_managed_reader(vector: &str, source: i32) {
         let v: Value = serde_json::from_str(vector).unwrap();

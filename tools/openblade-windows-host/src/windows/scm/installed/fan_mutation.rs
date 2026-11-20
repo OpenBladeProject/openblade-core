@@ -34,9 +34,9 @@ pub(super) struct FanPermit {
     application: Option<String>,
     proof: ReadAdmission,
     selected: Mutex<Option<(i32, Value)>>,
-    // The saved preset this return to Automatic applies (see `handback_preset`).
-    performance: Mutex<Option<Preset>>,
-    // A saved preset was left unapplied because its GPU clock effect is unsupported.
+    // The saved destination this return to Automatic applies (see `saved_preset`).
+    performance: Mutex<Option<Destination>>,
+    // A saved destination was left unapplied because its GPU clock effect is unsupported.
     performance_gpu: AtomicBool,
     // The selector an earlier owner recorded, when this request's no-op closed it.
     released: Mutex<Option<u8>>,
@@ -92,21 +92,10 @@ impl FanPermit {
             .record_fan(entry, self.cleanup())
             .inspect_err(|e| remember_failure(&self.fatal, e))
     }
-    /// The saved preset a return to Automatic applies, resolved as a
-    /// performance request resolves its destination. A configured GPU clock
-    /// effect has no native pair, so then the observed selector is kept, as it
-    /// is for a destination the native fan recipe does not write
-    /// (`thermal_mutation::applies_on_fan_handback`).
-    fn handback_preset(&self, power: i32) -> io::Result<Option<Preset>> {
-        Ok(self
-            .saved_preset(power)?
-            .filter(|destination| applies_on_fan_handback(*destination))
-            .and_then(|destination| match destination {
-                Destination::Preset(preset) => Some(preset),
-                Destination::Custom(_) => None,
-            }))
-    }
-    /// The saved destination a performance request would select, unfiltered.
+    /// The saved destination a return to Automatic applies, resolved as a
+    /// performance request resolves it. Managed writes every destination there
+    /// (`ApplyDirectAutomaticFanTransitionOutcomeAsync`). A configured GPU
+    /// clock effect has no native writer, so then the observed selector is kept.
     fn saved_preset(&self, power: i32) -> io::Result<Option<Destination>> {
         let application = self.application.as_deref();
         // A temporary override kept for another class has expired for both
@@ -164,7 +153,7 @@ impl Permit for FanPermit {
                 return Ok(true);
             }
             let performance = *self.performance.lock().map_err(|_| io::ErrorKind::Other)?;
-            Ok(self.handback_preset(power)? == performance)
+            Ok(self.saved_preset(power)? == performance)
         })()
         .inspect_err(|e| remember_failure(&self.fatal, e))
         .unwrap_or(false)
@@ -228,8 +217,8 @@ impl Permit for FanPermit {
             }
             // The preset carried by a return to Automatic is saved policy too:
             // every setter needs it to remain the current destination.
-            if let Some(preset) = *self.performance.lock().ok()?
-                && self.handback_preset(*source).ok()? != Some(preset)
+            if let Some(destination) = *self.performance.lock().ok()?
+                && self.saved_preset(*source).ok()? != Some(destination)
             {
                 return None;
             }
@@ -243,7 +232,7 @@ impl Permit for FanPermit {
         &self,
         power: i32,
         baseline: ObservedPerformance,
-    ) -> io::Result<Option<(FanIntent, Option<Preset>)>> {
+    ) -> io::Result<Option<(FanIntent, Option<Destination>)>> {
         if self.authorize().is_none() {
             return Ok(None);
         }
@@ -287,7 +276,7 @@ impl Permit for FanPermit {
         let returning = leaving_manual && intent.is_some_and(|i| !i.manual());
         self.returning.store(returning, Ordering::Release);
         let performance = if returning {
-            self.handback_preset(power)?
+            self.saved_preset(power)?
         } else {
             None
         };
@@ -365,6 +354,7 @@ impl Permit for FanPermit {
                 preflight: [[0; 2]; 2],
                 ids: Vec::new(),
                 cleanup: Vec::new(),
+                custom: None,
             })
         })
     }
@@ -520,7 +510,7 @@ impl Permit for FanSettlePermit {
         &self,
         _power: i32,
         _baseline: ObservedPerformance,
-    ) -> io::Result<Option<(FanIntent, Option<Preset>)>> {
+    ) -> io::Result<Option<(FanIntent, Option<Destination>)>> {
         Err(io::ErrorKind::PermissionDenied.into())
     }
     fn confirm_fan_noop(&self, _source: i32, _baseline: ObservedPerformance) -> io::Result<()> {
@@ -810,16 +800,16 @@ impl Runtime {
         if result.as_ref().is_err_and(is_fatal_admission) {
             return result.map(|_| unreachable!());
         }
-        // A return to Automatic that carried the saved preset reports it as managed
-        // does; Debug names match managed's PerformancePreset names.
-        let performance = permit
+        // A return to Automatic that carried the saved destination reports it as
+        // managed does, with managed's PerformancePreset names.
+        let performance = *permit
             .performance
             .lock()
-            .map_err(|_| io::ErrorKind::Other)?
-            .map(Destination::from);
+            .map_err(|_| io::ErrorKind::Other)?;
         let observed = result.as_ref().ok().copied().flatten();
-        // Without a native plan (battery, Silent, battery selectors, Custom) a no-op
-        // can leave a carried preset unapplied: claim it only when confirmed.
+        // Without a native plan (battery, or Automatic fans under Silent, battery
+        // selectors or Custom) a no-op can leave a carried destination unapplied:
+        // claim it only when confirmed.
         let matched = performance.filter(|p| {
             observed.is_some_and(|o| openblade_domain::thermal_mutation::confirms(o, *p))
         });
@@ -865,7 +855,7 @@ impl Runtime {
                 && settings["mode"].as_u64() == Some(0)
                 && let Some(preset) = match performance {
                     Some(preset) => Some(preset),
-                    // Name a saved destination the fan recipe does not write too.
+                    // Name a saved destination this request did not carry too.
                     None => permit.saved_preset(power)?,
                 }
                 && !openblade_domain::thermal_mutation::confirms(observed, preset)

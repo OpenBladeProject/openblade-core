@@ -7,6 +7,8 @@ pub use openblade_types::InstalledThermalPreset as Preset;
 
 /// The managed PerformancePreset wire value of Custom.
 pub const CUSTOM: i32 = 5;
+/// The 0D/02 Custom selector (fixture `performance-custom-channel-1/2`).
+pub const CUSTOM_SELECTOR: u8 = 4;
 /// One native destination on exact RZ09-0581, after managed
 /// `ProductionBatteryPort`: a preset is its own 0D/02 pair
 /// (`SetPerformanceAsync`); Custom is the selector-4 pair and then the CPU and
@@ -51,6 +53,13 @@ impl Destination {
         match self {
             Self::Custom(levels) => Some(levels),
             Self::Preset(_) => None,
+        }
+    }
+    /// The 0D/02 selector the destination's pair writes; Custom is 4.
+    pub fn selector(self) -> u8 {
+        match self {
+            Self::Preset(preset) => preset.selector(),
+            Self::Custom(_) => CUSTOM_SELECTOR,
         }
     }
     /// The managed PerformancePreset name, as managed replies print it.
@@ -168,18 +177,6 @@ pub fn admits_class(
         1 => destination.is_battery() && windows_on_battery == Some(true),
         _ => false,
     }
-}
-/// The destinations a native fan return to Automatic applies in its own
-/// pair (`fan_recipe::Plan::select_toward`). Managed applies every saved preset
-/// there (`ApplyDirectAutomaticFanTransitionOutcomeAsync`); the native fan
-/// recipe and its journal grammar (selectors 0 and 2) cover Balanced and
-/// Performance only, so any other saved preset keeps the observed selector
-/// and needs a new performance request.
-pub fn applies_on_fan_handback(destination: Destination) -> bool {
-    matches!(
-        destination,
-        Destination::Preset(Preset::Balanced | Preset::Performance)
-    )
 }
 /// Intent precedes possible submission. Acknowledgement never settles the
 /// transaction; only a new independent paired read can do so. Each setter
@@ -412,13 +409,6 @@ mod tests {
                     assert!(!admits_class(destination, class, windows));
                 }
             }
-            assert_eq!(
-                applies_on_fan_handback(destination),
-                matches!(
-                    destination,
-                    Destination::Preset(Preset::Balanced | Preset::Performance)
-                )
-            );
         }
     }
     /// The admitted Custom range is the managed RZ09-0581 capability vector,
@@ -511,7 +501,6 @@ mod tests {
         ] {
             assert!(!confirms(current, requested), "{current:?}");
         }
-        assert!(!applies_on_fan_handback(requested));
     }
     #[test]
     fn each_setter_has_its_own_intent_and_acknowledgement() {

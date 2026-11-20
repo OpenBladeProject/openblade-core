@@ -408,6 +408,38 @@ public sealed class NativeThermalHistoryTests : IDisposable
         using var retired = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
     }
 
+    // A return to Automatic that writes the saved destination directly: Silent, Battery
+    // Saver or Battery Balanced as one pair, or Custom with its two level setters. The Rust
+    // FanRecord consumes the same vector.
+    [Fact]
+    public void DestinationReturnRecordsPassReadAndRetiredOwner()
+    {
+        using var vector = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fan-history-v3-destination-return.json")));
+        var v = vector.RootElement;
+        foreach (var c in v.GetProperty("cases").EnumerateArray())
+        {
+            var fan = c.GetProperty("fan");
+            Assert.Equal(c.GetProperty("canonical").GetString(), Encoding.UTF8.GetString(WindowsNativeFanHistory.Canonical(fan)));
+            Assert.Equal(c.GetProperty("intent").GetString(), NativeCanonical.Digest(WindowsNativeFanHistory.Canonical(fan)));
+            int end = fan.TryGetProperty("custom", out _) ? 17 : 13;
+            Assert.True(WindowsNativeFanHistory.ValidProgress(fan, (byte)end));
+            Assert.False(WindowsNativeFanHistory.ValidProgress(fan, (byte)(end + 1)));
+            Assert.True(WindowsNativeFanHistory.Follows(fan, (byte)end, 50));
+            Assert.False(WindowsNativeFanHistory.Follows(fan, (byte)(end - 2), 50));
+            using var files = ManagedMailboxCorrectionTests.Bootstrap();
+            var record = new NativeEpochRecord(NativeEpochPhase.Retired, new string('2', 32), new string('0', 64), 1, new string('1', 32), new string('a', 64), new string('b', 32), new string('3', 64) + "-service", new string('c', 64) + "-agent", new string('0', 64), new string('d', 64));
+            byte[] active = Owner(files, record, new string('7', 64));
+            var original = new WindowsNativeTrustLifecycle.OwnerReference(record.Installation, record.Epoch, record.ServiceId, "17:1", new string('7', 64), NativeCanonical.Digest(active));
+            Thermal(files, Bytes(c.GetProperty("released").GetString()!));
+            _ = WindowsNativeThermalHistory.Read(files, [original]);
+            using var retired = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
+        }
+        foreach (var rejected in v.GetProperty("rejected").EnumerateArray())
+        {
+            Assert.Throws<IOException>(() => WindowsNativeFanHistory.Canonical(rejected.GetProperty("fan")));
+        }
+    }
+
     // The Rust host producer writes these exact bytes and the Rust domain reader
     // consumes the same vector: an owner recorded under Balanced, closed by 51
     // while firmware reports Automatic fans under Performance.

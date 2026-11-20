@@ -1,5 +1,5 @@
 //! Actual fan actuation on the existing serialized Reader, including retained Stop IDs.
-use super::mutation::{Permit, Refusal};
+use super::mutation::{Permit, Refusal, Setters};
 use super::*;
 use openblade_domain::{
     fan_history::CONTRACT,
@@ -83,13 +83,14 @@ impl<P: Port> Reader<P, ReadAdmission> {
         } else {
             // Owned Stop cleanup above keeps the owner's selector: shutdown hands
             // back to firmware without applying saved settings. An explicit
-            // return to Automatic applies the saved preset in the same pair.
+            // return to Automatic writes the saved destination's own setters.
             let (intent, performance) = permit.resolve_fan(source, baseline).ok()??;
             let plan = Plan::select_toward(baseline, intent, source, performance);
             // Automatic requested and already reported: a true no-op when the
-            // plan is unchanged or no native plan exists (battery, Silent, battery
-            // selectors and Custom). Nothing is written; the reply names any saved
-            // preset left unapplied. A plan that changes the selector applies it.
+            // plan is unchanged or no native plan exists (battery, or Automatic
+            // fans under Silent, battery selectors and Custom). Nothing is
+            // written; the reply names any saved destination left unapplied. A
+            // plan that changes the destination applies it.
             // The permit refuses HyperBoost here (managed read parity).
             if !intent.manual() && automatic_handback(baseline) && plan.is_none_or(|p| p.unchanged)
             {
@@ -97,8 +98,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 return Some(baseline);
             } // No ownership, no journal or setter.
             let plan = plan?;
-            // A carried preset is applied through managed `SetPerformanceAsync`
-            // (`allowBattery: false`), which refuses Windows battery before any
+            // A carried destination is applied through managed
+            // `SetPerformanceAsync` or `SetCustomPerformanceAsync`
+            // (`allowBattery: false`), which refuse Windows battery before any
             // write; nothing is prepared.
             if performance.is_some() && !fence.require_presence() {
                 permit.refused(Refusal::PowerChanged);
@@ -135,6 +137,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
             record.preflight = preflight;
             record.ids = ids.clone();
             record.cleanup = cleanup_ids;
+            record.custom = plan
+                .custom_levels()
+                .map(|levels| [levels.cpu as u8, levels.gpu as u8]);
             record.validate().ok()?;
             permit.prepare_fan(record.clone()).ok()?;
             (plan, ids, performance)
@@ -156,20 +161,32 @@ impl<P: Port> Reader<P, ReadAdmission> {
         };
         a.checkpoint(&mut authorize, admission, limit).ok()?;
         permit.record_fan(if cleanup { 31 } else { 0 }).ok()?;
+        // The setters take the first reserved IDs in order; the power readings,
+        // any intermediate read and the final reads follow.
+        let mut next = ids.iter().copied();
         let mut groups = Vec::new();
-        if plan.entry {
-            groups.push(FanPair::state(ids[0], plan.selector, true)?);
-        }
-        if plan.intent.manual() {
-            groups.push(FanPair::target(
-                ids[usize::from(plan.entry)],
-                plan.intent.rpm,
-            )?);
+        if let Some(destination) = plan.destination {
+            // The saved destination's own setters, with the performance
+            // writer's codec and bytes: no fan pair first.
+            groups.push(Group::Destination(Setters::new(destination, &mut || {
+                next.next()
+            })?));
         } else {
-            groups.push(FanPair::state(ids[0], plan.selector, false)?);
+            if plan.entry {
+                groups.push(Group::Fan(FanPair::state(
+                    next.next()?,
+                    plan.selector,
+                    true,
+                )?));
+            }
+            groups.push(Group::Fan(if plan.intent.manual() {
+                FanPair::target(next.next()?, plan.intent.rpm)?
+            } else {
+                FanPair::state(next.next()?, plan.selector, false)?
+            }));
         }
         let setters = plan.setters();
-        let power_start = groups.len();
+        let power_start = ids.len() - next.len();
         let mut step = 0usize;
         let mut last_state = None;
         let mut last_target = None;
@@ -182,7 +199,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
                     return None;
                 }
             }
-            for (index, command) in group.commands().iter().enumerate() {
+            for (index, command) in group.commands().into_iter().enumerate() {
                 if group_index == 1
                     && let Some(at) = last_state
                 {
@@ -228,7 +245,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 if !matches!(length, REPORT_LENGTH | FRAME_LENGTH) || reply[0] != 0 {
                     return None;
                 }
-                group.acknowledge(index, &reply[1..]).ok()?;
+                group.acknowledge(index, &reply[1..])?;
                 permit
                     .record_fan(if cleanup { 41 } else { 11 } + step as u8 * 2)
                     .ok()?;
@@ -238,9 +255,19 @@ impl<P: Port> Reader<P, ReadAdmission> {
         if step != setters {
             return None;
         }
-        let observed = a
-            .read_reserved_pair(&mut authorize, admission, limit, *ids.last()?, false)
-            .await?;
+        // Custom settles only with its levels read back, as the performance
+        // writer's final read does.
+        let observed = match plan.custom_levels() {
+            Some(_) => {
+                let final_ids = *ids.get(ids.len().checked_sub(2)?)?;
+                a.read_reserved_custom(&mut authorize, admission, limit, final_ids, *ids.last()?)
+                    .await?
+            }
+            None => {
+                a.read_reserved_pair(&mut authorize, admission, limit, *ids.last()?, false)
+                    .await?
+            }
+        };
         if !plan.confirms(observed) {
             return None;
         }
@@ -250,5 +277,25 @@ impl<P: Port> Reader<P, ReadAdmission> {
             .ok()?;
         a.completed = true;
         Some(observed)
+    }
+}
+/// One run of setters: a fan state or target pair, or a carried destination's
+/// own setters.
+enum Group {
+    Fan(FanPair),
+    Destination(Setters),
+}
+impl Group {
+    fn commands(&self) -> Vec<&RazerReport> {
+        match self {
+            Self::Fan(pair) => pair.commands().iter().collect(),
+            Self::Destination(setters) => setters.commands().collect(),
+        }
+    }
+    fn acknowledge(&self, index: usize, reply: &[u8]) -> Option<()> {
+        match self {
+            Self::Fan(pair) => pair.acknowledge(index, reply).ok(),
+            Self::Destination(setters) => setters.acknowledge(index, reply),
+        }
     }
 }
