@@ -288,8 +288,9 @@ jobs:
           # The GPU endpoint runs beside Display so the shared feature
           # lifetime is exercised with more than one feature.
           $gpu = @('openblade-windows-agent-candidate', 'agent-display-query-v1,agent-gpu-v1')
-          # The application reporter runs beside GPU so its lifetime joins the shared
-          # feature supervision, and alone so no other endpoint masks its wiring.
+          # The application reporter lane selects the reporter alone, so no other
+          # endpoint masks its wiring. The shared feature supervision with other
+          # endpoints is exercised by the combined check and lint lanes below.
           $reporter = @('openblade-windows-agent-candidate', 'agent-application-reporter-v1')
           # One run per filter, so a filter that matches no test fails the step.
           foreach ($run in @(
@@ -313,6 +314,7 @@ jobs:
               ($gpu + 'native_endpoint_readiness'),
               ($reporter + 'session_native::application'),
               ($reporter + 'service_client::tests::report'),
+              ($reporter + 'session_native::restart'),
               ($reporter + 'native_package'),
               ($reporter + 'feature_lifetime'))) {
             # Capture the exit code instead of throwing, so the output is printed first.
