@@ -78,10 +78,13 @@ impl FanPermit {
     /// effect has no native pair, so then the observed selector is kept.
     fn handback_preset(&self, power: i32) -> io::Result<Option<Preset>> {
         let application = self.application.as_deref();
+        // A temporary override kept for another class has expired for both
+        // reads (Storage expires it in each), as for a performance request.
+        let desired = self.storage.desired(power, application)?;
         if self.storage.gpu_incomplete(power, application)? {
             return Ok(None);
         }
-        Ok(self.storage.desired(power, application)?.map(|(p, _)| p))
+        Ok(desired.map(|(p, _)| p))
     }
 }
 impl Permit for FanPermit {
@@ -567,6 +570,25 @@ impl Runtime {
             message.push_str(
                 " The saved performance intent was not applied: GPU clock handling is incomplete.",
             );
+        } else if status == 1 && performance.is_none() {
+            // Managed's trigger is request-level (`previousManual`), so a retry after
+            // a refused return, or fans already Automatic, carries no preset. Say so
+            // when the confirmed selector is not the saved native preset.
+            let selected = permit
+                .selected
+                .lock()
+                .map_err(|_| io::ErrorKind::Other)?
+                .clone();
+            let observed = result.as_ref().ok().copied().flatten();
+            if let (Some((power, settings)), Some(observed)) = (selected, observed)
+                && settings["mode"].as_u64() == Some(0)
+                && let Some(preset) = permit.handback_preset(power)?
+                && !openblade_domain::thermal_mutation::confirms(observed, preset)
+            {
+                message.push_str(&format!(
+                    " The saved {preset:?} performance intent was not applied: submit a new performance request to apply it."
+                ));
+            }
         }
         let outcome = Outcome { status, message };
         let snapshot = if permit.accepted.load(Ordering::Acquire) {

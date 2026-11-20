@@ -593,7 +593,12 @@ impl Storage {
             }))
     }
     pub(super) fn gpu_incomplete(&self, power: i32, application: Option<&str>) -> io::Result<bool> {
-        let s = self.state.lock().map_err(|_| denied())?;
+        let mut s = self.state.lock().map_err(|_| denied())?;
+        // The same class expiry as `desired`, so the answer does not depend on
+        // which of the two a caller reads first.
+        if matches!(power, 0..=2) && s.temporary.as_ref().is_some_and(|(_, p)| *p != power) {
+            s.temporary = None;
+        }
         if !s.document["overrides"]["gpuClockTuning"].is_null()
             || s.temporary
                 .as_ref()

@@ -4783,6 +4783,134 @@ async fn fan_handback_without_a_native_saved_preset_keeps_the_observed_selector(
 
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
+async fn fan_handback_stored_only_when_a_native_destination_resolves() {
+    // A Silent profile under owned Fixed fans: clearing the override leaves no
+    // Balanced or Performance pair for the fan request to apply, so the reply is
+    // Blocked instead of promising an apply (the codec admits no Silent override).
+    // A Performance override still defers and is applied by the return.
+    const NONE: &str =
+        "No supported performance destination is selected by the current power and profile policy.";
+    for (n, request, reply) in [
+        (
+            231,
+            Value::Null,
+            format!("Performance override was cleared. Hardware result: {NONE}"),
+        ),
+        (233, value(2, 1), DEFERRED.into()),
+    ] {
+        let r = fan_rig_with(0, 0, 0);
+        r.get().await;
+        assert_eq!(
+            r.request(fan_request(230, Some(1), 3700)).await["result"]["status"],
+            1
+        );
+        let out = r.set(n, request).await;
+        assert_eq!(out["result"]["message"], reply, "{out}");
+        assert_eq!(
+            out["result"]["status"],
+            if n == 233 { 0 } else { 2 },
+            "{out}"
+        );
+        // No thermal setter beyond the four entry setters.
+        assert_eq!(r.port.state.lock().unwrap().writes, 4);
+        let sent = r.port.state.lock().unwrap().sent.len();
+        let back = r.request(fan_request(240, None, 0)).await;
+        assert_eq!(back["result"]["status"], 1, "{back}");
+        let selector = if n == 233 { 2 } else { 0 };
+        assert_eq!(
+            mode_setters(&r, sent),
+            [[1, 1, selector, 0], [1, 2, selector, 0]]
+        );
+        r.origin.stop();
+        r.stop().await;
+    }
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_handback_expires_a_stale_class_temporary_gpu_override_first() {
+    // A temporary Performance override with a GPU effect, kept for the full
+    // adapter, expires when the adapter becomes limited. The limited class's
+    // profile Performance then applies, whichever storage read runs first.
+    for read_desired_first in [false, true] {
+        let files = MemoryFiles::default();
+        files.profiles_with(1, Some(2));
+        let r = Rig::new(files);
+        *r.custody.origin_for_fan.lock().unwrap() = Some(r.origin.clone());
+        {
+            let mut s = r.port.state.lock().unwrap();
+            s.selectors = [0; 2];
+            s.fans = [0; 2];
+        }
+        r.get().await;
+        assert_eq!(
+            r.request(fan_request(230, Some(1), 3700)).await["result"]["status"],
+            1
+        );
+        let mut temporary = value(2, 0);
+        temporary["gpuClockTuning"] =
+            json!({"enabled":true,"offsets":{"coreMegahertz":10,"memoryMegahertz":20}});
+        assert_eq!(r.set(231, temporary).await["result"]["status"], 2);
+        r.port.state.lock().unwrap().actual = 10;
+        if read_desired_first {
+            assert!(r.storage.desired(2, None).unwrap().is_some());
+        }
+        let sent = r.port.state.lock().unwrap().sent.len();
+        let out = r.request(fan_request(232, None, 0)).await;
+        assert_eq!(
+            out["result"]["message"],
+            "Fans returned to Automatic with Performance performance, confirmed by independent paired readback.",
+            "{out}"
+        );
+        assert_eq!(mode_setters(&r, sent), [[1, 1, 2, 0], [1, 2, 2, 0]]);
+        r.origin.stop();
+        r.stop().await;
+    }
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_handback_retry_after_a_refused_return_reports_the_unapplied_preset() {
+    // The first return is refused before any setter (power class change) after
+    // its Automatic intent was saved. Managed's trigger is request-level, so the
+    // retry leaves no saved manual intent and keeps the observed selector; its
+    // reply says the saved preset was not applied.
+    let r = handback_rig(0, 15, 2).await;
+    let reads = r.port.state.lock().unwrap().power_reads;
+    r.port.state.lock().unwrap().change_power = Some((reads + 2, 10));
+    let first = r.request(fan_request(232, None, 0)).await;
+    assert_eq!(first["result"]["status"], 2, "{first}");
+    assert_eq!(request_rows(&r, 232).last().unwrap()["progress"], 6);
+    assert_eq!(r.port.state.lock().unwrap().writes, 4);
+    r.port.state.lock().unwrap().actual = 15;
+    let sent = r.port.state.lock().unwrap().sent.len();
+    let retry = r.request(fan_request(233, None, 0)).await;
+    assert_eq!(retry["result"]["status"], 1, "{retry}");
+    assert_eq!(mode_setters(&r, sent), [[1, 1, 0, 0], [1, 2, 0, 0]]);
+    assert_eq!(
+        retry["result"]["message"],
+        "Fan setters completed and independent mode was confirmed. Target RPM and rotation are not readable on this backend. The saved Performance performance intent was not applied: submit a new performance request to apply it."
+    );
+    // The new performance request the reply names applies it directly.
+    let applied = r.set(234, value(2, 1)).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    {
+        let state = r.port.state.lock().unwrap();
+        assert_eq!((state.selectors, state.fans), ([2; 2], [0; 2]));
+    }
+    // A matching confirmed selector adds no note.
+    let again = r.request(fan_request(235, None, 0)).await;
+    assert_eq!(again["result"]["status"], 1, "{again}");
+    assert_eq!(
+        again["result"]["message"],
+        "Automatic mode independently observed; no fan setter was submitted and no ownership was established."
+    );
+    r.origin.stop();
+    r.stop().await;
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
 async fn fan_correction_fresh_epoch_auto_recovery_and_true_noop_close_original_owner() {
     for already_auto in [false, true] {
         for resume in [false, true] {

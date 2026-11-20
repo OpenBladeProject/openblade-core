@@ -626,6 +626,13 @@ impl Permit for RequestPermit {
                 .map_err(|_| io::ErrorKind::Other)? = desired.map(|(_, s)| s);
             let desired = desired.map(|(p, _)| p);
             *self.destination.lock().map_err(|_| io::ErrorKind::Other)? = desired;
+            // Stored promises that the fan request returning the fans applies the
+            // intent. That request writes only Balanced or Performance, so
+            // without such a destination the intent is reported unapplied.
+            if desired.is_none() {
+                self.set_cause(Cause::NoEligiblePolicy);
+                return Ok(None);
+            }
             if openblade_domain::thermal_mutation::defer_manual_performance(
                 baseline,
                 power,
@@ -640,9 +647,6 @@ impl Permit for RequestPermit {
             if self.storage.outstanding_fan() {
                 self.set_cause(Cause::FanHandbackPending);
                 return Ok(None);
-            }
-            if desired.is_none() {
-                self.set_cause(Cause::NoEligiblePolicy);
             }
             Ok(desired)
         })()
