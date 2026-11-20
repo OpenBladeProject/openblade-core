@@ -2622,7 +2622,8 @@ public sealed class ControlCoordinatorTests
         Assert.Equal(baseline, device.State.CustomPerformance);
     }
 
-    // Maximum Fans is a separate Custom firmware flag (029F, 029D, 02A0). The
+    // Maximum Fans is a separate Custom firmware flag (029F, 029D, 02A0, 02B6,
+    // 02B7, 02B8: every profile with SupportsMaximumFans). The
     // matcher compares Cpu/Gpu individually so the legacy GpuClockOffsets field
     // cannot cause false mismatches; it must still compare the confirmed flag.
     private static RecordingBladeDevice CreateMaximumFansCustomDevice(

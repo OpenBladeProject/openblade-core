@@ -15,7 +15,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Turning only Custom Maximum Fans on or off now reaches the laptop on Blade 16 (2023, RZ09-0483) and Blade 18 (2023, RZ09-0484), and ending HyperBoost on the Blade 16 turns it back on. Before, OpenBlade reported the change as applied without writing it. ([#986](https://github.com/OpenBladeProject/openblade-core/pull/986))
+- Turning only Custom Maximum Fans on or off now reaches the laptop on Blade 16 (2023, RZ09-0483), Blade 18 (2023, RZ09-0484) and Blade 14, 16 and 18 (2024, RZ09-0508, RZ09-0510 and RZ09-0509), and ending HyperBoost on the Blade 16 turns it back on. Before, OpenBlade reported the change as applied without writing it. At the next start, a saved Custom profile now sets Maximum Fans to match: fans run at maximum if the profile has it on, and a Maximum Fans setting made in Synapse is turned off if the profile has it off. ([#986](https://github.com/OpenBladeProject/openblade-core/pull/986))
 
 ## [0.65.1-nightly.117] - 2026-11-20
 

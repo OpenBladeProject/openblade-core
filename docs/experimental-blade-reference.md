@@ -86,7 +86,10 @@ Product 669 also offers CPU Boost as bit `0x01` of the same byte. OpenBlade
 reports that bit in diagnostics and lists it as observed-only; it adds no CPU
 Boost control. In Custom, a failed `07/8F` read fails the whole performance
 query closed, as on the Blade 16 and Blade 18: the confirmed state has no
-unknown Maximum Fans value, and reporting it off would be a guess.
+unknown Maximum Fans value, and reporting it off would be a guess. Writes need
+that read too: on the Blade 14 and Blade 16, a preset change or a fixed fan
+target from Balanced stops before any write when it fails. A status query in
+Balanced still completes.
 The shared Power Mode Control decoder accepts any one-byte subset of
 `0x0F`; Maximum Fans is bit `0x02`. CPU boost (`0x01`), temporary full charge
 (`0x04`), and local dimming (`0x08`) remain independent observations. Undefined
@@ -104,7 +107,11 @@ together with another option, such as CPU Boost set in Synapse, leaving Custom
 is refused before any write: clearing only `0x02` would need a combined
 whole-byte value that no reviewed source writes. Turn the other option off in
 Synapse first. The service compares the confirmed flag with the saved Custom
-intent, so a change to Maximum Fans alone is written and confirmed.
+intent, so a change to Maximum Fans alone is written and confirmed. That shared
+comparison covers every model that offers Maximum Fans: the Blade 14, 16 and 18
+(2023), RZ09-0482, RZ09-0483 and RZ09-0484, and the Blade 14, 16 and 18 (2024),
+RZ09-0508, RZ09-0510 and RZ09-0509. Startup reconciliation compares it in both
+directions, so a saved Custom profile turns the flag on or off to match.
 On battery, the Blade 14 (2023) and Blade 16 (2023) admit no thermal preset,
 so the flag stays as it is until external power returns. Their Synapse
 policies clear it before the DC Balanced setter, which OpenBlade does not
@@ -165,9 +172,15 @@ Silent and Custom bases, never Performance/raw 2, and requires MCU 1.1.1.3.
 Like the Blade 16, HyperBoost entry from Custom clears an active Maximum Fans
 flag with the guarded `07/0F [0]` cleanup. The ownership journal keeps the
 saved Custom intent, and on exit the service compares it with the confirmed
-flag and turns Maximum Fans back on. If admission changes after the confirmed
-cleanup but before mode 7, the refusal reports a known state and writes stay
-available. Blade 16 (2023) requires MCU 1.5.0.0.
+flag and turns Maximum Fans back on. If that write is refused before
+submission, for example while CPU Boost is on, HyperBoost still ends: the fresh
+read confirms Custom, the journal is retired, writes stay available, and the
+saved Custom intent waits for a reapply. A possibly submitted write stays
+indeterminate and blocks writes. If entry stops after the confirmed cleanup but
+before mode 7, such as on an admission change, a lost exact host or a native
+guard refusal, the refusal reports a known state, says Maximum Fans was turned
+off, and writes stay available. The service records that flag change as its
+own, not as an external change. Blade 16 (2023) requires MCU 1.5.0.0.
 
 Blade 18 (2023) remains observed-only. Turn HyperBoost off in Synapse before
 using performance controls; no HyperBoost setter is admitted for that model.
