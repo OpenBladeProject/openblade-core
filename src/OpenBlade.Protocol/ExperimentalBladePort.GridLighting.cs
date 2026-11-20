@@ -86,6 +86,7 @@ internal sealed partial class ExperimentalBladePort
                     {
                         // [0,0,8] would also switch the LED4 logo; select LED38 alone.
                         RequireWriteAdmission();
+                        RecordRz090529VaporChamberSelection();
                         await ExchangeAsync("KeyboardAnimationFrame", 0x0F, 0x02,
                             [0, VaporChamberRegion, 8], true, token, variableResponse: true,
                             payloadValidator: static value => value.Length <= RazerReport.MaximumPayloadLength,

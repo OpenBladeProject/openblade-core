@@ -244,14 +244,9 @@ internal sealed partial class ExperimentalBladePort
         {
         }
 
-        // Keyboard and LED38 rows form one submitted frame for duplicate suppression.
         bool ShouldSubmitFrame(IReadOnlyList<RgbColor> colors, IReadOnlyList<RgbColor>? vaporChamber = null) =>
             !keyTriggered
-            || lastKeyFrame is null
-            || !colors.SequenceEqual(lastKeyFrame)
-            || (vaporChamber is null
-                ? lastVaporChamberFrame is not null
-                : lastVaporChamberFrame is null || !vaporChamber.SequenceEqual(lastVaporChamberFrame))
+            || !IsRepeatedKeyTriggeredFrame(colors, vaporChamber, lastKeyFrame, lastVaporChamberFrame)
             || animationTime.GetElapsedTime(lastKeyFrameTimestamp) >= KeyTriggeredFrameKeepalive;
 
         void RecordSubmittedFrame(IReadOnlyList<RgbColor> colors, IReadOnlyList<RgbColor>? vaporChamber = null)
@@ -265,6 +260,16 @@ internal sealed partial class ExperimentalBladePort
             policy.RecordAnimationFrameApplied(settings.Effect);
         }
     }
+
+    // Keyboard and LED38 rows form one submitted frame for duplicate suppression:
+    // a changed LED38 row, or adding or dropping it, is a new frame.
+    internal static bool IsRepeatedKeyTriggeredFrame(
+        IReadOnlyList<RgbColor> colors, IReadOnlyList<RgbColor>? vaporChamber,
+        IReadOnlyList<RgbColor>? lastColors, IReadOnlyList<RgbColor>? lastVaporChamber) =>
+        lastColors is not null && colors.SequenceEqual(lastColors)
+        && (vaporChamber is null
+            ? lastVaporChamber is null
+            : lastVaporChamber is not null && vaporChamber.SequenceEqual(lastVaporChamber));
 
     private async Task SubmitBlade18FrameAsync(
         Blade18LightingFrame frame,

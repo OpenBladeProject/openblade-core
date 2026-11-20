@@ -257,6 +257,128 @@ internal sealed partial class ExperimentalBladePort
     private static bool SupportsRz090529VaporChamberFrames(ExperimentalBladeModel model) =>
         model.ProductId == 0x02C7;
 
+    private ExperimentalVaporChamberAvailability? vaporChamberAvailability;
+    private ExperimentalVaporChamberAvailability.Key vaporChamberAvailabilityKey;
+    private bool vaporChamberReadFailed;
+
+    // The factory binds its identity-scoped result so every later session for the
+    // same device reuses a completed failure. A directly constructed port keeps
+    // only its own result.
+    internal void BindVaporChamberAvailability(
+        ExperimentalVaporChamberAvailability availability, ExperimentalVaporChamberAvailability.Key key)
+    {
+        vaporChamberAvailability = availability;
+        vaporChamberAvailabilityKey = key;
+    }
+
+    private bool VaporChamberReadAvailable => !vaporChamberReadFailed
+        && vaporChamberAvailability?.Get(vaporChamberAvailabilityKey) != false;
+
+    private void SettleVaporChamberAvailability(bool available)
+    {
+        vaporChamberReadFailed |= !available;
+        vaporChamberAvailability?.Settle(vaporChamberAvailabilityKey, available);
+    }
+
+    // Optional open-time probe, run once for each admitted identity before the port
+    // is published. Shipped keyboard effects never depend on it: a rejected GET
+    // leaves later frames keyboard-only, and a GET that poisons this session is
+    // rethrown so the factory drains it and opens one fresh session without it.
+    internal async Task InitializeRz090529VaporChamberAvailabilityAsync(CancellationToken cancellationToken)
+    {
+        if (!SupportsRz090529VaporChamberFrames(model) || vaporChamberAvailability is null)
+        {
+            return;
+        }
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (vaporChamberAvailability.Get(vaporChamberAvailabilityKey) is not null)
+            {
+                return;
+            }
+            if (!exactHostStillPresent())
+            {
+                throw new CapabilityUnavailableException("The exact Blade 18 is no longer verified.");
+            }
+            _ = await ReadReviewedVaporChamberEffectAsync(cancellationToken).ConfigureAwait(false);
+            SettleVaporChamberAvailability(true);
+        }
+        catch (IOException) when (!cancellationToken.IsCancellationRequested)
+        {
+            SettleVaporChamberAvailability(false);
+            if (session.Disposition != RazerCommandSessionDisposition.Healthy)
+            {
+                throw;
+            }
+            RecordQuery("VaporChamberEffect", "Unavailable", failure: "VaporChamberFramesUnavailable");
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    // Reads LED38 for a host-frame decision. When OpenBlade selected LED38 the read
+    // is required to return it. Otherwise LED38 is optional: a failed read on a
+    // usable session leaves this owner keyboard-only, a poisoned session still
+    // fails the request before any write, and both keep later requests from
+    // probing again.
+    private async Task<(LightingSettings? Settings, byte Mode)?> ReadVaporChamberForFramesAsync(
+        bool required, CancellationToken token)
+    {
+        try
+        {
+            return await ReadReviewedVaporChamberEffectAsync(token).ConfigureAwait(false);
+        }
+        catch (IOException) when (!token.IsCancellationRequested)
+        {
+            if (required)
+            {
+                throw;
+            }
+            SettleVaporChamberAvailability(false);
+            if (session.Disposition != RazerCommandSessionDisposition.Healthy)
+            {
+                throw;
+            }
+            RecordQuery("VaporChamberEffect", "Unavailable", failure: "VaporChamberFramesUnavailable");
+            return null;
+        }
+    }
+
+    // Write-ahead record that LED38 may be selected, saved before [0,38,8] can be
+    // submitted. Only this record lets a later restore write LED38.
+    private void RecordRz090529VaporChamberSelection()
+    {
+        ExperimentalLightingBaseline baseline = lightingOwnership.Baseline
+            ?? throw new IOException("The pre-frame lighting baseline is unavailable.");
+        if (baseline.VaporChamber is not null)
+        {
+            return;
+        }
+        ExperimentalLightingBaseline selected = baseline with
+        {
+            VaporChamber = lightingOwnership.VaporChamberDestination
+                ?? throw new IOException("The Vapor Chamber restore destination is unavailable."),
+        };
+        lightingOwnership.Journal?.ReplacePendingVaporChamber(selected);
+        lightingOwnership.Baseline = selected;
+    }
+
+    // LED38 is no longer OpenBlade's: it was restored, or another controller took it.
+    private void ReleaseRz090529VaporChamberSelection()
+    {
+        if (lightingOwnership.Baseline is not { VaporChamber: not null } baseline)
+        {
+            return;
+        }
+        ExperimentalLightingBaseline released = baseline with { VaporChamber = null };
+        lightingOwnership.Journal?.ReplacePendingVaporChamber(released);
+        lightingOwnership.Baseline = released;
+        lightingOwnership.VaporChamberFrames = false;
+    }
+
     private async Task<(LightingSettings? Settings, byte Mode)> ReadReviewedVaporChamberEffectAsync(
         CancellationToken token)
     {
@@ -305,11 +427,12 @@ internal sealed partial class ExperimentalBladePort
         };
     }
 
-    // Restore LED38 only while it still reads the custom mode 8 this owner
-    // selected. From mode 8 every restorable setter clears the
-    // custom-ownership flag and bypasses its same-mode shortcuts, so no bridge
-    // effect is needed. Any other mode means another controller replaced the
-    // frame; leave it unchanged.
+    // Restore LED38 only when the durable record says OpenBlade may have selected
+    // it and it still reads custom mode 8. From mode 8 every restorable setter
+    // clears the custom-ownership flag and bypasses its same-mode shortcuts
+    // (KI8110 1.07.00 set table 0x96B2), so no bridge effect is needed. Any other
+    // mode means another controller replaced the frame; leave it unchanged. The
+    // selection record is removed only after a confirmed restore or a skip.
     private async Task RestoreRz090529VaporChamberAsync(ExperimentalLightingBaseline baseline,
         byte? currentMode, CancellationToken token, Action markSubmitted)
     {
@@ -323,6 +446,7 @@ internal sealed partial class ExperimentalBladePort
             policy.Record("VaporChamberEffect", "Restore", "Skipped",
                 requested: destination.Effect.ToString(), confirmed: $"Mode{mode}",
                 failure: "ExternallyChanged");
+            ReleaseRz090529VaporChamberSelection();
             return;
         }
         RequireWriteAdmission();
@@ -338,5 +462,6 @@ internal sealed partial class ExperimentalBladePort
         }
         policy.Record("VaporChamberEffect", "Restore", "Confirmed", true,
             requested: destination.Effect.ToString(), confirmed: actual.Effect.ToString());
+        ReleaseRz090529VaporChamberSelection();
     }
 }

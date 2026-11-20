@@ -545,6 +545,7 @@ public sealed partial class ExperimentalBladeFactoryTests
     {
         private byte[] lastRequest = [];
         internal List<byte> Commands { get; } = [];
+        internal List<(byte Class, byte Id, byte Region)> Requests { get; } = [];
         internal List<string>? Events { get; init; }
         internal Action? AfterGet { get; init; }
         internal bool RejectSecondInterface { get; init; }
@@ -555,6 +556,8 @@ public sealed partial class ExperimentalBladeFactoryTests
         internal bool FailRead { get; init; }
         internal (byte Class, byte Id)? StatusFailure { get; init; }
         internal int StatusFailuresRemaining { get; set; }
+        // Restricts StatusFailure to requests whose second argument is this region.
+        internal byte? StatusFailureRegion { get; init; }
 
         public Task<HidFeatureIoResult> ExecuteAsync(OpenedHidHandle handle, uint controlCode,
             byte[] buffer, CancellationToken callerCancellation, CancellationToken deadlineCancellation)
@@ -567,6 +570,7 @@ public sealed partial class ExperimentalBladeFactoryTests
                     LightingEffect = buffer[11];
                 }
                 Commands.Add(buffer[8]);
+                Requests.Add((buffer[7], buffer[8], buffer[10]));
                 Events?.Add($"query:{handle.FileHandle.DangerousGetHandle().ToInt64()}:{buffer[7]:X2}/{buffer[8]:X2}");
             }
             else
@@ -579,7 +583,8 @@ public sealed partial class ExperimentalBladeFactoryTests
                 lastRequest.CopyTo(buffer, 0);
                 if (StatusFailuresRemaining > 0
                     && StatusFailure is { } failure
-                    && failure == (lastRequest[7], lastRequest[8]))
+                    && failure == (lastRequest[7], lastRequest[8])
+                    && (StatusFailureRegion is not { } region || lastRequest[10] == region))
                 {
                     buffer[1] = 0x05;
                     StatusFailuresRemaining--;

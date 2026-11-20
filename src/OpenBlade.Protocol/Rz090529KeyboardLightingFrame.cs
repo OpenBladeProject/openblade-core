@@ -26,7 +26,11 @@ internal static class Rz090529KeyboardLightingFrame
     }
 
     // The Product 711 manifest maps logical VC row 0, columns 0..17, to transport
-    // row 6 columns 1..18. Transport column 0 carries no VC address and stays black.
+    // row 6 columns 1..18, and transport column 0 stays black, as in Synapse's own
+    // frames. The KI8110 1.07.00 row-6 handler stores transport columns 0..17 in
+    // VC slots 0..17 and drops column 18, so VC slot 0 shows that black column and
+    // logical VC column 17 is not shown. Physical validation decides whether the
+    // offset is visible.
     internal static byte[] EncodeVaporChamberRow(IReadOnlyList<RgbColor> colors)
     {
         ArgumentNullException.ThrowIfNull(colors);
@@ -35,6 +39,16 @@ internal static class Rz090529KeyboardLightingFrame
             throw new ArgumentException("A KI8110 Vapor Chamber row requires exactly 18 colors.", nameof(colors));
         }
         return Encode(VaporChamberTransportRow, column => column == 0 ? default : colors[column - 1]);
+    }
+
+    // No reviewed LED38 setter writes its record brightness, and OpenBlade writes
+    // none. VC frame colors therefore carry the keyboard brightness in software.
+    internal static RgbColor ScaleVaporChamberColor(RgbColor color, int brightnessPercent)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(brightnessPercent);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(brightnessPercent, 100);
+        return new(Scale(color.Red), Scale(color.Green), Scale(color.Blue));
+        byte Scale(byte value) => (byte)((value * brightnessPercent + 50) / 100);
     }
 
     private static byte[] Encode(int row, Func<int, RgbColor> color)

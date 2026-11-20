@@ -516,6 +516,10 @@ public sealed partial class SourceReviewedBladeModelTests
         private RazerCommandSessionDisposition disposition;
         internal bool RejectLogoQuery;
         internal bool RejectVaporChamberQuery;
+        // Rejects the LED38 effect GET (0F/82 region 38), not the 03/80 enabled GET.
+        internal bool RejectVaporChamberEffectQuery;
+        // Acknowledges LED38 effect SETs without changing the record.
+        internal bool IgnoreVaporChamberWrites;
         internal byte Fan1 = 45;
         internal byte Fan2 = 45;
         internal byte[] DynamicFanRange = [0, 0, 0, 0, 0, 0, 37, 0, 45, 0, 53, 0];
@@ -561,6 +565,8 @@ public sealed partial class SourceReviewedBladeModelTests
                 || RejectLightingQuery && command.ClassId == 0x03 && command.CommandId >= 0x80
                 || RejectLogoQuery && command.ClassId == 0x03 && command.CommandId is 0x80 or 0x82
                 || RejectVaporChamberQuery && command.ClassId == 0x03 && command.CommandId == 0x80
+                    && command.Arguments.Span[1] == 38
+                || RejectVaporChamberEffectQuery && command.ClassId == 0x0F && command.CommandId == 0x82
                     && command.Arguments.Span[1] == 38)
             {
                 if (RetireOnQueryFailure)
@@ -618,6 +624,8 @@ public sealed partial class SourceReviewedBladeModelTests
                         }
                         Brightness = SavedBrightness;
                         McuCustomOverlay = false;
+                        break;
+                    case (0x0F, 0x02) when arguments[1] == 38 && IgnoreVaporChamberWrites:
                         break;
                     case (0x0F, 0x02) when arguments[1] == 38:
                         // KI8110 LED38 setter shortcuts: same Off, same-count

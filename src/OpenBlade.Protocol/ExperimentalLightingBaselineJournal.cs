@@ -96,6 +96,27 @@ internal sealed class ExperimentalLightingBaselineJournal
         }
     }
 
+    // Change only the LED38 record of the pending baseline. Its presence means
+    // OpenBlade may have selected LED38, so this process adds it to its own capture
+    // before [0,38,8] can be submitted. It is removed once LED38 is restored or
+    // another controller took it, including during recovery of a loaded record.
+    internal void ReplacePendingVaporChamber(ExperimentalLightingBaseline baseline)
+    {
+        ArgumentNullException.ThrowIfNull(baseline);
+        ValidateBaseline(baseline);
+        lock (gate)
+        {
+            EnsureUnchanged();
+            if (pending is null || pending.Settings != baseline.Settings
+                || pending.RawBrightness != baseline.RawBrightness
+                || baseline.VaporChamber is not null && !capturedHere)
+            { throw new InvalidDataException("Only the pending baseline's LED38 record may change."); }
+            if (pending == baseline) { return; }
+            Publish(new(SchemaFor(baseline), modelNumber, 0x1532, productId, true, baseline));
+            pending = baseline;
+        }
+    }
+
     // Require a confirmed built-in destination, or a confirmed baseline with a known pre-submission failure.
     // A durable cleared tombstone avoids deletion/recreation races; failure leaves recovery pending.
     internal void ClearAfterVerifiedRestoration()
