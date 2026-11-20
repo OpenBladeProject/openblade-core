@@ -542,7 +542,7 @@ fn temporary_overrides_follow_classification_boundaries() {
         storage
             .desired(power, None)
             .unwrap()
-            .map(|(p, s)| (p as i32, s))
+            .map(|(p, s)| (p.wire(), s))
     };
     storage.save(Some(temporary(2)), 0).unwrap();
     assert_eq!(desired(3), Some((2, 3)));

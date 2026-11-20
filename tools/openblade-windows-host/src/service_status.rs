@@ -1386,7 +1386,7 @@ impl Snapshot {
     pub(crate) fn thermal_intent(
         mut self,
         value: Option<&PerformanceOverride>,
-        destination: Option<openblade_domain::thermal_mutation::Preset>,
+        destination: Option<openblade_domain::thermal_mutation::Destination>,
         message: &str,
         power: Option<i32>,
     ) -> Self {
@@ -1397,10 +1397,24 @@ impl Snapshot {
         if let Some(power) = power {
             self.active_power_source = power;
         }
-        if let Some(selected) = destination.map(|d| d as i32) {
+        if let Some(destination) = destination {
             self.desired_state.performance = Resolved {
-                value: selected,
+                value: destination.wire(),
                 source: value.map_or(1, |v| if v.lifetime == 1 { 4 } else { 3 }),
+            };
+            // The requested Custom levels, in the confirmed-state shape; the
+            // firmware levels are reported only by an independent read.
+            match destination.custom_levels() {
+                Some(levels) => self.desired_state.feature_fields.insert(
+                    "customPerformance".into(),
+                    serde_json::json!({
+                        "cpu": levels.cpu as u8, "gpu": levels.gpu as u8, "maximumFans": false
+                    }),
+                ),
+                None => self
+                    .desired_state
+                    .feature_fields
+                    .remove("customPerformance"),
             };
         }
         self

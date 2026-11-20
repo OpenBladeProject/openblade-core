@@ -158,7 +158,7 @@ internal sealed class WindowsNativeThermalHistory
             var row = new Row(Text("request"), Text("owner"), Text("user_sid"), e.GetProperty("caller_pid").GetUInt32(), e.GetProperty("session").GetUInt32(), e.GetProperty("destination").GetInt32(), Text("intent"), e.GetProperty("progress").GetByte(), fan is null ? null : Encoding.UTF8.GetString(fan), battery is null ? null : Encoding.UTF8.GetString(battery), temporary is null ? null : Encoding.UTF8.GetString(temporary));
             if (!Guid.TryParseExact(row.Request, "D", out var request) || request == Guid.Empty || !NativeCanonical.IsHex(row.Owner, 64) || !NativeCanonical.IsHex(row.Intent, 64)
                 || !row.Sid.StartsWith("S-1-5-21-", StringComparison.Ordinal) || row.Sid.Any(c => !char.IsAsciiDigit(c) && c is not ('S' or '-'))
-                || row.Pid == 0 || row.Session == 0 || (temporary is not null ? fan is not null || battery is not null || row.Destination != 0 || !WindowsNativeTemporaryChargeHistory.ValidProgress(row.Progress) : battery is not null ? fan is not null || row.Destination != 0 || !WindowsNativeBatteryHistory.ValidProgress(row.Progress) : fan is null ? PresetName(row.Destination) is null || row.Progress > 6 : row.Destination != 0 || !WindowsNativeFanHistory.ValidProgress(f, row.Progress))) { throw Denied(); }
+                || row.Pid == 0 || row.Session == 0 || (temporary is not null ? fan is not null || battery is not null || row.Destination != 0 || !WindowsNativeTemporaryChargeHistory.ValidProgress(row.Progress) : battery is not null ? fan is not null || row.Destination != 0 || !WindowsNativeBatteryHistory.ValidProgress(row.Progress) : fan is null ? !ValidPerformanceProgress(row.Destination, row.Progress) : row.Destination != 0 || !WindowsNativeFanHistory.ValidProgress(f, row.Progress))) { throw Denied(); }
             JsonElement requested = e.TryGetProperty("requested", out var v) ? v : default;
             if ((fan is not null || battery is not null || temporary is not null) && requested.ValueKind != JsonValueKind.Null || NativeCanonical.Digest(temporary ?? battery ?? fan ?? Intent(requested)) != row.Intent) { throw Denied(); }
             if (temporary is not null && t.GetProperty("origin").ValueKind != JsonValueKind.Null)
@@ -189,7 +189,7 @@ internal sealed class WindowsNativeThermalHistory
             bool resumedRelease = row.Progress is 31 or 51 && ownedFan is not null && ownedFan with { Progress = row.Progress } == row;
             if (last is not null && last.Request == row.Request)
             {
-                if (last with { Progress = row.Progress } != row || !(temporary is not null ? WindowsNativeTemporaryChargeHistory.Follows(t, last.Progress, row.Progress) : battery is not null ? WindowsNativeBatteryHistory.Follows(b, last.Progress, row.Progress) : fan is null ? last.Progress < 5 && row.Progress == last.Progress + 1 || last.Progress == 0 && row.Progress == 6 : WindowsNativeFanHistory.Follows(f, last.Progress, row.Progress))) { throw Denied(); }
+                if (last with { Progress = row.Progress } != row || !(temporary is not null ? WindowsNativeTemporaryChargeHistory.Follows(t, last.Progress, row.Progress) : battery is not null ? WindowsNativeBatteryHistory.Follows(b, last.Progress, row.Progress) : fan is null ? PerformanceFollows(row.Destination, last.Progress, row.Progress) : WindowsNativeFanHistory.Follows(f, last.Progress, row.Progress))) { throw Denied(); }
             }
             else if (last is not null && last.Progress is not (5 or 6 or 30 or 50 or 51 or 62 or 63 or 72 or 73) || !resumedRelease && (row.Progress != 0 || last?.Progress == 30 && (fan is null && !coupled || row.Owner != last.Owner || row.Sid != last.Sid || row.Session != last.Session))) { throw Denied(); }
             if (fan is not null) { if (row.Progress == 30) { ownedFan = row; } else if (row.Progress is 50 or 51) { ownedFan = null; } }
@@ -225,8 +225,8 @@ internal sealed class WindowsNativeThermalHistory
         if (generations.ContainsKey(record.Epoch) && (!service.ThermalMutation || original.Length == 0)) { throw Denied(); }
         return generations.GetValueOrDefault(record.Epoch) ?? Empty(record.Installation, record.Epoch, record.ServiceId);
     }
-    // The native RZ09-0581 pair destinations, by managed PerformancePreset wire
-    // value and name. Custom (5) and the unadmitted presets are not native rows.
+    // The native RZ09-0581 destinations, by managed PerformancePreset wire
+    // value and name. The unadmitted presets are not native rows.
     internal static string? PresetName(int value) => value switch
     {
         0 => "Silent",
@@ -234,8 +234,19 @@ internal sealed class WindowsNativeThermalHistory
         2 => "Performance",
         3 => "BatterySaver",
         4 => "BatteryBalanced",
+        Custom => "Custom",
         _ => null,
     };
+    private const int Custom = 5;
+    // thermal_mutation.rs Progress::chain: each destination's setter chain. A
+    // preset is one pair (0, 1-4, 5); Custom adds the 0D/07 CPU and GPU level
+    // setters (7-10) before its final read. Prepared (0) may also retire as 6.
+    private static readonly byte[] PairChain = [0, 1, 2, 3, 4, 5];
+    private static readonly byte[] CustomChain = [0, 1, 2, 3, 4, 7, 8, 9, 10, 5];
+    private static byte[]? Chain(int destination) => destination == Custom ? CustomChain : PresetName(destination) is null ? null : PairChain;
+    internal static bool ValidPerformanceProgress(int destination, byte progress) => Chain(destination) is { } chain && (progress == 6 || chain.Contains(progress));
+    internal static bool PerformanceFollows(int destination, byte prior, byte next) => Chain(destination) is { } chain
+        && (prior == 0 && next == 6 || Array.IndexOf(chain, prior) is int at && at >= 0 && at + 1 < chain.Length && chain[at + 1] == next);
     private static void Members(JsonElement value, string[] allowed)
     {
         if (value.ValueKind != JsonValueKind.Object) { throw Denied(); }
@@ -248,8 +259,32 @@ internal sealed class WindowsNativeThermalHistory
         Members(requested, ["value", "lifetime", "customPerformance", "gpuClockTuning"]);
         int value = requested.GetProperty("value").GetInt32();
         byte lifetime = requested.GetProperty("lifetime").GetByte();
-        if (PresetName(value) is null || lifetime > 1 || requested.TryGetProperty("customPerformance", out var custom) && custom.ValueKind != JsonValueKind.Null) { throw Denied(); }
+        var custom = requested.TryGetProperty("customPerformance", out var c) && c.ValueKind != JsonValueKind.Null ? c : default;
+        // thermal_history.rs PerformanceOverride::validate: Custom carries its
+        // settings and a preset none.
+        if (PresetName(value) is null || lifetime > 1 || (value == Custom) != (custom.ValueKind != JsonValueKind.Undefined)) { throw Denied(); }
         var gpu = requested.TryGetProperty("gpuClockTuning", out var g) ? g : default;
+        if (custom.ValueKind != JsonValueKind.Undefined)
+        {
+            // validate_custom_performance: canonical integer levels (CPU Low 0
+            // to Boost 3, GPU Low 0 to High 2), an optional maximum-fan flag and
+            // optional legacy offsets, which GPU clock tuning excludes.
+            Members(custom, ["cpu", "gpu", "maximumFans", "gpuClockOffsets"]);
+            foreach ((string k, ulong max) in new[] { ("cpu", 3UL), ("gpu", 2UL) })
+            {
+                if (!custom.TryGetProperty(k, out var level) || !Canonical(level, out long n) || n < 0 || (ulong)n > max) { throw Denied(); }
+            }
+            if (custom.TryGetProperty("maximumFans", out var fans) && fans.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) { throw Denied(); }
+            if (custom.TryGetProperty("gpuClockOffsets", out var legacy) && legacy.ValueKind != JsonValueKind.Null)
+            {
+                Members(legacy, ["coreMegahertz", "memoryMegahertz"]);
+                foreach (string k in new[] { "coreMegahertz", "memoryMegahertz" })
+                {
+                    if (!legacy.TryGetProperty(k, out var o) || !Canonical(o, out long n) || n is < -10000 or > 10000) { throw Denied(); }
+                }
+                if (gpu.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)) { throw Denied(); }
+            }
+        }
         if (gpu.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
         {
             Members(gpu, ["enabled", "offsets", "effectiveOffsets"]);
@@ -270,17 +305,25 @@ internal sealed class WindowsNativeThermalHistory
         using var memory = new MemoryStream();
         using (var writer = new Utf8JsonWriter(memory))
         {
-            writer.WriteStartObject(); writer.WriteNumber("value", value); writer.WriteNumber("lifetime", lifetime); writer.WriteNull("customPerformance");
-            writer.WritePropertyName("gpuClockTuning");
             void Sorted(JsonElement e)
             {
                 if (e.ValueKind == JsonValueKind.Object) { writer.WriteStartObject(); foreach (var p in e.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal)) { writer.WritePropertyName(p.Name); Sorted(p.Value); } writer.WriteEndObject(); }
                 else if (e.ValueKind == JsonValueKind.Number) { writer.WriteNumberValue(e.GetInt64()); }
                 else { e.WriteTo(writer); }
             }
+            writer.WriteStartObject(); writer.WriteNumber("value", value); writer.WriteNumber("lifetime", lifetime);
+            writer.WritePropertyName("customPerformance");
+            if (custom.ValueKind == JsonValueKind.Undefined) { writer.WriteNullValue(); } else { Sorted(custom); }
+            writer.WritePropertyName("gpuClockTuning");
             if (gpu.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null) { writer.WriteNullValue(); } else { Sorted(gpu); }
             writer.WriteEndObject();
         }
         return memory.ToArray();
+    }
+    // A JSON integer in its canonical form, as serde_json writes it back.
+    private static bool Canonical(JsonElement e, out long n)
+    {
+        n = 0;
+        return e.ValueKind == JsonValueKind.Number && e.TryGetInt64(out n) && e.GetRawText() == n.ToString(CultureInfo.InvariantCulture);
     }
 }

@@ -100,10 +100,14 @@ impl FanPermit {
     fn handback_preset(&self, power: i32) -> io::Result<Option<Preset>> {
         Ok(self
             .saved_preset(power)?
-            .filter(|preset| applies_on_fan_handback(*preset)))
+            .filter(|destination| applies_on_fan_handback(*destination))
+            .and_then(|destination| match destination {
+                Destination::Preset(preset) => Some(preset),
+                Destination::Custom(_) => None,
+            }))
     }
-    /// The saved preset a performance request would select, unfiltered.
-    fn saved_preset(&self, power: i32) -> io::Result<Option<Preset>> {
+    /// The saved destination a performance request would select, unfiltered.
+    fn saved_preset(&self, power: i32) -> io::Result<Option<Destination>> {
         let application = self.application.as_deref();
         // A temporary override kept for another class has expired for both
         // reads (Storage expires it in each), as for a performance request.
@@ -232,7 +236,7 @@ impl Permit for FanPermit {
         }
         proof
     }
-    fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Preset>> {
+    fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Destination>> {
         Ok(None)
     }
     fn resolve_fan(
@@ -525,7 +529,7 @@ impl Permit for FanSettlePermit {
     fn prepare_fan(&self, _record: FanRecord) -> io::Result<()> {
         Err(io::ErrorKind::PermissionDenied.into())
     }
-    fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Preset>> {
+    fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Destination>> {
         Err(io::ErrorKind::PermissionDenied.into())
     }
     fn record(&self, _: Progress) -> io::Result<()> {
@@ -808,10 +812,11 @@ impl Runtime {
         }
         // A return to Automatic that carried the saved preset reports it as managed
         // does; Debug names match managed's PerformancePreset names.
-        let performance = *permit
+        let performance = permit
             .performance
             .lock()
-            .map_err(|_| io::ErrorKind::Other)?;
+            .map_err(|_| io::ErrorKind::Other)?
+            .map(Destination::from);
         let observed = result.as_ref().ok().copied().flatten();
         // Without a native plan (battery, Silent, battery selectors, Custom) a no-op
         // can leave a carried preset unapplied: claim it only when confirmed.
@@ -820,11 +825,13 @@ impl Runtime {
         });
         let mut message = match (status, permit.prepared.load(Ordering::Acquire), performance) {
             (1, false, Some(preset)) if matched.is_some() => format!(
-                "Fans and {preset:?} performance already matched the requested state; no fan setter was submitted and no ownership was established."
+                "Fans and {} performance already matched the requested state; no fan setter was submitted and no ownership was established.",
+                preset.name()
             ),
             (1, false, _) => "Automatic mode independently observed; no fan setter was submitted and no ownership was established.".into(),
             (1, true, Some(preset)) => format!(
-                "Fans returned to Automatic with {preset:?} performance, confirmed by independent paired readback."
+                "Fans returned to Automatic with {} performance, confirmed by independent paired readback.",
+                preset.name()
             ),
             _ => message.into(),
         };
@@ -867,7 +874,8 @@ impl Runtime {
                 // baseline gate, so a new performance request is the next step
                 // whatever the fan recipe; it is not that request's precondition.
                 message.push_str(&format!(
-                    " The saved {preset:?} performance intent was not applied: submit a new performance request to apply it."
+                    " The saved {} performance intent was not applied: submit a new performance request to apply it.",
+                    preset.name()
                 ));
             }
         }

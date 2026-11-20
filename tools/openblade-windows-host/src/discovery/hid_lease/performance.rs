@@ -243,6 +243,14 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
     }
 }
 
+/// Whether a paired read also reads Custom levels, and with which getter IDs.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LevelRead {
+    Skip,
+    Reserve,
+    Reserved([u8; 2]),
+}
+
 struct Attempt<'a, P: Port, A: ObservationProof> {
     reader: &'a mut Reader<P, A>,
     completed: bool,
@@ -268,6 +276,43 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
         limit: Limit<'_>,
         transactions: [u8; 2],
         include_custom: bool,
+    ) -> Option<ObservedPerformance> {
+        let levels = if include_custom {
+            LevelRead::Reserve
+        } else {
+            LevelRead::Skip
+        };
+        self.read_reserved(authorize, admission, limit, transactions, levels)
+            .await
+    }
+
+    /// A paired read whose Custom level getters were reserved with the rest
+    /// of an operation, so a Custom selector always reads its levels.
+    async fn read_reserved_custom(
+        &mut self,
+        authorize: Authorize<'_, A>,
+        admission: A,
+        limit: Limit<'_>,
+        transactions: [u8; 2],
+        levels: [u8; 2],
+    ) -> Option<ObservedPerformance> {
+        self.read_reserved(
+            authorize,
+            admission,
+            limit,
+            transactions,
+            LevelRead::Reserved(levels),
+        )
+        .await
+    }
+
+    async fn read_reserved(
+        &mut self,
+        authorize: Authorize<'_, A>,
+        admission: A,
+        limit: Limit<'_>,
+        transactions: [u8; 2],
+        levels: LevelRead,
     ) -> Option<ObservedPerformance> {
         self.checkpoint(authorize, admission, limit).ok()?;
         let mut selectors = [(0, 0); 2];
@@ -316,14 +361,17 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
             (6, 1) => Some(ObservedPerformance::BatteryBalancedManual),
             (0, 1) => Some(ObservedPerformance::FixedMaximum),
             (7, 0) => Some(ObservedPerformance::HyperBoostObserved),
-            (4, fan @ (0 | 1)) if !include_custom => Some(ObservedPerformance::Custom {
+            (4, fan @ (0 | 1)) if levels == LevelRead::Skip => Some(ObservedPerformance::Custom {
                 manual: fan == 1,
                 levels: None,
             }),
             (4, fan @ (0 | 1)) => {
                 // Reserve only after a complete Custom selector pair. A new handle
                 // does not replenish the process-wide budget or drain firmware replies.
-                let [cpu_id, gpu_id] = self.reader.port.reserve_pair()?;
+                let [cpu_id, gpu_id] = match levels {
+                    LevelRead::Reserved(ids) => ids,
+                    _ => self.reader.port.reserve_pair()?,
+                };
                 let cpu = self
                     .read_custom(
                         CustomPerformanceQuery::new(cpu_id, CustomPerformanceComponent::Cpu),

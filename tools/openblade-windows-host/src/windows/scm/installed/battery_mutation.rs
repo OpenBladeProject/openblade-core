@@ -223,7 +223,7 @@ impl Permit for BatteryPermit {
         let p = self.fresh.authorize();
         (p == Some(self.proof)).then_some(self.proof)
     }
-    fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Preset>> {
+    fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Destination>> {
         Ok(None)
     }
     fn record(&self, _: Progress) -> io::Result<()> {

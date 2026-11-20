@@ -38,6 +38,8 @@ pub(crate) struct State {
     pub(crate) selectors: [u8; 2],
     pub(crate) fans: [u8; 2],
     pub(crate) custom_levels: [u8; 2],
+    // Acknowledge 0D/07 level setters without applying them.
+    pub(crate) ignore_levels: bool,
     pub(crate) retired: usize,
     pub(crate) opened: usize,
     pub(crate) power_reads: usize,
@@ -211,7 +213,7 @@ impl Port for MemoryPort {
                     hook(command, s.battery_reads);
                 }
                 let response = match (class, command) {
-                    (13, 1 | 2) => {
+                    (13, 1 | 2 | 7) => {
                         if let Some(check) = &s.before_write {
                             check(s.writes + 1);
                         }
@@ -224,6 +226,11 @@ impl Port for MemoryPort {
                         if command == 2 {
                             s.selectors[index] = payload[2];
                             s.fans[index] = payload[3];
+                        }
+                        // 0D/07 [1, component, level]: CPU 1, GPU 2.
+                        if command == 7 && !s.ignore_levels {
+                            assert!(payload[2] <= 2);
+                            s.custom_levels[index] = payload[2];
                         }
                         s.writes += 1;
                         if let Some((number, release)) = &s.held_write
@@ -354,7 +361,7 @@ impl Port for MemoryPort {
                         self.reply_timeout = true;
                     }
                 }
-                if class == 13 && matches!(command, 1 | 2) && s.corrupt_ack == Some(s.writes) {
+                if class == 13 && matches!(command, 1 | 2 | 7) && s.corrupt_ack == Some(s.writes) {
                     reply[2] ^= 1;
                 }
                 if class == 13 && command == 0x82 && s.writes == 2 {

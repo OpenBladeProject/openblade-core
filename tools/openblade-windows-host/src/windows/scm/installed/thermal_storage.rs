@@ -3,7 +3,7 @@
 use crate::configuration::{self, File as ConfigFile, Inspection, RecoveryRecord};
 use openblade_domain::{
     automation::{UNCLASSIFIED_EXTERNAL, temporary_after, temporary_expired},
-    thermal_mutation::{Preset, Progress, progress_follows, settled},
+    thermal_mutation::{CUSTOM, Destination, Preset, Progress, progress_follows, settled},
 };
 use serde_json::{Value, json};
 
@@ -373,6 +373,42 @@ fn fan_control(v: &Value) -> io::Result<()> {
 }
 
 pub(super) use crate::service_status::PerformanceOverride as Override;
+/// The destination saved Custom settings name on exact RZ09-0581, if the
+/// model admits them (`Destination::custom`). Missing levels are not guessed.
+pub(super) fn custom_destination(settings: &Value) -> Option<Destination> {
+    Destination::custom(
+        settings["cpu"].as_u64()?,
+        settings["gpu"].as_u64()?,
+        settings
+            .get("maximumFans")
+            .map_or(Some(false), Value::as_bool)?,
+    )
+}
+/// A selected wire destination, its Custom settings and its provenance,
+/// before model admission.
+struct Selected {
+    value: i32,
+    custom: Option<Value>,
+    source: i32,
+}
+impl Selected {
+    fn destination(&self) -> Option<Destination> {
+        if self.value == CUSTOM {
+            self.custom.as_ref().and_then(custom_destination)
+        } else {
+            Preset::from_wire(self.value).map(Destination::Preset)
+        }
+    }
+    /// Legacy offsets saved inside the selected Custom settings are a GPU
+    /// clock effect (managed `NormalizeLegacyGpuClockTuning`).
+    fn custom_offsets(&self) -> bool {
+        self.value == CUSTOM
+            && self
+                .custom
+                .as_ref()
+                .is_some_and(|c| c.get("gpuClockOffsets").is_some_and(|o| !o.is_null()))
+    }
+}
 use crate::thermal_history::Entry;
 struct State {
     quarantined: bool,
@@ -511,7 +547,11 @@ impl Storage {
         let mut next = s.document.clone();
         let saved = value.as_ref().filter(|v| v.lifetime == 1);
         next["overrides"]["performance"] = saved.map_or(Value::Null, |v| json!(v.value));
-        next["overrides"]["customPerformance"] = Value::Null;
+        // Managed `PersistentOverrideState` keeps Custom settings only beside
+        // a persistent Custom override; validation already paired them.
+        next["overrides"]["customPerformance"] = saved
+            .and_then(|v| v.custom_performance.clone())
+            .unwrap_or(Value::Null);
         next["overrides"]["gpuClockTuning"] = saved
             .and_then(|v| v.gpu_clock_tuning.clone())
             .unwrap_or(Value::Null);
@@ -547,11 +587,19 @@ impl Storage {
         });
         Ok(())
     }
+    /// The saved destination for class `power`, with its provenance. Custom
+    /// settings the model does not admit, unadmitted presets and Custom
+    /// without levels select nothing.
     pub(super) fn desired(
         &self,
         power: i32,
         application: Option<&str>,
-    ) -> io::Result<Option<(Preset, i32)>> {
+    ) -> io::Result<Option<(Destination, i32)>> {
+        Ok(self
+            .selected(power, application)?
+            .and_then(|s| s.destination().map(|d| (d, s.source))))
+    }
+    fn selected(&self, power: i32, application: Option<&str>) -> io::Result<Option<Selected>> {
         let mut s = self.state.lock().map_err(|_| denied())?;
         if s.temporary
             .as_ref()
@@ -559,15 +607,26 @@ impl Storage {
         {
             s.temporary = None;
         }
-        let persistent = s.document["overrides"]["performance"]
-            .as_i64()
-            .map(|n| n as i32);
-        let temporary = s.temporary.as_ref().map(|(v, _)| v.value);
+        let overrides = &s.document["overrides"];
+        let persistent = overrides["performance"].as_i64().map(|n| {
+            (
+                n as i32,
+                Some(overrides["customPerformance"].clone()).filter(|v| !v.is_null()),
+            )
+        });
+        let temporary = s
+            .temporary
+            .as_ref()
+            .map(|(v, _)| (v.value, v.custom_performance.clone()));
         for (value, source) in [(persistent, 4), (temporary, 3)] {
-            if let Some(value) = value
+            if let Some((value, custom)) = value
                 && openblade_domain::automation::override_source_eligible(value, power)
             {
-                return Ok(Preset::from_wire(value).map(|p| (p, source)));
+                return Ok(Some(Selected {
+                    value,
+                    custom,
+                    source,
+                }));
             }
         }
         drop(s);
@@ -595,18 +654,24 @@ impl Storage {
         let selected = app
             .and_then(|a| a["overrides"][key]["performance"].as_i64())
             .or_else(|| profiles[key]["performance"].as_i64());
+        // Managed `ApplicationProfileResolution`: an application's Custom
+        // settings replace the power profile's, whichever selected Custom.
+        let custom = app
+            .map(|a| &a["overrides"][key]["customPerformance"])
+            .filter(|v| !v.is_null())
+            .unwrap_or(&profiles[key]["customPerformance"]);
         Ok(selected
             .filter(|n| openblade_domain::automation::performance_source_eligible(*n as i32, power))
-            .and_then(|n| Preset::from_wire(n as i32))
-            .map(|p| {
-                (
-                    p,
-                    if app.is_some_and(|a| a["overrides"][key]["performance"].as_i64().is_some()) {
-                        2
-                    } else {
-                        1
-                    },
-                )
+            .map(|n| Selected {
+                value: n as i32,
+                custom: Some(custom.clone()).filter(|v| !v.is_null()),
+                source: if app
+                    .is_some_and(|a| a["overrides"][key]["performance"].as_i64().is_some())
+                {
+                    2
+                } else {
+                    1
+                },
             }))
     }
     pub(super) fn gpu_incomplete(&self, power: i32, application: Option<&str>) -> io::Result<bool> {
@@ -627,6 +692,12 @@ impl Storage {
             return Ok(true);
         }
         drop(s);
+        if self
+            .selected(power, application)?
+            .is_some_and(|s| s.custom_offsets())
+        {
+            return Ok(true);
+        }
         let Some(doc) = aggregate(self.files.as_ref(), self.same_path)? else {
             return Ok(false);
         };
@@ -1017,7 +1088,7 @@ impl Storage {
         &self,
         request: &str,
         owner: &str,
-        destination: Preset,
+        destination: Destination,
         intent: &str,
         requested: &Option<Override>,
         caller_pid: u32,
@@ -1045,8 +1116,8 @@ impl Storage {
                     || prior.caller_pid != caller_pid
                     || prior.session != session
                     || prior.intent != intent
-                    || prior.destination != destination as i32
-                    || !progress_follows(prior.progress, progress as u8)
+                    || prior.destination != destination.wire()
+                    || !progress_follows(destination.wire(), prior.progress, progress as u8)
                 {
                     return Err(denied());
                 }
@@ -1066,22 +1137,30 @@ impl Storage {
             caller_pid,
             session,
             requested: requested.clone(),
-            destination: destination as i32,
+            destination: destination.wire(),
             intent: intent.into(),
             progress: progress as u8,
         };
         if progress == Progress::Prepared {
-            // Reserve the exact request's largest legal branch (0..5). Row
-            // progress is one digit, including the shorter 0->6 retirement path.
+            // Reserve the exact request's largest legal branch, its whole chain
+            // (0..5, or Custom's 0..4, 7..10, 5). The Prepared row's progress is
+            // one digit; each step adds its own extra digits. The 0->6
+            // retirement path is shorter.
             let row = serde_json::to_vec(&entry)?
                 .len()
                 .checked_add(1)
                 .ok_or_else(denied)?;
-            if row > crate::thermal_history::ROW {
+            let chain = Progress::chain(destination.wire()).ok_or_else(denied)?;
+            let extra = |step: &Progress| (*step as u8).to_string().len() - 1;
+            if chain
+                .iter()
+                .any(|step| row + extra(step) > crate::thermal_history::ROW)
+            {
                 return Err(denied());
             }
-            let needed = row
-                .checked_mul(6)
+            let needed = chain
+                .iter()
+                .try_fold(0usize, |total, step| total.checked_add(row + extra(step)))
                 .and_then(|n| n.checked_add(s.temporary_capacity))
                 .ok_or_else(denied)?;
             // A live process-scoped TFC origin and its reserved cancellation
@@ -1125,8 +1204,13 @@ impl Storage {
             s.preparation_failed = progress == Progress::Prepared;
             // An unsuccessful intent append may already be pending or published.
             // Cached Prepared is not proof that no intent evidence exists.
-            s.intent_append_failed =
-                matches!(progress, Progress::FirstIntent | Progress::SecondIntent);
+            s.intent_append_failed = matches!(
+                progress,
+                Progress::FirstIntent
+                    | Progress::SecondIntent
+                    | Progress::ThirdIntent
+                    | Progress::FourthIntent
+            );
             return Err(error);
         }
         s.journal = Some(bytes);

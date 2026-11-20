@@ -18,7 +18,7 @@ use crate::{
 };
 use openblade_domain::{
     automation::UNCLASSIFIED_EXTERNAL,
-    thermal_mutation::{Preset, Progress, applies_on_fan_handback, confirms},
+    thermal_mutation::{CUSTOM, Destination, Preset, Progress, applies_on_fan_handback, confirms},
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -207,6 +207,9 @@ pub(super) const UNCLASSIFIED_CLEARED: &str =
 /// Managed `ValidateUnclassifiedPerformanceOverride`, as `RecordRejectedIntent`
 /// reports it (Failed).
 const UNCLASSIFIED_REJECTED: &str = "The requested intent was rejected: This request needs classified power or includes native overclocking; ordinary external presence does not admit it.";
+/// Managed `ValidateUnclassifiedPerformanceOverride` for Custom settings the
+/// model capability does not admit, as `RecordRejectedIntent` reports it.
+const UNCLASSIFIED_CUSTOM_REJECTED: &str = "The requested intent was rejected: The complete Custom CPU/GPU and maximum-fan intent is not admitted for this model.";
 /// Managed `PublishScopedUnavailable` (Blocked) when an unclassified adapter
 /// reading lacks fresh Windows AC presence or the confirmed state is HyperBoost
 /// (`CanAdmitUnclassifiedExternalControl`); no intent is stored.
@@ -557,7 +560,7 @@ impl Runtime {
         let requested_applied = permit
             .value
             .as_ref()
-            .is_none_or(|v| destination.is_some_and(|d| v.value == d as i32));
+            .is_none_or(|v| destination.is_some_and(|d| v.value == d.wire()));
         let outcome = if observed.is_some() && requested_applied {
             Outcome{status:1,message:"Bounded thermal preset confirmed by independent paired readback. GPU clock handling and broad device capabilities remain unavailable; other native controls are incomplete.".into()}
         } else if permit.storage.configuration_failed() {
@@ -600,13 +603,12 @@ impl Runtime {
                 };
                 Outcome::blocked(format!("{committed} Hardware result: {reason}"))
             }
-        } else if matches!(
-            *permit.cause.lock().map_err(|_| io::ErrorKind::Other)?,
-            Cause::UnclassifiedRejected
-        ) {
+        } else if let cause @ (Cause::UnclassifiedRejected | Cause::UnclassifiedCustomRejected) =
+            &*permit.cause.lock().map_err(|_| io::ErrorKind::Other)?
+        {
             Outcome {
                 status: 3,
-                message: UNCLASSIFIED_REJECTED.into(),
+                message: cause.message(),
             }
         } else if matches!(
             *permit.cause.lock().map_err(|_| io::ErrorKind::Other)?,
@@ -652,7 +654,7 @@ impl Runtime {
 /// written now. It stores nothing and submits nothing, so a later automatic
 /// reconciliation of already-saved intent (Stage 4b) can reuse it unchanged.
 struct Selection {
-    desired: Option<(Preset, i32)>,
+    desired: Option<(Destination, i32)>,
     blocked: Option<Cause>,
 }
 fn select(
@@ -668,10 +670,10 @@ fn select(
     if storage.gpu_incomplete(power, application)? {
         return Ok(blocked(Cause::Gpu));
     }
-    let Some((preset, source)) = storage.desired(power, application)? else {
+    let Some((destination, source)) = storage.desired(power, application)? else {
         return Ok(blocked(Cause::NoEligiblePolicy));
     };
-    let desired = Some((preset, source));
+    let desired = Some((destination, source));
     let blocked = if openblade_domain::thermal_mutation::defer_manual_performance(
         baseline,
         power,
@@ -680,7 +682,7 @@ fn select(
         // Stored promises that the fan request returning the fans applies the
         // intent. That request writes only Balanced or Performance, so any
         // other destination asks for a new performance request instead.
-        Some(if applies_on_fan_handback(preset) {
+        Some(if applies_on_fan_handback(destination) {
             Cause::ManualDeferred
         } else {
             Cause::ManualDeferredResubmit
@@ -705,7 +707,7 @@ struct RequestPermit {
     value: Option<Override>,
     application: Option<String>,
     accepted: AtomicBool,
-    destination: Mutex<Option<Preset>>,
+    destination: Mutex<Option<Destination>>,
     power: Mutex<Option<i32>>,
     selected_source: Mutex<Option<i32>>,
     cause: Mutex<Cause>,
@@ -730,6 +732,7 @@ enum Cause {
     Transport(String),
     UnclassifiedBlocked,
     UnclassifiedRejected,
+    UnclassifiedCustomRejected,
 }
 impl Cause {
     fn message(&self) -> String {
@@ -750,6 +753,7 @@ impl Cause {
             Self::Transport(e) => format!("Thermal transport or ownership did not complete: {e}"),
             Self::UnclassifiedBlocked => UNCLASSIFIED_BLOCKED.into(),
             Self::UnclassifiedRejected => UNCLASSIFIED_REJECTED.into(),
+            Self::UnclassifiedCustomRejected => UNCLASSIFIED_CUSTOM_REJECTED.into(),
         }
     }
 }
@@ -798,7 +802,11 @@ impl Permit for RequestPermit {
         .inspect_err(|error| self.remember_failure(error))
         .unwrap_or(false)
     }
-    fn resolve(&self, power: i32, baseline: ObservedPerformance) -> io::Result<Option<Preset>> {
+    fn resolve(
+        &self,
+        power: i32,
+        baseline: ObservedPerformance,
+    ) -> io::Result<Option<Destination>> {
         self.verify_failure()?;
         (|| {
             if self.accepted.load(Ordering::Acquire) {
@@ -813,16 +821,28 @@ impl Permit for RequestPermit {
                 return Ok(None);
             }
             // Managed `ValidateUnclassifiedPerformanceOverride` rejects native
-            // overclocking and the battery presets there before any intent is
-            // stored: ordinary external presence admits neither.
-            if unclassified
-                && self.value.as_ref().is_some_and(|v| {
-                    v.gpu_clock_tuning.is_some()
-                        || Preset::from_wire(v.value).is_some_and(Preset::is_battery)
-                })
-            {
-                self.set_cause(Cause::UnclassifiedRejected);
-                return Ok(None);
+            // overclocking, legacy Custom offsets included, and the battery
+            // presets there before any intent is stored: ordinary external
+            // presence admits none of them. It then rejects Custom settings the
+            // model capability does not admit.
+            if let Some(v) = self.value.as_ref().filter(|_| unclassified) {
+                let custom = v.custom_performance.as_ref();
+                if v.gpu_clock_tuning.is_some()
+                    || Preset::from_wire(v.value).is_some_and(Preset::is_battery)
+                    || custom
+                        .is_some_and(|c| c.get("gpuClockOffsets").is_some_and(|o| !o.is_null()))
+                {
+                    self.set_cause(Cause::UnclassifiedRejected);
+                    return Ok(None);
+                }
+                if v.value == CUSTOM
+                    && custom
+                        .and_then(super::thermal_storage::custom_destination)
+                        .is_none()
+                {
+                    self.set_cause(Cause::UnclassifiedCustomRejected);
+                    return Ok(None);
+                }
             }
             self.observe_power(power)?;
             self.storage

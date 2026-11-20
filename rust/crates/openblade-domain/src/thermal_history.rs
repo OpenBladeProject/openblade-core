@@ -1,5 +1,5 @@
 //! Portable, lossless thermal history grammar. No filesystem/default suppliers.
-use crate::thermal_mutation::{Preset, progress_follows, settled};
+use crate::thermal_mutation::{CUSTOM, Preset, progress_follows, settled, valid_progress};
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -43,33 +43,86 @@ pub struct PerformanceOverride {
     pub gpu_clock_tuning: Option<Value>,
 }
 impl PerformanceOverride {
+    /// Managed `PerformanceOverride.IsWellFormed` over the native values: a
+    /// preset destination carries no Custom settings, and Custom (5) carries
+    /// well-formed ones. Model capability is policy, checked when selected.
     pub fn validate(&self) -> io::Result<()> {
-        if crate::thermal_mutation::Preset::from_wire(self.value).is_none()
-            || self.lifetime > 1
-            || self.custom_performance.is_some()
-        {
+        let custom = self.custom_performance.as_ref();
+        let well_formed = if self.value == CUSTOM {
+            custom.is_some_and(|v| validate_custom_performance(v).is_ok())
+        } else {
+            Preset::from_wire(self.value).is_some() && custom.is_none()
+        };
+        if !well_formed || self.lifetime > 1 {
             return Err(invalid("unsupported or invalid thermal override"));
         }
         if let Some(gpu) = &self.gpu_clock_tuning {
             validate_gpu_tuning(gpu)?;
+            // Legacy Custom offsets and GPU tuning are exclusive.
+            if custom.is_some_and(|v| v.get("gpuClockOffsets").is_some_and(|o| !o.is_null())) {
+                return Err(invalid("unsupported or invalid thermal override"));
+            }
         }
         Ok(())
     }
+}
+
+/// Managed `CustomPerformanceSettings.IsWellFormed`: a defined CPU level
+/// (Low 0 to Boost 3), a GPU level of Low, Medium or High, the optional
+/// maximum-fan flag and optional legacy GPU offsets. Numbers must be in their
+/// canonical integer form, so the managed reader's intent digest agrees.
+pub fn validate_custom_performance(v: &Value) -> io::Result<()> {
+    let level = |key: &str, max: u64| {
+        v[key]
+            .as_u64()
+            .is_some_and(|n| n <= max && canonical_integer(&v[key]))
+    };
+    let members = v.as_object().is_some_and(|o| {
+        o.keys()
+            .all(|k| ["cpu", "gpu", "maximumFans", "gpuClockOffsets"].contains(&k.as_str()))
+    });
+    if !members
+        || !level("cpu", 3)
+        || !level("gpu", 2)
+        || v.get("maximumFans").is_some_and(|f| !f.is_boolean())
+        || v.get("gpuClockOffsets")
+            .is_some_and(|o| !o.is_null() && !valid_offsets(o, true))
+    {
+        return Err(invalid("unsupported or invalid thermal override"));
+    }
+    Ok(())
+}
+
+// An integer written as serde_json writes it back: no fraction, exponent or
+// negative zero (arbitrary_precision keeps the original text).
+fn canonical_integer(value: &Value) -> bool {
+    let text = value.to_string();
+    value
+        .as_i64()
+        .map(|n| n.to_string())
+        .or_else(|| value.as_u64().map(|n| n.to_string()))
+        == Some(text)
+}
+
+// Managed GpuClockOffsetSettings bounds; `canonical` also requires each number
+// in its canonical integer form.
+fn valid_offsets(value: &Value, canonical: bool) -> bool {
+    value.as_object().is_some_and(|o| {
+        o.len() == 2
+            && o.keys()
+                .all(|k| ["coreMegahertz", "memoryMegahertz"].contains(&k.as_str()))
+    }) && ["coreMegahertz", "memoryMegahertz"].iter().all(|k| {
+        value[k].as_i64().is_some_and(|n| {
+            (-10000..=10000).contains(&n) && (!canonical || canonical_integer(&value[k]))
+        })
+    })
 }
 
 // Shared by saved intent and typed requests. Managed GpuClockTuningSettings
 // emits EffectiveOffsets as a computed property (Profiles.cs); it grants no
 // extra intent and must agree with Enabled/Offsets when it is present.
 pub fn validate_gpu_tuning(gpu: &Value) -> io::Result<()> {
-    let valid_offsets = |value: &Value| {
-        value.as_object().is_some_and(|o| {
-            o.len() == 2
-                && o.keys()
-                    .all(|k| ["coreMegahertz", "memoryMegahertz"].contains(&k.as_str()))
-        }) && ["coreMegahertz", "memoryMegahertz"]
-            .iter()
-            .all(|k| matches!(value[k].as_i64(), Some(-10000..=10000)))
-    };
+    let valid_offsets = |value: &Value| valid_offsets(value, false);
     if gpu.as_object().is_none_or(|o| {
         o.keys()
             .any(|k| !["enabled", "offsets", "effectiveOffsets"].contains(&k.as_str()))
@@ -281,8 +334,7 @@ fn rows_from(
                     || !f.valid_progress(entry.progress)
                     || f.hash()? != entry.intent
             } else {
-                Preset::from_wire(entry.destination).is_none()
-                    || entry.progress > 6
+                !valid_progress(entry.destination, entry.progress)
                     || digest(&serde_json::to_vec(&entry.requested)?) != entry.intent
             }
         {
@@ -371,7 +423,13 @@ fn rows_from(
                             entry.battery.as_ref().map_or_else(
                                 || {
                                     entry.tfc.as_ref().map_or_else(
-                                        || progress_follows(p.progress, entry.progress),
+                                        || {
+                                            progress_follows(
+                                                entry.destination,
+                                                p.progress,
+                                                entry.progress,
+                                            )
+                                        },
                                         |t| t.follows(p.progress, entry.progress),
                                     )
                                 },
@@ -835,13 +893,42 @@ mod tests {
         ))
         .unwrap()
     }
+    /// The managed reader consumes the same journals.
+    #[test]
+    fn custom_rows_carry_their_settings_and_four_setters() {
+        let v = vector();
+        let custom = &v["customRows"];
+        let requested: PerformanceOverride =
+            serde_json::from_str(custom["requested"].as_str().unwrap()).unwrap();
+        requested.validate().unwrap();
+        assert_eq!(
+            serde_json::to_string(&requested).unwrap(),
+            custom["requested"].as_str().unwrap()
+        );
+        assert_eq!(
+            digest(&serde_json::to_vec(&requested).unwrap()),
+            custom["intent"].as_str().unwrap()
+        );
+        for (key, admitted) in [("admitted", true), ("refused", false)] {
+            for case in custom[key].as_array().unwrap() {
+                let journal = case["journal"].as_str().unwrap().as_bytes();
+                assert_eq!(
+                    rows(journal, |_, _| Ok(())).is_ok(),
+                    admitted,
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
     #[test]
     fn canonical_shared_grammar_and_original_generation_commitment() {
         let v = vector();
         let segment = v["segment"].as_str().unwrap().as_bytes();
         // Every admitted RZ09-0581 pair destination (Silent, Balanced,
         // Performance, Battery Saver, Battery Balanced) is a valid row; Custom
-        // and out-of-range values are denied with a valid intent digest.
+        // without its settings and out-of-range values are denied with a
+        // valid intent digest.
         for (key, admitted) in [("admitted", true), ("refused", false)] {
             for row in v["presetRows"][key].as_array().unwrap() {
                 let text = std::str::from_utf8(segment)
@@ -867,7 +954,7 @@ mod tests {
             }
         }
         // A destination alone still needs its own valid value range.
-        for destination in [5, -1] {
+        for destination in [6, -1] {
             let text = std::str::from_utf8(segment).unwrap().replace(
                 "\"destination\":1",
                 &format!("\"destination\":{destination}"),

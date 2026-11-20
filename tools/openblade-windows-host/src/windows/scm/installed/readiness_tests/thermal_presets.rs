@@ -1,7 +1,8 @@
-//! Silent, Battery Saver and Battery Balanced through the installed dispatcher:
-//! each is its own reviewed RZ09-0581 0D/02 pair (managed
-//! `ProductionBatteryPort.SetPerformanceAsync`), written directly from every
-//! confirmed state with the destination's own power-class rule.
+//! Silent, Battery Saver, Battery Balanced and Custom through the installed
+//! dispatcher: each preset is its own reviewed RZ09-0581 0D/02 pair (managed
+//! `ProductionBatteryPort.SetPerformanceAsync`), and Custom adds the 0D/07 CPU
+//! and GPU level setters, written directly from every confirmed state with the
+//! destination's own power-class rule.
 use super::*;
 
 /// (wire value, firmware selector) of the three destinations this slice adds.
@@ -319,9 +320,13 @@ async fn manual_fans_defer_a_destination_the_fan_return_does_not_write() {
     // Managed defers every preset under saved manual fans on external power.
     // The native fan return writes only Balanced or Performance, so the reply
     // asks for a new request instead of promising the return applies it.
-    for (preset, _) in [SILENT, BATTERY_SAVER] {
+    for request in [
+        value(SILENT.0, 1),
+        value(BATTERY_SAVER.0, 1),
+        custom(1, 0, false),
+    ] {
         let rig = rig_at(2, 1, FULL, manual_files());
-        let result = rig.set(1, value(preset, 1)).await;
+        let result = rig.set(1, request).await;
         assert_eq!(result["result"]["status"], 0, "{result}");
         assert_eq!(result["result"]["message"], RESUBMIT);
         assert!(setters(&rig).is_empty());
@@ -359,4 +364,359 @@ async fn a_fan_return_keeps_the_selector_and_names_an_unwritten_saved_preset() {
     assert_eq!(mode_setters(&r, sent), [[1, 1, 5, 0], [1, 2, 5, 0]]);
     r.origin.stop();
     r.stop().await;
+}
+
+// Custom on RZ09-0581: managed `ProductionBatteryPort.SetCustomPerformanceAsync`
+// writes the selector-4 pair, then the 0D/07 CPU and GPU level setters, and
+// settles only when the final 0D/82 and 0D/87 reads report all three.
+const CUSTOM: i32 = 5;
+fn custom(cpu: u8, gpu: u8, maximum_fans: bool) -> Value {
+    json!({"value":CUSTOM,"lifetime":1,"customPerformance":{"cpu":cpu,"gpu":gpu,"maximumFans":maximum_fans,"gpuClockOffsets":null},"gpuClockTuning":null})
+}
+/// Every thermal setter in submission order, as (command, payload).
+fn thermal_setters(rig: &Rig) -> Vec<(u8, Vec<u8>)> {
+    rig.port
+        .state
+        .lock()
+        .unwrap()
+        .sent
+        .iter()
+        .filter(|(class, command, _, _)| *class == 13 && matches!(command, 2 | 7))
+        .map(|(_, command, payload, _)| (*command, payload.clone()))
+        .collect()
+}
+fn custom_setters(cpu: u8, gpu: u8) -> Vec<(u8, Vec<u8>)> {
+    vec![
+        (2, vec![1, 1, 4, 0]),
+        (2, vec![1, 2, 4, 0]),
+        (7, vec![1, 1, cpu]),
+        (7, vec![1, 2, gpu]),
+    ]
+}
+fn progress(rig: &Rig) -> Vec<Value> {
+    rows(rig).iter().map(|r| r["progress"].clone()).collect()
+}
+const CUSTOM_CHAIN: [u8; 10] = [0, 1, 2, 3, 4, 7, 8, 9, 10, 5];
+
+#[tokio::test]
+async fn custom_is_the_pair_then_both_level_setters_from_every_confirmed_state() {
+    for actual in [FULL, LIMITED, 0x10] {
+        for (from, fans) in STATES {
+            let rig = rig_at(from, fans, actual, MemoryFiles::default());
+            let result = rig.set(1, custom(2, 1, false)).await;
+            let case = format!("from ({from}, {fans}) at {actual}: {result}");
+            if (from, actual) == (7, 0x10) {
+                // Leaving HyperBoost pins a class that unclassified power lacks.
+                assert_eq!(result["result"]["status"], 2, "{case}");
+                assert!(thermal_setters(&rig).is_empty(), "{case}");
+                rig.stop().await;
+                continue;
+            }
+            assert_eq!(result["result"]["status"], 1, "{case}");
+            assert_eq!(thermal_setters(&rig), custom_setters(2, 1), "{case}");
+            assert_eq!(progress(&rig), CUSTOM_CHAIN, "{case}");
+            let rows = rows(&rig);
+            assert!(rows.iter().all(|r| r["destination"] == CUSTOM), "{case}");
+            assert!(
+                rows.iter()
+                    .all(|r| r["requested"]["customPerformance"]["cpu"] == 2),
+                "{case}"
+            );
+            let status = rig.get().await;
+            let confirmed = &status["status"]["confirmedState"];
+            assert_eq!(confirmed["performance"], CUSTOM, "{case}");
+            assert_eq!(confirmed["fans"], 0, "{case}");
+            assert_eq!(
+                confirmed["customPerformance"],
+                json!({"cpu":2,"gpu":1,"maximumFans":false}),
+                "{case}"
+            );
+            if actual != 0x10 {
+                // The private projection selects the persistent override and
+                // reports the requested levels, not the firmware's.
+                let mut source = rig.source.lock().await;
+                let projected = source.snapshot(USER, Instant::now()).await.unwrap();
+                drop(source);
+                let projected = serde_json::to_value(projected).unwrap();
+                assert_eq!(
+                    projected["desiredState"]["performance"],
+                    json!({"value": CUSTOM, "source": 4}),
+                    "{case}"
+                );
+                assert_eq!(
+                    projected["desiredState"]["customPerformance"],
+                    json!({"cpu":2,"gpu":1,"maximumFans":false}),
+                    "{case}"
+                );
+            }
+            rig.stop().await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn every_admitted_level_pair_writes_its_own_fixture_payloads() {
+    // The RZ09-0581 capability range: every CPU/GPU pair except High/High.
+    for (cpu, gpu) in [
+        (0, 0),
+        (0, 1),
+        (0, 2),
+        (1, 0),
+        (1, 1),
+        (1, 2),
+        (2, 0),
+        (2, 1),
+    ] {
+        let rig = rig_at(2, 0, FULL, MemoryFiles::default());
+        let result = rig.set(1, custom(cpu, gpu, false)).await;
+        assert_eq!(result["result"]["status"], 1, "{cpu}/{gpu}: {result}");
+        assert_eq!(thermal_setters(&rig), custom_setters(cpu, gpu));
+        rig.stop().await;
+    }
+    // Already confirmed: the getter decodes Custom with the same levels.
+    let rig = rig_at(4, 0, FULL, MemoryFiles::default());
+    let result = rig.set(1, custom(1, 0, false)).await;
+    assert_eq!(result["result"]["status"], 1, "{result}");
+    assert!(thermal_setters(&rig).is_empty());
+    assert!(rows(&rig).is_empty());
+    rig.stop().await;
+    // Custom with other levels is written in full, the pair included.
+    let rig = rig_at(4, 0, FULL, MemoryFiles::default());
+    assert_eq!(rig.set(1, custom(0, 2, false)).await["result"]["status"], 1);
+    assert_eq!(thermal_setters(&rig), custom_setters(0, 2));
+    rig.stop().await;
+}
+
+#[tokio::test]
+async fn unsupported_custom_intent_is_stored_or_rejected_without_a_setter() {
+    const NO_POLICY: &str = "Performance override intent was stored. Hardware result: No supported performance destination is selected by the current power and profile policy.";
+    // High/High, an unreviewed CPU level and maximum fans are outside the
+    // RZ09-0581 range; Custom is an ordinary command, never a battery one.
+    for (request, actual) in [
+        (custom(2, 2, false), FULL),
+        (custom(3, 0, false), FULL),
+        (custom(1, 0, true), LIMITED),
+        (custom(1, 0, false), BATTERY),
+    ] {
+        let rig = rig_at(2, 0, actual, MemoryFiles::default());
+        let result = rig.set(1, request.clone()).await;
+        assert_eq!(result["result"]["status"], 2, "{request}: {result}");
+        assert_eq!(result["result"]["message"], NO_POLICY, "{request}");
+        assert!(thermal_setters(&rig).is_empty());
+        assert!(rows(&rig).is_empty());
+        let status = rig.get().await;
+        assert_eq!(status["status"]["performanceOverride"], request);
+        rig.stop().await;
+    }
+    // Unclassified external power rejects an unsupported Custom intent before
+    // it is stored, as managed `ValidateUnclassifiedPerformanceOverride` does.
+    for request in [custom(2, 2, false), custom(1, 0, true)] {
+        let rig = rig_at(2, 0, 0x10, MemoryFiles::default());
+        let result = rig.set(1, request.clone()).await;
+        assert_eq!(result["result"]["status"], 3, "{request}: {result}");
+        assert_eq!(
+            result["result"]["message"],
+            "The requested intent was rejected: The complete Custom CPU/GPU and maximum-fan intent is not admitted for this model."
+        );
+        assert!(thermal_setters(&rig).is_empty());
+        assert!(rig.files.read("manual-overrides.json").unwrap().is_none());
+        rig.stop().await;
+    }
+    // Custom GPU clock offsets have no native writer.
+    let mut request = custom(1, 0, false);
+    request["customPerformance"]["gpuClockOffsets"] =
+        json!({"coreMegahertz":10,"memoryMegahertz":20});
+    let rig = rig_at(2, 0, FULL, MemoryFiles::default());
+    let result = rig.set(1, request).await;
+    assert_eq!(result["result"]["status"], 2, "{result}");
+    assert!(
+        result["result"]["message"]
+            .as_str()
+            .unwrap()
+            .ends_with("GPU clock handling is incomplete; no thermal setter was submitted."),
+        "{result}"
+    );
+    assert!(thermal_setters(&rig).is_empty());
+    rig.stop().await;
+}
+
+#[tokio::test]
+async fn a_level_readback_mismatch_fences_the_row_without_replay() {
+    // The level setters are acknowledged but not applied, so the final 0D/87
+    // read disagrees: managed reports an indeterminate result and stops.
+    let files = MemoryFiles::default();
+    let rig = rig_at(2, 0, FULL, files.clone());
+    let before = {
+        let mut s = rig.port.state.lock().unwrap();
+        s.ignore_levels = true;
+        s.custom_levels
+    };
+    assert_ne!(before, [2, 1]);
+    let result = rig.set(1, custom(2, 1, false)).await;
+    assert_eq!(result["result"]["status"], 2, "{result}");
+    assert_eq!(result["result"]["message"], PENDING);
+    assert_eq!(thermal_setters(&rig), custom_setters(2, 1));
+    assert_eq!(progress(&rig), CUSTOM_CHAIN[..9]);
+    // The requested levels never become a confirmation.
+    let status = rig.get().await;
+    assert!(status["status"]["confirmedState"].is_null(), "{status}");
+    assert_eq!(rig.port.state.lock().unwrap().custom_levels, before);
+    assert_eq!(rig.set(2, custom(2, 1, false)).await["result"]["status"], 2);
+    assert_eq!(thermal_setters(&rig).len(), 4);
+    rig.stop().await;
+    let restarted = rig_at(2, 0, FULL, files);
+    assert_eq!(
+        restarted.set(3, custom(2, 1, false)).await["result"]["status"],
+        2
+    );
+    assert!(thermal_setters(&restarted).is_empty());
+    restarted.stop().await;
+}
+
+#[tokio::test]
+async fn each_level_setter_failure_fences_restart_without_replay() {
+    // (cut, last journal row, setters written).
+    for (cut, last, writes) in [
+        ("third-write", 7, 3),
+        ("fourth-write", 9, 4),
+        ("third-ack", 7, 3),
+        ("fourth-ack", 9, 4),
+    ] {
+        let files = MemoryFiles::default();
+        let rig = rig_at(2, 0, FULL, files.clone());
+        {
+            let mut s = rig.port.state.lock().unwrap();
+            match cut {
+                "third-write" => s.fail_write = Some(3),
+                "fourth-write" => s.fail_write = Some(4),
+                "third-ack" => s.corrupt_ack = Some(3),
+                _ => s.corrupt_ack = Some(4),
+            }
+        }
+        let result = rig.set(1, custom(1, 2, false)).await;
+        assert_eq!(result["result"]["status"], 2, "{cut}: {result}");
+        assert_eq!(thermal_setters(&rig).len(), writes, "{cut}");
+        assert_eq!(rows(&rig).last().unwrap()["progress"], last, "{cut}");
+        rig.stop().await;
+        assert!(
+            Storage::open(Box::new(files.clone()), SID)
+                .unwrap()
+                .pending()
+        );
+        let restarted = rig_at(2, 0, FULL, files);
+        let retry = restarted.set(2, custom(1, 2, false)).await;
+        assert_eq!(retry["result"]["status"], 2, "{cut}: {retry}");
+        assert!(thermal_setters(&restarted).is_empty(), "{cut}");
+        restarted.stop().await;
+    }
+}
+
+#[tokio::test]
+async fn a_class_change_during_custom_stops_before_the_next_setter() {
+    // Full to limited keeps ordinary continuity; leaving HyperBoost pins the
+    // starting class, and battery never admits Custom.
+    for (from, changed, completes) in [(2, LIMITED, true), (2, BATTERY, false), (7, LIMITED, false)]
+    {
+        // Power read 1 is the initial observation; reads 2-5 precede setters 1-4.
+        for at in 2..=5 {
+            let rig = rig_at(from, 0, FULL, MemoryFiles::default());
+            rig.port.state.lock().unwrap().change_power = Some((at, changed));
+            let result = rig.set(1, custom(1, 1, false)).await;
+            let case = format!("from {from} -> {changed} at read {at}: {result}");
+            let written = thermal_setters(&rig).len();
+            if completes {
+                assert_eq!(result["result"]["status"], 1, "{case}");
+                assert_eq!(written, 4, "{case}");
+            } else {
+                assert_eq!(result["result"]["status"], 2, "{case}");
+                // Read `at` precedes setter `at - 1`: every earlier setter was
+                // acknowledged, and a stop before the first one retires the row.
+                assert_eq!(written, at - 2, "{case}");
+                assert_eq!(
+                    rows(&rig).last().unwrap()["progress"],
+                    [6, 2, 4, 8][at - 2],
+                    "{case}"
+                );
+                if written == 0 {
+                    rig.stop().await;
+                    continue;
+                }
+                // The open row fences the next request.
+                rig.port.state.lock().unwrap().change_power = None;
+                assert_eq!(rig.set(2, custom(1, 1, false)).await["result"]["status"], 2);
+                assert_eq!(thermal_setters(&rig).len(), written, "{case}");
+            }
+            rig.stop().await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn profile_custom_uses_the_application_levels_when_it_names_them() {
+    // Managed `ApplicationProfileResolution`: an application's Custom levels
+    // replace the power profile's, whichever of the two selected Custom. The
+    // fixture's plugged-in profile carries Medium/High.
+    for (app, levels) in [
+        (None, Some((1, 2))),
+        (
+            Some(json!({"performance":5,"customPerformance":{"cpu":0,"gpu":1}})),
+            Some((0, 1)),
+        ),
+        (
+            Some(json!({"customPerformance":{"cpu":2,"gpu":0}})),
+            Some((2, 0)),
+        ),
+        // High/High is outside the RZ09-0581 range: nothing is selected.
+        (Some(json!({"customPerformance":{"cpu":2,"gpu":2}})), None),
+    ] {
+        let files = MemoryFiles::default();
+        match &app {
+            Some(app) => files.profiles_custom(app.clone()),
+            None => files.profiles(CUSTOM),
+        }
+        let rig = rig_at(2, 0, FULL, files);
+        if app.is_some() {
+            let report = rig.request(json!({"operation":"reportApplicationContext","version":85,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
+            assert_eq!(report["result"]["status"], 0, "{report}");
+        }
+        let result = rig.set(1, Value::Null).await;
+        let case = format!("{app:?}: {result}");
+        match levels {
+            Some((cpu, gpu)) => {
+                assert_eq!(result["result"]["status"], 1, "{case}");
+                assert_eq!(thermal_setters(&rig), custom_setters(cpu, gpu), "{case}");
+                // A policy-selected row carries no request and no levels.
+                let rows = rows(&rig);
+                assert!(rows.iter().all(|r| r["destination"] == CUSTOM), "{case}");
+                assert!(rows.iter().all(|r| r["requested"].is_null()), "{case}");
+                let status = rig.get().await;
+                assert_eq!(
+                    status["status"]["confirmedState"]["customPerformance"],
+                    json!({"cpu":cpu,"gpu":gpu,"maximumFans":false}),
+                    "{case}"
+                );
+            }
+            None => {
+                assert_eq!(result["result"]["status"], 2, "{case}");
+                assert!(thermal_setters(&rig).is_empty(), "{case}");
+            }
+        }
+        rig.stop().await;
+    }
+}
+
+#[tokio::test]
+async fn custom_reserves_exactly_its_complete_chain_before_prepared() {
+    // The reservation covers all ten rows, the two-digit level steps included.
+    for request in [custom(1, 0, false), value(SILENT.0, 1)] {
+        let rig = rig_at(2, 0, FULL, MemoryFiles::default());
+        assert_eq!(rig.set(1, request.clone()).await["result"]["status"], 1);
+        let journal = rig.files.read("thermal-mutation.journal").unwrap().unwrap();
+        assert_eq!(
+            rig.files.last_reservation.load(Ordering::Acquire),
+            journal.len(),
+            "{request}"
+        );
+        rig.stop().await;
+    }
 }

@@ -100,7 +100,8 @@ public sealed class NativeThermalHistoryTests : IDisposable
         var launches = new Dictionary<string, byte[]> { ["17-1.bin"] = [] };
         Assert.Equal(v.GetProperty("generation").GetString(), legacy.Generation(record, service, [original], launches));
         // Every admitted RZ09-0581 pair destination is a valid row with its own
-        // requested value; Custom and out-of-range values stay denied.
+        // requested value; Custom without its settings and out-of-range values
+        // stay denied.
         string[] names = ["Silent", "Balanced", "Performance", "BatterySaver", "BatteryBalanced"];
         foreach (var (key, admitted) in new[] { ("admitted", true), ("refused", false) })
         {
@@ -121,11 +122,30 @@ public sealed class NativeThermalHistoryTests : IDisposable
                 else { Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [original])); }
             }
         }
-        foreach (int destination in new[] { 5, -1 })
+        // Custom (5) rows carry their settings and four setters (customRows);
+        // a pair-shaped journal names no destination beyond the reviewed ones.
+        foreach (int destination in new[] { 6, -1 })
         {
             Thermal(files, Bytes(Encoding.UTF8.GetString(segment).Replace("\"destination\":1", "\"destination\":" + destination.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)));
             Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [original]));
         }
+        var custom = v.GetProperty("customRows");
+        using (var requested = JsonDocument.Parse(custom.GetProperty("requested").GetString()!))
+        {
+            byte[] intent = WindowsNativeThermalHistory.Intent(requested.RootElement);
+            Assert.Equal(custom.GetProperty("requested").GetString(), Encoding.UTF8.GetString(intent));
+            Assert.Equal(custom.GetProperty("intent").GetString(), NativeCanonical.Digest(intent));
+        }
+        foreach (var (key, admitted) in new[] { ("admitted", true), ("refused", false) })
+        {
+            foreach (var journal in custom.GetProperty(key).EnumerateArray())
+            {
+                Thermal(files, Bytes(journal.GetProperty("journal").GetString()!));
+                if (admitted) { _ = WindowsNativeThermalHistory.Read(files, [original]); }
+                else { Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [original])); }
+            }
+        }
+        Assert.Equal("Custom", WindowsNativeThermalHistory.PresetName(5));
         Thermal(files, segment);
         Roll(files, segment, []);
         var segmented = WindowsNativeThermalHistory.Read(files, [original]);

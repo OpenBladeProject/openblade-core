@@ -56,7 +56,7 @@ configuration writer handle, protected relative paths, atomic replacement and
 independent byte readback.
 
 Manual overrides at schemas 8, 9 and the current 10 support Silent, Balanced,
-Performance, Battery Saver and Battery Balanced (see
+Performance, Battery Saver, Battery Balanced and Custom (see
 [preset recipes](#preset-recipes)),
 Persistent and UntilPowerSourceChange lifetimes, and explicit nullable clear.
 Every save writes schema 10, as managed does. Each setter clears
@@ -156,28 +156,72 @@ and replies Blocked without preparing a row (`Plan::NoDirectPath`). A direct
 exit to Silent keeps the first reading's classified external class, as the
 Performance exit does.
 
-Custom (5) stays refused at decode. Its 0D/02 selector-4 pair plus the 0D/07
-CPU and GPU level setters (`SetCustomPerformanceAsync`), the saved
-`customPerformance` field and its final 0D/87 read are not part of this slice.
+### Custom
+
+Custom (5) follows managed `SetCustomPerformanceAsync`
+(`ProductionBatteryPort.cs:954-1003`): the selector-4 pair
+`performance-custom-channel-1/2`, then the 0D/07 CPU `[1, 1, level]` and GPU
+`[1, 2, level]` setters (`custom-performance-cpu-*` and
+`custom-performance-gpu-*` in the same fixture), then the final 0D/82 pair read
+and the 0D/87 CPU and GPU reads. A protocol test compares all nine level
+payloads and both channels with the fixture. Only Custom with Automatic fans
+and the requested levels confirms it. Any other final read leaves the row
+pending without replay, where managed reports an indeterminate result; the
+requested levels never become a confirmation. Custom is an ordinary command, so
+battery refuses it, and it leaves HyperBoost directly with the first reading's
+class pinned, as the Performance and Silent exits do. Each setter has its own
+intent and acknowledgement row, so the row runs progress 0, 1-4, 7-10, then 5.
+Prepared reserves that whole chain, the two-digit steps included.
+
+The admitted range is the RZ09-0581 capability
+(`tests/data/profile-capabilities-rz09-0581.json`): CPU and GPU Low, Medium or
+High except High/High, and no maximum fans
+(`thermal_mutation::Destination::custom`). Request validation follows managed
+`CustomPerformanceSettings.IsWellFormed`: CPU 0 to 3 and GPU 0 to 2 as canonical
+integers, an optional `maximumFans` flag, and optional legacy
+`gpuClockOffsets`, which exclude `gpuClockTuning`. A well-formed request
+outside the range is stored and replies Blocked with the no-eligible-destination
+cause; managed replies with its capability message instead. On unclassified
+external power it is rejected before storage, as managed
+`ValidateUnclassifiedPerformanceOverride` does. Non-null `gpuClockOffsets` has
+no native writer and blocks with the GPU cause.
+
+Saved and profile Custom use their stored levels. An application profile's
+`customPerformance` replaces the power profile's, whichever of the two selected
+Custom (managed `ApplicationProfileResolution`). Managed fills missing levels
+from the confirmed state or Medium/High; native selects no destination then.
+
 `select` in the installed thermal runtime resolves the saved destination for a
 fresh class without storing anything; a later automatic reconciliation of saved
 profile intent can reuse it.
 
-Performance rows journal the destination's wire value. The Rust grammar and
-the managed `WindowsNativeThermalHistory` and `WindowsNativeHandback` readers
-admit destinations and requested values 0 to 4 and refuse Custom and every
-other value. Both consume the `presetRows` vectors in
-`tools/openblade-windows-host/tests/data/thermal-history-v1.json`. Readers
-before this change reject a Silent or battery row as invalid history, which
-fences retirement, upgrade and mailbox custody fail-closed, as the earlier
-fan-history extensions do. The row contract string is unchanged.
+Performance rows journal the destination's wire value, 0 to 5. The Rust
+grammar and the managed `WindowsNativeThermalHistory` and `WindowsNativeHandback`
+readers follow each destination's chain (`Progress::chain`): a preset is 0,
+1-4, 5 and Custom 0, 1-4, 7-10, 5, and Prepared may retire as 6. A Custom
+request carries its canonical `customPerformance`, which the intent digest
+covers; a policy-selected row carries no request and no levels. A pending Custom
+row hands back as Custom at progress 1-4 or 7-10. Both readers consume the
+`presetRows` and `customRows` vectors in
+`tools/openblade-windows-host/tests/data/thermal-history-v1.json`. Earlier
+readers reject a Custom, Silent or battery row as invalid history, which fences
+retirement, upgrade and mailbox custody fail-closed, as the earlier fan-history
+extensions do. The row contract string is unchanged.
 
 Status projects a persistent or temporary override as the desired destination
 on battery and for Silent. Status metadata reports every external class as the
 coarse class 3, where a battery preset is not eligible, so a Battery Saver or
 Battery Balanced override on an adapter keeps the default desired slot in
 status, while the saved override and the confirmed firmware selector are
-reported. A clear keeps the default desired slot, as before.
+reported. A clear keeps the default desired slot, as before. A Custom
+destination also projects its requested levels as `desiredState.customPerformance`;
+confirmed levels come only from a firmware read.
+
+Status does not project the real class (0, 2 or 3). Its base carries only the
+Windows power kind (`service_status.rs` `StatusSnapshot` construction,
+`active_power_source`), and the 07/8C class is read only inside a mutation.
+Caching that reading would go stale when one adapter replaces another without a
+Windows power generation change, so status keeps the coarse encoding.
 
 ### Unclassified external power
 
@@ -337,8 +381,8 @@ unapplied intent:
 | Native case | Reply |
 | --- | --- |
 | External power (PluggedIn, limited USB-C or unclassified) with current-manual plus desired-manual fans, when a Balanced or Performance destination resolves | Stored, `Performance intent was stored and will be applied when fans return to Automatic.` |
-| The same manual-fan state when Silent, Battery Saver or Battery Balanced resolves | Stored, `Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.` |
-| The same manual-fan state with no native destination (for example a clear under a Custom profile) | Blocked, `Performance override was cleared. Hardware result: No supported performance destination...` |
+| The same manual-fan state when Silent, Battery Saver, Battery Balanced or Custom resolves | Stored, `Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.` |
+| The same manual-fan state with no native destination (for example a clear under a High/High Custom profile) | Blocked, `Performance override was cleared. Hardware result: No supported performance destination...` |
 | Confirmed HyperBoost and a Battery Saver or Battery Balanced destination | Blocked, `Performance override intent was stored. Hardware result: Leaving HyperBoost for a battery preset needs the HyperBoost restore sequence, which this build does not submit; no thermal setter was submitted.` |
 | OpenBlade-owned fan row whose handback to Automatic is outstanding, without that manual deferral | Blocked, `Performance override intent was stored. Hardware result: OpenBlade still owns a fan change...` |
 | GPU effect, ineligible policy, power change, admission, capacity, storage or transport cause after the intent was saved | Blocked, `Performance override intent was stored. Hardware result: <cause>` |
@@ -352,10 +396,10 @@ unapplied intent:
 The Stored text is managed's `DeferredPerformanceIntentMessage`. Native
 returns it only when the later fan request can apply the intent, so the
 no-destination check runs before the manual-fan deferral. The fan request
-writes only Balanced or Performance, so a Silent or battery destination gets
-the resubmission text instead (`thermal_mutation::applies_on_fan_handback`).
+writes only Balanced or Performance, so a Silent, battery or Custom destination
+gets the resubmission text instead (`thermal_mutation::applies_on_fan_handback`).
 Managed promises the apply there too, because its fan return writes every
-preset, and it defers a Custom destination as well. A build
+destination. A build
 without `service-fan-mutation-v2` has no native fan request, so it keeps the
 older instruction to submit a new performance request after selecting
 Automatic fans.

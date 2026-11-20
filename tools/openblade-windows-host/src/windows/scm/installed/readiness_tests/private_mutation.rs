@@ -241,7 +241,7 @@ fn private_protected_override_and_submission_journal_survive_restart_and_share_c
             .record(
                 request,
                 &"7".repeat(64),
-                Preset::Balanced,
+                Preset::Balanced.into(),
                 &intent,
                 &requested,
                 42,
@@ -273,7 +273,7 @@ fn private_protected_override_and_submission_journal_survive_restart_and_share_c
             .record(
                 "aaaaaaaa-bbbb-cccc-dddd-000000000002",
                 &"8".repeat(64),
-                Preset::Balanced,
+                Preset::Balanced.into(),
                 &intent,
                 &requested,
                 42,
@@ -415,7 +415,7 @@ fn private_prepared_settlement_authenticates_owner_prefix_and_reopens_terminal_h
         .record(
             request,
             &"7".repeat(64),
-            Preset::Balanced,
+            Preset::Balanced.into(),
             &intent,
             &requested,
             42,
@@ -435,7 +435,7 @@ fn private_prepared_settlement_authenticates_owner_prefix_and_reopens_terminal_h
         .record(
             request,
             &"7".repeat(64),
-            Preset::Balanced,
+            Preset::Balanced.into(),
             &intent,
             &requested,
             42,
@@ -542,7 +542,7 @@ fn private_pending_terminal_file_preserves_intact_original_owner_custody() {
         .record(
             request,
             &"7".repeat(64),
-            Preset::Balanced,
+            Preset::Balanced.into(),
             &intent,
             &requested,
             42,
@@ -574,7 +574,7 @@ fn private_pending_terminal_file_preserves_intact_original_owner_custody() {
         .record(
             request,
             &"7".repeat(64),
-            Preset::Balanced,
+            Preset::Balanced.into(),
             &intent,
             &requested,
             42,
@@ -669,7 +669,7 @@ fn history_growth_real_storage_reserves_before_prepared_across_original_owners()
         .record(
             request,
             &"8".repeat(64),
-            Preset::Balanced,
+            Preset::Balanced.into(),
             &intent,
             &requested,
             42,
@@ -709,7 +709,7 @@ fn history_growth_real_storage_reserves_before_prepared_across_original_owners()
             .record(
                 request,
                 &"8".repeat(64),
-                Preset::Balanced,
+                Preset::Balanced.into(),
                 &intent,
                 &requested,
                 42,
@@ -740,7 +740,7 @@ fn history_growth_real_storage_reserves_before_prepared_across_original_owners()
         .record(
             request,
             &"9".repeat(64),
-            Preset::Performance,
+            Preset::Performance.into(),
             &intent,
             &requested,
             42,
@@ -752,7 +752,7 @@ fn history_growth_real_storage_reserves_before_prepared_across_original_owners()
         .record(
             request,
             &"9".repeat(64),
-            Preset::Performance,
+            Preset::Performance.into(),
             &intent,
             &requested,
             42,

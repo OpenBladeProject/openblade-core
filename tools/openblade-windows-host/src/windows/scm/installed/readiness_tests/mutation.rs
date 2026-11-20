@@ -122,6 +122,18 @@ impl MemoryFiles {
             "battery-preferences.json",
             serde_json::from_str(fixture["prior"][1].as_str().unwrap()).unwrap(),
         );
+        self.commit_configuration();
+    }
+    /// A plugged-in Custom profile whose application profile carries `app` as
+    /// its plugged-in overrides.
+    fn profiles_custom(&self, app: Value) {
+        self.profiles(5);
+        let mut document = self.document("profiles.json");
+        document["profiles"]["applicationProfiles"][0]["overrides"]["pluggedIn"] = app;
+        self.put("profiles.json", document);
+        self.commit_configuration();
+    }
+    fn commit_configuration(&self) {
         let bytes = self.bytes.lock().unwrap();
         let profile = crate::configuration::digest_hex(&bytes["profiles.json"]);
         let prefs = crate::configuration::digest_hex(&bytes["battery-preferences.json"]);
@@ -658,14 +670,11 @@ impl Rig {
         let port = Fixture::new();
         let custody = Custody::new(&port);
         let persisted = files.clone();
-        let thermal_writes = AtomicUsize::new(0);
         port.state.lock().unwrap().before_write = Some(Arc::new(move |_number| {
             // Battery overrides are memory-scoped, not manual-overrides fields.
             let journal = persisted.read("thermal-mutation.journal").unwrap().unwrap();
-            let last = journal
-                .split(|b| *b == b'\n')
-                .rfind(|s| !s.is_empty())
-                .unwrap();
+            let mut rows = journal.split(|b| *b == b'\n').filter(|s| !s.is_empty());
+            let last = rows.next_back().unwrap();
             let entry: Value = serde_json::from_slice(last).unwrap();
             if entry.get("tfc").is_some() {
                 assert_eq!(entry["progress"], 70);
@@ -679,17 +688,20 @@ impl Rig {
                 ));
             } else {
                 assert!(persisted.read("manual-overrides.json").unwrap().is_some());
-                assert_eq!(
-                    entry["progress"],
-                    if thermal_writes
-                        .fetch_add(1, Ordering::AcqRel)
-                        .is_multiple_of(2)
-                    {
-                        1
-                    } else {
-                        3
-                    }
-                );
+                // Each setter is preceded by its own intent, which directly
+                // follows the prior step of the destination's chain.
+                let chain = openblade_domain::thermal_mutation::Progress::chain(
+                    entry["destination"].as_i64().unwrap() as i32,
+                )
+                .unwrap();
+                let at = chain
+                    .iter()
+                    .position(|step| Some(*step as u64) == entry["progress"].as_u64())
+                    .unwrap();
+                assert!(at % 2 == 1 && at + 1 < chain.len(), "{entry}");
+                let prior: Value = serde_json::from_slice(rows.next_back().unwrap()).unwrap();
+                assert_eq!(prior["request"], entry["request"]);
+                assert_eq!(prior["progress"], chain[at - 1] as u8);
             }
             assert_eq!(entry["user_sid"], SID);
         }));
@@ -1270,13 +1282,13 @@ fn installed_override_lifetimes_replace_each_other_and_temporary_expires_on_powe
         gpu_clock_tuning: None,
     };
     storage.save(Some(override_value(2, 0)), 0).unwrap();
-    assert_eq!(storage.desired(0, None).unwrap().unwrap().0 as i32, 2);
+    assert_eq!(storage.desired(0, None).unwrap().unwrap().0.wire(), 2);
     storage.save(Some(override_value(1, 1)), 0).unwrap();
     assert_eq!(storage.desired(0, None).unwrap().unwrap().1, 4);
     storage.save(None, 0).unwrap();
     assert_eq!(storage.desired(0, None).unwrap().unwrap().1, 1);
     storage.save(Some(override_value(2, 0)), 0).unwrap();
-    assert_eq!(storage.desired(2, None).unwrap().unwrap().0 as i32, 1);
+    assert_eq!(storage.desired(2, None).unwrap().unwrap().0.wire(), 1);
     assert!(files.document("manual-overrides.json")["overrides"]["performance"].is_null());
 }
 
@@ -2816,11 +2828,29 @@ async fn edge_managed_saved_custom_survives_unpublished_activation_and_private_f
     let mut custom_request = value(5, 1);
     custom_request["customPerformance"] = managed["overrides"]["customPerformance"].clone();
     let custom: crate::service_status::PerformanceOverride =
-        serde_json::from_value(custom_request).unwrap();
-    assert!(
-        custom.validate().is_err(),
-        "saved Custom never grants a Custom setter"
-    );
+        serde_json::from_value(custom_request.clone()).unwrap();
+    // The request is well formed; maximum fans are outside the RZ09-0581
+    // Custom range, so admission refuses it before any write or journal row.
+    assert!(custom.validate().is_ok());
+    {
+        let rig = Rig::new(MemoryFiles::default());
+        let reply = rig.set(91, custom_request).await;
+        assert_eq!(reply["result"]["status"], 2);
+        assert!(
+            reply["result"]["message"]
+                .as_str()
+                .unwrap()
+                .ends_with("No supported performance destination is selected by the current power and profile policy.")
+        );
+        assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+        assert!(
+            rig.files
+                .read("thermal-mutation.journal")
+                .unwrap()
+                .is_none()
+        );
+        rig.stop().await;
+    }
     for enabled in [false, true] {
         let rig = Rig::new(MemoryFiles::default());
         let mut request = value(1, 1);

@@ -2,9 +2,9 @@
 use super::*;
 use openblade_domain::{
     automation::UNCLASSIFIED_EXTERNAL,
-    thermal_mutation::{Plan, Preset, Progress, admits_class, confirms, pins_class},
+    thermal_mutation::{Destination, Plan, Preset, Progress, admits_class, confirms, pins_class},
 };
-use openblade_protocol::thermal_preset::PresetPair;
+use openblade_protocol::{custom_performance::CustomLevelPair, thermal_preset::PresetPair};
 use std::sync::Arc;
 
 /// Internal host evidence. Clients cannot construct a permit or journal progress.
@@ -93,7 +93,8 @@ pub(crate) trait Permit: Send + Sync {
     fn destination_holds(&self, _power: i32) -> bool {
         false
     }
-    fn resolve(&self, power: i32, baseline: ObservedPerformance) -> io::Result<Option<Preset>>;
+    fn resolve(&self, power: i32, baseline: ObservedPerformance)
+    -> io::Result<Option<Destination>>;
     fn refused(&self, _cause: Refusal) {}
     fn failed(&self, _error: &io::Error) {}
     fn retired(&self) -> io::Result<Settlement> {
@@ -173,17 +174,25 @@ impl<P: Port> Reader<P, ReadAdmission> {
             fence.pin_class();
         }
         fence.bind_destination(destination);
-        // Reserve all remaining commands, including the independent final pair,
-        // before journaling/submitting. Exhaustion cannot strand a partial pair.
+        // Reserve all remaining commands, including the independent final read
+        // and its Custom level getters, before journaling/submitting.
+        // Exhaustion cannot strand a partial recipe.
         let mut reserve = || {
             self.port.reserve_pair().or_else(|| {
                 permit.refused(Refusal::TransactionCapacity);
                 None
             })
         };
-        let pair = PresetPair::new(reserve()?, destination)?;
-        let power_ids = reserve()?;
+        let setters = Setters::new(destination, &mut reserve)?;
+        let mut power_ids = Vec::new();
+        for _ in 0..destination.setters().div_ceil(2) {
+            power_ids.push(reserve()?);
+        }
         let final_ids = reserve()?;
+        let level_ids = match destination {
+            Destination::Custom(_) => Some(reserve()?),
+            Destination::Preset(_) => None,
+        };
         let admission = self.admission;
         let mut attempt = Attempt {
             reader: self,
@@ -191,10 +200,16 @@ impl<P: Port> Reader<P, ReadAdmission> {
         };
         attempt.checkpoint(&mut authorize, admission, limit).ok()?;
         permit.record(Progress::Prepared).ok()?;
-        for (index, command) in pair.commands().iter().enumerate() {
+        for (index, command) in setters.commands().enumerate() {
+            let (intent, acknowledged) = Progress::setter(destination, index)?;
             attempt.checkpoint(&mut authorize, admission, limit).ok()?;
             let power = attempt
-                .read_power(power_ids[index], &mut authorize, admission, limit)
+                .read_power(
+                    power_ids[index / 2][index % 2],
+                    &mut authorize,
+                    admission,
+                    limit,
+                )
                 .await?;
             // Each command needs a fresh external reading from the exact decoder,
             // never ACLineStatus alone, that agrees with Windows AC presence.
@@ -203,13 +218,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 return None;
             }
             attempt.checkpoint(&mut authorize, admission, limit).ok()?;
-            permit
-                .record(if index == 0 {
-                    Progress::FirstIntent
-                } else {
-                    Progress::SecondIntent
-                })
-                .ok()?;
+            permit.record(intent).ok()?;
             attempt.checkpoint(&mut authorize, admission, limit).ok()?;
             let mut frame = [0; FRAME_LENGTH];
             frame[1..].copy_from_slice(&command.encode());
@@ -223,18 +232,24 @@ impl<P: Port> Reader<P, ReadAdmission> {
             if !matches!(length, REPORT_LENGTH | FRAME_LENGTH) || frame[0] != 0 {
                 return None;
             }
-            pair.acknowledge(index, &frame[1..]).ok()?;
-            permit
-                .record(if index == 0 {
-                    Progress::FirstAcknowledged
-                } else {
-                    Progress::SecondAcknowledged
-                })
-                .ok()?;
+            setters.acknowledge(index, &frame[1..])?;
+            permit.record(acknowledged).ok()?;
         }
-        let observed = attempt
-            .read_reserved_pair(&mut authorize, admission, limit, final_ids, false)
-            .await?;
+        // Custom settles only with its levels read back (managed
+        // `verifyFinalState`); a mismatch or an unreadable level confirms
+        // nothing and nothing is replayed.
+        let observed = match level_ids {
+            Some(level_ids) => {
+                attempt
+                    .read_reserved_custom(&mut authorize, admission, limit, final_ids, level_ids)
+                    .await?
+            }
+            None => {
+                attempt
+                    .read_reserved_pair(&mut authorize, admission, limit, final_ids, false)
+                    .await?
+            }
+        };
         if !confirms(observed, destination) {
             return None;
         }
@@ -242,6 +257,43 @@ impl<P: Port> Reader<P, ReadAdmission> {
         permit.record(Progress::Confirmed).ok()?;
         attempt.completed = true;
         Some(observed)
+    }
+}
+/// A destination's reviewed setters in submission order: its 0D/02 pair, then
+/// for Custom the 0D/07 CPU and GPU levels (managed `SetCustomPerformanceAsync`).
+struct Setters {
+    pair: PresetPair,
+    levels: Option<CustomLevelPair>,
+}
+impl Setters {
+    fn new(
+        destination: Destination,
+        reserve: &mut impl FnMut() -> Option<[u8; 2]>,
+    ) -> Option<Self> {
+        Some(match destination {
+            Destination::Preset(preset) => Self {
+                pair: PresetPair::new(reserve()?, preset)?,
+                levels: None,
+            },
+            Destination::Custom(levels) => Self {
+                pair: PresetPair::custom(reserve()?)?,
+                levels: Some(CustomLevelPair::new(reserve()?, levels.cpu, levels.gpu)?),
+            },
+        })
+    }
+    fn commands(&self) -> impl Iterator<Item = &RazerReport> {
+        self.pair
+            .commands()
+            .iter()
+            .chain(self.levels.iter().flat_map(|levels| levels.commands()))
+    }
+    /// The exact echo of setter `index`.
+    fn acknowledge(&self, index: usize, reply: &[u8]) -> Option<()> {
+        match (index, &self.levels) {
+            (0 | 1, _) => self.pair.acknowledge(index, reply).ok(),
+            (2 | 3, Some(levels)) => levels.acknowledge(index - 2, reply).ok(),
+            _ => None,
+        }
     }
 }
 /// Fresh-power admission for one ordinary thermal operation, after managed
@@ -264,8 +316,8 @@ pub(super) struct PowerFence<'a> {
     external: AtomicBool,
     battery: AtomicBool,
     pinned: AtomicBool,
-    // A performance pair's resolved destination; fan permits bind none.
-    destination: std::sync::OnceLock<Preset>,
+    // A performance request's resolved destination; fan permits bind none.
+    destination: std::sync::OnceLock<Destination>,
 }
 impl<'a> PowerFence<'a> {
     pub(super) fn new(permit: &'a dyn Permit) -> Self {
@@ -291,7 +343,7 @@ impl<'a> PowerFence<'a> {
     }
     /// Setter-time readings are then admitted by the destination's own class
     /// rule (`thermal_mutation::admits_class`).
-    pub(super) fn bind_destination(&self, destination: Preset) {
+    pub(super) fn bind_destination(&self, destination: Destination) {
         let _ = self.destination.set(destination);
     }
     /// Every later reading must be in the first reading's class: managed pins

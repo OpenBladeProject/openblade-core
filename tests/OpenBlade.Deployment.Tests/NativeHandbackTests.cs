@@ -333,6 +333,8 @@ public sealed class NativeHandbackTests : IDisposable
         ("pending", Item("temporaryCharge", 72, battery: new(80, true, true))),
         ("pending", Item("performance", 5, performance: "Balanced")),
         ("pending", Item("performance", 0, performance: "Balanced")),
+        ("pending", Item("performance", 7, performance: "Balanced")),
+        ("pending", Item("performance", 11, performance: "Custom")),
         ("pending", Item("fan", 30, fanMode: "Fixed")),
         ("pending", Item("fan", 31, fanMode: "Automatic")),
         ("pending", Item("fan", 41, fanMode: "Fixed")),
@@ -359,6 +361,20 @@ public sealed class NativeHandbackTests : IDisposable
         };
         Assert.False(WindowsNativeHandback.ValidSlot(slot, item) && item.Battery is not { Temporary: true, Protection: false });
         Assert.Throws<InvalidDataException>(() => WindowsNativeHandback.Parse(handback.Serialize([])));
+    }
+
+    // Custom's CPU and GPU level setters (progress 7-10) are pending Custom rows.
+    [Theory]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(9)]
+    [InlineData(10)]
+    public void CustomLevelSettersArePendingCustomRows(int progress)
+    {
+        var item = Item("performance", progress, performance: "Custom");
+        Assert.True(WindowsNativeHandback.ValidSlot("pending", item));
+        var handback = new WindowsNativeHandback(new string('2', 32), item, null, null, null, null);
+        Assert.Equal(item, WindowsNativeHandback.Parse(handback.Serialize([])).Handback.Pending);
     }
 
     [Fact]
