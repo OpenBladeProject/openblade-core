@@ -2622,6 +2622,95 @@ public sealed class ControlCoordinatorTests
         Assert.Equal(baseline, device.State.CustomPerformance);
     }
 
+    // Maximum Fans is a separate Custom firmware flag (029F, 029D, 02A0). The
+    // matcher compares Cpu/Gpu individually so the legacy GpuClockOffsets field
+    // cannot cause false mismatches; it must still compare the confirmed flag.
+    private static RecordingBladeDevice CreateMaximumFansCustomDevice(
+        CustomPerformanceSettings confirmed,
+        bool supportsMaximumFans = true)
+    {
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsDirectManualFanTransitions = true,
+            ReportsPerformanceWithManualFans = true,
+            PerformancePresets = new HashSet<PerformancePreset>
+            {
+                PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Custom,
+            },
+            CustomPerformance = new CustomPerformanceCapabilities(
+                new HashSet<CustomPerformanceCombination> { new(confirmed.Cpu, confirmed.Gpu) })
+            {
+                SupportsMaximumFans = supportsMaximumFans,
+            },
+        };
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Custom,
+            CustomPerformance = confirmed,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        return device;
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task ScopedCustom_MaximumFansOnlyDeltaReachesDevice(bool confirmedFlag, bool requestedFlag)
+    {
+        var levels = new CustomPerformanceSettings(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low);
+        RecordingBladeDevice device = CreateMaximumFansCustomDevice(levels with { MaximumFans = confirmedFlag });
+        var coordinator = new ControlCoordinator(device);
+        CustomPerformanceSettings requested = levels with { MaximumFans = requestedFlag };
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(
+            PerformancePreset.Custom, requested, null, CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.True(outcome.WriteAttempted);
+        Assert.Equal(requested, device.State.CustomPerformance);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task FullTransition_MaximumFansOnlyDeltaReachesDevice(bool confirmedFlag, bool requestedFlag)
+    {
+        var levels = new CustomPerformanceSettings(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low);
+        RecordingBladeDevice device = CreateMaximumFansCustomDevice(levels with { MaximumFans = confirmedFlag });
+        var coordinator = new ControlCoordinator(device);
+        DesiredDeviceState desired = CreateThermalDesired(device.State,
+            PerformancePreset.Custom, FanMode.Automatic) with
+        {
+            CustomPerformance = levels with { MaximumFans = requestedFlag },
+        };
+
+        FullTransitionApplyOutcome outcome = await coordinator.ApplyDesiredStateOutcomeAsync(desired, CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Performance.Status);
+        Assert.Contains(DeviceSubsystem.Performance, outcome.ReadbackMatched);
+        Assert.Single(device.PerformanceWrites);
+        Assert.Equal(requestedFlag, device.State.CustomPerformance!.MaximumFans);
+    }
+
+    [Fact]
+    public async Task ScopedCustom_MatchingMaximumFansStaysUnchanged()
+    {
+        var confirmed = new CustomPerformanceSettings(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low)
+        {
+            MaximumFans = true,
+        };
+        RecordingBladeDevice device = CreateMaximumFansCustomDevice(confirmed);
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(
+            PerformancePreset.Custom, confirmed, null, CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Unchanged, outcome.Result.Status);
+        Assert.Empty(device.PerformanceWrites);
+    }
+
     private static RecordingBladeDevice CreateReportedManualPerformanceDevice()
     {
         RecordingBladeDevice device = CreateMatchingDevice();
