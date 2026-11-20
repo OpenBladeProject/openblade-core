@@ -1298,6 +1298,8 @@ internal sealed partial class ExperimentalBladePort
     private void SetLightingOwnership(LightingRendererOwnershipState value)
     {
         Volatile.Write(ref lightingOwnership.Ownership, (int)value);
+        // A refused-read window belongs to one owner.
+        ResetReviewedMcuSelectionDeferral();
         if (value is LightingRendererOwnershipState.None or LightingRendererOwnershipState.Faulted)
         {
             keyboardMirrorFrame = null;

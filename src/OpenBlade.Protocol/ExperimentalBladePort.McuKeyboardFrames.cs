@@ -41,31 +41,39 @@ internal sealed partial class ExperimentalBladePort
         };
 
     // A refused read skips one frame. Persistent refusal must not keep an owner
-    // that is never re-checked, so stop after this long without a fresh read.
+    // that is never re-checked, so stop after this many consecutive refused reads
+    // spanning at least this long, about 5 s of 50 ms frames. Any successful read
+    // of the effect register and any owner change start a new window, so the
+    // bound counts only one owner's consecutive refusals.
     internal static readonly TimeSpan ReviewedMcuSelectionDeferralLimit = TimeSpan.FromSeconds(5);
+    internal static readonly int ReviewedMcuSelectionDeferralLimitCount =
+        (int)(ReviewedMcuSelectionDeferralLimit / ExperimentalGridLightingEffect.FrameInterval);
 
     private long? reviewedMcuSelectionDeferredSince;
+    private int reviewedMcuSelectionDeferrals;
+
+    private void ResetReviewedMcuSelectionDeferral()
+    {
+        reviewedMcuSelectionDeferredSince = null;
+        reviewedMcuSelectionDeferrals = 0;
+    }
 
     private async Task<ReadOnlyMemory<byte>> ReadReviewedMcuSelectionAsync(CancellationToken token)
     {
         try
         {
-            ReadOnlyMemory<byte> payload = await ReadReviewedMcuEffectPayloadAsync(token).ConfigureAwait(false);
-            reviewedMcuSelectionDeferredSince = null;
-            return payload;
+            // A successful read ends the refused-read window inside the reader.
+            return await ReadReviewedMcuEffectPayloadAsync(token).ConfigureAwait(false);
         }
         catch (Exception error) when (IsUnobservedSelectionReadFailure(error))
         {
             long now = animationTime.GetTimestamp();
-            if (reviewedMcuSelectionDeferredSince is not { } since)
-            {
-                reviewedMcuSelectionDeferredSince = now;
-            }
-            else if (animationTime.GetElapsedTime(since, now)
-                >= ReviewedMcuSelectionDeferralLimit)
+            long since = reviewedMcuSelectionDeferredSince ??= now;
+            if (++reviewedMcuSelectionDeferrals >= ReviewedMcuSelectionDeferralLimitCount
+                && animationTime.GetElapsedTime(since, now) >= ReviewedMcuSelectionDeferralLimit)
             {
                 // Nothing was written. Stop like any other refused frame.
-                reviewedMcuSelectionDeferredSince = null;
+                ResetReviewedMcuSelectionDeferral();
                 SetLightingFaulted();
                 policy.Record("KeyboardAnimationFrame", "Ownership", "Unavailable",
                     failure: "SelectionReadDeferralLimit");
@@ -82,7 +90,7 @@ internal sealed partial class ExperimentalBladePort
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
-            reviewedMcuSelectionDeferredSince = null;
+            ResetReviewedMcuSelectionDeferral();
             SetLightingFaulted();
             policy.Record("KeyboardAnimationFrame", "Ownership", "Unavailable",
                 failure: "CustomSelectionReadFailed");

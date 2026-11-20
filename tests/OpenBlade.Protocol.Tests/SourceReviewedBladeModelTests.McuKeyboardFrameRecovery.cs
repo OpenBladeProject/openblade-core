@@ -823,6 +823,172 @@ public sealed partial class SourceReviewedBladeModelTests
         }
     }
 
+    // One owner's refused read never counts against the next owner.
+    [Theory]
+    [MemberData(nameof(ReviewedMcuFrameProducts))]
+    public async Task McuFrames_RefusedReadWindowStartsAgainForANewOwner(int product)
+    {
+        using var storage = new McuFrameJournalFixture(product);
+        var session = new Session { Brightness = 129, McuLighting = McuFrameBaseline.ToArray() };
+        session.EchoLightingAck = true;
+        var clock = new VaporChamberClock();
+        await using var port = new ExperimentalBladePort(session, new(), Model(product), new(Model(product)), () => true,
+            () => PowerSource.PluggedIn, sharedLightingOwnership: new() { Journal = storage.Journal },
+            lightingTimeProvider: clock);
+        await port.SetLightingAsync(LightingSettingsFactory.Fire(51), default);
+        await clock.WaitForTimerCountAsync(1);
+        int timers = 1;
+        // Fire stops one refusal short of the bound.
+        for (int batch = 1; batch < ExperimentalBladePort.ReviewedMcuSelectionDeferralLimitCount; batch++)
+        {
+            await AdvanceMcuAnimationBatchAsync(session, clock, ++timers, refused: true);
+        }
+        Assert.Equal(LightingRendererOwnershipState.Fire, port.OwnershipState);
+        await port.RelinquishRendererAsync(default);
+
+        clock.Advance(TimeSpan.FromSeconds(60));
+        await port.SetLightingAsync(LightingSettingsFactory.Wheel(LightingRotationDirection.Clockwise, 51), default);
+        await clock.WaitForTimerCountAsync(++timers);
+        await AdvanceMcuAnimationBatchAsync(session, clock, ++timers, refused: true);
+
+        Assert.Equal(LightingRendererOwnershipState.Wheel, port.OwnershipState);
+        AssertMcuFrameContract(session);
+    }
+
+    // Isolated refusals far apart are not a persistent refusal.
+    [Theory]
+    [MemberData(nameof(ReviewedMcuFrameProducts))]
+    public async Task McuFrames_IsolatedRefusedSampledReadsDoNotStopTheOwner(int product)
+    {
+        using var storage = new McuFrameJournalFixture(product);
+        var session = new Session { McuLighting = McuFrameBaseline.ToArray() };
+        session.EchoLightingAck = true;
+        var clock = new VaporChamberClock();
+        await using var port = new ExperimentalBladePort(session, new(), Model(product), new(Model(product)), () => true,
+            () => PowerSource.PluggedIn, sharedLightingOwnership: new() { Journal = storage.Journal },
+            lightingTimeProvider: clock);
+        await port.SetLightingAsync(LightingSettingsFactory.AudioMeter(1, 51), default);
+        await port.PushUniformLightingFrameAsync(new(new RgbColor(9, 8, 7)), default);
+
+        foreach (TimeSpan gap in new[] { TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(10) })
+        {
+            clock.Advance(gap);
+            session.McuSelectionReadFailure = HidSessionFailureKind.QueuedCanceled;
+            BladeWriteException skipped = await Assert.ThrowsAsync<BladeWriteException>(() =>
+                port.PushUniformLightingFrameAsync(new(new RgbColor(1, 2, 3)), default));
+            Assert.Equal("The keyboard lighting state could not be read, so this frame was skipped.", skipped.Message);
+        }
+
+        Assert.Equal(LightingRendererOwnershipState.AudioMeter, port.OwnershipState);
+    }
+
+    // A successful read ends a run of refusals, so two shorter runs never add up.
+    [Theory]
+    [MemberData(nameof(ReviewedMcuFrameProducts))]
+    public async Task McuFrames_SuccessfulReadEndsARunOfRefusedReads(int product)
+    {
+        using var storage = new McuFrameJournalFixture(product);
+        var session = new Session { McuLighting = McuFrameBaseline.ToArray() };
+        session.EchoLightingAck = true;
+        var clock = new VaporChamberClock();
+        await using var port = new ExperimentalBladePort(session, new(), Model(product), new(Model(product)), () => true,
+            () => PowerSource.PluggedIn, sharedLightingOwnership: new() { Journal = storage.Journal },
+            lightingTimeProvider: clock);
+        await port.SetLightingAsync(LightingSettingsFactory.Fire(60), default);
+        await clock.WaitForTimerCountAsync(1);
+        int timers = 1;
+        int run = ExperimentalBladePort.ReviewedMcuSelectionDeferralLimitCount * 3 / 5;
+        foreach (bool refused in Enumerable.Repeat(true, run).Append(false).Concat(Enumerable.Repeat(true, run)))
+        {
+            await AdvanceMcuAnimationBatchAsync(session, clock, ++timers, refused);
+        }
+
+        Assert.Equal(LightingRendererOwnershipState.Fire, port.OwnershipState);
+        Assert.NotNull(storage.Journal.Load().Baseline);
+    }
+
+    // Sampled owners reach the same bound through their pushes, and fault there.
+    [Theory]
+    [MemberData(nameof(ReviewedMcuFrameProducts))]
+    public async Task McuFrames_PersistentlyRefusedSampledReadsStopTheOwnerWithoutAWrite(int product)
+    {
+        using var storage = new McuFrameJournalFixture(product);
+        var session = new Session { McuLighting = McuFrameBaseline.ToArray() };
+        session.EchoLightingAck = true;
+        var clock = new VaporChamberClock();
+        await using var port = new ExperimentalBladePort(session, new(), Model(product), new(Model(product)), () => true,
+            () => PowerSource.PluggedIn, sharedLightingOwnership: new() { Journal = storage.Journal },
+            lightingTimeProvider: clock);
+        await port.SetLightingAsync(LightingSettingsFactory.AmbientAwareness(AmbientAwarenessRegion.Full, 51), default);
+        await port.PushUniformLightingFrameAsync(new(new RgbColor(9, 8, 7)), default);
+        int before = session.Commands.Count;
+        int pushes = 0;
+        BladeWriteException? stopped = null;
+        while (stopped is null && pushes < 200)
+        {
+            clock.Advance(ExperimentalGridLightingEffect.FrameInterval);
+            session.McuSelectionReadFailure = HidSessionFailureKind.Exhausted;
+            pushes++;
+            BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+                port.PushUniformLightingFrameAsync(new(new RgbColor(1, 2, 3)), default));
+            if (failure.Message != "The keyboard lighting state could not be read, so this frame was skipped.")
+            {
+                stopped = failure;
+            }
+        }
+
+        Assert.NotNull(stopped);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, stopped.SubmissionState);
+        Assert.Equal("The keyboard lighting state could not be read for 5 seconds, so host lighting stopped. Choose a lighting effect to continue.",
+            stopped.Message);
+        Assert.InRange(pushes, ExperimentalBladePort.ReviewedMcuSelectionDeferralLimitCount,
+            ExperimentalBladePort.ReviewedMcuSelectionDeferralLimitCount + 1);
+        Assert.Equal(LightingRendererOwnershipState.Faulted, port.OwnershipState);
+        Assert.DoesNotContain(session.Commands.Skip(before), command => command.CommandId < 0x80);
+        Assert.NotNull(storage.Journal.Load().Baseline);
+    }
+
+    // A verified restore ends the possible selection, so a later sampled owner
+    // that never selected mode 8 needs no effect write on release.
+    [Theory]
+    [MemberData(nameof(ReviewedMcuFrameProducts))]
+    public async Task McuFrames_VerifiedRestoreEndsThePossibleCustomSelection(int product)
+    {
+        using var storage = new McuFrameJournalFixture(product);
+        var session = new Session { Brightness = 129, McuLighting = McuFrameBaseline.ToArray() };
+        var ownership = new ExperimentalLightingOwnershipState { Journal = storage.Journal };
+        await using var port = CreateMcuFrames(product, session, ownership: ownership);
+        await port.SetLightingAsync(LightingSettingsFactory.Fire(60), default);
+        Assert.True(ownership.McuCustomFrameMayRemain);
+        await port.RelinquishRendererAsync(default);
+        Assert.False(ownership.McuCustomFrameMayRemain);
+        await port.SetLightingAsync(LightingSettingsFactory.AudioMeter(1, 60), default);
+        int before = session.Commands.Count;
+
+        await port.RelinquishRendererAsync(default);
+
+        Assert.DoesNotContain(session.Commands.Skip(before), command => command.ClassId == 3 && command.CommandId == 0x0A);
+        Assert.Equal(McuFrameBaseline, session.McuLighting);
+        Assert.Equal(129, session.Brightness);
+        Assert.Null(storage.Journal.Load().Baseline);
+    }
+
+    private static async Task AdvanceMcuAnimationBatchAsync(Session session, VaporChamberClock clock, int timers, bool refused)
+    {
+        if (refused)
+        {
+            session.McuSelectionReadFailure = HidSessionFailureKind.Exhausted;
+        }
+        int reads = session.Commands.Count;
+        clock.Advance(ExperimentalGridLightingEffect.FrameInterval);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (session.Commands.Count == reads)
+        {
+            await Task.Delay(1, timeout.Token);
+        }
+        await clock.WaitForTimerCountAsync(timers);
+    }
+
     private static void InjectSelectionReadFailure(Session session, string failure)
     {
         if (failure == nameof(ObjectDisposedException))
