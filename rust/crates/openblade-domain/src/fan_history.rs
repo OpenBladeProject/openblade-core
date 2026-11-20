@@ -35,7 +35,8 @@ impl FanRecord {
             CONTRACT | PREVIOUS_CONTRACT | LEGACY_CONTRACT
         ) || FanIntent::checked(self.intent.mode, self.intent.rpm) != Some(self.intent)
             || !matches!(self.selector, 0 | 2)
-            || !matches!(self.source, 0 | 2)
+            // 3 is unclassified external power; readers before it refuse the row.
+            || !matches!(self.source, 0 | 2 | crate::automation::UNCLASSIFIED_EXTERNAL)
             || self.entry && !self.intent.manual()
             || self.ids.len() != self.setters() + 1 + usize::from(self.entry && self.selector == 2)
             || self.cleanup.len() != if self.intent.manual() { 5 } else { 0 }
@@ -221,12 +222,27 @@ mod tests {
     /// The managed WindowsNativeFanHistory reader consumes the same vector.
     #[test]
     fn performance_selector_on_limited_power_matches_the_managed_reader() {
-        let v: Value = serde_json::from_str(include_str!(
-            "../../../../tools/openblade-windows-host/tests/data/fan-history-v3-limited-source.json"
-        ))
-        .unwrap();
+        source_vector_matches_the_managed_reader(
+            include_str!(
+                "../../../../tools/openblade-windows-host/tests/data/fan-history-v3-limited-source.json"
+            ),
+            2,
+        );
+    }
+    /// Unclassified external power (3); the managed reader consumes the same vector.
+    #[test]
+    fn performance_selector_on_unclassified_power_matches_the_managed_reader() {
+        source_vector_matches_the_managed_reader(
+            include_str!(
+                "../../../../tools/openblade-windows-host/tests/data/fan-history-v3-unclassified-source.json"
+            ),
+            3,
+        );
+    }
+    fn source_vector_matches_the_managed_reader(vector: &str, source: i32) {
+        let v: Value = serde_json::from_str(vector).unwrap();
         let r: FanRecord = serde_json::from_value(v["fan"].clone()).unwrap();
-        assert_eq!((r.selector, r.source), (2, 2));
+        assert_eq!((r.selector, r.source), (2, source));
         r.validate().unwrap();
         assert_eq!(
             serde_json::to_string(&r).unwrap(),

@@ -53,7 +53,9 @@ internal static class WindowsNativeFanHistory
         int mode = Number(intent.GetProperty("mode")); int rpm = Number(intent.GetProperty("rpm")); int selector = Number(f.GetProperty("selector")); int source = Number(f.GetProperty("source")); bool entry = f.GetProperty("entry").GetBoolean();
         // The Performance selector (2) is valid on both classified external sources, full (0)
         // and limited (2), as in the Rust FanRecord; readers before d6ce3339 refuse it on 2.
-        if (mode is not (0 or 1 or 3) || !Speed(intent.GetProperty("rpm")) || mode == 3 && rpm != 5400 || selector is not (0 or 2) || source is not (0 or 2) || entry && mode == 0) { throw Denied(); }
+        // Source 3 is unclassified external power (fresh Windows AC presence, completed but
+        // unclassified 07/8C query); readers before it refuse the row and fence custody.
+        if (mode is not (0 or 1 or 3) || !Speed(intent.GetProperty("rpm")) || mode == 3 && rpm != 5400 || selector is not (0 or 2) || source is not (0 or 2 or 3) || entry && mode == 0) { throw Denied(); }
         var requested = f.GetProperty("requested");
         if (requested.GetProperty("value").ValueKind != JsonValueKind.Null) { int requestedMode = Number(requested.GetProperty("value").GetProperty("value")); int requestedRpm = requested.GetProperty("settings").ValueKind == JsonValueKind.Null ? 3700 : Number(requested.GetProperty("settings").GetProperty("fixedSpeedRpm")); if (mode != requestedMode || rpm != (mode == 3 ? 5400 : requestedRpm)) { throw Denied(); } }
         int setters = entry ? 4 : 2;

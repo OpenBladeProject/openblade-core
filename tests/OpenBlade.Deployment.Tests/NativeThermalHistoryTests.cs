@@ -344,11 +344,15 @@ public sealed class NativeThermalHistoryTests : IDisposable
     }
 
     // The Rust FanRecord consumes the same vector, so the two readers cannot drift.
-    [Fact]
-    public void PerformanceSelectorOnLimitedPowerPassesReadAndRetiredOwner()
+    // Source 2 is limited and 3 unclassified external power.
+    [Theory]
+    [InlineData("fan-history-v3-limited-source.json", 2)]
+    [InlineData("fan-history-v3-unclassified-source.json", 3)]
+    public void PerformanceSelectorOnExternalPowerPassesReadAndRetiredOwner(string name, int source)
     {
-        using var vector = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fan-history-v3-limited-source.json")));
+        using var vector = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, name)));
         var v = vector.RootElement;
+        Assert.Equal(source, v.GetProperty("fan").GetProperty("source").GetInt32());
         Assert.Equal(v.GetProperty("canonical").GetString(), Encoding.UTF8.GetString(WindowsNativeFanHistory.Canonical(v.GetProperty("fan"))));
         Assert.Equal(v.GetProperty("intent").GetString(), NativeCanonical.Digest(WindowsNativeFanHistory.Canonical(v.GetProperty("fan"))));
         foreach (var rejected in v.GetProperty("rejected").EnumerateArray())
