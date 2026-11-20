@@ -65,7 +65,9 @@ are preserved when unrelated; schema 1-7 requires managed migration. As in
 managed, a non-false `controlsKeyboardEffect` below schema 9 or a non-null zone
 control below schema 10 makes the document invalid. Stored fan speeds admit
 managed's 5500 RPM maximum, while the fan write path keeps its 5400 RPM bound,
-so a larger saved target is refused when selected. Unsupported
+so a larger saved target is refused when selected. A fan request above 5400
+RPM is refused when the native Service decodes it; managed decodes up to 5500
+and refuses it at model admission, so the error text differs. Unsupported
 saved lighting overrides are preserved and refused rather than erased or labeled
 as corrupt. Future, malformed, duplicate-member and interrupted documents remain
 unchanged. A compatible committed profile/preferences/commit envelope at schema
