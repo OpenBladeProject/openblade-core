@@ -628,14 +628,17 @@ fn executable_path_fault(path: &str) -> Option<&'static str> {
     }
     let trimmed = path.trim();
     let bytes = trimmed.as_bytes();
-    let rooted = bytes.len() >= 3
+    let separator = |byte| matches!(byte, b'\\' | b'/');
+    // `Path.IsPathFullyQualified`: a drive root, or a leading separator
+    // followed by another or by the `?` of an object-namespace path.
+    let qualified = bytes.len() >= 3
         && bytes[0].is_ascii_alphabetic()
         && bytes[1] == b':'
-        && matches!(bytes[2], b'\\' | b'/')
-        || bytes.len() >= 2 && matches!(bytes[0], b'\\' | b'/') && matches!(bytes[1], b'\\' | b'/');
+        && separator(bytes[2])
+        || bytes.len() >= 2 && separator(bytes[0]) && (separator(bytes[1]) || bytes[1] == b'?');
     if text::utf16_length(trimmed) > ApplicationProfile::MAXIMUM_EXECUTABLE_PATH_LENGTH
         || text::has_control(trimmed)
-        || !rooted
+        || !qualified
     {
         return Some(
             "An application profile requires one absolute executable path. (Parameter 'value')",

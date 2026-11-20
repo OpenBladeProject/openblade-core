@@ -45,6 +45,33 @@ fn lower_invariant(text: &str) -> String {
         .collect()
 }
 
+/// Managed `StringComparison.OrdinalIgnoreCase` equality, which finds
+/// duplicate executable paths and rule names. Each character is compared by
+/// its one upper-case character: never by an expansion to several, so a sharp
+/// s is not `SS`, and never by an ASCII letter for a character outside ASCII,
+/// so a dotless i is not `I`. The Windows ordinal comparison differs from
+/// managed's for some letters and is not a substitute.
+pub fn same_ordinal_ignoring_case(left: &str, right: &str) -> bool {
+    fn upper(character: char) -> char {
+        let mut mapped = character.to_uppercase();
+        match (mapped.next(), mapped.next()) {
+            (Some(one), None) if character.is_ascii() || !one.is_ascii() => one,
+            // A Greek letter with a subscript iota has a one-character upper
+            // case beside the expansion the standard library returns.
+            _ => match character {
+                '\u{1F80}'..='\u{1F87}' | '\u{1F90}'..='\u{1F97}' | '\u{1FA0}'..='\u{1FA7}' => {
+                    char::from_u32(character as u32 + 8).unwrap_or(character)
+                }
+                '\u{1FB3}' | '\u{1FC3}' | '\u{1FF3}' => {
+                    char::from_u32(character as u32 + 9).unwrap_or(character)
+                }
+                _ => character,
+            },
+        }
+    }
+    left.chars().map(upper).eq(right.chars().map(upper))
+}
+
 /// Managed `ThxApplicationAudioRule.NormalizeExecutableName`; `None` where
 /// its constructor throws.
 pub fn normalize_thx_executable_name(name: &str) -> Option<String> {
@@ -61,11 +88,12 @@ pub fn normalize_thx_executable_name(name: &str) -> Option<String> {
 /// `ApplicationProfileDefinition.NormalizeExecutablePath(path)`: one fully
 /// qualified Windows path to an `.exe`, already in `Path.GetFullPath` form.
 ///
-/// `GetFullPath` leaves a `\\?\` path untouched. For every other path this
-/// accepts only what it returns unchanged: backslash separators, no empty,
-/// `.` or `..` segment, and no segment ending in a period or, for the last
-/// one, a space. It does not expand an 8.3 short name, which managed does
-/// when that alias exists on disk.
+/// `GetFullPath` returns a `\\?\` or `\??\` path as written. For every other
+/// path this accepts only what it returns unchanged: a drive, a `\\.\` device
+/// or a `\\` network root, backslash separators, no empty, `.` or `..`
+/// segment, and no segment ending in a period or, for the last one, a space.
+/// It does not expand an 8.3 short name, which managed does when that alias
+/// exists on disk.
 pub fn is_normalized_executable_path(path: &str) -> bool {
     if path.is_empty()
         || path.trim() != path
@@ -85,8 +113,8 @@ pub fn is_normalized_executable_path(path: &str) -> bool {
         && bytes[2] == b'\\'
     {
         &path[3..]
-    } else if let Some(unc) = path.strip_prefix(r"\\") {
-        unc
+    } else if let Some(rooted) = path.strip_prefix(r"\\.\").or(path.strip_prefix(r"\\")) {
+        rooted
     } else {
         return false;
     };

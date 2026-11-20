@@ -1270,13 +1270,22 @@ fn preserve_legacy_independent_intent(profiles: &mut Value) {
     }
 }
 
+/// One absolute executable path in the form managed stores. `GetFullPath`
+/// returns a `\\?\` or `\??\` path as written, so its segments are not
+/// inspected, and it keeps the `\\.\` device prefix; any other `.` or `..`
+/// segment means the path was never normalised.
 pub(super) fn valid_application_path(p: &str) -> bool {
+    let verbatim = p.starts_with(r"\\?\") || p.starts_with(r"\??\");
+    let body = p.strip_prefix(r"\\.\").unwrap_or(p);
     p.encode_utf16().count() <= 32767
         && p.trim() == p
-        && std::path::Path::new(p).is_absolute()
         && p.to_ascii_lowercase().ends_with(".exe")
         && !p.chars().any(char::is_control)
-        && !p.split(['\\', '/']).any(|part| matches!(part, "." | ".."))
+        && (verbatim
+            || std::path::Path::new(p).is_absolute()
+                && !body
+                    .split(['\\', '/'])
+                    .any(|part| matches!(part, "." | "..")))
 }
 
 // Exact managed FromLegacy defaults; only intent, never firmware confirmation.
@@ -1289,6 +1298,46 @@ pub(super) fn legacy_fan(mode: u8) -> Value {
             .collect::<Vec<_>>()
     };
     json!({"mode":mode,"fixedSpeedRpm":if mode==3{5400}else{3700},"manualCurve":{"cpu":points([40,50,60,70,80,90],[2000,2100,2600,3400,4400,5400]),"gpu":points([35,45,55,65,75,85],[2000,2100,2700,3600,4500,5400]),"useHigherTemperatureForBoth":true}})
+}
+#[cfg(test)]
+mod application_path_tests {
+    use super::valid_application_path;
+
+    #[test]
+    fn saved_application_paths_are_read_in_the_form_managed_stores() {
+        for stored in [
+            r"C:\Games\Game.exe",
+            r"\\server\share\Game.EXE",
+            r"\\server\Game.exe",
+            // Managed stores these as written.
+            r"\\?\C:\Games\..\Game.exe",
+            r"\\?\C:\Games\.\Game.exe",
+            r"\\?\C:\Games\\Game.exe",
+            r"\\?\UNC\server\share\Game.exe",
+            r"\??\C:\Games\..\Game.exe",
+            // A device root is a prefix, not a current-directory segment.
+            r"\\.\C:\Game.exe",
+            r"\\.\Game.exe",
+        ] {
+            assert!(valid_application_path(stored), "{stored}");
+        }
+        for refused in [
+            r"C:\Games\..\Game.exe",
+            r"C:\Games\.\Game.exe",
+            r"\\.\C:\Games\..\Game.exe",
+            r"\\.\C:\Games\.\Game.exe",
+            r"\\server\share\..\Game.exe",
+            r"Games\Game.exe",
+            r"C:Game.exe",
+            r"\Games\Game.exe",
+            r"C:\Games\Game.txt",
+            r"\\?\C:\Games\Game.txt",
+            " C:\\Games\\Game.exe",
+            "C:\\Games\\Ga\u{1}me.exe",
+        ] {
+            assert!(!valid_application_path(refused), "{refused}");
+        }
+    }
 }
 #[cfg(test)]
 mod release_read_tests {

@@ -24,10 +24,7 @@ const CAPABILITIES: &str = include_str!(
     "../../../../tools/openblade-windows-host/tests/data/profile-capabilities-rz09-0581.json"
 );
 
-/// Ordinal case-insensitive equality, which the host takes from Windows.
-fn same_path(left: &str, right: &str) -> bool {
-    left.to_uppercase() == right.to_uppercase()
-}
+use openblade_domain::profile_set::text::same_ordinal_ignoring_case as same_path;
 
 fn member<'a>(value: &'a Json, name: &str) -> &'a Json {
     value.member(name).unwrap_or(&Json::Null)

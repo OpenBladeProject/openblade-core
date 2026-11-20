@@ -6,7 +6,7 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::IgnoredAny};
 
 #[cfg(feature = "service-profiles-v1")]
-use openblade_domain::profile_set::{ProfileSet, encode, json, update};
+use openblade_domain::profile_set::{ProfileSet, encode, json, text, update};
 #[cfg(feature = "service-profiles-v1")]
 use std::sync::Arc;
 
@@ -35,14 +35,9 @@ impl Serialize for ProfilesBody {
 #[cfg(feature = "service-profiles-v1")]
 impl ProfilesBody {
     /// Binds the set as managed's IPC reader does and admits it as its body
-    /// validation does. Duplicate executable paths are compared by Unicode
-    /// upper case here; the stored-intent validator repeats the check with
-    /// the operating system's ordinal comparison before anything is saved.
+    /// validation does, duplicate executable paths included.
     pub(crate) fn bind(payload: &[u8]) -> std::io::Result<Self> {
-        fn same_path(left: &str, right: &str) -> bool {
-            left.to_uppercase() == right.to_uppercase()
-        }
-        update::decode_request(payload, same_path)
+        update::decode_request(payload, text::same_ordinal_ignoring_case)
             .map(|profiles| Self(Some(Arc::new(profiles))))
             .map_err(|_| crate::service_frame::invalid("invalid Service profile set"))
     }
