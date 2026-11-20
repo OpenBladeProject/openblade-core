@@ -422,11 +422,11 @@ impl Files for ProtectedFiles {
     }
     #[cfg(feature = "service-profiles-v1")]
     fn remove(&self, name: &str, expected: &[u8]) -> io::Result<()> {
-        self.delete(name, |bytes| bytes == expected)
+        self.delete(name, Some(expected))
     }
     #[cfg(feature = "service-profiles-v1")]
     fn discard_stage(&self, name: &str) -> io::Result<()> {
-        match self.delete(&format!("{name}.pending"), |_| true) {
+        match self.delete(&format!("{name}.pending"), None) {
             Err(error) if paths::missing_leaf(&error) => Ok(()),
             result => result,
         }
@@ -434,9 +434,10 @@ impl Files for ProtectedFiles {
 }
 #[cfg(feature = "service-profiles-v1")]
 impl ProtectedFiles {
-    /// Deletes `name`, which must exist, through one exclusive handle; `admit`
-    /// sees its bytes first.
-    fn delete(&self, name: &str, admit: impl FnOnce(&[u8]) -> bool) -> io::Result<()> {
+    /// Deletes `name`, which must exist, through one exclusive handle: only
+    /// while it holds exactly `expected`, or whatever it holds when there is
+    /// nothing to match.
+    fn delete(&self, name: &str, expected: Option<&[u8]>) -> io::Result<()> {
         if name.is_empty()
             || !name
                 .bytes()
@@ -445,8 +446,8 @@ impl ProtectedFiles {
             return Err(deny());
         }
         self.check(&self.root, USER_ROOT)?;
-        // Exclusive, so the bytes admitted are the bytes deleted.
-        let mut file = paths::open_relative(
+        // Exclusive, so the bytes matched are the bytes deleted.
+        let file = paths::open_relative(
             &self.root,
             OsStr::new(name),
             FILE_GENERIC_READ | DELETE,
@@ -456,10 +457,19 @@ impl ProtectedFiles {
         )?;
         paths::check_regular_file(&file)?;
         self.check(&file, Policy::Record)?;
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
-        if !admit(&bytes) {
-            return Err(deny());
+        if let Some(expected) = expected {
+            // A file of another length is not these bytes, so no more than
+            // their length is ever read. A stage is deleted unread.
+            if file.metadata()?.len() != expected.len() as u64 {
+                return Err(deny());
+            }
+            let mut bytes = Vec::with_capacity(expected.len());
+            (&file)
+                .take(expected.len() as u64)
+                .read_to_end(&mut bytes)?;
+            if bytes != expected {
+                return Err(deny());
+            }
         }
         paths::mark_for_deletion(&file)?;
         drop(file);

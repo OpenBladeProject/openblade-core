@@ -219,6 +219,10 @@ fn remove_deletes_only_the_exact_bytes_and_a_stage_only_by_its_name() {
     std::fs::write(root.path(&stage(NAMES[0])), b"half a docu").unwrap();
     Files::discard_stage(&files, NAMES[0]).unwrap();
     assert!(!root.path(&stage(NAMES[0])).exists());
+    // It is deleted unread, so one larger than anything the store reads goes too.
+    std::fs::write(root.path(&stage(NAMES[0])), vec![b' '; 9 * 1024 * 1024]).unwrap();
+    Files::discard_stage(&files, NAMES[0]).unwrap();
+    assert!(!root.path(&stage(NAMES[0])).exists());
     assert_eq!(root.documents(), Model::replay("prior"));
     // Names outside the store's alphabet never reach the file system.
     assert!(Files::discard_stage(&files, r"..\profiles.json").is_err());
