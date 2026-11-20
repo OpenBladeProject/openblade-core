@@ -112,10 +112,11 @@ brightness only when the setter changed it.
 
 Every later frame first rereads `0F/82`. If a GPIO event or another app leaves
 mode 8, rendering stops with no further write or restore until the user
-chooses an effect. Frames need a healthy recovery journal; a corrupt or
-downgraded journal blocks them until the protected data storage is repaired.
-If the keyboard reports exactly the journaled baseline again, a new host-drawn
-effect may start from it and the restore still uses the flag-clearing setter.
+chooses an effect. An unreadable, corrupt or downgraded recovery journal blocks
+every lighting change until the protected data storage is repaired. If the
+keyboard reports exactly the journaled baseline again, a new host-drawn effect
+may start from it, and every restore after a mode 8 selection uses the
+flag-clearing setter.
 Reactive, Ripple and sequences stay unavailable because no
 reviewed input-to-light map exists for this model.
 

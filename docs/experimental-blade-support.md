@@ -36,8 +36,8 @@ brightness/logo editing and existing field-only profiles. On RZ09-0301,
 RZ09-0421, RZ09-0423 and RZ09-0427, OpenBlade draws Fire, Wheel, Starlight and
 Tidal across the keyboard, and Ambient Awareness and Audio Meter in one color.
 If another app or the firmware changes the keyboard effect, OpenBlade stops
-drawing; choose an effect to continue. These effects need a healthy lighting
-recovery record; if it is damaged, they stay unavailable until OpenBlade's
+drawing; choose an effect to continue. If the lighting recovery record is
+damaged, OpenBlade blocks every lighting change on these laptops until its
 protected data storage is repaired. Reactive and Ripple need a reviewed key
 map and remain unavailable. Host-drawn effects on RZ09-0509 and RZ09-0510 are
 not established. The added controls

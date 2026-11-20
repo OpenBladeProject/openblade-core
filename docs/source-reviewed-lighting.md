@@ -160,23 +160,29 @@ They share one keyboard-only contract:
   `0F/82` must then report mode 8.
 - Before the first write, OpenBlade journals the confirmed built-in baseline.
   It refuses a custom, Spectrum or mode 5/6/7 baseline because it cannot
-  restore it exactly. Frames require a healthy journal: a corrupt or downgraded
-  journal blocks them until the protected data storage is repaired.
+  restore it exactly. An unreadable, corrupt or downgraded journal blocks every
+  lighting change on these models, built-in effects included, until the
+  protected data storage is repaired, as on RZ09-0529.
 - Each later frame batch first rereads `0F/82`. Any mode other than 8 means a
   GPIO event or another controller changed the keyboard. Rendering stops with
   no further write and no restore, and the owner faults until the user chooses
   an effect. The same check precedes the normal restore. Ambient Awareness and
   Audio Meter select mode 8 only with their first frame; until then the reread
-  must still show the journaled baseline effect.
+  before that frame, before a replacement and before release must still show
+  the journaled baseline effect.
 - A read refused before it reaches the keyboard (busy operation gate, canceled
   queue or closed session) skips that frame without a fault or journal change.
+  After 5 seconds without a fresh read, rendering stops without a write. A
+  read that may have reached the keyboard and failed stops at once.
 - A GPIO event or MCU reset makes `0F/82` report the saved effect. When that
   equals the journaled baseline in mode and parameters, OpenBlade records it as
   externally restored to baseline. The pending journal then admits a new
   host-drawn owner with that same baseline, and the normal restore still writes
   the flag-clearing `03/0A` setter: after a GPIO event the custom frame can
-  remain displayed while the saved mode is reported. Any other effect keeps the
-  fault until the user chooses an effect.
+  remain displayed while the saved mode is reported. This holds for any owner
+  of a baseline for which mode 8 was selected, including a sampled owner
+  released before its first frame and a journal left by an earlier run. Any
+  other effect keeps the fault until the user chooses an effect.
 - Restoration uses the legacy `03/0A` setters, which clear custom ownership.
   Brightness is reread after the effect and written only if the setter changed it.
 
