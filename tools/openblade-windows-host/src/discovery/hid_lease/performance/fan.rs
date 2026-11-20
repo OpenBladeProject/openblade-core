@@ -97,6 +97,13 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 return Some(baseline);
             } // No ownership, no journal or setter.
             let plan = plan?;
+            // A carried preset is applied through managed `SetPerformanceAsync`
+            // (`allowBattery: false`), which refuses Windows battery before any
+            // write; nothing is prepared.
+            if performance.is_some() && !fence.require_presence() {
+                permit.refused(Refusal::PowerChanged);
+                return None;
+            }
             let mut reserve = || {
                 self.port.reserve_pair().or_else(|| {
                     permit.refused(Refusal::TransactionCapacity);
@@ -134,11 +141,13 @@ impl<P: Port> Reader<P, ReadAdmission> {
         };
         // Managed keeps an observed AC selector only in the class it first read
         // (`ProductionBatteryPort` acPreset with `EnsureThermalWritePowerAsync`),
-        // so a transition that keeps Performance without a carried preset, owned
-        // Stop included, stops on a class change. Balanced has no such pin. The
-        // class is this operation's own first reading, not the recorded one, so
-        // a steady Stop on another external class still completes.
-        if plan.selector == 2 && carried.is_none() {
+        // so a transition that writes the Performance state pair without a
+        // carried preset, owned Stop included, stops on a class change. Managed
+        // has no acPreset for a target-only change under manual fans, and
+        // Balanced has no such pin. The class is this operation's own first
+        // reading, not the recorded one, so a steady Stop on another external
+        // class still completes.
+        if plan.selector == 2 && carried.is_none() && (plan.entry || !plan.intent.manual()) {
             fence.pin_class();
         }
         let mut a = Attempt {

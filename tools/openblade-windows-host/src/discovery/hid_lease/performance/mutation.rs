@@ -238,14 +238,17 @@ impl<P: Port> Reader<P, ReadAdmission> {
 /// Fresh-power admission for one ordinary thermal operation, after managed
 /// `AdmitOrdinaryThermalCommandAsync` (f6502f85). An unclassified reading needs
 /// fresh Windows AC presence. A performance setter needs it on every external
-/// class (`allowBattery: false`); a fan setter only on unclassified power,
-/// since managed admits a classified fan command while Windows reports battery
-/// (`allowBattery: true`). The presence a reading was admitted with must hold
+/// class (`allowBattery: false`), and so does a fan setter that carries a
+/// performance preset. Other fan setters need it only on unclassified power,
+/// since managed admits such a classified command while Windows reports
+/// battery (`allowBattery: true`). The presence a reading was admitted with must hold
 /// at every later checkpoint (managed `OrdinarySourceUnchanged` rechecks the
 /// Windows source at submission), so losing it stops before the next command.
 pub(super) struct PowerFence<'a> {
     permit: &'a dyn Permit,
-    fans: bool,
+    // Whether Windows battery admits a classified reading with no check: a fan
+    // command that carries no performance preset.
+    unchecked: AtomicBool,
     external: AtomicBool,
     pinned: AtomicBool,
 }
@@ -253,7 +256,7 @@ impl<'a> PowerFence<'a> {
     pub(super) fn new(permit: &'a dyn Permit) -> Self {
         Self {
             permit,
-            fans: permit.is_fan(),
+            unchecked: AtomicBool::new(permit.is_fan()),
             external: AtomicBool::new(false),
             pinned: AtomicBool::new(false),
         }
@@ -272,11 +275,24 @@ impl<'a> PowerFence<'a> {
     pub(super) fn pin_class(&self) {
         self.pinned.store(true, Ordering::Release);
     }
+    /// A fan return to Automatic that carries a saved preset applies it
+    /// through managed `SetPerformanceAsync` (`allowBattery: false`): the
+    /// operation needs fresh Windows AC presence now and at every later
+    /// reading and checkpoint. False when presence is missing.
+    pub(super) fn require_presence(&self) -> bool {
+        self.unchecked.store(false, Ordering::Release);
+        let presence = self.permit.external_presence();
+        if presence {
+            self.external.store(true, Ordering::Release);
+        }
+        presence
+    }
     /// The admitted class, and whether later checkpoints need presence.
     fn source(&self, power: Power) -> Option<(i32, bool)> {
         let windows = self.permit.windows_on_battery();
         let presence = windows == Some(false);
-        let source = power.thermal_source(presence, self.fans && windows == Some(true))?;
+        let unchecked = self.unchecked.load(Ordering::Acquire) && windows == Some(true);
+        let source = power.thermal_source(presence, unchecked)?;
         Some((source, presence && source != 1))
     }
     /// The class of the operation's first reading.

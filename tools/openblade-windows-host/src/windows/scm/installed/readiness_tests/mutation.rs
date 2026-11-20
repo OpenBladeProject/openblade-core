@@ -500,12 +500,9 @@ impl Fresh for Custody {
     // The same kind mapping as `WindowsGuard::power_generation`; the SCM
     // power-notice sample is `Rig::notice` (unclassified_external.rs).
     fn power_generation(&self) -> Option<u64> {
-        let kind = match self.on_battery() {
-            Some(true) => 1,
-            Some(false) => 2,
-            None => 0,
-        };
-        self.lifecycle.observe_power_kind(Some(kind))
+        // Unknown Windows power is a failed capture, not a kind.
+        let kind = self.on_battery().map(|battery| if battery { 1 } else { 2 });
+        self.lifecycle.observe_power_kind(kind)
     }
     fn authentication(&self) -> Option<(u32, i32)> {
         Some((self.authentication.load(Ordering::Acquire) as u32, 0))

@@ -83,7 +83,7 @@ pub(crate) struct Lifecycle(Mutex<LifecycleState>);
 struct LifecycleState {
     epoch: u64,
     awake: bool,
-    // The last sampled Windows ACLineStatus kind (0 unknown, 1 battery, 2 AC)
+    // The last sampled Windows ACLineStatus kind (1 battery, 2 AC)
     // and how many times a sample has changed it.
     power_kind: Option<u8>,
     power_generation: u64,
@@ -154,7 +154,8 @@ impl Lifecycle {
         Some(state.power_generation)
     }
 }
-/// The current Windows ACLineStatus kind, or `None` when the read fails.
+/// The current Windows ACLineStatus kind, or `None` when the read fails or
+/// reports an unknown status.
 #[cfg(feature = "service-thermal-mutation-v1")]
 #[cfg_attr(test, allow(dead_code))]
 #[allow(unsafe_code)]
@@ -165,16 +166,19 @@ pub(crate) fn sample_power_kind() -> Option<u8> {
     if unsafe { GetSystemPowerStatus(&mut status) } == 0 {
         return None;
     }
-    Some(power_kind(status.ACLineStatus))
+    power_kind(status.ACLineStatus)
 }
 /// Windows ACLineStatus as a power kind, as managed `CaptureControlPowerSource`
-/// classifies it.
+/// classifies it. An unknown status (255 or any other value) is a failed
+/// capture, not a power boundary: managed
+/// `WindowsPowerStateProvider.MapPowerSource` throws, and
+/// `CaptureControlPowerSource` then keeps the generation.
 #[cfg(any(test, feature = "service-thermal-mutation-v1"))]
-pub(crate) fn power_kind(ac_line_status: u8) -> u8 {
+pub(crate) fn power_kind(ac_line_status: u8) -> Option<u8> {
     match ac_line_status {
-        0 => 1,
-        1 => 2,
-        _ => 0,
+        0 => Some(1),
+        1 => Some(2),
+        _ => None,
     }
 }
 
@@ -218,11 +222,14 @@ mod lifecycle_tests {
         assert_eq!(lifecycle.observe_power_kind(None), Some(0));
         assert_eq!(lifecycle.observe_power_kind(Some(1)), Some(1));
         assert_eq!(lifecycle.observe_power_kind(Some(2)), Some(2));
-        assert_eq!(lifecycle.observe_power_kind(Some(0)), Some(3));
+        // An unknown ACLineStatus is a failed capture, not a boundary.
+        assert_eq!(lifecycle.observe_power_kind(power_kind(255)), Some(2));
+        assert_eq!(lifecycle.observe_power_kind(power_kind(1)), Some(2));
+        assert_eq!(lifecycle.observe_power_kind(power_kind(0)), Some(3));
         assert_eq!(
-            [0, 1, 255].map(power_kind),
-            [1, 2, 0],
-            "ACLineStatus offline, online and unknown"
+            [0, 1, 2, 255].map(power_kind),
+            [Some(1), Some(2), None, None],
+            "ACLineStatus offline, online, out of range and unknown"
         );
     }
 }

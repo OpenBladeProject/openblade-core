@@ -91,9 +91,16 @@ enum Between {
     Notices,
     /// Windows AC to battery and back, each with its power notice.
     KindChange,
+    /// An unknown ACLineStatus at a power notice, then the kind again.
+    UnknownSample,
 }
 #[cfg(feature = "service-fan-mutation-v2")]
-const BETWEEN: [Between; 3] = [Between::Nothing, Between::Notices, Between::KindChange];
+const BETWEEN: [Between; 4] = [
+    Between::Nothing,
+    Between::Notices,
+    Between::UnknownSample,
+    Between::KindChange,
+];
 #[cfg(feature = "service-fan-mutation-v2")]
 fn pass(rig: &Rig, between: Between) {
     match between {
@@ -104,9 +111,10 @@ fn pass(rig: &Rig, between: Between) {
             rig.notice(14, 8);
             rig.notice(13, 10);
         }
-        Between::KindChange => {
+        Between::UnknownSample | Between::KindChange => {
             let prior = rig.port.state.lock().unwrap().windows_on_battery;
-            rig.port.state.lock().unwrap().windows_on_battery = Some(Some(true));
+            let between = (between == Between::KindChange).then_some(true);
+            rig.port.state.lock().unwrap().windows_on_battery = Some(between);
             rig.notice(13, 10);
             rig.port.state.lock().unwrap().windows_on_battery = prior;
             rig.notice(13, 10);
@@ -566,6 +574,19 @@ fn temporary_overrides_follow_classification_boundaries() {
     storage.save(Some(temporary(2)), 1).unwrap();
     assert!(storage.current_override(1).unwrap().is_some());
     assert!(storage.current_override(3).unwrap().is_none());
+    assert_eq!(desired(3), None);
+    // A real Windows kind change (AC, battery, AC) retires a temporary saved
+    // unclassified even when the adapter is still unclassified; a sample
+    // that keeps the kind or fails does not.
+    let lifecycle = crate::scm_host::Lifecycle::default();
+    let generation = |kind| lifecycle.observe_power_kind(kind).unwrap();
+    storage.observe_power(3, generation(Some(2))).unwrap();
+    storage.save(Some(temporary(2)), 3).unwrap();
+    generation(None);
+    storage.observe_power(3, generation(Some(2))).unwrap();
+    assert_eq!(desired(3), Some((2, 3)));
+    generation(Some(1));
+    storage.observe_power(3, generation(Some(2))).unwrap();
     assert_eq!(desired(3), None);
 }
 
@@ -1089,22 +1110,144 @@ mod fans {
         rig.stop().await;
     }
 
-    // An owner recorded on full power hands back at Stop while the query is
-    // rejected: the commands are the same, and the rows keep source 0.
+    // An owner recorded on full power hands back at a steady Stop on another
+    // external class: the commands are the same, and the rows keep source 0.
+    // Under Performance the class pin compares with Stop's own first reading,
+    // not the recorded source, so nothing is left pending.
     #[tokio::test]
     async fn classified_owner_hands_back_at_stop_on_unclassified_power() {
-        let rig = fan_rig(0, 0);
+        for selector in [0, 2] {
+            for unclassified in [true, false] {
+                let rig = fan_rig(selector, 0);
+                assert_eq!(
+                    rig.request(fan_request(1, Some(1), 3700)).await["result"]["status"],
+                    1
+                );
+                assert_eq!(last_source(&rig), 0);
+                if unclassified {
+                    unclassify(&rig, Form::Rejected(3));
+                } else {
+                    rig.port.state.lock().unwrap().actual = 10;
+                }
+                rig.origin.stop();
+                rig.stop().await;
+                let name = format!("{selector} {unclassified}");
+                assert_eq!(fan_rows(&rig).last().unwrap()["progress"], 50, "{name}");
+                assert_eq!(last_source(&rig), 0);
+                assert_eq!(hardware(&rig).2, [0; 2]);
+                assert!(!rig.storage.pending(), "{name}");
+            }
+        }
+    }
+
+    // A return to Automatic that carries the saved Performance preset applies
+    // it through managed `SetPerformanceAsync` (`allowBattery: false`): Windows
+    // battery or unknown power refuses it before anything is prepared, and
+    // Windows AC applies it.
+    #[tokio::test]
+    async fn preset_return_to_automatic_needs_windows_ac() {
+        for windows in [Some(false), Some(true), None] {
+            let rig = handback_rig(0, 15, 2).await;
+            rig.port.state.lock().unwrap().windows_on_battery = Some(windows);
+            let out = rig.request(fan_request(232, Some(0), 3700)).await;
+            if windows == Some(false) {
+                assert_eq!(out["result"]["status"], 1, "{out}");
+                assert_eq!(hardware(&rig), (6, [2; 2], [0; 2]));
+            } else {
+                assert_eq!(out["result"]["status"], 2, "{windows:?} {out}");
+                // Under Windows battery the intent is stored and not applied,
+                // as managed KnownNotApplied; unknown Windows power already
+                // fails fresh admission.
+                let message = out["result"]["message"].as_str().unwrap();
+                let stored = message.ends_with("No applied target is claimed.");
+                assert_eq!(stored, windows == Some(true), "{windows:?} {out}");
+                assert_eq!(hardware(&rig), (4, [0; 2], [1; 2]), "{windows:?}");
+                assert!(request_rows(&rig, 232).is_empty(), "{windows:?}");
+                assert!(!rig.storage.pending());
+                assert!(rig.storage.outstanding_fan());
+            }
+            rig.origin.stop();
+            let drained = rig.source.lock().await.drain().await;
+            // Owned Stop hands back unchecked under Windows battery; unknown
+            // Windows power admits no fan command.
+            assert_eq!(
+                drained.is_ok(),
+                windows.is_some(),
+                "{windows:?} {drained:?}"
+            );
+        }
+        // The refusal reserves no setter or cleanup IDs: a later request on
+        // Windows AC starts its IDs after only the refused request's own
+        // preflight. The refused request stored Automatic, so the later one no
+        // longer leaves saved manual intent (managed `previousManual`) and hands
+        // back under the observed selector without the preset.
+        let first_ids = |rig: &Rig, n| request_rows(rig, n)[0]["fan"]["ids"][0][0].clone();
+        let rig = handback_rig(0, 15, 2).await;
         assert_eq!(
-            rig.request(fan_request(1, Some(1), 3700)).await["result"]["status"],
+            rig.request(fan_request(232, Some(0), 3700)).await["result"]["status"],
             1
         );
-        assert_eq!(last_source(&rig), 0);
-        unclassify(&rig, Form::Rejected(3));
+        let unrefused = first_ids(&rig, 232).as_u64().unwrap();
         rig.origin.stop();
-        rig.stop().await;
-        assert_eq!(fan_rows(&rig).last().unwrap()["progress"], 50);
-        assert_eq!(last_source(&rig), 0);
-        assert_eq!(hardware(&rig).2, [0; 2]);
+        let rig = handback_rig(0, 15, 2).await;
+        rig.port.state.lock().unwrap().windows_on_battery = Some(Some(true));
+        assert_eq!(
+            rig.request(fan_request(232, Some(0), 3700)).await["result"]["status"],
+            2
+        );
+        rig.port.state.lock().unwrap().windows_on_battery = Some(Some(false));
+        let out = rig.request(fan_request(233, Some(0), 3700)).await;
+        assert_eq!(out["result"]["status"], 1, "{out}");
+        assert_eq!(hardware(&rig), (6, [0; 2], [0; 2]));
+        assert_eq!(first_ids(&rig, 233), unrefused + 4);
+        rig.origin.stop();
+        // Windows battery at the first setter's own reading: once the preset
+        // needs AC, no reading of the operation is admitted unchecked, and the
+        // prepared request is retired without a setter.
+        let rig = handback_rig(0, 15, 2).await;
+        let reads = power_reads(&rig);
+        rig.port.state.lock().unwrap().change_windows = Some((reads + 2, Some(true)));
+        let out = rig.request(fan_request(232, Some(0), 3700)).await;
+        assert_eq!(out["result"]["status"], 2, "{out}");
+        assert_eq!(writes(&rig), 4);
+        let progress: Vec<_> = request_rows(&rig, 232)
+            .iter()
+            .map(|r| r["progress"].clone())
+            .collect();
+        assert_eq!(progress, [0, 6]);
+        rig.origin.stop();
+    }
+
+    // A target-only change under manual fans writes no state pair, so managed
+    // has no acPreset to pin it with: under Performance, as under Balanced, it
+    // continues across a class change between its setters.
+    #[tokio::test]
+    async fn retarget_continues_across_a_class_change() {
+        type Change = fn(&mut Port, usize);
+        let changes: [(&str, Change); 2] = [
+            ("limited", |s, at| s.change_power = Some((at, 10))),
+            ("unclassified", |s, at| {
+                s.change_power_status = Some((at, 5))
+            }),
+        ];
+        for selector in [2, 0] {
+            for (name, change) in changes {
+                let rig = fan_rig(selector, 0);
+                assert_eq!(
+                    rig.request(fan_request(1, Some(1), 2600)).await["result"]["status"],
+                    1
+                );
+                let before = writes(&rig);
+                let reads = power_reads(&rig);
+                change(&mut rig.port.state.lock().unwrap(), reads + 3);
+                let out = rig.request(fan_request(2, Some(1), 3700)).await;
+                assert_eq!(out["result"]["status"], 1, "{selector} {name} {out}");
+                assert_eq!(writes(&rig) - before, 2, "{selector} {name}");
+                assert_eq!(fan_rows(&rig).last().unwrap()["progress"], 30);
+                rig.origin.stop();
+                rig.stop().await;
+            }
+        }
     }
 
     // Owned Stop hands back on the owner's class; unclassified needs presence,
