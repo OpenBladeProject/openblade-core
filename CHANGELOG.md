@@ -9,6 +9,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Credit the Blade 18 (2025, RZ09-0529) keyboard lighting effects and per-key color editing in 0.65.1-nightly.117 to their contributor. Thanks to [@TheChrisTech](https://github.com/TheChrisTech). ([#977](https://github.com/OpenBladeProject/openblade-core/pull/977))
 
+### Fixed
+
+- Return fans from a fixed speed or fan curve to Automatic on source-reviewed models without stopping the OpenBlade service. The current performance mode stays as it is. ([#989](https://github.com/OpenBladeProject/openblade-core/pull/989))
+
 ## [0.65.1-nightly.117] - 2026-11-20
 
 ### Added
