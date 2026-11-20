@@ -108,25 +108,48 @@ brightness, so the saved VC destination always uses brightness 100. From custom
 mode 8, every restorable setter clears the custom-ownership flag and skips its
 same-mode shortcuts, so restoration needs no bridge effect.
 
-Before host entry, OpenBlade reads the VC alongside the keyboard baseline. A
-restorable record joins the journal, which then uses schema 2; keyboard-only
-journals keep schema 1 byte for byte. An unrestorable record keeps frames
-keyboard-only, with no VC write. A reply that does not echo region 38 is a read
-failure and stops host entry before any write.
+OpenBlade reads the VC only for an effect that drives it, or to return a VC it
+selected; Reactive, imported sequences and built-in effects never read it. The
+first restorable record seen for a keyboard baseline becomes the VC restore
+destination. An unrestorable record keeps frames keyboard-only, with no VC
+write. A rejected or malformed reply on a usable session also keeps frames
+keyboard-only and stops further VC reads for that session. A failure that
+leaves the session unusable stops the request before any write. Opening an
+RZ09-0529 session makes the same read once for each admitted host and HID
+identity. A rejection there drains that session and opens one fresh session,
+and later sessions for the identity skip the read and stay keyboard-only.
+
+OpenBlade takes the VC only from a read made under the same operation lock,
+while the VC reads custom mode 8 under OpenBlade's selection record or still
+equals the restore destination. Ambient Awareness and Audio Meter choose the VC
+when they start but select it with their first sample, so that sample reads it
+again. Before `[0,38,8]` can be submitted, the journal records the destination
+and moves to schema 2; keyboard-only journals keep schema 1 byte for byte. Only
+this selection record lets a restore write the VC, so a keyboard-only owner
+never overwrites another controller's VC frame. The record is removed after a
+confirmed restore, or when the VC no longer reads mode 8 because another
+controller changed it.
 
 When the VC participates, every frame also sends transport row 6. Its column 0
-is black and columns 1–18 carry logical VC columns 0–17, matching the manifest.
-The MCU copies row 6 columns 0–17 into the VC buffer and drops column 18. First
-activation sends `[0,5,8]`, confirms keyboard mode 8, then sends `[0,38,8]` and
-confirms VC mode 8. Any failure after a possible submission is indeterminate:
-writes stop without replay and the journal is kept.
+is black and columns 1–18 carry logical VC columns 0–17, as in Synapse's own
+frames. The KI8110 1.07.00 row-6 handler stores transport columns 0–17 in VC
+slots 0–17 and drops column 18. VC slot 0 therefore shows the black column 0,
+and logical VC column 17 is not shown, exactly as with Synapse's frames.
+Physical validation decides whether that offset is visible. The VC keeps its
+own record brightness, so OpenBlade scales VC frame colors by the keyboard
+brightness percentage instead of writing VC brightness. First activation sends
+`[0,5,8]`, confirms keyboard mode 8, then sends `[0,38,8]` and confirms VC mode
+8. Any failure after a possible submission is indeterminate: writes stop
+without replay and the journal is kept.
 
 Every restore point (renderer release, shutdown, a built-in effect choice and
-switching to a keyboard-only effect) reads the VC first. OpenBlade restores the
-saved VC effect, with confirming readback, only while the VC still reads mode 8.
-Any other mode means another controller changed it, so OpenBlade leaves it
-unchanged. A confirmed low-power boundary keeps the journal without restoring,
-as for the keyboard.
+switching to a keyboard-only effect) reads the VC first while the selection
+record exists. OpenBlade restores the saved VC effect, with confirming
+readback, only while the VC still reads mode 8. Any other mode means another
+controller changed it, so OpenBlade leaves it unchanged. A failed or
+unconfirmed restore faults the owner and keeps the record for recovery. A
+confirmed low-power boundary keeps the journal without restoring, as for the
+keyboard.
 
 ## Touchpad status and Vapor Chamber lighting
 

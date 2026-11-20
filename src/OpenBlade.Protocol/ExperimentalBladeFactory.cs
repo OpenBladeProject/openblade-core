@@ -16,6 +16,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ExperimentalLightingOwnershipState lightingOwnership;
     private readonly ExperimentalStartupAnimationState startupAnimationState = new();
+    private readonly ExperimentalVaporChamberAvailability vaporChamberAvailability = new();
 
     internal ExperimentalBladeFactory(ExperimentalBladeModel model, IHostIdentitySource identity,
         IHidCandidateNative native, IHardwareAccessGuard guard, IHidFeatureIo io,
@@ -249,6 +250,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             try
             {
                 await port.InitializeBlade18KeyboardLayoutAsync(cancellationToken).ConfigureAwait(false);
+                // Each exact-model read returns immediately for every other product.
+                await port.InitializeRz090529VaporChamberAvailabilityAsync(cancellationToken).ConfigureAwait(false);
                 if (!port.IsRecoverySessionHealthy)
                 {
                     throw new IOException("The optional keyboard-layout read left an unhealthy session.");
@@ -256,7 +259,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             }
             catch (IOException) when (!port.IsRecoverySessionHealthy)
             {
-                // Layout is optional metadata, not admission for thermal/battery controls.
+                // Layout and LED38 availability are optional, not admission for other controls.
                 // A rejected GET poisons its session: drain it before one complete fresh
                 // admission, without repeating the failed metadata query or guessing a layout.
                 pending = null;
@@ -291,7 +294,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         {
             return new(null, HidSessionFailureKind.Canceled);
         }
-        if (identity.ReadExactIdentity() is not { Evidence: not null, Failure: null })
+        if (identity.ReadExactIdentity() is not { Evidence: { } hostEvidence, Failure: null })
         {
             return new(null, HidSessionFailureKind.IdentityBlocked);
         }
@@ -304,6 +307,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
         List<(OpenedCandidateHandle Handle, HidHandleIdentity Identity)> candidates = FindCandidates();
         ExperimentalBladePort? selected = null;
+        HidHandleIdentity selectedIdentity = default;
         bool ambiguous = false;
         ExperimentalControlObservation? lastAdmissionFailure = null;
         try
@@ -350,6 +354,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                     if (selected is null)
                     {
                         selected = port;
+                        selectedIdentity = candidate.Identity;
                         port = null;
                     }
                     else
@@ -395,6 +400,9 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             }
             ExperimentalBladePort admitted = selected;
             admitted.EnableQueryRecording();
+            // Key the optional LED38 probe result to this session's fresh host and exact
+            // HID identity, including its version number, so a changed device probes again.
+            admitted.BindVaporChamberAvailability(vaporChamberAvailability, new(hostEvidence, selectedIdentity));
             // Startup animation is queried independently by the service. Temporary full
             // charge is read with battery state. Neither optional probe belongs in the
             // shared port-open path; each control still requires its own real readback.

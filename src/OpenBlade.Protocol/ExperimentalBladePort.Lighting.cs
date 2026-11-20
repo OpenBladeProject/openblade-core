@@ -3,8 +3,10 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
-// VaporChamber is the RZ09-0529 LED38 built-in record, present only when it was
-// restorable at capture. Omitted when null so keyboard-only journals keep schema 1.
+// VaporChamber is the restorable RZ09-0529 LED38 record, present only while
+// OpenBlade may have selected LED38 custom mode: it is saved before [0,38,8] can
+// be submitted and removed once LED38 is restored or another controller took it.
+// Omitted when null so keyboard-only journals keep schema 1.
 internal sealed record ExperimentalLightingBaseline(
     LightingSettings Settings,
     byte RawBrightness,
@@ -16,8 +18,14 @@ internal sealed class ExperimentalLightingOwnershipState
     internal int Ownership;
     internal ExperimentalLightingBaseline? Baseline;
     internal LightingSettings? Intent;
-    // The current RZ09-0529 host frames also drive LED38 row 6 and select it.
+    // The current RZ09-0529 host frames also drive LED38 row 6. Uniform owners set
+    // it before their first sample, which re-reads LED38 before selecting it.
     internal bool VaporChamberFrames;
+    // The first LED38 record seen during this keyboard baseline's lifetime, before
+    // OpenBlade touched LED38 (null when it was unrestorable). LED38 is taken only
+    // while it still equals this record, so another controller's change wins.
+    internal bool VaporChamberObserved;
+    internal LightingSettings? VaporChamberDestination;
     internal int UniformFrameActivated;
     internal long UniformFrameTimestamp;
     internal ExperimentalLightingBaselineJournal? Journal;
@@ -610,6 +618,10 @@ internal sealed partial class ExperimentalBladePort
         int priorUniformFrameActivated = lightingOwnership.UniformFrameActivated;
         long priorUniformFrameTimestamp = lightingOwnership.UniformFrameTimestamp;
         bool priorVaporChamberFrames = lightingOwnership.VaporChamberFrames;
+        // Reactive pulses and per-key sequences never address LED38.
+        bool includesVaporChamber = SupportsRz090529VaporChamberFrames(model)
+            && (gridEffect?.IncludesVaporChamber
+                ?? settings.Effect is LightingEffect.AmbientAwareness or LightingEffect.AudioMeter);
         bool hostOwnershipAcquired = false;
         bool replacingOwnedFrame = IsOwnedFrameOwnership(priorOwnership);
         bool replacingFaultedFrame = priorOwnership == LightingRendererOwnershipState.Faulted;
@@ -711,24 +723,44 @@ internal sealed partial class ExperimentalBladePort
                 throw new CapabilityUnavailableException(
                     "A readable pre-frame lighting baseline is required for host rendering.");
             }
-            // RZ09-0529 host frames may also own LED38. Read it before the journal
-            // is saved: a restorable record joins a newly captured baseline, and
-            // its current mode decides ownership. An unrestorable record keeps
-            // frames keyboard-only; a malformed reply stops before any write.
+            // RZ09-0529 host frames may also drive LED38. Read it only for an
+            // effect that uses it, or to return an LED38 that OpenBlade selected.
+            // An optional read that fails on a usable session leaves this owner
+            // keyboard-only; an unrestorable record does the same.
+            bool vaporChamberSelected = lightingOwnership.Baseline?.VaporChamber is not null
+                && !replacingFaultedFrame;
             (LightingSettings? Settings, byte Mode)? vaporChamberState = hostFrameRequest
                 && SupportsRz090529VaporChamberFrames(model)
-                    ? await ReadReviewedVaporChamberEffectAsync(cancellationToken).ConfigureAwait(false)
+                && (vaporChamberSelected || includesVaporChamber && VaporChamberReadAvailable)
+                    ? await ReadVaporChamberForFramesAsync(vaporChamberSelected, cancellationToken)
+                        .ConfigureAwait(false)
                     : null;
+            if (hostFrameRequest && SupportsRz090529VaporChamberFrames(model))
+            {
+                if (priorBaseline is null || recaptureFaultedBaseline)
+                {
+                    lightingOwnership.VaporChamberObserved = false;
+                    lightingOwnership.VaporChamberDestination = null;
+                }
+                if (vaporChamberState is { } observed && !lightingOwnership.VaporChamberObserved)
+                {
+                    // Nothing has touched LED38 yet in this baseline's lifetime.
+                    lightingOwnership.VaporChamberObserved = true;
+                    lightingOwnership.VaporChamberDestination = observed.Settings;
+                }
+            }
             LogoLightingMode? baselineLogo = settings.LogoMode is null
                 ? null
                 : await ReadLogoAsync(cancellationToken).ConfigureAwait(false);
             byte originalBaselineRaw = baselineRaw;
             ExperimentalLightingBaseline CaptureFrameBaseline()
             {
+                // Keyboard only. LED38 enters the record solely through its
+                // write-ahead selection record, just before [0,38,8].
                 ExperimentalLightingBaseline captured = new(
                     baseline ?? throw new IOException(
                         "A readable pre-frame lighting baseline is required for host rendering."),
-                    originalBaselineRaw, vaporChamberState?.Settings);
+                    originalBaselineRaw);
                 // A journal admits only a complete built-in destination. Spectrum
                 // reads as a mode without its hidden policy, so refuse it before
                 // any write instead of failing while the journal is saved. The
@@ -813,8 +845,7 @@ internal sealed partial class ExperimentalBladePort
                 if (gridEffect is not null)
                 {
                     bool vaporChamber = await SelectRz090529VaporChamberFramesAsync(vaporChamberState,
-                        gridEffect.IncludesVaporChamber, priorVaporChamberFrames, cancellationToken,
-                        () => submitted = true).ConfigureAwait(false);
+                        includesVaporChamber, cancellationToken, () => submitted = true).ConfigureAwait(false);
                     await SubmitExperimentalGridFrameAsync(gridEffect.RenderFrame(TimeSpan.Zero),
                         vaporChamber ? gridEffect.RenderVaporChamber(TimeSpan.Zero) : null,
                         activate: true, cancellationToken, () => submitted = true).ConfigureAwait(false);
@@ -856,15 +887,16 @@ internal sealed partial class ExperimentalBladePort
                 lightingOwnership.UniformFrameActivated = inheritedCustomSelection ? 1 : 0;
                 lightingOwnership.UniformFrameTimestamp = 0;
                 hostOwnershipAcquired = true;
-                await SelectRz090529VaporChamberFramesAsync(vaporChamberState, includesVaporChamber: true,
-                    priorVaporChamberFrames, cancellationToken, () => submitted = true).ConfigureAwait(false);
+                await SelectRz090529VaporChamberFramesAsync(vaporChamberState, includesVaporChamber,
+                    cancellationToken, () => submitted = true).ConfigureAwait(false);
                 if (wakingFromDark)
                 {
                     // A sampled effect starts black until its first session sample,
                     // just like the validated renderers. Hide stale firmware colors.
                     frameWriteAttempted = true;
                     await WriteUniformFrameCoreAsync(
-                        new RgbColor(0, 0, 0), cancellationToken, () => submitted = true)
+                        new RgbColor(0, 0, 0), cancellationToken, () => submitted = true,
+                        verifyVaporChamber: false)
                         .ConfigureAwait(false);
                 }
                 setOnlyFrame = true;
@@ -1124,11 +1156,19 @@ internal sealed partial class ExperimentalBladePort
             }
             else if (hostOwnershipAcquired)
             {
-                lightingOwnership.Baseline = priorBaseline;
+                // Without a submission, LED38 can only have been released because
+                // another controller took it; that durable release stands.
+                bool vaporChamberReleased = priorBaseline?.VaporChamber is not null
+                    && lightingOwnership.Baseline?.VaporChamber is null;
+                lightingOwnership.Baseline = vaporChamberReleased
+                    ? priorBaseline! with { VaporChamber = null } : priorBaseline;
                 lightingOwnership.Intent = priorIntent;
                 lightingOwnership.UniformFrameActivated = priorUniformFrameActivated;
                 lightingOwnership.UniformFrameTimestamp = priorUniformFrameTimestamp;
-                lightingOwnership.VaporChamberFrames = priorVaporChamberFrames;
+                lightingOwnership.VaporChamberFrames = priorVaporChamberFrames && !vaporChamberReleased;
+                // The LED38 observation needs no rollback. An owner that has not observed
+                // LED38 is animated, so its failed replacement faults above, or it can no
+                // longer read LED38.
                 SetLightingOwnership(priorOwnership);
             }
             else if (capturedBaselineForFrameAttempt)
@@ -1321,25 +1361,32 @@ internal sealed partial class ExperimentalBladePort
         lightingOwnership.Baseline = null;
         lightingOwnership.Intent = null;
         lightingOwnership.UniformFrameActivated = 0;
+        // The next host-frame baseline resets its own LED38 observation.
         lightingOwnership.VaporChamberFrames = false;
         SetLightingOwnership(LightingRendererOwnershipState.None);
     }
 
-    // Decide whether these RZ09-0529 frames also drive LED38. A new baseline
-    // carries the record just read. A prior owner keeps LED38 while it still
-    // reads custom mode 8; otherwise LED38 is retaken only while it still equals
-    // the saved destination. A keyboard-only effect first restores an owned LED38.
+    // Decide whether these RZ09-0529 frames also drive LED38, from a read made in
+    // this same operation. LED38 is taken only while it reads custom mode 8 under
+    // OpenBlade's selection record, or still equals the restore destination: the
+    // record first observed for this baseline. Anything else means another
+    // controller changed it, so a selected LED38 is released without a write. A
+    // keyboard-only effect returns an owned LED38 first.
     private async Task<bool> SelectRz090529VaporChamberFramesAsync(
         (LightingSettings? Settings, byte Mode)? current, bool includesVaporChamber,
-        bool priorFrames, CancellationToken token, Action markSubmitted)
+        CancellationToken token, Action markSubmitted)
     {
-        bool owned = priorFrames && current?.Mode == 8;
+        bool selected = lightingOwnership.Baseline?.VaporChamber is not null;
+        bool owned = selected && current?.Mode == 8;
+        LightingSettings? destination = lightingOwnership.Baseline?.VaporChamber
+            ?? lightingOwnership.VaporChamberDestination;
         bool frames = includesVaporChamber && current is { } state
-            && lightingOwnership.Baseline?.VaporChamber is { } destination
-            && (owned || state.Settings is { } actual && KeyboardSettingsMatch(actual, destination));
-        if (owned && !frames && lightingOwnership.Baseline is { } baseline)
+            && (owned || destination is not null && state.Settings is { } actual
+                && KeyboardSettingsMatch(actual, destination));
+        if (selected && !frames && current is { } observed)
         {
-            await RestoreRz090529VaporChamberAsync(baseline, 8, token, markSubmitted).ConfigureAwait(false);
+            await RestoreRz090529VaporChamberAsync(lightingOwnership.Baseline!, observed.Mode, token,
+                markSubmitted).ConfigureAwait(false);
         }
         lightingOwnership.VaporChamberFrames = frames;
         return frames;
@@ -1531,9 +1578,22 @@ internal sealed partial class ExperimentalBladePort
     private async Task WriteUniformFrameCoreAsync(
         RgbColor color,
         CancellationToken cancellationToken,
-        Action onSubmitted)
+        Action onSubmitted,
+        bool verifyVaporChamber = true)
     {
         bool activate = lightingOwnership.UniformFrameActivated == 0;
+        if (activate && verifyVaporChamber && lightingOwnership.VaporChamberFrames
+            && SupportsRz090529VaporChamberFrames(model))
+        {
+            // The owner chose LED38 in an earlier operation. Select it only from a
+            // read made under this same gate hold.
+            bool selected = lightingOwnership.Baseline?.VaporChamber is not null;
+            (LightingSettings? Settings, byte Mode)? current = selected || VaporChamberReadAvailable
+                ? await ReadVaporChamberForFramesAsync(selected, cancellationToken).ConfigureAwait(false)
+                : null;
+            await SelectRz090529VaporChamberFramesAsync(current, includesVaporChamber: true,
+                cancellationToken, onSubmitted).ConfigureAwait(false);
+        }
         if (!activate)
         {
             // Bound all source-reviewed uniform renderers to a deliberate
@@ -1551,8 +1611,11 @@ internal sealed partial class ExperimentalBladePort
         {
             var colors = new RgbColor[Rz090529KeyboardLightingFrame.Rows * Rz090529KeyboardLightingFrame.Columns];
             Array.Fill(colors, color);
+            // LED38 keeps its own record brightness, so follow the keyboard in RGB.
             RgbColor[]? vaporChamber = lightingOwnership.VaporChamberFrames
-                ? Enumerable.Repeat(color, Rz090529KeyboardLightingFrame.VaporChamberColumns).ToArray()
+                ? Enumerable.Repeat(Rz090529KeyboardLightingFrame.ScaleVaporChamberColor(color,
+                    lightingOwnership.Intent?.Brightness ?? 100),
+                    Rz090529KeyboardLightingFrame.VaporChamberColumns).ToArray()
                 : null;
             await SubmitExperimentalGridFrameAsync(colors, vaporChamber, activate, cancellationToken, onSubmitted)
                 .ConfigureAwait(false);

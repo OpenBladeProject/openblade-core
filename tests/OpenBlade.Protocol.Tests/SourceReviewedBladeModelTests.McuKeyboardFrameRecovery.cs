@@ -437,6 +437,112 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Null(storage.Journal.Load().Baseline);
     }
 
+    // #985 and #988 together: a live sampled owner on RZ09-0529 keeps its
+    // journaled baseline across replacement, including the LED38 write-ahead
+    // selection record, and the final restore still returns LED38.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Rz090529_ReplacedSampledOwnerKeepsTheVaporChamberSelectionRecord(bool selectedBeforeReplacement)
+    {
+        using var storage = new Rz090529LightingJournalFixture();
+        var session = new Session
+        {
+            Brightness = 129,
+            McuLighting = Rz090529StaticKeyboard.ToArray(),
+            McuVaporChamber = Rz090529StaticVaporChamber.ToArray(),
+        };
+        var ownership = new ExperimentalLightingOwnershipState { Journal = storage.Journal };
+        await using var port = CreateRz090529Frames(session, ownership: ownership);
+        await port.SetLightingAsync(LightingSettingsFactory.AmbientAwareness(AmbientAwarenessRegion.Full, 50), default);
+        if (selectedBeforeReplacement)
+        {
+            await port.PushUniformLightingFrameAsync(new(new RgbColor(9, 8, 7)), default);
+            Assert.Equal(8, session.McuVaporChamber[2]);
+        }
+        ExperimentalLightingBaseline before = Assert.IsType<ExperimentalLightingBaseline>(storage.Journal.Load().Baseline);
+        Assert.Equal(selectedBeforeReplacement, before.VaporChamber is not null);
+
+        await port.SetLightingAsync(LightingSettingsFactory.AudioMeter(1, 50), default);
+
+        Assert.Equal(LightingRendererOwnershipState.AudioMeter, port.OwnershipState);
+        Assert.Equal(before, ownership.Baseline);
+        Assert.Equal(before, storage.Journal.Load().Baseline);
+        await port.PushUniformLightingFrameAsync(new(new RgbColor(1, 2, 3)), default);
+        Assert.NotNull(storage.Journal.Load().Baseline?.VaporChamber);
+        await port.RelinquishRendererAsync(default);
+        Assert.Equal(Rz090529StaticVaporChamber, session.McuVaporChamber);
+        Assert.Equal(Rz090529StaticKeyboard, session.McuLighting);
+        Assert.Equal(129, session.Brightness);
+        Assert.Null(storage.Journal.Load().Baseline);
+    }
+
+    // Baseline reconciliation is reviewed only for the four 2026-11-19 MCU images.
+    // A faulted RZ09-0529 owner with a pending LED38 selection record is still
+    // refused, spends no read and writes nothing to either region.
+    [Fact]
+    public async Task Rz090529_FaultedOwnerWithAVaporChamberRecordIsNotReconciled()
+    {
+        using var storage = new Rz090529LightingJournalFixture();
+        var saved = new ExperimentalLightingBaseline(LightingSettingsFactory.Static(new(11, 22, 33), 51), 129,
+            LightingSettingsFactory.Static(new(1, 2, 3), 100));
+        storage.Journal.SavePending(saved);
+        var session = new Session
+        {
+            Brightness = 129,
+            McuLighting = Rz090529StaticKeyboard.ToArray(),
+            McuVaporChamber = [0, 38, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        };
+        var ownership = new ExperimentalLightingOwnershipState
+        {
+            Journal = storage.Journal,
+            Baseline = saved,
+            Ownership = (int)LightingRendererOwnershipState.Faulted,
+        };
+        await using var port = CreateRz090529Frames(session, ownership: ownership);
+
+        CapabilityUnavailableException refused = await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            port.SetLightingAsync(LightingSettingsFactory.AmbientAwareness(AmbientAwarenessRegion.Full, 50), default));
+
+        Assert.Equal("Lighting recovery requires a confirmed built-in destination before starting another renderer.",
+            refused.Message);
+        Assert.Empty(session.Commands);
+        Assert.Equal(saved, storage.Journal.Load().Baseline);
+        Assert.Equal(LightingRendererOwnershipState.Faulted, port.OwnershipState);
+    }
+
+    // Adoption keeps the pending record exactly: it neither drops nor invents an
+    // LED38 selection record, and publishes nothing.
+    [Fact]
+    public void LightingJournal_AdoptReconciledPendingRequiresTheExactRecordAndPublishesNothing()
+    {
+        using var storage = new Rz090529LightingJournalFixture();
+        var keyboard = new ExperimentalLightingBaseline(LightingSettingsFactory.Static(new(11, 22, 33), 51), 129);
+        ExperimentalLightingBaseline withVaporChamber = keyboard with
+        {
+            VaporChamber = LightingSettingsFactory.Static(new(1, 2, 3), 100),
+        };
+        storage.Journal.SavePending(withVaporChamber);
+        ExperimentalLightingBaselineJournal reopened = ReopenRz090529Journal(storage);
+        string published = File.ReadAllText(storage.JournalPath);
+
+        InvalidDataException dropped = Assert.Throws<InvalidDataException>(() => reopened.AdoptReconciledPending(keyboard));
+        Assert.Equal("The original lighting baseline requires explicit built-in recovery.", dropped.Message);
+        reopened.AdoptReconciledPending(withVaporChamber);
+        reopened.SavePending(withVaporChamber);
+
+        Assert.Equal(published, File.ReadAllText(storage.JournalPath));
+        Assert.Equal(withVaporChamber, reopened.Load().Baseline);
+
+        using var keyboardOnly = new Rz090529LightingJournalFixture();
+        keyboardOnly.Journal.SavePending(keyboard);
+        ExperimentalLightingBaselineJournal reopenedKeyboard = ReopenRz090529Journal(keyboardOnly);
+        InvalidDataException invented = Assert.Throws<InvalidDataException>(() =>
+            reopenedKeyboard.AdoptReconciledPending(withVaporChamber));
+        Assert.Equal("The original lighting baseline requires explicit built-in recovery.", invented.Message);
+        Assert.Equal(keyboard, reopenedKeyboard.Load().Baseline);
+    }
+
     private static void InjectSelectionReadFailure(Session session, string failure)
     {
         if (failure == nameof(ObjectDisposedException))

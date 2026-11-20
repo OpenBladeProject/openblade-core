@@ -158,6 +158,8 @@ internal sealed class ExperimentalGridLightingEffect
                 StarlightLightingParameters => FromMatrix(starlight!.RenderSlot(Rows * columns + column, elapsed)),
                 _ => throw new InvalidOperationException("Unsupported Vapor Chamber effect."),
             };
+            // Unlike the keyboard rows, LED38 brightness is not set by the port.
+            colors[column] = Rz090529KeyboardLightingFrame.ScaleVaporChamberColor(colors[column], settings.Brightness);
         }
         return colors;
     }
