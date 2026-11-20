@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add the Custom Maximum Fans switch on Blade 14 (2023, RZ09-0482), following its own Synapse source. Starting HyperBoost from Custom no longer requires turning Maximum Fans off in Synapse first; OpenBlade turns it off and restores your saved Custom setting when HyperBoost ends. ([#TBD](https://github.com/OpenBladeProject/openblade-core/pull/TBD))
+- Add the Custom Maximum Fans switch on Blade 14 (2023, RZ09-0482), following its own Synapse source. Starting HyperBoost from Custom no longer requires turning Maximum Fans off in Synapse first; OpenBlade turns it off and restores your saved Custom setting when HyperBoost ends. ([#986](https://github.com/OpenBladeProject/openblade-core/pull/986))
 
 ### Changed
 
