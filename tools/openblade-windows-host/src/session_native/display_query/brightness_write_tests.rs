@@ -340,6 +340,17 @@ fn denied_admission_and_preparation_failures_never_reach_the_setter() {
         (Status::Blocked, Some(CHANGED_POWER))
     );
 
+    // Managed ExternalUnknown needs Service external-power evidence that a
+    // native power context never holds, so it is the changed-source refusal.
+    let mut host = Host::admitted(0);
+    let setters = rig.setters();
+    let outcome = rig.set(&mut host, 3, 75).unwrap();
+    assert_eq!(
+        (outcome.status, outcome.error),
+        (Status::Blocked, Some(CHANGED_POWER))
+    );
+    assert_eq!(rig.setters(), setters);
+
     // Origin, session or power generation changed after preparation.
     let mut host = Host::admitted(1);
     host.admit = false;

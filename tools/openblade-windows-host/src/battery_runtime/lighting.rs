@@ -44,6 +44,10 @@ struct OffSettings {
     parameters: Option<Parameters>,
     logo_mode: Option<u8>,
     independent_controls: Option<serde::de::IgnoredAny>,
+    // Protocol 85 full-effect authority on hybrid backends. Managed omits the
+    // default; an explicit true is not an admitted Off on this backend.
+    #[serde(default)]
+    controls_keyboard_effect: bool,
 }
 
 #[derive(Deserialize)]
@@ -75,6 +79,7 @@ impl LightingOverride {
                 .is_some_and(|p| p.kind != "off" || !p.fields.is_empty())
             || settings.logo_mode.is_some()
             || settings.independent_controls.is_some()
+            || settings.controls_keyboard_effect
         {
             return None;
         }
@@ -1092,6 +1097,46 @@ mod tests {
         assert!(lighting.temporary && !lighting.saved.off);
         assert_eq!(lighting.apply(None, true).status, ScopedStatus::Unchanged);
         assert!(!lighting.temporary && !lighting.saved.off);
+    }
+
+    #[test]
+    fn lighting_admits_protocol_85_off_only_without_keyboard_effect_authority() {
+        let off = |extra: Value| {
+            let mut value = json!({
+                "effect": 0, "brightness": 0, "color": {"red": 0, "green": 0, "blue": 0},
+                "parameters": {"kind": "off"}
+            });
+            value
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            serde_json::from_value::<LightingOverride>(json!({"value": value, "lifetime": 1}))
+        };
+        // Managed writes the default by omission; an explicit false is the same Off.
+        for extra in [json!({}), json!({"controlsKeyboardEffect": false})] {
+            assert_eq!(
+                off(extra).unwrap().off_lifetime(),
+                Some(Lifetime::Persistent)
+            );
+        }
+        // Full-effect authority and the protocol 85 zone fields are not admitted here.
+        assert_eq!(
+            off(json!({"controlsKeyboardEffect": true}))
+                .unwrap()
+                .off_lifetime(),
+            None
+        );
+        for zone in [
+            json!({"independentControls": {"vaporChamberLightingEnabled": false}}),
+            json!({"independentControls": {"touchpadStatusIndicatorEnabled": true}}),
+        ] {
+            assert_eq!(off(zone).unwrap().off_lifetime(), None);
+        }
+        assert!(off(json!({"controlsKeyboardEffect": 1})).is_err());
+        let mut lighting = fixture();
+        let refused = off(json!({"controlsKeyboardEffect": true})).ok();
+        assert_eq!(lighting.apply(refused, true).status, ScopedStatus::Blocked);
+        assert!(lighting.device.trace.is_empty() && !lighting.saved.off);
     }
 
     #[test]

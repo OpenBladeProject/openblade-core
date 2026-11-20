@@ -275,10 +275,13 @@ impl Request {
                 (None, None, None, None, None, None) => Operation::Query,
                 _ => return Err(invalid("invalid Display query members")),
             },
-            // Managed IsConfirmed (PluggedIn, Battery, UsbC) and byte percent <= 100.
+            // Managed IsManualSource (PluggedIn, Battery, UsbC or ExternalUnknown)
+            // and byte percent <= 100. ExternalUnknown never matches a native
+            // power context, so admission refuses it as managed does without
+            // fresh Service external-power evidence.
             #[cfg(feature = "agent-display-brightness-write-v1")]
             Name::SetBrightness => match (power, percent, enabled, key, color, settings) {
-                (Some(source @ 0..=2), Some(percent @ 0..=100), None, None, None, None) => {
+                (Some(source @ 0..=3), Some(percent @ 0..=100), None, None, None, None) => {
                     Operation::SetBrightness(SetBrightness {
                         expected_power_source: source as u8,
                         percent: percent as u8,
@@ -286,10 +289,10 @@ impl Request {
                 }
                 _ => return Err(invalid("invalid Display setBrightness members")),
             },
-            // Managed IsConfirmed and a required JSON Boolean.
+            // Managed IsManualSource and a required JSON Boolean.
             #[cfg(feature = "agent-display-hdr-write-v1")]
             Name::SetHdr => match (power, percent, enabled, key, color, settings) {
-                (Some(source @ 0..=2), None, Some(enabled), None, None, None) => {
+                (Some(source @ 0..=3), None, Some(enabled), None, None, None) => {
                     Operation::SetHdr(SetHdr {
                         expected_power_source: source as u8,
                         enabled,
@@ -297,11 +300,11 @@ impl Request {
                 }
                 _ => return Err(invalid("invalid Display setHdr members")),
             },
-            // Managed IsConfirmed and ValidKey (non-blank, trimmed, at most
+            // Managed IsManualSource and ValidKey (non-blank, trimmed, at most
             // 1024 UTF-16 units, no control characters).
             #[cfg(feature = "agent-display-refresh-write-v1")]
             Name::SetRefreshRate => match (power, percent, enabled, key, color, settings) {
-                (Some(source @ 0..=2), None, None, Some(key), None, None)
+                (Some(source @ 0..=3), None, None, Some(key), None, None)
                     if observation::valid_key(&key) =>
                 {
                     Operation::SetRefreshRate(SetRefreshRate {
@@ -311,10 +314,10 @@ impl Request {
                 }
                 _ => return Err(invalid("invalid Display setRefreshRate members")),
             },
-            // Managed IsConfirmed and ValidKey, like setRefreshRate.
+            // Managed IsManualSource and ValidKey, like setRefreshRate.
             #[cfg(feature = "agent-display-color-write-v1")]
             Name::SetColorProfile => match (power, percent, enabled, key, color, settings) {
-                (Some(source @ 0..=2), None, None, None, Some(key), None)
+                (Some(source @ 0..=3), None, None, None, Some(key), None)
                     if observation::valid_key(&key) =>
                 {
                     Operation::SetColorProfile(SetColorProfile {

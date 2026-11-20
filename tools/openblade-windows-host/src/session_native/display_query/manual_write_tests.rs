@@ -187,6 +187,13 @@ fn power_admission_blocks_after_the_hold_without_an_attempt() {
     assert_eq!(result(&outcome), (Status::Blocked, Some(CHANGED_POWER)));
     assert_eq!(changed.native().attempts, 0);
 
+    // Managed ExternalUnknown needs Service external-power evidence that a
+    // native power context never holds, so it is the changed-source refusal.
+    let mut external = host(0, Attempt::Confirmed, true);
+    let outcome = rig.set(&mut external, 3, ()).unwrap();
+    assert_eq!(result(&outcome), (Status::Blocked, Some(CHANGED_POWER)));
+    assert_eq!(external.native().attempts, 0);
+
     // Blocked completions restore the inherited (unpaused) state.
     let record = rig.file.record();
     assert!(!flag(&record, "AutomaticWritesPaused") && !flag(&record, "UncertainRefreshRate"));

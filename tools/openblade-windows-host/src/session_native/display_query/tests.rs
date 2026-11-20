@@ -989,7 +989,7 @@ mod brightness_writes {
     #[tokio::test]
     async fn invalid_write_members_and_other_mutations_reach_no_supplier() {
         let mut inputs = vec![
-            set(json!(3), json!(50)),
+            set(json!(4), json!(50)),
             set(json!(-1), json!(50)),
             set(json!(0), json!(101)),
             set(json!(0), json!(-1)),
@@ -1338,7 +1338,7 @@ mod hdr_writes {
     #[tokio::test]
     async fn invalid_hdr_members_and_other_mutations_reach_no_supplier() {
         let mut inputs = vec![
-            set(json!(3), json!(true)),
+            set(json!(4), json!(true)),
             set(json!(-1), json!(true)),
             set(json!(0.5), json!(true)),
             set(json!("PluggedIn"), json!(true)),
@@ -1756,7 +1756,7 @@ mod refresh_writes {
     async fn invalid_refresh_members_and_other_mutations_reach_no_supplier() {
         let id = ID;
         let mut inputs = vec![
-            set(json!(3), json!("fixed-240")),
+            set(json!(4), json!("fixed-240")),
             set(json!(-1), json!("fixed-240")),
             set(json!(0.5), json!("fixed-240")),
             set(json!("PluggedIn"), json!("fixed-240")),
@@ -2156,7 +2156,7 @@ mod color_writes {
     async fn invalid_color_members_and_other_mutations_reach_no_supplier() {
         let id = ID;
         let mut inputs = vec![
-            set(json!(3), json!("sRGB_CTR.icm")),
+            set(json!(4), json!("sRGB_CTR.icm")),
             set(json!(-1), json!("sRGB_CTR.icm")),
             set(json!(0.5), json!("sRGB_CTR.icm")),
             set(json!("PluggedIn"), json!("sRGB_CTR.icm")),

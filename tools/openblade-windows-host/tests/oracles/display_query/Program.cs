@@ -318,6 +318,11 @@ static async Task<int> EmitRequestsAsync(string outPath)
     // Keys are text a user can choose; only member names are serde_json tokens.
     await AddValid("setRefreshRate-private-prefix", new SetRefreshRateRequest(V, id, PowerSource.Battery, "$serde_json::private::Number"));
     await AddValid("setColorProfile-private-prefix", new SetColorProfileRequest(V, id, PowerSource.UsbC, "$serde_json::private::RawValue"));
+    // Manual operations also name unclassified external power; applyProfile does not.
+    await AddValid("setBrightness-unclassified-external", new SetBrightnessRequest(V, id, PowerSource.ExternalUnknown, 50));
+    await AddValid("setHdr-unclassified-external", new SetHdrRequest(V, id, PowerSource.ExternalUnknown, true));
+    await AddValid("setRefreshRate-unclassified-external", new SetRefreshRateRequest(V, id, PowerSource.ExternalUnknown, "fixed-60"));
+    await AddValid("setColorProfile-unclassified-external", new SetColorProfileRequest(V, id, PowerSource.ExternalUnknown, "sRGB.icm"));
     await AddValid("applyProfile-all-null", new ApplyDisplayProfileRequest(
         V, id, PowerSource.PluggedIn, new DisplayProfileSettings(null, null, null)));
     await AddValid("applyProfile-full", new ApplyDisplayProfileRequest(
@@ -353,7 +358,7 @@ static async Task<int> EmitRequestsAsync(string outPath)
     AddInvalid("null-enabled", Op("setHdr", ",\"expectedPowerSource\":0,\"enabled\":null"));
     AddInvalid("null-colorProfileKey", Op("setColorProfile", ",\"expectedPowerSource\":0,\"colorProfileKey\":null"));
     AddInvalid("null-settings", Op("applyProfile", ",\"expectedPowerSource\":0,\"settings\":null"));
-    AddInvalid("power-source-3", Op("setBrightness", ",\"expectedPowerSource\":3,\"percent\":50"));
+    AddInvalid("power-source-4", Op("setBrightness", ",\"expectedPowerSource\":4,\"percent\":50"));
     AddInvalid("power-source-minus-1", Op("setBrightness", ",\"expectedPowerSource\":-1,\"percent\":50"));
     AddInvalid("percent-101", Op("setBrightness", ",\"expectedPowerSource\":0,\"percent\":101"));
     AddInvalid("blank-key", Rate("   "));
