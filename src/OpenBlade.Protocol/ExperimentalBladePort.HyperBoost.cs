@@ -78,13 +78,9 @@ internal sealed partial class ExperimentalBladePort
                 byte flags = await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false);
                 if ((flags & TemporaryFullChargeProtocol.MaximumFanSpeedBit) != 0)
                 {
-                    // Product 669 proves this flag exists, but this backend cannot
-                    // journal/restore it. Do not clear an unrepresentable baseline.
-                    if (!CreateCustomCapabilities(model).SupportsMaximumFans)
-                    {
-                        throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                            "Turn off Maximum Fans in Synapse before enabling HyperBoost; OpenBlade cannot restore that option on this model.");
-                    }
+                    // Products 671/669 both clear this bit before leaving Custom.
+                    // 029F/029D represent it in Custom intent, which the service
+                    // ownership journal retains for restoration on exit.
                     RequireMaximumFansWriteBaseline(flags);
                     // Cleanup belongs to this HyperBoost request; it cannot inherit
                     // ordinary Unknown-AC admission before the mode-7 command.

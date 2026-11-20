@@ -18,7 +18,11 @@ internal sealed partial class ExperimentalBladePort
                      || (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High)))
          select combination).ToHashSet())
     {
-        SupportsMaximumFans = model.ThermalPolicy?.SupportsMaximumFans ?? (model.ProductId is 0x029F or 0x02A0),
+        // 029D: pinned product-669 main.8e09720cb94da405eead.js enables
+        // hasMaxFanSpeedModeEnabled (byte 162554); its 6737.439ff1a12463933a6346.js
+        // setter writes Power Mode Control bit 2 like 029F. See
+        // evidence/source-reviewed-blades/2026-11-19-rz09-0482-maximum-fans.json.
+        SupportsMaximumFans = model.ThermalPolicy?.SupportsMaximumFans ?? (model.ProductId is 0x029F or 0x029D or 0x02A0),
     };
 
     // 029F High/High and CPU Boost are explicit Synapse captures in tdakhran

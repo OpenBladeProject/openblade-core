@@ -7,7 +7,7 @@ public sealed partial class ExperimentalThermalExpansionTests
 {
     [Theory]
     [InlineData(0x029F, true, true, true)]
-    [InlineData(0x029D, false, false, true)]
+    [InlineData(0x029D, false, true, true)]
     [InlineData(0x02C5, false, false, true)]
     [InlineData(0x0255, false, false, true)]
     [InlineData(0x02A0, true, true, true)]
@@ -71,7 +71,10 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.Equal(4, session.Mode);
         Assert.Equal(1, session.Cpu);
         Assert.Equal(2, session.Gpu);
-        Assert.DoesNotContain(session.Commands, item => item.ClassId == 7 && item.CommandId != 0x8C);
+        // Only 029D admits Custom Maximum Fans here; it reads Power Mode Control but writes nothing.
+        Assert.DoesNotContain(session.Commands, item => item.ClassId == 7 && item.CommandId is not (0x8C or 0x8F));
+        Assert.DoesNotContain(session.Writes, item => item.ClassId == 7);
+        Assert.Equal(pid == 0x029D, session.Commands.Any(item => item.ClassId == 7 && item.CommandId == 0x8F));
     }
 
     [Fact]

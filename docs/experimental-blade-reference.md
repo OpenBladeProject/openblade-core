@@ -15,7 +15,7 @@ For setup and test reports, use
 | Laptop | Exact Windows product name | USB identity | Admitted controls |
 | --- | --- | --- | --- |
 | Blade 16 (2023), RZ09-0483 | `Blade 16 - RZ09-0483` | `1532:029F` | Balanced, Silent, Performance, Custom, HyperBoost with or without the cooling pad, fixed fan targets, Maximum Fans, keyboard and logo lighting, 50-100% charge limits |
-| Blade 14 (2023), RZ09-0482 | `Blade 14 - RZ09-0482` | `1532:029D` | Balanced, Silent, Custom, HyperBoost with or without the cooling pad, fixed fan targets, keyboard and logo lighting, 50-100% charge limits |
+| Blade 14 (2023), RZ09-0482 | `Blade 14 - RZ09-0482` | `1532:029D` | Balanced, Silent, Custom, HyperBoost with or without the cooling pad, fixed fan targets, Maximum Fans, keyboard and logo lighting, 50-100% charge limits |
 | Blade 14 (2025), RZ09-0530 | `Blade 14 - RZ09-0530` | `1532:02C5` | Balanced, Silent, Battery Saver, Battery Balanced, Custom, keyboard and logo lighting, 50-100% charge limits |
 | Blade 15 Base (Early 2020), RZ09-0328 | `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | Balanced, Silent, Gaming, Custom, single-zone keyboard lighting |
 | Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, Performance, Custom, Balanced/Silent linked fixed targets and Balanced curves, Maximum Fans, keyboard and logo lighting, 50-100% charge limits |
@@ -75,8 +75,11 @@ The setters/getters address each target register independently; independent
 physical RPM remains unverified.
 Blade 18 temperature telemetry remains physically unverified.
 
-Maximum Fans is a separate Custom-mode switch on the Blade 16 (2023) and Blade
-18 (2023). The shared Power Mode Control decoder accepts any one-byte subset of
+Maximum Fans is a separate Custom-mode switch on the Blade 14 (2023), Blade 16
+(2023) and Blade 18 (2023). The Blade 14 uses its own product-669 Synapse flag
+and setter, which match the Blade 16 contract; see the
+[source review](../evidence/source-reviewed-blades/2026-11-19-rz09-0482-maximum-fans.json).
+It keeps that model's echoed set acknowledgement. The shared Power Mode Control decoder accepts any one-byte subset of
 `0x0F`; Maximum Fans is bit `0x02`. CPU boost (`0x01`), temporary full charge
 (`0x04`), and local dimming (`0x08`) remain independent observations. Undefined
 bits and other payload lengths are rejected with the bytes retained in diagnostics.
@@ -142,9 +145,9 @@ laptop-control writes; recovery performs fresh reads and never replays a setter.
 Blade 14 (2023) is absent from Razer's public compatibility list; its exact
 Synapse definitions are the source-reviewed admission source. It admits Balanced,
 Silent and Custom bases, never Performance/raw 2, and requires MCU 1.1.1.3.
-Its HyperBoost prerequisite reads Power Mode Control but never clears Maximum
-Fans: an externally enabled flag blocks entry because restoration is not
-available for that option. Blade 16 (2023) requires MCU 1.5.0.0.
+Like the Blade 16, HyperBoost entry from Custom clears an active Maximum Fans
+flag with the guarded `07/0F [0]` cleanup, and the journaled Custom intent
+retains it for restoration. Blade 16 (2023) requires MCU 1.5.0.0.
 
 Blade 18 (2023) remains observed-only. Turn HyperBoost off in Synapse before
 using performance controls; no HyperBoost setter is admitted for that model.

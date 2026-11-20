@@ -150,6 +150,10 @@ internal static class ExperimentalBladeModels
                     "https://apps.razer.com/synapse/products/669/mw/6737.439ff1a12463933a6346.js",
                     "https://apps.razer.com/synapse/products/669/mw/rzDevice25.1094c437ecd0242743f8.js"]),
                 new("CustomAndFixedFans", "SourceBackedExtrapolation", [RazerCtlSource, MaintainedRazerCtlSource]),
+                new("MaximumFans", "SynapseSourceBackedWithoutPhysicalValidation", [
+                    "https://apps.razer.com/synapse/products/669/mw/main.8e09720cb94da405eead.js;SHA256=EEB8A171E77D1E066655D7FC997E4015B420B0F936F2464A27A87FDAFB5AC302",
+                    "https://apps.razer.com/synapse/products/669/mw/6737.439ff1a12463933a6346.js;SHA256=D1AC2212AED5491D3EAB69ABAFA270B963A2336E859DF6BFBF9ED9A455E3791B",
+                    "evidence/source-reviewed-blades/2026-11-19-rz09-0482-maximum-fans.json"]),
                 new("KeyboardLightingAndLogoOnOff", "UpstreamOwnerReported", [OpenRazerSource, "https://github.com/openrazer/openrazer/pull/2237"]),
                 new("LogoStaticAndBreathing", "SourceBackedExtrapolation", [RazerCtlSource, MaintainedRazerCtlSource]),
                 new("ChargeLimits50To100", "SourceBackedExtrapolation", [RazerCtlSource, MaintainedRazerCtlSource])],

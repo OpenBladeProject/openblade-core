@@ -66,19 +66,33 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.Empty(session.Writes);
     }
 
-    [Theory]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(10)]
-    public async Task Blade14HyperBoost_ActiveUnrestorableMaximumFansBlocksWithoutClearing(byte flags)
+    [Fact]
+    public async Task Blade14HyperBoost_ClearsMaximumFansBeforeModeSevenLikeProduct669()
     {
-        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, PowerModeControlFlags = flags };
+        // Product 669 clears Maximum Fans before any non-Custom thermal setter.
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, PowerModeControlFlags = 2, HyperBoostFirmware = [1, 1, 1, 3] };
+        await using var port = HyperBoostPort(session, new Pad(), pid: 0x029D);
+        await port.SetHyperBoostAsync(true, PerformancePreset.Custom, true, CancellationToken.None);
+        Assert.Equal(0, session.PowerModeControlFlags);
+        Assert.Equal(7, session.Mode);
+        Assert.Equal(new byte[][] { [0], [1, 1, 7, 0], [1, 2, 7, 0] },
+            session.Writes.Select(command => command.Arguments.ToArray()).ToArray());
+        Assert.Equal((0x07, 0x0F), (session.Writes.First().ClassId, session.Writes.First().CommandId));
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(6)]
+    [InlineData(10)]
+    public async Task Blade14HyperBoost_MaximumFansWithOtherPowerOptionsBlocksWithoutClearing(byte flags)
+    {
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, PowerModeControlFlags = flags, HyperBoostFirmware = [1, 1, 1, 3] };
         var policy = new ExperimentalFeaturesPolicy(Model(0x029D));
         await using var port = HyperBoostPort(session, new Pad(), policy, pid: 0x029D);
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetHyperBoostAsync(true, PerformancePreset.Custom, true, CancellationToken.None));
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
-        Assert.Contains("Maximum Fans", failure.Message);
+        Assert.Contains("maximum fans", failure.Message);
         Assert.Equal(flags, session.PowerModeControlFlags);
         Assert.Empty(session.Writes);
         Assert.True(policy.WritesAllowed);

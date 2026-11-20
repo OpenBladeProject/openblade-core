@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Add the Custom Maximum Fans switch on Blade 14 (2023, RZ09-0482), following its own Synapse source. Starting HyperBoost from Custom no longer requires turning Maximum Fans off in Synapse first; OpenBlade turns it off and restores your saved Custom setting when HyperBoost ends. ([#TBD](https://github.com/OpenBladeProject/openblade-core/pull/TBD))
+
 ### Changed
 
 - Credit the Blade 18 (2025, RZ09-0529) keyboard lighting effects and per-key color editing in 0.65.1-nightly.117 to their contributor. Thanks to [@TheChrisTech](https://github.com/TheChrisTech). ([#977](https://github.com/OpenBladeProject/openblade-core/pull/977))

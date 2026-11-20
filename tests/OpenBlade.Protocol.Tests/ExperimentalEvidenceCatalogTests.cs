@@ -167,6 +167,17 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.All(feature.Sources, source => Assert.StartsWith(
                         $"https://apps.razer.com/synapse/products/{(blade14 ? 669 : 671)}/mw/", source));
                 }
+                else if (feature.Feature == "MaximumFans" && model.ProductId == 0x029D)
+                {
+                    Assert.Equal("SynapseSourceBackedWithoutPhysicalValidation", feature.Basis);
+                    Assert.Equal(3, feature.Sources.Count);
+                    Assert.All(feature.Sources.Take(2), source =>
+                    {
+                        Assert.StartsWith("https://apps.razer.com/synapse/products/669/mw/", source);
+                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
+                    });
+                    Assert.Equal("evidence/source-reviewed-blades/2026-11-19-rz09-0482-maximum-fans.json", feature.Sources[2]);
+                }
                 else if (feature.Feature == "FireAndWheel")
                 {
                     Assert.Equal((ushort)0x02A0, model.ProductId);
