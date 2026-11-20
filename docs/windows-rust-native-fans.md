@@ -19,14 +19,17 @@ request that leaves saved manual fan intent goes directly to the saved
 Balanced or Performance preset, as managed does: that preset's 0D/02 pair
 carries the Automatic fan mode, so the stored performance intent is applied in
 the same pair. Without such a preset, or with a saved GPU clock effect, it keeps
-the observed selector. Owned Stop cleanup always keeps the owner's selector.
+the observed selector. Owned Stop cleanup writes only under the owner's selector.
 Automatic under the destination selector, with no OpenBlade owner, is a true
-no-op and never establishes ownership. Known gap, older than the preset return:
-when an OpenBlade owner recorded another selector and firmware or another
-controller has already moved the fans to Automatic under the destination, the
-no-op close refuses the owner (`confirm_fan_noop` requires the owner's
-selector). The request is Blocked, the owner row stays outstanding, and owned
-Stop cleanup does not settle it. Custom, Silent, battery and delegated states
+no-op and never establishes ownership. When fresh 0D/82 readback already shows
+Automatic fans, under the owner's selector or another one, an explicit
+Automatic request or owned Stop closes the owner with progress 51 and no
+setter. Managed does the same: `ExactFanControlOwnership.ObserveTopology`
+clears ownership on confirmed Automatic, and shutdown cleanup writes nothing
+when fans already use firmware Automatic. The old selector is never written
+back first, and the reply names the selector firmware reports. Ambiguous or
+unclassified readback, manual fans under another selector, and a changed power
+class keep the owner outstanding. Custom, Silent, battery and delegated states
 store intent with a zero-setter pending software outcome until their separate
 native recipes exist. No fallback profile or background control loop is added.
 
@@ -47,7 +50,9 @@ and cleanup IDs to the original producer/request/user/session. Existing v1
 performance rows, numeric meanings and raw commitments remain unchanged.
 Fan progress uses 0 for Prepared, 10–17 for indexed setter intent/ACK, 30 for
 mode-proven manual ownership, 31 for owned release preparation, 40–43 for
-release intent/ACK and 50 for independent Automatic proof. Numeric 6 remains
+release intent/ACK and 50 for independent Automatic proof. The linked-v2 and
+v3 contracts add 51: an owned 30 row closed because Automatic was observed,
+with no setter. The row keeps the owner's recorded selector. Numeric 6 remains
 Prepared-only KnownNotSubmitted after positive native retirement. Progress 30
 completes the explicit request while retaining its firmware handback obligation.
 Transport retirement alone cannot settle that obligation. Partial/future/foreign
