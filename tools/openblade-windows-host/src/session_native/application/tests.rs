@@ -30,9 +30,9 @@ use tokio::{sync::watch, time::sleep};
 use super::{
     ProfileFeed, Profiles, host,
     owner::{Owner, Timing, Watcher},
-    profiles, serve,
+    profiles, publish_status, serve,
 };
-use crate::service_status::Snapshot;
+use crate::{service_status::Snapshot, session_native::service_client::StatusUpdate};
 
 const GAME: &str = r"C:\Games\Game.exe";
 const OTHER: &str = r"C:\Games\Other.exe";
@@ -825,6 +825,8 @@ async fn origin_loss_before_a_send_is_fatal_and_sends_nothing() {
             profiles_for(rig, json!([entry(1, GAME, 0)]));
             focus(rig, 1, 41, GAME);
             sleep(Duration::from_millis(300)).await;
+            // Without the fatal origin error this would otherwise wait forever.
+            rig.finish();
         },
     )
     .await;
@@ -1206,4 +1208,61 @@ async fn the_hosted_transport_reports_its_failure_and_its_panic() {
         .await
         .unwrap_err();
     assert!(error.to_string().contains("panicked"));
+}
+
+// ---- The monitor's status wiring, extracted as `publish_status`. ----
+
+fn initial() -> crate::session_native::service_client::SubscriptionInitial {
+    crate::session_native::service_client::tests::fixture_initial()
+        .unwrap()
+        .1
+}
+
+#[test]
+fn verified_fresh_status_reaches_the_feed_and_a_reconnect_changes_nothing() {
+    let feed = ProfileFeed::new();
+    let receiver = feed.subscribe();
+    let ok = || Ok(());
+    publish_status(&feed, &StatusUpdate::Reconnecting, ok).unwrap();
+    assert!(receiver.borrow().is_none());
+
+    publish_status(&feed, &StatusUpdate::Opened(initial()), ok).unwrap();
+    assert_eq!(receiver.borrow().as_ref().unwrap().len(), 0);
+
+    let mut observation = initial().into_observation();
+    observation.snapshot = snapshot(json!([entry(1, GAME, 0)]));
+    publish_status(&feed, &StatusUpdate::Event(observation), ok).unwrap();
+    assert_eq!(receiver.borrow().as_ref().unwrap().len(), 1);
+
+    // Managed keeps the last profiles through a reconnect.
+    publish_status(&feed, &StatusUpdate::Reconnecting, ok).unwrap();
+    assert_eq!(receiver.borrow().as_ref().unwrap().len(), 1);
+}
+
+#[test]
+fn status_that_is_stale_or_from_a_lost_origin_is_not_published() {
+    let feed = ProfileFeed::new();
+    let receiver = feed.subscribe();
+    let stale = initial();
+    // Real time: the observation clock is not paused outside a runtime.
+    std::thread::sleep(Duration::from_millis(2100));
+    let error = publish_status(&feed, &StatusUpdate::Opened(stale), || Ok(())).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+    assert!(receiver.borrow().is_none());
+
+    let error = publish_status(&feed, &StatusUpdate::Opened(initial()), || {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "origin lost",
+        ))
+    })
+    .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    let mut observation = initial().into_observation();
+    observation.snapshot = snapshot(json!([entry(1, GAME, 0)]));
+    publish_status(&feed, &StatusUpdate::Event(observation), || {
+        Err(io::Error::other("origin lost"))
+    })
+    .unwrap_err();
+    assert!(receiver.borrow().is_none());
 }

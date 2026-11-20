@@ -84,19 +84,9 @@ pub(super) fn run(
             std::future::pending::<()>(),
             |update| {
                 #[cfg(feature = "agent-application-reporter-v1")]
-                match &update {
-                    service_client::StatusUpdate::Opened(value) => {
-                        super::verify_origin(&origin)?;
-                        value.require_fresh()?;
-                        profiles.observe(value.snapshot());
-                    }
-                    service_client::StatusUpdate::Event(value) => {
-                        super::verify_origin(&origin)?;
-                        value.require_fresh()?;
-                        profiles.observe(&value.snapshot);
-                    }
-                    service_client::StatusUpdate::Reconnecting => {}
-                }
+                super::application::publish_status(&profiles, &update, || {
+                    super::verify_origin(&origin)
+                })?;
                 #[cfg(openblade_display_write)]
                 let result = (|| {
                     super::verify_origin(&origin)?;

@@ -20,7 +20,10 @@ use openblade_windows_host::reporter_pipe;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use self::owner::{Completion, Link, Retire, Signals, Timing, Wakes, Watcher};
-use super::{scm_peer::WindowsInstalledServiceAuthority, service_client::ReportChannel};
+use super::{
+    scm_peer::WindowsInstalledServiceAuthority,
+    service_client::{ReportChannel, StatusUpdate},
+};
 use crate::service_status::{PROTOCOL_VERSION, random_guid};
 
 mod owner;
@@ -29,6 +32,30 @@ pub(crate) use profiles::{ProfileFeed, Profiles};
 
 // The reporter codec and the Agent's Service client speak one protocol.
 const _: () = assert!(PROTOCOL_VERSION == reporter_pipe::VERSION);
+
+/// Hand a verified, fresh status to the profile feed, as managed hands every
+/// connected status to `ApplicationProfileReporter.Observe`. A reconnect changes
+/// nothing: managed keeps the last profiles.
+pub(crate) fn publish_status(
+    feed: &ProfileFeed,
+    update: &StatusUpdate,
+    verify: impl Fn() -> io::Result<()>,
+) -> io::Result<()> {
+    match update {
+        StatusUpdate::Opened(initial) => {
+            verify()?;
+            initial.require_fresh()?;
+            feed.observe(initial.snapshot());
+        }
+        StatusUpdate::Event(observation) => {
+            verify()?;
+            observation.require_fresh()?;
+            feed.observe(&observation.snapshot);
+        }
+        StatusUpdate::Reconnecting => {}
+    }
+    Ok(())
+}
 
 /// The installed role. Its Service transport runs on its own thread and
 /// runtime: acquiring the Service generation re-reads and hashes the installed
