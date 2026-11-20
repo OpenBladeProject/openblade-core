@@ -81,6 +81,7 @@ internal sealed class ExperimentalLightingBaselineJournal
     {
         ArgumentNullException.ThrowIfNull(baseline);
         ValidateBaseline(baseline);
+        RequireVaporChamberProduct(baseline);
         lock (gate)
         {
             EnsureUnchanged();
@@ -104,6 +105,7 @@ internal sealed class ExperimentalLightingBaselineJournal
     {
         ArgumentNullException.ThrowIfNull(baseline);
         ValidateBaseline(baseline);
+        RequireVaporChamberProduct(baseline);
         lock (gate)
         {
             EnsureUnchanged();
@@ -169,12 +171,24 @@ internal sealed class ExperimentalLightingBaselineJournal
             || document.Pending != (document.Baseline is not null)
             || document.SchemaVersion != SchemaFor(document.Baseline))
         { throw new InvalidDataException("Lighting baseline journal identity or schema is invalid."); }
-        if (document.Baseline is { } baseline) { ValidateBaseline(baseline); }
+        if (document.Baseline is { } baseline)
+        {
+            ValidateBaseline(baseline);
+            RequireVaporChamberProduct(baseline);
+        }
         return document;
     }
 
     private static int SchemaFor(ExperimentalLightingBaseline? baseline) =>
         baseline?.VaporChamber is null ? 1 : 2;
+
+    // Only RZ09-0529 has a reviewed LED38 contract. An LED38 record for any other
+    // product is not a recovery instruction, so the journal is invalid.
+    private void RequireVaporChamberProduct(ExperimentalLightingBaseline baseline)
+    {
+        if (baseline.VaporChamber is not null && productId != 0x02C7)
+        { throw new InvalidDataException("Only the RZ09-0529 lighting baseline may include an LED38 record."); }
+    }
 
     private static void ValidateBaseline(ExperimentalLightingBaseline baseline)
     {

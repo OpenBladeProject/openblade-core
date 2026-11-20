@@ -280,6 +280,16 @@ internal sealed partial class ExperimentalBladePort
         vaporChamberAvailability?.Settle(vaporChamberAvailabilityKey, available);
     }
 
+    // Only a GET that the MCU could have received settles LED38 availability. A
+    // shared-gate refusal, queued cancellation, exhausted transaction IDs or an
+    // already unusable session never sent it, so the next open probes again.
+    private static bool VaporChamberReadReachedDevice(IOException exception) =>
+        exception is not NativeDeviceReadException native
+        || native.Diagnostic?.Phase is not (HidSessionFailurePhase.SharedGateAdmission or HidSessionFailurePhase.Guard)
+            && native.Failure is not (HidSessionFailureKind.QueuedCanceled or HidSessionFailureKind.Canceled
+                or HidSessionFailureKind.Exhausted or HidSessionFailureKind.Disposed
+                or HidSessionFailureKind.Poisoned);
+
     // Optional open-time probe, run once for each admitted identity before the port
     // is published. Shipped keyboard effects never depend on it: a rejected GET
     // leaves later frames keyboard-only, and a GET that poisons this session is
@@ -304,14 +314,22 @@ internal sealed partial class ExperimentalBladePort
             _ = await ReadReviewedVaporChamberEffectAsync(cancellationToken).ConfigureAwait(false);
             SettleVaporChamberAvailability(true);
         }
-        catch (IOException) when (!cancellationToken.IsCancellationRequested)
+        catch (IOException exception)
         {
-            SettleVaporChamberAvailability(false);
+            // A wait canceled at the shared command gate is cancellation, as for
+            // the Blade 18 layout probe.
+            cancellationToken.ThrowIfCancellationRequested();
+            bool answered = VaporChamberReadReachedDevice(exception);
+            if (answered)
+            {
+                SettleVaporChamberAvailability(false);
+            }
             if (session.Disposition != RazerCommandSessionDisposition.Healthy)
             {
                 throw;
             }
-            RecordQuery("VaporChamberEffect", "Unavailable", failure: "VaporChamberFramesUnavailable");
+            RecordQuery("VaporChamberEffect", "Unavailable",
+                failure: answered ? "VaporChamberFramesUnavailable" : "VaporChamberProbeDeferred");
         }
         finally
         {
@@ -320,10 +338,12 @@ internal sealed partial class ExperimentalBladePort
     }
 
     // Reads LED38 for a host-frame decision. When OpenBlade selected LED38 the read
-    // is required to return it. Otherwise LED38 is optional: a failed read on a
-    // usable session leaves this owner keyboard-only, a poisoned session still
-    // fails the request before any write, and both keep later requests from
-    // probing again.
+    // is required to return it. Otherwise LED38 is optional: a device answer that
+    // fails on a usable session leaves this owner keyboard-only, a poisoned session
+    // still fails the request before any write, and both keep later requests from
+    // probing again. A read that never reached the MCU (shared-gate refusal,
+    // queued cancellation, an unusable session) fails the request before any
+    // write and settles nothing.
     private async Task<(LightingSettings? Settings, byte Mode)?> ReadVaporChamberForFramesAsync(
         bool required, CancellationToken token)
     {
@@ -331,7 +351,8 @@ internal sealed partial class ExperimentalBladePort
         {
             return await ReadReviewedVaporChamberEffectAsync(token).ConfigureAwait(false);
         }
-        catch (IOException) when (!token.IsCancellationRequested)
+        catch (IOException exception) when (!token.IsCancellationRequested
+            && VaporChamberReadReachedDevice(exception))
         {
             if (required)
             {
@@ -436,7 +457,9 @@ internal sealed partial class ExperimentalBladePort
     private async Task RestoreRz090529VaporChamberAsync(ExperimentalLightingBaseline baseline,
         byte? currentMode, CancellationToken token, Action markSubmitted)
     {
-        if (baseline.VaporChamber is not { } destination)
+        // Only RZ09-0529 has a reviewed LED38 contract; the journal rejects an
+        // LED38 record for any other product.
+        if (!SupportsRz090529VaporChamberFrames(model) || baseline.VaporChamber is not { } destination)
         {
             return;
         }
