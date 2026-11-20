@@ -126,9 +126,11 @@ temporary full charge keep their classified-only admission.
 
 The commands and the fresh 07/8C read before each setter are the same as on the
 classified classes. An unclassified reading needs fresh Windows AC presence. A
-performance setter needs it on every external class (`allowBattery: false`); a
-fan setter on a classified class needs Windows AC that agrees with the reading,
-or Windows battery, where managed admits it unchecked. The presence a reading
+performance setter needs it on every external class (`allowBattery: false`), and
+so does a fan return to Automatic that carries a saved preset, which managed
+applies through `SetPerformanceAsync`. Other fan setters on a classified class
+need Windows AC that agrees with the reading, or Windows battery, where managed
+admits them unchecked. The presence a reading
 was admitted with must hold at every later checkpoint (managed
 `AdmitOrdinaryThermalCommandAsync` and `OrdinarySourceUnchanged`), so losing it
 stops before the next command. A class change between setters, either way
@@ -137,11 +139,12 @@ the same destination. A persistent explicit override does, and so does a
 temporary saved unclassified within one Windows power generation. A temporary
 saved on full or limited power does not, because the other class retires it,
 and a profile destination does not, because unclassified power selects no
-profile. Two transitions stay in their first reading's class, as managed pins
-them: a direct HyperBoost exit to Performance
-(`requireExternalPowerOnDirectHyperBoostExit`), and a fan transition that keeps
-the Performance selector without carrying a saved preset, owned Stop included
-(`EnsureThermalWritePowerAsync`). Battery stops the pair without replay.
+profile. Two transitions stay in their first reading's class: a direct
+HyperBoost exit to Performance (after managed
+`requireExternalPowerOnDirectHyperBoostExit`), and a fan transition that writes
+the Performance state pair without carrying a saved preset, owned Stop included
+(after managed acPreset with `EnsureThermalWritePowerAsync`). A target-only
+change under manual fans has no such pin. Battery stops the pair without replay.
 Without presence, an unclassified reading, like a confirmed HyperBoost state on
 unclassified power (managed `CanAdmitUnclassifiedExternalControl`), is Blocked
 before any intent is stored: `Hardware application was not confirmed. The external power
@@ -171,7 +174,9 @@ sample changes the Windows ACLineStatus kind (managed `windowsPowerGeneration`).
 Native samples the kind at every SCM power notice and whenever a request
 resolves or checks its destination, so an unplug and replug between requests
 expires the temporary, while a lock, an unlock, a suspend and resume or a
-notice that keeps the kind do not. A failed sample is not a boundary. The
+notice that keeps the kind do not. A failed sample, an unknown ACLineStatus
+included, is not a boundary, and a change is seen only while a sample still
+shows it: a replug that completes before the notice's sample is missed. The
 status base reports 1 for battery and 3 for any other power, Unknown included,
 and may be older than the read. Status reads saved intent at that class only
 where fresh Windows power agrees with it, and otherwise at an unknown class,
@@ -193,16 +198,29 @@ Native differs from managed here in these ways:
   class selects another one.
 - Native pins a HyperBoost exit to the reading its destination was resolved
   on; managed pins it to the first command's own reading, taken just after.
+- Native checks a pinned fan transition's class at the first setter too.
+  Managed skips the pin on its first command, so a class change there gives
+  managed one write and an Indeterminate result; native writes nothing, and an
+  owned Stop leaves its 31 row pending for read-only reconciliation.
+- Native requires the presence a reading was admitted with at every later
+  checkpoint of the operation; managed requires it only until that command's
+  own SET. A Performance entry admitted on Windows AC whose later commands see
+  Windows battery completes its four writes in managed and stops in native.
 - Managed admits a fan command with no reading check while Windows reports
   battery; native still reads 07/8C before each setter and stops on a battery
-  reading, which no fan destination holds.
+  reading, which no fan destination holds, and on an unclassified reading,
+  which needs Windows AC. Managed's Balanced handback there writes both
+  setters without an adapter query.
+- On a Balanced HyperBoost exit native re-reads 07/8C before each setter and
+  stops on a battery reading; managed reads power once for that exit.
 - With manual fans saved and current, native replies with the Stored manual-fan
   deferral; managed has no deferral text there, and its coordinator leaves the
   manual fans in place.
 - Managed samples the Windows power kind at every control capture; native
   samples it at SCM power notices and when a request resolves or checks its
-  destination, which sees every kind change SCM reports. Native does not
-  track managed's separate last classified class per generation.
+  destination, so it sees a kind change only while one of those samples still
+  shows it. Native does not track managed's separate last classified class per
+  generation.
 - Native status carries no `externalPowerPresent` or capabilities, and with no
   override its desired provenance stays the profile default; managed reports
   the confirmed firmware state.

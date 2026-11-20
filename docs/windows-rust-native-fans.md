@@ -97,11 +97,17 @@ Every setter has fresh exact-device, caller/session, controller, lifecycle and
 07/8C source admission. An unclassified reading needs fresh Windows AC presence.
 A classified reading needs Windows AC that agrees with it, or Windows battery,
 where managed admits a fan command unchecked (`allowBattery`); unknown Windows
-power admits none. The reading must be in the operation's first class or another
-external class whose destination is the same. A transition that keeps the
-Performance selector without carrying a saved preset, owned Stop included, stays
-in its first reading's class (managed acPreset with
-`EnsureThermalWritePowerAsync`); Balanced has no such pin.
+power admits none. A return to Automatic that carries a saved preset needs
+Windows AC throughout, as managed applies that preset through
+`SetPerformanceAsync`; under Windows battery it is refused before Prepared and
+writes nothing. It still stores Automatic, so a later return no longer leaves
+saved manual intent and, as in managed (`previousManual`), carries no preset.
+The reading must be in the operation's first class or another
+external class whose destination is the same. A transition that writes the
+Performance state pair without carrying a saved preset, owned Stop included,
+stays in its first reading's class (managed acPreset with
+`EnsureThermalWritePowerAsync`). A target-only change under manual fans and
+Balanced have no such pin.
 State-channel, state-to-target and target-channel spacing remain at least 10,
 210 and 65 ms, alongside native feature settling.
 The complete recipe and all command IDs are frozen before Prepared. Ordinary
