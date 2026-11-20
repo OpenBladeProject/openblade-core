@@ -170,7 +170,18 @@ public sealed partial class SourceReviewedBladeModelTests
             var session = new Session { McuLighting = baseline.ToArray() };
             await using var port = CreateMcuFrames(product, session, ownership: new() { Journal = storage.Journal });
 
-            await Assert.ThrowsAnyAsync<Exception>(() => port.SetLightingAsync(requested, default));
+            BladeWriteException refused = await Assert.ThrowsAsync<BladeWriteException>(() =>
+                port.SetLightingAsync(requested, default));
+
+            (Type cause, string message) = baseline[2] switch
+            {
+                8 => (typeof(CapabilityUnavailableException), "A readable pre-frame lighting baseline is required for host rendering."),
+                3 => (typeof(CapabilityUnavailableException), "Host lighting can restore only Off, Static, Breathing or Wave. Choose one of them first."),
+                _ => (typeof(DeviceStateContentRejectedException), "The reviewed MCU lighting reply has an unknown effect or inconsistent parameters."),
+            };
+            Assert.Equal(WriteSubmissionState.KnownNotApplied, refused.SubmissionState);
+            Assert.Equal(message, refused.Message);
+            Assert.IsType(cause, refused.InnerException);
 
             Assert.DoesNotContain(session.Commands, command => command.CommandId < 0x80);
             Assert.Equal(baseline, session.McuLighting);
@@ -185,9 +196,11 @@ public sealed partial class SourceReviewedBladeModelTests
     {
         var session = new Session { McuLighting = [0, 5, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0] };
         await using var port = CreateMcuFrames(product, session);
-        Exception failure = await Assert.ThrowsAnyAsync<Exception>(() =>
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetLightingAsync(LightingSettingsFactory.Tidal(new(1, 2, 3), new(4, 5, 6), false, LightingDirection.Rightward, 60), default));
-        Assert.Contains("Off, Static, Breathing or Wave", failure.Message, StringComparison.Ordinal);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Equal("Host lighting can restore only Off, Static, Breathing or Wave. Choose one of them first.", failure.Message);
+        Assert.IsType<CapabilityUnavailableException>(failure.InnerException);
         Assert.DoesNotContain(session.Commands, command => command.CommandId < 0x80);
 
         // Spectrum itself stays a built-in effect, set through the legacy setter.
@@ -232,7 +245,8 @@ public sealed partial class SourceReviewedBladeModelTests
         CapabilityUnavailableException blocked = await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
             port.SetLightingAsync(LightingSettingsFactory.Fire(60), default));
         Assert.Contains("confirmed built-in", blocked.Message, StringComparison.Ordinal);
-        Assert.Equal(beforeLoss + 1, session.Commands.Count);
+        // One fresh read showed an effect other than the baseline; nothing was written.
+        Assert.Equal(new[] { "0F/82 region5", "0F/82 region5" }, session.Commands.Skip(beforeLoss).Select(DescribeMcu).ToArray());
 
         // An explicit built-in choice clears the custom flag and the journal.
         await port.SetLightingAsync(LightingSettingsFactory.BreathingSingle(new(11, 22, 33), 50), default);
@@ -256,10 +270,11 @@ public sealed partial class SourceReviewedBladeModelTests
         await port.PushUniformLightingFrameAsync(new(new RgbColor(9, 8, 7)), default);
         Assert.Equal(new[]
         {
+            "0F/82 region5",
             "03/0B row0", "03/0B row1", "03/0B row2", "03/0B row3", "03/0B row4", "03/0B row5",
             "0F/02 [0,5,8]", "0F/82 region5",
         }, session.Commands.Skip(beforeFirst).Select(DescribeMcu).ToArray());
-        Assert.All(session.Commands.Skip(beforeFirst).Take(6), row =>
+        Assert.All(session.Commands.Skip(beforeFirst + 1).Take(6), row =>
             Assert.Equal(Enumerable.Repeat(new byte[] { 9, 8, 7 }, 16).SelectMany(rgb => rgb), row.Arguments.Span[4..].ToArray()));
 
         int beforeSecond = session.Commands.Count;
@@ -353,8 +368,12 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.NotNull(storage.Journal.Load().Baseline);
         Assert.Equal(stage == "row" ? 3 : 6, session.Commands.Count(command => command.ClassId == 3 && command.CommandId == 0x0B));
         int count = session.Commands.Count;
-        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+        // Paused writes refuse the next renderer before any reconciliation read.
+        BladeWriteException paused = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetLightingAsync(LightingSettingsFactory.Fire(60), default));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, paused.SubmissionState);
+        Assert.Equal("Experimental writes are paused after an uncertain result. Check the current settings, then resume experimental controls.",
+            paused.Message);
         Assert.Equal(LightingRendererOwnershipState.Faulted, await port.RelinquishRendererAsync(default));
         Assert.Equal(count, session.Commands.Count);
         AssertMcuFrameContract(session);

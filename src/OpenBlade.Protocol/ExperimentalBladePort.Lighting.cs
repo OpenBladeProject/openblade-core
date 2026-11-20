@@ -580,10 +580,14 @@ internal sealed partial class ExperimentalBladePort
                 ?? sequenceEffect?.RenderFrame(TimeSpan.Zero)
                 ?? standardEffect?.RenderFrame(TimeSpan.Zero)
                 ?? Blade18LightingAnimation.Render(settings, TimeSpan.Zero) : null;
+        bool reconciledFaultedBaseline = false;
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            RequireLightingJournalAdmission(hostFrameRequest);
+            RequireLightingJournalAdmission(hostFrameRequest: false);
+            reconciledFaultedBaseline = await FaultedReviewedMcuBaselineStillReportedAsync(
+                hostFrameRequest, cancellationToken).ConfigureAwait(false);
+            RequireLightingJournalAdmission(hostFrameRequest, reconciledFaultedBaseline);
         }
         catch
         {
@@ -609,6 +613,9 @@ internal sealed partial class ExperimentalBladePort
         bool hostOwnershipAcquired = false;
         bool replacingOwnedFrame = IsOwnedFrameOwnership(priorOwnership);
         bool replacingFaultedFrame = priorOwnership == LightingRendererOwnershipState.Faulted;
+        // A fault normally invalidates the former baseline. A reconciled one is
+        // still the journaled destination, so the new owner keeps it.
+        bool recaptureFaultedBaseline = replacingFaultedFrame && !reconciledFaultedBaseline;
         bool startingHostFrameFromFault = replacingFaultedFrame
             && (animationRequest || settings.Effect is LightingEffect.AmbientAwareness
                 or LightingEffect.AudioMeter);
@@ -629,8 +636,32 @@ internal sealed partial class ExperimentalBladePort
             ? LightingBrightnessProtocol.PercentToRaw(settings.Brightness)
             : checked((byte)((settings.Brightness * 255 + 50) / 100));
         string requested = $"{settings.Effect};Raw={raw};Logo={settings.LogoMode?.ToString() ?? "Unchanged"}";
+        bool selectionCheckDeferred = false;
         try
         {
+            if (replacingOwnedFrame && hostFrameRequest && SupportsReviewedMcuKeyboardFrames(model)
+                && ReviewedMcuCustomFrameSelected())
+            {
+                // Replace frames only while this owner still holds custom mode 8.
+                // Check before draining the renderer, so a read refused before it
+                // reaches the device leaves the current owner running unchanged.
+                try
+                {
+                    RequireWriteAdmission();
+                    await RequireReviewedMcuCustomFrameSelectionAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (BladeWriteException deferred)
+                    when (deferred.FailurePhase == BladeWriteFailurePhase.LightingSelectionRead)
+                {
+                    selectionCheckDeferred = true;
+                    throw;
+                }
+                catch
+                {
+                    await StopAnimationCoreAsync().ConfigureAwait(false);
+                    throw;
+                }
+            }
             await StopAnimationCoreAsync().ConfigureAwait(false);
             RequireWriteAdmission();
             LightingSettings? baseline;
@@ -650,12 +681,6 @@ internal sealed partial class ExperimentalBladePort
                         .ConfigureAwait(false);
                     baseline = DecodeReviewedMcuEffect(baselineEffectPayload.Span,
                         checked((byte)LightingBrightnessProtocol.RawToPercent(baselineRaw)));
-                }
-                else if (hostFrameRequest && SupportsReviewedMcuKeyboardFrames(model)
-                    && ReviewedMcuCustomFrameSelected())
-                {
-                    // Replace frames only while this owner still holds custom mode 8.
-                    await RequireReviewedMcuCustomFrameSelectionAsync(cancellationToken).ConfigureAwait(false);
                 }
             }
             else if (replacingFaultedFrame && !startingHostFrameFromFault)
@@ -719,7 +744,15 @@ internal sealed partial class ExperimentalBladePort
             if (hostFrameRequest && SupportsReviewedMcuLighting(model)
                 && lightingOwnership.Journal is { } journal)
             {
-                ExperimentalLightingBaseline saved = lightingOwnership.Baseline ?? CaptureFrameBaseline();
+                // A faulted owner's baseline is replaced by the fresh reading;
+                // it reaches here only when that reading equals the journal.
+                // A reconciled journal stays pending with its original baseline.
+                if (reconciledFaultedBaseline)
+                {
+                    journal.AdoptReconciledPending(lightingOwnership.Baseline!);
+                }
+                ExperimentalLightingBaseline saved = recaptureFaultedBaseline
+                    ? CaptureFrameBaseline() : lightingOwnership.Baseline ?? CaptureFrameBaseline();
                 journal.SavePending(saved);
                 lightingOwnership.Baseline = saved;
                 if (priorBaseline is null)
@@ -758,7 +791,7 @@ internal sealed partial class ExperimentalBladePort
             bool setOnlyFrame = false;
             if (animationRequest)
             {
-                lightingOwnership.Baseline = replacingFaultedFrame
+                lightingOwnership.Baseline = recaptureFaultedBaseline
                     ? CaptureFrameBaseline()
                     : lightingOwnership.Baseline ?? CaptureFrameBaseline();
                 lightingOwnership.Intent = settings with { LogoMode = null };
@@ -803,23 +836,24 @@ internal sealed partial class ExperimentalBladePort
                     throw new CapabilityUnavailableException(
                         "Uniform host-rendered lighting is not admitted for this model.");
                 }
-                var hostBaseline = CaptureFrameBaseline();
-                if (replacingFaultedFrame)
+                if (recaptureFaultedBaseline || lightingOwnership.Baseline is null)
                 {
                     // A readable effect after a fault is the only safe baseline
                     // for this new ownership. Never retain the former owner's
-                    // stale restore destination.
-                    lightingOwnership.Baseline = hostBaseline;
+                    // stale restore destination. A replaced live owner keeps
+                    // its journaled baseline: its intent is not a destination.
+                    lightingOwnership.Baseline = CaptureFrameBaseline();
                 }
-                else
-                {
-                    lightingOwnership.Baseline ??= hostBaseline;
-                }
+                // A replaced live owner on the reviewed MCU images already selected
+                // mode 8. The pre-drain check confirmed it, so the first sample is
+                // monitored like any later one instead of re-selecting.
+                bool inheritedCustomSelection = SupportsReviewedMcuKeyboardFrames(model)
+                    && replacingOwnedFrame && !replacingFaultedFrame && ReviewedMcuCustomFrameSelected();
                 lightingOwnership.Intent = settings with { LogoMode = null };
                 SetLightingOwnership(settings.Effect == LightingEffect.AmbientAwareness
                     ? LightingRendererOwnershipState.AmbientAwareness
                     : LightingRendererOwnershipState.AudioMeter);
-                lightingOwnership.UniformFrameActivated = 0;
+                lightingOwnership.UniformFrameActivated = inheritedCustomSelection ? 1 : 0;
                 lightingOwnership.UniformFrameTimestamp = 0;
                 hostOwnershipAcquired = true;
                 await SelectRz090529VaporChamberFramesAsync(vaporChamberState, includesVaporChamber: true,
@@ -1078,12 +1112,13 @@ internal sealed partial class ExperimentalBladePort
 
             // A failed replacement cannot still claim an active renderer after
             // its loop was drained. Do not restart it after lost admission.
-            if (stoppedAnimation || (replacingOwnedFrame && submitted)
+            // A deferred ownership read ran before draining and changed nothing.
+            if (!selectionCheckDeferred && (stoppedAnimation || (replacingOwnedFrame && submitted)
                 || (newlyPendingJournal is not null && (submitted || indeterminate))
                 || (hostOwnershipAcquired && (submitted || indeterminate))
                 || frameActivationAttempted
                 || frameWriteAttempted
-                    && (submitted || indeterminate))
+                    && (submitted || indeterminate)))
             {
                 SetLightingFaulted();
             }
@@ -1253,7 +1288,7 @@ internal sealed partial class ExperimentalBladePort
             or LightingRendererOwnershipState.Wave
             or LightingRendererOwnershipState.Wheel;
 
-    private void RequireLightingJournalAdmission(bool hostFrameRequest)
+    private void RequireLightingJournalAdmission(bool hostFrameRequest, bool faultedBaselineStillReported = false)
     {
         if (lightingOwnership.Journal?.Load().Invalid == true)
         {
@@ -1264,8 +1299,11 @@ internal sealed partial class ExperimentalBladePort
             throw new CapabilityUnavailableException(
                 "The lighting recovery journal is invalid or unreadable. Repair the protected OpenBlade data storage and restart the OpenBlade service.");
         }
+        // A reviewed MCU that freshly reports exactly the journaled baseline can
+        // hand that baseline to the new renderer; see McuKeyboardFrames.
         if (hostFrameRequest && OwnershipState == LightingRendererOwnershipState.Faulted
-            && lightingOwnership.Journal is not null && lightingOwnership.Baseline is not null)
+            && lightingOwnership.Journal is not null && lightingOwnership.Baseline is not null
+            && !faultedBaselineStillReported)
         {
             throw new CapabilityUnavailableException(
                 "Lighting recovery requires a confirmed built-in destination before starting another renderer.");
@@ -1323,22 +1361,41 @@ internal sealed partial class ExperimentalBladePort
             // must not accidentally create a same-Off prerequisite.
             ReadOnlyMemory<byte> current = await ReadReviewedMcuEffectPayloadAsync(cancellationToken)
                 .ConfigureAwait(false);
-            if (SupportsReviewedMcuKeyboardFrames(model) && ReviewedMcuCustomFrameSelected()
-                && current.Span[2] != 8)
+            bool effectAlreadyRestored = false;
+            if (SupportsReviewedMcuKeyboardFrames(model)
+                && (current.Span[2] != 8 || !ReviewedMcuCustomFrameSelected()))
             {
-                // The firmware or another controller changed the selection; its
-                // custom flag may still show this owner's frame. Write nothing.
-                policy.Record("KeyboardStaticFrame", "Restore", "Skipped",
-                    requested: baseline.Settings.Effect.ToString(), confirmed: $"Mode{current.Span[2]}",
-                    failure: "ExternallyChanged");
-                throw new IOException(
-                    "The keyboard left custom lighting outside OpenBlade. Choose a lighting effect to restore it.");
+                bool selected = ReviewedMcuCustomFrameSelected();
+                if (!ReviewedMcuEffectMatchesBaseline(current.Span, baseline))
+                {
+                    // The firmware or another controller changed the effect; its
+                    // custom flag may still show this owner's frame. Write nothing.
+                    policy.Record("KeyboardStaticFrame", "Restore", "Skipped",
+                        requested: baseline.Settings.Effect.ToString(), confirmed: $"Mode{current.Span[2]}",
+                        failure: "ExternallyChanged");
+                    throw new IOException(selected
+                        ? "The keyboard left custom lighting outside OpenBlade. Choose a lighting effect to restore it."
+                        : "Another app changed the keyboard lighting, so OpenBlade left it unchanged. Choose a lighting effect to continue.");
+                }
+                // The reported effect is exactly the journaled destination. A
+                // sampled owner that never selected mode 8 needs no effect write.
+                // After a GPIO edge the flag and staging may remain, so the
+                // flag-clearing setter still completes a selected owner's restore.
+                effectAlreadyRestored = !selected;
+                if (selected)
+                {
+                    policy.Record("KeyboardStaticFrame", "Restore", "ExternallyRestoredToBaseline",
+                        requested: baseline.Settings.Effect.ToString(), confirmed: $"Mode{current.Span[2]}");
+                }
             }
-            LightingSettings? actual = DecodeReviewedMcuEffect(current.Span,
-                checked((byte)LightingBrightnessProtocol.RawToPercent(currentRaw)));
-            await SetReviewedMcuBuiltInEffectAsync(baseline.Settings, actual, current,
-                cancellationToken, markSubmitted).ConfigureAwait(false);
-            if (UsesLegacyReviewedMcuEffectSetter(model))
+            if (!effectAlreadyRestored)
+            {
+                LightingSettings? actual = DecodeReviewedMcuEffect(current.Span,
+                    checked((byte)LightingBrightnessProtocol.RawToPercent(currentRaw)));
+                await SetReviewedMcuBuiltInEffectAsync(baseline.Settings, actual, current,
+                    cancellationToken, markSubmitted).ConfigureAwait(false);
+            }
+            if (!effectAlreadyRestored && UsesLegacyReviewedMcuEffectSetter(model))
             {
                 // The legacy setter copies saved brightness into the active bank.
                 // Restore the original value only if that copy changed it.

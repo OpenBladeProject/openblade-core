@@ -202,10 +202,12 @@ internal sealed partial class ExperimentalBladePort
                             }
                         }
                     }
-                    catch (BladeWriteException exception) when (LightingRecoveryWriteGate.IsDeferral(exception))
+                    catch (BladeWriteException exception) when (LightingRecoveryWriteGate.IsDeferral(exception)
+                        || exception.FailurePhase == BladeWriteFailurePhase.LightingSelectionRead)
                     {
                         // Nothing was submitted. Advance to the next animation time;
-                        // recovery admission keeps every later row paused as needed.
+                        // recovery admission keeps every later row paused as needed,
+                        // and a refused ownership read observed no external change.
                     }
                     catch (Exception error)
                     {

@@ -96,6 +96,21 @@ internal sealed class ExperimentalLightingBaselineJournal
         }
     }
 
+    // A fresh exact-device read showed the keyboard reporting this pending baseline
+    // again. The record stays pending with its original destination, and this
+    // process may now hand it to a new owner; nothing is published or cleared.
+    internal void AdoptReconciledPending(ExperimentalLightingBaseline baseline)
+    {
+        ArgumentNullException.ThrowIfNull(baseline);
+        lock (gate)
+        {
+            EnsureUnchanged();
+            if (pending != baseline)
+            { throw new InvalidDataException("The original lighting baseline requires explicit built-in recovery."); }
+            capturedHere = true;
+        }
+    }
+
     // Require a confirmed built-in destination, or a confirmed baseline with a known pre-submission failure.
     // A durable cleared tombstone avoids deletion/recreation races; failure leaves recovery pending.
     internal void ClearAfterVerifiedRestoration()

@@ -30,18 +30,30 @@ internal sealed partial class ExperimentalBladePort
             or LightingRendererOwnershipState.AudioMeter)
         || lightingOwnership.UniformFrameActivated != 0;
 
-    // A GPIO bit-8 rising edge copies the saved records over the active ones
-    // without clearing the custom flag: 0F/82 then reports the saved mode
-    // while the old frame stays visible. Another controller can also select an
-    // effect. Any mode other than 8 therefore ends this owner's frames with no
-    // further write; a restore could overwrite another controller's choice.
-    // A later explicit built-in selection uses 03/0A, which clears the flag.
-    private async Task RequireReviewedMcuCustomFrameSelectionAsync(CancellationToken token)
+    // The operation gate, transaction budget or session lifetime refused the
+    // read before it reached the MCU. Nothing about ownership was observed.
+    private static bool IsUnobservedSelectionReadFailure(Exception error) =>
+        error is ObjectDisposedException
+        || error is NativeDeviceReadException
+        {
+            Failure: HidSessionFailureKind.QueuedCanceled or HidSessionFailureKind.Exhausted
+                or HidSessionFailureKind.Disposed,
+        };
+
+    private async Task<ReadOnlyMemory<byte>> ReadReviewedMcuSelectionAsync(CancellationToken token)
     {
-        byte mode;
         try
         {
-            mode = (await ReadReviewedMcuEffectPayloadAsync(token).ConfigureAwait(false)).Span[2];
+            return await ReadReviewedMcuEffectPayloadAsync(token).ConfigureAwait(false);
+        }
+        catch (Exception error) when (IsUnobservedSelectionReadFailure(error))
+        {
+            // Skip this frame. No row was sent, so ownership and the journal stay.
+            policy.Record("KeyboardAnimationFrame", "Ownership", "Deferred",
+                failure: error is NativeDeviceReadException read ? read.Failure.ToString() : error.GetType().Name);
+            throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                BladeWriteFailurePhase.LightingSelectionRead,
+                "The keyboard lighting state could not be read, so this frame was skipped.", error);
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
@@ -50,14 +62,86 @@ internal sealed partial class ExperimentalBladePort
                 failure: "CustomSelectionReadFailed");
             throw;
         }
-        if (mode != 8)
+    }
+
+    // Mode and parameters only. Brightness is a separate field that OpenBlade
+    // itself adjusts after entry on these legacy setters.
+    private bool ReviewedMcuEffectMatchesBaseline(ReadOnlySpan<byte> payload, ExperimentalLightingBaseline baseline) =>
+        DecodeReviewedMcuEffect(payload, baseline.Settings.Brightness) is { } actual
+        && KeyboardSettingsMatch(actual, baseline.Settings);
+
+    // A GPIO bit-8 rising edge or an MCU reset copies the saved records over
+    // the active ones, so 0F/82 then reports the saved effect. After a reset
+    // the custom flag is clear; after the GPIO edge it stays set and staging
+    // stays visible, so the reported mode never proves the frame is gone.
+    // When the reported effect equals the journaled baseline, the flag-clearing
+    // legacy setter can still complete restoration, and a new renderer can
+    // take over with that same baseline: neither overwrites another choice.
+    private async Task<bool> FaultedReviewedMcuBaselineStillReportedAsync(bool hostFrameRequest,
+        CancellationToken token)
+    {
+        if (!hostFrameRequest || !SupportsReviewedMcuKeyboardFrames(model)
+            || OwnershipState != LightingRendererOwnershipState.Faulted
+            || lightingOwnership.Journal is null || lightingOwnership.Baseline is not { } baseline)
         {
-            SetLightingFaulted();
-            policy.Record("KeyboardAnimationFrame", "Ownership", "ExternallyChanged",
-                confirmed: $"Mode{mode}", failure: "CustomSelectionLost");
-            throw new IOException(
-                "The keyboard left custom lighting outside OpenBlade, so host lighting stopped. Choose a lighting effect to continue.");
+            return false;
         }
+        // Paused or unadmitted writes keep their own refusal and spend no read.
+        RequireWriteAdmission();
+        try
+        {
+            ReadOnlyMemory<byte> payload = await ReadReviewedMcuEffectPayloadAsync(token).ConfigureAwait(false);
+            if (!ReviewedMcuEffectMatchesBaseline(payload.Span, baseline))
+            {
+                return false;
+            }
+            policy.Record("KeyboardLighting", "Baseline", "ExternallyRestoredToBaseline",
+                requested: baseline.Settings.Effect.ToString(), confirmed: $"Mode{payload.Span[2]}");
+            return true;
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            // Unreadable state keeps the existing fail-closed refusal.
+            return false;
+        }
+    }
+
+    // Any mode other than 8 ends this owner's frames with no further write; a
+    // restore could overwrite another controller's choice. A later explicit
+    // built-in selection uses 03/0A, which clears the custom flag.
+    private async Task RequireReviewedMcuCustomFrameSelectionAsync(CancellationToken token)
+    {
+        ReadOnlyMemory<byte> payload = await ReadReviewedMcuSelectionAsync(token).ConfigureAwait(false);
+        byte mode = payload.Span[2];
+        if (mode == 8)
+        {
+            return;
+        }
+        bool baselineReported = lightingOwnership.Baseline is { } baseline
+            && ReviewedMcuEffectMatchesBaseline(payload.Span, baseline);
+        SetLightingFaulted();
+        policy.Record("KeyboardAnimationFrame", "Ownership",
+            baselineReported ? "ExternallyRestoredToBaseline" : "ExternallyChanged",
+            confirmed: $"Mode{mode}", failure: "CustomSelectionLost");
+        throw new IOException(
+            "The keyboard left custom lighting outside OpenBlade, so host lighting stopped. Choose a lighting effect to continue.");
+    }
+
+    // A sampled owner selects mode 8 only with its first frame. Until then the
+    // keyboard must still show the journaled baseline effect; anything else is
+    // another controller's change, so stop without writing or restoring.
+    private async Task RequireReviewedMcuBaselineStillShownAsync(CancellationToken token)
+    {
+        ReadOnlyMemory<byte> payload = await ReadReviewedMcuSelectionAsync(token).ConfigureAwait(false);
+        if (lightingOwnership.Baseline is { } baseline && ReviewedMcuEffectMatchesBaseline(payload.Span, baseline))
+        {
+            return;
+        }
+        SetLightingFaulted();
+        policy.Record("KeyboardAnimationFrame", "Ownership", "ExternallyChanged",
+            confirmed: $"Mode{payload.Span[2]}", failure: "BaselineChangedBeforeFirstFrame");
+        throw new IOException(
+            "Another app changed the keyboard lighting, so host lighting stopped. Choose a lighting effect to continue.");
     }
 
     // Ownership is re-read once per frame batch, before any of its rows, so
@@ -68,9 +152,16 @@ internal sealed partial class ExperimentalBladePort
     {
         byte[][] rows = Enumerable.Range(0, ExperimentalBladeLightingFrame.RowCount)
             .Select(row => ExperimentalBladeLightingFrame.CreateRow(row, colors, padded: false)).ToArray();
+        // Admission precedes the ownership read: a refused write spends no
+        // device read, and a read never stands in for admission.
+        RequireWriteAdmission();
         if (!activate)
         {
             await RequireReviewedMcuCustomFrameSelectionAsync(token).ConfigureAwait(false);
+        }
+        else if (!ReviewedMcuCustomFrameSelected())
+        {
+            await RequireReviewedMcuBaselineStillShownAsync(token).ConfigureAwait(false);
         }
         bool submitted = false;
         try
