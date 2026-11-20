@@ -4,7 +4,7 @@ use crate::service_status::FanOverride;
 use crate::thermal_history::Entry;
 use openblade_domain::{
     fan_history::{CONTRACT, FanRecord},
-    fan_recipe::{FanIntent, Plan},
+    fan_recipe::{FanIntent, Plan, automatic_handback},
 };
 use serde_json::{Value, json};
 pub(super) struct FanPermit {
@@ -158,7 +158,7 @@ impl Permit for FanPermit {
     fn resolve_fan(
         &self,
         power: i32,
-        baseline: ObservedPerformance,
+        _baseline: ObservedPerformance,
     ) -> io::Result<Option<(FanIntent, Option<Preset>)>> {
         if self.authorize().is_none() {
             return Ok(None);
@@ -196,11 +196,11 @@ impl Permit for FanPermit {
         }
         *self.performance.lock().map_err(|_| io::ErrorKind::Other)? = performance;
         *self.selected.lock().map_err(|_| io::ErrorKind::Other)? = Some((power, settings));
-        Ok(intent
-            .filter(|i| Plan::select_toward(baseline, *i, power, performance).is_some())
-            .map(|i| (i, performance)))
+        // The Reader selects the plan; an Automatic intent without one may still
+        // be firmware's own state (`automatic_handback`), which writes nothing.
+        Ok(intent.map(|i| (i, performance)))
     }
-    fn confirm_fan_noop(&self, source: i32, baseline: ObservedPerformance) -> io::Result<()> {
+    fn confirm_fan_noop(&self, _source: i32, baseline: ObservedPerformance) -> io::Result<()> {
         self.authorize().ok_or(io::ErrorKind::PermissionDenied)?;
         let mut prior = self.prior.lock().map_err(|_| io::ErrorKind::Other)?;
         if let Some(owner) = prior.as_ref() {
@@ -210,22 +210,20 @@ impl Permit for FanPermit {
                 .map_err(|_| io::ErrorKind::Other)?
                 .clone()
                 .ok_or(io::ErrorKind::PermissionDenied)?;
-            let auto = Plan::select(baseline, FanIntent::checked(0, 3700).unwrap(), source)
-                .ok_or(io::ErrorKind::PermissionDenied)?;
-            // The owner's selector is not compared: Automatic fans are firmware's
-            // own handback state under either selector, and managed's
+            // Neither the owner's selector nor its power source is compared:
+            // Automatic fans are firmware's own handback state under any stock
+            // selector and source, and managed's
             // `ExactFanControlOwnership.ObserveTopology` clears ownership on any
             // confirmed Automatic. Writing the old selector back first would be
-            // an intermediate write with no firmware reason.
+            // an intermediate write with no firmware reason. The 51 row repeats
+            // the owner's exact record, including its recorded source.
             if !owner.owned.load(Ordering::Acquire)
                 || owner.release.load(Ordering::Acquire)
                 || !matches!(
                     record.contract.as_str(),
                     CONTRACT | openblade_domain::fan_history::PREVIOUS_CONTRACT
                 )
-                || record.source != source
-                || !auto.unchanged
-                || !auto.confirms(baseline)
+                || !automatic_handback(baseline)
                 || self.storage.pending()
             {
                 return Err(io::ErrorKind::PermissionDenied.into());
@@ -565,11 +563,17 @@ impl Runtime {
             .performance
             .lock()
             .map_err(|_| io::ErrorKind::Other)?;
+        let observed = result.as_ref().ok().copied().flatten();
+        // Without a native plan (battery, Silent and battery selectors) a no-op
+        // can leave a carried preset unapplied: claim it only when confirmed.
+        let matched = performance.filter(|p| {
+            observed.is_some_and(|o| openblade_domain::thermal_mutation::confirms(o, *p))
+        });
         let mut message = match (status, permit.prepared.load(Ordering::Acquire), performance) {
-            (1, false, Some(preset)) => format!(
+            (1, false, Some(preset)) if matched.is_some() => format!(
                 "Fans and {preset:?} performance already matched the requested state; no fan setter was submitted and no ownership was established."
             ),
-            (1, false, None) => "Automatic mode independently observed; no fan setter was submitted and no ownership was established.".into(),
+            (1, false, _) => "Automatic mode independently observed; no fan setter was submitted and no ownership was established.".into(),
             (1, true, Some(preset)) => format!(
                 "Fans returned to Automatic with {preset:?} performance, confirmed by independent paired readback."
             ),
@@ -579,27 +583,20 @@ impl Runtime {
         // return to that selector: name the one firmware reports instead.
         let released = *permit.released.lock().map_err(|_| io::ErrorKind::Other)?;
         if status == 1
-            && let (Some(owned), Some(observed)) =
-                (released, result.as_ref().ok().copied().flatten())
-            && let [Some(owned), Some(observed)] = [
-                [Preset::Balanced, Preset::Performance]
-                    .into_iter()
-                    .find(|p| p.selector() == owned),
-                [Preset::Balanced, Preset::Performance]
-                    .into_iter()
-                    .find(|p| openblade_domain::thermal_mutation::confirms(observed, *p)),
-            ]
-            && owned != observed
+            && let (Some(owned), Some(observed)) = (released, observed)
+            && let Some(firmware) = observed.projection().0.and_then(preset_words)
+            && let Some(recorded) = preset_words(if owned == 2 { 2 } else { 1 })
+            && recorded != firmware
         {
             message.push_str(&format!(
-                " OpenBlade's earlier fan change under {owned:?} was released without a fan setter: firmware already reports Automatic fans under {observed:?}."
+                " OpenBlade's earlier fan change under {recorded} was released without a fan setter: firmware already reports Automatic fans under {firmware}."
             ));
         }
         if status == 1 && permit.performance_gpu.load(Ordering::Acquire) {
             message.push_str(
                 " The saved performance intent was not applied: GPU clock handling is incomplete.",
             );
-        } else if status == 1 && performance.is_none() {
+        } else if status == 1 && matched.is_none() {
             // Managed's trigger is request-level (`previousManual`), so a retry after
             // a refused return, or fans already Automatic, carries no preset. Say so
             // when the confirmed selector is not the saved native preset.
@@ -608,14 +605,24 @@ impl Runtime {
                 .lock()
                 .map_err(|_| io::ErrorKind::Other)?
                 .clone();
-            let observed = result.as_ref().ok().copied().flatten();
             if let (Some((power, settings)), Some(observed)) = (selected, observed)
                 && settings["mode"].as_u64() == Some(0)
-                && let Some(preset) = permit.handback_preset(power)?
+                && let Some(preset) = match performance {
+                    Some(preset) => Some(preset),
+                    None => permit.handback_preset(power)?,
+                }
                 && !openblade_domain::thermal_mutation::confirms(observed, preset)
             {
+                let next = if FanIntent::checked(0, 3700)
+                    .and_then(|auto| Plan::select(observed, auto, power))
+                    .is_some()
+                {
+                    "submit a new performance request to apply it"
+                } else {
+                    "this source or observed mode needs a native recipe that is not yet implemented"
+                };
                 message.push_str(&format!(
-                    " The saved {preset:?} performance intent was not applied: submit a new performance request to apply it."
+                    " The saved {preset:?} performance intent was not applied: {next}."
                 ));
             }
         }
@@ -737,4 +744,15 @@ impl Runtime {
         }
         Ok(())
     }
+}
+/// Managed `PerformancePreset` words for a confirmed performance wire value.
+fn preset_words(wire: i32) -> Option<&'static str> {
+    Some(match wire {
+        0 => "Silent",
+        1 => "Balanced",
+        2 => "Performance",
+        3 => "Battery Saver",
+        4 => "Battery Balanced",
+        _ => return None,
+    })
 }

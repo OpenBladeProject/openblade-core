@@ -5172,17 +5172,149 @@ async fn fan_foreign_selector_close_journals_match_the_shared_vector() {
     let journal = |r: &Rig| {
         String::from_utf8(r.files.read("thermal-mutation.journal").unwrap().unwrap()).unwrap()
     };
-    for stop in [false, true] {
-        let r = foreign_selector_rig(0, [2; 2], [0; 2], 15).await;
-        assert_eq!(journal(&r), v["owned"].as_str().unwrap());
-        if !stop {
-            let out = r.request(fan_request(232, Some(0), 3700)).await;
-            assert_eq!(out["result"]["status"], 1, "{out}");
+    // The 51 row repeats the owner's record, so a close after a change to the
+    // limited adapter or to battery writes the same bytes: source stays 0.
+    for (now, observed) in [(15, [2; 2]), (10, [2; 2]), (0, [3; 2])] {
+        for stop in [false, true] {
+            let r = foreign_selector_rig(0, observed, [0; 2], 15).await;
+            assert_eq!(journal(&r), v["owned"].as_str().unwrap());
+            r.port.state.lock().unwrap().actual = now;
+            if !stop {
+                let out = r.request(fan_request(232, Some(0), 3700)).await;
+                assert_eq!(out["result"]["status"], 1, "{out}");
+            }
+            r.origin.stop();
+            r.stop().await;
+            assert_eq!(journal(&r), v["closed"].as_str().unwrap());
+            assert_eq!(r.port.state.lock().unwrap().writes, 4);
         }
+    }
+}
+// After a power class change, or on battery where no native plan exists, an
+// unambiguous Automatic readback is still firmware's own handback state.
+#[cfg(feature = "service-fan-mutation-v2")]
+async fn power_change_rig(start: u8, now: u8, observed: [u8; 2], fans: [u8; 2]) -> Rig {
+    let r = foreign_selector_rig(0, observed, fans, start).await;
+    r.port.state.lock().unwrap().actual = now;
+    r
+}
+/// Adapter classes as fixture 07/8C levels: full 15, limited 10, battery 0.
+#[cfg(feature = "service-fan-mutation-v2")]
+const POWER_CHANGES: [(u8, u8, [u8; 2]); 6] = [
+    (15, 10, [2; 2]),
+    (10, 15, [2; 2]),
+    (15, 0, [3; 2]),
+    (10, 0, [6; 2]),
+    (15, 0, [0; 2]),
+    // Silent has no native plan on either adapter.
+    (15, 15, [5; 2]),
+];
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_automatic_after_a_power_change_or_on_battery_settles_without_a_setter() {
+    for (start, now, observed) in POWER_CHANGES {
+        let r = power_change_rig(start, now, observed, [0; 2]).await;
+        let closed = owner_row(&r, 51);
+        let out = r.request(fan_request(232, Some(0), 3700)).await;
+        assert_eq!(out["result"]["status"], 1, "{start}->{now} {out}");
+        let message = out["result"]["message"].as_str().unwrap();
+        assert!(
+            message
+                .starts_with("Automatic mode independently observed; no fan setter was submitted")
+                || message.starts_with("Fans and Performance performance already matched"),
+            "{message}"
+        );
+        // Only a selector other than the recorded Balanced one is named.
+        assert_eq!(
+            message.contains("released without a fan setter"),
+            observed != [0; 2],
+            "{message}"
+        );
+        // The row keeps the owner's recorded source, not the current class.
+        assert_eq!(*fan_rows(&r).last().unwrap(), closed);
+        assert_eq!(closed["fan"]["source"], if start == 15 { 0 } else { 2 });
+        assert!(request_rows(&r, 232).is_empty());
+        assert!(!r.storage.outstanding_fan());
+        let journal = r.files.read("thermal-mutation.journal").unwrap();
         r.origin.stop();
         r.stop().await;
-        assert_eq!(journal(&r), v["closed"].as_str().unwrap());
+        assert_eq!(r.files.read("thermal-mutation.journal").unwrap(), journal);
         assert_eq!(r.port.state.lock().unwrap().writes, 4);
+
+        let r = power_change_rig(start, now, observed, [0; 2]).await;
+        let closed = owner_row(&r, 51);
+        r.origin.stop();
+        r.stop().await;
+        assert_eq!(*fan_rows(&r).last().unwrap(), closed, "{start}->{now}");
+        assert!(!r.storage.outstanding_fan());
+        let state = r.port.state.lock().unwrap();
+        assert_eq!(
+            (state.writes, state.selectors, state.fans),
+            (4, observed, [0; 2])
+        );
+    }
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_power_change_close_refuses_an_ambiguous_readback() {
+    for (start, now, observed) in POWER_CHANGES {
+        // Channels disagree: no observation, no row, no setter.
+        let split = [observed[0], if observed[0] == 2 { 0 } else { 2 }];
+        let r = power_change_rig(start, now, split, [0; 2]).await;
+        let (owned, closed) = (owner_row(&r, 30), owner_row(&r, 51));
+        let out = r.request(fan_request(232, Some(0), 3700)).await;
+        assert_eq!(out["result"]["status"], 2, "{start}->{now} {out}");
+        assert_eq!(*fan_rows(&r).last().unwrap(), owned);
+        assert!(r.storage.outstanding_fan());
+        assert_eq!(r.port.state.lock().unwrap().writes, 4);
+        // Once both channels agree, the same request settles without a setter.
+        r.port.state.lock().unwrap().selectors = observed;
+        let out = r.request(fan_request(233, Some(0), 3700)).await;
+        assert_eq!(out["result"]["status"], 1, "{start}->{now} {out}");
+        assert_eq!(*fan_rows(&r).last().unwrap(), closed);
+        assert_eq!(r.port.state.lock().unwrap().writes, 4);
+        r.origin.stop();
+        r.stop().await;
+
+        // Stop keeps its one-shot fail-closed refusal on the same readback.
+        let r = power_change_rig(start, now, split, [0; 2]).await;
+        let owned = owner_row(&r, 30);
+        r.origin.stop();
+        assert!(r.source.lock().await.drain().await.is_err());
+        assert_eq!(*fan_rows(&r).last().unwrap(), owned);
+        assert!(r.storage.outstanding_fan());
+        assert_eq!(r.port.state.lock().unwrap().writes, 4);
+    }
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_manual_readback_after_a_power_change_keeps_its_existing_outcomes() {
+    // Regression guard, unchanged: manual fans are not firmware's handback state.
+    for now in [10, 0] {
+        // Stop's write path keeps the owner's recorded source, so it refuses.
+        let r = power_change_rig(15, now, [0; 2], [1; 2]).await;
+        let owned = owner_row(&r, 30);
+        r.origin.stop();
+        assert!(r.source.lock().await.drain().await.is_err());
+        assert_eq!(*fan_rows(&r).last().unwrap(), owned);
+        assert_eq!(r.port.state.lock().unwrap().writes, 4);
+        // An explicit return writes its pair on the limited adapter and has no
+        // battery recipe.
+        let r = power_change_rig(15, now, [0; 2], [1; 2]).await;
+        let out = r.request(fan_request(232, Some(0), 3700)).await;
+        if now == 10 {
+            assert_eq!(out["result"]["status"], 1, "{out}");
+            assert_eq!(r.port.state.lock().unwrap().writes, 6);
+            assert_eq!(request_rows(&r, 232).last().unwrap()["progress"], 50);
+            assert!(!r.storage.outstanding_fan());
+            r.origin.stop();
+            r.stop().await;
+        } else {
+            assert_eq!(out["result"]["status"], 2, "{out}");
+            assert_eq!(r.port.state.lock().unwrap().writes, 4);
+            assert_eq!(*fan_rows(&r).last().unwrap(), owner_row(&r, 30));
+            assert!(r.storage.outstanding_fan());
+        }
     }
 }
 #[cfg(feature = "service-fan-mutation-v2")]

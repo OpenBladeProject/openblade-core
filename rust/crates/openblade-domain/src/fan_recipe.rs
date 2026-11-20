@@ -24,6 +24,22 @@ impl FanIntent {
         self.mode != 0
     }
 }
+/// Fans firmware reports as Automatic under a stock preset selector: firmware's
+/// own handback state, whatever the power source and whether a native recipe
+/// exists for that selector. Managed releases fan ownership on any confirmed
+/// Automatic (`ExactFanControlOwnership.ObserveTopology`). Custom and the
+/// HyperBoost overlay stay excluded, as before: neither is a stock preset
+/// state, and HyperBoost can force a composite state over manual fans.
+pub fn automatic_handback(o: O) -> bool {
+    matches!(
+        o,
+        O::BalancedAutomatic
+            | O::PerformanceAutomatic
+            | O::SilentAutomatic
+            | O::BatterySaverAutomatic
+            | O::BatteryBalancedAutomatic
+    )
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Plan {
     pub intent: FanIntent,
@@ -99,6 +115,39 @@ impl Plan {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn automatic_handback_needs_stock_automatic_fans_not_a_plan() {
+        let auto = FanIntent::checked(0, 3700).unwrap();
+        for o in [
+            O::BalancedAutomatic,
+            O::PerformanceAutomatic,
+            O::SilentAutomatic,
+            O::BatterySaverAutomatic,
+            O::BatteryBalancedAutomatic,
+        ] {
+            assert!(automatic_handback(o), "{o:?}");
+            // Battery has no plan at all, yet the fans are already handed back.
+            assert!(Plan::select(o, auto, 1).is_none());
+        }
+        for o in [
+            O::SilentManual,
+            O::PerformanceManual,
+            O::BatterySaverManual,
+            O::BatteryBalancedManual,
+            O::FixedMaximum,
+            O::HyperBoostObserved,
+            O::Custom {
+                manual: false,
+                levels: None,
+            },
+            O::Custom {
+                manual: true,
+                levels: None,
+            },
+        ] {
+            assert!(!automatic_handback(o), "{o:?}");
+        }
+    }
     #[test]
     fn checked_direct_recipes_keep_unknown_fields_unknown() {
         for rpm in [2000, 2100, 3700, 4000, 5400] {

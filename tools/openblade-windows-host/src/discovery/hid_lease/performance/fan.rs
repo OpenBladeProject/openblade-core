@@ -3,7 +3,7 @@ use super::mutation::{Permit, Refusal};
 use super::*;
 use openblade_domain::{
     fan_history::CONTRACT,
-    fan_recipe::{FanIntent, Plan},
+    fan_recipe::{FanIntent, Plan, automatic_handback},
 };
 use openblade_protocol::fan::FanPair;
 impl<P: Port> Reader<P, ReadAdmission> {
@@ -48,15 +48,16 @@ impl<P: Port> Reader<P, ReadAdmission> {
         let source = power.source()?;
         let (plan, record, ids) = if cleanup {
             let r = permit.fan_record()?;
-            // Automatic fans in this fresh 0D/82 readback are firmware's own
-            // handback state under either selector; the selector is performance
-            // state, not the owned manual-fan obligation. Managed writes nothing
-            // then (`OwnedManualFanHandbackBlockReason`: "already uses
-            // firmware-managed Automatic mode") and `ObserveTopology` clears
-            // ownership, so settle with 51 and no setter. An unclassified or
-            // disagreeing readback has no plan and stays fenced.
-            let auto = Plan::select(baseline, FanIntent::checked(0, 3700)?, source)?;
-            if auto.unchanged && auto.confirms(baseline) && source == r.source {
+            // Automatic fans in this fresh, agreeing 0D/82 pair are firmware's
+            // own handback state, under any stock selector and power source; the
+            // selector and source are not the owned manual-fan obligation.
+            // Managed writes nothing then (`OwnedManualFanHandbackBlockReason`:
+            // "already uses firmware-managed Automatic mode") and
+            // `ObserveTopology` clears ownership, so settle with 51 before any
+            // plan exists: battery and recipe-less selectors never reach a setter.
+            // A disagreeing or unclassified readback has no baseline; Custom and
+            // HyperBoost stay fenced below.
+            if automatic_handback(baseline) {
                 permit.record_fan(51).ok()?;
                 return Some(baseline);
             }
@@ -72,11 +73,17 @@ impl<P: Port> Reader<P, ReadAdmission> {
             // back to firmware without applying saved settings. An explicit
             // return to Automatic applies the saved preset in the same pair.
             let (intent, performance) = permit.resolve_fan(source, baseline).ok()??;
-            let plan = Plan::select_toward(baseline, intent, source, performance)?;
-            if plan.unchanged {
+            let plan = Plan::select_toward(baseline, intent, source, performance);
+            // Automatic requested and already reported: a true no-op when the
+            // plan is unchanged or no native plan exists (battery, Silent and
+            // battery selectors). Nothing is written; the reply names any saved
+            // preset left unapplied. A plan that changes the selector applies it.
+            if !intent.manual() && automatic_handback(baseline) && plan.is_none_or(|p| p.unchanged)
+            {
                 permit.confirm_fan_noop(source, baseline).ok()?;
                 return Some(baseline);
             } // No ownership, no journal or setter.
+            let plan = plan?;
             let mut reserve = || {
                 self.port.reserve_pair().or_else(|| {
                     permit.refused(Refusal::TransactionCapacity);
