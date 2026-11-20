@@ -696,6 +696,14 @@ unrelated worktrees and checkout changes.
    draft PR first, then add the verified reference before marking it ready or
    merging. Preserve existing references and published release snapshots;
    reference-only corrections to `Unreleased` must link the original PR.
+   Credit outside contributors in every changelog bullet that includes their
+   code. An outside contributor is a pull request author or commit co-author
+   who is not an owner, member or collaborator of the repository; check the
+   GitHub author association, not the name. Put the credit before the pull
+   request link as `Thanks to [@login](https://github.com/login).`, listing
+   each contributor. This covers code only, not issue reports, logs or
+   testing. Keep the credit when a maintainer finishes or rewrites an outside
+   contribution.
    The Nightly workflow treats each published tag as a release boundary, attaches
    an exact-source changelog snapshot, and opens or updates a draft pull request
    that moves included entries into dated `## [X.Y.Z-nightly.N] - YYYY-MM-DD`
