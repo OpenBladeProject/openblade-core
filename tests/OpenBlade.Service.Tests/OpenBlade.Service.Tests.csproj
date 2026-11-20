@@ -22,6 +22,8 @@
     <None Include="../Fixtures/Parity/managed-mailbox-handoff-v2.json" Link="managed-mailbox-handoff-v2.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/Parity/managed-mailbox-handoff-v1.json" Link="managed-mailbox-handoff-v1.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="WindowsReplay\v1\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/profile-set-vectors-v27.json" Link="profile-set-vectors-v27.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../tools/openblade-windows-host/tests/data/profile-capabilities-rz09-0581.json" Link="profile-capabilities-rz09-0581.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

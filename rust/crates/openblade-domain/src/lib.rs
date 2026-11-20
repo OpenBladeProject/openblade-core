@@ -4,7 +4,7 @@
 //! enum payloads and display values retain the host's validation order.
 #![no_std]
 
-#[cfg(feature = "thermal-history")]
+#[cfg(any(feature = "thermal-history", feature = "profile-set"))]
 extern crate std;
 
 #[cfg(feature = "thermal-history")]
@@ -12,6 +12,8 @@ pub mod battery_history;
 #[cfg(feature = "thermal-history")]
 pub mod fan_history;
 pub mod fan_recipe;
+#[cfg(feature = "profile-set")]
+pub mod profile_set;
 #[cfg(feature = "thermal-history")]
 pub mod temporary_charge_history;
 pub mod thermal_mutation;

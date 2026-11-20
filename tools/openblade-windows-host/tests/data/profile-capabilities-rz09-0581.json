@@ -1,0 +1,85 @@
+{
+  "performancePresets": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "fanModes": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "lightingEffects": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13
+  ],
+  "fanSpeedRange": {
+    "minimumRpm": 2000,
+    "maximumRpm": 5400,
+    "stepRpm": 100
+  },
+  "fanSpeedRangesByPerformancePreset": [],
+  "customPerformance": {
+    "allowedCombinations": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        2,
+        1
+      ]
+    ],
+    "supportsMaximumFans": false
+  },
+  "keyboardLightingLayoutId": "openblade.razer.rz09-0581.keyboard.6x17.v1",
+  "supportsBreathingColorSelection": true,
+  "supportedBreathingColorModes": null,
+  "supportsWaveDirectionSelection": true,
+  "supportsIndependentLightingControls": false,
+  "supportsVaporChamberLighting": false,
+  "supportsTouchpadStatusIndicator": false,
+  "reportsPerformanceWithManualFans": false,
+  "supportsManualFansOnLimitedPower": true,
+  "supportsBatterySaverFanStop": false
+}

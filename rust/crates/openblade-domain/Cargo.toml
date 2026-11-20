@@ -13,6 +13,9 @@ workspace = true
 # Pure bounded parsing/commitments use allocation and std::io error values;
 # no platform APIs. The existing allocation-free policy core stays no_std.
 thermal-history = ["dep:serde", "dep:serde_json", "dep:sha2"]
+# The managed ProfileSet model, codec and validator. Pure rules over std
+# collections with their own JSON reader and writer; no serde, no platform APIs.
+profile-set = []
 
 [dependencies]
 openblade-types.workspace = true
@@ -24,3 +27,4 @@ sha2 = { version = '=0.10.9', optional = true }
 [dev-dependencies]
 serde = { version = '=1.0.228', features = ['derive'] }
 serde_json = '=1.0.149'
+sha2 = '=0.10.9'
