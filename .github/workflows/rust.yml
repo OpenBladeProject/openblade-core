@@ -285,8 +285,11 @@ jobs:
           # One run per filter, so a filter that matches no test fails the step.
           foreach ($run in @(
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'service_status::object_tests'),
-              # Managed's unsupported reply, in the widest and the read-only Service.
+              # Managed's unsupported reply in every Service lane: each one
+              # pins a different row of the compiled `serves` table.
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'unserved'),
+              @('openblade-windows-service-candidate', 'service-fan-mutation-v2', 'unserved'),
+              @('openblade-windows-service-candidate', 'service-thermal-mutation-v1', 'unserved'),
               @('openblade-windows-service-candidate', 'service-metadata-only-v1', 'unserved'),
               ($agent + 'service_status::object_tests'),
               ($agent + 'display_query::recovery'),

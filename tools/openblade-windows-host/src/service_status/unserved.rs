@@ -127,11 +127,11 @@ mod tests {
         serde_json::to_vec(value).unwrap()
     }
 
-    #[test]
-    fn served_operation_list_is_each_variant_discriminator() {
+    // One valid request per variant: each decodes wherever it is compiled.
+    fn variants() -> [StatusRequest; 9] {
         let id = || ID.to_owned();
         let version = PROTOCOL_VERSION;
-        let variants = [
+        [
             StatusRequest::SetBatteryPolicy {
                 version,
                 request_id: id(),
@@ -178,12 +178,16 @@ mod tests {
             StatusRequest::ObserveState {
                 include_live_readings: false,
                 requested_live_readings: 0,
-                effective_live_readings: None,
+                effective_live_readings: Some(0),
                 version,
                 request_id: id(),
             },
-        ];
-        let tags: BTreeSet<_> = variants
+        ]
+    }
+
+    #[test]
+    fn served_operation_list_is_each_variant_discriminator() {
+        let tags: BTreeSet<_> = variants()
             .iter()
             .map(|variant| {
                 let tag = serde_json::to_value(variant).unwrap()["operation"].clone();
@@ -192,6 +196,28 @@ mod tests {
             })
             .collect();
         assert_eq!(tags, StatusRequest::OPERATIONS.into_iter().collect());
+    }
+
+    // The compiled feature table in `serves` matches what the typed decoder
+    // admits in this lane, for every variant.
+    #[test]
+    fn served_operations_are_exactly_those_the_typed_decoder_admits() {
+        for variant in variants() {
+            let operation = variant.operation();
+            let payload = serde_json::to_vec(&variant).unwrap();
+            let decoded = StatusRequest::decode(&payload).map(|_| ());
+            assert_eq!(
+                decoded.is_ok(),
+                StatusRequest::serves(operation),
+                "{operation}: {decoded:?}"
+            );
+            // A served variant is never also taken as unserved.
+            assert_eq!(
+                UnservedRequest::decode(&payload).is_ok(),
+                !StatusRequest::serves(operation),
+                "{operation}"
+            );
+        }
     }
 
     #[test]

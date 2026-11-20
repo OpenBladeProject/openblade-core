@@ -1,6 +1,7 @@
 //! Managed's typed unsupported reply for known operations this composition
 //! does not serve, and the unchanged fail-closed handling of everything else.
 use super::*;
+use std::cell::Cell;
 use tokio::io::AsyncReadExt;
 
 const ID: &str = "CCCCCCCC-dddd-4eee-8fff-000000000001";
@@ -20,12 +21,46 @@ fn unserved_operations() -> Vec<String> {
     operations
 }
 
-fn source(events: &Events) -> Rc<Mutex<Box<dyn StatusSource>>> {
-    Rc::new(Mutex::new(Box::new(TestSource {
+type Shared = Rc<Mutex<Box<dyn StatusSource>>>;
+
+fn test_source(events: &Events) -> TestSource {
+    TestSource {
         fault: Fault::None,
         events: events.clone(),
         publications: None,
-    })))
+    }
+}
+
+fn source(events: &Events) -> Shared {
+    Rc::new(Mutex::new(Box::new(test_source(events))))
+}
+
+// A source whose publication guard reports a replaced origin from call
+// `fails_from` onward, counting every call.
+struct GuardedSource {
+    inner: TestSource,
+    fails_from: usize,
+    calls: Rc<Cell<usize>>,
+}
+
+impl StatusSource for GuardedSource {
+    fn snapshot(&mut self, caller: Caller, requested: Instant) -> Pending<'_, Snapshot> {
+        self.inner.snapshot(caller, requested)
+    }
+    fn drain(&mut self) -> Pending<'_, ()> {
+        self.inner.drain()
+    }
+    fn publication_guard(&self) -> Rc<dyn Fn() -> io::Result<()>> {
+        let (calls, fails_from) = (self.calls.clone(), self.fails_from);
+        Rc::new(move || {
+            let call = calls.get();
+            calls.set(call + 1);
+            if call >= fails_from {
+                return Err(io::Error::other("status origin replaced"));
+            }
+            Ok(())
+        })
+    }
 }
 
 async fn exchange_payload(
@@ -33,10 +68,18 @@ async fn exchange_payload(
     caller: Caller,
     events: &Events,
 ) -> (Result<(), ExchangeError>, Vec<u8>) {
+    exchange_with(payload, caller, source(events)).await
+}
+
+async fn exchange_with(
+    payload: &[u8],
+    caller: Caller,
+    source: Shared,
+) -> (Result<(), ExchangeError>, Vec<u8>) {
     let (mut client, server) = duplex(65_536);
     let served = serve_connection(
         test_stream(server, caller, Fault::None),
-        source(events),
+        source,
         None,
         Rc::new(Subscriptions::new(1)),
     );
@@ -142,16 +185,54 @@ async fn unknown_malformed_and_refused_requests_still_close_without_a_reply() {
 }
 
 #[tokio::test]
+async fn refusal_is_published_only_while_the_status_origin_holds() {
+    let operation = unserved_operations().remove(0);
+    let request = json!({"operation": operation, "version": 85, "requestId": ID});
+    let payload = serde_json::to_vec(&request).unwrap();
+    // The guard runs before the write and again after it.
+    for (fails_from, replied, failed) in [(0, false, true), (1, true, true), (2, true, false)] {
+        let events = Events::default();
+        let calls = Rc::new(Cell::new(0));
+        let source: Shared = Rc::new(Mutex::new(Box::new(GuardedSource {
+            inner: test_source(&events),
+            fails_from,
+            calls: calls.clone(),
+        })));
+        let (result, reply) = exchange_with(&payload, SETUP, source).await;
+        if failed {
+            assert!(
+                matches!(&result, Err(ExchangeError::Runtime(_))),
+                "{fails_from}: {result:?}"
+            );
+        } else {
+            result.unwrap();
+        }
+        if replied {
+            assert_eq!(
+                serde_json::from_slice::<Value>(&reply[4..]).unwrap(),
+                unsupported(ID)
+            );
+        } else {
+            assert!(reply.is_empty(), "{fails_from}");
+        }
+        assert_eq!(calls.get(), if fails_from == 0 { 1 } else { 2 });
+        assert!(events.borrow().is_empty());
+    }
+}
+
+#[tokio::test]
 async fn concurrent_refusals_stay_correlated_beside_a_status_read() {
     let operations = unserved_operations();
     let events = Events::default();
+    // Every exchange shares one source and therefore one source mutex.
+    let shared = source(&events);
     let refuse = |n: usize| {
         let id = format!("dddddddd-eeee-4fff-8aaa-{n:012}");
         let request = json!({"operation": operations[n], "version": 85, "requestId": id});
-        let events = events.clone();
+        let shared = shared.clone();
         async move {
             let (result, reply) =
-                exchange_payload(&serde_json::to_vec(&request).unwrap(), SETUP, &events).await;
+                exchange_with(&serde_json::to_vec(&request).unwrap(), SETUP, shared).await;
             result.unwrap();
             assert_eq!(
                 serde_json::from_slice::<Value>(&reply[4..]).unwrap(),
@@ -161,8 +242,12 @@ async fn concurrent_refusals_stay_correlated_beside_a_status_read() {
     };
     let status = async {
         let request = json!({"operation": "getStatus", "version": 85, "requestId": ID});
-        let (result, reply) =
-            exchange_payload(&serde_json::to_vec(&request).unwrap(), SETUP, &events).await;
+        let (result, reply) = exchange_with(
+            &serde_json::to_vec(&request).unwrap(),
+            SETUP,
+            shared.clone(),
+        )
+        .await;
         result.unwrap();
         serde_json::from_slice::<Value>(&reply[4..]).unwrap()
     };
