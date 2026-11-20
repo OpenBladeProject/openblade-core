@@ -14,9 +14,14 @@ No 0D/81 getter or tachometer inference is added.
 The codec, installed dispatcher and runtime use the existing serialized
 ReadSource, Worker and Reader. Generic manual target changes send targets only.
 Balanced and Performance entry preserve their admitted selectors; Performance
-entry includes independent intermediate mode proof. Automatic handback goes
-directly to the source-admitted selector. Already Automatic is a true no-op
-and never establishes ownership. Custom, Silent, battery and delegated states
+entry includes independent intermediate mode proof. An explicit Automatic
+request that leaves saved manual fan intent goes directly to the saved
+Balanced or Performance preset, as managed does: that preset's 0D/02 pair
+carries the Automatic fan mode, so the stored performance intent is applied in
+the same pair. Without such a preset, or with a saved GPU clock effect, it keeps
+the observed selector. Owned Stop cleanup always keeps the owner's selector.
+Automatic under the destination selector is a true no-op and never establishes
+ownership. Custom, Silent, battery and delegated states
 store intent with a zero-setter pending software outcome until their separate
 native recipes exist. No fallback profile or background control loop is added.
 

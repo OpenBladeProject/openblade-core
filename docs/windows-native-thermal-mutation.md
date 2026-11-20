@@ -129,17 +129,59 @@ unapplied intent:
 
 | Native case | Reply |
 | --- | --- |
-| External power (PluggedIn or limited USB-C) with current-manual plus desired-manual fans | Stored, `Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved...` |
+| External power (PluggedIn or limited USB-C) with current-manual plus desired-manual fans | Stored, `Performance intent was stored and will be applied when fans return to Automatic.` |
 | OpenBlade-owned fan row whose handback to Automatic is outstanding, without that manual deferral | Blocked, `Performance override intent was stored. Hardware result: OpenBlade still owns a fan change...` |
 | GPU effect, ineligible policy, power change, admission, capacity, storage or transport cause after the intent was saved | Blocked, `Performance override intent was stored. Hardware result: <cause>` |
 | Saved clear that was not applied | Blocked, `Performance override was cleared. Hardware result: <cause>` |
 | Fan intent saved but not applied | Blocked, `Fan override intent was stored. Hardware result: ...` or `Fan override was cleared. Hardware result: ...` |
 
-The Stored reply matches managed's reply only. Managed applies a deferred
-performance intent when fans return to Automatic (`ServiceControlRuntime`
-fan-override path). Native does not yet: after the fan handback the saved
-performance intent stays unapplied until a new performance request. This
-missing apply-on-handback is a functional gap and a cutover gate.
+The Stored text is managed's `DeferredPerformanceIntentMessage`. A build
+without `service-fan-mutation-v2` has no native fan request, so it keeps the
+older instruction to submit a new performance request after selecting
+Automatic fans.
+
+### Apply on fan handback
+
+Managed applies the saved performance intent when a fan request returns
+manual fans to Automatic. On exact RZ09-0581 (direct manual transitions, no
+performance report under manual fans),
+`ControlCoordinator.ApplyDirectAutomaticFanTransitionOutcomeAsync` writes the
+resolved preset's own 0D/02 pair, which carries the Automatic fan mode. It
+does this when the saved fan intent before the request was manual
+(`previousManual`), and replies `Fans returned to Automatic with <preset>
+performance.`
+
+Native does the same in the fan request. When a `setFanOverride` clear or
+Automatic request leaves saved manual fan intent, the fan worker resolves the
+destination as a performance request would (manual override, application
+report, then the profile for the freshly read power class) and returns the fans
+through that preset's pair instead of the observed selector. It is one direct
+pair with the same bytes as the performance writer's pair; there is no fan
+pair first and no reset. The existing fan-path admission applies to each
+setter: fresh exact-device, caller, session, controller and lifecycle admission,
+a fresh 07/8C read in the first observed external class, and unchanged saved fan
+settings and destination preset. An independent final 0D/82 pair must confirm
+the preset with Automatic fans. The reply is `Fans returned to Automatic with
+<preset> performance, confirmed by independent paired readback.`
+
+The fan journal row records the destination selector. Its grammar is unchanged:
+selectors 0 and 2 on sources 0 and 2 were already admitted, so the Rust and
+managed fan-history readers need no change. Progress follows the fan chain
+(Prepared, 10 to 13, 50). A power change before the first setter settles as
+KnownNotSubmitted (6). A later stop, cancellation, rejected echo or readback
+mismatch leaves the row unsettled and fences further writes; nothing is
+replayed. A native-to-managed handback of such a row names the fan family with
+Automatic only, so managed confirms the fan mode and reconciles performance
+from its own desired state.
+
+The fans keep the observed selector, and the saved intent stays unapplied, when
+the saved fan intent was already Automatic, when no Balanced or Performance
+destination is selected (managed would also write Silent or Custom, which this
+writer does not admit), or when a GPU clock effect is saved; the reply then says
+the GPU effect left it unapplied. Owned Stop cleanup always hands back through
+the owner's selector: shutdown reaches the firmware handoff without applying
+saved settings. Native has no automatic reconciliation, so fans returned to
+Automatic by firmware or another controller do not apply it.
 
 Native never replies Failed. These managed Failed cases have no unambiguous
 native counterpart, so native keeps Blocked:
@@ -174,8 +216,9 @@ alone would misreport the other class.
 
 The portable typed pair resolves both 0D/02 reports before the first mutation.
 Balanced and Performance use their destination directly when current admission
-permits it. Exact0581 PluggedIn current-manual plus effective-desired-manual fan
-policy stores the request without setters; it does not restore per-preset fans.
+permits it. Exact0581 external-power current-manual plus effective-desired-manual
+fan policy stores the request without setters; it does not restore per-preset
+fans. The fan request that later returns the fans to Automatic applies it.
 Automatic-active plus saved fixed fan intent remains direct. No blanket
 Balanced/Automatic reset is an entry prerequisite.
 The same native port worker and finite process transaction allocator are used;
