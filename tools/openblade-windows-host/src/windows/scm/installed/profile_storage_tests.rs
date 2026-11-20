@@ -1,6 +1,7 @@
 //! The profile transaction against an in-memory store that can fail any one
-//! of its writes. The managed replay fixture supplies the documents managed
-//! itself wrote before and after the same save.
+//! of its writes and keeps staging files as the protected store does. The
+//! managed replay fixture supplies the documents managed itself wrote before
+//! and after the same save. `real` runs the same saves on files.
 use super::*;
 use openblade_domain::profile_set::{BatteryPolicy, Dialect, json, preferences, update};
 use std::collections::BTreeMap;
@@ -21,6 +22,17 @@ enum Fault {
     After,
     /// Reported as written while other bytes landed.
     Wrong,
+    /// Reported as written while nothing landed.
+    Lost,
+    /// Landed with a line break after it: the same JSON, other bytes.
+    Padded,
+    /// Refused with its staging file left behind, as the protected store
+    /// leaves it when the rename fails.
+    Stranded,
+}
+
+fn stage(name: &str) -> String {
+    format!("{name}.pending")
 }
 
 #[derive(Clone, Default)]
@@ -30,6 +42,8 @@ struct Model {
     /// Zero-based write to fail, and how; later entries fail later writes.
     faults: Arc<Mutex<Vec<(usize, Fault)>>>,
     log: Arc<Mutex<Vec<String>>>,
+    /// A staging file another handle holds: it cannot be removed.
+    held: Arc<Mutex<Option<String>>>,
 }
 
 impl Model {
@@ -66,6 +80,12 @@ impl Model {
         NAMES.map(|name| self.bytes.lock().unwrap().get(name).cloned())
     }
 
+    /// Leaves the staging file of `name` behind, as an interrupted replace does.
+    fn strand(&self, name: &str) {
+        let mut files = self.bytes.lock().unwrap();
+        files.insert(stage(name), b"{\"schemaVersion\":".to_vec());
+    }
+
     /// Counts a write and returns the fault scripted for it.
     fn write(&self, entry: String) -> Option<Fault> {
         let number = self.writes.fetch_add(1, Ordering::AcqRel);
@@ -92,15 +112,24 @@ impl Files for Model {
             return Err(injected());
         }
         let mut files = self.bytes.lock().unwrap();
-        if files.get(name).map(Vec::as_slice) != expected {
+        // The stage is created new, so one left behind refuses the replace.
+        if files.get(name).map(Vec::as_slice) != expected || files.contains_key(&stage(name)) {
             return Err(denied());
         }
-        if fault == Some(Fault::Wrong) {
-            files.insert(name.into(), b"{".to_vec());
-            return Ok(());
+        match fault {
+            Some(Fault::Wrong) => drop(files.insert(name.into(), b"{".to_vec())),
+            Some(Fault::Lost) => {}
+            Some(Fault::Padded) => drop(files.insert(name.into(), [bytes, b"\r\n"].concat())),
+            Some(Fault::Stranded) => {
+                files.insert(stage(name), bytes.to_vec());
+                return Err(injected());
+            }
+            _ => drop(files.insert(name.into(), bytes.to_vec())),
         }
-        files.insert(name.into(), bytes.to_vec());
-        fault.map_or(Ok(()), |_| Err(injected()))
+        if fault == Some(Fault::After) {
+            return Err(injected());
+        }
+        Ok(())
     }
     fn remove(&self, name: &str, expected: &[u8]) -> io::Result<()> {
         let fault = self.write(format!("remove {name}"));
@@ -113,6 +142,15 @@ impl Files for Model {
         }
         files.remove(name);
         fault.map_or(Ok(()), |_| Err(injected()))
+    }
+    fn discard_stage(&self, name: &str) -> io::Result<()> {
+        let mut files = self.bytes.lock().unwrap();
+        let held = self.held.lock().unwrap().as_deref() == Some(name);
+        if held && files.contains_key(&stage(name)) {
+            return Err(io::Error::from_raw_os_error(32));
+        }
+        files.remove(&stage(name));
+        Ok(())
     }
 }
 
@@ -323,6 +361,27 @@ fn a_write_that_lands_other_bytes_is_caught_by_the_readback() {
 }
 
 #[test]
+fn a_marker_that_is_not_the_intended_bytes_is_restored() {
+    // The marker still commits the two documents, so the aggregate reads
+    // back as the admitted set; only its bytes differ from what was meant.
+    let model = Model::committed();
+    model.fail(6, Fault::Padded);
+    let storage = model.storage();
+
+    assert_eq!(
+        storage.save_profiles(&requested(&model)).unwrap(),
+        ProfileSave::Rejected(RESTORED.into())
+    );
+
+    assert_eq!(
+        model.documents().map(Option::unwrap),
+        Model::replay("prior")
+    );
+    assert_eq!(model.snapshot().len(), 3);
+    assert!(!storage.pending());
+}
+
+#[test]
 fn a_failed_restore_keeps_the_record_and_every_backup() {
     // The marker replacement fails and then the first restore write fails.
     let model = Model::committed();
@@ -356,6 +415,37 @@ fn a_failed_restore_keeps_the_record_and_every_backup() {
     assert!(storage.pending());
     // Reads refuse the torn aggregate too.
     assert!(storage.profiles().is_err());
+}
+
+#[test]
+fn a_restore_that_does_not_land_keeps_the_record_and_every_backup() {
+    // The profile lands though its write reports failure, and the write
+    // that restores it reports success while nothing changes.
+    let model = Model::committed();
+    model.fail(4, Fault::After);
+    model.fail(5, Fault::Lost);
+    let storage = model.storage();
+
+    assert_eq!(
+        storage.save_profiles(&requested(&model)).unwrap(),
+        ProfileSave::Rejected(RECOVERY_REQUIRED.into())
+    );
+
+    // Only reading the documents back shows the restore did not happen.
+    let files = model.snapshot();
+    assert!(files.contains_key(RECORD));
+    assert_eq!(
+        files
+            .keys()
+            .filter(|name| name.ends_with(".backup"))
+            .count(),
+        3
+    );
+    assert_eq!(
+        model.documents()[0],
+        Some(Model::replay("committed")[0].clone())
+    );
+    assert!(storage.pending());
 }
 
 #[test]
@@ -496,3 +586,401 @@ fn a_repeated_attempt_reuses_its_own_backups() {
     );
     assert_eq!(model.snapshot().len(), 3);
 }
+
+#[test]
+fn a_stage_an_abandoned_attempt_left_is_removed_before_the_save() {
+    // The backups are named by the change, so learn their names first.
+    let rehearsal = Model::committed();
+    rehearsal
+        .storage()
+        .save_profiles(&requested(&rehearsal))
+        .unwrap();
+    let id = transaction_id(&rehearsal);
+    let staged = NAMES
+        .map(|name| format!("{name}.transaction-{id}.backup"))
+        .into_iter()
+        .chain([RECORD.to_owned()])
+        .chain(NAMES.map(str::to_owned));
+    for name in staged {
+        let model = Model::committed();
+        model.strand(&name);
+        let storage = model.storage();
+
+        assert_eq!(
+            storage.save_profiles(&requested(&model)).unwrap(),
+            ProfileSave::Stored,
+            "{name}"
+        );
+
+        assert_eq!(
+            model.documents().map(Option::unwrap),
+            Model::replay("committed"),
+            "{name}"
+        );
+        assert_eq!(model.snapshot().len(), 3, "{name}: the stage is gone");
+    }
+}
+
+#[test]
+fn a_stage_that_cannot_be_removed_refuses_the_save_and_says_so() {
+    let model = Model::committed();
+    model.strand(NAMES[0]);
+    *model.held.lock().unwrap() = Some(NAMES[0].into());
+    let storage = model.storage();
+    let before = model.snapshot();
+
+    assert_eq!(
+        storage.save_profiles(&requested(&model)).unwrap(),
+        ProfileSave::Rejected(STAGE_BLOCKED.into())
+    );
+
+    // Nothing was written and the store is not closed over it.
+    assert_eq!(model.snapshot(), before);
+    assert_eq!(model.writes.load(Ordering::Acquire), 0);
+    assert!(!storage.pending());
+
+    *model.held.lock().unwrap() = None;
+    assert_eq!(
+        storage.save_profiles(&requested(&model)).unwrap(),
+        ProfileSave::Stored
+    );
+    assert_eq!(model.snapshot().len(), 3);
+}
+
+#[test]
+fn a_write_that_fails_takes_its_stage_back() {
+    // Every staged write in turn fails and leaves its staging file behind.
+    for write in 0..=6 {
+        let model = Model::committed();
+        model.fail(write, Fault::Stranded);
+        let storage = model.storage();
+
+        assert_eq!(
+            storage.save_profiles(&requested(&model)).unwrap(),
+            ProfileSave::Rejected(RESTORED.into()),
+            "write {write}"
+        );
+
+        assert_eq!(
+            model.documents().map(Option::unwrap),
+            Model::replay("prior"),
+            "write {write}"
+        );
+        assert_eq!(
+            model.snapshot().len(),
+            3,
+            "write {write}: {:?}",
+            model.snapshot().keys()
+        );
+        assert!(!storage.pending(), "write {write}");
+        // A restart reads the same aggregate, and the same save now stores.
+        assert_eq!(
+            Storage::open(Box::new(model.clone()), SID)
+                .unwrap()
+                .save_profiles(&requested(&model))
+                .unwrap(),
+            ProfileSave::Stored,
+            "write {write}"
+        );
+        assert_eq!(model.snapshot().len(), 3, "write {write}");
+    }
+}
+
+#[test]
+fn a_stage_that_could_not_be_taken_back_is_removed_by_the_next_save() {
+    // The profile replacement fails while another handle holds its stage.
+    let model = Model::committed();
+    model.fail(4, Fault::Stranded);
+    *model.held.lock().unwrap() = Some(NAMES[0].into());
+    let storage = model.storage();
+
+    assert_eq!(
+        storage.save_profiles(&requested(&model)).unwrap(),
+        ProfileSave::Rejected(RESTORED.into())
+    );
+
+    let left: Vec<String> = model.snapshot().into_keys().collect();
+    assert_eq!(left.len(), 4, "{left:?}");
+    assert!(left.contains(&stage(NAMES[0])), "{left:?}");
+    assert!(!storage.pending());
+    // Still held: the next save says what is in its way and writes nothing.
+    let writes = model.writes.load(Ordering::Acquire);
+    assert_eq!(
+        storage.save_profiles(&requested(&model)).unwrap(),
+        ProfileSave::Rejected(STAGE_BLOCKED.into())
+    );
+    assert_eq!(model.writes.load(Ordering::Acquire), writes);
+
+    *model.held.lock().unwrap() = None;
+    assert_eq!(
+        storage.save_profiles(&requested(&model)).unwrap(),
+        ProfileSave::Stored
+    );
+    assert_eq!(model.snapshot().len(), 3);
+}
+
+#[test]
+fn writes_that_never_land_are_caught_before_the_record_is_removed() {
+    // The profile and the marker report success and change nothing, which
+    // leaves the prior aggregate: whole and committed, but not the one meant.
+    let model = Model::committed();
+    model.fail(4, Fault::Lost);
+    model.fail(6, Fault::Lost);
+    let storage = model.storage();
+
+    assert_eq!(
+        storage.save_profiles(&requested(&model)).unwrap(),
+        ProfileSave::Rejected(RESTORED.into())
+    );
+
+    assert_eq!(
+        model.documents().map(Option::unwrap),
+        Model::replay("prior")
+    );
+    // The verification ran while the record stood: it was removed after.
+    let log = model.log.lock().unwrap().clone();
+    assert_eq!(log[7], format!("remove {RECORD}"), "{log:?}");
+    assert_eq!(model.snapshot().len(), 3);
+    assert!(!storage.pending());
+}
+
+#[test]
+fn a_failed_materialisation_deletes_the_documents_it_created() {
+    // No aggregate and so no backups: the record, then the three documents.
+    for (write, fault) in [(2, Fault::Before), (3, Fault::Before), (3, Fault::Wrong)] {
+        let model = Model::default();
+        model.fail(write, fault);
+        let storage = model.storage();
+        let mut request = ProfileSet::safe_defaults();
+        request.battery_policy = Some(BatteryPolicy {
+            charge_limit_percent: 75,
+        });
+
+        assert_eq!(
+            storage.save_profiles(&request).unwrap(),
+            ProfileSave::Rejected(RESTORED.into()),
+            "{fault:?} write {write}"
+        );
+
+        assert!(
+            model.snapshot().is_empty(),
+            "{fault:?} write {write}: {:?}",
+            model.snapshot().keys()
+        );
+        assert!(!storage.pending());
+        assert_eq!(
+            storage.save_profiles(&request).unwrap(),
+            ProfileSave::Stored
+        );
+    }
+}
+
+/// The prior aggregate with `applications` as its application profiles.
+fn aggregate_with(applications: Value) -> [Vec<u8>; 3] {
+    let [profile, preferences, _] = Model::replay("prior");
+    let mut document: Value = serde_json::from_slice(&profile).unwrap();
+    document["profiles"]["applicationProfiles"] = applications;
+    let profile = serde_json::to_vec(&document).unwrap();
+    let marker = preferences::commit_marker(
+        profile_set::CURRENT_SCHEMA,
+        &configuration::digest_hex(&profile),
+        &configuration::digest_hex(&preferences),
+    );
+    [profile, preferences, marker]
+}
+
+fn application(id: u8, path: &str) -> Value {
+    json!({"id": format!("{id}f8fad5b-d9cb-469f-a165-70867728950e"), "name": "Game", "executablePath": path,
+        "activationMode": 0, "enabled": true, "overrides": {"pluggedIn": {"performance": 2}}})
+}
+
+#[test]
+fn the_reader_check_admits_what_the_service_reads_and_nothing_else() {
+    let same = str::eq_ignore_ascii_case;
+    assert!(reopens(&Model::replay("committed"), same));
+    for stored in [
+        r"C:\Games\Game.exe",
+        r"\\?\C:\Games\..\Game.exe",
+        r"\\?\C:\Games\.\Game.exe",
+        r"\??\C:\Games\..\Game.exe",
+        r"\\.\C:\Game.exe",
+        r"\\server\share\Game.exe",
+    ] {
+        let documents = aggregate_with(json!([application(0, stored)]));
+        assert!(reopens(&documents, same), "{stored}");
+        // The store opens on exactly what the check admitted.
+        assert!(Storage::open(Box::new(Model::seeded(documents)), SID).is_ok());
+    }
+    for refused in [
+        r"C:\Games\..\Game.exe",
+        r"\\.\C:\Games\.\Game.exe",
+        r"Games\Game.exe",
+        r"C:\Games\Game.txt",
+    ] {
+        let documents = aggregate_with(json!([application(0, refused)]));
+        assert!(!reopens(&documents, same), "{refused}");
+        assert!(Storage::open(Box::new(Model::seeded(documents)), SID).is_err());
+    }
+    // Two paths the store's comparison holds to be one.
+    let twice = json!([
+        application(0, r"C:\Game.exe"),
+        application(1, r"c:\GAME.EXE")
+    ]);
+    assert!(!reopens(&aggregate_with(twice), same));
+    // A marker that does not commit the documents.
+    let mut torn = Model::replay("committed");
+    torn[2] = Model::replay("prior")[2].clone();
+    assert!(!reopens(&torn, same));
+}
+
+const VECTORS: &str = include_str!("../../../../tests/data/profile-set-vectors-v27.json");
+
+#[test]
+fn the_store_finds_duplicate_paths_as_managed_does_whatever_its_reader_compares() {
+    // A final sigma and a capital sigma: one path to managed, two to the
+    // reader this store was opened with. The frame reader refuses the pair
+    // first; the store must not depend on that.
+    let model = Model::committed();
+    let storage = model.storage();
+    let mut request = requested(&model);
+    let document = aggregate_with(json!([
+        application(0, "C:\\\u{3c2}\\Game.exe"),
+        application(1, "C:\\\u{3a3}\\Game.exe")
+    ]));
+    assert!(reopens(&document, str::eq_ignore_ascii_case));
+    let document = json::parse(&document[0]).unwrap();
+    request.application_profiles =
+        update::decode_profiles(document.member("profiles").unwrap(), Dialect::Document)
+            .unwrap()
+            .application_profiles;
+
+    assert_eq!(
+        storage.save_profiles(&request).unwrap(),
+        ProfileSave::Rejected(
+            "The requested intent was rejected: The application profile 2 executable path is not normalized or is duplicated."
+                .into()
+        )
+    );
+
+    assert_eq!(model.writes.load(Ordering::Acquire), 0);
+}
+
+/// A reader that holds a dotless i to be an i, as a different case table
+/// could: coarser than managed's comparison, which keeps the two apart.
+fn coarser(left: &str, right: &str) -> bool {
+    let fold = |path: &str| path.replace('\u{131}', "i").to_ascii_lowercase();
+    fold(left) == fold(right)
+}
+
+#[test]
+fn a_set_the_service_reader_would_refuse_is_rejected_before_anything_is_written() {
+    let model = Model::committed();
+    let prior = model.snapshot();
+    let storage = Storage::open_with(Box::new(model.clone()), SID, coarser).unwrap();
+    let mut request = requested(&model);
+    let document = aggregate_with(json!([
+        application(0, "C:\\\u{131}\\Game.exe"),
+        application(1, r"C:\I\Game.exe")
+    ]));
+    let document = json::parse(&document[0]).unwrap();
+    let applications = document.member("profiles").unwrap();
+    request.application_profiles = update::decode_profiles(applications, Dialect::Document)
+        .unwrap()
+        .application_profiles;
+
+    // Managed's comparison keeps the two paths apart, so the set is valid.
+    assert_eq!(
+        storage.save_profiles(&request).unwrap(),
+        ProfileSave::Rejected(UNREADABLE.into())
+    );
+
+    assert_eq!(model.snapshot(), prior);
+    assert_eq!(model.writes.load(Ordering::Acquire), 0);
+    assert!(!storage.pending());
+    // The store still opens and still saves what its reader accepts.
+    let reopened = Storage::open_with(Box::new(model.clone()), SID, coarser).unwrap();
+    assert_eq!(
+        reopened.save_profiles(&requested(&model)).unwrap(),
+        ProfileSave::Stored
+    );
+    // A reader that compares as managed does stores the same set.
+    let model = Model::committed();
+    assert_eq!(
+        model.storage().save_profiles(&request).unwrap(),
+        ProfileSave::Stored
+    );
+    assert!(Storage::open(Box::new(model.clone()), SID).is_ok());
+}
+
+#[test]
+fn every_managed_path_vector_is_answered_and_read_back_with_the_installed_comparison() {
+    let reader = crate::installed::readiness::thermal_native::same_path;
+    let vectors = json::parse(VECTORS.as_bytes()).unwrap();
+    let Some(json::Json::Array(cases)) = vectors.member("cases") else {
+        panic!("the vectors hold cases");
+    };
+    let (mut stored, mut closed) = (0, 0);
+    for case in cases {
+        let name = case.member("name").and_then(json::Json::text).unwrap();
+        if !name.contains("application path") {
+            continue;
+        }
+        let Some(json::Json::Array(edits)) = case.member("edit") else {
+            panic!("{name} edits the set");
+        };
+        let [json::Json::Array(edit)] = edits.as_slice() else {
+            panic!("{name} sets the application profiles only");
+        };
+        let model = Model::committed();
+        let prior = model.snapshot();
+        let mut set = profile_set::encode::profile_set(&requested(&model));
+        let json::Json::Object(members) = &mut set else {
+            unreachable!()
+        };
+        for (member, value) in members.iter_mut() {
+            if member == "applicationProfiles" {
+                *value = edit[1].clone();
+            }
+        }
+        let frame = json::write(&json::Json::Object(vec![("profiles".into(), set)]), false);
+        let expect = case.member("expect").unwrap();
+
+        let bound = crate::service_status::ProfilesBody::bind(&frame);
+
+        if expect.member("decode") != Some(&json::Json::Bool(true)) {
+            closed += 1;
+            assert!(bound.is_err(), "{name}: managed closes the connection");
+            continue;
+        }
+        let bound = bound.unwrap_or_else(|_| panic!("{name}: managed binds this set"));
+        let storage = Storage::open_with(Box::new(model.clone()), SID, reader).unwrap();
+        let outcome = storage.save_profiles(bound.profiles().unwrap()).unwrap();
+
+        let update = expect.member("update").unwrap();
+        let message = update.member("message").and_then(json::Json::text).unwrap();
+        let managed = match update.member("status").unwrap().integer(0, 3).unwrap() {
+            0 => ProfileSave::Stored,
+            _ => ProfileSave::Rejected(message.into()),
+        };
+        assert_eq!(outcome, managed, "{name}");
+        if outcome == ProfileSave::Stored {
+            stored += 1;
+        } else {
+            assert_eq!(model.snapshot(), prior, "{name}: nothing was written");
+        }
+        // Whatever was answered, the service still reads its configuration.
+        assert!(!storage.pending(), "{name}");
+        let reopened = Storage::open_with(Box::new(model.clone()), SID, reader);
+        let reopened = reopened.unwrap_or_else(|error| panic!("{name}: {error}"));
+        reopened
+            .profiles()
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+    }
+    assert!(
+        stored >= 20 && closed >= 25,
+        "{stored} stored, {closed} closed"
+    );
+}
+
+#[path = "profile_storage_real_tests.rs"]
+mod real;

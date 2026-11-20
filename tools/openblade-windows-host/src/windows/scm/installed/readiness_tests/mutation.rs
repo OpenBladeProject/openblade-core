@@ -212,6 +212,11 @@ impl Files for MemoryFiles {
         files.remove(name);
         Ok(())
     }
+    #[cfg(feature = "service-profiles-v1")]
+    fn discard_stage(&self, _name: &str) -> io::Result<()> {
+        // This store replaces in one step and never stages.
+        Ok(())
+    }
     fn replace(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
         if name == "thermal-mutation.journal" {
             let progress = bytes

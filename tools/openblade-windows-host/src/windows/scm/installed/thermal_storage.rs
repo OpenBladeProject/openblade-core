@@ -161,6 +161,15 @@ pub(super) trait Files: Send + Sync {
     fn remove(&self, _name: &str, _expected: &[u8]) -> io::Result<()> {
         Err(denied())
     }
+    /// Removes the staging file a `replace` of `name` leaves where it fails.
+    /// None is success. Only the owner of `name` may call this, and only for
+    /// a file whose stage is never evidence: the override document's and the
+    /// journal's are preserved for the handback. A store that cannot prove
+    /// the removal refuses it.
+    #[cfg(feature = "service-profiles-v1")]
+    fn discard_stage(&self, _name: &str) -> io::Result<()> {
+        Err(denied())
+    }
 }
 fn denied() -> io::Error {
     io::Error::new(

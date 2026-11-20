@@ -4,14 +4,23 @@
 //!
 //! The transaction follows managed's protocol with this store's primitives:
 //! exact backups, then the `recovery-required` record, then the three
-//! documents in managed's order (profile, preferences, marker), a readback,
-//! and only then the record and backups are removed. Each document is staged
-//! by the store's own compare-and-swap replace (`<name>.pending`) instead of
-//! a `.stage` file. A failure after the record exists restores the exact
-//! prior documents from memory, as managed's in-process rollback does; if
-//! that cannot be confirmed the record and backups stay and the aggregate is
-//! quarantined. Like managed, nothing recovers a recorded transaction after
-//! a crash: the record alone preserves the aggregate until it is reviewed.
+//! documents in managed's order (profile, preferences, marker), managed's
+//! verification of the stored aggregate, and only then the record and
+//! backups are removed. Each document is staged by the store's own
+//! compare-and-swap replace (`<name>.pending`) instead of a `.stage` file. A
+//! failure after the record exists restores the exact prior documents from
+//! memory, as managed's in-process rollback does; if that cannot be
+//! confirmed the record and backups stay and the aggregate is quarantined.
+//! Like managed, nothing recovers a recorded transaction after a crash: the
+//! record alone preserves the aggregate until it is reviewed.
+//!
+//! A stage of this transaction is never evidence. Managed names its stages
+//! per transaction and only ever deletes them; this store's stage names are
+//! fixed and its replace leaves the stage where it fails, which the override
+//! document relies on. So the transaction takes back the stage of each write
+//! of its own that fails, and before it starts it removes any stage an
+//! earlier attempt left under a name it writes. With no record there is no
+//! open transaction for such a stage to belong to.
 use super::*;
 use openblade_domain::profile_set::{
     self as profile_set, Capabilities, ProfileSet, ValidationPolicy, Validator, encode,
@@ -26,6 +35,10 @@ const QUARANTINE_BLOCKED: &str = "OpenBlade preserved an unsupported or invalid 
 const RESTORED: &str = "The requested intent was rejected: The configuration aggregate could not be replaced. The saved configuration is unchanged.";
 /// A transaction whose restore could not be confirmed.
 const RECOVERY_REQUIRED: &str = "The requested intent was rejected: Configuration transaction recovery is required. The recovery-required record and the original transaction backups are preserved.";
+/// A leftover stage is in the way and could not be removed.
+const STAGE_BLOCKED: &str = "The requested intent was rejected: A staging file left by an earlier configuration save could not be removed. The saved configuration is unchanged.";
+/// The set is valid, but this service's own reader would refuse it once stored.
+const UNREADABLE: &str = "The requested intent was rejected: This service cannot read the profile set back once it is stored. The saved configuration is unchanged.";
 
 const NAMES: [&str; 3] = [
     configuration::PROFILE,
@@ -45,26 +58,37 @@ pub(in super::super) enum ProfileSave {
     Blocked(&'static str),
 }
 
-/// Exact RZ09-0581 only: this composition serves no other model.
-fn validator(same_path: fn(&str, &str) -> bool) -> (Capabilities, Validator) {
+/// Exact RZ09-0581 only: this composition serves no other model. Duplicates
+/// are found as managed finds them, not by the comparison the store was
+/// opened with.
+fn validator() -> (Capabilities, Validator) {
     let capabilities = Capabilities::rz09_0581();
     let policy = ValidationPolicy::for_capabilities(&capabilities, &capabilities);
-    (capabilities, Validator::new(policy, same_path))
+    let validator = Validator::new(policy, profile_set::text::same_ordinal_ignoring_case);
+    (capabilities, validator)
 }
 
-/// The committed aggregate a save builds on, or why it is preserved.
+/// A committed aggregate as it is stored.
 struct Committed {
-    prior: [Option<Vec<u8>>; 3],
+    documents: [Option<Vec<u8>>; 3],
     profiles: ProfileSet,
     preferences: Preferences,
     /// The stored documents are not what managed would write for them.
     migrated: bool,
 }
 
+/// The committed aggregate a save builds on, or `None` where it is preserved:
+/// a recorded transaction preserves whatever the documents hold.
 fn committed(files: &dyn Files, validator: &Validator) -> io::Result<Option<Committed>> {
     if files.read(configuration::RECOVERY_REQUIRED)?.is_some() {
         return Ok(None);
     }
+    read_committed(files, validator)
+}
+
+/// The three documents, when they are one committed aggregate this
+/// composition reads.
+fn read_committed(files: &dyn Files, validator: &Validator) -> io::Result<Option<Committed>> {
     let mut prior: [Option<Vec<u8>>; 3] = Default::default();
     for (bytes, name) in prior.iter_mut().zip(NAMES) {
         *bytes = files.read(name)?;
@@ -84,7 +108,7 @@ fn committed(files: &dyn Files, validator: &Validator) -> io::Result<Option<Comm
         // Managed materialises its safe defaults on load; an absent aggregate
         // is that same starting point here.
         Inspection::Empty => Some(Committed {
-            prior,
+            documents: prior,
             profiles: ProfileSet::safe_defaults(),
             preferences: Preferences::default(),
             migrated: true,
@@ -99,12 +123,29 @@ fn committed(files: &dyn Files, validator: &Validator) -> io::Result<Option<Comm
                     profiles: aggregate.profiles,
                     preferences: aggregate.preferences,
                     migrated: aggregate.migrated,
-                    prior,
+                    documents: prior,
                 })
         }
         // A schema-less legacy profile and every preserved state need managed.
         _ => None,
     })
+}
+
+/// Whether this service's own reader accepts `documents` as the stored
+/// aggregate. It reads the aggregate again before every later request and
+/// when it starts, so a set it refuses would close the store it was saved to.
+fn reopens(documents: &[Vec<u8>; 3], same_path: fn(&str, &str) -> bool) -> bool {
+    struct Intended<'a>(&'a [Vec<u8>; 3]);
+    impl Files for Intended<'_> {
+        fn read(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
+            let index = NAMES.iter().position(|known| *known == name);
+            Ok(index.map(|index| self.0[index].clone()))
+        }
+        fn replace(&self, _: &str, _: Option<&[u8]>, _: &[u8]) -> io::Result<()> {
+            Err(denied())
+        }
+    }
+    aggregate(&Intended(documents), same_path).is_ok()
 }
 
 /// The transaction's artifacts. The identifier is the digest of the change,
@@ -115,6 +156,10 @@ struct Transaction<'a> {
     prior: &'a [Option<Vec<u8>>; 3],
     intended: [Vec<u8>; 3],
     id: String,
+    /// What the intended documents must read back as.
+    admitted: &'a ProfileSet,
+    preferences: &'a Preferences,
+    validator: &'a Validator,
 }
 
 impl Transaction<'_> {
@@ -159,16 +204,51 @@ impl Transaction<'_> {
         Ok(true)
     }
 
-    /// Replaces the documents in managed's order and reads them back.
+    /// Removes what an abandoned attempt left under a name this transaction
+    /// stages: its backups, the record and the documents.
+    fn discard_stages(&self) -> io::Result<()> {
+        for (name, _) in self.backups() {
+            self.files.discard_stage(&name)?;
+        }
+        for name in [configuration::RECOVERY_REQUIRED].into_iter().chain(NAMES) {
+            self.files.discard_stage(name)?;
+        }
+        Ok(())
+    }
+
+    /// One staged write of this transaction. A failure takes its stage back,
+    /// best effort: one left behind is removed before the next transaction.
+    fn put(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        self.files.replace(name, expected, bytes).inspect_err(|_| {
+            let _ = self.files.discard_stage(name);
+        })
+    }
+
+    /// Replaces the documents in managed's order.
     fn replace(&self) -> io::Result<()> {
         for (index, name) in NAMES.into_iter().enumerate() {
-            self.files
-                .replace(name, self.prior[index].as_deref(), &self.intended[index])?;
+            self.put(name, self.prior[index].as_deref(), &self.intended[index])?;
         }
-        if self.holds([0, 1, 2].map(|index| Some(self.intended[index].as_slice())))? {
-            Ok(())
-        } else {
-            Err(denied())
+        Ok(())
+    }
+
+    /// Managed `VerifyIntendedAggregateAsync`: the store holds exactly the
+    /// intended documents and they read back as the admitted aggregate.
+    fn verify(&self) -> io::Result<()> {
+        match read_committed(self.files, self.validator)? {
+            Some(stored)
+                if stored.profiles == *self.admitted
+                    && stored.preferences == *self.preferences
+                    && !stored.migrated
+                    && stored
+                        .documents
+                        .iter()
+                        .zip(&self.intended)
+                        .all(|(stored, intended)| stored.as_ref() == Some(intended)) =>
+            {
+                Ok(())
+            }
+            _ => Err(denied()),
         }
     }
 
@@ -178,7 +258,7 @@ impl Transaction<'_> {
             let current = self.files.read(name)?;
             match (&self.prior[index], current) {
                 (prior, current) if *prior == current => {}
-                (Some(prior), current) => self.files.replace(name, current.as_deref(), prior)?,
+                (Some(prior), current) => self.put(name, current.as_deref(), prior)?,
                 (None, Some(current)) => self.files.remove(name, &current)?,
                 (None, None) => {}
             }
@@ -190,19 +270,22 @@ impl Transaction<'_> {
         }
     }
 
+    /// The caller found no record, so no transaction is open.
     fn run(&self) -> Result<(), Failure> {
+        if self.discard_stages().is_err() {
+            return Err(Failure::StageBlocked);
+        }
         for (name, bytes) in self.backups() {
             // An earlier attempt at this same change may have left its backup.
             let kept = matches!(self.files.read(&name), Ok(Some(existing)) if existing == bytes);
-            if !kept && self.files.replace(&name, None, bytes).is_err() {
+            if !kept && self.put(&name, None, bytes).is_err() {
                 self.discard_backups();
                 return Err(Failure::Unchanged);
             }
         }
         let record = self.record().map_err(|_| Failure::Unchanged)?;
         if self
-            .files
-            .replace(configuration::RECOVERY_REQUIRED, None, &record)
+            .put(configuration::RECOVERY_REQUIRED, None, &record)
             .is_err()
         {
             // No document was touched. As managed does, drop a record this
@@ -211,7 +294,9 @@ impl Transaction<'_> {
             self.discard_backups();
             return Err(Failure::Unchanged);
         }
-        let replaced = self.replace();
+        // Verified while the record and the backups still stand, as managed
+        // does: a stored aggregate that is not the intended one is restored.
+        let replaced = self.replace().and_then(|()| self.verify());
         let settled = match replaced {
             Ok(()) => Ok(()),
             Err(_) => self
@@ -237,6 +322,8 @@ impl Transaction<'_> {
 
 #[derive(Debug, Eq, PartialEq)]
 enum Failure {
+    /// A leftover stage could not be removed. Nothing was written.
+    StageBlocked,
     /// No document was touched.
     Unchanged,
     /// Documents were replaced and the exact prior aggregate is back.
@@ -256,10 +343,11 @@ impl Storage {
         if state.quarantined {
             return Ok(ProfileSave::Blocked(QUARANTINE_BLOCKED));
         }
-        let (capabilities, validator) = validator(self.same_path);
+        let (capabilities, validator) = validator();
         let Some(saved) = committed(self.files.as_ref(), &validator)? else {
             return Ok(ProfileSave::Blocked(QUARANTINE_BLOCKED));
         };
+        let prior = &saved.documents;
         let admitted = match update::admit(
             requested.clone(),
             &saved.profiles,
@@ -273,7 +361,7 @@ impl Storage {
         let profile = encode::profile_document(profile_set::CURRENT_SCHEMA, &admitted);
         // Managed keeps the committed preference bytes unless loading them
         // migrated something; then it writes them again.
-        let preferences = match &saved.prior[1] {
+        let preferences = match &prior[1] {
             Some(bytes) if !saved.migrated => bytes.clone(),
             _ => preferences_document(profile_set::CURRENT_SCHEMA, &saved.preferences),
         };
@@ -283,34 +371,27 @@ impl Storage {
             &digest(&profile),
             &digest(&preferences),
         );
+        let intended = [profile, preferences, marker];
+        if !reopens(&intended, self.same_path) {
+            return Ok(ProfileSave::Rejected(UNREADABLE.into()));
+        }
         let mut change = Sha256::new();
-        for bytes in saved
-            .prior
-            .iter()
-            .flatten()
-            .chain([&profile, &preferences, &marker])
-        {
+        for bytes in prior.iter().flatten().chain(&intended) {
             change.update((bytes.len() as u64).to_le_bytes());
             change.update(bytes);
         }
         let transaction = Transaction {
             files: self.files.as_ref(),
-            prior: &saved.prior,
-            intended: [profile, preferences, marker],
+            prior,
+            intended,
             id: format!("{:x}", change.finalize())[..32].to_owned(),
+            admitted: &admitted,
+            preferences: &saved.preferences,
+            validator: &validator,
         };
         Ok(match transaction.run() {
-            // Managed verifies the committed aggregate reads back as intended.
-            Ok(()) => match committed(self.files.as_ref(), &validator)? {
-                Some(stored) if stored.profiles == admitted && !stored.migrated => {
-                    ProfileSave::Stored
-                }
-                _ => {
-                    state.quarantined = true;
-                    state.configuration_changed = true;
-                    ProfileSave::Blocked(QUARANTINE_BLOCKED)
-                }
-            },
+            Ok(()) => ProfileSave::Stored,
+            Err(Failure::StageBlocked) => ProfileSave::Rejected(STAGE_BLOCKED.into()),
             Err(Failure::Unchanged | Failure::Restored) => ProfileSave::Rejected(RESTORED.into()),
             Err(Failure::RecoveryRequired) => {
                 state.quarantined = true;

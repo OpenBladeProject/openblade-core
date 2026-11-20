@@ -422,6 +422,21 @@ impl Files for ProtectedFiles {
     }
     #[cfg(feature = "service-profiles-v1")]
     fn remove(&self, name: &str, expected: &[u8]) -> io::Result<()> {
+        self.delete(name, |bytes| bytes == expected)
+    }
+    #[cfg(feature = "service-profiles-v1")]
+    fn discard_stage(&self, name: &str) -> io::Result<()> {
+        match self.delete(&format!("{name}.pending"), |_| true) {
+            Err(error) if paths::missing_leaf(&error) => Ok(()),
+            result => result,
+        }
+    }
+}
+#[cfg(feature = "service-profiles-v1")]
+impl ProtectedFiles {
+    /// Deletes `name`, which must exist, through one exclusive handle; `admit`
+    /// sees its bytes first.
+    fn delete(&self, name: &str, admit: impl FnOnce(&[u8]) -> bool) -> io::Result<()> {
         if name.is_empty()
             || !name
                 .bytes()
@@ -430,7 +445,7 @@ impl Files for ProtectedFiles {
             return Err(deny());
         }
         self.check(&self.root, USER_ROOT)?;
-        // Exclusive, so the bytes compared are the bytes deleted.
+        // Exclusive, so the bytes admitted are the bytes deleted.
         let mut file = paths::open_relative(
             &self.root,
             OsStr::new(name),
@@ -443,7 +458,7 @@ impl Files for ProtectedFiles {
         self.check(&file, Policy::Record)?;
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)?;
-        if bytes != expected {
+        if !admit(&bytes) {
             return Err(deny());
         }
         paths::mark_for_deletion(&file)?;
@@ -505,6 +520,15 @@ impl Files for CustodialFiles {
             return Err(deny());
         }
         self.user.remove(name, expected)
+    }
+    #[cfg(feature = "service-profiles-v1")]
+    fn discard_stage(&self, name: &str) -> io::Result<()> {
+        // A pending journal or override document is evidence the handback to
+        // managed preserves, never a leftover to clean up.
+        if name.starts_with("thermal-mutation.journal") || name == "manual-overrides.json" {
+            return Err(deny());
+        }
+        self.user.discard_stage(name)
     }
 }
 
