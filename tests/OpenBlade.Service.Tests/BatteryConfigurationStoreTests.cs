@@ -158,6 +158,48 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             SHA256.HashData(Encoding.UTF8.GetBytes(document)));
     }
 
+    // The native profile aggregate reader consumes the same cases.
+    [Fact]
+    public async Task WindowsReplay_Schema26LightingMatchesManagedNormalization()
+    {
+        JsonNode vector = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(
+            AppContext.BaseDirectory, "WindowsReplay", "v1", "configuration-schema26-lighting.json")))!;
+        foreach (JsonNode item in vector["cases"]!.AsArray()!)
+        {
+            string name = item!["name"]!.GetValue<string>();
+            int schema = item["schema"]!.GetValue<int>();
+            Paths paths = CreatePaths();
+            BatteryConfigurationStore store = CreateStore(paths);
+            _ = await store.LoadAsync(CancellationToken.None);
+            JsonNode profile = JsonNode.Parse(await File.ReadAllTextAsync(paths.Profiles))!;
+            JsonNode preferences = JsonNode.Parse(await File.ReadAllTextAsync(paths.Preferences))!;
+            profile["schemaVersion"] = schema;
+            preferences["schemaVersion"] = schema;
+            JsonObject lighting = profile["profiles"]!["pluggedIn"]!["lighting"]!.AsObject();
+            foreach ((string member, JsonNode? value) in item["set"]!.AsObject())
+            {
+                lighting[member] = value?.DeepClone();
+            }
+            string profileJson = profile.ToJsonString();
+            string preferenceJson = preferences.ToJsonString();
+            string marker = JsonSerializer.Serialize(new BatteryConfigurationCommit(
+                schema,
+                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(profileJson))),
+                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(preferenceJson)))),
+                ProfileStore.SerializerOptions);
+            foreach ((string path, string json) in paths.All.Zip([profileJson, preferenceJson, marker]))
+            {
+                await File.WriteAllTextAsync(path, json);
+            }
+
+            BatteryConfiguration loaded = await store.LoadAsync(CancellationToken.None);
+            Assert.True(loaded.IsAuthoritative, name);
+            LightingSettings result = loaded.Profiles.PluggedIn.Lighting!;
+            Assert.Equal(item["controlsKeyboardEffect"]!.GetValue<bool>(), result.ControlsKeyboardEffect);
+            Assert.Equal(item["set"]!["independentControls"] is null, result.IndependentControls is null);
+        }
+    }
+
     [Fact]
     public async Task WindowsReplay_ProfileFixtureMatchesManagedMigration()
     {

@@ -1114,9 +1114,10 @@ fn aggregate(files: &dyn Files, same_path: fn(&str, &str) -> bool) -> io::Result
     fn file(v: Option<&[u8]>) -> ConfigFile<'_> {
         v.map_or(ConfigFile::Missing, ConfigFile::Bytes)
     }
-    // Schemas 25 and 26 differ from 27 only by lighting members that managed
-    // rejects below their introducing schema; schema 24 still needs managed
-    // Fan Stop migration first.
+    // Schemas 25 and 26 are read as managed ProfileStore reads them: lighting
+    // members newer than the document are rejected, and schema 26 also gets the
+    // PreserveLegacyIndependentProfileIntent normalisation below. Schema 24 still
+    // needs managed Fan Stop migration first.
     let Inspection::CommittedEnvelope {
         schema: schema @ 25..=configuration::CURRENT_SCHEMA,
     } = configuration::inspect(configuration::Snapshot {
@@ -1131,7 +1132,7 @@ fn aggregate(files: &dyn Files, same_path: fn(&str, &str) -> bool) -> io::Result
             "Uncommitted or non-current profile aggregate is preserved; managed recovery or migration is required.",
         ));
     };
-    let doc = decode(profile.as_deref().ok_or_else(denied)?)?;
+    let mut doc = decode(profile.as_deref().ok_or_else(denied)?)?;
     let prefs = decode(preferences.as_deref().ok_or_else(denied)?)?;
     if [&doc, &prefs]
         .into_iter()
@@ -1202,6 +1203,9 @@ fn aggregate(files: &dyn Files, same_path: fn(&str, &str) -> bool) -> io::Result
         }
     }
     crate::service_status::Snapshot::validate_thermal_profiles(&doc["profiles"])?;
+    if schema == 26 {
+        configuration::preserve_legacy_independent_intent(&mut doc["profiles"]);
+    }
     Ok(Some(doc))
 }
 

@@ -2442,6 +2442,45 @@ fn managed_application_files(bytes: &[u8]) -> MemoryFiles {
     );
     files
 }
+// Managed ProfileStore normalises schema-26 lighting on read; the managed
+// BatteryConfigurationStoreTests consume the same cases.
+#[test]
+fn installed_storage_reads_schema26_lighting_as_managed_normalises_it() {
+    let vector: Value = serde_json::from_str(include_str!(
+        "../../../../../../../tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-schema26-lighting.json"
+    ))
+    .unwrap();
+    for case in vector["cases"].as_array().unwrap() {
+        let staged = MemoryFiles::default();
+        staged.profiles(1);
+        let mut profile = staged.document("profiles.json");
+        profile["schemaVersion"] = case["schema"].clone();
+        let mut lighting = profile["profiles"]["pluggedIn"]["lighting"].clone();
+        for (name, value) in case["set"].as_object().unwrap() {
+            lighting[name] = value.clone();
+        }
+        profile["profiles"]["pluggedIn"]["lighting"] = lighting.clone();
+        profile["profiles"]["applicationProfiles"][0]["overrides"]["battery"] =
+            json!({ "lighting": lighting });
+        let files = managed_application_files(&serde_json::to_vec(&profile).unwrap());
+        let storage = Storage::open(Box::new(files), SID).unwrap();
+        let profiles = storage.profiles().unwrap().unwrap();
+        let name = case["name"].as_str().unwrap();
+        for lighting in [
+            &profiles["pluggedIn"]["lighting"],
+            &profiles["applicationProfiles"][0]["overrides"]["battery"]["lighting"],
+        ] {
+            assert_eq!(
+                lighting["controlsKeyboardEffect"], case["controlsKeyboardEffect"],
+                "{name}"
+            );
+            assert_eq!(
+                lighting["independentControls"], case["set"]["independentControls"],
+                "{name}"
+            );
+        }
+    }
+}
 async fn report_game(rig: &Rig) {
     let result = rig.request(json!({"operation":"reportApplicationContext","version":85,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
     assert_eq!(result["result"]["status"], 0);
