@@ -1,0 +1,219 @@
+{
+    "schemaVersion":  1,
+    "reviewedAt":  "2026-11-19",
+    "model":  "RZ09-0509",
+    "usbIdentity":  "1532:02B8",
+    "physicalValidation":  "Pending",
+    "reviewScope":  "Read-only static review of the exact keyboard MCU image. No hardware was touched. Source-backed only; not physical validation.",
+    "firmware":  {
+                     "hexImageSha256":  "20158E4D7374A21D3A0C57AB44601E34A9796AEDD119B21500825828B3FA55F0",
+                     "hexImageProvenance":  "Pinned by 2026-11-13-modern-mcu-lighting.json and 2026-11-07-models.json.",
+                     "decodedSha256":  "32BB690B242B524BE8432E838E587E1FFD495DF413EAFB93341D4479D750FC1F",
+                     "decodedBytes":  63600,
+                     "decodedLoadBase":  "0x0 (Cortex-M0 Thumb; RAM at 0x10000000)",
+                     "hashCheck":  "Intel HEX and decoded image hashes recomputed on 2026-11-19 and matched the repository pins.",
+                     "restriction":  "Source provenance, not an installed firmware version allowlist."
+                 },
+    "firmwareState":  {
+                          "reportBase":  "0x10001664 (status at +0, data size +5, class +6, command +7, arguments from +8; status 5 = not supported)",
+                          "records":  "0x40-byte records, mode at +5; selector (storage, led) returns active (storage 0) or saved (storage 1) record",
+                          "customFlag":  "0x10000265 (LED5), 0x10000266 (LED4)",
+                          "keyboardStaging":  "0x10001878 (0x120 = 6x16x3)",
+                          "logoStaging":  "0x10001998 (0x30)",
+                          "copyHelper":  "0x63A8",
+                          "composer":  "0x67D4 (called from 0x690A)",
+                          "class0fHandler":  "0x96C8",
+                          "class03Handler":  "0xABC0"
+                      },
+    "keyboardTransport":  {
+                              "rows":  6,
+                              "columns":  16,
+                              "rowCommand":  "03/0B",
+                              "rowDataSize":  52,
+                              "rowArguments":  "FF,row,0,15,RGB*16",
+                              "rowHandler":  "0xB372..0xB41C",
+                              "rowSemantics":  "Arguments [frameId (ignored), row, start, end, RGB from arg4]. Writes keyboard staging at row*0x30+col*3. FE,FE,FE as the first RGB clears the whole keyboard staging buffer. Status 5 for row 6 or higher, end 16 or higher, or start greater than end.",
+                              "alternativeRowCommand":  "0F/03",
+                              "alternativeRowDataSize":  53,
+                              "alternativeRowArguments":  "0,5,row,0,15,RGB*16",
+                              "alternativeRowHandler":  "0x9FFA..0xA206",
+                              "alternativeRowSemantics":  "Arguments [storage (ignored), led, row, start, end, RGB from arg5]. LED5 rows 0..5 write keyboard staging. LED5 row 6 returns success without writing. Status 5 for row 7 or higher, end 16 or higher, or start greater than end.",
+                              "forbiddenAddressing":  "Never send 0F/03 with LED4 or LED0. LED4 rows 1..5 write logo_buffer + row*0x30, past the 0x30-byte logo buffer (RAM overwrite). LED0 rows 0..5 write keyboard staging and LED0 row 6 writes the logo buffer. Send LED5 rows 0..5 only.",
+                              "persistence":  "Row writes only change RAM staging. Boot reloads staging from storage offset 0x210 with a CRC; the default pattern is written only after a CRC failure.",
+                              "activationCommand":  "0F/02",
+                              "activationDataSize":  3,
+                              "activationArguments":  [
+                                                          0,
+                                                          5,
+                                                          8
+                                                      ],
+                              "activationSemantics":  "Custom arm 0x9E62: LED5 sets flag[0]=1, active record mode 8 and copies staging to output. Completion 0x9F76 with storage 0 only re-initialises the renderer; nothing is persisted. LED4 and LED38 are untouched.",
+                              "alternativeActivation":  "03/0A [5,0] custom arm 0xB270: flag[0]=1, copy, active record mode 8, no persistence; keyboard-only.",
+                              "forbiddenActivation":  "0F/02 [0,0,8] also sets the LED4 flag and record. Storage 1 activates and persists the saved bank. Neither is used.",
+                              "selectionReadback":  "0F/82 [0,5,0,0,0,0,0,0,0,0,0,0] returns [0,5,8,...] (GET case 0x998C; GET table 0x9818).",
+                              "pixelsReadable":  false,
+                              "excluded":  "No vapor-chamber or auxiliary frame row: 03/0B rejects row 6 and 0F/03 LED5 row 6 is a silent no-op. The logo has no admissible frame path."
+                          },
+    "restoration":  {
+                        "baseline":  "Not admitted. The existing Volatile0FTyped built-in contract is unchanged by this review.",
+                        "firmwareFacts":  "0F/02 Off checks mode!=0 before clearing flag[0]; Static and Breathing clear the flag before their same-effect test; Spectrum clears and applies only while 0x100002FD==1. 03/0A built-ins clear flag[0] unconditionally except Spectrum, which is a no-op while 0x100002FD==0."
+                    },
+    "ownershipHazards":  {
+                             "fnOverlay":  "0x1000023D with record id 5: 0x66EE / 0x63F0 overlay into output 0x10000C7E only. Transient: staging and the custom flag are untouched, so frames resume when Fn is released. Fn-row keys are overdrawn while Fn is held.",
+                             "gpioEvent":  "Handler 0x514A (called from 0x91F6) debounces GPIO 0x50002100 bit 8 (lid or backlight line; semantics not established). Falling edge fades out. Rising edge copies the saved records over the active records and re-initialises the renderer with the saved mode, without clearing the custom flag. Afterwards 0F/82 reports the saved mode while staging is still displayed.",
+                             "gpioMitigation":  "Treat any 0F/82 read other than mode 8 during a frame session as an external change: stop host rendering and restore through the flag-clearing legacy 03/0A setter. Never infer the frame is off from the reported mode.",
+                             "idle":  "0xC9B4 and 0xDB6C call fades (0x6A34) only; 0xC84C (from the sleep path) clears device mode 0x100002C2",
+                             "hostOnlyFlagClears":  "Class-00 paths clear both flags when device mode is 2 and on the factory-default restore commands. OpenBlade sends neither.",
+                             "boot":  "Initialised data sets both flags to 0 and init 0x5BD4 clears them; a reset always leaves custom mode.",
+                             "windowsDynamicLighting":  {
+                                                            "descriptor":  "HID LampArray usage page 0x59 usage 0x01 at 0xEDE8.",
+                                                            "sourceSelect":  "Copy helper 0x63A8 for LED5 copies the LampArray buffer 0x100011FA instead of keyboard staging 0x10001878 (0x120 = 6x16x3) when autonomous mode 0x100002FD==0 and (policy 0x100002DF==0 or device mode 0x100002C2==0). Otherwise it copies keyboard staging.",
+                                                            "defaults":  "Initialised data: 0x100002FD=1 (byte 0xF86D), 0x100002DF=0 (byte 0xF84F), 0x100002C2=0.",
+                                                            "lampArrayHandler":  "0xD680..0xD86A: LampRangeUpdate/LampMultiUpdate write 0x100011FA through 0xD370. While autonomous mode is 0 (unless policy 1 with device mode 2 or 3) the firmware sets flag[0]=1, saved record mode 8, activates the saved bank and persists. LampArrayControl stores AutonomousMode in 0x100002FD; returning to 1 with device mode 0 clears flag[0], sets saved mode 3 (Spectrum), activates and persists.",
+                                                            "writers":  "0x100002FD is written only by LampArrayControl. 0x100002DF is written only by 0F/11 at 0xA3A8. 0x100002C2 is written by boot, 00/04 at 0xB6AA (store 0xB6E2) and the sleep path.",
+                                                            "consequence":  "When Windows Dynamic Lighting controls the LampArray, OpenBlade rows land in staging but the keyboard shows the LampArray buffer, and 0F/82 still reports mode 8. Releasing control forces a persisted Spectrum and clears the custom flag. OpenBlade cannot read AutonomousMode through a reviewed command."
+                                                        }
+                         },
+    "limitations":  [
+                        "Six rows x 16 columns of the LED5 keyboard only; no logo, vapor-chamber or extra row.",
+                        "Send LED5 only. LED4 and LED0 frame writes are forbidden (LED4 overwrites RAM past the logo buffer).",
+                        "Pixels are write-only; a mode-8 baseline is unrestorable and blocks host entry.",
+                        "0F/82 mode 8 confirms selection only. The GPIO bit-8 event can change the reported mode while staging stays visible.",
+                        "The Fn overlay overdraws Fn-row and arrow keys while Fn is held.",
+                        "Display ownership depends on the unreadable LampArray AutonomousMode flag controlled by Windows Dynamic Lighting."
+                    ],
+    "commandSequence":  [
+                            "Not admitted. The transport and selection commands are the same as the admitted siblings (03/0B rows plus 0F/02 [0,5,8] confirmed by 0F/82), but display ownership cannot be confirmed."
+                        ],
+    "verdict":  "NOT-ESTABLISHED",
+    "wouldEstablish":  "A separately reviewed, readable proof that no LampArray host controls the exact device (AutonomousMode 1) before and during the session, or a reviewed Synapse-style ownership sequence (0F/11 policy plus device mode). 0F/11 [1] rewrites the saved record from a backup and persists, so it needs its own exact-model review.",
+    "differencesFrom0529":  [
+                                "16 columns (rowDataSize 52, end column 15) instead of 19 (61, end 18).",
+                                "No row 6 or second region: no vapor-chamber frame and no LED38 activation.",
+                                "Restore uses the always flag-clearing legacy 03/0A setter instead of 0F/02 typed setters gated on mode 8, because the GPIO event can move the active mode off 8 while the flag stays set.",
+                                "LED4 0F/03 rows overflow the logo buffer; the implementation must hard-reject them.",
+                                "Firmware exposes a HID LampArray whose AutonomousMode selects the displayed buffer."
+                            ],
+    "windows":  [
+                    {
+                        "name":  "getTable0F82",
+                        "offset":  "9818",
+                        "length":  12,
+                        "sha256":  "6B4499282E691F5011C8C760D88E851DCF699A96ACECDBE5EF6A4686D2FCC16E"
+                    },
+                    {
+                        "name":  "getCustomCase",
+                        "offset":  "998C",
+                        "length":  12,
+                        "sha256":  "F7AAEC9B305F7E524952136F43622488AF022B3C731203C7C780AC8073D9B3DB"
+                    },
+                    {
+                        "name":  "setTable0F02",
+                        "offset":  "9A34",
+                        "length":  12,
+                        "sha256":  "67B0639D62E4DCF14EF3F77E91FEACDF1C105040D30F07EC9454680E73C75B3A"
+                    },
+                    {
+                        "name":  "customArm0F02",
+                        "offset":  "9E62",
+                        "length":  138,
+                        "sha256":  "389EF86FB6723208E5BB398E612B8DE715D65F9EDC8388B2F56B06CA24A57146"
+                    },
+                    {
+                        "name":  "activeCompletion",
+                        "offset":  "9F76",
+                        "length":  132,
+                        "sha256":  "7023C2DEB3D4183EEE69B00CE05AB951F347E03D5E10647708E00D61A489240F"
+                    },
+                    {
+                        "name":  "frameWriter0F03",
+                        "offset":  "9FFA",
+                        "length":  524,
+                        "sha256":  "5BAFE7467552CB9102A301AEFA72BE04EE94BE2FF141E4483D6076F608D549DF"
+                    },
+                    {
+                        "name":  "legacy03_0A",
+                        "offset":  "B0C8",
+                        "length":  682,
+                        "sha256":  "61639B28460276D4765319D17521D58E3087812B11B5EAC9E0DC15678395B91D"
+                    },
+                    {
+                        "name":  "legacyCustomArm03_0A",
+                        "offset":  "B270",
+                        "length":  28,
+                        "sha256":  "90E9E1B95C6224ED9FB7734FA6003CEEB8362080A3C8E841DCE024856F19700A"
+                    },
+                    {
+                        "name":  "legacyRows03_0B",
+                        "offset":  "B372",
+                        "length":  170,
+                        "sha256":  "E4075BF9D90661C7402E4C1BE482AC9A9D79627017C9F667B41FA38108699176"
+                    },
+                    {
+                        "name":  "copyHelperSourceSelect",
+                        "offset":  "63A8",
+                        "length":  72,
+                        "sha256":  "A645FD0C3CFA17347A3B68D8CE5CA841E016595CB2FFF4D32DE59D4A2FC90A97"
+                    },
+                    {
+                        "name":  "composer",
+                        "offset":  "67D4",
+                        "length":  310,
+                        "sha256":  "F4543BFFDF0F709C06C04812CF343ED4AF3D82078C325241B8B39C62661155F1"
+                    },
+                    {
+                        "name":  "gpioEventHandler",
+                        "offset":  "514A",
+                        "length":  266,
+                        "sha256":  "284F3E34B4AEF3C5397BC6E170B8B68E6BEE06BE319AA8A1BFF56AECDB87C598"
+                    },
+                    {
+                        "name":  "initFlagClear",
+                        "offset":  "5BD4",
+                        "length":  274,
+                        "sha256":  "13A84A804E41B1724B59C34EB24BF313616D327F2CD73217589CE61E5F1CB461"
+                    },
+                    {
+                        "name":  "bootFrameLoad",
+                        "offset":  "9036",
+                        "length":  358,
+                        "sha256":  "E87CD246AF514110994D7AF44DEF4984E149DB25EB44A9A36A4AB826AAEF0D43"
+                    },
+                    {
+                        "name":  "lampRangeWriter",
+                        "offset":  "D370",
+                        "length":  126,
+                        "sha256":  "63622381FD7DC8073F55EA3F718C51FC82E13862C064FB75A1913DC414DFA992"
+                    },
+                    {
+                        "name":  "lampArrayUpdateAndAutonomous",
+                        "offset":  "D680",
+                        "length":  492,
+                        "sha256":  "CCE680B2B33F9EE08ADFC6CC7576C0EE14517B677040B8A3DCF9EA1134B8CDDE"
+                    },
+                    {
+                        "name":  "deviceModeSet00_04",
+                        "offset":  "B6E0",
+                        "length":  18,
+                        "sha256":  "D039500E6B3D58F4CADDFE3886B2D67AC10C89B5249B7ACA8AA3E1179F1E979B"
+                    },
+                    {
+                        "name":  "lampArrayDescriptor",
+                        "offset":  "EDE8",
+                        "length":  32,
+                        "sha256":  "3FD5C4DEE9FA499A60EDCCDCEFC2FE91A5D36956DC4645B66A8E2A76136348CC"
+                    },
+                    {
+                        "name":  "scatterTable",
+                        "offset":  "F750",
+                        "length":  32,
+                        "sha256":  "9321B8B3124E610D560117A2E5B3EB87DDA02545FBD7AD342675D0EB8D5F1007"
+                    },
+                    {
+                        "name":  "initializedData",
+                        "offset":  "F770",
+                        "length":  256,
+                        "sha256":  "F6E4A733919806CDDB61AF6394635DEF3A7DFC51410648081D0C07764AA5309B"
+                    }
+                ]
+}

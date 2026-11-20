@@ -21,6 +21,30 @@
       "sha256": "9fa8cec07a14530926e21e2c7b31703bbf4e18f6e4c5ba54150292712d1adc47"
     },
     {
+      "path": "2026-11-19-rz09-0301-keyboard-frames.json",
+      "sha256": "6cb1dc2f6addbf99d67d297af4b4b5ed82fe31cf82904f9e46ea049eb3132504"
+    },
+    {
+      "path": "2026-11-19-rz09-0421-keyboard-frames.json",
+      "sha256": "db2f6b133b604751341ff1ea4d7e64f3e006e151c2743cbf49f60c3ee694dc09"
+    },
+    {
+      "path": "2026-11-19-rz09-0423-keyboard-frames.json",
+      "sha256": "af9c618a46f2abadb43d7f6a410c77dfdaea56f4fbf0bfe79a6e158b91f1af24"
+    },
+    {
+      "path": "2026-11-19-rz09-0427-keyboard-frames.json",
+      "sha256": "2999d8344f598b2844e27924d5e33d2323d78499420b5046418984ba02920e13"
+    },
+    {
+      "path": "2026-11-19-rz09-0509-keyboard-frames.json",
+      "sha256": "26025175d9b06b2cfe194d38f8221dc8a5517a084cec805b940ab709aa70d404"
+    },
+    {
+      "path": "2026-11-19-rz09-0510-keyboard-frames.json",
+      "sha256": "68af128e6551b35674c14e8ac2b43a1acef8e94db9f1bc06ac3801fa40042eb1"
+    },
+    {
       "path": "2026-11-13-mcu-color-wave-review.json",
       "sha256": "82f8ff18b7f12b332ba9f63c7e9c1ee3a81cc099e6749f147c9cabef408e13c1"
     },
@@ -644,13 +668,14 @@
       "independentFieldsRetained": false,
       "independentFieldControls": true,
       "geometry": "MCU frame bounds 6x16",
-      "frameTransport": "Source bounds recorded; no custom-frame backend or ownership lifecycle admitted in this change.",
+      "frameTransport": "Not established. The 2026-11-19 exact-image review found the same 03/0B rows and 0F/02 [0,5,8] selection as the admitted siblings, but Windows LampArray AutonomousMode selects the displayed buffer and cannot be read. Host frames stay unavailable.",
+      "frameReview": "2026-11-19-rz09-0509-keyboard-frames.json",
       "keyMap": "No exact physical input-to-light map admitted.",
       "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
       "restoration": "Per-submission admission, independent effect confirmation; legacy setters require fresh active-brightness read then requested target. No framebuffer restoration claim.",
       "gaps": [
         "Spectrum hidden policy/palette is not readable.",
-        "Custom-frame ownership, lifecycle and pixel restoration backend is not admitted.",
+        "Custom frames are not admitted: Windows Dynamic Lighting can show its own buffer instead of the rows, and OpenBlade cannot read that state.",
         "Key input mapping and advanced key-triggered controls need their own source review."
       ],
       "physicalValidation": "Pending for these additions."
@@ -688,14 +713,15 @@
       "independentFieldsRetained": false,
       "independentFieldControls": true,
       "geometry": "MCU frame bounds 6x16",
-      "frameTransport": "Source bounds recorded; no custom-frame backend or ownership lifecycle admitted in this change.",
+      "frameTransport": "Not established. The 2026-11-19 exact-image review found the same 03/0B rows and 0F/02 [0,5,8] selection as the admitted siblings, but Windows LampArray AutonomousMode selects the displayed buffer and cannot be read. Host frames stay unavailable.",
+      "frameReview": "2026-11-19-rz09-0510-keyboard-frames.json",
       "keyMap": "No exact physical input-to-light map admitted.",
       "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
       "restoration": "Per-submission admission, independent effect confirmation; legacy setters require fresh active-brightness read then requested target. No framebuffer restoration claim.",
       "gaps": [
         "Static hidden palette selector is not readable.",
         "Spectrum hidden policy/palette is not readable.",
-        "Custom-frame ownership, lifecycle and pixel restoration backend is not admitted.",
+        "Custom frames are not admitted: Windows Dynamic Lighting can show its own buffer instead of the rows, and OpenBlade cannot read that state.",
         "Key input mapping and advanced key-triggered controls need their own source review."
       ],
       "physicalValidation": "Pending for these additions."
