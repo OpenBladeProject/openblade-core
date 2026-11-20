@@ -237,6 +237,21 @@ public sealed class CoolingPadSourceProtocolTests
         Assert.Contains(controller, result.Conflicts);
     }
 
+    [Fact]
+    public void FailureMessageNamesTheTypedCommandAndSessionClassification()
+    {
+        var result = new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.ProtocolFailure)
+        {
+            Diagnostic = new(HidSessionFailurePhase.ProtocolValidation, HidSessionFailureKind.ProtocolFailure, null, 91)
+            { ProtocolValidationFailure = HidProtocolValidationFailure.Status },
+            QueryResponseStatus = 0x05,
+        };
+        Assert.Equal("Cooling-pad operation failed: ProtocolFailure (0D/90, ProtocolValidation, Status, status 0x05).",
+            SourceBackedCoolingPadDevice.DescribeFailure(CoolingPadProtocol.FanQuery(), result));
+        Assert.Equal("Cooling-pad operation failed: Timeout (0F/82).", SourceBackedCoolingPadDevice.DescribeFailure(
+            CoolingPadProtocol.EffectQuery(), new(default, HidSessionFailureKind.Timeout)));
+    }
+
     private sealed class ControllerProcesses(string name) : IRunningProcessSource
     {
         public IReadOnlyList<string> GetProcessNames() => [name];

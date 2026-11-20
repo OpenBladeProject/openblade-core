@@ -274,6 +274,21 @@ internal sealed class SourceBackedCoolingPadDevice(
         if (actual.Span[2] != raw) { FailReadback("Cooling-pad brightness readback differs from the request."); }
     }
 
+    // Names the failing typed command and the session's own classification so an exported
+    // status identifies which read or write stopped. No response payload bytes are included.
+    internal static string DescribeFailure(RazerCommandSpec command, HidSessionResult<ReadOnlyMemory<byte>> result)
+    {
+        var detail = new List<string>(4) { $"{command.ClassId:X2}/{command.CommandId:X2}" };
+        if (result.Diagnostic is { } diagnostic)
+        {
+            detail.Add(diagnostic.Phase.ToString());
+            if (diagnostic.ProtocolValidationFailure is { } validation) { detail.Add(validation.ToString()); }
+            if (diagnostic.NativeWin32Error is { } error) { detail.Add($"Win32 {error}"); }
+        }
+        if (result.QueryResponseStatus is { } status) { detail.Add($"status 0x{status:X2}"); }
+        return $"Cooling-pad operation failed: {result.Failure} ({string.Join(", ", detail)}).";
+    }
+
     private async Task<ReadOnlyMemory<byte>> Execute(RazerCommandSpec command, bool write, Func<bool>? allowed,
         CancellationToken token, bool setOnly = false)
     {
@@ -330,7 +345,7 @@ internal sealed class SourceBackedCoolingPadDevice(
         }
         if (knownNotSubmitted && !partialMutation) { token.ThrowIfCancellationRequested(); }
         uncertain |= partialMutation || write && !knownNotSubmitted;
-        throw new CoolingPadOperationException($"Cooling-pad operation failed: {result.Failure}.", uncertain)
+        throw new CoolingPadOperationException(DescribeFailure(command, result), uncertain)
         {
             LocalAdmissionDeferred = write && admissionRevoked && knownNotSubmitted && !partialMutation && !uncertain,
         };
