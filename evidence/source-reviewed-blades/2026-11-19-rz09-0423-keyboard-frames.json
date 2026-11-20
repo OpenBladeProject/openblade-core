@@ -32,7 +32,7 @@
                               "rowDataSize":  52,
                               "rowArguments":  "FF,row,0,15,RGB*16",
                               "rowHandler":  "0xAE54..0xAEFE",
-                              "rowSemantics":  "Arguments [frameId (ignored), row, start, end, RGB from arg4]. Writes keyboard staging at row*0x30+col*3. FE,FE,FE as the first RGB clears the whole keyboard staging buffer. Status 5 for row 6 or higher, end 16 or higher, or start greater than end.",
+                              "rowSemantics":  "Arguments [frameId (ignored), row, start, end, RGB from arg4]. Writes keyboard staging at row*0x30+col*3. row=start=end=0xFE clears the staging buffer; OpenBlade sends rows 0..5, start 0, end 15, so it can never form the sentinel. Status 5 for row 6 or higher, end 16 or higher, or start greater than end.",
                               "alternativeRowCommand":  "0F/03",
                               "alternativeRowDataSize":  53,
                               "alternativeRowArguments":  "0,5,row,0,15,RGB*16",

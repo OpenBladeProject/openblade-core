@@ -32,7 +32,7 @@
                               "rowDataSize":  52,
                               "rowArguments":  "FF,row,0,15,RGB*16",
                               "rowHandler":  "0xBC3C..0xBCE6",
-                              "rowSemantics":  "Arguments [frameId (ignored), row, start, end, RGB from arg4]. Writes keyboard staging at row*0x30+col*3. FE,FE,FE as the first RGB clears the whole keyboard staging buffer. Status 5 for row 6 or higher, end 16 or higher, or start greater than end.",
+                              "rowSemantics":  "Arguments [frameId (ignored), row, start, end, RGB from arg4]. Writes keyboard staging at row*0x30+col*3. row=start=end=0xFE clears the staging buffer (corrected from the RZ09-0301 handler at 0xA6B6..0xA6CC, which compares row, start and end with 0xFE; this image was not re-read). OpenBlade sends no frames on this model. Status 5 for row 6 or higher, end 16 or higher, or start greater than end.",
                               "alternativeRowCommand":  "0F/03",
                               "alternativeRowDataSize":  53,
                               "alternativeRowArguments":  "0,5,row,0,15,RGB*16",
