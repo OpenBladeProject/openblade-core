@@ -79,7 +79,10 @@ try {
         # completed_rejection (0e1061a0) pins the shared 07/8C completed-rejection geometry.
         'openblade-protocol' = @('completed_rejection', 'custom_performance', 'report_parity', 'report_properties',
             'temporary_charge')
-        'openblade-domain' = @('automation_policy', 'function_row_policy', 'profile_policy', 'recovery_replay')
+        # profile_set_vectors reads the managed ProfileSet vectors; it compiles only
+        # with the profile-set and thermal-history features.
+        'openblade-domain' = @('automation_policy', 'function_row_policy', 'profile_policy',
+            'profile_set_vectors', 'recovery_replay')
     }
 
     $metadataJson = cargo metadata --locked --offline --format-version 1
@@ -250,7 +253,8 @@ try {
             $domainFeatures = @($package.features.PSObject.Properties | ForEach-Object {
                 $_.Name + '=' + (@($_.Value | Sort-Object) -join '+')
             }) -join ','
-            if ($domainFeatures -cne 'thermal-history=dep:serde+dep:serde_json+dep:sha2') {
+            # profile-set is pure std code with no dependency of its own.
+            if ($domainFeatures -cne 'profile-set=,thermal-history=dep:serde+dep:serde_json+dep:sha2') {
                 throw "Unreviewed openblade-domain features: $domainFeatures"
             }
         }

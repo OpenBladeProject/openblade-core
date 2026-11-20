@@ -5,7 +5,10 @@
 //! validator and the real `UpdateProfilesAsync` path, and verifies the same
 //! file. A case marked `nativeDifference` is one where native refuses a frame
 //! managed accepts; the note says why.
-#![cfg(feature = "profile-set")]
+//!
+//! The stored documents are compared by SHA-256, which `thermal-history`
+//! brings; run with both features.
+#![cfg(all(feature = "profile-set", feature = "thermal-history"))]
 
 use openblade_domain::profile_set::json::{self, Json};
 use openblade_domain::profile_set::{
