@@ -676,6 +676,22 @@ async fn unsupported_custom_intent_is_stored_or_rejected_without_a_setter() {
     );
     assert!(thermal_setters(&rig).is_empty());
     rig.stop().await;
+    // The request codec reads negative zero as the integer 0, so the stored
+    // intent is canonical.
+    let mut request = custom(1, 0, false);
+    request["customPerformance"]["gpuClockOffsets"] =
+        serde_json::from_str(r#"{"coreMegahertz":-0,"memoryMegahertz":20}"#).unwrap();
+    let rig = rig_at(2, 0, FULL, MemoryFiles::default());
+    let result = rig.set(1, request).await;
+    assert_eq!(result["result"]["status"], 2, "{result}");
+    assert!(thermal_setters(&rig).is_empty());
+    let saved: Value =
+        serde_json::from_slice(&rig.files.read("manual-overrides.json").unwrap().unwrap()).unwrap();
+    assert_eq!(
+        saved["overrides"]["customPerformance"]["gpuClockOffsets"].to_string(),
+        r#"{"coreMegahertz":0,"memoryMegahertz":20}"#
+    );
+    rig.stop().await;
 }
 
 #[tokio::test]
