@@ -7197,6 +7197,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
             resumeStateValidation.RecordConfirmedWrite(DeviceSubsystem.Performance);
             resumeStateValidation.RecordConfirmedWrite(DeviceSubsystem.Fans);
+            bool maximumFansNotRestored = false;
             if (!enabled && restoreUserIntent && transitionIntent is not null)
             {
                 HyperBoostIntentRestorationResult restoration =
@@ -7209,16 +7210,24 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                             transitionRunner: transitionRunner)
                         .ConfigureAwait(false);
                 readback = restoration.Readback ?? readback;
-                if (!restoration.Succeeded)
+                FailedHyperBoostRestoreObservation? failureObservation = restoration.Succeeded
+                    ? null
+                    : await CaptureFailedHyperBoostRestoreObservationAsync(
+                            transitionRunner.CurrentDevice,
+                            transitionIntent,
+                            restoration,
+                            readback)
+                        .ConfigureAwait(false);
+                readback = failureObservation?.State ?? readback;
+                // A refused Maximum Fans write (for example while CPU Boost is on)
+                // leaves nothing ambiguous when the fresh read confirms every
+                // other restored setting: retire the journal, keep writes open,
+                // and keep the saved Custom intent for a later reapply.
+                maximumFansNotRestored = failureObservation is not null
+                    && restoration.PerformanceRefusedBeforeSubmission
+                    && OnlyMaximumFansRemainsUnrestored(transitionIntent, failureObservation);
+                if (failureObservation is not null && !maximumFansNotRestored)
                 {
-                    FailedHyperBoostRestoreObservation failureObservation =
-                        await CaptureFailedHyperBoostRestoreObservationAsync(
-                                transitionRunner.CurrentDevice,
-                                transitionIntent,
-                                restoration,
-                                readback)
-                            .ConfigureAwait(false);
-                    readback = failureObservation.State;
                     HyperBoostRestoreRetryDisposition retryDisposition =
                         restoration.DeferredRetryEligible
                         && failureObservation.RecoveryBaseline is not null
@@ -7364,6 +7373,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 ? journalRequiresCoolingPad
                     ? "HyperBoost is active. Keep the supported cooling pad connected."
                     : "HyperBoost is active through the admitted pad-less path; no cooling pad is required for this owned session."
+                : disableJournalCleared && maximumFansNotRestored
+                    ? "HyperBoost is off. Maximum Fans was not turned back on; reapply Custom to restore it."
                 : disableJournalCleared
                     ? $"HyperBoost is off and the prior {PerformanceLabel(transitionIntent?.Performance ?? requestedBaseMode)} performance and fan intent is restored."
                     : $"HyperBoost is off and the prior {PerformanceLabel(transitionIntent?.Performance ?? requestedBaseMode)} performance and fan intent is restored, but its ownership journal could not be cleared; control writes remain blocked.";
@@ -7513,6 +7524,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         catch (BladeWriteException exception)
         {
             HyperBoostIntentRestorationResult? failedEntryRestoration = null;
+            if (enabled
+                && exception.SubmissionState == WriteSubmissionState.KnownNotApplied
+                && exception.MaximumFansClearedBeforeFailure)
+            {
+                RecordMaximumFansClearedForHyperBoost();
+            }
             if (exception.SubmissionState == WriteSubmissionState.Indeterminate)
             {
                 if (transitionRunner is not null)
@@ -7749,7 +7766,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         bool Succeeded,
         ConfirmedDeviceState? Readback,
         string Message,
-        bool DeferredRetryEligible = false);
+        bool DeferredRetryEligible = false,
+        bool PerformanceRefusedBeforeSubmission = false);
 
     private sealed record FailedHyperBoostRestoreObservation(
         ConfirmedDeviceState State,
@@ -8032,6 +8050,56 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private static bool HyperBoostBaselineStepSucceeded(
         ScopedApplyOutcome outcome) => outcome.Result.Status is
         ControlResultStatus.Applied or ControlResultStatus.Unchanged;
+
+    // The port confirmed Maximum Fans off by readback before HyperBoost entry
+    // stopped. Record that change as OpenBlade's own so a later observation
+    // does not attribute it to another controller.
+    private void RecordMaximumFansClearedForHyperBoost()
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (current.ConfirmedState is not { CustomPerformance: { MaximumFans: true } custom } confirmed)
+        {
+            return;
+        }
+        ConfirmedDeviceState cleared = confirmed with
+        {
+            CustomPerformance = custom with { MaximumFans = false },
+        };
+        bool externalBefore = driftTracker.ExternalChanges.Contains(DeviceSubsystem.Performance);
+        driftTracker.Observe(cleared);
+        if (!externalBefore)
+        {
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
+        }
+        PublishIfChanged(current with
+        {
+            ConfirmedState = cleared,
+            ExternalChanges = driftTracker.ExternalChanges,
+        });
+    }
+
+    // Only a fresh read counts: HyperBoost is off, Custom and Automatic fans
+    // are confirmed, and the saved processor levels match. The single missing
+    // setting is Maximum Fans, which the exit was asked to turn back on.
+    private static bool OnlyMaximumFansRemainsUnrestored(
+        HyperBoostRestoreIntent intent,
+        FailedHyperBoostRestoreObservation observation) =>
+        observation.RecoveryBaseline is not null
+        && intent is
+        {
+            Performance: PerformancePreset.Custom,
+            CustomPerformance: { MaximumFans: true } desired,
+            GpuClockTuning: null,
+            FanControl.Mode: FanMode.Automatic,
+        }
+        && observation.State is
+        {
+            HyperBoostActive: false,
+            Performance: PerformancePreset.Custom,
+            Fans: FanMode.Automatic,
+            CustomPerformance: { MaximumFans: false } confirmed,
+        }
+        && confirmed == desired with { MaximumFans = false };
 
     private static async Task<ScopedApplyOutcome>
         ResolveIndeterminateHyperBoostFanBaselineAsync(
@@ -8367,7 +8435,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 Succeeded: false,
                 MergeHyperBoostThermalState(preservedState, performance.Readback),
                 performance.Result.Message,
-                IsDeferredHyperBoostRestoreRetryEligible(performance));
+                IsDeferredHyperBoostRestoreRetryEligible(performance),
+                PerformanceRefusedBeforeSubmission: !performance.WriteAttempted
+                    && performance.WriteSubmissionState == WriteSubmissionState.KnownNotApplied);
         }
 
         ScopedApplyOutcome automaticFans = await ApplyStepAsync(
