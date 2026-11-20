@@ -198,40 +198,6 @@ pub(crate) fn legacy_lighting_intent(
     (reject_zone && contains(document, &zone)) || (reject_keyboard && contains(document, &keyboard))
 }
 
-/// Managed `LightingSettingsFactory.PreserveLegacyIndependentProfileIntent`,
-/// which `ProfileStore` applies only when it reads a schema-26 document: a
-/// lighting setting that controls the keyboard effect and also carries
-/// independent controls keeps them without the keyboard effect. `profiles` is
-/// the document's `profiles` member; power profiles and application overrides
-/// are both covered.
-pub(crate) fn preserve_legacy_independent_intent(profiles: &mut serde_json::Value) {
-    use serde_json::Value;
-    const POWER: [&str; 3] = ["pluggedIn", "battery", "usbC"];
-    fn preserve(profile: Option<&mut Value>) {
-        let Some(Value::Object(lighting)) = profile.and_then(|p| p.get_mut("lighting")) else {
-            return;
-        };
-        // ProfileStore binds these case-sensitively.
-        if lighting.get("controlsKeyboardEffect") == Some(&Value::Bool(true))
-            && lighting
-                .get("independentControls")
-                .is_some_and(|v| !v.is_null())
-        {
-            lighting.insert("controlsKeyboardEffect".into(), Value::Bool(false));
-        }
-    }
-    for key in POWER {
-        preserve(profiles.get_mut(key));
-    }
-    if let Some(Value::Array(apps)) = profiles.get_mut("applicationProfiles") {
-        for app in apps {
-            for key in POWER {
-                preserve(app.get_mut("overrides").and_then(|o| o.get_mut(key)));
-            }
-        }
-    }
-}
-
 pub(crate) fn digest_hex(bytes: &[u8]) -> String {
     format!("{:X}", Sha256::digest(bytes))
 }

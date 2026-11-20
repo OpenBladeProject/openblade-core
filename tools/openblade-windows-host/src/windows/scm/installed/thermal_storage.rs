@@ -1204,9 +1204,42 @@ fn aggregate(files: &dyn Files, same_path: fn(&str, &str) -> bool) -> io::Result
     }
     crate::service_status::Snapshot::validate_thermal_profiles(&doc["profiles"])?;
     if schema == 26 {
-        configuration::preserve_legacy_independent_intent(&mut doc["profiles"]);
+        preserve_legacy_independent_intent(&mut doc["profiles"]);
     }
     Ok(Some(doc))
+}
+
+/// Managed `LightingSettingsFactory.PreserveLegacyIndependentProfileIntent`,
+/// which `ProfileStore` applies only when it reads a schema-26 document: a
+/// lighting setting that controls the keyboard effect and also carries
+/// independent controls keeps them without the keyboard effect. `profiles` is
+/// the document's `profiles` member; power profiles and application overrides
+/// are both covered.
+fn preserve_legacy_independent_intent(profiles: &mut Value) {
+    const POWER: [&str; 3] = ["pluggedIn", "battery", "usbC"];
+    fn preserve(profile: Option<&mut Value>) {
+        let Some(Value::Object(lighting)) = profile.and_then(|p| p.get_mut("lighting")) else {
+            return;
+        };
+        // ProfileStore binds these case-sensitively.
+        if lighting.get("controlsKeyboardEffect") == Some(&Value::Bool(true))
+            && lighting
+                .get("independentControls")
+                .is_some_and(|v| !v.is_null())
+        {
+            lighting.insert("controlsKeyboardEffect".into(), Value::Bool(false));
+        }
+    }
+    for key in POWER {
+        preserve(profiles.get_mut(key));
+    }
+    if let Some(Value::Array(apps)) = profiles.get_mut("applicationProfiles") {
+        for app in apps {
+            for key in POWER {
+                preserve(app.get_mut("overrides").and_then(|o| o.get_mut(key)));
+            }
+        }
+    }
 }
 
 pub(super) fn valid_application_path(p: &str) -> bool {
