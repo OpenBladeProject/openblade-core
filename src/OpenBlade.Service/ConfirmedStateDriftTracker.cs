@@ -20,6 +20,14 @@ public sealed class ConfirmedStateDriftTracker
     private bool? independentTouchpadIndicator;
     private readonly Func<bool>? retireCompletedTemporaryFullCharge;
 
+    // The preset the firmware held at the latest point OpenBlade's performance
+    // intent became authoritative: the first observation, a confirmed
+    // OpenBlade performance write, or an explicit user choice (deferred or
+    // applied). A later readback that differs is an external change newer than
+    // that intent. Unlike the external-change latch, an explicit choice moves
+    // this point forward without clearing the user-visible warning.
+    private PerformancePreset? performanceAtIntent;
+
     public ConfirmedStateDriftTracker(Func<bool>? retireCompletedTemporaryFullCharge = null) =>
         this.retireCompletedTemporaryFullCharge = retireCompletedTemporaryFullCharge;
 
@@ -27,9 +35,23 @@ public sealed class ConfirmedStateDriftTracker
         externalChangesSnapshot ??= new ReadOnlyCollection<DeviceSubsystem>(
             externalChanges.OrderBy(subsystem => subsystem).ToArray());
 
+    // Records that the user chose or cleared a performance intent now. Any
+    // earlier external preset change is older than this choice.
+    public void RecordExplicitPerformanceIntent() =>
+        performanceAtIntent = performance ?? performanceAtIntent;
+
+    // True when a fresh preset readback differs from the preset held when the
+    // current intent became authoritative, including a change no observation
+    // has recorded yet. Unknown evidence is not an external change.
+    public bool PerformanceChangedSinceIntent(PerformancePreset? fresh) =>
+        fresh is { } observed
+        && performanceAtIntent is { } reference
+        && observed != reference;
+
     public void Observe(ConfirmedDeviceState state)
     {
         ArgumentNullException.ThrowIfNull(state);
+        performanceAtIntent ??= state.Performance;
         ObserveValue(state.Performance, ref performance, DeviceSubsystem.Performance);
         ObserveCustomPerformance(state);
         ObserveValue(
@@ -50,6 +72,10 @@ public sealed class ConfirmedStateDriftTracker
         if (matched)
         {
             RemoveExternalChange(subsystem);
+            if (subsystem == DeviceSubsystem.Performance)
+            {
+                performanceAtIntent = performance ?? performanceAtIntent;
+            }
         }
         else
         {

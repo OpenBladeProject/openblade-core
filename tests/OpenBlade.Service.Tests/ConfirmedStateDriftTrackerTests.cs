@@ -348,6 +348,38 @@ public sealed class ConfirmedStateDriftTrackerTests
         LightingSettings? lighting = null) =>
         new(performance, fans, battery, lighting);
 
+    // The reference point for external preset changes moves forward on an
+    // explicit choice and on a confirmed OpenBlade write, never on an
+    // observation; the user-visible latch is independent of it.
+    [Fact]
+    public void PerformanceChangedSinceIntent_OrdersExternalChangesAgainstTheLatestIntent()
+    {
+        var tracker = new ConfirmedStateDriftTracker();
+        Assert.False(tracker.PerformanceChangedSinceIntent(PerformancePreset.Silent));
+        tracker.Observe(State(PerformancePreset.Balanced, FanMode.Fixed, Battery(80), DefaultLighting));
+        Assert.False(tracker.PerformanceChangedSinceIntent(PerformancePreset.Balanced));
+        Assert.True(tracker.PerformanceChangedSinceIntent(PerformancePreset.Silent));
+        Assert.False(tracker.PerformanceChangedSinceIntent(null));
+
+        tracker.Observe(State(PerformancePreset.Silent, FanMode.Fixed, Battery(80), DefaultLighting));
+        Assert.Contains(DeviceSubsystem.Performance, tracker.ExternalChanges);
+        Assert.True(tracker.PerformanceChangedSinceIntent(PerformancePreset.Silent));
+
+        tracker.RecordExplicitPerformanceIntent();
+        Assert.False(tracker.PerformanceChangedSinceIntent(PerformancePreset.Silent));
+        Assert.True(tracker.PerformanceChangedSinceIntent(PerformancePreset.Balanced));
+        Assert.Contains(DeviceSubsystem.Performance, tracker.ExternalChanges);
+
+        tracker.Observe(State(PerformancePreset.Performance, FanMode.Automatic, Battery(80), DefaultLighting));
+        tracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
+        Assert.False(tracker.PerformanceChangedSinceIntent(PerformancePreset.Performance));
+        Assert.DoesNotContain(DeviceSubsystem.Performance, tracker.ExternalChanges);
+
+        tracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
+        tracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: false);
+        Assert.False(tracker.PerformanceChangedSinceIntent(PerformancePreset.Performance));
+    }
+
     private static ConfirmedBatteryState Battery(int limit) => new(true, limit, false);
 
     private static ConfirmedBatteryState ProtectionOff() => new(false, null, false);

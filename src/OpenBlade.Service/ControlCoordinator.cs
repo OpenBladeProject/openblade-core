@@ -471,12 +471,22 @@ public sealed class ControlCoordinator
     internal const string UndeclaredThermalComponentMessage =
         "The fan or performance state changed during the request; no hardware setting was changed. Try again.";
 
+    internal const string ExternalPerformanceKeptMessage =
+        "The performance mode changed outside OpenBlade and was kept.";
+
+    private static bool PresetRangeAdmits(FanSpeedRange? range, FanControlSettings requested) =>
+        range is { IsWellFormed: true }
+        && (requested.Mode == FanMode.Fixed && range.Supports(requested.FixedSpeedRpm)
+            || requested.Mode is FanMode.ManualCurve or FanMode.Maximum);
+
     // Only a backend that reports the real preset under manual fans and admits
     // direct manual transitions applies a preset change while fans stay manual.
-    // Every other shape blocks performance writes under manual fans
-    // (PerformanceInitialStateBlockReason), so a preset chosen there waits for
-    // fans to return to Automatic. Unknown capabilities keep the deferring
-    // shape so a declaration stays a superset.
+    // Reporting backends without direct transitions block the write in
+    // PerformanceInitialStateBlockReason. On shared-selector shapes the
+    // runtime's deferral message stores the intent before any write is tried.
+    // Either way a preset chosen under manual fans waits for Automatic fans.
+    // Unknown capabilities keep the deferring shape so a declaration stays a
+    // superset.
     internal static bool DefersPerformanceUnderManualFans(
         DeviceCapabilities? capabilities) =>
         capabilities is not
@@ -485,22 +495,34 @@ public sealed class ControlCoordinator
             SupportsDirectManualFanTransitions: true,
         };
 
-    // Leaving manual fans applies the deferred performance intent. A backend
-    // that reports the real preset under manual fans can show an external
-    // preset change there; the drift tracker's external-change latch then keeps
-    // that preset (rule 5) instead of overwriting it on the exit. Shared
-    // selectors hide the preset under manual fans, so their drift observation
-    // is no evidence of an external preset change and never skips the restore.
+    // A reporting backend without direct transitions holds the preset that was
+    // applied when its fans went manual and reports it independently. Any
+    // request that ends with Automatic fans reconciles that applied preset to
+    // the desired intent from the fan step's fresh readback, whatever the
+    // previous fan mode was (a retry after a failed exit included), unless the
+    // readback shows an external preset change newer than the intent.
+    internal static bool ReconcilesPerformanceOnAutomaticFans(
+        DeviceCapabilities? capabilities) =>
+        capabilities is
+        {
+            ReportsPerformanceWithManualFans: true,
+            SupportsDirectManualFanTransitions: false,
+        };
+
+    // Whether a fan request may write the performance intent after fans reach
+    // Automatic. Shared selectors hide the preset under manual fans, so their
+    // exit from a manual mode always restores the saved intent, as before;
+    // reporting backends without direct transitions reconcile on every request
+    // to Automatic. The external-change check is applied separately, from the
+    // fresh readback, so this stays a declaration superset.
     internal static bool FanExitRestoresPerformance(
         DeviceCapabilities? capabilities,
         FanMode previous,
-        FanMode requested,
-        bool performanceChangedExternally = false) =>
+        FanMode requested) =>
         DefersPerformanceUnderManualFans(capabilities)
         && requested == FanMode.Automatic
-        && DeviceSubsystemOrder.IsManualFanMode(previous)
-        && !(performanceChangedExternally
-            && capabilities?.ReportsPerformanceWithManualFans == true);
+        && (DeviceSubsystemOrder.IsManualFanMode(previous)
+            || ReconcilesPerformanceOnAutomaticFans(capabilities));
 
     // Without direct manual transitions, entering or changing a manual mode
     // first establishes Balanced Automatic fans.
@@ -515,7 +537,8 @@ public sealed class ControlCoordinator
     // The thermal components a fan-control transition may touch, from cached
     // capabilities. This is a superset of what the coordinator decides from its
     // fresh read through the same predicates: it ignores the external-change
-    // gate and treats absent or incomplete capabilities as the wider shape. A
+    // check, treats absent or incomplete capabilities as the wider shape, and
+    // declares Performance for any request to Automatic without capabilities. A
     // fresh decision outside it, for example after a capability change, is
     // caught by UndeclaredThermalComponentOutcome before the first write.
     internal static IReadOnlyList<DeviceSubsystem> FanControlTransitionComponents(
@@ -528,6 +551,7 @@ public sealed class ControlCoordinator
             && capabilities.FanModes.Count > 0
             && capabilities.SupportsDirectManualFanTransitions;
         return FanExitRestoresPerformance(capabilities, previous, requested)
+            || (capabilities is null && requested == FanMode.Automatic)
             || FanEntryRequiresAutomaticBridge(
                 supportsDirectManualFanTransitions,
                 previous,
@@ -950,7 +974,7 @@ public sealed class ControlCoordinator
         PerformancePreset performanceIntent,
         CustomPerformanceSettings? customPerformanceIntent,
         CancellationToken cancellationToken,
-        bool performanceChangedExternally = false)
+        Func<PerformancePreset?, bool>? performanceChangedSinceIntent = null)
     {
         var writeAttempted = new HashSet<DeviceSubsystem>();
         var confirmedCoupledWrites = new HashSet<DeviceSubsystem>();
@@ -964,7 +988,7 @@ public sealed class ControlCoordinator
                 writeAttempted,
                 confirmedCoupledWrites,
                 cancellationToken,
-                performanceChangedExternally).ConfigureAwait(false);
+                performanceChangedSinceIntent).ConfigureAwait(false);
             return outcome with
             {
                 ConfirmedCoupledWrites = new HashSet<DeviceSubsystem>(
@@ -998,7 +1022,7 @@ public sealed class ControlCoordinator
         HashSet<DeviceSubsystem> writeAttempted,
         HashSet<DeviceSubsystem> confirmedCoupledWrites,
         CancellationToken cancellationToken,
-        bool performanceChangedExternally)
+        Func<PerformancePreset?, bool>? performanceChangedSinceIntent)
     {
         ArgumentNullException.ThrowIfNull(previous);
         ArgumentNullException.ThrowIfNull(requested);
@@ -1046,8 +1070,9 @@ public sealed class ControlCoordinator
         bool restoresPerformance = FanExitRestoresPerformance(
             transitionCapabilities,
             previous.Mode,
-            requested.Mode,
-            performanceChangedExternally);
+            requested.Mode);
+        bool reconcilesAppliedPreset = requested.Mode == FanMode.Automatic
+            && ReconcilesPerformanceOnAutomaticFans(transitionCapabilities);
         // Source backends report independent performance and manual state.
         // Scalar-range host curves require the requested preset just as mapped
         // targets do; another supported current preset is not a confirmation.
@@ -1084,9 +1109,14 @@ public sealed class ControlCoordinator
 
         if (directPresetRangedEntry)
         {
-            if (presetRange is not { IsWellFormed: true }
-                || !(requested.Mode == FanMode.Fixed && presetRange.Supports(requested.FixedSpeedRpm)
-                    || requested.Mode is FanMode.ManualCurve or FanMode.Maximum))
+            // Between manual modes on a backend without direct transitions, the
+            // firmware keeps the preset applied when fans went manual, and a
+            // preset chosen since waits for Automatic. The manual target then
+            // follows the freshly read applied preset's range, not the deferred
+            // intent's. Entry from Automatic still requires the intent itself.
+            bool followsAppliedPreset = !supportsDirectManualFanTransitions
+                && DeviceSubsystemOrder.IsManualFanMode(previous.Mode);
+            if (!followsAppliedPreset && !PresetRangeAdmits(presetRange, requested))
             {
                 return new ScopedApplyOutcome(
                     Unsupported("Fans"), null, WriteAttempted: false, ReadbackMatched: false,
@@ -1095,10 +1125,13 @@ public sealed class ControlCoordinator
             ScopedApplyOutcome direct = await ApplyRequestedFanControlStepOutcomeAsync(
                 requested,
                 cancellationToken,
-                initialStateBlockReason: state => state.Performance == performanceIntent
-                    && IsConfirmedDirectManualFanWriteBaseline(state)
-                        ? null
-                        : "Manual fan entry requires the freshly confirmed admitted performance preset and fan state.")
+                initialStateBlockReason: state => !IsConfirmedDirectManualFanWriteBaseline(state)
+                    || !(followsAppliedPreset
+                        ? state.Performance is { } applied
+                            && PresetRangeAdmits(transitionCapabilities.GetFanSpeedRange(applied), requested)
+                        : state.Performance == performanceIntent)
+                        ? "Manual fan entry requires the freshly confirmed admitted performance preset and fan state."
+                        : null)
                 .ConfigureAwait(false);
             RecordWriteAttempt(writeAttempted, DeviceSubsystem.Fans, direct);
             return direct;
@@ -1220,18 +1253,22 @@ public sealed class ControlCoordinator
 
         if (!restoresPerformance)
         {
-            return FanExitRestoresPerformance(
-                    transitionCapabilities,
-                    previous.Mode,
-                    requested.Mode)
-                ? fans with
+            return fans;
+        }
+
+        // Rule 5: a fresh readback whose preset differs from the one held when
+        // the intent became authoritative is an external change newer than
+        // that intent, observed or not, and stays as it is.
+        if (reconcilesAppliedPreset
+            && performanceChangedSinceIntent?.Invoke(fans.Readback?.Performance) == true)
+        {
+            return fans with
+            {
+                Result = fans.Result with
                 {
-                    Result = fans.Result with
-                    {
-                        Message = $"{fans.Result.Message} The performance mode changed outside OpenBlade and was kept.",
-                    },
-                }
-                : fans;
+                    Message = $"{fans.Result.Message} {ExternalPerformanceKeptMessage}",
+                },
+            };
         }
 
         ScopedApplyOutcome performance = await RunThermalStepAsync(
@@ -1270,6 +1307,7 @@ public sealed class ControlCoordinator
             Result = fans.Result with
             {
                 Message = performanceIntent == PerformancePreset.Balanced
+                    || reconcilesAppliedPreset && performance.Result.Status == ControlResultStatus.Unchanged
                     ? fans.Result.Message
                     : $"{fans.Result.Message} {performanceIntent} performance was restored.",
             },

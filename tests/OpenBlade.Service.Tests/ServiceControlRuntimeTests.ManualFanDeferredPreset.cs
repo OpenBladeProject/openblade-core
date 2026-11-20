@@ -87,6 +87,7 @@ public sealed partial class ServiceControlRuntimeTests
             FanControlSettings.Default, default);
 
         Assert.True(automatic.Status == ControlOperationStatus.Applied, $"{variant}: {automatic.Message}");
+        Assert.DoesNotContain(ControlCoordinator.ExternalPerformanceKeptMessage, automatic.Message, StringComparison.Ordinal);
         Assert.Equal(["Fans:Automatic", $"Performance:{preset}"], writes);
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
         Assert.Equal(preset, status.ConfirmedState!.Performance);
@@ -113,6 +114,7 @@ public sealed partial class ServiceControlRuntimeTests
             FanControlSettings.Default, default);
 
         Assert.True(automatic.Status == ControlOperationStatus.Applied, automatic.Message);
+        Assert.Contains(ControlCoordinator.ExternalPerformanceKeptMessage, automatic.Message, StringComparison.Ordinal);
         Assert.Equal(["Fans:Automatic"], writes);
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
         Assert.Equal(PerformancePreset.Silent, status.ConfirmedState!.Performance);
@@ -123,16 +125,18 @@ public sealed partial class ServiceControlRuntimeTests
     // Backends with direct transitions apply the preset while fans stay
     // manual, so the exit writes only the fan mode.
     [Theory]
-    [InlineData(0x029D)]
-    [InlineData(0x029F)]
-    public async Task ExactDirectReportingBackend_AppliesPresetUnderManualFansAndExitWritesOnlyFans(int productId)
+    [InlineData(0x029D, PerformancePreset.Silent)]
+    [InlineData(0x029F, PerformancePreset.Silent)]
+    [InlineData(0x029F, PerformancePreset.Performance)]
+    public async Task ExactDirectReportingBackend_AppliesPresetUnderManualFansAndExitWritesOnlyFans(
+        int productId, PerformancePreset preset)
     {
         (TestContext context, List<string> writes) = await EnterExactBalancedFixedFansAsync(productId);
 
         ControlOperationResult chosen = await context.Runtime.SetPerformanceConfigurationOverrideAsync(
-            new PerformanceOverride(PerformancePreset.Silent, OverrideLifetime.UntilPowerSourceChange), default);
+            new PerformanceOverride(preset, OverrideLifetime.UntilPowerSourceChange), default);
         Assert.True(chosen.Status == ControlOperationStatus.Applied, chosen.Message);
-        Assert.Equal(["Performance:Silent"], writes);
+        Assert.Equal([$"Performance:{preset}"], writes);
         writes.Clear();
 
         ControlOperationResult automatic = await context.Runtime.SetFanControlOverrideAsync(
@@ -141,7 +145,7 @@ public sealed partial class ServiceControlRuntimeTests
 
         Assert.True(automatic.Status == ControlOperationStatus.Applied, automatic.Message);
         Assert.Equal(["Fans:Automatic"], writes);
-        Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
+        Assert.Equal(preset, context.Device.ConfirmedState.Performance);
     }
 
     // Defense in depth for the entry bridge: cached capabilities admit direct

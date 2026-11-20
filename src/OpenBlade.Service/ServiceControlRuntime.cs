@@ -2308,7 +2308,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         Func<bool> stillControlsSession,
         CancellationToken token) => ExecuteScopedMutationAsync(
             DeviceSubsystem.Performance,
-            cancellationToken => SetPerformanceOverrideCoreAsync(value, cancellationToken),
+            async cancellationToken =>
+            {
+                await SetPerformanceOverrideCoreAsync(value, cancellationToken)
+                    .ConfigureAwait(false);
+                driftTracker.RecordExplicitPerformanceIntent();
+            },
             (coordinator, desired, cancellationToken) =>
                 coordinator.ApplyPerformanceTransitionOutcomeAsync(
                     desired,
@@ -2318,17 +2323,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 ? "Performance override was cleared."
                 : "Performance override intent was stored.",
             // The staged snapshot can still carry the previous desired state, so
-            // the deferral decision reads the requested preset from the override.
+            // the deferral decision resolves the stored intent again. A cleared
+            // override resolves to its profile, including a Custom profile.
             deferHardwareApply: (powerSource, status) => DeferredPerformanceIntentMessage(
                 powerSource,
                 status,
-                value is null
-                    ? status.DesiredState
-                    : status.DesiredState with
-                    {
-                        Performance = status.DesiredState.Performance with { Value = value.Value },
-                        CustomPerformance = value.CustomPerformance,
-                    }),
+                ResolveAutomationDesired(status.ConfirmedState ?? UnknownConfirmedState)),
             stillControlsSession: stillControlsSession,
             clearsExplicitOverride: value is null,
             thermalComponentResolver: desired =>
@@ -2485,6 +2485,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 {
                     await SetPerformanceOverrideCoreAsync(stagedOverride, token)
                         .ConfigureAwait(false);
+                    driftTracker.RecordExplicitPerformanceIntent();
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
@@ -2509,11 +2510,20 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
             else
             {
+                // On a reporting backend without direct transitions the
+                // shortcut takes the same transition as an explicit choice, so
+                // a Custom policy that first returns fans to Automatic applies
+                // instead of being blocked by the manual fans it hands back.
+                bool shortcutTransition = ControlCoordinator.ReconcilesPerformanceOnAutomaticFans(
+                    current.Capabilities);
                 result = await ApplyScopedIntentAsync(
                     DeviceSubsystem.Performance,
                     powerSource,
-                    (coordinator, desired, cancellationToken) =>
-                        coordinator.ApplyPerformanceOutcomeAsync(
+                    (coordinator, desired, cancellationToken) => shortcutTransition
+                        ? coordinator.ApplyPerformanceTransitionOutcomeAsync(
+                            desired,
+                            cancellationToken)
+                        : coordinator.ApplyPerformanceOutcomeAsync(
                             desired,
                             cancellationToken),
                     token,
@@ -2525,10 +2535,18 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         CustomPerformance = stagedOverride.CustomPerformance,
                         GpuClockTuning = stagedOverride.GpuClockTuning,
                     },
-                    cancellationToken => SetPerformanceOverrideCoreAsync(
-                        stagedOverride,
-                        cancellationToken),
-                    stillControlsSession: stillControlsSession).ConfigureAwait(false);
+                    async cancellationToken =>
+                    {
+                        await SetPerformanceOverrideCoreAsync(
+                            stagedOverride,
+                            cancellationToken).ConfigureAwait(false);
+                        driftTracker.RecordExplicitPerformanceIntent();
+                    },
+                    stillControlsSession: stillControlsSession,
+                    thermalExecutionOptions: shortcutTransition
+                        ? new ScopedThermalExecutionOptions(
+                            [DeviceSubsystem.Fans, DeviceSubsystem.Performance])
+                        : null).ConfigureAwait(false);
             }
             if (result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored)
             {
@@ -2631,8 +2649,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     performanceIntent,
                     customPerformanceIntent,
                     cancellationToken,
-                    performanceChangedExternally: driftTracker.ExternalChanges.Contains(
-                        DeviceSubsystem.Performance));
+                    performanceChangedSinceIntent: fresh =>
+                        driftTracker.PerformanceChangedSinceIntent(fresh));
             },
             token,
             value is null
@@ -2710,7 +2728,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         FanTargetSpeeds targets = FanCurveCalculator.Calculate(
             settings.ManualCurve,
             temperatures,
-            snapshot.Capabilities?.GetFanIntentSpeedRange(snapshot.DesiredState.Performance.Value)
+            snapshot.Capabilities?.GetFanIntentSpeedRange(ManualFanRangePreset(snapshot))
                 ?? FanSpeedRange.Standard);
         if (lastCurveFan1Rpm == targets.Fan1Rpm
             && lastCurveFan2Rpm == targets.Fan2Rpm)
@@ -2779,12 +2797,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 return;
             }
 
+            PerformancePreset curvePreset = ManualFanRangePreset(current);
             // Bind original intent to the current destination after waiting
             // for the gate. The backend projects effective output only.
             targets = FanCurveCalculator.Calculate(
                 settings.ManualCurve,
                 temperatures,
-                current.Capabilities?.GetFanIntentSpeedRange(current.DesiredState.Performance.Value)
+                current.Capabilities?.GetFanIntentSpeedRange(curvePreset)
                     ?? FanSpeedRange.Standard);
             var authority = new ManualFanCurveAuthority(
                 settings,
@@ -2820,7 +2839,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                             ThermalTransitionStepPurpose.ManualCurveTarget,
                             (coordinator, stepToken) =>
                                 coordinator.ApplyFanTargetsOutcomeAsync(
-                                    authority.Desired.Performance.Value,
+                                    curvePreset,
                                     targets.Fan1Rpm,
                                     targets.Fan2Rpm,
                                     stepToken),
@@ -18540,7 +18559,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         PowerSource powerSource,
         ServiceStatusSnapshot status,
         DesiredDeviceState requested) =>
-        PowerSourcePolicy.IsExternal(powerSource)
+        (PowerSourcePolicy.IsExternal(powerSource)
+            || ControlCoordinator.ReconcilesPerformanceOnAutomaticFans(status.Capabilities))
         && ControlCoordinator.DefersPerformanceUnderManualFans(status.Capabilities)
         && DeviceSubsystemOrder.IsManualFanMode(status.ConfirmedState?.Fans)
         && DeviceSubsystemOrder.IsManualFanMode(requested.Fans.Value)
@@ -20885,6 +20905,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     : ScopedThermalAuthorityPurpose.OrdinaryConfigurationIntent));
     }
 
+    // On a reporting backend without direct transitions, the firmware keeps
+    // the preset applied when fans went manual, and a preset chosen since is
+    // deferred until Automatic. Manual fan curves follow the applied preset
+    // range so they keep tracking temperature while that intent waits.
+    private static PerformancePreset ManualFanRangePreset(ServiceStatusSnapshot status) =>
+        ControlCoordinator.ReconcilesPerformanceOnAutomaticFans(status.Capabilities)
+        && DeviceSubsystemOrder.IsManualFanMode(status.ConfirmedState?.Fans)
+        && status.ConfirmedState?.Performance is { } applied
+            ? applied
+            : status.DesiredState.Performance.Value;
+
     private bool CanMaintainFanCurve(
         ServiceStatusSnapshot current,
         FanControlSettings settings)
@@ -20897,11 +20928,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             && CurrentPowerContextMatchesAutomation(EffectiveControlPowerSource(current))
             && current.Capabilities is { } curveCapabilities
             && ManualFanCurveCapabilityPolicy.SupportsPowerSource(curveCapabilities, EffectiveControlPowerSource(current), HasFreshExternalPowerPresence)
-            && ManualFanCurveCapabilityPolicy.SupportsPreset(curveCapabilities, current.DesiredState.Performance.Value)
+            && ManualFanCurveCapabilityPolicy.SupportsPreset(curveCapabilities, ManualFanRangePreset(current))
             && currentSettings == settings
             && (!curveCapabilities.ReportsPerformanceWithManualFans
-                || current.ConfirmedState?.Performance == current.DesiredState.Performance.Value
-                    && current.Capabilities?.GetFanSpeedRange(current.DesiredState.Performance.Value)
+                || current.ConfirmedState?.Performance == ManualFanRangePreset(current)
+                    && current.Capabilities?.GetFanSpeedRange(ManualFanRangePreset(current))
                         is { IsWellFormed: true })
             && current.ConfirmedState?.HyperBoostActive == false
             && current.ConfirmedState?.Fans is { } confirmedFans
@@ -20988,7 +21019,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         FanTargetSpeeds freshTargets = FanCurveCalculator.Calculate(
             authority.Settings.ManualCurve,
             temperatures,
-            current.Capabilities?.GetFanIntentSpeedRange(authority.Desired.Performance.Value)
+            current.Capabilities?.GetFanIntentSpeedRange(ManualFanRangePreset(current))
                 ?? FanSpeedRange.Standard);
         if (freshTargets != authority.Targets)
         {
