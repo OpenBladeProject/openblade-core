@@ -962,20 +962,31 @@ async fn installed_source_ineligible_intent_is_stored_and_power_change_stops_par
         }
         rig.stop().await;
     }
-    let rig = Rig::new(MemoryFiles::default());
-    rig.port.state.lock().unwrap().change_power = Some((3, 1));
-    let result = rig.set(2, value(2, 1)).await;
-    let status = rig.get().await;
-    assert_eq!(status["status"]["writesBlocked"], true);
-    assert_eq!(result["result"]["status"], 2);
-    assert_eq!(rig.port.state.lock().unwrap().writes, 1);
-    assert_eq!(
-        Storage::open(Box::new(rig.files.clone()), SID)
+    // Between the setters, managed `AdmitOrdinaryThermalCommandAsync` admits
+    // any fresh external reading that agrees with Windows AC: full to limited
+    // keeps this explicit destination, so the pair completes. Battery
+    // disagrees and stops it after the first setter, without replay.
+    for (changed, completed) in [(1, true), (0, false)] {
+        let rig = Rig::new(MemoryFiles::default());
+        rig.port.state.lock().unwrap().change_power = Some((3, changed));
+        let result = rig.set(2, value(2, 1)).await;
+        let status = rig.get().await;
+        let progress = Storage::open(Box::new(rig.files.clone()), SID)
             .unwrap()
-            .progress(),
-        Some(2)
-    );
-    rig.stop().await;
+            .progress();
+        if completed {
+            assert_eq!(result["result"]["status"], 1, "{result}");
+            assert_eq!(status["status"]["confirmedState"]["performance"], 2);
+            assert_eq!(rig.port.state.lock().unwrap().writes, 2);
+            assert_eq!(progress, Some(5));
+        } else {
+            assert_eq!(status["status"]["writesBlocked"], true);
+            assert_eq!(result["result"]["status"], 2);
+            assert_eq!(rig.port.state.lock().unwrap().writes, 1);
+            assert_eq!(progress, Some(2));
+        }
+        rig.stop().await;
+    }
 }
 #[tokio::test]
 async fn installed_cleared_performance_override_keeps_the_managed_prefix() {
@@ -4638,7 +4649,11 @@ async fn fan_handback_applies_the_deferred_preset_on_full_and_limited_adapters()
 
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
-async fn fan_handback_power_class_change_before_or_between_setters_stops_without_replay() {
+async fn fan_handback_power_class_change_before_or_between_setters_follows_managed() {
+    // Managed `AdmitOrdinaryThermalCommandAsync` admits every setter on a fresh
+    // external reading that agrees with Windows AC, so a full/limited change
+    // keeps the explicit Performance destination and the pair completes.
+    // Battery disagrees and stops it without replay.
     for (actual, changed) in [(15, 10), (10, 15), (15, 0)] {
         for between in [false, true] {
             let r = handback_rig(0, actual, 2).await;
@@ -4647,11 +4662,30 @@ async fn fan_handback_power_class_change_before_or_between_setters_stops_without
             r.port.state.lock().unwrap().change_power =
                 Some((reads + if between { 3 } else { 2 }, changed));
             let out = r.request(fan_request(232, None, 0)).await;
-            assert_eq!(out["result"]["status"], 2, "{out}");
             let rows = request_rows(&r, 232);
             // The destination preset is journaled before any possible submission.
             assert_eq!(rows[0]["progress"], 0);
             assert_eq!(rows[0]["fan"]["selector"], 2);
+            // The row keeps the first class.
+            assert_eq!(rows[0]["fan"]["source"], if actual == 15 { 0 } else { 2 });
+            if changed != 0 {
+                assert_eq!(out["result"]["status"], 1, "{out}");
+                assert_eq!(
+                    out["result"]["message"],
+                    "Fans returned to Automatic with Performance performance, confirmed by independent paired readback."
+                );
+                {
+                    let state = r.port.state.lock().unwrap();
+                    assert_eq!(
+                        (state.writes, state.selectors, state.fans),
+                        (6, [2; 2], [0; 2])
+                    );
+                }
+                r.origin.stop();
+                r.stop().await;
+                continue;
+            }
+            assert_eq!(out["result"]["status"], 2, "{out}");
             let writes = r.port.state.lock().unwrap().writes;
             if between {
                 assert_eq!(writes, 5);
@@ -4693,6 +4727,36 @@ async fn fan_handback_power_class_change_before_or_between_setters_stops_without
             }
         }
     }
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_handback_class_change_to_another_profile_destination_stops() {
+    // No explicit override: the return applies the plugged-in profile's
+    // Performance. A limited adapter between the setters selects the USB-C
+    // profile's Balanced, so the pair stops without replay.
+    let files = MemoryFiles::default();
+    files.profiles_with(2, Some(1));
+    let r = Rig::new(files);
+    *r.custody.origin_for_fan.lock().unwrap() = Some(r.origin.clone());
+    {
+        let mut s = r.port.state.lock().unwrap();
+        s.selectors = [0; 2];
+        s.fans = [0; 2];
+    }
+    r.get().await;
+    let owned = r.request(fan_request(230, Some(1), 3700)).await;
+    assert_eq!(owned["result"]["status"], 1, "{owned}");
+    let reads = r.port.state.lock().unwrap().power_reads;
+    r.port.state.lock().unwrap().change_power = Some((reads + 3, 10));
+    let out = r.request(fan_request(232, None, 0)).await;
+    assert_eq!(out["result"]["status"], 2, "{out}");
+    assert_eq!(request_rows(&r, 232)[0]["fan"]["selector"], 2);
+    assert_eq!(r.port.state.lock().unwrap().writes, 5);
+    assert!(r.storage.pending());
+    r.origin.stop();
+    assert!(r.source.lock().await.drain().await.is_err());
+    assert_eq!(r.port.state.lock().unwrap().writes, 5);
 }
 
 #[cfg(feature = "service-fan-mutation-v2")]
@@ -4990,13 +5054,13 @@ async fn fan_handback_expires_a_stale_class_temporary_gpu_override_first() {
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn fan_handback_retry_after_a_refused_return_reports_the_unapplied_preset() {
-    // The first return is refused before any setter (power class change) after
+    // The first return is refused before any setter (battery) after
     // its Automatic intent was saved. Managed's trigger is request-level, so the
     // retry leaves no saved manual intent and keeps the observed selector; its
     // reply says the saved preset was not applied.
     let r = handback_rig(0, 15, 2).await;
     let reads = r.port.state.lock().unwrap().power_reads;
-    r.port.state.lock().unwrap().change_power = Some((reads + 2, 10));
+    r.port.state.lock().unwrap().change_power = Some((reads + 2, 0));
     let first = r.request(fan_request(232, None, 0)).await;
     assert_eq!(first["result"]["status"], 2, "{first}");
     assert_eq!(request_rows(&r, 232).last().unwrap()["progress"], 6);
@@ -5428,13 +5492,15 @@ async fn fan_power_change_close_refuses_an_ambiguous_readback() {
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn fan_manual_readback_after_a_power_change_keeps_its_existing_outcomes() {
-    // Regression guard, unchanged: manual fans are not firmware's handback state.
+    // Manual fans are not firmware's handback state.
     for now in [10, 0] {
         // With the POWEREVENT, Stop takes the settle-only permit, which cannot
         // journal a release. Without one (a PD renegotiation with AC still
         // online, or a class change after STOP_PENDING) the owner's own permit
-        // still authorizes Stop, and only its recorded-source fence refuses
-        // before 31: the row stays a clean 30, not a pending release.
+        // still authorizes Stop. On the limited adapter it hands back with the
+        // same commands (managed owned Stop admits any fresh external reading
+        // that agrees with Windows AC); battery refuses before 31, so the row
+        // stays a clean 30, not a pending release.
         for event in [true, false] {
             let r = if event {
                 power_change_rig(15, now, [0; 2], [1; 2]).await
@@ -5445,6 +5511,15 @@ async fn fan_manual_readback_after_a_power_change_keeps_its_existing_outcomes() 
             };
             let owned = owner_row(&r, 30);
             r.origin.stop();
+            if now == 10 && !event {
+                r.stop().await;
+                assert_eq!(fan_rows(&r).last().unwrap()["progress"], 50);
+                assert_eq!(fan_rows(&r).last().unwrap()["fan"]["source"], 0);
+                assert!(!r.storage.outstanding_fan());
+                let state = r.port.state.lock().unwrap();
+                assert_eq!((state.writes, state.fans), (6, [0; 2]));
+                continue;
+            }
             assert!(r.source.lock().await.drain().await.is_err());
             assert_eq!(*fan_rows(&r).last().unwrap(), owned, "{now} {event}");
             assert!(r.storage.outstanding_fan());

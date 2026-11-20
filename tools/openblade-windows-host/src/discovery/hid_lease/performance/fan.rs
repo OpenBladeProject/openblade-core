@@ -70,8 +70,12 @@ impl<P: Port> Reader<P, ReadAdmission> {
         let (plan, record, ids) = if cleanup {
             let r = permit.fan_record()?;
             let owned = Plan::select(baseline, r.intent, source)?;
-            // Fresh generic-manual topology retains only this already established owner.
-            if !owned.confirms(baseline) || owned.selector != r.selector || source != r.source {
+            // Fresh generic-manual topology retains only this already established
+            // owner. Its power class may differ from the recorded one: the
+            // handback commands are the same on every external class, and managed
+            // owned Stop admits any fresh external reading that agrees with
+            // Windows AC. The rows keep the recorded source.
+            if !owned.confirms(baseline) || owned.selector != r.selector {
                 return None;
             }
             let plan = Plan::select(baseline, FanIntent::checked(0, 3700)?, source)?;
@@ -179,8 +183,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
                         limit,
                     )
                     .await?;
-                // The selected AC preset is kept on every external class.
-                if !fence.unchanged(current, record.source) {
+                // The commands are the same on every external class; a class
+                // change continues only while the permit's destination holds.
+                if !fence.admits(current, record.source) {
                     permit.refused(Refusal::PowerChanged);
                     return None;
                 }

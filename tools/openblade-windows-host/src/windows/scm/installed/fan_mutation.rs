@@ -43,6 +43,10 @@ pub(super) struct FanPermit {
     // A clear on unclassified external power: no profile applies, so only an
     // owned manual fan change is handed back to firmware Automatic.
     unclassified_clear: AtomicBool,
+    // Refused before storage on unclassified power (`UNCLASSIFIED_BLOCKED`).
+    unclassified_blocked: AtomicBool,
+    // This request returns saved manual fans to Automatic (`previousManual`).
+    returning: AtomicBool,
     record: Mutex<Option<FanRecord>>,
     accepted: AtomicBool,
     owned: AtomicBool,
@@ -101,8 +105,57 @@ impl FanPermit {
         }
         Ok(desired.map(|(p, _)| p))
     }
+    fn observe_power(&self, power: i32) -> io::Result<()> {
+        let admission = self
+            .fresh
+            .authorize()
+            .ok_or(io::ErrorKind::PermissionDenied)?;
+        self.storage.observe_power(power, admission.lifecycle)
+    }
 }
 impl Permit for FanPermit {
+    fn refused(&self, cause: Refusal) {
+        if cause == Refusal::UnclassifiedBlocked {
+            self.unclassified_blocked.store(true, Ordering::Release);
+        }
+    }
+    fn destination_holds(&self, power: i32) -> bool {
+        // Owned Stop hands back to Automatic under the owner's selector, with
+        // the same commands on every external class.
+        if self.cleanup() {
+            return true;
+        }
+        (|| -> io::Result<bool> {
+            let Some((_, settings)) = self
+                .selected
+                .lock()
+                .map_err(|_| io::ErrorKind::Other)?
+                .clone()
+            else {
+                return Ok(false);
+            };
+            // A synthesized unclassified-clear handback has no saved settings
+            // to compare; a classified class would select a profile instead.
+            if settings.is_null() {
+                return Ok(false);
+            }
+            self.observe_power(power)?;
+            if self
+                .storage
+                .desired_fan(power, self.application.as_deref())?
+                != Some(settings)
+            {
+                return Ok(false);
+            }
+            if !self.returning.load(Ordering::Acquire) {
+                return Ok(true);
+            }
+            let performance = *self.performance.lock().map_err(|_| io::ErrorKind::Other)?;
+            Ok(self.handback_preset(power)? == performance)
+        })()
+        .inspect_err(|e| remember_failure(&self.fatal, e))
+        .unwrap_or(false)
+    }
     fn mutation_registered(&self) {
         self.registered.store(true, Ordering::Release);
     }
@@ -176,11 +229,18 @@ impl Permit for FanPermit {
     fn resolve_fan(
         &self,
         power: i32,
-        _baseline: ObservedPerformance,
+        baseline: ObservedPerformance,
     ) -> io::Result<Option<(FanIntent, Option<Preset>)>> {
         if self.authorize().is_none() {
             return Ok(None);
         }
+        // Managed `CanAdmitUnclassifiedExternalControl` needs confirmed
+        // HyperBoost to be inactive; nothing is stored or written.
+        if power == UNCLASSIFIED_EXTERNAL && baseline == ObservedPerformance::HyperBoostObserved {
+            self.unclassified_blocked.store(true, Ordering::Release);
+            return Ok(None);
+        }
+        self.observe_power(power)?;
         // Managed applies the saved preset only when fans leave saved manual
         // intent (`previousManual` in ApplyFanControlTransitionCoreOutcomeAsync).
         let leaving_manual = self
@@ -212,6 +272,7 @@ impl Permit for FanPermit {
             settings["fixedSpeedRpm"].as_u64().unwrap_or(0) as u16,
         );
         let returning = leaving_manual && intent.is_some_and(|i| !i.manual());
+        self.returning.store(returning, Ordering::Release);
         let performance = if returning {
             self.handback_preset(power)?
         } else {
@@ -642,6 +703,8 @@ impl Runtime {
             performance_gpu: AtomicBool::new(false),
             released: Mutex::new(None),
             unclassified_clear: AtomicBool::new(false),
+            unclassified_blocked: AtomicBool::new(false),
+            returning: AtomicBool::new(false),
             record: Mutex::new(None),
             accepted: AtomicBool::new(false),
             owned: AtomicBool::new(false),
@@ -661,6 +724,9 @@ impl Runtime {
                 return Ok(base.without_private_policy());
             }
             let power = base.thermal_power_source();
+            // Saved intent is read at an unknown class without fresh AC
+            // presence (see `status_query_power`).
+            let query = status_query_power(power, policy_fresh.as_ref());
             let app = policy_runtime
                 .application
                 .borrow()
@@ -669,9 +735,9 @@ impl Runtime {
                     a.sid == policy_sid && a.session == caller.session && Instant::now() < a.expires
                 })
                 .and_then(|a| a.path.clone());
-            let perf = store.desired(power, app.as_deref())?;
-            let value = store.current_override(power)?;
-            let fan_value = store.current_fan_override(power)?;
+            let perf = store.desired(query, app.as_deref())?;
+            let value = store.current_override(query)?;
+            let fan_value = store.current_fan_override(query)?;
             Ok(base
                 .without_private_policy()
                 .thermal_profiles(store.profiles()?)?
@@ -684,7 +750,7 @@ impl Runtime {
                 .thermal_provenance(perf.map(|v| v.1))
                 .fan_intent(
                     fan_value.as_ref(),
-                    store.desired_fan(power, app.as_deref())?,
+                    store.desired_fan(query, app.as_deref())?,
                     power,
                     "Saved fan intent; target RPM remains unreadable.",
                 )
@@ -797,9 +863,14 @@ impl Runtime {
         }
         // A clear on unclassified power: managed replies Stored once no owned
         // change remains, and returns the failed handback otherwise.
-        let outcome = if permit.unclassified_clear.load(Ordering::Acquire)
-            && !permit.storage.pending()
+        let outcome = if permit.unclassified_blocked.load(Ordering::Acquire)
+            && !permit.accepted.load(Ordering::Acquire)
         {
+            Outcome {
+                status: 2,
+                message: UNCLASSIFIED_BLOCKED.into(),
+            }
+        } else if permit.unclassified_clear.load(Ordering::Acquire) && !permit.storage.pending() {
             if permit.storage.outstanding_fan() {
                 Outcome {
                     status: 2,

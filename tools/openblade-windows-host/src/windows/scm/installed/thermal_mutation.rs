@@ -196,6 +196,19 @@ pub(super) const UNCLASSIFIED_CLEARED: &str =
 /// Managed `ValidateUnclassifiedPerformanceOverride`, as `RecordRejectedIntent`
 /// reports it (Failed).
 const UNCLASSIFIED_REJECTED: &str = "The requested intent was rejected: This request needs classified power or includes native overclocking; ordinary external presence does not admit it.";
+/// Managed `PublishScopedUnavailable` (Blocked) when an unclassified adapter
+/// reading lacks fresh Windows AC presence or the confirmed state is HyperBoost
+/// (`CanAdmitUnclassifiedExternalControl`); no intent is stored.
+pub(super) const UNCLASSIFIED_BLOCKED: &str = "Hardware application was not confirmed. The external power adapter could not be classified; overrides and control writes are blocked.";
+/// The class a status projection reads saved intent at: battery, AC with fresh
+/// presence (the base's 3), or unknown (-1) otherwise.
+pub(super) fn status_query_power(base: i32, fresh: &dyn Fresh) -> i32 {
+    if base == 1 || fresh.external_presence() {
+        base
+    } else {
+        -1
+    }
+}
 #[derive(Clone, serde::Serialize)]
 pub(super) struct Outcome {
     pub(super) status: u8,
@@ -437,6 +450,12 @@ impl Runtime {
                 return Ok(base);
             }
             let power = base.thermal_power_source();
+            // The status base reports 3 for any power that is not battery,
+            // Unknown included. A failed or unknown Windows read is not a power
+            // boundary (managed `CaptureControlPowerSource`), so without fresh
+            // AC presence saved intent is read at an unknown class (-1), which
+            // retires no temporary.
+            let query = status_query_power(power, fresh.as_ref());
             let application = runtime
                 .application
                 .borrow()
@@ -445,8 +464,8 @@ impl Runtime {
                     a.sid == policy_sid && a.session == caller.session && Instant::now() < a.expires
                 })
                 .and_then(|a| a.path.clone());
-            let value = store.current_override(power)?;
-            let desired = store.desired(power, application.as_deref())?;
+            let value = store.current_override(query)?;
+            let desired = store.desired(query, application.as_deref())?;
             Ok(base
                 .thermal_profiles(store.profiles()?)?
                 .thermal_intent(
@@ -457,8 +476,8 @@ impl Runtime {
                 )
                 .thermal_provenance(desired.map(|(_, s)| s))
                 .fan_intent(
-                    store.current_fan_override(power)?.as_ref(),
-                    store.desired_fan(power, application.as_deref())?,
+                    store.current_fan_override(query)?.as_ref(),
+                    store.desired_fan(query, application.as_deref())?,
                     power,
                     "Saved thermal policy; firmware mode is reported independently.",
                 )
@@ -567,6 +586,11 @@ impl Runtime {
                 status: 3,
                 message: UNCLASSIFIED_REJECTED.into(),
             }
+        } else if matches!(
+            *permit.cause.lock().map_err(|_| io::ErrorKind::Other)?,
+            Cause::UnclassifiedBlocked
+        ) {
+            Outcome::blocked(UNCLASSIFIED_BLOCKED)
         } else {
             Outcome::blocked(
                 "Performance intent was not accepted; admission or protected persistence failed.",
@@ -632,6 +656,7 @@ enum Cause {
     PowerChanged,
     Storage(String),
     Transport(String),
+    UnclassifiedBlocked,
     UnclassifiedRejected,
 }
 impl Cause {
@@ -650,6 +675,7 @@ impl Cause {
             Self::PowerChanged => "The independently observed power source changed or no longer admits this destination.".into(),
             Self::Storage(e) => format!("Protected storage could not record the next step: {e}"),
             Self::Transport(e) => format!("Thermal transport or ownership did not complete: {e}"),
+            Self::UnclassifiedBlocked => UNCLASSIFIED_BLOCKED.into(),
             Self::UnclassifiedRejected => UNCLASSIFIED_REJECTED.into(),
         }
     }
@@ -666,6 +692,13 @@ impl RequestPermit {
             *current = cause;
         }
     }
+    fn observe_power(&self, power: i32) -> io::Result<()> {
+        let admission = self
+            .fresh
+            .authorize()
+            .ok_or(io::ErrorKind::PermissionDenied)?;
+        self.storage.observe_power(power, admission.lifecycle)
+    }
 }
 impl Permit for RequestPermit {
     fn failed(&self, error: &io::Error) {
@@ -678,6 +711,20 @@ impl Permit for RequestPermit {
     fn external_presence(&self) -> bool {
         self.fresh.external_presence()
     }
+    fn destination_holds(&self, power: i32) -> bool {
+        (|| -> io::Result<bool> {
+            let Some(destination) = *self.destination.lock().map_err(|_| io::ErrorKind::Other)?
+            else {
+                return Ok(false);
+            };
+            self.observe_power(power)?;
+            let application = self.application.as_deref();
+            Ok(!self.storage.gpu_incomplete(power, application)?
+                && self.storage.desired(power, application)?.map(|(p, _)| p) == Some(destination))
+        })()
+        .inspect_err(|error| self.remember_failure(error))
+        .unwrap_or(false)
+    }
     fn resolve(&self, power: i32, baseline: ObservedPerformance) -> io::Result<Option<Preset>> {
         self.verify_failure()?;
         (|| {
@@ -685,6 +732,13 @@ impl Permit for RequestPermit {
                 return Err(io::ErrorKind::PermissionDenied.into());
             }
             let unclassified = power == UNCLASSIFIED_EXTERNAL;
+            // Managed `CanAdmitUnclassifiedExternalControl` needs confirmed
+            // HyperBoost to be inactive, and the HyperBoost exit needs classified
+            // power, so nothing is stored or written.
+            if unclassified && baseline == ObservedPerformance::HyperBoostObserved {
+                self.set_cause(Cause::UnclassifiedBlocked);
+                return Ok(None);
+            }
             // Managed `ValidateUnclassifiedPerformanceOverride` rejects native
             // overclocking there before any intent is stored.
             if unclassified
@@ -696,6 +750,7 @@ impl Permit for RequestPermit {
                 self.set_cause(Cause::UnclassifiedRejected);
                 return Ok(None);
             }
+            self.observe_power(power)?;
             self.storage
                 .save(self.value.clone(), power)
                 .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))?;
@@ -752,6 +807,7 @@ impl Permit for RequestPermit {
             Refusal::TransactionCapacity => Cause::TransactionCapacity,
             Refusal::CurrentAdmission => Cause::CurrentAdmission,
             Refusal::PowerChanged => Cause::PowerChanged,
+            Refusal::UnclassifiedBlocked => Cause::UnclassifiedBlocked,
         });
     }
     fn retired(&self) -> io::Result<Settlement> {

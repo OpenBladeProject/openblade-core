@@ -330,7 +330,9 @@ impl Permit for BatteryPermit {
                 "Complete battery transaction budget is unavailable; no setter was submitted."
             }
             Refusal::PowerChanged => "Battery operation source changed before submission.",
-            Refusal::CurrentAdmission => "Fresh battery admission is unavailable.",
+            Refusal::CurrentAdmission | Refusal::UnclassifiedBlocked => {
+                "Fresh battery admission is unavailable."
+            }
         });
     }
     fn retired(&self) -> io::Result<Settlement> {

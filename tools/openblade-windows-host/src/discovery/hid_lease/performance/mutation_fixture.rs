@@ -3,6 +3,8 @@ use super::mutation::Permit;
 use super::worker::Reading;
 use super::*;
 use std::sync::{Arc, Mutex};
+/// Edits one raw 07/8C reply frame in place.
+pub(crate) type PowerEdit = Arc<dyn Fn(&mut [u8; FRAME_LENGTH]) + Send + Sync>;
 #[derive(Default)]
 pub(crate) struct State {
     pub(crate) battery_getter_hook: Option<Arc<dyn Fn(u8, usize) + Send + Sync>>,
@@ -49,6 +51,13 @@ pub(crate) struct State {
     // from the adapter level: Some(None) is unknown.
     pub(crate) windows_on_battery: Option<Option<bool>>,
     pub(crate) change_windows: Option<(usize, Option<bool>)>,
+    // Applied at the first port check after that power read's reply was
+    // received: after the Reader's setter-time class decision, before its SET.
+    pub(crate) change_windows_after_reply: Option<(usize, Option<bool>)>,
+    // Edits every raw 07/8C reply frame (byte 0 is the HID report ID).
+    pub(crate) power_edit: Option<PowerEdit>,
+    // That power read's reply completes with a receive timeout.
+    pub(crate) power_timeout: Option<usize>,
     pub(crate) held_read: Option<Arc<AtomicBool>>,
     pub(crate) held_write: Option<(usize, Arc<AtomicBool>)>,
     pub(crate) before_write: Option<Arc<dyn Fn(usize) + Send + Sync>>,
@@ -165,6 +174,15 @@ impl Port for MemoryPort {
         self.fixture.transactions.reserve_pair()
     }
     fn verify(&mut self, limit: Limit<'_>) -> io::Result<()> {
+        if self.pending.is_none() && self.reply.is_none() {
+            let mut s = self.fixture.state.lock().unwrap();
+            if let Some((at, windows)) = s.change_windows_after_reply
+                && at == s.power_reads
+            {
+                s.windows_on_battery = Some(windows);
+                s.change_windows_after_reply = None;
+            }
+        }
         limit.check()
     }
     fn submit(&mut self, transfer: Transfer, limit: Limit<'_>) -> io::Result<()> {
@@ -327,6 +345,14 @@ impl Port for MemoryPort {
                 reply[1] = 2;
                 if class == 7 && command == 0x8c && s.power_status != 0 {
                     reply[1] = s.power_status;
+                }
+                if class == 7 && command == 0x8c {
+                    if let Some(edit) = &s.power_edit {
+                        edit(&mut reply);
+                    }
+                    if s.power_timeout == Some(s.power_reads) {
+                        self.reply_timeout = true;
+                    }
                 }
                 if class == 13 && matches!(command, 1 | 2) && s.corrupt_ack == Some(s.writes) {
                     reply[2] ^= 1;
