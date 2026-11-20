@@ -91,9 +91,11 @@
                                 "16 columns (rowDataSize 52, end column 15) instead of 19 (61, end 18).",
                                 "No row 6 or second region: no vapor-chamber frame and no LED38 activation.",
                                 "Restore uses the always flag-clearing legacy 03/0A setter instead of 0F/02 typed setters gated on mode 8, because the GPIO event can move the active mode off 8 while the flag stays set.",
-                                "LED4 0F/03 rows overflow the logo buffer; the implementation must hard-reject them.",
-                                "Firmware exposes a HID LampArray whose AutonomousMode selects the displayed buffer."
+                                "LED4 0F/03 rows overflow the logo buffer; the implementation must hard-reject them."
                             ],
+    "sharedWith0529":  [
+                           "Firmware exposes a HID LampArray whose AutonomousMode selects the displayed buffer. The RZ09-0529 KI8110 evidence (2026-11-13-rz09-0529-keyboard-frames.json) records the same hazard, so it is not a difference from 0529."
+                       ],
     "windows":  [
                     {
                         "name":  "getTable0F82",
