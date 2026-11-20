@@ -73,6 +73,8 @@ struct MemoryFiles {
     first_intent_attempts: Arc<AtomicUsize>,
     first_intent_prior: Arc<StdMutex<Option<Vec<u8>>>>,
     terminal_attempts: Arc<AtomicUsize>,
+    /// A file whose replacement blocks for this long, as slow storage does.
+    stalled_replace: Arc<StdMutex<Option<(&'static str, std::time::Duration)>>>,
 }
 impl MemoryFiles {
     fn put(&self, name: &str, value: Value) {
@@ -218,6 +220,14 @@ impl Files for MemoryFiles {
         Ok(())
     }
     fn replace(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        let stalled = self
+            .stalled_replace
+            .lock()
+            .unwrap()
+            .take_if(|(file, _)| *file == name);
+        if let Some((_, time)) = stalled {
+            std::thread::sleep(time);
+        }
         if name == "thermal-mutation.journal" {
             let progress = bytes
                 .split(|b| *b == b'\n')

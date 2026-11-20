@@ -478,6 +478,31 @@ async fn installed_update_profiles_waits_for_a_mutation_in_flight() {
     rig.stop().await;
 }
 
+#[tokio::test]
+async fn installed_update_profiles_answers_a_save_that_finished_after_the_frame_deadline() {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let rig = Rig::new(files.clone());
+    rig.get().await;
+    let mut profiles = saved(&files);
+    profiles["batteryPolicy"]["chargeLimitPercent"] = json!(65);
+    // The marker, the commit point, is slow to land.
+    *files.stalled_replace.lock().unwrap() = Some((
+        NAMES[2],
+        crate::service_frame::FRAME_TIMEOUT + std::time::Duration::from_millis(150),
+    ));
+
+    let reply = rig.request(update_request(1, &profiles)).await;
+
+    // The set is stored, so the caller is told so and sees it published.
+    assert_eq!(reply, result(0, STORED, 1));
+    assert_eq!(saved(&files)["batteryPolicy"]["chargeLimitPercent"], 65);
+    let (_, published, _) = published_profiles(&rig).await;
+    assert_eq!(published["batteryPolicy"]["chargeLimitPercent"], 65);
+    no_hardware(&rig);
+    rig.stop().await;
+}
+
 /// Applies a vector's edits: `[path, value]` sets a member, `[path]` removes it.
 fn edited(base: &Json, edits: Option<&Json>) -> Json {
     let mut result = base.clone();

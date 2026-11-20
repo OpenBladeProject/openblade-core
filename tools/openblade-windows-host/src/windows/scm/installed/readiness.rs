@@ -720,10 +720,13 @@ async fn serve_mutation(
         disconnected=stream.read(&mut probe)=>{disconnected.map_err(Client)?;return Err(Client(io::ErrorKind::BrokenPipe.into()));}
         result=timeout_at(deadline,future)=>result.map_err(|e|Client(e.into()))?.map_err(Runtime)?,
     };
+    // The deadline bounds the wait above and each runtime's own admission.
+    // A mutation that has returned is answered even when it finished late:
+    // it may have stored or submitted, and the caller must learn the outcome
+    // rather than a closed connection.
     let current = refresh_caller(stream, original)?;
     if current.access().map_err(Client)? != 0
         || stream.user_sid_after_read().map_err(Client)? != sid
-        || Instant::now() >= deadline
     {
         return Err(Client(io::ErrorKind::PermissionDenied.into()));
     }
