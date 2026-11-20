@@ -156,9 +156,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
             let power = attempt
                 .read_power(power_ids[index], &mut authorize, admission, limit)
                 .await?;
-            // Balanced admits limited external power; Performance requires the
-            // exact decoder's sufficient-adapter comparison, never ACLineStatus.
-            if power.source() != Some(power_source) || !power.admits(destination) {
+            // Each command needs a fresh classified external reading in the
+            // first observed class, from the exact decoder, never ACLineStatus.
+            if power.source() != Some(power_source) || !power.external() {
                 permit.refused(Refusal::PowerChanged);
                 return None;
             }
@@ -221,15 +221,13 @@ impl Power {
             Some(2)
         }
     }
-    pub(super) fn admits(self, destination: Preset) -> bool {
-        // Managed battery policy admits BatterySaver/BatteryBalanced, not
-        // these AC/limited-external destinations. Managed now offers every
-        // preset on a limited adapter (automation::performance_source_eligible);
-        // this native writer keeps the reviewed Balanced-only limit until
-        // that expansion is separately ported, so it refuses fail-closed.
-        self.actual > 0
-            && self.recommended > 0
-            && (destination == Preset::Balanced || self.actual >= self.recommended)
+    /// Managed `ProductionBatteryPort` admits every supported AC preset on
+    /// both classified external classes (full and limited adapters) with the
+    /// same commands. Battery presets and unclassified power are not
+    /// admitted here. Callers also require the fresh class to equal the one
+    /// first observed, as managed requires an unchanged ordinary source.
+    pub(super) fn external(self) -> bool {
+        self.actual > 0 && self.recommended > 0
     }
 }
 fn watts(level: u8) -> Option<u16> {

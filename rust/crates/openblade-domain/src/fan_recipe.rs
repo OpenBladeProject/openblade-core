@@ -45,9 +45,8 @@ impl Plan {
             O::FixedMaximum => (0, true),
             _ => return None,
         };
-        if selector == 2 && source != 0 {
-            return None;
-        }
+        // Managed keeps the observed AC selector on both classified external
+        // sources (full 0 and limited 2) with the same commands.
         Some(Self {
             intent,
             selector,
@@ -107,7 +106,9 @@ mod tests {
                 .pairs(),
             5
         );
-        assert!(Plan::select(O::PerformanceAutomatic, maximum, 2).is_none());
+        let limited = Plan::select(O::PerformanceAutomatic, maximum, 2).unwrap();
+        assert_eq!((limited.selector, limited.pairs()), (2, 6));
+        assert!(Plan::select(O::PerformanceAutomatic, maximum, 1).is_none());
         assert!(Plan::select(O::HyperBoostObserved, maximum, 0).is_none());
         assert!(
             Plan::select(

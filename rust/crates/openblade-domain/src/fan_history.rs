@@ -36,7 +36,6 @@ impl FanRecord {
         ) || FanIntent::checked(self.intent.mode, self.intent.rpm) != Some(self.intent)
             || !matches!(self.selector, 0 | 2)
             || !matches!(self.source, 0 | 2)
-            || self.selector == 2 && self.source != 0
             || self.entry && !self.intent.manual()
             || self.ids.len() != self.setters() + 1 + usize::from(self.entry && self.selector == 2)
             || self.cleanup.len() != if self.intent.manual() { 5 } else { 0 }

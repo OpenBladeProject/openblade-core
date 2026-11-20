@@ -860,6 +860,10 @@ async fn installed_gpu_intent_is_stored_with_explicit_incompleteness_and_no_pair
 
 #[tokio::test]
 async fn installed_source_ineligible_intent_is_stored_and_power_change_stops_partial_pair() {
+    // Battery stores an AC override without a write. Managed offers every
+    // supported preset on both external classes, so a confirmed limited
+    // USB-C adapter applies the saved Performance override with the same
+    // commands, after fresh per-command class admission.
     for actual in [0, 1] {
         let files = MemoryFiles::default();
         files.profiles(1);
@@ -867,25 +871,19 @@ async fn installed_source_ineligible_intent_is_stored_and_power_change_stops_par
         rig.port.state.lock().unwrap().actual = actual;
         let result = rig.set(1, value(2, 1)).await;
         let status = rig.get().await;
-        assert_eq!(status["status"]["writesBlocked"], true);
-        assert_eq!(result["result"]["status"], 2);
         assert_eq!(status["status"]["performanceOverride"]["value"], 2);
         let message = result["result"]["message"].as_str().unwrap();
-        assert!(message.starts_with("Performance override intent was stored. Hardware result: "));
         if actual == 0 {
+            assert_eq!(status["status"]["writesBlocked"], true);
+            assert_eq!(result["result"]["status"], 2);
+            assert!(
+                message.starts_with("Performance override intent was stored. Hardware result: ")
+            );
             assert_eq!(rig.port.state.lock().unwrap().writes, 0)
         } else {
-            // The shared policy admits every preset on a confirmed USB-C
-            // source, so the override is the destination. The native
-            // performance writer still admits only Balanced on a limited
-            // adapter, so it refuses before any write instead of following
-            // the managed expansion.
-            assert_eq!(status["status"]["desiredState"]["performance"]["value"], 1);
-            assert!(status["status"]["confirmedState"].is_null());
-            assert_eq!(rig.port.state.lock().unwrap().writes, 0);
-            assert!(message.ends_with(
-                "The independently observed power source changed or no longer admits this destination."
-            ));
+            assert_eq!(result["result"]["status"], 1, "{message}");
+            assert_eq!(status["status"]["confirmedState"]["performance"], 2);
+            assert_eq!(rig.port.state.lock().unwrap().writes, 2);
         }
         rig.stop().await;
     }
@@ -4244,6 +4242,22 @@ async fn fan_v2_known_capacity_refusal_preserves_owner_but_uncertain_reservation
             if uncertain { 30 } else { 50 }
         );
     }
+}
+
+// Managed keeps the observed AC selector on both external classes, so a
+// manual fan write under Performance is admitted on a limited USB-C adapter
+// with the same commands and fresh per-command class admission.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_v2_limited_source_keeps_the_performance_selector() {
+    let r = fan_rig(2, 0);
+    r.port.state.lock().unwrap().actual = 10;
+    r.get().await;
+    let applied = r.request(fan_request(180, Some(1), 3700)).await;
+    assert_eq!(applied["result"]["status"], 1, "{applied}");
+    assert_eq!(r.port.state.lock().unwrap().selectors, [2, 2]);
+    r.origin.stop();
+    r.stop().await;
 }
 
 #[cfg(feature = "service-fan-mutation-v2")]

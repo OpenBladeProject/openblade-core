@@ -75,6 +75,15 @@ are validated before saving. This does not implement all managed profile payload
 semantics or migrate/modify the aggregate; schema 24 still needs managed
 migration first.
 
+As in managed, every supported AC preset and the observed AC fan selector are
+admitted on both classified external classes: an adapter at or above its
+recommendation (PluggedIn) and a limited one (USB-C). The commands are the
+same. Each setter needs a fresh adapter reading in the class first observed,
+so a class change stops the pair without replay. Battery presets are outside
+this writer. Managed's ordinary control on unclassified external power, where
+the adapter reading is Unknown (exact RZ09-0581, `f6502f85`), is not ported:
+native reports no power source for it and makes no thermal write.
+
 Resolution uses eligible manual intent, then the current application report's
 performance override, then the matching power profile. Application instances have
 monotonic sequence numbers and a 15-second lease, use full canonical executable

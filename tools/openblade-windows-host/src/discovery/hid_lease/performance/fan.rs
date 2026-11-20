@@ -148,13 +148,8 @@ impl<P: Port> Reader<P, ReadAdmission> {
                         limit,
                     )
                     .await?;
-                if current.source() != Some(record.source)
-                    || !current.admits(if plan.selector == 2 {
-                        openblade_domain::thermal_mutation::Preset::Performance
-                    } else {
-                        openblade_domain::thermal_mutation::Preset::Balanced
-                    })
-                {
+                // The selected AC preset is kept on either external class.
+                if current.source() != Some(record.source) || !current.external() {
                     permit.refused(Refusal::PowerChanged);
                     return None;
                 }
