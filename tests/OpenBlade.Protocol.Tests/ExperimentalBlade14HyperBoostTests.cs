@@ -97,29 +97,51 @@ public sealed partial class ExperimentalThermalExpansionTests
         Assert.True(session.Writes.First().AllowVariableResponseLength);
     }
 
-    [Fact]
-    public async Task Blade14HyperBoost_AdmissionLossAfterConfirmedCleanupIsKnown()
+    public enum StopAfterCleanup
+    {
+        PadAdmissionLost,
+        ExactHostLost,
+        NativeGuardRefusal,
+    }
+
+    [Theory]
+    [InlineData(StopAfterCleanup.PadAdmissionLost)]
+    [InlineData(StopAfterCleanup.ExactHostLost)]
+    [InlineData(StopAfterCleanup.NativeGuardRefusal)]
+    public async Task Blade14HyperBoost_KnownStopAfterConfirmedCleanupReportsTheClearedFlag(StopAfterCleanup stop)
     {
         // The cleanup is confirmed and mode 7 was never sent: the state is known,
-        // so writes stay allowed and the saved Custom intent can be reapplied.
+        // so writes stay allowed, every such stop names the cleared flag, and
+        // the service can reapply the saved Custom intent.
         var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, PowerModeControlFlags = 2, HyperBoostFirmware = [1, 1, 1, 3] };
         var pad = new Pad();
         var policy = new ExperimentalFeaturesPolicy(Model(0x029D));
+        bool hostPresent = true;
         session.BeforeSubmission = command =>
         {
-            if (command.ClassId == 0x07 && command.CommandId == 0x8F
-                && session.Writes.Any(item => item.ClassId == 0x07 && item.CommandId == 0x0F))
+            bool cleanupConfirmed = session.Writes.Any(item => item.ClassId == 0x07 && item.CommandId == 0x0F);
+            if (stop == StopAfterCleanup.NativeGuardRefusal ? command.ClassId == 0x0D && command.CommandId == 0x02
+                : command.ClassId == 0x07 && command.CommandId == 0x8F && cleanupConfirmed)
             {
-                pad.State = CoolingPadConnectionState.Absent;
+                if (stop == StopAfterCleanup.ExactHostLost)
+                {
+                    hostPresent = false;
+                }
+                else
+                {
+                    pad.State = CoolingPadConnectionState.Absent;
+                }
             }
         };
-        await using var port = HyperBoostPort(session, pad, policy, pid: 0x029D);
+        await using var port = new ExperimentalBladePort(session, new(), Model(0x029D), policy, () => hostPresent,
+            () => PowerSource.ExternalUnknown, coolingPadDiscovery: pad);
 
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
             port.SetHyperBoostAsync(true, PerformancePreset.Custom, true, CancellationToken.None));
 
         Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
-        Assert.Contains("reapply Custom", failure.Message, StringComparison.Ordinal);
+        Assert.EndsWith(ExperimentalBladePort.MaximumFansClearedForHyperBoostNotice, failure.Message, StringComparison.Ordinal);
+        Assert.True(failure.MaximumFansClearedBeforeFailure);
         Assert.True(policy.WritesAllowed);
         Assert.Equal(0, session.PowerModeControlFlags);
         Assert.Equal(4, session.Mode);
@@ -137,6 +159,8 @@ public sealed partial class ExperimentalThermalExpansionTests
             port.SetHyperBoostAsync(true, PerformancePreset.Custom, true, CancellationToken.None));
 
         Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
+        Assert.False(failure.MaximumFansClearedBeforeFailure);
+        Assert.DoesNotContain(ExperimentalBladePort.MaximumFansClearedForHyperBoostNotice, failure.Message, StringComparison.Ordinal);
         Assert.False(policy.WritesAllowed);
         Assert.Equal(4, session.Mode);
         Assert.DoesNotContain(session.Writes, command => command.ClassId == 0x0D);

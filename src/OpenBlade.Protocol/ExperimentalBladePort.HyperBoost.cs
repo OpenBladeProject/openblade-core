@@ -4,6 +4,9 @@ namespace OpenBlade.Protocol;
 
 internal sealed partial class ExperimentalBladePort
 {
+    internal const string MaximumFansClearedForHyperBoostNotice =
+        "Maximum Fans was turned off for HyperBoost; reapply Custom to turn it back on.";
+
     // Synapse products 671/669 enable mode 7 for 029F/029D. Experimental padless use
     // shares that exact command; see docs/experimental-hyperboost-evidence.md.
     public Task SetHyperBoostAsync(bool enabled, CancellationToken cancellationToken) =>
@@ -128,9 +131,7 @@ internal sealed partial class ExperimentalBladePort
                 if (!StillAdmitted())
                 {
                     throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                        maximumFansCleared && !submitted
-                            ? "HyperBoost cooling-pad or power admission changed before submission. Maximum Fans was turned off for HyperBoost; reapply Custom to turn it back on."
-                            : "HyperBoost cooling-pad or power admission changed before submission.");
+                        "HyperBoost cooling-pad or power admission changed before submission.");
                 }
                 await ExchangeAsync(operation, 0x0D, 0x02, [1, selector, mode, 0], true, cancellationToken,
                     variableResponse: acceptsStatusOnlyAck,
@@ -152,7 +153,20 @@ internal sealed partial class ExperimentalBladePort
         }
         catch (Exception exception)
         {
-            throw MapWriteFailure(operation, submitted, exception);
+            BladeWriteException failure = MapWriteFailure(operation, submitted, exception);
+            // Every known pre-submission stop after the confirmed cleanup, such
+            // as a lost exact host or a native guard refusal, leaves the flag
+            // off. Say so; a possibly submitted mode-7 write stays indeterminate.
+            if (maximumFansCleared && !submitted
+                && failure.SubmissionState == WriteSubmissionState.KnownNotApplied)
+            {
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied, failure.FailurePhase,
+                    $"{failure.Message} {MaximumFansClearedForHyperBoostNotice}", exception)
+                {
+                    MaximumFansClearedBeforeFailure = true,
+                };
+            }
+            throw failure;
         }
         finally
         {
