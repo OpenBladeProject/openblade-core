@@ -57,22 +57,27 @@ pub fn progress_follows(prior: u8, next: u8) -> bool {
 }
 /// Existing exact0581 performance-only policy; not a firmware prerequisite.
 /// Managed `DeferredPerformanceIntentMessage` defers on every external source
-/// (`PowerSourcePolicy.IsExternal`): full (0) and limited (2) adapters.
+/// (`PowerSourcePolicy.IsExternal`): full (0) and limited (2) adapters. On
+/// unclassified external power (3) the managed coordinator also leaves manual
+/// fans in place (its latent manual-fan intent writes nothing), so the
+/// performance pair is deferred there too.
 pub fn defer_manual_performance(
     current: ObservedPerformance,
     power: i32,
     desired_manual: bool,
 ) -> bool {
-    matches!(power, 0 | 2) && desired_manual && current.projection().1 != 0
+    matches!(power, 0 | 2 | crate::automation::UNCLASSIFIED_EXTERNAL)
+        && desired_manual
+        && current.projection().1 != 0
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn manual_performance_defers_on_both_external_sources_only() {
-        for power in 0..=3 {
-            let external = matches!(power, 0 | 2);
+    fn manual_performance_defers_on_every_external_class_only() {
+        for power in 0..=4 {
+            let external = matches!(power, 0 | 2 | 3);
             let manual = ObservedPerformance::PerformanceManual;
             assert_eq!(defer_manual_performance(manual, power, true), external);
             assert!(!defer_manual_performance(manual, power, false));

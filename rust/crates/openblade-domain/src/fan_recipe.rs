@@ -54,7 +54,9 @@ pub struct Plan {
 }
 impl Plan {
     pub fn select(baseline: O, intent: FanIntent, source: i32) -> Option<Self> {
-        if FanIntent::checked(intent.mode, intent.rpm) != Some(intent) || !matches!(source, 0 | 2) {
+        if FanIntent::checked(intent.mode, intent.rpm) != Some(intent)
+            || !matches!(source, 0 | 2 | crate::automation::UNCLASSIFIED_EXTERNAL)
+        {
             return None;
         }
         let (selector, manual) = match baseline {
@@ -65,7 +67,9 @@ impl Plan {
             _ => return None,
         };
         // Managed keeps the observed AC selector on both classified external
-        // sources (full 0 and limited 2) with the same commands.
+        // sources (full 0 and limited 2) and on unclassified external power
+        // (3, `ProductionBatteryPort` UnclassifiedExternal) with the same
+        // commands; the host admits 3 only with fresh Windows AC presence.
         Some(Self {
             intent,
             selector,
@@ -194,6 +198,11 @@ mod tests {
         let limited = Plan::select(O::PerformanceAutomatic, maximum, 2).unwrap();
         assert_eq!((limited.selector, limited.pairs()), (2, 6));
         assert!(Plan::select(O::PerformanceAutomatic, maximum, 1).is_none());
+        let unclassified = Plan::select(O::PerformanceAutomatic, maximum, 3).unwrap();
+        assert_eq!((unclassified.selector, unclassified.pairs()), (2, 6));
+        for source in [-1, 4, i32::MAX] {
+            assert!(Plan::select(O::PerformanceAutomatic, maximum, source).is_none());
+        }
         assert!(Plan::select(O::HyperBoostObserved, maximum, 0).is_none());
         assert!(
             Plan::select(
@@ -209,7 +218,8 @@ mod tests {
     fn automatic_return_takes_the_saved_preset_in_one_pair() {
         use crate::thermal_mutation::Preset;
         let auto = FanIntent::checked(0, 3700).unwrap();
-        for source in [0, 2] {
+        // Unclassified external power (3) uses the same commands and selector.
+        for source in [0, 2, 3] {
             // Manual fans under either selector leave through the saved preset.
             for baseline in [O::FixedMaximum, O::PerformanceManual] {
                 for (preset, selector, settled) in [

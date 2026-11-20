@@ -143,3 +143,45 @@ fn decoded_performance_source_expands_external_policy_from_frozen_matrix() {
         }
     }
 }
+
+/// Managed `ProfileAutomationState.IsOrdinaryExternalOverride` on
+/// `PowerSource.ExternalUnknown`; profiles keep the frozen refusal.
+#[test]
+fn unclassified_external_admits_only_ordinary_explicit_overrides() {
+    let source = automation::UNCLASSIFIED_EXTERNAL;
+    assert_eq!(source, 3);
+    for preset in -1..=10 {
+        assert_eq!(
+            automation::override_source_eligible(preset, source),
+            matches!(preset, 0..=2 | 5..=9),
+            "preset {preset}"
+        );
+        assert!(!automation::performance_source_eligible(preset, source));
+        for classified in [0, 1, 2] {
+            assert_eq!(
+                automation::override_source_eligible(preset, classified),
+                automation::performance_source_eligible(preset, classified)
+            );
+        }
+    }
+}
+
+#[test]
+fn temporary_expiry_keeps_external_intent_while_unclassified() {
+    // A classified class retires every other saved class.
+    for observed in [0, 1, 2] {
+        for saved in [0, 1, 2, 3] {
+            assert_eq!(
+                automation::temporary_expired(saved, observed),
+                saved != observed
+            );
+        }
+    }
+    // Unclassified external power retires only battery intent.
+    for (saved, expired) in [(0, false), (1, true), (2, false), (3, false)] {
+        assert_eq!(automation::temporary_expired(saved, 3), expired);
+    }
+    for observed in [-1, 4] {
+        assert!(!automation::temporary_expired(1, observed));
+    }
+}

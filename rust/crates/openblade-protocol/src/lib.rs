@@ -104,6 +104,20 @@ impl RazerReport {
         bytes[..usize::from(length)].copy_from_slice(&response[8..8 + usize::from(length)]);
         Ok(ReportPayload { bytes, length })
     }
+
+    /// A correlated terminal rejection of this request: checksum, transaction,
+    /// command class and command ID all match, the raw status is FAILED (3) or
+    /// NOT_SUPPORTED (5), and the single-report geometry is intact. Mirrors C#
+    /// `OrdinaryThermalPowerAdmission.IsCompletedAdapterRejection` and
+    /// `HasSingleReportGeometry`. New, busy and timeout statuses are not
+    /// completed. An error body is never payload evidence, so none is returned.
+    pub fn is_completed_rejection(&self, response: &[u8]) -> bool {
+        self.validate_response(response, None) == Err(ProtocolValidationFailure::Status)
+            && matches!(response[0], 3 | 5)
+            && response[2..5] == [0, 0, 0]
+            && usize::from(response[5]) <= MAXIMUM_PAYLOAD_LENGTH
+            && response[89] == 0
+    }
 }
 
 /// Static encoding validates payload size before destination size, then publishes.
