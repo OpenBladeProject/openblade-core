@@ -114,10 +114,19 @@ impl RazerReport {
     pub fn is_completed_rejection(&self, response: &[u8]) -> bool {
         self.validate_response(response, None) == Err(ProtocolValidationFailure::Status)
             && matches!(response[0], 3 | 5)
-            && response[2..5] == [0, 0, 0]
-            && usize::from(response[5]) <= MAXIMUM_PAYLOAD_LENGTH
-            && response[89] == 0
+            && has_single_report_geometry(response)
     }
+}
+
+/// One whole report: reserved bytes 2-4 and the trailing byte are zero and the
+/// payload length fits it. C# `OrdinaryThermalPowerAdmission.HasSingleReportGeometry`,
+/// which managed requires of a rejection and of a success reply it maps to
+/// unclassified adapter power (`WindowsRazerHidSession`).
+pub fn has_single_report_geometry(response: &[u8]) -> bool {
+    response.len() == REPORT_LENGTH
+        && response[2..5] == [0, 0, 0]
+        && usize::from(response[5]) <= MAXIMUM_PAYLOAD_LENGTH
+        && response[89] == 0
 }
 
 /// Static encoding validates payload size before destination size, then publishes.

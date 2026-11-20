@@ -1,6 +1,8 @@
 //! The 07/8C adapter-query rejection that C# `OrdinaryThermalPowerAdmission`
 //! treats as a completed query without a classification.
-use openblade_protocol::{REPORT_LENGTH, RazerReport, calculate_checksum};
+use openblade_protocol::{
+    REPORT_LENGTH, RazerReport, calculate_checksum, has_single_report_geometry,
+};
 
 fn query() -> RazerReport {
     RazerReport::create(0x21, 0x07, 0x8c, &[0, 0]).unwrap()
@@ -52,4 +54,25 @@ fn correlation_and_geometry_failures_are_not_completed() {
     corrupt[88] ^= 1;
     assert!(!q.is_completed_rejection(&corrupt));
     assert!(!q.is_completed_rejection(&corrupt[..REPORT_LENGTH - 1]));
+}
+
+#[test]
+fn single_report_geometry_is_shared_by_success_and_rejection() {
+    // Managed requires the same geometry of a success reply it maps to
+    // unclassified power (`WindowsRazerHidSession`) as of a rejection.
+    for status in [2, 3, 5] {
+        assert!(has_single_report_geometry(&reply(status, |_| {})));
+        for edit in [
+            (|r: &mut [u8; REPORT_LENGTH]| r[2] = 1) as fn(&mut [u8; REPORT_LENGTH]),
+            |r| r[3] = 1,
+            |r| r[4] = 1,
+            |r| r[5] = 81,
+            |r| r[89] = 1,
+        ] {
+            assert!(!has_single_report_geometry(&reply(status, edit)));
+        }
+    }
+    assert!(!has_single_report_geometry(
+        &reply(2, |_| {})[..REPORT_LENGTH - 1]
+    ));
 }
