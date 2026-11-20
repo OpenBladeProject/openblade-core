@@ -22,27 +22,27 @@
     },
     {
       "path": "2026-11-19-rz09-0301-keyboard-frames.json",
-      "sha256": "0a5406deac1f2e6ee0a4efedbe7f5c4b9371dc2970680461ec3f99e415657f7e"
+      "sha256": "95de39517e7159b66e9e0f2b17bf674ac0df3452a9f68ad65fcc0b627e9c9117"
     },
     {
       "path": "2026-11-19-rz09-0421-keyboard-frames.json",
-      "sha256": "db0752a4edc97a21174f24b4e5f3c8e6161bde0dcd21d8faa25a5bd6599d85e2"
+      "sha256": "160e05bdbb9958f0dcce166dfad4ee1dee3f5d1fef44a2792ae690440a62e6ae"
     },
     {
       "path": "2026-11-19-rz09-0423-keyboard-frames.json",
-      "sha256": "a46c073acced08c7188f08c3a126cf043fb2e6ad5354f10cb7e9399a9e53c845"
+      "sha256": "b8a8934e2adbe736acefbddf2560a81684b340ab3b36f265ae292d15c2d111a5"
     },
     {
       "path": "2026-11-19-rz09-0427-keyboard-frames.json",
-      "sha256": "9da1d083ed9cdc3544ec2553447c0fcbe762431c9a659610e8933f8891b8ea91"
+      "sha256": "73a6c30934c1b1b88968db24f2ef9857595329348832cce9be4efa4cfa1388ab"
     },
     {
       "path": "2026-11-19-rz09-0509-keyboard-frames.json",
-      "sha256": "6599ee02234f0143d406257164cc523c9887ae5d5dae0c7cfb49b8f45837c17f"
+      "sha256": "b8f46de6fe3c0e068294db44539746774ca5c70b6acd1df6d6dd18292f5f1edc"
     },
     {
       "path": "2026-11-19-rz09-0510-keyboard-frames.json",
-      "sha256": "de193ba03c87d3bddb078c14aaf3a26ea46e0673815a3b16e4a04d655ced3398"
+      "sha256": "3de55edd2de2ed88901b7a4fdb6d07ccb46280e5130749146f6f6125be8dbb97"
     },
     {
       "path": "2026-11-13-mcu-color-wave-review.json",
@@ -169,7 +169,7 @@
       "frameReview": "2026-11-19-rz09-0301-keyboard-frames.json",
       "keyMap": "No exact physical input-to-light map admitted.",
       "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
-      "restoration": "Durable complete built-in baseline (Off, Static, Breathing or Wave) plus exact raw active brightness before frame writes; Spectrum, custom mode 8 and modes 5..7 refuse host frames. Restore uses the flag-clearing legacy 03/0A setter with effect readback, then re-reads brightness and restores it only if the setter changed it. Restoration is skipped and the owner faults when the selection no longer reads mode 8. No pixel readback claim.",
+      "restoration": "Durable complete built-in baseline (Off, Static, Breathing or Wave) plus exact raw active brightness before frame writes; Spectrum, custom mode 8 and modes 5..7 refuse host frames. Restore uses the flag-clearing legacy 03/0A setter with effect readback, then re-reads brightness and restores it only if the setter changed it. Restoration is skipped and the owner faults when the selection no longer reads mode 8, unless 0F/82 reports exactly the journaled baseline in mode and parameters: then the restore still uses the flag-clearing 03/0A setter, because a GPIO event can leave the frame shown, and a new host-drawn owner may adopt the pending baseline. No pixel readback claim.",
       "gaps": [
         "Custom pixels are write-only; a GPIO event can report the saved mode while the frame stays visible.",
         "Key input mapping, Reactive, Ripple and sequences need their own source review."
@@ -373,7 +373,7 @@
       "frameReview": "2026-11-19-rz09-0421-keyboard-frames.json",
       "keyMap": "No exact physical input-to-light map admitted.",
       "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
-      "restoration": "Durable complete built-in baseline (Off, Static, Breathing or Wave) plus exact raw active brightness before frame writes; Spectrum, custom mode 8 and modes 5..7 refuse host frames. Restore uses the flag-clearing legacy 03/0A setter with effect readback, then re-reads brightness and restores it only if the setter changed it. Restoration is skipped and the owner faults when the selection no longer reads mode 8. No pixel readback claim.",
+      "restoration": "Durable complete built-in baseline (Off, Static, Breathing or Wave) plus exact raw active brightness before frame writes; Spectrum, custom mode 8 and modes 5..7 refuse host frames. Restore uses the flag-clearing legacy 03/0A setter with effect readback, then re-reads brightness and restores it only if the setter changed it. Restoration is skipped and the owner faults when the selection no longer reads mode 8, unless 0F/82 reports exactly the journaled baseline in mode and parameters: then the restore still uses the flag-clearing 03/0A setter, because a GPIO event can leave the frame shown, and a new host-drawn owner may adopt the pending baseline. No pixel readback claim.",
       "gaps": [
         "Static hidden palette selector is not readable.",
         "Custom pixels are write-only; a GPIO event can report the saved mode while the frame stays visible.",
@@ -426,7 +426,7 @@
       "frameReview": "2026-11-19-rz09-0423-keyboard-frames.json",
       "keyMap": "No exact physical input-to-light map admitted.",
       "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
-      "restoration": "Durable complete built-in baseline (Off, Static, Breathing or Wave) plus exact raw active brightness before frame writes; Spectrum, custom mode 8 and modes 5..7 refuse host frames. Restore uses the flag-clearing legacy 03/0A setter with effect readback, then re-reads brightness and restores it only if the setter changed it. Restoration is skipped and the owner faults when the selection no longer reads mode 8. No pixel readback claim.",
+      "restoration": "Durable complete built-in baseline (Off, Static, Breathing or Wave) plus exact raw active brightness before frame writes; Spectrum, custom mode 8 and modes 5..7 refuse host frames. Restore uses the flag-clearing legacy 03/0A setter with effect readback, then re-reads brightness and restores it only if the setter changed it. Restoration is skipped and the owner faults when the selection no longer reads mode 8, unless 0F/82 reports exactly the journaled baseline in mode and parameters: then the restore still uses the flag-clearing 03/0A setter, because a GPIO event can leave the frame shown, and a new host-drawn owner may adopt the pending baseline. No pixel readback claim.",
       "gaps": [
         "Custom pixels are write-only; a GPIO event can report the saved mode while the frame stays visible.",
         "Key input mapping, Reactive, Ripple and sequences need their own source review."
@@ -478,7 +478,7 @@
       "frameReview": "2026-11-19-rz09-0427-keyboard-frames.json",
       "keyMap": "No exact physical input-to-light map admitted.",
       "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
-      "restoration": "Durable complete built-in baseline (Off, Static, Breathing or Wave) plus exact raw active brightness before frame writes; Spectrum, custom mode 8 and modes 5..7 refuse host frames. Restore uses the flag-clearing legacy 03/0A setter with effect readback, then re-reads brightness and restores it only if the setter changed it. Restoration is skipped and the owner faults when the selection no longer reads mode 8. No pixel readback claim.",
+      "restoration": "Durable complete built-in baseline (Off, Static, Breathing or Wave) plus exact raw active brightness before frame writes; Spectrum, custom mode 8 and modes 5..7 refuse host frames. Restore uses the flag-clearing legacy 03/0A setter with effect readback, then re-reads brightness and restores it only if the setter changed it. Restoration is skipped and the owner faults when the selection no longer reads mode 8, unless 0F/82 reports exactly the journaled baseline in mode and parameters: then the restore still uses the flag-clearing 03/0A setter, because a GPIO event can leave the frame shown, and a new host-drawn owner may adopt the pending baseline. No pixel readback claim.",
       "gaps": [
         "Custom pixels are write-only; a GPIO event can report the saved mode while the frame stays visible.",
         "Key input mapping, Reactive, Ripple and sequences need their own source review."
