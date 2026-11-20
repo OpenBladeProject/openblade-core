@@ -79,7 +79,15 @@ Maximum Fans is a separate Custom-mode switch on the Blade 14 (2023), Blade 16
 (2023) and Blade 18 (2023). The Blade 14 uses its own product-669 Synapse flag
 and setter, which match the Blade 16 contract; see the
 [source review](../evidence/source-reviewed-blades/2026-11-19-rz09-0482-maximum-fans.json).
-It keeps that model's echoed set acknowledgement. The shared Power Mode Control decoder accepts any one-byte subset of
+Its `07/0F` writes accept a status-only or one-byte reply, like the Blade 16:
+the exact product-669 setter and transport check only the transaction, command
+and status bytes. Other Blade 14 setters keep their echoed acknowledgement.
+Product 669 also offers CPU Boost as bit `0x01` of the same byte. OpenBlade
+reports that bit in diagnostics and lists it as observed-only; it adds no CPU
+Boost control. In Custom, a failed `07/8F` read fails the whole performance
+query closed, as on the Blade 16 and Blade 18: the confirmed state has no
+unknown Maximum Fans value, and reporting it off would be a guess.
+The shared Power Mode Control decoder accepts any one-byte subset of
 `0x0F`; Maximum Fans is bit `0x02`. CPU boost (`0x01`), temporary full charge
 (`0x04`), and local dimming (`0x08`) remain independent observations. Undefined
 bits and other payload lengths are rejected with the bytes retained in diagnostics.
@@ -91,7 +99,16 @@ Synapse explicitly turns Maximum Fans off before leaving Custom. OpenBlade does
 the same with a guarded whole-byte `07/0F [0]` write when the fresh `07/8F`
 read shows that bit set, confirms it is off, and only then submits the preset
 `0D/02`. This is a direct cleanup dependency, not a broad reset; `0D/02` is not
-treated as proof that the Maximum Fans bit was cleared.
+treated as proof that the Maximum Fans bit was cleared. If Maximum Fans is on
+together with another option, such as CPU Boost set in Synapse, leaving Custom
+is refused before any write: clearing only `0x02` would need a combined
+whole-byte value that no reviewed source writes. Turn the other option off in
+Synapse first. The service compares the confirmed flag with the saved Custom
+intent, so a change to Maximum Fans alone is written and confirmed.
+On battery, the Blade 14 (2023) and Blade 16 (2023) admit no thermal preset,
+so the flag stays as it is until external power returns. Their Synapse
+policies clear it before the DC Balanced setter, which OpenBlade does not
+admit on these models.
 Unrelated CPU/GPU level changes preserve the flags. The switch is unavailable
 in ordinary presets and is not a substitute for adjustable fixed targets.
 Select Automatic before enabling it; a Fixed baseline is rejected before any
@@ -146,8 +163,11 @@ Blade 14 (2023) is absent from Razer's public compatibility list; its exact
 Synapse definitions are the source-reviewed admission source. It admits Balanced,
 Silent and Custom bases, never Performance/raw 2, and requires MCU 1.1.1.3.
 Like the Blade 16, HyperBoost entry from Custom clears an active Maximum Fans
-flag with the guarded `07/0F [0]` cleanup, and the journaled Custom intent
-retains it for restoration. Blade 16 (2023) requires MCU 1.5.0.0.
+flag with the guarded `07/0F [0]` cleanup. The ownership journal keeps the
+saved Custom intent, and on exit the service compares it with the confirmed
+flag and turns Maximum Fans back on. If admission changes after the confirmed
+cleanup but before mode 7, the refusal reports a known state and writes stay
+available. Blade 16 (2023) requires MCU 1.5.0.0.
 
 Blade 18 (2023) remains observed-only. Turn HyperBoost off in Synapse before
 using performance controls; no HyperBoost setter is admitted for that model.

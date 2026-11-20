@@ -132,8 +132,9 @@ Blade 14 (2025) 在电池供电时还提供电池节能和电池平衡模式。
   缺少温度读数时保持最高转速；此型号的温度读取仍需实机验证。
 - 最大风扇是 Blade 14 (2023)、Blade 16 (2023) 和 Blade 18 (2023) 在自定义模式中的独立开关。
   开启前，请先将风扇设为自动。
-  如果局部调光、临时充满等其他 Power Mode Control 选项已开启，就不能切换最大风扇开关。
-  退出自定义模式前，OpenBlade 会关闭最大风扇。
+  如果 CPU Boost、局部调光、临时充满等其他 Power Mode Control 选项已开启，就不能切换最大风扇开关，
+  请先在 Synapse 中关闭该选项。退出自定义模式或启动 HyperBoost 前，OpenBlade 会关闭最大风扇，
+  HyperBoost 结束后会重新开启。
 - 自定义 CPU/GPU 档位为低、中、高。
   Blade 16 (2023) 还支持 CPU Boost，以及 CPU 和 GPU 同时设为高档。Blade 18 (2023) 支持全部 12 种 CPU/GPU 档位组合，包括 Boost/Medium 和双高档，依据为 Synapse 独立设置两个档位的实现。
 - RZ09-0328 使用单区 RGB 灯光，不支持波浪和标志灯控制。

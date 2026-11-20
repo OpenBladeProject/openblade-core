@@ -153,8 +153,9 @@ Blade 14 (2025) также
   на этой модели ещё требует проверки на ноутбуке.
 - Maximum Fans — отдельный переключатель режима Custom на Blade 14 (2023),
   Blade 16 (2023) и Blade 18 (2023). Перед включением выберите Automatic. Maximum Fans нельзя менять,
-  пока включён другой параметр Power Mode Control, например локальное затемнение
-  или временная полная зарядка. Перед выходом из Custom OpenBlade выключает Maximum Fans.
+  пока включён другой параметр Power Mode Control, например CPU Boost, локальное затемнение
+  или временная полная зарядка. Сначала выключите его в Synapse. Перед выходом из Custom
+  и запуском HyperBoost OpenBlade выключает Maximum Fans, а после HyperBoost включает снова.
 - Уровни CPU/GPU в Custom: Low, Medium и High. Blade 16 (2023) также предлагает
   CPU Boost и сочетание High/High. Blade 18 (2023) поддерживает все 12 сочетаний,
   включая Boost/Medium и High/High, на основе независимого управления уровнями в Synapse.

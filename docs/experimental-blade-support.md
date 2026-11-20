@@ -151,8 +151,9 @@ Battery Saver and Battery Balanced on battery power.
 - Maximum Fans is a separate Custom-mode switch on the Blade 14 (2023),
   Blade 16 (2023) and Blade 18 (2023). Select Automatic fans before turning it on. Maximum Fans cannot
   change while another
-  Power Mode Control option is on, such as local dimming or temporary full charge.
-  OpenBlade turns Maximum Fans off before leaving Custom.
+  Power Mode Control option is on, such as CPU Boost, local dimming or temporary full charge.
+  Turn that option off in Synapse first. OpenBlade turns Maximum Fans off before leaving
+  Custom or starting HyperBoost, and turns it back on when HyperBoost ends.
 - Custom CPU/GPU levels are Low, Medium, and High. The Blade 16 (2023) also
   offers CPU Boost and High/High. Blade 18 (2023) offers all twelve CPU/GPU
   combinations, including Boost/Medium and High/High, using Synapse's independent

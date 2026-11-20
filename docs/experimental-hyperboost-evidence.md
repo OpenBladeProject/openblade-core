@@ -60,7 +60,9 @@ contract ([source review](../evidence/source-reviewed-blades/2026-11-19-rz09-048
 so the Blade 14 now represents it in Custom intent. HyperBoost entry and ordinary
 transitions out of Custom use the same guarded `07/0F [0]` cleanup as the Blade
 16: a fresh `07/8F` must show no other option set, and the cleared bit is
-confirmed before the mode setter.
+confirmed before the mode setter. On exit, the service compares the journaled
+Custom intent with the confirmed flag and writes Maximum Fans back on. A refusal
+after the confirmed cleanup and before mode 7 reports a known state.
 Blade 18 product 672 has no HyperBoost entry in its exact mode list. A shared
 enum reference is insufficient to enable it. Its existing observed-only state
 remains unchanged.
