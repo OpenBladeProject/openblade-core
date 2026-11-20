@@ -26,6 +26,12 @@ internal sealed class ExperimentalLightingOwnershipState
     // while it still equals this record, so another controller's change wins.
     internal bool VaporChamberObserved;
     internal LightingSettings? VaporChamberDestination;
+    // RZ09-0301/0421/0423/0427: OpenBlade may have selected custom mode 8 for
+    // this baseline, so its frame can still be shown even when 0F/82 reports the
+    // saved effect (a GPIO edge keeps the custom flag). Set before every [0,5,8]
+    // and for a journal loaded at startup; a fault keeps it. Only a verified
+    // restore through the flag-clearing 03/0A setter clears it.
+    internal bool McuCustomFrameMayRemain;
     internal int UniformFrameActivated;
     internal long UniformFrameTimestamp;
     internal ExperimentalLightingBaselineJournal? Journal;
@@ -652,15 +658,24 @@ internal sealed partial class ExperimentalBladePort
         try
         {
             if (replacingOwnedFrame && hostFrameRequest && SupportsReviewedMcuKeyboardFrames(model)
-                && ReviewedMcuCustomFrameSelected())
+                && lightingOwnership.Baseline is not null)
             {
-                // Replace frames only while this owner still holds custom mode 8.
+                // Replace frames only while this owner still holds the keyboard:
+                // custom mode 8 once selected, otherwise the journaled baseline
+                // effect. Another controller's change stops without a write.
                 // Check before draining the renderer, so a read refused before it
                 // reaches the device leaves the current owner running unchanged.
                 try
                 {
                     RequireWriteAdmission();
-                    await RequireReviewedMcuCustomFrameSelectionAsync(cancellationToken).ConfigureAwait(false);
+                    if (ReviewedMcuCustomFrameSelected())
+                    {
+                        await RequireReviewedMcuCustomFrameSelectionAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await RequireReviewedMcuBaselineStillShownAsync(cancellationToken).ConfigureAwait(false);
+                    }
                 }
                 catch (BladeWriteException deferred)
                     when (deferred.FailurePhase == BladeWriteFailurePhase.LightingSelectionRead)
@@ -1361,6 +1376,7 @@ internal sealed partial class ExperimentalBladePort
         lightingOwnership.Baseline = null;
         lightingOwnership.Intent = null;
         lightingOwnership.UniformFrameActivated = 0;
+        lightingOwnership.McuCustomFrameMayRemain = false;
         // The next host-frame baseline resets its own LED38 observation.
         lightingOwnership.VaporChamberFrames = false;
         SetLightingOwnership(LightingRendererOwnershipState.None);
@@ -1412,7 +1428,10 @@ internal sealed partial class ExperimentalBladePort
             if (SupportsReviewedMcuKeyboardFrames(model)
                 && (current.Span[2] != 8 || !ReviewedMcuCustomFrameSelected()))
             {
-                bool selected = ReviewedMcuCustomFrameSelected();
+                // The current owner may not have selected mode 8 itself, but an
+                // earlier owner of this baseline, a faulted one or one from an
+                // earlier run may have. Its frame can remain under the saved effect.
+                bool selected = ReviewedMcuCustomFrameSelected() || lightingOwnership.McuCustomFrameMayRemain;
                 if (!ReviewedMcuEffectMatchesBaseline(current.Span, baseline))
                 {
                     // The firmware or another controller changed the effect; its
@@ -1424,8 +1443,8 @@ internal sealed partial class ExperimentalBladePort
                         ? "The keyboard left custom lighting outside OpenBlade. Choose a lighting effect to restore it."
                         : "Another app changed the keyboard lighting, so OpenBlade left it unchanged. Choose a lighting effect to continue.");
                 }
-                // The reported effect is exactly the journaled destination. A
-                // sampled owner that never selected mode 8 needs no effect write.
+                // The reported effect is exactly the journaled destination. Only
+                // when mode 8 was never selected for this baseline is no write needed.
                 // After a GPIO edge the flag and staging may remain, so the
                 // flag-clearing setter still completes a selected owner's restore.
                 effectAlreadyRestored = !selected;

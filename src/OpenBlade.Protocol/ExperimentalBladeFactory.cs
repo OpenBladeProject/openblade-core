@@ -51,6 +51,9 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             Baseline = journal.Baseline,
             Ownership = journal.Invalid || journal.Baseline is not null
                 ? (int)LightingRendererOwnershipState.Faulted : 0,
+            // A record from an earlier run may follow a [0,5,8] selection.
+            McuCustomFrameMayRemain = ExperimentalBladePort.SupportsReviewedMcuKeyboardFrames(model)
+                && journal.Baseline is not null,
         };
     }
 

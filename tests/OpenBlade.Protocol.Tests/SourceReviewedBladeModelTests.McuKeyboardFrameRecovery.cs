@@ -543,6 +543,286 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Equal(keyboard, reopenedKeyboard.Load().Baseline);
     }
 
+    // A GPIO edge reports the saved effect while the custom flag and staging stay
+    // shown. A sampled owner adopted from that fault never selected mode 8 itself,
+    // but its release must still clear the flag through the legacy 03/0A setter.
+    [Theory]
+    [MemberData(nameof(ReviewedMcuFrameProducts))]
+    public async Task McuFrames_AdoptedSampledOwnerReleasedBeforeItsFirstFrameClearsTheCustomFlag(int product)
+    {
+        foreach (bool audio in new[] { false, true })
+        {
+            using var storage = new McuFrameJournalFixture(product);
+            var session = new Session { Brightness = 129, McuLighting = McuFrameBaseline.ToArray() };
+            session.EchoLightingAck = true;
+            var clock = new VaporChamberClock();
+            await using var port = new ExperimentalBladePort(session, new(), Model(product), new(Model(product)),
+                () => true, () => PowerSource.PluggedIn, sharedLightingOwnership: new() { Journal = storage.Journal },
+                lightingTimeProvider: clock);
+            await port.SetLightingAsync(LightingSettingsFactory.Fire(60), default);
+            await clock.WaitForTimerCountAsync(1);
+            session.McuLighting = McuFrameBaseline.ToArray();
+            clock.Advance(TimeSpan.FromMilliseconds(50));
+            await WaitForOwnershipAsync(port, LightingRendererOwnershipState.Faulted);
+            Assert.True(session.McuCustomOverlay);
+            await port.SetLightingAsync(audio
+                ? LightingSettingsFactory.AudioMeter(1, 60)
+                : LightingSettingsFactory.AmbientAwareness(AmbientAwarenessRegion.Full, 60), default);
+            Assert.True(session.McuCustomOverlay);
+            int before = session.Commands.Count;
+
+            Assert.Equal(audio ? LightingRendererOwnershipState.AudioMeter : LightingRendererOwnershipState.AmbientAwareness,
+                await port.RelinquishRendererAsync(default));
+
+            Assert.Contains("03/0A [3,1,11,22,33]", session.Commands.Skip(before).Select(DescribeMcu));
+            Assert.False(session.McuCustomOverlay);
+            Assert.Equal(McuFrameBaseline, session.McuLighting);
+            Assert.Equal(129, session.Brightness);
+            Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+            Assert.Null(storage.Journal.Load().Baseline);
+            AssertMcuFrameContract(session);
+        }
+    }
+
+    // A journal left by an earlier run may follow a selection. The factory marks
+    // it with McuCustomFrameMayRemain, so the same release clears the flag.
+    [Theory]
+    [MemberData(nameof(ReviewedMcuFrameProducts))]
+    public async Task McuFrames_OwnerAdoptedFromAnEarlierRunJournalClearsTheCustomFlagOnRelease(int product)
+    {
+        using var storage = new McuFrameJournalFixture(product);
+        var saved = new ExperimentalLightingBaseline(LightingSettingsFactory.BreathingSingle(new(11, 22, 33), 51), 129);
+        storage.Journal.SavePending(saved);
+        var session = new Session { Brightness = 129, McuLighting = McuFrameBaseline.ToArray(), McuCustomOverlay = true };
+        await using var port = CreateMcuFrames(product, session, ownership: new()
+        {
+            Journal = storage.Journal,
+            Baseline = saved,
+            Ownership = (int)LightingRendererOwnershipState.Faulted,
+            McuCustomFrameMayRemain = true,
+        });
+        await port.SetLightingAsync(LightingSettingsFactory.AudioMeter(1, 60), default);
+        int before = session.Commands.Count;
+
+        await port.RelinquishRendererAsync(default);
+
+        Assert.Contains("03/0A [3,1,11,22,33]", session.Commands.Skip(before).Select(DescribeMcu));
+        Assert.False(session.McuCustomOverlay);
+        Assert.Null(storage.Journal.Load().Baseline);
+    }
+
+    // Replacing a sampled owner that has not selected mode 8 rereads the keyboard
+    // first. Another controller's effect stops the change without a write.
+    [Theory]
+    [MemberData(nameof(ReviewedMcuFrameProducts))]
+    public async Task McuFrames_UnselectedSampledOwnerReplacementRereadsOwnershipFirst(int product)
+    {
+        foreach (bool externallyChanged in new[] { true, false })
+        {
+            using var storage = new McuFrameJournalFixture(product);
+            var session = new Session { Brightness = 129, McuLighting = McuFrameBaseline.ToArray() };
+            await using var port = CreateMcuFrames(product, session, ownership: new() { Journal = storage.Journal });
+            await port.SetLightingAsync(LightingSettingsFactory.AudioMeter(1, 60), default);
+            ExperimentalLightingBaseline? journaled = storage.Journal.Load().Baseline;
+            byte[] external = [0, 5, 4, 2, 40, 0, 0, 0, 0, 0, 0, 0];
+            if (externallyChanged)
+            {
+                session.McuLighting = external.ToArray();
+            }
+            int before = session.Commands.Count;
+
+            if (externallyChanged)
+            {
+                BladeWriteException stopped = await Assert.ThrowsAsync<BladeWriteException>(() =>
+                    port.SetLightingAsync(LightingSettingsFactory.Fire(60), default));
+                Assert.Equal(WriteSubmissionState.KnownNotApplied, stopped.SubmissionState);
+                Assert.Equal("Another app changed the keyboard lighting, so host lighting stopped. Choose a lighting effect to continue.",
+                    stopped.Message);
+                Assert.Equal(new[] { "0F/82 region5" }, session.Commands.Skip(before).Select(DescribeMcu).ToArray());
+                Assert.Equal(external, session.McuLighting);
+                Assert.Equal(LightingRendererOwnershipState.Faulted, port.OwnershipState);
+                Assert.Equal(journaled, storage.Journal.Load().Baseline);
+                continue;
+            }
+
+            await port.SetLightingAsync(LightingSettingsFactory.Fire(60), default);
+
+            Assert.Equal("0F/82 region5", DescribeMcu(session.Commands[before]));
+            Assert.Equal(LightingRendererOwnershipState.Fire, port.OwnershipState);
+            Assert.Equal(journaled, storage.Journal.Load().Baseline);
+            await port.RelinquishRendererAsync(default);
+            Assert.Equal(McuFrameBaseline, session.McuLighting);
+            AssertMcuFrameContract(session);
+        }
+    }
+
+    // The replacement's ownership read follows write admission.
+    [Theory]
+    [MemberData(nameof(ReviewedMcuFrameProducts))]
+    public async Task McuFrames_RefusedAdmissionSpendsNoReplacementRead(int product)
+    {
+        var session = new Session { McuLighting = McuFrameBaseline.ToArray() };
+        session.EchoLightingAck = true;
+        bool hostPresent = true;
+        var clock = new VaporChamberClock();
+        await using var port = new ExperimentalBladePort(session, new(), Model(product), new(Model(product)),
+            () => hostPresent, () => PowerSource.PluggedIn, lightingTimeProvider: clock);
+        await port.SetLightingAsync(LightingSettingsFactory.Fire(60), default);
+        await clock.WaitForTimerCountAsync(1);
+        hostPresent = false;
+        int before = session.Commands.Count;
+
+        BladeWriteException refused = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(LightingSettingsFactory.Wheel(LightingRotationDirection.Clockwise, 60), default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, refused.SubmissionState);
+        Assert.Equal(before, session.Commands.Count);
+    }
+
+    // A selection read that may have reached the keyboard and failed is not a
+    // skipped frame: the owner faults without a write and keeps its journal.
+    [Theory]
+    [InlineData(0x0245, nameof(HidSessionFailureKind.Timeout))]
+    [InlineData(0x028A, nameof(HidSessionFailureKind.Poisoned))]
+    [InlineData(0x028B, nameof(HidSessionFailureKind.NativeIoFailure))]
+    [InlineData(0x028C, nameof(HidSessionFailureKind.ProtocolFailure))]
+    public async Task McuFrames_ObservedSelectionReadFailureFaultsWithoutAWrite(int product, string failure)
+    {
+        using var storage = new McuFrameJournalFixture(product);
+        var session = new Session { McuLighting = McuFrameBaseline.ToArray() };
+        var policy = new ExperimentalFeaturesPolicy(Model(product));
+        await using var port = CreateMcuFrames(product, session, policy, new() { Journal = storage.Journal },
+            clock: TimeProvider.System);
+        await port.SetLightingAsync(LightingSettingsFactory.AudioMeter(1, 51), default);
+        await port.PushUniformLightingFrameAsync(new(new RgbColor(9, 8, 7)), default);
+        session.McuSelectionReadFailure = Enum.Parse<HidSessionFailureKind>(failure);
+        int before = session.Commands.Count;
+
+        BladeWriteException failed = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.PushUniformLightingFrameAsync(new(new RgbColor(1, 2, 3)), default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failed.SubmissionState);
+        Assert.NotEqual(BladeWriteFailurePhase.LightingSelectionRead, failed.FailurePhase);
+        Assert.Equal(LightingRendererOwnershipState.Faulted, port.OwnershipState);
+        Assert.DoesNotContain(session.Commands.Skip(before), command => command.CommandId < 0x80);
+        Assert.NotNull(storage.Journal.Load().Baseline);
+        Assert.Contains(policy.Snapshot().Observations, observation => observation.FailureCategory == "CustomSelectionReadFailed");
+    }
+
+    // Refused reads skip batches for at most ReviewedMcuSelectionDeferralLimit;
+    // then the renderer stops without a write and keeps its journal.
+    [Theory]
+    [MemberData(nameof(ReviewedMcuFrameProducts))]
+    public async Task McuFrames_PersistentlyRefusedSelectionReadsStopTheRendererWithoutAWrite(int product)
+    {
+        using var storage = new McuFrameJournalFixture(product);
+        var session = new Session { McuLighting = McuFrameBaseline.ToArray() };
+        session.EchoLightingAck = true;
+        var policy = new ExperimentalFeaturesPolicy(Model(product));
+        var clock = new VaporChamberClock();
+        await using var port = new ExperimentalBladePort(session, new(), Model(product), policy, () => true,
+            () => PowerSource.PluggedIn, sharedLightingOwnership: new() { Journal = storage.Journal },
+            lightingTimeProvider: clock);
+        await port.SetLightingAsync(LightingSettingsFactory.Fire(60), default);
+        await clock.WaitForTimerCountAsync(1);
+        int before = session.Commands.Count;
+        int batches = 0;
+        while (port.OwnershipState == LightingRendererOwnershipState.Fire && batches < 200)
+        {
+            session.McuSelectionReadFailure = HidSessionFailureKind.Exhausted;
+            int reads = session.Commands.Count;
+            clock.Advance(ExperimentalGridLightingEffect.FrameInterval);
+            batches++;
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            while (session.Commands.Count == reads)
+            {
+                await Task.Delay(1, timeout.Token);
+            }
+            await Task.WhenAny(clock.WaitForTimerCountAsync(batches + 1),
+                WaitForOwnershipAsync(port, LightingRendererOwnershipState.Faulted));
+        }
+
+        int limit = (int)(ExperimentalBladePort.ReviewedMcuSelectionDeferralLimit / ExperimentalGridLightingEffect.FrameInterval);
+        Assert.Equal(LightingRendererOwnershipState.Faulted, port.OwnershipState);
+        Assert.InRange(batches, limit, limit + 2);
+        Assert.Equal(batches, session.Commands.Skip(before).Count());
+        Assert.DoesNotContain(session.Commands.Skip(before), command => command.CommandId < 0x80);
+        Assert.NotNull(storage.Journal.Load().Baseline);
+        Assert.Contains(policy.Snapshot().Observations, observation => observation.FailureCategory == "SelectionReadDeferralLimit");
+        Assert.True(policy.WritesAllowed);
+    }
+
+    // Only this process's own capture may add an LED38 record; a loaded record
+    // may only lose it.
+    [Fact]
+    public void LightingJournal_OnlyThisProcessCaptureMayAddAVaporChamberRecord()
+    {
+        using var storage = new Rz090529LightingJournalFixture();
+        var keyboard = new ExperimentalLightingBaseline(LightingSettingsFactory.Static(new(11, 22, 33), 51), 129);
+        ExperimentalLightingBaseline withVaporChamber = keyboard with
+        {
+            VaporChamber = LightingSettingsFactory.Static(new(1, 2, 3), 100),
+        };
+        storage.Journal.SavePending(keyboard);
+        ExperimentalLightingBaselineJournal reopened = ReopenRz090529Journal(storage);
+
+        InvalidDataException refused = Assert.Throws<InvalidDataException>(() =>
+            reopened.ReplacePendingVaporChamber(withVaporChamber));
+
+        Assert.Equal("Only the pending baseline's LED38 record may change.", refused.Message);
+        Assert.Equal(keyboard, reopened.Load().Baseline);
+        storage.Journal.ReplacePendingVaporChamber(withVaporChamber);
+        ExperimentalLightingBaselineJournal recovering = ReopenRz090529Journal(storage);
+        Assert.Equal(withVaporChamber, recovering.Load().Baseline);
+        recovering.ReplacePendingVaporChamber(keyboard);
+        Assert.Equal(keyboard, ReopenRz090529Journal(storage).Load().Baseline);
+    }
+
+    // As on RZ09-0529, an unreadable recovery journal blocks every lighting change,
+    // built-in effects included, until the protected storage is repaired.
+    [Theory]
+    [InlineData(0x0245)]
+    [InlineData(0x028A)]
+    [InlineData(0x028B)]
+    [InlineData(0x028C)]
+    [InlineData(0x02C7)]
+    public async Task LightingJournal_InvalidJournalBlocksEveryLightingChange(int product)
+    {
+        DirectoryInfo directory = Directory.CreateTempSubdirectory("openblade-invalid-lighting-journal-");
+        try
+        {
+            ExperimentalBladeModel model = Model(product);
+            File.WriteAllText(Path.Combine(directory.FullName, $"{model.ModelNumber}-1532-{model.ProductId:X4}.json"), "{ not json");
+            var journal = new ExperimentalLightingBaselineJournal(directory.FullName, model.ModelNumber, model.ProductId, _ => { });
+            Assert.True(journal.Load().Invalid);
+            var session = new Session { Brightness = 129, McuLighting = McuFrameBaseline.ToArray() };
+            await using var port = CreateMcuFrames(product, session, ownership: new()
+            {
+                Journal = journal,
+                JournalInvalid = true,
+                Ownership = (int)LightingRendererOwnershipState.Faulted,
+            });
+
+            foreach (LightingSettings requested in new[]
+            {
+                LightingSettingsFactory.BreathingSingle(new(1, 2, 3), 50),
+                LightingSettingsFactory.Off(),
+                LightingSettingsFactory.Fire(60),
+            })
+            {
+                CapabilityUnavailableException blocked = await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+                    port.SetLightingAsync(requested, default));
+                Assert.Equal("The lighting recovery journal is invalid or unreadable. Repair the protected OpenBlade data storage and restart the OpenBlade service.",
+                    blocked.Message);
+            }
+            Assert.Empty(session.Commands);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
     private static void InjectSelectionReadFailure(Session session, string failure)
     {
         if (failure == nameof(ObjectDisposedException))

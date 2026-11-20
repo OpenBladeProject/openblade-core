@@ -40,14 +40,39 @@ internal sealed partial class ExperimentalBladePort
                 or HidSessionFailureKind.Disposed,
         };
 
+    // A refused read skips one frame. Persistent refusal must not keep an owner
+    // that is never re-checked, so stop after this long without a fresh read.
+    internal static readonly TimeSpan ReviewedMcuSelectionDeferralLimit = TimeSpan.FromSeconds(5);
+
+    private long? reviewedMcuSelectionDeferredSince;
+
     private async Task<ReadOnlyMemory<byte>> ReadReviewedMcuSelectionAsync(CancellationToken token)
     {
         try
         {
-            return await ReadReviewedMcuEffectPayloadAsync(token).ConfigureAwait(false);
+            ReadOnlyMemory<byte> payload = await ReadReviewedMcuEffectPayloadAsync(token).ConfigureAwait(false);
+            reviewedMcuSelectionDeferredSince = null;
+            return payload;
         }
         catch (Exception error) when (IsUnobservedSelectionReadFailure(error))
         {
+            long now = animationTime.GetTimestamp();
+            if (reviewedMcuSelectionDeferredSince is not { } since)
+            {
+                reviewedMcuSelectionDeferredSince = now;
+            }
+            else if (animationTime.GetElapsedTime(since, now)
+                >= ReviewedMcuSelectionDeferralLimit)
+            {
+                // Nothing was written. Stop like any other refused frame.
+                reviewedMcuSelectionDeferredSince = null;
+                SetLightingFaulted();
+                policy.Record("KeyboardAnimationFrame", "Ownership", "Unavailable",
+                    failure: "SelectionReadDeferralLimit");
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    "The keyboard lighting state could not be read for 5 seconds, so host lighting stopped. Choose a lighting effect to continue.",
+                    error);
+            }
             // Skip this frame. No row was sent, so ownership and the journal stay.
             policy.Record("KeyboardAnimationFrame", "Ownership", "Deferred",
                 failure: error is NativeDeviceReadException read ? read.Failure.ToString() : error.GetType().Name);
@@ -57,6 +82,7 @@ internal sealed partial class ExperimentalBladePort
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
+            reviewedMcuSelectionDeferredSince = null;
             SetLightingFaulted();
             policy.Record("KeyboardAnimationFrame", "Ownership", "Unavailable",
                 failure: "CustomSelectionReadFailed");
@@ -181,6 +207,8 @@ internal sealed partial class ExperimentalBladePort
                 // [0,5,8] arms LED5 only and persists nothing. [0,0,8] would
                 // also arm the LED4 logo, and storage 1 persists the saved bank.
                 RequireWriteAdmission();
+                // Write-ahead: from here the custom frame may remain displayed.
+                lightingOwnership.McuCustomFrameMayRemain = true;
                 await ExchangeAsync("KeyboardAnimationFrame", 0x0F, 0x02,
                     [0, 5, 8], true, token, variableResponse: true,
                     payloadValidator: static value => value.Length <= RazerReport.MaximumPayloadLength,

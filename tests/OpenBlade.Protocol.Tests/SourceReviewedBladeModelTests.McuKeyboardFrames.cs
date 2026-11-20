@@ -335,6 +335,8 @@ public sealed partial class SourceReviewedBladeModelTests
     [InlineData(0x028C, "activation")]
     [InlineData(0x0245, "confirmation")]
     [InlineData(0x028A, "confirmation")]
+    [InlineData(0x028B, "unconfirmed")]
+    [InlineData(0x028C, "unconfirmed")]
     public async Task McuFrames_PartialOrAmbiguousSubmissionFaultsWithoutReplay(int product, string stage)
     {
         using var storage = new McuFrameJournalFixture(product);
@@ -355,6 +357,11 @@ public sealed partial class SourceReviewedBladeModelTests
             if (stage == "confirmation" && activated && command.ClassId == 15 && command.CommandId == 0x82)
             {
                 throw new IOException("Simulated confirmation failure.");
+            }
+            if (stage == "unconfirmed" && activated && command.ClassId == 15 && command.CommandId == 0x82)
+            {
+                // The selection was acknowledged but the keyboard still reports the baseline.
+                session.McuLighting = McuFrameBaseline.ToArray();
             }
         };
         await using var port = CreateMcuFrames(product, session, policy, new() { Journal = storage.Journal });
