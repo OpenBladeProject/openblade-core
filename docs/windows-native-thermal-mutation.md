@@ -61,7 +61,9 @@ Every save writes schema 10, as managed does. Each setter clears
 the other performance slot as managed setters do. Temporary state expires when
 a fresh classified power source differs. Unclassified external power expires
 only battery intent and never establishes full-power effectiveness; a
-temporary saved while unclassified expires on the first classified source.
+temporary saved while unclassified follows the first classified source within
+the same lifecycle epoch (see below). A status read without fresh Windows AC
+presence expires nothing.
 Existing manual fan detail/custom/GPU fields
 are preserved when unrelated; schema 1-7 requires managed migration. As in
 managed, a non-false `controlsKeyboardEffect` below schema 9 or a non-null zone
@@ -94,8 +96,11 @@ that recovery safely.
 As in managed, every supported AC preset and the observed AC fan selector are
 admitted on both classified external classes: an adapter at or above its
 recommendation (PluggedIn) and a limited one (USB-C). The commands are the
-same. Each setter needs a fresh adapter reading in the class first observed,
-so a class change stops the pair without replay. A fan row can therefore journal
+same. Each setter needs a fresh adapter reading that agrees with Windows AC
+presence (managed `AdmitOrdinaryThermalCommandAsync`). A class change between
+setters continues only while the request's destination is the same for the new
+class; battery, lost presence or a different destination stops the pair without
+replay. A fan row can therefore journal
 the Performance selector (2) with the limited source (2). Deployment readers
 before `d6ce3339` reject such a row as invalid history, which fences
 retirement, upgrade and mailbox custody fail-closed. The Rust `FanRecord` and
@@ -111,19 +116,27 @@ Fixed, Maximum and Automatic fans. Power is unclassified when Windows reports
 AC online and the 07/8C query completed without a class: either a correlated
 FAILED (3) or NOT_SUPPORTED (5) rejection with intact single-report geometry
 (`RazerReport::is_completed_rejection`, after managed
-`OrdinaryThermalPowerAdmission`), or a successful reply whose actual level is
-unmapped or whose recommended level is unmapped or zero. Any other validation
-failure is no reading. The class is source 3; it is never promoted to full or
-limited power, and battery policy and temporary full charge keep their
-classified-only admission.
+`OrdinaryThermalPowerAdmission`), or a successful reply with the same
+single-report geometry (`has_single_report_geometry`, managed
+`WindowsRazerHidSession`) whose actual level is unmapped or whose recommended
+level is unmapped or zero. Any other status, correlation, checksum, length or
+geometry failure, and any receive failure, is no reading. The class is source
+3; it is never promoted to full or limited power, and battery policy and
+temporary full charge keep their classified-only admission.
 
-The commands, the fresh 07/8C read before each setter and the class-stability
-rule are the same as on the classified classes. Each setter's reading must be
-unclassified again: a refinement to a classified class, or the reverse, stops
-the pair without replay. Once the first reading is unclassified, every later
-checkpoint also needs fresh Windows AC presence (managed
+The commands and the fresh 07/8C read before each setter are the same as on the
+classified classes. Every external reading, classified or not, needs fresh
+Windows AC presence, and once the first reading is external every later
+checkpoint needs it too (managed `AdmitOrdinaryThermalCommandAsync` and
 `OrdinarySourceUnchanged`), so a lost presence stops before the next command.
-Without presence the request writes and stores nothing.
+A class change between setters, either way between full, limited and
+unclassified, continues while the new class selects the same destination. An
+explicit override does; a profile destination does not, because unclassified
+power selects no profile. Battery stops the pair without replay. Without presence,
+an unclassified reading, like a confirmed HyperBoost state on unclassified
+power (managed `CanAdmitUnclassifiedExternalControl`), is Blocked before any
+intent is stored: `Hardware application was not confirmed. The external power
+adapter could not be classified; overrides and control writes are blocked.`
 
 No power profile or application profile applies there (managed
 `CreateObservedFallbackProfile`). Explicit Balanced and Performance overrides
@@ -135,10 +148,22 @@ application waits for adapter classification.` A fan clear first hands an
 OpenBlade-owned manual fan change back to Automatic under the observed
 selector, without a saved preset (managed `RestoreOwnedAutomaticFansCoreAsync`);
 if that handback is not confirmed, the reply is Blocked, `Fan control could
-not be handed back to firmware. <cause>`. Owned Stop cleanup of a row
-recorded on source 3 needs the same presence. Status reports
-`activePowerSource` 3 and, while an explicit override exists, that override as
-the desired destination.
+not be handed back to firmware. <cause>`. Owned Stop cleanup needs the same
+presence and hands back on any external class, whichever class the owner's
+row recorded: the commands are the same, and the rows keep the recorded
+source. Status reports `activePowerSource` 3 and, while an explicit override
+exists, that override as the desired destination.
+
+A temporary override saved while unclassified records the lifecycle epoch. A
+classified reading at the same epoch keeps it and makes that class its source,
+as managed `PreserveOverridesForExternalClassification` keeps it within one
+Windows power generation; a later different class expires it. The epoch
+advances on every SCM power and session notice, so the first reading after an
+unplug, a replug, a suspend or a session change expires it. The status base
+reports 3 for any power that is not battery, Unknown included; without fresh
+Windows AC presence status reads saved intent at an unknown class, which
+expires nothing (managed `CaptureControlPowerSource`: a failed read is not a
+power boundary).
 
 Fan rows can journal source 3. The Rust `FanRecord` and the managed
 `WindowsNativeFanHistory` reader both admit it and both consume
@@ -149,20 +174,20 @@ power source, so their grammar is unchanged.
 
 Native differs from managed here in these ways:
 
-- Managed's performance path admits a mid-pair class change that still agrees
-  with Windows presence; native stops on any change.
+- Managed completes a pair whose class changes between setters whatever the
+  new class's destination; native also requires that destination to be the
+  same, so a profile request stops when the new class selects another one.
 - With manual fans saved and current, native replies with the Stored manual-fan
   deferral; managed has no deferral text there, and its coordinator leaves the
   manual fans in place.
-- Managed keeps a temporary saved while unclassified when the adapter is later
-  classified within the same Windows power generation. Native keeps no such
-  generation and expires it. A temporary saved unclassified also survives an
-  unplug and replug that native never observed.
+- Native's generation is the lifecycle epoch, which session notices, suspend
+  and resume also advance. Managed's advances only when the Windows power kind
+  changes, so it keeps a temporary saved unclassified across a lock or a
+  session switch that native expires it on. Native does not track managed's
+  separate last classified class per generation.
 - Native status carries no `externalPowerPresent` or capabilities, and with no
   override its desired provenance stays the profile default; managed reports
   the confirmed firmware state.
-- An owner recorded on source 3 that is later classified with no Windows event
-  fails closed at Stop; managed would hand it back.
 - Managed also admits lighting and battery controls on unclassified power;
   those are not native thermal setters and are unchanged.
 
@@ -212,6 +237,7 @@ unapplied intent:
 | Performance or fan clear on unclassified external power, with no owned fan change left | Stored, `Override cleared. Power-profile application waits for adapter classification.` |
 | Fan clear on unclassified external power whose owned handback is not confirmed | Blocked, `Fan control could not be handed back to firmware. <cause>` |
 | GPU clock tuning requested on unclassified external power | Failed, `The requested intent was rejected: This request needs classified power or includes native overclocking; ordinary external presence does not admit it.` |
+| Unclassified 07/8C reading without fresh Windows AC presence, or with confirmed HyperBoost | Blocked, `Hardware application was not confirmed. The external power adapter could not be classified; overrides and control writes are blocked.` |
 
 The Stored text is managed's `DeferredPerformanceIntentMessage`. Native
 returns it only when the later fan request can apply the intent, so the
@@ -240,8 +266,9 @@ through that preset's pair instead of the observed selector. It is one direct
 pair with the same bytes as the performance writer's pair; there is no fan
 pair first and no reset. The existing fan-path admission applies to each
 setter: fresh exact-device, caller, session, controller and lifecycle admission,
-a fresh 07/8C read in the first observed external class, and unchanged saved fan
-settings and destination preset. An independent final 0D/82 pair must confirm
+a fresh 07/8C read that agrees with Windows AC presence, and unchanged saved fan
+settings and destination preset, also for a new class between setters. An
+independent final 0D/82 pair must confirm
 the preset with Automatic fans. The reply is `Fans returned to Automatic with
 <preset> performance, confirmed by independent paired readback.`
 
@@ -277,8 +304,10 @@ Custom High/High read and keeps ownership). Native has no automatic
 reconciliation, so fans returned to Automatic by firmware or another
 controller do not apply it.
 
-Native never replies Failed. These managed Failed cases have no unambiguous
-native counterpart, so native keeps Blocked:
+Native replies Failed only for GPU clock tuning on unclassified external
+power, which it rejects before storing, as managed does (see the reply table).
+These other managed Failed cases have no unambiguous native counterpart, so
+native keeps Blocked:
 
 - Uncertain submission by this request. Native leaves the journal unsettled and
   replies Blocked with the reconciliation reason. Managed replies Failed, `<Name>
@@ -294,12 +323,12 @@ native counterpart, so native keeps Blocked:
   replies Blocked with the admission or reconciliation reason. Managed replies
   Failed, `could not be read before writing` or `changed before the final
   aggregate readback`.
-- Intent rejected with nothing saved. Native replies Blocked, `Performance intent
-  was not accepted...` or `Saved configuration replacement failed...`. Managed
-  replies Failed, `The requested intent was rejected: ...`, except Blocked for a
-  quarantined configuration. Native saves after the hardware observation and
-  uses one refusal path for quarantine, an unsettled journal, validation and file
-  errors.
+- Other intent rejected with nothing saved. Native replies Blocked, `Performance
+  intent was not accepted...` or `Saved configuration replacement failed...`.
+  Managed replies Failed, `The requested intent was rejected: ...`, except
+  Blocked for a quarantined configuration. Native saves after the hardware
+  observation and uses one refusal path for quarantine, an unsettled journal,
+  validation and file errors.
 - The same classes in fan replies, which are Blocked whenever the fan intent is
   not applied.
 

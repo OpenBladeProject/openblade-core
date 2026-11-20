@@ -40,11 +40,14 @@ including the source it recorded. The old selector is never written back first.
 An explicit Automatic request closes the owner the same way when it has
 nothing to write: the plan keeps the observed selector, or no native plan
 exists (battery, Silent, Battery Saver, Battery Balanced, Custom). It needs a
-classified 07/8C source to resolve the saved intent. Its baseline read uses the
-same Custom getter as every native observation, so a Custom reply publishes the
-levels it read. Custom High/High with Automatic fans, which native and managed
-reads both reject, has no baseline: the request is Blocked, saves no intent and
-keeps the owner, and Stop still settles it. A saved Balanced or
+decoded 07/8C source to resolve the saved intent: a classified class, or
+unclassified external power (source 3) with fresh Windows AC presence (see
+[unclassified external power](windows-native-thermal-mutation.md#unclassified-external-power)).
+Its baseline read uses the same Custom getter as every native observation, so
+a Custom reply publishes the levels it read. Custom High/High with Automatic
+fans, which native and managed reads both reject, has no baseline: the request
+is Blocked, saves no intent and keeps the owner, and Stop still settles it.
+A saved Balanced or
 Performance preset that differs from the observed selector on external power
 writes its own pair and closes with 50. The reply names the firmware selector
 only when it differs from the owner's recorded Balanced or Performance
@@ -91,8 +94,10 @@ with a zero-setter pending software outcome until their separate native
 recipes exist. No fallback profile or background control loop is added.
 
 Every setter has fresh exact-device, caller/session, controller, lifecycle and
-decoded 07/8C source admission. State-channel, state-to-target and target-channel
-spacing remain at least 10, 210 and 65 ms, alongside native feature settling.
+07/8C source admission: a fresh reading that agrees with Windows AC presence,
+in the recorded class or another external class whose destination is the same.
+State-channel, state-to-target and target-channel spacing remain at least 10,
+210 and 65 ms, alongside native feature settling.
 The complete recipe and all command IDs are frozen before Prepared. Ordinary
 preflight consumes four IDs. Remaining target-only, Balanced-entry,
 Performance-entry and direct-Automatic budgets are 6, 10, 12 and 6 IDs.
