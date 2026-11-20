@@ -37,8 +37,11 @@ $bundle = Join-Path $scratch 'OpenBlade.NativeRoles.OfflineFixture.exe'
 New-Item -ItemType Directory -Path $staging,$buildIntermediate,$extractIntermediate,$ba,$extracted | Out-Null
 
 # Build from immutable Git inputs so local edits and prior Cargo outputs cannot enter this pair.
+# The two candidate bins embed the managed contract and model inventory through include_str!.
 & git -C $repo archive --format=zip --output=$archive $SourceRevision -- `
     Directory.Build.props rust tools/openblade-windows-host `
+    tests/OpenBlade.Contracts.Tests/WindowsReplay/v1/service.json `
+    tests/OpenBlade.Protocol.Tests/Fixtures/windows-rust-model-evidence-inventory.json `
     tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-aggregate.json `
     tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-profile.json
 [IO.Compression.ZipFile]::ExtractToDirectory($archive, $source)
