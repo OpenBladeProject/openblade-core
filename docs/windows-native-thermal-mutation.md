@@ -195,7 +195,8 @@ performance request to apply it.` Owned Stop cleanup writes, when it must,
 only through the owner's selector: shutdown reaches the firmware handoff
 without applying saved settings. When fans already read Automatic, under any
 selector, Custom or HyperBoost, Stop writes nothing and closes the owner with
-51 (see [native fans](windows-rust-native-fans.md)). Native has no automatic
+51 (see [native fans](windows-rust-native-fans.md); managed instead rejects a
+Custom High/High read and keeps ownership). Native has no automatic
 reconciliation, so fans returned to Automatic by firmware or another
 controller do not apply it.
 

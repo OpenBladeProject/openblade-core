@@ -31,13 +31,20 @@ Custom with Automatic fans and HyperBoost (mode 7 with Automatic fans), on any
 power source: Stop reads only the pair for this, not 07/8C. Managed does the
 same: `ExactFanControlOwnership.ObserveTopology` clears ownership on any
 confirmed Automatic fan mode, and shutdown cleanup writes nothing when fans
-already use firmware Automatic. The 51 row repeats the owner's record,
+already use firmware Automatic. One difference remains: managed's read rejects
+Custom High/High with Automatic fans (`MapThermalState` throws), so managed
+keeps ownership there, while native Stop reads no Custom levels and settles
+it. The 51 row repeats the owner's record,
 including the source it recorded. The old selector is never written back first.
 
 An explicit Automatic request closes the owner the same way when it has
 nothing to write: the plan keeps the observed selector, or no native plan
 exists (battery, Silent, Battery Saver, Battery Balanced, Custom). It needs a
-classified 07/8C source to resolve the saved intent. A saved Balanced or
+classified 07/8C source to resolve the saved intent. Its baseline read uses the
+same Custom getter as every native observation, so a Custom reply publishes the
+levels it read. Custom High/High with Automatic fans, which native and managed
+reads both reject, has no baseline: the request is Blocked, saves no intent and
+keeps the owner, and Stop still settles it. A saved Balanced or
 Performance preset that differs from the observed selector on external power
 writes its own pair and closes with 50. The reply names the firmware selector
 only when it differs from the owner's recorded Balanced or Performance
@@ -53,11 +60,31 @@ SID, session and logon at the current epoch and rechecks origin and package
 trust, the original custody and its generation, the unlocked console session,
 the AC line status and competing-controller absence before each read. It can
 append only the 51 row, so it cannot submit a setter; manual fans then keep the
-owner outstanding. Nothing is captured while Windows reports suspend.
+owner outstanding. Nothing is captured while Windows reports suspend. The
+permit's own half (owner and release flags, the per-read recheck, the saved
+fan configuration, the 51-only journal and result admission) is covered by
+readiness tests and mutants. Its Windows half (`WindowsGuard::capture_settle`
+and `authorize_for`) is source-reviewed only: the tests drive a `SettleFresh`
+model of it, not the real console, token, AC-line and controller suppliers.
 Disagreeing or undecodable readback (including mode 7 with manual fans) keeps
 the owner outstanding on both paths. So do manual fans under another selector
 or power class at Stop; an explicit return on external power writes its pair
 and closes with 50.
+
+Known gaps in this handback, none of which can submit a write:
+
+- HyperBoost restore. If firmware restores manual fans when HyperBoost ends,
+  the owner was already closed at 51 while HyperBoost showed Automatic fans.
+  Managed has the same exposure.
+- Competing controller at Stop. The settle-only permit requires fresh
+  competing-controller absence; managed's Automatic no-write branch does not
+  (`ServiceControlRuntime.cs` returns on Automatic at :13648, before the
+  controller check at :13653). With Synapse running, native Stop leaves the
+  owner at 30. This fails closed and costs liveness only.
+- Low power. Native detects suspend only from a delivered `PBT_APMSUSPEND`.
+  Modern Standby may deliver none (`ServiceLifecycleRefreshLoop.cs:134-138`),
+  and no notice arrives after `STOP_PENDING`. This predates the settle-only
+  permit and affects the owner's own path too.
 
 Other requests in Custom, Silent, battery and delegated states store intent
 with a zero-setter pending software outcome until their separate native
