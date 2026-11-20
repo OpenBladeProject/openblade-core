@@ -81,6 +81,13 @@ internal sealed partial class ExperimentalBladePort
                     // Products 671/669 both clear this bit before leaving Custom.
                     // 029F/029D represent it in Custom intent, which the service
                     // ownership journal retains for restoration on exit.
+                    // A model without a representable Maximum Fans intent cannot
+                    // restore the flag, so do not clear an unrepresentable baseline.
+                    if (!CreateCustomCapabilities(model).SupportsMaximumFans)
+                    {
+                        throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                            "Turn off Maximum Fans in Synapse before enabling HyperBoost; OpenBlade cannot restore that option on this model.");
+                    }
                     RequireMaximumFansWriteBaseline(flags);
                     // Cleanup belongs to this HyperBoost request; it cannot inherit
                     // ordinary Unknown-AC admission before the mode-7 command.
