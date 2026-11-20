@@ -308,6 +308,39 @@ public sealed class ExperimentalLightingBaselineJournalTests : IDisposable
         Assert.True(Create().Load().Invalid);
     }
 
+    // Only RZ09-0529 has a reviewed LED38 contract. An LED38 record journaled for
+    // any other product is not a recovery instruction: the journal is invalid and
+    // no new one is written.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void VaporChamberRecordIsInvalidForAnyOtherProduct(bool withVaporChamber)
+    {
+        Create().SavePending(withVaporChamber
+            ? Baseline() with { VaporChamber = LightingSettingsFactory.Static(new(1, 2, 3), 100) }
+            : Baseline());
+        JsonNode document = JsonNode.Parse(File.ReadAllText(JournalPath))!;
+        document["modelNumber"] = "RZ09-0301";
+        document["productId"] = 0x0245;
+        File.Delete(JournalPath);
+        File.WriteAllText(Path.Combine(directory, "RZ09-0301-1532-0245.json"), document.ToJsonString());
+        var other = new ExperimentalLightingBaselineJournal(directory, "RZ09-0301", 0x0245, _ => { });
+
+        ExperimentalLightingBaselineJournalLoadResult loaded = other.Load();
+
+        Assert.Equal(withVaporChamber, loaded.Invalid);
+        if (!withVaporChamber)
+        {
+            Assert.Equal(Baseline(), loaded.Baseline);
+        }
+
+        var fresh = new ExperimentalLightingBaselineJournal(
+            Path.Combine(directory, "fresh"), "RZ09-0301", 0x0245, _ => { });
+        Assert.Throws<InvalidDataException>(() => fresh.SavePending(
+            Baseline() with { VaporChamber = LightingSettingsFactory.Static(new(1, 2, 3), 100) }));
+        Assert.False(Directory.Exists(Path.Combine(directory, "fresh")));
+    }
+
     private ExperimentalLightingBaselineJournal Create() => new(directory, "RZ09-0529", 0x02C7, _ => { });
 
     private static ExperimentalLightingBaseline Baseline() =>

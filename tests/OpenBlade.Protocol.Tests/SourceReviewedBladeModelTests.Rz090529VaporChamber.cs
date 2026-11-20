@@ -1147,6 +1147,70 @@ public sealed partial class SourceReviewedBladeModelTests
         };
     }
 
+    // An optional LED38 read refused before it reached the MCU (shared-gate refusal)
+    // is no answer about LED38: the request fails before any write and settles
+    // nothing, so the next request reads LED38 and drives it.
+    [Fact]
+    public async Task Rz090529VaporChamber_SharedGateRefusalFailsBeforeWritesAndSettlesNothing()
+    {
+        var availability = new ExperimentalVaporChamberAvailability();
+        var key = new ExperimentalVaporChamberAvailability.Key(
+            new HostIdentityEvidence("Razer", "Razer Blade 18", null, "test-firmware"),
+            new HidHandleIdentity(0x1532, 0x02C7, 1, 2, 91));
+        var session = new Session
+        {
+            McuLighting = Rz090529StaticKeyboard.ToArray(),
+            McuVaporChamber = Rz090529StaticVaporChamber.ToArray(),
+            VaporChamberEffectQueryRefusal = new(default, HidSessionFailureKind.Exhausted)
+            {
+                Diagnostic = new(HidSessionFailurePhase.SharedGateAdmission, HidSessionFailureKind.Exhausted,
+                    null, null),
+            },
+        };
+        await using var port = CreateRz090529Frames(session);
+        port.BindVaporChamberAvailability(availability, key);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(LightingSettingsFactory.Fire(60), default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.DoesNotContain(session.Commands, command => command.CommandId < 0x80);
+        Assert.Null(availability.Get(key));
+
+        session.VaporChamberEffectQueryRefusal = null;
+        await port.SetLightingAsync(LightingSettingsFactory.Fire(60), default);
+        Assert.Contains(session.Commands, IsVaporChamberRead);
+        Assert.Single(session.Commands, command => IsRz090529Row(command, 6));
+        Assert.Equal(8, session.McuVaporChamber[2]);
+        await port.RelinquishRendererAsync(default);
+        Assert.Equal(Rz090529StaticVaporChamber, session.McuVaporChamber);
+        Assert.Equal(Rz090529StaticKeyboard, session.McuLighting);
+    }
+
+    // Only RZ09-0529 has a reviewed LED38 contract. An LED38 record in another MCU
+    // model's ownership is never acted on: restoring its keyboard sends no region-38
+    // command.
+    [Fact]
+    public async Task Rz090529VaporChamber_RecordOnAnotherModelSendsNoRegion38Command()
+    {
+        var session = new Session { McuLighting = Rz090529StaticKeyboard.ToArray() };
+        var ownership = new ExperimentalLightingOwnershipState
+        {
+            Baseline = new(LightingSettingsFactory.Static(new(11, 22, 33), 50), 128)
+            {
+                VaporChamber = LightingSettingsFactory.Static(new(1, 2, 3), 100),
+            },
+        };
+        await using var port = new ExperimentalBladePort(session, new(), Model(0x0245), new(Model(0x0245)),
+            () => true, () => PowerSource.PluggedIn, sharedLightingOwnership: ownership);
+
+        await port.SetLightingAsync(LightingSettingsFactory.Static(new(11, 22, 33), 50), default);
+
+        Assert.DoesNotContain(session.Commands, command => command.ClassId == 0x0F
+            && command.Arguments.Length > 1 && command.Arguments.Span[1] == 38);
+        Assert.Null(ownership.Baseline);
+    }
+
     private static bool IsRz090529Row(RazerCommandSpec command, int row) =>
         command.ClassId == 3 && command.CommandId == 0x0B && command.Arguments.Span[1] == row;
 

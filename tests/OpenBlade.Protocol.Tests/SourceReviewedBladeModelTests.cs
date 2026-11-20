@@ -520,6 +520,9 @@ public sealed partial class SourceReviewedBladeModelTests
         internal bool RejectVaporChamberEffectQuery;
         // Acknowledges LED38 effect SETs without changing the record.
         internal bool IgnoreVaporChamberWrites;
+        // Returned for the LED38 effect GET before it is recorded, like a refusal
+        // that never reaches the device.
+        internal HidSessionResult<ReadOnlyMemory<byte>>? VaporChamberEffectQueryRefusal;
         internal byte Fan1 = 45;
         internal byte Fan2 = 45;
         internal byte[] DynamicFanRange = [0, 0, 0, 0, 0, 0, 37, 0, 45, 0, 53, 0];
@@ -555,6 +558,11 @@ public sealed partial class SourceReviewedBladeModelTests
                 {
                     Diagnostic = new(HidSessionFailurePhase.Guard, HidSessionFailureKind.IdentityBlocked, null, null),
                 });
+            }
+            if (VaporChamberEffectQueryRefusal is { } refusal && command.ClassId == 0x0F
+                && command.CommandId == 0x82 && command.Arguments.Span[1] == 38)
+            {
+                return Task.FromResult(refusal);
             }
             Commands.Add(command);
             Transactions.Add(assignTransactionId().TransactionId);
