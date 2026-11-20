@@ -372,3 +372,95 @@ fn every_managed_vector_decodes_validates_and_stores_alike() {
     // The corpus keeps exercising each outcome.
     assert!(stored >= 60 && rejected >= 80 && refused >= 90 && differences >= 2);
 }
+
+const AGGREGATES: &str = include_str!(
+    "../../../../tools/openblade-windows-host/tests/data/profile-aggregate-vectors.json"
+);
+
+fn digest(bytes: &[u8]) -> String {
+    format!("{:X}", Sha256::digest(bytes))
+}
+
+/// `BatteryConfigurationStore.LoadAsync` over a committed aggregate at each
+/// schema: what is admitted, what is rewritten, and the rewritten bytes.
+#[test]
+fn every_managed_aggregate_loads_and_migrates_alike() {
+    use openblade_domain::profile_set::preferences::{
+        commit_marker, preferences_document, read_aggregate,
+    };
+    let root = json::parse(AGGREGATES.as_bytes()).unwrap();
+    let Json::Array(cases) = member(&root, "cases") else {
+        panic!("the vectors hold cases");
+    };
+    let validator = validator();
+    let mut failures = Vec::new();
+    let (mut kept, mut migrations, mut refusals) = (0, 0, 0);
+    for case in cases {
+        let name = text(member(case, "name")).unwrap();
+        let expect = member(case, "expect");
+        let schema = member(case, "schema").integer(1, 27).unwrap() as i32;
+        let observed = read_aggregate(
+            schema,
+            &json::write(member(case, "profile"), false),
+            &json::write(member(case, "preferences"), false),
+            &validator,
+        );
+        let mut check = |what: &str, observed: String, expected: String| {
+            if observed != expected {
+                failures.push(format!(
+                    "{name}: {what}\n  native:  {observed}\n  managed: {expected}"
+                ));
+            }
+        };
+        // Managed quarantines the aggregate, or fails the load outright.
+        if member(expect, "admitted") != &Json::Bool(true) {
+            refusals += 1;
+            if observed.is_ok() {
+                check("admitted", "admitted".into(), "refused".into());
+            }
+            continue;
+        }
+        let aggregate = match observed {
+            Ok(aggregate) => aggregate,
+            Err(reason) => {
+                check("admitted", reason.0, "admitted".into());
+                continue;
+            }
+        };
+        let migrated = member(expect, "migrated") == &Json::Bool(true);
+        check(
+            "migrated",
+            aggregate.migrated.to_string(),
+            migrated.to_string(),
+        );
+        if !migrated {
+            kept += 1;
+            continue;
+        }
+        migrations += 1;
+        let profile = encode::profile_document(CURRENT_SCHEMA, &aggregate.profiles);
+        let preferences = preferences_document(CURRENT_SCHEMA, &aggregate.preferences);
+        let marker = commit_marker(CURRENT_SCHEMA, &digest(&profile), &digest(&preferences));
+        for (what, shown, bytes) in [
+            ("profile", "profileDocument", &profile),
+            ("preferences", "preferencesDocument", &preferences),
+            ("marker", "", &marker),
+        ] {
+            let document = String::from_utf8(bytes.clone()).unwrap();
+            if let Some(shown) = text(member(expect, shown)) {
+                check("document", document.clone(), shown);
+            }
+            let expected = text(member(expect, &format!("{what}Sha256"))).unwrap();
+            if digest(bytes) != expected {
+                check(what, format!("{} for {document}", digest(bytes)), expected);
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} mismatches:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+    assert!(kept >= 5 && migrations >= 35 && refusals >= 35);
+}
