@@ -264,3 +264,26 @@ fn bounded_startup_cancels_and_retires_a_late_registration() {
         assert!(!script.registered());
     }
 }
+
+#[test]
+fn the_owner_is_woken_by_every_notice_and_by_the_worker_exit() {
+    use std::sync::atomic::AtomicUsize;
+
+    let mut script = Script::default();
+    let _game = script.process(1, 42, 1, GAME);
+    let mut watcher = start(&mut script, ActivationMode::Foreground);
+    let woken = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&woken);
+    watcher.set_notice(Arc::new(move || {
+        counter.fetch_add(1, Ordering::AcqRel);
+    }));
+    script.focus(1);
+    assert_eq!(woken.load(Ordering::Acquire), 1);
+    script.desktop_switch();
+    assert_eq!(woken.load(Ordering::Acquire), 2);
+    script.announce(0);
+    assert_eq!(woken.load(Ordering::Acquire), 3);
+    watcher.shutdown().unwrap();
+    // The registration thread's exit is also announced.
+    assert_eq!(woken.load(Ordering::Acquire), 4);
+}

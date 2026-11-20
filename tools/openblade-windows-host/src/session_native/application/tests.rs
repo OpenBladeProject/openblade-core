@@ -9,7 +9,7 @@ use std::{
     io,
     rc::Rc,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         mpsc,
     },
@@ -20,8 +20,9 @@ use openblade_application_reporter::{
     ActivationMode, ApplicationProfile, Guid, LEASE_INTERVAL, ReportApplicationContextRequest,
     ReportOutcome,
 };
-use openblade_platform_windows::application::watcher::replay::{
-    ProcessProbe, Script, ScriptedWatcher,
+use openblade_platform_windows::application::watcher::{
+    Wake,
+    replay::{ProcessProbe, Script, ScriptedWatcher},
 };
 use serde_json::{Value, json};
 use tokio::{sync::watch, time::sleep};
@@ -39,6 +40,10 @@ const THIRD: &str = r"C:\Games\Third.exe";
 const FRAMES: &[u8] = include_bytes!("../../../tests/fixtures/get-status-v85.frames");
 
 impl Watcher for ScriptedWatcher {
+    fn set_notice(&mut self, wake: Wake) {
+        ScriptedWatcher::set_notice(self, wake);
+    }
+
     fn wait_ready(&mut self, timeout: Duration) -> io::Result<()> {
         ScriptedWatcher::wait_ready(self, timeout)
     }
@@ -253,7 +258,12 @@ struct Driven {
     clock: Arc<AtomicU64>,
     handles: Arc<AtomicUsize>,
     registered: Arc<AtomicBool>,
+    notice: Notice,
 }
+
+/// The owner's wake, installed through `set_notice`, which the test shares so a
+/// command wakes the owner as a foreground notice would.
+type Notice = Arc<Mutex<Option<Wake>>>;
 
 impl Driven {
     fn publish(&self) {
@@ -267,6 +277,11 @@ impl Driven {
 }
 
 impl Watcher for Driven {
+    fn set_notice(&mut self, wake: Wake) {
+        *self.notice.lock().unwrap() = Some(wake.clone());
+        self.watcher.as_mut().unwrap().set_notice(wake);
+    }
+
     fn wait_ready(&mut self, timeout: Duration) -> io::Result<()> {
         self.watcher.as_mut().unwrap().wait_ready(timeout)?;
         self.publish();
@@ -320,6 +335,7 @@ struct Rig {
     clock: Arc<AtomicU64>,
     handles: Arc<AtomicUsize>,
     registered: Arc<AtomicBool>,
+    notice: Notice,
     feed: ProfileFeed,
     stop: watch::Sender<bool>,
     log: Rc<RefCell<Vec<Sent>>>,
@@ -339,6 +355,9 @@ impl Drop for Hung {
 impl Rig {
     fn drive(&self, command: impl FnOnce(&Script, &mut Vec<ProcessProbe>) + Send + 'static) {
         self.commands.send(Box::new(command)).unwrap();
+        if let Some(wake) = self.notice.lock().unwrap().clone() {
+            wake();
+        }
     }
 
     fn tick(&self, ticks: u64) {
@@ -397,16 +416,27 @@ async fn rig<R>(
     verify: impl Fn() -> io::Result<()>,
     scenario: impl AsyncFnOnce(&Rig) -> R,
 ) -> (io::Result<()>, R, Rig) {
+    rig_timed(TIMING, replies, verify, scenario).await
+}
+
+async fn rig_timed<R>(
+    timing: Timing,
+    replies: Vec<Reply>,
+    verify: impl Fn() -> io::Result<()>,
+    scenario: impl AsyncFnOnce(&Rig) -> R,
+) -> (io::Result<()>, R, Rig) {
     let (commands, receiver) = mpsc::channel();
     let clock = Arc::new(AtomicU64::new(0));
     let handles = Arc::new(AtomicUsize::new(0));
     let registered = Arc::new(AtomicBool::new(false));
+    let notice = Notice::default();
     let (stop, stopped) = watch::channel(false);
     let rig = Rig {
         commands,
         clock: clock.clone(),
         handles: handles.clone(),
         registered: registered.clone(),
+        notice: notice.clone(),
         feed: ProfileFeed::new(),
         stop,
         log: Rc::default(),
@@ -424,6 +454,7 @@ async fn rig<R>(
             clock,
             handles,
             registered,
+            notice,
         })
     };
     let replies = RefCell::new(VecDeque::from(replies));
@@ -451,7 +482,7 @@ async fn rig<R>(
         }
     };
     let (result, scenario) = tokio::join!(
-        serve(make, rig.feed.subscribe(), stopped, report, verify, TIMING),
+        serve(make, rig.feed.subscribe(), stopped, report, verify, timing),
         scenario(&rig),
     );
     (result, scenario, rig)
@@ -684,7 +715,11 @@ async fn a_locked_console_keeps_the_retained_context_and_renews_it() {
             // Managed keeps the tracked process and its renewal through a lock,
             // and the Service accepts reports from the locked console session.
             rig.quiet(1).await;
-            assert_eq!(rig.open_handles(), 1, "the live process handle was released");
+            assert_eq!(
+                rig.open_handles(),
+                1,
+                "the live process handle was released"
+            );
             rig.tick(1);
             rig.report(2, 2, Some(OTHER)).await;
             rig.tick(2);
@@ -712,7 +747,11 @@ async fn a_secure_desktop_switch_keeps_a_background_retention() {
             rig.quiet(1).await;
             rig.drive(|script, _| script.desktop_switch());
             rig.quiet(1).await;
-            assert_eq!(rig.open_handles(), 1, "the live process handle was released");
+            assert_eq!(
+                rig.open_handles(),
+                1,
+                "the live process handle was released"
+            );
             rig.tick(1);
             rig.report(2, 2, Some(OTHER)).await;
             rig.finish();
@@ -815,6 +854,7 @@ async fn dropping_the_role_without_a_stop_still_retires_the_watcher() {
                 clock: Arc::default(),
                 handles,
                 registered,
+                notice: Notice::default(),
             })
         }
     };
@@ -857,6 +897,8 @@ struct Fake {
 }
 
 impl Watcher for Fake {
+    fn set_notice(&mut self, _: Wake) {}
+
     fn wait_ready(&mut self, _: Duration) -> io::Result<()> {
         std::mem::replace(&mut self.ready, Ok(()))
     }
@@ -948,6 +990,8 @@ struct Stuck {
 }
 
 impl Watcher for Stuck {
+    fn set_notice(&mut self, _: Wake) {}
+
     fn wait_ready(&mut self, _: Duration) -> io::Result<()> {
         while !self.release.load(Ordering::Acquire) {
             std::thread::sleep(Duration::from_millis(1));
@@ -1007,4 +1051,44 @@ async fn a_stop_during_a_stuck_startup_is_bounded_and_the_owner_still_retires() 
         sleep(Duration::from_millis(1)).await;
     }
     panic!("the detached owner never retired its watcher");
+}
+
+/// A housekeeping tick far beyond any test: only a wake can make progress.
+const SLOW: Timing = Timing {
+    poll: Duration::from_secs(60),
+    ready: Duration::from_secs(2),
+};
+
+#[tokio::test]
+async fn foreground_notices_and_profile_changes_wake_the_owner_at_once() {
+    let started = std::time::Instant::now();
+    let (result, (), _) = rig_timed(
+        SLOW,
+        vec![],
+        || Ok(()),
+        async |rig| {
+            // A notice (the command wakes like a foreground callback does).
+            focus(rig, 1, 41, GAME);
+            profiles_for(rig, json!([entry(1, GAME, 0)]));
+            rig.report(1, 1, Some(GAME)).await;
+            // A profile change alone, with nothing else to wake the owner.
+            let mut off = entry(1, GAME, 0);
+            off["enabled"] = false.into();
+            profiles_for(rig, json!([off]));
+            rig.report(2, 2, None).await;
+            // A foreground change.
+            profiles_for(rig, json!([entry(1, GAME, 0), entry(2, OTHER, 0)]));
+            rig.report(3, 3, Some(GAME)).await;
+            rig.drive(|script, probes| {
+                probes.push(script.process(2, 42, 1, OTHER));
+                script.focus(2);
+            });
+            rig.report(4, 4, Some(OTHER)).await;
+            rig.finish();
+        },
+    )
+    .await;
+    result.unwrap();
+    // Four reports under a 60 s tick: nothing waited for housekeeping.
+    assert!(started.elapsed() < Duration::from_secs(20));
 }

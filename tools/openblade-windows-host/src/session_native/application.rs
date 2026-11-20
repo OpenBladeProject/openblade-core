@@ -78,6 +78,9 @@ async fn serve<W: Watcher>(
     timing: Timing,
 ) -> io::Result<()> {
     let startup = timing.ready;
+    // The owner cannot await a feed, so this task of the loop forwards a change.
+    let mut feed = profiles.clone();
+    let mut feed_open = true;
     let instance = new_guid()?;
     let signals = Arc::new(Signals::new());
     let (requests_tx, mut requests) = mpsc::channel(1);
@@ -91,6 +94,7 @@ async fn serve<W: Watcher>(
         signals: Arc::clone(&signals),
         requests: requests_tx,
         inbox,
+        wake: inbox_tx.clone(),
         ready: ready_tx,
     };
     let thread = thread::Builder::new()
@@ -146,6 +150,20 @@ async fn serve<W: Watcher>(
                     _ => Err(io::Error::other("application reporter stopped unexpectedly")),
                 });
                 break;
+            }
+            open = async {
+                if feed_open {
+                    feed.changed().await.is_ok()
+                } else {
+                    std::future::pending().await
+                }
+            } => {
+                if open {
+                    let _ = inbox_tx.try_send(Inbox::Wake);
+                } else {
+                    feed_open = false;
+                }
+                continue;
             }
             request = requests.recv() => match request {
                 Some(request) => request,

@@ -39,17 +39,35 @@ struct Latest {
     closed: bool,
 }
 
+/// Called after a notice or the worker's exit is recorded, outside the mailbox
+/// lock. It must not block or call into the OS: it runs on the hook callback.
+pub type Wake = Arc<dyn Fn() + Send + Sync>;
+
 #[derive(Clone)]
-struct Callbacks(Arc<Mutex<Latest>>);
+struct Callbacks(Arc<Mutex<Latest>>, Arc<Mutex<Option<Wake>>>);
 
 impl Callbacks {
     fn new() -> Self {
-        Self(Arc::new(Mutex::new(Latest {
-            revision: 1,
-            desktop_epoch: 0,
-            notice: Notice::SampleCurrent,
-            closed: false,
-        })))
+        Self(
+            Arc::new(Mutex::new(Latest {
+                revision: 1,
+                desktop_epoch: 0,
+                notice: Notice::SampleCurrent,
+                closed: false,
+            })),
+            Arc::default(),
+        )
+    }
+
+    fn wake(&self) {
+        let wake = self
+            .1
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
+        if let Some(wake) = wake {
+            wake();
+        }
     }
 
     fn record(&self, notice: Notice) {
@@ -59,6 +77,8 @@ impl Callbacks {
             latest.desktop_epoch = latest.desktop_epoch.wrapping_add(1);
         }
         latest.notice = notice;
+        drop(latest);
+        self.wake();
     }
 }
 
@@ -71,6 +91,7 @@ impl Drop for WorkerExit {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .closed = true;
+        self.0.wake();
     }
 }
 
@@ -207,6 +228,19 @@ impl<A: Desktop> ForegroundWatcher<A> {
             io::ErrorKind::Interrupted,
             "foreground startup cancelled",
         ))
+    }
+
+    /// Call `wake` after every foreground or desktop notice and when the
+    /// registration thread ends, so the owner can wait for them instead of
+    /// polling. It runs on the hook callback: it must not block or use the OS.
+    pub fn set_notice(&mut self, wake: Wake) {
+        if let Some(worker) = &self.worker {
+            *worker
+                .callbacks
+                .1
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) = Some(wake);
+        }
     }
 
     pub fn observe_profiles(&mut self, profiles: Vec<ApplicationProfile>) {

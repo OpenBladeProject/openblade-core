@@ -21,6 +21,10 @@ use windows_sys::Win32::{
 
 use super::{Callbacks, Notice, Registration};
 
+/// A message wakes the wait at once, so this only bounds how long cancellation
+/// can go unnoticed: the join in shutdown waits at most this long.
+const PUMP_WAIT_MS: u32 = 250;
+
 thread_local! {
     static CALLBACKS: RefCell<Option<Callbacks>> = const { RefCell::new(None) };
 }
@@ -110,7 +114,7 @@ impl Registration for Hooks {
             }
         // SAFETY: zero handles and a finite wait for this thread's queue.
         } else if unsafe {
-            MsgWaitForMultipleObjectsEx(0, null(), 25, QS_ALLINPUT, MWMO_INPUTAVAILABLE)
+            MsgWaitForMultipleObjectsEx(0, null(), PUMP_WAIT_MS, QS_ALLINPUT, MWMO_INPUTAVAILABLE)
         } == WAIT_FAILED
         {
             return Err(io::Error::last_os_error());

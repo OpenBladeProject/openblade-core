@@ -10,7 +10,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
-        mpsc::{Receiver, RecvTimeoutError},
+        mpsc::{Receiver, RecvTimeoutError, SyncSender},
     },
     time::{Duration, Instant},
 };
@@ -18,7 +18,7 @@ use std::{
 use openblade_application_reporter::{
     ApplicationProfile, Guid, ReportApplicationContextRequest as Request, ReportOutcome,
 };
-use openblade_platform_windows::application::watcher::WindowsForegroundWatcher;
+use openblade_platform_windows::application::watcher::{Wake, WindowsForegroundWatcher};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::profiles::Profiles;
@@ -28,6 +28,10 @@ use super::profiles::Profiles;
 pub(super) trait Watcher {
     /// Wait for the registration thread. A failure has already retired it.
     fn wait_ready(&mut self, timeout: Duration) -> io::Result<()>;
+    /// Call `wake` (from any thread, without blocking) after each foreground or
+    /// desktop notice and when the registration thread ends, so the owner waits
+    /// for notices instead of polling for them.
+    fn set_notice(&mut self, wake: Wake);
     fn observe_profiles(&mut self, profiles: Vec<ApplicationProfile>);
     fn poll(&mut self, elapsed: Duration, request_id: Guid) -> Option<Request>;
     fn complete(&mut self, sequence: i64, outcome: ReportOutcome);
@@ -38,6 +42,10 @@ pub(super) trait Watcher {
 impl Watcher for WindowsForegroundWatcher {
     fn wait_ready(&mut self, timeout: Duration) -> io::Result<()> {
         WindowsForegroundWatcher::wait_ready(self, timeout)
+    }
+
+    fn set_notice(&mut self, wake: Wake) {
+        WindowsForegroundWatcher::set_notice(self, wake);
     }
 
     fn observe_profiles(&mut self, profiles: Vec<ApplicationProfile>) {
@@ -110,8 +118,10 @@ pub(super) enum Inbox {
 
 #[derive(Clone, Copy)]
 pub(super) struct Timing {
-    /// Foreground, profile and completion latency bound. Managed is event
-    /// driven; the platform watcher is sampled and must be polled.
+    /// Housekeeping tick. Foreground and desktop notices, profile changes,
+    /// completions and stop all wake the owner at once. The tick only bounds
+    /// what has no notice: a process exit, a lock without a desktop event and
+    /// the five-second renewal, which is checked against the elapsed time.
     pub(super) poll: Duration,
     /// How long the registration thread may take to install its hooks.
     pub(super) ready: Duration,
@@ -119,7 +129,7 @@ pub(super) struct Timing {
 
 impl Timing {
     pub(super) const INSTALLED: Self = Self {
-        poll: Duration::from_millis(100),
+        poll: Duration::from_millis(500),
         ready: Duration::from_secs(5),
     };
 }
@@ -184,6 +194,8 @@ pub(super) struct Link {
     pub(super) signals: Arc<Signals>,
     pub(super) requests: mpsc::Sender<Request>,
     pub(super) inbox: Receiver<Inbox>,
+    /// Lets a watcher notice wake the owner through its own inbox.
+    pub(super) wake: SyncSender<Inbox>,
     pub(super) ready: oneshot::Sender<io::Result<()>>,
 }
 
@@ -200,6 +212,7 @@ pub(super) fn run<W: Watcher>(
         signals,
         requests,
         inbox,
+        wake,
         ready,
     } = link;
     let mut watcher = match make() {
@@ -209,6 +222,10 @@ pub(super) fn run<W: Watcher>(
             return Ok(());
         }
     };
+    watcher.set_notice(Arc::new(move || {
+        // A full inbox already holds a wake.
+        let _ = wake.try_send(Inbox::Wake);
+    }));
     if let Err(error) = watcher.wait_ready(timing.ready) {
         let _ = ready.send(Err(error));
         // The watcher retired its own startup; join its thread off the caller's path.
