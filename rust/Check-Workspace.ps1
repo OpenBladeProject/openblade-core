@@ -76,7 +76,9 @@ try {
     $fixtureReaderPackages = @('openblade-protocol', 'openblade-domain')
     $expectedTests = @{
         # custom_performance (cbf8aacc) and temporary_charge (a882588c) pin shared native grammar.
-        'openblade-protocol' = @('custom_performance', 'report_parity', 'report_properties', 'temporary_charge')
+        # completed_rejection (0e1061a0) pins the shared 07/8C completed-rejection geometry.
+        'openblade-protocol' = @('completed_rejection', 'custom_performance', 'report_parity', 'report_properties',
+            'temporary_charge')
         'openblade-domain' = @('automation_policy', 'function_row_policy', 'profile_policy', 'recovery_replay')
     }
 
