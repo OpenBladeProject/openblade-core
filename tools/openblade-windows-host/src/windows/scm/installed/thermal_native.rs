@@ -98,6 +98,45 @@ impl WindowsGuard {
     pub(super) fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
         self.authorize_for(true)
     }
+    /// A fresh Stop-scoped capture of this owner's exact identity at the
+    /// current lifecycle epoch, for the settle-only fan close. Every
+    /// SERVICE_CONTROL_POWEREVENT and SESSIONCHANGE advances the epoch, so the
+    /// owner's own capture cannot authorize Stop after an unplug, a lock or a
+    /// resume. This one pins the new epoch and keeps every other check of
+    /// `authorize_for(true)`: owned-stop origin and package trust, the exact
+    /// mailbox custody and generation, the same console session unlocked, the
+    /// same primary SID and logon LUID, a known AC line status and fresh
+    /// competing-controller absence. A suspended lifecycle has no active epoch,
+    /// so nothing is captured while Windows reports low power.
+    pub(super) fn capture_settle(
+        &self,
+        sid: &str,
+        session: u32,
+        authentication: Option<(u32, i32)>,
+    ) -> io::Result<Arc<SettleGuard>> {
+        if sid != self.sid || session != self.session || authentication != Some(self.authentication)
+        {
+            return Err(deny());
+        }
+        self.verify_health()?;
+        self.origin.verify_owned_stop()?;
+        let lifecycle = self.origin.lifecycle.active().ok_or_else(deny)?;
+        let guard = SettleGuard(Self {
+            origin: self.origin.clone(),
+            custody: self.custody.clone(),
+            sid: self.sid.clone(),
+            session: self.session,
+            authentication: self.authentication,
+            lifecycle,
+            controllers: Mutex::new(
+                openblade_platform_windows::controller_presence::admission::ReadOnlyAdmission::native(),
+            ),
+        });
+        let proof = guard.authorize_owned_stop();
+        guard.verify_health()?;
+        proof.ok_or_else(deny)?;
+        Ok(Arc::new(guard))
+    }
     fn authorize_for(&self, stop: bool) -> Option<ReadAdmission> {
         let verify = || {
             if stop {
@@ -152,6 +191,23 @@ impl WindowsGuard {
         } else {
             self.custody.authorize()
         }
+    }
+}
+/// Stop-only admission captured by `WindowsGuard::capture_settle`. It exposes
+/// only the owned-stop proof, never request admission. Test composition
+/// injects its own `Fresh`, so only the native factory constructs it.
+#[cfg_attr(test, allow(dead_code))]
+pub(super) struct SettleGuard(WindowsGuard);
+#[cfg_attr(test, allow(dead_code))]
+impl SettleGuard {
+    pub(super) fn authentication(&self) -> (u32, i32) {
+        self.0.authentication
+    }
+    pub(super) fn verify_health(&self) -> io::Result<()> {
+        self.0.verify_health()
+    }
+    pub(super) fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
+        self.0.authorize_for(true)
     }
 }
 // Exact current-session read; source/compile-only during offline validation.

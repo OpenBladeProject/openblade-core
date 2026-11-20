@@ -24,6 +24,19 @@ impl<P: Port> Reader<P, ReadAdmission> {
             let b = a
                 .read_reserved_pair(&mut authorize, admission, limit, r.cleanup[0], false)
                 .await?;
+            // Automatic fans in this fresh, agreeing 0D/82 pair are firmware's
+            // own handback state, under any selector and power source; neither
+            // is the owned manual-fan obligation, so 07/8C is not read for it.
+            // Managed writes nothing then (`OwnedManualFanHandbackBlockReason`:
+            // "already uses firmware-managed Automatic mode") and
+            // `ObserveTopology` clears ownership, so settle with 51 before any
+            // plan exists: battery and recipe-less selectors never reach a setter.
+            // A disagreeing or undecodable readback has no baseline.
+            if automatic_handback(b) {
+                a.completed = true;
+                permit.record_fan(51).ok()?;
+                return Some(b);
+            }
             let p = a
                 .read_power(r.cleanup[1][0], &mut authorize, admission, limit)
                 .await?;
@@ -48,19 +61,6 @@ impl<P: Port> Reader<P, ReadAdmission> {
         let source = power.source()?;
         let (plan, record, ids) = if cleanup {
             let r = permit.fan_record()?;
-            // Automatic fans in this fresh, agreeing 0D/82 pair are firmware's
-            // own handback state, under any stock selector and power source; the
-            // selector and source are not the owned manual-fan obligation.
-            // Managed writes nothing then (`OwnedManualFanHandbackBlockReason`:
-            // "already uses firmware-managed Automatic mode") and
-            // `ObserveTopology` clears ownership, so settle with 51 before any
-            // plan exists: battery and recipe-less selectors never reach a setter.
-            // A disagreeing or unclassified readback has no baseline; Custom and
-            // HyperBoost stay fenced below.
-            if automatic_handback(baseline) {
-                permit.record_fan(51).ok()?;
-                return Some(baseline);
-            }
             let owned = Plan::select(baseline, r.intent, source)?;
             // Fresh generic-manual topology retains only this already established owner.
             if !owned.confirms(baseline) || owned.selector != r.selector || source != r.source {
@@ -75,9 +75,10 @@ impl<P: Port> Reader<P, ReadAdmission> {
             let (intent, performance) = permit.resolve_fan(source, baseline).ok()??;
             let plan = Plan::select_toward(baseline, intent, source, performance);
             // Automatic requested and already reported: a true no-op when the
-            // plan is unchanged or no native plan exists (battery, Silent and
-            // battery selectors). Nothing is written; the reply names any saved
+            // plan is unchanged or no native plan exists (battery, Silent, battery
+            // selectors and Custom). Nothing is written; the reply names any saved
             // preset left unapplied. A plan that changes the selector applies it.
+            // The permit refuses HyperBoost here (managed read parity).
             if !intent.manual() && automatic_handback(baseline) && plan.is_none_or(|p| p.unchanged)
             {
                 permit.confirm_fan_noop(source, baseline).ok()?;

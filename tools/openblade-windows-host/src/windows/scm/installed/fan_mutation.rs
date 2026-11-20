@@ -4,7 +4,7 @@ use crate::service_status::FanOverride;
 use crate::thermal_history::Entry;
 use openblade_domain::{
     fan_history::{CONTRACT, FanRecord},
-    fan_recipe::{FanIntent, Plan, automatic_handback},
+    fan_recipe::{FanIntent, automatic_handback},
 };
 use serde_json::{Value, json};
 pub(super) struct FanPermit {
@@ -202,6 +202,13 @@ impl Permit for FanPermit {
     }
     fn confirm_fan_noop(&self, _source: i32, baseline: ObservedPerformance) -> io::Result<()> {
         self.authorize().ok_or(io::ErrorKind::PermissionDenied)?;
+        // An explicit reply publishes this observation, and native HyperBoost
+        // with no broad capability snapshot is outside the managed decoder's
+        // read parity (docs/windows-native-thermal-mutation.md). The explicit
+        // path stays fenced, as before; owned Stop settles it and replies nothing.
+        if baseline == ObservedPerformance::HyperBoostObserved {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
         let mut prior = self.prior.lock().map_err(|_| io::ErrorKind::Other)?;
         if let Some(owner) = prior.as_ref() {
             let record = owner
@@ -297,6 +304,139 @@ impl Permit for FanPermit {
             }
         }
         self.joined.store(true, Ordering::Release);
+        Ok(Settlement::Complete)
+    }
+}
+/// Settle-only owned Stop. Every SERVICE_CONTROL_POWEREVENT and SESSIONCHANGE
+/// advances the lifecycle epoch the owner's proof pins, so after an unplug, a
+/// limited-adapter change, a lock or a resume the owner cannot authorize Stop.
+/// This permit carries a fresh Stop-scoped capture of the same owner
+/// (`Fresh::capture_settle`) and can append only the owner's exact 51 row,
+/// after the Reader's fresh, agreeing Automatic readback. It refuses every
+/// other journal stage, so it cannot submit a setter: each setter needs its
+/// journaled stage first (31, then 40-43). Managed hands back nothing when the
+/// confirmed fans are already Automatic (`RestoreOwnedAutomaticFansCoreAsync`
+/// stores `OwnedManualFanHandbackBlockReason` with no write); native must read
+/// that state first, so it needs this fresh read admission.
+struct FanSettlePermit {
+    owner: Arc<FanPermit>,
+    fresh: Arc<dyn Fresh>,
+    proof: ReadAdmission,
+}
+impl FanSettlePermit {
+    fn capture(owner: &Arc<FanPermit>) -> Option<Arc<Self>> {
+        verify_retained_failure(&owner.fatal).ok()?;
+        if !owner.owned.load(Ordering::Acquire) || !owner.release.load(Ordering::Acquire) {
+            return None;
+        }
+        let fresh = owner
+            .fresh
+            .capture_settle(&owner.sid, owner.session, owner.authentication)
+            .inspect_err(|e| remember_failure(&owner.fatal, e))
+            .ok()?;
+        fresh
+            .verify_health()
+            .inspect_err(|e| remember_failure(&owner.fatal, e))
+            .ok()?;
+        let proof = fresh.authorize_owned_stop()?;
+        // Same original custody generation and the same logon; only the
+        // lifecycle epoch is fresh.
+        (proof.generation == owner.proof.generation
+            && owner.authentication.is_some()
+            && fresh.authentication() == owner.authentication)
+            .then(|| {
+                Arc::new(Self {
+                    owner: owner.clone(),
+                    fresh,
+                    proof,
+                })
+            })
+    }
+}
+impl Permit for FanSettlePermit {
+    fn authorize(&self) -> Option<ReadAdmission> {
+        verify_retained_failure(&self.owner.fatal).ok()?;
+        self.fresh
+            .verify_health()
+            .inspect_err(|e| remember_failure(&self.owner.fatal, e))
+            .ok()?;
+        if !self.owner.owned.load(Ordering::Acquire)
+            || !self.owner.release.load(Ordering::Acquire)
+            || self.fresh.authorize_owned_stop() != Some(self.proof)
+            || self.fresh.authentication() != self.owner.authentication
+        {
+            return None;
+        }
+        self.owner.storage.verify_fan_configuration().ok()?;
+        Some(self.proof)
+    }
+    fn result_admitted(&self, expected: ReadAdmission) -> bool {
+        self.owner.storage.progress() == Some(51)
+            && verify_retained_failure(&self.owner.fatal).is_ok()
+            && self.fresh.verify_health().is_ok()
+            && self.fresh.authorize_owned_stop() == Some(expected)
+            && expected == self.proof
+    }
+    fn is_fan(&self) -> bool {
+        true
+    }
+    fn cleanup(&self) -> bool {
+        true
+    }
+    fn fan_record(&self) -> Option<FanRecord> {
+        // Only the owner's exact retained record, never a default.
+        self.owner.record.lock().ok()?.clone()
+    }
+    fn record_fan(&self, progress: u8) -> io::Result<()> {
+        if progress != 51 {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
+        self.authorize().ok_or(io::ErrorKind::PermissionDenied)?;
+        let contract = self
+            .fan_record()
+            .ok_or(io::ErrorKind::PermissionDenied)?
+            .contract;
+        if !matches!(
+            contract.as_str(),
+            CONTRACT | openblade_domain::fan_history::PREVIOUS_CONTRACT
+        ) || self.owner.storage.pending()
+        {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
+        self.owner.write(51)?;
+        self.owner
+            .prior
+            .lock()
+            .map_err(|_| io::ErrorKind::Other)?
+            .take();
+        self.owner.owned.store(false, Ordering::Release);
+        Ok(())
+    }
+    fn resolve_fan(
+        &self,
+        _power: i32,
+        _baseline: ObservedPerformance,
+    ) -> io::Result<Option<(FanIntent, Option<Preset>)>> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
+    fn confirm_fan_noop(&self, _source: i32, _baseline: ObservedPerformance) -> io::Result<()> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
+    fn prepare_fan(&self, _record: FanRecord) -> io::Result<()> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
+    fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Preset>> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
+    fn record(&self, _: Progress) -> io::Result<()> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
+    fn failed(&self, e: &io::Error) {
+        remember_failure(&self.owner.fatal, e)
+    }
+    fn retired(&self) -> io::Result<Settlement> {
+        verify_retained_failure(&self.owner.fatal)?;
+        self.fresh.verify_health()?;
         Ok(Settlement::Complete)
     }
 }
@@ -564,7 +704,7 @@ impl Runtime {
             .lock()
             .map_err(|_| io::ErrorKind::Other)?;
         let observed = result.as_ref().ok().copied().flatten();
-        // Without a native plan (battery, Silent and battery selectors) a no-op
+        // Without a native plan (battery, Silent, battery selectors, Custom) a no-op
         // can leave a carried preset unapplied: claim it only when confirmed.
         let matched = performance.filter(|p| {
             observed.is_some_and(|o| openblade_domain::thermal_mutation::confirms(o, *p))
@@ -584,7 +724,7 @@ impl Runtime {
         let released = *permit.released.lock().map_err(|_| io::ErrorKind::Other)?;
         if status == 1
             && let (Some(owned), Some(observed)) = (released, observed)
-            && let Some(firmware) = observed.projection().0.and_then(preset_words)
+            && let Some(firmware) = observed_words(observed)
             && let Some(recorded) = preset_words(if owned == 2 { 2 } else { 1 })
             && recorded != firmware
         {
@@ -613,16 +753,11 @@ impl Runtime {
                 }
                 && !openblade_domain::thermal_mutation::confirms(observed, preset)
             {
-                let next = if FanIntent::checked(0, 3700)
-                    .and_then(|auto| Plan::select(observed, auto, power))
-                    .is_some()
-                {
-                    "submit a new performance request to apply it"
-                } else {
-                    "this source or observed mode needs a native recipe that is not yet implemented"
-                };
+                // The performance writer has its own admission and no fan
+                // baseline gate, so a new performance request is the next step
+                // whatever the fan recipe; it is not that request's precondition.
                 message.push_str(&format!(
-                    " The saved {preset:?} performance intent was not applied: {next}."
+                    " The saved {preset:?} performance intent was not applied: submit a new performance request to apply it."
                 ));
             }
         }
@@ -731,12 +866,20 @@ impl Runtime {
                 "Owned Stop cleanup was already attempted; reserved IDs will not be reused.",
             ));
         }
-        let result = reader
-            .mutate_cleanup(
-                permit.clone(),
-                Instant::now() + std::time::Duration::from_secs(3),
-            )
-            .await;
+        // The owner's own capture authorizes Stop only inside its lifecycle
+        // epoch. After a power or session event it cannot, and only the
+        // settle-only permit may run: it reads, and appends 51 on Automatic.
+        let deadline = Instant::now() + std::time::Duration::from_secs(3);
+        let result = if permit.authorize().is_some() {
+            reader.mutate_cleanup(permit.clone(), deadline).await
+        } else if let Some(settle) = FanSettlePermit::capture(&permit) {
+            reader.mutate_cleanup(settle, deadline).await
+        } else {
+            verify_retained_failure(&self.fatal)?;
+            Err(io::Error::other(
+                "Fresh owned fan cleanup admission is unavailable.",
+            ))
+        };
         if !matches!(permit.storage.progress(), Some(50 | 51)) || result?.is_none() {
             return Err(io::Error::other(
                 "Automatic fan handback was not independently confirmed; evidence is retained.",
@@ -745,7 +888,22 @@ impl Runtime {
         Ok(())
     }
 }
-/// Managed `PerformancePreset` words for a confirmed performance wire value.
+#[cfg(all(test, feature = "service-fan-mutation-v2"))]
+impl Runtime {
+    /// The settle-only permit owned Stop would capture, after claiming the
+    /// owner's one release attempt as Stop does.
+    pub(in super::super) fn settle_permit_for_tests(&self) -> Option<Arc<dyn Permit>> {
+        let owner = self
+            .fan_pending
+            .borrow()
+            .clone()
+            .filter(|p| p.owned.load(Ordering::Acquire))
+            .or(self.fan_owner.borrow().clone())?;
+        owner.release.store(true, Ordering::Release);
+        Some(FanSettlePermit::capture(&owner)?)
+    }
+}
+/// Managed `PerformancePreset` display words for a confirmed performance wire value.
 fn preset_words(wire: i32) -> Option<&'static str> {
     Some(match wire {
         0 => "Silent",
@@ -753,6 +911,15 @@ fn preset_words(wire: i32) -> Option<&'static str> {
         2 => "Performance",
         3 => "Battery Saver",
         4 => "Battery Balanced",
+        5 => "Custom",
         _ => return None,
     })
+}
+/// The mode firmware reports, in managed's words. HyperBoost has no
+/// `PerformancePreset`; managed names it "HyperBoost" (ExperimentalBladePort).
+fn observed_words(observed: ObservedPerformance) -> Option<&'static str> {
+    match observed {
+        ObservedPerformance::HyperBoostObserved => Some("HyperBoost"),
+        o => o.projection().0.and_then(preset_words),
+    }
 }

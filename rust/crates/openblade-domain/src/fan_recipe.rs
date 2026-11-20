@@ -24,12 +24,13 @@ impl FanIntent {
         self.mode != 0
     }
 }
-/// Fans firmware reports as Automatic under a stock preset selector: firmware's
-/// own handback state, whatever the power source and whether a native recipe
-/// exists for that selector. Managed releases fan ownership on any confirmed
-/// Automatic (`ExactFanControlOwnership.ObserveTopology`). Custom and the
-/// HyperBoost overlay stay excluded, as before: neither is a stock preset
-/// state, and HyperBoost can force a composite state over manual fans.
+/// Fans firmware reports as Automatic: firmware's own handback state, whatever
+/// the selector, the power source and whether a native recipe exists for it.
+/// Managed releases fan ownership on any confirmed Automatic fan mode
+/// (`ExactFanControlOwnership.ObserveTopology`), which includes Custom with
+/// Automatic fans and the HyperBoost pair (mode 7 with Automatic fans; see
+/// `ServiceControlRuntime.ClassifyObservedFanTopology`). Mode 7 with manual
+/// fans is not decoded, so it never reaches this predicate.
 pub fn automatic_handback(o: O) -> bool {
     matches!(
         o,
@@ -38,6 +39,8 @@ pub fn automatic_handback(o: O) -> bool {
             | O::SilentAutomatic
             | O::BatterySaverAutomatic
             | O::BatteryBalancedAutomatic
+            | O::HyperBoostObserved
+            | O::Custom { manual: false, .. }
     )
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -116,14 +119,30 @@ impl Plan {
 mod tests {
     use super::*;
     #[test]
-    fn automatic_handback_needs_stock_automatic_fans_not_a_plan() {
+    fn automatic_handback_needs_automatic_fans_not_a_plan() {
+        use crate::thermal_observation::{CustomPerformanceLevel as L, CustomPerformanceLevels};
         let auto = FanIntent::checked(0, 3700).unwrap();
+        let levels = Some(CustomPerformanceLevels {
+            cpu: L::Medium,
+            gpu: L::High,
+        });
         for o in [
             O::BalancedAutomatic,
             O::PerformanceAutomatic,
             O::SilentAutomatic,
             O::BatterySaverAutomatic,
             O::BatteryBalancedAutomatic,
+            // Managed maps both to FanMode.Automatic (ProductionBatteryPort
+            // MapThermalState), which ObserveTopology releases.
+            O::HyperBoostObserved,
+            O::Custom {
+                manual: false,
+                levels: None,
+            },
+            O::Custom {
+                manual: false,
+                levels,
+            },
         ] {
             assert!(automatic_handback(o), "{o:?}");
             // Battery has no plan at all, yet the fans are already handed back.
@@ -135,14 +154,13 @@ mod tests {
             O::BatterySaverManual,
             O::BatteryBalancedManual,
             O::FixedMaximum,
-            O::HyperBoostObserved,
             O::Custom {
-                manual: false,
+                manual: true,
                 levels: None,
             },
             O::Custom {
                 manual: true,
-                levels: None,
+                levels,
             },
         ] {
             assert!(!automatic_handback(o), "{o:?}");

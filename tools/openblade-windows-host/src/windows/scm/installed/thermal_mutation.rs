@@ -2,7 +2,7 @@
 use super::{
     Caller, Logon,
     mailbox_read::{MailboxSource, ReadCustody},
-    thermal_native::{CustodialFiles, ProtectedFiles, WindowsGuard},
+    thermal_native::{CustodialFiles, ProtectedFiles, SettleGuard, WindowsGuard},
     thermal_storage::{Override, Storage},
 };
 use crate::{
@@ -84,8 +84,42 @@ pub(super) trait Fresh: Send + Sync {
         Ok(())
     }
     fn authorize(&self) -> Option<ReadAdmission>;
+    /// Settle-only Stop admission for this owner's exact identity at the
+    /// current lifecycle epoch (`WindowsGuard::capture_settle`). The result
+    /// authorizes owned-stop reads only; its `authorize` is always None.
+    fn capture_settle(
+        &self,
+        _sid: &str,
+        _session: u32,
+        _authentication: Option<(u32, i32)>,
+    ) -> io::Result<Arc<dyn Fresh>> {
+        Err(io::ErrorKind::PermissionDenied.into())
+    }
+}
+impl Fresh for SettleGuard {
+    fn authentication(&self) -> Option<(u32, i32)> {
+        Some(self.authentication())
+    }
+    fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
+        self.authorize_owned_stop()
+    }
+    fn verify_health(&self) -> io::Result<()> {
+        self.verify_health()
+    }
+    // Never request admission: a settle capture cannot start a request.
+    fn authorize(&self) -> Option<ReadAdmission> {
+        None
+    }
 }
 impl Fresh for WindowsGuard {
+    fn capture_settle(
+        &self,
+        sid: &str,
+        session: u32,
+        authentication: Option<(u32, i32)>,
+    ) -> io::Result<Arc<dyn Fresh>> {
+        Ok(self.capture_settle(sid, session, authentication)?)
+    }
     fn on_battery(&self) -> Option<bool> {
         self.on_battery()
     }

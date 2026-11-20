@@ -347,6 +347,8 @@ impl Files for MemoryFiles {
     }
 }
 struct Custody {
+    me: std::sync::Weak<Custody>,
+    current_sid: StdMutex<String>,
     current_session: AtomicUsize,
     current_console: AtomicBool,
     scoped_fresh: AtomicBool,
@@ -366,7 +368,9 @@ struct Custody {
 }
 impl Custody {
     fn new(port: &Fixture) -> Arc<Self> {
-        Arc::new(Self {
+        Arc::new_cyclic(|me| Self {
+            me: me.clone(),
+            current_sid: StdMutex::new(SID.into()),
             current_session: AtomicUsize::new(7),
             current_console: AtomicBool::new(true),
             scoped_fresh: AtomicBool::new(false),
@@ -508,6 +512,61 @@ impl Fresh for Custody {
             return None;
         }
         ReadCustody::authorize(self)
+    }
+    fn capture_settle(
+        &self,
+        sid: &str,
+        session: u32,
+        authentication: Option<(u32, i32)>,
+    ) -> io::Result<Arc<dyn Fresh>> {
+        Fresh::verify_health(self)?;
+        let fresh = SettleFresh {
+            custody: self.me.upgrade().ok_or(io::ErrorKind::PermissionDenied)?,
+            sid: sid.into(),
+            session,
+            authentication,
+            epoch: self
+                .lifecycle
+                .active()
+                .ok_or(io::ErrorKind::PermissionDenied)?,
+        };
+        fresh
+            .authorize_owned_stop()
+            .ok_or(io::ErrorKind::PermissionDenied)?;
+        Ok(Arc::new(fresh))
+    }
+}
+/// Test model of `WindowsGuard::capture_settle`: the owner's SID, session and
+/// logon, checked against the current ones, at the epoch current at capture.
+struct SettleFresh {
+    custody: Arc<Custody>,
+    sid: String,
+    session: u32,
+    authentication: Option<(u32, i32)>,
+    epoch: u64,
+}
+impl Fresh for SettleFresh {
+    fn authentication(&self) -> Option<(u32, i32)> {
+        self.authentication
+    }
+    fn verify_health(&self) -> io::Result<()> {
+        Fresh::verify_health(self.custody.as_ref())
+    }
+    fn authorize_owned_stop(&self) -> Option<ReadAdmission> {
+        let c = &self.custody;
+        if c.lifecycle.active() != Some(self.epoch)
+            || *c.current_sid.lock().unwrap() != self.sid
+            || c.current_session.load(Ordering::Acquire) != self.session as usize
+            || !c.current_console.load(Ordering::Acquire)
+            || Fresh::authentication(c.as_ref()) != self.authentication
+        {
+            return None;
+        }
+        // Controller absence, integrity, origin trust, custody and generation.
+        Fresh::authorize_owned_stop(c.as_ref())
+    }
+    fn authorize(&self) -> Option<ReadAdmission> {
+        None
     }
 }
 struct Origin(Arc<crate::loaded_origin::lifetime::Lifetime>, Arc<Custody>);
@@ -5101,11 +5160,11 @@ async fn fan_stop_settles_an_owner_already_automatic_under_any_selector_without_
 }
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
-async fn fan_foreign_selector_close_refuses_an_ambiguous_or_unclassified_readback() {
-    // Disagreeing channels and an unclassified Custom selector prove no
+async fn fan_foreign_selector_close_refuses_an_ambiguous_or_undecodable_readback() {
+    // Disagreeing channels and mode 7 with manual fans (not decoded) prove no
     // Automatic handback: no row, no setter, the owner stays outstanding.
-    for observed in [[2, 0], [4, 4]] {
-        let r = foreign_selector_rig(0, observed, [0; 2], 15).await;
+    for (observed, fans) in [([2, 0], [0; 2]), ([7; 2], [1; 2])] {
+        let r = foreign_selector_rig(0, observed, fans, 15).await;
         let (owned, closed) = (owner_row(&r, 30), owner_row(&r, 51));
         let out = r.request(fan_request(232, Some(0), 3700)).await;
         assert_eq!(out["result"]["status"], 2, "{out}");
@@ -5114,6 +5173,7 @@ async fn fan_foreign_selector_close_refuses_an_ambiguous_or_unclassified_readbac
         assert!(r.storage.outstanding_fan());
         // A later unambiguous Automatic readback settles it without a setter.
         r.port.state.lock().unwrap().selectors = [2; 2];
+        r.port.state.lock().unwrap().fans = [0; 2];
         let out = r.request(fan_request(233, Some(0), 3700)).await;
         assert_eq!(out["result"]["status"], 1, "{out}");
         assert_eq!(*fan_rows(&r).last().unwrap(), closed);
@@ -5122,7 +5182,7 @@ async fn fan_foreign_selector_close_refuses_an_ambiguous_or_unclassified_readbac
         r.stop().await;
 
         // Stop keeps its one-shot fail-closed refusal on the same readback.
-        let r = foreign_selector_rig(0, observed, [0; 2], 15).await;
+        let r = foreign_selector_rig(0, observed, fans, 15).await;
         let owned = owner_row(&r, 30);
         r.origin.stop();
         assert!(r.source.lock().await.drain().await.is_err());
@@ -5173,12 +5233,21 @@ async fn fan_foreign_selector_close_journals_match_the_shared_vector() {
         String::from_utf8(r.files.read("thermal-mutation.journal").unwrap().unwrap()).unwrap()
     };
     // The 51 row repeats the owner's record, so a close after a change to the
-    // limited adapter or to battery writes the same bytes: source stays 0.
-    for (now, observed) in [(15, [2; 2]), (10, [2; 2]), (0, [3; 2])] {
+    // limited adapter or to battery, or under Custom or HyperBoost, writes the
+    // same bytes: source stays 0. Explicit HyperBoost stays fenced.
+    for (now, observed) in [
+        (15, [2; 2]),
+        (10, [2; 2]),
+        (0, [3; 2]),
+        (15, [4; 2]),
+        (15, [7; 2]),
+    ] {
         for stop in [false, true] {
-            let r = foreign_selector_rig(0, observed, [0; 2], 15).await;
+            if !stop && observed == [7; 2] {
+                continue;
+            }
+            let r = power_change_rig(15, now, observed, [0; 2]).await;
             assert_eq!(journal(&r), v["owned"].as_str().unwrap());
-            r.port.state.lock().unwrap().actual = now;
             if !stop {
                 let out = r.request(fan_request(232, Some(0), 3700)).await;
                 assert_eq!(out["result"]["status"], 1, "{out}");
@@ -5196,6 +5265,14 @@ async fn fan_foreign_selector_close_journals_match_the_shared_vector() {
 async fn power_change_rig(start: u8, now: u8, observed: [u8; 2], fans: [u8; 2]) -> Rig {
     let r = foreign_selector_rig(0, observed, fans, start).await;
     r.port.state.lock().unwrap().actual = now;
+    if now != start {
+        // Windows reports every source change (PBT_APMPOWERSTATUSCHANGE), which
+        // advances the lifecycle epoch the owner's proof pins.
+        r.custody.lifecycle.ingress(
+            windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+            10,
+        );
+    }
     r
 }
 /// Adapter classes as fixture 07/8C levels: full 15, limited 10, battery 0.
@@ -5209,27 +5286,28 @@ const POWER_CHANGES: [(u8, u8, [u8; 2]); 6] = [
     // Silent has no native plan on either adapter.
     (15, 15, [5; 2]),
 ];
+/// The exact reply for each `POWER_CHANGES` case. The owner recorded Balanced
+/// and the saved preset is Performance: it is claimed only where Performance is
+/// confirmed, a different firmware selector is named, and the unapplied preset
+/// is reported only where its class has one (battery has none).
+#[cfg(feature = "service-fan-mutation-v2")]
+const POWER_CHANGE_REPLIES: [&str; 6] = [
+    "Fans and Performance performance already matched the requested state; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Performance.",
+    "Fans and Performance performance already matched the requested state; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Performance.",
+    "Automatic mode independently observed; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Battery Saver.",
+    "Automatic mode independently observed; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Battery Balanced.",
+    "Automatic mode independently observed; no fan setter was submitted and no ownership was established.",
+    "Automatic mode independently observed; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Silent. The saved Performance performance intent was not applied: submit a new performance request to apply it.",
+];
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn fan_automatic_after_a_power_change_or_on_battery_settles_without_a_setter() {
-    for (start, now, observed) in POWER_CHANGES {
+    for ((start, now, observed), reply) in POWER_CHANGES.into_iter().zip(POWER_CHANGE_REPLIES) {
         let r = power_change_rig(start, now, observed, [0; 2]).await;
         let closed = owner_row(&r, 51);
         let out = r.request(fan_request(232, Some(0), 3700)).await;
         assert_eq!(out["result"]["status"], 1, "{start}->{now} {out}");
-        let message = out["result"]["message"].as_str().unwrap();
-        assert!(
-            message
-                .starts_with("Automatic mode independently observed; no fan setter was submitted")
-                || message.starts_with("Fans and Performance performance already matched"),
-            "{message}"
-        );
-        // Only a selector other than the recorded Balanced one is named.
-        assert_eq!(
-            message.contains("released without a fan setter"),
-            observed != [0; 2],
-            "{message}"
-        );
+        assert_eq!(out["result"]["message"], reply, "{start}->{now}");
         // The row keeps the owner's recorded source, not the current class.
         assert_eq!(*fan_rows(&r).last().unwrap(), closed);
         assert_eq!(closed["fan"]["source"], if start == 15 { 0 } else { 2 });
@@ -5316,6 +5394,247 @@ async fn fan_manual_readback_after_a_power_change_keeps_its_existing_outcomes() 
             assert!(r.storage.outstanding_fan());
         }
     }
+}
+// Managed releases fan ownership on any confirmed Automatic fan mode, which
+// includes Custom with Automatic fans and HyperBoost (mode 7, Automatic fans).
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_custom_automatic_and_hyperboost_release_the_owner_without_a_setter() {
+    for observed in [[4; 2], [7; 2]] {
+        let r = foreign_selector_rig(0, observed, [0; 2], 15).await;
+        let (owned, closed) = (owner_row(&r, 30), owner_row(&r, 51));
+        let out = r.request(fan_request(232, Some(0), 3700)).await;
+        if observed == [4; 2] {
+            assert_eq!(out["result"]["status"], 1, "{out}");
+            assert_eq!(
+                out["result"]["message"],
+                "Automatic mode independently observed; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Custom. The saved Performance performance intent was not applied: submit a new performance request to apply it."
+            );
+            assert_eq!(*fan_rows(&r).last().unwrap(), closed);
+            assert!(!r.storage.outstanding_fan());
+        } else {
+            // HyperBoost stays fenced on the explicit path: the reply would
+            // publish an observation outside managed read parity.
+            assert_eq!(out["result"]["status"], 2, "{out}");
+            assert_eq!(*fan_rows(&r).last().unwrap(), owned);
+            assert!(r.storage.outstanding_fan());
+        }
+        assert!(request_rows(&r, 232).is_empty());
+        assert_eq!(r.port.state.lock().unwrap().writes, 4);
+        r.origin.stop();
+        r.stop().await;
+        assert_eq!(*fan_rows(&r).last().unwrap(), closed);
+        assert!(!r.storage.outstanding_fan());
+
+        // Stop alone settles both, after a power event too, with no setter.
+        for now in [15, 10] {
+            let r = power_change_rig(15, now, observed, [0; 2]).await;
+            r.origin.stop();
+            r.stop().await;
+            assert_eq!(*fan_rows(&r).last().unwrap(), closed, "{observed:?} {now}");
+            assert!(!r.storage.outstanding_fan());
+            let state = r.port.state.lock().unwrap();
+            assert_eq!(
+                (state.writes, state.selectors, state.fans),
+                (4, observed, [0; 2])
+            );
+        }
+    }
+}
+// Stop settles on the 0D/82 pair alone: an unclassified 07/8C source is not
+// part of the Automatic handback. The explicit path still needs the source to
+// resolve the saved intent, so it stays refused.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_stop_settle_does_not_need_a_classified_power_source() {
+    let r = foreign_selector_rig(0, [2; 2], [0; 2], 15).await;
+    let (owned, closed) = (owner_row(&r, 30), owner_row(&r, 51));
+    r.port.state.lock().unwrap().recommended = 0;
+    let out = r.request(fan_request(232, Some(0), 3700)).await;
+    assert_eq!(out["result"]["status"], 2, "{out}");
+    assert_eq!(*fan_rows(&r).last().unwrap(), owned);
+    r.origin.stop();
+    r.stop().await;
+    assert_eq!(*fan_rows(&r).last().unwrap(), closed);
+    assert!(!r.storage.outstanding_fan());
+    assert_eq!(r.port.state.lock().unwrap().writes, 4);
+}
+/// Windows notices that advance the lifecycle epoch, as SCM delivers them.
+#[cfg(feature = "service-fan-mutation-v2")]
+type LifecycleCase = (&'static str, u8, u8, [u8; 2], &'static [(u32, u32)]);
+#[cfg(feature = "service-fan-mutation-v2")]
+const LIFECYCLE_EVENTS: [LifecycleCase; 5] = {
+    use windows_sys::Win32::System::Services::{
+        SERVICE_CONTROL_POWEREVENT as POWER, SERVICE_CONTROL_SESSIONCHANGE as SESSION,
+    };
+    [
+        ("unplug", 15, 0, [3; 2], &[(POWER, 10)]),
+        ("limited adapter", 15, 10, [2; 2], &[(POWER, 10)]),
+        ("full adapter", 10, 15, [2; 2], &[(POWER, 10)]),
+        // WTS_SESSION_LOCK then WTS_SESSION_UNLOCK.
+        (
+            "lock and unlock",
+            15,
+            15,
+            [2; 2],
+            &[(SESSION, 7), (SESSION, 8)],
+        ),
+        // PBT_APMSUSPEND then PBT_APMRESUMEAUTOMATIC.
+        (
+            "sleep and resume",
+            15,
+            15,
+            [2; 2],
+            &[(POWER, 4), (POWER, 18)],
+        ),
+    ]
+};
+#[cfg(feature = "service-fan-mutation-v2")]
+async fn lifecycle_rig(start: u8, now: u8, observed: [u8; 2], events: &[(u32, u32)]) -> Rig {
+    let r = foreign_selector_rig(0, observed, [0; 2], start).await;
+    r.port.state.lock().unwrap().actual = now;
+    for (code, event) in events {
+        r.custody.lifecycle.ingress(*code, *event);
+    }
+    r
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_stop_settles_after_a_power_or_session_event_without_a_setter() {
+    for (name, start, now, observed, events) in LIFECYCLE_EVENTS {
+        for explicit in [false, true] {
+            let r = lifecycle_rig(start, now, observed, events).await;
+            let closed = owner_row(&r, 51);
+            if explicit {
+                let out = r.request(fan_request(232, Some(0), 3700)).await;
+                assert_eq!(out["result"]["status"], 1, "{name} {out}");
+                assert_eq!(*fan_rows(&r).last().unwrap(), closed, "{name}");
+            }
+            r.origin.stop();
+            r.stop().await;
+            assert_eq!(*fan_rows(&r).last().unwrap(), closed, "{name}");
+            assert!(!r.storage.outstanding_fan(), "{name}");
+            assert!(!r.storage.pending(), "{name}");
+            let state = r.port.state.lock().unwrap();
+            assert_eq!(
+                (state.writes, state.selectors, state.fans),
+                (4, observed, [0; 2]),
+                "{name}"
+            );
+        }
+    }
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_settle_stop_fences_without_fresh_stop_admission() {
+    let reasons = [
+        "ambiguous readback",
+        "changed logon",
+        "changed SID",
+        "competing controller",
+        "lost origin trust",
+        "lost custody integrity",
+        "changed generation",
+        "suspended",
+        "session not the unlocked console",
+    ];
+    for (reason, name) in reasons.into_iter().enumerate() {
+        let r = power_change_rig(15, 10, [2; 2], [0; 2]).await;
+        let owned = owner_row(&r, 30);
+        let c = &r.custody;
+        match reason {
+            0 => r.port.state.lock().unwrap().selectors = [2, 0],
+            1 => c.authentication.store(2, Ordering::Release),
+            2 => *c.current_sid.lock().unwrap() = "S-1-5-21-111-222-333-1002".into(),
+            3 => c.fresh_refuse.store(true, Ordering::Release),
+            5 => c.integrity_lost.store(true, Ordering::Release),
+            6 => c.generation.store(8, Ordering::Release),
+            7 => c.lifecycle.ingress(
+                windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT,
+                4,
+            ),
+            8 => c.current_console.store(false, Ordering::Release),
+            _ => {}
+        }
+        r.origin.stop();
+        if reason == 4 {
+            r.origin.lose_trust();
+        }
+        assert!(r.source.lock().await.drain().await.is_err(), "{name}");
+        assert_eq!(*fan_rows(&r).last().unwrap(), owned, "{name}");
+        assert!(r.storage.outstanding_fan(), "{name}");
+        assert_eq!(r.port.state.lock().unwrap().writes, 4, "{name}");
+    }
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_settle_only_permit_cannot_reach_a_setter() {
+    // Manual fans after an event: the settle path reads, then cannot journal
+    // the release stage, so no setter is sent and the owner stays at 30. The
+    // lock and unlock case keeps the owner's selector and source, so only the
+    // permit stands between it and the owner's Automatic release pair.
+    for (now, events) in [
+        (10, &[][..]),
+        (0, &[][..]),
+        (
+            15,
+            &[
+                (
+                    windows_sys::Win32::System::Services::SERVICE_CONTROL_SESSIONCHANGE,
+                    7,
+                ),
+                (
+                    windows_sys::Win32::System::Services::SERVICE_CONTROL_SESSIONCHANGE,
+                    8,
+                ),
+            ][..],
+        ),
+    ] {
+        let r = power_change_rig(15, now, [0; 2], [1; 2]).await;
+        for (code, event) in events {
+            r.custody.lifecycle.ingress(*code, *event);
+        }
+        let owned = owner_row(&r, 30);
+        let sent = r.port.state.lock().unwrap().sent.len();
+        r.origin.stop();
+        assert!(r.source.lock().await.drain().await.is_err());
+        assert_eq!(*fan_rows(&r).last().unwrap(), owned);
+        assert!(r.storage.outstanding_fan());
+        let state = r.port.state.lock().unwrap();
+        assert_eq!(state.writes, 4);
+        assert!(
+            state.sent[sent..]
+                .iter()
+                .all(|(class, command, _, _)| *class != 13 || !matches!(*command, 1 | 2)),
+            "{:?}",
+            &state.sent[sent..]
+        );
+    }
+    // The permit itself admits reads and the 51 close only.
+    let r = power_change_rig(15, 10, [2; 2], [0; 2]).await;
+    let journal = r.files.read("thermal-mutation.journal").unwrap();
+    r.origin.stop();
+    let permit = r.runtime.settle_permit_for_tests().unwrap();
+    assert!(permit.authorize().is_some());
+    assert!(permit.cleanup() && permit.is_fan());
+    let record = permit.fan_record().unwrap();
+    let baseline = crate::discovery::performance::ObservedPerformance::PerformanceAutomatic;
+    for progress in [
+        0, 6, 10, 11, 12, 13, 14, 15, 16, 17, 30, 31, 40, 41, 42, 43, 50,
+    ] {
+        assert!(permit.record_fan(progress).is_err(), "{progress}");
+    }
+    assert!(permit.prepare_fan(record).is_err());
+    assert!(permit.resolve_fan(2, baseline).is_err());
+    assert!(permit.confirm_fan_noop(2, baseline).is_err());
+    assert!(permit.resolve(2, baseline).is_err());
+    assert!(
+        permit
+            .record(openblade_domain::thermal_mutation::Progress::FirstIntent)
+            .is_err()
+    );
+    assert_eq!(r.files.read("thermal-mutation.journal").unwrap(), journal);
+    assert_eq!(r.port.state.lock().unwrap().writes, 4);
 }
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
