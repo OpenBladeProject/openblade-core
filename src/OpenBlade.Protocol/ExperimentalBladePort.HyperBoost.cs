@@ -26,6 +26,7 @@ internal sealed partial class ExperimentalBladePort
         }
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         bool submitted = false;
+        bool maximumFansCleared = false;
         bool acceptsStatusOnlyAck = UsesSourceBackedSetAckContract(model);
         string operation = enabled ? "HyperBoost" : "HyperBoostRestore";
         try
@@ -78,11 +79,14 @@ internal sealed partial class ExperimentalBladePort
                 byte flags = await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false);
                 if ((flags & TemporaryFullChargeProtocol.MaximumFanSpeedBit) != 0)
                 {
-                    // Products 671/669 both clear this bit before leaving Custom.
-                    // 029F/029D represent it in Custom intent, which the service
-                    // ownership journal retains for restoration on exit.
-                    // A model without a representable Maximum Fans intent cannot
-                    // restore the flag, so do not clear an unrepresentable baseline.
+                    // Products 671/669 both clear this bit before any non-Custom
+                    // setter (671 policy byte 1397809, 669 policy byte 1557908).
+                    // 029F/029D represent it in Custom intent. The service journals
+                    // that intent, and on exit its Custom restore compares Maximum
+                    // Fans with the confirmed flag and writes it back when needed.
+                    // Every model that admits HyperBoost today also admits Maximum
+                    // Fans, so this refusal is a guard for a future model without
+                    // representable intent: never clear a flag it cannot restore.
                     if (!CreateCustomCapabilities(model).SupportsMaximumFans)
                     {
                         throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
@@ -91,10 +95,11 @@ internal sealed partial class ExperimentalBladePort
                     RequireMaximumFansWriteBaseline(flags);
                     // Cleanup belongs to this HyperBoost request; it cannot inherit
                     // ordinary Unknown-AC admission before the mode-7 command.
+                    bool statusOnlyPowerModeAck = UsesStatusOnlyPowerModeControlAck(model);
                     await ExchangeAsync("MaximumFans", 0x07, 0x0F, [0], true, cancellationToken,
-                        variableResponse: acceptsStatusOnlyAck,
-                        payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 1 : null,
-                        requireEcho: !acceptsStatusOnlyAck,
+                        variableResponse: statusOnlyPowerModeAck,
+                        payloadValidator: statusOnlyPowerModeAck ? static payload => payload.Length <= 1 : null,
+                        requireEcho: !statusOnlyPowerModeAck,
                         writeAdmission: StillAdmitted,
                         allowUnclassifiedExternal: false).ConfigureAwait(false);
                     submitted = true;
@@ -102,6 +107,11 @@ internal sealed partial class ExperimentalBladePort
                     {
                         throw new IOException("HyperBoost Maximum Fans cleanup was not confirmed.");
                     }
+                    // The cleanup is confirmed and mode 7 has not been sent, so
+                    // the state is fully known. A later admission refusal is not
+                    // ambiguous; the service can reapply the saved Custom intent.
+                    submitted = false;
+                    maximumFansCleared = true;
                 }
             }
             byte mode = enabled ? (byte)7 : (byte)(baseMode switch
@@ -118,7 +128,9 @@ internal sealed partial class ExperimentalBladePort
                 if (!StillAdmitted())
                 {
                     throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
-                        "HyperBoost cooling-pad or power admission changed before submission.");
+                        maximumFansCleared && !submitted
+                            ? "HyperBoost cooling-pad or power admission changed before submission. Maximum Fans was turned off for HyperBoost; reapply Custom to turn it back on."
+                            : "HyperBoost cooling-pad or power admission changed before submission.");
                 }
                 await ExchangeAsync(operation, 0x0D, 0x02, [1, selector, mode, 0], true, cancellationToken,
                     variableResponse: acceptsStatusOnlyAck,

@@ -7,34 +7,135 @@ namespace OpenBlade.Protocol.Tests;
 // evidence/source-reviewed-blades/2026-11-19-rz09-0482-maximum-fans.json.
 public sealed partial class ExperimentalThermalExpansionTests
 {
-    [Fact]
-    public void Blade14MaximumFans_EvidenceRecordMatchesCatalogPins()
+    [Theory]
+    [InlineData("MaximumFans")]
+    [InlineData("PowerModeCpuBoost")]
+    public void Blade14PowerModeControl_CatalogMatchesEvidenceRecord(string featureName)
     {
-        const string relativePath = "evidence/source-reviewed-blades/2026-11-19-rz09-0482-maximum-fans.json";
-        DirectoryInfo? directory = new(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, relativePath)))
+        using (System.Text.Json.JsonDocument document = Blade14PowerModeControlEvidence.Load())
         {
-            directory = directory.Parent;
+            Assert.Equal("RZ09-0482", document.RootElement.GetProperty("model").GetString());
+            Assert.False(document.RootElement.GetProperty("physicalValidationPerformed").GetBoolean());
+            Assert.Equal("ObservedOnly", document.RootElement.GetProperty("cpuBoost").GetProperty("access").GetString());
         }
-        Assert.NotNull(directory);
-        using var document = System.Text.Json.JsonDocument.Parse(
-            File.ReadAllText(Path.Combine(directory.FullName, relativePath)));
-        System.Text.Json.JsonElement root = document.RootElement;
-        Assert.Equal("RZ09-0482", root.GetProperty("model").GetString());
-        Assert.False(root.GetProperty("physicalValidationPerformed").GetBoolean());
         ExperimentalFeatureEvidence feature = Assert.Single(
-            ExperimentalBladeModels.FeatureEvidenceFor(Model(0x029D)), item => item.Feature == "MaximumFans");
-        System.Text.Json.JsonElement[] exact = root.GetProperty("sources").EnumerateArray()
-            .Where(item => item.GetProperty("id").GetString() is "669-main" or "669-policy" or "669-device")
-            .ToArray();
-        Assert.Equal(3, exact.Length);
-        foreach (System.Text.Json.JsonElement source in exact)
-        {
-            Assert.True(source.GetProperty("verifiedThisReview").GetBoolean());
-            Assert.Contains($"{source.GetProperty("url").GetString()};SHA256={source.GetProperty("sha256").GetString()}",
-                feature.Sources);
-        }
-        Assert.Contains(relativePath, feature.Sources);
+            ExperimentalBladeModels.FeatureEvidenceFor(Model(0x029D)), item => item.Feature == featureName);
+        (string basis, string[] sources) = Blade14PowerModeControlEvidence.CatalogFeature(featureName);
+        Assert.Equal(basis, feature.Basis);
+        Assert.Equal(sources, feature.Sources);
+    }
+
+    [Fact]
+    public async Task Blade14CpuBoost_IsDiagnosedWithoutAControl()
+    {
+        // Observed-only: the bit is reported and guards writes; no CPU Boost
+        // level or setter is admitted.
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, PowerModeControlFlags = 1 };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x029D));
+        await using var port = Create(0x029D, session, policy);
+        Assert.DoesNotContain(port.Capabilities.CustomPerformance!.AllowedCombinations,
+            item => item.Cpu == CustomPerformanceLevel.Boost);
+
+        Assert.False((await port.QueryPerformanceFanStateAsync(CancellationToken.None)).CustomPerformance!.MaximumFans);
+
+        Assert.Contains(policy.Snapshot().Observations, item => item.Operation == "MaximumFans"
+            && item.ConfirmedValue!.Contains("CpuBoostBit=True", StringComparison.Ordinal));
+        Assert.Empty(session.Writes);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("00")]
+    public async Task Blade14MaximumFans_EnableAcceptsStatusOnlyAck(string ackHex)
+    {
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, MaximumAckPayloadOverride = Convert.FromHexString(ackHex) };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x029D));
+        await using var port = Create(0x029D, session, policy);
+
+        await port.SetCustomPerformanceAsync(CustomPerformanceSettings.Default with { MaximumFans = true }, CancellationToken.None);
+
+        Assert.True(session.MaximumFans);
+        Assert.True(policy.WritesAllowed);
+        Assert.Equal(1, session.MaximumSetAttempts);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("00")]
+    public async Task Blade14MaximumFans_LeaveCustomCleanupAcceptsStatusOnlyAck(string ackHex)
+    {
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, MaximumFans = true, MaximumAckPayloadOverride = Convert.FromHexString(ackHex) };
+        var policy = new ExperimentalFeaturesPolicy(Model(0x029D));
+        await using var port = Create(0x029D, session, policy);
+
+        await port.SetPerformanceAsync(PerformancePreset.Balanced, CancellationToken.None);
+
+        Assert.False(session.MaximumFans);
+        Assert.Equal(0, session.Mode);
+        Assert.True(policy.WritesAllowed);
+        RazerCommandSpec cleanup = session.Writes.First();
+        Assert.Equal((0x07, 0x0F), (cleanup.ClassId, cleanup.CommandId));
+        Assert.True(cleanup.AllowVariableResponseLength);
+        // Other 029D setters keep the echoed contract.
+        Assert.All(session.Writes.Where(command => command.ClassId == 0x0D),
+            command => Assert.False(command.AllowVariableResponseLength));
+    }
+
+    [Theory]
+    [InlineData(0x029D)]
+    [InlineData(0x029F)]
+    public async Task Blade14MaximumFans_BatteryRefusesBeforeAnyWrite(int pid)
+    {
+        // 029D/029F admit no battery thermal preset, so no battery setter exists
+        // for a disable-only cleanup to precede. Both paths stop before writing.
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, MaximumFans = true, AdapterPowerPayload = [0x00, 0x11] };
+        var policy = new ExperimentalFeaturesPolicy(Model(pid));
+        await using var port = Create(pid, session, policy, power: () => PowerSource.Battery);
+
+        BladeWriteException leave = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetPerformanceAsync(PerformancePreset.Balanced, CancellationToken.None));
+        BladeWriteException disable = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetCustomPerformanceAsync(new CustomPerformanceSettings(
+                (CustomPerformanceLevel)1, (CustomPerformanceLevel)2), CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, leave.SubmissionState);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, disable.SubmissionState);
+        Assert.Empty(session.Writes);
+        Assert.True(session.MaximumFans);
+        Assert.Equal(4, session.Mode);
+        Assert.True(policy.WritesAllowed);
+    }
+
+    [Fact]
+    public async Task Blade14MaximumFans_FailedPowerModeReadFailsCustomStatusClosed()
+    {
+        // The confirmed Custom state has no unknown Maximum Fans value; reporting
+        // off would be a guess, so the whole query fails closed without writes.
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, PowerModeReadProtocolFailure = HidProtocolValidationFailure.Status };
+        await using var port = Create(0x029D, session);
+
+        await Assert.ThrowsAnyAsync<Exception>(() => port.QueryPerformanceFanStateAsync(CancellationToken.None));
+
+        Assert.Empty(session.Writes);
+        Assert.Contains(session.Commands, command => command.ClassId == 0x07 && command.CommandId == 0x8F);
+    }
+
+    [Theory]
+    [InlineData(1, "CPU boost")]
+    [InlineData(3, "CPU boost")]
+    public async Task Blade14MaximumFans_OtherOptionRefusalSaysWhereToTurnItOff(byte flags, string option)
+    {
+        var session = new Session { Mode = 4, Cpu = 1, Gpu = 2, PowerModeControlFlags = flags };
+        await using var port = Create(0x029D, session);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => (flags & 2) == 0
+            ? port.SetCustomPerformanceAsync(CustomPerformanceSettings.Default with { MaximumFans = true }, CancellationToken.None)
+            : port.SetPerformanceAsync(PerformancePreset.Balanced, CancellationToken.None));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Contains(option, failure.Message, StringComparison.Ordinal);
+        Assert.Contains("Synapse", failure.Message, StringComparison.Ordinal);
+        Assert.Empty(session.Writes);
     }
 
     [Fact]
@@ -50,8 +151,8 @@ public sealed partial class ExperimentalThermalExpansionTests
         RazerCommandSpec setter = Assert.Single(session.Writes);
         Assert.Equal((0x07, 0x0F), (setter.ClassId, setter.CommandId));
         Assert.Equal(new byte[] { 2 }, setter.Arguments.ToArray());
-        // 029D keeps its echoed acknowledgement; 029F/02A0 status-only ACKs are not inherited.
-        Assert.False(setter.AllowVariableResponseLength);
+        // Product 669's own setter and transport accept a status-only 07/0F reply.
+        Assert.True(setter.AllowVariableResponseLength);
         int setterIndex = session.Commands.IndexOf(setter);
         Assert.Contains(session.Commands.Take(setterIndex),
             command => command.ClassId == 0x07 && command.CommandId == 0x8F);

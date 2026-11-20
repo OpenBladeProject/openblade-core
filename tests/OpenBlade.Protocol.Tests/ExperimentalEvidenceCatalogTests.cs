@@ -167,17 +167,12 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.All(feature.Sources, source => Assert.StartsWith(
                         $"https://apps.razer.com/synapse/products/{(blade14 ? 669 : 671)}/mw/", source));
                 }
-                else if (feature.Feature == "MaximumFans" && model.ProductId == 0x029D)
+                else if (feature.Feature is "MaximumFans" or "PowerModeCpuBoost" && model.ProductId == 0x029D)
                 {
-                    Assert.Equal("SynapseSourceBackedWithoutPhysicalValidation", feature.Basis);
-                    Assert.Equal(4, feature.Sources.Count);
-                    Assert.All(feature.Sources.Take(3), source =>
-                    {
-                        Assert.StartsWith("https://apps.razer.com/synapse/products/669/mw/", source);
-                        Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
-                    });
-                    Assert.Contains(feature.Sources, source => source.Contains("/rzDevice25.1094c437ecd0242743f8.js;", StringComparison.Ordinal));
-                    Assert.Equal("evidence/source-reviewed-blades/2026-11-19-rz09-0482-maximum-fans.json", feature.Sources[3]);
+                    // The evidence record, not a second hand-written copy, defines the pins.
+                    (string basis, string[] sources) = Blade14PowerModeControlEvidence.CatalogFeature(feature.Feature);
+                    Assert.Equal(basis, feature.Basis);
+                    Assert.Equal(sources, feature.Sources);
                 }
                 else if (feature.Feature == "FireAndWheel")
                 {

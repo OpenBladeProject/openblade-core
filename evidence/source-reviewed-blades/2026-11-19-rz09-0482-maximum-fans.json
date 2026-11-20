@@ -120,6 +120,72 @@
     },
     {
       "source": "669-device",
+      "offset": 52963,
+      "text": "V=(t,n)=>s(void 0,void 0,void 0,(function*(){const e=new Uint8Array(i.$g[0]);e[0]=n;const o=yield t.sendCommand(i.$g,i.N3,e);return L(o),o}))",
+      "meaning": "Exact product-669 Set Power Mode Control helper: sends one byte and parses data only if the reply returns some. It never compares the reply payload with the request."
+    },
+    {
+      "source": "669-device",
+      "offset": 119015,
+      "text": "if(c[6]!==n[6])",
+      "meaning": "Shared transport matches the transaction ID (c[1]) and command class/ID (c[6]/c[7]) before accepting a reply."
+    },
+    {
+      "source": "669-device",
+      "offset": 119262,
+      "text": "switch(e.packetSizeReturned=c[5],c[0])",
+      "meaning": "Success comes from the status byte (case 2 is STATUS_SUCCESS). Returned data is c.slice(8,8+c[5]), so a status-only or zero-filled reply is a valid acknowledgement."
+    },
+    {
+      "source": "669-device",
+      "offset": 57741,
+      "text": "L=new Uint8Array([1,7,143]),P=new Uint8Array([1,7,15]),V=\"Get CPU Boost Control\",O=\"Set CPU Boost Control\"",
+      "meaning": "The same 07/8F and 07/0F commands are also declared as CPU Boost Control. Bit 0x01 of the shared byte is a live vendor option."
+    },
+    {
+      "source": "669-device",
+      "offset": 140766,
+      "text": "getCPUBoostControl(){return Ea(this,void 0,void 0,(function*(){return Nn.Rb(this)}))}",
+      "meaning": "Public CPU Boost getter. The setter setCPUBoostControl follows at byte 140851; its helper was not traced further in this review."
+    },
+    {
+      "source": "669-main",
+      "offset": 162583,
+      "text": "hasCpuBoostEnabled:!0",
+      "meaning": "Product feature flag that enables the CPU Boost control in Synapse."
+    },
+    {
+      "source": "669-main",
+      "offset": 150347,
+      "text": "cpuBoostEnabled:!1",
+      "meaning": "Inside the battery profile (battery:{mode:\"balanced\",balanced:{...}} at byte 150278): CPU Boost is a battery Balanced setting, off by default. The battery profile has no Custom mode."
+    },
+    {
+      "source": "669-main",
+      "offset": 162783,
+      "text": "hasBatteryOptimizer:!0",
+      "meaning": "Battery optimizer feature flag beside the CPU Boost flag."
+    },
+    {
+      "source": "669-policy",
+      "offset": 1149540,
+      "text": "case\"ON_SET_CPU_BOOST_ENABLED\"",
+      "meaning": "User action handler for CPU Boost."
+    },
+    {
+      "source": "669-policy",
+      "offset": 1542935,
+      "text": "e[e.cpuBoostEnabled=1]=\"cpuBoostEnabled\"",
+      "meaning": "CPU Boost is Power Mode Control bit 0x01."
+    },
+    {
+      "source": "669-policy",
+      "offset": 1643076,
+      "text": "params:{cpuBoostEnabled:e}};try{yield t.setCPUBoostControl(e)",
+      "meaning": "CPU Boost task runner calls the device CPU Boost setter."
+    },
+    {
+      "source": "669-device",
       "offset": 140939,
       "text": "getPowerModeControl(){return Ea(this,void 0,void 0,(function*(){return Nn.Il(this)}))}setPowerModeControl(t){return Ea(this,void 0,void 0,(function*(){return Nn._w(this,t)}))}",
       "meaning": "Public device methods called by the 669 policy read-modify-write helper."
@@ -155,12 +221,29 @@
       {"product": 711, "file": "rzDevice25.c8da1ead63e6cf002d32.js", "sha256": "02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9"}
     ]
   },
+  "cpuBoost": {
+    "access": "ObservedOnly",
+    "detail": "Product 669 offers CPU Boost as bit 0x01 of the same Power Mode Control byte. OpenBlade reports the bit in diagnostics (CpuBoostBit) and lists the PowerModeCpuBoost feature as SynapseSourceObservedOnly. It adds no CPU Boost control. While CPU Boost or another option is on, every 07/0F write is refused before submission, because writing the whole byte would change that option."
+  },
+  "catalogFeatures": {
+    "MaximumFans": {
+      "basis": "SynapseSourceBackedWithoutPhysicalValidation",
+      "sources": ["669-main", "669-policy", "669-device"]
+    },
+    "PowerModeCpuBoost": {
+      "basis": "SynapseSourceObservedOnly",
+      "sources": ["669-main", "669-policy", "669-device"]
+    }
+  },
   "implementation": {
     "gate": "src/OpenBlade.Protocol/ExperimentalBladePort.Custom.cs SupportsMaximumFans admits 0x029D with 0x029F and 0x02A0.",
     "commands": "07/8F read; 07/0F [02] enable; guarded 07/0F [00] cleanup before 0D/02 when leaving Custom or entering HyperBoost.",
     "guards": "Fresh whole-byte 07/8F guard before each 07/0F; CPU boost, temporary full charge and local dimming bits block the write. Undefined bits and other lengths are rejected. Fixed fan baselines block enable. Independent readback after each write; uncertain submission pauses writes without replay.",
-    "acknowledgement": "RZ09-0482 keeps its existing echoed set-acknowledgement contract; the status-only acknowledgement admitted for 029F/02A0 is not inherited. A status-only reply would pause writes as Indeterminate without replay.",
-    "hyperBoost": "HyperBoost entry on 029D clears an active Maximum Fans bit with the same guard instead of refusing. A model without representable Maximum Fans intent still refuses before any write. The 1.1.1.3 MCU minimum and cooling-pad admission are unchanged."
+    "acknowledgement": "The 029D 07/0F writes (Custom enable/disable, leave-Custom cleanup and HyperBoost cleanup) use the pinned status-only contract: a correlated successful reply with no payload or one byte. The device bundle setter (byte 52963) and transport (bytes 119015/119262) never compare the payload. Every other 029D setter keeps its existing echoed acknowledgement.",
+    "hyperBoost": "HyperBoost entry on 029D clears an active Maximum Fans bit with the same guard instead of refusing. After the clear is confirmed and before mode 7 is sent, a refusal is reported as known, not ambiguous. On exit, the service Custom restore compares Maximum Fans with the confirmed flag and writes it back. A model without representable Maximum Fans intent still refuses before any write. The 1.1.1.3 MCU minimum and cooling-pad admission are unchanged.",
+    "service": "src/OpenBlade.Service/ControlCoordinator.cs compares confirmed Maximum Fans with the requested value when the model admits it, so a flag-only change reaches the device. This applies to 029F, 029D and 02A0.",
+    "battery": "Product 669 clears Maximum Fans before its non-Custom setter (policy byte 1557908), including the DC Balanced branch. OpenBlade admits no battery thermal preset on 029D or 029F, so no battery setter exists to run that cleanup before. Leaving Custom and a flag-only disable are refused on battery before any write. A disable-only battery exception like 02B6/02B7/02B8 would have no caller; adding one needs a separately reviewed DC Balanced admission.",
+    "statusRead": "In Custom, the Performance and Fans query reads 07/8F. If that read fails, the whole query fails closed, as on 029F and 02A0. The confirmed Custom state has no unknown Maximum Fans value, and reporting off would be a guess. The service keeps its last confirmed state through bounded retries and checks again before every write."
   },
   "physicalValidationPerformed": false
 }

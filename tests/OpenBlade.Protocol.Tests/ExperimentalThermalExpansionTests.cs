@@ -655,6 +655,7 @@ public sealed partial class ExperimentalThermalExpansionTests
         internal bool IgnoreFanMode { get; init; }
         internal bool IgnoreCustomLevels { get; init; }
         internal bool IgnoreMaximum { get; init; }
+        internal HidProtocolValidationFailure? PowerModeReadProtocolFailure { get; init; }
         internal bool ResetTargetsOnModeWrite { get; init; }
         internal Action<RazerCommandSpec>? BeforeSubmission { get; set; }
         internal bool IgnoreHyperBoost { get; init; }
@@ -713,6 +714,7 @@ public sealed partial class ExperimentalThermalExpansionTests
                         : [FanTargetClassOverride ?? payload[0], payload[1], payload[1] == 1 ? FirstTarget : SecondTarget];
                     break;
                 case (0x07, 0x8F):
+                    if (PowerModeReadProtocolFailure is { } readFailure) { return ProtocolFailure(readFailure); }
                     payload = maximumWriteSeen && MaximumReadbackPayloadOverride is not null
                         ? MaximumReadbackPayloadOverride
                         : PowerModePayloadOverride ?? [PowerModeControlFlags];
