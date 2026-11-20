@@ -669,7 +669,7 @@ async fn stopping_during_a_pending_report_drops_it_and_retires_the_owner() {
 }
 
 #[tokio::test]
-async fn losing_session_authority_retires_evidence_and_sends_no_clear_until_regained() {
+async fn a_locked_console_keeps_the_retained_context_and_renews_it() {
     let (result, (), _) = rig(
         vec![],
         || Ok(()),
@@ -678,17 +678,71 @@ async fn losing_session_authority_retires_evidence_and_sends_no_clear_until_rega
             focus(rig, 2, 42, OTHER);
             rig.report(1, 1, Some(OTHER)).await;
             rig.drive(|script, _| {
-                script.active(false);
                 script.focus(0);
+                script.active(false);
             });
+            // Managed keeps the tracked process and its renewal through a lock,
+            // and the Service accepts reports from the locked console session.
+            rig.quiet(1).await;
+            assert_eq!(rig.open_handles(), 1, "the live process handle was released");
+            rig.tick(1);
+            rig.report(2, 2, Some(OTHER)).await;
+            rig.tick(2);
+            rig.report(3, 3, Some(OTHER)).await;
+            rig.drive(|script, _| script.active(true));
+            rig.quiet(3).await;
+            assert_eq!(rig.open_handles(), 1);
+            rig.finish();
+        },
+    )
+    .await;
+    result.unwrap();
+}
+
+#[tokio::test]
+async fn a_secure_desktop_switch_keeps_a_background_retention() {
+    let (result, (), _) = rig(
+        vec![],
+        || Ok(()),
+        async |rig| {
+            profiles_for(rig, json!([entry(2, OTHER, 1)]));
+            focus(rig, 2, 42, OTHER);
+            rig.report(1, 1, Some(OTHER)).await;
+            rig.drive(|script, _| script.focus(0));
+            rig.quiet(1).await;
+            rig.drive(|script, _| script.desktop_switch());
+            rig.quiet(1).await;
+            assert_eq!(rig.open_handles(), 1, "the live process handle was released");
+            rig.tick(1);
+            rig.report(2, 2, Some(OTHER)).await;
+            rig.finish();
+        },
+    )
+    .await;
+    result.unwrap();
+}
+
+#[tokio::test]
+async fn a_different_session_still_clears_and_releases_every_process() {
+    let (result, (), _) = rig(
+        vec![],
+        || Ok(()),
+        async |rig| {
+            profiles_for(rig, json!([entry(2, OTHER, 1)]));
+            focus(rig, 2, 42, OTHER);
+            rig.report(1, 1, Some(OTHER)).await;
+            rig.drive(|script, _| {
+                script.focus(0);
+                script.active(false);
+            });
+            rig.quiet(1).await;
+            rig.drive(|script, _| {
+                script.session(2);
+                script.active(true);
+            });
+            rig.report(2, 2, None).await;
             rig.until("the handle to retire", |rig| rig.open_handles() == 0)
                 .await;
-            // An inactive session can neither renew nor clear.
-            rig.tick(2);
-            rig.quiet(1).await;
-            // Fresh authority: the old context is cleared before anything else.
-            rig.drive(|script, _| script.active(true));
-            rig.report(2, 2, None).await;
             rig.finish();
         },
     )

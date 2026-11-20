@@ -281,8 +281,17 @@ impl<H: ProcessHandle> ApplicationProfileReporter<H> {
         });
     }
 
-    /// Invalidate local evidence after loss of session authority. Retain the
-    /// submission watermark so the next authorized poll can clear old intent.
+    /// The foreground is unknown (locked console, secure desktop or another
+    /// desktop) but the user's processes are not affected: retained handles,
+    /// activation order and the submission watermark all stay.
+    pub fn forget_foreground(&mut self) {
+        self.observations
+            .retain(|observation| matches!(observation, Observation::Exited(_)));
+        self.foreground = Foreground::Unknown;
+    }
+
+    /// Invalidate every local process after a change of session or user. Retain
+    /// the submission watermark so the next poll can clear old intent.
     pub fn forget_process_context(&mut self) {
         self.observations.clear();
         self.foreground = Foreground::Unknown;

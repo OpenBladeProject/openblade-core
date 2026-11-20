@@ -99,6 +99,7 @@ pub struct ForegroundWatcher<A: Desktop> {
     window: usize,
     desktop_epoch: u64,
     session: Option<NonZeroU32>,
+    suspended: bool,
 }
 
 impl WindowsForegroundWatcher {
@@ -160,6 +161,7 @@ impl<A: Desktop> ForegroundWatcher<A> {
             window: 0,
             desktop_epoch: 0,
             session: None,
+            suspended: false,
         })
     }
 
@@ -232,8 +234,10 @@ impl<A: Desktop> ForegroundWatcher<A> {
     }
 
     /// Drive this from the current-user owner at a bounded cadence, including
-    /// when there are no callbacks. A disconnected session cannot renew or
-    /// send a clear. The service lease can expire until authority is regained.
+    /// when there are no callbacks. While the session is locked or on another
+    /// desktop the foreground is unknown, but retained processes stay and the
+    /// lease keeps renewing, as managed does. Only a different session forgets
+    /// every process.
     pub fn poll(
         &mut self,
         elapsed: Duration,
@@ -255,16 +259,30 @@ impl<A: Desktop> ForegroundWatcher<A> {
             return None;
         }
 
-        let session = self.binding.api.active_local_session();
-        let reset = session != self.session || snapshot.desktop_epoch != self.desktop_epoch;
-        if reset {
-            self.forget_authority(session, snapshot.desktop_epoch);
+        // The active session is always this process's own. It is unavailable
+        // while the console is locked, on the secure desktop, or on another
+        // user, and none of those ends the user's processes. Managed keeps
+        // retained processes and keeps renewing through them, so only the
+        // foreground becomes unknown. A different session id is a different
+        // user and forgets everything.
+        let active = self.binding.api.active_local_session();
+        let mut reset = snapshot.desktop_epoch != self.desktop_epoch || self.suspended;
+        self.desktop_epoch = snapshot.desktop_epoch;
+        if let Some(now) = active {
+            if self.session.is_some_and(|before| before != now) {
+                self.binding.policy.forget_process_context();
+                reset = true;
+            }
+            self.session = Some(now);
         }
-        let session = session?;
+        self.suspended = active.is_none();
+        if reset || active.is_none() {
+            self.forget_foreground();
+        }
         self.binding.prune_foreground();
         self.binding.policy.prune_exited_processes();
 
-        let changed = snapshot.revision != self.consumed || reset;
+        let changed = active.is_some() && (snapshot.revision != self.consumed || reset);
         let window = if changed {
             match snapshot.notice {
                 Notice::Window(window) if !reset => window,
@@ -275,15 +293,17 @@ impl<A: Desktop> ForegroundWatcher<A> {
         };
         let sample = if changed {
             let sample = resolve(&mut self.binding.api, window, &self.binding.cancellation);
-            if self.binding.api.active_local_session() != Some(session) {
-                self.forget_authority(None, snapshot.desktop_epoch);
+            if self.binding.api.active_local_session() != active {
+                // Lost while resolving: the next poll takes the inactive path.
+                self.suspended = true;
+                self.forget_foreground();
                 return None;
             }
             sample
         } else {
             None
         };
-        if self.binding.api.foreground() != window {
+        if active.is_some() && self.binding.api.foreground() != window {
             // A stale HWND cannot produce even an unknown observation. Also
             // suppress renewals while a newer window's callback is in transit.
             return None;
@@ -308,11 +328,10 @@ impl<A: Desktop> ForegroundWatcher<A> {
         self.binding.poll_policy(elapsed, request_id)
     }
 
-    fn forget_authority(&mut self, session: Option<NonZeroU32>, desktop_epoch: u64) {
-        self.session = session;
-        self.desktop_epoch = desktop_epoch;
+    /// Foreground evidence is stale; retained processes stay.
+    fn forget_foreground(&mut self) {
         self.binding.foreground = None;
-        self.binding.policy.forget_process_context();
+        self.binding.policy.forget_foreground();
     }
 
     fn stop(&mut self) {

@@ -29,6 +29,7 @@ pub struct Script {
 
 struct State {
     active: bool,
+    session: u32,
     window: usize,
     processes: BTreeMap<usize, ProcessProbe>,
     callbacks: Option<Callbacks>,
@@ -83,6 +84,7 @@ impl Default for Script {
         Self {
             state: Rc::new(RefCell::new(State {
                 active: true,
+                session: 1,
                 window: 0,
                 processes: BTreeMap::new(),
                 callbacks: None,
@@ -154,6 +156,11 @@ impl Script {
         self.state.borrow_mut().active = value;
     }
 
+    /// The active console session id. A different id is a different user.
+    pub fn session(&self, id: u32) {
+        self.state.borrow_mut().session = id;
+    }
+
     pub fn registered(&self) -> bool {
         self.registration.load(Ordering::Acquire)
     }
@@ -163,7 +170,10 @@ impl Desktop for ScriptedDesktop {
     type Process = ScriptedProcess;
 
     fn active_local_session(&mut self) -> Option<NonZeroU32> {
-        NonZeroU32::new(u32::from(self.0.borrow().active))
+        {
+            let state = self.0.borrow();
+            NonZeroU32::new(if state.active { state.session } else { 0 })
+        }
     }
 
     fn foreground(&mut self) -> usize {
@@ -178,7 +188,7 @@ impl Desktop for ScriptedDesktop {
     }
 
     fn process_session(&mut self, _: NonZeroU32) -> Option<NonZeroU32> {
-        Some(NonZeroU32::MIN)
+        NonZeroU32::new(self.0.borrow().session)
     }
 
     fn open_query_and_synchronize(&mut self, pid: NonZeroU32) -> Option<Self::Process> {

@@ -118,33 +118,100 @@ fn exit_retires_exact_background_handle_and_reused_pid_needs_activation() {
 }
 
 #[test]
-fn loss_retires_evidence_with_a_send_in_flight_and_blocks_renewals() {
+fn a_locked_console_keeps_retained_processes_and_renewals() {
     let mut script = Script::default();
     let game = script.process(1, 42, 1, GAME);
     script.focus(1);
     let mut watcher = start(&mut script, ActivationMode::WhileRunningAfterActivation);
     expect(&mut watcher, 0, 1, Some(GAME));
-    script.active(false);
-    script.focus(0);
-    assert!(poll(&mut watcher, 1).is_none());
-    assert_eq!(game.handles(), 0);
     watcher.complete(1, ReportOutcome::Stored);
-    watcher.disconnected();
-    watcher.reconnected();
-    assert!(poll(&mut watcher, 3).is_none());
-
-    script.active(true);
-    expect(&mut watcher, 3, 2, None);
-    watcher.complete(2, ReportOutcome::Stored);
-    assert!(poll(&mut watcher, 4).is_none());
-    script.focus(1);
-    expect(&mut watcher, 4, 3, Some(GAME));
-    watcher.complete(3, ReportOutcome::Stored);
-
-    // A desktop boundary survives coalescing even if the session looks active again.
-    script.desktop_switch();
     script.focus(0);
-    expect(&mut watcher, 4, 4, None);
+    assert!(poll(&mut watcher, 0).is_none());
+
+    // Managed keeps the tracked process and its five-second renewal through a
+    // lock: only the foreground becomes unknown, and no clear is sent.
+    script.active(false);
+    assert!(poll(&mut watcher, 0).is_none());
+    assert_eq!(game.handles(), 1);
+    for tick in 1..=3 {
+        expect(&mut watcher, tick, i64::from(tick) + 1, Some(GAME));
+        watcher.complete(i64::from(tick) + 1, ReportOutcome::Stored);
+        assert_eq!(game.handles(), 1);
+    }
+    // The same session returns: nothing is cleared or resent early.
+    script.active(true);
+    assert!(poll(&mut watcher, 3).is_none());
+    assert_eq!(game.handles(), 1);
+    expect(&mut watcher, 4, 5, Some(GAME));
+    watcher.shutdown().unwrap();
+    assert_eq!(game.handles(), 0);
+}
+
+#[test]
+fn a_secure_desktop_switch_keeps_a_background_process_but_resamples_the_foreground() {
+    let mut script = Script::default();
+    let game = script.process(1, 42, 1, GAME);
+    script.focus(1);
+    let mut watcher = start(&mut script, ActivationMode::WhileRunningAfterActivation);
+    expect(&mut watcher, 0, 1, Some(GAME));
+    watcher.complete(1, ReportOutcome::Stored);
+    script.focus(0);
+    script.desktop_switch();
+    assert!(poll(&mut watcher, 0).is_none());
+    assert_eq!(game.handles(), 1);
+    expect(&mut watcher, 1, 2, Some(GAME));
+    watcher.complete(2, ReportOutcome::Stored);
+
+    // A Foreground profile has no process to keep: the context ends, and a
+    // desktop boundary survives coalescing with a later window notice.
+    let mut foreground = Script::default();
+    let first = foreground.process(1, 42, 1, GAME);
+    foreground.focus(1);
+    let mut other = start(&mut foreground, ActivationMode::Foreground);
+    expect(&mut other, 0, 1, Some(GAME));
+    other.complete(1, ReportOutcome::Stored);
+    foreground.desktop_switch();
+    foreground.focus(0);
+    expect(&mut other, 0, 2, None);
+    assert_eq!(first.handles(), 0);
+    other.shutdown().unwrap();
+    watcher.shutdown().unwrap();
+}
+
+#[test]
+fn a_locked_foreground_profile_ends_as_managed_reports_an_unknown_foreground() {
+    let mut script = Script::default();
+    let game = script.process(1, 42, 1, GAME);
+    script.focus(1);
+    let mut watcher = start(&mut script, ActivationMode::Foreground);
+    expect(&mut watcher, 0, 1, Some(GAME));
+    watcher.complete(1, ReportOutcome::Stored);
+    script.active(false);
+    expect(&mut watcher, 0, 2, None);
+    assert_eq!(game.handles(), 0);
+    watcher.complete(2, ReportOutcome::Stored);
+    // Unlocked on the same foreground window: it is sampled again.
+    script.active(true);
+    expect(&mut watcher, 0, 3, Some(GAME));
+    watcher.shutdown().unwrap();
+}
+
+#[test]
+fn a_different_session_forgets_every_process_and_clears_the_old_context() {
+    let mut script = Script::default();
+    let game = script.process(1, 42, 1, GAME);
+    script.focus(1);
+    let mut watcher = start(&mut script, ActivationMode::WhileRunningAfterActivation);
+    expect(&mut watcher, 0, 1, Some(GAME));
+    watcher.complete(1, ReportOutcome::Stored);
+    script.focus(0);
+    assert_eq!(game.handles(), 1);
+    // Another user takes the console and the session id returns different.
+    script.active(false);
+    assert!(poll(&mut watcher, 0).is_none());
+    script.session(2);
+    script.active(true);
+    expect(&mut watcher, 0, 2, None);
     assert_eq!(game.handles(), 0);
     watcher.shutdown().unwrap();
 }
