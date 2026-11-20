@@ -59,8 +59,10 @@ Manual overrides at schemas 8, 9 and the current 10 support Balanced/Performance
 Persistent and UntilPowerSourceChange lifetimes, and explicit nullable clear.
 Every save writes schema 10, as managed does. Each setter clears
 the other performance slot as managed setters do. Temporary state expires when
-a fresh known power source differs. Unresolved external power neither expires
-intent nor establishes full-power effectiveness. Existing manual fan detail/custom/GPU fields
+a fresh classified power source differs. Unclassified external power expires
+only battery intent and never establishes full-power effectiveness; a
+temporary saved while unclassified expires on the first classified source.
+Existing manual fan detail/custom/GPU fields
 are preserved when unrelated; schema 1-7 requires managed migration. As in
 managed, a non-false `controlsKeyboardEffect` below schema 9 or a non-null zone
 control below schema 10 makes the document invalid. Stored fan speeds admit
@@ -99,9 +101,70 @@ before `d6ce3339` reject such a row as invalid history, which fences
 retirement, upgrade and mailbox custody fail-closed. The Rust `FanRecord` and
 the managed `WindowsNativeFanHistory` reader both consume
 `tools/openblade-windows-host/tests/data/fan-history-v3-limited-source.json`.
-Battery presets are outside this writer. Managed's ordinary control on
-unclassified external power, where the adapter reading is Unknown (exact
-RZ09-0581, `f6502f85`), is not ported: native reports no power source for it and makes no thermal write.
+Battery presets are outside this writer.
+
+### Unclassified external power
+
+Native ports managed's ordinary thermal control on unclassified external power
+(`f6502f85`) for the setters it implements: Balanced and Performance, and
+Fixed, Maximum and Automatic fans. Power is unclassified when Windows reports
+AC online and the 07/8C query completed without a class: either a correlated
+FAILED (3) or NOT_SUPPORTED (5) rejection with intact single-report geometry
+(`RazerReport::is_completed_rejection`, after managed
+`OrdinaryThermalPowerAdmission`), or a successful reply whose actual level is
+unmapped or whose recommended level is unmapped or zero. Any other validation
+failure is no reading. The class is source 3; it is never promoted to full or
+limited power, and battery policy and temporary full charge keep their
+classified-only admission.
+
+The commands, the fresh 07/8C read before each setter and the class-stability
+rule are the same as on the classified classes. Each setter's reading must be
+unclassified again: a refinement to a classified class, or the reverse, stops
+the pair without replay. Once the first reading is unclassified, every later
+checkpoint also needs fresh Windows AC presence (managed
+`OrdinarySourceUnchanged`), so a lost presence stops before the next command.
+Without presence the request writes and stores nothing.
+
+No power profile or application profile applies there (managed
+`CreateObservedFallbackProfile`). Explicit Balanced and Performance overrides
+apply; a request with GPU clock tuning is rejected before it is stored, Failed,
+`The requested intent was rejected: This request needs classified power or
+includes native overclocking; ordinary external presence does not admit it.`
+A performance or fan clear replies Stored, `Override cleared. Power-profile
+application waits for adapter classification.` A fan clear first hands an
+OpenBlade-owned manual fan change back to Automatic under the observed
+selector, without a saved preset (managed `RestoreOwnedAutomaticFansCoreAsync`);
+if that handback is not confirmed, the reply is Blocked, `Fan control could
+not be handed back to firmware. <cause>`. Owned Stop cleanup of a row
+recorded on source 3 needs the same presence. Status reports
+`activePowerSource` 3 and, while an explicit override exists, that override as
+the desired destination.
+
+Fan rows can journal source 3. The Rust `FanRecord` and the managed
+`WindowsNativeFanHistory` reader both admit it and both consume
+`tools/openblade-windows-host/tests/data/fan-history-v3-unclassified-source.json`.
+Readers before this change reject such a row as invalid history, which fences
+retirement, upgrade and mailbox custody fail-closed. Performance rows carry no
+power source, so their grammar is unchanged.
+
+Native differs from managed here in these ways:
+
+- Managed's performance path admits a mid-pair class change that still agrees
+  with Windows presence; native stops on any change.
+- With manual fans saved and current, native replies with the Stored manual-fan
+  deferral; managed has no deferral text there, and its coordinator leaves the
+  manual fans in place.
+- Managed keeps a temporary saved while unclassified when the adapter is later
+  classified within the same Windows power generation. Native keeps no such
+  generation and expires it. A temporary saved unclassified also survives an
+  unplug and replug that native never observed.
+- Native status carries no `externalPowerPresent` or capabilities, and with no
+  override its desired provenance stays the profile default; managed reports
+  the confirmed firmware state.
+- An owner recorded on source 3 that is later classified with no Windows event
+  fails closed at Stop; managed would hand it back.
+- Managed also admits lighting and battery controls on unclassified power;
+  those are not native thermal setters and are unchanged.
 
 Resolution uses eligible manual intent, then the current application report's
 performance override, then the matching power profile. Application instances have
@@ -140,12 +203,15 @@ unapplied intent:
 
 | Native case | Reply |
 | --- | --- |
-| External power (PluggedIn or limited USB-C) with current-manual plus desired-manual fans, when a Balanced or Performance destination resolves | Stored, `Performance intent was stored and will be applied when fans return to Automatic.` |
+| External power (PluggedIn, limited USB-C or unclassified) with current-manual plus desired-manual fans, when a Balanced or Performance destination resolves | Stored, `Performance intent was stored and will be applied when fans return to Automatic.` |
 | The same manual-fan state with no Balanced or Performance destination (for example a clear under a Silent or Custom profile) | Blocked, `Performance override was cleared. Hardware result: No supported performance destination...` |
 | OpenBlade-owned fan row whose handback to Automatic is outstanding, without that manual deferral | Blocked, `Performance override intent was stored. Hardware result: OpenBlade still owns a fan change...` |
 | GPU effect, ineligible policy, power change, admission, capacity, storage or transport cause after the intent was saved | Blocked, `Performance override intent was stored. Hardware result: <cause>` |
 | Saved clear that was not applied | Blocked, `Performance override was cleared. Hardware result: <cause>` |
 | Fan intent saved but not applied | Blocked, `Fan override intent was stored. Hardware result: ...` or `Fan override was cleared. Hardware result: ...` |
+| Performance or fan clear on unclassified external power, with no owned fan change left | Stored, `Override cleared. Power-profile application waits for adapter classification.` |
+| Fan clear on unclassified external power whose owned handback is not confirmed | Blocked, `Fan control could not be handed back to firmware. <cause>` |
+| GPU clock tuning requested on unclassified external power | Failed, `The requested intent was rejected: This request needs classified power or includes native overclocking; ordinary external presence does not admit it.` |
 
 The Stored text is managed's `DeferredPerformanceIntentMessage`. Native
 returns it only when the later fan request can apply the intent, so the
