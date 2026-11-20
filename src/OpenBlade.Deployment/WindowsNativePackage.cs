@@ -81,6 +81,8 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         { throw new InvalidDataException("Profile serving is not admitted for packaging."); }
         // The application-context reporter is not admitted for packaging either. Refuse its
         // feature and its capability marker by name until a packaging stage admits both.
+        // That stage must also pair the reporter with a Service built with service-thermal-mutation-v1,
+        // which alone serves reportApplicationContext (docs/windows-native-agent-application-reporter.md).
         if (features.Contains("agent-application-reporter-v1", StringComparer.Ordinal) || capabilities.Split(',').Any(capability => capability is "agent-application-reporter-v1" or "session-application-reporter-v1"))
         { throw new InvalidDataException("The application reporter is not admitted for packaging."); }
         if (agentWrite && !agentDisplay) { throw new InvalidDataException("Brightness write requires the display query contract."); }

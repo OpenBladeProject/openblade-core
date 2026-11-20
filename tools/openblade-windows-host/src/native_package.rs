@@ -711,6 +711,9 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     // The application-context reporter is not admitted for packaging either:
     // refuse its feature and its capability marker by name, whatever else the
     // record claims, until a packaging stage admits both.
+    // That stage must also pair the reporter with a Service built with
+    // service-thermal-mutation-v1, which alone serves reportApplicationContext;
+    // see docs/windows-native-agent-application-reporter.md.
     const REPORTER: &str = "agent-application-reporter-v1";
     const REPORTER_MARKER: &str = "session-application-reporter-v1";
     if has(REPORTER)
