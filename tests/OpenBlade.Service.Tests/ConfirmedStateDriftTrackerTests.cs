@@ -348,36 +348,72 @@ public sealed class ConfirmedStateDriftTrackerTests
         LightingSettings? lighting = null) =>
         new(performance, fans, battery, lighting);
 
-    // The reference point for external preset changes moves forward on an
-    // explicit choice and on a confirmed OpenBlade write, never on an
-    // observation; the user-visible latch is independent of it.
+    // A deferred choice applies once, only while no performance change was
+    // observed since it was made and the fresh preset is still the observed
+    // one. Any observed change, an unknown fresh preset or a differing fresh
+    // preset or Custom level drops it; an OpenBlade write or a newer choice
+    // that is not deferred settles it silently.
     [Fact]
-    public void PerformanceChangedSinceIntent_OrdersExternalChangesAgainstTheLatestIntent()
+    public void DeferredPerformanceChoice_AppliesOnceOnlyWithoutAnObservedChange()
     {
         var tracker = new ConfirmedStateDriftTracker();
-        Assert.False(tracker.PerformanceChangedSinceIntent(PerformancePreset.Silent));
-        tracker.Observe(State(PerformancePreset.Balanced, FanMode.Fixed, Battery(80), DefaultLighting));
-        Assert.False(tracker.PerformanceChangedSinceIntent(PerformancePreset.Balanced));
-        Assert.True(tracker.PerformanceChangedSinceIntent(PerformancePreset.Silent));
-        Assert.False(tracker.PerformanceChangedSinceIntent(null));
+        ConfirmedDeviceState balanced = State(PerformancePreset.Balanced, FanMode.Fixed, Battery(80), DefaultLighting);
+        tracker.Observe(balanced);
+        Assert.Equal(DeferredPerformanceDecision.None, tracker.DecideDeferredPerformance(balanced));
 
-        tracker.Observe(State(PerformancePreset.Silent, FanMode.Fixed, Battery(80), DefaultLighting));
+        tracker.RecordDeferredPerformanceChoice();
+        Assert.Equal(DeferredPerformanceDecision.Apply, tracker.DecideDeferredPerformance(balanced));
+        Assert.Equal(DeferredPerformanceDecision.None, tracker.DecideDeferredPerformance(balanced));
+        tracker.RestoreUnsubmittedDeferredPerformance();
+        Assert.Equal(DeferredPerformanceDecision.Apply, tracker.DecideDeferredPerformance(balanced));
+
+        tracker.RecordDeferredPerformanceChoice();
+        Assert.Equal(DeferredPerformanceDecision.Kept, tracker.DecideDeferredPerformance(balanced with { Performance = null }));
+        Assert.Equal(DeferredPerformanceDecision.None, tracker.DecideDeferredPerformance(balanced));
+
+        tracker.RecordDeferredPerformanceChoice();
+        Assert.Equal(DeferredPerformanceDecision.Kept,
+            tracker.DecideDeferredPerformance(balanced with { Performance = PerformancePreset.Silent }));
+
+        // Away and back: an observed change drops the choice even though the
+        // fresh preset matches again.
+        tracker.RecordDeferredPerformanceChoice();
+        tracker.Observe(balanced with { Performance = PerformancePreset.Silent });
+        tracker.Observe(balanced);
+        Assert.Equal(DeferredPerformanceDecision.Kept, tracker.DecideDeferredPerformance(balanced));
+
+        // An external change before the choice does not drop it.
         Assert.Contains(DeviceSubsystem.Performance, tracker.ExternalChanges);
-        Assert.True(tracker.PerformanceChangedSinceIntent(PerformancePreset.Silent));
+        tracker.RecordDeferredPerformanceChoice();
+        Assert.Equal(DeferredPerformanceDecision.Apply, tracker.DecideDeferredPerformance(balanced));
 
-        tracker.RecordExplicitPerformanceIntent();
-        Assert.False(tracker.PerformanceChangedSinceIntent(PerformancePreset.Silent));
-        Assert.True(tracker.PerformanceChangedSinceIntent(PerformancePreset.Balanced));
-        Assert.Contains(DeviceSubsystem.Performance, tracker.ExternalChanges);
+        ConfirmedDeviceState custom = balanced with
+        {
+            Performance = PerformancePreset.Custom,
+            CustomPerformance = new CustomPerformanceSettings(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+        };
+        tracker.Observe(custom);
+        tracker.RecordDeferredPerformanceChoice();
+        Assert.Equal(DeferredPerformanceDecision.Kept, tracker.DecideDeferredPerformance(custom with
+        {
+            CustomPerformance = new CustomPerformanceSettings(CustomPerformanceLevel.High, CustomPerformanceLevel.Low),
+        }));
+        tracker.RecordDeferredPerformanceChoice();
+        tracker.Observe(custom with
+        {
+            CustomPerformance = new CustomPerformanceSettings(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Low),
+        });
+        Assert.Equal(DeferredPerformanceDecision.Kept, tracker.DecideDeferredPerformance(custom with
+        {
+            CustomPerformance = new CustomPerformanceSettings(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Low),
+        }));
 
-        tracker.Observe(State(PerformancePreset.Performance, FanMode.Automatic, Battery(80), DefaultLighting));
+        tracker.RecordDeferredPerformanceChoice();
         tracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
-        Assert.False(tracker.PerformanceChangedSinceIntent(PerformancePreset.Performance));
-        Assert.DoesNotContain(DeviceSubsystem.Performance, tracker.ExternalChanges);
-
-        tracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
-        tracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: false);
-        Assert.False(tracker.PerformanceChangedSinceIntent(PerformancePreset.Performance));
+        Assert.Equal(DeferredPerformanceDecision.None, tracker.DecideDeferredPerformance(custom));
+        tracker.RecordDeferredPerformanceChoice();
+        tracker.ClearDeferredPerformanceChoice();
+        Assert.False(tracker.HasDeferredPerformanceChoice);
     }
 
     private static ConfirmedBatteryState Battery(int limit) => new(true, limit, false);

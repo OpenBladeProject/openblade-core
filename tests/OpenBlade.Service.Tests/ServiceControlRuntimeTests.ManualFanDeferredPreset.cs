@@ -96,11 +96,21 @@ public sealed partial class ServiceControlRuntimeTests
     }
 
     // Rule 5: a preset changed outside OpenBlade while fans were manual stays
-    // as it is when the user returns fans to Automatic.
-    [Fact]
-    public async Task ExactReportingBackendWithoutDirectTransitions_KeepsExternalPresetChangeOnExit()
+    // as it is when the user returns fans to Automatic. Without a deferred
+    // choice nothing is reported; a deferred choice made before the change is
+    // dropped and the result says why.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExactReportingBackendWithoutDirectTransitions_KeepsExternalPresetChangeOnExit(bool choseFirst)
     {
         (TestContext context, List<string> writes) = await EnterExactBalancedFixedFansAsync(0x02A0);
+        if (choseFirst)
+        {
+            Assert.Equal(ControlOperationStatus.Stored, (await context.Runtime.SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(PerformancePreset.Performance, OverrideLifetime.UntilPowerSourceChange),
+                default)).Status);
+        }
         context.Device.ConfirmedState = context.Device.ConfirmedState with
         {
             Performance = PerformancePreset.Silent,
@@ -114,7 +124,8 @@ public sealed partial class ServiceControlRuntimeTests
             FanControlSettings.Default, default);
 
         Assert.True(automatic.Status == ControlOperationStatus.Applied, automatic.Message);
-        Assert.Contains(ControlCoordinator.ExternalPerformanceKeptMessage, automatic.Message, StringComparison.Ordinal);
+        Assert.Equal(choseFirst, automatic.Message.Contains(
+            ControlCoordinator.ExternalPerformanceKeptMessage, StringComparison.Ordinal));
         Assert.Equal(["Fans:Automatic"], writes);
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
         Assert.Equal(PerformancePreset.Silent, status.ConfirmedState!.Performance);

@@ -2312,7 +2312,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             {
                 await SetPerformanceOverrideCoreAsync(value, cancellationToken)
                     .ConfigureAwait(false);
-                driftTracker.RecordExplicitPerformanceIntent();
+                // A newer choice supersedes a deferred one; the deferral
+                // below records it again when this choice is deferred too.
+                driftTracker.ClearDeferredPerformanceChoice();
             },
             (coordinator, desired, cancellationToken) =>
                 coordinator.ApplyPerformanceTransitionOutcomeAsync(
@@ -2325,10 +2327,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             // The staged snapshot can still carry the previous desired state, so
             // the deferral decision resolves the stored intent again. A cleared
             // override resolves to its profile, including a Custom profile.
-            deferHardwareApply: (powerSource, status) => DeferredPerformanceIntentMessage(
-                powerSource,
-                status,
-                ResolveAutomationDesired(status.ConfirmedState ?? UnknownConfirmedState)),
+            deferHardwareApply: (powerSource, status) => RecordDeferredPerformanceChoice(
+                DeferredPerformanceIntentMessage(
+                    powerSource,
+                    status,
+                    ResolveAutomationDesired(status.ConfirmedState ?? UnknownConfirmedState))),
             stillControlsSession: stillControlsSession,
             clearsExplicitOverride: value is null,
             thermalComponentResolver: desired =>
@@ -2485,7 +2488,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 {
                     await SetPerformanceOverrideCoreAsync(stagedOverride, token)
                         .ConfigureAwait(false);
-                    driftTracker.RecordExplicitPerformanceIntent();
+                    _ = RecordDeferredPerformanceChoice(deferredMessage);
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
@@ -2540,7 +2543,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         await SetPerformanceOverrideCoreAsync(
                             stagedOverride,
                             cancellationToken).ConfigureAwait(false);
-                        driftTracker.RecordExplicitPerformanceIntent();
+                        driftTracker.ClearDeferredPerformanceChoice();
                     },
                     stillControlsSession: stillControlsSession,
                     thermalExecutionOptions: shortcutTransition
@@ -2649,8 +2652,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     performanceIntent,
                     customPerformanceIntent,
                     cancellationToken,
-                    performanceChangedSinceIntent: fresh =>
-                        driftTracker.PerformanceChangedSinceIntent(fresh));
+                    deferredPerformance: driftTracker);
             },
             token,
             value is null
@@ -14295,7 +14297,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 {
                     await RelinquishLightingOwnershipCoreAsync(GetStatus(), token).ConfigureAwait(false);
                 }
-                const string deferred = "Override cleared. Power-profile application waits for adapter classification.";
+                // A choice deferred under manual fans stays pending: this
+                // cleanup hands fans back without a performance write, and the
+                // next fan request that finds fans Automatic applies it.
+                string deferred = subsystem == DeviceSubsystem.Fans
+                    && driftTracker.HasDeferredPerformanceChoice
+                    && ControlCoordinator.ReconcilesPerformanceOnAutomaticFans(staged.Capabilities)
+                        ? "Override cleared. Power-profile application and the stored performance choice wait for adapter classification."
+                        : "Override cleared. Power-profile application waits for adapter classification.";
                 PublishScopedStatus(powerSource, GetStatus().ConfirmedState, staged.Capabilities,
                     deferred, staged.DeviceVerified, staged.WritesBlocked);
                 return new(ControlOperationStatus.Stored, deferred);
@@ -18549,6 +18558,15 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             exclusions.Remove(DeviceSubsystem.Lighting);
         }
         return pendingWriteConfirmations.GetWriteExclusions(exclusions);
+    }
+
+    private string? RecordDeferredPerformanceChoice(string? deferredMessage)
+    {
+        if (deferredMessage is not null)
+        {
+            driftTracker.RecordDeferredPerformanceChoice();
+        }
+        return deferredMessage;
     }
 
     // A preset chosen under confirmed manual fans waits for Automatic on every

@@ -4,12 +4,13 @@ using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
 
-// The reconciliation rule for reporting backends without direct manual
-// transitions: whenever fans are or become Automatic, the applied preset is
-// reconciled to the desired intent from the fresh readback, unless that
-// readback shows an external preset change newer than the user's last explicit
-// performance choice. Each test drives the real runtime with the exact
-// source-reviewed capabilities.
+// The deferred-choice rule for reporting backends without direct manual
+// transitions: a performance choice stored under manual fans is applied once,
+// when a fan request next leaves fans Automatic, only if no performance change
+// (preset or Custom levels) was observed since the choice and the fresh preset
+// is known. Otherwise it is dropped and the mode is kept. Without a pending
+// choice a fan request writes no performance. Each test drives the real
+// runtime with the exact source-reviewed capabilities.
 public sealed partial class ServiceControlRuntimeTests
 {
     private sealed class MutableFanTemperatureSource(FanTemperatureReadings readings)
@@ -29,12 +30,13 @@ public sealed partial class ServiceControlRuntimeTests
         FanMode mode = FanMode.Fixed,
         PowerSource powerSource = PowerSource.PluggedIn,
         IFanTemperatureSource? temperatures = null,
-        Func<DeviceCapabilities, ProfileSet, ProfileSet>? profiles = null)
+        Func<DeviceCapabilities, ProfileSet, ProfileSet>? profiles = null,
+        Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null)
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
         DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(model, enabled: true);
         TestContext context = CreateContext(providerAvailable: true, initialPowerSource: powerSource,
-            fanTemperatureSource: temperatures,
+            fanTemperatureSource: temperatures, transitionRetryDelay: transitionRetryDelay,
             profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities));
         context.Device.Capabilities = capabilities;
         context.Device.FanTargetsAvailable = true;
@@ -165,8 +167,8 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.DoesNotContain(DeviceSubsystem.Performance, context.Runtime.GetStatus().ExternalChanges);
     }
 
-    // G2: a latch that no longer describes the hardware does not suppress the
-    // intent; the firmware already holds it, so nothing is written.
+    // G2 and H3: without a deferred choice the exit writes only the fans,
+    // whatever the external-change latch says.
     [Fact]
     public async Task StaleExternalLatchWithFirmwareBackAtIntentWritesOnlyFans()
     {
@@ -185,9 +187,9 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
     }
 
-    // G3: an external change that no observation recorded yet is still newer
-    // than the intent when the fresh readback shows it, with or without a
-    // deferred choice made before it.
+    // G3: an external change that no observation recorded yet, seen first in
+    // the fan step's fresh readback, stays. A deferred choice made before it is
+    // dropped with the kept message; without one nothing is reported.
     [Theory]
     [InlineData(null)]
     [InlineData(PerformancePreset.Performance)]
@@ -203,15 +205,16 @@ public sealed partial class ServiceControlRuntimeTests
         ControlOperationResult automatic = await ReturnFansToAutomaticAsync(context);
 
         Assert.True(automatic.Status == ControlOperationStatus.Applied, automatic.Message);
-        Assert.Contains(ControlCoordinator.ExternalPerformanceKeptMessage, automatic.Message, StringComparison.Ordinal);
+        Assert.Equal(chosenFirst is not null, automatic.Message.Contains(
+            ControlCoordinator.ExternalPerformanceKeptMessage, StringComparison.Ordinal));
         Assert.Equal(["Fans:Automatic"], writes);
         Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
         Assert.Contains(DeviceSubsystem.Performance, context.Runtime.GetStatus().ExternalChanges);
     }
 
     // G4: when the first exit returned fans to Automatic but the preset write
-    // failed, a retry decides from the fresh preset, not from the previous fan
-    // mode, and applies the deferred intent.
+    // was known not to be submitted, the choice stays pending and the retry
+    // applies it.
     [Fact]
     public async Task RetryAfterFailedExitAppliesDeferredPreset()
     {

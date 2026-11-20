@@ -6,6 +6,16 @@ namespace OpenBlade.Service;
 // EffectiveDesired is the post-normalization, post-capability-filtered state
 // used by the coordinator. Runtime reconciliation must not compare a later
 // observation against optional intent that the coordinator dropped.
+// What a fan request that leaves fans Automatic does with a performance choice
+// deferred under manual fans: nothing is pending, apply it, or keep the
+// externally changed mode and drop it.
+internal enum DeferredPerformanceDecision
+{
+    None,
+    Apply,
+    Kept,
+}
+
 internal sealed record ScopedApplyOutcome(
     ControlResult Result,
     ConfirmedDeviceState? Readback,
@@ -495,12 +505,11 @@ public sealed class ControlCoordinator
             SupportsDirectManualFanTransitions: true,
         };
 
-    // A reporting backend without direct transitions holds the preset that was
-    // applied when its fans went manual and reports it independently. Any
-    // request that ends with Automatic fans reconciles that applied preset to
-    // the desired intent from the fan step's fresh readback, whatever the
-    // previous fan mode was (a retry after a failed exit included), unless the
-    // readback shows an external preset change newer than the intent.
+    // A reporting backend without direct transitions holds and reports the
+    // applied preset under manual fans and defers a preset chosen there. Only
+    // that deferred choice is written by a fan request, once, when the request
+    // leaves fans Automatic (a retry after a failed exit included), and only
+    // while no performance change was observed since the choice.
     internal static bool ReconcilesPerformanceOnAutomaticFans(
         DeviceCapabilities? capabilities) =>
         capabilities is
@@ -511,10 +520,11 @@ public sealed class ControlCoordinator
 
     // Whether a fan request may write the performance intent after fans reach
     // Automatic. Shared selectors hide the preset under manual fans, so their
-    // exit from a manual mode always restores the saved intent, as before;
-    // reporting backends without direct transitions reconcile on every request
-    // to Automatic. The external-change check is applied separately, from the
-    // fresh readback, so this stays a declaration superset.
+    // exit from a manual mode always restores the saved intent, as before.
+    // On reporting backends without direct transitions any request to
+    // Automatic may apply a pending deferred choice; whether one is pending
+    // and still admissible is decided from the fresh readback, so this stays a
+    // declaration superset.
     internal static bool FanExitRestoresPerformance(
         DeviceCapabilities? capabilities,
         FanMode previous,
@@ -974,7 +984,7 @@ public sealed class ControlCoordinator
         PerformancePreset performanceIntent,
         CustomPerformanceSettings? customPerformanceIntent,
         CancellationToken cancellationToken,
-        Func<PerformancePreset?, bool>? performanceChangedSinceIntent = null)
+        ConfirmedStateDriftTracker? deferredPerformance = null)
     {
         var writeAttempted = new HashSet<DeviceSubsystem>();
         var confirmedCoupledWrites = new HashSet<DeviceSubsystem>();
@@ -988,7 +998,7 @@ public sealed class ControlCoordinator
                 writeAttempted,
                 confirmedCoupledWrites,
                 cancellationToken,
-                performanceChangedSinceIntent).ConfigureAwait(false);
+                deferredPerformance).ConfigureAwait(false);
             return outcome with
             {
                 ConfirmedCoupledWrites = new HashSet<DeviceSubsystem>(
@@ -1022,7 +1032,7 @@ public sealed class ControlCoordinator
         HashSet<DeviceSubsystem> writeAttempted,
         HashSet<DeviceSubsystem> confirmedCoupledWrites,
         CancellationToken cancellationToken,
-        Func<PerformancePreset?, bool>? performanceChangedSinceIntent)
+        ConfirmedStateDriftTracker? deferredPerformance)
     {
         ArgumentNullException.ThrowIfNull(previous);
         ArgumentNullException.ThrowIfNull(requested);
@@ -1109,11 +1119,11 @@ public sealed class ControlCoordinator
 
         if (directPresetRangedEntry)
         {
-            // Between manual modes on a backend without direct transitions, the
-            // firmware keeps the preset applied when fans went manual, and a
-            // preset chosen since waits for Automatic. The manual target then
-            // follows the freshly read applied preset's range, not the deferred
-            // intent's. Entry from Automatic still requires the intent itself.
+            // Between manual modes on a backend without direct transitions, a
+            // preset chosen under manual fans is deferred, so the target follows
+            // the range of the preset the fresh read reports, whoever set it.
+            // Direct backends apply the intent under manual fans, and entry
+            // from Automatic still requires the intent preset itself.
             bool followsAppliedPreset = !supportsDirectManualFanTransitions
                 && DeviceSubsystemOrder.IsManualFanMode(previous.Mode);
             if (!followsAppliedPreset && !PresetRangeAdmits(presetRange, requested))
@@ -1256,19 +1266,30 @@ public sealed class ControlCoordinator
             return fans;
         }
 
-        // Rule 5: a fresh readback whose preset differs from the one held when
-        // the intent became authoritative is an external change newer than
-        // that intent, observed or not, and stays as it is.
-        if (reconcilesAppliedPreset
-            && performanceChangedSinceIntent?.Invoke(fans.Readback?.Performance) == true)
+        if (reconcilesAppliedPreset)
         {
-            return fans with
+            // Only a pending deferred choice is written. Rule 5: a performance
+            // change observed since that choice, or seen first in this fresh
+            // readback, stays as it is, and so does an unknown fresh preset
+            // (HyperBoost reads none).
+            DeferredPerformanceDecision decision =
+                deferredPerformance?.DecideDeferredPerformance(fans.Readback)
+                    ?? DeferredPerformanceDecision.None;
+            if (decision == DeferredPerformanceDecision.None)
             {
-                Result = fans.Result with
+                return fans;
+            }
+
+            if (decision == DeferredPerformanceDecision.Kept)
+            {
+                return fans with
                 {
-                    Message = $"{fans.Result.Message} {ExternalPerformanceKeptMessage}",
-                },
-            };
+                    Result = fans.Result with
+                    {
+                        Message = $"{fans.Result.Message} {ExternalPerformanceKeptMessage}",
+                    },
+                };
+            }
         }
 
         ScopedApplyOutcome performance = await RunThermalStepAsync(
@@ -1285,6 +1306,14 @@ public sealed class ControlCoordinator
             confirmedCoupledWrites,
             DeviceSubsystem.Performance,
             performance);
+        if (reconcilesAppliedPreset
+            && performance.Result.Status is not (
+                ControlResultStatus.Applied or ControlResultStatus.Unchanged)
+            && (performance.WriteSubmissionState == WriteSubmissionState.KnownNotApplied
+                || !performance.WriteAttempted && performance.WriteSubmissionState is null))
+        {
+            deferredPerformance?.RestoreUnsubmittedDeferredPerformance();
+        }
         if (performance.Result.Status is not (
                 ControlResultStatus.Applied or ControlResultStatus.Unchanged))
         {
