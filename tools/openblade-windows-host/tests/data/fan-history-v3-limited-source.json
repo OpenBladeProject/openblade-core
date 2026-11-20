@@ -1,0 +1,239 @@
+{
+  "description": "Selector 2 (Performance) on source 2 (limited external power). Rust FanRecord::validate and managed WindowsNativeFanHistory both admit it; readers before d6ce3339 refuse it.",
+  "fan": {
+    "contract": "service-battery-policy-v1/rz09-0581-fan-linked-v3",
+    "requested": {
+      "settings": null,
+      "value": {
+        "lifetime": 1,
+        "value": 1
+      }
+    },
+    "intent": {
+      "mode": 1,
+      "rpm": 3700
+    },
+    "selector": 2,
+    "entry": true,
+    "source": 2,
+    "preflight": [
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        4
+      ]
+    ],
+    "ids": [
+      [
+        5,
+        6
+      ],
+      [
+        7,
+        8
+      ],
+      [
+        9,
+        10
+      ],
+      [
+        11,
+        12
+      ],
+      [
+        13,
+        14
+      ],
+      [
+        15,
+        16
+      ]
+    ],
+    "cleanup": [
+      [
+        17,
+        18
+      ],
+      [
+        19,
+        20
+      ],
+      [
+        21,
+        22
+      ],
+      [
+        23,
+        24
+      ],
+      [
+        25,
+        26
+      ]
+    ]
+  },
+  "canonical": "{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}",
+  "intent": "b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684",
+  "released": "{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":0,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":10,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":11,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":12,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":13,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":14,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":15,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":16,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":17,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":30,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":31,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":40,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":41,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":42,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":43,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n{\"request\":\"aaaaaaaa-bbbb-cccc-dddd-000000000001\",\"owner\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"user_sid\":\"S-1-5-21-111-222-333-1002\",\"caller_pid\":42,\"session\":7,\"requested\":null,\"destination\":0,\"intent\":\"b4e0b9890081a7a0b1c00368d1302b2616282ac2ef56290ec1ce48770d3fe684\",\"progress\":50,\"fan\":{\"contract\":\"service-battery-policy-v1/rz09-0581-fan-linked-v3\",\"requested\":{\"settings\":null,\"value\":{\"lifetime\":1,\"value\":1}},\"intent\":{\"mode\":1,\"rpm\":3700},\"selector\":2,\"entry\":true,\"source\":2,\"preflight\":[[1,2],[3,4]],\"ids\":[[5,6],[7,8],[9,10],[11,12],[13,14],[15,16]],\"cleanup\":[[17,18],[19,20],[21,22],[23,24],[25,26]]}}\n",
+  "rejected": [
+    {
+      "name": "unknownSource",
+      "fan": {
+        "contract": "service-battery-policy-v1/rz09-0581-fan-linked-v3",
+        "requested": {
+          "settings": null,
+          "value": {
+            "lifetime": 1,
+            "value": 1
+          }
+        },
+        "intent": {
+          "mode": 1,
+          "rpm": 3700
+        },
+        "selector": 2,
+        "entry": true,
+        "source": 1,
+        "preflight": [
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            4
+          ]
+        ],
+        "ids": [
+          [
+            5,
+            6
+          ],
+          [
+            7,
+            8
+          ],
+          [
+            9,
+            10
+          ],
+          [
+            11,
+            12
+          ],
+          [
+            13,
+            14
+          ],
+          [
+            15,
+            16
+          ]
+        ],
+        "cleanup": [
+          [
+            17,
+            18
+          ],
+          [
+            19,
+            20
+          ],
+          [
+            21,
+            22
+          ],
+          [
+            23,
+            24
+          ],
+          [
+            25,
+            26
+          ]
+        ]
+      }
+    },
+    {
+      "name": "unknownSelector",
+      "fan": {
+        "contract": "service-battery-policy-v1/rz09-0581-fan-linked-v3",
+        "requested": {
+          "settings": null,
+          "value": {
+            "lifetime": 1,
+            "value": 1
+          }
+        },
+        "intent": {
+          "mode": 1,
+          "rpm": 3700
+        },
+        "selector": 1,
+        "entry": true,
+        "source": 2,
+        "preflight": [
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            4
+          ]
+        ],
+        "ids": [
+          [
+            5,
+            6
+          ],
+          [
+            7,
+            8
+          ],
+          [
+            9,
+            10
+          ],
+          [
+            11,
+            12
+          ],
+          [
+            13,
+            14
+          ],
+          [
+            15,
+            16
+          ]
+        ],
+        "cleanup": [
+          [
+            17,
+            18
+          ],
+          [
+            19,
+            20
+          ],
+          [
+            21,
+            22
+          ],
+          [
+            23,
+            24
+          ],
+          [
+            25,
+            26
+          ]
+        ]
+      }
+    }
+  ]
+}

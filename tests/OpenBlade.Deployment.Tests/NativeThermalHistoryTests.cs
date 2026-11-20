@@ -343,6 +343,27 @@ public sealed class NativeThermalHistoryTests : IDisposable
         Assert.False(WindowsNativeFanHistory.Follows(v.GetProperty("fan"), 31, 51));
     }
 
+    // The Rust FanRecord consumes the same vector, so the two readers cannot drift.
+    [Fact]
+    public void PerformanceSelectorOnLimitedPowerPassesReadAndRetiredOwner()
+    {
+        using var vector = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fan-history-v3-limited-source.json")));
+        var v = vector.RootElement;
+        Assert.Equal(v.GetProperty("canonical").GetString(), Encoding.UTF8.GetString(WindowsNativeFanHistory.Canonical(v.GetProperty("fan"))));
+        Assert.Equal(v.GetProperty("intent").GetString(), NativeCanonical.Digest(WindowsNativeFanHistory.Canonical(v.GetProperty("fan"))));
+        foreach (var rejected in v.GetProperty("rejected").EnumerateArray())
+        {
+            Assert.Throws<IOException>(() => WindowsNativeFanHistory.Canonical(rejected.GetProperty("fan")));
+        }
+        using var files = ManagedMailboxCorrectionTests.Bootstrap();
+        var record = new NativeEpochRecord(NativeEpochPhase.Retired, new string('2', 32), new string('0', 64), 1, new string('1', 32), new string('a', 64), new string('b', 32), new string('3', 64) + "-service", new string('c', 64) + "-agent", new string('0', 64), new string('d', 64));
+        byte[] active = Owner(files, record, new string('7', 64));
+        var original = new WindowsNativeTrustLifecycle.OwnerReference(record.Installation, record.Epoch, record.ServiceId, "17:1", new string('7', 64), NativeCanonical.Digest(active));
+        Thermal(files, Bytes(v.GetProperty("released").GetString()!));
+        _ = WindowsNativeThermalHistory.Read(files, [original]);
+        using var retired = WindowsNativeTrustLifecycle.AcquireRetiredOwner(files);
+    }
+
     public static IEnumerable<object[]> RetainedFanCallerScopeCases()
     {
         using var vectors = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fan-caller-scope-chains.json")));

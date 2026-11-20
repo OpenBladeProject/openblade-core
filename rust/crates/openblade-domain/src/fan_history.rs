@@ -218,6 +218,28 @@ mod tests {
             "retained owner scope mismatches: {mismatches:?}"
         );
     }
+    /// The managed WindowsNativeFanHistory reader consumes the same vector.
+    #[test]
+    fn performance_selector_on_limited_power_matches_the_managed_reader() {
+        let v: Value = serde_json::from_str(include_str!(
+            "../../../../tools/openblade-windows-host/tests/data/fan-history-v3-limited-source.json"
+        ))
+        .unwrap();
+        let r: FanRecord = serde_json::from_value(v["fan"].clone()).unwrap();
+        assert_eq!((r.selector, r.source), (2, 2));
+        r.validate().unwrap();
+        assert_eq!(
+            serde_json::to_string(&r).unwrap(),
+            v["canonical"].as_str().unwrap()
+        );
+        assert_eq!(r.hash().unwrap(), v["intent"]);
+        let released = v["released"].as_str().unwrap().as_bytes();
+        assert!(crate::thermal_history::handback_complete(released).unwrap());
+        for case in v["rejected"].as_array().unwrap() {
+            let bad: FanRecord = serde_json::from_value(case["fan"].clone()).unwrap();
+            assert!(bad.validate().is_err(), "{}", case["name"]);
+        }
+    }
     #[test]
     fn complete_cross_scope_histories_are_rejected_and_v3_auto_proof_is_exact() {
         let legacy: Value = serde_json::from_str(include_str!(
