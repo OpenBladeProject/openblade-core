@@ -437,10 +437,11 @@ unchanged: a failed `manual-overrides.json.pending` and a pending journal stay
 on disk as the evidence the handback to managed preserves, and the installed
 store refuses to discard either.
 
-Managed is the reference, and three shared vector files under
+Managed is the reference, and four shared vector files under
 `tools/openblade-windows-host/tests/data` pin it:
 `profile-set-vectors-v27.json` (decode, validation, reply and stored bytes),
-`profile-aggregate-vectors.json` (loading and migrating schemas 1 to 27) and
+`profile-aggregate-vectors.json` (loading and migrating schemas 1 to 27),
+`profile-ordinal-ignore-case.json` (the comparison that finds duplicates) and
 `profile-capabilities-rz09-0581.json`. The managed tests
 `ServiceControlRuntimeTests.NativeProfile*` record every expectation from the
 IPC codec, the production validator, `UpdateProfilesAsync` and
@@ -458,12 +459,15 @@ Differences from managed:
 - Member names are matched exactly. Managed's IPC reader ignores letter case;
   the Tray writes camelCase.
 - Duplicate application executable paths and THX rule names are found by
-  `text::same_ordinal_ignoring_case`, which the vectors pin to managed's
-  `OrdinalIgnoreCase`: one character against one upper-case character, never
-  an expansion (a sharp s is not `SS`) and never an ASCII letter for a
-  character outside ASCII (a dotless i is not `I`). It rests on the Rust
-  standard library's case table, so a letter whose case pair only one of the
-  two tables knows can still differ.
+  `text::same_ordinal_ignoring_case`, which is managed's `OrdinalIgnoreCase`
+  as a table: one character against one, never an expansion (a sharp s is not
+  `SS`) and never an ASCII letter for a character outside ASCII (a dotless i
+  is not `I`). A managed test records every set of characters the comparer
+  holds equal in `profile-ordinal-ignore-case.json`, and the Rust test checks
+  every character against it. The table is managed's as of the .NET runtime
+  that recorded it. When a newer runtime joins more letters the managed test
+  fails; record the vector again and run the domain vector tests with the
+  same variable set to rewrite `profile_set/ordinal_case.rs`.
 - The saved aggregate's reader and the match of the foreground application
   against a saved profile still use the Windows ordinal comparison, as the
   earlier lanes do. It keeps apart some pairs managed joins (final sigma, the
@@ -512,11 +516,11 @@ first save.
 
 Packaging refuses this composition. `build.rs` gives a build with
 `service-profiles-v1` the temporary-charge capabilities followed by
-`service-profiles-v1`, and neither package reader
-(`native_package.rs`, `WindowsNativePackage.RequireCapabilities`) admits that
-string, so a profile-serving image cannot be packaged, bound or installed as
-the temporary-charge composition it extends. Tests on both sides pin the
-refusal. Admitting it belongs to the packaging stage.
+`service-profiles-v1`, and both package readers (`native_package.rs`,
+`WindowsNativePackage.RequireCapabilities`) refuse that feature and that
+capability by name, whatever else a record claims. A profile-serving image
+cannot be packaged, bound or installed, as the temporary-charge composition it
+extends or as anything else. Tests on both sides pin the refusal. Admitting it belongs to the packaging stage.
 
 ## Submission, ambiguity and finite transport lifetime
 
@@ -589,9 +593,9 @@ injected memory-only metadata, caller, custody, files and ports. Separate prelis
 own-user private-file tests use the actual ProtectedFiles and durable Store,
 including first reservation, atomic journal replacement, exclusive sharing,
 restart and cross-SID refusal. The profile transaction also runs on real files:
-`profile_storage_real_tests.rs` drives the actual ProtectedFiles, with only the
-security verifier injected, in a private directory under the temporary directory,
-through a refused rename, leftover and held staging files, a recorded transaction
+the eight tests in `profile_storage_real_tests.rs` drive the actual
+ProtectedFiles, with only the security verifier injected, in a private directory
+under the temporary directory, through a refused rename, leftover and held staging files, a recorded transaction
 and exact-byte deletion. Constructors take those inputs before any default
 root resolution. Real controller/token/session/SCM/HID suppliers are compiled,
 not executed. Managed tests parse emitted native replies with the actual v85 codec
