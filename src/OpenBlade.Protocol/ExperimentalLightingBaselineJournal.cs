@@ -157,16 +157,22 @@ internal sealed class ExperimentalLightingBaselineJournal
 
     private static void ValidateBaseline(ExperimentalLightingBaseline baseline)
     {
+        if (!IsRestorable(baseline))
+        { throw new InvalidDataException("Lighting baseline is not a complete built-in setting."); }
+    }
+
+    internal static bool IsRestorable(ExperimentalLightingBaseline baseline)
+    {
+        ArgumentNullException.ThrowIfNull(baseline);
         LightingSettings settings = baseline.Settings;
         // No reviewed LED38 setter changes record brightness, so its saved
         // destination is always the nominal full-brightness setting.
-        if (!IsCompleteBuiltIn(settings)
-            || settings.Effect != LightingEffect.Off
-                && settings.Brightness != LightingBrightnessProtocol.RawToPercent(baseline.RawBrightness)
-            || baseline.VaporChamber is { } vaporChamber
-                && (!IsCompleteBuiltIn(vaporChamber)
-                    || vaporChamber.Effect != LightingEffect.Off && vaporChamber.Brightness != 100))
-        { throw new InvalidDataException("Lighting baseline is not a complete built-in setting."); }
+        return IsCompleteBuiltIn(settings)
+            && (settings.Effect == LightingEffect.Off
+                || settings.Brightness == LightingBrightnessProtocol.RawToPercent(baseline.RawBrightness))
+            && (baseline.VaporChamber is not { } vaporChamber
+                || IsCompleteBuiltIn(vaporChamber)
+                    && (vaporChamber.Effect == LightingEffect.Off || vaporChamber.Brightness == 100));
     }
 
     private static bool IsCompleteBuiltIn(LightingSettings settings) =>

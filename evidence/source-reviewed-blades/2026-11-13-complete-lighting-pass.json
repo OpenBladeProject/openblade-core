@@ -141,7 +141,13 @@
         "Breathing",
         "Wave",
         "Spectrum",
-        "Static"
+        "Static",
+        "Fire",
+        "Wheel",
+        "Starlight",
+        "Tidal",
+        "AmbientAwareness",
+        "AudioMeter"
       ],
       "breathingColorModes": [
         "Random",
@@ -159,13 +165,14 @@
       "independentFieldsRetained": true,
       "independentFieldControls": true,
       "geometry": "MCU frame bounds 6x16",
-      "frameTransport": "Source bounds recorded; no custom-frame backend or ownership lifecycle admitted in this change.",
+      "frameTransport": "03/0B rows 0..5, 52-byte payload [FF,row,0,15,RGB*16], then volatile 0F/02 [0,5,8] selection confirmed by 0F/82 mode 8. 0F/03 is never sent. 0F/82 is re-read before every later frame batch; any other mode stops host frames without a write. See 2026-11-19-rz09-0301-keyboard-frames.json.",
+      "frameReview": "2026-11-19-rz09-0301-keyboard-frames.json",
       "keyMap": "No exact physical input-to-light map admitted.",
       "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
-      "restoration": "Per-submission admission, independent effect confirmation; legacy setters require fresh active-brightness read then requested target. No framebuffer restoration claim.",
+      "restoration": "Durable complete built-in baseline (Off, Static, Breathing or Wave) plus exact raw active brightness before frame writes; Spectrum, custom mode 8 and modes 5..7 refuse host frames. Restore uses the flag-clearing legacy 03/0A setter with effect readback, then re-reads brightness and restores it only if the setter changed it. Restoration is skipped and the owner faults when the selection no longer reads mode 8. No pixel readback claim.",
       "gaps": [
-        "Custom-frame ownership, lifecycle and pixel restoration backend is not admitted.",
-        "Key input mapping and advanced key-triggered controls need their own source review."
+        "Custom pixels are write-only; a GPIO event can report the saved mode while the frame stays visible.",
+        "Key input mapping, Reactive, Ripple and sequences need their own source review."
       ],
       "physicalValidation": "Pending for these additions."
     },
@@ -338,7 +345,13 @@
         "Off",
         "Breathing",
         "Wave",
-        "Spectrum"
+        "Spectrum",
+        "Fire",
+        "Wheel",
+        "Starlight",
+        "Tidal",
+        "AmbientAwareness",
+        "AudioMeter"
       ],
       "breathingColorModes": [
         "Random",
@@ -356,14 +369,15 @@
       "independentFieldsRetained": false,
       "independentFieldControls": true,
       "geometry": "MCU frame bounds 6x16",
-      "frameTransport": "Source bounds recorded; no custom-frame backend or ownership lifecycle admitted in this change.",
+      "frameTransport": "03/0B rows 0..5, 52-byte payload [FF,row,0,15,RGB*16], then volatile 0F/02 [0,5,8] selection confirmed by 0F/82 mode 8. 0F/03 is never sent. 0F/82 is re-read before every later frame batch; any other mode stops host frames without a write. See 2026-11-19-rz09-0421-keyboard-frames.json.",
+      "frameReview": "2026-11-19-rz09-0421-keyboard-frames.json",
       "keyMap": "No exact physical input-to-light map admitted.",
       "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
-      "restoration": "Per-submission admission, independent effect confirmation; legacy setters require fresh active-brightness read then requested target. No framebuffer restoration claim.",
+      "restoration": "Durable complete built-in baseline (Off, Static, Breathing or Wave) plus exact raw active brightness before frame writes; Spectrum, custom mode 8 and modes 5..7 refuse host frames. Restore uses the flag-clearing legacy 03/0A setter with effect readback, then re-reads brightness and restores it only if the setter changed it. Restoration is skipped and the owner faults when the selection no longer reads mode 8. No pixel readback claim.",
       "gaps": [
         "Static hidden palette selector is not readable.",
-        "Custom-frame ownership, lifecycle and pixel restoration backend is not admitted.",
-        "Key input mapping and advanced key-triggered controls need their own source review."
+        "Custom pixels are write-only; a GPIO event can report the saved mode while the frame stays visible.",
+        "Key input mapping, Reactive, Ripple and sequences need their own source review."
       ],
       "physicalValidation": "Pending for these additions."
     },
@@ -384,7 +398,13 @@
         "Breathing",
         "Wave",
         "Spectrum",
-        "Static"
+        "Static",
+        "Fire",
+        "Wheel",
+        "Starlight",
+        "Tidal",
+        "AmbientAwareness",
+        "AudioMeter"
       ],
       "breathingColorModes": [
         "Random",
@@ -402,13 +422,14 @@
       "independentFieldsRetained": false,
       "independentFieldControls": true,
       "geometry": "MCU frame bounds 6x16",
-      "frameTransport": "Source bounds recorded; no custom-frame backend or ownership lifecycle admitted in this change.",
+      "frameTransport": "03/0B rows 0..5, 52-byte payload [FF,row,0,15,RGB*16], then volatile 0F/02 [0,5,8] selection confirmed by 0F/82 mode 8. 0F/03 is never sent. 0F/82 is re-read before every later frame batch; any other mode stops host frames without a write. See 2026-11-19-rz09-0423-keyboard-frames.json.",
+      "frameReview": "2026-11-19-rz09-0423-keyboard-frames.json",
       "keyMap": "No exact physical input-to-light map admitted.",
       "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
-      "restoration": "Per-submission admission, independent effect confirmation; legacy setters require fresh active-brightness read then requested target. No framebuffer restoration claim.",
+      "restoration": "Durable complete built-in baseline (Off, Static, Breathing or Wave) plus exact raw active brightness before frame writes; Spectrum, custom mode 8 and modes 5..7 refuse host frames. Restore uses the flag-clearing legacy 03/0A setter with effect readback, then re-reads brightness and restores it only if the setter changed it. Restoration is skipped and the owner faults when the selection no longer reads mode 8. No pixel readback claim.",
       "gaps": [
-        "Custom-frame ownership, lifecycle and pixel restoration backend is not admitted.",
-        "Key input mapping and advanced key-triggered controls need their own source review."
+        "Custom pixels are write-only; a GPIO event can report the saved mode while the frame stays visible.",
+        "Key input mapping, Reactive, Ripple and sequences need their own source review."
       ],
       "physicalValidation": "Pending for these additions."
     },
@@ -429,7 +450,13 @@
         "Breathing",
         "Wave",
         "Spectrum",
-        "Static"
+        "Static",
+        "Fire",
+        "Wheel",
+        "Starlight",
+        "Tidal",
+        "AmbientAwareness",
+        "AudioMeter"
       ],
       "breathingColorModes": [
         "Random",
@@ -447,13 +474,14 @@
       "independentFieldsRetained": false,
       "independentFieldControls": true,
       "geometry": "MCU frame bounds 6x16",
-      "frameTransport": "Source bounds recorded; no custom-frame backend or ownership lifecycle admitted in this change.",
+      "frameTransport": "03/0B rows 0..5, 52-byte payload [FF,row,0,15,RGB*16], then volatile 0F/02 [0,5,8] selection confirmed by 0F/82 mode 8. 0F/03 is never sent. 0F/82 is re-read before every later frame batch; any other mode stops host frames without a write. See 2026-11-19-rz09-0427-keyboard-frames.json.",
+      "frameReview": "2026-11-19-rz09-0427-keyboard-frames.json",
       "keyMap": "No exact physical input-to-light map admitted.",
       "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
-      "restoration": "Per-submission admission, independent effect confirmation; legacy setters require fresh active-brightness read then requested target. No framebuffer restoration claim.",
+      "restoration": "Durable complete built-in baseline (Off, Static, Breathing or Wave) plus exact raw active brightness before frame writes; Spectrum, custom mode 8 and modes 5..7 refuse host frames. Restore uses the flag-clearing legacy 03/0A setter with effect readback, then re-reads brightness and restores it only if the setter changed it. Restoration is skipped and the owner faults when the selection no longer reads mode 8. No pixel readback claim.",
       "gaps": [
-        "Custom-frame ownership, lifecycle and pixel restoration backend is not admitted.",
-        "Key input mapping and advanced key-triggered controls need their own source review."
+        "Custom pixels are write-only; a GPIO event can report the saved mode while the frame stays visible.",
+        "Key input mapping, Reactive, Ripple and sequences need their own source review."
       ],
       "physicalValidation": "Pending for these additions."
     },

@@ -32,11 +32,12 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         // A native operation may outlive the provider's managed operation lock.
         this.sharedCommandGate = sharedCommandGate ?? new(1, 1);
         policy = new(model);
-        if (model.ProductId != 0x02C7)
+        if (model.ProductId != 0x02C7 && !ExperimentalBladePort.SupportsReviewedMcuKeyboardFrames(model))
         {
-            // This journal admits the KI8110 active-bank baseline contract.
-            // Legacy frame backends retain their separately reviewed saved-bank
-            // and Spectrum restoration semantics; do not apply this parser to them.
+            // This journal admits the reviewed MCU active-bank baseline contract:
+            // KI8110 and the four 2026-11-19 legacy-setter frame reviews. Older
+            // frame backends retain their separately reviewed saved-bank and
+            // Spectrum restoration semantics; do not apply this parser to them.
             lightingOwnership = new();
             return;
         }

@@ -35,8 +35,7 @@ internal sealed partial class ExperimentalBladePort
 
     public bool RequiresLightingRendererOwnership(LightingSettings settings) =>
         SupportsBlade18Animation(model) && IsBlade18Animation(settings)
-        || SupportsExperimentalGridAnimation(model)
-            && ExperimentalGridLightingEffect.IsSupported(settings, model.ProductId == 0x02C7)
+        || IsExperimentalGridRequest(settings)
         || settings.Effect is LightingEffect.AmbientAwareness or LightingEffect.AudioMeter
         || settings.Effect == LightingEffect.Static && SupportsUniformFrame(model);
 
@@ -116,7 +115,8 @@ internal sealed partial class ExperimentalBladePort
     internal static IReadOnlySet<LightingEffect> CreateObservedExperimentalLightingEffects(
         ExperimentalBladeModel model)
     {
-        if (SupportsExperimentalGridAnimation(model) && model.ProductId != 0x02C7)
+        if (SupportsExperimentalGridAnimation(model) && model.ProductId != 0x02C7
+            && !SupportsReviewedMcuKeyboardFrames(model))
         {
             // Read-only discovery from each exact OpenRazer class's METHODS.
             // This newly allocated set is used only in ObservedLightingEffects.
@@ -171,7 +171,8 @@ internal sealed partial class ExperimentalBladePort
 
     internal static bool SupportsExperimentalUniformFrames(
         ExperimentalBladeModel model,
-        bool enabled) => enabled && (SupportsUniformFrame(model) || model.ProductId == 0x02C7);
+        bool enabled) => enabled && (SupportsUniformFrame(model) || model.ProductId == 0x02C7
+            || SupportsReviewedMcuKeyboardFrames(model));
 
     internal static IReadOnlySet<BreathingColorMode> CreateExperimentalBreathingColorModes(
         ExperimentalBladeModel model,
@@ -551,9 +552,8 @@ internal sealed partial class ExperimentalBladePort
                 "The requested lighting setting is not admitted for this experimental model.");
         }
 
-        ExperimentalGridLightingEffect? gridEffect = SupportsExperimentalGridAnimation(model)
-            && ExperimentalGridLightingEffect.IsSupported(settings, model.ProductId == 0x02C7)
-                ? new(settings, model.ProductId == 0x02C7) : null;
+        ExperimentalGridLightingEffect? gridEffect = IsExperimentalGridRequest(settings)
+            ? new(settings, model.ProductId == 0x02C7) : null;
         bool animationRequest = gridEffect is not null
             || SupportsBlade18Animation(model) && IsBlade18Animation(settings);
         if (animationRequest && gridEffect is null && session is not IRazerSetFeatureCommandSession)
@@ -651,6 +651,12 @@ internal sealed partial class ExperimentalBladePort
                     baseline = DecodeReviewedMcuEffect(baselineEffectPayload.Span,
                         checked((byte)LightingBrightnessProtocol.RawToPercent(baselineRaw)));
                 }
+                else if (hostFrameRequest && SupportsReviewedMcuKeyboardFrames(model)
+                    && ReviewedMcuCustomFrameSelected())
+                {
+                    // Replace frames only while this owner still holds custom mode 8.
+                    await RequireReviewedMcuCustomFrameSelectionAsync(cancellationToken).ConfigureAwait(false);
+                }
             }
             else if (replacingFaultedFrame && !startingHostFrameFromFault)
             {
@@ -692,10 +698,24 @@ internal sealed partial class ExperimentalBladePort
                 ? null
                 : await ReadLogoAsync(cancellationToken).ConfigureAwait(false);
             byte originalBaselineRaw = baselineRaw;
-            ExperimentalLightingBaseline CaptureFrameBaseline() => new(
-                baseline ?? throw new IOException(
-                    "A readable pre-frame lighting baseline is required for host rendering."),
-                originalBaselineRaw, vaporChamberState?.Settings);
+            ExperimentalLightingBaseline CaptureFrameBaseline()
+            {
+                ExperimentalLightingBaseline captured = new(
+                    baseline ?? throw new IOException(
+                        "A readable pre-frame lighting baseline is required for host rendering."),
+                    originalBaselineRaw, vaporChamberState?.Settings);
+                // A journal admits only a complete built-in destination. Spectrum
+                // reads as a mode without its hidden policy, so refuse it before
+                // any write instead of failing while the journal is saved. The
+                // 2026-11-19 MCU frame reviews require this baseline shape as well.
+                if ((lightingOwnership.Journal is not null || SupportsReviewedMcuKeyboardFrames(model))
+                    && !ExperimentalLightingBaselineJournal.IsRestorable(captured))
+                {
+                    throw new CapabilityUnavailableException(
+                        "Host lighting can restore only Off, Static, Breathing or Wave. Choose one of them first.");
+                }
+                return captured;
+            }
             if (hostFrameRequest && SupportsReviewedMcuLighting(model)
                 && lightingOwnership.Journal is { } journal)
             {
@@ -1303,10 +1323,27 @@ internal sealed partial class ExperimentalBladePort
             // must not accidentally create a same-Off prerequisite.
             ReadOnlyMemory<byte> current = await ReadReviewedMcuEffectPayloadAsync(cancellationToken)
                 .ConfigureAwait(false);
+            if (SupportsReviewedMcuKeyboardFrames(model) && ReviewedMcuCustomFrameSelected()
+                && current.Span[2] != 8)
+            {
+                // The firmware or another controller changed the selection; its
+                // custom flag may still show this owner's frame. Write nothing.
+                policy.Record("KeyboardStaticFrame", "Restore", "Skipped",
+                    requested: baseline.Settings.Effect.ToString(), confirmed: $"Mode{current.Span[2]}",
+                    failure: "ExternallyChanged");
+                throw new IOException(
+                    "The keyboard left custom lighting outside OpenBlade. Choose a lighting effect to restore it.");
+            }
             LightingSettings? actual = DecodeReviewedMcuEffect(current.Span,
                 checked((byte)LightingBrightnessProtocol.RawToPercent(currentRaw)));
             await SetReviewedMcuBuiltInEffectAsync(baseline.Settings, actual, current,
                 cancellationToken, markSubmitted).ConfigureAwait(false);
+            if (UsesLegacyReviewedMcuEffectSetter(model))
+            {
+                // The legacy setter copies saved brightness into the active bank.
+                // Restore the original value only if that copy changed it.
+                currentRaw = await ReadBrightnessAsync(cancellationToken).ConfigureAwait(false);
+            }
             if (currentRaw != baseline.RawBrightness)
             {
                 RequireWriteAdmission();
@@ -1461,6 +1498,16 @@ internal sealed partial class ExperimentalBladePort
                 ? Enumerable.Repeat(color, Rz090529KeyboardLightingFrame.VaporChamberColumns).ToArray()
                 : null;
             await SubmitExperimentalGridFrameAsync(colors, vaporChamber, activate, cancellationToken, onSubmitted)
+                .ConfigureAwait(false);
+            lightingOwnership.UniformFrameActivated = 1;
+            lightingOwnership.UniformFrameTimestamp = submittedAt;
+            return;
+        }
+        if (SupportsReviewedMcuKeyboardFrames(model))
+        {
+            var colors = new RgbColor[ExperimentalBladeLightingFrame.RowCount * ExperimentalBladeLightingFrame.ColumnCount];
+            Array.Fill(colors, color);
+            await SubmitExperimentalGridFrameAsync(colors, null, activate, cancellationToken, onSubmitted)
                 .ConfigureAwait(false);
             lightingOwnership.UniformFrameActivated = 1;
             lightingOwnership.UniformFrameTimestamp = submittedAt;

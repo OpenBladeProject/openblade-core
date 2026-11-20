@@ -8,7 +8,14 @@ internal sealed partial class ExperimentalBladePort
     // and standard custom-row dispatch. No physical-key mapping is inferred.
     // See docs/blade14-lighting-parity.md for the pinned encoders and scope.
     private static bool SupportsExperimentalGridAnimation(ExperimentalBladeModel model) =>
-        model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x02C7;
+        model.ProductId is 0x029F or 0x029D or 0x02C5 or 0x02C7
+        || SupportsReviewedMcuKeyboardFrames(model);
+
+    private bool IsExperimentalGridRequest(LightingSettings settings) =>
+        SupportsReviewedMcuKeyboardFrames(model)
+            ? IsReviewedMcuKeyboardGridEffect(settings)
+            : SupportsExperimentalGridAnimation(model)
+                && ExperimentalGridLightingEffect.IsSupported(settings, model.ProductId == 0x02C7);
 
     // The new Blade 14 contracts declare the full 70-byte standard row payload.
     // Keep 029F/02A0's separately established 52-byte uniform-row contracts.
@@ -32,6 +39,11 @@ internal sealed partial class ExperimentalBladePort
             || vaporChamber is not null && !SupportsRz090529VaporChamberFrames(model))
         {
             throw new CapabilityUnavailableException("Grid lighting is unavailable for this model.");
+        }
+        if (SupportsReviewedMcuKeyboardFrames(model))
+        {
+            await SubmitReviewedMcuKeyboardFrameAsync(colors, activate, token, onSubmitted).ConfigureAwait(false);
+            return;
         }
         byte[]? vaporChamberRow = vaporChamber is null
             ? null : Rz090529KeyboardLightingFrame.EncodeVaporChamberRow(vaporChamber);
