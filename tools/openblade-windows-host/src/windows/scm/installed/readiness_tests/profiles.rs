@@ -434,6 +434,50 @@ async fn installed_update_profiles_serialises_concurrent_requests() {
     rig.stop().await;
 }
 
+#[tokio::test]
+async fn installed_update_profiles_waits_for_a_mutation_in_flight() {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let rig = Rig::new(files.clone());
+    rig.get().await;
+    let prior = documents(&files);
+    let mut profiles = saved(&files);
+    profiles["batteryPolicy"]["chargeLimitPercent"] = json!(65);
+    // A thermal pair is submitted and held on its first mailbox write.
+    let release = Arc::new(AtomicBool::new(false));
+    rig.port.state.lock().unwrap().held_write = Some((1, release.clone()));
+    let thermal = rig.set(1, value(1, 1));
+    let save = rig.request(update_request(2, &profiles));
+    tokio::pin!(thermal, save);
+    let held = async {
+        while rig.port.state.lock().unwrap().writes != 1 {
+            tokio::task::yield_now().await;
+        }
+    };
+    tokio::select! {
+        _ = &mut thermal => panic!("the held mutation completed"),
+        result = tokio::time::timeout(std::time::Duration::from_secs(2), held) => result.unwrap(),
+    }
+
+    // The save neither answers nor stores while that mutation is in flight.
+    tokio::select! {
+        biased;
+        _ = &mut save => panic!("the save overtook a mutation in flight"),
+        _ = &mut thermal => panic!("the held mutation completed"),
+        _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {}
+    }
+    assert_eq!(documents(&files), prior);
+
+    release.store(true, Ordering::Release);
+    let (thermal, save) = tokio::join!(thermal, save);
+    assert_eq!(thermal["result"]["status"], 1);
+    assert_eq!(save, result(0, STORED, 2));
+    assert_eq!(saved(&files)["batteryPolicy"]["chargeLimitPercent"], 65);
+    // Only the thermal pair reached the mailbox.
+    assert_eq!(rig.port.state.lock().unwrap().writes, 2);
+    rig.stop().await;
+}
+
 /// Applies a vector's edits: `[path, value]` sets a member, `[path]` removes it.
 fn edited(base: &Json, edits: Option<&Json>) -> Json {
     let mut result = base.clone();

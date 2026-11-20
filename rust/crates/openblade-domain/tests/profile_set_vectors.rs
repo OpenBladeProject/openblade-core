@@ -13,7 +13,7 @@
 use openblade_domain::profile_set::json::{self, Json};
 use openblade_domain::profile_set::{
     CURRENT_SCHEMA, Capabilities, Dialect, ProfileSet, ValidationPolicy, Validator, encode,
-    normalize, update,
+    normalize, read_profile_document, update,
 };
 use sha2::{Digest, Sha256};
 
@@ -331,6 +331,10 @@ fn every_managed_vector_decodes_validates_and_stores_alike() {
         ) {
             Ok(admitted) => {
                 let document = encode::profile_document(CURRENT_SCHEMA, &admitted);
+                // What is written reads back as the same set, unmigrated.
+                let reread = read_profile_document(&document, true, &validator).unwrap();
+                assert_eq!(reread.profiles, admitted, "{name}");
+                assert!(!reread.migrated, "{name}");
                 stored += 1;
                 (
                     "0",

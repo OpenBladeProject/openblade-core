@@ -19,6 +19,8 @@ enum Fault {
     Before,
     /// Applied, then reported as failed: the store cannot tell which.
     After,
+    /// Reported as written while other bytes landed.
+    Wrong,
 }
 
 #[derive(Clone, Default)]
@@ -92,6 +94,10 @@ impl Files for Model {
         let mut files = self.bytes.lock().unwrap();
         if files.get(name).map(Vec::as_slice) != expected {
             return Err(denied());
+        }
+        if fault == Some(Fault::Wrong) {
+            files.insert(name.into(), b"{".to_vec());
+            return Ok(());
         }
         files.insert(name.into(), bytes.to_vec());
         fault.map_or(Ok(()), |_| Err(injected()))
@@ -273,6 +279,12 @@ fn any_single_failed_write_leaves_a_whole_aggregate() {
                     );
                     assert_eq!(files.contains_key(RECORD), fault == Fault::Before, "{case}");
                     assert!(storage.pending(), "{case}");
+                    // With or without the record, the store stays closed.
+                    assert_eq!(
+                        storage.save_profiles(&requested(&model)).unwrap(),
+                        ProfileSave::Blocked(QUARANTINE_BLOCKED),
+                        "{case}"
+                    );
                 }
                 // A backup could not be discarded: the save still stands.
                 _ => {
@@ -287,6 +299,26 @@ fn any_single_failed_write_leaves_a_whole_aggregate() {
             let documents = model.documents();
             assert!(documents == prior || documents == committed, "{case}");
         }
+    }
+}
+
+#[test]
+fn a_write_that_lands_other_bytes_is_caught_by_the_readback() {
+    let prior = Model::replay("prior").map(Some);
+    for write in 4..=6 {
+        let model = Model::committed();
+        model.fail(write, Fault::Wrong);
+        let storage = model.storage();
+
+        assert_eq!(
+            storage.save_profiles(&requested(&model)).unwrap(),
+            ProfileSave::Rejected(RESTORED.into()),
+            "write {write}"
+        );
+
+        assert_eq!(model.documents(), prior, "write {write}");
+        assert_eq!(model.snapshot().len(), 3, "write {write}");
+        assert!(!storage.pending(), "write {write}");
     }
 }
 
