@@ -1148,43 +1148,62 @@ public sealed partial class SourceReviewedBladeModelTests
     }
 
     // An optional LED38 read refused before it reached the MCU (shared-gate refusal)
-    // is no answer about LED38: the request fails before any write and settles
-    // nothing, so the next request reads LED38 and drives it.
-    [Fact]
-    public async Task Rz090529VaporChamber_SharedGateRefusalFailsBeforeWritesAndSettlesNothing()
+    // is no answer about LED38. It leaves just that request keyboard-only, so a
+    // running Reactive renderer is replaced normally rather than faulted, and it
+    // settles nothing, so the next request reads LED38 and drives it.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Rz090529VaporChamber_SharedGateRefusalLeavesOneRequestKeyboardOnly(bool replaceReactive)
     {
         var availability = new ExperimentalVaporChamberAvailability();
         var key = new ExperimentalVaporChamberAvailability.Key(
             new HostIdentityEvidence("Razer", "Razer Blade 18", null, "test-firmware"),
             new HidHandleIdentity(0x1532, 0x02C7, 1, 2, 91));
+        using var storage = new Rz090529LightingJournalFixture();
         var session = new Session
         {
             McuLighting = Rz090529StaticKeyboard.ToArray(),
             McuVaporChamber = Rz090529StaticVaporChamber.ToArray(),
-            VaporChamberEffectQueryRefusal = new(default, HidSessionFailureKind.Exhausted)
-            {
-                Diagnostic = new(HidSessionFailurePhase.SharedGateAdmission, HidSessionFailureKind.Exhausted,
-                    null, null),
-            },
         };
-        await using var port = CreateRz090529Frames(session);
+        var policy = new ExperimentalFeaturesPolicy(Model(0x02C7));
+        await using var port = CreateRz090529Frames(session, policy, new() { Journal = storage.Journal });
         port.BindVaporChamberAvailability(availability, key);
+        if (replaceReactive)
+        {
+            await port.SetLightingAsync(
+                LightingSettingsFactory.Reactive(new(1, 2, 3), 60, ReactiveLightingDuration.Medium), default);
+            Assert.Equal(LightingRendererOwnershipState.Reactive, port.OwnershipState);
+        }
+        session.VaporChamberEffectQueryRefusal = new(default, HidSessionFailureKind.Exhausted)
+        {
+            Diagnostic = new(HidSessionFailurePhase.SharedGateAdmission, HidSessionFailureKind.Exhausted,
+                null, null),
+        };
 
-        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() =>
-            port.SetLightingAsync(LightingSettingsFactory.Fire(60), default));
+        await port.SetLightingAsync(LightingSettingsFactory.Fire(60), default);
 
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
-        Assert.DoesNotContain(session.Commands, command => command.CommandId < 0x80);
+        Assert.Equal(LightingRendererOwnershipState.Fire, port.OwnershipState);
+        Assert.True(policy.WritesAllowed);
+        Assert.DoesNotContain(session.Commands, IsVaporChamberRead);
+        Assert.DoesNotContain(session.Commands, command => IsRz090529Row(command, 6));
+        Assert.DoesNotContain(session.Commands, IsVaporChamberSet);
+        Assert.Contains("\"schemaVersion\":1", File.ReadAllText(storage.JournalPath), StringComparison.Ordinal);
         Assert.Null(availability.Get(key));
+        Assert.Contains(policy.Snapshot().Observations, item => item.Operation == "VaporChamberEffect"
+            && item.FailureCategory == "VaporChamberReadDeferred");
 
         session.VaporChamberEffectQueryRefusal = null;
         await port.SetLightingAsync(LightingSettingsFactory.Fire(60), default);
+        Assert.Equal(LightingRendererOwnershipState.Fire, port.OwnershipState);
         Assert.Contains(session.Commands, IsVaporChamberRead);
         Assert.Single(session.Commands, command => IsRz090529Row(command, 6));
         Assert.Equal(8, session.McuVaporChamber[2]);
         await port.RelinquishRendererAsync(default);
         Assert.Equal(Rz090529StaticVaporChamber, session.McuVaporChamber);
         Assert.Equal(Rz090529StaticKeyboard, session.McuLighting);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        Assert.Null(storage.Journal.Load().Baseline);
     }
 
     // Only RZ09-0529 has a reviewed LED38 contract. An LED38 record in another MCU
