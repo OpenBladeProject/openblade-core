@@ -127,11 +127,7 @@ internal static class SnapTapDriverLoop
                         // Close without reading queued input; only the guardian may rearm
                         // a fresh worker after verified cleanup of this subscription.
                         foregroundPause = CanPauseForForegroundLoss(processor) && functionProcessor?.HasTrackedKeys != true;
-                        loopFailure = SnapTapDiagnosticFailure.Create(
-                            SnapTapDiagnosticFailure.Worker, "Run", stage, "ForegroundUnavailable") with
-                        {
-                            Context = $"ForegroundAvailable={foreground != 0}; KeyboardLayoutAvailable={layout != 0}; PhysicallyReleased={processor.ArePhysicallyReleased}",
-                        };
+                        loopFailure = ForegroundUnavailableFailure(foreground != 0, layout != 0, processor.ArePhysicallyReleased);
                         break;
                     }
                 }
@@ -277,6 +273,14 @@ internal static class SnapTapDriverLoop
             return sent;
         }
     }
+
+    internal static DiagnosticFailure ForegroundUnavailableFailure(
+        bool foregroundAvailable, bool layoutAvailable, bool physicallyReleased) =>
+        SnapTapDiagnosticFailure.Create(
+            SnapTapDiagnosticFailure.Worker, "Run", "InputLoop", "ForegroundUnavailable") with
+        {
+            Context = $"ForegroundAvailable={foregroundAvailable}; KeyboardLayoutAvailable={layoutAvailable}; PhysicallyReleased={physicallyReleased}",
+        };
 
     internal static bool CanPauseForForegroundLoss(SnapTapDriverInputProcessor processor) =>
         !processor.Faulted && processor.Winner == 0 && processor.ArePhysicallyReleased;
