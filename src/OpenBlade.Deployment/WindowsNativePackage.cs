@@ -79,6 +79,10 @@ internal sealed record NativeArtifact(string Id, string Role, string Target, str
         // feature and the capability by name, whatever else the record claims.
         if (features.Contains("service-profiles-v1", StringComparer.Ordinal) || capabilities.Split(',').Contains("service-profiles-v1", StringComparer.Ordinal))
         { throw new InvalidDataException("Profile serving is not admitted for packaging."); }
+        // The application-context reporter is not admitted for packaging either. Refuse its
+        // feature and its capability marker by name until a packaging stage admits both.
+        if (features.Contains("agent-application-reporter-v1", StringComparer.Ordinal) || capabilities.Split(',').Any(capability => capability is "agent-application-reporter-v1" or "session-application-reporter-v1"))
+        { throw new InvalidDataException("The application reporter is not admitted for packaging."); }
         if (agentWrite && !agentDisplay) { throw new InvalidDataException("Brightness write requires the display query contract."); }
         if (agentHdr && !agentDisplay) { throw new InvalidDataException("HDR write requires the display query contract."); }
         if (agentRefresh && !agentDisplay) { throw new InvalidDataException("Refresh-rate write requires the display query contract."); }

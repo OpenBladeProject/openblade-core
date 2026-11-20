@@ -502,6 +502,40 @@ public sealed class WindowsNativeEpochTests
     }
 
     [Fact]
+    public void ApplicationReporterAgentIsNotAdmittedUntilPackagingAdmitsIt()
+    {
+        string source = new('a', 40);
+        const string message = "The application reporter is not admitted for packaging.";
+        // The feature and the marker build.rs gives a build with agent-application-reporter-v1.
+        const string features = "agent-application-reporter-v1,native-agent-entry-compile-check";
+        // Refused by name, whatever the record claims: the marker, the feature name,
+        // neither, or the marker beside an admitted contract.
+        foreach (string capabilities in new[]
+        {
+            "session-application-reporter-v1",
+            "agent-application-reporter-v1",
+            "none",
+            "agent-battery-report-v1,session-application-reporter-v1",
+        })
+        {
+            var refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("agent", schema: 2, features: features, capabilities: capabilities)], "agent", source));
+            Assert.Equal(message, refused.Message);
+            refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+                [.. Image("agent", schema: 2, features: "agent-application-reporter-v1,agent-battery-report-v1,native-agent-entry-compile-check", capabilities: capabilities)], "agent", source));
+            Assert.Equal(message, refused.Message);
+        }
+        // A forged marker without the feature is no better.
+        var forged = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("agent", schema: 2, features: "native-agent-entry-compile-check", capabilities: "session-application-reporter-v1")], "agent", source));
+        Assert.Equal(message, forged.Message);
+        // The same build without the reporter is still the admitted battery composition.
+        var admitted = NativeArtifact.Inspect(
+            [.. Image("agent", schema: 2, features: "native-agent-entry-compile-check", agentBattery: true)], "agent", source);
+        Assert.NotNull(admitted);
+    }
+
+    [Fact]
     public void ExplicitThermalMutationRoleRequiresSignedCapabilityAndMailboxCustody()
     {
         var artifact = NativeArtifact.Inspect([.. Image("service", schema: 2, mutation: true)], "service", new string('a', 40));

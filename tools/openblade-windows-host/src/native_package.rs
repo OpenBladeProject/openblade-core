@@ -708,6 +708,18 @@ fn capabilities(schema: u8, role: &str, features: &str, value: &str) -> io::Resu
     if has(PROFILES) || value.split(',').any(|capability| capability == PROFILES) {
         return Err(deny());
     }
+    // The application-context reporter is not admitted for packaging either:
+    // refuse its feature and its capability marker by name, whatever else the
+    // record claims, until a packaging stage admits both.
+    const REPORTER: &str = "agent-application-reporter-v1";
+    const REPORTER_MARKER: &str = "session-application-reporter-v1";
+    if has(REPORTER)
+        || value
+            .split(',')
+            .any(|capability| capability == REPORTER || capability == REPORTER_MARKER)
+    {
+        return Err(deny());
+    }
     if (agent_write || agent_hdr || agent_refresh || agent_color) && !agent_display {
         return Err(deny());
     }

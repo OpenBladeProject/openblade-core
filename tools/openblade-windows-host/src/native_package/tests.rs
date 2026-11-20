@@ -716,6 +716,47 @@ fn a_profile_serving_service_is_not_admitted_as_any_composition() {
 }
 
 #[test]
+fn an_application_reporter_agent_is_not_admitted_by_feature_or_marker() {
+    // The feature and the marker build.rs gives a build with
+    // agent-application-reporter-v1. Packaging has not admitted either, so the
+    // reader refuses the image by name whatever else the record claims.
+    let features = "agent-application-reporter-v1,native-agent-entry-compile-check";
+    for claimed in [
+        "session-application-reporter-v1",
+        "agent-application-reporter-v1",
+        "none",
+        "agent-battery-report-v1,session-application-reporter-v1",
+    ] {
+        assert!(capabilities(2, "agent", features, claimed).is_err());
+        assert!(capabilities(1, "agent", features, claimed).is_err());
+        assert!(capabilities(2, "service", features, claimed).is_err());
+    }
+    // A forged marker without the feature is no better.
+    assert!(
+        capabilities(
+            2,
+            "agent",
+            "native-agent-entry-compile-check",
+            "session-application-reporter-v1"
+        )
+        .is_err()
+    );
+    // The reporter beside an admitted contract is refused; the contract alone is not.
+    let combined =
+        "agent-application-reporter-v1,agent-battery-report-v1,native-agent-entry-compile-check";
+    assert!(capabilities(2, "agent", combined, "agent-battery-report-v1").is_err());
+    assert!(
+        capabilities(
+            2,
+            "agent",
+            "agent-battery-report-v1,native-agent-entry-compile-check",
+            "agent-battery-report-v1"
+        )
+        .is_ok()
+    );
+}
+
+#[test]
 fn legacy_artifact_record_and_compiled_identity_reencode_byte_exact() {
     let v = vector();
     for role in ["service", "agent"] {
