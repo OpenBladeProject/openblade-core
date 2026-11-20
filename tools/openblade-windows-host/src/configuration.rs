@@ -13,7 +13,7 @@ pub const PROFILE: &str = "profiles.json";
 pub const PREFERENCES: &str = "battery-preferences.json";
 pub const COMMIT: &str = "battery-configuration.commit.json";
 pub const RECOVERY_REQUIRED: &str = "battery-configuration.commit.json.recovery-required";
-pub const CURRENT_SCHEMA: i32 = 25;
+pub const CURRENT_SCHEMA: i32 = 27;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum File<'a> {
@@ -166,6 +166,36 @@ fn hash_matches(supplied: Option<&str>, bytes: &[u8]) -> bool {
     // Hashes are public integrity metadata. Compare the exact uppercase spelling
     // over the original bytes, including whitespace and line endings.
     supplied.is_some_and(|expected| expected == digest_hex(bytes))
+}
+
+/// Managed `LightingSettingsValidation.ContainsZoneControlIntent` and
+/// `ProfileStore.RejectKeyboardEffectControlInLegacySchema`: an older document
+/// may not carry a non-null zone control or a non-false keyboard-effect member,
+/// matched case-insensitively at any depth. Callers pass which rule applies.
+pub(crate) fn legacy_lighting_intent(
+    document: &serde_json::Value,
+    reject_zone: bool,
+    reject_keyboard: bool,
+) -> bool {
+    use serde_json::Value;
+    fn contains(value: &Value, rejects: &dyn Fn(&str, &Value) -> bool) -> bool {
+        match value {
+            Value::Object(fields) => fields
+                .iter()
+                .any(|(name, child)| rejects(name, child) || contains(child, rejects)),
+            Value::Array(items) => items.iter().any(|child| contains(child, rejects)),
+            _ => false,
+        }
+    }
+    let zone = |name: &str, value: &Value| {
+        (name.eq_ignore_ascii_case("vaporChamberLightingEnabled")
+            || name.eq_ignore_ascii_case("touchpadStatusIndicatorEnabled"))
+            && !value.is_null()
+    };
+    let keyboard = |name: &str, value: &Value| {
+        name.eq_ignore_ascii_case("controlsKeyboardEffect") && *value != Value::Bool(false)
+    };
+    (reject_zone && contains(document, &zone)) || (reject_keyboard && contains(document, &keyboard))
 }
 
 pub(crate) fn digest_hex(bytes: &[u8]) -> String {

@@ -190,23 +190,42 @@ fn decode(bytes: &[u8]) -> io::Result<Value> {
     configuration::validate_json_members(bytes).map_err(io::Error::other)?;
     serde_json::from_slice(bytes).map_err(io::Error::other)
 }
+// Managed PersistentOverrideStore.CurrentSchemaVersion. Schema 9 added keyboard
+// effect control and schema 10 lighting zone controls; schema 8 is the oldest
+// document whose fan details this bounded reader accepts without migration.
+const OVERRIDE_SCHEMA: i64 = 10;
+const OVERRIDE_KEYBOARD_EFFECT_SCHEMA: i64 = 9;
+const OVERRIDE_FAN_DETAIL_SCHEMA: i64 = 8;
 fn overrides(bytes: Option<&[u8]>) -> io::Result<Value> {
     let mut document = match bytes {
         Some(bytes) => decode(bytes)?,
         None => {
-            json!({"schemaVersion":8,"overrides":{"performance":null,"fans":null,"lighting":null,"customPerformance":null,"fanControl":null,"gpuClockTuning":null}})
+            json!({"schemaVersion":OVERRIDE_SCHEMA,"overrides":{"performance":null,"fans":null,"lighting":null,"customPerformance":null,"fanControl":null,"gpuClockTuning":null}})
         }
     };
     let root = document.as_object_mut().ok_or_else(denied)?;
     if root.len() != 2
         || !matches!(
             root.get("schemaVersion").and_then(Value::as_i64),
-            Some(1..=8)
+            Some(1..=OVERRIDE_SCHEMA)
         )
     {
         return Err(denied());
     }
-    if root.get("schemaVersion").and_then(Value::as_i64) != Some(8) {
+    let schema = root
+        .get("schemaVersion")
+        .and_then(Value::as_i64)
+        .ok_or_else(denied)?;
+    // Managed rejects these before typed migration, so the document is invalid
+    // rather than preserved for later migration.
+    if configuration::legacy_lighting_intent(
+        &Value::Object(root.clone()),
+        schema < OVERRIDE_SCHEMA,
+        schema < OVERRIDE_KEYBOARD_EFFECT_SCHEMA,
+    ) {
+        return Err(denied());
+    }
+    if schema < OVERRIDE_FAN_DETAIL_SCHEMA {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "Legacy overrides require managed migration; original bytes are preserved.",
@@ -295,6 +314,7 @@ fn overrides(bytes: Option<&[u8]>) -> io::Result<Value> {
     if let Some(v) = value.get("fanControl").filter(|v| !v.is_null()) {
         fan_control(v)?;
     }
+    // Schema 9 independent-intent preservation rewrites only non-null lighting.
     if !value["lighting"].is_null() {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
@@ -327,7 +347,10 @@ fn validate_gpu(v: &Value) -> io::Result<()> {
 }
 fn fan_control(v: &Value) -> io::Result<()> {
     members(v, &["mode", "fixedSpeedRpm", "manualCurve"])?;
-    let speed = |v: &Value| matches!(v.as_i64(),Some(n) if (2000..=5400).contains(&n)&&n%100==0);
+    // Managed FanControlSettings.ValidateSpeed admits MaximumSupportedSpeedRpm
+    // in stored intent for every model. Exact-model write admission remains
+    // fan_history::validate_settings and the fan recipe, both at 5400.
+    let speed = |v: &Value| matches!(v.as_i64(),Some(n) if (2000..=5500).contains(&n)&&n%100==0);
     if !matches!(v["mode"].as_i64(), Some(0..=3)) || !speed(&v["fixedSpeedRpm"]) {
         return Err(denied());
     }
@@ -496,7 +519,7 @@ impl Storage {
         next["overrides"]["gpuClockTuning"] = saved
             .and_then(|v| v.gpu_clock_tuning.clone())
             .unwrap_or(Value::Null);
-        next["schemaVersion"] = json!(8);
+        next["schemaVersion"] = json!(OVERRIDE_SCHEMA);
         let bytes = serde_json::to_vec(&next)?;
         // Accepted intent is published only after atomic protected replacement
         // and independent byte readback. Unrelated overrides remain intact.
@@ -682,6 +705,7 @@ impl Storage {
         } else {
             Value::Null
         };
+        next["schemaVersion"] = json!(OVERRIDE_SCHEMA);
         let bytes = serde_json::to_vec(&next)?;
         if let Err(e) = self.files.replace(OVERRIDES, s.bytes.as_deref(), &bytes) {
             s.quarantined = true;
@@ -748,7 +772,10 @@ impl Storage {
             return Ok(Some(v.clone()));
         }
         if !s.document["overrides"]["fanControl"].is_null() {
-            return Ok(Some(s.document["overrides"]["fanControl"].clone()));
+            // Stored intent may exceed the fan write bound; admit it here.
+            let selected = s.document["overrides"]["fanControl"].clone();
+            openblade_domain::fan_history::validate_settings(&selected)?;
+            return Ok(Some(selected));
         }
         drop(s);
         let Some(doc) = aggregate(self.files.as_ref(), self.same_path)? else {
@@ -1087,21 +1114,31 @@ fn aggregate(files: &dyn Files, same_path: fn(&str, &str) -> bool) -> io::Result
     fn file(v: Option<&[u8]>) -> ConfigFile<'_> {
         v.map_or(ConfigFile::Missing, ConfigFile::Bytes)
     }
-    if !matches!(
-        configuration::inspect(configuration::Snapshot {
-            profile: file(profile.as_deref()),
-            preferences: file(preferences.as_deref()),
-            commit: file(commit.as_deref()),
-            recovery: RecoveryRecord::Missing
-        }),
-        Inspection::CommittedEnvelope { schema: 25 }
-    ) {
+    // Schemas 25 and 26 differ from 27 only by lighting members that managed
+    // rejects below their introducing schema; schema 24 still needs managed
+    // Fan Stop migration first.
+    let Inspection::CommittedEnvelope {
+        schema: schema @ 25..=configuration::CURRENT_SCHEMA,
+    } = configuration::inspect(configuration::Snapshot {
+        profile: file(profile.as_deref()),
+        preferences: file(preferences.as_deref()),
+        commit: file(commit.as_deref()),
+        recovery: RecoveryRecord::Missing,
+    })
+    else {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "Uncommitted or non-current profile aggregate is preserved; managed recovery or migration is required.",
         ));
-    }
+    };
     let doc = decode(profile.as_deref().ok_or_else(denied)?)?;
+    let prefs = decode(preferences.as_deref().ok_or_else(denied)?)?;
+    if [&doc, &prefs]
+        .into_iter()
+        .any(|document| configuration::legacy_lighting_intent(document, schema < 27, schema < 26))
+    {
+        return Err(denied());
+    }
     let profiles = doc["profiles"].as_object().ok_or_else(denied)?;
     for key in ["pluggedIn", "battery", "usbC"] {
         let p = profiles

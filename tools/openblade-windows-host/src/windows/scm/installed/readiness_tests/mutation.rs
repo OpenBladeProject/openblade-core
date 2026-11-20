@@ -91,7 +91,7 @@ impl MemoryFiles {
         profiles["applicationProfiles"] = json!([{ "id":"11111111-2222-3333-4444-555555555555","name":"Game","executablePath":"C:\\Games\\Game.exe","activationMode":0,"enabled":true,"overrides":{"pluggedIn":{"performance":2}}}]);
         self.put(
             "profiles.json",
-            json!({"schemaVersion":25,"profiles":profiles}),
+            json!({"schemaVersion":crate::configuration::CURRENT_SCHEMA,"profiles":profiles}),
         );
         self.put(
             "battery-preferences.json",
@@ -103,7 +103,7 @@ impl MemoryFiles {
         drop(bytes);
         self.put(
             "battery-configuration.commit.json",
-            json!({"schemaVersion":25,"profileSha256":profile,"preferencesSha256":prefs}),
+            json!({"schemaVersion":crate::configuration::CURRENT_SCHEMA,"profileSha256":profile,"preferencesSha256":prefs}),
         );
     }
 }
@@ -989,6 +989,8 @@ async fn installed_final_mismatch_uses_reserved_pair_only_and_preserves_unrelate
 fn installed_storage_preserves_future_legacy_corrupt_and_uncommitted_documents() {
     for bytes in [
         br#"{"schemaVersion":9,"overrides":{}}"#.as_slice(),
+        br#"{"schemaVersion":11,"overrides":{"performance":null,"fans":null,"lighting":null}}"#
+            .as_slice(),
         br#"{"schemaVersion":7,"overrides":{"performance":null,"fans":null,"lighting":null}}"#
             .as_slice(),
         br#"{"schemaVersion":8,"schemaVersion":8,"overrides":{}}"#.as_slice(),
@@ -1009,11 +1011,77 @@ fn installed_storage_preserves_future_legacy_corrupt_and_uncommitted_documents()
     let before = files.read("profiles.json").unwrap().unwrap();
     files.put(
         "battery-configuration.commit.json",
-        json!({"schemaVersion":25,"profileSha256":"wrong","preferencesSha256":"wrong"}),
+        json!({"schemaVersion":crate::configuration::CURRENT_SCHEMA,"profileSha256":"wrong","preferencesSha256":"wrong"}),
     );
     assert!(Storage::open(Box::new(files.clone()), SID).is_err());
     assert_eq!(files.read("profiles.json").unwrap().unwrap(), before);
     assert!(files.read("manual-overrides.json").unwrap().is_none());
+}
+
+// Managed PersistentOverrideStore reads schemas 8 to 10 and always writes 10.
+// It rejects a non-null zone control below 10 and a non-false keyboard-effect
+// member below 9, case-insensitively at any depth, before typed migration.
+#[test]
+fn installed_storage_reads_older_override_schemas_and_writes_the_current_one() {
+    let document = |schema: i64, lighting: Value| json!({"schemaVersion":schema,"overrides":{"performance":null,"fans":null,"lighting":lighting,"customPerformance":null,"fanControl":null,"gpuClockTuning":null}});
+    for (schema, member, value) in [
+        (9, "vaporChamberLightingEnabled", json!(true)),
+        (8, "TouchpadStatusIndicatorEnabled", json!(false)),
+        (8, "controlsKeyboardEffect", Value::Null),
+    ] {
+        let mut lighting = serde_json::Map::new();
+        lighting.insert(member.into(), value);
+        let files = MemoryFiles::default();
+        files.put(
+            "manual-overrides.json",
+            document(schema, Value::Object(lighting)),
+        );
+        let before = files.read("manual-overrides.json").unwrap();
+        assert!(
+            Storage::open(Box::new(files.clone()), SID).is_err(),
+            "{member}"
+        );
+        assert_eq!(files.read("manual-overrides.json").unwrap(), before);
+    }
+    for schema in [8, 9, 10] {
+        let files = MemoryFiles::default();
+        files.profiles(1);
+        files.put("manual-overrides.json", document(schema, Value::Null));
+        let storage = Storage::open(Box::new(files.clone()), SID).unwrap();
+        storage
+            .save(
+                Some(super::super::thermal_storage::Override {
+                    value: 2,
+                    lifetime: 1,
+                    custom_performance: None,
+                    gpu_clock_tuning: None,
+                }),
+                0,
+            )
+            .unwrap();
+        let saved = files.document("manual-overrides.json");
+        assert_eq!(saved["schemaVersion"], 10, "{schema}");
+        assert_eq!(saved["overrides"]["performance"], 2);
+    }
+    // Stored intent admits managed MaximumSupportedSpeedRpm; the native fan
+    // write admission stays at 5400, so the saved target is refused at use.
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let mut fan = super::super::thermal_storage::legacy_fan(1);
+    fan["fixedSpeedRpm"] = json!(5500);
+    let mut saved = document(10, Value::Null);
+    saved["overrides"]["fans"] = json!(1);
+    saved["overrides"]["fanControl"] = fan;
+    files.put("manual-overrides.json", saved);
+    let storage = Storage::open(Box::new(files.clone()), SID).unwrap();
+    assert!(storage.desired_fan(0, None).is_err());
+    let mut fan = super::super::thermal_storage::legacy_fan(1);
+    fan["fixedSpeedRpm"] = json!(5600);
+    let mut beyond = document(10, Value::Null);
+    beyond["overrides"]["fans"] = json!(1);
+    beyond["overrides"]["fanControl"] = fan;
+    files.put("manual-overrides.json", beyond);
+    assert!(Storage::open(Box::new(files), SID).is_err());
 }
 
 #[test]
@@ -2352,9 +2420,15 @@ async fn edge_stored_temporary_publication_cannot_resurrect_expired_policy() {
     rig.stop().await;
 }
 
+// The aggregate carries the profile's own schema, so a frozen older managed
+// profile is read as a committed older envelope, as managed migration reads it.
 fn managed_application_files(bytes: &[u8]) -> MemoryFiles {
     let files = MemoryFiles::default();
     files.profiles(1);
+    let schema = serde_json::from_slice::<Value>(bytes).unwrap()["schemaVersion"].clone();
+    let mut preferences = files.document("battery-preferences.json");
+    preferences["schemaVersion"] = schema.clone();
+    files.put("battery-preferences.json", preferences);
     files
         .bytes
         .lock()
@@ -2366,7 +2440,7 @@ fn managed_application_files(bytes: &[u8]) -> MemoryFiles {
     drop(all);
     files.put(
         "battery-configuration.commit.json",
-        json!({"schemaVersion":25,"profileSha256":profile,"preferencesSha256":preferences}),
+        json!({"schemaVersion":schema,"profileSha256":profile,"preferencesSha256":preferences}),
     );
     files
 }
@@ -2376,95 +2450,106 @@ async fn report_game(rig: &Rig) {
 }
 #[tokio::test]
 async fn edge_managed_fan_control_only_application_precedence_and_lease_are_composed() {
-    let fixed = include_bytes!("../../../../../tests/fixtures/app-fans-0-1.json").as_slice();
-    let curve = include_bytes!("../../../../../tests/fixtures/app-fans-0-2.json").as_slice();
-    let automatic = include_bytes!("../../../../../tests/fixtures/app-fans-1-0.json").as_slice();
-    for (bytes, report, expired, persistent, expected) in [
-        (fixed, true, false, false, 0),
-        (curve, true, false, false, 0),
-        (automatic, true, false, false, 1),
-        (fixed, false, false, false, 1),
-        (fixed, true, true, false, 1),
-        (automatic, true, false, true, 0),
+    // Current schema 27 documents and the frozen schema 25 migration inputs.
+    for [fixed, curve, automatic] in [
+        [
+            include_bytes!("../../../../../tests/fixtures/app-fans-0-1.json").as_slice(),
+            include_bytes!("../../../../../tests/fixtures/app-fans-0-2.json").as_slice(),
+            include_bytes!("../../../../../tests/fixtures/app-fans-1-0.json").as_slice(),
+        ],
+        [
+            include_bytes!("../../../../../tests/fixtures/app-fans-0-1-v25.json").as_slice(),
+            include_bytes!("../../../../../tests/fixtures/app-fans-0-2-v25.json").as_slice(),
+            include_bytes!("../../../../../tests/fixtures/app-fans-1-0-v25.json").as_slice(),
+        ],
     ] {
-        let files = managed_application_files(bytes);
-        if persistent {
-            files.bytes.lock().unwrap().insert(
-                "manual-overrides.json".into(),
-                manual_files()
-                    .read("manual-overrides.json")
-                    .unwrap()
-                    .unwrap(),
+        for (bytes, report, expired, persistent, expected) in [
+            (fixed, true, false, false, 0),
+            (curve, true, false, false, 0),
+            (automatic, true, false, false, 1),
+            (fixed, false, false, false, 1),
+            (fixed, true, true, false, 1),
+            (automatic, true, false, true, 0),
+        ] {
+            let files = managed_application_files(bytes);
+            if persistent {
+                files.bytes.lock().unwrap().insert(
+                    "manual-overrides.json".into(),
+                    manual_files()
+                        .read("manual-overrides.json")
+                        .unwrap()
+                        .unwrap(),
+                );
+            }
+            let rig = Rig::new(files);
+            let before = fresh_observe(&rig).await;
+            assert_eq!(before["status"]["confirmedState"]["performance"], 5);
+            assert!(before["status"]["confirmedState"]["customPerformance"].is_null());
+            if report {
+                report_game(&rig).await;
+            }
+            if expired {
+                tokio::time::pause();
+                tokio::time::advance(std::time::Duration::from_secs(16)).await;
+                tokio::time::resume();
+            }
+            let result = rig.set(91, value(1, 1)).await;
+            assert_eq!(
+                result["result"]["status"], expected,
+                "report={report} expired={expired} persistent={persistent}"
             );
+            assert_eq!(
+                rig.port.state.lock().unwrap().writes,
+                if expected == 1 { 2 } else { 0 }
+            );
+            if expected == 0 {
+                assert!(
+                    rig.files
+                        .read("thermal-mutation.journal")
+                        .unwrap()
+                        .is_none()
+                );
+            }
+            rig.stop().await;
         }
+        // Explicit coherent Fans remains authoritative; it does not fall through to base Automatic.
+        let files = managed_application_files(fixed);
+        let mut profile = files.document("profiles.json");
+        profile["profiles"]["applicationProfiles"][0]["overrides"]["pluggedIn"]["fans"] = json!(1);
+        let files = managed_application_files(&serde_json::to_vec(&profile).unwrap());
         let rig = Rig::new(files);
-        let before = fresh_observe(&rig).await;
-        assert_eq!(before["status"]["confirmedState"]["performance"], 5);
-        assert!(before["status"]["confirmedState"]["customPerformance"].is_null());
-        if report {
-            report_game(&rig).await;
+        report_game(&rig).await;
+        assert_eq!(rig.set(91, value(1, 1)).await["result"]["status"], 0);
+        assert_eq!(rig.port.state.lock().unwrap().writes, 0);
+        rig.stop().await;
+        // Custom Automatic has real supported CPU Medium/GPU High observations and
+        // takes the direct pair even when saved application fan intent is manual.
+        let rig = Rig::new(managed_application_files(fixed));
+        {
+            let mut port = rig.port.state.lock().unwrap();
+            port.fans = [0, 0];
+            port.custom_levels = [1, 2];
         }
-        if expired {
-            tokio::time::pause();
-            tokio::time::advance(std::time::Duration::from_secs(16)).await;
-            tokio::time::resume();
-        }
-        let result = rig.set(91, value(1, 1)).await;
+        report_game(&rig).await;
+        let observed = fresh_observe(&rig).await;
+        assert_eq!(observed["success"], true);
         assert_eq!(
-            result["result"]["status"], expected,
-            "report={report} expired={expired} persistent={persistent}"
+            observed["status"]["confirmedState"]["customPerformance"]["cpu"],
+            1
         );
+        assert_eq!(rig.set(91, value(1, 1)).await["result"]["status"], 1);
+        let port = rig.port.state.lock().unwrap();
+        assert_eq!(port.writes, 2);
         assert_eq!(
-            rig.port.state.lock().unwrap().writes,
-            if expected == 1 { 2 } else { 0 }
+            port.sent
+                .iter()
+                .filter(|(class, command, _, _)| *class == 13 && *command == 2)
+                .count(),
+            2
         );
-        if expected == 0 {
-            assert!(
-                rig.files
-                    .read("thermal-mutation.journal")
-                    .unwrap()
-                    .is_none()
-            );
-        }
+        drop(port);
         rig.stop().await;
     }
-    // Explicit coherent Fans remains authoritative; it does not fall through to base Automatic.
-    let files = managed_application_files(fixed);
-    let mut profile = files.document("profiles.json");
-    profile["profiles"]["applicationProfiles"][0]["overrides"]["pluggedIn"]["fans"] = json!(1);
-    let files = managed_application_files(&serde_json::to_vec(&profile).unwrap());
-    let rig = Rig::new(files);
-    report_game(&rig).await;
-    assert_eq!(rig.set(91, value(1, 1)).await["result"]["status"], 0);
-    assert_eq!(rig.port.state.lock().unwrap().writes, 0);
-    rig.stop().await;
-    // Custom Automatic has real supported CPU Medium/GPU High observations and
-    // takes the direct pair even when saved application fan intent is manual.
-    let rig = Rig::new(managed_application_files(fixed));
-    {
-        let mut port = rig.port.state.lock().unwrap();
-        port.fans = [0, 0];
-        port.custom_levels = [1, 2];
-    }
-    report_game(&rig).await;
-    let observed = fresh_observe(&rig).await;
-    assert_eq!(observed["success"], true);
-    assert_eq!(
-        observed["status"]["confirmedState"]["customPerformance"]["cpu"],
-        1
-    );
-    assert_eq!(rig.set(91, value(1, 1)).await["result"]["status"], 1);
-    let port = rig.port.state.lock().unwrap();
-    assert_eq!(port.writes, 2);
-    assert_eq!(
-        port.sent
-            .iter()
-            .filter(|(class, command, _, _)| *class == 13 && *command == 2)
-            .count(),
-        2
-    );
-    drop(port);
-    rig.stop().await;
     // Persistent FanControl without Fans is a different, invalid document shape.
     let files = manual_files();
     let mut invalid = files.document("manual-overrides.json");
@@ -2519,6 +2604,9 @@ async fn edge_managed_saved_custom_survives_unpublished_activation_and_private_f
     for bytes in [
         include_bytes!("../../../../../tests/fixtures/custom-basic.json").as_slice(),
         include_bytes!("../../../../../tests/fixtures/custom-gpu-maximum.json").as_slice(),
+        // Frozen schema 8 documents are read without a rewrite, as managed migration.
+        include_bytes!("../../../../../tests/fixtures/custom-basic-v8.json").as_slice(),
+        include_bytes!("../../../../../tests/fixtures/custom-gpu-maximum-v8.json").as_slice(),
     ] {
         let files = MemoryFiles::default();
         files
@@ -5241,7 +5329,10 @@ async fn battery_correction_recoverable_profile_failure_keeps_status_and_fatal_c
             .await["result"]["status"],
         1
     );
-    r.files.put("profiles.json", json!({"schemaVersion":25}));
+    r.files.put(
+        "profiles.json",
+        json!({"schemaVersion":crate::configuration::CURRENT_SCHEMA}),
+    );
     let result = r.source.lock().await.snapshot(USER, Instant::now()).await;
     assert!(
         result.is_ok(),
@@ -6615,7 +6706,7 @@ async fn tfc_v1_unrepresentable_private_intent_keeps_evidence_and_both_actual_pa
     );
     r.files.put(
         "battery-configuration.commit.json",
-        json!({"schemaVersion":25,"profileSha256":profile,"preferencesSha256":preferences}),
+        json!({"schemaVersion":crate::configuration::CURRENT_SCHEMA,"profileSha256":profile,"preferencesSha256":preferences}),
     );
     let refresh = r.get().await;
     assert!(

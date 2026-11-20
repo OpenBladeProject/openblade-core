@@ -596,6 +596,69 @@ mod tests {
 
     use super::*;
 
+    // Managed ProfileStore and BatteryConfigurationStore read every schema from
+    // 24 to 27, derive Fan Stop cutoffs only below 25, and reject a non-false
+    // keyboard-effect member below 26 and a non-null zone control below 27.
+    #[test]
+    fn older_schemas_decode_with_managed_lighting_rejections() {
+        use serde_json::json;
+
+        let documents: Documents = serde_json::from_str(FIXTURE).unwrap();
+        let template = ProfileTemplate::from_managed(&documents.prior).unwrap();
+        let current = template
+            .decode_verified(
+                document_bytes(&documents.prior),
+                Inspection::CommittedEnvelope {
+                    schema: CURRENT_SCHEMA,
+                },
+            )
+            .unwrap();
+        let fan_stop = serde_json::to_value(current.fan_stop).unwrap();
+        let decode = |schema: i32, edit: &dyn Fn(&mut Value)| {
+            let docs = template
+                .documents(schema, current.charge_limit, fan_stop.clone())
+                .unwrap();
+            let mut profile: Value = serde_json::from_str(&docs[0]).unwrap();
+            edit(&mut profile);
+            let profile = serde_json::to_string_pretty(&profile).unwrap();
+            let marker = commit_marker(schema, profile.as_bytes(), docs[1].as_bytes()).unwrap();
+            let bytes = [profile.as_bytes(), docs[1].as_bytes(), marker.as_bytes()];
+            template.decode_verified(bytes, inspect_bytes(bytes.map(Some)))
+        };
+        for schema in [25, 26, CURRENT_SCHEMA] {
+            assert_eq!(decode(schema, &|_| {}).unwrap(), current, "{schema}");
+        }
+        let kind = |result: io::Result<ProfilePolicy>| result.unwrap_err().kind();
+        let zone = |profile: &mut Value| {
+            profile["profiles"]["battery"]["lighting"] =
+                json!({"TouchpadStatusIndicatorEnabled": false});
+        };
+        let keyboard = |profile: &mut Value| {
+            profile["profiles"]["battery"]["lighting"] = json!({"controlsKeyboardEffect": null});
+        };
+        let keyboard_false = |profile: &mut Value| {
+            profile["profiles"]["battery"]["lighting"] = json!({"controlsKeyboardEffect": false});
+        };
+        for schema in [24, 25, 26] {
+            assert_eq!(
+                kind(decode(schema, &zone)),
+                io::ErrorKind::InvalidData,
+                "{schema}"
+            );
+        }
+        for schema in [24, 25] {
+            assert_eq!(
+                kind(decode(schema, &keyboard)),
+                io::ErrorKind::InvalidData,
+                "{schema}"
+            );
+        }
+        // Admitted members stay outside the scoped fixture rather than invalid.
+        assert_eq!(kind(decode(26, &keyboard)), io::ErrorKind::Other);
+        assert_eq!(kind(decode(CURRENT_SCHEMA, &zone)), io::ErrorKind::Other);
+        assert_eq!(kind(decode(25, &keyboard_false)), io::ErrorKind::Other);
+    }
+
     #[test]
     fn typed_profile_settings_distinguish_missing_null_and_unknown_values() {
         use serde_json::json;

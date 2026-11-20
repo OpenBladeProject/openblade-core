@@ -2,12 +2,19 @@
 //! preferences fields must match the managed default fixture as JSON values.
 
 use super::{CURRENT_SCHEMA, Inspection, inspect_bytes};
-use crate::configuration::{digest_hex, web_integer};
+use crate::configuration::{digest_hex, legacy_lighting_intent, web_integer};
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::{Value, json, value::RawValue};
 use std::io;
 
 pub(super) const LEGACY_SCHEMA: i32 = 24;
+// Managed ProfileStore.FanStopRollingAverageSchemaVersion: the first schema
+// that stores the immediate cutoffs instead of deriving them.
+const FAN_STOP_CUTOFF_SCHEMA: i32 = 25;
+// Managed ProfileStore.KeyboardEffectControlSchemaVersion.
+const KEYBOARD_EFFECT_SCHEMA: i32 = 26;
+// Managed lighting zone controls first appear in profile schema 27.
+const ZONE_CONTROL_SCHEMA: i32 = 27;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct ProfilePolicy {
@@ -90,14 +97,14 @@ impl Default for FanStop {
 impl FanStop {
     fn read(value: Value, schema: i32) -> io::Result<Self> {
         let fields = value.as_object().ok_or_else(invalid)?;
-        if schema == CURRENT_SCHEMA
+        if schema >= FAN_STOP_CUTOFF_SCHEMA
             && (!fields.contains_key("cpuImmediateCutoffCelsius")
                 || !fields.contains_key("gpuImmediateCutoffCelsius"))
         {
             return Err(invalid());
         }
         let mut settings: Self = serde_json::from_value(value)?;
-        if schema == LEGACY_SCHEMA {
+        if schema < FAN_STOP_CUTOFF_SCHEMA {
             settings.cpu_immediate_cutoff_celsius =
                 (i64::from(settings.cpu_limit_celsius) + 10).min(100) as i32;
             settings.gpu_immediate_cutoff_celsius =
@@ -206,7 +213,7 @@ impl ProfileTemplate {
         inspection: Inspection,
     ) -> io::Result<ProfilePolicy> {
         let Inspection::CommittedEnvelope {
-            schema: schema @ (LEGACY_SCHEMA | CURRENT_SCHEMA),
+            schema: schema @ LEGACY_SCHEMA..=CURRENT_SCHEMA,
         } = inspection
         else {
             return Err(io::Error::other(format!(
@@ -215,7 +222,11 @@ impl ProfileTemplate {
         };
         let mut profile: Value = serde_json::from_slice(docs[0])?;
         let mut preferences: Value = serde_json::from_slice(docs[1])?;
+        reject_legacy_lighting(&profile, schema)?;
+        reject_legacy_lighting(&preferences, schema)?;
         let (policy, fan_stop) = take_fields(&mut profile, &mut preferences)?;
+        // The schema 26 independent-intent preservation rewrites only non-null
+        // lighting, which the scoped template never contains.
         if profile != self.profile || preferences != self.preferences {
             return Err(io::Error::other(
                 "profile or preferences outside the scoped fixture",
@@ -270,6 +281,20 @@ pub(super) fn commit_marker(schema: i32, profile: &[u8], preferences: &[u8]) -> 
         "profileSha256": digest_hex(profile),
         "preferencesSha256": digest_hex(preferences),
     }))?)
+}
+
+fn reject_legacy_lighting(document: &Value, schema: i32) -> io::Result<()> {
+    if legacy_lighting_intent(
+        document,
+        schema < ZONE_CONTROL_SCHEMA,
+        schema < KEYBOARD_EFFECT_SCHEMA,
+    ) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "lighting intent requires a newer profile schema",
+        ));
+    }
+    Ok(())
 }
 
 fn take_fields(profile: &mut Value, preferences: &mut Value) -> io::Result<(Value, Value)> {

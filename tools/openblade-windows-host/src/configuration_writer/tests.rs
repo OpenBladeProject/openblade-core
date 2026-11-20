@@ -241,45 +241,51 @@ fn rejects_bad_intent_and_refuses_old_or_incomplete_preimages() {
             "{report:?}"
         );
     }
-    let old_profile = fixture.prior[0].replace("\"schemaVersion\": 25", "\"schemaVersion\": 24");
-    let old_preferences =
-        fixture.prior[1].replace("\"schemaVersion\": 25", "\"schemaVersion\": 24");
-    let old_marker = format!(
-        r#"{{"schemaVersion":24,"profileSha256":"{:X}","preferencesSha256":"{:X}"}}"#,
-        Sha256::digest(old_profile.as_bytes()),
-        Sha256::digest(old_preferences.as_bytes()),
-    );
-    let old = [
-        old_profile.as_bytes(),
-        old_preferences.as_bytes(),
-        old_marker.as_bytes(),
-    ];
-    let report = store.commit(old, |_| panic!("old intent reached mutation"));
-    assert!(
-        matches!(
-            report.outcome,
-            Outcome::InvalidIntent(Inspection::CommittedEnvelope { schema: 24 })
-        ),
-        "{report:?}"
-    );
-    assert_only_primaries_and_lock(&store, false);
-    for (name, contents) in NAMES.into_iter().zip(old) {
-        store.create_durable(name, contents).unwrap();
+    // Every older supported schema is refused as an intent and preserved as a
+    // preimage; managed migration owns the upgrade to the current schema.
+    for schema in [24, 25, 26] {
+        let current = format!("\"schemaVersion\": {CURRENT_SCHEMA}");
+        let older = format!("\"schemaVersion\": {schema}");
+        let old_profile = fixture.prior[0].replace(&current, &older);
+        let old_preferences = fixture.prior[1].replace(&current, &older);
+        let old_marker = format!(
+            r#"{{"schemaVersion":{schema},"profileSha256":"{:X}","preferencesSha256":"{:X}"}}"#,
+            Sha256::digest(old_profile.as_bytes()),
+            Sha256::digest(old_preferences.as_bytes()),
+        );
+        let old = [
+            old_profile.as_bytes(),
+            old_preferences.as_bytes(),
+            old_marker.as_bytes(),
+        ];
+        let report = store.commit(old, |_| panic!("old intent reached mutation"));
+        assert!(
+            matches!(
+                report.outcome,
+                Outcome::InvalidIntent(Inspection::CommittedEnvelope { schema: s }) if s == schema
+            ),
+            "{report:?}"
+        );
+        assert_only_primaries_and_lock(&store, false);
+        for (name, contents) in NAMES.into_iter().zip(old) {
+            store.create_durable(name, contents).unwrap();
+        }
+        let report = store.commit(bytes(&fixture.committed), |_| {
+            panic!("old preimage reached mutation")
+        });
+        assert!(
+            matches!(
+                report.outcome,
+                Outcome::Refused(Inspection::CommittedEnvelope { schema: s }) if s == schema
+            ),
+            "{report:?}"
+        );
+        assert_primaries(&store, old.map(Some));
+        for name in NAMES {
+            fs::remove_file(store.path(name)).unwrap();
+        }
     }
-    let report = store.commit(bytes(&fixture.committed), |_| {
-        panic!("old preimage reached mutation")
-    });
-    assert!(
-        matches!(
-            report.outcome,
-            Outcome::Refused(Inspection::CommittedEnvelope { schema: 24 })
-        ),
-        "{report:?}"
-    );
-    assert_primaries(&store, old.map(Some));
 
-    fs::remove_file(store.path(PREFERENCES)).unwrap();
-    fs::remove_file(store.path(COMMIT)).unwrap();
     fs::write(store.path(PROFILE), fixture.legacy.as_bytes()).unwrap();
     let report = store.commit(bytes(&fixture.committed), |_| {
         panic!("legacy preimage reached mutation")

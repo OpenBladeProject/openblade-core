@@ -55,18 +55,25 @@ profile materialization occurs. The native writer retains its own exclusive
 configuration writer handle, protected relative paths, atomic replacement and
 independent byte readback.
 
-Current schema-8 manual overrides support Balanced/Performance, Persistent and
-UntilPowerSourceChange lifetimes, and explicit nullable clear. Each setter clears
+Manual overrides at schemas 8, 9 and the current 10 support Balanced/Performance,
+Persistent and UntilPowerSourceChange lifetimes, and explicit nullable clear.
+Every save writes schema 10, as managed does. Each setter clears
 the other performance slot as managed setters do. Temporary state expires when
 a fresh known power source differs. Unresolved external power neither expires
 intent nor establishes full-power effectiveness. Existing manual fan detail/custom/GPU fields
-are preserved when unrelated; schema 1-7 requires managed migration. Unsupported
+are preserved when unrelated; schema 1-7 requires managed migration. As in
+managed, a non-false `controlsKeyboardEffect` below schema 9 or a non-null zone
+control below schema 10 makes the document invalid. Stored fan speeds admit
+managed's 5500 RPM maximum, while the fan write path keeps its 5400 RPM bound,
+so a larger saved target is refused when selected. Unsupported
 saved lighting overrides are preserved and refused rather than erased or labeled
 as corrupt. Future, malformed, duplicate-member and interrupted documents remain
-unchanged. A compatible committed schema-25 profile/preferences/commit envelope
-is required when an aggregate exists; hashes and consumed typed thermal fields
+unchanged. A compatible committed profile/preferences/commit envelope at schema
+25, 26 or the current 27 is required when an aggregate exists. The same
+legacy lighting rejections apply to it; hashes and consumed typed thermal fields
 are validated before saving. This does not implement all managed profile payload
-semantics or migrate/modify the aggregate.
+semantics or migrate/modify the aggregate; schema 24 still needs managed
+migration first.
 
 Resolution uses eligible manual intent, then the current application report's
 performance override, then the matching power profile. Application instances have

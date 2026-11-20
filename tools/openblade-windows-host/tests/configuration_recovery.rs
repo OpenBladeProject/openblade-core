@@ -173,7 +173,7 @@ fn stale_marker_and_external_edits_are_preserved_byte_for_byte() {
     );
     assert_eq!(storage, before);
 
-    storage.put(PROFILE, br#"{"schemaVersion":26,"schemaVersion":25}"#);
+    storage.put(PROFILE, br#"{"schemaVersion":28,"schemaVersion":27}"#);
     assert_eq!(
         inspect(storage.observe()),
         Inspection::Preserve(Reason::FutureSchema)
@@ -204,28 +204,28 @@ fn with_marker(profile: &str, preferences: &str, marker_schema: &str) -> FakeSto
 fn envelope_schema_and_hash_rules_preserve_numeric_and_legacy_meanings() {
     let f = fixture();
     let [profile, prefs, _] = &f.committed;
-    let old_profile = profile.replacen(r#""schemaVersion": 25"#, r#""schemaVersion": 24"#, 1);
-    let old_prefs = prefs.replacen(r#""schemaVersion": 25"#, r#""schemaVersion": 24"#, 1);
+    let old_profile = profile.replacen(r#""schemaVersion": 27"#, r#""schemaVersion": 24"#, 1);
+    let old_prefs = prefs.replacen(r#""schemaVersion": 27"#, r#""schemaVersion": 24"#, 1);
     assert_eq!(
         inspect(with_marker(&old_profile, &old_prefs, "24").observe()),
         Inspection::CommittedEnvelope { schema: 24 }
     );
     assert_eq!(
-        inspect(with_marker(&old_profile, prefs, "25").observe()),
+        inspect(with_marker(&old_profile, prefs, "27").observe()),
         Inspection::Preserve(Reason::MixedSchema)
     );
     assert_eq!(
-        inspect(with_marker(profile, &old_prefs, "25").observe()),
+        inspect(with_marker(profile, &old_prefs, "27").observe()),
         Inspection::Preserve(Reason::InvalidDocument)
     );
 
-    let quoted_prefs = prefs.replacen(r#""schemaVersion": 25"#, r#""schemaVersion": "25""#, 1);
+    let quoted_prefs = prefs.replacen(r#""schemaVersion": 27"#, r#""schemaVersion": "27""#, 1);
     assert_eq!(
-        inspect(with_marker(profile, &quoted_prefs, r#""25""#).observe()),
+        inspect(with_marker(profile, &quoted_prefs, r#""27""#).observe()),
         COMMITTED
     );
     assert_eq!(
-        inspect(with_marker(profile, prefs, "25.0").observe()),
+        inspect(with_marker(profile, prefs, "27.0").observe()),
         Inspection::Preserve(Reason::InvalidDocument)
     );
     assert_eq!(
@@ -233,11 +233,11 @@ fn envelope_schema_and_hash_rules_preserve_numeric_and_legacy_meanings() {
         Inspection::Preserve(Reason::InvalidDocument)
     );
     assert_eq!(
-        inspect(with_marker(profile, prefs, "26").observe()),
+        inspect(with_marker(profile, prefs, "28").observe()),
         Inspection::Preserve(Reason::FutureSchema)
     );
 
-    let mut storage = with_marker(profile, prefs, "25");
+    let mut storage = with_marker(profile, prefs, "27");
     let expected = String::from_utf8(storage.0[COMMIT].clone()).unwrap();
     let digest = format!("{:X}", Sha256::digest(profile.as_bytes()));
     for replacement in [digest.to_lowercase(), digest[..63].to_owned()] {
@@ -266,15 +266,15 @@ fn envelope_schema_and_hash_rules_preserve_numeric_and_legacy_meanings() {
 fn malformed_or_duplicate_hashed_documents_remain_invalid() {
     let f = fixture();
     for broken in [
-        r#"{"schemaVersion":25,"profiles":{"nested":[{"red":0,"r\u0065d":1}]}}"#,
-        r#"{"schemaVersion":25,"profiles":null}"#,
-        r#"{"schemaVersion":25,"profiles":{}}{}"#,
-        r#"{"schemaVersion":25,"profiles":{"bad":"\uD800"}}"#,
-        r#"{"schemaVersion":25,"profiles":{}"#,
+        r#"{"schemaVersion":27,"profiles":{"nested":[{"red":0,"r\u0065d":1}]}}"#,
+        r#"{"schemaVersion":27,"profiles":null}"#,
+        r#"{"schemaVersion":27,"profiles":{}}{}"#,
+        r#"{"schemaVersion":27,"profiles":{"bad":"\uD800"}}"#,
+        r#"{"schemaVersion":27,"profiles":{}"#,
         "",
     ] {
         assert_eq!(
-            inspect(with_marker(broken, &f.committed[1], "25").observe()),
+            inspect(with_marker(broken, &f.committed[1], "27").observe()),
             Inspection::Preserve(Reason::InvalidDocument),
             "{broken}"
         );
@@ -307,7 +307,7 @@ fn inspection_matches_checked_managed_edge_cases() {
         let document = |raw: Option<String>, schema: Option<String>, original: &str| {
             raw.unwrap_or_else(|| match schema {
                 Some(schema) => original.replacen(
-                    r#""schemaVersion": 25"#,
+                    r#""schemaVersion": 27"#,
                     &format!(r#""schemaVersion": {schema}"#),
                     1,
                 ),
@@ -328,7 +328,7 @@ fn inspection_matches_checked_managed_edge_cases() {
             with_marker(
                 &profile,
                 &preferences,
-                vector.marker_schema.as_deref().unwrap_or("25"),
+                vector.marker_schema.as_deref().unwrap_or("27"),
             )
         };
         let actual = match inspect(storage.observe()) {

@@ -117,7 +117,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             {
                 string schema = vector.TryGetProperty("markerSchema", out JsonElement value)
                     ? value.GetString()!
-                    : "25";
+                    : ProfileStore.CurrentSchemaVersion.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 string marker = $$"""
                     {"schemaVersion":{{schema}},"profileSha256":"{{Hash(profile)}}","preferencesSha256":"{{Hash(preferences)}}"}
                     """;
@@ -148,7 +148,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
                     return document.GetString()!;
                 }
                 return vector.TryGetProperty(name + "Schema", out JsonElement schema)
-                    ? original.Replace("\"schemaVersion\": 25",
+                    ? original.Replace($"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
                         $"\"schemaVersion\": {schema.GetString()}", StringComparison.Ordinal)
                     : original;
             }
@@ -188,13 +188,13 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.True(JsonNode.DeepEquals(vector["currentFanStop"],
             JsonSerializer.SerializeToNode(migrated.Preferences.FanStopSettings, ProfileStore.SerializerOptions)));
         JsonNode expectedProfile = profile.DeepClone();
-        expectedProfile["schemaVersion"] = 25;
+        expectedProfile["schemaVersion"] = ProfileStore.CurrentSchemaVersion;
         Assert.True(JsonNode.DeepEquals(expectedProfile,
             JsonNode.Parse(await File.ReadAllBytesAsync(paths.Profiles))));
         foreach (string path in paths.All)
         {
             using JsonDocument document = JsonDocument.Parse(await File.ReadAllBytesAsync(path));
-            Assert.Equal(25, document.RootElement.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(ProfileStore.CurrentSchemaVersion, document.RootElement.GetProperty("schemaVersion").GetInt32());
         }
 
         // Enum names and numeric strings are unsupported for the enum, even
