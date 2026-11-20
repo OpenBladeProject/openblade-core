@@ -627,6 +627,43 @@ impl StatusSource for GuardedStatus {
                     runtime.application(caller, sid, instance_id, sequence, executable_path),
                     None,
                 )),
+                #[cfg(feature = "service-profiles-v1")]
+                crate::service_status::StatusRequest::UpdateProfiles { profiles, .. } => {
+                    let Some(profiles) = profiles.profiles().cloned() else {
+                        return Ok((
+                            super::thermal_mutation::Outcome::blocked(
+                                "Unsupported mutation operation.",
+                            ),
+                            None,
+                        ));
+                    };
+                    let (outcome, stored) = runtime
+                        .update_profiles(mailbox.clone(), caller, sid, &profiles)
+                        .await?;
+                    if !stored {
+                        return Ok((outcome, None));
+                    }
+                    // Managed publishes the saved set with its Stored reply.
+                    // Start from the latest status and project this user again.
+                    let mut status = publisher.borrow().active.clone();
+                    if let super::mailbox_read::MailboxSource::Reader(reader) = &mailbox {
+                        status = reader.current_policy(status)?;
+                        reader.retain_mutation(&status);
+                    }
+                    status.set_observation_revision(
+                        publisher
+                            .borrow()
+                            .active
+                            .revision()
+                            .checked_add(1)
+                            .ok_or_else(|| invalid("status revision exhausted"))?,
+                    );
+                    publisher.send_replace(Arc::new(Publication {
+                        inactive: status.inactive_mutation(),
+                        active: status.clone(),
+                    }));
+                    Ok((outcome, Some(status)))
+                }
                 crate::service_status::StatusRequest::SetPerformanceOverride {
                     request_id,
                     value,

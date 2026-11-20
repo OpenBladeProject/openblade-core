@@ -77,6 +77,9 @@ pub(super) use battery::BatteryUpdate;
 #[path = "fan_mutation.rs"]
 mod fan;
 pub(super) use fan::FanRequest;
+#[cfg(feature = "service-profiles-v1")]
+#[path = "profile_mutation.rs"]
+mod profiles;
 pub(super) trait Fresh: Send + Sync {
     /// The fresh Windows power kind: `Some(false)` is AC (ACLineStatus
     /// online), `Some(true)` battery and `None` unknown. It is never wattage
@@ -368,6 +371,69 @@ impl Runtime {
                 .into(),
         }
     }
+    /// The private thermal projection of one user: saved profiles, saved
+    /// intent and its provenance, read from that user's store at each status.
+    fn thermal_policy(
+        &self,
+        policy_sid: String,
+        session: u32,
+        custody: Arc<dyn ReadCustody>,
+    ) -> Rc<dyn Fn(Snapshot) -> io::Result<Snapshot>> {
+        let runtime = self.clone();
+        Rc::new(move |base| {
+            verify_retained_failure(&runtime.fatal)?;
+            let base = base.without_private_policy();
+            let (store, fresh) = match runtime.capture(&policy_sid, session, custody.clone()) {
+                Ok(value) => value,
+                Err(error) if is_fatal_admission(&error) => return Err(error),
+                Err(_) => {
+                    return Ok(base.private_policy_unavailable(
+                        crate::service_status::PrivatePolicyFamily::Thermal,
+                    ));
+                }
+            };
+            fresh.verify_health()?;
+            let admitted = fresh.authorize().is_some();
+            fresh.verify_health()?;
+            if !admitted {
+                return Ok(base);
+            }
+            let power = base.thermal_power_source();
+            // The status base reports 3 for any power that is not battery,
+            // Unknown included, and may be older than this read. A failed,
+            // unknown or disagreeing Windows read is not a power boundary
+            // (managed `CaptureControlPowerSource`), so unless fresh Windows
+            // power agrees with the base, saved intent is read at an unknown
+            // class (-1), which retires no temporary.
+            let query = status_query_power(power, fresh.as_ref());
+            let application = runtime
+                .application
+                .borrow()
+                .as_ref()
+                .filter(|a| {
+                    a.sid == policy_sid && a.session == session && Instant::now() < a.expires
+                })
+                .and_then(|a| a.path.clone());
+            let value = store.current_override(query)?;
+            let desired = store.desired(query, application.as_deref())?;
+            Ok(base
+                .thermal_profiles(store.profiles()?)?
+                .thermal_intent(
+                    value.as_ref(),
+                    desired.map(|(p, _)| p),
+                    "Saved performance policy; current hardware is reported independently.",
+                    None,
+                )
+                .thermal_provenance(desired.map(|(_, s)| s))
+                .fan_intent(
+                    store.current_fan_override(query)?.as_ref(),
+                    store.desired_fan(query, application.as_deref())?,
+                    power,
+                    "Saved thermal policy; firmware mode is reported independently.",
+                )
+                .bind_private_user(&policy_sid))
+        })
+    }
     // Every caller, including the shared mutation tests, passes the admitted request fields individually.
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn apply(
@@ -436,63 +502,7 @@ impl Runtime {
             .as_ref()
             .filter(|a| a.sid == sid && a.session == caller.session && Instant::now() < a.expires)
             .and_then(|a| a.path.clone());
-        let runtime = self.clone();
-        let policy_sid = sid.clone();
-        let custody = reader.custody();
-        reader.retain_policy(Rc::new(move |base| {
-            verify_retained_failure(&runtime.fatal)?;
-            let base = base.without_private_policy();
-            let (store, fresh) = match runtime.capture(&policy_sid, caller.session, custody.clone())
-            {
-                Ok(value) => value,
-                Err(error) if is_fatal_admission(&error) => return Err(error),
-                Err(_) => {
-                    return Ok(base.private_policy_unavailable(
-                        crate::service_status::PrivatePolicyFamily::Thermal,
-                    ));
-                }
-            };
-            fresh.verify_health()?;
-            let admitted = fresh.authorize().is_some();
-            fresh.verify_health()?;
-            if !admitted {
-                return Ok(base);
-            }
-            let power = base.thermal_power_source();
-            // The status base reports 3 for any power that is not battery,
-            // Unknown included, and may be older than this read. A failed,
-            // unknown or disagreeing Windows read is not a power boundary
-            // (managed `CaptureControlPowerSource`), so unless fresh Windows
-            // power agrees with the base, saved intent is read at an unknown
-            // class (-1), which retires no temporary.
-            let query = status_query_power(power, fresh.as_ref());
-            let application = runtime
-                .application
-                .borrow()
-                .as_ref()
-                .filter(|a| {
-                    a.sid == policy_sid && a.session == caller.session && Instant::now() < a.expires
-                })
-                .and_then(|a| a.path.clone());
-            let value = store.current_override(query)?;
-            let desired = store.desired(query, application.as_deref())?;
-            Ok(base
-                .thermal_profiles(store.profiles()?)?
-                .thermal_intent(
-                    value.as_ref(),
-                    desired.map(|(p, _)| p),
-                    "Saved performance policy; current hardware is reported independently.",
-                    None,
-                )
-                .thermal_provenance(desired.map(|(_, s)| s))
-                .fan_intent(
-                    store.current_fan_override(query)?.as_ref(),
-                    store.desired_fan(query, application.as_deref())?,
-                    power,
-                    "Saved thermal policy; firmware mode is reported independently.",
-                )
-                .bind_private_user(&policy_sid))
-        }));
+        reader.retain_policy(self.thermal_policy(sid.clone(), caller.session, reader.custody()));
         let intent = format!("{:x}", Sha256::digest(serde_json::to_vec(&value)?));
         let permit = Arc::new(RequestPermit {
             storage,

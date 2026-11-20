@@ -6,8 +6,8 @@ use crate::configuration::{
     RECOVERY_REQUIRED, RecoveryRecord, Snapshot, inspect,
 };
 use crate::windows_protected_path::{
-    FileIdentity, check_regular_file, file_identity, handle_information, open_relative,
-    open_relative_with_security,
+    FileIdentity, check_regular_file, file_identity, handle_information, mark_for_deletion,
+    open_relative, open_relative_with_security,
 };
 use serde::Serialize;
 use std::ffi::OsStr;
@@ -15,14 +15,13 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
-use std::os::windows::io::AsRawHandle;
 use std::path::{Component, Path, PathBuf, Prefix};
 use std::sync::Arc;
 use windows_sys::Win32::Storage::FileSystem::{
-    DELETE, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_DISPOSITION_INFO,
-    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_FLAG_WRITE_THROUGH,
-    FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileDispositionInfo,
-    MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW, SetFileInformationByHandle,
+    DELETE, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
+    FILE_FLAG_OPEN_REPARSE_POINT, FILE_FLAG_WRITE_THROUGH, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
+    FILE_SHARE_READ, FILE_SHARE_WRITE, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    MoveFileExW,
 };
 use windows_sys::Win32::System::Com::CoCreateGuid;
 
@@ -837,24 +836,6 @@ fn read_file(file: &File) -> io::Result<(FileIdentity, Vec<u8>)> {
         ));
     }
     Ok((identity, bytes))
-}
-
-fn mark_for_deletion(file: &File) -> io::Result<()> {
-    let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
-    // SAFETY: The file owns a live handle opened for DELETE and disposition
-    // points to the structure required by FileDispositionInfo.
-    if unsafe {
-        SetFileInformationByHandle(
-            file.as_raw_handle(),
-            FileDispositionInfo,
-            (&raw const disposition).cast(),
-            size_of::<FILE_DISPOSITION_INFO>() as u32,
-        )
-    } == 0
-    {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
 }
 
 fn move_file(source: &Path, target: &Path, replace: bool) -> io::Result<()> {

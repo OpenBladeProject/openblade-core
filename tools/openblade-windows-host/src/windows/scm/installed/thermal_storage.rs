@@ -15,6 +15,11 @@ use std::{
 #[path = "battery_storage.rs"]
 mod battery;
 pub(super) use battery::TemporaryRelease;
+#[cfg(feature = "service-profiles-v1")]
+#[path = "profile_storage.rs"]
+mod profiles;
+#[cfg(feature = "service-profiles-v1")]
+pub(super) use profiles::ProfileSave;
 
 pub(super) const RELEASE_PAUSED: &str = "Temporary charge journal release is deferred.";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -149,6 +154,12 @@ pub(super) trait Files: Send + Sync {
     }
     fn replace_retired(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
         self.replace(name, expected, bytes)
+    }
+    /// Deletes `name` only while it still holds exactly `expected`. A store
+    /// that cannot prove the removal refuses it.
+    #[cfg(feature = "service-profiles-v1")]
+    fn remove(&self, _name: &str, _expected: &[u8]) -> io::Result<()> {
+        Err(denied())
     }
 }
 fn denied() -> io::Error {

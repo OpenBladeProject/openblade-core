@@ -643,6 +643,29 @@ pub(crate) fn rename_same_directory(file: &File, target: &str, replace: bool) ->
     Ok(())
 }
 
+/// Deletes the file when its last handle closes. The handle must have been
+/// opened with DELETE access.
+pub(crate) fn mark_for_deletion(file: &File) -> io::Result<()> {
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_DISPOSITION_INFO, FileDispositionInfo, SetFileInformationByHandle,
+    };
+    let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
+    // SAFETY: The file owns a live handle opened for DELETE and disposition
+    // points to the structure required by FileDispositionInfo.
+    if unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileDispositionInfo,
+            (&raw const disposition).cast(),
+            size_of::<FILE_DISPOSITION_INFO>() as u32,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 /// Retain an existing protected descriptor for a child with the same policy.
 /// The caller verifies both parent and new child; this never grants wider ACLs.
 pub(crate) fn retain_descriptor(file: &File) -> io::Result<LocalDescriptor> {

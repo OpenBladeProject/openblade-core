@@ -420,6 +420,39 @@ impl Files for ProtectedFiles {
         }
         Ok(())
     }
+    #[cfg(feature = "service-profiles-v1")]
+    fn remove(&self, name: &str, expected: &[u8]) -> io::Result<()> {
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b".-".contains(&b))
+        {
+            return Err(deny());
+        }
+        self.check(&self.root, USER_ROOT)?;
+        // Exclusive, so the bytes compared are the bytes deleted.
+        let mut file = paths::open_relative(
+            &self.root,
+            OsStr::new(name),
+            FILE_GENERIC_READ | DELETE,
+            0,
+            FILE_OPEN,
+            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT,
+        )?;
+        paths::check_regular_file(&file)?;
+        self.check(&file, Policy::Record)?;
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)?;
+        if bytes != expected {
+            return Err(deny());
+        }
+        paths::mark_for_deletion(&file)?;
+        drop(file);
+        if self.read(name)?.is_some() {
+            return Err(deny());
+        }
+        Ok(())
+    }
 }
 
 // Configuration remains per-user; submission ambiguity is machine-global under
@@ -464,6 +497,14 @@ impl Files for CustodialFiles {
         } else {
             self.user.replace(name, expected, bytes)
         }
+    }
+    #[cfg(feature = "service-profiles-v1")]
+    fn remove(&self, name: &str, expected: &[u8]) -> io::Result<()> {
+        // The journal is custody's; it is never removed through this store.
+        if name.starts_with("thermal-mutation.journal") {
+            return Err(deny());
+        }
+        self.user.remove(name, expected)
     }
 }
 

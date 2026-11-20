@@ -203,12 +203,18 @@ jobs:
 
       # The workspace build leaves openblade-domain's thermal-history feature off;
       # it carries the history grammar that tools/openblade-windows-host enables.
-      - name: Test and lint the domain thermal-history feature
+      - name: Test and lint the domain thermal-history and profile-set features
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           cargo test --locked -p openblade-domain --features thermal-history --target ${{ matrix.target }}
           cargo clippy --locked -p openblade-domain --features thermal-history --all-targets --target ${{ matrix.target }} -- -D warnings
+          # The managed ProfileSet model, codec and validator, against the vectors
+          # the managed Service tests record. Their stored-document digests need
+          # thermal-history's SHA-256.
+          cargo test --locked -p openblade-domain --features profile-set,thermal-history --target ${{ matrix.target }}
+          cargo clippy --locked -p openblade-domain --features profile-set,thermal-history --all-targets --target ${{ matrix.target }} -- -D warnings
+          cargo clippy --locked -p openblade-domain --features profile-set --all-targets --target ${{ matrix.target }} -- -D warnings
 
       # The workspace build leaves the production Session GPU close backend
       # off. Its tests drive scripted process seams only; none opens, signals
@@ -288,6 +294,10 @@ jobs:
               # Managed's unsupported reply in every Service lane: each one
               # pins a different row of the compiled `serves` table.
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'unserved'),
+              @('openblade-windows-service-candidate', 'service-profiles-v1', 'unserved'),
+              # Installed updateProfiles: the store transaction and the managed
+              # vector corpus through the framed dispatcher.
+              @('openblade-windows-service-candidate', 'service-profiles-v1', 'profiles::'),
               @('openblade-windows-service-candidate', 'service-fan-mutation-v2', 'unserved'),
               @('openblade-windows-service-candidate', 'service-thermal-mutation-v1', 'unserved'),
               @('openblade-windows-service-candidate', 'service-metadata-only-v1', 'unserved'),
@@ -336,6 +346,7 @@ jobs:
               @('openblade-windows-service-candidate', 'service-fan-mutation-v2'),
               @('openblade-windows-service-candidate', 'service-battery-policy-v1'),
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1'),
+              @('openblade-windows-service-candidate', 'service-profiles-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-brightness-write-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-profile-apply-v1'),
               @('openblade-windows-agent-candidate', 'agent-battery-report-v1'),

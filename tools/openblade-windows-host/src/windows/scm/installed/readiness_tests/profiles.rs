@@ -1,0 +1,577 @@
+//! Installed `updateProfiles` through the real framed dispatcher. The store
+//! is the in-memory model; no hardware, pipe or operating-system supplier is
+//! reached, and every case asserts that no mailbox command was written.
+use super::*;
+use openblade_domain::profile_set::{
+    self, Capabilities, Dialect, Json, ProfileSet, ValidationPolicy, Validator, encode, normalize,
+    preferences, update,
+};
+
+const STORED: &str = "Profiles stored without automatic hardware application.";
+const VECTORS: &str = include_str!("../../../../../tests/data/profile-set-vectors-v27.json");
+const NAMES: [&str; 3] = [
+    "profiles.json",
+    "battery-preferences.json",
+    "battery-configuration.commit.json",
+];
+
+/// The set the fixture aggregate holds, as the Tray would send it back.
+fn saved(files: &MemoryFiles) -> Value {
+    files.document("profiles.json")["profiles"].clone()
+}
+
+fn update_request(n: u8, profiles: &Value) -> Value {
+    json!({
+        "operation": "updateProfiles", "version": 85,
+        "requestId": format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),
+        "profiles": profiles,
+    })
+}
+
+fn result(status: u8, message: &str, n: u8) -> Value {
+    json!({
+        "frame": "response", "version": 85,
+        "requestId": format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),
+        "success": true, "error": null, "status": null,
+        "result": {"status": status, "message": message},
+        "archive": null, "errorCode": null,
+    })
+}
+
+fn documents(files: &MemoryFiles) -> [Vec<u8>; 3] {
+    let bytes = files.bytes.lock().unwrap();
+    NAMES.map(|name| bytes[name].clone())
+}
+
+/// What managed writes for `profiles` over the saved set, by the domain
+/// codec the managed vectors pin.
+fn expected_profile_document(profiles: &Value, saved: &Value) -> Vec<u8> {
+    fn same_path(left: &str, right: &str) -> bool {
+        left.eq_ignore_ascii_case(right)
+    }
+    let typed = |value: &Value| {
+        let tree = profile_set::json::parse(&serde_json::to_vec(value).unwrap()).unwrap();
+        update::decode_profiles(&tree, Dialect::Document).unwrap()
+    };
+    let capabilities = Capabilities::rz09_0581();
+    let validator = Validator::new(
+        ValidationPolicy::for_capabilities(&capabilities, &capabilities),
+        same_path,
+    );
+    let mut prior: ProfileSet = typed(saved);
+    normalize::normalize_legacy_battery_profile(&mut prior, None).unwrap();
+    let admitted = update::admit(
+        typed(profiles),
+        &prior,
+        &validator,
+        &validator,
+        Some(&capabilities),
+    )
+    .unwrap();
+    encode::profile_document(profile_set::CURRENT_SCHEMA, &admitted)
+}
+
+/// One framed exchange with exact request bytes. The reply is empty when
+/// the Service closes the connection without answering.
+async fn exchange(rig: &Rig, payload: &[u8]) -> Vec<u8> {
+    exchange_as(rig, payload, USER).await
+}
+
+async fn exchange_as(rig: &Rig, payload: &[u8], caller: Caller) -> Vec<u8> {
+    let (mut client, server) = duplex(65536);
+    let source = rig.source.clone();
+    let publications = source.lock().await.publications();
+    let served = serve_connection(
+        Box::new(SidStream {
+            inner: test_stream(server, caller, Fault::None),
+            sid: SID.to_owned(),
+        }),
+        source,
+        publications,
+        Rc::new(Subscriptions::new(2)),
+    );
+    let exchange = async {
+        crate::service_frame::write_payload(&mut client, payload)
+            .await
+            .unwrap();
+        let mut reply = Vec::new();
+        tokio::io::AsyncReadExt::read_to_end(&mut client, &mut reply)
+            .await
+            .unwrap();
+        reply
+    };
+    let (served, reply) = tokio::join!(served, exchange);
+    assert!(
+        !matches!(served, Err(ExchangeError::Runtime(_))),
+        "a client fault never fails the Service"
+    );
+    assert_eq!(served.is_ok(), !reply.is_empty());
+    reply
+}
+
+fn no_hardware(rig: &Rig) {
+    let port = rig.port.state.lock().unwrap();
+    assert_eq!(port.writes, 0, "saving profiles writes no mailbox command");
+}
+
+async fn published_profiles(rig: &Rig) -> (u64, Value, Value) {
+    let publications = rig.source.lock().await.publications().unwrap();
+    let publication = publications.borrow().clone();
+    let active = serde_json::to_value(&publication.active).unwrap();
+    let inactive = serde_json::to_value(&publication.inactive).unwrap();
+    (
+        active["revision"].as_u64().unwrap(),
+        active["profiles"].clone(),
+        inactive["profiles"].clone(),
+    )
+}
+
+#[tokio::test]
+async fn installed_update_profiles_stores_the_managed_aggregate_and_publishes_it() {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let rig = Rig::new(files.clone());
+    rig.get().await;
+    let (revision, _, _) = published_profiles(&rig).await;
+    let prior = documents(&files);
+    let prior_set = saved(&files);
+    let mut profiles = prior_set.clone();
+    profiles["batteryPolicy"]["chargeLimitPercent"] = json!(75);
+    profiles["battery"]["batteryProtectionEnabled"] = json!(false);
+    profiles["pluggedIn"]["display"]["refreshRateKey"] = json!("240 Hz \u{e9}<&>");
+
+    let response = rig.request(update_request(1, &profiles)).await;
+
+    // Managed's reply: one result body, no status body.
+    assert_eq!(response, result(0, STORED, 1));
+    let [profile, stored_preferences, marker] = documents(&files);
+    assert_eq!(profile, expected_profile_document(&profiles, &prior_set));
+    assert!(profile.starts_with(b"{\r\n  \"schemaVersion\": 27,\r\n  \"profiles\": {\r\n"));
+    assert!(
+        String::from_utf8(profile.clone())
+            .unwrap()
+            .contains(r#""refreshRateKey": "240 Hz \u00E9\u003C\u0026\u003E""#)
+    );
+    // The preferences document is carried over; the marker commits both.
+    assert_eq!(stored_preferences, prior[1]);
+    assert_eq!(
+        marker,
+        preferences::commit_marker(
+            27,
+            &crate::configuration::digest_hex(&profile),
+            &crate::configuration::digest_hex(&stored_preferences),
+        )
+    );
+    assert!(
+        !files
+            .bytes
+            .lock()
+            .unwrap()
+            .keys()
+            .any(|name| name.contains("recovery-required") || name.contains(".transaction-")),
+        "no record or backup remains"
+    );
+    no_hardware(&rig);
+
+    // The save is published at the next revision, to the owner only.
+    let (published, active, inactive) = published_profiles(&rig).await;
+    assert!(published > revision);
+    assert_eq!(active["batteryPolicy"]["chargeLimitPercent"], 75);
+    assert_eq!(active["battery"]["batteryProtectionEnabled"], false);
+    assert_ne!(inactive["batteryPolicy"]["chargeLimitPercent"], 75);
+    // A later status read shows the same saved set.
+    let status = rig.get().await;
+    assert_eq!(
+        status["status"]["profiles"]["batteryPolicy"]["chargeLimitPercent"],
+        75
+    );
+    assert_eq!(
+        status["status"]["profiles"]["pluggedIn"]["display"]["refreshRateKey"],
+        "240 Hz \u{e9}<&>"
+    );
+    rig.stop().await;
+}
+
+#[tokio::test]
+async fn installed_update_profiles_rejects_intent_with_the_managed_message_and_stores_nothing() {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let rig = Rig::new(files.clone());
+    rig.get().await;
+    let prior = files.bytes.lock().unwrap().clone();
+    let set = saved(&files);
+    let edit = |change: &dyn Fn(&mut Value)| {
+        let mut profiles = set.clone();
+        change(&mut profiles);
+        profiles
+    };
+    for (n, profiles, message) in [
+        // Structural: managed refuses it for any device.
+        (
+            1,
+            edit(&|p| p["battery"]["performance"] = json!(2)),
+            "The requested intent was rejected: The battery profile is invalid: The performance preset is not valid for this power source.",
+        ),
+        // Capability dependent: valid stored intent elsewhere, not selectable
+        // on exact RZ09-0581.
+        (
+            2,
+            edit(&|p| p["pluggedIn"]["performance"] = json!(6)),
+            "The requested intent was rejected: The performance preset is not supported by the active device capability.",
+        ),
+        (
+            3,
+            edit(&|p| {
+                p["pluggedIn"]["performance"] = json!(5);
+                p["pluggedIn"]["customPerformance"] = json!({"cpu": 2, "gpu": 2});
+            }),
+            "The requested intent was rejected: The changed custom performance combination is not supported by this device.",
+        ),
+        (
+            4,
+            edit(&|p| p["battery"]["stopFansInBatterySaver"] = json!(true)),
+            "The requested intent was rejected: Battery Saver fan stop requires explicit support from the current device.",
+        ),
+        (
+            5,
+            edit(&|p| p["usbC"]["lighting"] = Value::Null),
+            "The requested intent was rejected: Value cannot be null. (Parameter 'settings')",
+        ),
+    ] {
+        // Managed `Failed`, inside a successful response frame.
+        assert_eq!(
+            rig.request(update_request(n, &profiles)).await,
+            result(3, message, n)
+        );
+        assert_eq!(*files.bytes.lock().unwrap(), prior, "{message}");
+    }
+    no_hardware(&rig);
+    // Whatever is published is still the saved set, never a refused one.
+    let (_, active, _) = published_profiles(&rig).await;
+    assert_eq!(
+        active["battery"]["performance"],
+        set["battery"]["performance"]
+    );
+    assert_eq!(active["pluggedIn"]["performance"], 1);
+    assert_eq!(active["battery"]["stopFansInBatterySaver"], false);
+    assert_eq!(active["usbC"]["lighting"], set["usbC"]["lighting"]);
+    rig.stop().await;
+}
+
+#[tokio::test]
+async fn installed_update_profiles_closes_on_a_frame_managed_refuses() {
+    use crate::service_status::StatusRequest;
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let set = saved(&files);
+    let frame = |change: &dyn Fn(&mut Value)| {
+        let mut request = update_request(1, &set);
+        change(&mut request);
+        serde_json::to_vec(&request).unwrap()
+    };
+    assert!(StatusRequest::decode(&frame(&|_| {})).is_ok());
+    let mut refused = vec![
+        frame(&|r| r["profiles"] = Value::Null),
+        frame(&|r| drop(r.as_object_mut().unwrap().remove("profiles"))),
+        frame(&|r| r["profiles"]["pluggedIn"] = Value::Null),
+        frame(&|r| r["profiles"]["pluggedIn"]["unknown"] = json!(1)),
+        frame(&|r| r["profiles"]["pluggedIn"]["fans"] = json!("0")),
+        frame(&|r| r["profiles"]["batteryPolicy"]["chargeLimitPercent"] = json!(100)),
+        frame(&|r| r["profiles"]["windowsPowerModes"]["silent"] = json!(3)),
+        frame(&|r| r["profiles"]["applicationProfiles"][0]["executablePath"] = json!("Game.exe")),
+        frame(&|r| r["extra"] = json!(1)),
+        frame(&|r| r["version"] = json!(84)),
+        frame(&|r| r["requestId"] = json!("not-a-guid")),
+    ];
+    // The discriminator of lighting parameters must come first, which only
+    // the ordered reader can see.
+    refused.push(
+        String::from_utf8(frame(&|r| {
+            r["profiles"]["pluggedIn"]["lighting"]["parameters"] = json!({"kind": "off"})
+        }))
+        .unwrap()
+        .replacen(r#"{"kind":"off"}"#, r#"{"extra":1,"kind":"off"}"#, 1)
+        .into_bytes(),
+    );
+    refused.push(
+        String::from_utf8(frame(&|_| {}))
+            .unwrap()
+            .replacen(r#""fans":0"#, r#""fans":0,"fans":0"#, 1)
+            .into_bytes(),
+    );
+    let rig = Rig::new(files.clone());
+    rig.get().await;
+    let prior = files.bytes.lock().unwrap().clone();
+    for payload in refused {
+        let text = String::from_utf8_lossy(&payload).into_owned();
+        assert!(StatusRequest::decode(&payload).is_err(), "{text}");
+        // Served and malformed: no reply, and never the unsupported refusal.
+        assert!(
+            crate::service_status::UnservedRequest::decode(&payload).is_err(),
+            "{text}"
+        );
+        let reply = exchange(&rig, &payload).await;
+        assert!(reply.is_empty(), "{text}");
+    }
+    assert_eq!(*files.bytes.lock().unwrap(), prior);
+    assert_eq!(rig.entered.get(), 0, "no refused frame reaches the runtime");
+    no_hardware(&rig);
+    rig.stop().await;
+}
+
+#[tokio::test]
+async fn installed_update_profiles_closes_for_a_caller_outside_the_control_session() {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let rig = Rig::new(files.clone());
+    rig.get().await;
+    let prior = files.bytes.lock().unwrap().clone();
+    let mut profiles = saved(&files);
+    profiles["batteryPolicy"]["chargeLimitPercent"] = json!(60);
+    let payload = serde_json::to_vec(&update_request(1, &profiles)).unwrap();
+    // Another session holds control: like every installed mutation, the
+    // request stores nothing and the connection closes without a reply.
+    let other_session = Caller {
+        control_session: Some(9),
+        ..USER
+    };
+
+    assert!(exchange_as(&rig, &payload, other_session).await.is_empty());
+
+    assert_eq!(*files.bytes.lock().unwrap(), prior);
+    // The owner's identical request is stored.
+    assert_eq!(
+        rig.request(update_request(1, &profiles)).await,
+        result(0, STORED, 1)
+    );
+    no_hardware(&rig);
+    rig.stop().await;
+}
+
+#[tokio::test]
+async fn installed_update_profiles_blocks_a_preserved_aggregate() {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let rig = Rig::new(files.clone());
+    rig.get().await;
+    let mut profiles = saved(&files);
+    profiles["batteryPolicy"]["chargeLimitPercent"] = json!(60);
+    // Another writer leaves a transaction record after this store opened.
+    files.bytes.lock().unwrap().insert(
+        "battery-configuration.commit.json.recovery-required".into(),
+        b"{}".to_vec(),
+    );
+    let prior = files.bytes.lock().unwrap().clone();
+
+    let response = rig.request(update_request(1, &profiles)).await;
+
+    assert_eq!(
+        response,
+        result(
+            2,
+            "OpenBlade preserved an unsupported or invalid configuration. Thermal settings are read-only until the service restarts with a valid configuration.",
+            1
+        )
+    );
+    assert_eq!(*files.bytes.lock().unwrap(), prior);
+    no_hardware(&rig);
+    rig.stop().await;
+}
+
+#[tokio::test]
+async fn installed_update_profiles_serialises_concurrent_requests() {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let rig = Rig::new(files.clone());
+    rig.get().await;
+    let (revision, _, _) = published_profiles(&rig).await;
+    let set = saved(&files);
+    let with_limit = |limit: u8| {
+        let mut profiles = set.clone();
+        profiles["batteryPolicy"]["chargeLimitPercent"] = json!(limit);
+        profiles
+    };
+    let (first, second) = (with_limit(60), with_limit(70));
+
+    // Two saves and a status read arrive together on separate connections.
+    let (a, b, status) = tokio::join!(
+        rig.request(update_request(1, &first)),
+        rig.request(update_request(2, &second)),
+        rig.get(),
+    );
+
+    assert_eq!(a, result(0, STORED, 1));
+    assert_eq!(b, result(0, STORED, 2));
+    assert!(status["success"].as_bool().unwrap());
+    assert_eq!(rig.entered.get(), 2);
+    // Each save committed a whole aggregate on top of the other: the result
+    // is one of the two sets, never a mixture, with nothing left behind.
+    let [profile, stored_preferences, marker] = documents(&files);
+    let limit = saved(&files)["batteryPolicy"]["chargeLimitPercent"]
+        .as_u64()
+        .unwrap();
+    assert!(limit == 60 || limit == 70);
+    assert_eq!(
+        marker,
+        preferences::commit_marker(
+            27,
+            &crate::configuration::digest_hex(&profile),
+            &crate::configuration::digest_hex(&stored_preferences),
+        )
+    );
+    assert!(
+        !files
+            .bytes
+            .lock()
+            .unwrap()
+            .keys()
+            .any(|name| name.contains("recovery-required") || name.contains(".transaction-"))
+    );
+    let (published, active, _) = published_profiles(&rig).await;
+    assert!(published >= revision + 2, "each save publishes");
+    assert_eq!(active["batteryPolicy"]["chargeLimitPercent"], limit);
+    no_hardware(&rig);
+    rig.stop().await;
+}
+
+/// Applies a vector's edits: `[path, value]` sets a member, `[path]` removes it.
+fn edited(base: &Json, edits: Option<&Json>) -> Json {
+    let mut result = base.clone();
+    let Some(Json::Array(edits)) = edits else {
+        return result;
+    };
+    for edit in edits {
+        let Json::Array(pair) = edit else {
+            panic!("malformed edit");
+        };
+        let Some(Json::Array(path)) = pair.first() else {
+            panic!("malformed edit path");
+        };
+        let Some((Json::String(name), parents)) = path.split_last() else {
+            panic!("an edit names a member");
+        };
+        let mut parent = &mut result;
+        for key in parents {
+            parent = match (parent, key) {
+                (Json::Object(members), Json::String(name)) => {
+                    &mut members
+                        .iter_mut()
+                        .find(|(member, _)| member == name)
+                        .unwrap()
+                        .1
+                }
+                (Json::Array(items), Json::Number(index)) => {
+                    &mut items[index.parse::<usize>().unwrap()]
+                }
+                _ => panic!("unreachable edit path"),
+            };
+        }
+        let Json::Object(members) = parent else {
+            panic!("an edit targets an object");
+        };
+        let at = members.iter().position(|(member, _)| member == name);
+        match (pair.get(1), at) {
+            (Some(value), Some(at)) => members[at].1 = value.clone(),
+            (Some(value), None) => members.push((name.clone(), value.clone())),
+            (None, Some(at)) => drop(members.remove(at)),
+            (None, None) => {}
+        }
+    }
+    result
+}
+
+#[tokio::test]
+async fn installed_update_profiles_answers_the_managed_vector_corpus() {
+    // Every managed vector saved over the safe defaults, through the
+    // installed dispatcher with the exact frame bytes: the reply managed
+    // gives and the document it stores, or a closed connection where
+    // managed sends no result.
+    let vectors = profile_set::json::parse(VECTORS.as_bytes()).unwrap();
+    let base = vectors.member("base").unwrap();
+    let Some(Json::Array(cases)) = vectors.member("cases") else {
+        panic!("the vectors hold cases");
+    };
+    let text = |value: Option<&Json>| value.and_then(Json::text).map(str::to_owned);
+    let seed = profile_set::json::write(
+        &Json::Object(vec![
+            ("schemaVersion".into(), Json::int(27)),
+            ("profiles".into(), base.clone()),
+        ]),
+        true,
+    );
+    let (mut stored, mut rejected, mut closed) = (0, 0, 0);
+    for case in cases {
+        let name = text(case.member("name")).unwrap();
+        // The domain test covers the cases saved over another set.
+        if case.member("saved").is_some() {
+            continue;
+        }
+        let expect = case.member("expect").unwrap();
+        let update = expect.member("update");
+        let files = MemoryFiles::default();
+        files.profiles(1);
+        let marker = json!({
+            "schemaVersion": 27,
+            "profileSha256": crate::configuration::digest_hex(&seed),
+            "preferencesSha256": crate::configuration::digest_hex(&files.bytes.lock().unwrap()[NAMES[1]]),
+        });
+        files
+            .bytes
+            .lock()
+            .unwrap()
+            .insert(NAMES[0].into(), seed.clone());
+        files.put(NAMES[2], marker);
+        let rig = Rig::new(files.clone());
+        rig.get().await;
+        let prior = files.bytes.lock().unwrap().clone();
+        let payload = profile_set::json::write(
+            &Json::Object(vec![
+                ("operation".into(), Json::string("updateProfiles")),
+                ("version".into(), Json::int(85)),
+                (
+                    "requestId".into(),
+                    Json::string("aaaaaaaa-bbbb-cccc-dddd-000000000001"),
+                ),
+                ("profiles".into(), edited(base, case.member("edit"))),
+            ]),
+            false,
+        );
+
+        let reply = exchange(&rig, &payload).await;
+
+        let answers = expect.member("decode") == Some(&Json::Bool(true))
+            && case.member("nativeDifference").is_none()
+            && update.and_then(|update| update.member("throws")).is_none();
+        if !answers {
+            closed += 1;
+            assert!(reply.is_empty(), "{name}");
+            assert_eq!(*files.bytes.lock().unwrap(), prior, "{name}");
+        } else {
+            let reply: Value = serde_json::from_slice(&reply[4..]).unwrap();
+            let update = update.unwrap();
+            let status = update.member("status").unwrap().integer(0, 3).unwrap();
+            assert_eq!(
+                reply["result"],
+                json!({"status": status, "message": text(update.member("message")).unwrap()}),
+                "{name}"
+            );
+            if status == 0 {
+                stored += 1;
+                assert_eq!(
+                    crate::configuration::digest_hex(&files.bytes.lock().unwrap()[NAMES[0]]),
+                    text(expect.member("documentSha256")).unwrap(),
+                    "{name}"
+                );
+            } else {
+                rejected += 1;
+                assert_eq!(*files.bytes.lock().unwrap(), prior, "{name}");
+            }
+        }
+        no_hardware(&rig);
+        rig.stop().await;
+    }
+    assert!(
+        stored >= 60 && rejected >= 75 && closed >= 90,
+        "{stored} stored, {rejected} rejected, {closed} closed"
+    );
+}

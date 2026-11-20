@@ -16,8 +16,12 @@ fn unserved_operations() -> Vec<String> {
         .map(|operation| operation.as_str().unwrap().to_owned())
         .filter(|operation| !StatusRequest::serves(operation))
         .collect();
-    // Every installed composition serves at least the three status reads.
-    assert!(operations.len() >= 42, "{}", operations.len());
+    // No composition serves more than the typed request variants.
+    assert!(
+        operations.len() >= 51 - StatusRequest::OPERATIONS.len(),
+        "{}",
+        operations.len()
+    );
     operations
 }
 

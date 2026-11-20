@@ -119,6 +119,7 @@ fn parse(contract: &str) -> Option<BTreeSet<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service_status::ProfilesBody;
     use serde_json::json;
 
     const ID: &str = "AAAAAAAA-bbbb-4ccc-8ddd-000000000001";
@@ -128,7 +129,7 @@ mod tests {
     }
 
     // One valid request per variant: each decodes wherever it is compiled.
-    fn variants() -> [StatusRequest; 9] {
+    fn variants() -> [StatusRequest; 10] {
         let id = || ID.to_owned();
         let version = PROTOCOL_VERSION;
         [
@@ -181,6 +182,11 @@ mod tests {
                 effective_live_readings: Some(0),
                 version,
                 request_id: id(),
+            },
+            StatusRequest::UpdateProfiles {
+                version,
+                request_id: id(),
+                profiles: ProfilesBody::sample(),
             },
         ]
     }

@@ -6,6 +6,9 @@ use std::io;
 #[path = "fan_request.rs"]
 mod fan_request;
 pub(crate) use fan_request::FanOverride;
+#[path = "service_status/profiles.rs"]
+mod profiles;
+pub(crate) use profiles::ProfilesBody;
 
 use openblade_windows_host::json_object::{self, nullable_object, object};
 use serde::{Deserialize, Serialize};
@@ -76,6 +79,12 @@ pub(crate) enum StatusRequest {
         #[serde(deserialize_with = "Deserialize::deserialize")]
         executable_path: Option<String>,
     },
+    UpdateProfiles {
+        version: i32,
+        request_id: String,
+        // Bound from the frame bytes by `decode`, not by serde.
+        profiles: ProfilesBody,
+    },
     GetStatus {
         version: i32,
         request_id: String,
@@ -109,7 +118,7 @@ impl StatusRequest {
     /// The discriminator of every variant. `operation` maps each variant to
     /// its entry, so a new variant cannot be added without listing it here.
     #[cfg(feature = "installed-service-candidate")]
-    pub(crate) const OPERATIONS: [&'static str; 9] = [
+    pub(crate) const OPERATIONS: [&'static str; 10] = [
         "setBatteryPolicy",
         "setBatteryProtection",
         "setFullChargeOverride",
@@ -119,6 +128,7 @@ impl StatusRequest {
         "getStatus",
         "subscribeStatus",
         "observeState",
+        "updateProfiles",
     ];
 
     #[cfg(all(test, feature = "installed-service-candidate"))]
@@ -133,6 +143,7 @@ impl StatusRequest {
             Self::GetStatus { .. } => 6,
             Self::SubscribeStatus { .. } => 7,
             Self::ObserveState { .. } => 8,
+            Self::UpdateProfiles { .. } => 9,
         }]
     }
 
@@ -145,8 +156,9 @@ impl StatusRequest {
         const THERMAL: bool = cfg!(feature = "service-thermal-mutation-v1");
         const FAN: bool = cfg!(feature = "service-fan-mutation-v2");
         const BATTERY: bool = cfg!(feature = "service-battery-policy-v1");
-        const COMPILED: [bool; 9] = [
-            BATTERY, BATTERY, BATTERY, FAN, THERMAL, THERMAL, true, true, true,
+        const PROFILES: bool = cfg!(feature = "service-profiles-v1");
+        const COMPILED: [bool; 10] = [
+            BATTERY, BATTERY, BATTERY, FAN, THERMAL, THERMAL, true, true, true, PROFILES,
         ];
         Self::OPERATIONS
             .iter()
@@ -189,9 +201,14 @@ impl StatusRequest {
     pub(crate) fn decode(payload: &[u8]) -> io::Result<Self> {
         openblade_domain::thermal_history::validate_json_members(payload)
             .map_err(|_| invalid("duplicate Service request member"))?;
-        let request: Self = json_object::from_slice(payload)
+        #[cfg_attr(not(feature = "service-profiles-v1"), allow(unused_mut))]
+        let mut request: Self = json_object::from_slice(payload)
             .map_err(|_| invalid("invalid Service status request"))?;
         request.validate()?;
+        #[cfg(feature = "service-profiles-v1")]
+        if let Self::UpdateProfiles { profiles, .. } = &mut request {
+            *profiles = ProfilesBody::bind(payload)?;
+        }
         Ok(request)
     }
 
@@ -246,6 +263,11 @@ impl StatusRequest {
                 version,
                 request_id,
                 ..
+            }
+            | Self::UpdateProfiles {
+                version,
+                request_id,
+                ..
             } => (*version, request_id),
             Self::GetStatus {
                 version,
@@ -293,6 +315,9 @@ impl StatusRequest {
         ) && !cfg!(feature = "service-thermal-mutation-v1")
         {
             return Err(invalid("this signed composition is read-only"));
+        }
+        if matches!(self, Self::UpdateProfiles { .. }) && !cfg!(feature = "service-profiles-v1") {
+            return Err(invalid("signed profile composition is unavailable"));
         }
         if let Self::SetPerformanceOverride {
             value: Some(value), ..

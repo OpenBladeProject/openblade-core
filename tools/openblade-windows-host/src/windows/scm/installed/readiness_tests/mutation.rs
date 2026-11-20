@@ -203,6 +203,15 @@ impl Files for MemoryFiles {
         }
         Ok(self.bytes.lock().unwrap().get(name).cloned())
     }
+    #[cfg(feature = "service-profiles-v1")]
+    fn remove(&self, name: &str, expected: &[u8]) -> io::Result<()> {
+        let mut files = self.bytes.lock().unwrap();
+        if files.get(name).map(Vec::as_slice) != Some(expected) {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
+        files.remove(name);
+        Ok(())
+    }
     fn replace(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
         if name == "thermal-mutation.journal" {
             let progress = bytes
@@ -1051,7 +1060,7 @@ async fn installed_unserved_operations_reply_with_the_managed_unsupported_failur
             "{operation}"
         );
     }
-    assert!(refused >= 42);
+    assert!(refused >= 51 - crate::service_status::StatusRequest::OPERATIONS.len());
     {
         let port = rig.port.state.lock().unwrap();
         assert_eq!((port.writes, port.opened, port.power_reads), (0, 0, 0));
@@ -8225,3 +8234,7 @@ async fn tfc_v1_unrepresentable_private_intent_keeps_evidence_and_both_actual_pa
     );
     r.stop().await;
 }
+
+#[cfg(feature = "service-profiles-v1")]
+#[path = "profiles.rs"]
+mod profiles;

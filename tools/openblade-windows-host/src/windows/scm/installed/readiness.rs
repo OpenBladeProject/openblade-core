@@ -466,6 +466,7 @@ async fn serve_connection(
                 | StatusRequest::SetFanOverride { .. }
                 | StatusRequest::SetPerformanceOverride { .. }
                 | StatusRequest::ReportApplicationContext { .. }
+                | StatusRequest::UpdateProfiles { .. }
         )
     {
         #[cfg(feature = "service-thermal-mutation-v1")]
