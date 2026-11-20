@@ -339,18 +339,18 @@ impl FanSettlePermit {
             .inspect_err(|e| remember_failure(&owner.fatal, e))
             .ok()?;
         let proof = fresh.authorize_owned_stop()?;
-        // Same original custody generation and the same logon; only the
-        // lifecycle epoch is fresh.
-        (proof.generation == owner.proof.generation
-            && owner.authentication.is_some()
-            && fresh.authentication() == owner.authentication)
-            .then(|| {
-                Arc::new(Self {
-                    owner: owner.clone(),
-                    fresh,
-                    proof,
-                })
+        // Same original custody generation; only the lifecycle epoch is
+        // fresh. The logon is not compared here: `capture_settle` takes the
+        // owner's SID, session and LUID and checks them against the live
+        // session token on every `authorize_owned_stop`, so a permit-side
+        // comparison of the copied LUID could never fail.
+        (proof.generation == owner.proof.generation).then(|| {
+            Arc::new(Self {
+                owner: owner.clone(),
+                fresh,
+                proof,
             })
+        })
     }
 }
 impl Permit for FanSettlePermit {
@@ -363,7 +363,6 @@ impl Permit for FanSettlePermit {
         if !self.owner.owned.load(Ordering::Acquire)
             || !self.owner.release.load(Ordering::Acquire)
             || self.fresh.authorize_owned_stop() != Some(self.proof)
-            || self.fresh.authentication() != self.owner.authentication
         {
             return None;
         }
@@ -724,7 +723,7 @@ impl Runtime {
         let released = *permit.released.lock().map_err(|_| io::ErrorKind::Other)?;
         if status == 1
             && let (Some(owned), Some(observed)) = (released, observed)
-            && let Some(firmware) = observed_words(observed)
+            && let Some(firmware) = observed.projection().0.and_then(preset_words)
             && let Some(recorded) = preset_words(if owned == 2 { 2 } else { 1 })
             && recorded != firmware
         {
@@ -914,12 +913,4 @@ fn preset_words(wire: i32) -> Option<&'static str> {
         5 => "Custom",
         _ => return None,
     })
-}
-/// The mode firmware reports, in managed's words. HyperBoost has no
-/// `PerformancePreset`; managed names it "HyperBoost" (ExperimentalBladePort).
-fn observed_words(observed: ObservedPerformance) -> Option<&'static str> {
-    match observed {
-        ObservedPerformance::HyperBoostObserved => Some("HyperBoost"),
-        o => o.projection().0.and_then(preset_words),
-    }
 }

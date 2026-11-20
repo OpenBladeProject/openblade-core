@@ -4046,6 +4046,9 @@ async fn fan_v2_noop_observation_and_pending_modes_never_mint_owner() {
         (0, 1, 2),
     ] {
         let r = fan_rig(selector, manual);
+        // Admitted Custom levels: High/High (the fixture default) has no
+        // explicit baseline at all, so nothing would be accepted or saved.
+        r.port.state.lock().unwrap().custom_levels = [1, 2];
         r.get().await;
         let out = r.request(fan_request(102, Some(mode), 3700)).await;
         assert_eq!(
@@ -5247,6 +5250,8 @@ async fn fan_foreign_selector_close_journals_match_the_shared_vector() {
                 continue;
             }
             let r = power_change_rig(15, now, observed, [0; 2]).await;
+            // Admitted Medium/High levels; High/High would leave no explicit baseline.
+            r.port.state.lock().unwrap().custom_levels = [1, 2];
             assert_eq!(journal(&r), v["owned"].as_str().unwrap());
             if !stop {
                 let out = r.request(fan_request(232, Some(0), 3700)).await;
@@ -5369,13 +5374,27 @@ async fn fan_power_change_close_refuses_an_ambiguous_readback() {
 async fn fan_manual_readback_after_a_power_change_keeps_its_existing_outcomes() {
     // Regression guard, unchanged: manual fans are not firmware's handback state.
     for now in [10, 0] {
-        // Stop's write path keeps the owner's recorded source, so it refuses.
-        let r = power_change_rig(15, now, [0; 2], [1; 2]).await;
-        let owned = owner_row(&r, 30);
-        r.origin.stop();
-        assert!(r.source.lock().await.drain().await.is_err());
-        assert_eq!(*fan_rows(&r).last().unwrap(), owned);
-        assert_eq!(r.port.state.lock().unwrap().writes, 4);
+        // With the POWEREVENT, Stop takes the settle-only permit, which cannot
+        // journal a release. Without one (a PD renegotiation with AC still
+        // online, or a class change after STOP_PENDING) the owner's own permit
+        // still authorizes Stop, and only its recorded-source fence refuses
+        // before 31: the row stays a clean 30, not a pending release.
+        for event in [true, false] {
+            let r = if event {
+                power_change_rig(15, now, [0; 2], [1; 2]).await
+            } else {
+                let r = foreign_selector_rig(0, [0; 2], [1; 2], 15).await;
+                r.port.state.lock().unwrap().actual = now;
+                r
+            };
+            let owned = owner_row(&r, 30);
+            r.origin.stop();
+            assert!(r.source.lock().await.drain().await.is_err());
+            assert_eq!(*fan_rows(&r).last().unwrap(), owned, "{now} {event}");
+            assert!(r.storage.outstanding_fan());
+            assert!(!r.storage.pending(), "{now} {event}");
+            assert_eq!(r.port.state.lock().unwrap().writes, 4);
+        }
         // An explicit return writes its pair on the limited adapter and has no
         // battery recipe.
         let r = power_change_rig(15, now, [0; 2], [1; 2]).await;
@@ -5400,11 +5419,15 @@ async fn fan_manual_readback_after_a_power_change_keeps_its_existing_outcomes() 
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn fan_custom_automatic_and_hyperboost_release_the_owner_without_a_setter() {
-    for observed in [[4; 2], [7; 2]] {
+    // Fixture levels: 1 Medium, 2 High. High/High Custom Automatic is rejected
+    // by the native getter admission (and by managed's read), so the explicit
+    // path has no baseline; Stop reads no levels and still settles.
+    for (observed, levels) in [([4; 2], [1, 2]), ([4; 2], [2, 2]), ([7; 2], [1, 2])] {
         let r = foreign_selector_rig(0, observed, [0; 2], 15).await;
+        r.port.state.lock().unwrap().custom_levels = levels;
         let (owned, closed) = (owner_row(&r, 30), owner_row(&r, 51));
         let out = r.request(fan_request(232, Some(0), 3700)).await;
-        if observed == [4; 2] {
+        if (observed, levels) == ([4; 2], [1, 2]) {
             assert_eq!(out["result"]["status"], 1, "{out}");
             assert_eq!(
                 out["result"]["message"],
@@ -5412,10 +5435,20 @@ async fn fan_custom_automatic_and_hyperboost_release_the_owner_without_a_setter(
             );
             assert_eq!(*fan_rows(&r).last().unwrap(), closed);
             assert!(!r.storage.outstanding_fan());
+            // The reply publishes the levels it read, not a null Custom.
+            let status = r.get().await;
+            let confirmed = &status["status"]["confirmedState"];
+            assert_eq!(confirmed["performance"], 5, "{status}");
+            assert_eq!(
+                confirmed["customPerformance"],
+                json!({"cpu": 1, "gpu": 2, "maximumFans": false}),
+                "{status}"
+            );
         } else {
-            // HyperBoost stays fenced on the explicit path: the reply would
-            // publish an observation outside managed read parity.
-            assert_eq!(out["result"]["status"], 2, "{out}");
+            // High/High Custom has no admitted baseline, and HyperBoost stays
+            // fenced on the explicit path: the reply would publish an
+            // observation outside managed read parity.
+            assert_eq!(out["result"]["status"], 2, "{observed:?} {levels:?} {out}");
             assert_eq!(*fan_rows(&r).last().unwrap(), owned);
             assert!(r.storage.outstanding_fan());
         }
@@ -5429,6 +5462,7 @@ async fn fan_custom_automatic_and_hyperboost_release_the_owner_without_a_setter(
         // Stop alone settles both, after a power event too, with no setter.
         for now in [15, 10] {
             let r = power_change_rig(15, now, observed, [0; 2]).await;
+            r.port.state.lock().unwrap().custom_levels = levels;
             r.origin.stop();
             r.stop().await;
             assert_eq!(*fan_rows(&r).last().unwrap(), closed, "{observed:?} {now}");
@@ -5565,6 +5599,90 @@ async fn fan_settle_stop_fences_without_fresh_stop_admission() {
         assert!(r.storage.outstanding_fan(), "{name}");
         assert_eq!(r.port.state.lock().unwrap().writes, 4, "{name}");
     }
+}
+// The settle permit rechecks its whole admission on every read checkpoint and
+// before the 51 row, not only at capture. Each change lands while the first
+// 0D/82 reply of the Stop read is held.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_settle_stop_rechecks_admission_during_the_read() {
+    use windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT as POWER;
+    let cases = [
+        ("competing controller", true),
+        ("console", true),
+        ("SID", true),
+        ("logon", true),
+        ("epoch", true),
+        ("suspend", true),
+        ("saved fan configuration", true),
+        ("epoch on the owner path", false),
+        ("none", true),
+    ];
+    for (name, event_first) in cases {
+        let r = foreign_selector_rig(0, [2; 2], [0; 2], 15).await;
+        if event_first {
+            r.custody.lifecycle.ingress(POWER, 10);
+        }
+        let (owned, closed) = (owner_row(&r, 30), owner_row(&r, 51));
+        let release = Arc::new(AtomicBool::new(false));
+        r.port.state.lock().unwrap().held_read = Some(release.clone());
+        let sent = r.port.state.lock().unwrap().sent.len();
+        r.origin.stop();
+        let drain = async { r.source.lock().await.drain().await };
+        let change = async {
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while r.port.state.lock().unwrap().sent.len() == sent {
+                assert!(std::time::Instant::now() < deadline, "{name}");
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            let c = &r.custody;
+            match name {
+                "competing controller" => c.fresh_refuse.store(true, Ordering::Release),
+                "console" => c.current_console.store(false, Ordering::Release),
+                "SID" => *c.current_sid.lock().unwrap() = "S-1-5-21-111-222-333-1002".into(),
+                "logon" => c.authentication.store(2, Ordering::Release),
+                "epoch" | "epoch on the owner path" => c.lifecycle.ingress(POWER, 10),
+                "suspend" => c.lifecycle.ingress(POWER, 4),
+                "saved fan configuration" => {
+                    let mut v = r.files.document("manual-overrides.json");
+                    v["overrides"]["fans"] = json!(3);
+                    r.files.put("manual-overrides.json", v);
+                }
+                _ => {}
+            }
+            r.port.state.lock().unwrap().held_read = None;
+            release.store(true, Ordering::Release);
+        };
+        let (drained, ()) = tokio::join!(drain, change);
+        if name == "none" {
+            drained.unwrap();
+            assert_eq!(*fan_rows(&r).last().unwrap(), closed);
+            continue;
+        }
+        assert!(drained.is_err(), "{name}");
+        assert_eq!(*fan_rows(&r).last().unwrap(), owned, "{name}");
+        assert!(r.storage.outstanding_fan(), "{name}");
+        assert_eq!(r.port.state.lock().unwrap().writes, 4, "{name}");
+    }
+}
+// Result publication is a separate admission: a fence that lands after the
+// 51 row is written still refuses the confirmed result, so Stop reports the
+// handback as unconfirmed instead of claiming it.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_settle_stop_result_needs_fresh_admission() {
+    let r = power_change_rig(15, 10, [2; 2], [0; 2]).await;
+    let closed = owner_row(&r, 51);
+    let c = r.custody.clone();
+    r.port.state.lock().unwrap().on_mutation_retired = Some(Arc::new(move || {
+        c.fresh_refuse.store(true, Ordering::Release);
+    }));
+    r.origin.stop();
+    assert!(r.source.lock().await.drain().await.is_err());
+    // The 51 row is durable; it is not replayed or rolled back.
+    assert_eq!(*fan_rows(&r).last().unwrap(), closed);
+    assert!(!r.storage.outstanding_fan());
+    assert_eq!(r.port.state.lock().unwrap().writes, 4);
 }
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]

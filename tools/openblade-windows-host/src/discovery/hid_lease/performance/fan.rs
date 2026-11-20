@@ -31,7 +31,10 @@ impl<P: Port> Reader<P, ReadAdmission> {
             // "already uses firmware-managed Automatic mode") and
             // `ObserveTopology` clears ownership, so settle with 51 before any
             // plan exists: battery and recipe-less selectors never reach a setter.
-            // A disagreeing or undecodable readback has no baseline.
+            // A disagreeing or undecodable readback has no baseline. Stop
+            // publishes nothing and reads no Custom levels: Custom with Automatic
+            // fans settles whatever its levels (managed would reject a High/High
+            // read and keep ownership; see docs/windows-rust-native-fans.md).
             if automatic_handback(b) {
                 a.completed = true;
                 permit.record_fan(51).ok()?;
@@ -49,8 +52,12 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 reader: self,
                 completed: false,
             };
+            // An explicit reply publishes this baseline, so it uses the same
+            // Custom getter admission as every other native observation: a
+            // Custom selector is reported with its read levels, and High/High
+            // Automatic (rejected by native and managed reads) has no baseline.
             let b = a
-                .read_reserved_pair(&mut authorize, admission, limit, modes, false)
+                .read_reserved_pair(&mut authorize, admission, limit, modes, true)
                 .await?;
             let p = a
                 .read_power(power[0], &mut authorize, admission, limit)
