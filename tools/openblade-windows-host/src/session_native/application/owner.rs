@@ -8,7 +8,7 @@
 use std::{
     io,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
         mpsc::{Receiver, RecvTimeoutError, SyncSender},
     },
@@ -109,12 +109,14 @@ impl Drop for Retire {
     }
 }
 
-/// What the transport tells the owner. The channel holds one entry: at most one
-/// request is in flight, and a wake only needs to be delivered once.
-pub(super) enum Inbox {
-    Completed(i64, ReportOutcome),
-    Wake,
-}
+/// The outcome of the one request in flight. It has its own slot, never the
+/// wake channel, because a wake can fill that channel and a completion must not
+/// be lost; at most one request is in flight, so one slot is enough.
+pub(super) type Completion = Arc<Mutex<Option<(i64, ReportOutcome)>>>;
+
+/// A wake carries nothing: the owner reads the slots it waits on. The channel
+/// holds one entry because one pending wake is as good as many.
+pub(super) type Wakes = SyncSender<()>;
 
 #[derive(Clone, Copy)]
 pub(super) struct Timing {
@@ -193,9 +195,10 @@ impl<W: Watcher, G: FnMut() -> io::Result<Guid>> Owner<W, G> {
 pub(super) struct Link {
     pub(super) signals: Arc<Signals>,
     pub(super) requests: mpsc::Sender<Request>,
-    pub(super) inbox: Receiver<Inbox>,
-    /// Lets a watcher notice wake the owner through its own inbox.
-    pub(super) wake: SyncSender<Inbox>,
+    pub(super) wakes: Receiver<()>,
+    /// Lets a watcher notice wake the owner.
+    pub(super) wake: Wakes,
+    pub(super) completion: Completion,
     pub(super) ready: oneshot::Sender<io::Result<()>>,
 }
 
@@ -211,8 +214,9 @@ pub(super) fn run<W: Watcher>(
     let Link {
         signals,
         requests,
-        inbox,
+        wakes,
         wake,
+        completion,
         ready,
     } = link;
     let mut watcher = match make() {
@@ -223,8 +227,8 @@ pub(super) fn run<W: Watcher>(
         }
     };
     watcher.set_notice(Arc::new(move || {
-        // A full inbox already holds a wake.
-        let _ = wake.try_send(Inbox::Wake);
+        // A full channel already holds a wake.
+        let _ = wake.try_send(());
     }));
     if let Err(error) = watcher.wait_ready(timing.ready) {
         let _ = ready.send(Err(error));
@@ -261,10 +265,16 @@ pub(super) fn run<W: Watcher>(
                 break;
             }
         }
-        match inbox.recv_timeout(timing.poll) {
-            Ok(Inbox::Completed(sequence, outcome)) => owner.complete(sequence, outcome),
-            Ok(Inbox::Wake) | Err(RecvTimeoutError::Timeout) => {}
+        match wakes.recv_timeout(timing.poll) {
+            Ok(()) | Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => break,
+        }
+        let finished = completion
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take();
+        if let Some((sequence, outcome)) = finished {
+            owner.complete(sequence, outcome);
         }
     }
     let retired = owner.shutdown();

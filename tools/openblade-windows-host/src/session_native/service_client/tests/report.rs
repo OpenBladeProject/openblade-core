@@ -6,6 +6,18 @@ use openblade_application_reporter::{Guid, ReportApplicationContextRequest, Repo
 
 use super::*;
 
+/// One report on a fresh channel, as a restart would see it.
+async fn report_once<S: AsyncRead + AsyncWrite + Unpin>(
+    authority: Option<&dyn InstalledServiceAuthority>,
+    request: &ReportApplicationContextRequest,
+    connect: impl AsyncFnOnce() -> io::Result<S>,
+    peer: impl Fn(&S) -> io::Result<(u32, u32)>,
+) -> io::Result<ReportOutcome> {
+    ReportChannel::new(authority)
+        .report_on(request, connect, peer)
+        .await
+}
+
 fn request(path: Option<&str>) -> ReportApplicationContextRequest {
     ReportApplicationContextRequest {
         version: 85,
@@ -47,7 +59,7 @@ async fn exchange(
     serve: impl AsyncFnOnce(DuplexStream, Vec<u8>),
 ) -> io::Result<ReportOutcome> {
     let (client, mut server) = duplex(16_384);
-    let report = report_on(Some(authority), request, async || Ok(client), peer);
+    let report = report_once(Some(authority), request, async || Ok(client), peer);
     let serving = async move {
         let mut length = [0; 4];
         if server.read_exact(&mut length).await.is_err() {
@@ -183,7 +195,7 @@ async fn nothing_is_sent_to_a_peer_that_is_not_the_installed_service() {
     let authority = Authority::live();
     authority.pid.set(None);
     let connected = Cell::new(false);
-    let error = report_on(
+    let error = report_once(
         Some(&authority),
         &request(None),
         async || {
@@ -230,7 +242,7 @@ impl InstalledServiceAuthority for Unavailable {
 #[tokio::test(start_paused = true)]
 async fn a_stopped_or_restarting_service_fails_the_report_without_connecting() {
     let connected = Cell::new(false);
-    let error = report_on(
+    let error = report_once(
         Some(&Unavailable),
         &request(None),
         async || {
@@ -260,7 +272,7 @@ async fn a_stopped_or_restarting_service_fails_the_report_without_connecting() {
     assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
 
     assert_eq!(
-        report_on(
+        report_once(
             None,
             &request(None),
             async || Ok(duplex(64).0),
@@ -279,7 +291,7 @@ async fn a_silent_service_fails_at_the_shared_budget() {
     let (client, _server) = duplex(16_384);
     let authority = Authority::live();
     let started = Instant::now();
-    let error = report_on(
+    let error = report_once(
         Some(&authority),
         &request(None),
         async || Ok(client),
@@ -296,7 +308,7 @@ async fn dropping_a_pending_report_closes_its_connection() {
     let (client, mut server) = duplex(16_384);
     let authority = Authority::live();
     let pending_request = request(Some(r"C:\Games\Game.exe"));
-    let report = report_on(
+    let report = report_once(
         Some(&authority),
         &pending_request,
         async || Ok(client),
@@ -314,4 +326,139 @@ async fn dropping_a_pending_report_closes_its_connection() {
     // The canceled report is never replayed: the server sees only the close.
     let mut rest = Vec::new();
     assert_eq!(server.read_to_end(&mut rest).await.unwrap(), 0);
+}
+
+/// Counts how often the package is re-read to establish a generation.
+struct Counting {
+    inner: Authority,
+    acquired: Cell<u32>,
+}
+
+impl Counting {
+    fn live() -> Self {
+        Self {
+            inner: Authority::live(),
+            acquired: Cell::new(0),
+        }
+    }
+}
+
+impl InstalledServiceAuthority for Counting {
+    fn acquire_generation(
+        &self,
+    ) -> Result<Box<dyn InstalledServiceGeneration + '_>, ServiceAuthorityError> {
+        self.acquired.set(self.acquired.get() + 1);
+        self.inner.acquire_generation()
+    }
+}
+
+/// One report on a held channel against a server that replies `reply`.
+async fn held(
+    channel: &mut ReportChannel<'_>,
+    peer: impl Fn(&DuplexStream) -> io::Result<(u32, u32)>,
+    reply: Option<Vec<u8>>,
+) -> io::Result<ReportOutcome> {
+    let (client, mut server) = duplex(16_384);
+    let request = request(Some(r"C:\Games\Game.exe"));
+    let report = channel.report_on(&request, async || Ok(client), peer);
+    let serving = async move {
+        let mut length = [0; 4];
+        if server.read_exact(&mut length).await.is_err() {
+            return;
+        }
+        let mut payload = vec![0; i32::from_le_bytes(length) as usize];
+        server.read_exact(&mut payload).await.unwrap();
+        if let Some(reply) = reply {
+            server.write_all(&reply).await.unwrap();
+        }
+    };
+    tokio::join!(report, serving).0
+}
+
+#[tokio::test(start_paused = true)]
+async fn renewals_reuse_one_verified_generation_without_rereading_the_package() {
+    let authority = Counting::live();
+    let mut channel = ReportChannel::new(Some(&authority));
+    for _ in 0..4 {
+        let outcome = held(&mut channel, |_| Ok((PID, 0)), Some(ok_reply(1))).await;
+        assert_eq!(outcome.unwrap(), ReportOutcome::Applied);
+    }
+    assert_eq!(authority.acquired.get(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_retired_generation_is_acquired_again_and_an_unavailable_one_fails_the_report() {
+    let authority = Counting::live();
+    let mut channel = ReportChannel::new(Some(&authority));
+    held(&mut channel, |_| Ok((PID, 0)), Some(ok_reply(1)))
+        .await
+        .unwrap();
+    // The Service is gone: the held generation no longer verifies, a new one
+    // cannot be acquired, and nothing is connected or sent.
+    authority.inner.pid.set(None);
+    let error = held(&mut channel, |_| Ok((PID, 0)), Some(ok_reply(1)))
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    assert_eq!(authority.acquired.get(), 2);
+    // A replacement Service generation (new process id) is acquired and used.
+    authority.inner.pid.set(NonZeroU32::new(PID + 1));
+    held(&mut channel, |_| Ok((PID + 1, 0)), Some(ok_reply(1)))
+        .await
+        .unwrap();
+    assert_eq!(authority.acquired.get(), 3);
+    held(&mut channel, |_| Ok((PID + 1, 0)), Some(ok_reply(1)))
+        .await
+        .unwrap();
+    assert_eq!(authority.acquired.get(), 3);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_failed_peer_verification_drops_the_generation_but_an_io_failure_keeps_it() {
+    let authority = Counting::live();
+    let mut channel = ReportChannel::new(Some(&authority));
+    held(&mut channel, |_| Ok((PID, 0)), Some(ok_reply(1)))
+        .await
+        .unwrap();
+    // The Service dropped the connection: nothing says the Service changed.
+    let error = held(&mut channel, |_| Ok((PID, 0)), None)
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+    held(&mut channel, |_| Ok((PID, 0)), Some(ok_reply(1)))
+        .await
+        .unwrap();
+    assert_eq!(authority.acquired.get(), 1);
+    // An unverified peer drops it, so the next report proves the Service again.
+    let error = held(&mut channel, |_| Ok((PID + 1, 0)), Some(ok_reply(1)))
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    held(&mut channel, |_| Ok((PID, 0)), Some(ok_reply(1)))
+        .await
+        .unwrap();
+    assert_eq!(authority.acquired.get(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_connect_that_never_completes_fails_at_two_seconds_and_keeps_the_generation() {
+    let authority = Counting::live();
+    let mut channel = ReportChannel::new(Some(&authority));
+    let request = request(None);
+    let started = Instant::now();
+    // The pipe is absent or busy and the open keeps waiting.
+    let error = channel
+        .report_on(
+            &request,
+            async || std::future::pending::<io::Result<DuplexStream>>().await,
+            |_| Ok((PID, 0)),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+    assert_eq!(started.elapsed(), Duration::from_secs(2));
+    held(&mut channel, |_| Ok((PID, 0)), Some(ok_reply(1)))
+        .await
+        .unwrap();
+    assert_eq!(authority.acquired.get(), 1);
 }

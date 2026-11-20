@@ -158,12 +158,7 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
             }));
             #[cfg(feature = "agent-application-reporter-v1")]
             features.push(feature(|feature_stop| {
-                super::application::run(
-                    origin.clone(),
-                    feature_stop,
-                    profiles.subscribe(),
-                    &authority,
-                )
+                super::application::run(origin.clone(), feature_stop, profiles.subscribe())
             }));
             #[cfg(feature = "agent-display-query-v1")]
             features.push(feature(display));

@@ -390,50 +390,111 @@ async fn request_on<S: AsyncRead + AsyncWrite + Unpin>(
 /// report, closed after its reply. The Agent additionally proves the installed
 /// Service generation and pipe peer before any byte is sent and again before
 /// the reply is accepted, because the request names the foreground executable.
-/// The whole exchange shares the status budget; dropping the future closes the
-/// pipe, so a canceled report is never replayed.
+///
+/// The channel keeps one generation across reports, as the status subscription
+/// keeps one for its stream. Acquiring a generation re-reads and hashes the
+/// installed package, which is far too heavy for every five-second renewal. A
+/// report verifies the held generation, as `verify_peer` does for any stream,
+/// and acquires a new one only when it is retired or a verification fails. An
+/// I/O failure keeps it, since it says nothing about the Service identity.
+/// Dropping a report future closes its connection; a canceled report is never
+/// replayed. Acquisition blocks its caller, so run the channel on a thread that
+/// may block, not on the Agent's shared runtime.
 #[cfg(feature = "agent-application-reporter-v1")]
-pub(super) async fn report_application_context(
-    authority: Option<&dyn InstalledServiceAuthority>,
-    request: &openblade_application_reporter::ReportApplicationContextRequest,
-) -> io::Result<openblade_application_reporter::ReportOutcome> {
-    report_on(authority, request, connect_installed, |pipe| {
-        server_identity(pipe.as_raw_handle())
-    })
-    .await
+pub(super) struct ReportChannel<'a> {
+    authority: Option<&'a dyn InstalledServiceAuthority>,
+    generation: Option<(Box<dyn InstalledServiceGeneration + 'a>, NonZeroU32)>,
 }
 
+/// Managed connects within two seconds and then waits for the reply without a
+/// limit. A wedged Service would hold the one in-flight report, and with it
+/// every renewal, forever, so each later step has its own two-second bound.
 #[cfg(feature = "agent-application-reporter-v1")]
-async fn report_on<S: AsyncRead + AsyncWrite + Unpin>(
-    authority: Option<&dyn InstalledServiceAuthority>,
-    request: &openblade_application_reporter::ReportApplicationContextRequest,
-    connect: impl AsyncFnOnce() -> io::Result<S>,
-    peer: impl Fn(&S) -> io::Result<(u32, u32)>,
-) -> io::Result<openblade_application_reporter::ReportOutcome> {
-    use openblade_windows_host::reporter_pipe::{Response, encode, guid_text};
+const REPORT_CONNECT_BUDGET: Duration = Duration::from_secs(2);
 
-    let deadline = Instant::now() + STATUS_BUDGET;
-    let exchange = async {
-        let authority = require_authority(authority)?;
+#[cfg(feature = "agent-application-reporter-v1")]
+impl<'a> ReportChannel<'a> {
+    pub(super) fn new(authority: Option<&'a dyn InstalledServiceAuthority>) -> Self {
+        Self {
+            authority,
+            generation: None,
+        }
+    }
+
+    pub(super) async fn report(
+        &mut self,
+        request: &openblade_application_reporter::ReportApplicationContextRequest,
+    ) -> io::Result<openblade_application_reporter::ReportOutcome> {
+        self.report_on(request, connect_installed, |pipe| {
+            server_identity(pipe.as_raw_handle())
+        })
+        .await
+    }
+
+    /// The held generation if it still verifies, else a freshly acquired one.
+    fn admit(&mut self) -> io::Result<(Box<dyn InstalledServiceGeneration + 'a>, NonZeroU32)> {
+        let authority = require_authority(self.authority)?;
+        if let Some((generation, pid)) = self.generation.take()
+            && generation.verify_live_process().ok() == Some(pid)
+        {
+            return Ok((generation, pid));
+        }
         let generation = authority
             .acquire_generation()
             .map_err(ServiceAuthorityError::into_io)?;
         let pid = generation
             .verify_live_process()
             .map_err(ServiceAuthorityError::into_io)?;
+        Ok((generation, pid))
+    }
+
+    async fn report_on<S: AsyncRead + AsyncWrite + Unpin>(
+        &mut self,
+        request: &openblade_application_reporter::ReportApplicationContextRequest,
+        connect: impl AsyncFnOnce() -> io::Result<S>,
+        peer: impl Fn(&S) -> io::Result<(u32, u32)>,
+    ) -> io::Result<openblade_application_reporter::ReportOutcome> {
+        use crate::service_frame::{FRAME_TIMEOUT, read_payload, write_payload};
+        use openblade_windows_host::reporter_pipe::{Response, encode, guid_text};
+
         let payload = encode(request)?;
-        let mut stream = connect().await?;
+        let (generation, pid) = self.admit()?;
+        let connected = timeout_at(Instant::now() + REPORT_CONNECT_BUDGET, connect()).await;
+        let mut stream = match connected {
+            Ok(Ok(stream)) => stream,
+            Ok(Err(error)) => return self.keep(generation, pid, Err(error)),
+            Err(elapsed) => return self.keep(generation, pid, Err(elapsed.into())),
+        };
+        // A failed verification, here or after the reply, drops the generation.
         verify_peer(generation.as_ref(), pid, &stream, &peer)?;
-        crate::service_frame::write_payload(&mut stream, &payload).await?;
-        let reply = timeout_at(deadline, crate::service_frame::read_payload(&mut stream)).await??;
+        let exchanged = async {
+            write_payload(&mut stream, &payload).await?;
+            timeout_at(Instant::now() + FRAME_TIMEOUT, read_payload(&mut stream)).await?
+        }
+        .await;
+        let reply = match exchanged {
+            Ok(reply) => reply,
+            Err(error) => return self.keep(generation, pid, Err(error)),
+        };
         verify_peer(generation.as_ref(), pid, &stream, &peer)?;
         // Any refusal, including a typed Blocked or Failed result, leaves the
         // report pending exactly as managed: only Stored and Applied acknowledge.
-        Response::decode(&reply, &guid_text(request.request_id))?
-            .report_outcome()
-            .map(|(outcome, _message)| outcome)
-    };
-    timeout_at(deadline, exchange).await?
+        let outcome = Response::decode(&reply, &guid_text(request.request_id))
+            .and_then(|response| response.report_outcome())
+            .map(|(outcome, _message)| outcome);
+        self.keep(generation, pid, outcome)
+    }
+
+    /// Hold the verified generation for the next report, whatever this result.
+    fn keep<T>(
+        &mut self,
+        generation: Box<dyn InstalledServiceGeneration + 'a>,
+        pid: NonZeroU32,
+        result: io::Result<T>,
+    ) -> io::Result<T> {
+        self.generation = Some((generation, pid));
+        result
+    }
 }
 
 fn require_authority(

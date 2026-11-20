@@ -28,7 +28,7 @@ use serde_json::{Value, json};
 use tokio::{sync::watch, time::sleep};
 
 use super::{
-    ProfileFeed, Profiles,
+    ProfileFeed, Profiles, host,
     owner::{Owner, Timing, Watcher},
     profiles, serve,
 };
@@ -1091,4 +1091,119 @@ async fn foreground_notices_and_profile_changes_wake_the_owner_at_once() {
     result.unwrap();
     // Four reports under a 60 s tick: nothing waited for housekeeping.
     assert!(started.elapsed() < Duration::from_secs(20));
+}
+
+/// A watcher that wakes its owner on every poll, so the wake channel is always
+/// full when the transport finishes a report.
+struct Chatty {
+    wake: Option<Wake>,
+    sent: bool,
+    completed: Arc<AtomicU64>,
+}
+
+impl Watcher for Chatty {
+    fn set_notice(&mut self, wake: Wake) {
+        self.wake = Some(wake);
+    }
+
+    fn wait_ready(&mut self, _: Duration) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn observe_profiles(&mut self, _: Vec<ApplicationProfile>) {}
+
+    fn poll(&mut self, _: Duration, request_id: Guid) -> Option<ReportApplicationContextRequest> {
+        if let Some(wake) = &self.wake {
+            wake();
+        }
+        if std::mem::replace(&mut self.sent, true) {
+            return None;
+        }
+        Some(ReportApplicationContextRequest {
+            version: 85,
+            request_id,
+            instance_id: Guid([3; 16]),
+            sequence: 1,
+            executable_path: Some(GAME.into()),
+        })
+    }
+
+    fn complete(&mut self, sequence: i64, _: ReportOutcome) {
+        self.completed.store(sequence as u64, Ordering::Release);
+    }
+
+    fn shutdown(self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn a_completion_is_never_lost_behind_a_full_wake_channel() {
+    let completed = Arc::new(AtomicU64::new(0));
+    let (stop, stopped) = watch::channel(false);
+    let feed = ProfileFeed::new();
+    let seen = completed.clone();
+    let watcher = completed.clone();
+    let role = serve(
+        move |_, _| {
+            Ok(Chatty {
+                wake: None,
+                sent: false,
+                completed: watcher,
+            })
+        },
+        feed.subscribe(),
+        stopped,
+        async |_: &ReportApplicationContextRequest| Ok(ReportOutcome::Applied),
+        || Ok(()),
+        SLOW,
+    );
+    let watching = async {
+        for _ in 0..1_000 {
+            if seen.load(Ordering::Acquire) == 1 {
+                stop.send_replace(true);
+                return;
+            }
+            sleep(Duration::from_millis(1)).await;
+        }
+        stop.send_replace(true);
+        panic!("the completion never reached the owner");
+    };
+    let (result, ()) = tokio::join!(role, watching);
+    result.unwrap();
+}
+
+#[tokio::test]
+async fn the_transport_runs_on_its_own_thread_and_never_blocks_the_callers_runtime() {
+    let caller = std::thread::current().id();
+    let ticked = Arc::new(AtomicBool::new(false));
+    let seen = ticked.clone();
+    let work = host(move || async move {
+        assert_ne!(std::thread::current().id(), caller);
+        // Blocking here, as acquiring a Service generation does, must leave the
+        // caller's other roles running.
+        std::thread::sleep(Duration::from_millis(400));
+        assert!(seen.load(Ordering::Acquire), "the caller was blocked");
+        Ok(())
+    });
+    let ticker = async {
+        for _ in 0..5 {
+            sleep(Duration::from_millis(10)).await;
+        }
+        ticked.store(true, Ordering::Release);
+    };
+    let (result, ()) = tokio::join!(work, ticker);
+    result.unwrap();
+}
+
+#[tokio::test]
+async fn the_hosted_transport_reports_its_failure_and_its_panic() {
+    let error = host(|| async { Err(io::Error::new(io::ErrorKind::BrokenPipe, "lost")) })
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+    let error = host(|| async { panic!("transport bug") })
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("panicked"));
 }

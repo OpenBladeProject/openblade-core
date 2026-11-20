@@ -10,7 +10,7 @@
 //! fresh sequence and request id. Unlike managed, every exchange first proves
 //! the installed Service generation and pipe peer, because the request names
 //! the user's foreground executable.
-use std::{io, sync::Arc, thread};
+use std::{future::Future, io, sync::Arc, thread};
 
 use openblade_application_reporter::{
     Guid, ReportApplicationContextRequest as Request, ReportOutcome,
@@ -19,8 +19,8 @@ use openblade_platform_windows::application::watcher::WindowsForegroundWatcher;
 use openblade_windows_host::reporter_pipe;
 use tokio::sync::{mpsc, oneshot, watch};
 
-use self::owner::{Inbox, Link, Retire, Signals, Timing, Watcher};
-use super::service_client::{self, InstalledServiceAuthority};
+use self::owner::{Completion, Link, Retire, Signals, Timing, Wakes, Watcher};
+use super::{scm_peer::WindowsInstalledServiceAuthority, service_client::ReportChannel};
 use crate::service_status::{PROTOCOL_VERSION, random_guid};
 
 mod owner;
@@ -30,24 +30,61 @@ pub(crate) use profiles::{ProfileFeed, Profiles};
 // The reporter codec and the Agent's Service client speak one protocol.
 const _: () = assert!(PROTOCOL_VERSION == reporter_pipe::VERSION);
 
+/// The installed role. Its Service transport runs on its own thread and
+/// runtime: acquiring the Service generation re-reads and hashes the installed
+/// package and verifying it queries the SCM, all blocking calls that must never
+/// stall the display, GPU and battery roles on the Agent's shared runtime.
 pub(super) async fn run(
     origin: Arc<crate::loaded_origin::Origin>,
     stop: watch::Receiver<bool>,
     profiles: watch::Receiver<Profiles>,
-    authority: &dyn InstalledServiceAuthority,
 ) -> io::Result<()> {
     super::verify_origin(&origin)?;
+    host(move || transport(origin, stop, profiles)).await
+}
+
+async fn transport(
+    origin: Arc<crate::loaded_origin::Origin>,
+    stop: watch::Receiver<bool>,
+    profiles: watch::Receiver<Profiles>,
+) -> io::Result<()> {
+    let authority = WindowsInstalledServiceAuthority::from_agent(Arc::clone(&origin))?;
+    let mut channel = ReportChannel::new(Some(&authority));
     serve(
         |instance, cancellation| {
             WindowsForegroundWatcher::start(PROTOCOL_VERSION, instance, cancellation)
         },
         profiles,
         stop,
-        async |request| service_client::report_application_context(Some(authority), request).await,
+        async |request| channel.report(request).await,
         || super::verify_origin(&origin),
         Timing::INSTALLED,
     )
     .await
+}
+
+/// Run `work` on a thread with its own current-thread runtime and wait for it
+/// without blocking the caller. The thread is joined before this returns.
+async fn host<F: Future<Output = io::Result<()>>>(
+    work: impl FnOnce() -> F + Send + 'static,
+) -> io::Result<()> {
+    let (done_tx, done) = oneshot::channel();
+    let thread = thread::Builder::new()
+        .name("OpenBlade application transport".into())
+        .spawn(move || {
+            let result = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .and_then(|runtime| runtime.block_on(work()));
+            let _ = done_tx.send(result);
+        })?;
+    let result = done
+        .await
+        .unwrap_or_else(|_| Err(io::Error::other("application transport panicked")));
+    thread
+        .join()
+        .map_err(|_| io::Error::other("application transport panicked"))?;
+    result
 }
 
 fn new_guid() -> io::Result<Guid> {
@@ -84,7 +121,8 @@ async fn serve<W: Watcher>(
     let instance = new_guid()?;
     let signals = Arc::new(Signals::new());
     let (requests_tx, mut requests) = mpsc::channel(1);
-    let (inbox_tx, inbox) = std::sync::mpsc::sync_channel(1);
+    let (wake_tx, wakes) = std::sync::mpsc::sync_channel(1);
+    let completion = Completion::default();
     let (ready_tx, ready) = oneshot::channel();
     let (exit_tx, mut exit) = oneshot::channel();
     // From here every exit, including a dropped future, retires the owner.
@@ -93,8 +131,9 @@ async fn serve<W: Watcher>(
     let link = Link {
         signals: Arc::clone(&signals),
         requests: requests_tx,
-        inbox,
-        wake: inbox_tx.clone(),
+        wakes,
+        wake: wake_tx.clone(),
+        completion: Arc::clone(&completion),
         ready: ready_tx,
     };
     let thread = thread::Builder::new()
@@ -119,7 +158,7 @@ async fn serve<W: Watcher>(
             // keeps retiring itself after the Agent has moved on.
             return tokio::time::timeout(
                 startup,
-                join(&signals, &inbox_tx, None, exit, thread),
+                join(&signals, &wake_tx, None, exit, thread),
             )
             .await
             .unwrap_or_else(|_| {
@@ -159,7 +198,7 @@ async fn serve<W: Watcher>(
                 }
             } => {
                 if open {
-                    let _ = inbox_tx.try_send(Inbox::Wake);
+                    let _ = wake_tx.try_send(());
                 } else {
                     feed_open = false;
                 }
@@ -179,14 +218,11 @@ async fn serve<W: Watcher>(
             () = stopped(&mut stop) => break,
             outcome = report(&request) => outcome.unwrap_or(ReportOutcome::TransportFailed),
         };
-        if inbox_tx
-            .try_send(Inbox::Completed(request.sequence, outcome))
-            .is_err()
-        {
-            break;
-        }
+        *completion.lock().unwrap_or_else(|error| error.into_inner()) =
+            Some((request.sequence, outcome));
+        let _ = wake_tx.try_send(());
     }
-    let joined = join(&signals, &inbox_tx, finished, exit, thread).await;
+    let joined = join(&signals, &wake_tx, finished, exit, thread).await;
     result.and(joined)
 }
 
@@ -194,13 +230,13 @@ async fn serve<W: Watcher>(
 /// is the owner's result when it already ended on its own.
 async fn join(
     signals: &Signals,
-    inbox: &std::sync::mpsc::SyncSender<Inbox>,
+    wake: &Wakes,
     finished: Option<io::Result<()>>,
     exit: oneshot::Receiver<io::Result<()>>,
     thread: thread::JoinHandle<()>,
 ) -> io::Result<()> {
     signals.retire();
-    let _ = inbox.try_send(Inbox::Wake);
+    let _ = wake.try_send(());
     let result = match finished {
         Some(result) => result,
         None => exit
