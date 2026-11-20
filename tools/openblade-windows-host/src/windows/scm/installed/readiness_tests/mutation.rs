@@ -4478,19 +4478,20 @@ async fn fan_handback_applies_the_deferred_preset_on_full_and_limited_adapters()
                 mode_setters(&r, sent),
                 [[1, 1, destination, 0], [1, 2, destination, 0]]
             );
-            let state = r.port.state.lock().unwrap();
-            assert_eq!(
-                (state.writes, state.selectors, state.fans),
-                (6, [destination; 2], [0; 2])
-            );
+            let commands: Vec<_> = {
+                let state = r.port.state.lock().unwrap();
+                assert_eq!(
+                    (state.writes, state.selectors, state.fans),
+                    (6, [destination; 2], [0; 2])
+                );
+                state.sent[sent..].iter().map(|s| (s.0, s.1)).collect()
+            };
             // A fresh 07/8C read precedes each setter.
-            let commands: Vec<_> = state.sent[sent..].iter().map(|s| (s.0, s.1)).collect();
             for (index, command) in commands.iter().enumerate() {
                 if *command == (13, 2) {
                     assert_eq!(commands[index - 1], (7, 0x8c));
                 }
             }
-            drop(state);
             let rows = request_rows(&r, 232);
             let progress: Vec<_> = rows.iter().map(|row| row["progress"].clone()).collect();
             assert_eq!(progress, [0, 10, 11, 12, 13, 50]);
@@ -4556,9 +4557,10 @@ async fn fan_handback_power_class_change_before_or_between_setters_stops_without
                 assert_eq!(rows.last().unwrap()["progress"], 6);
                 assert!(!r.storage.pending());
                 assert!(r.storage.outstanding_fan());
-                let state = r.port.state.lock().unwrap();
-                assert_eq!((state.selectors, state.fans), ([0; 2], [1; 2]));
-                drop(state);
+                {
+                    let state = r.port.state.lock().unwrap();
+                    assert_eq!((state.selectors, state.fans), ([0; 2], [1; 2]));
+                }
                 // Stop hands the owner back through its own selector, never the
                 // saved preset: shutdown does not apply saved settings.
                 r.port.state.lock().unwrap().actual = actual;
