@@ -24,18 +24,40 @@ and power class. An explicit Automatic request whose fans are already Automatic
 is a true no-op under the destination selector, or under a selector or power
 class with no native recipe, and never establishes ownership.
 
-When a fresh, agreeing 0D/82 pair shows Automatic fans under a stock selector
-(Balanced, Performance, Silent, Battery Saver or Battery Balanced), an explicit
-Automatic request or owned Stop closes an OpenBlade owner with progress 51 and
-no setter. This holds under any selector and on any classified power source,
-including after an adapter change and on battery. Managed does the same:
-`ExactFanControlOwnership.ObserveTopology` clears ownership on confirmed
-Automatic, and shutdown cleanup writes nothing when fans already use firmware
-Automatic. The 51 row repeats the owner's record, including the source it
-recorded. The old selector is never written back first. The reply names the
-selector firmware reports and any saved preset left unapplied. Disagreeing or
-unclassified readback, Custom, HyperBoost, unclassified power, and manual fans
-under another selector or power class keep the owner outstanding.
+When a fresh, agreeing 0D/82 pair shows Automatic fans, owned Stop closes an
+OpenBlade owner with progress 51 and no setter. That covers every stock
+selector (Balanced, Performance, Silent, Battery Saver, Battery Balanced),
+Custom with Automatic fans and HyperBoost (mode 7 with Automatic fans), on any
+power source: Stop reads only the pair for this, not 07/8C. Managed does the
+same: `ExactFanControlOwnership.ObserveTopology` clears ownership on any
+confirmed Automatic fan mode, and shutdown cleanup writes nothing when fans
+already use firmware Automatic. The 51 row repeats the owner's record,
+including the source it recorded. The old selector is never written back first.
+
+An explicit Automatic request closes the owner the same way when it has
+nothing to write: the plan keeps the observed selector, or no native plan
+exists (battery, Silent, Battery Saver, Battery Balanced, Custom). It needs a
+classified 07/8C source to resolve the saved intent. A saved Balanced or
+Performance preset that differs from the observed selector on external power
+writes its own pair and closes with 50. The reply names the firmware selector
+only when it differs from the owner's recorded Balanced or Performance
+selector, claims the saved preset only when the readback confirms it, and
+otherwise says it was not applied. HyperBoost stays refused on this path:
+its reply would publish an observation outside managed read parity.
+
+Stop closes the owner only after fresh admission. Every power-source,
+suspend/resume and session notice advances the lifecycle epoch that the
+owner's own capture pins, so after an unplug, an adapter change, a lock or a
+resume Stop uses a separate settle-only permit. It captures the owner's exact
+SID, session and logon at the current epoch and rechecks origin and package
+trust, the original custody and its generation, the unlocked console session,
+the AC line status and competing-controller absence before each read. It can
+append only the 51 row, so it cannot submit a setter; manual fans then keep the
+owner outstanding. Nothing is captured while Windows reports suspend.
+Disagreeing or undecodable readback (including mode 7 with manual fans) keeps
+the owner outstanding on both paths. So do manual fans under another selector
+or power class at Stop; an explicit return on external power writes its pair
+and closes with 50.
 
 Other requests in Custom, Silent, battery and delegated states store intent
 with a zero-setter pending software outcome until their separate native
@@ -71,7 +93,8 @@ A partial later submission cannot authorize that resumption.
 Normal Stop immediately denies ordinary writes, joins active original work,
 then permits one bounded direct Auto release of the positively established
 in-process owner. Expected Stop denies ordinary reads without discarding retained
-custody. Unexpected origin/trust/epoch loss never becomes cleanup authority.
+custody. Unexpected origin or trust loss never becomes cleanup authority, and an epoch
+change admits only the settle-only 51 close.
 The established owner is kept separately from a candidate request, so a refused
 identical request cannot discard its cleanup budget. Metadata-only settlement
 can append only exact Prepared-to-KnownNotSubmitted evidence and grants no

@@ -191,10 +191,13 @@ after a return refused before any setter (its Automatic intent is already
 saved), a retry keeps the observed selector. When an Automatic request confirms
 a selector other than the saved Balanced or Performance preset, the reply adds
 `The saved <preset> performance intent was not applied: submit a new
-performance request to apply it.` Owned Stop cleanup always hands back through
-the owner's selector: shutdown reaches the firmware handoff without applying
-saved settings. Native has no automatic reconciliation, so fans returned to
-Automatic by firmware or another controller do not apply it.
+performance request to apply it.` Owned Stop cleanup writes, when it must,
+only through the owner's selector: shutdown reaches the firmware handoff
+without applying saved settings. When fans already read Automatic, under any
+selector, Custom or HyperBoost, Stop writes nothing and closes the owner with
+51 (see [native fans](windows-rust-native-fans.md)). Native has no automatic
+reconciliation, so fans returned to Automatic by firmware or another
+controller do not apply it.
 
 Native never replies Failed. These managed Failed cases have no unambiguous
 native counterpart, so native keeps Blocked:
@@ -282,6 +285,9 @@ retirement.
 A separate read-parity gap remains: native observed HyperBoost combined with a
 null broad capability snapshot does not satisfy the managed decoder's capability
 requirements. This stage does not widen that validator or infer capabilities.
+An explicit Automatic fan request therefore stays refused while HyperBoost is
+observed, since its reply would publish that observation; owned Stop, which
+publishes nothing, closes the owner with 51.
 Full native-read/managed-codec parity, including that combination, remains future
 work; the confirmed-only Custom correction grants no new write authority.
 
