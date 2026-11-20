@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Add Fire, Wheel, Starlight, Tidal, Ambient Awareness and Audio Meter keyboard lighting on Blade 15 Advanced (Mid 2019, RZ09-0301), Blade 15 (2022, RZ09-0421), Blade 17 (2022, RZ09-0423) and Blade 14 (2022, RZ09-0427). Start them from Off, Breathing, Wave or, where available, Static so OpenBlade can put that effect back afterwards. If another app changes the keyboard effect, OpenBlade stops drawing until you choose an effect. These effects are based on firmware review and have not been tested on these laptops yet. ([#TBD](https://github.com/OpenBladeProject/openblade-core/pull/TBD))
 - Light the Vapor Chamber on Blade 18 (2025, RZ09-0529) with the keyboard's Spectrum, Fire, Wheel, Starlight, Tidal, Ripple, Ambient Awareness and Audio Meter effects when its current effect is Off, Static, Breathing or Wave, so OpenBlade can put it back afterwards. With any other Vapor Chamber effect, these effects stay on the keyboard. ([#985](https://github.com/OpenBladeProject/openblade-core/pull/985))
 
 ### Changed

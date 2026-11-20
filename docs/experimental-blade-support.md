@@ -23,16 +23,22 @@ installed; PawnIO supplies CPU temperatures only.
 | --- | --- |
 | RZ09-0287, RZ09-0314, RZ09-0330, RZ09-0370, RZ09-0409, RZ09-0508 | Keyboard brightness; logo Off, Static and Breathing |
 | RZ09-0300, RZ09-0351 | Keyboard brightness |
-| RZ09-0301 | Brightness; keyboard Off, Static, Breathing, Spectrum and Wave; logo controls |
-| RZ09-0421 | Brightness; keyboard Off, Breathing, Spectrum and Wave |
-| RZ09-0423, RZ09-0427 | Brightness; keyboard Off, Static, Breathing, Spectrum and Wave; logo controls |
+| RZ09-0301 | Brightness; keyboard Off, Static, Breathing, Spectrum, Wave, Fire, Wheel, Starlight, Tidal, Ambient Awareness and Audio Meter; logo controls |
+| RZ09-0421 | Brightness; keyboard Off, Breathing, Spectrum, Wave, Fire, Wheel, Starlight, Tidal, Ambient Awareness and Audio Meter |
+| RZ09-0423, RZ09-0427 | Brightness; keyboard Off, Static, Breathing, Spectrum, Wave, Fire, Wheel, Starlight, Tidal, Ambient Awareness and Audio Meter; logo controls |
 | RZ09-0510 | Brightness; keyboard Off, Breathing and Wave; logo controls |
 | RZ09-0509 | Brightness; keyboard Off, Static, Breathing and Wave; logo controls |
 | RZ09-0529 | All twelve Synapse-listed keyboard effects, with host-rendered effects also on the vapor chamber; per-key editor and animation import; Off, brightness and logo; vapor chamber enabled and touchpad-status indicator ([details](rz09-0529-lighting-expansion.md)) |
 
 The seven MCU-backed additions support random, single-color and dual-color
 Breathing, and both Wave directions. RZ09-0301 also retains independent
-brightness/logo editing and existing field-only profiles. The added controls
+brightness/logo editing and existing field-only profiles. On RZ09-0301,
+RZ09-0421, RZ09-0423 and RZ09-0427, OpenBlade draws Fire, Wheel, Starlight and
+Tidal across the keyboard, and Ambient Awareness and Audio Meter in one color.
+If another app or the firmware changes the keyboard effect, OpenBlade stops
+drawing; choose an effect to continue. Reactive and Ripple need a reviewed key
+map and remain unavailable. Host-drawn effects on RZ09-0509 and RZ09-0510 are
+not established. The added controls
 use exact-model source evidence; physical validation remains pending. Existing
 lighting backends retain their own admission. See the
 [lighting review](source-reviewed-lighting.md) for all 22 profiles, MCU-first
