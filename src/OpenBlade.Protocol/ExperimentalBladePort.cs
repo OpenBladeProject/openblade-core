@@ -234,9 +234,11 @@ internal sealed partial class ExperimentalBladePort(
     // Their 07/0F helpers/public methods are at 671 chars 20394/140294 and 672 chars 52955/141017.
     // Product 711 rzDevice25.c8da1ead63e6cf002d32.js
     // (SHA-256 02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9) has the same
-    // 07/0F helper/public method at chars 48088/141805; temporary full charge relies on it.
+    // 07/0F helper/public method at chars 48088/141805, and product 709 rzDevice25.d532642d8de7a9cfcf5d.js
+    // (SHA-256 9109826D790FEB8597BBFC115231066CA66E2C480ED9769BB85F3F91188AAD0A) at chars 52965/142479;
+    // temporary full charge relies on them.
     // These paths accept status ACKs and parse optional payload; every relaxed caller keeps an independent GET.
-    private static bool UsesSourceBackedSetAckContract(ExperimentalBladeModel model) =>
+    internal static bool UsesSourceBackedSetAckContract(ExperimentalBladeModel model) =>
         model.ThermalPolicy is not null || model.ProductId is 0x029F or 0x02A0 or 0x0255 or 0x02C5;
 
     private static IReadOnlySet<PerformancePreset> CreatePerformancePresets(ExperimentalBladeModel model)

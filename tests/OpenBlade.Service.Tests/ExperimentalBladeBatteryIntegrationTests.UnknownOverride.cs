@@ -8,6 +8,7 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
 {
     [Theory]
     [InlineData(0x02A0)]
+    [InlineData(0x02C5)]
     [InlineData(0x02C7)]
     public async Task QueryCapableBlade18_UnknownOverrideBlocksPolicyPlanBeforeFirstRead(int product)
     {
@@ -30,7 +31,6 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
     [Theory]
     [InlineData(0x029F)]
     [InlineData(0x029D)]
-    [InlineData(0x02C5)]
     [InlineData(0x02B6)]
     [InlineData(0x02B7)]
     [InlineData(0x02B8)]
@@ -54,14 +54,17 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
         Assert.DoesNotContain(io.Commands, command => command is (0x07, 0x8F));
     }
 
-    // RZ09-0529 admits temporary full charge from its own product 711 sources, so the
-    // service reads the real override and checks it again before a policy write.
-    [Fact]
-    public async Task Rz090529Provider_ReadsOverrideAndChecksItBeforePolicyWrite()
+    // RZ09-0530 and RZ09-0529 admit temporary full charge from their own product 709
+    // and 711 sources, so the service reads the real override and checks it again
+    // before a policy write.
+    [Theory]
+    [InlineData(0x02C5)]
+    [InlineData(0x02C7)]
+    public async Task ReviewedOverrideProvider_ReadsOverrideAndChecksItBeforePolicyWrite(int product)
     {
         var io = new Io { Raw = 0xD0 };
         using WindowsVerifiedBladeDeviceProvider provider = CreateProvider(io,
-            native: new Native { ProductId = 0x02C7 }, productId: 0x02C7);
+            native: new Native { ProductId = (ushort)product }, productId: product);
         Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
         Assert.True((await device.ReadCapabilitiesAsync(CancellationToken.None)).SupportsTemporaryFullCharge);
         ConfirmedDeviceState initial = await device.ReadStateAsync(CancellationToken.None);

@@ -16,7 +16,7 @@ For setup and test reports, use
 | --- | --- | --- | --- |
 | Blade 16 (2023), RZ09-0483 | `Blade 16 - RZ09-0483` | `1532:029F` | Balanced, Silent, Performance, Custom, HyperBoost with or without the cooling pad, fixed fan targets, Maximum Fans, keyboard and logo lighting, 50-100% charge limits |
 | Blade 14 (2023), RZ09-0482 | `Blade 14 - RZ09-0482` | `1532:029D` | Balanced, Silent, Custom, HyperBoost with or without the cooling pad, fixed fan targets, keyboard and logo lighting, 50-100% charge limits |
-| Blade 14 (2025), RZ09-0530 | `Blade 14 - RZ09-0530` | `1532:02C5` | Balanced, Silent, Battery Saver, Battery Balanced, Custom, keyboard and logo lighting, 50-100% charge limits |
+| Blade 14 (2025), RZ09-0530 | `Blade 14 - RZ09-0530` | `1532:02C5` | Balanced, Silent, Battery Saver, Battery Balanced, Custom, keyboard and logo lighting, 50-100% charge limits, experimental temporary full charge |
 | Blade 15 Base (Early 2020), RZ09-0328 | `Blade 15 Base Model (Early 2020) - RZ09-0328` | `1532:0255` | Balanced, Silent, Gaming, Custom, single-zone keyboard lighting |
 | Blade 18 (2023), RZ09-0484 | `Blade 18 - RZ09-0484` | `1532:02A0` | Balanced, Silent, Performance, Custom, Balanced/Silent linked fixed targets and Balanced curves, Maximum Fans, keyboard and logo lighting, 50-100% charge limits |
 
@@ -155,9 +155,9 @@ The Blade 16 (2023), both Blade 14 profiles, and Blade 18 (2023) admit every
 whole charge limit from 50% through 100%. Limits from 50% through 99% enable
 protection; 100% writes the firmware's protection-off value. The Blade 15 is
 excluded because upstream reports that its firmware echoes the battery command
-without applying it. Blade 18 (2023) and Blade 18 (2025, `02C7`) also admit
-experimental temporary full charge after valid flag readback; the other
-source-reviewed models do not.
+without applying it. Blade 18 (2023), Blade 14 (2025, `02C5`) and Blade 18
+(2025, `02C7`) also admit experimental temporary full charge after valid flag
+readback; the other source-reviewed models do not.
 
 Battery protection uses `07/92 [0]` for GET and `07/12 [encoded limit]` for SET.
 Each operation first decodes and saves the raw protection flag and threshold,
@@ -183,11 +183,12 @@ enablement, and all other Power Mode Control bits clear. It writes only 04/00,
 then independently confirms the flag and unchanged charge policy. A possibly
 submitted operation pauses writes; recovery rereads both fields. See the
 [pinned source contract](blade18-source-feature-recovery.md#temporary-full-charge-command-contract).
-Product 711 (`02C7`) pins the same helpers, decoder and read-modify-write
-middleware in its own sources; see the
-[0529 review](../evidence/source-reviewed-blades/2026-11-19-temporary-full-charge-rz09-0529.json).
-RZ09-0530 (`02C5`) remains unadmitted until its own product 709 device helper is
-reviewed.
+Products 709 (`02C5`) and 711 (`02C7`) each pin the same helpers, decoder and
+read-modify-write middleware in their own sources; see the
+[0530 and 0529 review](../evidence/source-reviewed-blades/2026-11-19-temporary-full-charge-rz09-0529-0530.json).
+Both write 07/0F through each backend's existing status-only SET
+acknowledgment contract. Product 709 also declares local dimming; its set bit
+blocks the write like any other Power Mode Control option.
 
 ## Lighting controls
 

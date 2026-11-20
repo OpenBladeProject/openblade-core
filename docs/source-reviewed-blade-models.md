@@ -165,7 +165,7 @@ the service and Session Agent; a tray-only replacement is insufficient.
 These profiles do not initially admit fixed fans, fan curves, HyperBoost, lighting,
 custom RGB frames, spatial effects, startup animation or temporary full charge.
 RZ09-0529 later admits temporary full charge from its own pinned product 711
-sources ([review](../evidence/source-reviewed-blades/2026-11-19-temporary-full-charge-rz09-0529.json)).
+sources ([review](../evidence/source-reviewed-blades/2026-11-19-temporary-full-charge-rz09-0529-0530.json)).
 These profiles also do not admit Razer-driver SnapTap/function-row handling, keyboard driver
 setup, native-brightness driver integration or THX integration. Reviewed vendor
 package declarations do not establish a complete runtime or installation recipe.

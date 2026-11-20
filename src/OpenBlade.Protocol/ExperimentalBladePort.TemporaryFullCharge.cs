@@ -13,14 +13,18 @@ internal sealed partial class ExperimentalBladePort
     // bytes 47963/48088, tuples [1,7,143]/[1,7,15] at 52973, decoder at 47786; its
     // 6737.c63928b0e4fd1b7673b4.js (3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88)
     // read-modify-write helper at 2376567 and override callers at 1986374/1988648.
-    // See evidence/source-reviewed-blades/2026-11-19-temporary-full-charge-rz09-0529.json.
-    // Product 709 (RZ09-0530) stays out until its own rzDevice25 helper is reviewed.
+    // Product 709 (RZ09-0530) pins it independently: rzDevice25.d532642d8de7a9cfcf5d.js
+    // (9109826D790FEB8597BBFC115231066CA66E2C480ED9769BB85F3F91188AAD0A) GET/SET helpers at
+    // bytes 52840/52965, tuples at 57850, decoder at 52663; its 6737.d34a3f9a638030f35c6a.js
+    // (4758FB7E2D8296564FB9CE971F6DCE3D580ED5407EEF07A69E1C362A04FF28C0) read-modify-write
+    // helper at 2312703 and override callers at 1941348/1943622.
+    // See evidence/source-reviewed-blades/2026-11-19-temporary-full-charge-rz09-0529-0530.json.
     // Only 00/04 are admitted here, with other shared bits clear; a readable zero
     // mask is not physical validation.
     public bool SupportsTemporaryFullChargeQuery => SupportsTemporaryFullCharge(model);
 
     internal static bool SupportsTemporaryFullCharge(ExperimentalBladeModel model) =>
-        model.ProductId is 0x02A0 or 0x02C7;
+        model.ProductId is 0x02A0 or 0x02C5 or 0x02C7;
 
     // Command support is stable. An unknown override reading must not be
     // mistaken for a backend without the query; every SET below reads it afresh.
@@ -105,6 +109,12 @@ internal sealed partial class ExperimentalBladePort
                 confirmed: $"Active={active};ChargePolicyRaw=0x{baseline.Raw:X2}");
             RequireTemporaryFullChargeWriteAdmission(enabled);
             byte requestedFlags = TemporaryFullChargeProtocol.Encode(enabled);
+            // Each admitted model's own pinned 07/0F helper parses data only when the
+            // ACK returns some; that is its reviewed status-only SET contract.
+            if (!UsesSourceBackedSetAckContract(model))
+            {
+                throw new CapabilityUnavailableException("Temporary full charge has no reviewed SET acknowledgment contract for this exact model.");
+            }
             await ExchangeAsync("TemporaryFullCharge", 0x07, 0x0F, [requestedFlags], true,
                 cancellationToken, variableResponse: true,
                 payloadValidator: static payload => payload.Length <= 1,

@@ -3,7 +3,7 @@
   "audit": "temporary full charge source review for RZ09-0529 and RZ09-0530",
   "base": "571d7ef7",
   "coordinates": "zero-based UTF8 byte offsets of the first byte of each quoted snippet; all quoted files are ASCII",
-  "physicalValidation": "none; previously downloaded vendor files inspected read-only; no vendor code executed and no hardware commands sent",
+  "physicalValidation": "none; downloaded vendor files inspected read-only; no vendor code executed and no hardware commands sent",
   "provenance": "Cached copies were stored with CRLF line endings; removing every CR reproduces the pinned size and SHA-256 exactly. The 709 policy and main files match their pins without normalization.",
   "contract": "Same as product 672 (RZ09-0484): GET 07/8F [0], SET 07/0F [mask], Power Mode Control bits cpuBoost 01, maxFanSpeedMode 02, oneTimeOverride 04, localDimming 08; the battery charging override changes bit 04 by read-modify-write and clears it whenever the charge limiter is disabled.",
   "decisions": [
@@ -106,9 +106,14 @@
       "model": "RZ09-0530",
       "usb": "1532:02C5",
       "vendorProductId": 709,
-      "decision": "Blocked: not admitted",
-      "reason": "The pinned 709 rzDevice25.d532642d8de7a9cfcf5d.js (280091 bytes, SHA-256 9109826D790FEB8597BBFC115231066CA66E2C480ED9769BB85F3F91188AAD0A) was not available locally, so its 07/8F and 07/0F helpers and command tuples could not be reviewed. The policy and main files establish the feature and the same read-modify-write middleware only.",
+      "decision": "Admitted as source-reviewed temporary full charge without physical validation",
       "sources": [
+        {
+          "id": "709-device",
+          "url": "https://apps.razer.com/synapse/products/709/mw/rzDevice25.d532642d8de7a9cfcf5d.js",
+          "bytes": 280091,
+          "sha256": "9109826D790FEB8597BBFC115231066CA66E2C480ED9769BB85F3F91188AAD0A"
+        },
         {
           "id": "709-policy",
           "url": "https://apps.razer.com/synapse/products/709/mw/6737.d34a3f9a638030f35c6a.js",
@@ -122,7 +127,56 @@
           "sha256": "CC8E0EFD2B37F1ED5AF6C8CC8C3AB1327B9502927DC05F20EE7465486AB006F1"
         }
       ],
+      "provenance": "The 709 device file was downloaded with user approval after this review began; it has no CR bytes and matches its pinned size and SHA-256 as downloaded.",
       "findings": [
+        {
+          "source": "709-device",
+          "claim": "Module 31509 command tuples: GET 07/8F and SET 07/0F, one-byte payload",
+          "offsetUtf8": 57850,
+          "text": "j=new Uint8Array([1,7,143]),$=new Uint8Array([1,7,15])"
+        },
+        {
+          "source": "709-device",
+          "claim": "Command names",
+          "offsetUtf8": 57905,
+          "text": "k=\"Get Power Mode Control\",M=\"Set Power Mode Control\""
+        },
+        {
+          "source": "709-device",
+          "claim": "Module 31509 exports the SET tuple here, then N3:()=>M at 56292, Rt:()=>k at 56347 and Uk:()=>j at 56393",
+          "offsetUtf8": 56135,
+          "text": "$g:()=>$,"
+        },
+        {
+          "source": "709-device",
+          "claim": "Shared reply decoder, identical to 711; bit 04 is oneTimeOverride; status-only ACK parses no payload",
+          "offsetUtf8": 52663,
+          "text": "L=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={cpuBoost:1&t.data[0],maxFanSpeedMode:2&t.data[0],oneTimeOverride:4&t.data[0],localDimming:8&t.data[0]})}"
+        },
+        {
+          "source": "709-device",
+          "claim": "Getter helper sends a zeroed one-byte argument",
+          "offsetUtf8": 52840,
+          "text": "P=t=>s(void 0,void 0,void 0,(function*(){const n=new Uint8Array(i.Uk[0]),e=yield t.sendCommand(i.Uk,i.Rt,n);return L(e),e}))"
+        },
+        {
+          "source": "709-device",
+          "claim": "Setter helper sends the whole mask byte; only the minified name differs from 711",
+          "offsetUtf8": 52965,
+          "text": "V=(t,n)=>s(void 0,void 0,void 0,(function*(){const e=new Uint8Array(i.$g[0]);e[0]=n;const o=yield t.sendCommand(i.$g,i.N3,e);return L(o),o}))"
+        },
+        {
+          "source": "709-device",
+          "claim": "Module 34836 (imports i=e(31509)) exports the getter here and the setter as ,_w:()=>V at 47427; the public methods call it through gn=e(34836) at 90227",
+          "offsetUtf8": 47319,
+          "text": ",Il:()=>P,"
+        },
+        {
+          "source": "709-device",
+          "claim": "Public methods",
+          "offsetUtf8": 142393,
+          "text": "getPowerModeControl(){return Oa(this,void 0,void 0,(function*(){return gn.Il(this)}))}setPowerModeControl(t){return Oa(this,void 0,void 0,(function*(){return gn._w(this,t)}))}"
+        },
         {
           "source": "709-policy",
           "claim": "Same read-modify-write helper shape",
@@ -142,7 +196,8 @@
           "text": "hasBatteryChargingOverrideEnabled:!0"
         }
       ],
-      "remaining": "Review the pinned 709 rzDevice25 GET/SET helpers, tuples and decoder before admitting RZ09-0530."
+      "ackContract": "The existing 0x02C5 backend already uses the status-only SET acknowledgment contract (ExperimentalBladePort.UsesSourceBackedSetAckContract) for its other source-reviewed setters; the 709 helper parses payload only when packetSizeReturned > 0, so the 07/0F write accepts a status-only ACK and does not require an echo.",
+      "implementation": "ExperimentalBladePort.SupportsTemporaryFullCharge admits 0x02C5 with the same safeguards as 0x02C7. Product 709 also enables localDimming; any set 08 bit blocks the write, and no Clear action is offered for it here."
     }
   ]
 }

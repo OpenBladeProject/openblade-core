@@ -275,24 +275,50 @@ public sealed class Rz090529TemporaryFullChargeTests : SourceReviewedTemporaryFu
 {
     protected override ushort ProductId => 0x02C7;
 
-    // Product 711's own rzDevice25 and 6737 pins establish the contract. RZ09-0530
-    // stays unadmitted until its product 709 rzDevice25 helper is reviewed.
+    // Products 709 and 711 each pin their own rzDevice25 and 6737 helpers; no other
+    // source-reviewed model inherits the contract.
     [Fact]
     public void Admission_IsLimitedToProductsWithReviewedHelpers()
     {
         foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All)
         {
-            bool admitted = model.ProductId is 0x02A0 or 0x02C7;
+            bool admitted = model.ProductId is 0x02A0 or 0x02C5 or 0x02C7;
             Assert.Equal(admitted, ExperimentalBladePort.CreateCapabilities(model, enabled: true).SupportsTemporaryFullCharge);
             Assert.False(ExperimentalBladePort.CreateCapabilities(model, enabled: false).SupportsTemporaryFullCharge);
         }
-        ExperimentalBladeModel rz090529 = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02C7);
-        ExperimentalFeatureEvidence evidence = Assert.Single(ExperimentalBladeModels.FeatureEvidenceFor(rz090529),
+        AssertEvidence(0x02C7,
+            "https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js;SHA256=02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9",
+            "https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js;SHA256=3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88",
+            "https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js;SHA256=C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E");
+        AssertEvidence(0x02C5,
+            "https://apps.razer.com/synapse/products/709/mw/rzDevice25.d532642d8de7a9cfcf5d.js;SHA256=9109826D790FEB8597BBFC115231066CA66E2C480ED9769BB85F3F91188AAD0A",
+            "https://apps.razer.com/synapse/products/709/mw/6737.d34a3f9a638030f35c6a.js;SHA256=4758FB7E2D8296564FB9CE971F6DCE3D580ED5407EEF07A69E1C362A04FF28C0",
+            "https://apps.razer.com/synapse/products/709/mw/main.bb0dd1873a58a987c63a.js;SHA256=CC8E0EFD2B37F1ED5AF6C8CC8C3AB1327B9502927DC05F20EE7465486AB006F1");
+    }
+
+    // Both admitted backends already accept status-only SET ACKs for their other
+    // source-reviewed setters; the pinned 07/0F helpers parse payload only when present.
+    [Fact]
+    public void Admission_UsesEachModelsReviewedStatusOnlySetAckContract()
+    {
+        foreach (ushort product in new ushort[] { 0x02C5, 0x02C7 })
+        {
+            ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == product);
+            Assert.True(ExperimentalBladePort.UsesSourceBackedSetAckContract(model));
+        }
+    }
+
+    private static void AssertEvidence(ushort product, params string[] sources)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == product);
+        ExperimentalFeatureEvidence evidence = Assert.Single(ExperimentalBladeModels.FeatureEvidenceFor(model),
             item => item.Feature == "TemporaryFullCharge");
         Assert.Equal("SynapseSourceBackedWithoutPhysicalValidation", evidence.Basis);
-        Assert.Contains("https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js;SHA256=02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9",
-            evidence.Sources);
-        Assert.Contains("https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js;SHA256=3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88",
-            evidence.Sources);
+        Assert.Equal(sources, evidence.Sources);
     }
+}
+
+public sealed class Rz090530TemporaryFullChargeTests : SourceReviewedTemporaryFullChargeTests
+{
+    protected override ushort ProductId => 0x02C5;
 }

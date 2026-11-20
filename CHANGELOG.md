@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Add experimental temporary full charge on Blade 18 (2025, RZ09-0529), using the same checks as Blade 18 (2023): an active charge limit, other Power Mode Control options off, and readback of both the setting and the charge limit. ([#TBD](https://github.com/OpenBladeProject/openblade-core/pull/TBD))
+- Add experimental temporary full charge on Blade 14 (2025, RZ09-0530) and Blade 18 (2025, RZ09-0529), using the same checks as Blade 18 (2023): an active charge limit, other Power Mode Control options off, and readback of both the setting and the charge limit. ([#TBD](https://github.com/OpenBladeProject/openblade-core/pull/TBD))
 
 ### Changed
 
