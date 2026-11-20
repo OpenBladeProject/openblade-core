@@ -20,8 +20,13 @@ Balanced or Performance preset, as managed does: that preset's 0D/02 pair
 carries the Automatic fan mode, so the stored performance intent is applied in
 the same pair. Without such a preset, or with a saved GPU clock effect, it keeps
 the observed selector. Owned Stop cleanup always keeps the owner's selector.
-Automatic under the destination selector is a true no-op and never establishes
-ownership. Custom, Silent, battery and delegated states
+Automatic under the destination selector, with no OpenBlade owner, is a true
+no-op and never establishes ownership. Known gap, older than the preset return:
+when an OpenBlade owner recorded another selector and firmware or another
+controller has already moved the fans to Automatic under the destination, the
+no-op close refuses the owner (`confirm_fan_noop` requires the owner's
+selector). The request is Blocked, the owner row stays outstanding, and owned
+Stop cleanup does not settle it. Custom, Silent, battery and delegated states
 store intent with a zero-setter pending software outcome until their separate
 native recipes exist. No fallback profile or background control loop is added.
 
