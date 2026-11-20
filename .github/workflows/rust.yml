@@ -288,6 +288,9 @@ jobs:
           # The GPU endpoint runs beside Display so the shared feature
           # lifetime is exercised with more than one feature.
           $gpu = @('openblade-windows-agent-candidate', 'agent-display-query-v1,agent-gpu-v1')
+          # The application reporter runs beside GPU so its lifetime joins the shared
+          # feature supervision, and alone so no other endpoint masks its wiring.
+          $reporter = @('openblade-windows-agent-candidate', 'agent-application-reporter-v1')
           # One run per filter, so a filter that matches no test fails the step.
           foreach ($run in @(
               @('openblade-windows-service-candidate', 'service-temporary-charge-v1', 'service_status::object_tests'),
@@ -307,7 +310,11 @@ jobs:
               ($gpu + 'gpu::request_parity'),
               ($gpu + 'gpu::tests'),
               ($gpu + 'feature_lifetime'),
-              ($gpu + 'native_endpoint_readiness'))) {
+              ($gpu + 'native_endpoint_readiness'),
+              ($reporter + 'session_native::application'),
+              ($reporter + 'service_client::tests::report'),
+              ($reporter + 'native_package'),
+              ($reporter + 'feature_lifetime'))) {
             # Capture the exit code instead of throwing, so the output is printed first.
             $PSNativeCommandUseErrorActionPreference = $false
             $output = cargo test --locked --manifest-path $manifest --target ${{ matrix.target }} --bin $run[0] --features $run[1] -- $run[2]
@@ -330,7 +337,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           $manifest = '../tools/openblade-windows-host/Cargo.toml'
-          foreach ($features in @('agent-gpu-v1', 'agent-gpu-v1,agent-battery-report-v1,agent-display-profile-apply-v1')) {
+          foreach ($features in @('agent-gpu-v1', 'agent-application-reporter-v1', 'agent-gpu-v1,agent-battery-report-v1,agent-display-profile-apply-v1', 'agent-application-reporter-v1,agent-gpu-v1,agent-battery-report-v1,agent-display-profile-apply-v1')) {
             cargo check --locked --manifest-path $manifest --target ${{ matrix.target }} --bin openblade-windows-agent-candidate --features $features
           }
 
@@ -351,8 +358,10 @@ jobs:
               @('openblade-windows-agent-candidate', 'agent-display-profile-apply-v1'),
               @('openblade-windows-agent-candidate', 'agent-battery-report-v1'),
               @('openblade-windows-agent-candidate', 'agent-gpu-v1'),
+              @('openblade-windows-agent-candidate', 'agent-application-reporter-v1'),
               @('openblade-windows-agent-candidate', 'agent-display-query-v1,agent-gpu-v1'),
-              @('openblade-windows-agent-candidate', 'agent-gpu-v1,agent-battery-report-v1,agent-display-profile-apply-v1'))) {
+              @('openblade-windows-agent-candidate', 'agent-gpu-v1,agent-battery-report-v1,agent-display-profile-apply-v1'),
+              @('openblade-windows-agent-candidate', 'agent-application-reporter-v1,agent-gpu-v1,agent-battery-report-v1,agent-display-profile-apply-v1'))) {
             cargo clippy --locked --manifest-path $manifest --target ${{ matrix.target }} --bin $lane[0] --features $lane[1] --all-targets -- -D warnings
           }
 
