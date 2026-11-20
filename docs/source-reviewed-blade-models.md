@@ -17,7 +17,7 @@ source-reviewed models and their different feature sets.
 
 | Laptop | Exact Windows product name | USB identity | Synapse product | Initial controls |
 | --- | --- | --- | --- | --- |
-| Blade 18 (2025), RZ09-0529 | `Blade 18 - RZ09-0529` | `1532:02C7` | 711 | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic fans, bounded charge limits; no Maximum Fans |
+| Blade 18 (2025), RZ09-0529 | `Blade 18 - RZ09-0529` | `1532:02C7` | 711 | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic fans, bounded charge limits, experimental temporary full charge; no Maximum Fans |
 | Blade 14 (2024), RZ09-0508 | `Blade 14 - RZ09-0508` | `1532:02B6` | 694 | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic fans, Maximum Fans, bounded charge limits |
 | Blade 16 (2024), RZ09-0510 | `Blade 16 - RZ09-0510` | `1532:02B7` | 695 | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic fans, Maximum Fans, bounded charge limits |
 | Blade 18 (2024), RZ09-0509 | `Blade 18 - RZ09-0509` | `1532:02B8` | 696 | Balanced, Silent, Turbo, Custom Low/Medium/High, Automatic fans, Maximum Fans, bounded charge limits |
@@ -164,7 +164,9 @@ the service and Session Agent; a tray-only replacement is insufficient.
 
 These profiles do not initially admit fixed fans, fan curves, HyperBoost, lighting,
 custom RGB frames, spatial effects, startup animation or temporary full charge.
-They also do not admit Razer-driver SnapTap/function-row handling, keyboard driver
+RZ09-0529 later admits temporary full charge from its own pinned product 711
+sources ([review](../evidence/source-reviewed-blades/2026-11-19-temporary-full-charge-rz09-0529.json)).
+These profiles also do not admit Razer-driver SnapTap/function-row handling, keyboard driver
 setup, native-brightness driver integration or THX integration. Reviewed vendor
 package declarations do not establish a complete runtime or installation recipe.
 No model inherits another laptop's key map, frame mask, driver stack or physical

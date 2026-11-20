@@ -149,7 +149,7 @@ internal sealed partial class ExperimentalBladePort(
                 : enabled && model.ThermalPolicy is not null ? new HashSet<FanMode> { FanMode.Automatic } : [],
             CreateExperimentalLightingEffects(model, enabled),
             enabled ? GetExperimentalChargeLimits(model) : new HashSet<int>(),
-            enabled && GetExperimentalChargeLimits(model).Count > 0, enabled && model.ProductId == 0x02A0)
+            enabled && GetExperimentalChargeLimits(model).Count > 0, enabled && SupportsTemporaryFullCharge(model))
         {
             SupportsOrdinaryThermalControlOnUnclassifiedExternalPower = enabled
                 && OrdinaryThermalPowerAdmission.SupportsProduct(model.ProductId),
@@ -232,6 +232,9 @@ internal sealed partial class ExperimentalBladePort(
     // 0D/02 parsers/setters at 671 chars 2958/3448 and 672 chars 61214/61706;
     // and 0D/07 parsers/setters at 671 chars 7082/7516 and 672 chars 65356/65792.
     // Their 07/0F helpers/public methods are at 671 chars 20394/140294 and 672 chars 52955/141017.
+    // Product 711 rzDevice25.c8da1ead63e6cf002d32.js
+    // (SHA-256 02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9) has the same
+    // 07/0F helper/public method at chars 48088/141805; temporary full charge relies on it.
     // These paths accept status ACKs and parse optional payload; every relaxed caller keeps an independent GET.
     private static bool UsesSourceBackedSetAckContract(ExperimentalBladeModel model) =>
         model.ThermalPolicy is not null || model.ProductId is 0x029F or 0x02A0 or 0x0255 or 0x02C5;
@@ -640,7 +643,7 @@ internal sealed partial class ExperimentalBladePort(
                 && OrdinaryThermalPowerAdmission.ExternalPresence(capturePowerSource())
                 && OrdinaryThermalPowerAdmission.IsOrdinaryExperimentalSet(operation, commandClass, commandId, arguments);
         }
-        // The exact 02A0 full-charge bit changes battery policy, not thermal mode.
+        // The admitted full-charge bit changes battery policy, not thermal mode.
         // It retains general submission admission and its own shared-mask guard.
         if (IsTemporaryFullChargeSet(operation, commandClass, commandId, arguments))
         {

@@ -7,9 +7,20 @@ internal sealed partial class ExperimentalBladePort
     // Product 672 inherits rzDevice25 DFB3E3612D36B20910AF02E61A17ED64A1FFD3781E09C63BAAEE7CBEFDEBCA24:
     // GET 07/8F [0], SET 07/0F [mask], oneTimeOverride = bit 04.
     // Its shared middleware 651F63DCC0EFC92B0FD7496EE70751707B5F650F20AF5C01C3255B61817C1997
-    // changes that field through read-modify-write. Only 00/04 are admitted here,
-    // with other shared bits clear; a readable zero mask is not physical validation.
-    public bool SupportsTemporaryFullChargeQuery => model.ProductId == 0x02A0;
+    // changes that field through read-modify-write. Product 711 (RZ09-0529) pins the
+    // same contract: rzDevice25.c8da1ead63e6cf002d32.js
+    // (02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9) GET/SET helpers at
+    // bytes 47963/48088, tuples [1,7,143]/[1,7,15] at 52973, decoder at 47786; its
+    // 6737.c63928b0e4fd1b7673b4.js (3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88)
+    // read-modify-write helper at 2376567 and override callers at 1986374/1988648.
+    // See evidence/source-reviewed-blades/2026-11-19-temporary-full-charge-rz09-0529.json.
+    // Product 709 (RZ09-0530) stays out until its own rzDevice25 helper is reviewed.
+    // Only 00/04 are admitted here, with other shared bits clear; a readable zero
+    // mask is not physical validation.
+    public bool SupportsTemporaryFullChargeQuery => SupportsTemporaryFullCharge(model);
+
+    internal static bool SupportsTemporaryFullCharge(ExperimentalBladeModel model) =>
+        model.ProductId is 0x02A0 or 0x02C7;
 
     // Command support is stable. An unknown override reading must not be
     // mistaken for a backend without the query; every SET below reads it afresh.

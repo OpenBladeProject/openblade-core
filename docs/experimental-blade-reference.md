@@ -155,8 +155,9 @@ The Blade 16 (2023), both Blade 14 profiles, and Blade 18 (2023) admit every
 whole charge limit from 50% through 100%. Limits from 50% through 99% enable
 protection; 100% writes the firmware's protection-off value. The Blade 15 is
 excluded because upstream reports that its firmware echoes the battery command
-without applying it. Blade 18 also admits experimental temporary full charge
-after valid flag readback; the other source-reviewed models do not.
+without applying it. Blade 18 (2023) and Blade 18 (2025, `02C7`) also admit
+experimental temporary full charge after valid flag readback; the other
+source-reviewed models do not.
 
 Battery protection uses `07/92 [0]` for GET and `07/12 [encoded limit]` for SET.
 Each operation first decodes and saves the raw protection flag and threshold,
@@ -182,6 +183,11 @@ enablement, and all other Power Mode Control bits clear. It writes only 04/00,
 then independently confirms the flag and unchanged charge policy. A possibly
 submitted operation pauses writes; recovery rereads both fields. See the
 [pinned source contract](blade18-source-feature-recovery.md#temporary-full-charge-command-contract).
+Product 711 (`02C7`) pins the same helpers, decoder and read-modify-write
+middleware in its own sources; see the
+[0529 review](../evidence/source-reviewed-blades/2026-11-19-temporary-full-charge-rz09-0529.json).
+RZ09-0530 (`02C5`) remains unadmitted until its own product 709 device helper is
+reviewed.
 
 ## Lighting controls
 

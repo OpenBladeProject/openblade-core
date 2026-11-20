@@ -62,7 +62,7 @@ temperature holds 5000 RPM. Physical curve validation remains pending; see the
 
 | Laptop | Model number | Controls |
 | --- | --- | --- |
-| Blade 18 (2025) | `RZ09-0529` | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic, fixed fans and curves, charge limits 50–80% in 5% steps or protection off |
+| Blade 18 (2025) | `RZ09-0529` | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic, fixed fans and curves, charge limits 50–80% in 5% steps or protection off, experimental temporary full charge |
 | Blade 14 (2024) | `RZ09-0508` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
 | Blade 16 (2024) | `RZ09-0510` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
 | Blade 18 (2024) | `RZ09-0509` | Balanced, Silent, Turbo, Custom Low/Medium/High, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
@@ -72,6 +72,8 @@ and Blade 16 (2024) additionally offer CPU Boost.
 
 All four offer Balanced on battery. The other listed presets require confirmed
 full-power AC, except Battery Saver on Blade 18 (2025), which is a battery mode.
+Temporary full charge on Blade 18 (2025) works like Blade 18 (2023): it needs an
+active charge limit, and other Power Mode Control options must be off.
 Fixed speeds and curves follow the [per-preset fan review](source-reviewed-thermal-967.md).
 See the [exact-model admission guide](source-reviewed-blade-models.md) for the other controls and evidence.
 

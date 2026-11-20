@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Add experimental temporary full charge on Blade 18 (2025, RZ09-0529), using the same checks as Blade 18 (2023): an active charge limit, other Power Mode Control options off, and readback of both the setting and the charge limit. ([#TBD](https://github.com/OpenBladeProject/openblade-core/pull/TBD))
+
 ### Changed
 
 - Credit the Blade 18 (2025, RZ09-0529) keyboard lighting effects and per-key color editing in 0.65.1-nightly.117 to their contributor. Thanks to [@TheChrisTech](https://github.com/TheChrisTech). ([#977](https://github.com/OpenBladeProject/openblade-core/pull/977))

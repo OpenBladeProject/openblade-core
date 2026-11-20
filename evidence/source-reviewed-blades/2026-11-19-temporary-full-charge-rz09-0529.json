@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "audit": "temporary full charge source review for RZ09-0529 and RZ09-0530",
+  "base": "571d7ef7",
+  "coordinates": "zero-based UTF8 byte offsets of the first byte of each quoted snippet; all quoted files are ASCII",
+  "physicalValidation": "none; previously downloaded vendor files inspected read-only; no vendor code executed and no hardware commands sent",
+  "provenance": "Cached copies were stored with CRLF line endings; removing every CR reproduces the pinned size and SHA-256 exactly. The 709 policy and main files match their pins without normalization.",
+  "contract": "Same as product 672 (RZ09-0484): GET 07/8F [0], SET 07/0F [mask], Power Mode Control bits cpuBoost 01, maxFanSpeedMode 02, oneTimeOverride 04, localDimming 08; the battery charging override changes bit 04 by read-modify-write and clears it whenever the charge limiter is disabled.",
+  "decisions": [
+    {
+      "model": "RZ09-0529",
+      "usb": "1532:02C7",
+      "vendorProductId": 711,
+      "decision": "Admitted as source-reviewed temporary full charge without physical validation",
+      "sources": [
+        {
+          "id": "711-device",
+          "url": "https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js",
+          "bytes": 279417,
+          "sha256": "02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9"
+        },
+        {
+          "id": "711-policy",
+          "url": "https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js",
+          "bytes": 2457106,
+          "sha256": "3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88"
+        },
+        {
+          "id": "711-main",
+          "url": "https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js",
+          "bytes": 184695,
+          "sha256": "C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E"
+        }
+      ],
+      "findings": [
+        {
+          "source": "711-device",
+          "claim": "Module 31509 command tuples: GET 07/8F and SET 07/0F, one-byte payload",
+          "offsetUtf8": 52973,
+          "text": "j=new Uint8Array([1,7,143]),$=new Uint8Array([1,7,15])"
+        },
+        {
+          "source": "711-device",
+          "claim": "Command names",
+          "offsetUtf8": 53028,
+          "text": "k=\"Get Power Mode Control\",M=\"Set Power Mode Control\""
+        },
+        {
+          "source": "711-device",
+          "claim": "Shared reply decoder; bit 04 is oneTimeOverride; status-only ACK parses no payload",
+          "offsetUtf8": 47786,
+          "text": "L=t=>{t.status===o.STATUS_SUCCESS&&t.packetSizeReturned>0&&(t.jsonData={cpuBoost:1&t.data[0],maxFanSpeedMode:2&t.data[0],oneTimeOverride:4&t.data[0],localDimming:8&t.data[0]})}"
+        },
+        {
+          "source": "711-device",
+          "claim": "Getter helper sends a zeroed one-byte argument",
+          "offsetUtf8": 47963,
+          "text": "P=t=>s(void 0,void 0,void 0,(function*(){const n=new Uint8Array(i.Uk[0]),e=yield t.sendCommand(i.Uk,i.Rt,n);return L(e),"
+        },
+        {
+          "source": "711-device",
+          "claim": "Setter helper sends the whole mask byte",
+          "offsetUtf8": 48088,
+          "text": "O=(t,n)=>s(void 0,void 0,void 0,(function*(){const e=new Uint8Array(i.$g[0]);e[0]=n;const o=yield t.sendCommand(i.$g,i.N3,e);return L(o),o}))"
+        },
+        {
+          "source": "711-device",
+          "claim": "Module 34836 exports the getter here and the setter as ,_w:()=>O at 42550; the public methods call it through En=e(34836) at 85501",
+          "offsetUtf8": 42442,
+          "text": ",Il:()=>P,"
+        },
+        {
+          "source": "711-device",
+          "claim": "Public methods",
+          "offsetUtf8": 141719,
+          "text": "getPowerModeControl(){return ja(this,void 0,void 0,(function*(){return En.Il(this)}))}setPowerModeControl(t){return ja(this,void 0,void 0,(function*(){return En._w(this,t"
+        },
+        {
+          "source": "711-policy",
+          "claim": "Read-modify-write helper exported as _w by module 34938",
+          "offsetUtf8": 2376567,
+          "text": "Ge=(e,t)=>x(void 0,void 0,void 0,(function*(){const i=r.jf.rzDevice;try{const{jsonData:n}=yield i.getPowerModeControl(),o=n;o[e]=t,yield i.setPowerModeControl(o.cpuBoost|o.localDimming|o.max"
+        },
+        {
+          "source": "711-policy",
+          "claim": "Charge limiter task sets bit 04 only with an enabled limiter and the override, otherwise clears it (module 46329 imports _=i(34938))",
+          "offsetUtf8": 1986374,
+          "text": "r&&c?yield(0,_._w)(ze.oneTimeOverride,ze.oneTimeOverrideEnabled):yield(0,_._w)(ze.oneTimeOverride,ze.disabled)"
+        },
+        {
+          "source": "711-policy",
+          "claim": "Override task writes 04 or 00 through the same helper",
+          "offsetUtf8": 1988648,
+          "text": "const t=e?ze.oneTimeOverrideEnabled:ze.disabled;yield(0,_._w)(ze.oneTimeOverride,t)"
+        },
+        {
+          "source": "711-main",
+          "claim": "Exact-model feature flag",
+          "offsetUtf8": 167795,
+          "text": "hasBatteryChargingOverrideEnabled:!0"
+        }
+      ],
+      "implementation": "ExperimentalBladePort.SupportsTemporaryFullCharge admits 0x02C7 beside 0x02A0. Writes stay limited to 00/04 with the other shared bits clear, an admitted enabled charge limit for enablement, confirmed connected power for enablement, fresh exact-device admission, independent readback of the flag and the raw charge policy, and a write pause after any possibly submitted failure."
+    },
+    {
+      "model": "RZ09-0530",
+      "usb": "1532:02C5",
+      "vendorProductId": 709,
+      "decision": "Blocked: not admitted",
+      "reason": "The pinned 709 rzDevice25.d532642d8de7a9cfcf5d.js (280091 bytes, SHA-256 9109826D790FEB8597BBFC115231066CA66E2C480ED9769BB85F3F91188AAD0A) was not available locally, so its 07/8F and 07/0F helpers and command tuples could not be reviewed. The policy and main files establish the feature and the same read-modify-write middleware only.",
+      "sources": [
+        {
+          "id": "709-policy",
+          "url": "https://apps.razer.com/synapse/products/709/mw/6737.d34a3f9a638030f35c6a.js",
+          "bytes": 2379746,
+          "sha256": "4758FB7E2D8296564FB9CE971F6DCE3D580ED5407EEF07A69E1C362A04FF28C0"
+        },
+        {
+          "id": "709-main",
+          "url": "https://apps.razer.com/synapse/products/709/mw/main.bb0dd1873a58a987c63a.js",
+          "bytes": 187452,
+          "sha256": "CC8E0EFD2B37F1ED5AF6C8CC8C3AB1327B9502927DC05F20EE7465486AB006F1"
+        }
+      ],
+      "findings": [
+        {
+          "source": "709-policy",
+          "claim": "Same read-modify-write helper shape",
+          "offsetUtf8": 2312703,
+          "text": "Re=(e,t)=>K(void 0,void 0,void 0,(function*(){const i=a.jf.rzDevice;try{const{jsonData:n}=yield i.getPowerModeControl()"
+        },
+        {
+          "source": "709-policy",
+          "claim": "Same charge limiter override handling",
+          "offsetUtf8": 1941348,
+          "text": "r&&c?yield(0,d._w)(Ge.oneTimeOverride,Ge.oneTimeOverrideEnabled):yield(0,d._w)(Ge.oneTimeOverride,Ge.disabled)"
+        },
+        {
+          "source": "709-main",
+          "claim": "Exact-model feature flag",
+          "offsetUtf8": 162238,
+          "text": "hasBatteryChargingOverrideEnabled:!0"
+        }
+      ],
+      "remaining": "Review the pinned 709 rzDevice25 GET/SET helpers, tuples and decoder before admitting RZ09-0530."
+    }
+  ]
+}

@@ -92,6 +92,7 @@ internal static class ExperimentalBladeModels
                 new("ChargeLimits50To80Step5AndOff", model.SupportsBatteryProtection
                     ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
                 new("MaximumFans", thermal.SupportsMaximumFans ? "SynapseSourceBackedWithoutPhysicalValidation" : "NotEstablished", sources),
+                .. TemporaryFullChargeEvidenceFor(model),
                 new("AdapterPowerClassification", "SynapseSourceBacked", sources),
                 .. OrdinaryThermalEvidenceFor(model),
                 .. FanStopEvidenceFor(model),
@@ -264,6 +265,15 @@ internal static class ExperimentalBladeModels
             ? [.. features, new("AdapterPowerClassification", "SynapseSourceBacked", [source])]
             : features;
     }
+
+    // Exact product 711 command and middleware pins; see
+    // evidence/source-reviewed-blades/2026-11-19-temporary-full-charge-rz09-0529.json.
+    private static IEnumerable<ExperimentalFeatureEvidence> TemporaryFullChargeEvidenceFor(ExperimentalBladeModel model) =>
+        model.ProductId != 0x02C7 ? [] :
+        [new("TemporaryFullCharge", "SynapseSourceBackedWithoutPhysicalValidation", [
+            "https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js;SHA256=02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9",
+            "https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js;SHA256=3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88",
+            "https://apps.razer.com/synapse/products/711/mw/main.1f8e0c604f19af3ea24c.js;SHA256=C8C0C794D6D01867CD9C6020869808428B81CB98AE297E46EC700F3B935BFF7E"])];
 
     private static IEnumerable<ExperimentalFeatureEvidence> CpuVoltageEvidenceFor(ExperimentalBladeModel model) =>
         model.ProductId is not (0x02B6 or 0x029D or 0x02C5) ? [] :

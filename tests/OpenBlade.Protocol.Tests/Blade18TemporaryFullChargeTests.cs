@@ -3,7 +3,8 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
 
-public sealed class Blade18TemporaryFullChargeTests
+// Each admitted model shares the 07/8F and 07/0F contract; derived classes pin the exact product.
+public abstract class SourceReviewedTemporaryFullChargeTests
 {
     [Theory]
     [InlineData(PowerSource.PluggedIn)]
@@ -210,8 +211,9 @@ public sealed class Blade18TemporaryFullChargeTests
         Assert.Empty(session.Writes);
     }
 
-    private static ExperimentalBladeModel Model => ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
-    private static ExperimentalBladePort Create(Session session, ExperimentalFeaturesPolicy? policy = null,
+    protected abstract ushort ProductId { get; }
+    private ExperimentalBladeModel Model => ExperimentalBladeModels.All.Single(item => item.ProductId == ProductId);
+    private ExperimentalBladePort Create(Session session, ExperimentalFeaturesPolicy? policy = null,
         Func<bool>? present = null, PowerSource source = PowerSource.PluggedIn) =>
         new(session, new(), Model, policy ?? new(Model), present ?? (() => true), () => source);
 
@@ -252,12 +254,45 @@ public sealed class Blade18TemporaryFullChargeTests
                     AfterSet?.Invoke();
                     if (FailSet) { return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, HidSessionFailureKind.Timeout)); }
                     response = []; break; // Do not infer state from vendor ACK.
-                case (0x0D, 0x82): response = [0, command.Arguments.Span[1], 0, 0]; break;
+                case (0x0D, 0x82): response = [command.Arguments.Span[0], command.Arguments.Span[1], 0, 0]; break;
                 case (3, 0x80): response = command.Arguments.ToArray(); break;
+                // RZ09-0529 lighting recovery reads zero brightness, the Off effect and an off indicator.
+                case (3, 0x83) or (0x0F, 0x82) or (0, 0xD9): response = command.Arguments.ToArray(); break;
                 default: throw new InvalidOperationException($"Unexpected {command.ClassId:X2}/{command.CommandId:X2}");
             }
             return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(response, null));
         }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+}
+
+public sealed class Blade18TemporaryFullChargeTests : SourceReviewedTemporaryFullChargeTests
+{
+    protected override ushort ProductId => 0x02A0;
+}
+
+public sealed class Rz090529TemporaryFullChargeTests : SourceReviewedTemporaryFullChargeTests
+{
+    protected override ushort ProductId => 0x02C7;
+
+    // Product 711's own rzDevice25 and 6737 pins establish the contract. RZ09-0530
+    // stays unadmitted until its product 709 rzDevice25 helper is reviewed.
+    [Fact]
+    public void Admission_IsLimitedToProductsWithReviewedHelpers()
+    {
+        foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All)
+        {
+            bool admitted = model.ProductId is 0x02A0 or 0x02C7;
+            Assert.Equal(admitted, ExperimentalBladePort.CreateCapabilities(model, enabled: true).SupportsTemporaryFullCharge);
+            Assert.False(ExperimentalBladePort.CreateCapabilities(model, enabled: false).SupportsTemporaryFullCharge);
+        }
+        ExperimentalBladeModel rz090529 = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02C7);
+        ExperimentalFeatureEvidence evidence = Assert.Single(ExperimentalBladeModels.FeatureEvidenceFor(rz090529),
+            item => item.Feature == "TemporaryFullCharge");
+        Assert.Equal("SynapseSourceBackedWithoutPhysicalValidation", evidence.Basis);
+        Assert.Contains("https://apps.razer.com/synapse/products/711/mw/rzDevice25.c8da1ead63e6cf002d32.js;SHA256=02C55B78B3EABDCC104D725C64C94CADE500FA78D29713ACE5FEF520D243EBB9",
+            evidence.Sources);
+        Assert.Contains("https://apps.razer.com/synapse/products/711/mw/6737.c63928b0e4fd1b7673b4.js;SHA256=3EF16C0BEB5E8399CDEE51E9995A717E029CDF2125324735440B68A34D2D7B88",
+            evidence.Sources);
     }
 }
