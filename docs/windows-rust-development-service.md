@@ -905,7 +905,7 @@ product ABI are unchanged.
 ### Known compatibility gaps
 
 - Session Display IPC stays at version 2 although main changed what it means. Manual setters now admit `ExternalUnknown` with fresh Service external-power evidence, and the display checkpoint admits source 3 as an unowned manual hold. The native Agent implements both. A version-2 peer built before that change refuses an `ExternalUnknown` manual request and treats a source-3 checkpoint as invalid, so automation pauses with every field uncertain. Both outcomes fail closed. The version number cannot tell the two behaviours apart.
-- The read-only protocol-51 projection keeps a confirmed Custom preset whose levels the firmware did not report, with `customPerformance` null. Protocol 85 admits that state; a protocol-51 reader that requires Custom levels may reject the status. This branch made that choice before the reconciliation and did not revisit it.
+- The read-only protocol-51 projection keeps a confirmed Custom preset whose levels the firmware did not report, with `customPerformance` null. Protocol 85 admits that state; every v51-era managed reader rejects it, because `ValidPerformanceState` requires `IsWellFormed`, so such a status fails closed. This branch made that choice before the reconciliation and did not revisit it.
 
 ## Native SCM gate
 

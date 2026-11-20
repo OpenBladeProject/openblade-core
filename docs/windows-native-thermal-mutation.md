@@ -66,25 +66,31 @@ managed, a non-false `controlsKeyboardEffect` below schema 9 or a non-null zone
 control below schema 10 makes the document invalid. Stored fan speeds admit
 managed's 5500 RPM maximum, while the fan write path keeps its 5400 RPM bound,
 so a larger saved target is refused when selected. A fan request above 5400
-RPM is refused when the native Service decodes it; managed decodes up to 5500
-and refuses it at model admission, so the error text differs. Unsupported
-saved lighting overrides are preserved and refused rather than erased or labeled
-as corrupt. Future, malformed, duplicate-member and interrupted documents remain
-unchanged. A compatible committed profile/preferences/commit envelope at schema
-25, 26 or the current 27 is required when an aggregate exists. The same
-legacy lighting rejections apply to it; hashes and consumed typed thermal fields
-are validated before saving. This does not implement all managed profile payload
-semantics or migrate/modify the aggregate; schema 24 still needs managed
-migration first.
+RPM fails closed at decode: the native Service closes the connection without a
+reply or error text. Managed decodes up to 5500 and refuses it at model
+admission with a reply. Unsupported saved lighting overrides are preserved and
+refused rather than erased or labeled as corrupt. Future, malformed,
+duplicate-member and interrupted documents remain unchanged. A compatible
+committed profile/preferences/commit envelope at schema 25, 26 or the current 27 is required when an aggregate exists. The same
+legacy lighting rejections apply to it, and a schema-26 aggregate gets managed's
+`PreserveLegacyIndependentProfileIntent` lighting normalisation on read. Hashes
+and consumed typed thermal fields are validated before saving. This does not
+implement all managed profile payload semantics or migrate/modify the aggregate;
+schema 24 still needs managed migration first.
 
 As in managed, every supported AC preset and the observed AC fan selector are
 admitted on both classified external classes: an adapter at or above its
 recommendation (PluggedIn) and a limited one (USB-C). The commands are the
 same. Each setter needs a fresh adapter reading in the class first observed,
-so a class change stops the pair without replay. Battery presets are outside
-this writer. Managed's ordinary control on unclassified external power, where
-the adapter reading is Unknown (exact RZ09-0581, `f6502f85`), is not ported:
-native reports no power source for it and makes no thermal write.
+so a class change stops the pair without replay. A fan row can therefore journal
+the Performance selector (2) with the limited source (2). Deployment readers
+before `d6ce3339` reject such a row as invalid history, which fences
+retirement, upgrade and mailbox custody fail-closed. The Rust `FanRecord` and
+the managed `WindowsNativeFanHistory` reader both consume
+`tools/openblade-windows-host/tests/data/fan-history-v3-limited-source.json`.
+Battery presets are outside this writer. Managed's ordinary control on
+unclassified external power, where the adapter reading is Unknown (exact
+RZ09-0581, `f6502f85`), is not ported: native reports no power source for it and makes no thermal write.
 
 Resolution uses eligible manual intent, then the current application report's
 performance override, then the matching power profile. Application instances have
@@ -123,17 +129,17 @@ unapplied intent:
 
 | Native case | Reply |
 | --- | --- |
-| PluggedIn current-manual plus desired-manual fans | Stored, `Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved...` |
+| External power (PluggedIn or limited USB-C) with current-manual plus desired-manual fans | Stored, `Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved...` |
 | OpenBlade-owned fan row whose handback to Automatic is outstanding, without that manual deferral | Blocked, `Performance override intent was stored. Hardware result: OpenBlade still owns a fan change...` |
 | GPU effect, ineligible policy, power change, admission, capacity, storage or transport cause after the intent was saved | Blocked, `Performance override intent was stored. Hardware result: <cause>` |
 | Saved clear that was not applied | Blocked, `Performance override was cleared. Hardware result: <cause>` |
 | Fan intent saved but not applied | Blocked, `Fan override intent was stored. Hardware result: ...` or `Fan override was cleared. Hardware result: ...` |
 
 The Stored reply matches managed's reply only. Managed applies a deferred
-performance intent when fans return to Automatic on PluggedIn power
-(`ServiceControlRuntime` fan-override path). Native does not yet: after the fan
-handback the saved performance intent stays unapplied until a new performance
-request. This missing apply-on-handback is a functional gap and a cutover gate.
+performance intent when fans return to Automatic (`ServiceControlRuntime`
+fan-override path). Native does not yet: after the fan handback the saved
+performance intent stays unapplied until a new performance request. This
+missing apply-on-handback is a functional gap and a cutover gate.
 
 Native never replies Failed. These managed Failed cases have no unambiguous
 native counterpart, so native keeps Blocked:
