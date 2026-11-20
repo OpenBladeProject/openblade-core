@@ -7309,9 +7309,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             ServiceStatusSnapshot status = await serviceClient.GetStatusAsync(token)
                 .ConfigureAwait(false);
-            // A stored performance clear was restored by the applied fan clear
-            // only when the service now confirms the performance it wants.
-            if (performanceCleared == ControlOperationStatus.Stored
+            // A performance clear that was stored, or blocked because fans were
+            // manual, was restored by the applied fan clear only when the service
+            // now confirms the performance it wants.
+            if (performanceCleared is ControlOperationStatus.Stored or ControlOperationStatus.Blocked
                 && fansCleared == ControlOperationStatus.Applied
                 && ConfirmsDesiredPerformance(status))
             {

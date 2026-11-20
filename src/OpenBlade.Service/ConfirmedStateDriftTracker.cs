@@ -35,8 +35,10 @@ public sealed class ConfirmedStateDriftTracker
         externalChangesSnapshot ??= new ReadOnlyCollection<DeviceSubsystem>(
             externalChanges.OrderBy(subsystem => subsystem).ToArray());
 
-    internal bool HasDeferredPerformanceChoice =>
-        deferredPerformanceChoice != DeferredPerformanceChoice.None;
+    // Only a choice that is still pending waits; an invalidated one will be
+    // dropped by the next fan request.
+    internal bool HasPendingDeferredPerformanceChoice =>
+        deferredPerformanceChoice == DeferredPerformanceChoice.Pending;
 
     // Called only when a performance choice was stored with the deferral
     // message. A newer choice that is not deferred clears it instead.

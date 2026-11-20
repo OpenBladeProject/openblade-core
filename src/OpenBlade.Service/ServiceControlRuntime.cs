@@ -14308,7 +14308,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 // cleanup hands fans back without a performance write, and the
                 // next fan request that finds fans Automatic applies it.
                 string deferred = subsystem == DeviceSubsystem.Fans
-                    && driftTracker.HasDeferredPerformanceChoice
+                    && driftTracker.HasPendingDeferredPerformanceChoice
                     && ControlCoordinator.ReconcilesPerformanceOnAutomaticFans(staged.Capabilities)
                         ? "Override cleared. Power-profile application and the stored performance choice wait for adapter classification."
                         : "Override cleared. Power-profile application waits for adapter classification.";

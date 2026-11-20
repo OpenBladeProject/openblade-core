@@ -395,7 +395,7 @@ public sealed class ConfirmedStateDriftTrackerTests
         tracker.RecordDeferredPerformanceChoice(Silent, null);
         tracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
         tracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: false);
-        Assert.True(tracker.HasDeferredPerformanceChoice);
+        Assert.True(tracker.HasPendingDeferredPerformanceChoice);
         Assert.Equal(DeferredPerformanceDecision.Apply, tracker.DecideDeferredPerformance(balanced, Silent, null));
 
         // Away and back: an observed change drops the choice even though the
@@ -438,7 +438,7 @@ public sealed class ConfirmedStateDriftTrackerTests
 
         tracker.RecordDeferredPerformanceChoice(Silent, null);
         tracker.ClearDeferredPerformanceChoice();
-        Assert.False(tracker.HasDeferredPerformanceChoice);
+        Assert.False(tracker.HasPendingDeferredPerformanceChoice);
         Assert.Equal(DeferredPerformanceDecision.None, tracker.DecideDeferredPerformance(balanced, Silent, null));
     }
 

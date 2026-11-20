@@ -9880,13 +9880,17 @@ public sealed partial class MainViewModelTests
     }
 
     // Performance clears before fans, so under manual fans the service stores
-    // the profile preset and the fan clear applies it once. That stored clear
-    // counts as restored only when the service then confirms the performance
-    // it wants.
+    // the profile preset, or a shared selector on battery blocks the preset
+    // write, and the fan clear applies it once. That clear counts as restored
+    // only when the service then confirms the performance it wants.
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task ClearManualOverrides_StoredPerformanceIsRestoredByAppliedFanClear(bool confirmed)
+    [InlineData(ControlOperationStatus.Stored, true)]
+    [InlineData(ControlOperationStatus.Stored, false)]
+    [InlineData(ControlOperationStatus.Blocked, true)]
+    [InlineData(ControlOperationStatus.Blocked, false)]
+    public async Task ClearManualOverrides_StoredPerformanceIsRestoredByAppliedFanClear(
+        ControlOperationStatus performanceStatus,
+        bool confirmed)
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -9905,8 +9909,10 @@ public sealed partial class MainViewModelTests
             viewModel.PerformanceOverride is not null
             && viewModel.FanOverride is not null);
         client.MutationResults.Enqueue(new ControlOperationResult(
-            ControlOperationStatus.Stored,
-            "Performance intent stored; it applies when fans return to Automatic."));
+            performanceStatus,
+            performanceStatus == ControlOperationStatus.Stored
+                ? "Performance intent stored; it applies when fans return to Automatic."
+                : "Performance override was cleared. Hardware result: Performance changes require Automatic fan mode."));
         client.MutationResults.Enqueue(new ControlOperationResult(
             ControlOperationStatus.Applied,
             "Fans returned to Automatic."));

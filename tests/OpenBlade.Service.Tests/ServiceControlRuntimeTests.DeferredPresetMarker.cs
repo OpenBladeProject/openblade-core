@@ -451,6 +451,121 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(PerformancePreset.Balanced, status.DesiredState.Performance.Value);
     }
 
+    // A2: an unclassified fan clear does not promise a stored choice that an
+    // observed change already invalidated; the next fan request keeps the mode.
+    [Fact]
+    public async Task UnclassifiedFanClearDoesNotPromiseInvalidatedChoice()
+    {
+        TestContext context = await CreateUnclassifiedExternalContextAsync();
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            FanModes = new HashSet<FanMode> { FanMode.Automatic, FanMode.Fixed, FanMode.Maximum, FanMode.ManualCurve },
+            SupportsDirectManualFanTransitions = false,
+        };
+        context.Device.FanTargetsAvailable = true;
+        await context.Runtime.ObserveAsync(default);
+        ControlOperationResult entered = await context.Runtime.SetFanControlOverrideAsync(
+            new(FanMode.Fixed, OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3700, ManualFanCurve.Default), default);
+        Assert.True(entered.Status == ControlOperationStatus.Applied, $"{entered.Status}: {entered.Message}");
+        ControlOperationResult choice = await ChooseAsync(context, PerformancePreset.Silent);
+        Assert.True(choice.Status == ControlOperationStatus.Stored, $"{choice.Status}: {choice.Message}");
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Custom,
+            CustomPerformance = CustomPerformanceSettings.Default,
+        };
+        await context.Runtime.ObserveAsync(default);
+        context.Device.PerformanceWrites.Clear();
+
+        ControlOperationResult cleared = await context.Runtime.SetFanControlOverrideAsync(null, null, default);
+        ControlOperationResult automatic = await ReturnFansToAutomaticAsync(context);
+
+        Assert.Equal(ControlOperationStatus.Stored, cleared.Status);
+        Assert.Equal("Override cleared. Power-profile application waits for adapter classification.", cleared.Message);
+        Assert.Contains(ControlCoordinator.ExternalPerformanceKeptMessage, automatic.Message, StringComparison.Ordinal);
+        Assert.Empty(context.Device.PerformanceWrites);
+        Assert.Equal(PerformancePreset.Custom, context.Device.ConfirmedState.Performance);
+    }
+
+    // B5: a device that already holds the choice when fans return to
+    // Automatic settles it with no preset write and no drop message.
+    [Fact]
+    public async Task DeviceAlreadyHoldingChoiceSettlesItWithoutWrite()
+    {
+        (TestContext context, List<string> writes) = await EnterExactFanModeAsync(0x02A0, reconcileStartup: true);
+        Assert.Equal(ControlOperationStatus.Stored, (await ChooseAsync(context, PerformancePreset.Silent)).Status);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with { Performance = PerformancePreset.Silent };
+
+        ControlOperationResult automatic = await ReturnFansToAutomaticAsync(context);
+        ControlOperationResult again = await ReturnFansToAutomaticAsync(context);
+
+        Assert.True(automatic.Status == ControlOperationStatus.Applied, $"{automatic.Status}: {automatic.Message}");
+        Assert.Equal(["Fans:Automatic"], writes);
+        Assert.DoesNotContain(ControlCoordinator.ExternalPerformanceKeptMessage, automatic.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(ControlCoordinator.DeferredPerformanceNoLongerAppliesMessage, automatic.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(ControlCoordinator.ExternalPerformanceKeptMessage, again.Message, StringComparison.Ordinal);
+        Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
+    }
+
+    // B5: a deferred Custom choice whose levels the intent no longer holds
+    // (a power change returned the intent to a Custom profile with other
+    // levels) no longer applies.
+    [Fact]
+    public async Task DeferredCustomChoiceWithReplacedLevelsNoLongerApplies()
+    {
+        int productId = ExperimentalBladeModels.All
+            .Select(model => (model.ProductId, Capabilities: ExperimentalBladePort.CreateCapabilities(model, enabled: true)))
+            .First(item => ControlCoordinator.ReconcilesPerformanceOnAutomaticFans(item.Capabilities)
+                && item.Capabilities.CustomPerformance is { AllowedCombinations.Count: > 1 }
+                && item.Capabilities.GetFanSpeedRange(PerformancePreset.Custom) is not null)
+            .ProductId;
+        CustomPerformanceSettings? profileLevels = null;
+        CustomPerformanceSettings? choiceLevels = null;
+        (TestContext context, List<string> writes) = await EnterExactFanModeAsync(productId,
+            reconcileStartup: true, fanLifetime: OverrideLifetime.Persistent,
+            profiles: (capabilities, current) =>
+            {
+                CustomPerformanceCombination[] combinations = capabilities.CustomPerformance!.AllowedCombinations
+                    .OrderBy(item => item.Cpu).ThenBy(item => item.Gpu).Take(2).ToArray();
+                profileLevels = new CustomPerformanceSettings(combinations[0].Cpu, combinations[0].Gpu);
+                choiceLevels = new CustomPerformanceSettings(combinations[1].Cpu, combinations[1].Gpu);
+                return current with
+                {
+                    PluggedIn = current.PluggedIn with
+                    {
+                        Performance = PerformancePreset.Custom,
+                        CustomPerformance = profileLevels,
+                    },
+                    UsbC = current.UsbC with
+                    {
+                        Performance = PerformancePreset.Custom,
+                        CustomPerformance = profileLevels,
+                    },
+                };
+            });
+        ControlOperationResult stored = await context.Runtime.SetPerformanceConfigurationOverrideAsync(
+            new PerformanceOverride(PerformancePreset.Custom, OverrideLifetime.UntilPowerSourceChange, choiceLevels), default);
+        Assert.True(stored.Status == ControlOperationStatus.Stored, $"{stored.Status}: {stored.Message}");
+        context.Telemetry.Current = CreateTelemetry(PowerSource.UsbC);
+        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+        await context.Runtime.HandlePowerSourceChangedAsync(default);
+        await context.Runtime.ObserveAsync(default);
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Null(status.PerformanceOverride);
+        Assert.Equal(PerformancePreset.Custom, status.DesiredState.Performance.Value);
+        Assert.Equal(profileLevels, status.DesiredState.CustomPerformance);
+        Assert.Equal(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+        AssertNoPerformanceWrite(writes);
+
+        ControlOperationResult automatic = await ReturnFansToAutomaticAsync(context);
+
+        Assert.True(automatic.Status == ControlOperationStatus.Applied, $"{automatic.Status}: {automatic.Message}");
+        Assert.Contains(ControlCoordinator.DeferredPerformanceNoLongerAppliesMessage, automatic.Message, StringComparison.Ordinal);
+        Assert.Equal(["Fans:Automatic"], writes);
+        Assert.Equal(PerformancePreset.Balanced, context.Device.ConfirmedState.Performance);
+    }
+
     // J5: the unclassified fan clear names the stored choice only when one is
     // pending on a backend that applies it on Automatic fans. A choice stored
     // before the backend reported direct manual transitions does not wait.
