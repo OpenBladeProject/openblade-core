@@ -69,7 +69,7 @@ pub fn override_source_eligible(preset: i32, source: i32) -> bool {
 /// as managed keeps its automation source until the adapter is classified,
 /// and retires only one saved on battery (managed expires transients once
 /// when AC arrives without a classification). Other classes retire nothing.
-/// Without the lifecycle epoch (`temporary_after`), a temporary saved while
+/// Without the power generation (`temporary_after`), a temporary saved while
 /// unclassified retires on the first classified class.
 pub fn temporary_expired(saved: i32, observed: i32) -> bool {
     match observed {
@@ -79,23 +79,25 @@ pub fn temporary_expired(saved: i32, observed: i32) -> bool {
     }
 }
 
-/// The class a temporary saved on `saved` at lifecycle epoch `saved_epoch`
-/// keeps after a fresh reading `observed` at `epoch`, or `None` once it lapses.
+/// The class a temporary saved on `saved` at Windows power generation
+/// `saved_generation` keeps after a fresh reading `observed` at `generation`,
+/// or `None` once it lapses.
 /// Managed `PreserveOverridesForExternalClassification` keeps a temporary
 /// saved while unclassified when the adapter is then classified within the
 /// same Windows power generation, and from then on treats that class as its
-/// source (`lastClassifiedExternalSource`). The native equivalent of that
-/// generation is the lifecycle epoch, which every SCM power and session notice
-/// advances: a temporary saved unclassified lapses at the first reading after
-/// such a notice, and is refined to the first classified class otherwise.
+/// source (`lastClassifiedExternalSource`). That
+/// generation advances only when the Windows ACLineStatus kind changes, so a
+/// lock, an unlock or a notice that keeps the kind does not end it. A
+/// temporary saved unclassified lapses at the first reading after a kind
+/// change, and is refined to the first classified class otherwise.
 /// Every other case is `temporary_expired`; an unknown class retires nothing.
 pub fn temporary_after(
     saved: i32,
-    saved_epoch: Option<u64>,
+    saved_generation: Option<u64>,
     observed: i32,
-    epoch: u64,
+    generation: u64,
 ) -> Option<i32> {
-    let same_generation = saved_epoch == Some(epoch);
+    let same_generation = saved_generation == Some(generation);
     match (saved, observed) {
         (UNCLASSIFIED_EXTERNAL, 0 | 2 | UNCLASSIFIED_EXTERNAL) => {
             same_generation.then_some(observed)

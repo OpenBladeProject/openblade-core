@@ -366,11 +366,11 @@ struct State {
     last: Option<Entry>,
     temporary: Option<(Override, i32)>,
     temporary_fan: Option<(Value, i32)>,
-    // Lifecycle epochs for `automation::temporary_after`: the latest fresh
-    // power reading's, and each temporary's at its save.
-    epoch: Option<u64>,
-    temporary_epoch: Option<u64>,
-    temporary_fan_epoch: Option<u64>,
+    // Windows power generations for `automation::temporary_after`: the latest
+    // fresh power reading's, and each temporary's at its save.
+    generation: Option<u64>,
+    temporary_generation: Option<u64>,
+    temporary_fan_generation: Option<u64>,
     battery_limit: Option<u8>,
     battery_protection: Option<(bool, u8)>,
     battery_temporary: Option<bool>,
@@ -457,9 +457,9 @@ impl Storage {
                 last,
                 temporary: None,
                 temporary_fan: None,
-                epoch: None,
-                temporary_epoch: None,
-                temporary_fan_epoch: None,
+                generation: None,
+                temporary_generation: None,
+                temporary_fan_generation: None,
                 battery_limit: None,
                 battery_protection: None,
                 battery_temporary: None,
@@ -507,20 +507,23 @@ impl Storage {
         s.bytes = Some(bytes);
         s.document = next;
         s.temporary = value.filter(|v| v.lifetime == 0).map(|v| (v, power));
-        s.temporary_epoch = s.epoch;
+        s.temporary_generation = s.generation;
         Ok(())
     }
-    /// A fresh power class read at lifecycle `epoch`: keeps, refines or retires
-    /// both temporaries (`automation::temporary_after`) before any read.
-    pub(super) fn observe_power(&self, power: i32, epoch: u64) -> io::Result<()> {
+    /// A fresh power class read at Windows power `generation`: keeps, refines
+    /// or retires both temporaries (`automation::temporary_after`) before any
+    /// read.
+    pub(super) fn observe_power(&self, power: i32, generation: u64) -> io::Result<()> {
         let mut s = self.state.lock().map_err(|_| denied())?;
-        s.epoch = Some(epoch);
+        s.generation = Some(generation);
         let s = &mut *s;
         s.temporary = s.temporary.take().and_then(|(value, saved)| {
-            temporary_after(saved, s.temporary_epoch, power, epoch).map(|next| (value, next))
+            temporary_after(saved, s.temporary_generation, power, generation)
+                .map(|next| (value, next))
         });
         s.temporary_fan = s.temporary_fan.take().and_then(|(value, saved)| {
-            temporary_after(saved, s.temporary_fan_epoch, power, epoch).map(|next| (value, next))
+            temporary_after(saved, s.temporary_fan_generation, power, generation)
+                .map(|next| (value, next))
         });
         Ok(())
     }
@@ -727,7 +730,7 @@ impl Storage {
         } else {
             None
         };
-        s.temporary_fan_epoch = s.epoch;
+        s.temporary_fan_generation = s.generation;
         Ok(())
     }
     pub(super) fn current_fan_override(

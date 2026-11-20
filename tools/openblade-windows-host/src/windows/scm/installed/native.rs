@@ -27,6 +27,15 @@ pub(crate) fn entry(origin: Arc<Origin>) -> io::Result<()> {
         if let Ok(slot) = ENTRY_ORIGIN.lock()
             && let Some(origin) = &*slot
         {
+            // Managed samples the Windows power kind at every control capture;
+            // a power notice is native's capture between requests, so an
+            // unplug and replug between them still advances the generation.
+            #[cfg(feature = "service-thermal-mutation-v1")]
+            if code == windows_sys::Win32::System::Services::SERVICE_CONTROL_POWEREVENT {
+                origin
+                    .lifecycle
+                    .observe_power_kind(crate::origin_lifetime::sample_power_kind());
+            }
             crate::scm_host::installed_ingress(&origin.lifecycle, code, event, || {
                 origin.revoke_for_stop()
             });

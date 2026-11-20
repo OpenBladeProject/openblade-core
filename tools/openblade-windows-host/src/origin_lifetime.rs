@@ -83,6 +83,10 @@ pub(crate) struct Lifecycle(Mutex<LifecycleState>);
 struct LifecycleState {
     epoch: u64,
     awake: bool,
+    // The last sampled Windows ACLineStatus kind (0 unknown, 1 battery, 2 AC)
+    // and how many times a sample has changed it.
+    power_kind: Option<u8>,
+    power_generation: u64,
 }
 impl Default for LifecycleState {
     // Match managed LowPowerGate's initial clear low-power latch. This is not
@@ -92,6 +96,8 @@ impl Default for LifecycleState {
         Self {
             epoch: 1,
             awake: true,
+            power_kind: None,
+            power_generation: 0,
         }
     }
 }
@@ -131,6 +137,45 @@ impl Lifecycle {
         let state = self.0.lock().ok()?;
         (state.epoch != 0 && state.awake).then_some(state.epoch)
     }
+    /// Records a sampled Windows power kind and returns the power generation,
+    /// which advances only when a sample changes the kind (managed
+    /// `ServiceControlRuntime.windowsPowerGeneration`). A failed sample (`None`)
+    /// is not a power boundary. Unlike the lifecycle epoch, session notices and
+    /// power notices that keep the kind never advance it.
+    #[cfg_attr(not(feature = "service-thermal-mutation-v1"), allow(dead_code))]
+    pub(crate) fn observe_power_kind(&self, kind: Option<u8>) -> Option<u64> {
+        let mut state = self.0.lock().ok()?;
+        if let Some(kind) = kind {
+            if state.power_kind.is_some_and(|prior| prior != kind) {
+                state.power_generation = state.power_generation.saturating_add(1);
+            }
+            state.power_kind = Some(kind);
+        }
+        Some(state.power_generation)
+    }
+}
+/// The current Windows ACLineStatus kind, or `None` when the read fails.
+#[cfg(feature = "service-thermal-mutation-v1")]
+#[cfg_attr(test, allow(dead_code))]
+#[allow(unsafe_code)]
+pub(crate) fn sample_power_kind() -> Option<u8> {
+    use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+    let mut status = SYSTEM_POWER_STATUS::default();
+    // SAFETY: writable native output.
+    if unsafe { GetSystemPowerStatus(&mut status) } == 0 {
+        return None;
+    }
+    Some(power_kind(status.ACLineStatus))
+}
+/// Windows ACLineStatus as a power kind, as managed `CaptureControlPowerSource`
+/// classifies it.
+#[cfg(any(test, feature = "service-thermal-mutation-v1"))]
+pub(crate) fn power_kind(ac_line_status: u8) -> u8 {
+    match ac_line_status {
+        0 => 1,
+        1 => 2,
+        _ => 0,
+    }
 }
 
 #[cfg(test)]
@@ -156,5 +201,28 @@ mod lifecycle_tests {
         assert_eq!(lifecycle.active(), None);
         lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 18);
         assert_eq!(lifecycle.active(), None);
+    }
+    #[test]
+    fn power_generation_advances_only_on_a_changed_kind() {
+        use windows_sys::Win32::System::Services::{
+            SERVICE_CONTROL_POWEREVENT, SERVICE_CONTROL_SESSIONCHANGE,
+        };
+        let lifecycle = Lifecycle::default();
+        assert_eq!(lifecycle.observe_power_kind(Some(2)), Some(0));
+        // Lock, unlock and a status notice that keeps AC advance the epoch only.
+        lifecycle.ingress(SERVICE_CONTROL_SESSIONCHANGE, 7);
+        lifecycle.ingress(SERVICE_CONTROL_SESSIONCHANGE, 8);
+        lifecycle.ingress(SERVICE_CONTROL_POWEREVENT, 10);
+        assert_eq!(lifecycle.observe_power_kind(Some(2)), Some(0));
+        // A failed sample is not a boundary.
+        assert_eq!(lifecycle.observe_power_kind(None), Some(0));
+        assert_eq!(lifecycle.observe_power_kind(Some(1)), Some(1));
+        assert_eq!(lifecycle.observe_power_kind(Some(2)), Some(2));
+        assert_eq!(lifecycle.observe_power_kind(Some(0)), Some(3));
+        assert_eq!(
+            [0, 1, 255].map(power_kind),
+            [1, 2, 0],
+            "ACLineStatus offline, online and unknown"
+        );
     }
 }

@@ -46,6 +46,13 @@ pub(super) struct WindowsGuard {
 }
 #[cfg_attr(test, allow(dead_code))] // Test composition injects its own Fresh; only the native factory builds the guard.
 impl WindowsGuard {
+    /// Samples the Windows power kind into the loaded origin's lifecycle
+    /// and returns its power generation.
+    pub(super) fn power_generation(&self) -> Option<u64> {
+        self.origin
+            .lifecycle
+            .observe_power_kind(crate::origin_lifetime::sample_power_kind())
+    }
     pub(super) fn on_battery(&self) -> Option<bool> {
         let mut status = SYSTEM_POWER_STATUS::default();
         // Same documented Windows ACLineStatus mapping as lifecycle Observation.

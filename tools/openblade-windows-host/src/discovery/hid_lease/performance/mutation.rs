@@ -77,10 +77,16 @@ pub(crate) trait Permit: Send + Sync {
     fn cleanup(&self) -> bool {
         false
     }
-    /// Fresh positive Windows AC presence, read at the moment of the call. An
-    /// unclassified 07/8C reading admits an ordinary thermal setter only with it.
+    /// The Windows power kind, read at the moment of the call: `Some(false)`
+    /// is AC (ACLineStatus online), `Some(true)` battery and `None` unknown. It
+    /// is never wattage evidence.
+    fn windows_on_battery(&self) -> Option<bool> {
+        None
+    }
+    /// Fresh positive Windows AC presence. An unclassified 07/8C reading admits
+    /// an ordinary thermal setter only with it.
     fn external_presence(&self) -> bool {
-        false
+        self.windows_on_battery() == Some(false)
     }
     /// Whether this operation's resolved destination is unchanged for a fresh
     /// external class that differs from its first one (see `PowerFence::admits`).
@@ -150,6 +156,13 @@ impl<P: Port> Reader<P, ReadAdmission> {
         let destination = permit.resolve(power_source, baseline).ok()??;
         if Plan::from_observation(baseline, destination) == Plan::Unchanged {
             return Some(baseline);
+        }
+        // Managed `requireExternalPowerOnDirectHyperBoostExit`: a direct exit to
+        // a non-Balanced preset needs every command's fresh reading in the same
+        // classified external class, so a class change stops it without
+        // replay. Managed's Balanced exit applies no class rule.
+        if baseline == ObservedPerformance::HyperBoostObserved && destination != Preset::Balanced {
+            fence.pin_class();
         }
         // Reserve all remaining commands, including the independent final pair,
         // before journaling/submitting. Exhaustion cannot strand a partial pair.
@@ -223,20 +236,26 @@ impl<P: Port> Reader<P, ReadAdmission> {
     }
 }
 /// Fresh-power admission for one ordinary thermal operation, after managed
-/// `AdmitOrdinaryThermalCommandAsync` (f6502f85). Every external reading needs
-/// fresh Windows AC presence, classified or not, and once the first reading is
-/// external every later checkpoint needs it too (managed
-/// `OrdinarySourceUnchanged` rechecks the Windows source at submission), so
-/// losing presence stops before the next command.
+/// `AdmitOrdinaryThermalCommandAsync` (f6502f85). An unclassified reading needs
+/// fresh Windows AC presence. A performance setter needs it on every external
+/// class (`allowBattery: false`); a fan setter only on unclassified power,
+/// since managed admits a classified fan command while Windows reports battery
+/// (`allowBattery: true`). The presence a reading was admitted with must hold
+/// at every later checkpoint (managed `OrdinarySourceUnchanged` rechecks the
+/// Windows source at submission), so losing it stops before the next command.
 pub(super) struct PowerFence<'a> {
     permit: &'a dyn Permit,
+    fans: bool,
     external: AtomicBool,
+    pinned: AtomicBool,
 }
 impl<'a> PowerFence<'a> {
     pub(super) fn new(permit: &'a dyn Permit) -> Self {
         Self {
             permit,
+            fans: permit.is_fan(),
             external: AtomicBool::new(false),
+            pinned: AtomicBool::new(false),
         }
     }
     pub(super) fn authorize(&self) -> Option<ReadAdmission> {
@@ -247,27 +266,52 @@ impl<'a> PowerFence<'a> {
         }
         Some(admission)
     }
+    /// Every later reading must be in the first reading's class: managed pins
+    /// it for a direct HyperBoost exit and for a fan transition that keeps an
+    /// AC selector (`EnsureThermalWritePowerAsync`).
+    pub(super) fn pin_class(&self) {
+        self.pinned.store(true, Ordering::Release);
+    }
+    /// The admitted class, and whether later checkpoints need presence.
+    fn source(&self, power: Power) -> Option<(i32, bool)> {
+        let windows = self.permit.windows_on_battery();
+        let presence = windows == Some(false);
+        let source = power.thermal_source(presence, self.fans && windows == Some(true))?;
+        Some((source, presence && source != 1))
+    }
     /// The class of the operation's first reading.
     pub(super) fn admit(&self, power: Power) -> Option<i32> {
-        let presence = self.permit.external_presence();
-        if power == Power::Unclassified && !presence {
-            self.permit.refused(Refusal::UnclassifiedBlocked);
-        }
-        let source = power.thermal_source(presence)?;
-        self.external.store(source != 1, Ordering::Release);
+        let Some((source, external)) = self.source(power) else {
+            if power == Power::Unclassified {
+                self.permit.refused(Refusal::UnclassifiedBlocked);
+            }
+            return None;
+        };
+        self.external.store(external, Ordering::Release);
         Some(source)
     }
-    /// A setter-time reading. Managed admits any fresh external reading that
-    /// agrees with Windows AC presence; a class change between setters, either
-    /// way between full, limited and unclassified, continues only while the
-    /// permit's destination is the same for the new class, so a profile that
-    /// differs there stops the pair. Battery always stops it.
+    /// A setter-time reading against the first reading's class `source`.
+    /// Managed admits any fresh external reading that agrees with Windows AC
+    /// presence; a class change between setters, either way between full,
+    /// limited and unclassified, continues only while the class is not pinned
+    /// and the permit's destination is the same for the new class, so a
+    /// profile that differs there stops the pair. Battery always stops it.
     pub(super) fn admits(&self, power: Power, source: i32) -> bool {
-        match power.thermal_source(self.permit.external_presence()) {
-            Some(current) if current == source => source != 1,
-            Some(current) => current != 1 && source != 1 && self.permit.destination_holds(current),
-            None => false,
+        let Some((current, external)) = self.source(power) else {
+            return false;
+        };
+        let admitted = if current == source {
+            source != 1
+        } else {
+            !self.pinned.load(Ordering::Acquire)
+                && current != 1
+                && source != 1
+                && self.permit.destination_holds(current)
+        };
+        if admitted {
+            self.external.store(external, Ordering::Release);
         }
+        admitted
     }
 }
 /// One fresh 07/8C adapter query.
@@ -305,14 +349,18 @@ impl Power {
         }
     }
     /// The class an ordinary thermal setter is admitted on. Every external
-    /// class, unclassified (3) included, counts only with fresh positive
-    /// Windows AC presence: managed `AdmitOrdinaryThermalCommandAsync` requires
-    /// the fresh adapter reading and the Windows external source to agree.
-    /// Battery needs no presence; no ordinary setter is admitted on it.
-    pub(super) fn thermal_source(self, presence: bool) -> Option<i32> {
+    /// class, unclassified (3) included, counts with fresh positive Windows AC
+    /// presence: managed `AdmitOrdinaryThermalCommandAsync` requires the fresh
+    /// adapter reading and the Windows external source to agree. A classified
+    /// class also counts `unchecked`, when managed admits the command without
+    /// any check: a fan command while Windows reports battery. Battery needs no
+    /// presence; no ordinary setter is admitted on it.
+    pub(super) fn thermal_source(self, presence: bool, unchecked: bool) -> Option<i32> {
         match self {
             Self::Unclassified => presence.then_some(UNCLASSIFIED_EXTERNAL),
-            classified => classified.source().filter(|s| *s == 1 || presence),
+            classified => classified
+                .source()
+                .filter(|s| *s == 1 || presence || unchecked),
         }
     }
 }

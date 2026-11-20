@@ -78,13 +78,18 @@ pub(super) use battery::BatteryUpdate;
 mod fan;
 pub(super) use fan::FanRequest;
 pub(super) trait Fresh: Send + Sync {
+    /// The fresh Windows power kind: `Some(false)` is AC (ACLineStatus
+    /// online), `Some(true)` battery and `None` unknown. It is never wattage
+    /// evidence.
     fn on_battery(&self) -> Option<bool> {
         None
     }
-    /// Fresh positive Windows AC presence (ACLineStatus online). It is never
-    /// wattage evidence; it only lets an unclassified 07/8C reading count.
-    fn external_presence(&self) -> bool {
-        self.on_battery() == Some(false)
+    /// The Windows power generation after a fresh sample of the power kind:
+    /// it advances only when the ACLineStatus kind changes (managed
+    /// `windowsPowerGeneration`), never on a lock, an unlock or a notice
+    /// that keeps the kind.
+    fn power_generation(&self) -> Option<u64> {
+        None
     }
     fn authentication(&self) -> Option<(u32, i32)> {
         None
@@ -134,6 +139,9 @@ impl Fresh for WindowsGuard {
     }
     fn on_battery(&self) -> Option<bool> {
         self.on_battery()
+    }
+    fn power_generation(&self) -> Option<u64> {
+        self.power_generation()
     }
     fn authentication(&self) -> Option<(u32, i32)> {
         Some(self.authentication())
@@ -200,13 +208,14 @@ const UNCLASSIFIED_REJECTED: &str = "The requested intent was rejected: This req
 /// reading lacks fresh Windows AC presence or the confirmed state is HyperBoost
 /// (`CanAdmitUnclassifiedExternalControl`); no intent is stored.
 pub(super) const UNCLASSIFIED_BLOCKED: &str = "Hardware application was not confirmed. The external power adapter could not be classified; overrides and control writes are blocked.";
-/// The class a status projection reads saved intent at: battery, AC with fresh
-/// presence (the base's 3), or unknown (-1) otherwise.
+/// The class a status projection reads saved intent at: the base only when
+/// fresh Windows power agrees with it (battery, or AC presence for the base's
+/// external class), and unknown (-1) otherwise.
 pub(super) fn status_query_power(base: i32, fresh: &dyn Fresh) -> i32 {
-    if base == 1 || fresh.external_presence() {
-        base
-    } else {
-        -1
+    match (base, fresh.on_battery()) {
+        (1, Some(true)) => 1,
+        (base, Some(false)) if base != 1 => base,
+        _ => -1,
     }
 }
 #[derive(Clone, serde::Serialize)]
@@ -451,10 +460,11 @@ impl Runtime {
             }
             let power = base.thermal_power_source();
             // The status base reports 3 for any power that is not battery,
-            // Unknown included. A failed or unknown Windows read is not a power
-            // boundary (managed `CaptureControlPowerSource`), so without fresh
-            // AC presence saved intent is read at an unknown class (-1), which
-            // retires no temporary.
+            // Unknown included, and may be older than this read. A failed,
+            // unknown or disagreeing Windows read is not a power boundary
+            // (managed `CaptureControlPowerSource`), so unless fresh Windows
+            // power agrees with the base, saved intent is read at an unknown
+            // class (-1), which retires no temporary.
             let query = status_query_power(power, fresh.as_ref());
             let application = runtime
                 .application
@@ -693,11 +703,11 @@ impl RequestPermit {
         }
     }
     fn observe_power(&self, power: i32) -> io::Result<()> {
-        let admission = self
+        let generation = self
             .fresh
-            .authorize()
+            .power_generation()
             .ok_or(io::ErrorKind::PermissionDenied)?;
-        self.storage.observe_power(power, admission.lifecycle)
+        self.storage.observe_power(power, generation)
     }
 }
 impl Permit for RequestPermit {
@@ -708,8 +718,8 @@ impl Permit for RequestPermit {
         self.verify_failure().ok()?;
         self.fresh.authorize()
     }
-    fn external_presence(&self) -> bool {
-        self.fresh.external_presence()
+    fn windows_on_battery(&self) -> Option<bool> {
+        self.fresh.on_battery()
     }
     fn destination_holds(&self, power: i32) -> bool {
         (|| -> io::Result<bool> {

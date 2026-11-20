@@ -89,6 +89,18 @@ impl MemoryFiles {
     }
     /// `usb_c` replaces the fixture's limited-adapter preset (Balanced).
     fn profiles_with(&self, performance: i32, usb_c: Option<i32>) {
+        self.profiles_document(performance, usb_c, Value::Null);
+    }
+    /// The plugged-in profile also carries a GPU clock effect, which has no
+    /// native pair.
+    fn profiles_gpu(&self, performance: i32) {
+        self.profiles_document(
+            performance,
+            None,
+            json!({"enabled":true,"offsets":{"coreMegahertz":10,"memoryMegahertz":20}}),
+        );
+    }
+    fn profiles_document(&self, performance: i32, usb_c: Option<i32>, plugged_in_gpu: Value) {
         let fixture:Value=serde_json::from_str(include_str!("../../../../../../../tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-aggregate.json")).unwrap();
         let profile: Value = serde_json::from_str(fixture["prior"][0].as_str().unwrap()).unwrap();
         let mut profiles = profile["profiles"].clone();
@@ -96,7 +108,7 @@ impl MemoryFiles {
         if let Some(usb_c) = usb_c {
             profiles["usbC"]["performance"] = json!(usb_c);
         }
-        profiles["pluggedIn"]["gpuClockTuning"] = Value::Null;
+        profiles["pluggedIn"]["gpuClockTuning"] = plugged_in_gpu;
         profiles["applicationProfiles"] = json!([{ "id":"11111111-2222-3333-4444-555555555555","name":"Game","executablePath":"C:\\Games\\Game.exe","activationMode":0,"enabled":true,"overrides":{"pluggedIn":{"performance":2}}}]);
         self.put(
             "profiles.json",
@@ -484,6 +496,16 @@ impl Fresh for Custody {
     fn on_battery(&self) -> Option<bool> {
         let port = self.port.lock().unwrap();
         port.windows_on_battery.unwrap_or(Some(port.actual == 0))
+    }
+    // The same kind mapping as `WindowsGuard::power_generation`; the SCM
+    // power-notice sample is `Rig::notice` (unclassified_external.rs).
+    fn power_generation(&self) -> Option<u64> {
+        let kind = match self.on_battery() {
+            Some(true) => 1,
+            Some(false) => 2,
+            None => 0,
+        };
+        self.lifecycle.observe_power_kind(Some(kind))
     }
     fn authentication(&self) -> Option<(u32, i32)> {
         Some((self.authentication.load(Ordering::Acquire) as u32, 0))
@@ -1616,6 +1638,8 @@ async fn correction_fresh_metadata_expires_temporary_policy_without_promoting_pr
     assert_eq!(rig.set(91, value(2, 0)).await["result"]["status"], 1);
     assert_eq!(rig.get().await["status"]["performanceOverride"]["value"], 2);
     rig.metadata.store(1, Ordering::Release);
+    // Fresh Windows power agrees with the battery base (`status_query_power`).
+    rig.port.state.lock().unwrap().windows_on_battery = Some(Some(true));
     let status = rig.get().await;
     assert_eq!(status["status"]["activePowerSource"], 1);
     assert!(status["status"]["performanceOverride"].is_null());
@@ -1816,6 +1840,8 @@ async fn correction_unknown_external_metadata_preserves_temporary_intent_without
         assert_eq!(response["status"]["writesBlocked"], true);
     }
     rig.metadata.store(1, Ordering::Release);
+    // Fresh Windows power agrees with the battery base (`status_query_power`).
+    rig.port.state.lock().unwrap().windows_on_battery = Some(Some(true));
     assert!(rig.get().await["status"]["performanceOverride"].is_null());
     assert_eq!(rig.port.state.lock().unwrap().writes, 2);
     rig.stop().await;
@@ -2521,6 +2547,8 @@ async fn edge_stored_temporary_publication_cannot_resurrect_expired_policy() {
             Value::Null
         );
         rig.metadata.store(1, Ordering::Release);
+        // Fresh Windows power agrees with the battery base (`status_query_power`).
+        rig.port.state.lock().unwrap().windows_on_battery = Some(Some(true));
         let expired = rig.get().await;
         assert_eq!(expired["status"]["activePowerSource"], 1);
         assert!(expired["status"]["performanceOverride"].is_null());

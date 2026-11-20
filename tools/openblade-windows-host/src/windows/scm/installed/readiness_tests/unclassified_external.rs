@@ -71,6 +71,48 @@ fn progress(rig: &Rig) -> Option<u8> {
 fn reseal(frame: &mut [u8; 91]) {
     frame[89] = openblade_protocol::calculate_checksum(&frame[1..]).unwrap();
 }
+#[cfg(feature = "service-fan-mutation-v2")]
+impl Rig {
+    /// An SCM notice as native ingress delivers it (`native::entry`): a power
+    /// notice samples the Windows power kind before the lifecycle sees it.
+    fn notice(&self, code: u32, event: u32) {
+        if code == 13 {
+            Fresh::power_generation(self.custody.as_ref());
+        }
+        self.custody.lifecycle.ingress(code, event);
+    }
+}
+/// What happens between two requests.
+#[cfg(feature = "service-fan-mutation-v2")]
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Between {
+    Nothing,
+    /// Lock, unlock and a power-status notice that keeps the Windows kind.
+    Notices,
+    /// Windows AC to battery and back, each with its power notice.
+    KindChange,
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+const BETWEEN: [Between; 3] = [Between::Nothing, Between::Notices, Between::KindChange];
+#[cfg(feature = "service-fan-mutation-v2")]
+fn pass(rig: &Rig, between: Between) {
+    match between {
+        Between::Nothing => {}
+        Between::Notices => {
+            // WTS_SESSION_LOCK, WTS_SESSION_UNLOCK, PBT_APMPOWERSTATUSCHANGE.
+            rig.notice(14, 7);
+            rig.notice(14, 8);
+            rig.notice(13, 10);
+        }
+        Between::KindChange => {
+            let prior = rig.port.state.lock().unwrap().windows_on_battery;
+            rig.port.state.lock().unwrap().windows_on_battery = Some(Some(true));
+            rig.notice(13, 10);
+            rig.port.state.lock().unwrap().windows_on_battery = prior;
+            rig.notice(13, 10);
+        }
+    }
+}
 
 #[tokio::test]
 async fn unclassified_power_applies_ordinary_presets_with_a_fresh_read_per_setter() {
@@ -475,7 +517,8 @@ async fn classified_and_unclassified_requests_alternate_without_inherited_writes
 // source until classification), retired by a classified class it was not
 // saved on, and battery intent is retired once AC arrives unclassified. A
 // temporary saved unclassified follows the first classified class within one
-// lifecycle epoch (managed `PreserveOverridesForExternalClassification`).
+// Windows power generation (managed
+// `PreserveOverridesForExternalClassification`).
 #[test]
 fn temporary_overrides_follow_classification_boundaries() {
     let files = MemoryFiles::default();
@@ -496,12 +539,12 @@ fn temporary_overrides_follow_classification_boundaries() {
     storage.save(Some(temporary(2)), 0).unwrap();
     assert_eq!(desired(3), Some((2, 3)));
     assert_eq!(desired(0), Some((2, 3)));
-    // Saved unclassified with no epoch, classified later: retired.
+    // Saved unclassified with no generation, classified later: retired.
     storage.save(Some(temporary(2)), 3).unwrap();
     assert_eq!(desired(3), Some((2, 3)));
     assert_eq!(desired(0), Some((1, 1)));
     assert_eq!(desired(3), None);
-    // Saved unclassified at epoch 7 and classified at 7: refined to full, so
+    // Saved unclassified at generation 7 and classified at 7: refined to full, so
     // a later limited class retires it.
     storage.observe_power(3, 7).unwrap();
     storage.save(Some(temporary(2)), 3).unwrap();
@@ -512,7 +555,7 @@ fn temporary_overrides_follow_classification_boundaries() {
     assert_eq!(desired(0), Some((2, 3)));
     storage.observe_power(2, 7).unwrap();
     assert_eq!(desired(2), Some((1, 1)));
-    // A power or session notice between the save and the classification
+    // A Windows power kind change between the save and the classification
     // retires it.
     storage.observe_power(3, 8).unwrap();
     storage.save(Some(temporary(2)), 3).unwrap();
@@ -526,31 +569,124 @@ fn temporary_overrides_follow_classification_boundaries() {
     assert_eq!(desired(3), None);
 }
 
-// The status base reports 3 for any power that is not battery, Unknown
-// included. Without fresh Windows AC that is no power boundary (managed
-// `CaptureControlPowerSource`), so a battery temporary survives it.
+// The status base may be older than the read: it reports 1 for battery and 3
+// for any other power. Saved intent is read at that class only where fresh
+// Windows power agrees (`status_query_power`); a stale or unknown read is no
+// power boundary (managed `CaptureControlPowerSource`) and retires nothing.
 #[tokio::test]
-async fn status_under_unknown_windows_power_keeps_a_battery_temporary() {
+async fn status_reads_saved_intent_only_where_fresh_windows_power_agrees() {
+    let lifetime = |status: &Value| status["status"]["performanceOverride"]["lifetime"].clone();
+    // An AC temporary under a stale battery base, then an agreeing one.
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let rig = Rig::new(files);
+    assert_eq!(rig.set(1, value(2, 0)).await["result"]["status"], 1);
+    rig.metadata.store(1, Ordering::Release);
+    assert_eq!(lifetime(&rig.get().await), 0);
+    rig.port.state.lock().unwrap().windows_on_battery = Some(Some(true));
+    assert!(rig.get().await["status"]["performanceOverride"].is_null());
+    rig.stop().await;
+    // A battery temporary under a stale AC base and under unknown Windows
+    // power, then an agreeing AC base.
     let files = MemoryFiles::default();
     files.profiles(1);
     let rig = Rig::new(files);
     rig.port.state.lock().unwrap().actual = 0;
     rig.metadata.store(1, Ordering::Release);
     rig.set(1, value(2, 0)).await;
-    let lifetime = |status: &Value| status["status"]["performanceOverride"]["lifetime"].clone();
     assert_eq!(lifetime(&rig.get().await), 0);
-    rig.metadata.store(4, Ordering::Release);
+    rig.metadata.store(0, Ordering::Release);
+    assert_eq!(lifetime(&rig.get().await), 0);
     rig.port.state.lock().unwrap().windows_on_battery = Some(None);
     let unknown = rig.get().await;
     assert_eq!(unknown["status"]["activePowerSource"], 3);
     assert_eq!(lifetime(&unknown), 0);
-    rig.metadata.store(1, Ordering::Release);
     rig.port.state.lock().unwrap().windows_on_battery = None;
-    assert_eq!(lifetime(&rig.get().await), 0);
-    // Fresh Windows AC is a boundary: it retires the battery temporary.
-    rig.metadata.store(0, Ordering::Release);
     rig.port.state.lock().unwrap().actual = 15;
     assert!(rig.get().await["status"]["performanceOverride"].is_null());
+    rig.stop().await;
+}
+
+// Managed `requireExternalPowerOnDirectHyperBoostExit`: a direct exit to a
+// non-Balanced preset needs every command's reading in the first class, so a
+// class change stops it before the next command and nothing is replayed. The
+// Balanced exit has no class rule and follows ordinary admission.
+#[tokio::test]
+async fn hyperboost_exits_keep_the_first_class_except_to_balanced() {
+    type Change = fn(&mut Port);
+    let cases: [(&str, i32, Change, usize); 5] = [
+        ("steady", 2, |_| {}, 2),
+        (
+            "unclassified at the first setter",
+            2,
+            |s| s.change_power_status = Some((2, 5)),
+            0,
+        ),
+        (
+            "unclassified at the second setter",
+            2,
+            |s| s.change_power_status = Some((3, 5)),
+            1,
+        ),
+        (
+            "limited at the second setter",
+            2,
+            |s| s.change_power = Some((3, 10)),
+            1,
+        ),
+        (
+            "Balanced, limited at the second setter",
+            1,
+            |s| s.change_power = Some((3, 10)),
+            2,
+        ),
+    ];
+    for (name, preset, change, submitted) in cases {
+        let rig = Rig::new(MemoryFiles::default());
+        {
+            let mut s = rig.port.state.lock().unwrap();
+            (s.selectors, s.fans) = ([7; 2], [0; 2]);
+            change(&mut s);
+        }
+        let out = rig.set(1, value(preset, 1)).await;
+        assert_eq!(writes(&rig), submitted, "{name} {out}");
+        let status = if submitted == 2 { 1 } else { 2 };
+        assert_eq!(out["result"]["status"], status, "{name} {out}");
+        if submitted == 1 {
+            assert_eq!(out["result"]["message"], PENDING, "{name}");
+        }
+        rig.stop().await;
+    }
+}
+
+// A temporary saved unclassified and classified at a setter's reading is
+// refined to the new class within the power generation, so its destination
+// holds there and the pair completes.
+#[tokio::test]
+async fn unclassified_temporary_refined_mid_pair_completes() {
+    let rig = unclassified_rig(Form::Rejected(3));
+    rig.port.state.lock().unwrap().change_power_status = Some((3, 0));
+    let out = rig.set(1, value(2, 0)).await;
+    assert_eq!(out["result"]["status"], 1, "{out}");
+    assert_eq!(writes(&rig), 2);
+    let status = rig.get().await["status"].clone();
+    assert_eq!(status["performanceOverride"]["lifetime"], 0, "{status}");
+    rig.stop().await;
+}
+
+// A class change onto a profile with a GPU effect that has no native pair
+// leaves the destination incomplete there, so the pair stops.
+#[tokio::test]
+async fn class_change_onto_an_incomplete_gpu_profile_stops_the_pair() {
+    let files = MemoryFiles::default();
+    files.profiles_gpu(1);
+    let rig = Rig::new(files);
+    unclassify(&rig, Form::Rejected(3));
+    rig.port.state.lock().unwrap().change_power_status = Some((3, 0));
+    let out = rig.set(1, value(2, 1)).await;
+    assert_eq!(out["result"]["status"], 2, "{out}");
+    assert_eq!(out["result"]["message"], PENDING);
+    assert_eq!(writes(&rig), 1);
     rig.stop().await;
 }
 
@@ -614,14 +750,17 @@ mod fans {
 
     // A fan setter's fresh reading may change class while the saved fan
     // settings, the same on every external class, hold (managed admission);
-    // battery stops the chain without replay.
+    // battery stops the chain without replay. A manual change that keeps the
+    // Performance selector has no carried preset, so managed pins its class
+    // (`EnsureThermalWritePowerAsync`) and a class change stops it too.
     #[tokio::test]
     async fn fan_setters_follow_managed_class_admission() {
-        for (name, battery) in [
-            ("unclassified to full", false),
-            ("unclassified to battery", true),
+        for (name, selector, battery, completes) in [
+            ("unclassified to full", 0, false, true),
+            ("unclassified to battery", 0, true, false),
+            ("unclassified to full under Performance", 2, false, false),
         ] {
-            let rig = fan_rig(0, 0);
+            let rig = fan_rig(selector, 0);
             let reads = power_reads(&rig);
             {
                 let mut s = rig.port.state.lock().unwrap();
@@ -634,17 +773,83 @@ mod fans {
             let out = rig.request(fan_request(1, Some(1), 3700)).await;
             // The row keeps the first class.
             assert_eq!(fan_rows(&rig)[0]["fan"]["source"], 3, "{name}");
-            if battery {
+            if completes {
+                assert_eq!(out["result"]["status"], 1, "{name} {out}");
+                assert_eq!(hardware(&rig), (4, [0; 2], [1; 2]), "{name}");
+                assert_eq!(fan_rows(&rig).last().unwrap()["progress"], 30);
+                rig.origin.stop();
+                rig.stop().await;
+            } else {
                 assert_eq!(out["result"]["status"], 2, "{name} {out}");
                 assert_eq!(writes(&rig), 1, "{name}");
                 assert_eq!(fan_rows(&rig).last().unwrap()["progress"], 11);
                 rig.origin.stop();
                 // The partial submission stays fenced for read-only reconciliation.
                 assert!(rig.source.lock().await.drain().await.is_err());
+            }
+        }
+    }
+
+    // A battery reading while Windows still reports AC stops the chain: no
+    // fan destination holds on battery.
+    #[tokio::test]
+    async fn fan_setters_stop_on_a_battery_reading_under_windows_ac() {
+        let rig = fan_rig(0, 0);
+        let reads = power_reads(&rig);
+        {
+            let mut s = rig.port.state.lock().unwrap();
+            s.windows_on_battery = Some(Some(false));
+            s.change_power = Some((reads + 3, 0));
+        }
+        let out = rig.request(fan_request(1, Some(1), 3700)).await;
+        assert_eq!(out["result"]["status"], 2, "{out}");
+        assert_eq!(writes(&rig), 1);
+        assert_eq!(fan_rows(&rig).last().unwrap()["progress"], 11);
+        rig.origin.stop();
+        assert!(rig.source.lock().await.drain().await.is_err());
+    }
+
+    // A setter reading admitted with Windows AC needs it until its SET, even
+    // after earlier readings were admitted unchecked under Windows battery
+    // (managed rechecks `OrdinarySourceUnchanged` per command).
+    #[tokio::test]
+    async fn fan_setter_admitted_on_windows_ac_needs_it_until_its_set() {
+        let rig = fan_rig(0, 0);
+        let reads = power_reads(&rig);
+        {
+            let mut s = rig.port.state.lock().unwrap();
+            s.windows_on_battery = Some(Some(true));
+            s.change_windows = Some((reads + 3, Some(false)));
+            s.change_windows_after_reply = Some((reads + 3, Some(true)));
+        }
+        let out = rig.request(fan_request(1, Some(1), 3700)).await;
+        assert_eq!(out["result"]["status"], 2, "{out}");
+        assert_eq!(writes(&rig), 1);
+        assert_eq!(fan_rows(&rig).last().unwrap()["progress"], 11);
+        rig.origin.stop();
+        assert!(rig.source.lock().await.drain().await.is_err());
+    }
+
+    // On classified power managed admits a fan command without any check
+    // while Windows reports battery (`allowBattery`), so a fan request and its
+    // owned Stop both apply; unknown Windows power admits neither.
+    #[tokio::test]
+    async fn classified_fan_commands_follow_managed_windows_admission() {
+        for windows in [Some(true), None] {
+            let rig = fan_rig(0, 0);
+            rig.port.state.lock().unwrap().windows_on_battery = Some(windows);
+            let out = rig.request(fan_request(1, Some(1), 3700)).await;
+            if windows.is_some() {
+                assert_eq!(out["result"]["status"], 1, "{out}");
+                assert_eq!(hardware(&rig), (4, [0; 2], [1; 2]));
+                rig.origin.stop();
+                rig.stop().await;
+                assert_eq!(fan_rows(&rig).last().unwrap()["progress"], 50);
+                assert_eq!(hardware(&rig).2, [0; 2]);
             } else {
-                assert_eq!(out["result"]["status"], 1, "{name} {out}");
-                assert_eq!(hardware(&rig), (4, [0; 2], [1; 2]), "{name}");
-                assert_eq!(fan_rows(&rig).last().unwrap()["progress"], 30);
+                assert_eq!(out["result"]["status"], 2, "{out}");
+                assert_eq!(writes(&rig), 0);
+                assert!(fan_rows(&rig).is_empty());
                 rig.origin.stop();
                 rig.stop().await;
             }
@@ -741,64 +946,112 @@ mod fans {
     }
 
     // A temporary Performance override saved unclassified is kept when the
-    // adapter is classified with no power or session notice in between, so the
+    // adapter is then classified within one Windows power generation, so the
     // return to Automatic applies it (managed
-    // `PreserveOverridesForExternalClassification`). After a notice it lapses
-    // and the plugged-in profile's Balanced applies.
+    // `PreserveOverridesForExternalClassification`). Lock, unlock and a status
+    // notice that keep the Windows kind do not end the generation; a kind
+    // change does, and the plugged-in profile's Balanced applies.
     #[tokio::test]
-    async fn unclassified_temporary_survives_classification_within_one_epoch() {
-        for notice in [false, true] {
+    async fn unclassified_temporary_survives_classification_within_one_power_generation() {
+        for between in BETWEEN {
             let rig = unclassified_fan_rig(0, 0, Form::Rejected(3));
             let performance = rig.set(1, value(2, 0)).await;
             assert_eq!(performance["result"]["status"], 1, "{performance}");
             let fixed = rig.request(fan_request(2, Some(1), 3700)).await;
             assert_eq!(fixed["result"]["status"], 1, "{fixed}");
             classify(&rig, 15);
-            if notice {
-                // SERVICE_CONTROL_POWEREVENT, PBT_APMPOWERSTATUSCHANGE.
-                rig.custody.lifecycle.ingress(13, 10);
-            }
+            pass(&rig, between);
             let back = rig.request(fan_request(3, Some(0), 3700)).await;
-            assert_eq!(back["result"]["status"], 1, "{notice} {back}");
-            let selector = if notice { 0 } else { 2 };
-            assert_eq!(hardware(&rig).1, [selector; 2], "{notice}");
+            assert_eq!(back["result"]["status"], 1, "{between:?} {back}");
+            let lapsed = between == Between::KindChange;
+            let selector = if lapsed { 0 } else { 2 };
+            assert_eq!(hardware(&rig).1, [selector; 2], "{between:?}");
             let status = rig.get().await["status"].clone();
-            assert_eq!(status["performanceOverride"].is_null(), notice, "{status}");
+            assert_eq!(status["performanceOverride"].is_null(), lapsed, "{status}");
             rig.origin.stop();
             rig.stop().await;
         }
     }
 
-    // A temporary fan override saved unclassified follows the same epoch rule:
-    // classified with no notice it stays the manual intent, so a performance
-    // request is still deferred; after a notice it lapses.
+    // A temporary fan override saved unclassified follows the same rule:
+    // classified within the generation it stays the manual intent, so a
+    // performance request is still deferred; after a kind change it lapses.
     #[tokio::test]
-    async fn unclassified_fan_temporary_survives_classification_within_one_epoch() {
-        for notice in [false, true] {
+    async fn unclassified_fan_temporary_survives_classification_within_one_power_generation() {
+        for between in BETWEEN {
             let rig = unclassified_fan_rig(0, 0, Form::Rejected(3));
             let mut fixed = fan_request(1, Some(1), 3700);
             fixed["value"]["lifetime"] = json!(0);
             assert_eq!(rig.request(fixed).await["result"]["status"], 1);
             classify(&rig, 15);
-            if notice {
-                rig.custody.lifecycle.ingress(13, 10);
-            }
+            pass(&rig, between);
             let out = rig.set(2, value(2, 1)).await;
             let status = rig.get().await["status"].clone();
-            assert_eq!(hardware(&rig), (4, [0; 2], [1; 2]), "{notice}");
-            rig.origin.stop();
-            if notice {
+            assert_eq!(hardware(&rig), (4, [0; 2], [1; 2]), "{between:?}");
+            if between == Between::KindChange {
                 // The owned manual change is still in hardware, so nothing is
-                // submitted; after the POWEREVENT Stop takes the settle-only
-                // permit and fails closed, as in the classified tests.
+                // submitted.
                 assert_eq!(out["result"]["status"], 2, "{out}");
                 assert!(status["fanOverride"].is_null(), "{status}");
-                assert!(rig.source.lock().await.drain().await.is_err());
             } else {
-                assert_eq!(out["result"]["status"], 0, "{out}");
+                assert_eq!(out["result"]["status"], 0, "{between:?} {out}");
                 assert_eq!(out["result"]["message"], DEFERRED);
                 assert_eq!(status["fanOverride"], json!({"lifetime": 0, "value": 1}));
+            }
+            rig.origin.stop();
+            if between == Between::Nothing {
                 rig.stop().await;
+            } else {
+                // After any notice Stop takes the settle-only permit and fails
+                // closed, as in the classified tests.
+                assert!(rig.source.lock().await.drain().await.is_err());
+            }
+        }
+    }
+
+    // A temporary fan override saved unclassified and classified at a
+    // setter's reading is refined to the new class, so the pair completes.
+    #[tokio::test]
+    async fn unclassified_fan_temporary_refined_mid_pair_completes() {
+        let rig = unclassified_fan_rig(0, 0, Form::Rejected(3));
+        let reads = power_reads(&rig);
+        rig.port.state.lock().unwrap().change_power_status = Some((reads + 3, 0));
+        let mut fixed = fan_request(1, Some(1), 3700);
+        fixed["value"]["lifetime"] = json!(0);
+        let out = rig.request(fixed).await;
+        assert_eq!(out["result"]["status"], 1, "{out}");
+        assert_eq!(hardware(&rig), (4, [0; 2], [1; 2]));
+        rig.origin.stop();
+        rig.stop().await;
+    }
+
+    // An unclassified clear hands back to Automatic with no saved settings;
+    // like owned Stop it continues across a classification under Balanced,
+    // and the Performance selector without a carried preset pins its class.
+    #[tokio::test]
+    async fn unclassified_clear_handback_follows_the_class_pin() {
+        for (selector, completes) in [(0, true), (2, false)] {
+            let rig = unclassified_fan_rig(selector, 0, Form::Rejected(5));
+            assert_eq!(
+                rig.request(fan_request(1, Some(1), 3700)).await["result"]["status"],
+                1
+            );
+            let before = writes(&rig);
+            let reads = power_reads(&rig);
+            rig.port.state.lock().unwrap().change_power_status = Some((reads + 3, 0));
+            let out = rig.request(fan_request(2, None, 0)).await;
+            rig.origin.stop();
+            if completes {
+                assert_eq!(out["result"]["status"], 0, "{selector} {out}");
+                assert_eq!(out["result"]["message"], CLEARED);
+                assert_eq!(writes(&rig) - before, 2);
+                assert_eq!(hardware(&rig).2, [0; 2]);
+                assert!(!rig.storage.outstanding_fan());
+                rig.stop().await;
+            } else {
+                assert_eq!(out["result"]["status"], 2, "{selector} {out}");
+                assert_eq!(writes(&rig) - before, 1);
+                assert!(rig.source.lock().await.drain().await.is_err());
             }
         }
     }
@@ -854,7 +1107,8 @@ mod fans {
         assert_eq!(hardware(&rig).2, [0; 2]);
     }
 
-    // Owned Stop hands back on the owner's class; unclassified needs presence.
+    // Owned Stop hands back on the owner's class; unclassified needs presence,
+    // and without it Stop records and writes nothing.
     #[tokio::test]
     async fn owned_stop_hands_back_on_unclassified_power_with_presence() {
         for presence in [true, false] {
@@ -863,6 +1117,8 @@ mod fans {
                 rig.request(fan_request(1, Some(1), 3700)).await["result"]["status"],
                 1
             );
+            let owner = fan_rows(&rig).last().unwrap().clone();
+            assert_eq!(owner["progress"], 30);
             if !presence {
                 rig.port.state.lock().unwrap().windows_on_battery = Some(None);
             }
@@ -871,6 +1127,45 @@ mod fans {
             assert_eq!(drained.is_ok(), presence, "{drained:?}");
             assert_eq!(!rig.storage.outstanding_fan(), presence);
             assert_eq!(hardware(&rig).2, if presence { [0; 2] } else { [1; 2] });
+            if !presence {
+                assert_eq!(*fan_rows(&rig).last().unwrap(), owner);
+                assert!(!rig.storage.pending());
+            }
+        }
+    }
+
+    // Owned Stop re-reads 07/8C before each setter: a battery reading while
+    // Windows still reports AC stops it, and so does a class change under the
+    // Performance selector, which carries no preset (managed acPreset pin).
+    // Under Balanced a change between external classes completes.
+    #[tokio::test]
+    async fn owned_stop_checks_every_setter_reading() {
+        for (selector, actual, completes) in [(0, 0, false), (2, 10, false), (0, 10, true)] {
+            let rig = fan_rig(selector, 0);
+            rig.port.state.lock().unwrap().windows_on_battery = Some(Some(false));
+            assert_eq!(
+                rig.request(fan_request(1, Some(1), 3700)).await["result"]["status"],
+                1
+            );
+            let before = writes(&rig);
+            let reads = power_reads(&rig);
+            rig.port.state.lock().unwrap().change_power = Some((reads + 3, actual));
+            rig.origin.stop();
+            let drained = rig.source.lock().await.drain().await;
+            assert_eq!(
+                drained.is_ok(),
+                completes,
+                "{selector} {actual} {drained:?}"
+            );
+            if completes {
+                assert_eq!(writes(&rig) - before, 2);
+                assert_eq!(fan_rows(&rig).last().unwrap()["progress"], 50);
+                assert_eq!(hardware(&rig).2, [0; 2]);
+            } else {
+                assert_eq!(writes(&rig) - before, 1, "{selector}");
+                assert_eq!(fan_rows(&rig).last().unwrap()["progress"], 41, "{selector}");
+                assert!(rig.storage.outstanding_fan(), "{selector}");
+            }
         }
     }
 }

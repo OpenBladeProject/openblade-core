@@ -106,11 +106,11 @@ impl FanPermit {
         Ok(desired.map(|(p, _)| p))
     }
     fn observe_power(&self, power: i32) -> io::Result<()> {
-        let admission = self
+        let generation = self
             .fresh
-            .authorize()
+            .power_generation()
             .ok_or(io::ErrorKind::PermissionDenied)?;
-        self.storage.observe_power(power, admission.lifecycle)
+        self.storage.observe_power(power, generation)
     }
 }
 impl Permit for FanPermit {
@@ -135,15 +135,16 @@ impl Permit for FanPermit {
                 return Ok(false);
             };
             // A synthesized unclassified-clear handback has no saved settings
-            // to compare; a classified class would select a profile instead.
-            if settings.is_null() {
-                return Ok(false);
-            }
+            // to compare: like owned Stop it hands back to Automatic on every
+            // external class, as managed continues it. Only a carried preset
+            // must still hold; a selector-2 handback without one is pinned by
+            // the power fence instead.
             self.observe_power(power)?;
-            if self
-                .storage
-                .desired_fan(power, self.application.as_deref())?
-                != Some(settings)
+            if !settings.is_null()
+                && self
+                    .storage
+                    .desired_fan(power, self.application.as_deref())?
+                    != Some(settings)
             {
                 return Ok(false);
             }
@@ -159,8 +160,8 @@ impl Permit for FanPermit {
     fn mutation_registered(&self) {
         self.registered.store(true, Ordering::Release);
     }
-    fn external_presence(&self) -> bool {
-        self.fresh.external_presence()
+    fn windows_on_battery(&self) -> Option<bool> {
+        self.fresh.on_battery()
     }
     fn result_admitted(&self, expected: ReadAdmission) -> bool {
         if self.cleanup() && matches!(self.storage.progress(), Some(50 | 51)) {

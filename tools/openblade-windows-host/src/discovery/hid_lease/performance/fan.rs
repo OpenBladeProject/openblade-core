@@ -67,7 +67,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
             (b, p, [modes, power])
         };
         let source = fence.admit(power)?;
-        let (plan, record, ids) = if cleanup {
+        let (plan, ids, carried) = if cleanup {
             let r = permit.fan_record()?;
             let owned = Plan::select(baseline, r.intent, source)?;
             // Fresh generic-manual topology retains only this already established
@@ -79,7 +79,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 return None;
             }
             let plan = Plan::select(baseline, FanIntent::checked(0, 3700)?, source)?;
-            (plan, r.clone(), r.cleanup[2..].to_vec())
+            (plan, r.cleanup[2..].to_vec(), None)
         } else {
             // Owned Stop cleanup above keeps the owner's selector: shutdown hands
             // back to firmware without applying saved settings. An explicit
@@ -130,8 +130,17 @@ impl<P: Port> Reader<P, ReadAdmission> {
             record.cleanup = cleanup_ids;
             record.validate().ok()?;
             permit.prepare_fan(record.clone()).ok()?;
-            (plan, record, ids)
+            (plan, ids, performance)
         };
+        // Managed keeps an observed AC selector only in the class it first read
+        // (`ProductionBatteryPort` acPreset with `EnsureThermalWritePowerAsync`),
+        // so a transition that keeps Performance without a carried preset, owned
+        // Stop included, stops on a class change. Balanced has no such pin. The
+        // class is this operation's own first reading, not the recorded one, so
+        // a steady Stop on another external class still completes.
+        if plan.selector == 2 && carried.is_none() {
+            fence.pin_class();
+        }
         let mut a = Attempt {
             reader: self,
             completed: false,
@@ -185,7 +194,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
                     .await?;
                 // The commands are the same on every external class; a class
                 // change continues only while the permit's destination holds.
-                if !fence.admits(current, record.source) {
+                if !fence.admits(current, source) {
                     permit.refused(Refusal::PowerChanged);
                     return None;
                 }
