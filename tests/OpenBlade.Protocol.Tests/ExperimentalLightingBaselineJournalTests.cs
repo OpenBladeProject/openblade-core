@@ -216,6 +216,98 @@ public sealed class ExperimentalLightingBaselineJournalTests : IDisposable
         Assert.Equal(Baseline(), Create().Load().Baseline);
     }
 
+    [Fact]
+    public void KeyboardOnlyBaselineRemainsSchemaOneWithoutVaporChamberMember()
+    {
+        Create().SavePending(Baseline());
+        JsonObject document = JsonNode.Parse(File.ReadAllText(JournalPath))!.AsObject();
+        Assert.Equal(1, (int)document["schemaVersion"]!);
+        Assert.Equal(new[] { "settings", "rawBrightness" }, document["baseline"]!.AsObject().Select(member => member.Key));
+        Assert.Equal(new(Baseline(), false), Create().Load());
+    }
+
+    public static TheoryData<LightingSettings> VaporChamberBaselines => new()
+    {
+        LightingSettingsFactory.Off(),
+        LightingSettingsFactory.Static(new(1, 2, 3), 100),
+        LightingSettingsFactory.BreathingRandom(100),
+        LightingSettingsFactory.BreathingSingle(new(1, 2, 3), 100),
+        LightingSettingsFactory.BreathingDual(new(1, 2, 3), new(4, 5, 6), 100),
+        LightingSettingsFactory.Wave(LightingDirection.Leftward, 100),
+        LightingSettingsFactory.Wave(LightingDirection.Rightward, 100),
+    };
+
+    [Theory]
+    [MemberData(nameof(VaporChamberBaselines))]
+    public void VaporChamberBaselineRoundTripsAsSchemaTwo(LightingSettings vaporChamber)
+    {
+        var baseline = Baseline() with { VaporChamber = vaporChamber };
+        var journal = Create();
+        journal.SavePending(baseline);
+        Assert.Equal(2, (int)JsonNode.Parse(File.ReadAllText(JournalPath))!["schemaVersion"]!);
+        Assert.Equal(new(baseline, false), Create().Load());
+        Assert.Throws<InvalidDataException>(() => journal.SavePending(Baseline()));
+        journal.ClearAfterVerifiedRestoration();
+        Assert.Equal(1, (int)JsonNode.Parse(File.ReadAllText(JournalPath))!["schemaVersion"]!);
+        Assert.Equal(new(null, false), Create().Load());
+    }
+
+    [Theory]
+    [InlineData(true, 1)]
+    [InlineData(false, 2)]
+    public void SchemaAndVaporChamberPresenceMustAgree(bool withVaporChamber, int schema)
+    {
+        Create().SavePending(withVaporChamber
+            ? Baseline() with { VaporChamber = LightingSettingsFactory.Static(new(1, 2, 3), 100) }
+            : Baseline());
+        JsonNode document = JsonNode.Parse(File.ReadAllText(JournalPath))!;
+        document["schemaVersion"] = schema;
+        File.WriteAllText(JournalPath, document.ToJsonString());
+        Assert.True(Create().Load().Invalid);
+    }
+
+    [Fact]
+    public void SchemaTwoTombstoneIsInvalid()
+    {
+        var journal = Create();
+        journal.SavePending(Baseline());
+        journal.ClearAfterVerifiedRestoration();
+        JsonNode document = JsonNode.Parse(File.ReadAllText(JournalPath))!;
+        document["schemaVersion"] = 2;
+        File.WriteAllText(JournalPath, document.ToJsonString());
+        Assert.True(Create().Load().Invalid);
+    }
+
+    [Fact]
+    public void IncompleteOrUnrestorableVaporChamberBaselinesAreRejectedWithoutFiles()
+    {
+        var journal = Create();
+        LightingSettings[] invalid =
+        [
+            LightingSettingsFactory.SpectrumCycling(100),
+            LightingSettingsFactory.StarlightRandom(100, StarlightLightingDuration.Medium),
+            new(LightingEffect.Static, new(1, 2, 3), 100),
+            LightingSettingsFactory.Static(new(1, 2, 3), 50),
+            LightingSettingsFactory.Wave(LightingDirection.Leftward, 100) with { LogoMode = LogoLightingMode.Breathing },
+            LightingSettingsFactory.Static(new(1, 2, 3), 100) with { ControlsKeyboardEffect = true },
+        ];
+        foreach (LightingSettings vaporChamber in invalid)
+        {
+            Assert.Throws<InvalidDataException>(() => journal.SavePending(Baseline() with { VaporChamber = vaporChamber }));
+        }
+        Assert.False(Directory.Exists(directory));
+    }
+
+    [Fact]
+    public void TamperedVaporChamberBaselineIsInvalid()
+    {
+        Create().SavePending(Baseline() with { VaporChamber = LightingSettingsFactory.Static(new(1, 2, 3), 100) });
+        JsonNode document = JsonNode.Parse(File.ReadAllText(JournalPath))!;
+        document["baseline"]!["vaporChamber"]!["brightness"] = 40;
+        File.WriteAllText(JournalPath, document.ToJsonString());
+        Assert.True(Create().Load().Invalid);
+    }
+
     private ExperimentalLightingBaselineJournal Create() => new(directory, "RZ09-0529", 0x02C7, _ => { });
 
     private static ExperimentalLightingBaseline Baseline() =>

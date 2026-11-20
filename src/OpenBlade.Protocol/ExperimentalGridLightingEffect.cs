@@ -19,6 +19,10 @@ internal sealed class ExperimentalGridLightingEffect
     private readonly List<(int Slot, TimeSpan At)> pulses = [];
     internal bool IsKeyTriggered => settings.Effect is LightingEffect.Reactive or LightingEffect.Ripple;
     internal bool IsSequence => sequence is not null;
+    // Reactive pulses and per-key sequences address keyboard slots only; every
+    // other RZ09-0529 pattern also has a defined value on the LED38 row.
+    internal bool IncludesVaporChamber => rz090529 && sequence is null
+        && settings.Effect != LightingEffect.Reactive;
 
     internal ExperimentalGridLightingEffect(LightingSettings settings, bool rz090529 = false)
     {
@@ -126,6 +130,38 @@ internal sealed class ExperimentalGridLightingEffect
         return colors;
     }
 
+    // LED38 occupies logical canvas row 0, columns 0..17. Grid patterns use
+    // that same row/column; Ripple uses the logical key-position space, and
+    // Starlight gives each LED its own slot after the 114 keyboard slots.
+    internal IReadOnlyList<RgbColor> RenderVaporChamber(TimeSpan elapsed)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(elapsed, TimeSpan.Zero);
+        if (!IncludesVaporChamber)
+        {
+            throw new InvalidOperationException("This grid effect has no Vapor Chamber output.");
+        }
+        if (IsKeyTriggered)
+        {
+            TimeSpan duration = PulseDuration();
+            pulses.RemoveAll(pulse => elapsed - pulse.At >= duration);
+        }
+        var colors = new RgbColor[Rz090529KeyboardLightingFrame.VaporChamberColumns];
+        for (int column = 0; column < colors.Length; column++)
+        {
+            colors[column] = settings.Parameters switch
+            {
+                SpectrumCyclingLightingParameters => Hue(Phase(elapsed, 12)),
+                FireLightingParameters => Fire(0, column, elapsed),
+                WheelLightingParameters wheel => Wheel(0, column, wheel, elapsed),
+                TidalLightingParameters tidal => Tidal(0, column, tidal, elapsed),
+                RippleLightingParameters ripple => Scale(ripple.Color, RippleIntensity(column, 0, elapsed)),
+                StarlightLightingParameters => FromMatrix(starlight!.RenderSlot(Rows * columns + column, elapsed)),
+                _ => throw new InvalidOperationException("Unsupported Vapor Chamber effect."),
+            };
+        }
+        return colors;
+    }
+
     // All periods, spatial functions and palettes below are explicit host-software
     // choices. They do not claim to reproduce a captured or vendor-native effect.
     private static RgbColor Breathing(BreathingLightingParameters value, TimeSpan elapsed)
@@ -176,10 +212,10 @@ internal sealed class ExperimentalGridLightingEffect
 
     private RgbColor RenderPulses(int slot, TimeSpan elapsed)
     {
-        bool hasPosition = TryGetKeyPosition(slot, out double x, out double y);
-        if (settings.Effect == LightingEffect.Ripple && !hasPosition)
+        if (settings.Parameters is RippleLightingParameters ripple)
         {
-            return default;
+            return TryGetKeyPosition(slot, out double x, out double y)
+                ? Scale(ripple.Color, RippleIntensity(x, y, elapsed)) : default;
         }
         double strongest = 0;
         double duration = PulseDuration().TotalSeconds;
@@ -187,26 +223,27 @@ internal sealed class ExperimentalGridLightingEffect
         {
             double age = (elapsed - at).TotalSeconds;
             if (age < 0 || age >= duration) { continue; }
-            double intensity;
-            if (settings.Effect == LightingEffect.Reactive)
-            {
-                intensity = slot == origin ? 1 - age / duration : 0;
-            }
-            else
-            {
-                if (!TryGetKeyPosition(origin, out double ox, out double oy))
-                {
-                    continue;
-                }
-                double distance = Math.Sqrt((x - ox) * (x - ox) + (y - oy) * (y - oy));
-                double band = Math.Max(0, 1 - Math.Abs(distance - age / duration * 18) / 1.25);
-                intensity = band * (1 - age / duration);
-            }
-            strongest = Math.Max(strongest, intensity);
+            strongest = Math.Max(strongest, slot == origin ? 1 - age / duration : 0);
         }
-        RgbColor color = settings.Parameters is ReactiveLightingParameters reactive
-            ? reactive.Color : ((RippleLightingParameters)settings.Parameters!).Color;
-        return Scale(color, strongest);
+        return Scale(((ReactiveLightingParameters)settings.Parameters!).Color, strongest);
+    }
+
+    private double RippleIntensity(double x, double y, TimeSpan elapsed)
+    {
+        double strongest = 0;
+        double duration = PulseDuration().TotalSeconds;
+        foreach ((int origin, TimeSpan at) in pulses)
+        {
+            double age = (elapsed - at).TotalSeconds;
+            if (age < 0 || age >= duration || !TryGetKeyPosition(origin, out double ox, out double oy))
+            {
+                continue;
+            }
+            double distance = Math.Sqrt((x - ox) * (x - ox) + (y - oy) * (y - oy));
+            double band = Math.Max(0, 1 - Math.Abs(distance - age / duration * 18) / 1.25);
+            strongest = Math.Max(strongest, band * (1 - age / duration));
+        }
+        return strongest;
     }
 
     private static double Phase(TimeSpan elapsed, int seconds) =>

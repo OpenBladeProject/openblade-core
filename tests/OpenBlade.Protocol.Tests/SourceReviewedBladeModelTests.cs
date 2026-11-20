@@ -504,6 +504,8 @@ public sealed partial class SourceReviewedBladeModelTests
         internal byte LogoOn = 1;
         internal byte LogoEffect;
         internal byte[] McuLighting = [0, 5, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        // LED38 defaults to unrestorable Spectrum, so frames stay keyboard-only.
+        internal byte[] McuVaporChamber = [0, 38, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         internal bool EchoLightingAck;
         internal bool EchoThermalAck;
         internal byte SavedBrightness = 128;
@@ -575,7 +577,7 @@ public sealed partial class SourceReviewedBladeModelTests
                 (0x00, 0xD9) => [0, 1, 1],
                 (0x03, 0x82) => [0, 4, LogoEffect],
                 (0x03, 0x00) or (0x03, 0x02) or (0x03, 0x03) => EchoLightingAck ? arguments : [],
-                (0x0F, 0x82) => McuLighting.ToArray(),
+                (0x0F, 0x82) => arguments[1] == 38 ? McuVaporChamber.ToArray() : McuLighting.ToArray(),
                 (0x0F, 0x02) => arguments,
                 (0x03, 0x0A) or (0x03, 0x0B) => [],
                 (0x07, 0x8C) => Adapter,
@@ -616,6 +618,26 @@ public sealed partial class SourceReviewedBladeModelTests
                         }
                         Brightness = SavedBrightness;
                         McuCustomOverlay = false;
+                        break;
+                    case (0x0F, 0x02) when arguments[1] == 38:
+                        // KI8110 LED38 setter shortcuts: same Off, same-count
+                        // Breathing and same-direction Wave keep the record.
+                        if (arguments[2] == McuVaporChamber[2] && (arguments[2] == 0
+                            || arguments[2] == 2 && arguments[5] == McuVaporChamber[5]
+                            || arguments[2] == 4 && arguments[3] == McuVaporChamber[3]))
+                        {
+                            break;
+                        }
+                        McuVaporChamber = [0, 38, arguments[2], 0, 0, 0, 0, 0, 0, 0, 0, 0];
+                        if (arguments[2] is 1 or 2)
+                        {
+                            arguments.AsSpan(3).CopyTo(McuVaporChamber.AsSpan(3));
+                        }
+                        if (arguments[2] == 4)
+                        {
+                            McuVaporChamber[3] = arguments[3];
+                            McuVaporChamber[4] = 40;
+                        }
                         break;
                     case (0x0F, 0x02):
                         if (arguments[2] == 0 && McuLighting[2] == 0)

@@ -127,6 +127,7 @@ internal sealed partial class ExperimentalBladePort
         bool keyTriggered = gridEffect?.IsKeyTriggered == true || spatialEffect?.IsKeyTriggered == true;
         // StartAnimationCore follows the successful initial frame submission.
         IReadOnlyList<RgbColor>? lastKeyFrame = keyTriggered ? keyboardMirrorFrame : null;
+        IReadOnlyList<RgbColor>? lastVaporChamberFrame = keyTriggered ? vaporChamberMirrorFrame : null;
         long lastKeyFrameTimestamp = started;
         bool sequencePlayback = sequenceEffect is not null || gridEffect?.IsSequence == true;
         TimeSpan? firstChange = gridEffect?.IsSequence == true
@@ -165,12 +166,20 @@ internal sealed partial class ExperimentalBladePort
                         if (gridEffect is not null)
                         {
                             IReadOnlyList<RgbColor> colors;
-                            lock (animationEffectSync) { colors = gridEffect.RenderFrame(elapsed); }
-                            if (ShouldSubmitFrame(colors))
+                            IReadOnlyList<RgbColor>? vaporChamber = null;
+                            lock (animationEffectSync)
                             {
-                                await SubmitExperimentalGridFrameAsync(colors, activate: false,
+                                colors = gridEffect.RenderFrame(elapsed);
+                                if (lightingOwnership.VaporChamberFrames)
+                                {
+                                    vaporChamber = gridEffect.RenderVaporChamber(elapsed);
+                                }
+                            }
+                            if (ShouldSubmitFrame(colors, vaporChamber))
+                            {
+                                await SubmitExperimentalGridFrameAsync(colors, vaporChamber, activate: false,
                                     CancellationToken.None, static () => { }).ConfigureAwait(false);
-                                RecordSubmittedFrame(colors);
+                                RecordSubmittedFrame(colors, vaporChamber);
                             }
                         }
                         else
@@ -235,16 +244,22 @@ internal sealed partial class ExperimentalBladePort
         {
         }
 
-        bool ShouldSubmitFrame(IReadOnlyList<RgbColor> colors) => !keyTriggered
+        // Keyboard and LED38 rows form one submitted frame for duplicate suppression.
+        bool ShouldSubmitFrame(IReadOnlyList<RgbColor> colors, IReadOnlyList<RgbColor>? vaporChamber = null) =>
+            !keyTriggered
             || lastKeyFrame is null
             || !colors.SequenceEqual(lastKeyFrame)
+            || (vaporChamber is null
+                ? lastVaporChamberFrame is not null
+                : lastVaporChamberFrame is null || !vaporChamber.SequenceEqual(lastVaporChamberFrame))
             || animationTime.GetElapsedTime(lastKeyFrameTimestamp) >= KeyTriggeredFrameKeepalive;
 
-        void RecordSubmittedFrame(IReadOnlyList<RgbColor> colors)
+        void RecordSubmittedFrame(IReadOnlyList<RgbColor> colors, IReadOnlyList<RgbColor>? vaporChamber = null)
         {
             if (keyTriggered)
             {
                 lastKeyFrame = colors;
+                lastVaporChamberFrame = vaporChamber;
                 lastKeyFrameTimestamp = animationTime.GetTimestamp();
             }
             policy.RecordAnimationFrameApplied(settings.Effect);

@@ -118,6 +118,14 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Equal("ExactMcuAndSelectedSynapseFieldsWithoutPhysicalValidation", feature.Basis);
                     Assert.Equal("evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json", feature.Sources[1]);
                 }
+                else if (feature.Feature == "VaporChamberHostFramesWithRestorableBaseline")
+                {
+                    Assert.Equal((ushort)0x02C7, model.ProductId);
+                    Assert.Equal("ExactMcuSourceBackedWithoutPhysicalValidation", feature.Basis);
+                    Assert.Equal(2, feature.Sources.Count);
+                    Assert.Contains(";SHA256=", feature.Sources[0], StringComparison.Ordinal);
+                    Assert.Equal("evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json", feature.Sources[1]);
+                }
                 else if (model.ThermalPolicy is not null)
                 {
                     Assert.Equal("Supported", snapshot.SupportStatus);
