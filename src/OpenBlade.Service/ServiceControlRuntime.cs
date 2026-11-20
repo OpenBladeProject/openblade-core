@@ -2637,27 +2637,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 FanControlSettings requested = desired.FanControl
                     ?? FanControlSettings.FromLegacy(desired.Fans.Value);
                 FanControlSettings prior = previous ?? requested;
-                DeviceCapabilities? capabilities = GetStatus().Capabilities;
-                bool supportsDirectManualFanTransitions = capabilities is not null
-                    && capabilities.PerformancePresets.Count > 0
-                    && capabilities.FanModes.Count > 0
-                    && capabilities.SupportsDirectManualFanTransitions;
-                bool requestedManual = DeviceSubsystemOrder.IsManualFanMode(
+                return ControlCoordinator.FanControlTransitionComponents(
+                    GetStatus().Capabilities,
+                    prior.Mode,
                     requested.Mode);
-                bool priorManual = DeviceSubsystemOrder.IsManualFanMode(prior.Mode);
-                bool performanceMayChange = capabilities?.ReportsPerformanceWithManualFans != true
-                        && requested.Mode == FanMode.Automatic
-                        && priorManual
-                    || !supportsDirectManualFanTransitions
-                        && requestedManual
-                        && (!priorManual || prior.Mode != requested.Mode);
-                return performanceMayChange
-                    ? new[]
-                    {
-                        DeviceSubsystem.Fans,
-                        DeviceSubsystem.Performance,
-                    }
-                    : new[] { DeviceSubsystem.Fans };
             });
     }
 

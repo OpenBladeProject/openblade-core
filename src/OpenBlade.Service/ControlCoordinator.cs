@@ -417,6 +417,53 @@ public sealed class ControlCoordinator
         && capabilities.FanSpeedRangesByPerformancePreset.Count > 0
         && capabilities.GetFanSpeedRange(PerformancePreset.Custom) is null;
 
+    // A shared manual selector hides the preset while fans are manual, so the
+    // exit to Automatic restores the saved performance intent. Backends that
+    // report the real preset under manual fans keep it across the Automatic
+    // handback, which rewrites only the fan flag and confirms the preset by
+    // readback; a restoration step there would be a redundant performance write
+    // that can also overwrite an external preset change. Unknown capabilities
+    // keep the restoring shape so a declaration stays a superset.
+    internal static bool FanExitRestoresPerformance(
+        DeviceCapabilities? capabilities,
+        FanMode previous,
+        FanMode requested) =>
+        capabilities?.ReportsPerformanceWithManualFans != true
+        && requested == FanMode.Automatic
+        && DeviceSubsystemOrder.IsManualFanMode(previous);
+
+    // Without direct manual transitions, entering or changing a manual mode
+    // first establishes Balanced Automatic fans.
+    internal static bool FanEntryRequiresAutomaticBridge(
+        bool supportsDirectManualFanTransitions,
+        FanMode previous,
+        FanMode requested) =>
+        !supportsDirectManualFanTransitions
+        && DeviceSubsystemOrder.IsManualFanMode(requested)
+        && (!DeviceSubsystemOrder.IsManualFanMode(previous) || previous != requested);
+
+    // The thermal components a fan-control transition may touch. The request
+    // declares exactly these, and ApplyFanControlTransitionOutcomeAsync runs a
+    // Performance step only through the same two predicates, so the two cannot
+    // drift. Absent or incomplete capabilities declare the wider set.
+    internal static IReadOnlyList<DeviceSubsystem> FanControlTransitionComponents(
+        DeviceCapabilities? capabilities,
+        FanMode previous,
+        FanMode requested)
+    {
+        bool supportsDirectManualFanTransitions = capabilities is not null
+            && capabilities.PerformancePresets.Count > 0
+            && capabilities.FanModes.Count > 0
+            && capabilities.SupportsDirectManualFanTransitions;
+        return FanExitRestoresPerformance(capabilities, previous, requested)
+            || FanEntryRequiresAutomaticBridge(
+                supportsDirectManualFanTransitions,
+                previous,
+                requested)
+            ? [DeviceSubsystem.Fans, DeviceSubsystem.Performance]
+            : [DeviceSubsystem.Fans];
+    }
+
     internal static bool SupportsPresetRangedManualFans(
         DesiredDeviceState desired,
         DeviceCapabilities capabilities) =>
@@ -881,8 +928,6 @@ public sealed class ControlCoordinator
         ArgumentNullException.ThrowIfNull(previous);
         ArgumentNullException.ThrowIfNull(requested);
 
-        bool requestedManual = DeviceSubsystemOrder.IsManualFanMode(requested.Mode);
-        bool previousManual = DeviceSubsystemOrder.IsManualFanMode(previous.Mode);
         DeviceCapabilities transitionCapabilities;
         try
         {
@@ -923,10 +968,11 @@ public sealed class ControlCoordinator
 
         bool supportsDirectManualFanTransitions =
             transitionCapabilities.SupportsDirectManualFanTransitions;
-        if (supportsDirectManualFanTransitions
-            && !transitionCapabilities.ReportsPerformanceWithManualFans
-            && requested.Mode == FanMode.Automatic
-            && previousManual)
+        bool restoresPerformance = FanExitRestoresPerformance(
+            transitionCapabilities,
+            previous.Mode,
+            requested.Mode);
+        if (supportsDirectManualFanTransitions && restoresPerformance)
         {
             return await ApplyDirectAutomaticFanTransitionOutcomeAsync(
                 performanceIntent,
@@ -968,9 +1014,10 @@ public sealed class ControlCoordinator
             return direct;
         }
 
-        bool requiresAutomaticBridge = !supportsDirectManualFanTransitions
-            && requestedManual
-            && (!previousManual || previous.Mode != requested.Mode);
+        bool requiresAutomaticBridge = FanEntryRequiresAutomaticBridge(
+            supportsDirectManualFanTransitions,
+            previous.Mode,
+            requested.Mode);
         ScopedApplyOutcome? automaticBridge = null;
         if (requiresAutomaticBridge)
         {
@@ -1085,7 +1132,7 @@ public sealed class ControlCoordinator
             };
         }
 
-        if (requested.Mode != FanMode.Automatic || !previousManual)
+        if (!restoresPerformance)
         {
             return fans;
         }
