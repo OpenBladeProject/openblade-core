@@ -58,12 +58,12 @@ independent byte readback.
 Manual overrides at schemas 8, 9 and the current 10 support Balanced/Performance,
 Persistent and UntilPowerSourceChange lifetimes, and explicit nullable clear.
 Every save writes schema 10, as managed does. Each setter clears
-the other performance slot as managed setters do. Temporary state expires when
-a fresh classified power source differs. Unclassified external power expires
-only battery intent and never establishes full-power effectiveness; a
-temporary saved while unclassified follows the first classified source within
-the same lifecycle epoch (see below). A status read without fresh Windows AC
-presence expires nothing.
+the other performance slot as managed setters do. Temporary state saved on
+a classified source expires when a fresh classified power source differs.
+Unclassified external power expires only battery intent and never establishes
+full-power effectiveness; a temporary saved while unclassified follows the
+first classified source within the same Windows power generation (see below).
+A status read expires nothing unless fresh Windows power agrees with its base.
 Existing manual fan detail/custom/GPU fields
 are preserved when unrelated; schema 1-7 requires managed migration. As in
 managed, a non-false `controlsKeyboardEffect` below schema 9 or a non-null zone
@@ -125,17 +125,26 @@ geometry failure, and any receive failure, is no reading. The class is source
 temporary full charge keep their classified-only admission.
 
 The commands and the fresh 07/8C read before each setter are the same as on the
-classified classes. Every external reading, classified or not, needs fresh
-Windows AC presence, and once the first reading is external every later
-checkpoint needs it too (managed `AdmitOrdinaryThermalCommandAsync` and
-`OrdinarySourceUnchanged`), so a lost presence stops before the next command.
-A class change between setters, either way between full, limited and
-unclassified, continues while the new class selects the same destination. An
-explicit override does; a profile destination does not, because unclassified
-power selects no profile. Battery stops the pair without replay. Without presence,
-an unclassified reading, like a confirmed HyperBoost state on unclassified
-power (managed `CanAdmitUnclassifiedExternalControl`), is Blocked before any
-intent is stored: `Hardware application was not confirmed. The external power
+classified classes. An unclassified reading needs fresh Windows AC presence. A
+performance setter needs it on every external class (`allowBattery: false`); a
+fan setter on a classified class needs Windows AC that agrees with the reading,
+or Windows battery, where managed admits it unchecked. The presence a reading
+was admitted with must hold at every later checkpoint (managed
+`AdmitOrdinaryThermalCommandAsync` and `OrdinarySourceUnchanged`), so losing it
+stops before the next command. A class change between setters, either way
+between full, limited and unclassified, continues while the new class selects
+the same destination. A persistent explicit override does, and so does a
+temporary saved unclassified within one Windows power generation. A temporary
+saved on full or limited power does not, because the other class retires it,
+and a profile destination does not, because unclassified power selects no
+profile. Two transitions stay in their first reading's class, as managed pins
+them: a direct HyperBoost exit to Performance
+(`requireExternalPowerOnDirectHyperBoostExit`), and a fan transition that keeps
+the Performance selector without carrying a saved preset, owned Stop included
+(`EnsureThermalWritePowerAsync`). Battery stops the pair without replay.
+Without presence, an unclassified reading, like a confirmed HyperBoost state on
+unclassified power (managed `CanAdmitUnclassifiedExternalControl`), is Blocked
+before any intent is stored: `Hardware application was not confirmed. The external power
 adapter could not be classified; overrides and control writes are blocked.`
 
 No power profile or application profile applies there (managed
@@ -154,16 +163,20 @@ row recorded: the commands are the same, and the rows keep the recorded
 source. Status reports `activePowerSource` 3 and, while an explicit override
 exists, that override as the desired destination.
 
-A temporary override saved while unclassified records the lifecycle epoch. A
-classified reading at the same epoch keeps it and makes that class its source,
-as managed `PreserveOverridesForExternalClassification` keeps it within one
-Windows power generation; a later different class expires it. The epoch
-advances on every SCM power and session notice, so the first reading after an
-unplug, a replug, a suspend or a session change expires it. The status base
-reports 3 for any power that is not battery, Unknown included; without fresh
-Windows AC presence status reads saved intent at an unknown class, which
-expires nothing (managed `CaptureControlPowerSource`: a failed read is not a
-power boundary).
+A temporary override saved while unclassified records the Windows power
+generation. A classified reading in the same generation keeps it and makes that
+class its source, as managed `PreserveOverridesForExternalClassification` does;
+a later different class expires it. The generation advances only when a fresh
+sample changes the Windows ACLineStatus kind (managed `windowsPowerGeneration`).
+Native samples the kind at every SCM power notice and whenever a request
+resolves or checks its destination, so an unplug and replug between requests
+expires the temporary, while a lock, an unlock, a suspend and resume or a
+notice that keeps the kind do not. A failed sample is not a boundary. The
+status base reports 1 for battery and 3 for any other power, Unknown included,
+and may be older than the read. Status reads saved intent at that class only
+where fresh Windows power agrees with it, and otherwise at an unknown class,
+which expires nothing (managed `CaptureControlPowerSource`: a failed read is
+not a power boundary).
 
 Fan rows can journal source 3. The Rust `FanRecord` and the managed
 `WindowsNativeFanHistory` reader both admit it and both consume
@@ -174,17 +187,22 @@ power source, so their grammar is unchanged.
 
 Native differs from managed here in these ways:
 
-- Managed completes a pair whose class changes between setters whatever the
-  new class's destination; native also requires that destination to be the
-  same, so a profile request stops when the new class selects another one.
+- Where no class pin applies, managed completes a pair whose class changes
+  between setters whatever the new class's destination; native also requires
+  that destination to be the same, so a profile request stops when the new
+  class selects another one.
+- Native pins a HyperBoost exit to the reading its destination was resolved
+  on; managed pins it to the first command's own reading, taken just after.
+- Managed admits a fan command with no reading check while Windows reports
+  battery; native still reads 07/8C before each setter and stops on a battery
+  reading, which no fan destination holds.
 - With manual fans saved and current, native replies with the Stored manual-fan
   deferral; managed has no deferral text there, and its coordinator leaves the
   manual fans in place.
-- Native's generation is the lifecycle epoch, which session notices, suspend
-  and resume also advance. Managed's advances only when the Windows power kind
-  changes, so it keeps a temporary saved unclassified across a lock or a
-  session switch that native expires it on. Native does not track managed's
-  separate last classified class per generation.
+- Managed samples the Windows power kind at every control capture; native
+  samples it at SCM power notices and when a request resolves or checks its
+  destination, which sees every kind change SCM reports. Native does not
+  track managed's separate last classified class per generation.
 - Native status carries no `externalPowerPresent` or capabilities, and with no
   override its desired provenance stays the profile default; managed reports
   the confirmed firmware state.

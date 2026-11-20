@@ -19,10 +19,11 @@ request that leaves saved manual fan intent goes directly to the saved
 Balanced or Performance preset, as managed does: that preset's 0D/02 pair
 carries the Automatic fan mode, so the stored performance intent is applied in
 the same pair. Without such a preset, or with a saved GPU clock effect, it keeps
-the observed selector. Owned Stop cleanup writes only under the owner's selector
-and power class. An explicit Automatic request whose fans are already Automatic
-is a true no-op under the destination selector, or under a selector or power
-class with no native recipe, and never establishes ownership.
+the observed selector. Owned Stop cleanup writes only under the owner's selector,
+on any external class: the handback commands are the same there. An explicit
+Automatic request whose fans are already Automatic is a true no-op under the
+destination selector, or under a selector or power class with no native
+recipe, and never establishes ownership.
 
 When a fresh, agreeing 0D/82 pair shows Automatic fans, owned Stop closes an
 OpenBlade owner with progress 51 and no setter. That covers every stock
@@ -70,9 +71,8 @@ readiness tests and mutants. Its Windows half (`WindowsGuard::capture_settle`
 and `authorize_for`) is source-reviewed only: the tests drive a `SettleFresh`
 model of it, not the real console, token, AC-line and controller suppliers.
 Disagreeing or undecodable readback (including mode 7 with manual fans) keeps
-the owner outstanding on both paths. So do manual fans under another selector
-or power class at Stop; an explicit return on external power writes its pair
-and closes with 50.
+the owner outstanding on both paths. So do manual fans under another selector at
+Stop; an explicit return on external power writes its pair and closes with 50.
 
 Known gaps in this handback, none of which can submit a write:
 
@@ -94,8 +94,14 @@ with a zero-setter pending software outcome until their separate native
 recipes exist. No fallback profile or background control loop is added.
 
 Every setter has fresh exact-device, caller/session, controller, lifecycle and
-07/8C source admission: a fresh reading that agrees with Windows AC presence,
-in the recorded class or another external class whose destination is the same.
+07/8C source admission. An unclassified reading needs fresh Windows AC presence.
+A classified reading needs Windows AC that agrees with it, or Windows battery,
+where managed admits a fan command unchecked (`allowBattery`); unknown Windows
+power admits none. The reading must be in the operation's first class or another
+external class whose destination is the same. A transition that keeps the
+Performance selector without carrying a saved preset, owned Stop included, stays
+in its first reading's class (managed acPreset with
+`EnsureThermalWritePowerAsync`); Balanced has no such pin.
 State-channel, state-to-target and target-channel spacing remain at least 10,
 210 and 65 ms, alongside native feature settling.
 The complete recipe and all command IDs are frozen before Prepared. Ordinary
