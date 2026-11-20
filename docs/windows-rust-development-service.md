@@ -324,11 +324,14 @@ protocol versions and served operations that fail their own decoder still close
 without a reply.
 
 Managed reaches its fallback only after the session access policy and user
-activation, and it rejects an invalid known-operation body in the codec before
-dispatch. Native replies the same refusal to every admitted caller and does not
-validate the body, so an inactive session or a malformed body for an unserved
-operation gets the refusal where managed would send an access failure or
-close. Neither path changes state.
+activation. Its codec rejects an invalid known-operation body before dispatch:
+`NamedPipeControlServer` then replies `IPC request is malformed.` under a
+fresh random `requestId` and closes. Native replies the unsupported refusal to
+every admitted caller and does not validate the body. An inactive session
+therefore gets the refusal where managed would send an access failure, and a
+malformed body for an unserved operation gets the refusal, correlated to its
+own `requestId`, where managed would send the uncorrelated malformed-request
+failure. Neither path changes state.
 `installed_unserved_operations_reply_with_the_managed_unsupported_failure`
 contributes its actual frames to the `OPENBLADE_NATIVE_THERMAL_RESPONSES`
 corpus, and the managed fact requires the unsupported reply to decode through
