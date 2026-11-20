@@ -113,11 +113,17 @@ selected; Reactive, imported sequences and built-in effects never read it. The
 first restorable record seen for a keyboard baseline becomes the VC restore
 destination. An unrestorable record keeps frames keyboard-only, with no VC
 write. A rejected or malformed reply on a usable session also keeps frames
-keyboard-only and stops further VC reads for that session. A failure that
-leaves the session unusable stops the request before any write. Opening an
-RZ09-0529 session makes the same read once for each admitted host and HID
-identity. A rejection there drains that session and opens one fresh session,
-and later sessions for the identity skip the read and stay keyboard-only.
+keyboard-only. It stops further VC reads for that host and HID identity until
+the service restarts or the identity changes. A failure that leaves the session
+unusable stops the request before any write. A read that never reached the MCU,
+such as a shared command-gate refusal or a cancellation, also stops the request
+before any write, but it records nothing about the VC, so the next request
+reads it again. Opening an RZ09-0529 session makes the same read once for each
+admitted host and HID identity. A rejection there drains that session and
+opens one fresh session, and later sessions for the identity skip the read and
+stay keyboard-only. A gate refusal or cancellation there settles nothing:
+cancellation returns a canceled open, a refusal opens the session without the
+read, and the next open reads again.
 
 OpenBlade takes the VC only from a read made under the same operation lock,
 while the VC reads custom mode 8 under OpenBlade's selection record or still
@@ -149,7 +155,51 @@ readback, only while the VC still reads mode 8. Any other mode means another
 controller changed it, so OpenBlade leaves it unchanged. A failed or
 unconfirmed restore faults the owner and keeps the record for recovery. A
 confirmed low-power boundary keeps the journal without restoring, as for the
-keyboard.
+keyboard. Only RZ09-0529 has this LED38 contract: a journal that holds an LED38
+record for any other product is invalid, and no other model's restore sends a
+region-38 command.
+
+## Windows Dynamic Lighting
+
+KI8110 1.07.00 also exposes a HID LampArray collection (usage page `0x59`,
+usage `0x01`) at image offset `0xEE30`. Its report handler at `0xA784` serves
+LampArrayAttributes, LampAttributes, LampMultiUpdate, LampRangeUpdate and
+LampArrayControl. AutonomousMode lives at `0x100001C9` and starts at 1. The
+handler covers LED38 as well as the keyboard: lamps below the count minus 18
+go to the keyboard LampArray buffer at `0x10001264` and the last 18 lamps go to
+the VC LampArray buffer at `0x1000145C`. Neither buffer is the staging buffer
+that `03/0B` rows fill (`0x10001B80` for the keyboard, `0x10001CD6` for the VC).
+
+The custom-frame copy helper at `0x4B80` chooses the source per region. When
+AutonomousMode is 0 and either the `0F/10` policy byte `0x10000179` or
+`0x10000188` is 0 (both are 0 by default, and `0x10000188` is only ever
+stored as 0), it copies the LampArray buffer instead of staging. The `0F/02`
+custom arm at `0x9CBC` sets mode 8 and the custom flag without checking
+AutonomousMode, so `0F/82` still reports mode 8.
+
+This is the same hazard that keeps RZ09-0509 and RZ09-0510 frames unadmitted,
+and it applies to the keyboard frames already admitted here as well as to the
+VC:
+
+- While Windows Dynamic Lighting holds AutonomousMode 0, OpenBlade rows land
+  in staging but the keyboard and VC show the LampArray buffers. OpenBlade has
+  no reviewed command that reads AutonomousMode, so the hidden output is not
+  detectable.
+- Each LampMultiUpdate or LampRangeUpdate in that state sets mode 8 and the
+  custom flag on any region that lacks them, then persists. After Windows
+  sends an update, both regions read mode 8, the baseline is unrestorable and
+  host entry is refused. An OpenBlade restore confirmed while Windows still
+  holds control is replaced by mode 8 at its next update.
+- Returning AutonomousMode to 1 sets each region that is not already Spectrum
+  to a persisted Spectrum and clears its custom flag (`0xAAB6`–`0xAAF4`).
+- `0F/02` Off, Static, Breathing and Wave still clear the custom flag. The
+  `0F/02` Spectrum arm acts only while AutonomousMode is 1.
+
+The LampArray handler never writes the staging buffers or OpenBlade's journal,
+and it never changes a region that already reads mode 8 with its flag set.
+The addresses and window hashes are in the
+[command and descriptor proof](../evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json).
+Admission is unchanged while the maintainer decides how to gate it.
 
 ## Touchpad status and Vapor Chamber lighting
 

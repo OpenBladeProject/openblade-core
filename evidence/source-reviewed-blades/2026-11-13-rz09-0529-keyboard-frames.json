@@ -83,14 +83,28 @@
       "brightness": "No VC setter changes the record brightness; the baseline brightness is 100. OpenBlade writes no VC brightness and scales VC frame colors by the keyboard brightness percentage.",
       "restorePrecondition": "Restore only while the selection record exists and a fresh 0F/82 region-38 read reports mode 8. Any other mode means another controller changed the VC; OpenBlade leaves it unchanged and removes the record.",
       "sameModeShortcuts": "The Off, same-count Breathing and same-direction Wave shortcuts compare against the current mode. Restores start from mode 8, so they always write.",
-      "journal": "Durable baseline schema 2 stores the VC destination as a write-ahead selection record, saved before [0,38,8] can be submitted and removed after a confirmed restore or an external change. Schema 1 remains the keyboard-only format.",
+      "journal": "Durable baseline schema 2 stores the VC destination as a write-ahead selection record, saved before [0,38,8] can be submitted and removed after a confirmed restore or an external change. Schema 1 remains the keyboard-only format. An LED38 record journaled for any product other than 0x02C7 makes the journal invalid, and restore sends region-38 commands only on 0x02C7.",
       "selection": "LED38 is selected only from a read made under the same operation lock, while it reads mode 8 under the selection record or equals the destination first observed for the keyboard baseline. Ambient Awareness and Audio Meter re-read it with their first sample.",
-      "readFailure": "Only effects that drive the VC read it. A rejected or malformed optional read on a usable session keeps frames keyboard-only; a session-poisoning read stops before any write. The factory probe result is cached per host and HID identity."
+      "readFailure": "Only effects that drive the VC read it. A rejected or malformed optional read on a usable session keeps frames keyboard-only; a session-poisoning read stops before any write. The factory probe result is cached per host and HID identity. A read that never reached the MCU (shared command-gate refusal, cancellation) stops the request before any write and caches nothing, so the next request or open reads again."
     },
     "participatingEffects": ["Spectrum", "Fire", "Wheel", "Starlight", "Tidal", "Ripple", "AmbientAwareness", "AudioMeter"],
     "excludedEffects": "Reactive and imported or per-key sequences never read the VC; they restore a VC that OpenBlade selected before their first frame.",
     "openBladeMutationAdmitted": true,
     "physicalValidation": "Pending"
+  },
+  "windowsDynamicLighting": {
+    "reviewedAt": "2026-11-19",
+    "firmware": "KI8110 MCU 1.07.00, decoded image C0EBB3B40D3AC763A50D7301457D73F1A84A3E2C951730454D848B13CA3F3578",
+    "descriptor": "HID LampArray usage page 0x59 usage 0x01 at 0xEE30 (0x147 bytes): report 1 LampArrayAttributes, 2 LampAttributesRequest, 3 LampAttributesResponse, 4 LampMultiUpdate, 5 LampRangeUpdate, 6 LampArrayControl (AutonomousMode).",
+    "state": "Struct 0x100001C8: [0] attributes cursor, [1] AutonomousMode, [2] lamp layout variant, [3] pending report, [4] lamp table pointer. Initialised data (scatter 0x21BC: 0xFA88 -> 0x100000C0, 0x110 bytes, uncompressed copy 0x479A) gives AutonomousMode 0x100001C9 = 1 (byte 0xFB91), policy 0x10000179 = 0 and 0x10000188 = 0.",
+    "writers": "0x100001C9 is written by LampArrayControl at 0xAA7A and by a keyboard-event branch at 0x7FA8 that sets it to 1 when it is 0, clears custom flags 0 and 2 and persists (0x7FB4). 0x10000179 is written only by 0F/10 at 0xA0F0. 0x10000188 is only ever stored as 0 (0x417E, 0x6316).",
+    "lampBuffers": "Report handler 0xA784 (report switch 0xA7AC, report data 0x10001D2C). LampMultiUpdate 0xA8C4 and LampRangeUpdate 0xA9A4 write lamps below count-18 to the keyboard LampArray buffer 0x10001264 (6x19x3) through 0x48A4 and the last 18 lamps to the VC LampArray buffer 0x1000145C (18x3) through 0x490C. Lamp counts are 115, 116 or 119 by layout variant. Neither writer touches keyboard staging 0x10001B80 or VC staging 0x10001CD6.",
+    "sourceSelect": "Copy helper 0x4B80 (overlayCopy) copies the LampArray buffer instead of staging when 0x100001C9 == 0 and (0x10000179 == 0 or 0x10000188 == 0): LED5 0x10001264 instead of 0x10001B80 into 0x10000CD6, LED38 0x1000145C instead of 0x10001CD6 into 0x100013BA. The 0F/02 custom arm 0x9CBC sets the custom flag and mode 8 and calls this helper without checking AutonomousMode, and the refresh 0x4ABC repeats the copy while the flag is set.",
+    "updateSideEffects": "While AutonomousMode is 0 (unless policy 1 with 0x10000188 equal to 2 or 3), every LampMultiUpdate or LampRangeUpdate checks LED5 and LED38 separately: when the active mode is not 8 or the custom flag is clear it sets the flag (0x10000125[0] or [2]), sets saved record mode 8 (0x10001A83+0x14 or 0x10001B03+0x14), copies, activates through 0x4BF4 and persists through 0xABE0. When both regions already read mode 8 with the flag set, it changes no record.",
+    "releaseSideEffects": "LampArrayControl 0xAA70 returning AutonomousMode to 1 with 0x10000188 == 0 (the only stored value) sets each region whose active mode is not 3 to saved Spectrum (mode 3), clears its custom flag, sets 0x10000119 = 1, activates and persists (0xAAB6..0xAAF4). The branch for a non-zero 0x10000188 (0xAA94) copies backup records 0x10001696 and 0x100016E0 instead.",
+    "setterInteraction": "0F/02 Off, Static, Breathing and Wave clear the custom flag whatever AutonomousMode is. The 0F/02 Spectrum arm 0x9982 acts only while AutonomousMode is 1 and otherwise leaves the record unchanged.",
+    "consequence": "Same hazard as RZ09-0509/0510, and it covers LED38 as well as the keyboard. While Windows Dynamic Lighting holds AutonomousMode 0, OpenBlade rows land in staging but the keyboard and VC show the LampArray buffers, and 0F/82 still reports mode 8, so output is hidden without a readable signal. Once Windows sends an update, both regions read mode 8 and an OpenBlade baseline is unrestorable, so host entry is refused. A restore confirmed while Windows still holds control is replaced by mode 8 at its next update, and release replaces it with persisted Spectrum. OpenBlade cannot read AutonomousMode through a reviewed command.",
+    "admission": "Unchanged pending maintainer decision; this affects keyboard frames already admitted, not only LED38."
   },
   "rgbAddressingReview": {
     "selectedBlade2Module": {
@@ -255,7 +269,15 @@
     { "name": "inputDescriptorTable", "offset": "EF78", "length": 32, "sha256": "93E8A88F801474248BD20C50FA346B20DD9E9C135F7EC6A2F09D6FB736D67064" },
     { "name": "usbConfiguration", "offset": "EF98", "length": 109, "sha256": "9DB6069211888D5F085C5B3D48A509F422D8B02AE0907B476209BA6557C9B2F5" },
     { "name": "mi00Keyboard", "offset": "EDF3", "length": 61, "sha256": "A638A07D99BB58FA0734D44E7B20AC7327BD0B92AEC401420CEAFBAE0C552915" },
-    { "name": "mi01Collections", "offset": "ED54", "length": 159, "sha256": "1A8DED231A2DF9765104BF1D0DE3449F35676DE229DAB0300892FDA05735C40A" }
+    { "name": "mi01Collections", "offset": "ED54", "length": 159, "sha256": "1A8DED231A2DF9765104BF1D0DE3449F35676DE229DAB0300892FDA05735C40A" },
+    { "name": "lampArrayDescriptor", "offset": "EE30", "length": 327, "sha256": "6AE88AEB15120171F2112D116C2BC987A173368B6197DBCE3B87BCDBDE9C9D8D" },
+    { "name": "lampArrayReportHandler", "offset": "A784", "length": 886, "sha256": "B64ED1F2C1205CF16B528EF437C75EAD0FB3848B9C4FA54FA8BD6E8C2385E70C" },
+    { "name": "lampArrayBufferWriters", "offset": "48A4", "length": 160, "sha256": "E857E1A67883598F74DB9FB807F18DAB9E040B532E14A5EE081D945FCCA44800" },
+    { "name": "spectrumAutonomousGate", "offset": "9982", "length": 82, "sha256": "23D0C8C5EC159D40C5ED3F87F702AAAE09428895E732FC58FC1E81463F70BEB1" },
+    { "name": "policyStore0F10", "offset": "A0E6", "length": 14, "sha256": "0257FDE4225D9D65927B99B6B32B34AF878BCB3AD06D775A0018E840607BD6CC" },
+    { "name": "keyEventAutonomousReset", "offset": "7F8C", "length": 44, "sha256": "3117E699C582E78227BE62A2279D08B23C1AE7BB73CECC05604209653C66A1AF" },
+    { "name": "scatterLoad", "offset": "21BC", "length": 34, "sha256": "8E3A7DD2AF7D6C95C8C9A3AC224C149EF4A5F1647AB0C74DAE10B86F155F2237" },
+    { "name": "initializedData", "offset": "FA88", "length": 272, "sha256": "B15CC33933AC7B824A589DCFACA9D1EFFE708299CF41DA93D609F049F46EA703" }
   ],
   "inputAdmission": "MI00 sole keyboard TLC; MI01 COL01 keyboard only. Reject MI02 mouse/control and MI03 vendor feature collection. Use exact711 manifest's 94 common kbd scan bindings; no dkm or auxiliary row input mapping.",
   "independentFields": {
