@@ -276,9 +276,8 @@ impl Request {
                 _ => return Err(invalid("invalid Display query members")),
             },
             // Managed IsManualSource (PluggedIn, Battery, UsbC or ExternalUnknown)
-            // and byte percent <= 100. ExternalUnknown never matches a native
-            // power context, so admission refuses it as managed does without
-            // fresh Service external-power evidence.
+            // and byte percent <= 100. ExternalUnknown is admitted only by a
+            // manual-external power context (managed ManualExternalPowerPresent).
             #[cfg(feature = "agent-display-brightness-write-v1")]
             Name::SetBrightness => match (power, percent, enabled, key, color, settings) {
                 (Some(source @ 0..=3), Some(percent @ 0..=100), None, None, None, None) => {

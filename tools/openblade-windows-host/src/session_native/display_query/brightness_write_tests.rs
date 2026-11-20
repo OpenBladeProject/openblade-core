@@ -402,12 +402,17 @@ fn checkpoint_failure_before_submission_blocks_without_device_interaction() {
     );
     assert_eq!(rig.setters(), 0);
     assert_eq!(host.fence_checks.load(Ordering::SeqCst), 0);
-    // No prior checkpoint and no confirmed source: nothing can be saved.
+    // No prior checkpoint and no confirmed source: managed saves an
+    // ExternalUnknown manual hold, then refuses the unconfirmed power.
     let rig = Rig::new(25, Mode::Apply, Memory::default());
     let mut host = Host::admitted(1);
     host.power = None;
-    assert_eq!(rig.set(&mut host, 1, 75).unwrap().error, Some(CHECKPOINT));
+    assert_eq!(
+        rig.set(&mut host, 1, 75).unwrap().error,
+        Some(UNCONFIRMED_POWER)
+    );
     assert_eq!(rig.setters(), 0);
+    assert_eq!(rig.file.record()["LastReconciledPowerSource"], 3);
 }
 
 #[test]

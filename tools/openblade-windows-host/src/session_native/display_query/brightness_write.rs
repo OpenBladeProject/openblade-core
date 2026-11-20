@@ -14,7 +14,7 @@ pub(super) use super::write::{CHANGED_POWER, STALE_AFTER, UNCONFIRMED_POWER, UNR
 use super::{
     observation::{SharedBrightness, Snapshot},
     recovery::{CheckpointFile, Fields, Recovery, Status},
-    write::{WindowsHost, begin, lock, refreshed},
+    write::{WindowsHost, begin, lock, power_refusal, refreshed},
 };
 use crate::session_native::power_admission::PowerContext;
 use openblade_platform_windows::{
@@ -150,13 +150,10 @@ fn attempt(
     power: Option<PowerContext>,
     canceled: &AtomicBool,
 ) -> Attempt {
-    let Some(power) = power else {
-        return Ok((Status::Blocked, Some(UNCONFIRMED_POWER), None));
-    };
-    if power.source != request.expected_power_source {
-        return Ok((Status::Blocked, Some(CHANGED_POWER), None));
+    match (power, power_refusal(power, request.expected_power_source)) {
+        (Some(power), None) => admitted(host, brightness, request.percent, power, canceled),
+        (_, refusal) => Ok((Status::Blocked, refusal.or(Some(UNCONFIRMED_POWER)), None)),
     }
-    admitted(host, brightness, request.percent, power, canceled)
 }
 
 /// One fenced targeted write after power admission. A confirmed level is
@@ -217,7 +214,7 @@ pub(super) fn admitted(
 
 impl WriteHost for WindowsHost {
     fn power(&self) -> Option<PowerContext> {
-        WindowsHost::power(self)
+        WindowsHost::manual_power(self)
     }
 
     fn fence(&self, admitted: PowerContext) -> Arc<dyn SubmissionFence> {

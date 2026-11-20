@@ -274,6 +274,50 @@ fn retained_power_source_is_unconfirmed_for_display_admission() {
     }
 }
 
+/// Managed `DisplayAutomationCoordinator.Observe` manual-external evidence:
+/// an ExternalUnknown or retained source, external power, a verified device
+/// and Active control, all from the same status.
+#[cfg(openblade_display_write)]
+#[test]
+fn manual_external_power_needs_every_managed_condition() {
+    let (request, frame) = server_frame(&rows("serverFrames")[0]);
+    let base: Value = serde_json::from_slice(&frame).unwrap();
+    let decode = |change: &dyn Fn(&mut serde_json::Map<String, Value>)| {
+        let mut frame = base.clone();
+        let status = frame["status"].as_object_mut().unwrap();
+        status.insert("activePowerSource".into(), json!(3));
+        status.insert("externalPowerPresent".into(), json!(true));
+        status.insert("deviceVerified".into(), json!(true));
+        status.insert("controlAccess".into(), json!(0));
+        change(status);
+        let payload = serde_json::to_vec(&frame).unwrap();
+        StatusResponse::decode(&payload, &request, None)
+            .unwrap()
+            .display_manual_external_power()
+    };
+    assert!(decode(&|_| {}));
+    assert!(decode(&|status| {
+        status.insert("activePowerSource".into(), json!(1));
+        status.insert("observationReason".into(), json!(3));
+    }));
+    for (name, member, value) in [
+        ("confirmed source", "activePowerSource", json!(1)),
+        ("no external power", "externalPowerPresent", json!(false)),
+        ("unverified device", "deviceVerified", json!(false)),
+        ("inactive session", "controlAccess", json!(1)),
+    ] {
+        assert!(
+            !decode(&|status| {
+                status.insert(member.into(), value.clone());
+            }),
+            "{name}"
+        );
+    }
+    assert!(!decode(&|status| {
+        status.remove("externalPowerPresent");
+    }));
+}
+
 /// JSON pointers of every object in `value`, the root included.
 fn object_pointers(value: &Value, pointer: String, out: &mut Vec<String>) {
     match value {

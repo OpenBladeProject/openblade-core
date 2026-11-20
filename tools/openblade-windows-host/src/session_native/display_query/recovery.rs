@@ -8,6 +8,7 @@
 //! Begin/Complete/Resume mirror `DisplayAutomationCoordinator`. The native
 //! Agent has no automation, so no transition is scheduled after a resume.
 use super::observation::Snapshot;
+use crate::session_native::power_admission::EXTERNAL_UNKNOWN;
 use openblade_windows_host::json_object::scan;
 use serde_json::{Map, Value, json};
 use std::{
@@ -247,7 +248,7 @@ impl<F: CheckpointFile> Recovery<F> {
                 state.uncertain = Fields::ALL;
             }
             Loaded::Recovery(record) => {
-                state.last = Some(record.last);
+                state.last = record.last;
                 state.manual_hold = record.manual_hold;
                 state.paused = record.paused;
                 state.uncertain = record.uncertain;
@@ -270,10 +271,12 @@ impl<F: CheckpointFile> Recovery<F> {
     }
 
     /// `BeginManualOperation` for a manual request affecting `fields`. `source`
-    /// is the current trusted power source, which managed observation would
-    /// already have recorded. Returns false when the checkpoint could not be saved.
+    /// is the current trusted power source; a confirmed one is what managed
+    /// observation would already have recorded, and a manual-external one
+    /// (ExternalUnknown) never replaces the last confirmed source. Returns
+    /// false when the checkpoint could not be saved.
     pub(super) fn begin(&mut self, fields: Fields, source: Option<u8>) -> bool {
-        if let Some(source) = source {
+        if let Some(source @ 0..=2) = source {
             self.last = Some(source);
         }
         self.inherited_pause = self.paused;
@@ -335,7 +338,7 @@ impl<F: CheckpointFile> Recovery<F> {
         self.inherited_pause = false;
         self.inherited = Fields::default();
         self.operation = Fields::default();
-        if self.last.is_some() && !self.persist() {
+        if !self.persist() {
             self.uncertain = affected;
             self.latch();
             self.unresolved = self.unresolved.include(affected);
@@ -367,10 +370,20 @@ impl<F: CheckpointFile> Recovery<F> {
         self.manual_hold = true;
     }
 
+    /// Managed `TryRecordRecoveryState(lastConfirmedPowerSource ?? ExternalUnknown)`
+    /// through `SaveRecovery`, which admits ExternalUnknown only as a durable
+    /// manual hold that owns nothing.
     fn persist(&mut self) -> bool {
-        let Some(source) = self.last else {
+        let source = self.last.unwrap_or(EXTERNAL_UNKNOWN);
+        if !recovery_source_admitted(
+            source,
+            self.manual_hold,
+            self.application_profile_id.is_some(),
+            self.baseline.is_some(),
+            self.owned,
+        ) {
             return false;
-        };
+        }
         let record = json!({
             "SchemaVersion": RECOVERY_SCHEMA,
             "LastReconciledPowerSource": source,
@@ -412,7 +425,8 @@ enum Loaded {
 }
 
 struct Record {
-    last: u8,
+    /// The last confirmed source; None for an admitted ExternalUnknown hold.
+    last: Option<u8>,
     application_profile_id: Option<String>,
     baseline: Option<Value>,
     owned: Fields,
@@ -481,7 +495,7 @@ fn recovery(object: &Map<String, Value>) -> Option<Record> {
     };
     let flag = |name| boolean(object, name);
     let record = Record {
-        last: 0,
+        last: None,
         application_profile_id,
         baseline,
         owned: Fields {
@@ -499,10 +513,38 @@ fn recovery(object: &Map<String, Value>) -> Option<Record> {
             brightness: flag("UncertainBrightness")?,
         },
     };
-    (schema == RECOVERY_SCHEMA && (0..=2).contains(&last)).then_some(Record {
-        last: last as u8,
+    let admitted = recovery_source_admitted(
+        last,
+        record.manual_hold,
+        record.application_profile_id.is_some(),
+        record.baseline.is_some(),
+        record.owned,
+    );
+    (schema == RECOVERY_SCHEMA && admitted).then_some(Record {
+        last: (0..=2).contains(&last).then_some(last as u8),
         ..record
     })
+}
+
+/// Managed `IsRecoverySourceAdmitted`: a confirmed source, or ExternalUnknown
+/// as a durable manual hold that owns no application, baseline or field.
+fn recovery_source_admitted(
+    source: impl Into<i64>,
+    manual_hold: bool,
+    application: bool,
+    baseline: bool,
+    owned: Fields,
+) -> bool {
+    match source.into() {
+        0..=2 => true,
+        source => {
+            source == i64::from(EXTERNAL_UNKNOWN)
+                && manual_hold
+                && !application
+                && !baseline
+                && owned == Fields::default()
+        }
+    }
 }
 
 /// A present member must be a JSON integer representable as Int32.

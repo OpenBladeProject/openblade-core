@@ -935,6 +935,17 @@ impl Snapshot {
             self.active_power_source
         }
     }
+    /// Managed `DisplayAutomationCoordinator.Observe` manual-external evidence:
+    /// an ExternalUnknown (or retained) display source on a verified device
+    /// with Active control whose Service status reports external power. It
+    /// admits only manual display setters, never automation or profile apply.
+    #[cfg(openblade_display_write)]
+    pub(crate) fn display_manual_external_power(&self) -> bool {
+        self.display_power_source() == 3
+            && self.feature_fields.get("externalPowerPresent") == Some(&Value::Bool(true))
+            && self.device_verified
+            && self.control_access == 0
+    }
     // Use only for a direct, admitted ObserveState reply. v85 can retain
     // fields during failed observations. Require the managed completion
     // guards and explicit absence of observation or write uncertainty.

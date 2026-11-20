@@ -8,7 +8,7 @@ use crate::session_native::display_query::{
     observation::fixture_query,
     recovery::Fields,
     test_support::{FencedTopology, Host, Memory, Rig, TestPanel, flag, result},
-    write::CHECKPOINT,
+    write::{CHANGED_POWER, CHECKPOINT},
 };
 use openblade_platform_windows::display::InternalDisplayTopology;
 use std::sync::atomic::Ordering;
@@ -139,13 +139,15 @@ fn a_checkpoint_failure_blocks_before_any_attempt() {
     assert_eq!((refused.native().attempts, refused.queries), (0, 1));
     assert!(!rig.unresolved().refresh);
 
-    // No prior checkpoint and no confirmed source: nothing can be saved.
+    // No prior checkpoint and no confirmed source: managed saves an
+    // ExternalUnknown manual hold, then refuses the unconfirmed power.
     let rig = Rig::new(Memory::default());
-    let mut unsaved = host(1, Attempt::Confirmed, true);
-    unsaved.power = None;
-    let outcome = rig.set(&mut unsaved, 1, ()).unwrap();
-    assert_eq!(result(&outcome), (Status::Blocked, Some(CHECKPOINT)));
-    assert_eq!(unsaved.native().attempts, 0);
+    let mut unconfirmed = host(1, Attempt::Confirmed, true);
+    unconfirmed.power = None;
+    let outcome = rig.set(&mut unconfirmed, 1, ()).unwrap();
+    assert_eq!(result(&outcome), (Status::Blocked, Some(UNCONFIRMED_POWER)));
+    assert_eq!(unconfirmed.native().attempts, 0);
+    assert_eq!(rig.file.record()["LastReconciledPowerSource"], 3);
 }
 
 #[test]
@@ -187,12 +189,18 @@ fn power_admission_blocks_after_the_hold_without_an_attempt() {
     assert_eq!(result(&outcome), (Status::Blocked, Some(CHANGED_POWER)));
     assert_eq!(changed.native().attempts, 0);
 
-    // Managed ExternalUnknown needs Service external-power evidence that a
-    // native power context never holds, so it is the changed-source refusal.
+    // An ExternalUnknown request against a confirmed context changed source.
     let mut external = host(0, Attempt::Confirmed, true);
     let outcome = rig.set(&mut external, 3, ()).unwrap();
     assert_eq!(result(&outcome), (Status::Blocked, Some(CHANGED_POWER)));
     assert_eq!(external.native().attempts, 0);
+
+    // A manual-external context is unconfirmed: it refuses a confirmed request
+    // with the unconfirmed message, as managed ValidateExpectedAsync does.
+    let mut manual = host(3, Attempt::Confirmed, true);
+    let outcome = rig.set(&mut manual, 1, ()).unwrap();
+    assert_eq!(result(&outcome), (Status::Blocked, Some(UNCONFIRMED_POWER)));
+    assert_eq!(manual.native().attempts, 0);
 
     // Blocked completions restore the inherited (unpaused) state.
     let record = rig.file.record();
@@ -283,6 +291,39 @@ fn a_successful_setter_whose_power_changed_is_stale() {
     let outcome = rig.set(&mut host, 1, ()).unwrap();
     assert_eq!(result(&outcome), (Status::Failed, Some(FAILED)));
     assert!(!rig.unresolved().refresh);
+}
+
+#[test]
+fn a_manual_external_context_admits_an_external_unknown_request() {
+    // Managed ManualExternalPowerPresent: the manual setter runs. A confirmed
+    // source already on record stays the checkpoint's source.
+    let rig = Rig::new(Memory::legacy(1));
+    let mut admitted = host(3, Attempt::Confirmed, true);
+    let outcome = rig.set(&mut admitted, 3, ()).unwrap();
+    assert_eq!(result(&outcome), (Status::Succeeded, None));
+    assert_eq!(admitted.native().attempts, 1);
+    assert_eq!(rig.file.record()["LastReconciledPowerSource"], 1);
+
+    // With no confirmed source, the hold records ExternalUnknown, as managed
+    // `lastConfirmedPowerSource ?? ExternalUnknown` does.
+    let rig = Rig::new(Memory::default());
+    let mut first = host(3, Attempt::Confirmed, true);
+    let outcome = rig.set(&mut first, 3, ()).unwrap();
+    assert_eq!(result(&outcome), (Status::Succeeded, None));
+    let record = rig.file.record();
+    assert_eq!(record["LastReconciledPowerSource"], 3);
+    assert!(flag(&record, "ManualHold"));
+
+    // Managed EnsureCurrent: losing the evidence, or a confirmed source in a
+    // new generation, makes the successful setter stale.
+    let drifted = |source, generation| Some(PowerContext { source, generation });
+    for later in [None, drifted(3, 8), drifted(0, 8)] {
+        let rig = Rig::new(Memory::legacy(0));
+        let mut host = host(3, Attempt::Confirmed, true);
+        host.later = Some(later);
+        let outcome = rig.set(&mut host, 3, ()).unwrap();
+        assert_eq!(result(&outcome), (Status::Indeterminate, Some(STALE_AFTER)));
+    }
 }
 
 #[test]

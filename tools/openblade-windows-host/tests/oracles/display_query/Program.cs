@@ -163,6 +163,8 @@ static int EmitCheckpoints(string outPath)
         // names with this prefix specially.
         ("battery-private-prefix-keys-baseline", S(PowerSource.Battery, null,
             new DisplayProfileSettings("$serde_json::private::Number", false, "$serde_json::private::srgb"), oR: true, oC: true)),
+        // Main admits ExternalUnknown only as a durable manual hold that owns nothing.
+        ("externalunknown-manualhold-paused-uncertain-brightness", S(PowerSource.ExternalUnknown, hold: true, paused: true, uB: true)),
     };
     var lines = new StringBuilder();
     foreach (var (name, state) in cases)

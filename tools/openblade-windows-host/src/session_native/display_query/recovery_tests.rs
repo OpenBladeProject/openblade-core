@@ -88,7 +88,7 @@ fn without_brightness() -> Snapshot {
 /// itself, never from the bytes under test.
 fn expected(state: &Recovery<Mem>) -> Value {
     json!({
-        "LastReconciledPowerSource": state.last,
+        "LastReconciledPowerSource": state.last.unwrap_or(EXTERNAL_UNKNOWN),
         "ApplicationProfileId": state.application_profile_id,
         "Baseline": state.baseline,
         "OwnedRefreshRate": state.owned.refresh,
@@ -116,7 +116,7 @@ fn comparable(mut record: Value) -> Value {
 #[test]
 fn loads_every_managed_fixture_row_and_rewrites_the_same_state() {
     let rows = fixtures();
-    assert_eq!(rows.len(), 10);
+    assert_eq!(rows.len(), 11);
     for row in rows {
         let case = row["case"].as_str().unwrap();
         let file = Mem::with(row["bytes"].as_str().unwrap().as_bytes());
@@ -234,12 +234,62 @@ fn begin_clears_baseline_ownership_and_profile_like_managed() {
 }
 
 #[test]
-fn begin_without_any_power_source_fails_and_writes_nothing() {
-    let file = Mem::default();
-    let mut recovery = Recovery::load(file.clone());
-    assert!(!recovery.begin(Fields::BRIGHTNESS, None));
-    assert!(file.raw().is_none());
-    assert!(recovery.flags().1);
+fn begin_without_any_confirmed_source_holds_external_unknown() {
+    // Managed `lastConfirmedPowerSource ?? ExternalUnknown`, admitted by the
+    // store only as a manual hold that owns nothing.
+    for source in [None, Some(EXTERNAL_UNKNOWN)] {
+        let file = Mem::default();
+        let mut recovery = Recovery::load(file.clone());
+        assert!(recovery.begin(Fields::BRIGHTNESS, source));
+        let stored = file.stored();
+        assert_eq!(stored["LastReconciledPowerSource"], 3);
+        assert_eq!(stored["ManualHold"], true);
+        assert_eq!(recovery.last, None);
+        // Complete still saves the hold; an explicit read cannot resume
+        // without a confirmed source, as managed requires one.
+        recovery.complete(Status::Indeterminate, &Snapshot::unavailable("unknown"));
+        assert_eq!(file.stored()["AutomaticWritesPaused"], true);
+        assert!(!recovery.explicit_read(&with_brightness()));
+        assert!(recovery.flags().1);
+        // A confirmed begin records its source again.
+        assert!(recovery.begin(Fields::BRIGHTNESS, Some(1)));
+        assert_eq!(file.stored()["LastReconciledPowerSource"], 1);
+    }
+    // A manual-external begin never replaces the last confirmed source.
+    let (mut recovery, file) = from_fixture("battery-minimal");
+    assert!(recovery.begin(Fields::BRIGHTNESS, Some(EXTERNAL_UNKNOWN)));
+    assert_eq!(file.stored()["LastReconciledPowerSource"], 1);
+}
+
+#[test]
+fn an_external_unknown_checkpoint_loads_only_as_an_unowned_manual_hold() {
+    let hold = fixture("externalunknown-manualhold-paused-uncertain-brightness");
+    let recovery = Recovery::load(Mem::with(hold.as_bytes()));
+    assert_eq!(recovery.last, None);
+    assert_eq!(recovery.flags(), (true, true, brightness_only()));
+    assert!(recovery.unresolved().brightness);
+    for (name, bytes) in [
+        ("without hold", hold.replace("\"ManualHold\":true", "\"ManualHold\":false")),
+        ("owned", hold.replace("\"OwnedHdr\":false", "\"OwnedHdr\":true")),
+        (
+            "profile",
+            hold.replace(
+                "\"ApplicationProfileId\":null",
+                "\"ApplicationProfileId\":\"3f2c8a10-5b6d-4e7a-9c1f-0a2b3c4d5e6f\"",
+            ),
+        ),
+        (
+            "baseline",
+            hold.replace(
+                "\"Baseline\":null",
+                "\"Baseline\":{\"RefreshRateKey\":null,\"HdrEnabled\":null,\"ColorProfileKey\":null,\"BrightnessPercent\":30}",
+            ),
+        ),
+    ] {
+        assert_ne!(bytes, hold, "{name}");
+        let recovery = Recovery::load(Mem::with(bytes.as_bytes()));
+        assert_eq!(recovery.flags(), (false, true, Fields::ALL), "{name}");
+    }
 }
 
 #[test]
@@ -453,12 +503,34 @@ fn emits_native_rows_for_the_managed_oracle() {
         &file,
     );
 
-    let invalid = json!({
-        "case": "native-invalid-schema",
-        "bytes": "{\"SchemaVersion\":9}",
-        "expectedInvalid": true,
-    });
-    rows.push_str(&format!("{invalid}\n"));
+    // Main's manual-external hold: no confirmed source yet, so ExternalUnknown.
+    let file = Mem::default();
+    let mut external = Recovery::load(file.clone());
+    assert!(external.begin(Fields::BRIGHTNESS, Some(EXTERNAL_UNKNOWN)));
+    row("native-external-unknown-after-begin", &external, &file);
+    external.complete(Status::Indeterminate, &Snapshot::unavailable("unknown"));
+    row(
+        "native-external-unknown-after-indeterminate",
+        &external,
+        &file,
+    );
+
+    let hold = String::from_utf8(file.raw().unwrap()).unwrap();
+    for (case, bytes) in [
+        ("native-invalid-schema", "{\"SchemaVersion\":9}".to_owned()),
+        (
+            "native-invalid-external-unknown-without-hold",
+            hold.replace("\"ManualHold\":true", "\"ManualHold\":false"),
+        ),
+        (
+            "native-invalid-external-unknown-owned",
+            hold.replace("\"OwnedBrightness\":false", "\"OwnedBrightness\":true"),
+        ),
+    ] {
+        assert_ne!(bytes, hold, "{case}");
+        let invalid = json!({"case": case, "bytes": bytes, "expectedInvalid": true});
+        rows.push_str(&format!("{invalid}\n"));
+    }
     let mut output = OpenOptions::new()
         .create(true)
         .append(true)

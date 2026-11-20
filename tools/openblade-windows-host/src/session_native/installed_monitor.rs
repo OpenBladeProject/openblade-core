@@ -77,12 +77,18 @@ pub(super) fn run(origin: Arc<Origin>) -> io::Result<()> {
                     match update {
                         service_client::StatusUpdate::Opened(value) => {
                             value.require_fresh()?;
-                            let source = value.into_observation().snapshot.display_power_source();
-                            power.opened(source);
+                            let snapshot = value.into_observation().snapshot;
+                            power.opened(
+                                snapshot.display_power_source(),
+                                snapshot.display_manual_external_power(),
+                            );
                         }
                         service_client::StatusUpdate::Event(value) => {
                             value.require_fresh()?;
-                            power.observed(value.snapshot.display_power_source());
+                            power.observed(
+                                value.snapshot.display_power_source(),
+                                value.snapshot.display_manual_external_power(),
+                            );
                         }
                         service_client::StatusUpdate::Reconnecting => power.unavailable(),
                     }

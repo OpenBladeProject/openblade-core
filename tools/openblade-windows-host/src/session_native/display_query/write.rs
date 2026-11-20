@@ -37,6 +37,21 @@ pub(super) const UNREFRESHED: &str = "Display state could not be refreshed.";
 pub(super) const STALE_AFTER: &str =
     "The display operation became stale after the power source changed.";
 
+/// Managed `ValidateExpectedAsync`: the refusal of `power` for a request that
+/// expects `expected`, or None when admitted. A manual-external context is
+/// unconfirmed, so it admits only an ExternalUnknown request and otherwise
+/// reports the unconfirmed refusal; a confirmed one admits only its own source.
+pub(super) fn power_refusal(power: Option<PowerContext>, expected: u8) -> Option<&'static str> {
+    match power {
+        None => Some(UNCONFIRMED_POWER),
+        Some(power) if power.manual_external() && power.source != expected => {
+            Some(UNCONFIRMED_POWER)
+        }
+        Some(power) if power.source != expected => Some(CHANGED_POWER),
+        Some(_) => None,
+    }
+}
+
 /// Managed `TryQueryFailureAsync`: report the reply query's snapshot, or an
 /// unavailable one when the read itself is interrupted.
 pub(super) fn refreshed(query: io::Result<Snapshot>) -> io::Result<Snapshot> {
@@ -253,9 +268,16 @@ pub(super) struct WindowsHost {
 }
 
 impl WindowsHost {
-    /// The trusted confirmed power context, if any.
+    /// The trusted confirmed power context, if any (automation and profile
+    /// apply).
     pub(super) fn power(&self) -> Option<PowerContext> {
         self.power.capture()
+    }
+
+    /// The context a manual setter may admit: confirmed, or managed
+    /// `ManualExternalPowerPresent`.
+    pub(super) fn manual_power(&self) -> Option<PowerContext> {
+        self.power.capture_manual()
     }
 
     /// The production fence bound to the captured power context.

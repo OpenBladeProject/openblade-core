@@ -16,8 +16,8 @@ use super::{
     observation::{SharedBrightness, Snapshot},
     recovery::{CheckpointFile, Fields, Recovery, Status},
     write::{
-        CHANGED_POWER, Refused, STALE_AFTER, UNCONFIRMED_POWER, UNREFRESHED, WindowsHost, begin,
-        lock, refreshed,
+        Refused, STALE_AFTER, UNCONFIRMED_POWER, UNREFRESHED, WindowsHost, begin, lock,
+        power_refusal, refreshed,
     },
 };
 use crate::session_native::power_admission::PowerContext;
@@ -123,7 +123,7 @@ impl<N> ManualHost for WindowsManualHost<N> {
     type Native = N;
 
     fn power(&self) -> Option<PowerContext> {
-        self.host.power()
+        self.host.manual_power()
     }
 
     fn fence(&self, admitted: PowerContext) -> Arc<dyn SubmissionFence> {
@@ -204,21 +204,21 @@ impl Attempt {
     }
 }
 
-/// Managed `ValidateExpectedAsync`: the trusted power source is confirmed and
-/// is the one the request expects, or the Blocked refusal.
+/// Managed `ValidateExpectedAsync`: the trusted power context admits the
+/// request's expected source (see `power_refusal`), or the Blocked refusal.
+/// Manual setters pass a manual-aware context; profile apply passes only a
+/// confirmed one, as managed `ApplyProfileAsync` never allows unclassified
+/// external power.
 pub(super) fn admit_power(
     power: Option<PowerContext>,
     expected: u8,
 ) -> Result<PowerContext, Attempt> {
-    match power {
-        None => Err(Attempt::Done(
+    match (power, power_refusal(power, expected)) {
+        (Some(power), None) => Ok(power),
+        (_, refusal) => Err(Attempt::Done(
             Status::Blocked,
-            Cow::Borrowed(UNCONFIRMED_POWER),
+            Cow::Borrowed(refusal.unwrap_or(UNCONFIRMED_POWER)),
         )),
-        Some(power) if power.source != expected => {
-            Err(Attempt::Done(Status::Blocked, Cow::Borrowed(CHANGED_POWER)))
-        }
-        Some(power) => Ok(power),
     }
 }
 
