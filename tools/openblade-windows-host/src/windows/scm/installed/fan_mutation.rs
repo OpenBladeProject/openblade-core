@@ -40,6 +40,9 @@ pub(super) struct FanPermit {
     performance_gpu: AtomicBool,
     // The selector an earlier owner recorded, when this request's no-op closed it.
     released: Mutex<Option<u8>>,
+    // A clear on unclassified external power: no profile applies, so only an
+    // owned manual fan change is handed back to firmware Automatic.
+    unclassified_clear: AtomicBool,
     record: Mutex<Option<FanRecord>>,
     accepted: AtomicBool,
     owned: AtomicBool,
@@ -103,6 +106,9 @@ impl Permit for FanPermit {
     fn mutation_registered(&self) {
         self.registered.store(true, Ordering::Release);
     }
+    fn external_presence(&self) -> bool {
+        self.fresh.external_presence()
+    }
     fn result_admitted(&self, expected: ReadAdmission) -> bool {
         if self.cleanup() && matches!(self.storage.progress(), Some(50 | 51)) {
             return verify_retained_failure(&self.fatal).is_ok()
@@ -143,12 +149,14 @@ impl Permit for FanPermit {
         if !self.cleanup()
             && let Some((source, settings)) = &*self.selected.lock().ok()?
         {
+            // A synthesized handback (null settings) needs saved fan intent to
+            // stay cleared; any other selection needs it unchanged.
             if self
                 .storage
                 .desired_fan(*source, self.application.as_deref())
                 .ok()?
                 .as_ref()
-                != Some(settings)
+                != Some(settings).filter(|s| !s.is_null())
             {
                 return None;
             }
@@ -181,6 +189,18 @@ impl Permit for FanPermit {
         self.storage
             .save_fan(self.value.clone(), self.settings.clone(), power)?;
         self.accepted.store(true, Ordering::Release);
+        if power == UNCLASSIFIED_EXTERNAL && self.value.is_none() {
+            // Managed `ExecuteScopedMutationAsync`: with no profile to apply, a
+            // clear hands back only an owned manual fan change, through
+            // `RestoreOwnedAutomaticFansCoreAsync` (Automatic, no saved preset),
+            // and otherwise writes nothing.
+            self.unclassified_clear.store(true, Ordering::Release);
+            if !self.storage.outstanding_fan() {
+                return Ok(None);
+            }
+            *self.selected.lock().map_err(|_| io::ErrorKind::Other)? = Some((power, Value::Null));
+            return Ok(FanIntent::checked(0, 3700).map(|i| (i, None)));
+        }
         let Some(settings) = self
             .storage
             .desired_fan(power, self.application.as_deref())?
@@ -621,6 +641,7 @@ impl Runtime {
             performance: Mutex::new(None),
             performance_gpu: AtomicBool::new(false),
             released: Mutex::new(None),
+            unclassified_clear: AtomicBool::new(false),
             record: Mutex::new(None),
             accepted: AtomicBool::new(false),
             owned: AtomicBool::new(false),
@@ -774,7 +795,25 @@ impl Runtime {
                 ));
             }
         }
-        let outcome = Outcome { status, message };
+        // A clear on unclassified power: managed replies Stored once no owned
+        // change remains, and returns the failed handback otherwise.
+        let outcome = if permit.unclassified_clear.load(Ordering::Acquire)
+            && !permit.storage.pending()
+        {
+            if permit.storage.outstanding_fan() {
+                Outcome {
+                    status: 2,
+                    message: format!("Fan control could not be handed back to firmware. {message}"),
+                }
+            } else {
+                Outcome {
+                    status: 0,
+                    message: UNCLASSIFIED_CLEARED.into(),
+                }
+            }
+        } else {
+            Outcome { status, message }
+        };
         let snapshot = if permit.accepted.load(Ordering::Acquire) {
             let (power, settings) = permit
                 .selected

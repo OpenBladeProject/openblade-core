@@ -6,6 +6,8 @@ mod tfc_corrections;
 #[cfg(feature = "service-temporary-charge-v1")]
 #[path = "temporary_charge_release.rs"]
 mod tfc_release;
+#[path = "unclassified_external.rs"]
+mod unclassified_external;
 use crate::discovery::performance::{ReadAdmission, mutation_fixture::Fixture};
 use crate::installed::readiness::{
     mailbox_read::{MailboxSource, MutationFactories, ReadCustody, ReadSource},
@@ -480,7 +482,8 @@ impl ReadCustody for Custody {
 }
 impl Fresh for Custody {
     fn on_battery(&self) -> Option<bool> {
-        Some(self.port.lock().unwrap().actual == 0)
+        let port = self.port.lock().unwrap();
+        port.windows_on_battery.unwrap_or(Some(port.actual == 0))
     }
     fn authentication(&self) -> Option<(u32, i32)> {
         Some((self.authentication.load(Ordering::Acquire) as u32, 0))
@@ -5529,14 +5532,18 @@ async fn fan_custom_automatic_and_hyperboost_release_the_owner_without_a_setter(
     }
 }
 // Stop settles on the 0D/82 pair alone: an unclassified 07/8C source is not
-// part of the Automatic handback. The explicit path still needs the source to
-// resolve the saved intent, so it stays refused.
+// part of the Automatic handback. The explicit path admits unclassified power
+// only with Windows AC presence, so without it the request stays refused.
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn fan_stop_settle_does_not_need_a_classified_power_source() {
     let r = foreign_selector_rig(0, [2; 2], [0; 2], 15).await;
     let (owned, closed) = (owner_row(&r, 30), owner_row(&r, 51));
-    r.port.state.lock().unwrap().recommended = 0;
+    {
+        let mut s = r.port.state.lock().unwrap();
+        s.recommended = 0;
+        s.windows_on_battery = Some(Some(true));
+    }
     let out = r.request(fan_request(232, Some(0), 3700)).await;
     assert_eq!(out["result"]["status"], 2, "{out}");
     assert_eq!(*fan_rows(&r).last().unwrap(), owned);

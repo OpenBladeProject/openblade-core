@@ -40,6 +40,15 @@ pub(crate) struct State {
     pub(crate) opened: usize,
     pub(crate) power_reads: usize,
     pub(crate) change_power: Option<(usize, u8)>,
+    // Raw 07/8C report status (0 means success, 2): 3 FAILED and 5
+    // NOT_SUPPORTED are correlated rejections. The second field switches it
+    // from that power read on.
+    pub(crate) power_status: u8,
+    pub(crate) change_power_status: Option<(usize, u8)>,
+    // Windows ACLineStatus the test custody reports instead of deriving it
+    // from the adapter level: Some(None) is unknown.
+    pub(crate) windows_on_battery: Option<Option<bool>>,
+    pub(crate) change_windows: Option<(usize, Option<bool>)>,
     pub(crate) held_read: Option<Arc<AtomicBool>>,
     pub(crate) held_write: Option<(usize, Arc<AtomicBool>)>,
     pub(crate) before_write: Option<Arc<dyn Fn(usize) + Send + Sync>>,
@@ -295,6 +304,16 @@ impl Port for MemoryPort {
                         {
                             s.actual = actual;
                         }
+                        if let Some((at, status)) = s.change_power_status
+                            && at == s.power_reads
+                        {
+                            s.power_status = status;
+                        }
+                        if let Some((at, windows)) = s.change_windows
+                            && at == s.power_reads
+                        {
+                            s.windows_on_battery = Some(windows);
+                        }
                         vec![s.actual, s.recommended]
                     }
                     _ => panic!("unexpected typed fixture command {class:x}/{command:x}"),
@@ -306,6 +325,9 @@ impl Port for MemoryPort {
                         .encode(),
                 );
                 reply[1] = 2;
+                if class == 7 && command == 0x8c && s.power_status != 0 {
+                    reply[1] = s.power_status;
+                }
                 if class == 13 && matches!(command, 1 | 2) && s.corrupt_ack == Some(s.writes) {
                     reply[2] ^= 1;
                 }

@@ -16,7 +16,10 @@ use crate::{
     },
     service_status::{ReadConfirmation, Snapshot},
 };
-use openblade_domain::thermal_mutation::{Preset, Progress, confirms};
+use openblade_domain::{
+    automation::UNCLASSIFIED_EXTERNAL,
+    thermal_mutation::{Preset, Progress, confirms},
+};
 use sha2::{Digest, Sha256};
 use std::{
     cell::RefCell,
@@ -77,6 +80,11 @@ pub(super) use fan::FanRequest;
 pub(super) trait Fresh: Send + Sync {
     fn on_battery(&self) -> Option<bool> {
         None
+    }
+    /// Fresh positive Windows AC presence (ACLineStatus online). It is never
+    /// wattage evidence; it only lets an unclassified 07/8C reading count.
+    fn external_presence(&self) -> bool {
+        self.on_battery() == Some(false)
     }
     fn authentication(&self) -> Option<(u32, i32)> {
         None
@@ -181,6 +189,13 @@ struct Application {
     path: Option<String>,
     expires: Instant,
 }
+/// Managed `ExecuteScopedMutationAsync` reply for a cleared explicit override
+/// on unclassified external power, which selects no power profile.
+pub(super) const UNCLASSIFIED_CLEARED: &str =
+    "Override cleared. Power-profile application waits for adapter classification.";
+/// Managed `ValidateUnclassifiedPerformanceOverride`, as `RecordRejectedIntent`
+/// reports it (Failed).
+const UNCLASSIFIED_REJECTED: &str = "The requested intent was rejected: This request needs classified power or includes native overclocking; ordinary external presence does not admit it.";
 #[derive(Clone, serde::Serialize)]
 pub(super) struct Outcome {
     pub(super) status: u8,
@@ -514,9 +529,13 @@ impl Runtime {
             Outcome::blocked(permit.storage.pending_reason()?)
         } else if accepted {
             let cause = permit.cause.lock().map_err(|_| io::ErrorKind::Other)?;
-            if matches!(*cause, Cause::ManualDeferred) {
+            if matches!(
+                *cause,
+                Cause::ManualDeferred | Cause::AwaitingClassification
+            ) {
                 // Managed's reply for this external-power manual-fan deferral
-                // (ServiceControlRuntime.DeferredPerformanceIntentMessage). As in
+                // (ServiceControlRuntime.DeferredPerformanceIntentMessage), or for a
+                // clear while the adapter is unclassified. As in
                 // managed, a fan request that returns the fans to Automatic
                 // applies the saved preset in the same pair (FanPermit).
                 Outcome {
@@ -539,6 +558,14 @@ impl Runtime {
                     cause.message()
                 };
                 Outcome::blocked(format!("{committed} Hardware result: {reason}"))
+            }
+        } else if matches!(
+            *permit.cause.lock().map_err(|_| io::ErrorKind::Other)?,
+            Cause::UnclassifiedRejected
+        ) {
+            Outcome {
+                status: 3,
+                message: UNCLASSIFIED_REJECTED.into(),
             }
         } else {
             Outcome::blocked(
@@ -596,6 +623,7 @@ struct RequestPermit {
 #[derive(Debug)]
 enum Cause {
     CurrentAdmission,
+    AwaitingClassification,
     FanHandbackPending,
     Gpu,
     ManualDeferred,
@@ -604,11 +632,13 @@ enum Cause {
     PowerChanged,
     Storage(String),
     Transport(String),
+    UnclassifiedRejected,
 }
 impl Cause {
     fn message(&self) -> String {
         match self {
             Self::CurrentAdmission => "Current admission or independent readback did not complete; no successful application is reported.".into(),
+            Self::AwaitingClassification => UNCLASSIFIED_CLEARED.into(),
             Self::FanHandbackPending => "OpenBlade still owns a fan change that has not been handed back to firmware Automatic; no thermal setter was submitted.".into(),
             Self::Gpu => "GPU clock handling is incomplete; no thermal setter was submitted.".into(),
             // Without the fan composition no native request returns the fans,
@@ -620,6 +650,7 @@ impl Cause {
             Self::PowerChanged => "The independently observed power source changed or no longer admits this destination.".into(),
             Self::Storage(e) => format!("Protected storage could not record the next step: {e}"),
             Self::Transport(e) => format!("Thermal transport or ownership did not complete: {e}"),
+            Self::UnclassifiedRejected => UNCLASSIFIED_REJECTED.into(),
         }
     }
 }
@@ -644,17 +675,38 @@ impl Permit for RequestPermit {
         self.verify_failure().ok()?;
         self.fresh.authorize()
     }
+    fn external_presence(&self) -> bool {
+        self.fresh.external_presence()
+    }
     fn resolve(&self, power: i32, baseline: ObservedPerformance) -> io::Result<Option<Preset>> {
         self.verify_failure()?;
         (|| {
             if self.accepted.load(Ordering::Acquire) {
                 return Err(io::ErrorKind::PermissionDenied.into());
             }
+            let unclassified = power == UNCLASSIFIED_EXTERNAL;
+            // Managed `ValidateUnclassifiedPerformanceOverride` rejects native
+            // overclocking there before any intent is stored.
+            if unclassified
+                && self
+                    .value
+                    .as_ref()
+                    .is_some_and(|v| v.gpu_clock_tuning.is_some())
+            {
+                self.set_cause(Cause::UnclassifiedRejected);
+                return Ok(None);
+            }
             self.storage
                 .save(self.value.clone(), power)
                 .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))?;
             self.accepted.store(true, Ordering::Release);
             *self.power.lock().map_err(|_| io::ErrorKind::Other)? = Some(power);
+            // A clear selects no profile there: nothing is written until the
+            // adapter is classified (managed `ExecuteScopedMutationAsync`).
+            if unclassified && self.value.is_none() {
+                self.set_cause(Cause::AwaitingClassification);
+                return Ok(None);
+            }
             if self
                 .storage
                 .gpu_incomplete(power, self.application.as_deref())?

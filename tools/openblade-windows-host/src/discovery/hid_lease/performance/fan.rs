@@ -13,7 +13,8 @@ impl<P: Port> Reader<P, ReadAdmission> {
         limit: Limit<'_>,
     ) -> Option<ObservedPerformance> {
         let admission = self.admission;
-        let mut authorize = || permit.authorize();
+        let fence = super::mutation::PowerFence::new(permit);
+        let mut authorize = || fence.authorize();
         let cleanup = permit.cleanup();
         let (baseline, power, preflight) = if cleanup {
             let r = permit.fan_record()?;
@@ -65,7 +66,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
             a.completed = true;
             (b, p, [modes, power])
         };
-        let source = power.source()?;
+        let source = fence.admit(power)?;
         let (plan, record, ids) = if cleanup {
             let r = permit.fan_record()?;
             let owned = Plan::select(baseline, r.intent, source)?;
@@ -178,8 +179,8 @@ impl<P: Port> Reader<P, ReadAdmission> {
                         limit,
                     )
                     .await?;
-                // The selected AC preset is kept on either external class.
-                if current.source() != Some(record.source) || !current.external() {
+                // The selected AC preset is kept on every external class.
+                if !fence.unchanged(current, record.source) {
                     permit.refused(Refusal::PowerChanged);
                     return None;
                 }

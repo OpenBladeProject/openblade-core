@@ -1,6 +1,9 @@
 //! Typed mutation on the existing native port and process-wide transaction pool.
 use super::*;
-use openblade_domain::thermal_mutation::{Plan, Preset, Progress, confirms};
+use openblade_domain::{
+    automation::UNCLASSIFIED_EXTERNAL,
+    thermal_mutation::{Plan, Preset, Progress, confirms},
+};
 use openblade_protocol::thermal_preset::PresetPair;
 use std::sync::Arc;
 
@@ -74,6 +77,11 @@ pub(crate) trait Permit: Send + Sync {
     fn cleanup(&self) -> bool {
         false
     }
+    /// Fresh positive Windows AC presence, read at the moment of the call. An
+    /// unclassified 07/8C reading admits an ordinary thermal setter only with it.
+    fn external_presence(&self) -> bool {
+        false
+    }
     fn resolve(&self, power: i32, baseline: ObservedPerformance) -> io::Result<Option<Preset>>;
     fn refused(&self, _cause: Refusal) {}
     fn failed(&self, _error: &io::Error) {}
@@ -114,7 +122,8 @@ impl<P: Port> Reader<P, ReadAdmission> {
         if permit.is_fan() {
             return self.apply_fan(permit, limit).await;
         }
-        let mut authorize = || permit.authorize();
+        let fence = PowerFence::new(permit);
+        let mut authorize = || fence.authorize();
         let baseline = self.observe(&mut authorize, limit).await?;
         let initial_power_ids = self.port.reserve_pair()?;
         let admission = self.admission;
@@ -129,7 +138,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
             attempt.completed = true;
             power
         };
-        let power_source = power.source()?;
+        let power_source = fence.admit(power)?;
         let destination = permit.resolve(power_source, baseline).ok()??;
         if Plan::from_observation(baseline, destination) == Plan::Unchanged {
             return Some(baseline);
@@ -157,9 +166,9 @@ impl<P: Port> Reader<P, ReadAdmission> {
             let power = attempt
                 .read_power(power_ids[index], &mut authorize, admission, limit)
                 .await?;
-            // Each command needs a fresh classified external reading in the
-            // first observed class, from the exact decoder, never ACLineStatus.
-            if power.source() != Some(power_source) || !power.external() {
+            // Each command needs a fresh external reading in the first observed
+            // class, from the exact decoder, never ACLineStatus alone.
+            if !fence.unchanged(power, power_source) {
                 permit.refused(Refusal::PowerChanged);
                 return None;
             }
@@ -205,30 +214,97 @@ impl<P: Port> Reader<P, ReadAdmission> {
         Some(observed)
     }
 }
-#[derive(Clone, Copy)]
-pub(super) struct Power {
-    actual: u16,
-    recommended: u16,
+/// Fresh-power admission for one ordinary thermal operation. Once its first
+/// reading is unclassified external power, every later checkpoint also needs
+/// fresh Windows AC presence, so losing presence stops before the next command.
+/// Managed `OrdinarySourceUnchanged` likewise rechecks the Windows source at
+/// submission.
+pub(super) struct PowerFence<'a> {
+    permit: &'a dyn Permit,
+    unclassified: AtomicBool,
+}
+impl<'a> PowerFence<'a> {
+    pub(super) fn new(permit: &'a dyn Permit) -> Self {
+        Self {
+            permit,
+            unclassified: AtomicBool::new(false),
+        }
+    }
+    pub(super) fn authorize(&self) -> Option<ReadAdmission> {
+        self.permit.authorize().filter(|_| {
+            !self.unclassified.load(Ordering::Acquire) || self.permit.external_presence()
+        })
+    }
+    /// The class of the operation's first reading.
+    pub(super) fn admit(&self, power: Power) -> Option<i32> {
+        let source = power.thermal_source(self.permit.external_presence())?;
+        self.unclassified
+            .store(source == UNCLASSIFIED_EXTERNAL, Ordering::Release);
+        Some(source)
+    }
+    /// A setter-time reading: external power in the first class, never a
+    /// refinement either way between unclassified and classified.
+    pub(super) fn unchanged(&self, power: Power, source: i32) -> bool {
+        power.external() && power.thermal_source(self.permit.external_presence()) == Some(source)
+    }
+}
+/// One fresh 07/8C adapter query.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Power {
+    /// Both levels decode and the recommended level is nonzero.
+    Classified { actual: u16, recommended: u16 },
+    /// A completed query that classifies nothing: a correlated FAILED or
+    /// NOT_SUPPORTED rejection, or a reply whose actual level is unmapped or
+    /// whose recommended level is unmapped or zero. Managed reports it as
+    /// `AdapterPowerState.Unknown` with `UnclassifiedAdapterResponseAvailable`.
+    /// It is never full, limited or battery power.
+    Unclassified,
 }
 impl Power {
+    fn decode(actual: u8, recommended: u8) -> Self {
+        match (watts(actual), watts(recommended)) {
+            (Some(actual), Some(recommended @ 1..)) => Self::Classified {
+                actual,
+                recommended,
+            },
+            _ => Self::Unclassified,
+        }
+    }
+    /// The classified class: 0 full, 1 battery, 2 limited. Battery policy and
+    /// temporary charge use only this, so unclassified power never admits them.
     pub(super) fn source(self) -> Option<i32> {
-        if self.recommended == 0 {
-            None
-        } else if self.actual == 0 {
-            Some(1)
-        } else if self.actual >= self.recommended {
-            Some(0)
-        } else {
-            Some(2)
+        match self {
+            Self::Classified { recommended: 0, .. } | Self::Unclassified => None,
+            Self::Classified { actual: 0, .. } => Some(1),
+            Self::Classified {
+                actual,
+                recommended,
+            } => Some(if actual >= recommended { 0 } else { 2 }),
+        }
+    }
+    /// The class an ordinary thermal setter is admitted on. Unclassified power
+    /// (3) counts only with fresh positive Windows AC presence, as managed
+    /// `QueryThermalWritePowerAsync` admits Unknown only with that presence.
+    pub(super) fn thermal_source(self, presence: bool) -> Option<i32> {
+        match self {
+            Self::Unclassified => presence.then_some(UNCLASSIFIED_EXTERNAL),
+            classified => classified.source(),
         }
     }
     /// Managed `ProductionBatteryPort` admits every supported AC preset on
-    /// both classified external classes (full and limited adapters) with the
-    /// same commands. Battery presets and unclassified power are not
-    /// admitted here. Callers also require the fresh class to equal the one
-    /// first observed, as managed requires an unchanged ordinary source.
+    /// both classified external classes (full and limited adapters) and the
+    /// ordinary presets on unclassified external power, with the same
+    /// commands. Battery presets are not admitted here. Callers also require
+    /// the fresh class to equal the one first observed, as managed requires an
+    /// unchanged ordinary source.
     pub(super) fn external(self) -> bool {
-        self.actual > 0 && self.recommended > 0
+        match self {
+            Self::Classified {
+                actual,
+                recommended,
+            } => actual > 0 && recommended > 0,
+            Self::Unclassified => true,
+        }
     }
 }
 fn watts(level: u8) -> Option<u16> {
@@ -263,14 +339,16 @@ impl<P: Port> Attempt<'_, P, ReadAdmission> {
         if !matches!(length, REPORT_LENGTH | FRAME_LENGTH) || frame[0] != 0 {
             return None;
         }
+        // A correlated terminal rejection completed the query without wattage;
+        // every other validation failure is no reading at all.
+        if query.is_completed_rejection(&frame[1..]) {
+            return Some(Power::Unclassified);
+        }
         let payload = query.validate_response(&frame[1..], Some(2)).ok()?;
         let [actual, recommended] = payload.as_slice() else {
             return None;
         };
-        Some(Power {
-            actual: watts(*actual)?,
-            recommended: watts(*recommended)?,
-        })
+        Some(Power::decode(*actual, *recommended))
     }
 }
 

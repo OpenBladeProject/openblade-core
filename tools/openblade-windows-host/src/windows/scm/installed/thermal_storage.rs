@@ -1,7 +1,10 @@
 //! Compatible saved intent and durable per-submission fence. Constructors take
 //! explicit storage first; the injected path never resolves a product root.
 use crate::configuration::{self, File as ConfigFile, Inspection, RecoveryRecord};
-use openblade_domain::thermal_mutation::{Preset, Progress, progress_follows, settled};
+use openblade_domain::{
+    automation::{UNCLASSIFIED_EXTERNAL, temporary_expired},
+    thermal_mutation::{Preset, Progress, progress_follows, settled},
+};
 use serde_json::{Value, json};
 
 use std::{
@@ -504,7 +507,10 @@ impl Storage {
         application: Option<&str>,
     ) -> io::Result<Option<(Preset, i32)>> {
         let mut s = self.state.lock().map_err(|_| denied())?;
-        if matches!(power, 0..=2) && s.temporary.as_ref().is_some_and(|(_, p)| *p != power) {
+        if s.temporary
+            .as_ref()
+            .is_some_and(|(_, p)| temporary_expired(*p, power))
+        {
             s.temporary = None;
         }
         let persistent = s.document["overrides"]["performance"]
@@ -513,7 +519,7 @@ impl Storage {
         let temporary = s.temporary.as_ref().map(|(v, _)| v.value);
         for (value, source) in [(persistent, 4), (temporary, 3)] {
             if let Some(value) = value
-                && openblade_domain::automation::performance_source_eligible(value, power)
+                && openblade_domain::automation::override_source_eligible(value, power)
             {
                 return Ok(Preset::from_wire(value).map(|p| (p, source)));
             }
@@ -561,7 +567,10 @@ impl Storage {
         let mut s = self.state.lock().map_err(|_| denied())?;
         // The same class expiry as `desired`, so the answer does not depend on
         // which of the two a caller reads first.
-        if matches!(power, 0..=2) && s.temporary.as_ref().is_some_and(|(_, p)| *p != power) {
+        if s.temporary
+            .as_ref()
+            .is_some_and(|(_, p)| temporary_expired(*p, power))
+        {
             s.temporary = None;
         }
         if !s.document["overrides"]["gpuClockTuning"].is_null()
@@ -580,6 +589,9 @@ impl Storage {
             0 => "pluggedIn",
             1 => "battery",
             2 => "usbC",
+            // Unclassified external power selects no profile: only the
+            // explicit overrides checked above can carry a GPU effect.
+            UNCLASSIFIED_EXTERNAL => return Ok(false),
             _ => return Ok(true),
         };
         let app = application.and_then(|path| {
@@ -622,7 +634,10 @@ impl Storage {
             s.configuration_changed = true;
             return Err(denied());
         }
-        if matches!(power, 0..=2) && s.temporary.as_ref().is_some_and(|(_, p)| *p != power) {
+        if s.temporary
+            .as_ref()
+            .is_some_and(|(_, p)| temporary_expired(*p, power))
+        {
             s.temporary = None;
         }
         if let Some((v, _)) = &s.temporary {
@@ -697,7 +712,7 @@ impl Storage {
     ) -> io::Result<Option<crate::service_status::FanOverride>> {
         let s = self.state.lock().map_err(|_| denied())?;
         if let Some((v, p)) = &s.temporary_fan
-            && *p == power
+            && !temporary_expired(*p, power)
         {
             return Ok(Some(crate::service_status::FanOverride {
                 value: v["mode"].as_u64().ok_or_else(denied)? as u8,
@@ -735,7 +750,10 @@ impl Storage {
             s.configuration_changed = true;
             return Err(denied());
         }
-        if s.temporary_fan.as_ref().is_some_and(|(_, p)| *p != power) {
+        if s.temporary_fan
+            .as_ref()
+            .is_some_and(|(_, p)| temporary_expired(*p, power))
+        {
             s.temporary_fan = None;
         }
         if let Some((v, _)) = &s.temporary_fan {
@@ -902,7 +920,7 @@ impl Storage {
     ) -> io::Result<bool> {
         let s = self.state.lock().map_err(|_| denied())?;
         if let Some((v, p)) = &s.temporary_fan
-            && *p == power
+            && !temporary_expired(*p, power)
         {
             return Ok(v["mode"] != 0);
         }
