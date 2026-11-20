@@ -78,6 +78,17 @@ and consumed typed thermal fields are validated before saving. This does not
 implement all managed profile payload semantics or migrate/modify the aggregate;
 schema 24 still needs managed migration first.
 
+The installed Service does not serve `updateProfiles`. The request gets
+managed's typed `IPC request operation is unsupported.` failure (see
+[unserved operations](windows-rust-development-service.md#managed-operations-the-installed-service-does-not-serve)),
+and the aggregate stays exactly as managed wrote it. Managed's save path
+normalises and validates the complete `ProfileSet` against the device
+capabilities, migrates an older committed aggregate, and rewrites all three
+documents with its own serializer and recovery record. Native has no typed
+`ProfileSet` model, no canonical System.Text.Json writer for it and no
+installed aggregate transaction, so it cannot yet reproduce those bytes or
+that recovery safely.
+
 As in managed, every supported AC preset and the observed AC fan selector are
 admitted on both classified external classes: an adapter at or above its
 recommendation (PluggedIn) and a limited one (USB-C). The commands are the

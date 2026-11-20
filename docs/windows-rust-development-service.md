@@ -300,6 +300,40 @@ The source reports observational metadata with writes blocked. Profile activatio
 and device ownership require separate admission. The offline exchange scripts
 observer inputs and peer evidence over in-memory streams.
 
+### Managed operations the installed Service does not serve
+
+A well-formed v85 request that names a managed operation outside the
+composition's typed decoder gets managed's own fallback reply: the correlated
+`ServiceResponse` with `success: false`, error
+`IPC request operation is unsupported.` and no body or error code
+(`ControlRequestHandler.HandleUserRequestAsync`). The operation list is the
+`operationFamilies` inventory in the
+[managed replay contract](windows-backend-replay.md), which
+`WindowsReplay_FrozenWireInventoryMatchesManagedRegistry` pins to the managed
+`ServiceRequest` registry. Its 51 operations include `reportSessionPowerTransition`
+and `updateProfiles`. An operation is served only when this build's features
+dispatch it, so a read-only composition also refuses `setFanOverride` and the
+other mutations instead of closing.
+
+The refusal decodes only the object envelope: one `operation`, an Int32
+`version` of 85 and a non-nil `requestId`, with duplicate members and serde
+private member names refused. It never interprets the body, reads the status
+source, opens the device or touches storage, so every caller the status
+endpoint admits receives it. Unknown operation names, malformed frames, other
+protocol versions and served operations that fail their own decoder still close
+without a reply.
+
+Managed reaches its fallback only after the session access policy and user
+activation, and it rejects an invalid known-operation body in the codec before
+dispatch. Native replies the same refusal to every admitted caller and does not
+validate the body, so an inactive session or a malformed body for an unserved
+operation gets the refusal where managed would send an access failure or
+close. Neither path changes state.
+`installed_unserved_operations_reply_with_the_managed_unsupported_failure`
+contributes its actual frames to the `OPENBLADE_NATIVE_THERMAL_RESPONSES`
+corpus, and the managed fact requires the unsupported reply to decode through
+the v85 codec.
+
 ## Compile the installed service launch boundary
 
 The standalone Windows host workspace has a separate `openblade-windows-service-candidate`
