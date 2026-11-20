@@ -18,7 +18,7 @@
   "proofs": [
     {
       "path": "2026-11-13-rz09-0529-keyboard-frames.json",
-      "sha256": "cd2eff74fd8f225fcd13747c9ae5ef411d24db26708346b3124927d1af9f845a"
+      "sha256": "9fa8cec07a14530926e21e2c7b31703bbf4e18f6e4c5ba54150292712d1adc47"
     },
     {
       "path": "2026-11-13-mcu-color-wave-review.json",
@@ -788,10 +788,10 @@
       "independentFieldsRetained": false,
       "independentFieldControls": true,
       "geometry": "MCU frame bounds 6x19",
-      "frameTransport": "Keyboard-only 03/0B rows0..5, 61-byte row payload; exact MCU 0F/02 [0,5,8] activation leaves LED38 unchanged. See 2026-11-13-rz09-0529-keyboard-frames.json.",
+      "frameTransport": "03/0B rows0..5, 61-byte row payload, plus row6 for the Vapor Chamber when its built-in baseline is restorable; exact MCU 0F/02 [0,5,8] activation, then [0,38,8] for the Vapor Chamber. Otherwise LED38 stays unchanged. See 2026-11-13-rz09-0529-keyboard-frames.json.",
       "keyMap": "Exact product711 regional manifest intersection: 94 ordinary keyboard scan bindings; no dkm identifiers or auxiliary-row input.",
       "readback": "Active bank 0, strict 12-byte built-in parameters; hidden palette/policy states and custom pixels remain unknown.",
-      "restoration": "Durable complete builtin baseline plus exact raw active brightness before frame writes; MCU-aware builtin restoration with full parameters and bank0 raw-brightness readback. No pixel readback claim.",
+      "restoration": "Durable complete builtin baseline plus exact raw active brightness before frame writes; MCU-aware builtin restoration with full parameters and bank0 raw-brightness readback. A restorable Vapor Chamber baseline is restored only while it still reads custom mode 8. No pixel readback claim.",
       "gaps": [
         "Firmware Spectrum hidden policy/palette is not readable; OpenBlade implements Spectrum in software.",
         "External custom frames cannot supply a restoration baseline.",

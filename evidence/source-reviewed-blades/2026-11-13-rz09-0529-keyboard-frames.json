@@ -54,13 +54,39 @@
     "logicalCanvasRow": 0,
     "columns": 18,
     "rowCommand": "03/0B",
-    "rowArguments": "FF,6,0,17,RGB*18",
+    "rowArguments": "FF,6,0,18,RGB*19 (keyboard row encoding; transport column 0 black, columns 1..18 carry logical VC columns 0..17)",
+    "firmwareColumnMapping": "The KI8110 row-6 path copies transport columns 0..17 into the separate VC buffer and drops column 18. OpenBlade follows the Synapse manifest addresses (row 6 columns 1..18) unchanged.",
     "vendorFramePath": "Selected Product 711 engine iterates every eventData.numRow, sends each row, then selects the CustomFrame effect.",
     "vendorSource": "https://apps.razer.com/synapse/lighting-engine/static/js/3061.282c86b2.chunk.js",
     "knownCombinedSelector": "03/0A [5,0] activates LED5 and LED38.",
-    "stateReadback": "Enabled boolean plus newly identified 0F/82 [0,38,...] built-in effect parameters; custom-frame RGB pixels remain unreadable. The complete restoration contract is under review.",
-    "openBladeMutationAdmitted": false,
-    "blocker": "The durable renderer baseline/restoration path confirms keyboard effect parameters and brightness but does not capture or restore the prior LED38 frame/effect.",
+    "activationCommand": "0F/02",
+    "activationArguments": [0, 38, 8],
+    "activationOrder": "After keyboard [0,5,8] and its readback confirmation. [0,0,8] is not used because it also switches the LED4 logo.",
+    "selectionReadback": "0F/82 [0,38,0,0,0,0,0,0,0,0,0,0] returns [0,38,8,...]",
+    "stateReadback": "Enabled boolean plus 0F/82 [0,38,...] built-in effect parameters; custom-frame RGB pixels remain unreadable.",
+    "restoreContract": {
+      "firmware": "KI8110 MCU 1.07.00",
+      "hexImageSha256Prefix": "18392850",
+      "decodedImageSha256": "C0EBB3B40D3AC763A50D7301457D73F1A84A3E2C951730454D848B13CA3F3578",
+      "class0fHandler": "0x9400",
+      "getTable": "0x9524",
+      "setTable": "0x96B2",
+      "stateRecords": "0x100015D6 + 0x40*i; VC record index 2",
+      "restorableModes": [
+        "Off [0,38,0]",
+        "Static [0,38,1,0,0,1,R,G,B]",
+        "Breathing [0,38,2,0,0,count,colors] with count 0 (random), 1 or 2",
+        "Wave [0,38,4,direction] with direction 1 or 2 and speed 40"
+      ],
+      "unrestorableModes": "Spectrum (3), Starlight (7), Custom (8), mode 9 and inconsistent parameters: the VC stays unchanged and frames remain keyboard-only.",
+      "brightness": "No VC setter changes the record brightness; the baseline brightness is 100.",
+      "restorePrecondition": "Restore only when a fresh 0F/82 region-38 read reports mode 8. Any other mode means another controller changed the VC; OpenBlade leaves it unchanged.",
+      "sameModeShortcuts": "The Off, same-count Breathing and same-direction Wave shortcuts compare against the current mode. Restores start from mode 8, so they always write.",
+      "journal": "Durable baseline schema 2 stores the VC baseline; schema 1 remains the keyboard-only format."
+    },
+    "participatingEffects": ["Spectrum", "Fire", "Wheel", "Starlight", "Tidal", "Ripple", "AmbientAwareness", "AudioMeter"],
+    "excludedEffects": "Reactive and imported or per-key sequences restore the VC before their first frame.",
+    "openBladeMutationAdmitted": true,
     "physicalValidation": "Pending"
   },
   "rgbAddressingReview": {
@@ -154,14 +180,14 @@
       }
     },
     "touchpadRgbAddressing": "Not established; reviewed MCU commands address only the touchpad status indicator boolean.",
-    "independentPixelReadbackAndRestore": "Not established for Vapor Chamber or touchpad RGB.",
+    "independentPixelReadbackAndRestore": "Not established for Vapor Chamber or touchpad RGB pixels. The VC built-in effect baseline is read and restored through 0F/82 and 0F/02 region 38.",
     "firmwareReadbackReview": {
       "source": "2026-11-13-modern-mcu-lighting.json, RZ09-0529 KI8110 section",
       "imageSha256": "C0EBB3B40D3AC763A50D7301457D73F1A84A3E2C951730454D848B13CA3F3578",
       "class03Handler": "Offset 0x896C, reviewed as brightness/logo fields; independent brightness GET is command 03/83.",
       "class0fHandler": "Offset 0x9400, effect GET returns built-in effect parameters for LED5, LED4 and LED38 (decimal38/hex26). Instructions94F2-9516 explicitly accept region38 and choose its record through65B4. Custom-frame mode does not return RGB pixels.",
       "frameSetter": "Command 03/0B is a write-only row transport; no matching exact-model frame getter is established.",
-      "conclusion": "The expanded exact-image review establishes a region38 effect getter previously missed by the module/callsite review. It also identifies 0F/03 LED38 row0 column0..17 writes into the separate VC buffer. Mutation remains disabled pending complete setter/renderer side-effect and restoration review; neither a touchpad RGB map nor pixel readback is established."
+      "conclusion": "The expanded exact-image review establishes a region38 effect getter previously missed by the module/callsite review. It also identifies 0F/03 LED38 row0 column0..17 writes into the separate VC buffer. The KI8110 1.07.00 setter and state-record review (vaporChamberFrame.restoreContract) admits host VC frames with a restorable built-in baseline; neither a touchpad RGB map nor pixel readback is established."
     },
     "independentUpstreamReview": {
       "project": "OpenRazer",
@@ -209,7 +235,8 @@
     "openBladeRgbMutationAdmitted": false
   },
   "restoration": {
-    "baseline": "Complete independently read Off/Static/Breathing/Wave parameters plus exact raw bank0 brightness, durably saved before possible writes.",
+    "baseline": "Complete independently read Off/Static/Breathing/Wave parameters plus exact raw bank0 brightness, durably saved before possible writes. A restorable VC effect read through 0F/82 region 38 is saved in the same journal entry.",
+    "vaporChamber": "Restore through 0F/02 region 38 with full parameter readback only while the VC reads mode 8; otherwise leave it unchanged. An unrestorable VC baseline keeps frames keyboard-only.",
     "unknownBaseline": "External custom pixels and hidden Spectrum policy remain unknown; block host entry without a complete baseline.",
     "method": "Fresh current bank0 payload, MCU-aware typed built-in setter and full parameter readback; exact raw brightness restored through bank0 with independent readback.",
     "failure": "Stop on ambiguous submission or confirmation; retain durable original baseline. No startup replay or alternative sequence."

@@ -22,7 +22,7 @@ control, driver installation or firmware updater execution was performed.
 | RZ09-0423, RZ09-0427 | Brightness; keyboard Off, Static, Breathing, Spectrum and Wave; logo controls | DI780 and PI480 MCUs and exact vendor definitions |
 | RZ09-0510 | Brightness; keyboard Off, Breathing and Wave; logo controls | SO6100 MCU and exact vendor definitions |
 | RZ09-0509 | Brightness; keyboard Off, Static, Breathing and Wave; logo controls | KI8100 MCU and exact vendor definitions |
-| RZ09-0529 | All twelve Synapse-listed keyboard effects; per-key editor and animation import; Off, brightness and logo; VC enabled and touchpad-status indicator | KI8110 MCU, exact product711 engine and regional maps; [expansion review](rz09-0529-lighting-expansion.md) |
+| RZ09-0529 | All twelve Synapse-listed keyboard effects, with host-rendered effects also on the VC; per-key editor and animation import; Off, brightness and logo; VC enabled and touchpad-status indicator | KI8110 MCU, exact product711 engine and regional maps; [expansion review](rz09-0529-lighting-expansion.md) |
 
 All fifteen expanded profiles support independent brightness and available logo
 editing, even when the keyboard effect is unknown. All seven MCU-backed additions support random, single-color and dual-color
@@ -30,7 +30,7 @@ Breathing, and both Wave directions. Static is unavailable on RZ09-0421 and
 RZ09-0510 because their renderers can select a hidden palette instead of the
 stored RGB returned by the getter. Native Spectrum remains observed-only on the three
 newer images because its separate policy/palette is not reported. RZ09-0529
-provides Spectrum through its keyboard-only software renderer instead.
+provides Spectrum through its software renderer instead.
 
 The [complete per-model ledger](../evidence/source-reviewed-blades/2026-11-13-complete-lighting-pass.json)
 records the admitted controls and remaining gaps. The

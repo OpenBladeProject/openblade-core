@@ -1,8 +1,8 @@
 # RZ09-0529 lighting expansion review
 
 Reviewed 2026-11-13 against exact Synapse product 711 (`1532:02C7`). This
-follow-up documents per-key keyboard animation imports, keyboard-only OpenBlade
-rendering, the vendor's full-frame Vapor Chamber path, and independent VC/status
+follow-up documents per-key keyboard animation imports, OpenBlade host rendering
+on the keyboard and Vapor Chamber (VC, LED38), and independent VC/status
 controls. Physical validation is pending. Other source-reviewed controls are listed in
 [lighting coverage](source-reviewed-lighting.md).
 
@@ -28,33 +28,35 @@ keyboard; row 6 belongs to LED38, the auxiliary VC region. The selected Synapse
 frame engine sends every transport row in its frame and then selects its custom
 frame effect. Its selected engine method loops through `eventData.numRow`; the
 manifest declares a 7-by-19 device transport and 8-by-18 logical effect canvas.
-The VC transport row follows logical effect row 0. OpenBlade currently sends
-only keyboard rows 0–5 with 61-byte `03/0B` payloads. `FF` is the payload frame
-ID, not the report transaction ID. The reviewed `03/0A [5,0]` selector activates
-both LED5 and LED38, while `0F/02 [0,5,8]` selects keyboard-only custom-frame
-mode.
-
-OpenBlade does not yet send the VC row. The `03/80 [0,38,0]` getter confirms
-only the enabled boolean. Expanded MCU disassembly identifies a separate
-`0F/82 [0,38,...]` getter for built-in VC effect parameters, but not custom pixels.
-The current durable renderer baseline and restore path confirm keyboard MCU effect
-parameters and brightness only. Until an exact-model restoration path covers
-VC state, sending row 6 and selecting both regions could leave an unknown VC
-effect behind, so VC frame mutation remains unavailable. Physical validation
-is also pending.
+The VC transport row follows logical effect row 0. Keyboard rows 0–5 and VC
+row 6 use 61-byte `03/0B` payloads. `FF` is the payload frame ID, not the
+report transaction ID. The reviewed `03/0A [5,0]` selector activates both LED5
+and LED38; OpenBlade does not use it. `0F/02 [0,5,8]` selects keyboard-only
+custom-frame mode and `0F/02 [0,38,8]` selects VC-only custom-frame mode.
+`0F/02 [0,0,8]` also switches the LED4 logo and is not used.
 
 OpenBlade renders Spectrum, Fire, Wheel, Starlight, Tidal, Reactive and Ripple
-in software on the keyboard. Ambient Awareness and Audio Meter use the same
-keyboard-only transport for current-user samples. Off, Static, Breathing and
-Wave retain the typed MCU implementation. Imported sequences use the same
-keyboard-only renderer with the exact RZ09-0529 114-slot sequence layout; they
-do not include auxiliary row 6.
+in software. Ambient Awareness and Audio Meter use the same transport for
+current-user samples. Off, Static, Breathing and Wave retain the typed MCU
+implementation. Imported sequences use the exact RZ09-0529 114-slot keyboard
+layout.
 
-Each submitted frame uses six acknowledged keyboard rows. The HID session
-waits 30 ms before reading each acknowledgment, so the row exchanges take at
-least 180 ms before accounting for HID I/O. For imported sequences, the animation
-scheduler waits at least 50 ms after each update and samples the sequence against
-elapsed time, so short timeline frames can be skipped.
+Spectrum, Fire, Wheel, Starlight, Tidal, Ripple, Ambient Awareness and Audio
+Meter also drive the VC when its baseline is restorable (see
+[Vapor Chamber frames](#vapor-chamber-frames)). Grid effects evaluate the VC at
+renderer row 0, columns 0–17. Ripple uses logical key-position coordinates
+(column, 0). Starlight gives each VC LED its own slot after the 114 keyboard
+slots. Ambient Awareness and Audio Meter use their uniform sample color. Reactive
+and imported or edited per-key sequences stay keyboard-only. Switching to one of
+them while OpenBlade owns the VC first restores the VC.
+
+Each submitted frame uses six acknowledged keyboard rows, or seven with the VC
+row. The HID session waits 30 ms before reading each acknowledgment, so the row
+exchanges take at least 180 ms (210 ms with the VC) before accounting for HID
+I/O. For imported sequences, the animation scheduler waits at least 50 ms after
+each update and samples the sequence against elapsed time, so short timeline
+frames can be skipped. Key-triggered duplicate suppression compares the keyboard
+and VC rows together.
 
 The input map keeps 94 ordinary keyboard scan bindings common to all nine
 layouts. It excludes vendor `dkm` identifiers, auxiliary-row inputs and regional
@@ -79,15 +81,62 @@ journal on restart marks the renderer faulted; it never authorizes startup repla
 Partial submission or uncertain confirmation stops writes and retains recovery
 provenance. See the [command and descriptor proof](../evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json).
 
+## Vapor Chamber frames
+
+The VC restore contract comes from the exact KI8110 MCU 1.07.00 image (Intel
+HEX SHA-256 prefix `18392850`, decoded image SHA-256
+`C0EBB3B40D3AC763A50D7301457D73F1A84A3E2C951730454D848B13CA3F3578`). The class
+`0F` handler at `0x9400` dispatches the get table at `0x9524` and the set table
+at `0x96B2`. Effect records are `0x40` bytes at `0x100015D6 + 0x40 * i`; index 0
+is LED5, 1 is LED4 and 2 is LED38. Selector 0 is the volatile active bank.
+
+`0F/82 [0,38,0,…]` returns `[0,38,mode,…]` with the same layout as the keyboard
+getter. `0F/02 [0,38,mode,…]` uses the keyboard setter layouts:
+
+| Mode | Setter arguments | Readback | Restorable |
+| --- | --- | --- | --- |
+| Off | `[0,38,0]` | Mode only | Yes |
+| Static | `[0,38,1,0,0,1,R,G,B]` | `[5]=1`, `[6..8]` RGB | Yes |
+| Breathing | `[0,38,2,0,0,count,colors…]`, count 1 or 2, else random | `[5]` count and colors | Yes, including random |
+| Wave | `[0,38,4,direction]`, 1 left, 2 right | `[3]` direction, `[4]` speed 40 | Yes |
+| Spectrum (3), Starlight (7), mode 9, custom (8) | — | Incomplete | No |
+
+Spectrum depends on a hidden gate and writes a hidden flag. Starlight stores a
+parameter the getter does not return. Mode 9 stores parameters outside the
+record, and custom pixels cannot be read. No VC setter changes record
+brightness, so the saved VC destination always uses brightness 100. From custom
+mode 8, every restorable setter clears the custom-ownership flag and skips its
+same-mode shortcuts, so restoration needs no bridge effect.
+
+Before host entry, OpenBlade reads the VC alongside the keyboard baseline. A
+restorable record joins the journal, which then uses schema 2; keyboard-only
+journals keep schema 1 byte for byte. An unrestorable record keeps frames
+keyboard-only, with no VC write. A reply that does not echo region 38 is a read
+failure and stops host entry before any write.
+
+When the VC participates, every frame also sends transport row 6. Its column 0
+is black and columns 1–18 carry logical VC columns 0–17, matching the manifest.
+The MCU copies row 6 columns 0–17 into the VC buffer and drops column 18. First
+activation sends `[0,5,8]`, confirms keyboard mode 8, then sends `[0,38,8]` and
+confirms VC mode 8. Any failure after a possible submission is indeterminate:
+writes stop without replay and the journal is kept.
+
+Every restore point (renderer release, shutdown, a built-in effect choice and
+switching to a keyboard-only effect) reads the VC first. OpenBlade restores the
+saved VC effect, with confirming readback, only while the VC still reads mode 8.
+Any other mode means another controller changed it, so OpenBlade leaves it
+unchanged. A confirmed low-power boundary keeps the journal without restoring,
+as for the keyboard.
+
 ## Touchpad status and Vapor Chamber lighting
 
 The selected product configuration enables `hasVCLed` and the
 `functionLighting.config.touchpadStatus` indicator. These are separate features.
 The selected vendor UI calls the former **Vapor Chamber Lighting**. Synapse's
-frame engine includes LED38 in full-matrix frames, but OpenBlade does not yet
-admit those writes because it cannot restore the prior VC effect. This does not
-independently identify the owner-reported Under-glass label or establish a
-Touchpad RGB zone.
+frame engine includes LED38 in full-matrix frames. OpenBlade includes it in host
+frames only with a restorable VC baseline, as described in
+[Vapor Chamber frames](#vapor-chamber-frames). This does not independently
+identify the owner-reported Under-glass label or establish a Touchpad RGB zone.
 
 The touchpad indicator follows Windows touchpad enabled status. Its typed
 notification is `00/59`, with `[0, 1, enabled]`. Targeted MCU review establishes
@@ -103,7 +152,8 @@ The selected Blade2 backend provides these VC operations:
 | Set sleep policy | `03/21` | `[0, 38, mode, duration]` |
 
 The exact Product 711 Blade2 module also provides VC brightness through region
-38. It does not expose a VC per-LED RGB read or restore operation. The generic
+38. It does not expose a VC per-LED RGB read or restore operation; the MCU's
+region-38 effect record supplies OpenBlade's VC restoration instead. The generic
 Product 711 middleware base contains LED RGB helper methods, but the selected
 Blade2 module and checked Product 711 UI bundles do not use them for the VC or
 touchpad. Those generic methods do not establish this model's LED addresses,
@@ -128,16 +178,16 @@ an EC image whose reset and startup instructions identify Andes NDS32 code.
 Its inspected USB descriptor identifies a separate `1532:F003` EC endpoint;
 that endpoint rejects class `0F`, so the keyboard MCU's VC commands cannot be
 transferred to it. The bounded EC review did not identify a touchpad RGB path.
-VC and touchpad RGB remain unavailable until exact addressing and
-independent restoration semantics are established.
+Touchpad RGB remains unavailable until exact addressing and independent
+restoration semantics are established.
 
 The selected enabled-setting task passes selector 1 while the getter uses 0.
 Targeted MCU review of `8A08–8A5C` and `8AD8–8ADC` establishes that both access
 the same inverted global flag at `0x1000017A`, without persistence or a bank
 copy. OpenBlade reads the baseline and independently confirms each changed
-enabled value. OpenBlade's current VC controls offer enabled state, not sleep,
-RGB or effect selection. Synapse's full-frame behavior is separate from this
-independent enabled flag.
+enabled value. OpenBlade's VC controls offer enabled state and host-frame
+colors, not sleep policy or built-in effect selection. Host frames are separate
+from this independent enabled flag.
 
 The Fn+V task supplies an enabled-only operation: `setVcLedState(1, enabled)`.
 There is no source-backed requirement to also write the sleep policy for that
