@@ -134,6 +134,11 @@ fn main() {
         let capabilities = if role == "service" && has("installed-service-candidate") {
             if metadata {
                 "private-service-custody-v1,service-metadata-only-v1"
+            } else if has("service-profiles-v1") {
+                // No package reader admits this capability yet, so an image
+                // that serves updateProfiles cannot be packaged as the
+                // temporary-charge composition it extends.
+                "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1,service-profiles-v1"
             } else if has("service-temporary-charge-v1") {
                 "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1"
             } else if has("service-battery-policy-v1") {

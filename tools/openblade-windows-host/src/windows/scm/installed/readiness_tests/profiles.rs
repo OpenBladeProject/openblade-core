@@ -619,3 +619,25 @@ async fn installed_update_profiles_answers_the_managed_vector_corpus() {
         "{stored} stored, {rejected} rejected, {closed} closed"
     );
 }
+
+#[test]
+fn this_composition_declares_profile_serving_in_its_compiled_identity() {
+    // `native_package` and the managed package reader both refuse this
+    // capability, so the image cannot be packaged as the temporary-charge
+    // composition it extends until a packaging stage admits it.
+    let identity = std::str::from_utf8(&crate::NATIVE_ARTIFACT_IDENTITY).unwrap();
+    let fields: Vec<&str> = identity.split('\n').collect();
+    assert_eq!(
+        (fields[0], fields[2]),
+        ("OpenBlade.NativeArtifact.v2", "service")
+    );
+    assert!(
+        fields[5]
+            .split(',')
+            .any(|feature| feature == "service-profiles-v1")
+    );
+    assert_eq!(
+        fields[8],
+        "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1,service-profiles-v1"
+    );
+}

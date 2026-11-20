@@ -687,6 +687,24 @@ fn shared_v2_capabilities_preserve_combined_agent_features_and_reject_forgery() 
 }
 
 #[test]
+fn a_profile_serving_service_is_not_admitted_as_any_composition() {
+    // The features and the capability build.rs gives a build with
+    // service-profiles-v1. Packaging has not admitted that capability, so the
+    // reader must refuse the image rather than take it for the
+    // temporary-charge composition it extends.
+    let features = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-profiles-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
+    let temporary = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1";
+    let profiles = format!("{temporary},service-profiles-v1");
+    assert!(capabilities(2, "service", features, &profiles).is_err());
+    assert!(capabilities(1, "service", features, &profiles).is_err());
+    // The refusal is the profile capability: without it this is the admitted
+    // temporary-charge composition, which cannot claim it either.
+    let extended = features.replace("service-profiles-v1,", "");
+    assert!(capabilities(2, "service", &extended, temporary).is_ok());
+    assert!(capabilities(2, "service", &extended, &profiles).is_err());
+}
+
+#[test]
 fn legacy_artifact_record_and_compiled_identity_reencode_byte_exact() {
     let v = vector();
     for role in ["service", "agent"] {

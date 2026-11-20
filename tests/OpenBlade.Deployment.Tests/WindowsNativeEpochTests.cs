@@ -28,7 +28,7 @@ public sealed class WindowsNativeEpochTests
         return markers.Length == 0 ? "none" : string.Join(',', markers);
     }
 
-    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1, int schema = 1, string? capabilities = null, bool mailbox = false, string? sourceRevision = null, bool mutation = false, bool fan = false, bool battery = false, bool temporary = false, bool agentBattery = false, bool agentDisplay = false, bool agentWrite = false, bool agentHdr = false, bool agentRefresh = false, bool agentColor = false, string[]? imports = null, bool agentProfile = false, bool agentGpu = false)
+    internal static byte[] Image(string role, char nonce = 'b', byte marker = 1, int schema = 1, string? capabilities = null, bool mailbox = false, string? sourceRevision = null, bool mutation = false, bool fan = false, bool battery = false, bool temporary = false, bool agentBattery = false, bool agentDisplay = false, bool agentWrite = false, bool agentHdr = false, bool agentRefresh = false, bool agentColor = false, string[]? imports = null, bool agentProfile = false, bool agentGpu = false, string? features = null)
     {
         byte[] bytes = new byte[imports is null ? 0xA00 : 0xC00];
         void U16(int n, ushort v) => BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(n), v);
@@ -42,6 +42,7 @@ public sealed class WindowsNativeEpochTests
                 : "installed-service-candidate,native-agent-entry-compile-check,service-metadata-only-v1,startup-custody-v1",
             "rustc 1.99.1 (inert test data)", "debug"];
         if (temporary) { fields[4] = "controller-admission-compile-check,firmware-performance-compile-check,installed-service-candidate,native-agent-entry-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1"; }
+        if (features is not null) { fields[4] = features; }
         if (agentGpu) { fields[4] = "agent-gpu-v1," + fields[4]; }
         if (agentRefresh) { fields[4] = "agent-display-refresh-write-v1," + fields[4]; }
         if (agentDisplay) { fields[4] = "agent-display-query-v1," + fields[4]; }
@@ -464,6 +465,29 @@ public sealed class WindowsNativeEpochTests
         Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect([.. Agent(schema: 1)], "agent", source));
         Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
             [.. Image("service", schema: 2, capabilities: expected, agentBattery: agentBattery, agentDisplay: agentDisplay, agentGpu: true)], "service", source));
+    }
+
+    [Fact]
+    public void ProfileServingServiceIsNotAdmittedAsAnyComposition()
+    {
+        // The features and the capability build.rs gives a build with
+        // service-profiles-v1. Packaging has not admitted that capability, so
+        // the image is refused rather than taken for the temporary-charge
+        // composition it extends.
+        const string features = "controller-admission-compile-check,firmware-performance-compile-check,hid-identity-compile-check,installed-service-candidate,lifecycle-evidence-compile-check,service-battery-policy-v1,service-fan-mutation-v2,service-hardware-compile-check,service-mailbox-observation-v1,service-profiles-v1,service-temporary-charge-v1,service-thermal-mutation-v1,startup-custody-v1";
+        const string temporary = "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1";
+        const string profiles = temporary + ",service-profiles-v1";
+        var refused = Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, features: features, capabilities: profiles)], "service", new string('a', 40)));
+        Assert.Equal("Native capabilities differ from the authenticated role composition.", refused.Message);
+        // The refusal is the profile capability: without it this is the admitted
+        // temporary-charge composition, which cannot claim it either.
+        string extended = features.Replace("service-profiles-v1,", "", StringComparison.Ordinal);
+        var admitted = NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, features: extended, capabilities: temporary)], "service", new string('a', 40));
+        Assert.Equal("service-temporary-charge-v1", admitted.StartupPolicy);
+        Assert.Throws<InvalidDataException>(() => NativeArtifact.Inspect(
+            [.. Image("service", schema: 2, features: extended, capabilities: profiles)], "service", new string('a', 40)));
     }
 
     [Fact]
