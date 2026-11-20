@@ -19,19 +19,27 @@ request that leaves saved manual fan intent goes directly to the saved
 Balanced or Performance preset, as managed does: that preset's 0D/02 pair
 carries the Automatic fan mode, so the stored performance intent is applied in
 the same pair. Without such a preset, or with a saved GPU clock effect, it keeps
-the observed selector. Owned Stop cleanup writes only under the owner's selector.
-Automatic under the destination selector, with no OpenBlade owner, is a true
-no-op and never establishes ownership. When fresh 0D/82 readback already shows
-Automatic fans, under the owner's selector or another one, an explicit
-Automatic request or owned Stop closes the owner with progress 51 and no
-setter. Managed does the same: `ExactFanControlOwnership.ObserveTopology`
-clears ownership on confirmed Automatic, and shutdown cleanup writes nothing
-when fans already use firmware Automatic. The old selector is never written
-back first, and the reply names the selector firmware reports. Ambiguous or
-unclassified readback, manual fans under another selector, and a changed power
-class keep the owner outstanding. Custom, Silent, battery and delegated states
-store intent with a zero-setter pending software outcome until their separate
-native recipes exist. No fallback profile or background control loop is added.
+the observed selector. Owned Stop cleanup writes only under the owner's selector
+and power class. An explicit Automatic request whose fans are already Automatic
+is a true no-op under the destination selector, or under a selector or power
+class with no native recipe, and never establishes ownership.
+
+When a fresh, agreeing 0D/82 pair shows Automatic fans under a stock selector
+(Balanced, Performance, Silent, Battery Saver or Battery Balanced), an explicit
+Automatic request or owned Stop closes an OpenBlade owner with progress 51 and
+no setter. This holds under any selector and on any classified power source,
+including after an adapter change and on battery. Managed does the same:
+`ExactFanControlOwnership.ObserveTopology` clears ownership on confirmed
+Automatic, and shutdown cleanup writes nothing when fans already use firmware
+Automatic. The 51 row repeats the owner's record, including the source it
+recorded. The old selector is never written back first. The reply names the
+selector firmware reports and any saved preset left unapplied. Disagreeing or
+unclassified readback, Custom, HyperBoost, unclassified power, and manual fans
+under another selector or power class keep the owner outstanding.
+
+Other requests in Custom, Silent, battery and delegated states store intent
+with a zero-setter pending software outcome until their separate native
+recipes exist. No fallback profile or background control loop is added.
 
 Every setter has fresh exact-device, caller/session, controller, lifecycle and
 decoded 07/8C source admission. State-channel, state-to-target and target-channel
