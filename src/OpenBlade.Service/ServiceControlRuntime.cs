@@ -7198,6 +7198,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             resumeStateValidation.RecordConfirmedWrite(DeviceSubsystem.Performance);
             resumeStateValidation.RecordConfirmedWrite(DeviceSubsystem.Fans);
             bool maximumFansNotRestored = false;
+            string? maximumFansRestoreFailure = null;
             if (!enabled && restoreUserIntent && transitionIntent is not null)
             {
                 HyperBoostIntentRestorationResult restoration =
@@ -7226,6 +7227,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 maximumFansNotRestored = failureObservation is not null
                     && restoration.PerformanceRefusedBeforeSubmission
                     && OnlyMaximumFansRemainsUnrestored(transitionIntent, failureObservation);
+                maximumFansRestoreFailure = maximumFansNotRestored ? restoration.Message : null;
                 if (failureObservation is not null && !maximumFansNotRestored)
                 {
                     HyperBoostRestoreRetryDisposition retryDisposition =
@@ -7375,6 +7377,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     : "HyperBoost is active through the admitted pad-less path; no cooling pad is required for this owned session."
                 : disableJournalCleared && maximumFansNotRestored
                     ? "HyperBoost is off. Maximum Fans was not turned back on; reapply Custom to restore it."
+                // Never claim a full restore here: report the existing restore
+                // failure and journal-safety text, which keep writes blocked.
+                : maximumFansNotRestored
+                    ? $"HyperBoost is off, but the prior performance or fan intent was not fully restored. {maximumFansRestoreFailure} Its ownership journal could not be made safe, so control writes remain blocked. Maximum Fans was not turned back on."
                 : disableJournalCleared
                     ? $"HyperBoost is off and the prior {PerformanceLabel(transitionIntent?.Performance ?? requestedBaseMode)} performance and fan intent is restored."
                     : $"HyperBoost is off and the prior {PerformanceLabel(transitionIntent?.Performance ?? requestedBaseMode)} performance and fan intent is restored, but its ownership journal could not be cleared; control writes remain blocked.";
