@@ -63,8 +63,37 @@ intersection covers every firmware selector branch, including its default.
 Region-specific keys remain unbound without a confirmed applicable map.
 
 Exact `00/86` returns the same edition byte at payload byte 0 and an adjacent
-stored byte at payload byte 1. The second byte remains opaque. The common
-intersection does not require this query.
+stored byte at payload byte 1. The second byte remains opaque.
+
+## Runtime edition selection
+
+The service reads exact `00/86` once per RZ09-0530 device session, before it
+publishes the port, with two zero data bytes and a two-byte reply. The read is
+read-only and never sends the `00/06` setter. Every byte value selects a map
+through the firmware's own switch, so payload byte 0 alone chooses the table:
+
+| Firmware edition byte | Map | Bound slots | Windows scan-code bindings |
+| --- | --- | --- | --- |
+| 0, 1, 5, 8, 9, 11 | `0xAFE3` | 79 | 76 |
+| 12 | `0xB63B` | 83 | 80 |
+| 2, 3, 4, 6, 7, 10 and every other byte value | `0xB313` | 80 | 77 |
+
+The selected map drives Reactive and Ripple key input, Ripple positions and
+Keyboard .chroma imports. It adds Enter, Space, Alt and the HID `31`, `32`,
+`64` and International1-5 keys where that map binds them. Usages `81`, `D2`
+and `F0` remain without a Windows binding.
+
+The common 74-slot intersection remains the fallback whenever the read fails,
+times out, returns a malformed reply, or leaves the session unhealthy. An
+unhealthy session is retired and reopened once without repeating the read.
+The edition is metadata only: its failure never disables other controls.
+Service status reports the raw edition byte as `blade14KeyboardEdition`
+(service IPC protocol 85); the Session Agent and tray map it locally.
+
+Stored sequences use the union of the three maps, 87 slots, so a profile stays
+valid for every edition. The nine slots that are holes in all three maps and
+the container tail must stay black. Installed-MCU attestation and physical
+validation of regional output remain outstanding.
 
 ## Link to custom RGB commands
 

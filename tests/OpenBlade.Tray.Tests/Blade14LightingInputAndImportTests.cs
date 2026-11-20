@@ -78,6 +78,68 @@ public sealed class Blade14LightingInputAndImportTests
         Assert.All(colors.Skip(96), color => Assert.Equal(default, color));
     }
 
+    [Theory]
+    [InlineData(0x1C, 0, 0, 63)] // Enter.
+    [InlineData(0x1C, 0, 12, 46)]
+    [InlineData(0x1C, 0, 2, 46)]
+    [InlineData(0x39, 0, 2, 87)] // Space.
+    [InlineData(0x38, 2, 0, 89)] // Right Alt.
+    [InlineData(0x38, 2, 12, -1)]
+    [InlineData(0x7D, 0, 12, 30)] // International3.
+    [InlineData(0x7D, 0, 0, -1)]
+    [InlineData(0x56, 0, 2, 66)] // Non-US backslash.
+    [InlineData(0x56, 0, 255, 66)] // The firmware default family uses the same table.
+    [InlineData(0x56, 0, 0, -1)]
+    public void RawKeyboardRegionalKeysUseOnlyTheConfirmedEditionTable(int scan, int flags, byte edition, int slot)
+    {
+        bool mapped = ReactiveRawKeyboardInput.TryCreatePulses(RazerBladeInputDeviceKind.Rz09_0530,
+            null, edition, (ushort)scan, (ushort)flags, out ReactiveKeyPulse primary, out ReactiveKeyPulse? secondary);
+        Assert.Equal(slot >= 0, mapped);
+        if (mapped)
+        {
+            Assert.Equal(slot, primary.MatrixSlot);
+            Assert.Null(secondary);
+        }
+        Assert.False(ReactiveRawKeyboardInput.TryCreatePulses(RazerBladeInputDeviceKind.Rz09_0530,
+            null, null, (ushort)scan, (ushort)flags, out _, out _));
+        // Another model's region value never selects a Blade 14 table.
+        Assert.False(ReactiveRawKeyboardInput.TryCreatePulses(RazerBladeInputDeviceKind.Rz09_0530,
+            edition, null, (ushort)scan, (ushort)flags, out _, out _));
+    }
+
+    [Theory]
+    [InlineData(12, 3 * 22 + 14, 46)] // Enter.
+    [InlineData(12, 3 * 22 + 13, 61)] // Non-US # on the home row.
+    [InlineData(12, 0 * 22 + 21, 30)] // International3.
+    [InlineData(12, 5 * 22 + 4, 85)] // International5.
+    [InlineData(0, 3 * 22 + 14, 63)]
+    [InlineData(0, 2 * 22 + 14, 47)] // HID 0x31 above Enter.
+    [InlineData(0, 5 * 22 + 11, 89)] // Right Alt.
+    [InlineData(2, 4 * 22 + 2, 66)] // Non-US backslash.
+    [InlineData(2, 5 * 22 + 7, 87)] // Space.
+    public void ChromaProjectsRegionalNamedKeysThroughTheConfirmedEditionTable(byte edition, int cell, int slot)
+    {
+        var canvas = new uint[6 * 22];
+        canvas[3 * 22 + 2] = 0x000000FF; // A: red, common to every table.
+        canvas[cell] = 0x00030201;
+        byte[] file = CreateChroma(canvas);
+
+        KeyboardLightingPreset imported = RazerChromaFileAdapter.Deserialize(file, null,
+            KeyboardLightingLayoutIds.Rz09_0530, null, edition);
+
+        var settings = Assert.IsType<SequenceLightingParameters>(imported.Lighting.Parameters);
+        IReadOnlyList<RgbColor> colors = Assert.Single(KeyboardLightingSequenceCodec.Decode(
+            settings.TimelineBase64, settings.LayoutId).Frames).Slots;
+        Assert.Equal(new RgbColor(255, 0, 0), colors[50]);
+        Assert.Equal(new RgbColor(1, 2, 3), colors[slot]);
+        Assert.Equal(2, colors.Count(color => color != default));
+        Assert.DoesNotContain("colored source cells", imported.ImportWarning);
+
+        KeyboardLightingPreset common = RazerChromaFileAdapter.Deserialize(file, null,
+            KeyboardLightingLayoutIds.Rz09_0530, null, null);
+        Assert.Contains("1 colored source cells", common.ImportWarning);
+    }
+
     private static byte[] CreateChroma(uint[] colors)
     {
         byte[] bytes = new byte[10 + 4 + colors.Length * 4];

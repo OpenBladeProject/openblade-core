@@ -4,9 +4,10 @@ using System.Text.Json;
 namespace OpenBlade.Contracts;
 
 /// <summary>
-/// Common HID-to-RGB bindings across the exact RZ09-0530 keyboard MCU's three
-/// descriptor tables. Regional disagreements remain unavailable until their
-/// runtime selection can be established independently.
+/// HID-to-RGB bindings from the exact RZ09-0530 keyboard MCU's three descriptor
+/// tables. An edition byte read through that MCU's own <c>00/86</c> getter selects
+/// one table, using the same selector groups as firmware function <c>0x5D24</c>.
+/// Without a confirmed edition, only bindings common to all three tables apply.
 /// </summary>
 public static class Blade14KeyboardLightingLayout
 {
@@ -18,8 +19,10 @@ public static class Blade14KeyboardLightingLayout
         "9356BC177DFBCB458E4C9E465D93AD7E32AF94A61ADBDF7C7E2A7319A7D3E623";
     private const string ApprovedImageSha256 =
         "1ac3f05486d0bca5fbbb1a4a52b874943ad491a00afd298b8d6b857a49d98f11";
-    private static readonly HashSet<int> KeySlots = [];
-    private static readonly Dictionary<(ushort ScanCode, bool Extended), byte> InputSlots = [];
+    private static readonly RegionalMap Common;
+    private static readonly RegionalMap[] Maps;
+    private static readonly RegionalMap DefaultMap;
+    private static readonly HashSet<int> AddressableKeySlots = [];
 
     static Blade14KeyboardLightingLayout()
     {
@@ -47,7 +50,10 @@ public static class Blade14KeyboardLightingLayout
         {
             throw new InvalidOperationException("The Blade 14 lighting layout identity is invalid.");
         }
-        var variants = new List<Dictionary<byte, byte>>();
+        var usagesByMap = new List<Dictionary<byte, byte>>();
+        var maps = new List<RegionalMap>();
+        var selectors = new HashSet<byte>();
+        RegionalMap? defaultMap = null;
         foreach (JsonElement variant in root.GetProperty("variants").EnumerateArray())
         {
             JsonElement usages = variant.GetProperty("hidUsages");
@@ -55,48 +61,99 @@ public static class Blade14KeyboardLightingLayout
             {
                 throw new InvalidOperationException("The Blade 14 lighting layout dimensions are invalid.");
             }
-            var map = new Dictionary<byte, byte>();
+            var usageSlots = new Dictionary<byte, byte>();
             for (int slot = 0; slot < SlotCount; slot++)
             {
                 byte usage = usages[slot].GetByte();
-                if (usage != 0 && !map.TryAdd(usage, (byte)slot))
+                if (usage != 0 && !usageSlots.TryAdd(usage, (byte)slot))
                 {
                     throw new InvalidOperationException("The Blade 14 lighting layout duplicates a HID usage.");
                 }
             }
-            variants.Add(map);
+            var editions = new HashSet<byte>();
+            foreach (JsonElement selector in variant.GetProperty("selectorValues").EnumerateArray())
+            {
+                byte edition = selector.GetByte();
+                if (!editions.Add(edition) || !selectors.Add(edition))
+                {
+                    throw new InvalidOperationException("The Blade 14 lighting layout selectors overlap.");
+                }
+            }
+            var map = new RegionalMap(variant.GetProperty("id").GetString()!, editions, usageSlots);
+            if (variant.GetProperty("otherByteValues").GetBoolean())
+            {
+                if (defaultMap is not null)
+                {
+                    throw new InvalidOperationException("The Blade 14 lighting layout has two default maps.");
+                }
+                defaultMap = map;
+            }
+            usagesByMap.Add(usageSlots);
+            maps.Add(map);
         }
-        if (variants.Count != 3)
+        if (maps.Count != 3 || defaultMap is null
+            || maps.Select(map => map.Id).Distinct(StringComparer.Ordinal).Count() != maps.Count)
         {
             throw new InvalidOperationException("The Blade 14 lighting layout variants are incomplete.");
         }
-        foreach ((byte usage, byte slot) in variants[0])
+        var common = new Dictionary<byte, byte>();
+        foreach ((byte usage, byte slot) in usagesByMap[0])
         {
-            if (!variants.All(map => map.TryGetValue(usage, out byte other) && other == slot))
+            if (usagesByMap.All(map => map.TryGetValue(usage, out byte other) && other == slot))
             {
-                continue;
-            }
-            KeySlots.Add(slot);
-            if (TryGetWindowsScanCode(usage, out ushort scanCode, out bool extended))
-            {
-                InputSlots.Add((scanCode, extended), slot);
+                common.Add(usage, slot);
             }
         }
-        if (KeySlots.Count != 74 || InputSlots.Count != 71)
+        Common = new RegionalMap("common", [], common);
+        Maps = [.. maps];
+        DefaultMap = defaultMap;
+        foreach (RegionalMap map in Maps)
+        {
+            AddressableKeySlots.UnionWith(map.KeySlots);
+        }
+        if (Common.KeySlots.Count != 74 || Common.InputSlots.Count != 71
+            || AddressableKeySlots.Count != 87
+            || !Maps.All(map => Common.KeySlots.IsSubsetOf(map.KeySlots)))
         {
             throw new InvalidOperationException("The Blade 14 common lighting bindings are incomplete.");
         }
     }
 
-    public static bool TryMapScanCode(ushort scanCode, bool extended, out byte slot) =>
-        InputSlots.TryGetValue((scanCode, extended), out slot);
+    /// <summary>
+    /// Returns the reviewed descriptor table that firmware selects for an
+    /// edition byte. Every byte value has one, including the default family.
+    /// </summary>
+    public static string GetMapId(byte edition) => Select(edition).Id;
 
-    public static bool IsKeySlot(int slot) => KeySlots.Contains(slot);
+    public static bool TryMapScanCode(ushort scanCode, bool extended, out byte slot) =>
+        TryMapScanCode(null, scanCode, extended, out slot);
+
+    /// <summary>A null edition uses only bindings common to all three tables.</summary>
+    public static bool TryMapScanCode(byte? edition, ushort scanCode, bool extended, out byte slot) =>
+        Resolve(edition).InputSlots.TryGetValue((scanCode, extended), out slot);
+
+    /// <summary>Whether the selected table, or the common map for null, binds a HID usage.</summary>
+    public static bool BindsUsage(byte? edition, byte usage) => Resolve(edition).Usages.Contains(usage);
+
+    public static bool IsKeySlot(int slot) => IsKeySlot(null, slot);
+
+    /// <summary>A null edition uses only slots common to all three tables.</summary>
+    public static bool IsKeySlot(byte? edition, int slot) => Resolve(edition).KeySlots.Contains(slot);
+
+    /// <summary>
+    /// Slots bound by any of the three reviewed tables. Stored sequences use this
+    /// address mask so that they remain valid for every edition.
+    /// </summary>
+    public static bool IsAddressableKeySlot(int slot) => AddressableKeySlots.Contains(slot);
 
     /// <summary>Returns RGB address-grid coordinates, not physical key geometry.</summary>
-    public static bool TryGetKeyPosition(int slot, out double x, out double y)
+    public static bool TryGetKeyPosition(int slot, out double x, out double y) =>
+        TryGetKeyPosition(null, slot, out x, out y);
+
+    /// <summary>Returns RGB address-grid coordinates, not physical key geometry.</summary>
+    public static bool TryGetKeyPosition(byte? edition, int slot, out double x, out double y)
     {
-        if (IsKeySlot(slot))
+        if (IsKeySlot(edition, slot))
         {
             x = slot % Columns;
             y = slot / Columns;
@@ -106,6 +163,11 @@ public static class Blade14KeyboardLightingLayout
         y = 0;
         return false;
     }
+
+    private static RegionalMap Resolve(byte? edition) => edition is { } value ? Select(value) : Common;
+
+    private static RegionalMap Select(byte edition) =>
+        Maps.FirstOrDefault(map => map.Editions.Contains(edition)) ?? DefaultMap;
 
     private static bool TryGetWindowsScanCode(byte usage, out ushort scanCode, out bool extended)
     {
@@ -143,6 +205,7 @@ public static class Blade14KeyboardLightingLayout
             0x2F => (0x1A, false),
             0x30 => (0x1B, false),
             0x31 => (0x2B, false),
+            0x32 => (0x2B, false), // Non-US # and ~; no table also binds 0x31.
             0x33 => (0x27, false),
             0x34 => (0x28, false),
             0x35 => (0x29, false),
@@ -157,14 +220,51 @@ public static class Blade14KeyboardLightingLayout
             0x50 => (0x4B, true),
             0x51 => (0x50, true),
             0x52 => (0x48, true),
+            0x64 => (0x56, false), // Non-US \ and |.
+            0x87 => (0x73, false), // International1 through International5.
+            0x88 => (0x70, false),
+            0x89 => (0x7D, false),
+            0x8A => (0x79, false),
+            0x8B => (0x7B, false),
             0xE0 => (0x1D, false),
             0xE1 => (0x2A, false),
+            0xE2 => (0x38, false),
             0xE3 => (0x5B, true),
             0xE5 => (0x36, false),
+            0xE6 => (0x38, true),
             _ => (0, false),
         };
         scanCode = checked((ushort)makeCode);
         extended = e0;
         return scanCode != 0;
+    }
+
+    private sealed class RegionalMap
+    {
+        internal RegionalMap(string id, HashSet<byte> editions, Dictionary<byte, byte> usageSlots)
+        {
+            Id = id;
+            Editions = editions;
+            foreach ((byte usage, byte slot) in usageSlots)
+            {
+                Usages.Add(usage);
+                KeySlots.Add(slot);
+                if (TryGetWindowsScanCode(usage, out ushort scanCode, out bool extended)
+                    && !InputSlots.TryAdd((scanCode, extended), slot))
+                {
+                    throw new InvalidOperationException("The Blade 14 lighting layout duplicates a scan code.");
+                }
+            }
+        }
+
+        internal string Id { get; }
+
+        internal HashSet<byte> Editions { get; }
+
+        internal HashSet<byte> Usages { get; } = [];
+
+        internal HashSet<int> KeySlots { get; } = [];
+
+        internal Dictionary<(ushort ScanCode, bool Extended), byte> InputSlots { get; } = [];
     }
 }

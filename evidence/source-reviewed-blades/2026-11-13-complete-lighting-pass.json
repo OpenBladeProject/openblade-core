@@ -830,7 +830,7 @@
       "readback": "MCU-proved four-byte Wave query, independent brightness and logo queries. Frame RGB remains unknown.",
       "restoration": "Retains a complete built-in baseline and exact raw brightness. Partial frames pause further writes without replay.",
       "gaps": [
-        "Selecting full per-region maps would be an optional product expansion; the current common intersection is intentional and already has a complete source basis.",
+        "The 00/86 edition selects the full regional map at runtime; the common intersection remains the fallback. Installed-MCU attestation and regional physical output remain unvalidated.",
         "No RGB frame readback is established."
       ],
       "brightness": true,

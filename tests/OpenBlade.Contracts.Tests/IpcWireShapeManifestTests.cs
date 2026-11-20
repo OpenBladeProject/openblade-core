@@ -28,6 +28,7 @@ public sealed class IpcWireShapeManifestTests
         Assert.Contains("property supportsBreathingColorSelection:System.Boolean member", manifest, StringComparison.Ordinal);
         Assert.Contains("property supportsWaveDirectionSelection:System.Boolean member", manifest, StringComparison.Ordinal);
         Assert.Contains("property blade18KeyboardLayoutId:System.Byte? member", manifest, StringComparison.Ordinal);
+        Assert.Contains("property blade14KeyboardEdition:System.Byte? member", manifest, StringComparison.Ordinal);
         Assert.Contains("property hostManagedLaptopControls:System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> member", manifest, StringComparison.Ordinal);
         Assert.Contains("property fanSpeedRangesByPerformancePreset:System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset,OpenBlade.Contracts.FanSpeedRange> member", manifest, StringComparison.Ordinal);
         Assert.Contains("derived setFanStopMode=OpenBlade.Contracts.SetFanStopModeRequest", manifest, StringComparison.Ordinal);
@@ -90,6 +91,8 @@ public sealed class IpcWireShapeManifestTests
             83 => "C29F478A17D06E6EDD3F69F1A6EAC11FAAEA3B89186B043F7ABB95761C294EC6",
             // Protocol 84 combines RZ09-0529 lighting zones with current-main contracts.
             84 => "7698A5B8C9679FCDE35762221E1DBD8A31E92086588511320CB0D5D87473D306",
+            // Protocol 85 adds the RZ09-0530 keyboard-MCU edition for regional key maps.
+            85 => "9EF933EB1FD88FD7D2645E41DEA1C83B5BE88ED1FE4E3E249DAB007EC1C50753",
             _ => null,
         };
 

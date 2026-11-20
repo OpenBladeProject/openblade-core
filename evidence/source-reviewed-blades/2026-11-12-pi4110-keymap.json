@@ -551,7 +551,7 @@
     "responseByte0": "Same stored edition byte used by selector; RAM0x10001870",
     "responseByte1": "Adjacent stored byte RAM0x10001871; not assigned a new semantic meaning here",
     "proof": "0x7030 loads settings pointer;0x7034 loads+4;0x7036 stores local;0x71b0/71b2 returns payload0;0x71b4/71b6 returns+5 at payload1",
-    "runtimeUse": "Optional; the common intersection requires no getter or guessed edition"
+    "runtimeUse": "Read once per exact RZ09-0530 device session before port publication; payload0 selects the map through selectorGroups; failure, timeout, malformed reply or unhealthy session keeps the common intersection; the 00/06 setter is never sent"
   },
   "usbInputDescriptors": [
     {

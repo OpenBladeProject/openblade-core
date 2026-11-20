@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Contracts.Tests;
@@ -99,6 +100,59 @@ public sealed partial class IpcMessageCodecTests
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
         {
             LightingEffects = new HashSet<LightingEffect> { LightingEffect.Sequence },
+        };
+        ServiceStatusSnapshot status = CreateStatus() with { Capabilities = capabilities };
+        using MemoryStream stream = new();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => IpcMessageCodec.WriteServerFrameAsync(stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status), CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(12)]
+    [InlineData(255)]
+    public async Task CurrentProtocol_RoundTripsBlade14KeyboardEdition(byte edition)
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0530,
+            Blade14KeyboardEdition = edition,
+        };
+        ServiceStatusSnapshot status = CreateStatus() with { Capabilities = capabilities };
+        using MemoryStream stream = new();
+        await IpcMessageCodec.WriteServerFrameAsync(stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status), CancellationToken.None);
+        JsonObject json = FramedJsonObject(stream);
+        Assert.Equal(edition, json["status"]!["capabilities"]!["blade14KeyboardEdition"]!.GetValue<byte>());
+
+        ServiceStatusSnapshot decoded = await RoundTripStatusAsync(status);
+
+        Assert.Equal(edition, decoded.Capabilities!.Blade14KeyboardEdition);
+    }
+
+    [Fact]
+    public async Task CurrentProtocol_OmittedBlade14KeyboardEditionDecodesAsCommonMapFallback()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0530,
+        };
+        ServiceStatusSnapshot decoded = await RoundTripStatusAsync(CreateStatus() with { Capabilities = capabilities });
+
+        Assert.Null(decoded.Capabilities!.Blade14KeyboardEdition);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(KeyboardLightingLayoutIds.Rz09_0484)]
+    [InlineData(KeyboardLightingLayoutIds.Rz09_0529)]
+    public async Task CurrentProtocol_RejectsBlade14KeyboardEditionWithoutItsLayout(string? layoutId)
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            KeyboardLightingLayoutId = layoutId,
+            Blade14KeyboardEdition = 12,
         };
         ServiceStatusSnapshot status = CreateStatus() with { Capabilities = capabilities };
         using MemoryStream stream = new();

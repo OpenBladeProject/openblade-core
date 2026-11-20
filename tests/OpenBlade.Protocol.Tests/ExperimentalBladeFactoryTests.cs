@@ -142,6 +142,50 @@ public sealed partial class ExperimentalBladeFactoryTests
     }
 
     [Fact]
+    public async Task Blade14Factory_ReadsEditionOnceBeforePublishingThePort()
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02C5);
+        var native = new Native(1) { ProductId = model.ProductId };
+        var io = new Io();
+        var factory = new ExperimentalBladeFactory(model, new Identity(model.ProductName), native,
+            new Guard(), io, () => PowerSource.ExternalUnknown);
+
+        HidSessionResult<IProductionBatteryPort> opened = await factory.OpenAsync(CancellationToken.None);
+
+        Assert.Null(opened.Failure);
+        await using ExperimentalBladePort port = Assert.IsType<ExperimentalBladePort>(opened.Value);
+        Assert.Equal(new byte[] { 0x82, 0x82, 0x86 }, io.Commands);
+        Assert.All(io.Commands, command => Assert.True(command >= 0x80));
+        Assert.Equal((byte)12, port.Capabilities.Blade14KeyboardEdition);
+        Assert.Null(port.Capabilities.Blade18KeyboardLayoutId);
+        Assert.Equal(1, native.BoundCount);
+    }
+
+    [Fact]
+    public async Task Blade14EditionStatusFailure_ReopensOnceWithoutRepeatingTheReadOrGuessing()
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02C5);
+        var native = new Native(1) { ProductId = model.ProductId };
+        var io = new Io
+        {
+            Events = native.Events,
+            StatusFailure = (0x00, 0x86),
+            StatusFailuresRemaining = 1,
+        };
+        var factory = new ExperimentalBladeFactory(model, new Identity(model.ProductName), native,
+            new Guard(), io, () => PowerSource.ExternalUnknown);
+
+        HidSessionResult<IProductionBatteryPort> opened = await factory.OpenAsync(CancellationToken.None);
+
+        Assert.Null(opened.Failure);
+        await using ExperimentalBladePort port = Assert.IsType<ExperimentalBladePort>(opened.Value);
+        Assert.Equal(new byte[] { 0x82, 0x82, 0x86, 0x82, 0x82 }, io.Commands);
+        Assert.Equal(2, native.BoundCount);
+        Assert.Null(port.Capabilities.Blade14KeyboardEdition);
+        Assert.Equal(KeyboardLightingLayoutIds.Rz09_0530, port.Capabilities.KeyboardLightingLayoutId);
+    }
+
+    [Fact]
     public async Task Blade18LayoutStatusFailure_CancellationAtRetirementStopsBeforeReopen()
     {
         using var cancellation = new CancellationTokenSource();
@@ -241,7 +285,8 @@ public sealed partial class ExperimentalBladeFactoryTests
 
         Assert.Null(result.Failure);
         await using IProductionLightingPort port = Assert.IsType<ExperimentalBladePort>(result.Value);
-        Assert.Equal(new byte[] { 0x82, 0x82 }, io.Commands);
+        // Only RZ09-0530 adds its exact read-only edition getter after the two admission reads.
+        Assert.Equal(productId == 0x02C5 ? new byte[] { 0x82, 0x82, 0x86 } : new byte[] { 0x82, 0x82 }, io.Commands);
         Assert.Equal(1, native.BoundCount);
         Assert.True(port.Capabilities.SupportsKeyboardBrightness);
         Assert.NotEmpty(port.Capabilities.LightingEffects);

@@ -1169,7 +1169,7 @@ public sealed partial class ExperimentalBladeLightingTests
             byte[] response;
             if (command.ClassId == 0 && command.CommandId == 0x86)
             {
-                Assert.Equal(new byte[] { 0, 0, 0 }, args);
+                Assert.True(args is [0, 0, 0] or [0, 0]);
                 CancelEditionRead?.Cancel();
                 if (FailEditionRead || CancelEditionRead is not null)
                 {

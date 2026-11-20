@@ -41,8 +41,9 @@ choices; they do not reproduce another model's recorded output. Animation runs
 at up to 20 frames per second, skips missed frames, and drains before replacement.
 Native random Breathing and Rightward Wave retain their existing commands.
 Blade 14 (2025) also offers Reactive, Ripple and imported Keyboard .chroma
-sequences through its [firmware-derived common key map](blade14-keymap.md).
-Regional bindings that disagree across the three firmware maps remain unavailable.
+sequences through its [firmware-derived key map](blade14-keymap.md). The
+keyboard MCU's edition selects one of three firmware maps; without a confirmed
+edition, only bindings common to all three maps apply.
 Blade 14 (2023) and Blade 16 (2023) retain Reactive/Ripple as observed-only.
 
 Frames retain the complete confirmed built-in baseline and exact raw brightness

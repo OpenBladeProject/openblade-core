@@ -21,7 +21,15 @@ public static partial class RazerChromaFileAdapter
         Deserialize(content, presetName, keyboardLayoutId, null);
 
     public static KeyboardLightingPreset Deserialize(
-        ReadOnlySpan<byte> content, string? presetName, string? keyboardLayoutId, byte? blade18Region)
+        ReadOnlySpan<byte> content, string? presetName, string? keyboardLayoutId, byte? blade18Region) =>
+        Deserialize(content, presetName, keyboardLayoutId, blade18Region, null);
+
+    /// <param name="blade14Edition">
+    /// Confirmed RZ09-0530 keyboard-MCU edition; null projects only the common map.
+    /// </param>
+    public static KeyboardLightingPreset Deserialize(
+        ReadOnlySpan<byte> content, string? presetName, string? keyboardLayoutId, byte? blade18Region,
+        byte? blade14Edition)
     {
         if (content.Length == 0)
         {
@@ -142,7 +150,7 @@ public static partial class RazerChromaFileAdapter
         }
 
         IReadOnlyDictionary<int, byte> map = CreateLogicalKeyProjection(
-            keyboardLayoutId, blade18Region);
+            keyboardLayoutId, blade18Region, blade14Edition);
         var unmappedColoredCells = new HashSet<int>();
         var projected = new List<KeyboardLightingSequenceFrame>(sourceFrames.Count);
         foreach (SourceFrame source in sourceFrames)
@@ -196,11 +204,11 @@ public static partial class RazerChromaFileAdapter
     }
 
     private static IReadOnlyDictionary<int, byte> CreateLogicalKeyProjection(
-        string? layoutId, byte? blade18Region)
+        string? layoutId, byte? blade18Region, byte? blade14Edition)
     {
         if (layoutId == KeyboardLightingLayoutIds.Rz09_0530)
         {
-            return CreateBlade14Projection();
+            return CreateBlade14Projection(blade14Edition);
         }
         if (layoutId == KeyboardLightingLayoutIds.Rz09_0484)
         {
@@ -369,16 +377,17 @@ public static partial class RazerChromaFileAdapter
         return map;
     }
 
-    private static IReadOnlyDictionary<int, byte> CreateBlade14Projection()
+    private static IReadOnlyDictionary<int, byte> CreateBlade14Projection(byte? edition)
     {
         // Generic RZKEY named-key canvas from HTML5ChromaSDK
         // ec61d7a1924a6facc0e136a84a00b8b87f7ce4ba/ChromaSDKImpl.js.
-        // Resolve identities through the MCU-backed common map; never project
-        // by another laptop's physical positions or copy its RGB slot numbers.
+        // Resolve identities through the MCU table for the confirmed edition, or
+        // the common map without one; never project by another laptop's
+        // physical positions or copy its RGB slot numbers.
         var map = new Dictionary<int, byte>();
         void Add(int row, int column, ushort scan, bool extended = false)
         {
-            if (Blade14KeyboardLightingLayout.TryMapScanCode(scan, extended, out byte slot))
+            if (Blade14KeyboardLightingLayout.TryMapScanCode(edition, scan, extended, out byte slot))
             {
                 map.Add(row * 22 + column, slot);
             }
@@ -417,6 +426,26 @@ public static partial class RazerChromaFileAdapter
         Add(5, 15, 0x4B, true);
         Add(5, 16, 0x50, true);
         Add(5, 17, 0x4D, true);
+        // Regional keys resolve only through a confirmed edition's table.
+        Add(3, 14, 0x1C);
+        // HID Non-US # (0x32) sits on the home row; ANSI backslash (0x31) above it.
+        if (Blade14KeyboardLightingLayout.BindsUsage(edition, 0x32))
+        {
+            Add(3, 13, 0x2B);
+        }
+        else
+        {
+            Add(2, 14, 0x2B);
+        }
+        Add(4, 2, 0x56);
+        Add(5, 3, 0x38);
+        Add(5, 7, 0x39);
+        Add(5, 11, 0x38, true);
+        Add(0, 21, 0x7D);
+        Add(4, 13, 0x73);
+        Add(5, 4, 0x7B);
+        Add(5, 9, 0x79);
+        Add(5, 10, 0x70);
         return map;
     }
 

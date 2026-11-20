@@ -247,7 +247,9 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             pending = port;
             try
             {
+                // Each exact-model read returns immediately for every other product.
                 await port.InitializeBlade18KeyboardLayoutAsync(cancellationToken).ConfigureAwait(false);
+                await port.InitializeBlade14KeyboardEditionAsync(cancellationToken).ConfigureAwait(false);
                 if (!port.IsRecoverySessionHealthy)
                 {
                     throw new IOException("The optional keyboard-layout read left an unhealthy session.");
