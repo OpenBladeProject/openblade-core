@@ -95,7 +95,7 @@ if (Test-Path -LiteralPath $output) {
 [IO.Directory]::CreateDirectory($output) | Out-Null
 . (Join-Path $repository 'build\BuildIdentity.ps1')
 [xml]$props = Get-Content -LiteralPath (Join-Path $repository 'Directory.Build.props')
-$identity = Resolve-OpenBladeBuildIdentity -BaseVersion ([string]$props.Project.PropertyGroup.OpenBladeVersion) `
+$identity = Resolve-OpenBladeBuildIdentity -BaseVersion ([string]$props.SelectSingleNode('/Project/PropertyGroup/OpenBladeVersion').InnerText) `
     -Channel LocalDev -LocalDevVersion $LocalDevVersion -SourceRevision $source
 $serviceVersion = "$LocalDevVersion+voltage-validation.$($source.Substring(0, 8))"
 if ($serviceVersion.Length -gt 64) { throw 'Service version exceeds the IPC limit.' }

@@ -43,7 +43,7 @@ New-Item -ItemType Directory -Path $staging,$buildIntermediate,$extractIntermedi
     tests/OpenBlade.Service.Tests/WindowsReplay/v1/configuration-profile.json
 [IO.Compression.ZipFile]::ExtractToDirectory($archive, $source)
 [xml]$props = Get-Content -Raw -LiteralPath (Join-Path $source 'Directory.Build.props')
-$version = "$($props.Project.PropertyGroup.OpenBladeVersion).0"
+$version = "$($props.SelectSingleNode('/Project/PropertyGroup/OpenBladeVersion').InnerText).0"
 $service = 'openblade-windows-service-candidate'
 $agent = 'openblade-windows-agent-candidate'
 $target = 'x86_64-pc-windows-msvc'

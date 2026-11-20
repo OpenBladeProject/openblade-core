@@ -18,7 +18,7 @@ function Assert-Rejected {
 
 $prerequisite = Get-OpenBladeDotNetRuntimePrerequisite
 [xml]$properties = Get-Content -LiteralPath (Join-Path $repository 'Directory.Build.props')
-if ($prerequisite.Version -ne [string]$properties.Project.PropertyGroup.OpenBladeMinimumDotNetRuntimeVersion) {
+if ($prerequisite.Version -ne [string]$properties.SelectSingleNode('/Project/PropertyGroup/OpenBladeMinimumDotNetRuntimeVersion').InnerText) {
     throw 'The runtime download must match the installed apps minimum version.'
 }
 $runtimeUri = [Uri]$prerequisite.Uri

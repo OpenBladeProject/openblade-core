@@ -403,7 +403,7 @@ function Assert-FrameworkDependentProductPayload {
     param([Parameter(Mandatory)][string]$Payload)
 
     [xml]$properties = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\Directory.Build.props')
-    $minimumVersion = [string]$properties.Project.PropertyGroup.OpenBladeMinimumDotNetRuntimeVersion
+    $minimumVersion = [string]$properties.SelectSingleNode('/Project/PropertyGroup/OpenBladeMinimumDotNetRuntimeVersion').InnerText
     foreach ($application in @('OpenBlade.Service', 'OpenBlade.FanStop.Guardian', 'OpenBlade.CpuTemperature', 'OpenBlade.SessionAgent', 'OpenBlade.Tray')) {
         $configurationPath = Join-Path $Payload ($application + '.runtimeconfig.json')
         $configuration = Get-Content -LiteralPath $configurationPath -Raw | ConvertFrom-Json
