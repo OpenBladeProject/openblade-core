@@ -124,7 +124,7 @@ jobs:
   workspace:
     name: Rust (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -316,6 +316,27 @@ jobs:
           $manifest = '../tools/openblade-windows-host/Cargo.toml'
           foreach ($features in @('agent-gpu-v1', 'agent-gpu-v1,agent-battery-report-v1,agent-display-profile-apply-v1')) {
             cargo check --locked --manifest-path $manifest --target ${{ matrix.target }} --bin openblade-windows-agent-candidate --features $features
+          }
+
+      # The default Clippy steps skip the code each candidate feature lane adds.
+      - name: Lint the candidate feature lanes
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $manifest = '../tools/openblade-windows-host/Cargo.toml'
+          foreach ($lane in @(
+              @('openblade-windows-service-candidate', 'service-thermal-mutation-v1'),
+              @('openblade-windows-service-candidate', 'service-fan-mutation-v2'),
+              @('openblade-windows-service-candidate', 'service-battery-policy-v1'),
+              @('openblade-windows-service-candidate', 'service-temporary-charge-v1'),
+              @('openblade-windows-agent-candidate', 'agent-display-brightness-write-v1'),
+              @('openblade-windows-agent-candidate', 'agent-display-profile-apply-v1'),
+              @('openblade-windows-agent-candidate', 'agent-battery-report-v1'),
+              @('openblade-windows-agent-candidate', 'agent-gpu-v1'),
+              @('openblade-windows-agent-candidate', 'agent-display-query-v1,agent-gpu-v1'),
+              @('openblade-windows-agent-candidate', 'agent-gpu-v1,agent-battery-report-v1,agent-display-profile-apply-v1'))) {
+            cargo clippy --locked --manifest-path $manifest --target ${{ matrix.target }} --bin $lane[0] --features $lane[1] --all-targets -- -D warnings
           }
 
       - name: Verify the Windows configuration writer against the managed store
