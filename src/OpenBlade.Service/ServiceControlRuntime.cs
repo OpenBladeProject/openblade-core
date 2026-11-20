@@ -2322,18 +2322,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             clearsExplicitOverride: value is null,
             thermalComponentResolver: desired =>
             {
-                ServiceStatusSnapshot status = GetStatus();
-                DeviceCapabilities capabilities = status.Capabilities
-                    ?? DeviceCapabilities.Unavailable();
-                return ControlCoordinator.RequiresAutomaticFansForCustom(
-                        desired,
-                        capabilities)
-                    || ControlCoordinator.RequiresPresetRangedFanRestore(
-                        desired,
-                        capabilities,
-                        status.ConfirmedState)
-                    ? [DeviceSubsystem.Fans, DeviceSubsystem.Performance]
-                    : [DeviceSubsystem.Performance];
+                return ControlCoordinator.PerformanceTransitionComponents(
+                    desired,
+                    GetStatus().Capabilities ?? DeviceCapabilities.Unavailable());
             });
 
     public async Task<ControlOperationResult> CyclePerformanceShortcutAsync(
@@ -14748,7 +14739,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                                          stageDesired,
                                          stillControlsSession,
                                          options.AdditionalWriteBlockReason,
-                                         options.AuthorityPurpose));
+                                         options.AuthorityPurpose),
+                                declaredThermalComponents: options.Components);
                             return await apply(
                                     coordinator,
                                     desired,

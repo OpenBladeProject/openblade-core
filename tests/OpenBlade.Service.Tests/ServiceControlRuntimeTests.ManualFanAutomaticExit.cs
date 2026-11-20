@@ -188,4 +188,131 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(intent, status.ConfirmedState.Performance);
         Assert.Equal(FanMode.Automatic, status.DesiredState.Fans.Value);
     }
+
+    private async Task<(TestContext Context, List<string> Writes)> EnterRz090484FixedFansAsync(
+        DeviceCapabilities? cachedCapabilities = null)
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
+        DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(model, enabled: true);
+        TestContext context = CreateContext(providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities));
+        context.Device.Capabilities = cachedCapabilities ?? capabilities;
+        context.Device.FanTargetsAvailable = true;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(default);
+        ControlOperationResult entered = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(FanMode.Fixed, OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3700, ManualFanCurve.Default), default);
+        Assert.True(entered.Status == ControlOperationStatus.Applied, entered.Message);
+        Assert.Equal(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+        context.Device.Capabilities = capabilities;
+        var writes = new List<string>();
+        context.Device.AfterSetter = subsystem => writes.Add(subsystem == DeviceSubsystem.Fans
+            ? $"Fans:{context.Device.FanWrites[^1]}"
+            : $"Performance:{context.Device.PerformanceWrites[^1]}");
+        return (context, writes);
+    }
+
+    // The runtime's cached state still reports Balanced with manual fans when
+    // the request resolves its components, but the device now reports Custom
+    // with Automatic fans. The coordinator's fresh read requires the
+    // preset-ranged fan restore after the preset write; that Fans step must
+    // already be declared and run through the admitted step runner.
+    [Fact]
+    public async Task PerformanceRequest_FanStateChangedAfterResolutionRunsDeclaredFanRestore()
+    {
+        (TestContext context, List<string> writes) = await EnterRz090484FixedFansAsync();
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Custom,
+            CustomPerformance = CustomPerformanceSettings.Default,
+            Fans = FanMode.Automatic,
+        };
+        Assert.Equal(FanMode.Fixed, context.Runtime.GetStatus().ConfirmedState!.Fans);
+        int singleAttemptFanWrites = context.Device.SingleAttemptFanControlCalls;
+
+        ControlOperationResult result = await context.Runtime.SetPerformanceConfigurationOverrideAsync(
+            new PerformanceOverride(PerformancePreset.Silent, OverrideLifetime.UntilPowerSourceChange), default);
+
+        Assert.True(result.Status == ControlOperationStatus.Applied, result.Message);
+        Assert.Equal(["Performance:Silent", "Fans:Fixed"], writes);
+        Assert.Equal(singleAttemptFanWrites + 1, context.Device.SingleAttemptFanControlCalls);
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PerformancePreset.Silent, status.ConfirmedState!.Performance);
+        Assert.Equal(FanMode.Fixed, status.ConfirmedState.Fans);
+    }
+
+    // Defense in depth: when a capability change after resolution makes the
+    // fresh decision need a component the request did not declare, the
+    // coordinator stops before its first write instead of throwing later.
+    [Fact]
+    public async Task PerformanceRequest_UndeclaredFanRestoreStopsBeforeAnyWrite()
+    {
+        ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == 0x02A0);
+        DeviceCapabilities cached = ExperimentalBladePort.CreateCapabilities(model, enabled: true) with
+        {
+            FanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>(),
+        };
+        (TestContext context, List<string> writes) = await EnterRz090484FixedFansAsync(cached);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Custom,
+            CustomPerformance = CustomPerformanceSettings.Default,
+            Fans = FanMode.Automatic,
+        };
+
+        ControlOperationResult result = await context.Runtime.SetPerformanceConfigurationOverrideAsync(
+            new PerformanceOverride(PerformancePreset.Silent, OverrideLifetime.UntilPowerSourceChange), default);
+
+        Assert.NotEqual(ControlOperationStatus.Applied, result.Status);
+        Assert.Contains("try again", result.Message, StringComparison.Ordinal);
+        Assert.Empty(writes);
+        Assert.Equal(PerformancePreset.Custom, context.Device.ConfirmedState.Performance);
+        Assert.Equal(FanMode.Automatic, context.Device.ConfirmedState.Fans);
+    }
+
+    [Fact]
+    public async Task FanRequest_UndeclaredPerformanceStepStopsBeforeAnyWrite()
+    {
+        TestContext context = CreateWritableContext();
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            ReportsPerformanceWithManualFans = true,
+            SupportsDirectManualFanTransitions = true,
+        };
+        context.Device.FanTargetsAvailable = true;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        await context.Runtime.ObserveAsync(default);
+        ControlOperationResult entered = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(FanMode.Fixed, OverrideLifetime.UntilPowerSourceChange),
+            new FanControlSettings(FanMode.Fixed, 3700, ManualFanCurve.Default), default);
+        Assert.True(entered.Status == ControlOperationStatus.Applied, entered.Message);
+        // The request declares Fans alone from the cached capabilities; the
+        // fresh read now describes a shared selector that needs Performance.
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            ReportsPerformanceWithManualFans = false,
+        };
+        var writes = new List<DeviceSubsystem>();
+        context.Device.AfterSetter = writes.Add;
+
+        ControlOperationResult automatic = await context.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(FanMode.Automatic, OverrideLifetime.UntilPowerSourceChange),
+            FanControlSettings.Default, default);
+
+        Assert.NotEqual(ControlOperationStatus.Applied, automatic.Status);
+        Assert.Contains("try again", automatic.Message, StringComparison.Ordinal);
+        Assert.Empty(writes);
+        Assert.Equal(FanMode.Fixed, context.Device.ConfirmedState.Fans);
+    }
 }
