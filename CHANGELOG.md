@@ -7,7 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- Use the keyboard's own firmware edition on Blade 14 (2025, RZ09-0530) to select its regional key map, so Reactive, Ripple and Keyboard .chroma imports include regional Enter, Space, Alt, ISO and Japanese keys. If the edition cannot be read, only keys shared by every regional map respond. ([#TBD](https://github.com/OpenBladeProject/openblade-core/pull/TBD))
+- Use the keyboard's own firmware edition on Blade 14 (2025, RZ09-0530) to select its regional key map, so Reactive, Ripple and Keyboard .chroma imports include regional Enter, Space, Alt, ISO and Japanese keys. If the edition cannot be read, only keys shared by every regional map respond. ([#984](https://github.com/OpenBladeProject/openblade-core/pull/984))
 
 ### Changed
 
