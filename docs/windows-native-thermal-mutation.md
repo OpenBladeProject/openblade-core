@@ -82,16 +82,12 @@ and consumed typed thermal fields are validated before saving. This does not
 implement all managed profile payload semantics or migrate/modify the aggregate;
 schema 24 still needs managed migration first.
 
-The installed Service does not serve `updateProfiles`. The request gets
-managed's typed `IPC request operation is unsupported.` failure (see
+Without `service-profiles-v1` the installed Service does not serve
+`updateProfiles`. The request gets managed's typed
+`IPC request operation is unsupported.` failure (see
 [unserved operations](windows-rust-development-service.md#managed-operations-the-installed-service-does-not-serve)),
-and the aggregate stays exactly as managed wrote it. Managed's save path
-normalises and validates the complete `ProfileSet` against the device
-capabilities, migrates an older committed aggregate, and rewrites all three
-documents with its own serializer and recovery record. Native has no typed
-`ProfileSet` model, no canonical System.Text.Json writer for it and no
-installed aggregate transaction, so it cannot yet reproduce those bytes or
-that recovery safely.
+and the aggregate stays exactly as managed wrote it. With that feature the
+request is served as described under [Saved profiles](#saved-profiles-service-profiles-v1).
 
 As in managed, every supported AC preset and the observed AC fan selector are
 admitted on both classified external classes: an adapter at or above its
@@ -370,6 +366,109 @@ native keeps Blocked:
 
 Mapping any of these needs native error classification first; a status change
 alone would misreport the other class.
+
+## Saved profiles (`service-profiles-v1`)
+
+`service-profiles-v1` adds `updateProfiles` on top of the temporary-charge
+lane. It is a candidate source composition like the others: not selected,
+installed or published, and exact RZ09-0581 only. Saving profiles writes no
+mailbox command.
+
+The typed model, codec and validator are in
+`rust/crates/openblade-domain/src/profile_set` (feature `profile-set`):
+
+- `model`, `decode`, `encode`, `json`: the whole managed `ProfileSet`, bound
+  and written by `System.Text.Json` rules. The reader keeps member order and
+  number text; the writer reproduces `ProfileStore`'s bytes (CRLF indentation,
+  default encoder escapes, shortest round-trip doubles, the computed
+  `isConfigured` and `effectiveOffsets` members).
+- `normalize`, `lighting`, `resolve`: `ProfileStore` normalisation, lighting
+  well-formedness and application-override resolution.
+- `policy`, `validate`: `ProfileValidationPolicy` and `ProfileSetValidator`
+  with managed's messages. The policy is built from
+  `Capabilities::rz09_0581()`, the capabilities the managed battery and
+  lighting factories admit for that model.
+- `document`, `preferences`: `ProfileStore.ReadDocument` and
+  `BatteryConfigurationStore.ReadPreferences` for schemas 1 to 27, and the
+  documents managed writes back.
+- `update`: the intent half of `UpdateProfilesAsync`.
+
+A request is handled in managed's order:
+
+1. The frame is decoded and admitted as `IpcMessageCodec` does. A frame it
+   refuses closes the connection with no reply.
+2. The set is normalised, validated as stored intent, and its changed thermal
+   intent is validated against the device. A refusal is managed's `Failed`
+   reply, `The requested intent was rejected: <message>`, and nothing is
+   written.
+3. The aggregate is replaced in one recorded transaction: an exact backup of
+   each document, then `battery-configuration.commit.json.recovery-required`,
+   then profile, preferences and marker, then a readback. The preferences
+   bytes are carried over unless reading them migrated something. The record
+   and backups are removed only after the readback.
+4. The reply is `Stored` with
+   `Profiles stored without automatic hardware application.`, and the saved
+   set is published to the owner at the next status revision.
+
+If a replacement fails, the exact prior documents are restored and the reply
+is `Failed`. If the restore or the record removal cannot be confirmed, the
+record and backups stay, the store is quarantined, and later requests are
+`Blocked`. As in managed, nothing recovers a recorded transaction after a
+crash; the record preserves the aggregate until it is reviewed.
+
+Managed is the reference, and three shared vector files under
+`tools/openblade-windows-host/tests/data` pin it:
+`profile-set-vectors-v27.json` (decode, validation, reply and stored bytes),
+`profile-aggregate-vectors.json` (loading and migrating schemas 1 to 27) and
+`profile-capabilities-rz09-0581.json`. The managed tests
+`ServiceControlRuntimeTests.NativeProfile*` record every expectation from the
+IPC codec, the production validator, `UpdateProfilesAsync` and
+`BatteryConfigurationStore.LoadAsync`, and verify the same files the Rust
+tests read. To regenerate after a managed change, set
+`OPENBLADE_REGENERATE_NATIVE_PROFILE_VECTORS` to that data directory and run
+those tests.
+
+Differences from managed:
+
+- No hardware application. Managed restores lighting it had suppressed and,
+  when an edit changes the active application profile's intent, runs a full
+  transition. Native has no automatic application or reconciliation yet, so a
+  stored set is always answered as stored.
+- Member names are matched exactly. Managed's IPC reader ignores letter case;
+  the Tray writes camelCase.
+- Duplicate application executable paths are compared by Unicode upper case
+  when the frame is admitted and by the operating system's ordinal comparison
+  in the validator. A pair only the second finds gets a `Failed` reply where
+  managed closes the connection.
+- An application override that selects fan Stop without fan settings closes
+  the connection. Managed throws a `NativeComponentException` there and sends
+  no reply either.
+- A keyboard sequence is checked against the six by seventeen grid only.
+  Managed also knows three layouts with their own key maps; a set naming one
+  is refused as malformed lighting rather than as a different layout.
+- An executable path with an 8.3 short name that exists on disk is accepted;
+  managed expands it and refuses the path as not normalised.
+- Battery Saver fan stop cannot be newly enabled, because this composition has
+  no Fan Stop. Managed allows it once Fan Stop is admitted at run time.
+- A request from another session, or while a thermal submission needs
+  reconciliation, is refused as every installed mutation is (closed
+  connection, or `Blocked` with the reconciliation reason). Managed stores
+  profiles in both cases after its own session check.
+- Each document is staged as `<name>.pending` by the store's replace
+  primitive instead of a `.stage` file, the transaction identifier is the
+  digest of the change instead of a random GUID, and the record lists file
+  names instead of full paths. Only the record's presence is ever read.
+- A failed transaction is reported in native words. Managed's text comes from
+  the .NET I/O exception.
+- The published status carries no `Profiles stored...` message.
+
+Not done here: the read path still refuses a committed schema 24 or older
+aggregate and the schema-less legacy profile before any request is served, so
+the migration this stage can perform is reachable for schemas 25 and 26 and
+for an absent aggregate, which is materialised from the safe defaults on the
+first save. The artifact capability string does not name
+`service-profiles-v1` yet; a profile-serving image must not be bound until
+the package readers know it.
 
 ## Submission, ambiguity and finite transport lifetime
 
