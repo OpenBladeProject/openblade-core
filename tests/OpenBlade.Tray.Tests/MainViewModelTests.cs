@@ -9872,11 +9872,62 @@ public sealed partial class MainViewModelTests
             .ExecuteAsync(null);
 
         Assert.Equal(2, client.MutationCalls);
-        Assert.Equal(["fans:<clear>", "performance:<clear>"], client.MutationOperations);
+        Assert.Equal(["performance:<clear>", "fans:<clear>"], client.MutationOperations);
         Assert.Null(client.PerformanceOverride);
         Assert.Null(client.FanOverride);
         Assert.Null(client.LightingOverride);
         Assert.Equal("Manual overrides cleared.", viewModel.OperationStatusMessage);
+    }
+
+    // Performance clears before fans, so under manual fans the service stores
+    // the profile preset and the fan clear applies it once. That stored clear
+    // counts as restored only when the service then confirms the performance
+    // it wants.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ClearManualOverrides_StoredPerformanceIsRestoredByAppliedFanClear(bool confirmed)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        client.Publish(status with
+        {
+            PerformanceOverride = new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.UntilPowerSourceChange),
+            FanOverride = new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+        });
+        await WaitUntilAsync(() =>
+            viewModel.PerformanceOverride is not null
+            && viewModel.FanOverride is not null);
+        client.MutationResults.Enqueue(new ControlOperationResult(
+            ControlOperationStatus.Stored,
+            "Performance intent stored; it applies when fans return to Automatic."));
+        client.MutationResults.Enqueue(new ControlOperationResult(
+            ControlOperationStatus.Applied,
+            "Fans returned to Automatic."));
+        PerformancePreset desired = status.DesiredState.Performance.Value;
+        client.GetStatusResponse = status with
+        {
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Performance = confirmed ? desired : PerformancePreset.Performance,
+            },
+        };
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ClearManualOverridesCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(["performance:<clear>", "fans:<clear>"], client.MutationOperations);
+        Assert.Equal(
+            confirmed
+                ? "Manual overrides cleared."
+                : "Manual overrides cleared; hardware restoration was not applied for performance.",
+            viewModel.OperationStatusMessage);
     }
 
     [Fact]

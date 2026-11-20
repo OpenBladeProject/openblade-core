@@ -293,9 +293,9 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.Equal(["Fans:Automatic", $"Performance:{selected}"], writes);
     }
 
-    // H6: a deferred choice equal to the held preset reconciles as Unchanged,
-    // writes only the fans and does not claim a restoration. The held preset
-    // is not Balanced, whose restoration is never announced anyway.
+    // H6: a deferred choice that the fresh state already holds needs no
+    // preset write, writes only the fans and does not claim a restoration.
+    // The held preset is not Balanced, whose restoration is never announced.
     [Fact]
     public async Task UnchangedDeferredChoiceDoesNotClaimRestoration()
     {
@@ -333,6 +333,7 @@ public sealed partial class ServiceControlRuntimeTests
 
         AssertNoPerformanceWrite(writes);
         Assert.DoesNotContain(ControlCoordinator.ExternalPerformanceKeptMessage, automatic.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(ControlCoordinator.DeferredPerformanceNoLongerAppliesMessage, automatic.Message, StringComparison.Ordinal);
     }
 
     // H6: the fresh-session retry of a curve target revalidates against the

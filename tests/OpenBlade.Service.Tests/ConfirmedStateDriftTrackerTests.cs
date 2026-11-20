@@ -348,72 +348,98 @@ public sealed class ConfirmedStateDriftTrackerTests
         LightingSettings? lighting = null) =>
         new(performance, fans, battery, lighting);
 
-    // A deferred choice applies once, only while no performance change was
-    // observed since it was made and the fresh preset is still the observed
-    // one. Any observed change, an unknown fresh preset or a differing fresh
-    // preset or Custom level drops it; an OpenBlade write or a newer choice
-    // that is not deferred settles it silently.
+    // A deferred choice applies once, only while the resolved intent still
+    // holds it, no performance change was observed since it was made and the
+    // fresh preset is still the observed one. Any observed change, an unknown
+    // fresh preset or a differing fresh preset or Custom level keeps the mode;
+    // an intent that replaced the choice no longer applies it; a fresh state
+    // that already holds the choice, or a newer choice that is not deferred,
+    // settles it silently. OpenBlade's own desired-versus-confirmed
+    // comparisons never settle or invalidate it.
     [Fact]
     public void DeferredPerformanceChoice_AppliesOnceOnlyWithoutAnObservedChange()
     {
+        const PerformancePreset Silent = PerformancePreset.Silent;
         var tracker = new ConfirmedStateDriftTracker();
         ConfirmedDeviceState balanced = State(PerformancePreset.Balanced, FanMode.Fixed, Battery(80), DefaultLighting);
         tracker.Observe(balanced);
-        Assert.Equal(DeferredPerformanceDecision.None, tracker.DecideDeferredPerformance(balanced));
+        Assert.Equal(DeferredPerformanceDecision.None, tracker.DecideDeferredPerformance(balanced, Silent, null));
 
-        tracker.RecordDeferredPerformanceChoice();
-        Assert.Equal(DeferredPerformanceDecision.Apply, tracker.DecideDeferredPerformance(balanced));
-        Assert.Equal(DeferredPerformanceDecision.None, tracker.DecideDeferredPerformance(balanced));
+        tracker.RecordDeferredPerformanceChoice(Silent, null);
+        Assert.Equal(DeferredPerformanceDecision.Apply, tracker.DecideDeferredPerformance(balanced, Silent, null));
+        Assert.Equal(DeferredPerformanceDecision.None, tracker.DecideDeferredPerformance(balanced, Silent, null));
         tracker.RestoreUnsubmittedDeferredPerformance();
-        Assert.Equal(DeferredPerformanceDecision.Apply, tracker.DecideDeferredPerformance(balanced));
+        Assert.Equal(DeferredPerformanceDecision.Apply, tracker.DecideDeferredPerformance(balanced, Silent, null));
 
-        tracker.RecordDeferredPerformanceChoice();
-        Assert.Equal(DeferredPerformanceDecision.Kept, tracker.DecideDeferredPerformance(balanced with { Performance = null }));
-        Assert.Equal(DeferredPerformanceDecision.None, tracker.DecideDeferredPerformance(balanced));
-
-        tracker.RecordDeferredPerformanceChoice();
+        tracker.RecordDeferredPerformanceChoice(Silent, null);
         Assert.Equal(DeferredPerformanceDecision.Kept,
-            tracker.DecideDeferredPerformance(balanced with { Performance = PerformancePreset.Silent }));
+            tracker.DecideDeferredPerformance(balanced with { Performance = null }, Silent, null));
+        Assert.Equal(DeferredPerformanceDecision.None, tracker.DecideDeferredPerformance(balanced, Silent, null));
+
+        tracker.RecordDeferredPerformanceChoice(Silent, null);
+        Assert.Equal(DeferredPerformanceDecision.Kept,
+            tracker.DecideDeferredPerformance(balanced with { Performance = PerformancePreset.Performance }, Silent, null));
+
+        // A fresh state that already holds the choice needs no write.
+        tracker.RecordDeferredPerformanceChoice(Silent, null);
+        Assert.Equal(DeferredPerformanceDecision.None,
+            tracker.DecideDeferredPerformance(balanced with { Performance = Silent }, Silent, null));
+
+        // The intent replaced the choice: it no longer applies, even unchanged.
+        tracker.RecordDeferredPerformanceChoice(Silent, null);
+        Assert.Equal(DeferredPerformanceDecision.NoLongerApplies,
+            tracker.DecideDeferredPerformance(balanced, PerformancePreset.Balanced, null));
+        Assert.Equal(DeferredPerformanceDecision.None, tracker.DecideDeferredPerformance(balanced, Silent, null));
+
+        // OpenBlade's own comparisons neither settle nor invalidate it.
+        tracker.RecordDeferredPerformanceChoice(Silent, null);
+        tracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
+        tracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: false);
+        Assert.True(tracker.HasDeferredPerformanceChoice);
+        Assert.Equal(DeferredPerformanceDecision.Apply, tracker.DecideDeferredPerformance(balanced, Silent, null));
 
         // Away and back: an observed change drops the choice even though the
         // fresh preset matches again.
-        tracker.RecordDeferredPerformanceChoice();
-        tracker.Observe(balanced with { Performance = PerformancePreset.Silent });
+        tracker.RecordDeferredPerformanceChoice(Silent, null);
+        tracker.Observe(balanced with { Performance = PerformancePreset.Performance });
         tracker.Observe(balanced);
-        Assert.Equal(DeferredPerformanceDecision.Kept, tracker.DecideDeferredPerformance(balanced));
+        Assert.Equal(DeferredPerformanceDecision.Kept, tracker.DecideDeferredPerformance(balanced, Silent, null));
 
         // An external change before the choice does not drop it.
         Assert.Contains(DeviceSubsystem.Performance, tracker.ExternalChanges);
-        tracker.RecordDeferredPerformanceChoice();
-        Assert.Equal(DeferredPerformanceDecision.Apply, tracker.DecideDeferredPerformance(balanced));
+        tracker.RecordDeferredPerformanceChoice(Silent, null);
+        Assert.Equal(DeferredPerformanceDecision.Apply, tracker.DecideDeferredPerformance(balanced, Silent, null));
 
+        var low = new CustomPerformanceSettings(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low);
+        var high = new CustomPerformanceSettings(CustomPerformanceLevel.High, CustomPerformanceLevel.Low);
+        var medium = new CustomPerformanceSettings(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Low);
         ConfirmedDeviceState custom = balanced with
         {
             Performance = PerformancePreset.Custom,
-            CustomPerformance = new CustomPerformanceSettings(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+            CustomPerformance = low,
         };
         tracker.Observe(custom);
-        tracker.RecordDeferredPerformanceChoice();
-        Assert.Equal(DeferredPerformanceDecision.Kept, tracker.DecideDeferredPerformance(custom with
-        {
-            CustomPerformance = new CustomPerformanceSettings(CustomPerformanceLevel.High, CustomPerformanceLevel.Low),
-        }));
-        tracker.RecordDeferredPerformanceChoice();
-        tracker.Observe(custom with
-        {
-            CustomPerformance = new CustomPerformanceSettings(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Low),
-        });
-        Assert.Equal(DeferredPerformanceDecision.Kept, tracker.DecideDeferredPerformance(custom with
-        {
-            CustomPerformance = new CustomPerformanceSettings(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Low),
-        }));
+        tracker.RecordDeferredPerformanceChoice(PerformancePreset.Custom, high);
+        Assert.Equal(DeferredPerformanceDecision.Apply,
+            tracker.DecideDeferredPerformance(custom, PerformancePreset.Custom, high));
+        tracker.RecordDeferredPerformanceChoice(PerformancePreset.Custom, high);
+        Assert.Equal(DeferredPerformanceDecision.NoLongerApplies,
+            tracker.DecideDeferredPerformance(custom, PerformancePreset.Custom, medium));
+        tracker.RecordDeferredPerformanceChoice(PerformancePreset.Custom, high);
+        Assert.Equal(DeferredPerformanceDecision.None,
+            tracker.DecideDeferredPerformance(custom with { CustomPerformance = high }, PerformancePreset.Custom, high));
+        tracker.RecordDeferredPerformanceChoice(PerformancePreset.Custom, high);
+        Assert.Equal(DeferredPerformanceDecision.Kept,
+            tracker.DecideDeferredPerformance(custom with { CustomPerformance = medium }, PerformancePreset.Custom, high));
+        tracker.RecordDeferredPerformanceChoice(PerformancePreset.Custom, high);
+        tracker.Observe(custom with { CustomPerformance = medium });
+        Assert.Equal(DeferredPerformanceDecision.Kept,
+            tracker.DecideDeferredPerformance(custom with { CustomPerformance = medium }, PerformancePreset.Custom, high));
 
-        tracker.RecordDeferredPerformanceChoice();
-        tracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
-        Assert.Equal(DeferredPerformanceDecision.None, tracker.DecideDeferredPerformance(custom));
-        tracker.RecordDeferredPerformanceChoice();
+        tracker.RecordDeferredPerformanceChoice(Silent, null);
         tracker.ClearDeferredPerformanceChoice();
         Assert.False(tracker.HasDeferredPerformanceChoice);
+        Assert.Equal(DeferredPerformanceDecision.None, tracker.DecideDeferredPerformance(balanced, Silent, null));
     }
 
     private static ConfirmedBatteryState Battery(int limit) => new(true, limit, false);

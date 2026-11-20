@@ -31,7 +31,9 @@ public sealed partial class ServiceControlRuntimeTests
         PowerSource powerSource = PowerSource.PluggedIn,
         IFanTemperatureSource? temperatures = null,
         Func<DeviceCapabilities, ProfileSet, ProfileSet>? profiles = null,
-        Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null)
+        Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null,
+        bool reconcileStartup = false,
+        OverrideLifetime fanLifetime = OverrideLifetime.UntilPowerSourceChange)
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);
         DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(model, enabled: true);
@@ -47,6 +49,12 @@ public sealed partial class ServiceControlRuntimeTests
             HyperBoostActive = false,
         };
         await context.Runtime.ObserveAsync(default);
+        if (reconcileStartup)
+        {
+            // Startup reconciliation makes later observations compare the
+            // confirmed state against the desired state.
+            await context.Runtime.ReconcileStartupProfileAsync(default);
+        }
         PerformancePreset start = context.Runtime.GetStatus().DesiredState.Performance.Value;
         if (start != PerformancePreset.Balanced)
         {
@@ -81,7 +89,7 @@ public sealed partial class ServiceControlRuntimeTests
             : new FanControlSettings(FanMode.Fixed, capabilities.GetFanSpeedRange(start)!.MinimumRpm,
                 ManualFanCurve.Default);
         ControlOperationResult entered = await context.Runtime.SetFanControlOverrideAsync(
-            new ManualOverride<FanMode>(mode, OverrideLifetime.UntilPowerSourceChange), settings, default);
+            new ManualOverride<FanMode>(mode, fanLifetime), settings, default);
         Assert.True(entered.Status == ControlOperationStatus.Applied, entered.Message);
         Assert.Equal(mode == FanMode.ManualCurve ? FanMode.Maximum : FanMode.Fixed, context.Device.ConfirmedState.Fans);
         var writes = new List<string>();

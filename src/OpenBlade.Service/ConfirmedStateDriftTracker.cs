@@ -21,9 +21,12 @@ public sealed class ConfirmedStateDriftTracker
     private readonly Func<bool>? retireCompletedTemporaryFullCharge;
 
     // A performance choice stored under manual fans, to be applied once when
-    // fans next become Automatic. Any performance change observed after the
-    // choice invalidates it, so the next fan request keeps that change.
+    // fans next become Automatic. Only an observed hardware performance change
+    // after the choice invalidates it. OpenBlade's own desired-versus-confirmed
+    // comparisons never touch it: under a deferral they differ by design.
     private DeferredPerformanceChoice deferredPerformanceChoice;
+    private PerformancePreset deferredPreset;
+    private CustomPerformanceSettings? deferredCustomPerformance;
 
     public ConfirmedStateDriftTracker(Func<bool>? retireCompletedTemporaryFullCharge = null) =>
         this.retireCompletedTemporaryFullCharge = retireCompletedTemporaryFullCharge;
@@ -37,19 +40,31 @@ public sealed class ConfirmedStateDriftTracker
 
     // Called only when a performance choice was stored with the deferral
     // message. A newer choice that is not deferred clears it instead.
-    public void RecordDeferredPerformanceChoice() =>
+    public void RecordDeferredPerformanceChoice(
+        PerformancePreset preset,
+        CustomPerformanceSettings? customPerformance)
+    {
         deferredPerformanceChoice = DeferredPerformanceChoice.Pending;
+        deferredPreset = preset;
+        deferredCustomPerformance = preset == PerformancePreset.Custom ? customPerformance : null;
+    }
 
     public void ClearDeferredPerformanceChoice() =>
         deferredPerformanceChoice = DeferredPerformanceChoice.None;
 
     // Settles the pending choice from a fan step's fresh readback after fans
-    // became Automatic. The choice applies only while no performance change was
-    // observed since it was made and the fresh preset is known and still the
-    // last observed one, including Custom levels; otherwise it is dropped.
-    // Either way it is consumed before any write, so a canceled or uncertain
-    // write is never replayed.
-    internal DeferredPerformanceDecision DecideDeferredPerformance(ConfirmedDeviceState? fresh)
+    // became Automatic, against the intent that request resolved. A choice the
+    // intent no longer holds (automation, a power change or a profile edit
+    // replaced it) no longer applies. A fresh readback that already holds the
+    // choice needs no write. Otherwise the choice applies only while no
+    // performance change was observed since it was made and the fresh preset
+    // is known and still the last observed one, including Custom levels; any
+    // other outcome keeps the mode. Either way the choice is consumed before
+    // any write, so a canceled or uncertain write is never replayed.
+    internal DeferredPerformanceDecision DecideDeferredPerformance(
+        ConfirmedDeviceState? fresh,
+        PerformancePreset intent,
+        CustomPerformanceSettings? customPerformanceIntent)
     {
         DeferredPerformanceChoice choice = deferredPerformanceChoice;
         if (choice == DeferredPerformanceChoice.None)
@@ -58,6 +73,19 @@ public sealed class ConfirmedStateDriftTracker
         }
 
         deferredPerformanceChoice = DeferredPerformanceChoice.None;
+        if (intent != deferredPreset
+            || intent == PerformancePreset.Custom && customPerformanceIntent != deferredCustomPerformance)
+        {
+            return DeferredPerformanceDecision.NoLongerApplies;
+        }
+
+        if (fresh?.Performance == deferredPreset
+            && (deferredPreset != PerformancePreset.Custom
+                || fresh.CustomPerformance == deferredCustomPerformance))
+        {
+            return DeferredPerformanceDecision.None;
+        }
+
         if (choice == DeferredPerformanceChoice.Pending
             && fresh?.Performance is { } observed
             && observed == performance
@@ -101,12 +129,6 @@ public sealed class ConfirmedStateDriftTracker
         if (matched)
         {
             RemoveExternalChange(subsystem);
-            if (subsystem == DeviceSubsystem.Performance)
-            {
-                // OpenBlade itself confirmed a performance state, which
-                // applies or supersedes a deferred choice.
-                deferredPerformanceChoice = DeferredPerformanceChoice.None;
-            }
         }
         else
         {
@@ -138,7 +160,7 @@ public sealed class ConfirmedStateDriftTracker
                 baseline.Value,
                 observed.Value))
         {
-            AddExternalChange(subsystem);
+            AddObservedChange(subsystem);
         }
 
         baseline = observed;
@@ -157,7 +179,7 @@ public sealed class ConfirmedStateDriftTracker
 
         if (baseline is not null && !EqualityComparer<T>.Default.Equals(baseline, observed))
         {
-            AddExternalChange(subsystem);
+            AddObservedChange(subsystem);
         }
 
         baseline = observed;
@@ -217,7 +239,8 @@ public sealed class ConfirmedStateDriftTracker
             DeviceSubsystem.Performance);
     }
 
-    private void AddExternalChange(DeviceSubsystem subsystem)
+    // A hardware value differs from the last observed one.
+    private void AddObservedChange(DeviceSubsystem subsystem)
     {
         if (subsystem == DeviceSubsystem.Performance
             && deferredPerformanceChoice == DeferredPerformanceChoice.Pending)
@@ -225,6 +248,11 @@ public sealed class ConfirmedStateDriftTracker
             deferredPerformanceChoice = DeferredPerformanceChoice.Invalidated;
         }
 
+        AddExternalChange(subsystem);
+    }
+
+    private void AddExternalChange(DeviceSubsystem subsystem)
+    {
         if (externalChanges.Add(subsystem))
         {
             externalChangesSnapshot = null;

@@ -11,7 +11,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Return fans from a fixed speed or fan curve to Automatic on source-reviewed models without stopping the OpenBlade service. A performance mode chosen while the fans were manual, including on battery, is applied once when they return to Automatic, unless the mode changed outside OpenBlade after that choice. Fan curves keep following temperature while the choice waits. ([#989](https://github.com/OpenBladeProject/openblade-core/pull/989))
+- Return fans from a fixed speed or fan curve to Automatic on source-reviewed models without stopping the OpenBlade service. A performance mode chosen while the fans were manual, including on battery, is applied once when they return to Automatic, unless the mode changed outside OpenBlade after that choice or a profile or power change replaced the choice. Clear manual overrides now clears performance before fans, so it no longer reapplies the cleared mode first. Fan curves keep following temperature while the choice waits. ([#989](https://github.com/OpenBladeProject/openblade-core/pull/989))
 
 ## [0.65.1-nightly.117] - 2026-11-20
 

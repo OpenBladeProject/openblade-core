@@ -2327,11 +2327,15 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             // The staged snapshot can still carry the previous desired state, so
             // the deferral decision resolves the stored intent again. A cleared
             // override resolves to its profile, including a Custom profile.
-            deferHardwareApply: (powerSource, status) => RecordDeferredPerformanceChoice(
-                DeferredPerformanceIntentMessage(
-                    powerSource,
-                    status,
-                    ResolveAutomationDesired(status.ConfirmedState ?? UnknownConfirmedState))),
+            deferHardwareApply: (powerSource, status) =>
+            {
+                DesiredDeviceState requested = ResolveAutomationDesired(
+                    status.ConfirmedState ?? UnknownConfirmedState);
+                return RecordDeferredPerformanceChoice(
+                    DeferredPerformanceIntentMessage(powerSource, status, requested),
+                    requested.Performance.Value,
+                    requested.CustomPerformance);
+            },
             stillControlsSession: stillControlsSession,
             clearsExplicitOverride: value is null,
             thermalComponentResolver: desired =>
@@ -2488,7 +2492,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 {
                     await SetPerformanceOverrideCoreAsync(stagedOverride, token)
                         .ConfigureAwait(false);
-                    _ = RecordDeferredPerformanceChoice(deferredMessage);
+                    _ = RecordDeferredPerformanceChoice(
+                        deferredMessage,
+                        next,
+                        stagedOverride.CustomPerformance);
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
@@ -18560,11 +18567,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         return pendingWriteConfirmations.GetWriteExclusions(exclusions);
     }
 
-    private string? RecordDeferredPerformanceChoice(string? deferredMessage)
+    private string? RecordDeferredPerformanceChoice(
+        string? deferredMessage,
+        PerformancePreset preset,
+        CustomPerformanceSettings? customPerformance)
     {
         if (deferredMessage is not null)
         {
-            driftTracker.RecordDeferredPerformanceChoice();
+            driftTracker.RecordDeferredPerformanceChoice(preset, customPerformance);
         }
         return deferredMessage;
     }

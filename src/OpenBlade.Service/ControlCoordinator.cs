@@ -7,13 +7,14 @@ namespace OpenBlade.Service;
 // used by the coordinator. Runtime reconciliation must not compare a later
 // observation against optional intent that the coordinator dropped.
 // What a fan request that leaves fans Automatic does with a performance choice
-// deferred under manual fans: nothing is pending, apply it, or keep the
-// externally changed mode and drop it.
+// deferred under manual fans: nothing to write, apply it, keep the externally
+// changed mode and drop it, or drop it because the intent replaced it.
 internal enum DeferredPerformanceDecision
 {
     None,
     Apply,
     Kept,
+    NoLongerApplies,
 }
 
 internal sealed record ScopedApplyOutcome(
@@ -483,6 +484,9 @@ public sealed class ControlCoordinator
 
     internal const string ExternalPerformanceKeptMessage =
         "The performance mode changed outside OpenBlade and was kept.";
+
+    internal const string DeferredPerformanceNoLongerAppliesMessage =
+        "The stored performance choice no longer applies.";
 
     private static bool PresetRangeAdmits(FanSpeedRange? range, FanControlSettings requested) =>
         range is { IsWellFormed: true }
@@ -1268,25 +1272,32 @@ public sealed class ControlCoordinator
 
         if (reconcilesAppliedPreset)
         {
-            // Only a pending deferred choice is written. Rule 5: a performance
-            // change observed since that choice, or seen first in this fresh
-            // readback, stays as it is, and so does an unknown fresh preset
-            // (HyperBoost reads none).
+            // Only a pending deferred choice that this request's intent still
+            // holds is written. Rule 5: a performance change observed since
+            // that choice, or seen first in this fresh readback, stays as it
+            // is, and so does an unknown fresh preset (HyperBoost reads none).
             DeferredPerformanceDecision decision =
-                deferredPerformance?.DecideDeferredPerformance(fans.Readback)
+                deferredPerformance?.DecideDeferredPerformance(
+                    fans.Readback,
+                    performanceIntent,
+                    customPerformanceIntent)
                     ?? DeferredPerformanceDecision.None;
             if (decision == DeferredPerformanceDecision.None)
             {
                 return fans;
             }
 
-            if (decision == DeferredPerformanceDecision.Kept)
+            if (decision is DeferredPerformanceDecision.Kept
+                or DeferredPerformanceDecision.NoLongerApplies)
             {
+                string dropped = decision == DeferredPerformanceDecision.Kept
+                    ? ExternalPerformanceKeptMessage
+                    : DeferredPerformanceNoLongerAppliesMessage;
                 return fans with
                 {
                     Result = fans.Result with
                     {
-                        Message = $"{fans.Result.Message} {ExternalPerformanceKeptMessage}",
+                        Message = $"{fans.Result.Message} {dropped}",
                     },
                 };
             }
