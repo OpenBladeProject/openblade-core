@@ -56,9 +56,9 @@ internal sealed class SourceBackedCoolingPadDevice(
         brightnessRegion = regionId;
         var brightness = await Execute(CoolingPadProtocol.BrightnessQuery(regionId), false, null, token).ConfigureAwait(false);
         var effect = await Execute(CoolingPadProtocol.EffectQuery(), false, null, token).ConfigureAwait(false);
-        CoolingPadProtocol.TryDecodeEffect(effect.Span, out var light);
+        CoolingPadProtocol.TryDecodeEffect(effect.Span, 1, out var light);
         var activeEffect = await Execute(CoolingPadProtocol.EffectQuery(0), false, null, token).ConfigureAwait(false);
-        CoolingPadProtocol.TryDecodeEffect(activeEffect.Span, out var activeLight);
+        CoolingPadProtocol.TryDecodeEffect(activeEffect.Span, 0, out var activeLight);
         var appMode = fan.Preset == CoolingPadFanPreset.Off ? CoolingPadFanMode.Off
             : fan.Ownership == CoolingPadFanOwnership.Synapse ? CoolingPadFanMode.Fixed : (CoolingPadFanMode?)null;
         var lightMode = DecodeLight(light!.Effect);
@@ -163,15 +163,15 @@ internal sealed class SourceBackedCoolingPadDevice(
             if (mirrorActive)
             {
                 var active = await Execute(CoolingPadProtocol.EffectQuery(0), false, null, cancellationToken).ConfigureAwait(false);
-                CoolingPadProtocol.TryDecodeEffect(active.Span, out var activeConfiguration);
-                if (!SameEffect(effect, activeConfiguration!)) { FailReadback("Cooling-pad custom activation was not confirmed."); }
+                CoolingPadProtocol.TryDecodeEffect(active.Span, 0, out var activeConfiguration);
+                if (!CoolingPadProtocol.ConfirmsEffect(effect, activeConfiguration!)) { FailReadback("Cooling-pad custom activation was not confirmed."); }
                 customBufferOwned = true;
             }
             if (!mirrorActive)
             {
                 var actual = await Execute(CoolingPadProtocol.EffectQuery(), false, null, cancellationToken).ConfigureAwait(false);
-                CoolingPadProtocol.TryDecodeEffect(actual.Span, out var confirmed);
-                if (!SameEffect(effect, confirmed!)) { FailReadback("Cooling-pad effect readback differs from the request."); }
+                CoolingPadProtocol.TryDecodeEffect(actual.Span, 1, out var confirmed);
+                if (!CoolingPadProtocol.ConfirmsEffect(effect, confirmed!)) { FailReadback("Cooling-pad effect readback differs from the request."); }
                 if (originalMirrorMode is { } saved)
                 {
                     await WriteMode(saved, submissionAllowed, cancellationToken).ConfigureAwait(false);
@@ -237,8 +237,8 @@ internal sealed class SourceBackedCoolingPadDevice(
                 {
                     await Execute(CoolingPadProtocol.EffectSet(activeBaseline), true, submissionAllowed, cancellationToken).ConfigureAwait(false);
                     var active = await Execute(CoolingPadProtocol.EffectQuery(0), false, null, cancellationToken).ConfigureAwait(false);
-                    CoolingPadProtocol.TryDecodeEffect(active.Span, out var confirmedActive);
-                    if (!SameEffect(activeBaseline, confirmedActive!)) { FailReadback("Cooling-pad active effect restoration was not confirmed."); }
+                    CoolingPadProtocol.TryDecodeEffect(active.Span, 0, out var confirmedActive);
+                    if (!CoolingPadProtocol.ConfirmsEffect(activeBaseline, confirmedActive!)) { FailReadback("Cooling-pad active effect restoration was not confirmed."); }
                 }
                 if (baseline.DeviceMode is { } mode)
                 {
@@ -247,8 +247,8 @@ internal sealed class SourceBackedCoolingPadDevice(
                     { await WriteMode(mode, submissionAllowed, cancellationToken).ConfigureAwait(false); }
                 }
                 var actual = await Execute(CoolingPadProtocol.EffectQuery(), false, null, cancellationToken).ConfigureAwait(false);
-                CoolingPadProtocol.TryDecodeEffect(actual.Span, out var confirmed);
-                if (!SameEffect(light, confirmed!)) { FailReadback("Cooling-pad lighting restoration was not confirmed."); }
+                CoolingPadProtocol.TryDecodeEffect(actual.Span, 1, out var confirmed);
+                if (!CoolingPadProtocol.ConfirmsEffect(light, confirmed!)) { FailReadback("Cooling-pad lighting restoration was not confirmed."); }
                 mirrorActive = false;
                 customBufferOwned = false;
                 originalMirrorMode = null;
@@ -373,9 +373,6 @@ internal sealed class SourceBackedCoolingPadDevice(
         8 => CoolingPadLightingMode.KeyboardMirror,
         _ => null
     };
-    private static bool SameEffect(CoolingPadLightingConfiguration a, CoolingPadLightingConfiguration b) =>
-        a.Profile == b.Profile && a.Region == b.Region && a.Effect == b.Effect && a.Flags == b.Flags
-        && a.Rate == b.Rate && a.Colors.SequenceEqual(b.Colors);
 
     private readonly object disposalGate = new();
     private Task? disposal;

@@ -56,8 +56,9 @@ internal static class CoolingPadProtocol
     internal static bool TryDecodeRegion(ReadOnlySpan<byte> p, out byte region)
     {
         region = 0;
-        // The source consumes records of five bytes. Only the reviewed single 18-LED strip is admitted.
-        if (p.Length is < 5 or > 80 || p.Length % 5 != 0 || p[3] != LedCount || p[4] != 1) { return false; }
+        // Firmware 1.10.00 (image 0x657C) answers with one five-byte record [05,19,03,01,12]:
+        // region 5, then one row at byte 3 and 18 LEDs at byte 4. Only that single strip is admitted.
+        if (p.Length is < 5 or > 80 || p.Length % 5 != 0 || p[3] != 1 || p[4] != LedCount) { return false; }
         region = p[0];
         return true;
     }
@@ -66,7 +67,7 @@ internal static class CoolingPadProtocol
         p => p.Length == 3 && p.Span[0] == 1 && p.Span[1] == region);
     internal static RazerCommandSpec BrightnessSet(byte raw) => Echo(0x0F, 4, [1, 0, raw]);
     internal static RazerCommandSpec EffectQuery(byte profile = 1) => new(0x0F, 0x82, CreateEffectQueryPayload(profile), 80,
-        p => TryDecodeEffect(p.Span, out _) && p.Span[0] == profile)
+        p => TryDecodeEffect(p.Span, profile, out _))
     { AllowVariableResponseLength = true };
 
     private static byte[] CreateEffectQueryPayload(byte profile)
@@ -77,17 +78,45 @@ internal static class CoolingPadProtocol
         return payload;
     }
 
-    internal static bool TryDecodeEffect(ReadOnlySpan<byte> p, out CoolingPadLightingConfiguration? effect)
+    /// <summary>
+    /// Decodes the firmware 1.10.00 effect GET (image 0x65BA): twelve bytes
+    /// [0, stored region id, effect, flags, rate, count, color slot 1, color slot 2].
+    /// Byte 0 is a constant zero, not the profile, so the queried profile is supplied by the caller.
+    /// The firmware selects the record from the request's region, so the stored region id is not
+    /// interpreted. Slots beyond the count keep earlier bytes and are not part of the effect.
+    /// </summary>
+    internal static bool TryDecodeEffect(ReadOnlySpan<byte> p, byte profile, out CoolingPadLightingConfiguration? effect)
     {
         effect = null;
-        if (p.Length is < 6 or > 80 || p[0] is not (0 or 1) || p[1] != 0 || p[2] is not (0 or 1 or 2 or 3 or 4 or 8)
-            || p[5] > 2 || p.Length < 6 + p[5] * 3 || p[(6 + p[5] * 3)..].IndexOfAnyExcept((byte)0) >= 0)
+        if (profile > 1 || p.Length != EffectResponseLength || p[0] != 0
+            || p[2] is not (0 or 1 or 2 or 3 or 4 or 8) || p[5] > 2)
         { return false; }
         var colors = new CoolingPadColor[p[5]];
         for (int i = 0; i < colors.Length; i++)
         { colors[i] = new(p[6 + i * 3], p[7 + i * 3], p[8 + i * 3]); }
-        effect = new(p[0], p[1], p[2], p[3], p[4], Array.AsReadOnly(colors));
+        effect = new(profile, 0, p[2], p[3], p[4], Array.AsReadOnly(colors));
         return true;
+    }
+
+    private const int EffectResponseLength = 12;
+
+    /// <summary>
+    /// Compares a requested effect with readback using only the fields the firmware stores
+    /// (image 0x6E40). Effect 8 stores only its effect id. Other effects store flags, rate and
+    /// count; color slot 1 only for Static (1); color slot 2 from every request.
+    /// </summary>
+    internal static bool ConfirmsEffect(CoolingPadLightingConfiguration requested, CoolingPadLightingConfiguration readback)
+    {
+        ArgumentNullException.ThrowIfNull(requested);
+        ArgumentNullException.ThrowIfNull(readback);
+        if (requested.Profile != readback.Profile || requested.Region != readback.Region || requested.Effect != readback.Effect)
+        { return false; }
+        if (requested.Effect == 8) { return true; }
+        if (requested.Flags != readback.Flags || requested.Rate != readback.Rate
+            || requested.Colors.Count != readback.Colors.Count)
+        { return false; }
+        return (requested.Effect != 1 || requested.Colors.Count == 0 || requested.Colors[0] == readback.Colors[0])
+            && (requested.Colors.Count < 2 || requested.Colors[1] == readback.Colors[1]);
     }
 
     internal static RazerCommandSpec EffectSet(CoolingPadLightingConfiguration effect)

@@ -93,9 +93,9 @@ is introduced.
 | `0D/10` | 63472, 91655, 87887 | Set saved or requested fan configuration directly |
 | `0D/81` | 63472, 91655 | Read configured target for class 1, fan 5; not a tachometer |
 | `0D/01` | 91655, exact-pad scheduler | Set class 1, fan 5 target in 50-RPM units |
-| `0F/80` | 65430, 9069 | Read five-byte region records; admit the reviewed 18-LED geometry |
+| `0F/80` | 65430, 9069, firmware | Read the five-byte region record; admit one row of 18 LEDs |
 | `0F/84`, `0F/04` | 65430, 9069, 85191 | Read actual first-region brightness; write profile 1, region 0; preserve raw 0..255 baseline |
-| `0F/82`, `0F/02` | 65430, 79151, 9069, 85191 | Read and set effect, flags, rate, color count and RGB values |
+| `0F/82`, `0F/02` | 65430, 79151, 9069, 85191, firmware | Read and set effect, flags, rate, color count and RGB values |
 | `0F/03` | 65430, 9069 | Stream profile 0 frames with region/row/start/end and bounded RGB data |
 | `00/84`, `00/04` | 9069, product initialization | Read/set device mode; mirror entry uses Driver directly and saves prior mode |
 
@@ -106,6 +106,21 @@ existing Smart preset or directly selects Quiet `[0,3,0]`, then sends calculated
 `0D/01` demands. No preliminary Fixed, Medium, Automatic or Normal reset is
 required. Source initialization enters Driver `03 00` directly; ordinary pad
 cleanup in Synapse skips a blanket Normal handoff for this Chroma device.
+
+The firmware 1.10.00 image (Cortex-M0, class `0F` handler at `0x64E0`) defines
+the lighting replies:
+
+- `0F/80` (`0x657C`) returns exactly `[05,19,03,01,12]`: region 5, then one row
+  at byte 3 and 18 LEDs at byte 4.
+- `0F/82` (`0x65BA`) returns twelve bytes: a constant zero, the stored region
+  id, effect, flags, rate, color count, color slot 1 and color slot 2. Byte 0 is
+  not the profile. The request's profile and region select the record.
+- `0F/02` (`0x6E40`) stores only the effect id for effect 8. Other effects store
+  flags, rate and count, color slot 1 only for Static, and color slot 2 from
+  every request. Slots beyond the count keep earlier bytes.
+
+Readback compares only those stored fields. The firmware also accepts effects
+7 and 9, which OpenBlade does not admit.
 
 Brightness GET resolves requested region 0 through the regional descriptor to
 the first actual region (historically 5), while SET retains region 0. That is a

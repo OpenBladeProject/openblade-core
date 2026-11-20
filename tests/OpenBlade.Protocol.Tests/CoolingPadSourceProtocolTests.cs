@@ -26,12 +26,47 @@ public sealed class CoolingPadSourceProtocolTests
     [Fact]
     public void GeometryAdmissionRejectsAnotherAccessoryOrTruncatedDescriptor()
     {
-        byte[] region = new byte[80]; region[0] = 5; region[3] = 18; region[4] = 1;
+        // Firmware 1.10.00 region reply: region 5, one row (byte 3), 18 LEDs (byte 4).
+        byte[] region = [5, 0x19, 3, 1, 18];
         Assert.True(CoolingPadProtocol.TryDecodeRegion(region, out byte id)); Assert.Equal(5, id);
-        region[3] = 16;
-        Assert.False(CoolingPadProtocol.TryDecodeRegion(region, out _));
+        Assert.False(CoolingPadProtocol.TryDecodeRegion([5, 0x19, 3, 1, 16], out _));
+        Assert.False(CoolingPadProtocol.TryDecodeRegion([5, 0x19, 3, 18, 1], out _));
         Assert.False(CoolingPadProtocol.TryDecodeRegion(region.AsSpan(0, 4), out _));
         Assert.Throws<ArgumentException>(() => CoolingPadProtocol.FrameSet(new CoolingPadColor[19]));
+    }
+
+    [Fact]
+    public void EffectReadbackUsesTheFirmwareRecordLayout()
+    {
+        // [0, stored region 5, Static, flags, rate, one color, slot 1, stale slot 2].
+        byte[] reply = [0, 5, 1, 0, 0, 1, 255, 0, 0, 9, 9, 9];
+        Assert.True(CoolingPadProtocol.TryDecodeEffect(reply, 1, out var effect));
+        Assert.Equal((1, 0, 1), (effect!.Profile, effect.Region, effect.Effect));
+        Assert.Equal([new CoolingPadColor(255, 0, 0)], effect.Colors);
+        Assert.True(CoolingPadProtocol.TryDecodeEffect(reply, 0, out var active)); Assert.Equal(0, active!.Profile);
+        Assert.False(CoolingPadProtocol.TryDecodeEffect([1, .. reply[1..]], 1, out _));
+        Assert.False(CoolingPadProtocol.TryDecodeEffect(reply.AsSpan(0, 9), 1, out _));
+        Assert.False(CoolingPadProtocol.TryDecodeEffect([0, 5, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0], 1, out _));
+        Assert.False(CoolingPadProtocol.TryDecodeEffect([0, 5, 1, 0, 0, 3, 0, 0, 0, 0, 0, 0], 1, out _));
+    }
+
+    [Fact]
+    public void EffectConfirmationComparesOnlyFirmwareStoredFields()
+    {
+        CoolingPadLightingConfiguration staticRed = new(1, 0, 1, 0, 0, [new(255, 0, 0)]);
+        Assert.True(CoolingPadProtocol.ConfirmsEffect(staticRed, staticRed));
+        Assert.False(CoolingPadProtocol.ConfirmsEffect(staticRed, staticRed with { Colors = [new(0, 255, 0)] }));
+        Assert.False(CoolingPadProtocol.ConfirmsEffect(staticRed, staticRed with { Profile = 0 }));
+        // Breathing does not store color slot 1, so its earlier bytes are not a mismatch.
+        CoolingPadLightingConfiguration breathing = new(1, 0, 2, 0, 0, [new(255, 0, 0)]);
+        Assert.True(CoolingPadProtocol.ConfirmsEffect(breathing, breathing with { Colors = [new(0, 255, 0)] }));
+        Assert.False(CoolingPadProtocol.ConfirmsEffect(breathing, breathing with { Colors = [] }));
+        CoolingPadLightingConfiguration twoColor = new(1, 0, 2, 0, 0, [new(1, 2, 3), new(4, 5, 6)]);
+        Assert.False(CoolingPadProtocol.ConfirmsEffect(twoColor, twoColor with { Colors = [new(1, 2, 3), new(0, 0, 0)] }));
+        // Effect 8 stores only its effect id.
+        CoolingPadLightingConfiguration custom = new(0, 0, 8, 0, 0, []);
+        Assert.True(CoolingPadProtocol.ConfirmsEffect(custom, custom with { Rate = 40, Colors = [new(1, 2, 3)] }));
+        Assert.False(CoolingPadProtocol.ConfirmsEffect(custom, custom with { Effect = 1 }));
     }
 
     [Fact]
@@ -323,8 +358,15 @@ public sealed class CoolingPadSourceProtocolTests
     private sealed class Wire : IRazerCommandSession, IRazerSetFeatureCommandSession
     {
         internal CoolingPadFanConfiguration Fan { get; set; } = new(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Off, 0);
-        internal CoolingPadLightingConfiguration Effect { get; set; } = new(1, 0, 1, 0, 0, [new(0, 255, 0)]);
-        internal CoolingPadLightingConfiguration? ActiveEffect { get; set; }
+        // Firmware 1.10.00 effect records in GET order: [0, region 5, effect, flags, rate, count, slot 1, slot 2].
+        private byte[] persistentRecord = Record(new(1, 0, 1, 0, 0, [new(0, 255, 0)]));
+        private byte[]? volatileRecord;
+        internal CoolingPadLightingConfiguration Effect { get => Decode(persistentRecord, 1); set => persistentRecord = Record(value); }
+        internal CoolingPadLightingConfiguration? ActiveEffect
+        {
+            get => volatileRecord is null ? null : Decode(volatileRecord, 0);
+            set => volatileRecord = value is null ? null : Record(value);
+        }
         internal byte RawBrightness { get; set; } = 255;
         internal CoolingPadDeviceMode Mode { get; set; }
         internal bool ControllerBlocked { get; set; }
@@ -353,17 +395,15 @@ public sealed class CoolingPadSourceProtocolTests
                 case (13, 129): p = [1, 5, (byte)(target / 50)]; break;
                 case (0, 4): Mode = (CoolingPadDeviceMode)p[0]; break;
                 case (0, 132): p = [(byte)Mode, 0]; break;
-                case (15, 128): p = new byte[80]; p[0] = 5; p[3] = 18; p[4] = 1; break;
+                case (15, 128): p = [5, 0x19, 3, 1, 18]; break;
                 case (15, 132): p = [1, 5, RawBrightness]; break;
                 case (15, 4): RawBrightness = p[2]; break;
-                case (15, 130):
-                    var selectedEffect = p[0] == 0 ? ActiveEffect ?? Effect with { Profile = 0 } : Effect;
-                    p = new byte[80]; var encoded = CoolingPadProtocol.EffectSet(selectedEffect).Arguments; encoded.CopyTo(p); break;
+                case (15, 130): p = (byte[])(p[0] == 0 ? volatileRecord ?? persistentRecord : persistentRecord).Clone(); break;
                 case (15, 2):
-                    byte[] effect = new byte[80]; p.CopyTo(effect, 0);
-                    // The emulated GET persistent profile returns the previous persistent effect for volatile custom mode.
-                    CoolingPadProtocol.TryDecodeEffect(effect, out var decoded);
-                    if (p[0] == 1) { Effect = decoded!; } else { ActiveEffect = decoded; }
+                    byte[] arguments = new byte[80]; p.CopyTo(arguments, 0);
+                    // Volatile custom mode leaves the persistent record unchanged.
+                    if (p[0] == 1) { Store(persistentRecord, arguments); }
+                    else { volatileRecord ??= (byte[])persistentRecord.Clone(); Store(volatileRecord, arguments); }
                     break;
             }
             Assert.True(command.PayloadValidator?.Invoke(p) ?? true);
@@ -375,5 +415,33 @@ public sealed class CoolingPadSourceProtocolTests
         public Task<HidSessionResult<ReadOnlyMemory<byte>>> SubmitBatchAsync(IReadOnlyList<RazerCommandSpec> commands,
             Func<TransactionIdAssignment> assignTransactionId, TimeSpan exchangeTimeout, CancellationToken cancellationToken) => throw new NotSupportedException();
         public ValueTask DisposeAsync() { Disposition = RazerCommandSessionDisposition.FullyDisposed; return ValueTask.CompletedTask; }
+
+        private static byte[] Record(CoolingPadLightingConfiguration effect)
+        {
+            byte[] record = new byte[12];
+            record[1] = 5; record[2] = effect.Effect; record[3] = effect.Flags; record[4] = effect.Rate;
+            record[5] = (byte)effect.Colors.Count;
+            for (int i = 0; i < effect.Colors.Count; i++)
+            {
+                record[6 + i * 3] = effect.Colors[i].R; record[7 + i * 3] = effect.Colors[i].G; record[8 + i * 3] = effect.Colors[i].B;
+            }
+            return record;
+        }
+
+        private static CoolingPadLightingConfiguration Decode(byte[] record, byte profile)
+        {
+            Assert.True(CoolingPadProtocol.TryDecodeEffect(record, profile, out var effect));
+            return effect!;
+        }
+
+        // Firmware SET storage (image 0x6E40): effect 8 stores only its id; slot 1 is stored only for Static.
+        private static void Store(byte[] record, byte[] arguments)
+        {
+            record[2] = arguments[2];
+            if (arguments[2] == 8) { return; }
+            record[3] = arguments[3]; record[4] = arguments[4]; record[5] = arguments[5];
+            if (arguments[2] == 1) { arguments.AsSpan(6, 3).CopyTo(record.AsSpan(6)); }
+            arguments.AsSpan(9, 3).CopyTo(record.AsSpan(9));
+        }
     }
 }
