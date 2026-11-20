@@ -14,7 +14,7 @@ use crate::service_frame::read_payload;
 mod subscription;
 pub(in crate::session_native) use subscription::fixture_initial;
 
-const FRAMES: &[u8] = include_bytes!("../../../tests/fixtures/get-status-v80.frames");
+const FRAMES: &[u8] = include_bytes!("../../../tests/fixtures/get-status-v85.frames");
 const REQUEST_ID: &str = "11111111-2222-4333-8444-555555555555";
 const PID: u32 = 42;
 

@@ -8,7 +8,7 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class NativeThermalMutationResponseTests
 {
     [NativeThermalEdgeFact]
-    public async Task ActualNativeMutationResponsesUseManagedV80CodecAndOutcomes()
+    public async Task ActualNativeMutationResponsesUseManagedV85CodecAndOutcomes()
     {
         // The evidence runner extracts actual emitted Rust test replies into a
         // held, hashed private input. There is deliberately no product fallback.
@@ -121,7 +121,7 @@ public sealed class NativeThermalMutationResponseTests
         Assert.True(sawCleared, "An unapplied clear is Blocked with managed's cleared prefix.");
         Assert.True(decodeErrors.Count == 0, string.Join(Environment.NewLine, decodeErrors));
         Assert.True(sawPartialCustom, "Actual CustomManual observation must retain known selectors and unknown settings.");
-        using var requestedFrame = FrameJson("""{"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":5,"lifetime":1,"customPerformance":null,"gpuClockTuning":null}}""");
+        using var requestedFrame = FrameJson("""{"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":5,"lifetime":1,"customPerformance":null,"gpuClockTuning":null}}""");
         await Assert.ThrowsAsync<InvalidDataException>(() => IpcMessageCodec.ReadRequestAsync(requestedFrame, CancellationToken.None));
         Assert.True(sawConfirmedPreset, "Actual status retains confirmed hardware separately from the result-only reply without renewing write authority.");
         Assert.Contains(ControlOperationStatus.Stored, seen);
@@ -138,7 +138,7 @@ public sealed class NativeThermalMutationResponseTests
         foreach (var element in document.RootElement.EnumerateArray())
         {
             using var frame = FrameJson(element.GetRawText()); var response = Assert.IsType<ServiceResponse>(await IpcMessageCodec.ReadServerFrameAsync(frame, CancellationToken.None));
-            Assert.Equal(80, response.Version); Assert.True(response.Success);
+            Assert.Equal(OpenBladeIpc.ProtocolVersion, response.Version); Assert.True(response.Success);
             if (response.Result is { } result) { outcomes.Add(result.Status); Assert.Null(response.Status); }
             if (response.Status is { } status)
             {
@@ -165,14 +165,14 @@ public sealed class NativeThermalMutationResponseTests
             ServiceStatusSnapshot? status;
             if (decoded is ServiceStatusEvent update)
             {
-                Assert.Equal(80, update.Version);
+                Assert.Equal(OpenBladeIpc.ProtocolVersion, update.Version);
                 eventSeen = true;
                 status = update.Status;
             }
             else
             {
                 var response = Assert.IsType<ServiceResponse>(decoded);
-                Assert.Equal(80, response.Version);
+                Assert.Equal(OpenBladeIpc.ProtocolVersion, response.Version);
                 Assert.True(response.Success);
                 status = response.Status;
             }
@@ -209,13 +209,13 @@ public sealed class NativeThermalMutationResponseTests
             ServiceStatusSnapshot? status;
             if (decoded is ServiceStatusEvent update)
             {
-                Assert.Equal(80, update.Version);
+                Assert.Equal(OpenBladeIpc.ProtocolVersion, update.Version);
                 status = update.Status;
             }
             else
             {
                 var response = Assert.IsType<ServiceResponse>(decoded);
-                Assert.Equal(80, response.Version);
+                Assert.Equal(OpenBladeIpc.ProtocolVersion, response.Version);
                 if (!response.Success)
                 {
                     Assert.NotNull(response.Error);

@@ -209,6 +209,11 @@ def compare_generated(repo, out):
     for f in inventory['originalLegacyInputs']:
         if digest(pinned / f['name']) != f['sha256']:
             raise ValueError('Pinned legacy input drift: ' + f['name'])
+    # Persisted inputs frozen at the schemas the native readers admit. The
+    # producer still writes current managed documents; only pins are checked.
+    for f in inventory.get('frozenPersisted', []):
+        if digest(pinned / f['name']) != f['sha256']:
+            raise ValueError('Pinned persisted input drift: ' + f['name'])
     for f in inventory['generated']:
         generated = out / 'edge-producer/generated' / f['name']
         if generated.read_bytes() != (pinned / f['name']).read_bytes() or digest(generated) != f['sha256']:

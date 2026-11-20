@@ -16,7 +16,7 @@ selection and Setup handoff consumers retain the same authenticated mailbox
 handoff requirement. A correctly authenticated role inventory can carry this
 composition. There is no new default native publishing or installation path.
 
-The installed v80 dispatcher accepts typed `setPerformanceOverride` and
+The installed v85 dispatcher accepts typed `setPerformanceOverride` and
 `reportApplicationContext` requests only in this composition. The SID comes
 from the actual named-pipe peer token, with active interactive session continuity
 checked before and after the operation. The real supplier independently matches
@@ -94,7 +94,7 @@ ineligible saved request also replies Blocked with that prefix, even when the
 policy-selected preset is confirmed; the hardware result then says that the
 policy selects another destination. Requested override, effective
 selected value/provenance, and observed state remain distinct. Mutation success
-frames contain only the operation result, as required by the unchanged v80
+frames contain only the operation result, as required by the unchanged v85
 single-body response contract. Status travels separately through GetStatus,
 ObserveState and subscriptions.
 
@@ -214,7 +214,7 @@ own-user private-file tests use the actual ProtectedFiles and durable Store,
 including first reservation, atomic journal replacement, exclusive sharing,
 restart and cross-SID refusal. Constructors take those inputs before any default
 root resolution. Real controller/token/session/SCM/HID suppliers are compiled,
-not executed. Managed tests parse emitted native replies with the actual v80 codec
+not executed. Managed tests parse emitted native replies with the actual v85 codec
 and inspect explicit artifact capabilities and conservative recovery refusal.
 The native test marker emits the original received UTF-8 payload, preserving
 property order and the leading polymorphic discriminator. Extraction retains

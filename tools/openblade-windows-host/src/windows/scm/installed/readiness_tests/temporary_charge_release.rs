@@ -11,10 +11,10 @@ fn source_battery(r: &Rig) {
     );
 }
 fn get_request() -> Value {
-    json!({"operation":"getStatus","version":80,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000901"})
+    json!({"operation":"getStatus","version":85,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000901"})
 }
 fn performance_request(n: u32) -> Value {
-    json!({"operation":"setPerformanceOverride","version":80,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value(1,1)})
+    json!({"operation":"setPerformanceOverride","version":85,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value(1,1)})
 }
 async fn enable(r: &Rig, n: u32) {
     r.get().await;

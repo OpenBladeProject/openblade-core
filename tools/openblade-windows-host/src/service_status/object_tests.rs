@@ -1,4 +1,4 @@
-//! Service v80 frames are read only from JSON objects, like the managed
+//! Service v85 frames are read only from JSON objects, like the managed
 //! IpcMessageCodec. Every row of the shared fixture is also run through the
 //! managed codec (IpcMessageCodecTests.ObjectFrames.cs).
 use super::*;
@@ -6,9 +6,9 @@ use openblade_windows_host::json_object;
 use serde_json::json;
 
 const FIXTURE: &str = include_str!("../../tests/fixtures/service-object-frames.json");
-const GET_STATUS: &[u8] = include_bytes!("../../tests/fixtures/get-status-v80.frames");
-const OBSERVE_STATE: &[u8] = include_bytes!("../../tests/fixtures/observe-state-v80.frames");
-const SUBSCRIBE_STATUS: &[u8] = include_bytes!("../../tests/fixtures/subscribe-status-v80.frames");
+const GET_STATUS: &[u8] = include_bytes!("../../tests/fixtures/get-status-v85.frames");
+const OBSERVE_STATE: &[u8] = include_bytes!("../../tests/fixtures/observe-state-v85.frames");
+const SUBSCRIBE_STATUS: &[u8] = include_bytes!("../../tests/fixtures/subscribe-status-v85.frames");
 
 fn rows(group: &str) -> Vec<Value> {
     let fixture: Value = serde_json::from_str(FIXTURE).unwrap();
@@ -252,6 +252,26 @@ fn absent_live_readings_stay_absent() {
     let frame = serde_json::to_vec(&frame).unwrap();
     let snapshot = StatusResponse::decode(&frame, &request, None).unwrap();
     assert!(snapshot.live_readings.is_none());
+}
+
+/// A source the Service only retained confirms no display power context, as
+/// the managed display coordinator treats it as ExternalUnknown.
+#[cfg(openblade_display_write)]
+#[test]
+fn retained_power_source_is_unconfirmed_for_display_admission() {
+    let (request, frame) = server_frame(&rows("serverFrames")[0]);
+    let mut frame: Value = serde_json::from_slice(&frame).unwrap();
+    frame["status"]["activePowerSource"] = json!(1);
+    for (reason, expected) in [(None, 1), (Some(0), 1), (Some(2), 1), (Some(3), 3)] {
+        let status = frame["status"].as_object_mut().unwrap();
+        match reason {
+            Some(reason) => status.insert("observationReason".into(), json!(reason)),
+            None => status.remove("observationReason"),
+        };
+        let payload = serde_json::to_vec(&frame).unwrap();
+        let snapshot = StatusResponse::decode(&payload, &request, None).unwrap();
+        assert_eq!(snapshot.display_power_source(), expected, "{reason:?}");
+    }
 }
 
 /// JSON pointers of every object in `value`, the root included.

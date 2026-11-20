@@ -1,4 +1,4 @@
-//! The managed ServiceMessages v80 shape shared by the installed Service and Agent candidates.
+//! The managed ServiceMessages v85 shape shared by the installed Service and Agent candidates.
 //! Preserve rich feature records verbatim; readiness consumes the core snapshot
 //! and never interprets feature data as independent device or write evidence.
 
@@ -19,7 +19,7 @@ use tokio::{
 use crate::service_frame::{FRAME_TIMEOUT, invalid, is_guid, read_payload, write_frame};
 
 pub(crate) const PIPE_NAME: &str = "OpenBlade.Service.v2";
-pub(crate) const PROTOCOL_VERSION: i32 = 80;
+pub(crate) const PROTOCOL_VERSION: i32 = 85;
 
 pub(crate) fn production_path() -> String {
     format!(r"\\.\pipe\{PIPE_NAME}")
@@ -358,7 +358,7 @@ impl StatusResponse {
             request_id: request.header().1.to_ascii_lowercase(),
             success: true,
             error: None,
-            // v80 success frames carry exactly one body. Status is published
+            // v85 success frames carry exactly one body. Status is published
             // separately through GetStatus, ObserveState and subscriptions.
             status: None,
             result: Some(outcome),
@@ -509,7 +509,7 @@ pub(crate) async fn read_status_event(
     }
 
     // With `arbitrary_precision` a `Number` keeps the exact text, so this reads
-    // an Int32 as managed `TryGetInt32` does: `-0` is 0, while `-0.0`, `80.0`
+    // an Int32 as managed `TryGetInt32` does: `-0` is 0, while `-0.0`, `85.0`
     // and out-of-range integers are refused. A visitor would see `-0` and
     // `-0.0` as the same float. The scan refuses a private-token object first.
     fn event_version<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<i32, D::Error> {
@@ -539,7 +539,7 @@ pub(crate) async fn read_status_event(
 
 type FeatureRecord = Map<String, Value>;
 
-// Internal diagnostic provenance never crosses the v80 wire. Battery updates
+// Internal diagnostic provenance never crosses the v85 wire. Battery updates
 // replace one family; private policy text is dropped at the redaction boundary.
 #[derive(Clone, Copy)]
 pub(crate) enum PrivatePolicyFamily {
@@ -749,7 +749,7 @@ impl Snapshot {
             confirmed_state: None,
             profiles,
             desired_state,
-            // v80 has no fully unknown power source. Use its conservative
+            // v85 has no fully unknown power source. Use its conservative
             // unresolved encoding for both unknown and unclassified external.
             active_power_source: if on_battery {
                 BATTERY
@@ -917,14 +917,27 @@ impl Snapshot {
         self.revision = revision;
     }
 
-    // Use only for a direct, admitted ObserveState reply. v80 can retain
+    /// Managed PowerSource wire value for display admission, already bounded
+    /// to 0..=3 by `verify`. Like the managed display coordinator, a source the
+    /// Service only retained (observationReason RetainedPowerSource = 3) is
+    /// ExternalUnknown, so it confirms no display power context.
+    #[cfg(openblade_display_write)]
+    pub(crate) fn display_power_source(&self) -> i32 {
+        const RETAINED_POWER_SOURCE: i64 = 3;
+        let retained = self
+            .feature_fields
+            .get("observationReason")
+            .and_then(Value::as_i64)
+            == Some(RETAINED_POWER_SOURCE);
+        if retained {
+            3
+        } else {
+            self.active_power_source
+        }
+    }
+    // Use only for a direct, admitted ObserveState reply. v85 can retain
     // fields during failed observations. Require the managed completion
     // guards and explicit absence of observation or write uncertainty.
-    /// Managed PowerSource wire value, already bounded to 0..=3 by `verify`.
-    #[cfg(openblade_display_write)]
-    pub(crate) fn active_power_source(&self) -> i32 {
-        self.active_power_source
-    }
     pub(crate) fn confirmed_performance(&self) -> Option<ConfirmedPerformance> {
         let observing = self.feature_fields.get("observationReason")?.as_i64()? != 0;
         let unconfirmed = self.feature_fields.get("unconfirmedWrites")?.as_array()?;
@@ -974,7 +987,7 @@ impl Snapshot {
                 .iter()
                 .any(|value| !(0..=3).contains(value))
         {
-            return Err(invalid("invalid v80 status snapshot"));
+            return Err(invalid("invalid v85 status snapshot"));
         }
         Ok(())
     }
@@ -1093,7 +1106,7 @@ impl Snapshot {
         observation: Option<(u8, Option<bool>)>,
         message: &str,
     ) -> Self {
-        // The existing IPC80 DesiredBatteryState cannot represent Off + TFC.
+        // The existing IPC85 DesiredBatteryState cannot represent Off + TFC.
         // Keep that private intent internally and publish the established
         // unavailable projection; never turn it into firmware-confirmed false.
         let incompatible = desired.is_some_and(|d| d.temporary && !d.protection);

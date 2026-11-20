@@ -126,6 +126,23 @@ class FixtureContracts(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'semantic drift'):
                 f.compare_generated(root, root / 'out')
 
+    def test_frozen_persisted_inputs_ignore_fresh_output_but_not_pin_drift(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            pinned = root / 'tools/openblade-windows-host/tests/fixtures'
+            pinned.mkdir(parents=True)
+            generated = root / 'out/edge-producer/generated'
+            generated.mkdir(parents=True)
+            (pinned / 'store.json').write_bytes(b'schema 25')
+            (generated / 'store.json').write_bytes(b'schema 27')
+            inventory = dict(originalLegacyInputs=[], generated=[],
+                             frozenPersisted=[dict(name='store.json', sha256=f.digest(pinned / 'store.json'))])
+            (pinned / 'native-thermal-edge-fixtures.json').write_text(json.dumps(inventory))
+            f.compare_generated(root, root / 'out')
+            (pinned / 'store.json').write_bytes(b'edited')
+            with self.assertRaisesRegex(ValueError, 'persisted input drift'):
+                f.compare_generated(root, root / 'out')
+
     @unittest.skipUnless(sys.platform == 'win32', 'Windows process-tree timeout contract')
     def test_owned_command_timeout_fails_and_keeps_log(self):
         with tempfile.TemporaryDirectory() as d:

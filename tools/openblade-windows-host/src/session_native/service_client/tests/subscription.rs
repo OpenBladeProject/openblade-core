@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::VecDeque};
 
 mod generations;
 
-const FRAMES: &[u8] = include_bytes!("../../../../tests/fixtures/subscribe-status-v80.frames");
+const FRAMES: &[u8] = include_bytes!("../../../../tests/fixtures/subscribe-status-v85.frames");
 const NEXT_ID: &str = "11111111-2222-4333-8444-555555555556";
 const REPLACEMENT_ID: &str = "11111111-2222-4333-8444-555555555563";
 

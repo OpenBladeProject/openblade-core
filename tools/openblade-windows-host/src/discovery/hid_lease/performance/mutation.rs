@@ -223,7 +223,10 @@ impl Power {
     }
     pub(super) fn admits(self, destination: Preset) -> bool {
         // Managed battery policy admits BatterySaver/BatteryBalanced, not
-        // these AC/limited-external destinations (automation::performance_source_eligible).
+        // these AC/limited-external destinations. Managed now offers every
+        // preset on a limited adapter (automation::performance_source_eligible);
+        // this native writer keeps the reviewed Balanced-only limit until
+        // that expansion is separately ported, so it refuses fail-closed.
         self.actual > 0
             && self.recommended > 0
             && (destination == Preset::Balanced || self.actual >= self.recommended)

@@ -45,7 +45,7 @@ public sealed class NativeThermalEdgeFixtureTests
                 offset += length + 4;
             }
             Assert.Equal(original.Length, offset);
-            await File.WriteAllBytesAsync(Path.Combine(generated, name + "-v80.frames"), output.ToArray());
+            await File.WriteAllBytesAsync(Path.Combine(generated, $"{name}-v{OpenBladeIpc.ProtocolVersion}.frames"), output.ToArray());
         }
         foreach (bool maximum in new[] { false, true })
         {

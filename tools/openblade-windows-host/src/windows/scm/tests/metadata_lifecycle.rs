@@ -306,7 +306,7 @@ async fn check_status(path: &str, verified: bool, revision: &mut i64) {
 
 async fn request(path: &str, mut payload: Value) -> Value {
     let mut pipe = open_pipe(path).await;
-    payload["version"] = 80.into();
+    payload["version"] = 85.into();
     payload["requestId"] = "11111111-2222-4333-8444-555555555555".into();
     let payload = serde_json::to_vec(&payload).unwrap();
     pipe.write_i32_le(payload.len() as i32).await.unwrap();
@@ -317,6 +317,6 @@ async fn request(path: &str, mut payload: Value) -> Value {
     pipe.read_exact(&mut payload).await.unwrap();
     let response: Value = serde_json::from_slice(&payload).unwrap();
     assert_eq!(response["frame"], "response");
-    assert_eq!(response["version"], 80);
+    assert_eq!(response["version"], 85);
     response
 }

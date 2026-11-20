@@ -689,13 +689,13 @@ impl Rig {
         response
     }
     async fn get(&self) -> Value {
-        self.request(json!({"operation":"getStatus","version":80,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000099"})).await
+        self.request(json!({"operation":"getStatus","version":85,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000099"})).await
     }
     async fn set(&self, n: u8, value: Value) -> Value {
-        let response = self.request(json!({"operation":"setPerformanceOverride","version":80,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value})).await;
+        let response = self.request(json!({"operation":"setPerformanceOverride","version":85,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value})).await;
         assert!(
             response["status"].is_null(),
-            "v80 result replies have exactly one body"
+            "v85 result replies have exactly one body"
         );
         assert!(!response["result"].is_null());
         response
@@ -720,7 +720,7 @@ async fn installed_dispatcher_direct_pair_persists_before_applied_and_retains_pu
     assert_eq!(metadata["success"], true);
     assert_eq!(metadata["status"]["writesBlocked"], true);
     assert!(metadata["status"]["confirmedState"].is_null());
-    let initial=rig.request(json!({"operation":"observeState","version":80,"requestId":"dddddddd-bbbb-cccc-dddd-000000000001","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})).await;
+    let initial=rig.request(json!({"operation":"observeState","version":85,"requestId":"dddddddd-bbbb-cccc-dddd-000000000001","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})).await;
     assert_eq!(initial["success"], true);
     assert_eq!(initial["status"]["confirmedState"]["performance"], 5);
     assert_eq!(initial["status"]["confirmedState"]["fans"], 3);
@@ -781,7 +781,7 @@ async fn installed_temporary_clear_and_application_precedence_use_saved_canonica
     assert_eq!(rig.set(1, value(2, 1)).await["result"]["status"], 1);
     assert_eq!(rig.set(2, value(1, 0)).await["result"]["status"], 1);
     assert!(rig.files.document("manual-overrides.json")["overrides"]["performance"].is_null());
-    let report=rig.request(json!({"operation":"reportApplicationContext","version":80,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":"C:\\Games\\Game.exe"})).await;
+    let report=rig.request(json!({"operation":"reportApplicationContext","version":85,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":"C:\\Games\\Game.exe"})).await;
     assert_eq!(report["result"]["status"], 0);
     let result = rig.set(3, Value::Null).await;
     let status = rig.get().await;
@@ -875,11 +875,16 @@ async fn installed_source_ineligible_intent_is_stored_and_power_change_stops_par
         if actual == 0 {
             assert_eq!(rig.port.state.lock().unwrap().writes, 0)
         } else {
+            // The shared policy admits every preset on a confirmed USB-C
+            // source, so the override is the destination. The native
+            // performance writer still admits only Balanced on a limited
+            // adapter, so it refuses before any write instead of following
+            // the managed expansion.
             assert_eq!(status["status"]["desiredState"]["performance"]["value"], 1);
-            assert_eq!(status["status"]["confirmedState"]["performance"], 1);
-            // The policy-selected preset is confirmed; that is not an admission failure.
+            assert!(status["status"]["confirmedState"].is_null());
+            assert_eq!(rig.port.state.lock().unwrap().writes, 0);
             assert!(message.ends_with(
-                "The current power and profile policy selects another performance destination, which is confirmed; the requested value is saved but not applied."
+                "The independently observed power source changed or no longer admits this destination."
             ));
         }
         rig.stop().await;
@@ -1084,12 +1089,12 @@ async fn installed_private_projection_is_bound_to_sid_for_get_observe_and_subscr
     let rig = Rig::new(files);
     assert_eq!(rig.set(1, value(2, 1)).await["result"]["status"], 1);
     for operation in ["getStatus", "observeState", "subscribeStatus"] {
-        let request = json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0});
+        let request = json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0});
         // Get/subscription DTOs reject observation-only members.
         let request = if operation == "observeState" {
             request
         } else {
-            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077"})
+            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000077"})
         };
         let own = rig.request_as(request.clone(), USER, SID).await;
         assert_eq!(
@@ -1220,7 +1225,7 @@ fn manual_files() -> MemoryFiles {
 }
 async fn fresh_observe(rig: &Rig) -> Value {
     assert_eq!(rig.get().await["success"], true); // Same metadata readiness probe as installed prepare.
-    rig.request(json!({"operation":"observeState","version":80,"requestId":"eeeeeeee-bbbb-cccc-dddd-000000000001","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})).await
+    rig.request(json!({"operation":"observeState","version":85,"requestId":"eeeeeeee-bbbb-cccc-dddd-000000000001","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})).await
 }
 #[tokio::test]
 async fn correction_manual_active0581_stores_without_setters_and_automatic_stays_direct() {
@@ -1435,7 +1440,7 @@ async fn correction_late_accepted_intent_reconciles_only_with_new_read_without_r
             std::thread::yield_now();
         }
     }));
-    let request=crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000091","value":value(1,1)})).unwrap()).unwrap();
+    let request=crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000091","value":value(1,1)})).unwrap()).unwrap();
     let deadline = Instant::now() + std::time::Duration::from_secs(1);
     let operation = rig
         .source
@@ -1520,7 +1525,7 @@ async fn correction_queued_stored_subscription_rebases_latest_hardware_without_r
         Rc::new(Subscriptions::new(2)),
     );
     let exercise = async {
-        crate::service_frame::write_payload(&mut client,&serde_json::to_vec(&json!({"operation":"subscribeStatus","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000090"})).unwrap()).await.unwrap();
+        crate::service_frame::write_payload(&mut client,&serde_json::to_vec(&json!({"operation":"subscribeStatus","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000090"})).unwrap()).await.unwrap();
         let _: Value = serde_json::from_slice(
             &crate::service_frame::read_payload(&mut client)
                 .await
@@ -1538,7 +1543,7 @@ async fn correction_queued_stored_subscription_rebases_latest_hardware_without_r
         let mut desired = value(2, 1);
         desired["gpuClockTuning"] =
             json!({"enabled":true,"offsets":{"coreMegahertz":10,"memoryMegahertz":20}});
-        let request=crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000092","value":desired})).unwrap()).unwrap();
+        let request=crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000092","value":desired})).unwrap()).unwrap();
         let b = rig.source.lock().await.mutate(
             USER,
             SID.into(),
@@ -1598,7 +1603,7 @@ async fn correction_unknown_external_metadata_preserves_temporary_intent_without
     let rig = Rig::new(MemoryFiles::default());
     assert_eq!(rig.set(91, value(2, 0)).await["result"]["status"], 1);
     for operation in ["getStatus", "observeState", "subscribeStatus"] {
-        let mut request = json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000093"});
+        let mut request = json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000093"});
         if operation == "observeState" {
             request["includeLiveReadings"] = json!(false);
             request["requestedLiveReadings"] = json!(0);
@@ -1663,11 +1668,11 @@ async fn correction_outer_lifecycle_and_transient_admission_keep_service_running
             });
             assert_eq!(controls.handle(code), 0);
         };
-        let get = || json!({"operation":"getStatus","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000094"});
-        let observe = || json!({"operation":"observeState","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000095","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0});
+        let get = || json!({"operation":"getStatus","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000094"});
+        let observe = || json!({"operation":"observeState","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000095","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0});
         assert_eq!(outer_request(&tx, observe()).await["success"], true);
         rig.custody.fresh_refuse.store(true, Ordering::Release);
-        let refused=outer_request(&tx,json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096","value":value(1,1)})).await;
+        let refused=outer_request(&tx,json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096","value":value(1,1)})).await;
         assert_eq!(refused["result"]["status"], 2);
         assert_eq!(outer_request(&tx, get()).await["success"], true);
         ingress(SERVICE_CONTROL_POWEREVENT, 4);
@@ -1823,7 +1828,7 @@ async fn correction_outer_fatal_admission_terminates_and_preserves_possible_subm
                 sid: SID.into(),
             }))
             .unwrap();
-            crate::service_frame::write_payload(&mut client,&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})).unwrap()).await.unwrap();
+            crate::service_frame::write_payload(&mut client,&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})).unwrap()).await.unwrap();
             assert!(
                 crate::service_frame::read_payload(&mut client)
                     .await
@@ -2134,9 +2139,9 @@ async fn edge_outer_policy_fatal_capture_and_health_fail_get_and_observe() {
             }))
             .unwrap();
             let request = if observe {
-                json!({"operation":"observeState","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
+                json!({"operation":"observeState","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
             } else {
-                json!({"operation":"getStatus","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098"})
+                json!({"operation":"getStatus","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098"})
             };
             crate::service_frame::write_payload(
                 &mut client,
@@ -2227,7 +2232,7 @@ async fn edge_original_owner_integrity_loss_after_retirement_never_reopens_reads
         }));
     }
     rig.get().await;
-    let request = crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})).unwrap()).unwrap();
+    let request = crate::service_status::StatusRequest::decode(&serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})).unwrap()).unwrap();
     let result = rig
         .source
         .lock()
@@ -2283,7 +2288,7 @@ async fn edge_stored_temporary_publication_cannot_resurrect_expired_policy() {
         Rc::new(Subscriptions::new(2)),
     );
     let exercise = async {
-        crate::service_frame::write_payload(&mut client, &serde_json::to_vec(&json!({"operation":"subscribeStatus","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000090"})).unwrap()).await.unwrap();
+        crate::service_frame::write_payload(&mut client, &serde_json::to_vec(&json!({"operation":"subscribeStatus","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000090"})).unwrap()).await.unwrap();
         crate::service_frame::read_payload(&mut client)
             .await
             .unwrap();
@@ -2342,7 +2347,7 @@ async fn edge_stored_temporary_publication_cannot_resurrect_expired_policy() {
     };
     let (result, ()) = tokio::join!(server, exercise);
     assert!(result.is_ok());
-    let foreign = rig.request_as(json!({"operation":"getStatus","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000099"}), USER, "S-1-5-21-111-222-333-1002").await;
+    let foreign = rig.request_as(json!({"operation":"getStatus","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000099"}), USER, "S-1-5-21-111-222-333-1002").await;
     assert!(foreign["status"]["performanceOverride"].is_null());
     rig.stop().await;
 }
@@ -2366,7 +2371,7 @@ fn managed_application_files(bytes: &[u8]) -> MemoryFiles {
     files
 }
 async fn report_game(rig: &Rig) {
-    let result = rig.request(json!({"operation":"reportApplicationContext","version":80,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
+    let result = rig.request(json!({"operation":"reportApplicationContext","version":85,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
     assert_eq!(result["result"]["status"], 0);
 }
 #[tokio::test]
@@ -2537,7 +2542,7 @@ async fn edge_managed_saved_custom_survives_unpublished_activation_and_private_f
         );
         assert_eq!(rig.custody.activations.load(Ordering::Acquire), 0);
         for operation in ["getStatus", "observeState", "subscribeStatus"] {
-            let mut request = json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000078"});
+            let mut request = json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000078"});
             if operation == "observeState" {
                 request["includeLiveReadings"] = json!(false);
                 request["requestedLiveReadings"] = json!(0);
@@ -2576,7 +2581,7 @@ async fn edge_managed_saved_custom_survives_unpublished_activation_and_private_f
             Rc::new(Subscriptions::new(2)),
         );
         let exercise = async {
-            crate::service_frame::write_payload(&mut client, &serde_json::to_vec(&json!({"operation":"subscribeStatus","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000090"})).unwrap()).await.unwrap();
+            crate::service_frame::write_payload(&mut client, &serde_json::to_vec(&json!({"operation":"subscribeStatus","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000090"})).unwrap()).await.unwrap();
             crate::service_frame::read_payload(&mut client)
                 .await
                 .unwrap();
@@ -2696,7 +2701,7 @@ async fn edge_outer_terminal_fatal_survives_healthy_fresh_recheck() {
         .unwrap();
         crate::service_frame::write_payload(
             &mut client,
-            &serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":80,
+            &serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":85,
                 "requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000099","value":value(1,1)}))
             .unwrap(),
         )
@@ -2783,7 +2788,7 @@ async fn edge_outer_first_intent_and_worker_fatals_preserve_class_and_fences() {
             .unwrap();
             crate::service_frame::write_payload(
                 &mut client,
-                &serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":80,
+                &serde_json::to_vec(&json!({"operation":"setPerformanceOverride","version":85,
                 "requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000099","value":value(1,1)}))
                 .unwrap(),
             )
@@ -2862,11 +2867,11 @@ async fn edge_canceled_first_intent_fatal_is_sticky_for_get_observe_and_new_sid(
         ("setPerformanceOverride", "S-1-5-21-111-222-333-1002"),
     ] {
         let request = if operation == "setPerformanceOverride" {
-            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
+            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
         } else if operation == "observeState" {
-            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000097","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
+            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000097","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
         } else {
-            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096"})
+            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096"})
         };
         let (mut client, server) = duplex(65536);
         let publications = rig.source.lock().await.publications();
@@ -2948,11 +2953,11 @@ async fn correction_idle_owner_loss_precedes_direct_observe_and_retains_first_fa
         "setPerformanceOverride",
     ] {
         let request = if operation == "setPerformanceOverride" {
-            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
+            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
         } else if operation == "observeState" {
-            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000097","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
+            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000097","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
         } else {
-            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096"})
+            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096"})
         };
         let (mut client, server) = duplex(65536);
         let publications = rig.source.lock().await.publications();
@@ -3262,7 +3267,7 @@ async fn correction_disconnected_first_intent_fatal_precedes_later_owner_loss() 
         crate::service_frame::write_payload(
             &mut client,
             &serde_json::to_vec(&json!({
-                "operation":"setPerformanceOverride","version":80,
+                "operation":"setPerformanceOverride","version":85,
                 "requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000091","value":value(1,1)
             }))
             .unwrap(),
@@ -3300,11 +3305,11 @@ async fn correction_disconnected_first_intent_fatal_precedes_later_owner_loss() 
         ("setPerformanceOverride", "S-1-5-21-111-222-333-1002"),
     ] {
         let request = if operation == "setPerformanceOverride" {
-            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
+            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000098","value":value(1,1)})
         } else if operation == "observeState" {
-            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000097","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
+            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000097","includeLiveReadings":false,"requestedLiveReadings":0,"effectiveLiveReadings":0})
         } else {
-            json!({"operation":operation,"version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096"})
+            json!({"operation":operation,"version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000096"})
         };
         let (mut client, server) = duplex(65536);
         let publications = rig.source.lock().await.publications();
@@ -3445,7 +3450,7 @@ async fn correction_first_prepared_protection_failure_remains_fatal() {
         crate::service_frame::write_payload(
             &mut client,
             &serde_json::to_vec(&json!({
-                "operation":"setPerformanceOverride", "version":80,
+                "operation":"setPerformanceOverride", "version":85,
                 "requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000091", "value":value(1,1)
             }))
             .unwrap(),
@@ -3672,7 +3677,7 @@ fn fan_request(n: u32, mode: Option<u8>, rpm: u16) -> Value {
         v["fixedSpeedRpm"] = json!(rpm);
         v
     });
-    json!({"operation":"setFanOverride","version":80,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value,"settings":settings})
+    json!({"operation":"setFanOverride","version":85,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}"),"value":value,"settings":settings})
 }
 #[cfg(feature = "service-fan-mutation-v2")]
 fn fan_rig(selector: u8, manual: u8) -> Rig {
@@ -3723,7 +3728,8 @@ fn fan_v2_strict_managed_shapes_and_target_validation() {
     }
     let valid = fan_request(1, Some(1), 3700);
     for (key, value) in [
-        ("version", json!(81)),
+        ("version", json!(80)),
+        ("version", json!(84)),
         ("requestId", json!("bad")),
         ("extra", json!(1)),
     ] {
@@ -3732,8 +3738,8 @@ fn fan_v2_strict_managed_shapes_and_target_validation() {
         assert!(StatusRequest::decode(&serde_json::to_vec(&v).unwrap()).is_err());
     }
     for text in [
-        r#"{"operation":"setFanOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001"}"#,
-        r#"{"operation":"setFanOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":1,"value":3,"lifetime":1}}"#,
+        r#"{"operation":"setFanOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001"}"#,
+        r#"{"operation":"setFanOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000001","value":{"value":1,"value":3,"lifetime":1}}"#,
     ] {
         assert!(StatusRequest::decode(text.as_bytes()).is_err());
     }
@@ -3794,7 +3800,7 @@ async fn fan_v2_actual_dispatch_recipes_ownership_stop_timing_and_private_intent
                 .all(|(c, k, _, _)| !(*c == 13 && *k == 0x81))
         );
         drop(state);
-        let public=r.request_as(json!({"operation":"getStatus","version":80,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000077"}),USER,"S-1-5-21-111-222-333-1002").await;
+        let public=r.request_as(json!({"operation":"getStatus","version":85,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000077"}),USER,"S-1-5-21-111-222-333-1002").await;
         assert!(public["status"]["fanOverride"].is_null());
         assert!(public["status"]["fanControlOverride"].is_null());
         r.origin.stop();
@@ -4302,7 +4308,7 @@ async fn fan_correction_fresh_epoch_auto_recovery_and_true_noop_close_original_o
                 .await["result"]["status"],
                 2
             );
-            let foreign_performance = json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000186","value":value(1, 1)});
+            let foreign_performance = json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000186","value":value(1, 1)});
             assert_eq!(
                 r.request_as(foreign_performance, USER, "S-1-5-21-111-222-333-1002")
                     .await["result"]["status"],
@@ -4611,7 +4617,7 @@ async fn fan_correction_cancelled_registered_preflight_keeps_scope_until_native_
     drop(future);
     assert!(fan_rows(&r).is_empty());
     let captures = r.factory_calls.load(Ordering::Acquire);
-    let foreign = json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000231","value":value(1, 1)});
+    let foreign = json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000231","value":value(1, 1)});
     assert_eq!(
         r.request_as(foreign, USER, "S-1-5-21-111-222-333-1002")
             .await["result"]["status"],
@@ -4642,7 +4648,7 @@ async fn fan_correction_known_unpublished_activation_does_not_keep_scope_fence()
         2
     );
     let captures = r.factory_calls.load(Ordering::Acquire);
-    let foreign = json!({"operation":"setPerformanceOverride","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000241","value":value(1, 1)});
+    let foreign = json!({"operation":"setPerformanceOverride","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000241","value":value(1, 1)});
     assert_eq!(
         r.request_as(foreign, USER, "S-1-5-21-111-222-333-1002")
             .await["result"]["status"],
@@ -4657,7 +4663,7 @@ async fn fan_correction_known_unpublished_activation_does_not_keep_scope_fence()
 
 #[cfg(feature = "service-battery-policy-v1")]
 fn battery_request(n: u32, operation: &str, value: Value) -> Value {
-    let mut r = json!({"operation":operation,"version":80,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}")});
+    let mut r = json!({"operation":operation,"version":85,"requestId":format!("aaaaaaaa-bbbb-cccc-dddd-{n:012}")});
     r[if operation == "setBatteryPolicy" {
         "value"
     } else {
@@ -4683,7 +4689,8 @@ fn battery_v1_strict_existing_requests_no_raw_or_lifetime_escape() {
     }
     for (k, v) in [
         ("lifetime", json!(1)),
-        ("version", json!(81)),
+        ("version", json!(80)),
+        ("version", json!(84)),
         ("raw", json!(198)),
         ("requestId", json!("bad")),
     ] {
@@ -5285,7 +5292,7 @@ async fn battery_correction_first_committed_intent_survives_final_authority_loss
         "{status}"
     );
     assert_eq!(r.port.state.lock().unwrap().writes, 1);
-    let foreign = r.request_as(json!({"operation":"getStatus","version":80,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000331"}), USER, "S-1-5-21-111-222-333-1002").await;
+    let foreign = r.request_as(json!({"operation":"getStatus","version":85,"requestId":"bbbbbbbb-cccc-dddd-eeee-000000000331"}), USER, "S-1-5-21-111-222-333-1002").await;
     assert_ne!(
         foreign["status"]["desiredState"]["battery"]["configuredPolicy"]["chargeLimitPercent"],
         70
@@ -5802,7 +5809,7 @@ async fn battery_publication_active_subscription_expires_at_unaligned_battery_de
     };
     let exercise = async {
         crate::service_frame::write_payload(&mut client,&serde_json::to_vec(&json!({
-            "operation":"subscribeStatus","version":80,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000408"})).unwrap()).await.unwrap();
+            "operation":"subscribeStatus","version":85,"requestId":"aaaaaaaa-bbbb-cccc-dddd-000000000408"})).unwrap()).await.unwrap();
         let initial = crate::service_frame::read_payload(&mut client)
             .await
             .unwrap();
