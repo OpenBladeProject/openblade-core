@@ -185,3 +185,30 @@ fn temporary_expiry_keeps_external_intent_while_unclassified() {
         assert!(!automation::temporary_expired(1, observed));
     }
 }
+
+#[test]
+fn unclassified_temporary_follows_classification_within_one_epoch() {
+    use automation::temporary_after as after;
+    // Managed `PreserveOverridesForExternalClassification`: classified in the
+    // same generation keeps it, refined to that class.
+    for class in [0, 2, 3] {
+        assert_eq!(after(3, Some(7), class, 7), Some(class));
+        // A power or session notice since the save retires it.
+        assert_eq!(after(3, Some(7), class, 8), None);
+        assert_eq!(after(3, None, class, 7), None);
+    }
+    // Battery always retires it; an unknown reading retires nothing.
+    assert_eq!(after(3, Some(7), 1, 7), None);
+    assert_eq!(after(3, Some(7), -1, 8), Some(3));
+    // Every other saved class follows `temporary_expired`, whatever the epoch.
+    for saved in [0, 1, 2] {
+        for observed in [-1, 0, 1, 2, 3, 4] {
+            for epoch in [7, 8] {
+                assert_eq!(
+                    after(saved, Some(7), observed, epoch),
+                    (!automation::temporary_expired(saved, observed)).then_some(saved)
+                );
+            }
+        }
+    }
+}

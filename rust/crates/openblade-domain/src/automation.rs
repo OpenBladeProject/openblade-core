@@ -69,14 +69,38 @@ pub fn override_source_eligible(preset: i32, source: i32) -> bool {
 /// as managed keeps its automation source until the adapter is classified,
 /// and retires only one saved on battery (managed expires transients once
 /// when AC arrives without a classification). Other classes retire nothing.
-/// A temporary saved while unclassified retires on the first classified
-/// class: native keeps no Windows power generation, so it cannot prove what
-/// managed `PreserveOverridesForExternalClassification` needs to keep it.
+/// Without the lifecycle epoch (`temporary_after`), a temporary saved while
+/// unclassified retires on the first classified class.
 pub fn temporary_expired(saved: i32, observed: i32) -> bool {
     match observed {
         0..=2 => saved != observed,
         UNCLASSIFIED_EXTERNAL => saved == 1,
         _ => false,
+    }
+}
+
+/// The class a temporary saved on `saved` at lifecycle epoch `saved_epoch`
+/// keeps after a fresh reading `observed` at `epoch`, or `None` once it lapses.
+/// Managed `PreserveOverridesForExternalClassification` keeps a temporary
+/// saved while unclassified when the adapter is then classified within the
+/// same Windows power generation, and from then on treats that class as its
+/// source (`lastClassifiedExternalSource`). The native equivalent of that
+/// generation is the lifecycle epoch, which every SCM power and session notice
+/// advances: a temporary saved unclassified lapses at the first reading after
+/// such a notice, and is refined to the first classified class otherwise.
+/// Every other case is `temporary_expired`; an unknown class retires nothing.
+pub fn temporary_after(
+    saved: i32,
+    saved_epoch: Option<u64>,
+    observed: i32,
+    epoch: u64,
+) -> Option<i32> {
+    let same_generation = saved_epoch == Some(epoch);
+    match (saved, observed) {
+        (UNCLASSIFIED_EXTERNAL, 0 | 2 | UNCLASSIFIED_EXTERNAL) => {
+            same_generation.then_some(observed)
+        }
+        _ => (!temporary_expired(saved, observed)).then_some(saved),
     }
 }
 
