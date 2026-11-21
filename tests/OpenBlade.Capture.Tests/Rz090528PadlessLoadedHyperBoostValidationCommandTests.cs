@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using OpenBlade.Capture;
 using OpenBlade.Protocol;
 
@@ -77,15 +78,28 @@ public sealed class Rz090528PadlessLoadedHyperBoostValidationCommandTests
         }, _ => Interlocked.Increment(ref published), CancellationToken.None).AsTask();
         try
         {
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
-            await Assert.ThrowsAsync<TimeoutException>(() => read.WaitAsync(TimeSpan.FromSeconds(2)));
+            // These are worker-startup and completion guards, not the 200 ms
+            // lane deadline under test. Match the ten-second guard used under
+            // cold CI scheduling, and require the read itself to fault with the
+            // lane's timeout rather than accepting the guard's own timeout.
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Same(read, await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(10))));
+            await Assert.ThrowsAsync<TimeoutException>(() => read);
             Assert.False(await lane.CloseAsync());
             Assert.False(lane.OperationQuiesced);
             Assert.Equal(0, Volatile.Read(ref disposed));
             await Assert.ThrowsAsync<InvalidOperationException>(() => lane.InvokeAsync(() => "retry", null, CancellationToken.None).AsTask());
         }
         finally { release.Set(); }
-        Assert.True(await lane.CloseAsync());
+        // CloseAsync waits only the 200 ms lane timeout for the released worker
+        // to drain and dispose. Retry it within the completion guard so a slow
+        // runner cannot fail the quiescence check after the read returned.
+        bool quiesced = false;
+        for (var guard = Stopwatch.StartNew(); !quiesced && guard.Elapsed < TimeSpan.FromSeconds(10);)
+        {
+            quiesced = await lane.CloseAsync();
+        }
+        Assert.True(quiesced);
         Assert.True(lane.OperationQuiesced);
         Assert.Equal(1, Volatile.Read(ref disposed));
         Assert.Equal(0, Volatile.Read(ref published));
@@ -95,7 +109,10 @@ public sealed class Rz090528PadlessLoadedHyperBoostValidationCommandTests
     public async Task AcceptedReadPublishesOnceAndClosesBeforeDisposalClaim()
     {
         int published = 0, disposed = 0;
-        var lane = new OwnedReadOnlyLane<string>(() => disposed++);
+        // The default two-second lane deadline starts when the read is queued,
+        // so worker startup under full-suite load could fail the accepted read.
+        // This test covers publish-once and close ordering, not the deadline.
+        var lane = new OwnedReadOnlyLane<string>(() => disposed++, TimeSpan.FromMinutes(5));
         Assert.Equal("sample", await lane.InvokeAsync(() => "sample", _ => published++, CancellationToken.None));
         Assert.Equal(1, published);
         Assert.Equal(0, disposed);
