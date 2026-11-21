@@ -730,3 +730,47 @@ async fn fan_recipes_count_their_intermediate_pair_and_custom_levels() {
         }
     }
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_fan_return_charges_the_prepared_append_once_with_slow_checkpoints() {
+    // Automatic from manual fans under Performance, at 5 ms transfers, 60 ms
+    // checkpoints (two 30 ms authorizations) and 60 ms journal appends: the
+    // recipe takes 2160 ms. Its first exchange after the Prepared append is
+    // timed from after that append, so the append is charged once, with the
+    // rows left. The recipe is refused with no setter below 2225 ms and runs
+    // there inside its budget. Taking the append out of that exchange twice
+    // would start it from 1985 ms and overrun with setters written.
+    for (budget, confirmed) in [(2050, false), (2220, false), (2225, true)] {
+        let fixture = Fixture::new();
+        {
+            let mut s = fixture.state.lock().unwrap();
+            s.selectors = [2, 2];
+            s.fans = [1, 1];
+            s.custom_levels = [2, 2];
+            s.latency = Some(Duration::from_millis(5));
+        }
+        let permit = Paced {
+            fan: FanIntent::checked(0, 3700),
+            authorization: Duration::from_millis(30),
+            append: Duration::from_millis(60),
+            ..Paced::default()
+        };
+        let started = Instant::now();
+        let observed = apply(&fixture, &permit, Duration::from_millis(budget)).await;
+        let case = format!("{budget} ms");
+        assert_eq!(observed.is_some(), confirmed, "{case}");
+        if confirmed {
+            assert!(permit.refusals.lock().unwrap().is_empty(), "{case}");
+            assert_eq!(fixture.state.lock().unwrap().writes, 2, "{case}");
+            assert_eq!(started.elapsed(), Duration::from_millis(2160), "{case}");
+        } else {
+            assert_eq!(
+                *permit.refusals.lock().unwrap(),
+                [Refusal::Deadline],
+                "{case}"
+            );
+            assert_eq!(*permit.fan_rows.lock().unwrap(), [0], "{case}");
+            assert_eq!(fixture.state.lock().unwrap().writes, 0, "{case}");
+        }
+    }
+}
