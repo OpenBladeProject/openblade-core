@@ -66,6 +66,8 @@ pub(crate) struct State {
     // Every transfer completes this long after its submission, on the
     // runtime's clock (paused in the direct Reader tests).
     pub(crate) latency: Option<Duration>,
+    /// Extra latency on each 07/8C power read, on top of `latency`.
+    pub(crate) power_latency: Option<Duration>,
 }
 #[derive(Clone)]
 pub(crate) struct Fixture {
@@ -119,7 +121,7 @@ impl Fixture {
                 let paused = {
                     let mut s = fixture.state.lock().unwrap();
                     s.opened += 1;
-                    s.latency.is_some()
+                    s.latency.is_some() || s.power_latency.is_some()
                 };
                 let mut reader = Reader::new(fixture.port(), admission);
                 // With a latency the job runs on paused time: its clock starts at
@@ -229,6 +231,11 @@ impl Port for MemoryPort {
                 let payload = &frame[9..9 + frame[6] as usize];
                 s.sent.push((class, command, payload.to_vec(), id));
                 s.sent_at.push(Instant::now());
+                if (class, command) == (7, 0x8c)
+                    && let Some(extra) = s.power_latency
+                {
+                    self.ready_at = Some(self.ready_at.unwrap_or_else(Instant::now) + extra);
+                }
                 if class == 7
                     && matches!(command, 0x92 | 0x8f)
                     && let Some(hook) = &s.battery_getter_hook

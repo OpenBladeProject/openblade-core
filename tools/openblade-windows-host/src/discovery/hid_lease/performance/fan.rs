@@ -68,7 +68,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
             (b, p, [modes, power])
         };
         let source = fence.admit(power)?;
-        let (plan, ids, carried) = if cleanup {
+        let (plan, ids, carried, budget) = if cleanup {
             let r = permit.fan_record()?;
             let owned = Plan::select(baseline, r.intent, source)?;
             // Fresh generic-manual topology retains only this already established
@@ -80,7 +80,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 return None;
             }
             let plan = Plan::select(baseline, FanIntent::checked(0, 3700)?, source)?;
-            (plan, r.cleanup[2..].to_vec(), None)
+            (plan, r.cleanup[2..].to_vec(), None, None)
         } else {
             // Owned Stop cleanup above keeps the owner's selector: shutdown hands
             // back to firmware without applying saved settings. An explicit
@@ -135,10 +135,6 @@ impl<P: Port> Reader<P, ReadAdmission> {
             let fixed = Duration::from_millis(
                 if plan.entry { 210 } else { 0 } + if intent.manual() { 65 } else { 0 },
             );
-            if !pace.covers(self, remaining, fixed, limit) {
-                permit.refused(Refusal::Deadline);
-                return None;
-            }
             // Request bytes are supplied by the retained permit, never client recipe bytes.
             let mut record = permit.fan_record()?;
             record.contract = if cfg!(feature = "service-battery-policy-v1") {
@@ -159,7 +155,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 .map(|levels| [levels.cpu as u8, levels.gpu as u8]);
             record.validate().ok()?;
             permit.prepare_fan(record.clone()).ok()?;
-            (plan, ids, performance)
+            (plan, ids, performance, Some((remaining, fixed)))
         };
         // Managed keeps an observed AC selector only in the class it first read
         // (`ProductionBatteryPort` acPreset with `EnsureThermalWritePowerAsync`),
@@ -178,6 +174,17 @@ impl<P: Port> Reader<P, ReadAdmission> {
         };
         a.checkpoint(&mut authorize, admission, limit).ok()?;
         permit.record_fan(if cleanup { 31 } else { 0 }).ok()?;
+        // Paced after the Prepared append (`mutation::Pace`); owned Stop
+        // cleanup is not paced. A refusal here submitted nothing: retirement
+        // records it as known not submitted (row 6). Its reserved IDs are not
+        // reused, as for every operation that reserves them.
+        if let Some((remaining, fixed)) = budget
+            && !pace.covers(a.reader, remaining, fixed, limit)
+        {
+            a.completed = true;
+            permit.refused(Refusal::Deadline);
+            return None;
+        }
         // The setters take the first reserved IDs in order; the power readings,
         // any intermediate read and the final reads follow.
         let mut next = ids.iter().copied();

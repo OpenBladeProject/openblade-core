@@ -4739,14 +4739,21 @@ async fn fan_recipes_run_within_the_recipe_budget_and_refuse_one_they_cannot_fin
             assert_eq!(r.port.state.lock().unwrap().writes, 4);
         } else {
             // About 3.1 s for the first three exchanges leaves too little for
-            // the other ten: stored, with no row and no setter.
+            // the other ten: stored, with no setter, and the Prepared row
+            // settled as known not submitted.
             assert_eq!(out["result"]["status"], 2, "{out}");
             assert_eq!(
                 out["result"]["message"],
                 "Fan override intent was stored. Hardware result: The remaining request time cannot cover this recipe at the measured device pace; no fan setter was submitted."
             );
             assert_eq!(r.port.state.lock().unwrap().writes, 0);
-            assert!(fan_rows(&r).is_empty());
+            let rows: Vec<Value> = fan_rows(&r)
+                .iter()
+                .map(|row| row["progress"].clone())
+                .collect();
+            assert_eq!(rows, [json!(0), json!(6)]);
+            assert!(!r.storage.pending());
+            assert!(!r.storage.outstanding_fan());
             assert_eq!(
                 r.files.document("manual-overrides.json")["overrides"]["fans"],
                 1

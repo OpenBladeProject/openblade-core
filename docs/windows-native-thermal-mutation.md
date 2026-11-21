@@ -846,13 +846,21 @@ their power reads 8, the final pair and its levels 4), and a fan return to
 Automatic with Custom or a manual entry with its intermediate pair. The fan
 recipe also waits up to 210 ms after an entry state pair and 65 ms between target
 commands. 6 s leaves those 21 exchanges twice the per-exchange time of the 2 s
-deadline after the 275 ms of spacing. Before its first journal row each
-operation also checks its own measured pace (`Pace`): the mean time per exchange
-so far, storage and admission included, times the exchanges left plus the fixed
-spacing must end by the deadline. Otherwise the intent stays saved, nothing is
-prepared or submitted, and the reply is Blocked with "The remaining request time
-cannot cover this recipe at the measured device pace; no thermal setter was
-submitted." (no fan setter, for a fan request).
+deadline after the 275 ms of spacing. After its Prepared row and before its
+first setter each operation also checks its own measured pace (`Pace`): the
+slowest interval between exchange completions so far, times the exchanges left
+plus the fixed spacing, must end by the deadline. Each interval holds what the
+operation did around that exchange (admission, storage, the Prepared append)
+and the check includes the interval still open, so a slow 07/8C read or a slow
+journal append paces the whole recipe; a mean let fast reads hide either. Each
+remaining setter exchange carries one journal append. Otherwise the intent stays
+saved, no setter is submitted, retirement settles the Prepared row as known not
+submitted, and the reply is Blocked with "The remaining request time cannot
+cover this recipe at the measured device pace; no thermal setter was
+submitted." (no fan setter, for a fan request). Owned Stop cleanup is not
+paced. The refused recipe's transaction IDs are not reused: the pool is never
+reclaimed within a process, and a refusal consumes no more of it than running
+the recipe would have.
 
 A fan operation's checkpoints reread saved policy, so that a change between
 setters stops it. They resolve it again only when a digest of its inputs

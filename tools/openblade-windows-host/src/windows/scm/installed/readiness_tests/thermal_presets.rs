@@ -981,7 +981,7 @@ async fn a_recipe_runs_within_the_recipe_budget_and_refuses_one_it_cannot_finish
     rig.stop().await;
     // At 500 ms the observation and the 07/8C read take about 3.1 s, and the
     // six remaining exchanges would end past the budget: the saved intent is
-    // kept and nothing is prepared or submitted.
+    // kept, and the Prepared row is settled as known not submitted.
     let rig = rig_at(2, 0, FULL, MemoryFiles::default());
     latency(&rig, 500);
     let result = rig.set(1, value(SILENT.0, 1)).await;
@@ -994,10 +994,84 @@ async fn a_recipe_runs_within_the_recipe_budget_and_refuses_one_it_cannot_finish
         )
     );
     assert!(setters(&rig).is_empty());
-    assert!(rows(&rig).is_empty());
+    assert_eq!(progress(&rig), [json!(0), json!(6)]);
+    assert!(!rig.storage.pending());
     assert_eq!(
         rig.files.document("manual-overrides.json")["overrides"]["performance"],
         SILENT.0
     );
+    rig.stop().await;
+}
+
+#[tokio::test]
+async fn one_slow_power_read_refuses_a_custom_recipe_before_its_first_setter() {
+    // From a Custom baseline the observation reads the pair and both levels,
+    // then 07/8C. With each 07/8C read held 1300 ms on a fast device the mean
+    // per exchange stays low enough to start, and the recipe then reached
+    // three of its four setters before its deadline. The slowest interval
+    // refuses it after the Prepared row instead.
+    let rig = rig_at(4, 0, FULL, MemoryFiles::default());
+    rig.get().await;
+    rig.port.state.lock().unwrap().on_power = Some(Arc::new(|_| {
+        std::thread::sleep(std::time::Duration::from_millis(1300));
+    }));
+    let result = rig.set(1, custom(2, 1, false)).await;
+    rig.port.state.lock().unwrap().on_power = None;
+    assert_eq!(result["result"]["status"], 2, "{result}");
+    assert_eq!(
+        result["result"]["message"],
+        format!(
+            "Performance override intent was stored. Hardware result: {}",
+            crate::installed::readiness::thermal_mutation::DEADLINE
+        )
+    );
+    assert!(thermal_setters(&rig).is_empty());
+    assert_eq!(progress(&rig), [json!(0), json!(6)]);
+    assert!(!rig.storage.pending());
+    rig.stop().await;
+}
+
+#[tokio::test]
+async fn a_slow_journal_append_refuses_a_recipe_before_its_first_setter() {
+    // Every journal append held 1600 ms on a healthy device. Paced before the
+    // Prepared row, the Silent pair started and split after its first setter
+    // ([5, 2]) at the deadline. Paced after it, the append's interval refuses
+    // the recipe before any setter.
+    let rig = rig_at(2, 0, FULL, MemoryFiles::default());
+    rig.get().await;
+    let stop = Arc::new(AtomicBool::new(false));
+    let rearm = {
+        let files = rig.files.clone();
+        let stop = stop.clone();
+        std::thread::spawn(move || {
+            while !stop.load(Ordering::Acquire) {
+                {
+                    let mut slot = files.stalled_replace.lock().unwrap();
+                    if slot.is_none() {
+                        *slot = Some((
+                            "thermal-mutation.journal",
+                            std::time::Duration::from_millis(1600),
+                        ));
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        })
+    };
+    let result = rig.set(1, value(SILENT.0, 1)).await;
+    stop.store(true, Ordering::Release);
+    rearm.join().unwrap();
+    *rig.files.stalled_replace.lock().unwrap() = None;
+    assert_eq!(result["result"]["status"], 2, "{result}");
+    assert_eq!(
+        result["result"]["message"],
+        format!(
+            "Performance override intent was stored. Hardware result: {}",
+            crate::installed::readiness::thermal_mutation::DEADLINE
+        )
+    );
+    assert!(setters(&rig).is_empty());
+    assert_eq!(progress(&rig), [json!(0), json!(6)]);
+    assert!(!rig.storage.pending());
     rig.stop().await;
 }

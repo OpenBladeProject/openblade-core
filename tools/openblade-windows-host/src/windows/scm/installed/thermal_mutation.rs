@@ -205,7 +205,8 @@ struct Application {
 pub(super) const UNCLASSIFIED_CLEARED: &str =
     "Override cleared. Power-profile application waits for adapter classification.";
 /// The request's remaining time cannot cover the recipe at the device pace
-/// measured so far (`Refusal::Deadline`); nothing was prepared or submitted.
+/// measured so far (`Refusal::Deadline`): the Prepared row is settled as
+/// known not submitted and no setter was submitted.
 pub(super) const DEADLINE: &str = "The remaining request time cannot cover this recipe at the measured device pace; no thermal setter was submitted.";
 /// Managed `ValidateUnclassifiedPerformanceOverride`, as `RecordRejectedIntent`
 /// reports it (Failed).

@@ -185,9 +185,11 @@ struct Reader<P: Port, A = Admission> {
     port: P,
     admission: A,
     poisoned: bool,
-    // Completed exchanges (a send and its reply), for an operation's measured
-    // pace (`mutation::Pace`).
-    exchanges: u32,
+    // The completion of the last exchange (a send and its reply) and the
+    // longest interval between completions since `mutation::Pace::start`,
+    // for an operation's measured pace.
+    last_reply: Option<Instant>,
+    slowest: Duration,
 }
 
 impl<P: Port, A: ObservationProof> Reader<P, A> {
@@ -196,7 +198,8 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
             port,
             admission,
             poisoned: false,
-            exchanges: 0,
+            last_reply: None,
+            slowest: Duration::ZERO,
         }
     }
 
@@ -450,7 +453,12 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
             if let Some(completion) = self.reader.port.poll() {
                 limit.check()?;
                 if reply && completion.is_ok() {
-                    self.reader.exchanges = self.reader.exchanges.saturating_add(1);
+                    let now = Instant::now();
+                    if let Some(last) = self.reader.last_reply {
+                        self.reader.slowest =
+                            self.reader.slowest.max(now.saturating_duration_since(last));
+                    }
+                    self.reader.last_reply = Some(now);
                 }
                 return completion;
             }

@@ -61,7 +61,7 @@ pub(super) struct FanPermit {
     // The saved-policy inputs (`Storage::policy_inputs`) the last passing
     // authorization resolved.
     verified: Mutex<Option<[u8; 32]>>,
-    // Refused before the first row: the remaining request time cannot cover
+    // Refused before the first setter: the remaining request time cannot cover
     // the recipe at the measured device pace (`Refusal::Deadline`).
     deadline: AtomicBool,
     // This request returns saved manual fans to Automatic (`previousManual`).
