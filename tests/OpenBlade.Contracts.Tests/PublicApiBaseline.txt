@@ -2021,6 +2021,7 @@ type sealed class OpenBlade.Contracts.IntelCpuPowerLimitCapabilities
   method OpenBlade.Contracts.DeviceNumericRange get_ShortTermPowerMilliwatts()
   method OpenBlade.Contracts.IntelCpuPowerLimitCapabilities <Clone>$()
   method System.Boolean get_IsWellFormed()
+  method System.Boolean get_RangesKnown()
   method System.Boolean get_SupportsShortTermPowerEnableDisable()
   method System.Collections.Generic.IReadOnlyList<System.Int32> get_TimeWindowSeconds()
   method System.Int32 get_DefaultLongTermPowerMilliwatts()
@@ -2045,6 +2046,7 @@ type sealed class OpenBlade.Contracts.IntelCpuPowerLimitCapabilities
   property OpenBlade.Contracts.DeviceNumericRange LongTermPowerMilliwatts { get; init; }
   property OpenBlade.Contracts.DeviceNumericRange ShortTermPowerMilliwatts { get; init; }
   property System.Boolean IsWellFormed { get; }
+  property System.Boolean RangesKnown { get; }
   property System.Boolean SupportsShortTermPowerEnableDisable { get; init; }
   property System.Collections.Generic.IReadOnlyList<System.Int32> TimeWindowSeconds { get; init; }
   property System.Int32 DefaultLongTermPowerMilliwatts { get; init; }
@@ -2450,7 +2452,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 85
+  field const System.Int32 ProtocolVersion = 88
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion

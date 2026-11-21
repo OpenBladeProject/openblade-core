@@ -10,7 +10,7 @@ public static class OpenBladeIpc
 {
     // Protocol 85 adds Intel CPU power limits, firmware Gaming-mode GPU overclock,
     // local dimming capability and state, and the local dimming Clear request.
-    public const int ProtocolVersion = 85;
+    public const int ProtocolVersion = 88;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;

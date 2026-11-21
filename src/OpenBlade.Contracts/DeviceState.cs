@@ -117,11 +117,13 @@ public sealed record CpuPowerLimitCapabilities(
 /// Intel package power limits as Synapse presents them: a long-term limit (PL1),
 /// a short-term limit (PL2) that can be switched off, and the PL1 time window
 /// (tau). Power values are milliwatts so fractional vendor steps stay integral.
+/// A null range or tau list is unknown for that model; its defaults are still
+/// reported. A writable limit needs every range.
 /// </summary>
 public sealed record IntelCpuPowerLimitCapabilities(
-    DeviceNumericRange LongTermPowerMilliwatts,
-    DeviceNumericRange ShortTermPowerMilliwatts,
-    IReadOnlyList<int> TimeWindowSeconds,
+    DeviceNumericRange? LongTermPowerMilliwatts,
+    DeviceNumericRange? ShortTermPowerMilliwatts,
+    IReadOnlyList<int>? TimeWindowSeconds,
     int DefaultLongTermPowerMilliwatts,
     int DefaultShortTermPowerMilliwatts,
     int DefaultTimeWindowSeconds,
@@ -129,16 +131,30 @@ public sealed record IntelCpuPowerLimitCapabilities(
 {
     public bool SupportsShortTermPowerEnableDisable { get; init; }
 
+    /// <summary>True when both power ranges and the tau list are known.</summary>
+    public bool RangesKnown =>
+        LongTermPowerMilliwatts is not null
+        && ShortTermPowerMilliwatts is not null
+        && TimeWindowSeconds is not null;
+
     public bool IsWellFormed =>
-        LongTermPowerMilliwatts is { IsWellFormed: true, Step: not null, Minimum: > 0 }
-        && ShortTermPowerMilliwatts is { IsWellFormed: true, Step: not null, Minimum: > 0 }
-        && LongTermPowerMilliwatts.Supports(DefaultLongTermPowerMilliwatts)
-        && ShortTermPowerMilliwatts.Supports(DefaultShortTermPowerMilliwatts)
-        && TimeWindowSeconds is { Count: > 0 and <= 64 }
-        && TimeWindowSeconds[0] > 0
-        && TimeWindowSeconds.Zip(TimeWindowSeconds.Skip(1)).All(pair => pair.First < pair.Second)
-        && TimeWindowSeconds.Contains(DefaultTimeWindowSeconds)
-        && Enum.IsDefined(Access);
+        DefaultLongTermPowerMilliwatts > 0
+        && DefaultShortTermPowerMilliwatts > 0
+        && DefaultTimeWindowSeconds > 0
+        && IsKnownRangeWellFormed(LongTermPowerMilliwatts, DefaultLongTermPowerMilliwatts)
+        && IsKnownRangeWellFormed(ShortTermPowerMilliwatts, DefaultShortTermPowerMilliwatts)
+        && (TimeWindowSeconds is null
+            || TimeWindowSeconds is { Count: > 0 and <= 64 }
+            && TimeWindowSeconds[0] > 0
+            && TimeWindowSeconds.Zip(TimeWindowSeconds.Skip(1)).All(pair => pair.First < pair.Second)
+            && TimeWindowSeconds.Contains(DefaultTimeWindowSeconds))
+        && Enum.IsDefined(Access)
+        && (Access != DeviceFeatureAccess.ReadWrite || RangesKnown);
+
+    private static bool IsKnownRangeWellFormed(DeviceNumericRange? range, int defaultValue) =>
+        range is null
+        || range is { IsWellFormed: true, Step: not null, Minimum: > 0 }
+        && range.Supports(defaultValue);
 
     public bool Equals(IntelCpuPowerLimitCapabilities? other) =>
         other is not null
@@ -156,7 +172,7 @@ public sealed record IntelCpuPowerLimitCapabilities(
     public override int GetHashCode() => HashCode.Combine(
         LongTermPowerMilliwatts,
         ShortTermPowerMilliwatts,
-        TimeWindowSeconds?.Count ?? 0,
+        TimeWindowSeconds?.Count ?? -1,
         DefaultLongTermPowerMilliwatts,
         DefaultShortTermPowerMilliwatts,
         DefaultTimeWindowSeconds,

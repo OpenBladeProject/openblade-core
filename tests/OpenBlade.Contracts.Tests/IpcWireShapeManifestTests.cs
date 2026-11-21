@@ -90,8 +90,9 @@ public sealed class IpcWireShapeManifestTests
             83 => "C29F478A17D06E6EDD3F69F1A6EAC11FAAEA3B89186B043F7ABB95761C294EC6",
             // Protocol 84 combines RZ09-0529 lighting zones with current-main contracts.
             84 => "7698A5B8C9679FCDE35762221E1DBD8A31E92086588511320CB0D5D87473D306",
-            // Protocol 85 adds Intel CPU power limits, firmware Gaming GPU overclock and local dimming.
-            85 => "C22BA203A83623A397D22E520ACF97E9E646B014751CC64126F6C299E133C2CF",
+            // Protocol 88 adds Intel CPU power limits, firmware Gaming GPU overclock and local dimming
+            // (85-87 are taken by other open pull requests).
+            88 => "628199C34842DFEF42A298FE9BE4A150AD6CB19FA6706E87CA8BC444D22FB72E",
             _ => null,
         };
 

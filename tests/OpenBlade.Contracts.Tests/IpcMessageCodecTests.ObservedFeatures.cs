@@ -117,6 +117,29 @@ public sealed partial class IpcMessageCodecTests
         Assert.True(new LocalDimmingCapabilities(DeviceFeatureAccess.ObservedOnly, false).IsWellFormed);
     }
 
+    private static IntelCpuPowerLimitCapabilities UnknownRangeIntelCpuPowerLimit() => ObservedIntelCpuPowerLimit() with
+    {
+        LongTermPowerMilliwatts = null,
+        ShortTermPowerMilliwatts = null,
+        TimeWindowSeconds = null,
+    };
+
+    [Fact]
+    public async Task IntelCpuPowerLimit_UnknownRangesRoundTripWithTheirDefaults()
+    {
+        IntelCpuPowerLimitCapabilities limit = UnknownRangeIntelCpuPowerLimit();
+        Assert.True(limit.IsWellFormed);
+        Assert.False(limit.RangesKnown);
+        Assert.True(ObservedIntelCpuPowerLimit().RangesKnown);
+        ServiceStatusSnapshot decoded = await RoundTripStatusAsync(CreateStatus() with
+        {
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with { IntelCpuPowerLimit = limit },
+        });
+
+        Assert.Equal(limit, decoded.Capabilities!.IntelCpuPowerLimit);
+        Assert.Equal(120_000, decoded.Capabilities.IntelCpuPowerLimit!.DefaultLongTermPowerMilliwatts);
+    }
+
     public static TheoryData<IntelCpuPowerLimitCapabilities> MalformedIntelCpuPowerLimits() =>
     [
         ObservedIntelCpuPowerLimit() with { LongTermPowerMilliwatts = new DeviceNumericRange(0, 190_000, 125) },
@@ -128,6 +151,11 @@ public sealed partial class IpcMessageCodecTests
         ObservedIntelCpuPowerLimit() with { DefaultLongTermPowerMilliwatts = 120_001 },
         ObservedIntelCpuPowerLimit() with { DefaultShortTermPowerMilliwatts = 250_000 },
         ObservedIntelCpuPowerLimit() with { Access = (DeviceFeatureAccess)99 },
+        // Unknown ranges are allowed only for a limit that is not writable.
+        UnknownRangeIntelCpuPowerLimit() with { Access = DeviceFeatureAccess.ReadWrite },
+        UnknownRangeIntelCpuPowerLimit() with { DefaultLongTermPowerMilliwatts = 0 },
+        UnknownRangeIntelCpuPowerLimit() with { DefaultTimeWindowSeconds = 0 },
+        ObservedIntelCpuPowerLimit() with { Access = DeviceFeatureAccess.ReadWrite, TimeWindowSeconds = null },
     ];
 
     [Theory]
