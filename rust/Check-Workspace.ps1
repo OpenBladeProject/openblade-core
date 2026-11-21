@@ -82,9 +82,10 @@ try {
         # profile_set_vectors reads the managed ProfileSet vectors; it compiles only
         # with the profile-set and thermal-history features. profile_resolution_vectors
         # reads the managed active application-profile vectors; it compiles only with
-        # the profile-set feature.
-        'openblade-domain' = @('automation_policy', 'function_row_policy', 'profile_policy',
-            'profile_resolution_vectors', 'profile_set_vectors', 'recovery_replay')
+        # the profile-set feature. profile_migration_vectors reads the managed
+        # store-open migration vectors; like profile_set_vectors it needs both features.
+        'openblade-domain' = @('automation_policy', 'function_row_policy', 'profile_migration_vectors',
+            'profile_policy', 'profile_resolution_vectors', 'profile_set_vectors', 'recovery_replay')
     }
 
     $metadataJson = cargo metadata --locked --offline --format-version 1
