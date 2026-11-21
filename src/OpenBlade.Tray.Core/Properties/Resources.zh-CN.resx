@@ -1835,20 +1835,8 @@
   <data name="Connected. Choose settings and apply them to take control." xml:space="preserve">
     <value>已连接。选择并应用设置以开始控制。</value>
   </data>
-  <data name="Configured fan target: {0} RPM" xml:space="preserve">
-    <value>已设定风扇目标转速：{0} RPM</value>
-  </data>
-  <data name="Configured fan target unavailable" xml:space="preserve">
-    <value>无法获取已设定的风扇目标转速</value>
-  </data>
-  <data name="Configured brightness: {0}%" xml:space="preserve">
-    <value>已配置亮度：{0}%</value>
-  </data>
-  <data name="Configured brightness unavailable" xml:space="preserve">
-    <value>无法获取已配置的亮度</value>
-  </data>
-  <data name="Check fan speeds, increasing curve temperatures, and six-digit RGB colors." xml:space="preserve">
-    <value>请检查风扇转速、曲线温度递增顺序和六位 RGB 色值。</value>
+  <data name="Check the fan speeds, and make each curve temperature higher than the one before." xml:space="preserve">
+    <value>请检查风扇转速，并确保曲线中每个温度都高于前一个。</value>
   </data>
   <data name="The cooling-pad change was blocked. Refresh status and check Troubleshooting." xml:space="preserve">
     <value>散热底座设置更改已被阻止。请刷新状态并查看“故障排除”。</value>

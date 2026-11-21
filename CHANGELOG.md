@@ -7,6 +7,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Redesign the cooling-pad page with separate Fan and Lighting sections, a status card, sliders for fan speed and brightness, and color pickers in place of hex codes. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
 - Credit the Blade 18 (2025, RZ09-0529) keyboard lighting effects and per-key color editing in 0.65.1-nightly.117 to their contributor. Thanks to [@TheChrisTech](https://github.com/TheChrisTech). ([#977](https://github.com/OpenBladeProject/openblade-core/pull/977))
 
 ### Fixed

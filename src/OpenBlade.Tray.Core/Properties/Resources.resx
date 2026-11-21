@@ -1820,23 +1820,14 @@ Details: {1}</value>
   <data name="The cooling-pad change was blocked. Refresh status and check Troubleshooting." xml:space="preserve">
     <value>The cooling-pad change was blocked. Refresh status and check Troubleshooting.</value>
   </data>
-  <data name="Configured brightness: {0}%" xml:space="preserve">
-    <value>Configured brightness: {0}%</value>
-  </data>
   <data name="Cooling-pad status is unavailable. Showing the last confirmed state." xml:space="preserve">
     <value>Cooling-pad status is unavailable. Showing the last confirmed state.</value>
-  </data>
-  <data name="Configured fan target: {0} RPM" xml:space="preserve">
-    <value>Configured fan target: {0} RPM</value>
   </data>
   <data name="Cooling-pad control is paused. Refresh status before making another change." xml:space="preserve">
     <value>Cooling-pad control is paused. Refresh status before making another change.</value>
   </data>
   <data name="Keep current" xml:space="preserve">
     <value>Keep current</value>
-  </data>
-  <data name="Configured fan target unavailable" xml:space="preserve">
-    <value>Configured fan target unavailable</value>
   </data>
   <data name="Spectrum" xml:space="preserve">
     <value>Spectrum</value>
@@ -1856,14 +1847,11 @@ Details: {1}</value>
   <data name="The cooling-pad change could not be confirmed. Refresh status before continuing." xml:space="preserve">
     <value>The cooling-pad change could not be confirmed. Refresh status before continuing.</value>
   </data>
-  <data name="Check fan speeds, increasing curve temperatures, and six-digit RGB colors." xml:space="preserve">
-    <value>Check fan speeds, increasing curve temperatures, and six-digit RGB colors.</value>
+  <data name="Check the fan speeds, and make each curve temperature higher than the one before." xml:space="preserve">
+    <value>Check the fan speeds, and make each curve temperature higher than the one before.</value>
   </data>
   <data name="CPU/GPU curves" xml:space="preserve">
     <value>CPU/GPU curves</value>
-  </data>
-  <data name="Configured brightness unavailable" xml:space="preserve">
-    <value>Configured brightness unavailable</value>
   </data>
   <data name="Apply new settings, or release control to restore the captured cooling-pad settings." xml:space="preserve">
     <value>Apply new settings, or release control to restore the captured cooling-pad settings.</value>

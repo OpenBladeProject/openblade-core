@@ -3029,37 +3029,43 @@ OpenBlade did not retry any stop request.</value>
     <value>All-core offset</value>
   </data>
   <data name="MainWindow_CoolingPadApplyHelpText.Text" xml:space="preserve">
-    <value>Apply starts control for this session. Release restores the captured pad settings.</value>
+    <value>Apply gives OpenBlade control of the pad. Release control returns the pad to the settings it had before.</value>
   </data>
   <data name="MainWindow_CoolingPadApplyText.Content" xml:space="preserve">
     <value>Apply</value>
   </data>
-  <data name="MainWindow_CoolingPadBrightnessText.Header" xml:space="preserve">
-    <value>Requested brightness (%)</value>
+  <data name="MainWindow_CoolingPadBrightnessText.Text" xml:space="preserve">
+    <value>Brightness</value>
   </data>
   <data name="MainWindow_CoolingPadCpuCurveText.Text" xml:space="preserve">
     <value>CPU</value>
   </data>
   <data name="MainWindow_CoolingPadCurveHelpText.Text" xml:space="preserve">
-    <value>Use increasing temperatures and nondecreasing targets in 50 RPM steps. Both uses the higher target.</value>
+    <value>Set a fan speed for each temperature. Each row needs a higher temperature and the same or a faster speed, in 50 RPM steps. With Both, the pad uses the faster speed.</value>
   </data>
-  <data name="MainWindow_CoolingPadCurveRpmText.Header" xml:space="preserve">
-    <value>Target (RPM)</value>
+  <data name="MainWindow_CoolingPadCurveRpmBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Fan speed (RPM)</value>
   </data>
-  <data name="MainWindow_CoolingPadCurveTemperatureText.Header" xml:space="preserve">
+  <data name="MainWindow_CoolingPadCurveRpmText.Text" xml:space="preserve">
+    <value>Fan speed (RPM)</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveTemperatureBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Temperature (°C)</value>
+  </data>
+  <data name="MainWindow_CoolingPadCurveTemperatureText.Text" xml:space="preserve">
     <value>Temperature (°C)</value>
   </data>
   <data name="MainWindow_CoolingPadCurvesText.Header" xml:space="preserve">
-    <value>CPU/GPU curves</value>
+    <value>Fan curves</value>
   </data>
   <data name="MainWindow_CoolingPadExperimentalText.Text" xml:space="preserve">
-    <value>Source-backed experimental · Razer RC21-0230</value>
+    <value>Experimental support</value>
   </data>
   <data name="MainWindow_CoolingPadFanLabelText.Text" xml:space="preserve">
-    <value>Fan</value>
+    <value>Fan mode</value>
   </data>
-  <data name="MainWindow_CoolingPadFixedRpmText.Header" xml:space="preserve">
-    <value>Requested fan target (RPM)</value>
+  <data name="MainWindow_CoolingPadFixedRpmText.Text" xml:space="preserve">
+    <value>Fan speed</value>
   </data>
   <data name="MainWindow_CoolingPadGpuCurveText.Text" xml:space="preserve">
     <value>GPU</value>
@@ -3068,10 +3074,10 @@ OpenBlade did not retry any stop request.</value>
     <value>Cooling pad</value>
   </data>
   <data name="MainWindow_CoolingPadLightingLabelText.Text" xml:space="preserve">
-    <value>Lighting</value>
+    <value>Lighting effect</value>
   </data>
-  <data name="MainWindow_CoolingPadPrimaryColorText.Header" xml:space="preserve">
-    <value>Color (RGB hex)</value>
+  <data name="MainWindow_CoolingPadPrimaryColorText.Text" xml:space="preserve">
+    <value>Color</value>
   </data>
   <data name="MainWindow_CoolingPadRefreshText.Content" xml:space="preserve">
     <value>Refresh status</value>
@@ -3079,8 +3085,8 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_CoolingPadReleaseText.Content" xml:space="preserve">
     <value>Release control</value>
   </data>
-  <data name="MainWindow_CoolingPadSecondaryColorText.Header" xml:space="preserve">
-    <value>Second breathing color (RGB hex)</value>
+  <data name="MainWindow_CoolingPadSecondaryColorText.Text" xml:space="preserve">
+    <value>Second color</value>
   </data>
   <data name="MainWindow_CoolingPadWaveDirectionLabel.Text" xml:space="preserve">
     <value>Direction</value>
@@ -3150,5 +3156,32 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_KeyColorEditor_SelectedKey" xml:space="preserve">
     <value>Selected key: {0}</value>
+  </data>
+  <data name="MainWindow_CoolingPadBrightnessReadoutLabelText.Text" xml:space="preserve">
+    <value>Brightness</value>
+  </data>
+  <data name="MainWindow_CoolingPadBrightnessSlider.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Cooling-pad brightness</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanSectionText.Text" xml:space="preserve">
+    <value>Fan</value>
+  </data>
+  <data name="MainWindow_CoolingPadFixedRpmSlider.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Cooling-pad fan speed</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingSectionText.Text" xml:space="preserve">
+    <value>Lighting</value>
+  </data>
+  <data name="MainWindow_CoolingPadNameText.Text" xml:space="preserve">
+    <value>Razer Laptop Cooling Pad</value>
+  </data>
+  <data name="MainWindow_CoolingPadPrimaryColorButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Choose the cooling-pad color</value>
+  </data>
+  <data name="MainWindow_CoolingPadSecondaryColorButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Choose the second cooling-pad color</value>
+  </data>
+  <data name="MainWindow_CoolingPadTargetLabelText.Text" xml:space="preserve">
+    <value>Fan target</value>
   </data>
 </root>

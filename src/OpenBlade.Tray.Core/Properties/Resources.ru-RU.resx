@@ -1835,20 +1835,8 @@
   <data name="Connected. Choose settings and apply them to take control." xml:space="preserve">
     <value>Подключено. Выберите и примените настройки, чтобы начать управление.</value>
   </data>
-  <data name="Configured fan target: {0} RPM" xml:space="preserve">
-    <value>Заданная скорость вентилятора: {0} об/мин</value>
-  </data>
-  <data name="Configured fan target unavailable" xml:space="preserve">
-    <value>Заданная скорость вентилятора недоступна</value>
-  </data>
-  <data name="Configured brightness: {0}%" xml:space="preserve">
-    <value>Заданная яркость: {0}%</value>
-  </data>
-  <data name="Configured brightness unavailable" xml:space="preserve">
-    <value>Заданная яркость недоступна</value>
-  </data>
-  <data name="Check fan speeds, increasing curve temperatures, and six-digit RGB colors." xml:space="preserve">
-    <value>Проверьте скорости вентиляторов, возрастание температур в кривых и шестизначные RGB-коды цветов.</value>
+  <data name="Check the fan speeds, and make each curve temperature higher than the one before." xml:space="preserve">
+    <value>Проверьте скорости вентилятора. Каждая температура в кривой должна быть выше предыдущей.</value>
   </data>
   <data name="The cooling-pad change was blocked. Refresh status and check Troubleshooting." xml:space="preserve">
     <value>Изменение настроек подставки заблокировано. Обновите состояние и откройте раздел устранения неполадок.</value>

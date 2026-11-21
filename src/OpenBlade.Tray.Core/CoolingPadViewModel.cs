@@ -43,8 +43,8 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
     private CoolingPadChoice<CoolingPadTemperatureSource>? temperatureSource;
     private double fixedRpm = 1500;
     private double brightness = 100;
-    private string primaryColor = "00FF00";
-    private string secondaryColor = "0000FF";
+    private RgbColor primaryColor = new(0, 255, 0);
+    private RgbColor secondaryColor = new(0, 0, 255);
 
     public CoolingPadViewModel(IServiceClient client, IUiDispatcher dispatcher, CancellationToken lifetime = default)
     {
@@ -115,10 +115,12 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
             }
         }
     }
-    public double FixedRpm { get => fixedRpm; set => SetField(ref fixedRpm, value); }
-    public double Brightness { get => brightness; set => SetField(ref brightness, value); }
-    public string PrimaryColor { get => primaryColor; set => SetField(ref primaryColor, value); }
-    public string SecondaryColor { get => secondaryColor; set => SetField(ref secondaryColor, value); }
+    public double FixedRpm { get => fixedRpm; set { if (SetField(ref fixedRpm, value)) { Notify(nameof(FixedRpmText)); } } }
+    public double Brightness { get => brightness; set { if (SetField(ref brightness, value)) { Notify(nameof(BrightnessText)); } } }
+    public string FixedRpmText => TrayText.Format("{0:N0} RPM", fixedRpm);
+    public string BrightnessText => TrayText.Format("{0}%", brightness);
+    public RgbColor PrimaryColor { get => primaryColor; set => SetField(ref primaryColor, value); }
+    public RgbColor SecondaryColor { get => secondaryColor; set => SetField(ref secondaryColor, value); }
     public string StatusText => feedback ?? (uncertainSubmission || status.WritesPaused
         ? TrayText.Get("Cooling-pad control is paused. Refresh status before making another change.")
         : !serviceAvailable ? TrayText.Get("Reconnecting. Showing the last confirmed cooling-pad state.")
@@ -127,11 +129,11 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
         : status.Active ? TrayText.Get("OpenBlade is controlling the cooling pad.")
         : TrayText.Get("Connected. Choose settings and apply them to take control."));
     public string ConfiguredTargetText => status.ConfirmedTargetRpm is int rpm
-        ? TrayText.Format("Configured fan target: {0} RPM", rpm)
-        : TrayText.Get("Configured fan target unavailable");
+        ? TrayText.Format("{0:N0} RPM", rpm)
+        : TrayText.Get("Unavailable");
     public string ConfiguredLightingText => status.ConfirmedBrightnessPercent is int percent
-        ? TrayText.Format("Configured brightness: {0}%", percent)
-        : TrayText.Get("Configured brightness unavailable");
+        ? TrayText.Format("{0}%", percent)
+        : TrayText.Get("Unavailable");
 
     public void ApplyStatus(CoolingPadStatusSnapshot snapshot, bool available = true)
     {
@@ -163,8 +165,8 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
             TemperatureSource = TemperatureSources.FirstOrDefault(x => x.Value == requested.TemperatureSource) ?? TemperatureSources[2];
             FixedRpm = requested.FixedRpm; Brightness = requested.BrightnessPercent;
             AllowDemandApi = requested.AllowDemandApi;
-            PrimaryColor = ToHex(requested.Color);
-            SecondaryColor = ToHex(requested.SecondaryColor ?? new CoolingPadColor(0, 0, 255));
+            PrimaryColor = ToRgb(requested.Color);
+            SecondaryColor = ToRgb(requested.SecondaryColor ?? new CoolingPadColor(0, 0, 255));
             CpuCurve = requested.CpuCurve.Select(p => new CoolingPadCurvePointEditor(p.TemperatureCelsius, p.Rpm)).ToArray();
             GpuCurve = requested.GpuCurve.Select(p => new CoolingPadCurvePointEditor(p.TemperatureCelsius, p.Rpm)).ToArray();
             Notify(nameof(CpuCurve)); Notify(nameof(GpuCurve));
@@ -188,7 +190,7 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
         CoolingPadSettings? settings = null;
         if (apply && !TryBuildSettings(out settings))
         {
-            feedback = TrayText.Get("Check fan speeds, increasing curve temperatures, and six-digit RGB colors.");
+            feedback = TrayText.Get("Check the fan speeds, and make each curve temperature higher than the one before.");
             NotifyState(); return;
         }
         busy = true; feedback = null; NotifyState();
@@ -268,9 +270,7 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
     private bool TryBuildSettings(out CoolingPadSettings? settings)
     {
         settings = null;
-        if (!Whole(FixedRpm, CoolingPadSettings.MinimumRpm, CoolingPadSettings.MaximumRpm) || !Whole(Brightness, 0, 100)
-            || !TryColor(PrimaryColor, out CoolingPadColor color)
-            || !TryColor(SecondaryColor, out CoolingPadColor secondary))
+        if (!Whole(FixedRpm, CoolingPadSettings.MinimumRpm, CoolingPadSettings.MaximumRpm) || !Whole(Brightness, 0, 100))
         {
             return false;
         }
@@ -290,8 +290,8 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
             GpuCurve = GpuCurve.Select(p => new CoolingPadCurvePoint((int)p.Temperature, (int)p.Rpm)).ToArray(),
             LightingMode = LightingMode?.Value ?? CoolingPadLightingMode.Keep,
             BrightnessPercent = (int)Brightness,
-            Color = color,
-            SecondaryColor = secondary,
+            Color = new(PrimaryColor.Red, PrimaryColor.Green, PrimaryColor.Blue),
+            SecondaryColor = new(SecondaryColor.Red, SecondaryColor.Green, SecondaryColor.Blue),
             WaveDirection = WaveDirection?.Value ?? CoolingPadWaveDirection.Right,
         };
         return CoolingPadSettings.IsWellFormed(settings);
@@ -300,18 +300,7 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
         points.All(p => Whole(p.Temperature, 0, 110) && Whole(p.Rpm, CoolingPadSettings.MinimumRpm, CoolingPadSettings.MaximumRpm))
         && points.Zip(points.Skip(1)).All(pair => pair.First.Temperature < pair.Second.Temperature);
     private static bool Whole(double value, int min, int max) => double.IsFinite(value) && value >= min && value <= max && value == Math.Truncate(value);
-    private static bool TryColor(string value, out CoolingPadColor color)
-    {
-        color = new(0, 0, 0);
-        string hex = value.Trim().TrimStart('#');
-        if (hex.Length != 6 || !int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out int rgb))
-        {
-            return false;
-        }
-
-        color = new((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb); return true;
-    }
-    private static string ToHex(CoolingPadColor color) => $"{color.R:X2}{color.G:X2}{color.B:X2}";
+    private static RgbColor ToRgb(CoolingPadColor color) => new(color.R, color.G, color.B);
     private static IReadOnlyList<CoolingPadCurvePointEditor> DefaultCurve() => CoolingPadSettings.Default.CpuCurve.Select(p => new CoolingPadCurvePointEditor(p.TemperatureCelsius, p.Rpm)).ToArray();
     private bool SetField<T>(ref T storage, T value, [CallerMemberName] string? name = null)
     {

@@ -2291,16 +2291,22 @@ public sealed class WinUiShellContractTests
             Assert.Null(Attribute(row, "Background"));
             Assert.Null(Attribute(row, "SettingsCardPointerVisual.IsEnabled"));
         }
+        // Pad sections open with the laptop Fans card's first-row role; later rows are subcells.
+        XElement fanModeRow = NamedElement(document, "ResponsiveChoiceSelector", "DashboardFanModeSelector")
+            .Ancestors().First(element => element.Name.LocalName == "Border");
         foreach ((string name, string controlType) in new[]
                  {
                      ("CoolingPadFanLabel", "ResponsiveChoiceSelector"),
                      ("CoolingPadLightingLabel", "ResponsiveChoiceSelector"),
                      ("CoolingPadDemandLabel", "ToggleSwitch"),
+                     ("CoolingPadPrimaryColorLabel", "Button"),
+                     ("CoolingPadWaveDirectionLabel", "ResponsiveChoiceSelector"),
                  })
         {
             XElement title = NamedElement(document, "TextBlock", name);
             XElement row = title.Ancestors().First(element => element.Name.LocalName == "Border");
-            Assert.Equal(Attribute(cpuRow, "Style"), Attribute(row, "Style"));
+            bool firstRow = name is "CoolingPadFanLabel" or "CoolingPadLightingLabel";
+            Assert.Equal(Attribute(firstRow ? fanModeRow : cpuRow, "Style"), Attribute(row, "Style"));
             Assert.Equal(Attribute(cpuRow, "Padding"), Attribute(row, "Padding"));
             Assert.Equal(Attribute(cpuTitle, "Style"), Attribute(title, "Style"));
             Assert.Equal(Attribute(cpuTitle.Parent!, "VerticalAlignment"), Attribute(title, "VerticalAlignment"));
@@ -2330,15 +2336,16 @@ public sealed class WinUiShellContractTests
             Assert.Null(Attribute(row, "Background"));
             Assert.Null(Attribute(row, "SettingsCardPointerVisual.IsEnabled"));
         }
-        XElement commands = NamedElement(document, "Button", "CoolingPadApply")
-            .Ancestors().First(element => element.Name.LocalName == "Border");
-        XElement fanEditor = document.Descendants().Single(element => Attribute(element, "CardReorder.CardId") == "FixedFanSpeedSlider");
-        Assert.Equal(Attribute(fanEditor, "Style"), Attribute(commands, "Style"));
-        Assert.Null(Attribute(commands, "Padding"));
+        // The page commands sit below the cards: Apply is the one primary command.
+        XElement commands = NamedElement(document, "Grid", "CoolingPadCommands");
+        Assert.DoesNotContain(commands.Ancestors(), element => Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}");
         Assert.Null(Attribute(commands, "Background"));
-        Assert.Single(commands.Descendants(), element => element.Name.LocalName == "ContentWrapPanel");
-        Assert.All(commands.Descendants().Where(element => element.Name.LocalName == "Button"),
-            button => Assert.Equal("{StaticResource AppCommandButtonStyle}", Attribute(button, "Style")));
+        XElement wrap = Assert.Single(commands.Descendants(), element => element.Name.LocalName == "ContentWrapPanel");
+        Assert.Equal(new[] { "CoolingPadRelease", "CoolingPadApply" },
+            wrap.Elements().Where(element => element.Name.LocalName == "Button").Select(button => Attribute(button, "Name")));
+        Assert.Equal("{StaticResource AppCommandButtonStyle}", Attribute(NamedElement(document, "Button", "CoolingPadRelease"), "Style"));
+        Assert.Equal("{StaticResource AppAccentCommandButtonStyle}", Attribute(NamedElement(document, "Button", "CoolingPadApply"), "Style"));
+        Assert.Equal("{StaticResource AppCommandButtonStyle}", Attribute(NamedElement(document, "Button", "CoolingPadRefresh"), "Style"));
     }
 
     [Fact]

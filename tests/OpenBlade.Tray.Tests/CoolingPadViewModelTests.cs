@@ -88,7 +88,7 @@ public sealed class CoolingPadViewModelTests
         Assert.True(vm.CanApply);
         vm.ApplyStatus(new() { Connection = connection });
         Assert.True(vm.IsVisible);
-        Assert.Contains("2100", vm.ConfiguredTargetText);
+        Assert.Equal(TrayText.Format("{0:N0} RPM", 2100), vm.ConfiguredTargetText);
         Assert.False(vm.CanApply);
         Assert.False(vm.CanRelease);
         Assert.True(vm.CanRefresh);
@@ -155,17 +155,45 @@ public sealed class CoolingPadViewModelTests
         Assert.Equal("{x:Bind ViewModel.CoolingPad.IsVisible, Mode=OneWay}", (string?)navigation.Attribute("Visibility"));
         Assert.DoesNotContain(PageLayoutPreferenceDefaults.Layouts.SelectMany(layout => layout.Sections),
             entry => entry.Kind.ToString() == "LaptopCoolingPad");
-        XElement reference = document.Descendants().First(e => (string?)e.Attribute("Style") == "{StaticResource SettingsNeutralSubcardStyle}");
-        XElement fan = section.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "CoolingPadFanLabel");
-        XElement fanRow = fan.Ancestors().First(e => e.Name.LocalName == "Border");
-        Assert.Equal((string?)reference.Attribute("Style"), (string?)fanRow.Attribute("Style"));
-        Assert.Equal("{StaticResource DashboardSingleLineRowPadding}", (string?)fanRow.Attribute("Padding"));
-        Assert.Equal("{StaticResource DashboardSingleLineRowContentMinHeight}", (string?)fan.Parent!.Attribute("MinHeight"));
-        Assert.Equal("OnDashboardSingleLineTitleSizeChanged", (string?)fan.Attribute("SizeChanged"));
-        Assert.DoesNotContain(section.Descendants(), e => e.Attribute("FontSize") is not null || e.Attribute("Background") is not null);
+        // Each section opens with the same first row as the laptop's Fans card.
+        XElement reference = document.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "DashboardFanModeSelector")
+            .Ancestors().First(e => e.Name.LocalName == "Border");
+        foreach (string label in new[] { "CoolingPadFanLabel", "CoolingPadLightingLabel" })
+        {
+            XElement title = section.Descendants().Single(e => (string?)e.Attribute(x + "Name") == label);
+            XElement row = title.Ancestors().First(e => e.Name.LocalName == "Border");
+            Assert.Equal((string?)reference.Attribute("Style"), (string?)row.Attribute("Style"));
+            Assert.Equal((string?)reference.Attribute("Padding"), (string?)row.Attribute("Padding"));
+            Assert.Equal("{StaticResource DashboardSingleLineRowContentMinHeight}", (string?)title.Parent!.Attribute("MinHeight"));
+            Assert.Equal("OnDashboardSingleLineTitleSizeChanged", (string?)title.Attribute("SizeChanged"));
+        }
+        // Only the two color swatches paint a background; shared row styles own every other surface.
+        Assert.Equal(new[] { "CoolingPadPrimaryColorSwatch", "CoolingPadSecondaryColorSwatch" },
+            section.Descendants().Where(e => e.Attribute("Background") is not null).Select(e => (string?)e.Attribute(x + "Name")));
+        Assert.DoesNotContain(section.Descendants(), e => e.Attribute("FontSize") is not null);
+        Assert.DoesNotContain(section.Descendants(), e => e.Name.LocalName is "NumberBox" or "TextBox");
         XElement curves = section.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "CoolingPadCurves");
         Assert.Equal("{StaticResource CardContentExpanderStyle}", (string?)curves.Attribute("Style"));
-        Assert.Contains(section.Descendants(), e => (string?)e.Attribute("Header") == "Requested fan target (RPM)");
+        XElement fixedRpm = section.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "CoolingPadFixedRpm");
+        Assert.Equal("Slider", fixedRpm.Name.LocalName);
+        Assert.Equal(("500", "3200", "50", "StepValues"), ((string?)fixedRpm.Attribute("Minimum"), (string?)fixedRpm.Attribute("Maximum"),
+            (string?)fixedRpm.Attribute("StepFrequency"), (string?)fixedRpm.Attribute("SnapsTo")));
+        XElement brightness = section.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "CoolingPadBrightness");
+        Assert.Equal(("Slider", "0", "100"), (brightness.Name.LocalName, (string?)brightness.Attribute("Minimum"), (string?)brightness.Attribute("Maximum")));
+        foreach (string color in new[] { "CoolingPadPrimaryColor", "CoolingPadSecondaryColor" })
+        {
+            XElement button = section.Descendants().Single(e => (string?)e.Attribute(x + "Name") == color);
+            XElement picker = Assert.Single(button.Descendants(), e => e.Name.LocalName == "ColorPicker");
+            Assert.Equal("False", (string?)picker.Attribute("IsAlphaEnabled"));
+            // Flyout content does not inherit DataContext, so the picker names its own.
+            Assert.Equal("{x:Bind ViewModel.CoolingPad, Mode=OneWay}", (string?)picker.Attribute("DataContext"));
+            Assert.Equal("{Binding " + color["CoolingPad".Length..] + ", Mode=TwoWay, Converter={StaticResource RgbColor}}",
+                (string?)picker.Attribute("Color"));
+        }
+        // x:Bind resolves converters from the Window root, which has no Resources;
+        // the lookup throws during the first Bindings.Update and crashes startup.
+        Assert.DoesNotContain(document.Descendants().SelectMany(e => e.Attributes()),
+            a => a.Value.StartsWith("{x:Bind", StringComparison.Ordinal) && a.Value.Contains("Converter=", StringComparison.Ordinal));
         Assert.DoesNotContain("MeasuredRpm", section.ToString(), StringComparison.Ordinal);
         foreach ((string name, string selection) in new[]
                  {
@@ -195,11 +223,11 @@ public sealed class CoolingPadViewModelTests
         vm.FixedRpm = 2000;
         Assert.True(vm.IsVisible);
         Assert.Equal(0, client.Writes);
-        Assert.Contains("1500", vm.ConfiguredTargetText);
+        Assert.Equal(TrayText.Format("{0:N0} RPM", 1500), vm.ConfiguredTargetText);
         vm.SetServiceAvailable(false);
         Assert.True(vm.IsVisible);
         Assert.False(vm.CanApply);
-        Assert.Contains("1500", vm.ConfiguredTargetText);
+        Assert.Equal(TrayText.Format("{0:N0} RPM", 1500), vm.ConfiguredTargetText);
         vm.ApplyStatus(new() { Connected = false, Connection = CoolingPadConnectionState.Absent });
         Assert.False(vm.IsVisible);
     }
@@ -223,7 +251,7 @@ public sealed class CoolingPadViewModelTests
         Assert.False(vm.ShowGpuCurve);
         Assert.Equal(CoolingPadLightingMode.Wave, client.Submitted.LightingMode);
         Assert.Equal(2000, vm.FixedRpm);
-        Assert.Contains("1500", vm.ConfiguredTargetText);
+        Assert.Equal(TrayText.Format("{0:N0} RPM", 1500), vm.ConfiguredTargetText);
     }
 
     [Fact]
@@ -266,7 +294,7 @@ public sealed class CoolingPadViewModelTests
         vm.ApplyStatus(new() { Connected = true, ConfirmedTargetRpm = 2100 });
         await vm.RefreshCommand.ExecuteAsync(null);
         Assert.True(vm.IsVisible);
-        Assert.Contains("2100", vm.ConfiguredTargetText);
+        Assert.Equal(TrayText.Format("{0:N0} RPM", 2100), vm.ConfiguredTargetText);
         vm.ApplyStatus(new() { Connected = true, RecoveryRequired = true });
         Assert.True(vm.CanApply);
         Assert.True(vm.CanRelease);
@@ -286,9 +314,34 @@ public sealed class CoolingPadViewModelTests
         await vm.ApplyCommand.ExecuteAsync(null);
         Assert.Equal(0, client.Writes);
         vm.CpuCurve[1].Temperature = 65;
-        vm.PrimaryColor = "zzzzzz";
+        vm.FixedRpm = 450;
         await vm.ApplyCommand.ExecuteAsync(null);
         Assert.Equal(0, client.Writes);
+    }
+
+    [Fact]
+    public async Task PickedColorsAndSliderValuesReachTheSubmittedSettings()
+    {
+        var client = new PadClient();
+        await using var vm = new CoolingPadViewModel(client, new InlineDispatcher());
+        vm.ApplyStatus(new() { Connected = true });
+        var changed = new List<string?>();
+        vm.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+        vm.FanMode = vm.FanModes.Single(x => x.Value == CoolingPadFanMode.Fixed);
+        vm.LightingMode = vm.LightingModes.Single(x => x.Value == CoolingPadLightingMode.Breathing);
+        vm.PrimaryColor = new RgbColor(255, 64, 0);
+        vm.SecondaryColor = new RgbColor(0, 32, 255);
+        vm.FixedRpm = 2200;
+        vm.Brightness = 40;
+        // The slider value labels are computed, so each needs its own notification.
+        Assert.Contains(nameof(CoolingPadViewModel.FixedRpmText), changed);
+        Assert.Contains(nameof(CoolingPadViewModel.BrightnessText), changed);
+        Assert.Equal(TrayText.Format("{0:N0} RPM", 2200), vm.FixedRpmText);
+        Assert.Equal(TrayText.Format("{0}%", 40), vm.BrightnessText);
+        await vm.ApplyCommand.ExecuteAsync(null);
+        Assert.Equal(new CoolingPadColor(255, 64, 0), client.Submitted!.Color);
+        Assert.Equal(new CoolingPadColor(0, 32, 255), client.Submitted.SecondaryColor);
+        Assert.Equal((2200, 40), (client.Submitted.FixedRpm, client.Submitted.BrightnessPercent));
     }
 
     private sealed class InlineDispatcher : IUiDispatcher

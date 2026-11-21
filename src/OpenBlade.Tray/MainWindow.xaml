@@ -2636,8 +2636,8 @@
             <DataTemplate x:Key="CoolingPadCurvePointTemplate" x:DataType="local:CoolingPadCurvePointEditor">
                 <Grid ColumnSpacing="12" Margin="0,0,0,8">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                    <NumberBox x:Name="CoolingPadCurveTemperature" Header="{CustomResource MainWindow_CoolingPadCurveTemperatureText.Header}" Minimum="0" Maximum="110" SmallChange="1" SpinButtonPlacementMode="Inline" Value="{x:Bind Temperature, Mode=TwoWay}" />
-                    <NumberBox x:Name="CoolingPadCurveRpm" Grid.Column="1" Header="{CustomResource MainWindow_CoolingPadCurveRpmText.Header}" Minimum="500" Maximum="3200" SmallChange="50" LargeChange="500" SpinButtonPlacementMode="Inline" Value="{x:Bind Rpm, Mode=TwoWay}" />
+                    <NumberBox x:Name="CoolingPadCurveTemperature" AutomationProperties.Name="{CustomResource MainWindow_CoolingPadCurveTemperatureBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}" Minimum="0" Maximum="110" SmallChange="1" SpinButtonPlacementMode="Inline" Value="{x:Bind Temperature, Mode=TwoWay}" />
+                    <NumberBox x:Name="CoolingPadCurveRpm" Grid.Column="1" AutomationProperties.Name="{CustomResource MainWindow_CoolingPadCurveRpmBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}" Minimum="500" Maximum="3200" SmallChange="50" LargeChange="500" SpinButtonPlacementMode="Inline" Value="{x:Bind Rpm, Mode=TwoWay}" />
                 </Grid>
             </DataTemplate>
         </Grid.Resources>
@@ -3991,14 +3991,39 @@
                             <Border Style="{StaticResource SettingsGroupStyle}">
                                 <StackPanel>
                                     <Border Style="{StaticResource SettingsLastRowStyle}">
-                                        <StackPanel Spacing="4">
-                                            <TextBlock x:Name="CoolingPadExperimental" Text="{CustomResource MainWindow_CoolingPadExperimentalText.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
-                                            <TextBlock Text="{x:Bind ViewModel.CoolingPad.StatusText, Mode=OneWay}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
-                                            <TextBlock Text="{x:Bind ViewModel.CoolingPad.ConfiguredTargetText, Mode=OneWay}" Style="{StaticResource AppDataTextStyle}" TextWrapping="Wrap" />
-                                            <TextBlock Text="{x:Bind ViewModel.CoolingPad.ConfiguredLightingText, Mode=OneWay}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                                        </StackPanel>
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <Viewbox Width="32" Height="32" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw">
+                                                <PathIcon Data="M3,4 H17 A2,2 0 0 1 19,6 V14 A2,2 0 0 1 17,16 H3 A2,2 0 0 1 1,14 V6 A2,2 0 0 1 3,4 Z M3,5 A1,1 0 0 0 2,6 V14 A1,1 0 0 0 3,15 H17 A1,1 0 0 0 18,14 V6 A1,1 0 0 0 17,5 Z M10,6 A4,4 0 1 1 6,10 A4,4 0 0 1 10,6 Z M10,7 A3,3 0 1 0 13,10 A3,3 0 0 0 10,7 Z M9.5,7 H10.5 V9.5 H13 V10.5 H10.5 V13 H9.5 V10.5 H7 V9.5 H9.5 Z M4,17 H7 V18 H4 Z M13,17 H16 V18 H13 Z" />
+                                            </Viewbox>
+                                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                <TextBlock x:Name="CoolingPadName" Text="{CustomResource MainWindow_CoolingPadNameText.Text}" Style="{StaticResource CardTitleStyle}" TextWrapping="Wrap" />
+                                                <TextBlock Text="{x:Bind ViewModel.CoolingPad.StatusText, Mode=OneWay}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                                <TextBlock x:Name="CoolingPadExperimental" Text="{CustomResource MainWindow_CoolingPadExperimentalText.Text}" Style="{StaticResource AppCaptionTextStyle}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <Button x:Name="CoolingPadRefresh" Grid.Column="2" VerticalAlignment="Center" Content="{CustomResource MainWindow_CoolingPadRefreshText.Content}" Style="{StaticResource AppCommandButtonStyle}" Command="{x:Bind ViewModel.CoolingPad.RefreshCommand}" />
+                                        </Grid>
                                     </Border>
-                                    <Border x:Name="CoolingPadFanRow" Style="{StaticResource SettingsNeutralSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                    <Border Style="{StaticResource SettingsLastEditorSubcardStyle}">
+                                        <Grid ColumnSpacing="20">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="2">
+                                                <TextBlock x:Name="CoolingPadTargetLabel" Text="{CustomResource MainWindow_CoolingPadTargetLabelText.Text}" Style="{StaticResource AppCaptionTextStyle}" TextWrapping="Wrap" />
+                                                <TextBlock Text="{x:Bind ViewModel.CoolingPad.ConfiguredTargetText, Mode=OneWay}" Style="{StaticResource AppDataTextStyle}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Spacing="2">
+                                                <TextBlock x:Name="CoolingPadBrightnessReadoutLabel" Text="{CustomResource MainWindow_CoolingPadBrightnessReadoutLabelText.Text}" Style="{StaticResource AppCaptionTextStyle}" TextWrapping="Wrap" />
+                                                <TextBlock Text="{x:Bind ViewModel.CoolingPad.ConfiguredLightingText, Mode=OneWay}" Style="{StaticResource AppDataTextStyle}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock x:Name="CoolingPadFanSection" Text="{CustomResource MainWindow_CoolingPadFanSectionText.Text}" Style="{StaticResource SectionHeaderStyle}" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border x:Name="CoolingPadFanRow" Style="{StaticResource SettingsLastRowStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
                                         <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                             <TextBlock x:Name="CoolingPadFanLabel" Text="{CustomResource MainWindow_CoolingPadFanLabelText.Text}" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" TextWrapping="Wrap" SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
@@ -4010,8 +4035,52 @@
                                                                             IsEnabled="{x:Bind ViewModel.CoolingPad.CanEdit, Mode=OneWay}" />
                                         </Grid>
                                     </Border>
-                                    <Border Style="{StaticResource SettingsEditorSubcardStyle}" Visibility="{x:Bind ViewModel.CoolingPad.ShowFixedSpeed, Mode=OneWay}">
-                                        <NumberBox x:Name="CoolingPadFixedRpm" Header="{CustomResource MainWindow_CoolingPadFixedRpmText.Header}" Minimum="500" Maximum="3200" SmallChange="50" LargeChange="500" SpinButtonPlacementMode="Inline" Value="{x:Bind ViewModel.CoolingPad.FixedRpm, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.CoolingPad.CanEdit, Mode=OneWay}" />
+                                    <Border Style="{StaticResource SettingsEditorSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}" Visibility="{x:Bind ViewModel.CoolingPad.ShowFixedSpeed, Mode=OneWay}">
+                                        <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="260" /></Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="CoolingPadFixedRpmLabel" Text="{CustomResource MainWindow_CoolingPadFixedRpmText.Text}" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" TextWrapping="Wrap" SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                                            <Grid Grid.Column="1" ColumnSpacing="12" VerticalAlignment="Center">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <Slider x:Name="CoolingPadFixedRpm" Style="{StaticResource InlineCardSliderStyle}"
+                                                        Minimum="500" Maximum="3200" StepFrequency="50" SmallChange="50" LargeChange="500" SnapsTo="StepValues" IsThumbToolTipEnabled="True"
+                                                        AutomationProperties.Name="{CustomResource MainWindow_CoolingPadFixedRpmSlider.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                        Value="{x:Bind ViewModel.CoolingPad.FixedRpm, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.CoolingPad.CanEdit, Mode=OneWay}" />
+                                                <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.CoolingPad.FixedRpmText, Mode=OneWay}" Style="{StaticResource InlineCardSliderValueStyle}" />
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsEditorSubcardStyle}" Visibility="{x:Bind ViewModel.CoolingPad.ShowCurves, Mode=OneWay}">
+                                        <Expander x:Name="CoolingPadCurves" Header="{CustomResource MainWindow_CoolingPadCurvesText.Header}" Style="{StaticResource CardContentExpanderStyle}" IsEnabled="{x:Bind ViewModel.CoolingPad.CanEdit, Mode=OneWay}">
+                                            <StackPanel Spacing="12">
+                                                <TextBlock x:Name="CoolingPadCurveHelp" Text="{CustomResource MainWindow_CoolingPadCurveHelpText.Text}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                                                <StackPanel Spacing="6">
+                                                    <TextBlock x:Name="CoolingPadTemperatureSourceLabel" Text="{CustomResource MainWindow_CoolingPadTemperatureSourceLabel.Text}" Style="{StaticResource AppBodyTextStyle}" />
+                                                    <local:ResponsiveChoiceSelector x:Name="CoolingPadTemperatureSource" HorizontalAlignment="Left"
+                                                                                    CompactMinWidth="150" ExpandedMinWindowWidth="800"
+                                                                                    AccessibleName="{CustomResource MainWindow_CoolingPadTemperatureSourceText.AccessibleName}"
+                                                                                    ItemsSource="{x:Bind ViewModel.CoolingPad.TemperatureSources}" DisplayMemberPath="Label"
+                                                                                    SelectedItem="{x:Bind ViewModel.CoolingPad.TemperatureSource, Mode=TwoWay}" />
+                                                </StackPanel>
+                                                <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.CoolingPad.ShowCpuCurve, Mode=OneWay}">
+                                                    <TextBlock x:Name="CoolingPadCpuCurve" Text="{CustomResource MainWindow_CoolingPadCpuCurveText.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                    <Grid ColumnSpacing="12">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{CustomResource MainWindow_CoolingPadCurveTemperatureText.Text}" Style="{StaticResource AppCaptionTextStyle}" TextWrapping="Wrap" AutomationProperties.AccessibilityView="Raw" />
+                                                        <TextBlock Grid.Column="1" Text="{CustomResource MainWindow_CoolingPadCurveRpmText.Text}" Style="{StaticResource AppCaptionTextStyle}" TextWrapping="Wrap" AutomationProperties.AccessibilityView="Raw" />
+                                                    </Grid>
+                                                    <ItemsControl ItemsSource="{x:Bind ViewModel.CoolingPad.CpuCurve, Mode=OneWay}" ItemTemplate="{StaticResource CoolingPadCurvePointTemplate}" />
+                                                </StackPanel>
+                                                <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.CoolingPad.ShowGpuCurve, Mode=OneWay}">
+                                                    <TextBlock x:Name="CoolingPadGpuCurve" Text="{CustomResource MainWindow_CoolingPadGpuCurveText.Text}" Style="{StaticResource CardTitleStyle}" />
+                                                    <Grid ColumnSpacing="12">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{CustomResource MainWindow_CoolingPadCurveTemperatureText.Text}" Style="{StaticResource AppCaptionTextStyle}" TextWrapping="Wrap" AutomationProperties.AccessibilityView="Raw" />
+                                                        <TextBlock Grid.Column="1" Text="{CustomResource MainWindow_CoolingPadCurveRpmText.Text}" Style="{StaticResource AppCaptionTextStyle}" TextWrapping="Wrap" AutomationProperties.AccessibilityView="Raw" />
+                                                    </Grid>
+                                                    <ItemsControl ItemsSource="{x:Bind ViewModel.CoolingPad.GpuCurve, Mode=OneWay}" ItemTemplate="{StaticResource CoolingPadCurvePointTemplate}" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Expander>
                                     </Border>
                                     <Border x:Name="CoolingPadDemandRow" Style="{StaticResource SettingsNeutralSubcardStyle}"
                                             Padding="{StaticResource DashboardSingleLineRowPadding}"
@@ -4028,30 +4097,13 @@
                                                           AutomationProperties.Name="{CustomResource MainWindow_CoolingPadDemandToggleText.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}" />
                                         </Grid>
                                     </Border>
-                                    <Border Style="{StaticResource SettingsEditorSubcardStyle}" Visibility="{x:Bind ViewModel.CoolingPad.ShowCurves, Mode=OneWay}">
-                                        <Expander x:Name="CoolingPadCurves" Header="{CustomResource MainWindow_CoolingPadCurvesText.Header}" Style="{StaticResource CardContentExpanderStyle}" IsEnabled="{x:Bind ViewModel.CoolingPad.CanEdit, Mode=OneWay}">
-                                            <StackPanel Spacing="12">
-                                                <TextBlock x:Name="CoolingPadCurveHelp" Text="{CustomResource MainWindow_CoolingPadCurveHelpText.Text}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                                                <StackPanel Spacing="6">
-                                                    <TextBlock x:Name="CoolingPadTemperatureSourceLabel" Text="{CustomResource MainWindow_CoolingPadTemperatureSourceLabel.Text}" Style="{StaticResource AppBodyTextStyle}" />
-                                                    <local:ResponsiveChoiceSelector x:Name="CoolingPadTemperatureSource" HorizontalAlignment="Left"
-                                                                                    CompactMinWidth="150" ExpandedMinWindowWidth="800"
-                                                                                    AccessibleName="{CustomResource MainWindow_CoolingPadTemperatureSourceText.AccessibleName}"
-                                                                                    ItemsSource="{x:Bind ViewModel.CoolingPad.TemperatureSources}" DisplayMemberPath="Label"
-                                                                                    SelectedItem="{x:Bind ViewModel.CoolingPad.TemperatureSource, Mode=TwoWay}" />
-                                                </StackPanel>
-                                                <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.CoolingPad.ShowCpuCurve, Mode=OneWay}">
-                                                <TextBlock x:Name="CoolingPadCpuCurve" Text="{CustomResource MainWindow_CoolingPadCpuCurveText.Text}" Style="{StaticResource CardTitleStyle}" />
-                                                <ItemsControl ItemsSource="{x:Bind ViewModel.CoolingPad.CpuCurve, Mode=OneWay}" ItemTemplate="{StaticResource CoolingPadCurvePointTemplate}" />
-                                                </StackPanel>
-                                                <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.CoolingPad.ShowGpuCurve, Mode=OneWay}">
-                                                <TextBlock x:Name="CoolingPadGpuCurve" Text="{CustomResource MainWindow_CoolingPadGpuCurveText.Text}" Style="{StaticResource CardTitleStyle}" />
-                                                <ItemsControl ItemsSource="{x:Bind ViewModel.CoolingPad.GpuCurve, Mode=OneWay}" ItemTemplate="{StaticResource CoolingPadCurvePointTemplate}" />
-                                                </StackPanel>
-                                            </StackPanel>
-                                        </Expander>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsNeutralSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock x:Name="CoolingPadLightingSection" Text="{CustomResource MainWindow_CoolingPadLightingSectionText.Text}" Style="{StaticResource SectionHeaderStyle}" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsLastRowStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
                                         <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                             <TextBlock x:Name="CoolingPadLightingLabel" Text="{CustomResource MainWindow_CoolingPadLightingLabelText.Text}" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" TextWrapping="Wrap" SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
@@ -4063,34 +4115,87 @@
                                                                             IsEnabled="{x:Bind ViewModel.CoolingPad.CanEdit, Mode=OneWay}" />
                                         </Grid>
                                     </Border>
-                                    <Border Style="{StaticResource SettingsEditorSubcardStyle}">
-                                        <StackPanel Spacing="12">
-                                            <NumberBox x:Name="CoolingPadBrightness" IsEnabled="{x:Bind ViewModel.CoolingPad.CanEdit, Mode=OneWay}" Header="{CustomResource MainWindow_CoolingPadBrightnessText.Header}" Minimum="0" Maximum="100" SmallChange="1" LargeChange="10" SpinButtonPlacementMode="Inline" Value="{x:Bind ViewModel.CoolingPad.Brightness, Mode=TwoWay}" />
-                                            <TextBox x:Name="CoolingPadPrimaryColor" IsEnabled="{x:Bind ViewModel.CoolingPad.CanEdit, Mode=OneWay}" Header="{CustomResource MainWindow_CoolingPadPrimaryColorText.Header}" Text="{x:Bind ViewModel.CoolingPad.PrimaryColor, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="7" Visibility="{x:Bind ViewModel.CoolingPad.ShowPrimaryColor, Mode=OneWay}" />
-                                            <TextBox x:Name="CoolingPadSecondaryColor" IsEnabled="{x:Bind ViewModel.CoolingPad.CanEdit, Mode=OneWay}" Header="{CustomResource MainWindow_CoolingPadSecondaryColorText.Header}" Text="{x:Bind ViewModel.CoolingPad.SecondaryColor, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="7" Visibility="{x:Bind ViewModel.CoolingPad.ShowSecondaryColor, Mode=OneWay}" />
-                                            <StackPanel Spacing="6" Visibility="{x:Bind ViewModel.CoolingPad.ShowWaveDirection, Mode=OneWay}">
-                                                <TextBlock x:Name="CoolingPadWaveDirectionLabel" Text="{CustomResource MainWindow_CoolingPadWaveDirectionLabel.Text}" Style="{StaticResource AppBodyTextStyle}" />
-                                                <local:ResponsiveChoiceSelector x:Name="CoolingPadWaveDirection" HorizontalAlignment="Left"
-                                                                                CompactMinWidth="150" ExpandedMinWindowWidth="800"
-                                                                                AccessibleName="{CustomResource MainWindow_CoolingPadWaveDirectionText.AccessibleName}"
-                                                                                IsEnabled="{x:Bind ViewModel.CoolingPad.CanEdit, Mode=OneWay}"
-                                                                                ItemsSource="{x:Bind ViewModel.CoolingPad.WaveDirections}" DisplayMemberPath="Label"
-                                                                                SelectedItem="{x:Bind ViewModel.CoolingPad.WaveDirection, Mode=TwoWay}" />
-                                            </StackPanel>
-                                        </StackPanel>
+                                    <Border Style="{StaticResource SettingsEditorSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}">
+                                        <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="260" /></Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="CoolingPadBrightnessLabel" Text="{CustomResource MainWindow_CoolingPadBrightnessText.Text}" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" TextWrapping="Wrap" SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                                            <Grid Grid.Column="1" ColumnSpacing="12" VerticalAlignment="Center">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <Slider x:Name="CoolingPadBrightness" Style="{StaticResource InlineCardSliderStyle}"
+                                                        Minimum="0" Maximum="100" StepFrequency="1" SmallChange="1" LargeChange="10" IsThumbToolTipEnabled="True"
+                                                        AutomationProperties.Name="{CustomResource MainWindow_CoolingPadBrightnessSlider.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}"
+                                                        Value="{x:Bind ViewModel.CoolingPad.Brightness, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.CoolingPad.CanEdit, Mode=OneWay}" />
+                                                <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.CoolingPad.BrightnessText, Mode=OneWay}" Style="{StaticResource InlineCardSliderValueStyle}" />
+                                            </Grid>
+                                        </Grid>
                                     </Border>
-                                    <Border Style="{StaticResource SettingsLastEditorSubcardStyle}">
-                                        <StackPanel Spacing="8">
-                                            <TextBlock x:Name="CoolingPadApplyHelp" Text="{CustomResource MainWindow_CoolingPadApplyHelpText.Text}" Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
-                                            <local:ContentWrapPanel>
-                                                <Button x:Name="CoolingPadApply" Content="{CustomResource MainWindow_CoolingPadApplyText.Content}" Style="{StaticResource AppCommandButtonStyle}" Command="{x:Bind ViewModel.CoolingPad.ApplyCommand}" />
-                                                <Button x:Name="CoolingPadRelease" Content="{CustomResource MainWindow_CoolingPadReleaseText.Content}" Style="{StaticResource AppCommandButtonStyle}" Command="{x:Bind ViewModel.CoolingPad.ReleaseCommand}" />
-                                                <Button x:Name="CoolingPadRefresh" Content="{CustomResource MainWindow_CoolingPadRefreshText.Content}" Style="{StaticResource AppCommandButtonStyle}" Command="{x:Bind ViewModel.CoolingPad.RefreshCommand}" />
-                                            </local:ContentWrapPanel>
-                                        </StackPanel>
+                                    <Border Style="{StaticResource SettingsNeutralSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}" Visibility="{x:Bind ViewModel.CoolingPad.ShowPrimaryColor, Mode=OneWay}">
+                                        <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="CoolingPadPrimaryColorLabel" Text="{CustomResource MainWindow_CoolingPadPrimaryColorText.Text}" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" TextWrapping="Wrap" SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                                            <Button x:Name="CoolingPadPrimaryColor" Grid.Column="1" MinWidth="150" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                    IsEnabled="{x:Bind ViewModel.CoolingPad.CanEdit, Mode=OneWay}"
+                                                    AutomationProperties.Name="{CustomResource MainWindow_CoolingPadPrimaryColorButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}">
+                                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <Border x:Name="CoolingPadPrimaryColorSwatch" Width="18" Height="18" CornerRadius="9" BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}" BorderThickness="1"
+                                                            Background="{Binding CoolingPad.PrimaryColor, Mode=OneWay, Converter={StaticResource RgbColor}, ConverterParameter=Brush}" />
+                                                    <TextBlock VerticalAlignment="Center" Text="{Binding CoolingPad.PrimaryColor, Mode=OneWay, Converter={StaticResource RgbColor}, ConverterParameter=Hex}" />
+                                                </StackPanel>
+                                                <Button.Flyout>
+                                                    <Flyout>
+                                                        <ColorPicker MinWidth="320" DataContext="{x:Bind ViewModel.CoolingPad, Mode=OneWay}" IsAlphaEnabled="False" IsAlphaSliderVisible="False" IsAlphaTextInputVisible="False"
+                                                                     IsColorChannelTextInputVisible="True" IsHexInputVisible="True"
+                                                                     Color="{Binding PrimaryColor, Mode=TwoWay, Converter={StaticResource RgbColor}}" />
+                                                    </Flyout>
+                                                </Button.Flyout>
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsNeutralSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}" Visibility="{x:Bind ViewModel.CoolingPad.ShowSecondaryColor, Mode=OneWay}">
+                                        <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="CoolingPadSecondaryColorLabel" Text="{CustomResource MainWindow_CoolingPadSecondaryColorText.Text}" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" TextWrapping="Wrap" SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                                            <Button x:Name="CoolingPadSecondaryColor" Grid.Column="1" MinWidth="150" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                    IsEnabled="{x:Bind ViewModel.CoolingPad.CanEdit, Mode=OneWay}"
+                                                    AutomationProperties.Name="{CustomResource MainWindow_CoolingPadSecondaryColorButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name}">
+                                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <Border x:Name="CoolingPadSecondaryColorSwatch" Width="18" Height="18" CornerRadius="9" BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}" BorderThickness="1"
+                                                            Background="{Binding CoolingPad.SecondaryColor, Mode=OneWay, Converter={StaticResource RgbColor}, ConverterParameter=Brush}" />
+                                                    <TextBlock VerticalAlignment="Center" Text="{Binding CoolingPad.SecondaryColor, Mode=OneWay, Converter={StaticResource RgbColor}, ConverterParameter=Hex}" />
+                                                </StackPanel>
+                                                <Button.Flyout>
+                                                    <Flyout>
+                                                        <ColorPicker MinWidth="320" DataContext="{x:Bind ViewModel.CoolingPad, Mode=OneWay}" IsAlphaEnabled="False" IsAlphaSliderVisible="False" IsAlphaTextInputVisible="False"
+                                                                     IsColorChannelTextInputVisible="True" IsHexInputVisible="True"
+                                                                     Color="{Binding SecondaryColor, Mode=TwoWay, Converter={StaticResource RgbColor}}" />
+                                                    </Flyout>
+                                                </Button.Flyout>
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsNeutralSubcardStyle}" Padding="{StaticResource DashboardSingleLineRowPadding}" Visibility="{x:Bind ViewModel.CoolingPad.ShowWaveDirection, Mode=OneWay}">
+                                        <Grid ColumnSpacing="20" MinHeight="{StaticResource DashboardSingleLineRowContentMinHeight}">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="CoolingPadWaveDirectionLabel" Text="{CustomResource MainWindow_CoolingPadWaveDirectionLabel.Text}" Style="{StaticResource CardTitleStyle}" VerticalAlignment="Center" TextWrapping="Wrap" SizeChanged="OnDashboardSingleLineTitleSizeChanged" />
+                                            <local:ResponsiveChoiceSelector x:Name="CoolingPadWaveDirection" Grid.Column="1"
+                                                                            CompactMinWidth="150" ExpandedMinWindowWidth="800"
+                                                                            AccessibleName="{CustomResource MainWindow_CoolingPadWaveDirectionText.AccessibleName}"
+                                                                            IsEnabled="{x:Bind ViewModel.CoolingPad.CanEdit, Mode=OneWay}"
+                                                                            ItemsSource="{x:Bind ViewModel.CoolingPad.WaveDirections}" DisplayMemberPath="Label"
+                                                                            SelectedItem="{x:Bind ViewModel.CoolingPad.WaveDirection, Mode=TwoWay}" />
+                                        </Grid>
                                     </Border>
                                 </StackPanel>
                             </Border>
+
+                            <Grid x:Name="CoolingPadCommands" Margin="0,8,0,0" ColumnSpacing="20">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock x:Name="CoolingPadApplyHelp" Text="{CustomResource MainWindow_CoolingPadApplyHelpText.Text}" Style="{StaticResource SecondaryTextStyle}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                <local:ContentWrapPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <Button x:Name="CoolingPadRelease" Content="{CustomResource MainWindow_CoolingPadReleaseText.Content}" Style="{StaticResource AppCommandButtonStyle}" Command="{x:Bind ViewModel.CoolingPad.ReleaseCommand}" />
+                                    <Button x:Name="CoolingPadApply" Content="{CustomResource MainWindow_CoolingPadApplyText.Content}" Style="{StaticResource AppAccentCommandButtonStyle}" Command="{x:Bind ViewModel.CoolingPad.ApplyCommand}" />
+                                </local:ContentWrapPanel>
+                            </Grid>
                         </StackPanel>
 
                     </StackPanel>
