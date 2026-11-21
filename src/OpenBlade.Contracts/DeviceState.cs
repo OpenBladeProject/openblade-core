@@ -449,6 +449,12 @@ public sealed record DeviceCapabilities(
     /// <summary>Physical product-672 region from its edition getter; independent of input language.</summary>
     public byte? Blade18KeyboardLayoutId { get; init; }
 
+    /// <summary>
+    /// Raw RZ09-0530 keyboard-MCU edition byte from its read-only 00/86 getter.
+    /// Null means unread or unavailable: consumers use the common 74-slot map.
+    /// </summary>
+    public byte? Blade14KeyboardEdition { get; init; }
+
     public IReadOnlySet<LightingRefreshRate> SupportedLightingRefreshRates { get; init; } =
         new HashSet<LightingRefreshRate>();
 
@@ -529,6 +535,8 @@ public sealed record DeviceCapabilities(
         && (ThxAudio is null || ThxAudio.IsWellFormed)
         && (Blade18KeyboardLayoutId is null
             || Blade18KeyboardLightingLayout.IsKnownLayout(Blade18KeyboardLayoutId.Value))
+        && (Blade14KeyboardEdition is null
+            || string.Equals(KeyboardLightingLayoutId, KeyboardLightingLayoutIds.Rz09_0530, StringComparison.Ordinal))
         && (KeyboardLightingLayoutId is null || KeyboardLightingLayoutIds.IsKnown(KeyboardLightingLayoutId))
         && (!LightingEffects.Contains(LightingEffect.Sequence)
             || KeyboardLightingLayoutId is not null)

@@ -128,6 +128,7 @@ public sealed partial class ExperimentalBladeFactoryTests
         internal bool IgnoreThermalWrites { get; set; }
         internal bool IgnoreBatteryWrites { get; init; }
         internal bool RejectBatteryGet { get; set; }
+        internal byte Edition { get; init; } = 12;
         internal List<(byte Class, byte Id)> Commands { get; } = [];
 
         public Task<HidFeatureIoResult> ExecuteAsync(OpenedHidHandle handle, uint controlCode,
@@ -158,6 +159,7 @@ public sealed partial class ExperimentalBladeFactoryTests
                     case (0x03, 0x80): buffer[11] = 1; break;
                     case (0x03, 0x82): buffer[11] = 0; break;
                     case (0x0F, 0x82): buffer[11] = 3; break;
+                    case (0x00, 0x86): buffer[9] = Edition; break;
                     case (0x07, 0x92):
                         buffer[9] = battery;
                         if (RejectBatteryGet)

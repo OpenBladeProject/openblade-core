@@ -263,8 +263,9 @@ and Blade 16 also offer non-key-triggered grid effects and color Breathing,
 using their own 6×16 addresses. See [lighting parity](blade14-lighting-parity.md)
 for the pinned transport and software patterns. These address bounds alone do
 not establish a physical key map or admit the `02E0` shared ambient-frame API.
-Blade 14 (2025) separately uses its [MCU-derived common key map](blade14-keymap.md)
-for Reactive, Ripple and sequence imports; ambiguous regional keys remain unavailable.
+Blade 14 (2025) separately uses its [MCU-derived key maps](blade14-keymap.md)
+for Reactive, Ripple and sequence imports. Its own `00/86` edition getter selects
+the regional map; without a confirmed edition, ambiguous regional keys remain unavailable.
 Blade 18 also uses its own recorded frame templates for Fire and Wheel, described
 below, and the shared Starlight software pattern over its 96 RGB addresses.
 Blade 14, Blade 16 and Blade 18 use the typed uniform-frame path for Ambient Awareness and

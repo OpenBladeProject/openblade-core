@@ -28,6 +28,7 @@ public sealed class IpcWireShapeManifestTests
         Assert.Contains("property supportsBreathingColorSelection:System.Boolean member", manifest, StringComparison.Ordinal);
         Assert.Contains("property supportsWaveDirectionSelection:System.Boolean member", manifest, StringComparison.Ordinal);
         Assert.Contains("property blade18KeyboardLayoutId:System.Byte? member", manifest, StringComparison.Ordinal);
+        Assert.Contains("property blade14KeyboardEdition:System.Byte? member", manifest, StringComparison.Ordinal);
         Assert.Contains("property hostManagedLaptopControls:System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> member", manifest, StringComparison.Ordinal);
         Assert.Contains("property fanSpeedRangesByPerformancePreset:System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset,OpenBlade.Contracts.FanSpeedRange> member", manifest, StringComparison.Ordinal);
         Assert.Contains("derived setFanStopMode=OpenBlade.Contracts.SetFanStopModeRequest", manifest, StringComparison.Ordinal);
@@ -98,6 +99,8 @@ public sealed class IpcWireShapeManifestTests
             87 => "CB77D50C4764B3E1792C3EF11DB825E8F7FA65D8A63D64CF479F9D41B65B231B",
             // Protocol 88 adds Intel CPU power limits, firmware Gaming GPU overclock and local dimming.
             88 => "30A176D7BA27B101AD4317681A16B3AC3419096E239F9A4050F93E5046D60E30",
+            // Protocol 89 adds the RZ09-0530 keyboard-MCU edition for regional key maps.
+            89 => "DF84C6FAB3E8A12689F1F0CFC6AFECFC75A1411F8BA10B51757DE3FF5C931DE3",
             _ => null,
         };
 

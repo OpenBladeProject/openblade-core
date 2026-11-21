@@ -163,6 +163,7 @@ internal static class ServiceStatusSnapshotComparer
             && left.SupportsPlaybackMuteIndicator
                 == right.SupportsPlaybackMuteIndicator
             && left.Blade18KeyboardLayoutId == right.Blade18KeyboardLayoutId
+            && left.Blade14KeyboardEdition == right.Blade14KeyboardEdition
             && string.Equals(
                 left.KeyboardLightingLayoutId,
                 right.KeyboardLightingLayoutId,

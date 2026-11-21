@@ -1027,6 +1027,45 @@ public sealed partial class ServiceReactiveLightingLoopTests
     }
 
     [Fact]
+    public async Task Blade14KeyboardEditionTracksVerifiedStatusAndClearsOnModelOrAdmissionLoss()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        Assert.Null(factory.Last!.ReadBlade14KeyboardEdition());
+        ServiceStatusSnapshot blade14 = Status(LightingRendererOwnershipState.Reactive) with
+        {
+            Firmware = new FirmwareVersions("1.04", "1", "Unavailable", "Unavailable", "RZ09-0530"),
+            Capabilities = DeviceCapabilities.Unavailable() with
+            {
+                KeyboardLightingLayoutId = KeyboardLightingLayoutIds.Rz09_0530,
+                Blade14KeyboardEdition = 12,
+            },
+        };
+        client.Publish(blade14);
+        await WaitUntilAsync(() => factory.Last.ReadBlade14KeyboardEdition() == 12);
+        Assert.Null(factory.Last.ReadBlade18KeyboardLayoutId());
+        client.Publish(blade14 with { Revision = 2, Capabilities = blade14.Capabilities! with { Blade14KeyboardEdition = null } });
+        await WaitUntilAsync(() => factory.Last.ReadBlade14KeyboardEdition() is null);
+        client.Publish(blade14 with { Revision = 3 });
+        await WaitUntilAsync(() => factory.Last.ReadBlade14KeyboardEdition() == 12);
+        client.Publish(blade14 with { Revision = 4, DeviceVerified = false });
+        await WaitUntilAsync(() => factory.Last.ReadBlade14KeyboardEdition() is null);
+        client.Publish(blade14 with
+        {
+            Revision = 5,
+            Firmware = blade14.Firmware! with { ModelNumber = "RZ09-0529" },
+        });
+        await WaitUntilAsync(() => factory.Last.ReadVerifiedInputDeviceKind() == RazerBladeInputDeviceKind.Rz09_0529);
+        Assert.Null(factory.Last.ReadBlade14KeyboardEdition());
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
     public async Task UnknownVerifiedReadbackPreservesPreferenceButDisablesInterception()
     {
         var client = new WatchClient();
@@ -1304,6 +1343,7 @@ public sealed partial class ServiceReactiveLightingLoopTests
         private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
         private readonly Func<RazerBladeInputDeviceKind> readVerifiedInputDeviceKind;
         private readonly Func<byte?> readBlade18KeyboardLayoutId;
+        private readonly Func<byte?> readBlade14KeyboardEdition;
         private readonly Func<SpecialKeySlot, bool> isSpecialKeyInputAdmitted;
         private readonly Action<Blade18FnShortcut> publishBlade18FnShortcut;
         private readonly Func<bool> isBlade18FnInputAdmitted;
@@ -1324,6 +1364,7 @@ public sealed partial class ServiceReactiveLightingLoopTests
             readGamingModeKeyPolicy = options.ReadGamingModeKeyPolicy;
             readVerifiedInputDeviceKind = options.ReadVerifiedInputDeviceKind;
             readBlade18KeyboardLayoutId = options.ReadBlade18KeyboardLayoutId;
+            readBlade14KeyboardEdition = options.ReadBlade14KeyboardEdition;
             isSpecialKeyInputAdmitted = options.IsSpecialKeyInputAdmitted;
             publishBlade18FnShortcut = options.PublishBlade18FnShortcut;
             isBlade18FnInputAdmitted = options.IsBlade18FnInputAdmitted;
@@ -1373,6 +1414,8 @@ public sealed partial class ServiceReactiveLightingLoopTests
             readVerifiedInputDeviceKind();
 
         public byte? ReadBlade18KeyboardLayoutId() => readBlade18KeyboardLayoutId();
+
+        public byte? ReadBlade14KeyboardEdition() => readBlade14KeyboardEdition();
 
         public bool IsSpecialKeyInputAdmitted(SpecialKeySlot slot) =>
             isSpecialKeyInputAdmitted(slot);

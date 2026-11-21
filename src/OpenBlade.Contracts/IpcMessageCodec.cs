@@ -15,7 +15,8 @@ public static class OpenBladeIpc
     // report and the matching status field.
     // Protocol 88 adds Intel CPU power limits, firmware Gaming-mode GPU overclock,
     // local dimming capability and state, and the local dimming Clear request.
-    public const int ProtocolVersion = 88;
+    // Protocol 89 adds the RZ09-0530 keyboard-MCU edition for regional key maps.
+    public const int ProtocolVersion = 89;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -1463,6 +1464,9 @@ public static class IpcMessageCodec
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "blade18KeyboardLayoutId", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "blade14KeyboardEdition", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "thxAudio", StringComparison.OrdinalIgnoreCase))

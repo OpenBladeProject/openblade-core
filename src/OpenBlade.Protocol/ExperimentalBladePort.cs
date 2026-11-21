@@ -147,13 +147,22 @@ internal sealed partial class ExperimentalBladePort(
 
     internal void SetAdditionalWriteAdmission(Func<bool> admission) => additionalWriteAdmission = admission;
 
-    public DeviceCapabilities Capabilities => WithLocalDimmingAdmission(WithConfirmedExperimentalFanRange(
-        WithStartupReadAdmission(CreateCapabilities(model, policy.WritesAllowed, HyperBoostSkuAdmission),
-            startupAnimationState),
-        model, policy.ConfirmedFanRanges), model, policy.WritesAllowed, policy.MiniLedPanel) with
-    {
-        Blade18KeyboardLayoutId = blade18KeyboardLayoutId,
-    };
+    public DeviceCapabilities Capabilities => WithKeyboardLayoutMetadata(
+        WithLocalDimmingAdmission(WithConfirmedExperimentalFanRange(
+            WithStartupReadAdmission(CreateCapabilities(model, policy.WritesAllowed, HyperBoostSkuAdmission),
+                startupAnimationState),
+            model, policy.ConfirmedFanRanges), model, policy.WritesAllowed, policy.MiniLedPanel),
+        blade18KeyboardLayoutId, blade14KeyboardEdition);
+
+    internal static DeviceCapabilities WithKeyboardLayoutMetadata(
+        DeviceCapabilities capabilities, byte? blade18KeyboardLayoutId, byte? blade14KeyboardEdition) =>
+        capabilities with
+        {
+            Blade18KeyboardLayoutId = blade18KeyboardLayoutId,
+            // The edition describes this layout's key map; it is absent without that layout.
+            Blade14KeyboardEdition = capabilities.KeyboardLightingLayoutId == KeyboardLightingLayoutIds.Rz09_0530
+                ? blade14KeyboardEdition : null,
+        };
 
     // A null SKU admission describes the model's potential capabilities, before a host SKU is read.
     // The SKU recheck only restricts entry; access and restore bases never depend on it.

@@ -567,7 +567,8 @@ internal sealed partial class ExperimentalBladePort
         }
 
         ExperimentalGridLightingEffect? gridEffect = IsExperimentalGridRequest(settings)
-            ? new(settings, model.ProductId == 0x02C7) : null;
+            ? new(settings, model.ProductId == 0x02C7,
+                model.ProductId == 0x02C5 ? blade14KeyboardEdition : null) : null;
         bool animationRequest = gridEffect is not null
             || SupportsBlade18Animation(model) && IsBlade18Animation(settings);
         if (animationRequest && gridEffect is null && session is not IRazerSetFeatureCommandSession)

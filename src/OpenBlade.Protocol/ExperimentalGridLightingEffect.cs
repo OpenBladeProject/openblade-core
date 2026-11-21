@@ -12,6 +12,7 @@ internal sealed class ExperimentalGridLightingEffect
     private const int Rows = 6;
     private readonly int columns;
     private readonly bool rz090529;
+    private readonly byte? blade14Edition;
     private readonly LightingSettings settings;
     private readonly StarlightPattern? starlight;
     private readonly ImportedSequenceTimeline? sequence;
@@ -24,15 +25,24 @@ internal sealed class ExperimentalGridLightingEffect
     internal bool IncludesVaporChamber => rz090529 && sequence is null
         && settings.Effect != LightingEffect.Reactive;
 
-    internal ExperimentalGridLightingEffect(LightingSettings settings, bool rz090529 = false)
+    /// <param name="blade14Edition">
+    /// Confirmed RZ09-0530 keyboard-MCU edition; null keeps the common key map.
+    /// </param>
+    internal ExperimentalGridLightingEffect(LightingSettings settings, bool rz090529 = false,
+        byte? blade14Edition = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         if (!IsSupported(settings, rz090529))
         {
             throw new ArgumentException("The settings do not describe a supported typed grid effect.", nameof(settings));
         }
+        if (rz090529 && blade14Edition is not null)
+        {
+            throw new ArgumentException("A Blade 14 edition does not describe this keyboard.", nameof(blade14Edition));
+        }
         this.settings = settings;
         this.rz090529 = rz090529;
+        this.blade14Edition = blade14Edition;
         columns = rz090529 ? Rz090529KeyboardLightingLayout.Columns : 16;
         if (settings.Parameters is SequenceLightingParameters playback)
         {
@@ -88,7 +98,7 @@ internal sealed class ExperimentalGridLightingEffect
         ArgumentOutOfRangeException.ThrowIfLessThan(at, TimeSpan.Zero);
         if (!IsKeyTriggered || !(rz090529
             ? Rz090529KeyboardLightingLayout.IsKeySlot(slot)
-            : Blade14KeyboardLightingLayout.IsKeySlot(slot)))
+            : Blade14KeyboardLightingLayout.IsKeySlot(blade14Edition, slot)))
         {
             throw new CapabilityUnavailableException("The key is outside the reviewed keyboard map.");
         }
@@ -253,7 +263,7 @@ internal sealed class ExperimentalGridLightingEffect
 
     private bool TryGetKeyPosition(int slot, out double x, out double y) => rz090529
         ? Rz090529KeyboardLightingLayout.TryGetKeyPosition(slot, out x, out y)
-        : Blade14KeyboardLightingLayout.TryGetKeyPosition(slot, out x, out y);
+        : Blade14KeyboardLightingLayout.TryGetKeyPosition(blade14Edition, slot, out x, out y);
 
     private static double Fraction(double value) => value - Math.Floor(value);
 

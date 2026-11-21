@@ -164,7 +164,8 @@ internal sealed class FirmwareQueryDiagnostics
     // Closed request shapes bound both the number of entries and their data.
     // Do not infer queries from the high command bit: 00/82 reads a serial,
     // and 00/86 remains excluded from this shared payload catalog. The exact-02A0
-    // edition getter records only decoded regional layout through its own policy.
+    // and exact-02C5 edition getters record only decoded regional layout through
+    // their own policy.
     internal static bool CanRecord(RazerCommandSpec command)
     {
         ReadOnlySpan<byte> arguments = command.Arguments.Span;

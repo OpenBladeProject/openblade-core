@@ -204,8 +204,10 @@ and [SO690](../evidence/source-reviewed-blades/2026-11-13-rz09-0483-descriptor-f
 inspection pins selected descriptor tables, lookup paths and RGB consumers.
 Auxiliary routing, full command-copy linkage, Windows input bindings and reviewed
 fixtures remain incomplete, so those findings do not enable key-triggered effects
-or per-key imports. RZ09-0530 retains its intentionally bounded common regional
-bindings. These backends do not inherit another model's map.
+or per-key imports. RZ09-0530 selects its own regional MCU map from its `00/86`
+edition and falls back to the common bindings without one; see
+[Blade 14 keyboard map](blade14-keymap.md#runtime-edition-selection). These
+backends do not inherit another model's map.
 
 Reproduce the initial six-MCU proof against a locally acquired pinned HEX or
 decoded image, optionally including its official carrier:
