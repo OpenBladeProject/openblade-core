@@ -78,14 +78,16 @@ See the [exact-model admission guide](source-reviewed-blade-models.md) for the o
 ### GPU clock offsets
 
 RZ09-0529 and RZ09-0530 offer the GPU core and memory clock offsets on confirmed
-full-power AC. Synapse enables its NVIDIA overclock panel for products 711 and
-709 with core -1000 to 400 MHz and memory -1000 to 3000 MHz in 1 MHz steps; the
-pinned UI chunks are listed in each model's diagnostics evidence. OpenBlade
-writes through the NVIDIA driver, never through the laptop firmware, and applies
-the intersection of that envelope and the range the driver reports. As in
-Synapse, the control is hidden on battery and in low power, and OpenBlade
-refuses new offsets there. Leaving AC stops OpenBlade managing the offsets; it
-does not write them back to 0.
+external power, including limited adapters; the control is hidden and new offsets
+are refused on battery. Synapse enables its NVIDIA overclock panel for products
+711 and 709 with core -1000 to 400 MHz and memory -1000 to 3000 MHz in 1 MHz
+steps; the pinned Synapse files are listed in each model's diagnostics evidence.
+OpenBlade writes through the NVIDIA driver, never through the laptop firmware,
+and applies the intersection of that envelope and the range the driver reports.
+Synapse also hides the panel when the adapter is below its recommended wattage;
+OpenBlade keeps the same external-power rule it uses on RZ09-0581 and RZ09-0528,
+so the offsets stay available on a limited adapter. Switching to battery stops
+OpenBlade managing the offsets; it does not write them back to 0.
 
 Synapse applies the envelope per product, with no GPU-name check. OpenBlade adds
 its own guard: the laptop must have exactly one NVIDIA GPU, named
@@ -281,6 +283,12 @@ Failed checks keep controls paused.
 A thermal-only pause does not require unrelated charge-limit readings on models
 without temporary full charge. Pending battery operations still require their own
 confirmed readback.
+
+On RZ09-0529 and RZ09-0530, GPU clock offsets that were already applied stay in
+place while controls are paused, and new offsets, including a reset to 0, wait
+until controls resume. If the resume check cannot confirm the offsets of an
+interrupted change, OpenBlade sends them again with your next GPU or performance
+change.
 
 The [implementation reference](experimental-blade-reference.md) contains protocol
 limits, diagnostic fields, and upstream sources.
