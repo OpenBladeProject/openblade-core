@@ -1058,8 +1058,9 @@ async fn one_slow_power_read_refuses_a_custom_recipe_before_its_first_setter() {
     // From a Custom baseline the observation reads the pair and both levels,
     // then 07/8C. With each 07/8C read held 1300 ms on a fast device the mean
     // per exchange stays low enough to start, and the recipe then reached
-    // three of its four setters before its deadline. The slowest interval
-    // refuses it after the Prepared row instead.
+    // three of its four setters before its deadline. By the pace check two
+    // 07/8C reads are slow, so the second longest exchange charges the slow
+    // reads left and the recipe is refused before any setter.
     let rig = rig_at(4, 0, FULL, MemoryFiles::default());
     rig.get().await;
     rig.port.state.lock().unwrap().on_power = Some(Arc::new(|_| {
@@ -1089,8 +1090,8 @@ async fn one_slow_power_read_refuses_a_custom_recipe_before_its_first_setter() {
 async fn a_slow_journal_append_refuses_a_recipe_before_its_first_setter() {
     // Every journal append held 1600 ms on a healthy device. Paced before the
     // Prepared row, the Silent pair started and split after its first setter
-    // ([5, 2]) at the deadline. Paced after it, the append's interval refuses
-    // the recipe before any setter.
+    // ([5, 2]) at the deadline. The Prepared append is timed and charged for
+    // each of the five rows left, so the recipe is refused before any setter.
     let rig = rig_at(2, 0, FULL, MemoryFiles::default());
     rig.get().await;
     let stop = Arc::new(AtomicBool::new(false));

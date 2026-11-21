@@ -68,6 +68,12 @@ pub(crate) struct State {
     pub(crate) latency: Option<Duration>,
     /// Extra latency on each 07/8C power read, on top of `latency`.
     pub(crate) power_latency: Option<Duration>,
+    /// Extra latency on that 07/8C power read only (1-based), on top of
+    /// `latency` and `power_latency`.
+    pub(crate) power_stall: Option<(usize, Duration)>,
+    /// Extra latency on each 0D/01, 0D/02 and 0D/07 setter, on top of
+    /// `latency`.
+    pub(crate) setter_latency: Option<Duration>,
 }
 #[derive(Clone)]
 pub(crate) struct Fixture {
@@ -121,7 +127,10 @@ impl Fixture {
                 let paused = {
                     let mut s = fixture.state.lock().unwrap();
                     s.opened += 1;
-                    s.latency.is_some() || s.power_latency.is_some()
+                    s.latency.is_some()
+                        || s.power_latency.is_some()
+                        || s.power_stall.is_some()
+                        || s.setter_latency.is_some()
                 };
                 let mut reader = Reader::new(fixture.port(), admission);
                 // With a latency the job runs on paused time: its clock starts at
@@ -231,9 +240,18 @@ impl Port for MemoryPort {
                 let payload = &frame[9..9 + frame[6] as usize];
                 s.sent.push((class, command, payload.to_vec(), id));
                 s.sent_at.push(Instant::now());
-                if (class, command) == (7, 0x8c)
-                    && let Some(extra) = s.power_latency
-                {
+                let extra = match (class, command) {
+                    (7, 0x8c) => {
+                        let stall = s
+                            .power_stall
+                            .filter(|(at, _)| *at == s.power_reads + 1)
+                            .map(|(_, stall)| stall);
+                        s.power_latency.unwrap_or_default() + stall.unwrap_or_default()
+                    }
+                    (13, 1 | 2 | 7) => s.setter_latency.unwrap_or_default(),
+                    _ => Duration::ZERO,
+                };
+                if !extra.is_zero() {
                     self.ready_at = Some(self.ready_at.unwrap_or_else(Instant::now) + extra);
                 }
                 if class == 7

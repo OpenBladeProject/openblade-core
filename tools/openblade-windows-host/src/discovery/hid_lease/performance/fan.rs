@@ -1,5 +1,5 @@
 //! Actual fan actuation on the existing serialized Reader, including retained Stop IDs.
-use super::mutation::{Pace, Permit, Refusal, Setters};
+use super::mutation::{EXCHANGES_BEFORE_CHECK, Pace, Permit, Refusal, Setters};
 use super::*;
 use openblade_domain::{
     fan_history::CONTRACT,
@@ -16,7 +16,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
         let fence = super::mutation::PowerFence::new(permit);
         let mut authorize = || fence.authorize();
         let cleanup = permit.cleanup();
-        let pace = Pace::start(self);
+        let mut pace = Pace::start(self);
         let (baseline, power, preflight) = if cleanup {
             let r = permit.fan_record()?;
             let mut a = Attempt {
@@ -173,18 +173,8 @@ impl<P: Port> Reader<P, ReadAdmission> {
             completed: false,
         };
         a.checkpoint(&mut authorize, admission, limit).ok()?;
-        permit.record_fan(if cleanup { 31 } else { 0 }).ok()?;
-        // Paced after the Prepared append (`mutation::Pace`); owned Stop
-        // cleanup is not paced. A refusal here submitted nothing: retirement
-        // records it as known not submitted (row 6). Its reserved IDs are not
-        // reused, as for every operation that reserves them.
-        if let Some((remaining, fixed)) = budget
-            && !pace.covers(a.reader, remaining, fixed, limit)
-        {
-            a.completed = true;
-            permit.refused(Refusal::Deadline);
-            return None;
-        }
+        pace.prepared(|| permit.record_fan(if cleanup { 31 } else { 0 }))
+            .ok()?;
         // The setters take the first reserved IDs in order; the power readings,
         // any intermediate read and the final reads follow.
         let mut next = ids.iter().copied();
@@ -246,6 +236,25 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 // change continues only while the permit's destination holds.
                 if !fence.admits(current, source) {
                     permit.refused(Refusal::PowerChanged);
+                    return None;
+                }
+                // Paced once, before the first intent row (`mutation::Pace`);
+                // owned Stop cleanup is not paced. A refusal here submitted
+                // nothing: retirement records it as known not submitted (row
+                // 6). Its reserved IDs are not reused, as for every operation
+                // that reserves them.
+                if step == 0
+                    && let Some((remaining, fixed)) = budget
+                    && !pace.covers(
+                        a.reader,
+                        remaining - EXCHANGES_BEFORE_CHECK,
+                        setters as u32,
+                        fixed,
+                        limit,
+                    )
+                {
+                    a.completed = true;
+                    permit.refused(Refusal::Deadline);
                     return None;
                 }
                 a.checkpoint(&mut authorize, admission, limit).ok()?;

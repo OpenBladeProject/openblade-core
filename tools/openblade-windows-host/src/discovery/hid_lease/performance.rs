@@ -185,11 +185,34 @@ struct Reader<P: Port, A = Admission> {
     port: P,
     admission: A,
     poisoned: bool,
-    // The completion of the last exchange (a send and its reply) and the
-    // longest interval between completions since `mutation::Pace::start`,
-    // for an operation's measured pace.
-    last_reply: Option<Instant>,
+    // The two longest exchanges since `mutation::Pace::start`, for an
+    // operation's measured pace.
+    exchanges: Exchanges,
+}
+
+/// The two longest exchanges a Reader has completed: each runs from a send's
+/// submission to its reply's completion, settle wait included. Journal
+/// appends and admission between exchanges are not part of them;
+/// `mutation::Pace` times the Prepared append directly.
+#[derive(Default)]
+struct Exchanges {
+    sent: Option<Instant>,
     slowest: Duration,
+    second: Duration,
+}
+impl Exchanges {
+    fn replied(&mut self, at: Instant) {
+        let Some(sent) = self.sent.take() else {
+            return;
+        };
+        let exchange = at.saturating_duration_since(sent);
+        if exchange > self.slowest {
+            self.second = self.slowest;
+            self.slowest = exchange;
+        } else if exchange > self.second {
+            self.second = exchange;
+        }
+    }
 }
 
 impl<P: Port, A: ObservationProof> Reader<P, A> {
@@ -198,8 +221,7 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
             port,
             admission,
             poisoned: false,
-            last_reply: None,
-            slowest: Duration::ZERO,
+            exchanges: Exchanges::default(),
         }
     }
 
@@ -447,18 +469,16 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
     ) -> io::Result<(usize, Frame)> {
         limit.check()?;
         let reply = matches!(transfer, Transfer::ReceiveReply);
+        if !reply {
+            self.reader.exchanges.sent = Some(Instant::now());
+        }
         self.reader.port.submit(transfer, limit)?;
         loop {
             limit.check()?;
             if let Some(completion) = self.reader.port.poll() {
                 limit.check()?;
                 if reply && completion.is_ok() {
-                    let now = Instant::now();
-                    if let Some(last) = self.reader.last_reply {
-                        self.reader.slowest =
-                            self.reader.slowest.max(now.saturating_duration_since(last));
-                    }
-                    self.reader.last_reply = Some(now);
+                    self.reader.exchanges.replied(Instant::now());
                 }
                 return completion;
             }

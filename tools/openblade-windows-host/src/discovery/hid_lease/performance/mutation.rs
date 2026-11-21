@@ -122,47 +122,76 @@ pub(crate) enum Refusal {
     NoDirectPath,
     /// The request's remaining time cannot cover the rest of the recipe at the
     /// pace this operation measured (`Pace`). Only the Prepared row was
-    /// written; no setter was submitted.
+    /// written and the first setter's power reading taken; no setter was
+    /// submitted.
     Deadline,
 }
 
-/// One operation's measured device pace. After its Prepared row and before
-/// its first setter an operation checks that the rest of its recipe fits the
-/// request deadline at that pace, so a slow device refuses a recipe it cannot
-/// finish instead of timing out between setters.
+/// The journal rows each setter appends after the pace check: its intent row
+/// before the send and its acknowledged row after the reply.
+pub(super) const APPENDS_PER_SETTER: u32 = 2;
+/// The closing row after the final read: Confirmed, or the fan recipe's
+/// settled row.
+pub(super) const CLOSING_APPENDS: u32 = 1;
+/// The exchanges a recipe has completed when it checks its pace: the first
+/// setter's own 07/8C reading.
+pub(super) const EXCHANGES_BEFORE_CHECK: u32 = 1;
+
+/// One operation's measured pace. A recipe checks it once, after its Prepared
+/// row and its first setter's own 07/8C reading and before that setter's
+/// intent row, so a device or journal too slow to finish refuses the recipe
+/// with nothing submitted instead of timing out between setters. With `E`
+/// exchanges and `A` appends left, the recipe runs only if
 ///
-/// The pace is the slowest interval between exchange completions since the
-/// start, the interval still open at the check included. Each interval holds
-/// everything the operation did around that exchange: admission, a slow
-/// 07/8C read, and the Prepared append. Every remaining setter exchange also
-/// carries one journal append, so a slow append counts once per exchange. A
-/// mean would let fast reads hide one slow command or append.
-#[derive(Clone, Copy)]
+/// `now + slowest + (E - 1) × second + A × append + fixed <= deadline`.
+///
+/// - `slowest` and `second` are the two longest exchanges since `start`
+///   (`Exchanges`). One stall is charged once, at its own length, and every
+///   other exchange at the second longest. A single slow read or append is
+///   not a slow device, so it does not refuse a recipe that has seconds to
+///   spare. A device that is slow throughout has two slow samples by the
+///   check, the recipe's first 07/8C reading and the first setter's own, so
+///   the second longest carries it.
+/// - `append` is the Prepared append, timed directly (`prepared`). Every
+///   later row goes through the same journal replace, so each of the
+///   `A = APPENDS_PER_SETTER × setters + CLOSING_APPENDS` rows left is
+///   charged at that length.
+/// - `fixed` is the recipe's scheduled spacing that no exchange includes.
 pub(super) struct Pace {
-    started: Instant,
+    append: Duration,
 }
 impl Pace {
     pub(super) fn start<P: Port, A>(reader: &mut Reader<P, A>) -> Self {
-        let started = Instant::now();
-        reader.last_reply = Some(started);
-        reader.slowest = Duration::ZERO;
-        Self { started }
+        reader.exchanges = Exchanges::default();
+        Self {
+            append: Duration::ZERO,
+        }
     }
-    /// Whether `remaining` more exchanges at the slowest measured interval,
-    /// plus `fixed` scheduled waits, end by the deadline.
+    /// Writes the Prepared row through `append` and times it.
+    pub(super) fn prepared(&mut self, append: impl FnOnce() -> io::Result<()>) -> io::Result<()> {
+        let started = Instant::now();
+        let written = append();
+        self.append = Instant::now().saturating_duration_since(started);
+        written
+    }
+    /// Whether the `exchanges` and the rows of `setters` still to come,
+    /// plus `fixed` scheduled waits, end by the deadline at this pace.
     pub(super) fn covers<P: Port, A>(
-        self,
+        &self,
         reader: &Reader<P, A>,
-        remaining: u32,
+        exchanges: u32,
+        setters: u32,
         fixed: Duration,
         limit: Limit<'_>,
     ) -> bool {
+        let appends = APPENDS_PER_SETTER * setters + CLOSING_APPENDS;
+        let measured = &reader.exchanges;
         let now = Instant::now();
-        let open = now.saturating_duration_since(reader.last_reply.unwrap_or(self.started));
-        reader
-            .slowest
-            .max(open)
-            .checked_mul(remaining)
+        measured
+            .second
+            .checked_mul(exchanges.saturating_sub(1))
+            .and_then(|rest| rest.checked_add(measured.slowest))
+            .and_then(|rest| rest.checked_add(self.append.checked_mul(appends)?))
             .and_then(|rest| rest.checked_add(fixed))
             .and_then(|rest| now.checked_add(rest))
             .is_some_and(|end| end <= limit.deadline)
@@ -189,7 +218,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
         }
         let fence = PowerFence::new(permit);
         let mut authorize = || fence.authorize();
-        let pace = Pace::start(self);
+        let mut pace = Pace::start(self);
         let baseline = self.observe(&mut authorize, limit).await?;
         let initial_power_ids = self.port.reserve_pair()?;
         let admission = self.admission;
@@ -250,16 +279,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
             completed: false,
         };
         attempt.checkpoint(&mut authorize, admission, limit).ok()?;
-        permit.record(Progress::Prepared).ok()?;
-        // Paced after the Prepared append, which is measured with the rest.
-        // A refusal here submitted nothing: retirement settles the Prepared
-        // row as known not submitted. The IDs reserved above are not reused;
-        // a refused recipe consumes no more of the pool than running it would.
-        if !pace.covers(attempt.reader, remaining, Duration::ZERO, limit) {
-            attempt.completed = true;
-            permit.refused(Refusal::Deadline);
-            return None;
-        }
+        pace.prepared(|| permit.record(Progress::Prepared)).ok()?;
         for (index, command) in setters.commands().enumerate() {
             let (intent, acknowledged) = Progress::setter(destination, index)?;
             attempt.checkpoint(&mut authorize, admission, limit).ok()?;
@@ -275,6 +295,24 @@ impl<P: Port> Reader<P, ReadAdmission> {
             // never ACLineStatus alone, that agrees with Windows AC presence.
             if !fence.admits(power, power_source) {
                 permit.refused(Refusal::PowerChanged);
+                return None;
+            }
+            // Paced once, before the first intent row (`Pace`). A refusal
+            // here submitted nothing: retirement settles the Prepared row as
+            // known not submitted. The IDs reserved above are not reused; a
+            // refused recipe consumes no more of the pool than running it
+            // would.
+            if index == 0
+                && !pace.covers(
+                    attempt.reader,
+                    remaining - EXCHANGES_BEFORE_CHECK,
+                    destination.setters() as u32,
+                    Duration::ZERO,
+                    limit,
+                )
+            {
+                attempt.completed = true;
+                permit.refused(Refusal::Deadline);
                 return None;
             }
             attempt.checkpoint(&mut authorize, admission, limit).ok()?;

@@ -862,15 +862,23 @@ their power reads 8, the final pair and its levels 4), and a fan return to
 Automatic with Custom or a manual entry with its intermediate pair. The fan
 recipe also waits up to 210 ms after an entry state pair and 65 ms between target
 commands. 6 s leaves those 21 exchanges twice the per-exchange time of the 2 s
-deadline after the 275 ms of spacing. After its Prepared row and before its
-first setter each operation also checks its own measured pace (`Pace`): the
-slowest interval between exchange completions so far, times the exchanges left
-plus the fixed spacing, must end by the deadline. Each interval holds what the
-operation did around that exchange (admission, storage, the Prepared append)
-and the check includes the interval still open, so a slow 07/8C read or a slow
-journal append paces the whole recipe; a mean let fast reads hide either. Each
-remaining setter exchange carries one journal append. Otherwise the intent stays
-saved, no setter is submitted, retirement settles the Prepared row as known not
+deadline after the 275 ms of spacing. Each operation also checks its own
+measured pace once (`Pace`), after its Prepared row and its first setter's own
+07/8C reading and before that setter's intent row. With `E` exchanges and `A`
+journal rows left, it runs only if
+`now + slowest + (E - 1) × second + A × append + fixed` ends by the deadline.
+`slowest` and `second` are the two longest exchanges so far, each from a send to
+its reply. `append` is the Prepared append, timed directly. `A` is two rows per
+setter (intent and acknowledged) plus the closing row, and `fixed` is the fan
+recipe's spacing. One stall is charged once, so a single 07/8C read held up to
+1 s, or a slow append that still fits, does not refuse a recipe with seconds to
+spare. A device that is slow throughout has two slow samples by the check (the
+recipe's first 07/8C reading and the first setter's own), so the second longest
+carries it. A slow journal is charged for every row left. The earlier rules
+failed both ways: the mean let one slow read or append through to an overrun,
+and the slowest interval between completions refused healthy recipes after a
+single 500 ms stall and still let a uniformly slow device and journal start and
+overrun. Otherwise the intent stays saved, no setter is submitted, retirement settles the Prepared row as known not
 submitted, and the reply is Blocked with "The remaining request time cannot
 cover this recipe at the measured device pace; no thermal setter was
 submitted." (no fan setter, for a fan request). Owned Stop cleanup is not

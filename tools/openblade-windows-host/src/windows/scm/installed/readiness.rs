@@ -709,8 +709,8 @@ const FRAME_EXCHANGE: Duration = Duration::from_nanos(FRAME_TIMEOUT.as_nanos() a
 /// A performance or fan request's budget: the 6 s of a battery request. It
 /// gives the longest recipe twice the time per exchange `FRAME_TIMEOUT` gave a
 /// preset request, after its fixed spacing; each operation still refuses
-/// before its first setter when its measured pace cannot finish in what
-/// remains (`Pace`).
+/// before its first setter's intent row when its measured pace cannot finish
+/// in what remains (`Pace`).
 #[cfg(feature = "service-thermal-mutation-v1")]
 const RECIPE_BUDGET: Duration = Duration::from_secs(6);
 #[cfg(feature = "service-thermal-mutation-v1")]
