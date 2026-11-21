@@ -760,7 +760,14 @@ pins it for an aggregate managed would migrate but native refuses.
 An open that writes a migration admits the override document and the journal
 first, then writes the migration, then admits the migrated aggregate. When
 either of the first two is refused, the configuration documents are not
-written. That open is not read-only: its journal read is the one every open
+written. Before its first backup, `Planned::write` reads the three documents
+again; if another writer changed them after the plan, the open fails with
+`The saved configuration could not be migrated to the current schema. It is
+unchanged.` and writes nothing, so the transaction never backs up or restores
+planned bytes over newer ones, and the next open plans from what is stored
+then (`documents_another_writer_changed_after_the_plan_are_left_unchanged`).
+A change after that read falls to the transaction's own checks, as a save's
+does. That open is not read-only: its journal read is the one every open
 makes, and the journal store's read authenticates the rows, can fail fatally on
 the owner binding and can publish a pending roll. Managed's `ReadContextAsync`
 loads the battery store first and its overrides after, and quarantines an
@@ -846,8 +853,11 @@ the open fails:
   configuration. ...`, and holds one entry on the service runtime's thread:
   the user's SID and the change, the digest of the stored and migrated bytes.
   A later open of that user's store with the same bytes is refused the same
-  way without a write. The hold ends when another user's open reaches the
-  migration step, as managed's reload does, or when the process exits. Because
+  way without a write. The hold ends when another user's open succeeds, as
+  managed loads the held user's configuration again only after another user
+  activates, or when the process exits. Another user's refused open leaves it,
+  and a successful one forgets it whether or not it migrated anything
+  (`only_another_users_successful_open_forgets_a_hold`). Because
   the change is keyed by content, other bytes in the same store are another
   change, which is attempted and takes the hold's place, and another user's
   byte-identical store is attempted too. The runtime serves one user at a
