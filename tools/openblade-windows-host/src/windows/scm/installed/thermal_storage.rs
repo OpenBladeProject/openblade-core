@@ -1031,6 +1031,39 @@ impl Storage {
         s.last = Some(entry);
         Ok(())
     }
+    /// A digest of every input saved-policy resolution reads: the protected
+    /// override and configuration files, the override bytes this storage
+    /// accepted, and both temporaries. Resolution is a function of these and
+    /// of the class and application, so equal digests resolve equally and an
+    /// operation need not parse them again (`FanPermit::authorize`).
+    pub(super) fn policy_inputs(&self) -> io::Result<[u8; 32]> {
+        use sha2::{Digest, Sha256};
+        fn push(digest: &mut Sha256, bytes: Option<&[u8]>) {
+            match bytes {
+                None => digest.update([0]),
+                Some(bytes) => {
+                    digest.update([1]);
+                    digest.update((bytes.len() as u64).to_le_bytes());
+                    digest.update(bytes);
+                }
+            }
+        }
+        let mut digest = Sha256::new();
+        for name in [
+            OVERRIDES,
+            configuration::RECOVERY_REQUIRED,
+            configuration::PROFILE,
+            configuration::PREFERENCES,
+            configuration::COMMIT,
+        ] {
+            push(&mut digest, self.files.read(name)?.as_deref());
+        }
+        let s = self.state.lock().map_err(|_| denied())?;
+        push(&mut digest, s.bytes.as_deref());
+        let temporaries = serde_json::to_vec(&(&s.temporary, &s.temporary_fan))?;
+        push(&mut digest, Some(&temporaries));
+        Ok(digest.finalize().into())
+    }
     /// The power profile's own performance and fan mode for class `power`, as
     /// managed `ValidateThermalOverrideCombination` reads them from
     /// `Automation.Profiles` (application profiles take no part), or managed

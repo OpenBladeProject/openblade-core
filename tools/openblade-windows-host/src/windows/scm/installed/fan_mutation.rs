@@ -17,6 +17,9 @@ pub(in super::super) struct FanRequest {
     pub(in super::super) deadline: Instant,
     pub(in super::super) status: Snapshot,
 }
+/// A fan request refused by `Refusal::Deadline` after its intent was saved.
+const FAN_DEADLINE_STORED: &str = "Fan override intent was stored. Hardware result: The remaining request time cannot cover this recipe at the measured device pace; no fan setter was submitted.";
+const FAN_DEADLINE_CLEARED: &str = "Fan override was cleared. Hardware result: The remaining request time cannot cover this recipe at the measured device pace; no fan setter was submitted.";
 pub(super) struct FanPermit {
     storage: Arc<Storage>,
     fresh: Arc<dyn Fresh>,
@@ -45,6 +48,12 @@ pub(super) struct FanPermit {
     unclassified_clear: AtomicBool,
     // Refused before storage on unclassified power (`UNCLASSIFIED_BLOCKED`).
     unclassified_blocked: AtomicBool,
+    // The saved-policy inputs (`Storage::policy_inputs`) the last passing
+    // authorization resolved.
+    verified: Mutex<Option<[u8; 32]>>,
+    // Refused before the first row: the remaining request time cannot cover
+    // the recipe at the measured device pace (`Refusal::Deadline`).
+    deadline: AtomicBool,
     // This request returns saved manual fans to Automatic (`previousManual`).
     returning: AtomicBool,
     record: Mutex<Option<FanRecord>>,
@@ -116,8 +125,12 @@ impl FanPermit {
 }
 impl Permit for FanPermit {
     fn refused(&self, cause: Refusal) {
-        if cause == Refusal::UnclassifiedBlocked {
-            self.unclassified_blocked.store(true, Ordering::Release);
+        match cause {
+            Refusal::UnclassifiedBlocked => {
+                self.unclassified_blocked.store(true, Ordering::Release);
+            }
+            Refusal::Deadline => self.deadline.store(true, Ordering::Release),
+            _ => {}
         }
     }
     fn destination_holds(&self, power: i32) -> bool {
@@ -204,23 +217,31 @@ impl Permit for FanPermit {
         if !self.cleanup()
             && let Some((source, settings)) = &*self.selected.lock().ok()?
         {
-            // A synthesized handback (null settings) needs saved fan intent to
-            // stay cleared; any other selection needs it unchanged.
-            if self
-                .storage
-                .desired_fan(*source, self.application.as_deref())
-                .ok()?
-                .as_ref()
-                != Some(settings).filter(|s| !s.is_null())
-            {
-                return None;
-            }
-            // The preset carried by a return to Automatic is saved policy too:
-            // every setter needs it to remain the current destination.
-            if let Some(destination) = *self.performance.lock().ok()?
-                && self.saved_preset(*source).ok()? != Some(destination)
-            {
-                return None;
+            // Saved policy is resolved again only when one of its inputs
+            // changed since the last check that passed: every checkpoint still
+            // reads them, but unchanged bytes are not parsed again. The inputs
+            // are read first, so a change during the check is seen next time.
+            let inputs = self.storage.policy_inputs().ok()?;
+            if *self.verified.lock().ok()? != Some(inputs) {
+                // A synthesized handback (null settings) needs saved fan intent
+                // to stay cleared; any other selection needs it unchanged.
+                if self
+                    .storage
+                    .desired_fan(*source, self.application.as_deref())
+                    .ok()?
+                    .as_ref()
+                    != Some(settings).filter(|s| !s.is_null())
+                {
+                    return None;
+                }
+                // The preset carried by a return to Automatic is saved policy
+                // too: every setter needs it to remain the current destination.
+                if let Some(destination) = *self.performance.lock().ok()?
+                    && self.saved_preset(*source).ok()? != Some(destination)
+                {
+                    return None;
+                }
+                *self.verified.lock().ok()? = Some(inputs);
             }
         }
         proof
@@ -707,6 +728,8 @@ impl Runtime {
             released: Mutex::new(None),
             unclassified_clear: AtomicBool::new(false),
             unclassified_blocked: AtomicBool::new(false),
+            deadline: AtomicBool::new(false),
+            verified: Mutex::new(None),
             returning: AtomicBool::new(false),
             record: Mutex::new(None),
             accepted: AtomicBool::new(false),
@@ -788,6 +811,13 @@ impl Runtime {
             "Fan setters completed and independent mode was confirmed. Target RPM and rotation are not readable on this backend."
         } else if permit.storage.pending() {
             "Fan submission or owned release remains unresolved; further writes are fenced."
+        } else if permit.accepted.load(Ordering::Acquire) && permit.deadline.load(Ordering::Acquire)
+        {
+            if permit.value.is_none() {
+                FAN_DEADLINE_CLEARED
+            } else {
+                FAN_DEADLINE_STORED
+            }
         } else if permit.accepted.load(Ordering::Acquire) {
             if permit.value.is_none() {
                 "Fan override was cleared. Hardware result: This source or observed mode needs a native recipe that is not yet implemented, or admission/transaction capacity did not complete. No applied target is claimed."

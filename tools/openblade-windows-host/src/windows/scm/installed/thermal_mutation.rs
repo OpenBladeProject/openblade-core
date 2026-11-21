@@ -204,6 +204,9 @@ struct Application {
 /// on unclassified external power, which selects no power profile.
 pub(super) const UNCLASSIFIED_CLEARED: &str =
     "Override cleared. Power-profile application waits for adapter classification.";
+/// The request's remaining time cannot cover the recipe at the device pace
+/// measured so far (`Refusal::Deadline`); nothing was prepared or submitted.
+pub(super) const DEADLINE: &str = "The remaining request time cannot cover this recipe at the measured device pace; no thermal setter was submitted.";
 /// Managed `ValidateUnclassifiedPerformanceOverride`, as `RecordRejectedIntent`
 /// reports it (Failed).
 const UNCLASSIFIED_REJECTED: &str = "The requested intent was rejected: This request needs classified power or includes native overclocking; ordinary external presence does not admit it.";
@@ -603,8 +606,7 @@ impl Runtime {
             }
         } else if let cause @ (Cause::UnclassifiedRejected
         | Cause::UnclassifiedCustomRejected
-        | Cause::Rejected(_)) =
-            &*permit.cause.lock().map_err(|_| io::ErrorKind::Other)?
+        | Cause::Rejected(_)) = &*permit.cause.lock().map_err(|_| io::ErrorKind::Other)?
         {
             Outcome {
                 status: 3,
@@ -712,6 +714,7 @@ struct RequestPermit {
 #[derive(Debug)]
 enum Cause {
     CurrentAdmission,
+    Deadline,
     AwaitingClassification,
     FanHandbackPending,
     Gpu,
@@ -733,6 +736,7 @@ impl Cause {
     fn message(&self) -> String {
         match self {
             Self::CurrentAdmission => "Current admission or independent readback did not complete; no successful application is reported.".into(),
+            Self::Deadline => DEADLINE.into(),
             Self::AwaitingClassification => UNCLASSIFIED_CLEARED.into(),
             Self::FanHandbackPending => "OpenBlade still owns a fan change that has not been handed back to firmware Automatic; no thermal setter was submitted.".into(),
             Self::Gpu => "GPU clock handling is incomplete; no thermal setter was submitted.".into(),
@@ -789,8 +793,7 @@ impl RequestPermit {
         if !agrees {
             return Ok(None);
         }
-        let Some((profile_performance, profile_fans)) = self.storage.profile_thermal(power)?
-        else {
+        let Some((profile_performance, profile_fans)) = self.storage.profile_thermal(power)? else {
             return Ok(None);
         };
         let performance = self.value.as_ref().map_or(profile_performance, |v| v.value);
@@ -928,6 +931,7 @@ impl Permit for RequestPermit {
             Refusal::PowerChanged => Cause::PowerChanged,
             Refusal::UnclassifiedBlocked => Cause::UnclassifiedBlocked,
             Refusal::NoDirectPath => Cause::NoDirectPath,
+            Refusal::Deadline => Cause::Deadline,
         });
     }
     fn retired(&self) -> io::Result<Settlement> {

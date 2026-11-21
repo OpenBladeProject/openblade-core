@@ -63,6 +63,9 @@ pub(crate) struct State {
     pub(crate) held_read: Option<Arc<AtomicBool>>,
     pub(crate) held_write: Option<(usize, Arc<AtomicBool>)>,
     pub(crate) before_write: Option<Arc<dyn Fn(usize) + Send + Sync>>,
+    // Every transfer completes this long after its submission, on the
+    // runtime's clock (paused in the direct Reader tests).
+    pub(crate) latency: Option<Duration>,
 }
 #[derive(Clone)]
 pub(crate) struct Fixture {
@@ -113,21 +116,19 @@ impl Fixture {
                 let Some(admission) = authorize() else {
                     return Ok(None);
                 };
-                fixture.state.lock().unwrap().opened += 1;
-                let mut reader = Reader::new(
-                    MemoryPort {
-                        fixture: fixture.clone(),
-                        pending: None,
-                        reply: None,
-                        retired: false,
-                        held: None,
-                        reply_timeout: false,
-                        completion_error: None,
-                    },
-                    admission,
-                );
+                let paused = {
+                    let mut s = fixture.state.lock().unwrap();
+                    s.opened += 1;
+                    s.latency.is_some()
+                };
+                let mut reader = Reader::new(fixture.port(), admission);
+                // With a latency the job runs on paused time: its clock starts at
+                // the real instant the job starts and advances only through the
+                // job's own waits, so a slow device costs no wall time and the
+                // request deadline is compared with exact virtual progress.
                 tokio::runtime::Builder::new_current_thread()
                     .enable_time()
+                    .start_paused(paused)
                     .build()?
                     .block_on(async {
                         let observed = if let Some(permit) = &permit {
@@ -162,6 +163,20 @@ impl Fixture {
         )
     }
 }
+impl Fixture {
+    fn port(&self) -> MemoryPort {
+        MemoryPort {
+            fixture: self.clone(),
+            pending: None,
+            reply: None,
+            retired: false,
+            held: None,
+            reply_timeout: false,
+            completion_error: None,
+            ready_at: None,
+        }
+    }
+}
 struct MemoryPort {
     fixture: Fixture,
     pending: Option<(usize, Frame)>,
@@ -170,6 +185,7 @@ struct MemoryPort {
     held: Option<Arc<AtomicBool>>,
     reply_timeout: bool,
     completion_error: Option<io::ErrorKind>,
+    ready_at: Option<Instant>,
 }
 impl Port for MemoryPort {
     fn reserve_pair(&mut self) -> Option<[u8; 2]> {
@@ -190,6 +206,13 @@ impl Port for MemoryPort {
     fn submit(&mut self, transfer: Transfer, limit: Limit<'_>) -> io::Result<()> {
         limit.check()?;
         assert!(!self.retired && self.pending.is_none());
+        self.ready_at = self
+            .fixture
+            .state
+            .lock()
+            .unwrap()
+            .latency
+            .map(|latency| Instant::now() + latency);
         match transfer {
             Transfer::ReceiveReply => {
                 if self.reply_timeout {
@@ -387,6 +410,7 @@ impl Port for MemoryPort {
             .held
             .as_ref()
             .is_some_and(|release| !release.load(std::sync::atomic::Ordering::Acquire))
+            || self.ready_at.is_some_and(|at| Instant::now() < at)
         {
             return None;
         }
@@ -414,3 +438,5 @@ impl Port for MemoryPort {
         Ok(true)
     }
 }
+#[path = "mutation_pace_tests.rs"]
+mod pace_tests;

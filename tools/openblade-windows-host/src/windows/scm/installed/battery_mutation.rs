@@ -330,10 +330,12 @@ impl Permit for BatteryPermit {
                 "Complete battery transaction budget is unavailable; no setter was submitted."
             }
             Refusal::PowerChanged => "Battery operation source changed before submission.",
-            // NoDirectPath is a performance-pair refusal; a battery permit never plans one.
-            Refusal::CurrentAdmission | Refusal::UnclassifiedBlocked | Refusal::NoDirectPath => {
-                "Fresh battery admission is unavailable."
-            }
+            // NoDirectPath and Deadline are thermal-recipe refusals; a battery permit
+            // never plans one.
+            Refusal::CurrentAdmission
+            | Refusal::UnclassifiedBlocked
+            | Refusal::NoDirectPath
+            | Refusal::Deadline => "Fresh battery admission is unavailable.",
         });
     }
     fn retired(&self) -> io::Result<Settlement> {

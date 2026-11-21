@@ -788,6 +788,31 @@ Balanced/Automatic reset is an entry prerequisite.
 The same native port worker and finite process transaction allocator are used;
 all write, per-command power and final readback identifiers are reserved before
 submission. Reopening a handle or replacing a worker does not reset that budget.
+
+Performance and fan requests run for a 6 s recipe budget, the battery request's,
+both at the request (`readiness::mutation_budget`) and in the mutation worker,
+which otherwise caps a job at the 3 s observation bound. The 2 s frame deadline
+was sized for a preset request: 4 snapshot and 11 recipe exchanges, about
+133 ms each. The longest recipes are 4 + 17 exchanges: Custom from a Custom
+baseline (the observation and its levels 4, the 07/8C read 1, four setters with
+their power reads 8, the final pair and its levels 4), and a fan return to
+Automatic with Custom or a manual entry with its intermediate pair. The fan
+recipe also waits up to 210 ms after an entry state pair and 65 ms between target
+commands. 6 s leaves those 21 exchanges twice the per-exchange time of the 2 s
+deadline after the 275 ms of spacing. Before its first journal row each
+operation also checks its own measured pace (`Pace`): the mean time per exchange
+so far, storage and admission included, times the exchanges left plus the fixed
+spacing must end by the deadline. Otherwise the intent stays saved, nothing is
+prepared or submitted, and the reply is Blocked with "The remaining request time
+cannot cover this recipe at the measured device pace; no thermal setter was
+submitted." (no fan setter, for a fan request).
+
+A fan operation's checkpoints reread saved policy, so that a change between
+setters stops it. They resolve it again only when a digest of its inputs
+changed: the override and configuration files, the override bytes this storage
+accepted and both temporaries (`Storage::policy_inputs`). A full resolution
+parses the aggregate up to four times (about 226 us in memory, before file
+access), the digest reads the five files once (about 1.2 us in memory).
 An unexpected Custom final selector rejects confirmation without allocating
 unreserved Custom component queries. Ordinary full observation still reads both
 Custom components. CustomManual High/High confirms the Custom performance and

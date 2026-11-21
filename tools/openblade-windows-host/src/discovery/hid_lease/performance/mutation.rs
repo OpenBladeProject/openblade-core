@@ -120,6 +120,48 @@ pub(crate) enum Refusal {
     /// No admitted native sequence reaches the destination from the confirmed
     /// state (`Plan::NoDirectPath`); nothing was prepared or submitted.
     NoDirectPath,
+    /// The request's remaining time cannot cover the rest of the recipe at the
+    /// pace this operation measured (`Pace`); nothing was prepared or
+    /// submitted.
+    Deadline,
+}
+
+/// One operation's measured device pace: when it began and how many
+/// exchanges the Reader had completed then. Before the first journal row an
+/// operation checks that the rest of its recipe fits the request deadline at
+/// that pace, so a slow device refuses a recipe it cannot finish instead of
+/// timing out between setters.
+#[derive(Clone, Copy)]
+pub(super) struct Pace {
+    started: Instant,
+    exchanges: u32,
+}
+impl Pace {
+    pub(super) fn start<P: Port, A>(reader: &Reader<P, A>) -> Self {
+        Self {
+            started: Instant::now(),
+            exchanges: reader.exchanges,
+        }
+    }
+    /// Whether `remaining` more exchanges at the mean time per exchange
+    /// measured since the start, plus `fixed` scheduled waits, end by the
+    /// deadline. The mean counts everything the operation did, storage and
+    /// admission included, so it does not undercount.
+    pub(super) fn covers<P: Port, A>(
+        self,
+        reader: &Reader<P, A>,
+        remaining: u32,
+        fixed: Duration,
+        limit: Limit<'_>,
+    ) -> bool {
+        let done = reader.exchanges.saturating_sub(self.exchanges).max(1);
+        let now = Instant::now();
+        (now.saturating_duration_since(self.started) / done)
+            .checked_mul(remaining)
+            .and_then(|rest| rest.checked_add(fixed))
+            .and_then(|rest| now.checked_add(rest))
+            .is_some_and(|end| end <= limit.deadline)
+    }
 }
 
 impl<P: Port> Reader<P, ReadAdmission> {
@@ -142,6 +184,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
         }
         let fence = PowerFence::new(permit);
         let mut authorize = || fence.authorize();
+        let pace = Pace::start(self);
         let baseline = self.observe(&mut authorize, limit).await?;
         let initial_power_ids = self.port.reserve_pair()?;
         let admission = self.admission;
@@ -193,6 +236,13 @@ impl<P: Port> Reader<P, ReadAdmission> {
             Destination::Custom(_) => Some(reserve()?),
             Destination::Preset(_) => None,
         };
+        // Each setter is one power read and its own exchange; the final pair
+        // and any Custom levels follow.
+        let remaining = 2 * destination.setters() as u32 + 2 + 2 * u32::from(level_ids.is_some());
+        if !pace.covers(self, remaining, Duration::ZERO, limit) {
+            permit.refused(Refusal::Deadline);
+            return None;
+        }
         let admission = self.admission;
         let mut attempt = Attempt {
             reader: self,

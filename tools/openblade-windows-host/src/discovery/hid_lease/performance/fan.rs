@@ -1,5 +1,5 @@
 //! Actual fan actuation on the existing serialized Reader, including retained Stop IDs.
-use super::mutation::{Permit, Refusal, Setters};
+use super::mutation::{Pace, Permit, Refusal, Setters};
 use super::*;
 use openblade_domain::{
     fan_history::CONTRACT,
@@ -16,6 +16,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
         let fence = super::mutation::PowerFence::new(permit);
         let mut authorize = || fence.authorize();
         let cleanup = permit.cleanup();
+        let pace = Pace::start(self);
         let (baseline, power, preflight) = if cleanup {
             let r = permit.fan_record()?;
             let mut a = Attempt {
@@ -121,6 +122,22 @@ impl<P: Port> Reader<P, ReadAdmission> {
                 for _ in 0..5 {
                     cleanup_ids.push(reserve()?);
                 }
+            }
+            // Each setter is one power read and its own exchange; the
+            // intermediate pair, the final pair and any Custom levels follow.
+            // An entry waits up to 210 ms before its target pair, and the
+            // target pair 65 ms between its commands.
+            let setters = plan.setters() as u32;
+            let remaining = 2 * setters
+                + 2 * u32::from(plan.intermediate)
+                + 2
+                + 2 * u32::from(plan.custom_levels().is_some());
+            let fixed = Duration::from_millis(
+                if plan.entry { 210 } else { 0 } + if intent.manual() { 65 } else { 0 },
+            );
+            if !pace.covers(self, remaining, fixed, limit) {
+                permit.refused(Refusal::Deadline);
+                return None;
             }
             // Request bytes are supplied by the retained permit, never client recipe bytes.
             let mut record = permit.fan_record()?;

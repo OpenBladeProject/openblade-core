@@ -689,6 +689,51 @@ fn acquisition_exclusion_probe(package: crate::candidate_receipt::CommittedServi
     let _ = crate::discovery::performance::native_worker(|| None);
 }
 
+/// Exchanges (a send and its reply) in the longest thermal request: up to 4
+/// for the status snapshot, then 17 for Custom from a Custom baseline (the
+/// observation with its levels 4, the 07/8C read 1, four setters with their
+/// power reads 8, the final pair with its levels 4). The longest fan request
+/// has 17 as well: a return to Automatic with Custom, or a manual entry with
+/// its intermediate pair.
+#[cfg(feature = "service-thermal-mutation-v1")]
+const RECIPE_EXCHANGES: u32 = 21;
+/// The fan recipe's fixed spacing: 210 ms after an entry state pair and 65 ms
+/// between target commands.
+#[cfg(feature = "service-thermal-mutation-v1")]
+const RECIPE_WAITS: Duration = Duration::from_millis(275);
+/// The time `FRAME_TIMEOUT` leaves each exchange of the request it was sized
+/// for: a preset pair from a Custom baseline, 4 snapshot and 11 recipe
+/// exchanges.
+#[cfg(feature = "service-thermal-mutation-v1")]
+const FRAME_EXCHANGE: Duration = Duration::from_nanos(FRAME_TIMEOUT.as_nanos() as u64 / 15);
+/// A performance or fan request's budget: the 6 s of a battery request. It
+/// gives the longest recipe twice the time per exchange `FRAME_TIMEOUT` gave a
+/// preset request, after its fixed spacing; each operation still refuses
+/// before its first row when its measured pace cannot finish in what remains
+/// (`Pace`).
+#[cfg(feature = "service-thermal-mutation-v1")]
+const RECIPE_BUDGET: Duration = Duration::from_secs(6);
+#[cfg(feature = "service-thermal-mutation-v1")]
+const _: () = assert!(
+    RECIPE_BUDGET.as_nanos()
+        >= RECIPE_WAITS.as_nanos() + 2 * FRAME_EXCHANGE.as_nanos() * RECIPE_EXCHANGES as u128
+);
+
+/// The deadline a mutation request runs under, from its arrival.
+#[cfg(feature = "service-thermal-mutation-v1")]
+fn mutation_budget(request: &StatusRequest) -> Duration {
+    if request.battery_request().is_some()
+        || matches!(
+            request,
+            StatusRequest::SetPerformanceOverride { .. } | StatusRequest::SetFanOverride { .. }
+        )
+    {
+        RECIPE_BUDGET
+    } else {
+        FRAME_TIMEOUT
+    }
+}
+
 #[cfg(feature = "service-thermal-mutation-v1")]
 async fn serve_mutation(
     stream: &mut dyn Stream,
@@ -699,12 +744,7 @@ async fn serve_mutation(
     use ExchangeError::{Client, Runtime};
     let caller = refresh_caller(stream, original)?;
     let sid = stream.user_sid_after_read().map_err(Client)?;
-    let deadline = Instant::now()
-        + if request.battery_request().is_some() {
-            Duration::from_secs(6)
-        } else {
-            FRAME_TIMEOUT
-        };
+    let deadline = Instant::now() + mutation_budget(request);
     let future = {
         let mut source = source.lock().await;
         source.verify_origin().map_err(Runtime)?;

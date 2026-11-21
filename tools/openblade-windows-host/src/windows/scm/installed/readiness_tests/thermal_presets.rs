@@ -926,3 +926,41 @@ async fn custom_reserves_exactly_its_complete_chain_before_prepared() {
         rig.stop().await;
     }
 }
+
+#[tokio::test]
+async fn a_recipe_runs_within_the_recipe_budget_and_refuses_one_it_cannot_finish() {
+    // With a latency the fixture job runs on paused time, so these exchanges
+    // cost no wall time. At 150 ms a transfer each exchange takes 330 ms and
+    // the Silent recipe's nine take about 3 s: past FRAME_TIMEOUT, inside the
+    // 6 s recipe budget.
+    let latency = |rig: &Rig, ms| {
+        rig.port.state.lock().unwrap().latency = Some(std::time::Duration::from_millis(ms));
+    };
+    let rig = rig_at(2, 0, FULL, MemoryFiles::default());
+    latency(&rig, 150);
+    let result = rig.set(1, value(SILENT.0, 1)).await;
+    assert_eq!(result["result"]["status"], 1, "{result}");
+    assert_eq!(setters(&rig), [vec![1, 1, 5, 0], vec![1, 2, 5, 0]]);
+    rig.stop().await;
+    // At 500 ms the observation and the 07/8C read take about 3.1 s, and the
+    // six remaining exchanges would end past the budget: the saved intent is
+    // kept and nothing is prepared or submitted.
+    let rig = rig_at(2, 0, FULL, MemoryFiles::default());
+    latency(&rig, 500);
+    let result = rig.set(1, value(SILENT.0, 1)).await;
+    assert_eq!(result["result"]["status"], 2, "{result}");
+    assert_eq!(
+        result["result"]["message"],
+        format!(
+            "Performance override intent was stored. Hardware result: {}",
+            crate::installed::readiness::thermal_mutation::DEADLINE
+        )
+    );
+    assert!(setters(&rig).is_empty());
+    assert!(rows(&rig).is_empty());
+    assert_eq!(
+        rig.files.document("manual-overrides.json")["overrides"]["performance"],
+        SILENT.0
+    );
+    rig.stop().await;
+}

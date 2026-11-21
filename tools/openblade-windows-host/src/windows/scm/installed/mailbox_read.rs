@@ -1401,9 +1401,12 @@ impl ReadSource {
         let worker = (factory.write)(permit.clone());
         *self.mutation.borrow_mut() = Some((worker.clone(), permit.clone()));
         self.phase.set(MutationPhase::Active);
-        let result = if permit.is_battery() {
+        // Battery, performance and fan recipes run for the recipe budget their
+        // request deadline carries (`readiness::mutation_budget`).
+        // Temporary charge keeps the observation bound.
+        let result = if permit.temporary_target().is_none() {
             worker
-                .observe_with_budget(deadline, None, std::time::Duration::from_secs(6))
+                .observe_with_budget(deadline, None, super::RECIPE_BUDGET)
                 .await
         } else {
             worker.observe(deadline, None).await

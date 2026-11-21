@@ -185,6 +185,9 @@ struct Reader<P: Port, A = Admission> {
     port: P,
     admission: A,
     poisoned: bool,
+    // Completed exchanges (a send and its reply), for an operation's measured
+    // pace (`mutation::Pace`).
+    exchanges: u32,
 }
 
 impl<P: Port, A: ObservationProof> Reader<P, A> {
@@ -193,6 +196,7 @@ impl<P: Port, A: ObservationProof> Reader<P, A> {
             port,
             admission,
             poisoned: false,
+            exchanges: 0,
         }
     }
 
@@ -439,11 +443,15 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
         limit: Limit<'_>,
     ) -> io::Result<(usize, Frame)> {
         limit.check()?;
+        let reply = matches!(transfer, Transfer::ReceiveReply);
         self.reader.port.submit(transfer, limit)?;
         loop {
             limit.check()?;
             if let Some(completion) = self.reader.port.poll() {
                 limit.check()?;
+                if reply && completion.is_ok() {
+                    self.reader.exchanges = self.reader.exchanges.saturating_add(1);
+                }
                 return completion;
             }
             limit.wait(POLL).await?;

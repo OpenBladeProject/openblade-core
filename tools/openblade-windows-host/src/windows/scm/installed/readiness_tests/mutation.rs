@@ -1015,7 +1015,12 @@ async fn installed_source_ineligible_intent_is_rejected_and_power_change_stops_p
             );
             assert!(status["status"]["performanceOverride"].is_null());
             assert!(rig.files.read("manual-overrides.json").unwrap().is_none());
-            assert!(rig.files.read("thermal-mutation.journal").unwrap().is_none());
+            assert!(
+                rig.files
+                    .read("thermal-mutation.journal")
+                    .unwrap()
+                    .is_none()
+            );
             assert_eq!(rig.port.state.lock().unwrap().writes, 0);
         } else {
             assert_eq!(status["status"]["performanceOverride"]["value"], 2);
@@ -1479,6 +1484,39 @@ fn manual_files() -> MemoryFiles {
     let fan = json!({"mode":2,"fixedSpeedRpm":3700,"manualCurve":{"cpu":[{"temperatureCelsius":30,"speedRpm":2000},{"temperatureCelsius":90,"speedRpm":5400}],"gpu":[{"temperatureCelsius":30,"speedRpm":2000},{"temperatureCelsius":90,"speedRpm":5400}],"useHigherTemperatureForBoth":true}});
     files.put("manual-overrides.json",json!({"schemaVersion":8,"overrides":{"performance":null,"fans":2,"fanControl":fan,"lighting":null,"customPerformance":null,"gpuClockTuning":null}}));
     files
+}
+#[test]
+fn policy_inputs_change_with_every_input_saved_policy_reads() {
+    // FanPermit skips re-resolving saved policy only while this digest is
+    // unchanged, so each input resolution reads must move it.
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let storage = Storage::open(Box::new(files.clone()), SID).unwrap();
+    let mut seen = vec![storage.policy_inputs().unwrap()];
+    assert_eq!(storage.policy_inputs().unwrap(), seen[0]);
+    let changed = |seen: &mut Vec<[u8; 32]>| {
+        let next = storage.policy_inputs().unwrap();
+        assert!(!seen.contains(&next));
+        seen.push(next);
+    };
+    files.profiles(2);
+    changed(&mut seen);
+    // A temporary override, then a persistent one through this storage.
+    storage
+        .save(Some(serde_json::from_value(value(2, 0)).unwrap()), 0)
+        .unwrap();
+    changed(&mut seen);
+    storage
+        .save(Some(serde_json::from_value(value(2, 1)).unwrap()), 0)
+        .unwrap();
+    changed(&mut seen);
+    // Bytes this storage did not write.
+    let mut foreign = files.document("manual-overrides.json");
+    foreign["overrides"]["performance"] = json!(1);
+    files.put("manual-overrides.json", foreign);
+    changed(&mut seen);
+    files.put(crate::configuration::RECOVERY_REQUIRED, json!({}));
+    changed(&mut seen);
 }
 async fn fresh_observe(rig: &Rig) -> Value {
     assert_eq!(rig.get().await["success"], true); // Same metadata readiness probe as installed prepare.
@@ -4682,6 +4720,40 @@ fn mode_setters(r: &Rig, from: usize) -> Vec<Vec<u8>> {
         .collect()
 }
 
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_recipes_run_within_the_recipe_budget_and_refuse_one_they_cannot_finish() {
+    // Fixed fans from Balanced on paused fixture time: the observation, the
+    // 07/8C read, four setters with their power reads and the final pair are
+    // 13 exchanges, plus 275 ms of spacing. At 150 ms a transfer that is about
+    // 4.6 s: past FRAME_TIMEOUT, inside the 6 s recipe budget.
+    for (ms, applied) in [(150, true), (500, false)] {
+        let r = fan_rig(0, 0);
+        r.port.state.lock().unwrap().latency = Some(std::time::Duration::from_millis(ms));
+        let out = r.request(fan_request(240, Some(1), 3700)).await;
+        if applied {
+            assert_eq!(out["result"]["status"], 1, "{out}");
+            assert_eq!(r.port.state.lock().unwrap().writes, 4);
+        } else {
+            // About 3.1 s for the first three exchanges leaves too little for
+            // the other ten: stored, with no row and no setter.
+            assert_eq!(out["result"]["status"], 2, "{out}");
+            assert_eq!(
+                out["result"]["message"],
+                "Fan override intent was stored. Hardware result: The remaining request time cannot cover this recipe at the measured device pace; no fan setter was submitted."
+            );
+            assert_eq!(r.port.state.lock().unwrap().writes, 0);
+            assert!(fan_rows(&r).is_empty());
+            assert_eq!(
+                r.files.document("manual-overrides.json")["overrides"]["fans"],
+                1
+            );
+        }
+        r.port.state.lock().unwrap().latency = None;
+        r.origin.stop();
+        let _ = r.source.lock().await.drain().await;
+    }
+}
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn fan_handback_applies_the_deferred_preset_on_full_and_limited_adapters() {
