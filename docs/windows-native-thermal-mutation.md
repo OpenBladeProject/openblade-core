@@ -537,19 +537,42 @@ apply (`GetApplicationOverride`, `:632-641`) and the save path's
 `profile_set::application` binds them to the typed set with managed's
 `OrdinalIgnoreCase` table.
 
-`resolve` takes both power sources managed reads. The state source,
-`ProfileAutomationState.PowerSource`, selects the override and
-`EffectiveLaptopBehavior` (`:99-110`). `Resolve` starts from
+`resolve` takes both power sources managed reads and the confirmed firmware
+state `Resolve` reads. The state source, `ProfileAutomationState.PowerSource`,
+selects the override, `EffectiveLaptopBehavior` (`:99-110`) and
+`DesiredBattery`'s protection (`:84-89`). `Resolve` starts from
 `observedPowerSource ?? PowerSource` (`:322-344`), and `ResolveAutomationDesired`
 passes `ExternalUnknown` whenever `ProjectUnclassifiedIntent` holds
 (`ServiceControlRuntime.cs:19483-19490`,
 `ServiceControlRuntime.UnclassifiedExternalPower.cs:151-152`), even while an
 explicit unclassified override leaves the state source classified. So the
 resolved profile follows the projected source and the behaviour follows the
-state source. `desired_intent` is the predicate's desired term: the profile
-layer of `Resolve` for every `DesiredDeviceState` member, with each setting's
-source. A save that changes only display, THX audio or the gaming-mode key
-policy is no change; removing an override equal to its base is one.
+state source. On `ExternalUnknown` that profile is `CreateObservedFallbackProfile`
+(`:554-561`) with no override: confirmed performance, fans and lighting, each
+falling back to the saved USB-C value, the confirmed Custom settings only, and
+`DesiredBattery`'s protection. A USB-C edit therefore changes the desired state
+on unclassified power wherever the matching confirmed member is unknown, and
+`UpdateProfilesAsync` acts on that change: it skips the lighting restore
+(`ServiceControlRuntime.cs:2121-2122`) and pauses an armed fan stop (`:2154`).
+
+`desired_intent` is the profile layer of `Resolve` for every
+`DesiredDeviceState` member, with each setting's source. It is the predicate's
+desired term only while no manual override, recovered HyperBoost intent or
+temporary battery override is active. A save that changes only display, THX
+audio or the gaming-mode key policy is no change; removing an override equal
+to its base is one.
+
+An active override can hide a profile change or add one. A persistent Silent
+override over an edited rule preset leaves managed's desired state unchanged
+while the profile layer changes. A persistent Custom override without levels
+takes the profile's Custom settings even when the profile preset is not Custom
+(`:391-398`), and the legacy GPU offset move runs only after those layers are
+chosen (`:400-415`). The wiring slice composes the full term from the profile
+layer. It layers performance, fans, fan control, lighting and battery over each
+member's `Setting::source`. It takes Custom settings and GPU tuning from the raw
+`Resolution::profile`, not from `DesiredIntent`, layers the overrides over them
+and then reapplies the move with `gpu_clock_settings`. It puts fan control into
+an override's mode with `with_mode`.
 
 The replay's `application_runtime::Lease` uses the same selection rules, and
 `Lease::rule` also requires the pair to be retained by the current rules, so a
@@ -570,12 +593,14 @@ the replay used to record a change.
 
 `profile-resolution-vectors.json` pins it. `NativeProfileResolutionVectors`
 drives `ProfileAutomationState` through reports, updates, power changes and
-the unclassified projection. For each step it records the applied profile,
-`Resolve` with no manual override or confirmed state, and the behaviour.
-`"confirmedState"` in a step is the recorder's own marker, not a managed
-value: on `ExternalUnknown`, `Resolve` builds from confirmed firmware state.
-It also drives the real `UpdateProfilesAsync` for the predicate, recording its
-inputs and whether the full transition ran. The Rust reader computes the
+the unclassified projection, with and without manual fans on limited power and
+confirmed firmware state. For each step it records the profile `Resolve` starts
+from (on `ExternalUnknown`, the fallback profile, read through reflection),
+`Resolve` with no manual override, and the behaviour. Each update step also
+records the save-path predicate over that `Resolve`. Separate rows drive the
+real `UpdateProfilesAsync` on classified power, recording its inputs and
+whether the full transition ran. On unclassified power that transition never
+runs, so the update steps are the evidence there. The Rust reader computes the
 desired term with `desired_intent` and checks it against managed's.
 
 Differences from managed:
@@ -585,12 +610,9 @@ Differences from managed:
   `:1180-1194`), so this differs only for an in-process caller. The native
   check does not expand an 8.3 short name (`profile_set/text.rs:94-97`), so it
   accepts a short alias that managed would expand when it exists on disk.
-- `ExternalUnknown`, as the state or the projected source, resolves no profile
-  and no desired intent. Managed builds that base from confirmed firmware
-  state, which the host supplies.
 - `desired_intent` is the profile layer only. The host adds manual overrides,
-  recovered HyperBoost intent, the temporary battery overrides and full
-  charge, and confirmed state where the profile has none, as `Resolve` does.
+  recovered HyperBoost intent and the temporary battery overrides and full
+  charge as described above.
 - `ChangePowerSource`'s other effects (`ProfileAutomationState.cs:179-200`),
   expiring transient manual overrides and cancelling a temporary full charge
   on battery, are not ported; they belong with the host's overrides. The
