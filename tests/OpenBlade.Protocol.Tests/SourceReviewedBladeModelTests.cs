@@ -538,6 +538,9 @@ public sealed partial class SourceReviewedBladeModelTests
         internal HidSessionResult<ReadOnlyMemory<byte>>? AdapterResult;
         internal bool AdapterResponseAvailable;
         internal Action<RazerCommandSpec>? BeforeSubmission;
+        // One-shot failures of the next keyboard 0F/82 read.
+        internal HidSessionFailureKind? McuSelectionReadFailure;
+        internal Exception? McuSelectionReadException;
         internal List<(byte ClassId, byte CommandId, FirmwareQueryOutcome Outcome)> RetainedQueryFailures { get; } = [];
         public void RetainQueryFailure(byte classId, byte commandId, FirmwareQueryOutcome outcome) =>
             RetainedQueryFailures.Add((classId, commandId, outcome));
@@ -563,6 +566,19 @@ public sealed partial class SourceReviewedBladeModelTests
             }
             Commands.Add(command);
             Transactions.Add(assignTransactionId().TransactionId);
+            if (command.ClassId == 0x0F && command.CommandId == 0x82 && command.Arguments.Span[1] == 5)
+            {
+                if (McuSelectionReadException is { } thrown)
+                {
+                    McuSelectionReadException = null;
+                    throw thrown;
+                }
+                if (McuSelectionReadFailure is { } kind)
+                {
+                    McuSelectionReadFailure = null;
+                    return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(default, kind));
+                }
+            }
             if (command.ClassId == 0x07 && command.CommandId == 0x8C && AdapterResult is { } adapterResult)
             {
                 return Task.FromResult(adapterResult);
