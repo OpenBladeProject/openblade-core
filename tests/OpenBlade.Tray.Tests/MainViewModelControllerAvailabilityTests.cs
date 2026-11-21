@@ -172,12 +172,14 @@ public sealed partial class MainViewModelTests
     // An unconfirmed performance change on a laptop with GPU clock tuning may be
     // waiting for a driver read, which an idle GPU defers; say when it resolves.
     [Theory]
-    [InlineData(DeviceSubsystem.Performance, true, true)]
-    [InlineData(DeviceSubsystem.Performance, false, false)]
-    [InlineData(DeviceSubsystem.Fans, true, false)]
+    [InlineData(DeviceSubsystem.Performance, true, false, true)]
+    [InlineData(DeviceSubsystem.Performance, false, true, true)]
+    [InlineData(DeviceSubsystem.Performance, false, false, false)]
+    [InlineData(DeviceSubsystem.Fans, true, true, false)]
     public async Task UnconfirmedWrite_MessageSaysWhenGpuClockTuningIsCheckedAgain(
         DeviceSubsystem unconfirmed,
         bool gpuTuning,
+        bool gpuCapability,
         bool mentionsGpu)
     {
         var client = new FakeServiceClient();
@@ -188,6 +190,15 @@ public sealed partial class MainViewModelTests
         status = status with
         {
             UnconfirmedWrites = [unconfirmed],
+            Capabilities = status.Capabilities! with
+            {
+                GpuOverclock = gpuCapability
+                    ? new GpuOverclockCapabilities(
+                        new DeviceNumericRange(-1000, 400, 1),
+                        new DeviceNumericRange(-1000, 3000, 1),
+                        DeviceFeatureAccess.ReadWrite)
+                    : null,
+            },
             DesiredState = status.DesiredState with
             {
                 GpuClockTuning = gpuTuning

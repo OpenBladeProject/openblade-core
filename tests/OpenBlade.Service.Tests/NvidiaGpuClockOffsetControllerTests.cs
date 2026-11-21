@@ -174,6 +174,35 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         Assert.Equal(1, api.ShutdownCalls);
     }
 
+    // The memory restore is still attempted when the core restore fails, so the
+    // driver keeps as little unconfirmed change as possible.
+    [Fact]
+    public void Set_CoreRestoreRefused_StillRestoresMemory()
+    {
+        var api = new FakeNvmlApi
+        {
+            CoreCurrent = 50,
+            MemoryCurrent = 400,
+            FailAfterMutation = NvmlClockType.Memory,
+            RefuseCoreRestore = true,
+        };
+
+        BladeWriteException error = Assert.Throws<BladeWriteException>(() =>
+            new NvidiaGpuClockOffsetController(api).Set(
+                new GpuClockOffsetSettings(125, 500)));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal((125, 400), (api.CoreCurrent, api.MemoryCurrent));
+        Assert.Equal(
+            [
+                (NvmlClockType.Graphics, 125),
+                (NvmlClockType.Memory, 1000),
+                (NvmlClockType.Graphics, 50),
+                (NvmlClockType.Memory, 400),
+            ],
+            api.Writes);
+    }
+
     [Theory]
     [InlineData(0, "NVIDIA GeForce RTX 5090 Laptop GPU")]
     [InlineData(2, "NVIDIA GeForce RTX 5090 Laptop GPU")]
@@ -333,6 +362,8 @@ public sealed class NvidiaGpuClockOffsetControllerTests
 
         public bool RefuseEveryWrite { get; init; }
 
+        public bool RefuseCoreRestore { get; init; }
+
         public List<(NvmlClockType Type, int Offset)> Writes { get; } = [];
 
         public int Initialize()
@@ -392,6 +423,10 @@ public sealed class NvidiaGpuClockOffsetControllerTests
             }
             NvmlClockType type = info.Type;
             int channelWrites = Writes.Count(write => write.Type == type);
+            if (RefuseCoreRestore && type == NvmlClockType.Graphics && channelWrites > 1)
+            {
+                return 3;
+            }
             if (FailRestoration && FailAfterMutation == type && channelWrites > 1)
             {
                 return 3;
