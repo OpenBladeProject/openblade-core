@@ -299,6 +299,19 @@ public static class ReactiveRawKeyboardInput
         ushort flags,
         out ReactiveKeyPulse primary,
         out ReactiveKeyPulse? secondary)
+        => TryCreatePulses(deviceKind, blade18KeyboardLayoutId, null, makeCode, flags, out primary, out secondary);
+
+    /// <param name="blade14KeyboardEdition">
+    /// Confirmed RZ09-0530 keyboard-MCU edition; null keeps the common map.
+    /// </param>
+    public static bool TryCreatePulses(
+        RazerBladeInputDeviceKind deviceKind,
+        byte? blade18KeyboardLayoutId,
+        byte? blade14KeyboardEdition,
+        ushort makeCode,
+        ushort flags,
+        out ReactiveKeyPulse primary,
+        out ReactiveKeyPulse? secondary)
     {
         if (makeCode == 0
             || (flags & KeyBreakFlag) != 0
@@ -321,7 +334,7 @@ public static class ReactiveRawKeyboardInput
             RazerBladeInputDeviceKind.Rz09_0484 =>
                 TryCreateBlade18Pulse(blade18KeyboardLayoutId, makeCode, isExtended, out primary, out secondary),
             RazerBladeInputDeviceKind.Rz09_0530 =>
-                TryCreateBlade14Pulse(makeCode, isExtended, out primary, out secondary),
+                TryCreateBlade14Pulse(blade14KeyboardEdition, makeCode, isExtended, out primary, out secondary),
             RazerBladeInputDeviceKind.Rz09_0529 =>
                 TryCreateRz090529Pulse(makeCode, isExtended, out primary, out secondary),
             RazerBladeInputDeviceKind.Rz09_0528 =>
@@ -335,10 +348,10 @@ public static class ReactiveRawKeyboardInput
     }
 
     private static bool TryCreateBlade14Pulse(
-        ushort makeCode, bool extended, out ReactiveKeyPulse primary, out ReactiveKeyPulse? secondary)
+        byte? edition, ushort makeCode, bool extended, out ReactiveKeyPulse primary, out ReactiveKeyPulse? secondary)
     {
         secondary = null;
-        if (Blade14KeyboardLightingLayout.TryMapScanCode(makeCode, extended, out byte slot))
+        if (Blade14KeyboardLightingLayout.TryMapScanCode(edition, makeCode, extended, out byte slot))
         {
             primary = new(slot);
             return true;

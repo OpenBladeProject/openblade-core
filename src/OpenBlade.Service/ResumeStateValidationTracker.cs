@@ -451,6 +451,15 @@ internal sealed class ResumeStateValidationTracker
             nameof(ConfirmedDeviceState.IndependentLighting),
         };
 
+    // Local dimming is display state that firmware and Windows HDR can change on
+    // their own, and OpenBlade only offers a one-way Clear. Resume validation
+    // therefore never claims it was retained.
+    internal static IReadOnlySet<string> UncomparedStatePropertyNames { get; } =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            nameof(ConfirmedDeviceState.LocalDimmingActive),
+        };
+
     private static IReadOnlyList<DeviceSubsystem> ResumeComparedSubsystems { get; } =
     [
         DeviceSubsystem.Performance,

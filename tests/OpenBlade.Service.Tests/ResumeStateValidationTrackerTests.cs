@@ -622,11 +622,16 @@ public sealed class ResumeStateValidationTrackerTests
             .Select(property => property.Name)
             .Order(StringComparer.Ordinal)
             .ToArray();
+        Assert.Empty(ResumeStateValidationTracker.ComparedStatePropertyNames
+            .Intersect(ResumeStateValidationTracker.UncomparedStatePropertyNames));
         string[] actual = ResumeStateValidationTracker.ComparedStatePropertyNames
+            .Concat(ResumeStateValidationTracker.UncomparedStatePropertyNames)
             .Order(StringComparer.Ordinal)
             .ToArray();
 
         Assert.Equal(expected, actual);
+        Assert.Equal(nameof(ConfirmedDeviceState.LocalDimmingActive),
+            Assert.Single(ResumeStateValidationTracker.UncomparedStatePropertyNames));
     }
 
     private static ConfirmedDeviceState Confirmed() => new(

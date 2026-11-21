@@ -1,0 +1,256 @@
+{
+  "model": "RZ09-0510",
+  "productName": "Blade 16 - RZ09-0510",
+  "hid": "1532:02B7",
+  "synapseProduct": 695,
+  "feature": "HyperBoost",
+  "basis": "SynapseSourceBackedWithoutPhysicalValidation",
+  "padlessBasis": "SourceBackedExtrapolationWithoutPhysicalValidation",
+  "reviewedOn": "2026-11-20",
+  "method": "Static review of hash-verified official product-695, 671 and 669 bundles. Vendor code was not executed and no hardware command was sent.",
+  "offsetUnit": "UTF-8 byte offset into the single-line minified bundle",
+  "sources": [
+    {
+      "id": "695-main",
+      "url": "https://apps.razer.com/synapse/products/695/mw/main.27df2e7ddab0b6bc34cc.js",
+      "bytes": 175163,
+      "sha256": "A12CD7047CC1CF093DBB458D703BA4D18CFE77110F47391B180EA5B33BA5E379",
+      "verifiedThisReview": true
+    },
+    {
+      "id": "695-policy",
+      "url": "https://apps.razer.com/synapse/products/695/mw/6737.7ec91e479ef65c194b6c.js",
+      "bytes": 2465050,
+      "sha256": "22D359EB7EDA08A9D2F4766EB6898A875A5F009EDB666BA4CD5A0425491AD1DA",
+      "verifiedThisReview": true
+    },
+    {
+      "id": "695-device",
+      "url": "https://apps.razer.com/synapse/products/695/mw/rzDevice25.60bfcef58690c8bb715d.js",
+      "bytes": 277422,
+      "sha256": "2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491",
+      "verifiedThisReview": true
+    },
+    {
+      "id": "695-ui",
+      "url": "https://apps.razer.com/synapse/products/695/ui/static/js/main.65ed4ee5.js",
+      "bytes": 7227421,
+      "sha256": "74ECA71816B57B4C9BE3F83D3E5D894F95A2050D88FB2DF4B63A5AFFF5271612",
+      "verifiedThisReview": true
+    },
+    {
+      "id": "671-main",
+      "url": "https://apps.razer.com/synapse/products/671/mw/main.2ceb8f5607c0e7a5901a.js",
+      "bytes": 167525,
+      "sha256": "CACF8758BF8B4DF35B7D51536830149ED428960AFEDF08CC81367E75520551D1",
+      "verifiedThisReview": true
+    },
+    {
+      "id": "671-policy",
+      "url": "https://apps.razer.com/synapse/products/671/mw/6737.e123a2b3f0516116025b.js",
+      "bytes": 1953339,
+      "sha256": "54D3A9BBEC83568B02342AA54FF47A94EE55A48ECA85B5D9F28D60D01A0B1A9A",
+      "verifiedThisReview": true
+    },
+    {
+      "id": "669-main",
+      "url": "https://apps.razer.com/synapse/products/669/mw/main.8e09720cb94da405eead.js",
+      "bytes": 172497,
+      "sha256": "EEB8A171E77D1E066655D7FC997E4015B420B0F936F2464A27A87FDAFB5AC302",
+      "verifiedThisReview": true
+    },
+    {
+      "id": "669-policy",
+      "url": "https://apps.razer.com/synapse/products/669/mw/6737.439ff1a12463933a6346.js",
+      "bytes": 1957041,
+      "sha256": "D1AC2212AED5491D3EAB69ABAFA270B963A2336E859DF6BFBF9ED9A455E3791B",
+      "verifiedThisReview": true
+    },
+    {
+      "id": "0510-ec-mcu-updater",
+      "url": "https://dl.razerzone.com/drivers/Razer%20Blade%2016%22%20%282024%29%20%7C%20RZ09-0510/RazerUpdater_v1.1.1.3_SO6100_EC_0102_MCU_010300_VBIOS.exe",
+      "sha256": "2912408C872D57176E42D2DA09B68566CECF9B723F51CCE4AE4E717A9E98E295",
+      "verifiedThisReview": false
+    }
+  ],
+  "findings": [
+    {
+      "source": "695-main",
+      "offset": 141152,
+      "text": "productId:695,vendorId:5426",
+      "meaning": "Exact Blade 16 (2024) product identity."
+    },
+    {
+      "source": "695-main",
+      "offset": 163410,
+      "text": "useFeature(\"isHyperBoostSystem\",",
+      "meaning": "The product declares HyperBoost."
+    },
+    {
+      "source": "695-main",
+      "offset": 48922,
+      "text": "Hyperboost_Mode:7",
+      "meaning": "HyperBoost is firmware mode 7, the same value used on 029F and 029D. OpenBlade decodes raw mode 7 on 02B7 as HyperBoostActive."
+    },
+    {
+      "source": "695-main",
+      "offset": 145857,
+      "text": "{id:5,mode:i.mNQ.Hyperboost_Mode,",
+      "meaning": "HyperBoost is an ordinary entry in the product's mode list. Its manual fan range is 3400-5200 RPM (minFanSpeedValue at byte 146729); OpenBlade admits no manual fan range in mode 7 and reports HyperBoost with manual fans without reading targets."
+    },
+    {
+      "source": "695-main",
+      "offset": 144362,
+      "text": "{id:3,mode:i.mNQ.Turbo_Mode,",
+      "meaning": "Turbo is an ordinary mode. The setter maps Turbo_Mode to Gaming_Mode raw 1 (byte 117552; enum byte 48781). The product has no Performance (raw 2) mode."
+    },
+    {
+      "source": "695-main",
+      "offset": 158285,
+      "text": "defaultACPerformanceMode:1",
+      "meaning": "Turbo is the default AC mode, so it is the declared pad-present HyperBoost entry base."
+    },
+    {
+      "source": "695-main",
+      "offset": 141503,
+      "text": "firmwareMinimumRequired:\"1.3.0.0\"",
+      "meaning": "Exact MCU minimum for HyperBoost entry, compared with the 00/87 MCU version. The 0510 EC/MCU updater name carries MCU 010300."
+    },
+    {
+      "source": "695-policy",
+      "offset": 2386571,
+      "text": "isFirmwareSupported=!e",
+      "meaning": "The policy applies the firmware minimum (!check4DigitVersionGreater(minimum, current))."
+    },
+    {
+      "source": "695-main",
+      "offset": 163099,
+      "text": "useFeature(\"needHyperboostRecheck\",\"yes\")",
+      "meaning": "The product requests the system SKU recheck."
+    },
+    {
+      "source": "695-main",
+      "offset": 101870,
+      "text": "get systemSKU(){return this.isElectron?",
+      "meaning": "The getter returns the host's SKU, or the string \"false\" outside its two hosts. charAt(9) of any value shorter than ten characters is \"\", which matches no excluded character, so a missing or short SKU admits HyperBoost."
+    },
+    {
+      "source": "695-policy",
+      "offset": 1255621,
+      "text": "function uo(){...systemSKU).charAt(9);return e===so.TypeR||e===so.TypeS}",
+      "meaning": "SKU predicates: charAt(9) R or S, S, and 5 or 6 (charAt calls at 1255706, 1255836 and 1255945)."
+    },
+    {
+      "source": "695-policy",
+      "offset": 1256337,
+      "text": "dt.A.shouldDisableHyperboost=e",
+      "meaning": "The predicate result disables HyperBoost; the same assignment appears at 1278858."
+    },
+    {
+      "source": "695-policy",
+      "offset": 1795779,
+      "text": "!C.A.shouldDisableHyperboost",
+      "meaning": "The mode and pad offer are skipped when the flag is set (also 1793192)."
+    },
+    {
+      "source": "0510-ec-mcu-updater",
+      "text": "RZ09-0510S, RZ09-0510T, RZ09-05102, RZ09-05103",
+      "meaning": "SKU cases in the updater, each with its own graphics BIOS: S with VBVER 95.06.2F.00.1E, T with 95.04.5F.00.39, and 2 and 3 with 95.03.3B.00.2F (2026-11-07-models.json). Character 9 therefore changes with the graphics BIOS family, but no reviewed source names the GPU or the reason for the exclusion. Only the S case is disabled by the vendor predicate."
+    },
+    {
+      "source": "671-main",
+      "offset": 65855,
+      "text": "useFeature(\"needHyperboostRecheck\",\"yes\")",
+      "meaning": "Product 671 (029F) requests the system SKU recheck; isHyperBoostSystem follows at 65939."
+    },
+    {
+      "source": "671-policy",
+      "offset": 151548,
+      "text": "charAt(9);return e===Xn.TypeR||e===Xn.TypeS",
+      "meaning": "The same R or S, S, and 5 or 6 predicates as 695 (charAt at 151548, 151678 and 151787)."
+    },
+    {
+      "source": "671-policy",
+      "offset": 146227,
+      "text": "at.A.shouldDisableHyperboost=e",
+      "meaning": "The predicate result disables HyperBoost behind the needHyperboostRecheck guard; the same assignment appears at 132937."
+    },
+    {
+      "source": "669-main",
+      "meaning": "Product 669 declares isHyperBoostSystem but never sets needHyperboostRecheck. Its policy has only a 5/6 predicate (charAt at byte 1220019) behind the same needHyperboostRecheck guard (assignment at 1214688), so it never runs and 029D stays ungated.",
+      "offset": 164419,
+      "text": "useFeature(\"isHyperBoostSystem\","
+    },
+    {
+      "source": "695-policy",
+      "offset": 1892259,
+      "text": "hasMaxFanSpeedModeEnabled)&&(yield",
+      "meaning": "The absent hasMaxFanSpeedModeEnabled flag gates only the Maximum Fans clear and reapply around mode changes (also 1893528) and a startup UI restore (1295124)."
+    },
+    {
+      "source": "695-policy",
+      "offset": 1189750,
+      "text": "ON_SET_MAX_FAN_SPEED_MODE_ENABLED",
+      "meaning": "The Maximum Fans setter handler is not gated by hasMaxFanSpeedModeEnabled."
+    },
+    {
+      "source": "695-ui",
+      "offset": 6906405,
+      "text": "supportMaxFanSpeedModeEnabled:!0",
+      "meaning": "The product UI renders the Maximum Fans switch."
+    },
+    {
+      "source": "695-ui",
+      "offset": 6906371,
+      "text": "isCPUBoost:!0",
+      "meaning": "The product UI renders the Custom CPU Boost level."
+    },
+    {
+      "source": "695-policy",
+      "offset": 1295285,
+      "text": "hasCpuBoostEnabled)&&",
+      "meaning": "The absent hasCpuBoostEnabled flag gates a separate battery cpuBoostEnabled toggle, not Custom CPU level 3."
+    },
+    {
+      "source": "671-main",
+      "offset": 61433,
+      "text": "useFeature(\"isBalancedDCSupported\",\"yes\")",
+      "meaning": "029F declares DC Balanced; 669 main declares it at 164049 and 695 main at 164228."
+    },
+    {
+      "source": "695-policy",
+      "offset": 1892480,
+      "text": "if(c&&B.A.getFeatureParam(\"isBalancedDCSupported\",\"yes\")&&r===",
+      "meaning": "On battery the setter sends Balanced as DC Balanced raw 6. The same branch is at 671 policy 1398122 and 669 policy 1558223."
+    },
+    {
+      "source": "695-policy",
+      "offset": 1295406,
+      "text": "O&&!dt.A.shouldDisableHyperboost&&((yield ft.A.isOnBatteryPower)||(r.mode=r.previousModeBeforeHyperboost))",
+      "meaning": "The pre-HyperBoost mode is restored only on AC. The same rule is at 671 policy 172278 and 669 policy 1240504."
+    },
+    {
+      "source": "695-policy",
+      "offset": 1891618,
+      "text": "function nt(e,t,i,n,o,r,a,s,l,c,u)",
+      "meaning": "The thermal setter writes setThermalFanMode(1, thermalId, mode, fanModeValue) without reading the current state, so Synapse can leave mode 7 with manual fans."
+    },
+    {
+      "source": "695-policy",
+      "offset": 2362420,
+      "text": "const o={auto:0,manual:1,smartFanCurve:1}",
+      "meaning": "The fan flag map: automatic is 0, so an exit with automatic fans writes [1, selector, mode, 0]."
+    }
+  ],
+  "decisions": {
+    "admission": "02B7 joins 029F and 029D in the exact experimental HyperBoost contract: the paired 0D/02 [1, selector, 7, 0] setter, the 0D/82 getter with selector agreement, fresh exact-device, controller, full-power adapter and journaled pad-path admission at every submission, and stop-on-ambiguity.",
+    "padPaths": "Pad-present and padless entry use the same mode-7 pair. Padless use is a source-backed extrapolation awaiting community validation. No setMultipleDeviceWiredConnectionStatus or other accessory-status write emulates a pad.",
+    "bases": "Silent (5), Balanced (0), Turbo (1) and Custom (4) enter directly and are restored on an AC exit. Performance (2) is observed only. IPC protocol 86 adds the Turbo base slot and the HyperBoost entry restriction; protocol 85 is reserved by a separate pending change.",
+    "batteryExit": "Every battery exit hands off to Balanced raw 6, whatever base is owned, on 029F, 029D and 02B7. Readback accepts Balanced or BatteryBalanced only on battery; 02B7 reports raw 6 as BatteryBalanced. The exit command is never gated on the destination intent: battery intents are limited to BatterySaver and BatteryBalanced, and the default BatterySaver is in no mode-7 table, so the restore write is skipped and the saved profile kept. The handoff mode is recorded as OpenBlade's own result, not an outside change, for that transition and the next one only. The owned base is not carried over; the plugged-in profile applies again when AC returns. Synapse sets the plugged-in mode on AC attach without reading first (671 policy bytes 1,398,128 and 1,941,140; 669 bytes 1,558,229 and 1,699,212), so off battery 029F and 029D read a remaining raw 6 as BatteryBalanced, which no plugged-in intent matches and a typed AC set leaves. On 029F and 029D that transitional reading is not an outside change on a transition from battery, with or without a handoff record, so the plugged-in profile applies through normal fresh admission; a real AC mode is still compared. Raw 6 selected while external power stays connected remains an outside change across an external-to-external transition, with no write. 02A0 shares the table but its HyperBoost is ObservedOnly, so it never matches. The handoff record equates Balanced and BatteryBalanced only on 029F and 029D. Custom entry accepts a BatteryBalanced baseline off battery on 029F, 029D and 02B7 only, as Synapse enters Custom from the current mode (671 mw-6737 bytes 1,398,696 and 1,398,993; 669 bytes 1,558,801 and 1,559,098; 695 bytes 1,893,039 and 1,893,371). On battery only, a firmware pre-exit at the boundary, an indeterminate exit that a fresh read shows applied, a RestorePending journal whose battery destination the table lacks, and explicit recovery retire the journal as a handoff after a fresh read confirms HyperBoost off with Automatic fans and no pending write confirmation, without a write or replay. A deferred retry, an AC destination and a fan-range mismatch keep their restore path. Journal recovery accepts the handoff for a battery exit.",
+    "skuRecheck": "An entry restriction shared by 029F and 02B7, matching Synapse: charAt(9) of the admitted host's system SKU in {R, S, 5, 6} declines new HyperBoost entries and reports HyperBoostEntryRestriction=VendorSystemSku. A missing SKU or one shorter than ten characters admits entry, as in Synapse. Exit, restoration and journal recovery never depend on the SKU. Host admission and other controls are unaffected; diagnostics record only the evaluated character.",
+    "maximumFans": "Synapse 695 does not clear Maximum Fans before HyperBoost. OpenBlade deliberately keeps its guarded 07/0F [0] cleanup before mode 7 and restores the saved Custom intent on exit, as on 029F and 029D.",
+    "maximumFansAndCpuBoostAdmission": "Unchanged. The UI renders both controls directly and the Maximum Fans setter is ungated; the absent device flags gate only clear/reapply, startup restore and a separate battery toggle.",
+    "manualFans": "The exit baseline admits HyperBoost with manual fans on every mode-7 model, as Synapse's setter can leave it with its 3400-5200 RPM HyperBoost range (671 main byte 28,478; 669 byte 145,346; 695 byte 145,857), without reading fan targets; readback must confirm Automatic fans. Entry still requires a confirmed ordinary mode."
+  },
+  "physicalValidationPerformed": false
+}

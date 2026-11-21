@@ -353,8 +353,11 @@ reopening. No setter is part of initialization.
 Experimental read failures retain their typed query and native/protocol diagnostic.
 The firmware-query recorder also accepts the exact variable-response startup and
 Power Mode Control GET shapes that were accidentally omitted from earlier exports.
-A real temporary-full-charge query failure still leaves battery state unconfirmed;
-OpenBlade does not invent an inactive override. The fix needs the owner's normal
+A real temporary-full-charge query failure never becomes an inactive override.
+Since PR #987 it leaves only that override unknown on Blade 18 (2023): the charge
+limit stays confirmed and usable, because its limiter writes never depended on the
+override. A limiter write stays blocked while OpenBlade last read or confirmed the
+override as on. The fix needs the owner's normal
 OpenBlade checks for physical confirmation, not another Synapse capture.
 
 ## Owner checks after initialization recovery, 2026-10-19

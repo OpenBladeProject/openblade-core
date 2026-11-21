@@ -672,6 +672,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         KeyboardLightingLayoutId =
                             lighting.Capabilities.KeyboardLightingLayoutId,
                         Blade18KeyboardLayoutId = lighting.Capabilities.Blade18KeyboardLayoutId,
+                        Blade14KeyboardEdition = lighting.Capabilities.Blade14KeyboardEdition,
                         SupportedLightingRefreshRates =
                             lighting.Capabilities.SupportedLightingRefreshRates,
                     };
@@ -990,6 +991,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         private static readonly IReadOnlySet<DeviceSubsystem> BatteryStateSubsystems =
             new HashSet<DeviceSubsystem> { DeviceSubsystem.Battery };
 
+        // Local dimming is not a confirmed subsystem; its failure is not reported
+        // as partial state.
+        private static readonly IReadOnlySet<DeviceSubsystem> LocalDimmingStateSubsystems =
+            new HashSet<DeviceSubsystem>();
+
         // One closed thermal query reports the firmware preset, fan mode and
         // HyperBoost activity, so its rejection leaves all three unknown.
         private static readonly IReadOnlySet<DeviceSubsystem> ThermalStateSubsystems =
@@ -1028,16 +1034,36 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     bool? temporary = null;
                     if (port.SupportsTemporaryFullChargeQuery)
                     {
+                        // A backend whose limiter never depended on the override
+                        // keeps confirmed limiter fields and an unknown flag; the
+                        // failed query still retires the port before reuse.
+                        bool independent = port.Capabilities.ChargePolicyIndependentOfTemporaryFullCharge;
                         (_, temporary) = await ReadIsolatedStateQueryAsync(
                             lease,
                             DeviceStateQuery.TemporaryFullCharge,
                             BatteryStateSubsystems,
                             current => current.QueryTemporaryFullChargeAsync(cancellationToken),
-                            failures).ConfigureAwait(false);
+                            independent ? [] : failures).ConfigureAwait(false);
+                        // Synapse clears the override whenever it turns protection
+                        // off, so this pair has no confirmed representation. Keep
+                        // it out of every other subsystem: the flag becomes unknown,
+                        // and where the limiter depends on it the battery read is an
+                        // isolated failure with its own diagnostic.
+                        if (!protection.ProtectionEnabled && temporary == true)
+                        {
+                            temporary = null;
+                            if (!independent)
+                            {
+                                failures.Add(new DeviceStateReadFailure(
+                                    DeviceStateQuery.TemporaryFullCharge,
+                                    BatteryStateSubsystems,
+                                    "Temporary full charge query (07/8F) reported the override while battery protection is off."));
+                            }
+                        }
                     }
 
-                    // The temporary override changes how the protection fields
-                    // must be interpreted, so a rejected override leaves the
+                    // Otherwise the temporary override changes how the protection
+                    // fields must be interpreted, so a rejected override leaves the
                     // whole battery state unknown rather than half confirmed.
                     battery = failures.Count == 0
                         ? new(
@@ -1068,6 +1094,26 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 LogoLightingMode? logo =
                     await lightingSession.ReadLogoLightingStateCoreAsync(cancellationToken)
                         .ConfigureAwait(false);
+                // Only a model whose open admitted a readable mini-LED panel is
+                // queried. The bit is optional display metadata: a failed read
+                // retires the session and leaves only this field unknown, never
+                // the confirmed thermal, battery or lighting state. The port
+                // remembers the failure, so later reads skip 07/8F until a Clear
+                // or recovery reads it again.
+                bool? localDimming = null;
+                if (batteryFactory.Capabilities.LocalDimming is { Access: DeviceFeatureAccess.ReadOnly })
+                {
+                    IProductionBatteryPort dimmingPort = await lease.GetAsync().ConfigureAwait(false);
+                    if (dimmingPort.SupportsLocalDimmingQuery)
+                    {
+                        (_, localDimming) = await ReadIsolatedStateQueryAsync(
+                            lease,
+                            DeviceStateQuery.LocalDimming,
+                            LocalDimmingStateSubsystems,
+                            current => current.QueryLocalDimmingAsync(cancellationToken),
+                            []).ConfigureAwait(false);
+                    }
+                }
                 var state = new ConfirmedDeviceState(
                     performanceFan?.Performance,
                     performanceFan?.Fans,
@@ -1079,6 +1125,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     CustomPerformance = performanceFan?.CustomPerformance,
                     GpuClockOffsets = gpuOffsets,
                     LogoLighting = logo,
+                    LocalDimmingActive = localDimming,
                     IndependentLighting = await lightingSession.ReadIndependentLightingStateCoreAsync(cancellationToken)
                         .ConfigureAwait(false),
                 };
@@ -2601,6 +2648,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     port => port.SetTemporaryFullChargeAsync(enabled, cancellationToken),
                     cancellationToken)
                 : RejectProductionWrite("Temporary full charge is not admitted.");
+
+        public Task ClearLocalDimmingAsync(CancellationToken cancellationToken) =>
+            batteryFactory.Capabilities.LocalDimming is { SupportsClear: true }
+                ? ExecuteProductionWriteAsync(
+                    port => port.ClearLocalDimmingAsync(cancellationToken),
+                    cancellationToken)
+                : RejectProductionWrite("Local dimming Clear is not admitted.");
 
         public Task ApplyOneShotLaptopControlAsync(
             ApplyOneShotLaptopControl value,

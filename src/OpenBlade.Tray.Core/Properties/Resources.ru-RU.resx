@@ -1302,6 +1302,12 @@
   <data name="Windows did not confirm the requested start-at-sign-in setting." xml:space="preserve">
     <value>Windows не подтвердила запрошенный параметр запуска при входе.</value>
   </data>
+  <data name="Windows Dynamic Lighting is on and can override OpenBlade keyboard and Vapor chamber lighting. If your OpenBlade lighting doesn’t show, turn off Use Dynamic Lighting on my devices in Settings &gt; Personalization &gt; Dynamic Lighting." xml:space="preserve">
+    <value>Функция «Динамическое освещение» Windows включена и может заменять подсветку клавиатуры и испарительной камеры из OpenBlade. Если подсветка OpenBlade не отображается, отключите параметр «Использовать динамическое освещение на моих устройствах» в разделе «Параметры» &gt; «Персонализация» &gt; «Динамическое освещение».</value>
+  </data>
+  <data name="Windows Dynamic Lighting is on and can override OpenBlade keyboard lighting. If your OpenBlade lighting doesn’t show, turn off Use Dynamic Lighting on my devices in Settings &gt; Personalization &gt; Dynamic Lighting." xml:space="preserve">
+    <value>Функция «Динамическое освещение» Windows включена и может заменять подсветку клавиатуры из OpenBlade. Если подсветка OpenBlade не отображается, отключите параметр «Использовать динамическое освещение на моих устройствах» в разделе «Параметры» &gt; «Персонализация» &gt; «Динамическое освещение».</value>
+  </data>
   <data name="Windows Dynamic Lighting manages keyboard lighting." xml:space="preserve">
     <value>Подсветкой клавиатуры управляет функция «Динамическое освещение» Windows.</value>
   </data>
@@ -1373,6 +1379,12 @@
   </data>
   <data name="Pad-less HyperBoost is detected but is not available with the current admission evidence." xml:space="preserve">
     <value>HyperBoost без охлаждающей подставки обнаружен, но недоступен при текущем наборе подтверждающих данных.</value>
+  </data>
+  <data name="Synapse doesn't offer HyperBoost on this laptop configuration, so OpenBlade doesn't start it." xml:space="preserve">
+    <value>Synapse не предлагает HyperBoost для этой конфигурации ноутбука, поэтому OpenBlade его не включает.</value>
+  </data>
+  <data name="Synapse doesn't offer HyperBoost on this laptop configuration. You can still turn it off." xml:space="preserve">
+    <value>Synapse не предлагает HyperBoost для этой конфигурации ноутбука. Выключить его по-прежнему можно.</value>
   </data>
   <data name="Detected on this laptop, but OpenBlade cannot safely change it with the current evidence." xml:space="preserve">
     <value>Функция обнаружена на этом ноутбуке, но текущих данных недостаточно, чтобы OpenBlade мог безопасно изменять её состояние.</value>
