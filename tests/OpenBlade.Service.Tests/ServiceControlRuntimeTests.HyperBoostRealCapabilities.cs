@@ -62,14 +62,9 @@ public sealed partial class ServiceControlRuntimeTests
 
         AssertRealModeSevenBatteryHandoff(context, journal, productId, setCalls + 1, performanceWrites);
 
-        // When AC returns the plugged-in profile applies again; the owned base is not carried over.
-        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
-        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
-        Assert.False(context.Device.ConfirmedState.HyperBoostActive);
-        Assert.Equal(
-            context.Runtime.GetStatus().Profiles.PluggedIn.Performance,
-            context.Device.ConfirmedState.Performance);
-        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        // When AC returns the plugged-in profile applies again; the owned base is
+        // not carried over, and a later entry works.
+        await ReturnRealModeSevenToAcAndReenterAsync(context, productId);
     }
 
     [Theory]
@@ -103,13 +98,7 @@ public sealed partial class ServiceControlRuntimeTests
             Assert.True(result.Status == ControlOperationStatus.Applied, result.Message);
             Assert.Contains("Battery Saver setting isn't available", result.Message, StringComparison.Ordinal);
             Assert.Equal(context.Device.ConfirmedState.Performance, result.HyperBoostRestoredPerformance);
-
-            context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
-            await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
-            Assert.Equal(
-                context.Runtime.GetStatus().Profiles.PluggedIn.Performance,
-                context.Device.ConfirmedState.Performance);
-            Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+            await ReturnRealModeSevenToAcAndReenterAsync(context, productId);
         }
     }
 

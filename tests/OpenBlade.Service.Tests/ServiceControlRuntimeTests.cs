@@ -28898,7 +28898,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task RecoverHyperBoostRestore_UnsupportedFullPowerIntentIsPreserved()
+    public async Task RecoverHyperBoostRestore_UnsupportedIntentRetiresAsHandoffWithoutWrites()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
         TestContext context = CreateContext(
@@ -28928,19 +28928,22 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 HyperBoostActive: false),
         };
         journal.Journal = original;
-        await context.Runtime.ObserveAsync(CancellationToken.None);
-        int settersBeforeRecovery = context.Device.TotalSetterCalls;
+        int settersBeforeObservation = context.Device.TotalSetterCalls;
 
+        // HyperBoost is off with Automatic fans, and the intent can never be
+        // restored: the journal retires as a handoff and nothing is written.
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Null(journal.Journal);
+        Assert.Equal(settersBeforeObservation, context.Device.TotalSetterCalls);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.False(context.Runtime.GetStatus().HyperBoostRestorePending);
+        Assert.Contains("isn't available on this laptop", context.Runtime.GetStatus().Message);
         ControlOperationResult result =
             await context.Runtime.RecoverHyperBoostRestoreAsync(
                 CancellationToken.None);
-
-        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
-        Assert.Contains("no longer admitted", result.Message);
-        Assert.Equal(settersBeforeRecovery, context.Device.TotalSetterCalls);
-        Assert.Equal(original, journal.Journal);
-        Assert.Empty(journal.Writes);
-        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.Equal(settersBeforeObservation, context.Device.TotalSetterCalls);
     }
 
     [Fact]

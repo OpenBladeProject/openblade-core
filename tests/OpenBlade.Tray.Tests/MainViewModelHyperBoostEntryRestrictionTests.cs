@@ -76,6 +76,11 @@ public sealed partial class MainViewModelTests
         Assert.False(viewModel.CanToggleHyperBoost);
         Assert.DoesNotContain("Synapse", viewModel.HyperBoostUnavailableReason, StringComparison.Ordinal);
         Assert.DoesNotContain("turn it off", viewModel.HyperBoostUnavailableReason, StringComparison.Ordinal);
+        // The exit is admitted, so the reason is the general state, not the
+        // restriction's "cannot safely change it" text.
+        Assert.Equal(
+            "HyperBoost is unavailable with the current performance and fan state. Refresh the laptop state.",
+            viewModel.HyperBoostUnavailableReason);
     }
 
     [Theory]

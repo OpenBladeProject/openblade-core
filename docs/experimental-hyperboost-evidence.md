@@ -147,13 +147,33 @@ Battery Saver, which no mode-7 table lists; RZ09-0483 and RZ09-0482 have neither
 When the saved battery mode isn't available, the exit still runs, the restore
 write is skipped, and the saved profile is kept. OpenBlade records the mode the
 exit landed on as its own result, so automation does not treat it as an outside
-change. The owned base is not carried over: when AC returns, the plugged-in
-profile applies again.
+change. That record covers the transition that made it and the next one, AC
+return included; any other confirmed state, or a new session, clears it. The
+owned base is not carried over: when AC returns, the plugged-in profile applies
+again.
+
+Synapse sets the plugged-in mode on AC attach without reading the current mode
+first (671 policy bytes 1,398,128 and 1,941,140; 669 bytes 1,558,229 and
+1,699,212), so the controller can still hold raw 6 after external power
+returns. Off battery, RZ09-0483 and RZ09-0482 read raw 6 as DC Balanced: no
+plugged-in intent matches it, and the typed plugged-in set leaves it with one
+write. RZ09-0510 reports raw 6 as DC Balanced on any source.
+
+The restore-only paths follow the same rule. When firmware has already left
+mode 7 at the battery boundary, when an indeterminate exit is shown by a fresh
+read to have applied, or when a pending restore names a battery mode the table
+lacks, OpenBlade retires the journal once a fresh read confirms HyperBoost off
+with Automatic fans. Nothing is written or replayed, the saved profile is kept,
+and the landed mode is recorded as above. The explicit recovery does the same on
+battery instead of waiting for AC.
 
 Before this change the battery exit was refused for every base with the real
 capability tables, because the destination intent was checked before the exit
 command and Battery Saver is in none of them. A session could stay in HyperBoost
 after unplugging. The shared fix applies to RZ09-0483, RZ09-0482 and RZ09-0510.
+
+The SKU entry restriction applies to the forward steps of an entry only. If it
+appears after a bridge write, the rollback to the entry-time intent still runs.
 
 ### Manual fans
 
