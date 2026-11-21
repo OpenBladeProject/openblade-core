@@ -148,24 +148,49 @@ When the saved battery mode isn't available, the exit still runs, the restore
 write is skipped, and the saved profile is kept. OpenBlade records the mode the
 exit landed on as its own result, so automation does not treat it as an outside
 change. That record covers the transition that made it and the next one, AC
-return included; any other confirmed state, or a new session, clears it. The
-owned base is not carried over: when AC returns, the plugged-in profile applies
-again.
+return included; any other confirmed state, before or after the startup
+reconciliation, or a new session, clears it. On RZ09-0483 and RZ09-0482 the
+record treats the Balanced battery reading and the DC Balanced reading after AC
+returns as the same raw 6; RZ09-0510 lists DC Balanced as its own preset, so
+its raw 0 Balanced is a different mode there. The owned base is not carried
+over: when AC returns, the plugged-in profile applies again.
 
 Synapse sets the plugged-in mode on AC attach without reading the current mode
 first (671 policy bytes 1,398,128 and 1,941,140; 669 bytes 1,558,229 and
 1,699,212), so the controller can still hold raw 6 after external power
 returns. Off battery, RZ09-0483 and RZ09-0482 read raw 6 as DC Balanced: no
 plugged-in intent matches it, and the typed plugged-in set leaves it with one
-write. RZ09-0510 reports raw 6 as DC Balanced on any source.
+write. That transitional reading is not an outside change at AC return, with or
+without a handoff record (for example after the service started on battery or a
+new Windows user signed in on battery), so the plugged-in profile applies through
+its normal fresh admission; any real AC mode is still compared. RZ09-0510 reports
+raw 6 as DC Balanced on any source and lists it, so there it stays an outside
+change unless the handoff record covers it.
 
-The restore-only paths follow the same rule. When firmware has already left
-mode 7 at the battery boundary, when an indeterminate exit is shown by a fresh
-read to have applied, or when a pending restore names a battery mode the table
-lacks, OpenBlade retires the journal once a fresh read confirms HyperBoost off
-with Automatic fans. Nothing is written or replayed, the saved profile is kept,
-and the landed mode is recorded as above. The explicit recovery does the same on
-battery instead of waiting for AC.
+Synapse also enters Custom straight from the current mode, with the same per-fan
+mode-4 writes and, off battery, the CPU and GPU level writes, without reading or
+leaving that mode first (671 mw-6737 bytes 1,398,696 and 1,398,993; 669 bytes
+1,558,801 and 1,559,098; 695 bytes 1,893,039 and 1,893,371). OpenBlade's Custom
+setter therefore accepts a DC Balanced baseline off battery on these three
+models only, keeping its fan-baseline, Maximum Fans, stored-level and readback
+checks, so a plugged-in Custom profile also returns after a battery exit.
+
+The restore-only paths follow the same rule, on battery only. When firmware has
+already left mode 7 at the battery boundary, when an indeterminate exit is shown
+by a fresh read to have applied, or when a pending restore names a battery mode
+the table lacks, OpenBlade retires the journal once a fresh read on battery
+confirms HyperBoost off with Automatic fans and no write awaits confirmation.
+Nothing is written or replayed, the saved profile is kept, and the landed mode is
+recorded as above. The explicit recovery does the same on battery instead of
+waiting for AC. A lifecycle exit reports the skipped restore instead of claiming
+the entry-time profile. Every other pending restore keeps its earlier path: on AC
+a battery-mode journal is recovered to the current plugged-in destination, a
+deferred retry restores its current destination, and an AC intent that a fresh
+fan range narrows stays pending.
+
+The compensating exit after a failed journal finalization is an exit too: an
+entry restriction, direct-entry base or cooling-pad state that appears after
+activation doesn't refuse it.
 
 Before this change the battery exit was refused for every base with the real
 capability tables, because the destination intent was checked before the exit
