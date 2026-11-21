@@ -1109,12 +1109,9 @@ public sealed partial class SourceReviewedBladeModelTests
     }
 
     // These MCU models have no host-frame path; their built-in effects never address
-    // LED38. The host-frame models are covered in ExperimentalBladeGridLightingTests.
+    // LED38. The host-frame models are covered in ExperimentalBladeGridLightingTests;
+    // the RZ09-0301/0421/0423/0427 frames assert region 5 only in AssertMcuFrameContract.
     [Theory]
-    [InlineData(0x0245)]
-    [InlineData(0x028A)]
-    [InlineData(0x028B)]
-    [InlineData(0x028C)]
     [InlineData(0x02B7)]
     [InlineData(0x02B8)]
     public async Task Rz090529VaporChamber_OtherMcuModelsRejectFramesAndNeverAddressRegion38(int product)

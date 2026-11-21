@@ -95,6 +95,16 @@ internal static class ExperimentalBladeModels
                 new("AdapterPowerClassification", "SynapseSourceBacked", sources),
                 .. OrdinaryThermalEvidenceFor(model),
                 .. FanStopEvidenceFor(model),
+                .. (ExperimentalBladePort.SupportsReviewedMcuKeyboardFrames(model)
+                    ? new ExperimentalFeatureEvidence[] { new("KeyboardOnlyCustomFramesGridAndUniformEffects",
+                        "ExactMcuSourceBackedWithoutPhysicalValidation",
+                        [ReviewedMcuLightingSource(model), ReviewedMcuKeyboardFrameReview(model)]) }
+                    : []),
+                .. (model.ProductId is 0x02B7 or 0x02B8
+                    ? new ExperimentalFeatureEvidence[] { new("KeyboardCustomFrames",
+                        "NotEstablishedLampArrayAutonomousModeSelectsDisplayedBuffer",
+                        [ReviewedMcuLightingSource(model), ReviewedMcuKeyboardFrameReview(model)]) }
+                    : []),
                 .. (model.ProductId == 0x02C7
                     ? new ExperimentalFeatureEvidence[]
                     {
@@ -121,6 +131,8 @@ internal static class ExperimentalBladeModels
                     }
                     : []),
                 new(model.ProductId == 0x02C7 ? "HyperBoost"
+                    : ExperimentalBladePort.SupportsReviewedMcuKeyboardFrames(model)
+                    ? "KeyTriggeredEffectsSequencesAndHyperBoost"
                     : ExperimentalBladePort.SupportsReviewedMcuLighting(model)
                     ? "CustomFramesAdditionalEffectsAndHyperBoost"
                     : ExperimentalBladePort.SupportsIndependentLighting(model)
@@ -428,6 +440,11 @@ internal static class ExperimentalBladeModels
         0x02C7 => "https://dl.razerzone.com/drivers/RazerBlade18RZ09-0529/KI8110-MCUv01.07.00.exe;SHA256=30C06BA3D2D057593BBF3C812249D4EDD020D17FC157A8CC7C29264A9E72F9DC",
         _ => throw new ArgumentOutOfRangeException(nameof(model)),
     };
+
+    // 2026-11-19 exact keyboard MCU frame reviews: admitted for 0245/028A/028B/028C,
+    // recorded as not established for 02B7/02B8.
+    internal static string ReviewedMcuKeyboardFrameReview(ExperimentalBladeModel model) =>
+        $"evidence/source-reviewed-blades/2026-11-19-{model.ModelNumber.ToLowerInvariant()}-keyboard-frames.json";
 
     private static System.Collections.Immutable.ImmutableArray<string> SourceReviewedEvidence(ushort product) =>
         product switch

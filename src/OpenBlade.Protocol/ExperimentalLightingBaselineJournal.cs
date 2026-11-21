@@ -97,6 +97,21 @@ internal sealed class ExperimentalLightingBaselineJournal
         }
     }
 
+    // A fresh exact-device read showed the keyboard reporting this pending baseline
+    // again. The record stays pending with its original destination, and this
+    // process may now hand it to a new owner; nothing is published or cleared.
+    internal void AdoptReconciledPending(ExperimentalLightingBaseline baseline)
+    {
+        ArgumentNullException.ThrowIfNull(baseline);
+        lock (gate)
+        {
+            EnsureUnchanged();
+            if (pending != baseline)
+            { throw new InvalidDataException("The original lighting baseline requires explicit built-in recovery."); }
+            capturedHere = true;
+        }
+    }
+
     // Change only the LED38 record of the pending baseline. Its presence means
     // OpenBlade may have selected LED38, so this process adds it to its own capture
     // before [0,38,8] can be submitted. It is removed once LED38 is restored or
@@ -192,16 +207,22 @@ internal sealed class ExperimentalLightingBaselineJournal
 
     private static void ValidateBaseline(ExperimentalLightingBaseline baseline)
     {
+        if (!IsRestorable(baseline))
+        { throw new InvalidDataException("Lighting baseline is not a complete built-in setting."); }
+    }
+
+    internal static bool IsRestorable(ExperimentalLightingBaseline baseline)
+    {
+        ArgumentNullException.ThrowIfNull(baseline);
         LightingSettings settings = baseline.Settings;
         // No reviewed LED38 setter changes record brightness, so its saved
         // destination is always the nominal full-brightness setting.
-        if (!IsCompleteBuiltIn(settings)
-            || settings.Effect != LightingEffect.Off
-                && settings.Brightness != LightingBrightnessProtocol.RawToPercent(baseline.RawBrightness)
-            || baseline.VaporChamber is { } vaporChamber
-                && (!IsCompleteBuiltIn(vaporChamber)
-                    || vaporChamber.Effect != LightingEffect.Off && vaporChamber.Brightness != 100))
-        { throw new InvalidDataException("Lighting baseline is not a complete built-in setting."); }
+        return IsCompleteBuiltIn(settings)
+            && (settings.Effect == LightingEffect.Off
+                || settings.Brightness == LightingBrightnessProtocol.RawToPercent(baseline.RawBrightness))
+            && (baseline.VaporChamber is not { } vaporChamber
+                || IsCompleteBuiltIn(vaporChamber)
+                    && (vaporChamber.Effect == LightingEffect.Off || vaporChamber.Brightness == 100));
     }
 
     private static bool IsCompleteBuiltIn(LightingSettings settings) =>

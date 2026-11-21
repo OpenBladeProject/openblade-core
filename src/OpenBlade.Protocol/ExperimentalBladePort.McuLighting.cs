@@ -150,6 +150,8 @@ internal sealed partial class ExperimentalBladePort
             [0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], false, token,
             variableResponse: true, payloadValidator: static value => value.Length == 12)
             .ConfigureAwait(false);
+        // Any answer from this register ends a run of refused ownership reads.
+        ResetReviewedMcuSelectionDeferral();
         try
         {
             _ = DecodeReviewedMcuEffect(payload.Span, 100);
