@@ -146,4 +146,28 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Equal(mark, harness.Gpu.Operations.Count);
         Assert.Equal(GpuClockOffsetManagementState.SubmissionUncertain, harness.Managed.GpuClockOffsetManagementState);
     }
+
+    // An offset write reads the driver before it submits. That read resolves an
+    // uncertain submission even when the write is then refused, so a later idle
+    // read does not wait for GPU activity to learn what the driver reported.
+    [Fact]
+    public async Task OffsetWrite_PreflightReadResolvesTheSubmissionBeforeARefusal()
+    {
+        var harness = await CreateUncertainEnableAtIdleGpuAsync(memoryLanded: false);
+        using WindowsVerifiedBladeDeviceProvider provider = harness.Provider;
+        harness.Gpu.SetFailure = _ => new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            "NVML write refused.");
+
+        await Assert.ThrowsAsync<BladeWriteException>(() => harness.Managed.SetGpuClockOffsetsAsync(
+            new GpuClockOffsetSettings(100, 300),
+            retainManagement: true,
+            default));
+        harness.Gpu.SetFailure = null;
+
+        Assert.Equal(GpuClockOffsetManagementState.Managed, harness.Managed.GpuClockOffsetManagementState);
+        Assert.Equal(
+            new GpuClockOffsetSettings(200, 0),
+            (await harness.Device.ReadStateAsync(default)).GpuClockOffsets?.Current);
+    }
 }

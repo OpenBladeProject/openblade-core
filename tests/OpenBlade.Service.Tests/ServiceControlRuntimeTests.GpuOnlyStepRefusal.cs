@@ -346,6 +346,8 @@ public sealed partial class ServiceControlRuntimeTests
             PerformancePreset.Balanced,
             FanMode.Automatic);
 
+        // The pair would mark the fan handback done without a fan write.
+        Assert.Equal(1, device.FanSetCalls);
         Assert.Equal(0, device.PerformanceSetCalls);
         Assert.Equal(1, device.GpuClockSetCalls);
     }
@@ -361,5 +363,59 @@ public sealed partial class ServiceControlRuntimeTests
 
         Assert.Equal(0, device.PerformanceSetCalls);
         Assert.Equal(1, device.GpuClockSetCalls);
+    }
+
+    // A GPU-only step refused by the driver leaves the fan step to its own
+    // admission. A GPU-only step whose fresh pre-write read failed is a laptop
+    // access failure, which still stops the remaining thermal steps.
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 0)]
+    public async Task GpuOnlyStep_PreWriteReadFailure_StillStopsTheFanStep(bool preWriteRead, int fanWrites)
+    {
+        DeviceCapabilities capabilities = StepLessGpuCapabilities();
+        TestContext context = CreateWritableContext(
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities));
+        context.Device.Capabilities = context.Device.Capabilities with { GpuOverclock = capabilities.GpuOverclock };
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            HyperBoostActive = false,
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+            GpuClockOffsets = null,
+        };
+        context.Device.GpuClockOffsetManagementState = GpuClockOffsetManagementState.Relinquished;
+        context.Device.AfterGpuClockSet = () =>
+        {
+            context.Device.ConfirmedState = context.Device.ConfirmedState with { GpuClockOffsets = null };
+            context.Device.GpuClockOffsetManagementState = GpuClockOffsetManagementState.Relinquished;
+            throw preWriteRead
+                ? new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    BladeWriteFailurePhase.ThermalPreWriteRead,
+                    "Injected pre-write read failure.")
+                : new BladeWriteException(WriteSubmissionState.KnownNotApplied, "Injected refused GPU write.");
+        };
+        ConfirmedDeviceState initial = context.Device.ConfirmedState;
+        var desired = new DesiredDeviceState(
+            new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+            new ResolvedSetting<FanMode>(FanMode.Maximum, SettingValueSource.PowerProfile),
+            new ResolvedSetting<LightingSettings>(initial.Lighting ?? LightingSettingsFactory.Off(), SettingValueSource.PowerProfile),
+            new DesiredBatteryState(
+                BatteryPolicy.Create(initial.Battery?.ChargeLimitPercent ?? 80),
+                initial.Battery?.ProtectionEnabled ?? true,
+                false))
+        {
+            GpuClockTuning = new GpuClockTuningSettings(true, new GpuClockOffsetSettings(200, 500)),
+            FanControl = FanControlSettings.FromLegacy(FanMode.Maximum),
+        };
+
+        FullTransitionApplyOutcome outcome =
+            await new ControlCoordinator(context.Device).ApplyDesiredStateOutcomeAsync(desired, CancellationToken.None);
+
+        Assert.Equal(1, context.Device.GpuClockSetCalls);
+        Assert.Equal(0, context.Device.PerformanceSetCalls);
+        Assert.Equal(fanWrites, context.Device.FanSetCalls);
+        Assert.Contains(DeviceSubsystem.Performance, outcome.GpuClockOffsetsOnlyTried ?? new HashSet<DeviceSubsystem>());
     }
 }

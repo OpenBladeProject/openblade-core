@@ -29,6 +29,7 @@ public sealed partial class ServiceControlRuntimeTests
 
     [Theory]
     [InlineData("experimentalPaused")]
+    [InlineData("checkingConnection")]
     [InlineData("unverified")]
     public async Task PowerChange_PendingNextToAnotherWriteBlock_KeepsThatBlock(string owner)
     {
@@ -37,6 +38,15 @@ public sealed partial class ServiceControlRuntimeTests
         if (owner == "experimentalPaused")
         {
             context.Provider.IsExperimentalWritesPaused = true;
+        }
+        else if (owner == "checkingConnection")
+        {
+            // One missed read: the device stays verified while the connection is checked.
+            context.Provider.Available = false;
+            await context.Runtime.ObserveAsync(CancellationToken.None);
+            Assert.True(context.Runtime.GetStatus().DeviceVerified);
+            Assert.Equal(DeviceObservationReason.CheckingConnection, context.Runtime.GetStatus().ObservationReason);
+            Assert.Contains(DeviceSubsystem.Performance, context.Runtime.GetStatus().UnconfirmedWrites);
         }
         else
         {
