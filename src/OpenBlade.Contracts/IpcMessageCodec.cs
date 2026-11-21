@@ -8,8 +8,9 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    // Protocol 84 combines source-main power metadata with RZ09-0529 lighting-zone intent.
-    public const int ProtocolVersion = 84;
+    // Protocol 85 adds Intel CPU power limits, firmware Gaming-mode GPU overclock,
+    // local dimming capability and state, and the local dimming Clear request.
+    public const int ProtocolVersion = 85;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -362,6 +363,7 @@ public static class IpcMessageCodec
             SetFullChargeOverrideRequest => true,
             ApplyOneShotLaptopControlRequest apply =>
                 apply.Value is not null && apply.Value.IsWellFormed(),
+            ClearLocalDimmingRequest => true,
             ReportSessionPowerTransitionRequest report =>
                 report.InstanceId != Guid.Empty
                 && report.InstanceStartedQpc > 0
@@ -957,6 +959,10 @@ public static class IpcMessageCodec
                 ChargeLimits = status.Capabilities.ChargeLimits
                     .Where(IsProtocol51BatteryLimit)
                     .ToHashSet(),
+                // Protocol 85 fields have no protocol 51 representation.
+                IntelCpuPowerLimit = null,
+                FirmwareGamingGpuOverclockAccess = null,
+                LocalDimming = null,
                 SupportsIndependentLightingControls = false,
                 CustomPerformance = ProjectProtocol51CustomCapabilities(
                     status.Capabilities.CustomPerformance),
@@ -976,6 +982,7 @@ public static class IpcMessageCodec
             : status.ConfirmedState with
             {
                 IndependentLighting = null,
+                LocalDimmingActive = null,
                 Battery = status.ConfirmedState.Battery is
                 { ChargeLimitPercent: int confirmedLimit }
                     && !IsProtocol51BatteryLimit(confirmedLimit)

@@ -113,6 +113,71 @@ public sealed record CpuPowerLimitCapabilities(
         && Enum.IsDefined(Access);
 }
 
+/// <summary>
+/// Intel package power limits as Synapse presents them: a long-term limit (PL1),
+/// a short-term limit (PL2) that can be switched off, and the PL1 time window
+/// (tau). Power values are milliwatts so fractional vendor steps stay integral.
+/// </summary>
+public sealed record IntelCpuPowerLimitCapabilities(
+    DeviceNumericRange LongTermPowerMilliwatts,
+    DeviceNumericRange ShortTermPowerMilliwatts,
+    IReadOnlyList<int> TimeWindowSeconds,
+    int DefaultLongTermPowerMilliwatts,
+    int DefaultShortTermPowerMilliwatts,
+    int DefaultTimeWindowSeconds,
+    DeviceFeatureAccess Access)
+{
+    public bool SupportsShortTermPowerEnableDisable { get; init; }
+
+    public bool IsWellFormed =>
+        LongTermPowerMilliwatts is { IsWellFormed: true, Step: not null, Minimum: > 0 }
+        && ShortTermPowerMilliwatts is { IsWellFormed: true, Step: not null, Minimum: > 0 }
+        && LongTermPowerMilliwatts.Supports(DefaultLongTermPowerMilliwatts)
+        && ShortTermPowerMilliwatts.Supports(DefaultShortTermPowerMilliwatts)
+        && TimeWindowSeconds is { Count: > 0 and <= 64 }
+        && TimeWindowSeconds[0] > 0
+        && TimeWindowSeconds.Zip(TimeWindowSeconds.Skip(1)).All(pair => pair.First < pair.Second)
+        && TimeWindowSeconds.Contains(DefaultTimeWindowSeconds)
+        && Enum.IsDefined(Access);
+
+    public bool Equals(IntelCpuPowerLimitCapabilities? other) =>
+        other is not null
+        && LongTermPowerMilliwatts == other.LongTermPowerMilliwatts
+        && ShortTermPowerMilliwatts == other.ShortTermPowerMilliwatts
+        && (ReferenceEquals(TimeWindowSeconds, other.TimeWindowSeconds)
+            || TimeWindowSeconds is not null && other.TimeWindowSeconds is not null
+                && TimeWindowSeconds.SequenceEqual(other.TimeWindowSeconds))
+        && DefaultLongTermPowerMilliwatts == other.DefaultLongTermPowerMilliwatts
+        && DefaultShortTermPowerMilliwatts == other.DefaultShortTermPowerMilliwatts
+        && DefaultTimeWindowSeconds == other.DefaultTimeWindowSeconds
+        && Access == other.Access
+        && SupportsShortTermPowerEnableDisable == other.SupportsShortTermPowerEnableDisable;
+
+    public override int GetHashCode() => HashCode.Combine(
+        LongTermPowerMilliwatts,
+        ShortTermPowerMilliwatts,
+        TimeWindowSeconds?.Count ?? 0,
+        DefaultLongTermPowerMilliwatts,
+        DefaultShortTermPowerMilliwatts,
+        DefaultTimeWindowSeconds,
+        Access,
+        SupportsShortTermPowerEnableDisable);
+}
+
+/// <summary>
+/// The display local dimming bit (0x08) of the shared Power Mode Control mask.
+/// ReadOnly with <see cref="SupportsClear"/> admits only the reviewed Clear
+/// action, never turning local dimming on.
+/// </summary>
+public sealed record LocalDimmingCapabilities(
+    DeviceFeatureAccess Access,
+    bool SupportsClear)
+{
+    public bool IsWellFormed =>
+        Enum.IsDefined(Access)
+        && (!SupportsClear || Access == DeviceFeatureAccess.ReadOnly);
+}
+
 public sealed record CpuVoltageOptimizerCapabilities(
     DeviceNumericRange Value,
     DeviceFeatureAccess Access)
@@ -314,9 +379,20 @@ public sealed record DeviceCapabilities(
 
     public CpuPowerLimitCapabilities? CpuPowerLimit { get; init; }
 
+    /// <summary>Intel PL1/PL2/tau limits, separate from the AMD package-power shape.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IntelCpuPowerLimitCapabilities? IntelCpuPowerLimit { get; init; }
+
     public CpuVoltageOptimizerCapabilities? CpuVoltageOptimizer { get; init; }
 
     public GpuOverclockCapabilities? GpuOverclock { get; init; }
+
+    /// <summary>Firmware-stored GPU core/memory offsets that the vendor applies in Gaming mode.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public DeviceFeatureAccess? FirmwareGamingGpuOverclockAccess { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public LocalDimmingCapabilities? LocalDimming { get; init; }
 
     public DeviceFeatureAccess? HyperBoostAccess { get; init; }
 
@@ -386,8 +462,11 @@ public sealed record DeviceCapabilities(
         && (!FanModes.Any(IsManualFanMode) || FanSpeedRange is not null)
         && (CustomPerformance is null || CustomPerformance.IsWellFormed)
         && (CpuPowerLimit is null || CpuPowerLimit.IsWellFormed)
+        && (IntelCpuPowerLimit is null || IntelCpuPowerLimit.IsWellFormed)
         && (CpuVoltageOptimizer is null || CpuVoltageOptimizer.IsWellFormed)
         && (GpuOverclock is null || GpuOverclock.IsWellFormed)
+        && (FirmwareGamingGpuOverclockAccess is null || Enum.IsDefined(FirmwareGamingGpuOverclockAccess.Value))
+        && (LocalDimming is null || LocalDimming.IsWellFormed)
         && (HyperBoostAccess is null || Enum.IsDefined(HyperBoostAccess.Value))
         && (HyperBoostWithoutCoolingPadAccess is null
             || HyperBoostAccess is not null
@@ -506,6 +585,11 @@ public sealed record ConfirmedDeviceState(
 
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IndependentLightingSettings? IndependentLighting { get; init; }
+
+    // The local dimming bit (0x08) of a freshly decoded Power Mode Control read.
+    // Null means it was not read, never off.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LocalDimmingActive { get; init; }
 }
 
 public sealed record GpuClockOffsetRange(

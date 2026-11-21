@@ -70,6 +70,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetBatteryProtectionRequest), "setBatteryProtection")]
 [JsonDerivedType(typeof(SetFullChargeOverrideRequest), "setFullChargeOverride")]
 [JsonDerivedType(typeof(ApplyOneShotLaptopControlRequest), "applyOneShotLaptopControl")]
+[JsonDerivedType(typeof(ClearLocalDimmingRequest), "clearLocalDimming")]
 [JsonDerivedType(typeof(ShutdownOpenBladeRequest), "shutdownOpenBlade")]
 [JsonDerivedType(typeof(ReportSessionPowerTransitionRequest), "reportSessionPowerTransition")]
 [JsonDerivedType(typeof(ReportApplicationContextRequest), "reportApplicationContext")]
@@ -445,6 +446,10 @@ public sealed record ApplyOneShotLaptopControlRequest(
     int Version,
     Guid RequestId,
     ApplyOneShotLaptopControl Value)
+    : ServiceRequest(Version, RequestId);
+
+/// <summary>Turns off display local dimming once. There is no request to turn it on.</summary>
+public sealed record ClearLocalDimmingRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
 public sealed record ShutdownOpenBladeRequest(int Version, Guid RequestId)
