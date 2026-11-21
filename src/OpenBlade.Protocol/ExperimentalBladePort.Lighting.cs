@@ -1368,12 +1368,14 @@ internal sealed partial class ExperimentalBladePort
         }
         catch (Exception exception)
         {
+            // Record the recovery pause before Faulted becomes observable.
+            BladeWriteException failure = MapWriteFailure("KeyboardUniformFrame", submitted, exception);
             if (submitted || exception is BladeWriteException
                 { SubmissionState: not WriteSubmissionState.KnownNotApplied })
             {
                 SetLightingFaulted();
             }
-            throw MapWriteFailure("KeyboardUniformFrame", submitted, exception);
+            throw failure;
         }
         finally
         {
@@ -1484,8 +1486,10 @@ internal sealed partial class ExperimentalBladePort
         }
         catch (Exception exception)
         {
+            // Record the recovery pause before Faulted becomes observable.
+            BladeWriteException failure = MapWriteFailure("KeyboardStaticFrameRestore", submitted, exception);
             SetLightingFaulted();
-            throw MapWriteFailure("KeyboardStaticFrameRestore", submitted, exception);
+            throw failure;
         }
         finally
         {
@@ -1518,8 +1522,9 @@ internal sealed partial class ExperimentalBladePort
         }
         catch (Exception exception)
         {
-            SetLightingFaulted();
+            // Record the recovery pause before Faulted becomes observable.
             failure = MapWriteFailure("KeyboardStaticFrameRestore", submitted, exception);
+            SetLightingFaulted();
         }
         finally
         {
