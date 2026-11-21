@@ -332,8 +332,11 @@ RZ09-0581 and RZ09-0528. It accepts canonical F1–F12 callback packets, uses a
 single expiring host observation, and queues typed actions for a worker. The
 first down for each key passes through until the hook observes that key's up.
 The hook has desktop scope, so its packet cannot identify the originating
-keyboard. Tests use inert packets and a scripted message loop. Agent wiring,
-independent hook health evidence, and live Windows validation remain separate.
+keyboard. Tests use inert packets and a scripted message loop. The native
+Agent's `agent-function-row-v1` role wires it on RZ09-0581 only, from the
+Service's confirmed Driver mode, without Fn observation or any effect yet; see
+[Native Agent function row](../docs/windows-native-agent-function-row.md).
+Independent hook health evidence and live Windows validation remain separate.
 
 The standalone `openblade-domain::function_row` module consumes a single typed
 observation per edge. It keeps Windows hook pairing and recovery separate from
