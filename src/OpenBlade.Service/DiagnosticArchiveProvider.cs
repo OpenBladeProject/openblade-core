@@ -468,6 +468,18 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             capabilities.CpuPowerLimit?.IsWellFormed == true;
         result["performance.cpuPowerLimit.write"] =
             capabilities.CpuPowerLimit?.Access == DeviceFeatureAccess.ReadWrite;
+        result["performance.intelCpuPowerLimit.observed"] =
+            capabilities.IntelCpuPowerLimit?.IsWellFormed == true;
+        result["performance.intelCpuPowerLimit.write"] =
+            capabilities.IntelCpuPowerLimit?.Access == DeviceFeatureAccess.ReadWrite;
+        result["performance.firmwareGamingGpuOverclock.observed"] =
+            capabilities.FirmwareGamingGpuOverclockAccess is not null;
+        result["performance.firmwareGamingGpuOverclock.write"] =
+            capabilities.FirmwareGamingGpuOverclockAccess == DeviceFeatureAccess.ReadWrite;
+        result["display.localDimming.observed"] =
+            capabilities.LocalDimming is not null;
+        result["display.localDimming.clear"] =
+            capabilities.LocalDimming?.SupportsClear == true;
         result["performance.cpuVoltageOptimizer.observed"] =
             capabilities.CpuVoltageOptimizer?.IsWellFormed == true;
         result["performance.cpuVoltageOptimizer.write"] =

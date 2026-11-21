@@ -362,6 +362,11 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "One-shot laptop controls are unavailable."));
 
+    Task<ControlOperationResult> ClearLocalDimmingAsync(CancellationToken token) =>
+        Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked,
+            "Local dimming can't be turned off on this laptop."));
+
     Task<ControlOperationResult> SetBatteryPolicyAsync(
         BatteryPolicy value,
         CancellationToken token);

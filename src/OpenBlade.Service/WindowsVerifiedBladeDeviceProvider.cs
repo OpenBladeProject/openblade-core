@@ -1050,6 +1050,16 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 LogoLightingMode? logo =
                     await lightingSession.ReadLogoLightingStateCoreAsync(cancellationToken)
                         .ConfigureAwait(false);
+                // Only a model whose open admitted a readable mini-LED panel is
+                // queried; the exact port returns null when the bit cannot be read.
+                bool? localDimming = null;
+                if (batteryFactory.Capabilities.LocalDimming is { Access: DeviceFeatureAccess.ReadOnly })
+                {
+                    IProductionBatteryPort dimmingPort = await lease.GetAsync().ConfigureAwait(false);
+                    localDimming = dimmingPort.SupportsLocalDimmingQuery
+                        ? await dimmingPort.QueryLocalDimmingAsync(cancellationToken).ConfigureAwait(false)
+                        : null;
+                }
                 var state = new ConfirmedDeviceState(
                     performanceFan?.Performance,
                     performanceFan?.Fans,
@@ -1061,6 +1071,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     CustomPerformance = performanceFan?.CustomPerformance,
                     GpuClockOffsets = gpuOffsets,
                     LogoLighting = logo,
+                    LocalDimmingActive = localDimming,
                     IndependentLighting = await lightingSession.ReadIndependentLightingStateCoreAsync(cancellationToken)
                         .ConfigureAwait(false),
                 };
@@ -2393,6 +2404,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     port => port.SetTemporaryFullChargeAsync(enabled, cancellationToken),
                     cancellationToken)
                 : RejectProductionWrite("Temporary full charge is not admitted.");
+
+        public Task ClearLocalDimmingAsync(CancellationToken cancellationToken) =>
+            batteryFactory.Capabilities.LocalDimming is { SupportsClear: true }
+                ? ExecuteProductionWriteAsync(
+                    port => port.ClearLocalDimmingAsync(cancellationToken),
+                    cancellationToken)
+                : RejectProductionWrite("Local dimming Clear is not admitted.");
 
         public Task ApplyOneShotLaptopControlAsync(
             ApplyOneShotLaptopControl value,

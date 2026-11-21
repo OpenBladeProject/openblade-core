@@ -612,6 +612,9 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
     {
         private byte[] request = [];
         internal byte Raw { get; set; }
+        internal byte SkuHardwareConfiguration { get; set; }
+        internal byte PowerModeControl { get; set; }
+        internal List<byte> PowerModeControlWrites { get; } = [];
         internal (byte Class, byte Id)? RejectedGetter { get; set; }
         internal int GetterFailureKind { get; set; }
         internal int GetterFailureAfter { get; set; }
@@ -697,6 +700,11 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
                     Raw = request[9];
                     Setters.Add(Raw);
                 }
+                if (request[7] == 0x07 && request[8] == 0x0F)
+                {
+                    PowerModeControl = request[9];
+                    PowerModeControlWrites.Add(request[9]);
+                }
             }
             else
             {
@@ -726,6 +734,14 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
                 if (buffer[7] == 0x07 && buffer[8] == 0x92)
                 {
                     buffer[9] = Raw;
+                }
+                else if (buffer[7] == 0x0D && buffer[8] == 0x8F)
+                {
+                    buffer[9] = SkuHardwareConfiguration;
+                }
+                else if (buffer[7] == 0x07 && buffer[8] == 0x8F)
+                {
+                    buffer[9] = PowerModeControl;
                 }
                 else if (buffer[7] == 0x07 && buffer[8] == 0x12 && FailNextSetterResponse)
                 {
