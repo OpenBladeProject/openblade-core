@@ -160,12 +160,16 @@ first (671 policy bytes 1,398,128 and 1,941,140; 669 bytes 1,558,229 and
 1,699,212), so the controller can still hold raw 6 after external power
 returns. Off battery, RZ09-0483 and RZ09-0482 read raw 6 as DC Balanced: no
 plugged-in intent matches it, and the typed plugged-in set leaves it with one
-write. That transitional reading is not an outside change at AC return, with or
-without a handoff record (for example after the service started on battery or a
-new Windows user signed in on battery), so the plugged-in profile applies through
-its normal fresh admission; any real AC mode is still compared. RZ09-0510 reports
-raw 6 as DC Balanced on any source and lists it, so there it stays an outside
-change unless the handoff record covers it.
+write. On a transition from battery, that transitional reading is not an outside
+change, with or without a handoff record (for example after the service started
+on battery or a new Windows user signed in on battery), so the plugged-in profile
+applies through its normal fresh admission; any real AC mode is still compared.
+Raw 6 that another controller selects while external power stays connected is an
+outside change, and a later transition between external sources, such as plugged
+in to USB-C, keeps it that way without a write. RZ09-0510 reports raw 6 as DC
+Balanced on any source and lists it, so there it stays an outside change unless
+the handoff record covers it. RZ09-0484 shares the RZ09-0483 table but HyperBoost
+is observed only there, so it never makes this handoff and its raw 6 is compared.
 
 Synapse also enters Custom straight from the current mode, with the same per-fan
 mode-4 writes and, off battery, the CPU and GPU level writes, without reading or
