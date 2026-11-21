@@ -88,7 +88,8 @@ fn normalize(value: i32) -> Option<Backend> {
 /// `Enum.TryParse(ignoreCase: true)` for `KeyboardInputBackend`:
 /// - leading white space (`char.IsWhiteSpace`) is skipped;
 /// - text that then starts with a digit or sign is one 32-bit integer with
-///   optional trailing ASCII white space (`NumberStyles.AllowTrailingWhite`),
+///   optional trailing ASCII white space (`NumberStyles.AllowTrailingWhite`)
+///   and then optional NULs, which .NET number parsing ignores at the end;
 ///   never comma-joined;
 /// - anything else is comma-separated names, each trimmed and matched without
 ///   ASCII case, combined with OR; an empty or unknown name fails.
@@ -98,6 +99,7 @@ fn enum_parse(text: &str) -> Option<i32> {
     if first.is_ascii_digit() || first == '-' || first == '+' {
         // No name starts with a digit or sign, so a failed number fails.
         return text
+            .trim_end_matches('\0')
             .trim_end_matches([' ', '\t', '\n', '\u{b}', '\u{c}', '\r'])
             .parse()
             .ok();

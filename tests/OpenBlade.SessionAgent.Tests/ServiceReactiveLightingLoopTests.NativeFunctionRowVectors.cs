@@ -511,6 +511,7 @@ public sealed partial class ServiceReactiveLightingLoopTests
             "WindowsHook", "windowshook", "WINDOWSHOOK", "RazerDriver", "Unknown",
             "1", "2", "0", "3", "-1", "+1", "01", "-0", "1.0", "0x1", "1e0", "2147483648", "99999999999",
             " 1", "1 ", "\t1", "1\t", "\u00a01", "1\u00a0", "\u20001", "+ 1", "1 1",
+            "1\u0000", "1 \u0000", "1\u0000\u0000", "1\u0000 ", "1 \u0000 \u0000", "WindowsHook\u0000",
             " WindowsHook ", "\u00a0WindowsHook", "WindowsHook\u00a0", "Windows Hook",
             "1,1", "WindowsHook,1", "1,WindowsHook", "0,1", "RazerDriver,0", "1,2",
             "WindowsHook,Unknown", "WindowsHook,WindowsHook", "WindowsHook , Unknown",

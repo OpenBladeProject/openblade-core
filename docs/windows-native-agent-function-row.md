@@ -115,7 +115,7 @@ match case-insensitively. A string is read as `Enum.TryParse(ignoreCase: true)`
 reads it: leading white space is skipped, text starting with a digit or sign is
 one integer with optional trailing ASCII white space, and anything else is
 comma-joined names. A number must be a 32-bit integer. A failed read keeps the
-last value. The `preference` vectors pin 62 values. These choices differ from
+last value. The `preference` vectors pin 68 values. These choices differ from
 managed:
 
 - Before the first successful read the backend is unknown, so no hook is
