@@ -80,6 +80,8 @@ public sealed partial class ServiceControlRuntimeTests
     [InlineData("""{"comment":"","cases":[{"name":"x","profileText":{}}]}""")]
     [InlineData("""{"comment":"","cases":[{"name":"x","profile":{},"showDocument":1}]}""")]
     [InlineData("""{"comment":"","cases":[{"name":"x","profile":{},"expected":{}}]}""")]
+    [InlineData("""{"comment":"","cases":[{"name":"x","profile":{},"nativeDifference":true}]}""")]
+    [InlineData("""{"comment":"","cases":[{"name":"x","profile":{},"nativeDifference":""}]}""")]
     [InlineData("""{"comment":"","cases":[{"name":"x","profile":{}},{"name":"x","profile":{}}]}""")]
     public void NativeProfileMigrationVectors_RejectMalformedOrUnknownRows(string text) =>
         Assert.Throws<InvalidDataException>(() => ReadNativeMigrationVectors(text));
@@ -99,7 +101,7 @@ public sealed partial class ServiceControlRuntimeTests
         {
             JsonObject vector = Shape(
                 entry,
-                ["name", "profile", "profileText", "preferences", "preferencesText", "schema", "markerText", "showDocument", "expect"],
+                ["name", "profile", "profileText", "preferences", "preferencesText", "schema", "markerText", "showDocument", "nativeDifference", "expect"],
                 ["name"]);
             if (vector["name"]?.GetValueKind() != JsonValueKind.String
                 || vector["name"]!.GetValue<string>().Length == 0
@@ -128,6 +130,14 @@ public sealed partial class ServiceControlRuntimeTests
                 && vector["showDocument"]?.GetValueKind() is not (JsonValueKind.True or JsonValueKind.False))
             {
                 throw new InvalidDataException("showDocument is true or false.");
+            }
+            // A declared parity difference: managed's outcome is still the
+            // expectation, and the native readers pin their own refusal.
+            if (vector.ContainsKey("nativeDifference")
+                && (vector["nativeDifference"]?.GetValueKind() != JsonValueKind.String
+                    || vector["nativeDifference"]!.GetValue<string>().Length == 0))
+            {
+                throw new InvalidDataException("nativeDifference is a non-empty string.");
             }
             if (!new[] { "profile", "profileText", "preferences", "preferencesText", "schema", "markerText" }.Any(vector.ContainsKey))
             {

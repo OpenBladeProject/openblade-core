@@ -8,6 +8,9 @@
 //! committed aggregate at the marker's schema. A case only the envelope
 //! decides (a missing file, a marker of other bytes) is the host's.
 //!
+//! A case with `nativeDifference` is a declared parity difference: managed's
+//! outcome stays its expectation, and this reader refuses it as invalid.
+//!
 //! The rewritten documents are compared by SHA-256, which `thermal-history`
 //! brings; run with both features.
 #![cfg(all(feature = "profile-set", feature = "thermal-history"))]
@@ -43,7 +46,7 @@ fn read_vectors(text: &str) -> Result<Json, String> {
     };
     let mut names = Vec::new();
     for case in cases {
-        let allowed: Vec<&str> = ["name", "showDocument", "expect"]
+        let allowed: Vec<&str> = ["name", "showDocument", "nativeDifference", "expect"]
             .into_iter()
             .chain(STORED)
             .collect();
@@ -75,6 +78,12 @@ fn read_vectors(text: &str) -> Result<Json, String> {
             .is_some_and(|flag| flag.boolean().is_none())
         {
             return Err("showDocument is true or false".into());
+        }
+        if case
+            .member("nativeDifference")
+            .is_some_and(|reason| reason.text().is_none_or(str::is_empty))
+        {
+            return Err("nativeDifference is a non-empty string".into());
         }
         if !STORED.iter().any(|name| case.member(name).is_some()) {
             return Err("a case stores at least one file".into());
@@ -125,6 +134,7 @@ fn every_managed_store_open_migrates_alike() {
     let validator = validator();
     let mut failures = Vec::new();
     let (mut legacy, mut migrations, mut kept, mut refusals, mut envelope) = (0, 0, 0, 0, 0);
+    let mut differences = 0;
     let mut schemas = std::collections::BTreeSet::new();
     for case in cases {
         let name = member(case, "name").text().unwrap();
@@ -156,6 +166,17 @@ fn every_managed_store_open_migrates_alike() {
                 "{name}: {what}\n  native:  {native}\n  managed: {managed}"
             ));
         };
+        if case.member("nativeDifference").is_some() {
+            differences += 1;
+            if !matches!(observed, Err(Refusal::Invalid(_))) {
+                fail(
+                    "declared difference",
+                    format!("{observed:?}"),
+                    "Invalid".into(),
+                );
+            }
+            continue;
+        }
         if member(expect, "admitted") != &Json::Bool(true) {
             refusals += 1;
             let reason = member(expect, "reason").text().unwrap_or("throws");
@@ -226,9 +247,11 @@ fn every_managed_store_open_migrates_alike() {
         failures.len(),
         failures.join("\n")
     );
-    // Every schema managed migrates is migrated, and the legacy profile.
-    assert_eq!(schemas, (1..=26).collect());
+    // Every schema managed migrates is migrated, the current one included
+    // when its normalisation changes it, and the legacy profile.
+    assert_eq!(schemas, (1..=27).collect());
     assert!(legacy >= 50 && migrations >= 45 && kept >= 1 && refusals >= 50 && envelope >= 4);
+    assert_eq!(differences, 5);
 }
 
 #[test]
@@ -248,6 +271,8 @@ fn malformed_or_unknown_rows_are_rejected() {
         r#"{"comment":"","cases":[{"name":"x","profileText":{}}]}"#,
         r#"{"comment":"","cases":[{"name":"x","profile":{},"showDocument":1}]}"#,
         r#"{"comment":"","cases":[{"name":"x","profile":{},"expected":{}}]}"#,
+        r#"{"comment":"","cases":[{"name":"x","profile":{},"nativeDifference":true}]}"#,
+        r#"{"comment":"","cases":[{"name":"x","profile":{},"nativeDifference":""}]}"#,
         r#"{"comment":"","cases":[{"name":"x","profile":{}},{"name":"x","profile":{}}]}"#,
     ] {
         assert!(read_vectors(text).is_err(), "{text}");

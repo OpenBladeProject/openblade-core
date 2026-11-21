@@ -39,7 +39,8 @@ pub enum Refusal {
     FutureSchema,
     /// `IncompleteAggregate`: a lone profile that declares a schema.
     IncompleteAggregate,
-    /// `InvalidDocument`, with managed's exception message.
+    /// `InvalidDocument`. The message is this reader's own; the managed
+    /// vectors record only the reason.
     Invalid(Invalid),
 }
 
@@ -83,6 +84,11 @@ pub fn migrate(stored: Stored<'_>, validator: &Validator) -> Result<Option<Migra
             if schema > CURRENT_SCHEMA || [profile, preferences].into_iter().any(future_schema) {
                 return Err(Refusal::FutureSchema);
             }
+            // A declared difference: below schema 22 a null application
+            // profile, or one with null overrides or a null path, and below
+            // schema 12 null Windows power modes, are refused by the decoder,
+            // where managed reads them and then discards them
+            // (`ProfileStore.cs:235-256`).
             let aggregate = read_aggregate(schema, profile, preferences, validator)
                 .map_err(Refusal::Invalid)?;
             // `ReadCommittedSnapshot` reports `ConfigurationMigrated`; only
@@ -209,10 +215,14 @@ fn legacy_profile(json: &Json) -> Result<PowerProfile, Invalid> {
 /// Managed `BatteryConfigurationStore.ReadLegacy` (`:525-552`): the profile
 /// document from before schemas, with two power profiles and a battery
 /// policy at its root.
-pub fn read_legacy(bytes: &[u8], validator: &Validator) -> Result<ProfileSet, Refusal> {
+fn read_legacy(bytes: &[u8], validator: &Validator) -> Result<ProfileSet, Refusal> {
     if future_schema(bytes) {
         return Err(Refusal::FutureSchema);
     }
+    // A declared difference: managed names a lone profile with a duplicate
+    // member and a schema version incomplete (`HasSchemaVersion`, `:387-389`),
+    // and this parser refuses the duplicate first. The host's inspection
+    // matches managed, and both leave the file untouched.
     let root = json::parse(bytes)
         .map_err(|_| Refusal::Invalid(Invalid::new("The legacy profile is not valid JSON.")))?;
     // Managed reads the document even with a schema version, and its

@@ -11,6 +11,9 @@ pub(super) struct Case {
     pub(super) name: String,
     pub(super) files: BTreeMap<String, Vec<u8>>,
     expect: Value,
+    /// A declared parity difference: managed's outcome is recorded, and
+    /// this store refuses the open with every file untouched.
+    native_difference: bool,
 }
 
 /// The bytes the managed recorder stores: the raw text, or the value written
@@ -54,6 +57,7 @@ fn cases() -> Vec<Case> {
                 name: case["name"].as_str().unwrap().to_owned(),
                 files,
                 expect: case["expect"].clone(),
+                native_difference: case.get("nativeDifference").is_some(),
             }
         })
         .collect()
@@ -86,13 +90,20 @@ fn listing(files: &BTreeMap<String, Vec<u8>>) -> Vec<String> {
 
 #[test]
 fn every_managed_store_open_leaves_what_managed_leaves() {
-    let (mut migrations, mut preserved) = (0, 0);
+    let (mut migrations, mut preserved, mut differences) = (0, 0, 0);
     for case in cases() {
         let name = &case.name;
         let model = model(&case.files);
         let opened = open(&model);
         let after = model.snapshot();
         let expect = &case.expect;
+        if case.native_difference {
+            differences += 1;
+            assert!(opened.is_err(), "{name}: the store stays closed");
+            assert_eq!(after, case.files, "{name}: the stored files are untouched");
+            assert_eq!(model.writes.load(Ordering::Acquire), 0, "{name}");
+            continue;
+        }
         if expect["migrated"] == json!(true) {
             migrations += 1;
             assert!(opened.is_ok(), "{name}: {:?}", opened.err());
@@ -135,6 +146,7 @@ fn every_managed_store_open_leaves_what_managed_leaves() {
         migrations >= 45 && preserved >= 50,
         "{migrations} {preserved}"
     );
+    assert_eq!(differences, 5);
 }
 
 #[test]
