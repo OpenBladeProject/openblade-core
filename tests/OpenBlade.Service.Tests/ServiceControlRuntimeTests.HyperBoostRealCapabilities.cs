@@ -124,6 +124,15 @@ public sealed partial class ServiceControlRuntimeTests
                 productId == 0x02B7 && source == PowerSource.Battery;
             return source;
         };
+        // Mirrors the port's Custom baseline gate: raw 6 (Battery Balanced) is a
+        // Custom baseline only off battery on these three models.
+        context.Device.PerformancePrecondition = value =>
+            value == PerformancePreset.Custom
+            && context.Device.ConfirmedState.Performance == PerformancePreset.BatteryBalanced
+            && context.Telemetry.Current.PowerSource == PowerSource.Battery
+                ? new BladeWriteException(WriteSubmissionState.KnownNotApplied,
+                    "Experimental custom performance requires an ordinary AC preset and a model-supported fan baseline.")
+                : null;
         await context.Runtime.ObserveAsync(CancellationToken.None);
         Assert.Equal(
             PerformancePreset.BatterySaver,

@@ -438,12 +438,16 @@ public sealed partial class ServiceControlRuntimeTests
             };
         }
 
+        int performanceWrites = context.Device.PerformanceWrites.Count;
         context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
 
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
         Assert.False(context.Device.ConfirmedState.HyperBoostActive);
         Assert.Equal(status.Profiles.PluggedIn.Performance, context.Device.ConfirmedState.Performance);
+        // The plugged-in mode, Custom included, is set directly from raw 6.
+        Assert.Equal([status.Profiles.PluggedIn.Performance],
+            context.Device.PerformanceWrites.Skip(performanceWrites).ToArray());
         Assert.Empty(status.ExternalChanges);
         Assert.False(status.WritesBlocked, status.Message);
         ControlOperationResult reentered = await context.Runtime.SetHyperBoostAsync(true, CancellationToken.None);

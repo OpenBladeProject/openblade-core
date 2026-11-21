@@ -28898,7 +28898,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task RecoverHyperBoostRestore_UnsupportedIntentRetiresAsHandoffWithoutWrites()
+    public async Task RecoverHyperBoostRestore_UnsupportedFullPowerIntentIsPreserved()
     {
         var journal = new RecordingHyperBoostOwnershipJournalStore();
         TestContext context = CreateContext(
@@ -28928,22 +28928,21 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 HyperBoostActive: false),
         };
         journal.Journal = original;
-        int settersBeforeObservation = context.Device.TotalSetterCalls;
-
-        // HyperBoost is off with Automatic fans, and the intent can never be
-        // restored: the journal retires as a handoff and nothing is written.
+        // Only a battery destination that the table doesn't list retires as a
+        // handoff. An unadmitted external-power intent stays pending.
         await context.Runtime.ObserveAsync(CancellationToken.None);
+        int settersBeforeRecovery = context.Device.TotalSetterCalls;
 
-        Assert.Null(journal.Journal);
-        Assert.Equal(settersBeforeObservation, context.Device.TotalSetterCalls);
-        Assert.False(context.Runtime.GetStatus().WritesBlocked);
-        Assert.False(context.Runtime.GetStatus().HyperBoostRestorePending);
-        Assert.Contains("isn't available on this laptop", context.Runtime.GetStatus().Message);
         ControlOperationResult result =
             await context.Runtime.RecoverHyperBoostRestoreAsync(
                 CancellationToken.None);
-        Assert.Equal(ControlOperationStatus.Stored, result.Status);
-        Assert.Equal(settersBeforeObservation, context.Device.TotalSetterCalls);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Contains("no longer admitted", result.Message);
+        Assert.Equal(settersBeforeRecovery, context.Device.TotalSetterCalls);
+        Assert.Equal(original, journal.Journal);
+        Assert.Empty(journal.Writes);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
     }
 
     [Fact]
@@ -32737,6 +32736,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         public Exception? PerformanceFailure { get; set; }
 
+        // A port-side baseline gate evaluated against the current confirmed state.
+        public Func<PerformancePreset, Exception?>? PerformancePrecondition { get; set; }
+
         public int GpuClockSetCalls { get; private set; }
 
         public Action? AfterGpuClockSet { get; set; }
@@ -33236,6 +33238,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             if (PerformanceFailure is not null)
             {
                 throw PerformanceFailure;
+            }
+            if (PerformancePrecondition?.Invoke(value) is Exception refused)
+            {
+                throw refused;
             }
 
             if (SuppressConfirmationFor != DeviceSubsystem.Performance)
