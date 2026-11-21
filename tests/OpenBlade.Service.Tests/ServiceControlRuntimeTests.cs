@@ -33132,6 +33132,24 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 AfterHyperBoostFailure?.Invoke();
                 return Task.FromException(failure);
             }
+            if (ClearsMaximumFansForHyperBoost)
+            {
+                // Like the experimental port: entry clears the Maximum Fans bit
+                // before mode 7, and exit restores only the base mode and levels.
+                if (enabled)
+                {
+                    hyperBoostStoredCustom = ConfirmedState.CustomPerformance is { } stored
+                        ? stored with { MaximumFans = false } : null;
+                }
+                ConfirmedState = ConfirmedState with
+                {
+                    Performance = enabled ? null : baseMode,
+                    CustomPerformance = enabled || baseMode == PerformancePreset.Custom ? hyperBoostStoredCustom : null,
+                    Fans = FanMode.Automatic,
+                    HyperBoostActive = enabled,
+                };
+                return Task.CompletedTask;
+            }
             ConfirmedState = enabled
                 ? ConfirmedState with
                 {
@@ -33155,6 +33173,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 enabled,
                 baseMode,
                 cancellationToken);
+
+        public bool ClearsMaximumFansForHyperBoost { get; set; }
+
+        private CustomPerformanceSettings? hyperBoostStoredCustom;
 
         public List<bool> HyperBoostJournaledPadPaths { get; } = [];
 

@@ -167,6 +167,13 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.All(feature.Sources, source => Assert.StartsWith(
                         $"https://apps.razer.com/synapse/products/{(blade14 ? 669 : 671)}/mw/", source));
                 }
+                else if (feature.Feature is "MaximumFans" or "PowerModeCpuBoost" && model.ProductId == 0x029D)
+                {
+                    // The evidence record, not a second hand-written copy, defines the pins.
+                    (string basis, string[] sources) = Blade14PowerModeControlEvidence.CatalogFeature(feature.Feature);
+                    Assert.Equal(basis, feature.Basis);
+                    Assert.Equal(sources, feature.Sources);
+                }
                 else if (feature.Feature == "FireAndWheel")
                 {
                     Assert.Equal((ushort)0x02A0, model.ProductId);

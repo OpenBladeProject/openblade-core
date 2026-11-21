@@ -54,12 +54,15 @@ Useful character offsets: main 142,139 (identity), 142,487 (MCU minimum),
 (pad/firmware gate) and 1,876,601 (DC Balanced 6); base codec 59,644 and 70,580
 (thermal GET/SET); subclass 8,491 (overclocking dispatch, no mode-7 extra write).
 
-The source clears Maximum Fans before non-Custom transitions. OpenBlade cannot
-yet journal and restore that option on this model. HyperBoost therefore queries
-`07/8F` and blocks before any setter if Maximum Fans bit 2 is on. It never sends
-`07/0F` on the Blade 14, and preserves unrelated flags. This prerequisite applies
-to HyperBoost entry; ordinary Blade 14 mode transitions retain their existing
-behavior. The Blade 16 retains its separately admitted cleanup and restoration.
+The source clears Maximum Fans before non-Custom transitions. Product 669 also
+offers Maximum Fans as a user-facing Custom switch with the Blade 16 setter
+contract ([source review](../evidence/source-reviewed-blades/2026-11-19-rz09-0482-maximum-fans.json)),
+so the Blade 14 now represents it in Custom intent. HyperBoost entry and ordinary
+transitions out of Custom use the same guarded `07/0F [0]` cleanup as the Blade
+16: a fresh `07/8F` must show no other option set, and the cleared bit is
+confirmed before the mode setter. On exit, the service compares the journaled
+Custom intent with the confirmed flag and writes Maximum Fans back on. A refusal
+after the confirmed cleanup and before mode 7 reports a known state.
 Blade 18 product 672 has no HyperBoost entry in its exact mode list. A shared
 enum reference is insufficient to enable it. Its existing observed-only state
 remains unchanged.

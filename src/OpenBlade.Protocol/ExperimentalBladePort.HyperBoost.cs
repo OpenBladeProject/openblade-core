@@ -4,6 +4,9 @@ namespace OpenBlade.Protocol;
 
 internal sealed partial class ExperimentalBladePort
 {
+    internal const string MaximumFansClearedForHyperBoostNotice =
+        "Maximum Fans was turned off for HyperBoost; reapply Custom to turn it back on.";
+
     // Synapse products 671/669 enable mode 7 for 029F/029D. Experimental padless use
     // shares that exact command; see docs/experimental-hyperboost-evidence.md.
     public Task SetHyperBoostAsync(bool enabled, CancellationToken cancellationToken) =>
@@ -26,6 +29,7 @@ internal sealed partial class ExperimentalBladePort
         }
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         bool submitted = false;
+        bool maximumFansCleared = false;
         bool acceptsStatusOnlyAck = UsesSourceBackedSetAckContract(model);
         string operation = enabled ? "HyperBoost" : "HyperBoostRestore";
         try
@@ -78,8 +82,14 @@ internal sealed partial class ExperimentalBladePort
                 byte flags = await ReadPowerModeControlAsync(cancellationToken).ConfigureAwait(false);
                 if ((flags & TemporaryFullChargeProtocol.MaximumFanSpeedBit) != 0)
                 {
-                    // Product 669 proves this flag exists, but this backend cannot
-                    // journal/restore it. Do not clear an unrepresentable baseline.
+                    // Products 671/669 both clear this bit before any non-Custom
+                    // setter (671 policy byte 1397809, 669 policy byte 1557908).
+                    // 029F/029D represent it in Custom intent. The service journals
+                    // that intent, and on exit its Custom restore compares Maximum
+                    // Fans with the confirmed flag and writes it back when needed.
+                    // Every model that admits HyperBoost today also admits Maximum
+                    // Fans, so this refusal is a guard for a future model without
+                    // representable intent: never clear a flag it cannot restore.
                     if (!CreateCustomCapabilities(model).SupportsMaximumFans)
                     {
                         throw new BladeWriteException(WriteSubmissionState.KnownNotApplied,
@@ -88,10 +98,11 @@ internal sealed partial class ExperimentalBladePort
                     RequireMaximumFansWriteBaseline(flags);
                     // Cleanup belongs to this HyperBoost request; it cannot inherit
                     // ordinary Unknown-AC admission before the mode-7 command.
+                    bool statusOnlyPowerModeAck = UsesStatusOnlyPowerModeControlAck(model);
                     await ExchangeAsync("MaximumFans", 0x07, 0x0F, [0], true, cancellationToken,
-                        variableResponse: acceptsStatusOnlyAck,
-                        payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 1 : null,
-                        requireEcho: !acceptsStatusOnlyAck,
+                        variableResponse: statusOnlyPowerModeAck,
+                        payloadValidator: statusOnlyPowerModeAck ? static payload => payload.Length <= 1 : null,
+                        requireEcho: !statusOnlyPowerModeAck,
                         writeAdmission: StillAdmitted,
                         allowUnclassifiedExternal: false).ConfigureAwait(false);
                     submitted = true;
@@ -99,6 +110,11 @@ internal sealed partial class ExperimentalBladePort
                     {
                         throw new IOException("HyperBoost Maximum Fans cleanup was not confirmed.");
                     }
+                    // The cleanup is confirmed and mode 7 has not been sent, so
+                    // the state is fully known. A later admission refusal is not
+                    // ambiguous; the service can reapply the saved Custom intent.
+                    submitted = false;
+                    maximumFansCleared = true;
                 }
             }
             byte mode = enabled ? (byte)7 : (byte)(baseMode switch
@@ -137,7 +153,20 @@ internal sealed partial class ExperimentalBladePort
         }
         catch (Exception exception)
         {
-            throw MapWriteFailure(operation, submitted, exception);
+            BladeWriteException failure = MapWriteFailure(operation, submitted, exception);
+            // Every known pre-submission stop after the confirmed cleanup, such
+            // as a lost exact host or a native guard refusal, leaves the flag
+            // off. Say so; a possibly submitted mode-7 write stays indeterminate.
+            if (maximumFansCleared && !submitted
+                && failure.SubmissionState == WriteSubmissionState.KnownNotApplied)
+            {
+                throw new BladeWriteException(WriteSubmissionState.KnownNotApplied, failure.FailurePhase,
+                    $"{failure.Message} {MaximumFansClearedForHyperBoostNotice}", exception)
+                {
+                    MaximumFansClearedBeforeFailure = true,
+                };
+            }
+            throw failure;
         }
         finally
         {

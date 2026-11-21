@@ -396,8 +396,8 @@ runs:
   the product names the other settings that are on. Developer validation reports
   the refusal as `EnableFailed` or `CancelFailed`. Captured full-charge writes
   remain limited to bare `00` and `04`.
-- Source-reviewed Maximum Fans on `029F` and `02A0` uses upstream-backed `00` and
-  `02` writes. Its fresh guard refuses CPU boost, temporary full charge, or
+- Source-reviewed Maximum Fans on `029F`, `029D` and `02A0` uses `00` and `02`
+  writes backed by upstream or exact Synapse source. Its fresh guard refuses CPU boost, temporary full charge, or
   local dimming bits, so replacing the byte cannot clear another enabled option.
   This does not admit combined writes or a local dimming control.
 

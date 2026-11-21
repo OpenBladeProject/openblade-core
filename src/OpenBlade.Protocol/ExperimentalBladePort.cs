@@ -236,6 +236,15 @@ internal sealed partial class ExperimentalBladePort(
     private static bool UsesSourceBackedSetAckContract(ExperimentalBladeModel model) =>
         model.ThermalPolicy is not null || model.ProductId is 0x029F or 0x02A0 or 0x0255 or 0x02C5;
 
+    // Power Mode Control 07/0F only. Product 669 rzDevice25.1094c437ecd0242743f8.js
+    // (SHA-256 D76F0E964537BCF19D517E67B16E9D8AC0160230FA779AFB3640DA78B6201AD3) sends the
+    // one-byte SET through setter V (UTF-8 byte 52963) and parses data only when some returns.
+    // Its transport matches the transaction ID and command class/ID (byte 119015) and takes
+    // success from the status byte (byte 119262); it never compares the payload with the
+    // request. 029D's other setters keep their existing echoed acknowledgement.
+    private static bool UsesStatusOnlyPowerModeControlAck(ExperimentalBladeModel model) =>
+        UsesSourceBackedSetAckContract(model) || model.ProductId == 0x029D;
+
     private static IReadOnlySet<PerformancePreset> CreatePerformancePresets(ExperimentalBladeModel model)
     {
         if (model.ThermalPolicy is null && !SupportsExperimentalCustom(model))
@@ -493,9 +502,9 @@ internal sealed partial class ExperimentalBladePort(
                     RequirePerformanceWriteAdmission(value);
                     await ExchangeAsync("MaximumFans", 0x07, 0x0F, [0],
                         true, cancellationToken,
-                        variableResponse: acceptsStatusOnlyAck,
-                        payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 1 : null,
-                        requireEcho: !acceptsStatusOnlyAck,
+                        variableResponse: UsesStatusOnlyPowerModeControlAck(model),
+                        payloadValidator: UsesStatusOnlyPowerModeControlAck(model) ? static payload => payload.Length <= 1 : null,
+                        requireEcho: !UsesStatusOnlyPowerModeControlAck(model),
                         allowUnclassifiedExternal: !baseline.HyperBoostActive).ConfigureAwait(false);
                     submitted = true;
                     if (await ReadMaximumFansAsync(cancellationToken).ConfigureAwait(false))
