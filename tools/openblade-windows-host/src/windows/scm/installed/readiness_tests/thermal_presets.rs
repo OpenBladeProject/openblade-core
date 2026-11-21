@@ -353,6 +353,42 @@ async fn saved_profile_presets_apply_when_explicitly_requested() {
 }
 
 #[tokio::test]
+async fn the_resolved_application_preset_leaving_hyperboost_is_refused_as_no_direct_path() {
+    // A clear under confirmed HyperBoost selects the resolved profile. The
+    // plugged-in profile's Balanced is a direct exit; the active application's
+    // Battery Saver needs managed's restore sequence, and native has no
+    // recovered HyperBoost layer to hold instead, so nothing is written.
+    const CLEARED: &str = "Performance override was cleared. Hardware result: Leaving HyperBoost for a battery preset needs the HyperBoost restore sequence, which this build does not submit; no thermal setter was submitted.";
+    for reported in [false, true] {
+        let files = MemoryFiles::default();
+        files.profiles(1);
+        let mut document = files.document("profiles.json");
+        document["profiles"]["applicationProfiles"][0]["overrides"]["pluggedIn"] =
+            json!({"performance": BATTERY_SAVER.0});
+        files.put("profiles.json", document);
+        files.commit_configuration();
+        let rig = rig_at(7, 0, FULL, files);
+        if reported {
+            let report = rig.request(json!({"operation":"reportApplicationContext","version":85,"requestId":"bbbbbbbb-bbbb-cccc-dddd-000000000003","instanceId":"cccccccc-bbbb-cccc-dddd-000000000003","sequence":1,"executablePath":r"C:\Games\Game.exe"})).await;
+            assert_eq!(report["result"]["status"], 0, "{report}");
+        }
+        let result = rig.set(1, Value::Null).await;
+        if reported {
+            assert_eq!(result["result"]["status"], 2, "{result}");
+            assert_eq!(result["result"]["message"], CLEARED);
+            assert!(setters(&rig).is_empty(), "{result}");
+            assert!(rows(&rig).is_empty(), "{result}");
+        } else {
+            assert_eq!(result["result"]["status"], 1, "{result}");
+            assert!(!setters(&rig).is_empty(), "{result}");
+            let status = rig.get().await;
+            assert_eq!(status["status"]["confirmedState"]["performance"], 1);
+        }
+        rig.stop().await;
+    }
+}
+
+#[tokio::test]
 async fn manual_fans_defer_every_destination_to_the_fan_return() {
     // Managed defers every destination the saved manual fans admit on
     // external power, and the native fan return writes each of them. Without
