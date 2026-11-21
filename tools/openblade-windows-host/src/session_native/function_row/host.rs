@@ -9,7 +9,9 @@
 //! drops the backend, the hook drains its held keys for at most 250 ms, unhooks,
 //! and the worker resets. Another hook is installed only after the previous run
 //! retired cleanly (`HookControl::retired_cleanly`); an unclean run leaves
-//! ownership uncertain and the role never installs again in this lifetime.
+//! ownership uncertain and this supervisor installs no other hook. Nothing
+//! latches that across role runs; the in-process hook slot still refuses a
+//! second hook while one holds it.
 use std::{
     io,
     sync::Arc,

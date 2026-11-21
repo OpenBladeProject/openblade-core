@@ -22,10 +22,12 @@ use crate::{service_status::Snapshot, session_native::service_client::StatusUpda
 /// own function-row inputs (Function-P, host-managed Fn) and are refused.
 pub(crate) const ADMITTED_MODEL: &str = "RZ09-0581";
 
-/// How long one renewal keeps the projection admitted. The subscription checks
-/// its Service generation and pipe peer every 500 ms and reports a failure as
-/// a reconnect, so a renewal that stops (a stalled runtime) expires the
-/// admission within this bound instead of trusting it indefinitely.
+/// How long one renewal keeps the projection admitted. The renewal leases the
+/// open subscription, not the status's age: the Service sends no heartbeat.
+/// The idle subscription checks its Service generation and pipe peer every
+/// 500 ms; a failed read reconnects and a changed identity ends the watcher,
+/// and either invalidates the admission. A renewal that stops (a stalled
+/// runtime) lets the admission expire within this bound.
 pub(crate) const LEASE: Duration = Duration::from_secs(1);
 
 /// Managed `KeyboardDriverModeKnowledge`.

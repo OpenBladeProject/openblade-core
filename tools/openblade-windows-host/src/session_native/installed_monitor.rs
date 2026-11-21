@@ -63,8 +63,10 @@ pub(super) fn run(
         #[cfg(feature = "agent-application-reporter-v1")]
         let profiles = super::application::ProfileFeed::new();
         // The function-row hook reads Driver mode only from verified, fresh
-        // status; a reconnect, a stale status or a lost Origin passes every
-        // key through before the error ends the watcher.
+        // status. A reconnect, a stale status or a lost Origin passes every
+        // key through at once; the last two then end the watcher. A changed
+        // Service generation or pipe peer ends the watcher without a
+        // reconnect, and the role's stop then passes every key through.
         #[cfg(feature = "agent-function-row-v1")]
         let function_row = Arc::new(super::function_row::Admission::default());
         let canceled = async {

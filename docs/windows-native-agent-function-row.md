@@ -45,7 +45,10 @@ true, as managed `ServiceReactiveLightingLoop.ObserveStatus` does:
   Unknown for `null`, an absent member or any other JSON value. Only Active
   lets a new press be intercepted.
 - `functionKeyPrimary` is FunctionKeys for `0` and MultimediaKeys for `1`;
-  anything else is unknown.
+  anything else is unknown. Each verified status replaces the last mode, so a
+  status without one makes the mode unknown again and keys pass through.
+  Managed keeps the last mode it read when neither the status nor its profile
+  fallback names one; native's choice is the pass-through direction.
 
 An unverified status makes all three unknown. A reconnect, a failed origin
 check or a stale status (older than the two-second status budget) invalidates
@@ -54,14 +57,25 @@ the admission at once, before the error ends the status watcher.
 ## Admission and expiry
 
 The hook reads one packed atomic word holding the observation and its expiry,
-and never takes a lock. Each verified status publishes it until the status
-stops being fresh. While the role runs, a 500 ms tick re-verifies the Agent's
-origin and renews the expiry to one second from now. The status subscription
-has no heartbeat: an idle subscription checks its Service generation and pipe
-peer every 500 ms and reports a failure as a reconnect, which invalidates the
-admission. The renewal stands in for that idle period, and a stalled runtime
-lets the admission expire within a second. Stop invalidates the admission
-before the hook retires.
+and never takes a lock. Each verified status publishes it until that status
+stops being fresh, two seconds (the status budget) after it arrived. While the
+role runs, a 500 ms tick re-verifies the Agent's origin and extends the expiry
+to one second after the tick. After a suspend the tick runs once on resume,
+not once for every period missed.
+
+Freshness is therefore a lease on the open subscription, not a limit on the
+status's age. The Service sends no heartbeat, so a quiet subscription's last
+status may be minutes old and still current; managed assumes the same and
+keeps the last status while its subscription stays open. If the runtime
+stalls, the renewal stops and the admission expires one second after the last
+renewal or two seconds after the last status, whichever is later.
+
+The idle subscription checks its Service generation and pipe peer every
+500 ms. A failed read is reported as a reconnect, which invalidates the
+admission at once. A changed generation or peer ends the status watcher
+instead; the role stops with it, and its stop invalidates the admission. Stop
+always invalidates the admission before the supervisor can see it and retire
+the hook.
 
 ## Hook lifetime
 
@@ -74,14 +88,21 @@ each install:
 - a fresh, verified status names RZ09-0581.
 
 A later unknown status does not remove the hook; it passes keys through, as the
-managed hook stays installed. A preference change or stop retires it. The
-admission drops the backend first, so no new press is admitted. Then the hook
-drains held keys for at most 250 ms, which stays below the 300 ms
-`LowLevelHooksTimeout`, unhooks, and the worker resets. Another hook is
-installed only after the previous run retired cleanly
-(`HookControl::retired_cleanly`). A run that ends uncleanly or with a native
-failure leaves ownership uncertain, and the role never installs again in this
-Agent lifetime. A stop waits at most two seconds for the threads.
+managed hook stays installed. Driver mode gates which presses the hook may
+admit, not whether it is installed.
+
+The first press of each key after every install passes through. The hook did
+not see that key go down, so it treats the first down as a press that may have
+started before it and keeps that press's repeats and release paired with it.
+
+A preference change or stop retires the hook. The admission drops the backend
+first, so no new press is admitted. Then the hook drains held keys for at most
+250 ms, which stays below the 300 ms `LowLevelHooksTimeout`, unhooks, and the
+worker resets. Another hook is installed only after the previous run retired
+cleanly (`HookControl::retired_cleanly`). A run that ends uncleanly or with a
+native failure leaves ownership uncertain, and the role installs no other hook
+while it runs (see [Known limits](#known-limits)). A stop waits at most two
+seconds for the threads.
 
 ## Preference
 
@@ -89,10 +110,13 @@ The backend is the `functionRowBackend` member of
 `%LOCALAPPDATA%\OpenBlade\preferences.json`, read as managed
 `UiPreferenceStore.LoadInputPreferencesAsync` and
 `KeyboardInputBackendJsonConverter` read it: a missing file or member is
-WindowsHook, the file is bounded at 1 MiB and may start with a BOM, members
-match case-insensitively, and a string may be a name or a number, comma-joined
-as `Enum.TryParse` allows. A failed read keeps the last value. These choices
-differ from managed:
+WindowsHook, the file is bounded at 1 MiB and may start with a BOM, and members
+match case-insensitively. A string is read as `Enum.TryParse(ignoreCase: true)`
+reads it: leading white space is skipped, text starting with a digit or sign is
+one integer with optional trailing ASCII white space, and anything else is
+comma-joined names. A number must be a 32-bit integer. A failed read keeps the
+last value. The `preference` vectors pin 62 values. These choices differ from
+managed:
 
 - Before the first successful read the backend is unknown, so no hook is
   installed. Managed starts at WindowsHook.
@@ -111,11 +135,17 @@ earlier Windows boot. The native guard is stricter: any journal that exists, or
 whose existence cannot be observed, refuses installation. It never reads,
 changes or deletes a journal. Ownership is also bounded by:
 
-- the stop-event singleton, which admits one Agent per installed image path in
-  the session (managed uses the same name, so a managed Agent at that path
-  cannot run beside it);
+- the stop-event singleton, which admits one native Agent per installed image
+  path in the session;
 - the in-process hook slot, which refuses a second hook with `AlreadyOwned`;
 - the clean-retirement proof before any reinstall.
+
+The stop event does not exclude a managed Agent. Managed `CreateShutdownEvent`
+opens an existing event of the same name without failing, and the managed
+Agent's real singleton is its session pipes. A managed Agent can therefore run
+its own hook beside a native build whose only role is the function row. That
+is harmless while native admits no press. Press admission, a later stage, must
+either run with a native role that owns those pipes or add an explicit claim.
 
 ## Effects
 
@@ -146,10 +176,13 @@ also verifies it:
 - `status` rows drive `ServiceReactiveLightingLoop` and record what its hook
   reads, beside the status members as the IPC codec writes them, including
   `keyboardDriverModeActive` true, false and null.
+- `preference` rows hold one `functionRowBackend` value each and the backend
+  `UiPreferenceStore` reads from a file holding only that member.
 - `malformed` rows must be refused by every reader.
 
 The domain test `function_row_vectors` replays the cases, and the Agent test
-`function_row::tests::vectors` projects the status rows. Native differs in two
+`function_row::tests::vectors` projects the status rows and parses the
+preference rows. Native differs in two
 cases, both listed in the domain test:
 
 - `sequence/started-mid-press`: a first edge that Windows already reports as
@@ -169,3 +202,14 @@ data directory and run the managed test.
 - The function-row status the managed loop publishes to the Tray.
 - The Razer-driver backend and its handoff.
 - Live Windows validation of the installed hook.
+
+## Known limits
+
+- No permanent retirement latch. A run that retires uncleanly blocks further
+  installs only for that supervisor. If a stop exceeds its two-second bound,
+  the role returns `TimedOut` and abandons the supervisor thread, which ends
+  when its OS calls return. A later role run starts a new supervisor; the
+  in-process hook slot still refuses a second hook while the first holds it.
+- Idle cost. While the role runs, it re-verifies the origin every 500 ms and the
+  supervisor wakes every 100 ms and checks the preference file's length and
+  write time every second, even when no hook is installed.
