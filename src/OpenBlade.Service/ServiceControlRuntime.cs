@@ -4686,9 +4686,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 {
                     bool unavailableLightingIsBeingAbandoned = uncertainLighting
                         && observed.Lighting is null;
+                    // The provider adds its managed GPU offset observation to the
+                    // HID recovery state. GPU halves are judged with the device's
+                    // management state, as in ordinary observation; an unconfirmed
+                    // GPU half is retired by reconciliation and does not hold
+                    // the pause.
                     if (!StillAuthorized()
-                        || pendingWriteConfirmations.Snapshot().Any(entry => entry.Value.Match(
-                            entry.Key, observed, source, Automation, managementState: null)
+                        || pendingWriteConfirmations.Snapshot().Any(entry => MatchPendingWriteConfirmation(
+                            entry.Key, entry.Value, observed, source, device)
                                 == PendingConfirmationResult.Unavailable
                             && !(unavailableLightingIsBeingAbandoned
                                 && entry.Key == DeviceSubsystem.Lighting)))
@@ -17407,7 +17412,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             {
                 return result;
             }
-            unavailable |= result == PendingConfirmationResult.Unavailable;
+            // Unconfirmed GPU offsets never let a deferred transition continue.
+            unavailable |= result is PendingConfirmationResult.Unavailable
+                or PendingConfirmationResult.GpuClockOffsetsUnconfirmed;
         }
         return unavailable ? PendingConfirmationResult.Unavailable : PendingConfirmationResult.Match;
     }
@@ -18448,22 +18455,35 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         foreach ((DeviceSubsystem subsystem, PendingWriteConfirmation pending) in
             pendingWriteConfirmations.Snapshot())
         {
-            // A stale power source or battery intent owner must not query device
-            // management state or let matching firmware recommit abandoned intent.
-            GpuClockOffsetManagementState? managementState = pending.CanConfirm(powerSource, Automation)
-                ? GetWriteConfirmationManagementState(subsystem, pending.Expectation, confirmed, device)
-                : null;
-            PendingConfirmationResult result = pending.Match(
-                subsystem, confirmed, powerSource, Automation, managementState);
+            PendingConfirmationResult result = MatchPendingWriteConfirmation(
+                subsystem, pending, confirmed, powerSource, device);
             if (result == PendingConfirmationResult.Unavailable)
             {
                 continue;
             }
 
-            if (result == PendingConfirmationResult.Mismatch
+            if (result is PendingConfirmationResult.Mismatch
+                    or PendingConfirmationResult.GpuClockOffsetsUnconfirmed
                 && pendingTransitionContinuation?.Dependencies.Contains(subsystem) == true)
             {
                 pendingTransitionContinuation = null;
+            }
+
+            if (result == PendingConfirmationResult.GpuClockOffsetsUnconfirmed)
+            {
+                // The device holds no managed offset observation for the GPU half
+                // (it never completed, its confirmation was lost, or the dGPU cannot
+                // be read now). Retire that half instead of blocking every thermal
+                // write until a power change. The firmware fields matched, so a
+                // paired write clears its own drift latch; a GPU-only write leaves
+                // drift untouched. Desired offsets now differ from the unconfirmed
+                // observation, so the next apply writes them again.
+                if (!pending.GpuClockTuningOnly)
+                {
+                    driftTracker.ConfirmIntentional(subsystem, matched: true);
+                }
+                pendingWriteConfirmations.Remove(subsystem);
+                continue;
             }
 
             if (result == PendingConfirmationResult.Match
@@ -18501,6 +18521,23 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         && !ControllerMayOwnLighting(GetStatus())));
             pendingWriteConfirmations.Remove(subsystem);
         }
+    }
+
+    // Ordinary observation and experimental recovery judge a pending write the
+    // same way, including the device's GPU offset management state.
+    private PendingConfirmationResult MatchPendingWriteConfirmation(
+        DeviceSubsystem subsystem,
+        PendingWriteConfirmation pending,
+        ConfirmedDeviceState confirmed,
+        PowerSource powerSource,
+        IBladeDevice device)
+    {
+        // A stale power source or battery intent owner must not query device
+        // management state or let matching firmware recommit abandoned intent.
+        GpuClockOffsetManagementState? managementState = pending.CanConfirm(powerSource, Automation)
+            ? GetWriteConfirmationManagementState(subsystem, pending.Expectation, confirmed, device)
+            : null;
+        return pending.Match(subsystem, confirmed, powerSource, Automation, managementState);
     }
 
     private static PendingConfirmationResult MatchWriteConfirmation(

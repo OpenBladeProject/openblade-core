@@ -1504,6 +1504,69 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Empty(gpu.Writes);
     }
 
+    // Shared with RZ09-0581 and RZ09-0528: a core write whose restore failed leaves
+    // the driver changed while unmanaged offsets read as null before and after.
+    // That must not be reported as "prior state remained active", and the earlier
+    // default-reset confirmation must not let a later disable skip its reset.
+    [Fact]
+    public async Task IndeterminateGpuOnlyWrite_NullOffsetsAreNotUnchangedEvidence()
+    {
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        FakeProductionPort[] ports = Enumerable.Range(0, 20)
+            .Select(_ => new FakeProductionPort(
+                capabilities,
+                BatteryValidationSetting.Limit80,
+                temporary: null,
+                performanceFan: new ProductionPerformanceFanState(
+                    PerformancePreset.Balanced,
+                    FanMode.Automatic)))
+            .ToArray();
+        var gpu = new FakeGpuClockOffsetController();
+        using var provider = ReadyProvider(new FakeProductionFactory(capabilities, ports), gpu);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        var managed = (IGpuClockOffsetManagementDevice)device;
+        var coordinator = new ControlCoordinator(
+            device, scopedStateReader: null, resolveIndeterminatePerformanceWrites: true);
+        Assert.Equal(ControlResultStatus.Applied, (await coordinator.ApplyPerformanceOutcomeAsync(
+            PerformancePreset.Balanced, customPerformance: null, GpuClockTuningSettings.Disabled, default)).Result.Status);
+        Assert.Equal(GpuClockOffsetManagementState.ResetConfirmed, managed.GpuClockOffsetManagementState);
+        gpu.SetFailure = settings =>
+        {
+            gpu.SetCurrent(new GpuClockOffsetSettings(settings.CoreMegahertz, 0));
+            return new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "GPU clock tuning failed. Unable to set the GPU memory clock offset.");
+        };
+
+        // The preset already matches, so the GPU-only setter submits NVML.
+        ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(
+            PerformancePreset.Balanced,
+            customPerformance: null,
+            new GpuClockTuningSettings(true, new GpuClockOffsetSettings(200, 500)),
+            default);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.True(outcome.WriteAttempted);
+        Assert.False(outcome.ReadbackMatched);
+        Assert.Equal(WriteSubmissionState.Indeterminate, outcome.WriteSubmissionState);
+        Assert.DoesNotContain("remained active", outcome.Result.Message, StringComparison.Ordinal);
+        Assert.Null(outcome.Readback?.GpuClockOffsets);
+        Assert.Equal(GpuClockOffsetManagementState.Unknown, managed.GpuClockOffsetManagementState);
+
+        gpu.SetFailure = null;
+        ScopedApplyOutcome disable = await coordinator.ApplyPerformanceOutcomeAsync(
+            PerformancePreset.Balanced, customPerformance: null, GpuClockTuningSettings.Disabled, default);
+
+        Assert.True(disable.Result.Status == ControlResultStatus.Applied, disable.Result.Message);
+        Assert.Equal(
+            [GpuClockOffsetSettings.Default, new GpuClockOffsetSettings(200, 500), GpuClockOffsetSettings.Default],
+            gpu.Writes);
+        Assert.Equal(GpuClockOffsetSettings.Default, gpu.Capabilities!.Current);
+        Assert.Equal(GpuClockOffsetManagementState.ResetConfirmed, managed.GpuClockOffsetManagementState);
+    }
+
     [Fact]
     public async Task SetGpuClockOffsets_StepLessReadWritePolicyAdmitsInRangeWrite()
     {
@@ -3902,6 +3965,7 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
 
         public bool FailWrites { get; init; }
         public Exception? QueryFailure { get; set; }
+        public Func<GpuClockOffsetSettings, Exception?>? SetFailure { get; set; }
 
         public GpuClockOffsetCapabilities? Query()
         {
@@ -3916,6 +3980,10 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
         public GpuClockOffsetCapabilities Set(GpuClockOffsetSettings settings)
         {
             Writes.Add(settings);
+            if (SetFailure?.Invoke(settings) is { } failure)
+            {
+                throw failure;
+            }
             if (FailWrites)
             {
                 throw new BladeWriteException(

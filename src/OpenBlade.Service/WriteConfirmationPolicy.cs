@@ -5,13 +5,20 @@ namespace OpenBlade.Service;
 internal static class WriteConfirmationPolicy
 {
     // Both entry points share the same early exits so the runtime reads device
-    // management state only when the final GPU-reset comparison needs it.
+    // management state only when the final GPU comparison needs it.
     internal static bool RequiresGpuClockOffsetManagementState(
         DeviceSubsystem subsystem,
         WriteConfirmationExpectation expectation,
         ConfirmedDeviceState confirmed) =>
         MatchWithoutGpuManagementState(subsystem, expectation, confirmed) is null;
 
+    // A null management state means the caller supplied no GPU knowledge, so the
+    // GPU half stays Unavailable. With the device's management state, a disabled
+    // target needs explicit reset evidence. Any other GPU half without a managed
+    // offset observation is GpuClockOffsetsUnconfirmed: every non-GPU field has
+    // already matched, and the caller retires the GPU half instead of waiting for
+    // an NVIDIA reading that may never come (an idle dGPU, a lost confirmation or
+    // a paired write whose NVML step never ran). It never counts as a match.
     internal static PendingConfirmationResult Match(
         DeviceSubsystem subsystem,
         WriteConfirmationExpectation expectation,
@@ -20,6 +27,8 @@ internal static class WriteConfirmationPolicy
         MatchWithoutGpuManagementState(subsystem, expectation, confirmed)
         ?? (gpuClockOffsetManagementState is null
             ? PendingConfirmationResult.Unavailable
+            : expectation.Target.GpuClockTuning is not { Enabled: false }
+                ? PendingConfirmationResult.GpuClockOffsetsUnconfirmed
             : gpuClockOffsetManagementState is
                 GpuClockOffsetManagementState.ResetConfirmed
                 or GpuClockOffsetManagementState.RelinquishedDefaultConfirmed
@@ -174,7 +183,7 @@ internal static class WriteConfirmationPolicy
                 : PendingConfirmationResult.Mismatch;
         }
         return after is null
-            ? PendingConfirmationResult.Unavailable
+            ? null
             : before.Current == after.Current
                 ? PendingConfirmationResult.Match
                 : PendingConfirmationResult.Mismatch;
@@ -185,7 +194,7 @@ internal static class WriteConfirmationPolicy
         ConfirmedDeviceState confirmed) => !tuning.Enabled
             ? confirmed.GpuClockOffsets is null ? null : PendingConfirmationResult.Mismatch
             : confirmed.GpuClockOffsets is null
-                ? PendingConfirmationResult.Unavailable
+                ? null
                 : confirmed.GpuClockOffsets.Current == tuning.EffectiveOffsets
                     ? PendingConfirmationResult.Match
                     : PendingConfirmationResult.Mismatch;
@@ -220,6 +229,8 @@ internal enum PendingConfirmationResult
     Unavailable,
     Match,
     Mismatch,
+    // The non-GPU fields matched; the GPU offsets have no confirmation evidence.
+    GpuClockOffsetsUnconfirmed,
 }
 
 internal readonly record struct WriteConfirmationExpectation(

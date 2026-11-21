@@ -596,11 +596,22 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     }
                     await lightingSession.DisposeLightingPortWithinDeadlineAsync().ConfigureAwait(false);
                 }
-                return await factory.ResumeWritesAsync(acceptObservedState, () =>
-                {
-                    ThrowIfClosingOrDisposed();
-                    return stillAuthorized();
-                }, cancellationToken).ConfigureAwait(false);
+                // HID recovery reads no GPU offsets. Take the same read-only managed
+                // offset observation as an ordinary state read, under this hardware
+                // operation and before the synchronous acceptance callback, so the
+                // runtime judges a pending GPU half from real knowledge (or retires
+                // it when there is none) instead of an always-missing field.
+                GpuClockOffsetCapabilities? gpuClockOffsets =
+                    await ReadManagedGpuClockOffsetsAsync(cancellationToken).ConfigureAwait(false);
+                ConfirmedDeviceState recovered = await factory.ResumeWritesAsync(
+                    observed => acceptObservedState(observed with { GpuClockOffsets = gpuClockOffsets }),
+                    () =>
+                    {
+                        ThrowIfClosingOrDisposed();
+                        return stillAuthorized();
+                    },
+                    cancellationToken).ConfigureAwait(false);
+                return recovered with { GpuClockOffsets = gpuClockOffsets };
             }
             finally
             {
@@ -2006,33 +2017,39 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 cancellationToken.ThrowIfCancellationRequested();
                 lock (gpuClockOffsetManagementSync)
                 {
-                    bool requiresRevalidation = gpuClockOffsetManagementState is
-                        GpuClockOffsetManagementState.Managed
-                        or GpuClockOffsetManagementState.ResetConfirmed;
-                    if (gpuClockOffsetManagementState ==
-                        GpuClockOffsetManagementState.Managed)
-                    {
-                        confirmedManagedGpuClockOffsets = null;
-                    }
-                    else if (gpuClockOffsetManagementState ==
-                        GpuClockOffsetManagementState.ResetConfirmed)
-                    {
-                        gpuClockOffsetManagementState =
-                            GpuClockOffsetManagementState.Unknown;
-                    }
-                    else if (gpuClockOffsetManagementState ==
-                        GpuClockOffsetManagementState.RelinquishedDefaultConfirmed)
-                    {
-                        gpuClockOffsetManagementState =
-                            GpuClockOffsetManagementState.Relinquished;
-                    }
-                    return requiresRevalidation;
+                    return InvalidateGpuClockOffsetConfirmationCore();
                 }
             }
             finally
             {
                 hardwareOperationGate.Release();
             }
+        }
+
+        // Caller holds gpuClockOffsetManagementSync.
+        private bool InvalidateGpuClockOffsetConfirmationCore()
+        {
+            bool requiresRevalidation = gpuClockOffsetManagementState is
+                GpuClockOffsetManagementState.Managed
+                or GpuClockOffsetManagementState.ResetConfirmed;
+            if (gpuClockOffsetManagementState ==
+                GpuClockOffsetManagementState.Managed)
+            {
+                confirmedManagedGpuClockOffsets = null;
+            }
+            else if (gpuClockOffsetManagementState ==
+                GpuClockOffsetManagementState.ResetConfirmed)
+            {
+                gpuClockOffsetManagementState =
+                    GpuClockOffsetManagementState.Unknown;
+            }
+            else if (gpuClockOffsetManagementState ==
+                GpuClockOffsetManagementState.RelinquishedDefaultConfirmed)
+            {
+                gpuClockOffsetManagementState =
+                    GpuClockOffsetManagementState.Relinquished;
+            }
+            return requiresRevalidation;
         }
 
         public Task SetFanModeAsync(
@@ -2048,9 +2065,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             GpuClockOffsetCapabilities? driver)
         {
             GpuOverclockCapabilities? policy = batteryFactory.Capabilities.GpuOverclock;
+            // Without an admitted policy envelope there is no capability to publish;
+            // the raw driver range (for example +1000 MHz core) is never offered.
             if (driver is null || policy?.IsWellFormed != true)
             {
-                return driver;
+                return null;
             }
 
             int coreMinimum = Math.Max(
@@ -2110,6 +2129,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 bool? gpuActive = await gpuActivitySource.IsActiveAsync(cancellationToken)
                     .ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
+                // Paused experimental writes withdraw the policy envelope. A refresh
+                // then has no envelope to clip to, so keep the confirmation taken
+                // under the policy rather than publishing the raw driver range.
+                bool policyAdmitted = batteryFactory.Capabilities.GpuOverclock?.IsWellFormed == true;
 
                 lock (gpuClockOffsetManagementSync)
                 {
@@ -2121,7 +2144,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
                     GpuClockOffsetCapabilities? confirmed =
                         confirmedManagedGpuClockOffsets;
-                    if (confirmed != initialConfirmed || gpuActive is not true)
+                    if (confirmed != initialConfirmed || gpuActive is not true || !policyAdmitted)
                     {
                         return confirmed;
                     }
@@ -2167,7 +2190,24 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         {
             lock (gpuClockOffsetManagementSync)
             {
-                GpuClockOffsetCapabilities confirmed = gpuClockOffsets.Set(value);
+                GpuClockOffsetCapabilities confirmed;
+                try
+                {
+                    confirmed = gpuClockOffsets.Set(value);
+                }
+                catch (Exception exception) when (exception is not BladeWriteException
+                {
+                    SubmissionState: WriteSubmissionState.KnownNotApplied,
+                })
+                {
+                    // The driver may hold offsets that nothing confirmed, for example a
+                    // core write followed by a failed restore. No earlier managed or
+                    // default-reset confirmation survives that, so a later disable
+                    // cannot reuse a stale reset and a later read cannot report stale
+                    // offsets.
+                    InvalidateGpuClockOffsetConfirmationCore();
+                    throw;
+                }
                 gpuClockOffsetManagementState = retainManagement
                     ? GpuClockOffsetManagementState.Managed
                     : GpuClockOffsetManagementState.ResetConfirmed;

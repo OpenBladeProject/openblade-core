@@ -239,6 +239,37 @@ public sealed class NvidiaGpuClockOffsetControllerTests
         Assert.Empty(api.Writes);
     }
 
+    // The form is an ordinal, whole-string match of ASCII words separated by
+    // single spaces. Older RTX laptop names also match, which the single-GPU,
+    // exact-laptop admission bounds.
+    [Theory]
+    [InlineData("NVIDIA GeForce RTX 5090 Laptop GPU", true)]
+    [InlineData("NVIDIA GeForce RTX 5070 Ti Laptop GPU", true)]
+    [InlineData("NVIDIA GeForce RTX 4090 Laptop GPU", true)]
+    [InlineData("NVIDIA GeForce RTX 3080 Ti Laptop GPU", true)]
+    [InlineData("NVIDIA GeForce RTX Laptop GPU Laptop GPU", true)]
+    [InlineData("NVIDIA GeForce RTX 5090 Laptop GPU\n", false)]
+    [InlineData("NVIDIA GeForce RTX 5090 Laptop GPU ", false)]
+    [InlineData(" NVIDIA GeForce RTX 5090 Laptop GPU", false)]
+    [InlineData("NVIDIA GeForce RTX Laptop GPU", false)]
+    [InlineData("NVIDIA GeForce RTX 5070\tTi Laptop GPU", false)]
+    [InlineData("NVIDIA GeForce RTX 5070  Ti Laptop GPU", false)]
+    [InlineData("nvidia geforce rtx 5070 laptop gpu", false)]
+    [InlineData("NVIDIA GeForce RTX ５０７０ Laptop GPU", false)]
+    [InlineData("NVIDIA GeForce GTX 1650 Laptop GPU", false)]
+    [InlineData("NVIDIA RTX 5000 Ada Generation Laptop GPU", false)]
+    [InlineData("NVIDIA GeForce RTX 5090", false)]
+    [InlineData("NVIDIA GeForce RTX 5070 Laptop GPU\0", false)]
+    [InlineData("X NVIDIA GeForce RTX 5070 Laptop GPU", false)]
+    [InlineData("NVIDIA GeForce RTX 5070-Ti Laptop GPU", false)]
+    public void LaptopGpuForm_NamePredicateIsExact(string name, bool expected)
+    {
+        Assert.Equal(expected, NvidiaGpuClockOffsetController.IsAdmittedDeviceName(name, admitNvidiaLaptopGpuForm: true));
+        Assert.Equal(
+            name == "NVIDIA GeForce RTX 5090 Laptop GPU",
+            NvidiaGpuClockOffsetController.IsAdmittedDeviceName(name, admitNvidiaLaptopGpuForm: false));
+    }
+
     [Theory]
     [InlineData("NVIDIA GeForce RTX 5070 Ti Laptop GPU")]
     [InlineData("NVIDIA GeForce RTX 5080 Laptop GPU")]

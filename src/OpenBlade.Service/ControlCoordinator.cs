@@ -501,7 +501,16 @@ public sealed class ControlCoordinator
                     ? RelinquishGpuClockOffsetManagementAsync(token)
                     : Task.CompletedTask,
             resolveIndeterminateWriteByReadback: () => resolveIndeterminatePerformanceWrites,
-            unchangedAfterIndeterminateWrite: PerformanceStateMatches,
+            // Only the GPU-only setter can submit NVML without a firmware change.
+            unchangedAfterIndeterminateWrite: (initial, final) =>
+                CanApplyGpuClockOffsetsOnly(
+                    initial,
+                    value,
+                    customPerformance,
+                    effectiveGpuClockTuning,
+                    firmwarePerformanceSelectorHidden: false)
+                    ? GpuClockOffsetsUnchangedAfterIndeterminateWrite(initial, final)
+                    : PerformanceStateMatches(initial, final),
             writeBlockReason: performanceWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss:
                 performanceWriteBlockReason is not null)
@@ -543,7 +552,7 @@ public sealed class ControlCoordinator
                 ? "GPU clock tuning requires confirmed OpenBlade ownership of active HyperBoost."
                 : null,
             resolveIndeterminateWriteByReadback: static () => true,
-            unchangedAfterIndeterminateWrite: PerformanceStateMatches,
+            unchangedAfterIndeterminateWrite: GpuClockOffsetsUnchangedAfterIndeterminateWrite,
             writeBlockReason: performanceWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss: true);
 
@@ -3336,6 +3345,22 @@ public sealed class ControlCoordinator
         && left.GpuClockOffsets?.Current == right.GpuClockOffsets?.Current
         && left.Fans == right.Fans
         && left.HyperBoostActive == right.HyperBoostActive;
+
+    // Unmanaged offsets read as null before and after a write. After an
+    // indeterminate NVML submission (for example a core write whose restore
+    // failed) null == null is not evidence that the driver kept its prior offsets.
+    // Only a managed offset observation, or a default reset the device still
+    // holds as confirmed (an uncertain NVML write withdraws it), shows that the
+    // prior GPU state remained active.
+    private bool GpuClockOffsetsUnchangedAfterIndeterminateWrite(
+        ConfirmedDeviceState initial,
+        ConfirmedDeviceState final) =>
+        PerformanceStateMatches(initial, final)
+        && (final.GpuClockOffsets is not null
+            || device is IGpuClockOffsetManagementDevice managedDevice
+                && managedDevice.GpuClockOffsetManagementState is
+                    GpuClockOffsetManagementState.ResetConfirmed
+                    or GpuClockOffsetManagementState.RelinquishedDefaultConfirmed);
 
     private void EnsureGpuClockOffsetManagementContract(
         DeviceCapabilities capabilities)
