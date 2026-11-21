@@ -8,8 +8,8 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    // Protocol 84 combines source-main power metadata with RZ09-0529 lighting-zone intent.
-    public const int ProtocolVersion = 84;
+    // Protocol 85 adds the cooling-pad Auto fan mode and its profile.
+    public const int ProtocolVersion = 85;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;

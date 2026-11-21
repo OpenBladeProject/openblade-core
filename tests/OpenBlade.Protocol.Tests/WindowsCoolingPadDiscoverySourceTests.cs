@@ -10,7 +10,7 @@ public sealed class WindowsCoolingPadDiscoverySourceTests
     private static readonly HidHandleIdentity SystemAuxiliary = new(0x1532, 0x0F43, 1, 0x80, 0, 0x0101);
 
     [Fact]
-    public void ExactControlAndCapturedZeroFeatureAuxiliariesRemainPresentExact()
+    public void ExactControlAndInputOnlySiblingsRemainPresentExact()
     {
         var native = new Native(Control, ConsumerAuxiliary, SystemAuxiliary);
         Assert.Equal(CoolingPadConnectionState.PresentExact, new WindowsCoolingPadDiscoverySource(native).Observe());
@@ -27,8 +27,7 @@ public sealed class WindowsCoolingPadDiscoverySourceTests
     [Theory]
     [InlineData(0x1532, 0x0F43, 0x000C, 1, 91, 0x0101)]
     [InlineData(0x1532, 0x0F43, 0x000C, 1, 1, 0x0101)]
-    [InlineData(0x1532, 0x0F43, 0x000C, 1, 0, 0x0300)]
-    [InlineData(0x1532, 0x0F43, 0x0001, 2, 0, 0x0101)]
+    [InlineData(0x1532, 0x0F43, 0x0001, 2, 90, 0x0300)]
     [InlineData(0x1533, 0x0F43, 0x000C, 1, 0, 0x0101)]
     [InlineData(0x1532, 0x0F44, 0x000C, 1, 0, 0x0101)]
     public void UnknownOrFeatureCapableWrongIdentityStillFailsClosed(
@@ -36,6 +35,18 @@ public sealed class WindowsCoolingPadDiscoverySourceTests
     {
         var native = new Native(Control, new(vendor, product, page, usage, length, revision));
         Assert.Equal(CoolingPadConnectionState.ObservationFailed, new WindowsCoolingPadDiscoverySource(native).Observe());
+    }
+
+    // The firmware descriptor gives interface 0 exactly one feature report, so a zero-feature
+    // sibling cannot be the control channel whatever usage or driver-assigned revision it has.
+    [Theory]
+    [InlineData(0x000C, 1, 0x0300)]
+    [InlineData(0x0001, 2, 0x0101)]
+    [InlineData(0x000C, 1, 0x0200)]
+    public void InputOnlySiblingsOfAnyUsageOrRevisionDoNotHideTheExactControl(ushort page, ushort usage, ushort revision)
+    {
+        var native = new Native(Control, new(0x1532, 0x0F43, page, usage, 0, revision));
+        Assert.Equal(CoolingPadConnectionState.PresentExact, new WindowsCoolingPadDiscoverySource(native).Observe());
     }
 
     [Theory]

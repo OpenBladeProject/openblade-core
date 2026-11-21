@@ -1,7 +1,9 @@
 namespace OpenBlade.Contracts;
 
 public enum CoolingPadTemperatureSource { Cpu, Gpu, Both }
-public enum CoolingPadFanMode { Keep, Off, Fixed, HostCurve }
+public enum CoolingPadFanMode { Keep, Off, Fixed, HostCurve, Auto }
+/// <summary>Synapse Smart profiles. Each selects firmware preset Quiet, Balanced or Performance.</summary>
+public enum CoolingPadAutoProfile { Quiet, Balanced, Performance }
 public enum CoolingPadLightingMode { Keep, Off, Static, Breathing, Spectrum, Wave, KeyboardMirror }
 public enum CoolingPadWaveDirection { Left = 1, Right = 2 }
 public sealed record CoolingPadColor(byte R, byte G, byte B);
@@ -19,6 +21,7 @@ public sealed record CoolingPadSettings
     public int FixedRpm { get; init; } = 1500;
     public bool AllowDemandApi { get; init; }
     public CoolingPadTemperatureSource TemperatureSource { get; init; } = CoolingPadTemperatureSource.Both;
+    public CoolingPadAutoProfile AutoProfile { get; init; } = CoolingPadAutoProfile.Balanced;
     public IReadOnlyList<CoolingPadCurvePoint> CpuCurve { get; init; } = DefaultCurve();
     public IReadOnlyList<CoolingPadCurvePoint> GpuCurve { get; init; } = DefaultCurve();
     public CoolingPadLightingMode LightingMode { get; init; }
@@ -29,7 +32,7 @@ public sealed record CoolingPadSettings
 
     public static bool IsWellFormed(CoolingPadSettings? value) => value is not null
         && Enum.IsDefined(value.TemperatureSource) && Enum.IsDefined(value.FanMode) && Enum.IsDefined(value.LightingMode)
-        && Enum.IsDefined(value.WaveDirection) && ValidRpm(value.FixedRpm)
+        && Enum.IsDefined(value.WaveDirection) && Enum.IsDefined(value.AutoProfile) && ValidRpm(value.FixedRpm)
         && value.BrightnessPercent is >= 0 and <= 100 && value.Color is not null
         && ValidCurve(value.CpuCurve) && ValidCurve(value.GpuCurve);
 
@@ -51,7 +54,7 @@ public sealed record CoolingPadSettings
     }
 
     private static IReadOnlyList<CoolingPadCurvePoint> DefaultCurve() =>
-        [new(50, 500), new(65, 1500), new(80, 2500), new(90, 3200)];
+        [new(40, 500), new(50, 500), new(60, 1150), new(70, 1850), new(80, 2500), new(90, 3200)];
 }
 
 public sealed record CoolingPadStatusSnapshot

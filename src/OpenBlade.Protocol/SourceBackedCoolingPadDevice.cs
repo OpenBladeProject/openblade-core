@@ -14,6 +14,11 @@ internal sealed class SourceBackedCoolingPadDevice(
     private byte? brightnessRegion;
     private CoolingPadDeviceMode? originalMirrorMode;
     private bool partialMutation;
+    // The firmware runs the preset set last by either owner and cannot report which one that was.
+    // Until this session confirms its own fan write, the firmware-owned selection is reported.
+    private CoolingPadFanOwnership runningOwner = CoolingPadFanOwnership.Firmware;
+    // Set once this session has written and independently confirmed a fan selection.
+    private bool fanWriteConfirmed;
     public string Identity { get; } = identity;
 
     public void BindLightingBaseline(CoolingPadDeviceSnapshot baseline)
@@ -56,13 +61,15 @@ internal sealed class SourceBackedCoolingPadDevice(
         brightnessRegion = regionId;
         var brightness = await Execute(CoolingPadProtocol.BrightnessQuery(regionId), false, null, token).ConfigureAwait(false);
         var effect = await Execute(CoolingPadProtocol.EffectQuery(), false, null, token).ConfigureAwait(false);
-        CoolingPadProtocol.TryDecodeEffect(effect.Span, out var light);
+        CoolingPadProtocol.TryDecodeEffect(effect.Span, 1, out var light);
         var activeEffect = await Execute(CoolingPadProtocol.EffectQuery(0), false, null, token).ConfigureAwait(false);
-        CoolingPadProtocol.TryDecodeEffect(activeEffect.Span, out var activeLight);
+        CoolingPadProtocol.TryDecodeEffect(activeEffect.Span, 0, out var activeLight);
         var appMode = fan.Preset == CoolingPadFanPreset.Off ? CoolingPadFanMode.Off
             : fan.Ownership == CoolingPadFanOwnership.Synapse ? CoolingPadFanMode.Fixed : (CoolingPadFanMode?)null;
         var lightMode = DecodeLight(light!.Effect);
-        int configuredTarget = fan.Ownership == CoolingPadFanOwnership.Synapse ? fan.ConfiguredRpm
+        // Low/Medium/High report their configured speed; Smart presets only the ramping speed from 0D/81.
+        int configuredTarget = fan.Preset is CoolingPadFanPreset.Low or CoolingPadFanPreset.Medium or CoolingPadFanPreset.High
+            ? fan.ConfiguredRpm
             : fan.Preset == CoolingPadFanPreset.Off ? 0 : target.Span[2] * 50;
         return new(Identity, appMode, configuredTarget,
             CoolingPadProtocol.RawToPercent(brightness.Span[2]), lightMode)
@@ -75,20 +82,39 @@ internal sealed class SourceBackedCoolingPadDevice(
         };
     }
 
-    public async Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> submissionAllowed, CancellationToken cancellationToken)
+    public async Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> submissionAllowed, CancellationToken cancellationToken,
+        CoolingPadFanPreset? smartPreset = null)
     {
         ArgumentNullException.ThrowIfNull(submissionAllowed);
-        if (mode is CoolingPadFanMode.Fixed or CoolingPadFanMode.HostCurve)
+        if (mode is CoolingPadFanMode.Fixed or CoolingPadFanMode.HostCurve or CoolingPadFanMode.Auto)
         { CoolingPadProtocol.ValidateTarget(rpm ?? throw new ArgumentNullException(nameof(rpm))); }
         else if (mode is not (CoolingPadFanMode.Off or CoolingPadFanMode.Keep))
         { throw new ArgumentOutOfRangeException(nameof(mode)); }
+        if (mode == CoolingPadFanMode.Auto
+            && smartPreset is not (CoolingPadFanPreset.Quiet or CoolingPadFanPreset.Balanced or CoolingPadFanPreset.Performance))
+        { throw new ArgumentOutOfRangeException(nameof(smartPreset)); }
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             RequireWritable();
             partialMutation = false;
             if (mode == CoolingPadFanMode.Keep) { return; }
-            if (mode == CoolingPadFanMode.HostCurve)
+            if (mode == CoolingPadFanMode.Auto)
+            {
+                // Synapse Smart: setThermalFanCoolingMode(smart.active, 0, 0) selects the profile's
+                // preset in the firmware-owned record, then 0D/01 carries each demand. Go there
+                // directly. Skip the selection only when this session's own confirmed write left
+                // exactly that preset running: the firmware cannot report which owner wrote last.
+                var smart = new CoolingPadFanConfiguration(CoolingPadFanOwnership.Firmware, smartPreset!.Value, 0);
+                var current = await ReadFan(cancellationToken).ConfigureAwait(false);
+                if (!fanWriteConfirmed || runningOwner != CoolingPadFanOwnership.Firmware || current != smart)
+                {
+                    await WriteFan(smart, submissionAllowed, cancellationToken).ConfigureAwait(false);
+                }
+                // The verified echo confirms the demand; 0D/81 reports the ramping speed, not this target.
+                await Execute(CoolingPadProtocol.DemandSet(rpm!.Value), true, submissionAllowed, cancellationToken).ConfigureAwait(false);
+            }
+            else if (mode == CoolingPadFanMode.HostCurve)
             {
                 var current = await ReadFan(cancellationToken).ConfigureAwait(false);
                 // Preserve an already selected vendor Smart preset. Entry from another mode goes
@@ -99,9 +125,8 @@ internal sealed class SourceBackedCoolingPadDevice(
                     var smart = new CoolingPadFanConfiguration(CoolingPadFanOwnership.Firmware, CoolingPadFanPreset.Quiet, 0);
                     await WriteFan(smart, submissionAllowed, cancellationToken).ConfigureAwait(false);
                 }
+                // The verified echo confirms the demand; 0D/81 reports the ramping speed, not this target.
                 await Execute(CoolingPadProtocol.DemandSet(rpm!.Value), true, submissionAllowed, cancellationToken).ConfigureAwait(false);
-                var target = await Execute(CoolingPadProtocol.TargetQuery(), false, null, cancellationToken).ConfigureAwait(false);
-                if (target.Span[2] * 50 != rpm) { FailReadback("Cooling-pad target readback differs from the request."); }
             }
             else
             {
@@ -119,14 +144,19 @@ internal sealed class SourceBackedCoolingPadDevice(
     private async Task WriteFan(CoolingPadFanConfiguration state, Func<bool> allowed, CancellationToken token)
     {
         await Execute(CoolingPadProtocol.FanSet(state), true, allowed, token).ConfigureAwait(false);
-        var confirmed = await ReadFan(token).ConfigureAwait(false);
+        // The firmware records the selection under the writing owner; confirm that owner's record.
+        var confirmed = await ReadFan(state.Ownership, token).ConfigureAwait(false);
         if (confirmed != state) { FailReadback("Cooling-pad fan-mode readback differs from the request."); }
+        runningOwner = state.Ownership;
+        fanWriteConfirmed = true;
     }
 
-    private async Task<CoolingPadFanConfiguration> ReadFan(CancellationToken token)
+    private Task<CoolingPadFanConfiguration> ReadFan(CancellationToken token) => ReadFan(runningOwner, token);
+
+    private async Task<CoolingPadFanConfiguration> ReadFan(CoolingPadFanOwnership owner, CancellationToken token)
     {
-        var data = await Execute(CoolingPadProtocol.FanQuery(), false, null, token).ConfigureAwait(false);
-        CoolingPadProtocol.TryDecodeFan(data.Span, out var fan);
+        var data = await Execute(CoolingPadProtocol.FanQuery(owner), false, null, token).ConfigureAwait(false);
+        CoolingPadProtocol.TryDecodeFan(data.Span, owner, out var fan);
         return fan!;
     }
 
@@ -163,15 +193,15 @@ internal sealed class SourceBackedCoolingPadDevice(
             if (mirrorActive)
             {
                 var active = await Execute(CoolingPadProtocol.EffectQuery(0), false, null, cancellationToken).ConfigureAwait(false);
-                CoolingPadProtocol.TryDecodeEffect(active.Span, out var activeConfiguration);
-                if (!SameEffect(effect, activeConfiguration!)) { FailReadback("Cooling-pad custom activation was not confirmed."); }
+                CoolingPadProtocol.TryDecodeEffect(active.Span, 0, out var activeConfiguration);
+                if (!CoolingPadProtocol.ConfirmsEffect(effect, activeConfiguration!)) { FailReadback("Cooling-pad custom activation was not confirmed."); }
                 customBufferOwned = true;
             }
             if (!mirrorActive)
             {
                 var actual = await Execute(CoolingPadProtocol.EffectQuery(), false, null, cancellationToken).ConfigureAwait(false);
-                CoolingPadProtocol.TryDecodeEffect(actual.Span, out var confirmed);
-                if (!SameEffect(effect, confirmed!)) { FailReadback("Cooling-pad effect readback differs from the request."); }
+                CoolingPadProtocol.TryDecodeEffect(actual.Span, 1, out var confirmed);
+                if (!CoolingPadProtocol.ConfirmsEffect(effect, confirmed!)) { FailReadback("Cooling-pad effect readback differs from the request."); }
                 if (originalMirrorMode is { } saved)
                 {
                     await WriteMode(saved, submissionAllowed, cancellationToken).ConfigureAwait(false);
@@ -222,9 +252,8 @@ internal sealed class SourceBackedCoolingPadDevice(
                     && fan.Preset is CoolingPadFanPreset.Quiet or CoolingPadFanPreset.Balanced or CoolingPadFanPreset.Performance
                     && baseline.TargetRpm is >= 500 and <= 3200)
                 {
+                    // The verified echo confirms the demand; 0D/81 reports the ramping speed, not this target.
                     await Execute(CoolingPadProtocol.DemandSet(baseline.TargetRpm.Value), true, submissionAllowed, cancellationToken).ConfigureAwait(false);
-                    var target = await Execute(CoolingPadProtocol.TargetQuery(), false, null, cancellationToken).ConfigureAwait(false);
-                    if (target.Span[2] * 50 != baseline.TargetRpm) { FailReadback("Cooling-pad target restoration was not confirmed."); }
                 }
             }
             if (restoreLighting)
@@ -237,8 +266,8 @@ internal sealed class SourceBackedCoolingPadDevice(
                 {
                     await Execute(CoolingPadProtocol.EffectSet(activeBaseline), true, submissionAllowed, cancellationToken).ConfigureAwait(false);
                     var active = await Execute(CoolingPadProtocol.EffectQuery(0), false, null, cancellationToken).ConfigureAwait(false);
-                    CoolingPadProtocol.TryDecodeEffect(active.Span, out var confirmedActive);
-                    if (!SameEffect(activeBaseline, confirmedActive!)) { FailReadback("Cooling-pad active effect restoration was not confirmed."); }
+                    CoolingPadProtocol.TryDecodeEffect(active.Span, 0, out var confirmedActive);
+                    if (!CoolingPadProtocol.ConfirmsEffect(activeBaseline, confirmedActive!)) { FailReadback("Cooling-pad active effect restoration was not confirmed."); }
                 }
                 if (baseline.DeviceMode is { } mode)
                 {
@@ -247,8 +276,8 @@ internal sealed class SourceBackedCoolingPadDevice(
                     { await WriteMode(mode, submissionAllowed, cancellationToken).ConfigureAwait(false); }
                 }
                 var actual = await Execute(CoolingPadProtocol.EffectQuery(), false, null, cancellationToken).ConfigureAwait(false);
-                CoolingPadProtocol.TryDecodeEffect(actual.Span, out var confirmed);
-                if (!SameEffect(light, confirmed!)) { FailReadback("Cooling-pad lighting restoration was not confirmed."); }
+                CoolingPadProtocol.TryDecodeEffect(actual.Span, 1, out var confirmed);
+                if (!CoolingPadProtocol.ConfirmsEffect(light, confirmed!)) { FailReadback("Cooling-pad lighting restoration was not confirmed."); }
                 mirrorActive = false;
                 customBufferOwned = false;
                 originalMirrorMode = null;
@@ -272,6 +301,21 @@ internal sealed class SourceBackedCoolingPadDevice(
         await Execute(CoolingPadProtocol.BrightnessSet(raw), true, allowed, token).ConfigureAwait(false);
         var actual = await Execute(CoolingPadProtocol.BrightnessQuery(region), false, null, token).ConfigureAwait(false);
         if (actual.Span[2] != raw) { FailReadback("Cooling-pad brightness readback differs from the request."); }
+    }
+
+    // Names the failing typed command and the session's own classification so an exported
+    // status identifies which read or write stopped. No response payload bytes are included.
+    internal static string DescribeFailure(RazerCommandSpec command, HidSessionResult<ReadOnlyMemory<byte>> result)
+    {
+        var detail = new List<string>(4) { $"{command.ClassId:X2}/{command.CommandId:X2}" };
+        if (result.Diagnostic is { } diagnostic)
+        {
+            detail.Add(diagnostic.Phase.ToString());
+            if (diagnostic.ProtocolValidationFailure is { } validation) { detail.Add(validation.ToString()); }
+            if (diagnostic.NativeWin32Error is { } error) { detail.Add($"Win32 {error}"); }
+        }
+        if (result.QueryResponseStatus is { } status) { detail.Add($"status 0x{status:X2}"); }
+        return $"Cooling-pad operation failed: {result.Failure} ({string.Join(", ", detail)}).";
     }
 
     private async Task<ReadOnlyMemory<byte>> Execute(RazerCommandSpec command, bool write, Func<bool>? allowed,
@@ -330,7 +374,7 @@ internal sealed class SourceBackedCoolingPadDevice(
         }
         if (knownNotSubmitted && !partialMutation) { token.ThrowIfCancellationRequested(); }
         uncertain |= partialMutation || write && !knownNotSubmitted;
-        throw new CoolingPadOperationException($"Cooling-pad operation failed: {result.Failure}.", uncertain)
+        throw new CoolingPadOperationException(DescribeFailure(command, result), uncertain)
         {
             LocalAdmissionDeferred = write && admissionRevoked && knownNotSubmitted && !partialMutation && !uncertain,
         };
@@ -358,9 +402,6 @@ internal sealed class SourceBackedCoolingPadDevice(
         8 => CoolingPadLightingMode.KeyboardMirror,
         _ => null
     };
-    private static bool SameEffect(CoolingPadLightingConfiguration a, CoolingPadLightingConfiguration b) =>
-        a.Profile == b.Profile && a.Region == b.Region && a.Effect == b.Effect && a.Flags == b.Flags
-        && a.Rate == b.Rate && a.Colors.SequenceEqual(b.Colors);
 
     private readonly object disposalGate = new();
     private Task? disposal;
