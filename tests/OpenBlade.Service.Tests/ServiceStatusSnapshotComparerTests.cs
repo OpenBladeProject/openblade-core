@@ -21,6 +21,20 @@ public sealed class ServiceStatusSnapshotComparerTests
         }));
     }
 
+    [Fact]
+    public void HyperBoostEntryRestrictionChangesArePublished()
+    {
+        // A SKU reread that declines entry must reach the tray, which then explains it.
+        ServiceStatusSnapshot baseline = CreateStatus();
+        Assert.False(ServiceStatusSnapshotComparer.Equivalent(baseline, baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                HyperBoostEntryRestriction = HyperBoostEntryRestriction.VendorSystemSku,
+            },
+        }));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

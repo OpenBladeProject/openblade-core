@@ -15,6 +15,8 @@ internal enum BladeWriteFailurePhase
     HyperBoostAdapterEligibilityRead,
     ThermalFinalConfirmationRead,
     ControlRecoveryAdmission,
+    // A lighting ownership read was refused before it reached the device.
+    LightingSelectionRead,
 }
 
 public sealed class BladeWriteException : Exception
@@ -53,6 +55,11 @@ public sealed class BladeWriteException : Exception
     internal byte? CommandClass { get; init; }
 
     internal byte? CommandId { get; init; }
+
+    // HyperBoost entry confirmed that it turned Maximum Fans off and then
+    // stopped before any further command. The service updates its confirmed
+    // flag so the next observation does not report it as an external change.
+    internal bool MaximumFansClearedBeforeFailure { get; init; }
 
     private static (HidSessionFailureDiagnostic? Diagnostic, DeviceStateQuery? Query,
         byte? CommandClass, byte? CommandId) ReadDiagnostic(Exception? innerException) =>

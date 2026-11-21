@@ -336,6 +336,34 @@ public sealed class HyperBoostOwnershipJournalStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteAndLoad_TurboBaseRoundTrips()
+    {
+        // RZ09-0510 enters HyperBoost from Turbo (raw 1), its default AC mode.
+        string path = Path.Combine(directory, "hyperboost-ownership.json");
+        var store = new HyperBoostOwnershipJournalStore(path);
+        var expected = new HyperBoostOwnershipJournal(
+            HyperBoostOwnershipJournalState.OwnedConfirmed,
+            PerformancePreset.Turbo,
+            RequiresCoolingPad: true,
+            new DateTimeOffset(2026, 11, 20, 12, 0, 0, TimeSpan.Zero))
+        {
+            RestoreIntent = new HyperBoostRestoreIntent(
+                PerformancePreset.Turbo,
+                CustomPerformance: null,
+                GpuClockTuning: null,
+                FanControlSettings.FromLegacy(FanMode.Automatic)),
+            TransitionId = Guid.NewGuid(),
+        };
+
+        await store.WriteAsync(expected, CancellationToken.None);
+        HyperBoostOwnershipJournalLoadResult loaded =
+            await store.LoadAsync(CancellationToken.None);
+
+        Assert.False(loaded.Invalid);
+        Assert.Equal(expected, loaded.Journal);
+    }
+
+    [Fact]
     public async Task WriteAndLoad_CurrentCustomRestorePendingWithoutBaselineAllowsExplicitCapture()
     {
         string path = Path.Combine(directory, "hyperboost-ownership.json");

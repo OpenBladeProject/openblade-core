@@ -73,6 +73,7 @@ internal static class ServiceStatusSnapshotComparer
         && left.DisplayBrightnessHidAvailability
             == right.DisplayBrightnessHidAvailability
         && left.KeyboardLightingControlMode == right.KeyboardLightingControlMode
+        && left.WindowsDynamicLightingAdvisory == right.WindowsDynamicLightingAdvisory
         && left.LightingRendererOwnership == right.LightingRendererOwnership
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])
@@ -112,6 +113,7 @@ internal static class ServiceStatusSnapshotComparer
             && left.HyperBoostWithoutCoolingPadAccess
                 == right.HyperBoostWithoutCoolingPadAccess
             && left.HyperBoostBaseModes == right.HyperBoostBaseModes
+            && left.HyperBoostEntryRestriction == right.HyperBoostEntryRestriction
             && left.SpecialKeyBindingsAccess == right.SpecialKeyBindingsAccess
             && left.WritableSpecialKeySlots == right.WritableSpecialKeySlots
             && left.LampArrayLightingAccess == right.LampArrayLightingAccess

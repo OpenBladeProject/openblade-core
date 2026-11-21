@@ -9,6 +9,10 @@ namespace OpenBlade.Contracts;
 public static class OpenBladeIpc
 {
     // Protocol 85 adds the cooling-pad Auto fan mode and its profile.
+    // Protocol 86 adds the HyperBoost Turbo base-mode slot and entry restriction
+    // (RZ09-0510), and admits HyperBoost with manual fans.
+    // Protocol 87 adds the Session Agent's advisory Windows Dynamic Lighting
+    // report and the matching status field.
     // Protocol 88 adds Intel CPU power limits, firmware Gaming-mode GPU overclock,
     // local dimming capability and state, and the local dimming Clear request.
     public const int ProtocolVersion = 88;
@@ -287,6 +291,11 @@ public static class IpcMessageCodec
                 && report.Sequence > 0
                 && (report.ExecutablePath is null
                     || ValidApplicationExecutablePath(report.ExecutablePath)),
+            ReportWindowsDynamicLightingAdvisoryRequest report =>
+                report.Advisory is WindowsDynamicLightingAdvisory.Off
+                    or WindowsDynamicLightingAdvisory.MayControl
+                && WindowsDynamicLightingLampArrays.Find(report.ModelNumber) is { } profile
+                && string.Equals(profile.ModelNumber, report.ModelNumber, StringComparison.Ordinal),
             SetPerformanceOverrideRequest set =>
                 set.Value is null
                 || set.Value.IsWellFormed(),
@@ -671,7 +680,9 @@ public static class IpcMessageCodec
                     or DeviceFeatureAccess.ReadOnly
                     or DeviceFeatureAccess.ReadWrite)
                 || hyperBoost.Performance is not null
-                || hyperBoost.Fans != FanMode.Automatic))
+                // Synapse can run mode 7 with manual fans (RZ09-0510); exit then
+                // confirms Automatic fans.
+                || hyperBoost.Fans is not (FanMode.Automatic or FanMode.Fixed)))
         {
             throw InvalidStatus("confirmed HyperBoost state is inconsistent");
         }
@@ -709,6 +720,11 @@ public static class IpcMessageCodec
         if (!Enum.IsDefined(status.KeyboardLightingControlMode))
         {
             throw InvalidStatus("keyboard-lighting control mode is unknown");
+        }
+
+        if (!Enum.IsDefined(status.WindowsDynamicLightingAdvisory))
+        {
+            throw InvalidStatus("Windows Dynamic Lighting advisory is unknown");
         }
 
         if (!Enum.IsDefined(status.LightingRefreshRate))
@@ -935,6 +951,9 @@ public static class IpcMessageCodec
         }
     }
 
+    private static bool HyperBoostWithManualFans(ConfirmedDeviceState state) =>
+        state.HyperBoostActive == true && state.Fans != FanMode.Automatic;
+
     private static InvalidDataException InvalidBody(JsonException exception) =>
         new("IPC message body is invalid.", exception);
 
@@ -997,7 +1016,12 @@ public static class IpcMessageCodec
                     ? status.ConfirmedState.CustomPerformance : null,
                 Fans = status.ConfirmedState.Fans == FanMode.Stop
                     || status.ConfirmedState.CustomPerformance?.MaximumFans == true
+                    || HyperBoostWithManualFans(status.ConfirmedState)
                     ? null : status.ConfirmedState.Fans,
+                // Protocol 51 only knows HyperBoost with Automatic fans; show manual-fan
+                // HyperBoost as unknown, which that read-only projection shows as off.
+                HyperBoostActive = HyperBoostWithManualFans(status.ConfirmedState)
+                    ? null : status.ConfirmedState.HyperBoostActive,
                 Lighting = status.ConfirmedState.Lighting is { } confirmedLighting
                     && IsProtocol51LightingSetting(confirmedLighting)
                         ? confirmedLighting with { IndependentControls = null, ControlsKeyboardEffect = false }
@@ -1291,7 +1315,7 @@ public static class IpcMessageCodec
 
             if (protocol51Projection && typeInfo.Type == typeof(HyperBoostBaseModeCapabilities))
             {
-                foreach (string member in new[] { "custom", "coolingPadEntryBaseMode" })
+                foreach (string member in new[] { "custom", "turbo", "coolingPadEntryBaseMode" })
                 {
                     typeInfo.Properties.Single(property => string.Equals(
                         property.Name, member, StringComparison.OrdinalIgnoreCase))
@@ -1384,6 +1408,9 @@ public static class IpcMessageCodec
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "effectiveLaptopBehavior", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "windowsDynamicLightingAdvisory", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
             }
 
             if (protocol51Projection
@@ -1448,6 +1475,9 @@ public static class IpcMessageCodec
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "supportsTouchpadStatusIndicator", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "hyperBoostEntryRestriction", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
             }
 

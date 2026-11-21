@@ -610,6 +610,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["desired.lighting.source"] = status.DesiredState.Lighting.Source.ToString(),
             ["lighting.rendererOwnership"] =
                 status.LightingRendererOwnership.ToString(),
+            ["lighting.windowsDynamicLightingAdvisory"] =
+                status.WindowsDynamicLightingAdvisory.ToString(),
             ["lighting.alwaysOverrideExternalChanges"] =
                 status.AlwaysOverrideExternalLightingChanges.ToString(),
             ["lighting.refreshRate"] = status.LightingRefreshRate.ToString(),
@@ -672,10 +674,14 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["capability.hyperBoostWithoutCoolingPadAccess"] =
                 capabilities.HyperBoostWithoutCoolingPadAccess?.ToString()
                     ?? "Unavailable",
+            ["capability.hyperBoostEntryRestriction"] =
+                capabilities.HyperBoostEntryRestriction?.ToString() ?? "None",
             ["capability.hyperBoostBase.Balanced"] =
                 capabilities.HyperBoostBaseModes?.Balanced.ToString() ?? "Unavailable",
             ["capability.hyperBoostBase.Custom"] =
                 capabilities.HyperBoostBaseModes?.Custom?.ToString() ?? "Unavailable",
+            ["capability.hyperBoostBase.Turbo"] =
+                capabilities.HyperBoostBaseModes?.Turbo?.ToString() ?? "Unavailable",
             ["capability.fanSpeedMinimumRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.MinimumRpm),
             ["capability.reportsPerformanceWithManualFans"] =

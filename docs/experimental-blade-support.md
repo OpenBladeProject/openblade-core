@@ -23,16 +23,24 @@ installed; PawnIO supplies CPU temperatures only.
 | --- | --- |
 | RZ09-0287, RZ09-0314, RZ09-0330, RZ09-0370, RZ09-0409, RZ09-0508 | Keyboard brightness; logo Off, Static and Breathing |
 | RZ09-0300, RZ09-0351 | Keyboard brightness |
-| RZ09-0301 | Brightness; keyboard Off, Static, Breathing, Spectrum and Wave; logo controls |
-| RZ09-0421 | Brightness; keyboard Off, Breathing, Spectrum and Wave |
-| RZ09-0423, RZ09-0427 | Brightness; keyboard Off, Static, Breathing, Spectrum and Wave; logo controls |
+| RZ09-0301 | Brightness; keyboard Off, Static, Breathing, Spectrum, Wave, Fire, Wheel, Starlight, Tidal, Ambient Awareness and Audio Meter; logo controls |
+| RZ09-0421 | Brightness; keyboard Off, Breathing, Spectrum, Wave, Fire, Wheel, Starlight, Tidal, Ambient Awareness and Audio Meter |
+| RZ09-0423, RZ09-0427 | Brightness; keyboard Off, Static, Breathing, Spectrum, Wave, Fire, Wheel, Starlight, Tidal, Ambient Awareness and Audio Meter; logo controls |
 | RZ09-0510 | Brightness; keyboard Off, Breathing and Wave; logo controls |
 | RZ09-0509 | Brightness; keyboard Off, Static, Breathing and Wave; logo controls |
-| RZ09-0529 | All twelve Synapse-listed keyboard effects; per-key editor and animation import; Off, brightness and logo; vapor chamber enabled and touchpad-status indicator ([details](rz09-0529-lighting-expansion.md)) |
+| RZ09-0529 | All twelve Synapse-listed keyboard effects, with host-rendered effects also on the vapor chamber; per-key editor and animation import; Off, brightness and logo; vapor chamber enabled and touchpad-status indicator ([details](rz09-0529-lighting-expansion.md)) |
 
 The seven MCU-backed additions support random, single-color and dual-color
 Breathing, and both Wave directions. RZ09-0301 also retains independent
-brightness/logo editing and existing field-only profiles. The added controls
+brightness/logo editing and existing field-only profiles. On RZ09-0301,
+RZ09-0421, RZ09-0423 and RZ09-0427, OpenBlade draws Fire, Wheel, Starlight and
+Tidal across the keyboard, and Ambient Awareness and Audio Meter in one color.
+If another app or the firmware changes the keyboard effect, OpenBlade stops
+drawing; choose an effect to continue. If the lighting recovery record is
+damaged, OpenBlade blocks every lighting change on these laptops until its
+protected data storage is repaired. Reactive and Ripple need a reviewed key
+map and remain unavailable. Host-drawn effects on RZ09-0509 and RZ09-0510 are
+not established. The added controls
 use exact-model source evidence; physical validation remains pending. Existing
 lighting backends retain their own admission. See the
 [lighting review](source-reviewed-lighting.md) for all 22 profiles, MCU-first
@@ -47,7 +55,7 @@ are listed in the [complete fan review](source-reviewed-thermal-967.md).
 | --- | --- | --- |
 | Blade 14 (2025) | `RZ09-0530` | Balanced, Silent, Maximum Power, battery modes, Custom levels, fixed fans and curves, keyboard and logo lighting, 50–100% charge limits, optional [THX audio](thx-audio.md) with a supported installed stack |
 | Blade 16 (2023) | `RZ09-0483` | Performance and Custom levels with CPU Boost, HyperBoost with or without the cooling pad, fixed and maximum fans, host curves in Balanced/Silent/Performance/Custom on confirmed full-power AC, keyboard and logo lighting, 50–100% charge limits |
-| Blade 14 (2023) | `RZ09-0482` | Balanced, Silent, Custom levels, HyperBoost with or without the cooling pad, fixed fans, host curves in Balanced/Silent/Custom on confirmed full-power AC, keyboard and logo lighting, 50–100% charge limits |
+| Blade 14 (2023) | `RZ09-0482` | Balanced, Silent, Custom levels, HyperBoost with or without the cooling pad, fixed and maximum fans, host curves in Balanced/Silent/Custom on confirmed full-power AC, keyboard and logo lighting, 50–100% charge limits |
 | Blade 18 (2023) | `RZ09-0484` | Performance and Custom levels, including every CPU Boost/GPU level combination and High/High, linked fixed fans in Balanced/Silent, fan curves in Balanced/Silent and Custom Maximum Fans, keyboard and logo lighting, 50–100% charge limits |
 | Blade 15 Base (Early 2020) | `RZ09-0328` | Balanced, Silent, Performance (Gaming), Creator and Custom levels, fixed fans and curves, single-zone keyboard lighting |
 
@@ -64,7 +72,7 @@ temperature holds 5000 RPM. Physical curve validation remains pending; see the
 | --- | --- | --- |
 | Blade 18 (2025) | `RZ09-0529` | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic, fixed fans and curves, charge limits 50–80% in 5% steps or protection off |
 | Blade 14 (2024) | `RZ09-0508` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
-| Blade 16 (2024) | `RZ09-0510` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
+| Blade 16 (2024) | `RZ09-0510` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic, fixed fans and curves, Maximum Fans, HyperBoost with or without the cooling pad, charge limits 50–80% in 5% steps or protection off |
 | Blade 18 (2024) | `RZ09-0509` | Balanced, Silent, Turbo, Custom Low/Medium/High, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
 
 All four offer Custom CPU/GPU Low, Medium and High. Only Blade 14 (2024)
@@ -148,11 +156,12 @@ Battery Saver and Battery Balanced on battery power.
   temperature readings hold the maximum target. [Source recovery](blade18-source-feature-recovery.md#temperature-source-recovery)
   has not established a standalone Blade 18 CPU-temperature provider; variable
   curves remain unverified where neither known Windows counter works.
-- Maximum Fans is a separate Custom-mode switch on the Blade 16 (2023) and
-  Blade 18 (2023). Select Automatic fans before turning it on. Maximum Fans cannot
+- Maximum Fans is a separate Custom-mode switch on the Blade 14 (2023),
+  Blade 16 (2023) and Blade 18 (2023). Select Automatic fans before turning it on. Maximum Fans cannot
   change while another
-  Power Mode Control option is on, such as local dimming or temporary full charge.
-  OpenBlade turns Maximum Fans off before leaving Custom.
+  Power Mode Control option is on, such as CPU Boost, local dimming or temporary full charge.
+  Turn that option off in Synapse first. OpenBlade turns Maximum Fans off before leaving
+  Custom or starting HyperBoost, and turns it back on when HyperBoost ends.
 - Custom CPU/GPU levels are Low, Medium, and High. The Blade 16 (2023) also
   offers CPU Boost and High/High. Blade 18 (2023) offers all twelve CPU/GPU
   combinations, including Boost/Medium and High/High, using Synapse's independent
@@ -202,12 +211,13 @@ Battery Saver and Battery Balanced on battery power.
   actions are source-backed; behavior on the laptop still needs testing.
   OpenBlade handles these shortcuts only while the built-in keyboard is the only
   keyboard connected.
-- Blade 14 (2023) and Blade 16 (2023) offer HyperBoost on full-power
-  AC, with or without the Razer Laptop Cooling Pad. They require MCU firmware
-  1.1.1.3 or later on the Blade 14, and 1.5.0.0 or later on the Blade 16.
-  On the Blade 14, turn off
-  Maximum Fans in Synapse first if it was enabled there; OpenBlade cannot yet
-  restore that option on this model.
+- Blade 14 (2023), Blade 16 (2023) and Blade 16 (2024) offer HyperBoost on
+  full-power AC, with or without the Razer Laptop Cooling Pad. They require MCU
+  firmware 1.1.1.3 or later on the Blade 14, 1.5.0.0 or later on the Blade 16
+  (2023), and 1.3.0.0 or later on the Blade 16 (2024). Like Synapse, OpenBlade
+  doesn't start HyperBoost on Blade 16 configurations whose system SKU Synapse
+  excludes; you can still turn it off there. On battery, HyperBoost ends in
+  Balanced, and your plugged-in mode returns when you plug in again.
   Blade 18 (2023) remains observed-only: turn HyperBoost off in Synapse before
   changing performance.
 - Charge limits use 1% steps; 100% turns protection off. The Blade 15 does not
@@ -257,6 +267,18 @@ you check the display and select **Resume laptop controls**.
 
 See the [source review](../evidence/source-reviewed-blades/2026-11-20-observed-features-and-local-dimming.json)
 for the pinned Synapse files. Physical validation is pending.
+
+## Windows Dynamic Lighting
+
+On Blade 18 (2025), Blade 18 (2024), Blade 16 (2024), Blade 14 (2025) and
+Blade 16 (2025), Windows Dynamic Lighting can override OpenBlade keyboard
+lighting while it is on. OpenBlade then shows a notice on the Lighting page;
+its lighting controls stay available. On Blade 18 (2025) this also covers the
+Vapor chamber. If your OpenBlade lighting doesn't show, turn off **Use Dynamic
+Lighting on my devices** in **Settings > Personalization > Dynamic Lighting**.
+The notice has not yet been checked on these laptops. See the
+[advisory review](source-reviewed-blade-models.md#windows-dynamic-lighting-advisory)
+for the evidence.
 
 ## Send a useful test report
 

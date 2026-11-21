@@ -22,6 +22,11 @@ public sealed class ControlRequestHandlerTests
                 Guid.NewGuid(),
                 1,
                 @"C:\Games\game.exe"),
+            new ReportWindowsDynamicLightingAdvisoryRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                "RZ09-0529",
+                WindowsDynamicLightingAdvisory.MayControl),
             new SetPerformanceOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<PerformancePreset>(PerformancePreset.Silent, OverrideLifetime.Persistent)),
             new CyclePerformanceShortcutRequest(
@@ -130,6 +135,7 @@ public sealed class ControlRequestHandlerTests
         string[] expectedCalls =
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "ReportApplicationContext",
+            "ReportWindowsDynamicLightingAdvisory",
             "SetPerformanceOverride",
             "CyclePerformanceShortcut", "SetFanOverride", "SetBatterySaverFanStop", "SetFanStopMode",
             "SetFanStopSettings", "ResumeAutomaticFanStop", "SetLightingOverride",
@@ -707,6 +713,17 @@ public sealed class ControlRequestHandlerTests
         {
             Assert.True(stillControlsSession());
             return Record("ReportApplicationContext");
+        }
+
+        public Task<ControlOperationResult> ReportWindowsDynamicLightingAdvisoryAsync(
+            ReportWindowsDynamicLightingAdvisoryRequest request,
+            string reportingUserSid,
+            Func<bool> stillControlsSession,
+            CancellationToken token)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(reportingUserSid));
+            Assert.True(stillControlsSession());
+            return Record("ReportWindowsDynamicLightingAdvisory");
         }
 
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(ManualOverride<PerformancePreset>? value, CancellationToken token) =>

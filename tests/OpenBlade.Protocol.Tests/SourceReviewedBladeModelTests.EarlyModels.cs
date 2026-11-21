@@ -31,6 +31,11 @@ public sealed partial class SourceReviewedBladeModelTests
             : product == 0x028A
             ? [LightingEffect.Off, LightingEffect.Breathing, LightingEffect.Spectrum, LightingEffect.Wave]
             : [LightingEffect.Off, LightingEffect.Static, LightingEffect.Breathing, LightingEffect.Spectrum, LightingEffect.Wave];
+        if (!IsEarlyAcOnly(product))
+        {
+            // 2026-11-19 exact MCU frame reviews: grid and uniform host frames only.
+            expectedLighting = [.. expectedLighting, .. ReviewedMcuFrameEffects];
+        }
         Assert.Equal(expectedLighting.Order(), capabilities.LightingEffects.Order());
         LogoLightingMode[] expectedLogo = product == 0x028A
             ? []
@@ -46,7 +51,7 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.Null(capabilities.HyperBoostAccess);
         Assert.Null(capabilities.ThxAudio);
         Assert.True(capabilities.SupportsKeyboardBrightness);
-        Assert.False(capabilities.SupportsUniformLightingFrames);
+        Assert.Equal(!IsEarlyAcOnly(product), capabilities.SupportsUniformLightingFrames);
         Assert.Equal(IsEarlyAcOnly(product) ? Array.Empty<int>() : [50, 55, 60, 65, 70, 75, 80, 100], capabilities.ChargeLimits.Order());
         CustomPerformanceCapabilities custom = Assert.IsType<CustomPerformanceCapabilities>(capabilities.CustomPerformance);
         Assert.Equal(12, custom.AllowedCombinations.Count);

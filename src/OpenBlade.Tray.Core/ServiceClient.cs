@@ -50,6 +50,10 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         ReportApplicationContextRequest request,
         CancellationToken token) => SendMutationAsync(request, token);
 
+    public Task<ControlOperationResult> ReportWindowsDynamicLightingAdvisoryAsync(
+        ReportWindowsDynamicLightingAdvisoryRequest request,
+        CancellationToken token) => SendMutationAsync(request, token);
+
     public Task<ControlOperationResult> SetCoolingPadSettingsAsync(CoolingPadSettings settings, CancellationToken token) =>
         SendMutationAsync(new SetCoolingPadSettingsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), settings), token);
 

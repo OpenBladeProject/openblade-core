@@ -619,7 +619,7 @@ internal sealed class HyperBoostLifecycleValidationRunner
             && entry.Action == "Reconcile"
             && boundaries.Any(boundary =>
                 entry.Detail?.Contains(
-                    $"Attempting to exit OpenBlade-owned HyperBoost and restore its entry-time profile {boundary}.",
+                    $"Attempting to exit OpenBlade-owned HyperBoost {boundary}.",
                     StringComparison.Ordinal) == true));
         int completions = diagnostics.Count(entry =>
             entry.Timestamp >= marker.ArmedAtUtc
@@ -628,7 +628,9 @@ internal sealed class HyperBoostLifecycleValidationRunner
             && entry.Action == "Reconcile"
             && boundaries.Any(boundary =>
                 entry.Detail?.Contains(
-                    $"OpenBlade-owned HyperBoost exited and its entry-time profile was restored {boundary}.",
+                    // Either completion: the entry-time profile was restored, or the
+                    // saved profile isn't available and was not applied.
+                    $"OpenBlade-owned HyperBoost exited {boundary}",
                     StringComparison.Ordinal) == true));
         bool success = exactGeneration
             && processBoundary

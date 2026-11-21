@@ -15,9 +15,18 @@ internal sealed partial class ExperimentalBladePort(
     ExperimentalLightingOwnershipState? sharedLightingOwnership = null,
     ICoolingPadDiscoverySource? coolingPadDiscovery = null,
     TimeProvider? lightingTimeProvider = null,
-    ExperimentalStartupAnimationState? sharedStartupAnimationState = null)
+    ExperimentalStartupAnimationState? sharedStartupAnimationState = null,
+    string? systemSku = null)
     : IProductionBatteryPort, IProductionLightingPort, ILightingRecoveryWriteAdmission
 {
+    // Read once from the exact host identity that admitted this session. Only
+    // HyperBoost entry depends on it; exit, restoration and every other control do not.
+    internal HyperBoostSystemSkuAdmission HyperBoostSkuAdmission { get; } =
+        HyperBoostSystemSkuPolicy.Evaluate(model.ProductId, systemSku);
+
+    internal string HyperBoostSkuDiagnostic =>
+        HyperBoostSystemSkuPolicy.DescribeForDiagnostics(HyperBoostSkuAdmission, systemSku);
+
     private readonly SemaphoreSlim operationGate = sharedOperationGate ?? new(1, 1);
     private readonly AdapterPowerCommandClient adapterPowerCommands = new(session, TimeSpan.FromSeconds(3));
     private readonly ExperimentalLightingOwnershipState lightingOwnership =
@@ -139,13 +148,23 @@ internal sealed partial class ExperimentalBladePort(
     internal void SetAdditionalWriteAdmission(Func<bool> admission) => additionalWriteAdmission = admission;
 
     public DeviceCapabilities Capabilities => WithLocalDimmingAdmission(WithConfirmedExperimentalFanRange(
-        WithStartupReadAdmission(CreateCapabilities(model, policy.WritesAllowed), startupAnimationState),
+        WithStartupReadAdmission(CreateCapabilities(model, policy.WritesAllowed, HyperBoostSkuAdmission),
+            startupAnimationState),
         model, policy.ConfirmedFanRanges), model, policy.WritesAllowed, policy.MiniLedPanel) with
     {
         Blade18KeyboardLayoutId = blade18KeyboardLayoutId,
     };
 
-    internal static DeviceCapabilities CreateCapabilities(ExperimentalBladeModel model, bool enabled) =>
+    // A null SKU admission describes the model's potential capabilities, before a host SKU is read.
+    // The SKU recheck only restricts entry; access and restore bases never depend on it.
+    internal static DeviceCapabilities CreateCapabilities(ExperimentalBladeModel model, bool enabled,
+        HyperBoostSystemSkuAdmission? hyperBoostSku = null) =>
+        CreateCapabilitiesCore(model, enabled, SupportsExperimentalHyperBoost(model) && enabled,
+            hyperBoostSku is { } sku && !HyperBoostSystemSkuPolicy.AllowsEntry(sku)
+                ? HyperBoostEntryRestriction.VendorSystemSku : null);
+
+    private static DeviceCapabilities CreateCapabilitiesCore(ExperimentalBladeModel model, bool enabled,
+        bool hyperBoostWritable, HyperBoostEntryRestriction? hyperBoostEntryRestriction) =>
         new(enabled ? CreatePerformancePresets(model) : new HashSet<PerformancePreset>(),
             enabled && GetExperimentalFanRange(model) is not null
                 ? model.ProductId == 0x02A0 || UsesDynamicExperimentalFanRange(model) || SupportsStaticSourceHostCurves(model)
@@ -192,16 +211,20 @@ internal sealed partial class ExperimentalBladePort(
                     ObservedLightingZone.UnderGlass,
                 }
                 : new HashSet<ObservedLightingZone>(),
-            HyperBoostAccess = SupportsExperimentalHyperBoost(model) && enabled ? DeviceFeatureAccess.ReadWrite
-                : model.ProductId is 0x02A0 or 0x029F or 0x029D ? DeviceFeatureAccess.ObservedOnly : null,
-            HyperBoostWithoutCoolingPadAccess = SupportsExperimentalHyperBoost(model) && enabled ? DeviceFeatureAccess.ReadWrite : null,
-            HyperBoostBaseModes = SupportsExperimentalHyperBoost(model) && enabled
+            HyperBoostAccess = hyperBoostWritable ? DeviceFeatureAccess.ReadWrite
+                : model.ProductId is 0x02A0 or 0x029F or 0x029D or 0x02B7 ? DeviceFeatureAccess.ObservedOnly : null,
+            HyperBoostWithoutCoolingPadAccess = hyperBoostWritable ? DeviceFeatureAccess.ReadWrite : null,
+            HyperBoostBaseModes = hyperBoostWritable
                 ? new(DeviceFeatureAccess.ReadWrite, DeviceFeatureAccess.ReadWrite,
                     model.ProductId == 0x029F ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly)
                 {
                     Custom = DeviceFeatureAccess.ReadWrite,
-                    CoolingPadEntryBaseMode = model.ProductId == 0x029D ? PerformancePreset.Balanced : null,
+                    // Product 695 lists Turbo (raw 1) as an ordinary mode and its
+                    // default AC mode; it has no Performance (raw 2) mode.
+                    Turbo = model.ProductId == 0x02B7 ? DeviceFeatureAccess.ReadWrite : null,
+                    CoolingPadEntryBaseMode = HyperBoostCoolingPadEntryBaseMode(model),
                 } : null,
+            HyperBoostEntryRestriction = hyperBoostWritable ? hyperBoostEntryRestriction : null,
             OneShotLaptopControls = enabled && model.ProductId == 0x02A0
                 ? new HashSet<OneShotLaptopControl> { OneShotLaptopControl.StartupAnimation } : [],
             HostManagedLaptopControls = enabled && model.ProductId == 0x02A0
@@ -256,6 +279,15 @@ internal sealed partial class ExperimentalBladePort(
     // These paths accept status ACKs and parse optional payload; every relaxed caller keeps an independent GET.
     private static bool UsesSourceBackedSetAckContract(ExperimentalBladeModel model) =>
         model.ThermalPolicy is not null || model.ProductId is 0x029F or 0x02A0 or 0x0255 or 0x02C5;
+
+    // Power Mode Control 07/0F only. Product 669 rzDevice25.1094c437ecd0242743f8.js
+    // (SHA-256 D76F0E964537BCF19D517E67B16E9D8AC0160230FA779AFB3640DA78B6201AD3) sends the
+    // one-byte SET through setter V (UTF-8 byte 52963) and parses data only when some returns.
+    // Its transport matches the transaction ID and command class/ID (byte 119015) and takes
+    // success from the status byte (byte 119262); it never compares the payload with the
+    // request. 029D's other setters keep their existing echoed acknowledgement.
+    private static bool UsesStatusOnlyPowerModeControlAck(ExperimentalBladeModel model) =>
+        UsesSourceBackedSetAckContract(model) || model.ProductId == 0x029D;
 
     private static IReadOnlySet<PerformancePreset> CreatePerformancePresets(ExperimentalBladeModel model)
     {
@@ -385,7 +417,9 @@ internal sealed partial class ExperimentalBladePort(
                 DeviceStateQuery.ThermalChannelAgreement, first.Span, second.Span);
         }
         byte mode = first.Span[2];
-        bool hyperBoost = mode == 7 && model.ProductId is 0x02A0 or 0x029F or 0x029D;
+        // Decode mode 7 wherever it is observed or admitted (rule 9). Product 695
+        // lists Hyperboost_Mode:7 (main.27df2e7ddab0b6bc34cc.js byte 48,922).
+        bool hyperBoost = mode == 7 && model.ProductId is 0x02A0 or 0x029F or 0x029D or 0x02B7;
         PerformancePreset? performance = mode switch
         {
             0 => PerformancePreset.Balanced,
@@ -400,16 +434,32 @@ internal sealed partial class ExperimentalBladePort(
             3 when model.ProductId == 0x02C5 => PerformancePreset.BatterySaver,
             6 when model.ProductId == 0x02C5 => PerformancePreset.BatteryBalanced,
             // Products 671/669 map battery Balanced to raw 6 (AC Balanced is 0).
-            6 when SupportsExperimentalHyperBoost(model) && capturePowerSource() == PowerSource.Battery => PerformancePreset.Balanced,
+            // Synapse writes raw 6 on battery and sets the plugged-in mode on AC
+            // attach without reading it first (671 policy bytes 1,398,128 and
+            // 1,941,140; 669 policy bytes 1,558,229 and 1,699,212), so the EC can
+            // still hold raw 6 after the power source returns. Off battery it is a
+            // transitional DC Balanced reading: no AC intent matches it, and a
+            // typed AC set leaves it.
+            6 when UsesRaw6AsBatteryBalanced(model) => capturePowerSource() == PowerSource.Battery
+                ? PerformancePreset.Balanced
+                : PerformancePreset.BatteryBalanced,
             1 when model.ProductId == 0x0255 => PerformancePreset.Performance,
             2 when model.ProductId is 0x02A0 or 0x029F => PerformancePreset.Performance,
-            7 when model.ProductId is 0x02A0 or 0x029F or 0x029D => null,
+            7 when hyperBoost => null,
             _ => UnsupportedPerformanceMode(first.Span),
         };
         FanMode fans = first.Span[3] == 0 ? FanMode.Automatic : FanMode.Fixed;
         CustomPerformanceSettings? custom = mode == 4 && SupportsExperimentalCustom(model)
             ? await ReadCustomPerformanceAsync(cancellationToken).ConfigureAwait(false) : null;
-        if (readManualTargets && fans == FanMode.Fixed && GetExperimentalFanRange(model) is not null)
+        // Synapse runs mode-7 HyperBoost with manual fans at 3400-5200 RPM (main bytes
+        // 28,478 for 671, 145,346 for 669 and 145,857 for 695). No admitted range covers
+        // mode 7 on any of them, so report HyperBoost with manual fans and skip the
+        // target read instead of rejecting the whole state.
+        if (hyperBoost && fans == FanMode.Fixed)
+        {
+            RecordQuery("FanTargets", "NotQueried", failure: "HyperBoostHasNoAdmittedFanRange");
+        }
+        else if (readManualTargets && fans == FanMode.Fixed && GetExperimentalFanRange(model) is not null)
         {
             FanSpeedRange? activeRange = performance is { } activePerformance
                 ? GetExperimentalFanRange(model, activePerformance)
@@ -514,9 +564,9 @@ internal sealed partial class ExperimentalBladePort(
                     RequirePerformanceWriteAdmission(value);
                     await ExchangeAsync("MaximumFans", 0x07, 0x0F, [0],
                         true, cancellationToken,
-                        variableResponse: acceptsStatusOnlyAck,
-                        payloadValidator: acceptsStatusOnlyAck ? static payload => payload.Length <= 1 : null,
-                        requireEcho: !acceptsStatusOnlyAck,
+                        variableResponse: UsesStatusOnlyPowerModeControlAck(model),
+                        payloadValidator: UsesStatusOnlyPowerModeControlAck(model) ? static payload => payload.Length <= 1 : null,
+                        requireEcho: !UsesStatusOnlyPowerModeControlAck(model),
                         allowUnclassifiedExternal: !baseline.HyperBoostActive).ConfigureAwait(false);
                     submitted = true;
                     if (await ReadMaximumFansAsync(cancellationToken).ConfigureAwait(false))

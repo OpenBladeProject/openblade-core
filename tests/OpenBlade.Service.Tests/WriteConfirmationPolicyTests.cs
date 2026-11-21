@@ -326,6 +326,39 @@ public sealed class WriteConfirmationPolicyTests
         }
     }
 
+    [Theory]
+    [InlineData(PowerSource.Battery, PerformancePreset.BatteryBalanced, true)]
+    [InlineData(PowerSource.Battery, PerformancePreset.Balanced, true)]
+    [InlineData(PowerSource.PluggedIn, PerformancePreset.BatteryBalanced, false)]
+    [InlineData(null, PerformancePreset.BatteryBalanced, false)]
+    [InlineData(PowerSource.PluggedIn, PerformancePreset.Turbo, false)]
+    public void HyperBoostBatteryExit_ConfirmsBatteryBalancedOnlyOnBattery(
+        PowerSource? exitSource, PerformancePreset observed, bool matches)
+    {
+        // RZ09-0510 reports the battery exit's raw 6 as its DC Balanced preset.
+        var expectation = new WriteConfirmationExpectation(
+            Desired() with { GpuClockTuning = GpuClockTuningSettings.Disabled },
+            Confirmed(),
+            HyperBoostActive: false,
+            HyperBoostBaseMode: PerformancePreset.Balanced,
+            HyperBoostExitPowerSource: exitSource);
+        foreach (DeviceSubsystem subsystem in new[] { DeviceSubsystem.Performance, DeviceSubsystem.Fans })
+        {
+            Assert.Equal(matches ? PendingConfirmationResult.Match : PendingConfirmationResult.Mismatch,
+                Match(subsystem, expectation, Confirmed() with { Performance = observed }));
+        }
+    }
+
+    [Fact]
+    public void PendingHyperBoostExit_CarriesItsPowerSourceOnlyForExits()
+    {
+        var exit = new PendingWriteConfirmation(PowerSource.Battery, Desired(), Confirmed(),
+            HyperBoostActive: false, HyperBoostBaseMode: PerformancePreset.Balanced);
+        Assert.Equal(PowerSource.Battery, exit.Expectation.HyperBoostExitPowerSource);
+        var ordinary = new PendingWriteConfirmation(PowerSource.Battery, Desired(), Confirmed());
+        Assert.Null(ordinary.Expectation.HyperBoostExitPowerSource);
+    }
+
     private static PendingConfirmationResult Match(
         DeviceSubsystem subsystem,
         WriteConfirmationExpectation expectation,

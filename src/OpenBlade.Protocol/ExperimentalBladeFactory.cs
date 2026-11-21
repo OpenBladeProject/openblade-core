@@ -16,6 +16,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ExperimentalLightingOwnershipState lightingOwnership;
     private readonly ExperimentalStartupAnimationState startupAnimationState = new();
+    private readonly ExperimentalVaporChamberAvailability vaporChamberAvailability = new();
 
     internal ExperimentalBladeFactory(ExperimentalBladeModel model, IHostIdentitySource identity,
         IHidCandidateNative native, IHardwareAccessGuard guard, IHidFeatureIo io,
@@ -23,6 +24,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         ExperimentalLightingBaselineJournal? lightingJournal = null)
     {
         this.model = model;
+        hyperBoostSkuAdmission = HyperBoostSystemSkuPolicy.Evaluate(model.ProductId, null);
         this.identity = identity;
         this.native = native;
         this.guard = guard;
@@ -32,11 +34,12 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         // A native operation may outlive the provider's managed operation lock.
         this.sharedCommandGate = sharedCommandGate ?? new(1, 1);
         policy = new(model);
-        if (model.ProductId != 0x02C7)
+        if (model.ProductId != 0x02C7 && !ExperimentalBladePort.SupportsReviewedMcuKeyboardFrames(model))
         {
-            // This journal admits the KI8110 active-bank baseline contract.
-            // Legacy frame backends retain their separately reviewed saved-bank
-            // and Spectrum restoration semantics; do not apply this parser to them.
+            // This journal admits the reviewed MCU active-bank baseline contract:
+            // KI8110 and the four 2026-11-19 legacy-setter frame reviews. Older
+            // frame backends retain their separately reviewed saved-bank and
+            // Spectrum restoration semantics; do not apply this parser to them.
             lightingOwnership = new();
             return;
         }
@@ -49,17 +52,28 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             Baseline = journal.Baseline,
             Ownership = journal.Invalid || journal.Baseline is not null
                 ? (int)LightingRendererOwnershipState.Faulted : 0,
+            // A record from an earlier run may follow a [0,5,8] selection.
+            McuCustomFrameMayRemain = ExperimentalBladePort.SupportsReviewedMcuKeyboardFrames(model)
+                && journal.Baseline is not null,
         };
     }
 
     public string EvidenceSource => model.EvidenceSource;
 
+    internal ExperimentalLightingOwnershipState LightingOwnership => lightingOwnership;
+
     internal string LaptopControlRecoveryIdentity => $"{model.ModelNumber}|1532:{model.ProductId:X4}";
+
+    // The SKU admission of the last admitted session. Before one exists it is
+    // NotApplicable, so no entry restriction is reported; each port still checks
+    // its own SKU admission before an entry.
+    private volatile HyperBoostSystemSkuAdmission hyperBoostSkuAdmission;
 
     public DeviceCapabilities Capabilities => ExperimentalBladePort.WithLocalDimmingAdmission(
         ExperimentalBladePort.WithConfirmedExperimentalFanRange(
             ExperimentalBladePort.WithStartupReadAdmission(
-                ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed), startupAnimationState),
+                ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed,
+                    hyperBoostSkuAdmission), startupAnimationState),
             model, policy.ConfirmedFanRanges),
         model, policy.WritesAllowed, policy.MiniLedPanel);
 
@@ -252,6 +266,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             {
                 await port.InitializeBlade18KeyboardLayoutAsync(cancellationToken).ConfigureAwait(false);
                 await port.InitializeLocalDimmingPanelAsync(cancellationToken).ConfigureAwait(false);
+                // Each exact-model read returns immediately for every other product.
+                await port.InitializeRz090529VaporChamberAvailabilityAsync(cancellationToken).ConfigureAwait(false);
                 if (!port.IsRecoverySessionHealthy)
                 {
                     throw new IOException("An optional keyboard-layout or display-panel read left an unhealthy session.");
@@ -259,7 +275,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             }
             catch (IOException) when (!port.IsRecoverySessionHealthy)
             {
-                // Layout and panel are optional metadata, not admission for thermal/battery controls.
+                // Layout, panel and LED38 availability are optional metadata, not admission for other controls.
                 // A rejected GET poisons its session: drain it before one complete fresh
                 // admission, without repeating the failed metadata query or guessing a layout.
                 pending = null;
@@ -294,7 +310,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         {
             return new(null, HidSessionFailureKind.Canceled);
         }
-        if (identity.ReadExactIdentity() is not { Evidence: not null, Failure: null })
+        if (identity.ReadExactIdentity() is not { Evidence: { } hostEvidence, Failure: null })
         {
             return new(null, HidSessionFailureKind.IdentityBlocked);
         }
@@ -304,9 +320,12 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             return new(null, access.DetectionFailure is not null
                 ? HidSessionFailureKind.ConflictDetectionFailed : HidSessionFailureKind.ConflictBlocked);
         }
+        // The SKU is diagnostic host metadata; only HyperBoost's vendor recheck reads it.
+        string? systemSku = hostEvidence.Sku;
 
         List<(OpenedCandidateHandle Handle, HidHandleIdentity Identity)> candidates = FindCandidates();
         ExperimentalBladePort? selected = null;
+        HidHandleIdentity selectedIdentity = default;
         bool ambiguous = false;
         ExperimentalControlObservation? lastAdmissionFailure = null;
         try
@@ -343,7 +362,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                     sharedOperationGate: operationGate,
                     sharedLightingOwnership: lightingOwnership,
                     coolingPadDiscovery: new WindowsHyperBoostEligibilitySource(native),
-                    sharedStartupAnimationState: startupAnimationState);
+                    sharedStartupAnimationState: startupAnimationState,
+                    systemSku: systemSku);
                 try
                 {
                     // Correctly correlated selectors identify the interface even when
@@ -353,6 +373,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                     if (selected is null)
                     {
                         selected = port;
+                        selectedIdentity = candidate.Identity;
                         port = null;
                     }
                     else
@@ -398,6 +419,20 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             }
             ExperimentalBladePort admitted = selected;
             admitted.EnableQueryRecording();
+            hyperBoostSkuAdmission = admitted.HyperBoostSkuAdmission;
+            if (admitted.HyperBoostSkuAdmission != HyperBoostSystemSkuAdmission.NotApplicable)
+            {
+                // Deduplicated query record: why HyperBoost entry is or is not offered.
+                // Exit and restoration never depend on it.
+                policy.Record("HyperBoostSystemSku", "Query",
+                    HyperBoostSystemSkuPolicy.AllowsEntry(admitted.HyperBoostSkuAdmission) ? "Confirmed" : "Blocked",
+                    confirmed: admitted.HyperBoostSkuDiagnostic,
+                    failure: HyperBoostSystemSkuPolicy.AllowsEntry(admitted.HyperBoostSkuAdmission)
+                        ? null : admitted.HyperBoostSkuAdmission.ToString());
+            }
+            // Key the optional LED38 probe result to this session's fresh host and exact
+            // HID identity, including its version number, so a changed device probes again.
+            admitted.BindVaporChamberAvailability(vaporChamberAvailability, new(hostEvidence, selectedIdentity));
             // Startup animation is queried independently by the service. Temporary full
             // charge is read with battery state. Neither optional probe belongs in the
             // shared port-open path; each control still requires its own real readback.
