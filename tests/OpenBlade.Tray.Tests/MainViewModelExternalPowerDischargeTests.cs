@@ -87,7 +87,7 @@ public sealed partial class MainViewModelTests
             () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
         Assert.True(viewModel.CoolingPad.IsVisible);
         Assert.True(viewModel.CoolingPad.CanApply);
-        Assert.Contains("1500", viewModel.CoolingPad.ConfiguredTargetText, StringComparison.Ordinal);
+        Assert.Equal(TrayText.Format("{0:N0} RPM", 1500), viewModel.CoolingPad.ConfiguredTargetText);
 
         status = status with
         {
@@ -98,7 +98,7 @@ public sealed partial class MainViewModelTests
             () => viewModel.ObserveExternalPowerDischargeAsync(CancellationToken.None), status);
         Assert.True(viewModel.CoolingPad.IsVisible);
         Assert.False(viewModel.CoolingPad.CanApply);
-        Assert.Contains("2000", viewModel.CoolingPad.ConfiguredTargetText, StringComparison.Ordinal);
+        Assert.Equal(TrayText.Format("{0:N0} RPM", 2000), viewModel.CoolingPad.ConfiguredTargetText);
 
         status = status with
         {

@@ -180,7 +180,7 @@ internal sealed class WindowsCoolingPadDiscoverySource(IHidCandidateNative nativ
                     {
                         matches++;
                     }
-                    else if (targetMetadataRequired && IsKnownNonControlAuxiliary(identity))
+                    else if (targetMetadataRequired && IsInputOnlySibling(identity))
                     {
                         knownAuxiliaryPresent = true;
                     }
@@ -208,11 +208,15 @@ internal sealed class WindowsCoolingPadDiscoverySource(IHidCandidateNative nativ
         }
     }
 
-    private static bool IsKnownNonControlAuxiliary(HidHandleIdentity identity) =>
+    // Source: the signed RC21-0230 firmware updater (docs/cooling-pad.md, image SHA-256
+    // 8C8EACF5...). Interface 0's report descriptor at 0x793A declares exactly one feature
+    // report, unnumbered and 90 bytes; report ID 5 belongs only to the input descriptors that
+    // follow it. Any other 1532:0F43 MI_00 collection, including one re-exposed by an installed
+    // Razer driver stack, therefore carries no feature report and cannot be the control channel.
+    // Revision and usage are deliberately not pinned: a sibling's driver-assigned values are not
+    // firmware facts. A sibling with any feature report remains unknown and fails closed.
+    internal static bool IsInputOnlySibling(HidHandleIdentity identity) =>
         identity.VendorId == VendorId
         && identity.ProductId == ProductId
-        && identity.VersionNumber == 0x0101
-        && identity.FeatureReportByteLength == 0
-        && (identity.UsagePage == 0x000C && identity.Usage == 0x0001
-            || identity.UsagePage == 0x0001 && identity.Usage == 0x0080);
+        && identity.FeatureReportByteLength == 0;
 }
