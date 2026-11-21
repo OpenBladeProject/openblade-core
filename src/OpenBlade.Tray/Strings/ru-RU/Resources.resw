@@ -3119,4 +3119,16 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_KeyColorEditor_SelectedKey" xml:space="preserve">
     <value>Выбрана клавиша: {0}</value>
   </data>
+  <data name="MainWindow_LocalDimmingTitle.Text" xml:space="preserve">
+    <value>Локальное затемнение</value>
+  </data>
+  <data name="MainWindow_LocalDimmingDescription.Text" xml:space="preserve">
+    <value>Локальное затемнение включено. OpenBlade может его выключить, но не может включить снова.</value>
+  </data>
+  <data name="MainWindow_LocalDimmingTurnOffButton.Content" xml:space="preserve">
+    <value>Выключить</value>
+  </data>
+  <data name="MainWindow_LocalDimmingTurnOffButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Выключить локальное затемнение</value>
+  </data>
 </root>

@@ -29,6 +29,27 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void LocalDimmingCardReusesTheSharedRowAndStaysOutsideTheDisplaySectionHost()
+    {
+        XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");
+        XElement card = NamedElement(document, "Border", "LocalDimmingCard");
+        XElement host = NamedElement(document, "StackPanel", "DisplayCardsHost");
+        XElement button = NamedElement(document, "Button", "LocalDimmingTurnOffButton");
+
+        // The section host removes children it does not know, so the card is a sibling.
+        Assert.DoesNotContain(host, card.Ancestors());
+        Assert.Equal(host.Parent, card.Parent);
+        Assert.Equal("{StaticResource SettingsGroupStyle}", Attribute(card, "Style"));
+        Assert.Equal("{x:Bind ViewModel.ShowLocalDimmingClear, Mode=OneWay}", Attribute(card, "Visibility"));
+        XElement row = Assert.Single(card.Elements(), element => element.Name.LocalName == "Border");
+        Assert.Equal("{StaticResource SettingsLastRowStyle}", Attribute(row, "Style"));
+        Assert.Null(Attribute(row, "Background"));
+        Assert.Contains(row, button.Ancestors());
+        Assert.Equal("{StaticResource AppCommandButtonStyle}", Attribute(button, "Style"));
+        Assert.Equal("{x:Bind ViewModel.ClearLocalDimmingCommand}", Attribute(button, "Command"));
+    }
+
+    [Fact]
     public void WindowsBatteryReportLivesOutsideCollectionControlsAndKeepsDetailsOptional()
     {
         XDocument document = CanonicalLocalizedXaml.Load("MainWindow.xaml");

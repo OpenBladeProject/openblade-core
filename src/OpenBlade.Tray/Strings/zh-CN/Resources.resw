@@ -3102,4 +3102,16 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_KeyColorEditor_SelectedKey" xml:space="preserve">
     <value>已选择按键：{0}</value>
   </data>
+  <data name="MainWindow_LocalDimmingTitle.Text" xml:space="preserve">
+    <value>局部调光</value>
+  </data>
+  <data name="MainWindow_LocalDimmingDescription.Text" xml:space="preserve">
+    <value>局部调光已开启。OpenBlade 可以将其关闭，但无法重新开启。</value>
+  </data>
+  <data name="MainWindow_LocalDimmingTurnOffButton.Content" xml:space="preserve">
+    <value>关闭</value>
+  </data>
+  <data name="MainWindow_LocalDimmingTurnOffButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>关闭局部调光</value>
+  </data>
 </root>
