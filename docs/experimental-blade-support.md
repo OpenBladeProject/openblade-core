@@ -215,8 +215,9 @@ Battery Saver and Battery Balanced on battery power.
 - Charge limits use 1% steps; 100% turns protection off. The Blade 15 does not
   support charge limits. Blade 18 and Blade 14 (2025) also offer experimental
   temporary full charge after valid state readback. Enabling it requires an active charge limit; other
-  Power Mode Control options must be off. On Blade 14 (2025), Windows HDR can turn on local
-  dimming, one of those options. Turn off Windows HDR (or local dimming in Synapse), then retry.
+  Power Mode Control options must be off. On Blade 18 (2025) and Blade 14 (2025), Synapse can
+  turn on local dimming, one of those options, to follow Windows HDR. If Synapse is running,
+  turn off Windows HDR, close Synapse, then retry.
 
 Battery changes on these profiles and the seven newer limiter profiles share a
 bounded confirmation window: only GETs returning the exact pre-write raw byte
@@ -258,8 +259,9 @@ check, choose the setting again; the previous request is not replayed. For
 lighting, select a lighting setting or change the active profile's lighting.
 Failed checks keep controls paused.
 
-A thermal-only pause does not require unrelated charge-limit readings on models
-without temporary full charge. Pending battery operations still require their own
+A thermal-only pause does not require unrelated charge-limit or temporary full
+charge readings. Only a temporary full charge change that may have been sent needs
+a fresh reading of that setting. Pending battery operations still require their own
 confirmed readback.
 
 The [implementation reference](experimental-blade-reference.md) contains protocol

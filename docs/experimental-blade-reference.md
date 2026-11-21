@@ -187,8 +187,12 @@ Products 709 (`02C5`) and 711 (`02C7`) each pin the same helpers, decoder and
 read-modify-write middleware in their own sources; see the
 [0530 and 0529 review](../evidence/source-reviewed-blades/2026-11-19-temporary-full-charge-rz09-0529-0530.json).
 Both write 07/0F through each backend's existing status-only SET
-acknowledgment contract. Product 709 also declares local dimming; its set bit
+acknowledgment contract. Both products can set local dimming (bit 08); a set bit
 blocks the write like any other Power Mode Control option.
+On these three models a failed or undecodable 07/8F leaves only the override
+unknown: limiter writes keep their limiter-only path, except while the last
+decoded 07/8F or confirmed 07/0F reported the override on. Protection off with
+bit 04 set is read as an unknown override rather than a failed battery read.
 
 ## Lighting controls
 
