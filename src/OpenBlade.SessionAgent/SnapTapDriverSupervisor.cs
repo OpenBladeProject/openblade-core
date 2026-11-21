@@ -13,6 +13,19 @@ internal static class SnapTapDriverSupervisor
     internal const string WorkerMode = OpenBlade.ProcessArguments.InputHelperCommandLine.WorkerMode;
     internal static string HeartbeatName(int parent) => $"Local\\OpenBlade.SnapTap.Heartbeat.{parent}";
     internal static string StartGateName(int parent) => $"Local\\OpenBlade.SnapTap.Start.{parent}";
+    internal static string AdmissionName(int parent) => $"Local\\OpenBlade.SnapTap.Admission.{parent}";
+
+    internal const int StartupHeartbeatBudgetMilliseconds = 10000;
+    internal const int InputHeartbeatBudgetMilliseconds = 1500;
+    // Every driver mutation repeats full exact-device/controller admission on the
+    // input thread. That user-mode check measured 1.7 s under boot load, above the
+    // input budget, so its own window gets the startup bound. Driver requests stay
+    // under the input budget: they never run inside an admission window.
+    internal const int AdmissionHeartbeatBudgetMilliseconds = 10000;
+
+    internal static bool HeartbeatExpired(long elapsedMilliseconds, bool started, bool admitting) =>
+        elapsedMilliseconds > (!started ? StartupHeartbeatBudgetMilliseconds
+            : admitting ? AdmissionHeartbeatBudgetMilliseconds : InputHeartbeatBudgetMilliseconds);
 
     internal static int Run(Func<bool> shouldStop, KeyboardDriverFeatures features = KeyboardDriverFeatures.SnapTap)
     {
@@ -99,6 +112,7 @@ internal static class SnapTapDriverSupervisor
             }
             stage = "WorkerInfrastructure";
             using var heartbeat = new EventWaitHandle(false, EventResetMode.AutoReset, HeartbeatName(Environment.ProcessId));
+            using var admitting = new EventWaitHandle(false, EventResetMode.ManualReset, AdmissionName(Environment.ProcessId));
             using var startGate = new EventWaitHandle(false, EventResetMode.ManualReset, StartGateName(Environment.ProcessId));
             startGate.Reset();
             using var job = new SnapTapWorkerJob();
@@ -125,6 +139,7 @@ internal static class SnapTapDriverSupervisor
                     startGate.Reset();
                     stop.Reset();
                     heartbeat.Reset();
+                    admitting.Reset();
                     observedWorkerFailure = null;
                     bool interrupted = false;
                     stage = "WorkerLaunch";
@@ -137,13 +152,17 @@ internal static class SnapTapDriverSupervisor
                     bool started = false;
                     while (!worker.HasExited)
                     {
+                        // Read the window flag before consuming the heartbeat. The worker
+                        // signals before clearing it, so a just-finished admission is
+                        // always followed by a heartbeat consumed in this same pass.
+                        bool workerAdmitting = admitting.WaitOne(0);
                         if (heartbeat.WaitOne(50))
                         {
                             lastHeartbeat = Environment.TickCount64;
                             started = true;
                         }
                         bool requestedStop = shouldStop();
-                        bool timedOut = Environment.TickCount64 - lastHeartbeat > (started ? 1500 : 10000);
+                        bool timedOut = HeartbeatExpired(Environment.TickCount64 - lastHeartbeat, started, workerAdmitting);
                         if (requestedStop || timedOut)
                         {
                             interrupted = true;
