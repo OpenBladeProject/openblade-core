@@ -472,6 +472,11 @@ type enum OpenBlade.Contracts.ControlResultStatus
   field const OpenBlade.Contracts.ControlResultStatus Blocked = 2
   field const OpenBlade.Contracts.ControlResultStatus Failed = 3
   field const OpenBlade.Contracts.ControlResultStatus Unchanged = 1
+type enum OpenBlade.Contracts.CoolingPadAutoProfile
+  field System.Int32 value__
+  field const OpenBlade.Contracts.CoolingPadAutoProfile Balanced = 1
+  field const OpenBlade.Contracts.CoolingPadAutoProfile Performance = 2
+  field const OpenBlade.Contracts.CoolingPadAutoProfile Quiet = 0
 type sealed class OpenBlade.Contracts.CoolingPadColor
   interface System.IEquatable<OpenBlade.Contracts.CoolingPadColor>
   ctor (System.Byte R, System.Byte G, System.Byte B)
@@ -518,6 +523,7 @@ type sealed class OpenBlade.Contracts.CoolingPadCurvePoint
   property System.Int32 TemperatureCelsius { get; init; }
 type enum OpenBlade.Contracts.CoolingPadFanMode
   field System.Int32 value__
+  field const OpenBlade.Contracts.CoolingPadFanMode Auto = 4
   field const OpenBlade.Contracts.CoolingPadFanMode Fixed = 2
   field const OpenBlade.Contracts.CoolingPadFanMode HostCurve = 3
   field const OpenBlade.Contracts.CoolingPadFanMode Keep = 0
@@ -538,6 +544,7 @@ type sealed class OpenBlade.Contracts.CoolingPadSettings
   field const System.Int32 MaximumRpm = 3200
   field const System.Int32 MinimumRpm = 500
   field const System.Int32 RpmStep = 50
+  method OpenBlade.Contracts.CoolingPadAutoProfile get_AutoProfile()
   method OpenBlade.Contracts.CoolingPadColor get_Color()
   method OpenBlade.Contracts.CoolingPadColor get_SecondaryColor()
   method OpenBlade.Contracts.CoolingPadFanMode get_FanMode()
@@ -551,6 +558,7 @@ type sealed class OpenBlade.Contracts.CoolingPadSettings
   method System.Int32 get_BrightnessPercent()
   method System.Int32 get_FixedRpm()
   method System.Void set_AllowDemandApi(System.Boolean value)
+  method System.Void set_AutoProfile(OpenBlade.Contracts.CoolingPadAutoProfile value)
   method System.Void set_BrightnessPercent(System.Int32 value)
   method System.Void set_Color(OpenBlade.Contracts.CoolingPadColor value)
   method System.Void set_CpuCurve(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadCurvePoint> value)
@@ -570,6 +578,7 @@ type sealed class OpenBlade.Contracts.CoolingPadSettings
   method static System.Boolean op_Equality(OpenBlade.Contracts.CoolingPadSettings left, OpenBlade.Contracts.CoolingPadSettings right)
   method static System.Boolean op_Inequality(OpenBlade.Contracts.CoolingPadSettings left, OpenBlade.Contracts.CoolingPadSettings right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.CoolingPadSettings other)
+  property OpenBlade.Contracts.CoolingPadAutoProfile AutoProfile { get; init; }
   property OpenBlade.Contracts.CoolingPadColor Color { get; init; }
   property OpenBlade.Contracts.CoolingPadColor SecondaryColor { get; init; }
   property OpenBlade.Contracts.CoolingPadFanMode FanMode { get; init; }
@@ -2378,7 +2387,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 85
+  field const System.Int32 ProtocolVersion = 89
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion

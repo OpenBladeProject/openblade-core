@@ -8,13 +8,17 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Added
 
 - Use the keyboard's own firmware edition on Blade 14 (2025, RZ09-0530) to select its regional key map, so Reactive, Ripple and Keyboard .chroma imports include regional Enter, Alt, ISO and Japanese keys. Space has no RGB address and is not part of these effects. If the edition cannot be read, only keys shared by every regional map respond. ([#984](https://github.com/OpenBladeProject/openblade-core/pull/984))
+- Add an Automatic fan mode for the cooling pad with Quiet, Balanced and Performance profiles, following the CPU, the GPU or both the way Razer Synapse does. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
 
 ### Changed
 
+- Redesign the cooling-pad page with separate Fan and Lighting sections, a status card, sliders for fan speed and brightness, and color pickers in place of hex codes. Changes now apply as you make them, the status refreshes on its own, and the fan curves use the same editor as the laptop. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
+- Smooth the temperatures that drive manual fan curves, on the laptop and the cooling pad, so brief CPU spikes no longer change the fan speed. Missing readings and overheating still raise the laptop fans immediately. On the pad, a GPU that powers down no longer stops curve or Automatic control, and a missing reading keeps the last speed until it returns. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
 - Credit the Blade 18 (2025, RZ09-0529) keyboard lighting effects and per-key color editing in 0.65.1-nightly.117 to their contributor. Thanks to [@TheChrisTech](https://github.com/TheChrisTech). ([#977](https://github.com/OpenBladeProject/openblade-core/pull/977))
 
 ### Fixed
 
+- Make the cooling pad's fan and lighting controls apply when Razer's device drivers are installed. The extra input-only pad interfaces and the Razer Experience Service no longer block control, and the pad's fan and lighting replies are now read the way its firmware reports them, so a fixed fan speed no longer pauses control. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
 - Keep Razer-driver function-row media keys and SnapTap working after focus briefly leaves every window, such as at the lock screen, and when a key is pressed while Windows is still starting. Previously they stopped until Windows restarted or the setting was toggled. ([#990](https://github.com/OpenBladeProject/openblade-core/pull/990))
 
 ## [0.65.1-nightly.117] - 2026-11-20

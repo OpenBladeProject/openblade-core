@@ -99,7 +99,7 @@ the HID version number. Later battery, lighting and recovery sessions reuse the
 confirmed edition, and after a failed read they keep the common map without
 probing again. A changed identity starts a new read. Every session still passes
 fresh identity and safety admission. Service status reports the raw edition
-byte as `blade14KeyboardEdition` (service IPC protocol 85); the Session Agent
+byte as `blade14KeyboardEdition` (service IPC protocol 89); the Session Agent
 and tray map it locally.
 
 Stored sequences use the union of the three maps' lit slots, 85 in all, so a

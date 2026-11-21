@@ -19,6 +19,7 @@ copy their current sizes.
 | Caption | `AppCaptionTextStyle` | Units, timestamps, chart axes, and supporting metadata |
 | Data | `AppDataTextStyle` | Numeric readings and table values that benefit from tabular figures |
 | Command | `AppCommandButtonStyle` | String page commands with wrapping, centered text and a 40-DIP minimum height |
+| Primary command | `AppAccentCommandButtonStyle` | The one commit action on a page, such as Apply, with command sizing on the native accent button |
 | Toolbar | `AppToolbarButtonStyle`, `AppToolbarToggleButtonStyle` | Flat desktop tools with a 32-DIP minimum target and native focus/checked/hover states |
 | Toolbar icon | `AppToolbarIconStyle` | Shared 16-DIP decorative glyphs, with the control owning the accessible name |
 | Inline action | `AppInlineCommandStyle` | Native text links beside captions, with a 24-DIP minimum height |
