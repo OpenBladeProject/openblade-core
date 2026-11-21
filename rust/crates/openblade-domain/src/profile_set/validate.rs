@@ -29,9 +29,7 @@ const BLACK: RgbColor = RgbColor {
     blue: 0,
 };
 
-/// Managed `StringComparer.OrdinalIgnoreCase` equality, supplied by the host
-/// because ordinal case folding is the operating system's.
-pub type SamePath = fn(&str, &str) -> bool;
+pub use crate::application_context::SamePath;
 
 pub struct Validator {
     policy: ValidationPolicy,

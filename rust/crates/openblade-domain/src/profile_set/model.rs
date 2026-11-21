@@ -599,6 +599,15 @@ impl ApplicationProfile {
     pub const MAXIMUM_EXECUTABLE_PATH_LENGTH: usize = 32767;
     pub const MAXIMUM_PROFILES: usize = 128;
     pub const EMPTY_ID: &'static str = "00000000-0000-0000-0000-000000000000";
+
+    /// The view managed's selection reads.
+    pub fn rule(&self) -> crate::application_context::Rule<'_> {
+        crate::application_context::Rule {
+            id: &self.id,
+            executable_path: &self.executable_path,
+            enabled: self.enabled,
+        }
+    }
 }
 
 /// Managed `WindowsPowerModeAssociations`, indexed by `PerformancePreset`.

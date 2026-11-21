@@ -287,7 +287,8 @@ fn gaming_mode_key_policy(value: GamingModeKeyPolicy) -> Json {
     ])
 }
 
-fn laptop_behavior(value: LaptopBehavior) -> Json {
+/// `LaptopBehaviorProfileSettings` as `ProfileStore.SerializerOptions` writes it.
+pub fn laptop_behavior(value: LaptopBehavior) -> Json {
     object([
         (
             "startupAnimationEnabled",
@@ -379,7 +380,8 @@ fn thx_audio(value: &ThxAudio) -> Json {
     }
 }
 
-fn power_profile(value: &PowerProfile) -> Json {
+/// A `PowerProfile` as `ProfileStore.SerializerOptions` writes it.
+pub fn power_profile(value: &PowerProfile) -> Json {
     let mut members = Vec::from([
         (String::from("performance"), int(value.performance.0)),
         ("fans".into(), int(value.fans.0)),

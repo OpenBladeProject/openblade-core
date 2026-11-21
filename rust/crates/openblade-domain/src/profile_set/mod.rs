@@ -6,6 +6,7 @@
 //! Managed C# is the reference. Every rule here is pinned against it by the
 //! shared vectors under `tools/openblade-windows-host/tests/data/profile-*`.
 
+pub mod application;
 pub mod decode;
 pub mod document;
 pub mod encode;
