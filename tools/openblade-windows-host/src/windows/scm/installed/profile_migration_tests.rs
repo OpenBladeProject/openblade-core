@@ -368,6 +368,25 @@ fn a_stage_an_earlier_attempt_left_is_removed_before_the_migration() {
     }
 }
 
+/// Managed `CheckRecoveryRequired` stops the load before it reads anything,
+/// so a recorded transaction beside a migratable aggregate keeps every file,
+/// a leftover stage included. The record's own exclusive creation would
+/// refuse the migration later, after its stages were already discarded.
+#[test]
+fn a_recorded_transaction_is_never_migrated_or_cleaned() {
+    for source in sources() {
+        let mut files = source.files.clone();
+        files.insert(RECORD.into(), b"{}".to_vec());
+        files.insert(stage(NAMES[0]), b"{\"schemaVersion\":".to_vec());
+        let model = model(&files);
+
+        let error = open(&model).err().unwrap();
+
+        assert_ne!(error.to_string(), MIGRATION_UNCHANGED, "{}", source.name);
+        assert_eq!(model.snapshot(), files, "{}", source.name);
+    }
+}
+
 #[test]
 fn a_stage_that_cannot_be_removed_keeps_the_store_closed_and_unchanged() {
     let source = case("legacy profile");
