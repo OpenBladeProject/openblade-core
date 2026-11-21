@@ -601,7 +601,9 @@ impl Runtime {
                 };
                 Outcome::blocked(format!("{committed} Hardware result: {reason}"))
             }
-        } else if let cause @ (Cause::UnclassifiedRejected | Cause::UnclassifiedCustomRejected) =
+        } else if let cause @ (Cause::UnclassifiedRejected
+        | Cause::UnclassifiedCustomRejected
+        | Cause::Rejected(_)) =
             &*permit.cause.lock().map_err(|_| io::ErrorKind::Other)?
         {
             Outcome {
@@ -723,6 +725,9 @@ enum Cause {
     UnclassifiedBlocked,
     UnclassifiedRejected,
     UnclassifiedCustomRejected,
+    /// Managed `ValidateThermalOverrideCombination` on classified power, as
+    /// `RecordRejectedIntent` reports it (Failed); nothing is stored.
+    Rejected(String),
 }
 impl Cause {
     fn message(&self) -> String {
@@ -744,6 +749,7 @@ impl Cause {
             Self::UnclassifiedBlocked => UNCLASSIFIED_BLOCKED.into(),
             Self::UnclassifiedRejected => UNCLASSIFIED_REJECTED.into(),
             Self::UnclassifiedCustomRejected => UNCLASSIFIED_CUSTOM_REJECTED.into(),
+            Self::Rejected(message) => format!("The requested intent was rejected: {message}"),
         }
     }
 }
@@ -766,6 +772,56 @@ impl RequestPermit {
             .ok_or(io::ErrorKind::PermissionDenied)?;
         self.storage.observe_power(power, generation)
     }
+}
+impl RequestPermit {
+    /// Managed `ValidateThermalOverrideCombination` on classified power, run
+    /// before the override is stored: the requested preset (or the active
+    /// power profile's, for a clear) with the saved fan override (or the
+    /// profile's fans) must pass `ProfileSetValidator
+    /// .ValidatePerformanceFanCombination` for that source. Managed's power
+    /// source is the class only where it agrees with Windows; otherwise the
+    /// recipe's own power fence refuses the request without storing it.
+    fn combination_rejected(&self, power: i32) -> io::Result<Option<String>> {
+        let agrees = matches!(
+            (power, self.fresh.on_battery()),
+            (1, Some(true)) | (0 | 2, Some(false))
+        );
+        if !agrees {
+            return Ok(None);
+        }
+        let Some((profile_performance, profile_fans)) = self.storage.profile_thermal(power)?
+        else {
+            return Ok(None);
+        };
+        let performance = self.value.as_ref().map_or(profile_performance, |v| v.value);
+        let fans = self
+            .storage
+            .current_fan_override(power)?
+            .map_or(profile_fans, |f| i32::from(f.value));
+        Ok(thermal_combination(performance, fans, power).err())
+    }
+}
+/// Managed `ProfileSetValidator.ValidatePerformanceFanCombination` with the
+/// exact RZ09-0581 policy that profile saves use
+/// (`CreateForDeviceCapabilities`). `power` is a classified source.
+fn thermal_combination(performance: i32, fans: i32, power: i32) -> Result<(), String> {
+    use openblade_domain::profile_set::{
+        Capabilities, FanMode, PerformancePreset, PowerSource, ValidationPolicy, Validator,
+    };
+    let source = match power {
+        0 => PowerSource::PluggedIn,
+        1 => PowerSource::Battery,
+        _ => PowerSource::UsbC,
+    };
+    let capabilities = Capabilities::rz09_0581();
+    let policy = ValidationPolicy::for_capabilities(&capabilities, &capabilities);
+    Validator::validate_performance_fan_combination(
+        &policy,
+        PerformancePreset(performance),
+        FanMode(fans),
+        source,
+    )
+    .map_err(|invalid| invalid.0)
 }
 impl Permit for RequestPermit {
     fn failed(&self, error: &io::Error) {
@@ -835,6 +891,10 @@ impl Permit for RequestPermit {
                 }
             }
             self.observe_power(power)?;
+            if let Some(message) = self.combination_rejected(power)? {
+                self.set_cause(Cause::Rejected(message));
+                return Ok(None);
+            }
             self.storage
                 .save(self.value.clone(), power)
                 .inspect_err(|e| self.set_cause(Cause::Storage(e.to_string())))?;

@@ -31,6 +31,11 @@ const STATES: [(u8, u8); 13] = [
 ];
 const NO_DIRECT_PATH: &str = "Performance override intent was stored. Hardware result: Leaving HyperBoost for a battery preset needs the HyperBoost restore sequence, which this build does not submit; no thermal setter was submitted.";
 const PENDING: &str = "A thermal command may have been submitted. Read-only reconciliation is required and no mutation will be replayed.";
+/// Managed `ValidateThermalOverrideCombination`, as `RecordRejectedIntent`
+/// reports it (Failed).
+const SOURCE_REJECTED: &str =
+    "The requested intent was rejected: The performance preset is not valid for this power source.";
+const COMBINATION_REJECTED: &str = "The requested intent was rejected: The performance and fan combination is not supported by the active validation policy.";
 const RESUBMIT: &str = "Performance intent stored. Performance is saved, not applied. Manual fan intent is preserved. Submit a new performance request after selecting Automatic fans.";
 
 fn rows(rig: &Rig) -> Vec<Value> {
@@ -149,15 +154,30 @@ async fn each_preset_is_one_direct_pair_from_every_confirmed_state() {
 
 #[tokio::test]
 async fn power_classes_follow_the_ordinary_and_battery_selector_rules() {
-    // Battery admits only the battery presets: a Silent override is saved but
-    // not selected there, as managed's battery slot ignores it.
+    // Battery admits only the battery presets: managed
+    // `ValidateThermalOverrideCombination` rejects every other override on
+    // battery Windows confirms, before anything is stored.
+    for preset in [0, 1, 2, 5] {
+        let rig = rig_at(0, 0, BATTERY, MemoryFiles::default());
+        let request = if preset == 5 {
+            custom(1, 0, false)
+        } else {
+            value(preset, 1)
+        };
+        let result = rig.set(1, request).await;
+        assert_eq!(result["result"]["status"], 3, "{result}");
+        assert_eq!(result["result"]["message"], SOURCE_REJECTED);
+        assert!(setters(&rig).is_empty());
+        assert!(rig.files.read("manual-overrides.json").unwrap().is_none());
+        rig.stop().await;
+    }
+    // The class decides only where Windows agrees: a battery reading under
+    // Windows AC is not managed's battery source, so the recipe's own power
+    // fence refuses it instead, without a setter.
     let rig = rig_at(0, 0, BATTERY, MemoryFiles::default());
+    rig.port.state.lock().unwrap().windows_on_battery = Some(Some(false));
     let result = rig.set(1, value(SILENT.0, 1)).await;
-    assert_eq!(result["result"]["status"], 2, "{result}");
-    assert_eq!(
-        result["result"]["message"],
-        "Performance override intent was stored. Hardware result: No supported performance destination is selected by the current power and profile policy."
-    );
+    assert_ne!(result["result"]["message"], SOURCE_REJECTED, "{result}");
     assert!(setters(&rig).is_empty());
     rig.stop().await;
     // Unclassified external power: managed
@@ -317,16 +337,18 @@ async fn saved_profile_presets_apply_when_explicitly_requested() {
 
 #[tokio::test]
 async fn manual_fans_defer_every_destination_to_the_fan_return() {
-    // Managed defers every destination under saved manual fans on external
-    // power, and the native fan return writes each of them. Without the fan
-    // composition no native request returns the fans, so that build asks for
-    // a new performance request.
-    for request in [
-        value(SILENT.0, 1),
-        value(BATTERY_SAVER.0, 1),
-        custom(1, 0, false),
+    // Managed defers every destination the saved manual fans admit on
+    // external power, and the native fan return writes each of them. Without
+    // the fan composition no native request returns the fans, so that build
+    // asks for a new performance request. A battery preset is admitted with
+    // Fixed fans, not with a manual curve (below).
+    for (request, files) in [
+        (value(SILENT.0, 1), manual_files()),
+        (custom(1, 0, false), manual_files()),
+        (value(BATTERY_SAVER.0, 1), fixed_files()),
+        (value(BATTERY_BALANCED.0, 1), fixed_files()),
     ] {
-        let rig = rig_at(2, 1, FULL, manual_files());
+        let rig = rig_at(2, 1, FULL, files);
         let result = rig.set(1, request).await;
         assert_eq!(result["result"]["status"], 0, "{result}");
         assert_eq!(
@@ -341,6 +363,36 @@ async fn manual_fans_defer_every_destination_to_the_fan_return() {
         assert!(rows(&rig).is_empty());
         rig.stop().await;
     }
+}
+
+#[tokio::test]
+async fn a_manual_curve_rejects_the_battery_presets_before_storing() {
+    // Managed `ValidatePerformanceFanCombination` admits no battery preset
+    // with a manual curve (`CreateUnverifiedSafeDefaults`), so
+    // `ValidateThermalOverrideCombination` rejects them under the saved
+    // ManualCurve override before anything is stored.
+    for (preset, actual) in [
+        (BATTERY_SAVER.0, FULL),
+        (BATTERY_BALANCED.0, FULL),
+        (BATTERY_SAVER.0, LIMITED),
+    ] {
+        let rig = rig_at(2, 1, actual, manual_files());
+        let saved = rig.files.read("manual-overrides.json").unwrap();
+        let result = rig.set(1, value(preset, 1)).await;
+        assert_eq!(result["result"]["status"], 3, "{result}");
+        assert_eq!(result["result"]["message"], COMBINATION_REJECTED);
+        assert!(setters(&rig).is_empty());
+        assert!(rows(&rig).is_empty());
+        assert_eq!(rig.files.read("manual-overrides.json").unwrap(), saved);
+        rig.stop().await;
+    }
+}
+
+fn fixed_files() -> MemoryFiles {
+    let files = MemoryFiles::default();
+    let fan = json!({"mode":1,"fixedSpeedRpm":3700,"manualCurve":{"cpu":[{"temperatureCelsius":30,"speedRpm":2000},{"temperatureCelsius":90,"speedRpm":5400}],"gpu":[{"temperatureCelsius":30,"speedRpm":2000},{"temperatureCelsius":90,"speedRpm":5400}],"useHigherTemperatureForBoth":true}});
+    files.put("manual-overrides.json",json!({"schemaVersion":8,"overrides":{"performance":null,"fans":1,"fanControl":fan,"lighting":null,"customPerformance":null,"gpuClockTuning":null}}));
+    files
 }
 
 #[cfg(feature = "service-fan-mutation-v2")]
@@ -629,12 +681,12 @@ async fn every_admitted_level_pair_writes_its_own_fixture_payloads() {
 async fn unsupported_custom_intent_is_stored_or_rejected_without_a_setter() {
     const NO_POLICY: &str = "Performance override intent was stored. Hardware result: No supported performance destination is selected by the current power and profile policy.";
     // High/High, an unreviewed CPU level and maximum fans are outside the
-    // RZ09-0581 range; Custom is an ordinary command, never a battery one.
+    // RZ09-0581 range. Custom is an ordinary command: on battery managed
+    // rejects it before storing it (above).
     for (request, actual) in [
         (custom(2, 2, false), FULL),
         (custom(3, 0, false), FULL),
         (custom(1, 0, true), LIMITED),
-        (custom(1, 0, false), BATTERY),
     ] {
         let rig = rig_at(2, 0, actual, MemoryFiles::default());
         let result = rig.set(1, request.clone()).await;

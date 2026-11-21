@@ -991,13 +991,14 @@ async fn installed_gpu_intent_is_stored_with_explicit_incompleteness_and_no_pair
 }
 
 #[tokio::test]
-async fn installed_source_ineligible_intent_is_stored_and_power_change_stops_partial_pair() {
-    // Battery stores an AC override and applies the battery profile's own
-    // Battery Saver pair instead, as managed selects the battery slot there
-    // (`performance_source_eligible`). Managed offers every supported preset
-    // on both external classes, so a confirmed limited USB-C adapter applies
-    // the saved Performance override with the same commands, after fresh
-    // per-command class admission.
+async fn installed_source_ineligible_intent_is_rejected_and_power_change_stops_partial_pair() {
+    // On battery that Windows confirms, managed
+    // `ValidateThermalOverrideCombination` rejects an AC override before
+    // storing it (`PerformancePowerSourcePolicy.IsAllowed`), and nothing is
+    // written. Managed offers every supported preset on both external
+    // classes, so a confirmed limited USB-C adapter applies the saved
+    // Performance override with the same commands, after fresh per-command
+    // class admission.
     for actual in [0, 1] {
         let files = MemoryFiles::default();
         files.profiles(1);
@@ -1005,18 +1006,19 @@ async fn installed_source_ineligible_intent_is_stored_and_power_change_stops_par
         rig.port.state.lock().unwrap().actual = actual;
         let result = rig.set(1, value(2, 1)).await;
         let status = rig.get().await;
-        assert_eq!(status["status"]["performanceOverride"]["value"], 2);
         let message = result["result"]["message"].as_str().unwrap();
         if actual == 0 {
-            assert_eq!(result["result"]["status"], 2);
+            assert_eq!(result["result"]["status"], 3);
             assert_eq!(
                 message,
-                "Performance override intent was stored. Hardware result: The current power and profile policy selects another performance destination, which is confirmed; the requested value is saved but not applied."
+                "The requested intent was rejected: The performance preset is not valid for this power source."
             );
-            assert_eq!(status["status"]["confirmedState"]["performance"], 3);
-            let s = rig.port.state.lock().unwrap();
-            assert_eq!((s.writes, s.selectors, s.fans), (2, [3, 3], [0, 0]));
+            assert!(status["status"]["performanceOverride"].is_null());
+            assert!(rig.files.read("manual-overrides.json").unwrap().is_none());
+            assert!(rig.files.read("thermal-mutation.journal").unwrap().is_none());
+            assert_eq!(rig.port.state.lock().unwrap().writes, 0);
         } else {
+            assert_eq!(status["status"]["performanceOverride"]["value"], 2);
             assert_eq!(result["result"]["status"], 1, "{message}");
             assert_eq!(status["status"]["confirmedState"]["performance"], 2);
             assert_eq!(rig.port.state.lock().unwrap().writes, 2);
@@ -3387,6 +3389,9 @@ async fn correction_inflight_config_drift_distinguishes_stored_from_first_intent
             let mut port = rig.port.state.lock().unwrap();
             assert_eq!(port.opened, port.retired);
             port.change_power = None;
+            // The seed ends on battery, where managed rejects the AC override
+            // below before storing it; the drift request runs on full power.
+            port.actual = 15;
         }
         let prior_journal = rig.files.read("thermal-mutation.journal").unwrap();
         let prior_writes = rig.port.state.lock().unwrap().writes;

@@ -58,7 +58,9 @@ service-profiles-v1 = ["service-temporary-charge-v1", "openblade-domain/profile-
 service-temporary-charge-v1 = ["service-battery-policy-v1"]
 service-battery-policy-v1 = ["service-fan-mutation-v2"]
 service-fan-mutation-v2 = ["service-thermal-mutation-v1"]
-service-thermal-mutation-v1 = ["service-mailbox-observation-v1", "controller-admission-compile-check"]
+# Thermal overrides are checked with the managed ProfileSetValidator thermal
+# rules before anything is stored, so this lane needs the domain profile set.
+service-thermal-mutation-v1 = ["service-mailbox-observation-v1", "controller-admission-compile-check", "openblade-domain/profile-set"]
 service-mailbox-observation-v1 = ["service-hardware-compile-check"]
 service-hardware-compile-check = ["installed-service-candidate", "firmware-performance-compile-check"]
 installed-service-candidate = [

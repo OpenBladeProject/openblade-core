@@ -1031,6 +1031,31 @@ impl Storage {
         s.last = Some(entry);
         Ok(())
     }
+    /// The power profile's own performance and fan mode for class `power`, as
+    /// managed `ValidateThermalOverrideCombination` reads them from
+    /// `Automation.Profiles` (application profiles take no part), or managed
+    /// `ProfileDefaults.CreateSafeDefaults` when no aggregate is stored.
+    pub(super) fn profile_thermal(&self, power: i32) -> io::Result<Option<(i32, i32)>> {
+        let key = match power {
+            0 => "pluggedIn",
+            1 => "battery",
+            2 => "usbC",
+            _ => return Ok(None),
+        };
+        let Some(doc) = aggregate(self.files.as_ref(), self.same_path)? else {
+            let defaults = openblade_domain::profile_set::ProfileSet::safe_defaults();
+            let profile = match power {
+                0 => defaults.plugged_in,
+                1 => defaults.battery,
+                _ => defaults.usb_c,
+            };
+            return Ok(Some((profile.performance.0, profile.fans.0)));
+        };
+        let profile = &doc["profiles"][key];
+        let performance = profile["performance"].as_i64().ok_or_else(denied)?;
+        let fans = profile["fans"].as_i64().ok_or_else(denied)?;
+        Ok(Some((performance as i32, fans as i32)))
+    }
     pub(super) fn desired_manual_fans(
         &self,
         power: i32,

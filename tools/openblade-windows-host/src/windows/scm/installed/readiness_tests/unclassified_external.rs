@@ -614,7 +614,7 @@ async fn status_reads_saved_intent_only_where_fresh_windows_power_agrees() {
     let rig = Rig::new(files);
     rig.port.state.lock().unwrap().actual = 0;
     rig.metadata.store(1, Ordering::Release);
-    rig.set(1, value(2, 0)).await;
+    rig.set(1, value(3, 0)).await;
     assert_eq!(lifetime(&rig.get().await), 0);
     rig.metadata.store(0, Ordering::Release);
     assert_eq!(lifetime(&rig.get().await), 0);

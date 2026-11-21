@@ -144,8 +144,25 @@ A class change between setters follows the rules under
 [unclassified external power](#unclassified-external-power); a change to or
 from battery always stops the pair without replay. Saved-intent selection is
 unchanged: battery selects only the battery presets
-(`automation::performance_source_eligible`), so an ordinary override saved on
-battery is stored and not written there.
+(`automation::performance_source_eligible`), so an override saved on AC is kept
+and not written on battery.
+
+On classified power that agrees with Windows, managed
+`ValidateThermalOverrideCombination` checks a performance request before
+anything is stored, and native does the same with the ported
+`ProfileSetValidator.ValidatePerformanceFanCombination` and the exact RZ09-0581
+policy profile saves use. The preset is the requested one (the power profile's
+for a clear) and the fans are the saved fan override (the profile's without
+one). A rejection is Failed with managed's text, for example:
+
+- on battery, Silent, Balanced, Performance and Custom: "The requested intent was
+  rejected: The performance preset is not valid for this power source."
+- under a saved ManualCurve fan override, Battery Saver and Battery Balanced:
+  "The requested intent was rejected: The performance and fan combination is not
+  supported by the active validation policy." Fixed and Maximum fans admit them.
+
+A class that disagrees with Windows is not managed's source: this check does
+not apply, and the recipe's power fence submits no setter.
 
 Managed leaves confirmed HyperBoost for a battery preset through the
 `hyperboost-restore-balanced` pair first (`CanExitHyperBoostDirectlyTo`; the
