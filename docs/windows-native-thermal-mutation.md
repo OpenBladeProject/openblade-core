@@ -945,9 +945,10 @@ extends or as anything else. Tests on both sides pin the refusal. Admitting it b
 
 ### Active application profile
 
-Resolution of the active application profile is ported, write-free, and not
-yet called by the installed Service; a later slice wires it to saves,
-foreground reports, lease expiry and power changes.
+Resolution of the active application profile is ported and write-free. The
+installed Service resolves every request's profile layer through it (see
+below); later slices wire it to saves, foreground reports, lease expiry and
+power changes, none of which trigger a reconciliation yet.
 `openblade_domain::application_context` holds managed `ProfileAutomationState`'s
 selection rules over borrowed rules: the first enabled rule whose path matches
 a report (`SetApplicationContext`, `ProfileAutomationState.cs:216-236`), the
@@ -999,13 +1000,43 @@ fan control into an override's mode with `with_mode`.
 
 The replay's `application_runtime::Lease` uses the same selection rules, and
 `Lease::rule` also requires the pair to be retained by the current rules, so a
-caller that changes rules without `Lease::update` gets no overrides. The
-installed Service does not use them yet: `thermal_storage.rs` selects the
-application override with four stateless matchers (lines 584-594, 643-653,
-826-836 and 988-998) that take the first enabled rule for the reported path on
-every read. After a save that gives the active rule's path to a new id, managed
-keeps no profile until the next report, while those matchers select the new
-rule at once. The wiring slice replaces them.
+caller that changes rules without `Lease::update` gets no overrides.
+
+The installed Service composes over the same resolution.
+`thermal_mutation::Runtime` keeps the latest admitted report with its lease as
+a `thermal_storage::Foreground`: the reported path and an `ApplicationContext`.
+Each request step reads the aggregate once into a typed `ProfileSet`
+(`Storage::profile_layer`), selects the reported path in it with
+`ApplicationContext::report`, and resolves the step's power class with
+`application::resolve` (`ProfileLayer::at`). `Storage::desired`,
+`gpu_incomplete`, `custom_unsupported`, `desired_fan` and
+`desired_manual_fans` take that one `Resolution` and layer the overrides over
+it: a persistent performance override (source 4), then a temporary one (3),
+then the resolved profile, sourced from the application (2) only when its
+override sets the preset and from the power profile (1) otherwise. Fan intent
+is an unexpired temporary fan override, then a persistent one, then the
+resolved profile's fan control, or the legacy default for its mode. A step
+that reaches a setter resolves again before it (`destination_holds`, and the
+fan permit's `authorize` when its policy digest changed), so a profile edit
+during a request still stops it.
+
+Native applies no profile on unclassified external or unknown power, where
+`Resolve` takes `CreateObservedFallbackProfile`: there only explicit overrides
+select a destination, as before. It has no recovered HyperBoost layer either.
+It never selects HyperBoost, and a resolved battery preset under confirmed
+HyperBoost is refused as `Plan::NoDirectPath` (Blocked, "Leaving HyperBoost
+for a battery preset needs the HyperBoost restore sequence, which this build
+does not submit; no thermal setter was submitted."), whichever layer selected
+it.
+
+Until the report itself reads the profiles under the request gate, each step
+selects the reported path against the profiles it has just read. That keeps the
+matching the four inline matchers did: after a save that gives the active
+rule's path to a new id, managed keeps no profile until the next report, while
+native selects the new rule at the next read. The application's provenance
+also stays native's: managed's `DesiredIntent::performance` names the
+application when its override sets only Custom settings or GPU tuning, where
+native reports the power profile (1).
 
 The active pair keeps the reported spelling of the path, not the rule's. That
 is visible only in the state: path comparison ignores case, so no resolved
@@ -1105,8 +1136,9 @@ A fan operation's checkpoints reread saved policy, so that a change between
 setters stops it. They resolve it again only when a digest of its inputs
 changed: the override and configuration files, the override bytes this storage
 accepted and both temporaries (`Storage::policy_inputs`). A full resolution
-parses the aggregate up to four times (about 226 us in memory, before file
-access), the digest reads the five files once (about 1.2 us in memory).
+reads the aggregate once and decodes its profiles into the typed set
+(`Storage::profile_layer`); the digest reads the five files once (about 1.2 us
+in memory).
 An unexpected Custom final selector rejects confirmation without allocating
 unreserved Custom component queries. Ordinary full observation still reads both
 Custom components. CustomManual High/High confirms the Custom performance and
