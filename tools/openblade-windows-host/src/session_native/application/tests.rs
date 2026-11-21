@@ -813,9 +813,14 @@ async fn profile_changes_apply_to_the_current_foreground_without_a_new_window_ev
 
 #[tokio::test]
 async fn origin_loss_before_a_send_is_fatal_and_sends_nothing() {
+    // The scenario waits for the event it depends on, not for a fixed time: the
+    // origin check ran, or (without it) a report was sent.
+    let verified = Arc::new(AtomicUsize::new(0));
+    let counted = verified.clone();
     let (result, (), rig) = rig(
         vec![],
-        || {
+        move || {
+            counted.fetch_add(1, Ordering::AcqRel);
             Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "origin lost",
@@ -824,8 +829,11 @@ async fn origin_loss_before_a_send_is_fatal_and_sends_nothing() {
         async |rig| {
             profiles_for(rig, json!([entry(1, GAME, 0)]));
             focus(rig, 1, 41, GAME);
-            sleep(Duration::from_millis(300)).await;
-            // Without the fatal origin error this would otherwise wait forever.
+            rig.until("the origin check or a send", |rig| {
+                verified.load(Ordering::Acquire) > 0 || rig.sent() > 0
+            })
+            .await;
+            // Without the fatal origin error the role would otherwise wait forever.
             rig.finish();
         },
     )
