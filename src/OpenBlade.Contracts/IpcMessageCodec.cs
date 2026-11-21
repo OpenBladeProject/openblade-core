@@ -8,9 +8,10 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
+    // Protocol 85 adds the cooling-pad Auto fan mode and its profile.
     // Protocol 87 adds the Session Agent's advisory Windows Dynamic Lighting
-    // report and the matching status field. Protocols 85 and 86 are held by
-    // concurrent pull requests.
+    // report and the matching status field. Protocol 86 is held by a
+    // concurrent pull request.
     public const int ProtocolVersion = 87;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;

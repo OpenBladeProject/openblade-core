@@ -76,6 +76,14 @@ public sealed class AppTypographyContractTests
         AssertSetter(textCommand, "ContentTemplate", "{StaticResource AppCommandTextTemplate}");
         Assert.DoesNotContain(command.Elements(), setter =>
             Attribute(setter, "Property") is "Height" or "FontSize" or "FontFamily");
+        // The primary command differs only in its native accent base.
+        XElement accentCommand = AssertStyle(typography, "AppAccentCommandButtonStyle",
+            "{StaticResource AccentButtonStyle}", targetType: "Button");
+        foreach (XElement setter in command.Elements().Concat(textCommand.Elements()))
+        {
+            AssertSetter(accentCommand, Attribute(setter, "Property")!, Attribute(setter, "Value")!);
+        }
+        Assert.Equal(command.Elements().Count() + textCommand.Elements().Count(), accentCommand.Elements().Count());
     }
 
     [Fact]
@@ -116,6 +124,7 @@ public sealed class AppTypographyContractTests
         Assert.Contains("Caption = \"AppCaptionTextStyle\"", helper, StringComparison.Ordinal);
         Assert.Contains("Data = \"AppDataTextStyle\"", helper, StringComparison.Ordinal);
         Assert.Contains("CommandButton = \"AppCommandButtonStyle\"", helper, StringComparison.Ordinal);
+        Assert.Contains("AccentCommandButton = \"AppAccentCommandButtonStyle\"", helper, StringComparison.Ordinal);
         Assert.Contains("CustomCommandButton = \"AppCustomCommandButtonStyle\"", helper, StringComparison.Ordinal);
         Assert.Contains("textBlock.Style = RequireStyle(key);", helper, StringComparison.Ordinal);
         Assert.Contains("Application.Current.Resources[key]", helper, StringComparison.Ordinal);

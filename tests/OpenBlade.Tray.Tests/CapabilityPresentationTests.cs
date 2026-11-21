@@ -550,7 +550,9 @@ public sealed class CapabilityPresentationTests
             .Where(element => element.Name.LocalName == "Slider"
                 && Attribute(element, "Tag") == "{x:Bind Mode=OneTime}")
             .ToArray();
-        Assert.Equal(2, curveSliders.Length);
+        // Laptop and cooling-pad curves share the one point template.
+        Assert.Single(curveSliders);
+        Assert.Equal(4, document.Descendants().Count(element => Attribute(element, "ItemTemplate") == "{StaticResource FanCurvePointTemplate}"));
         Assert.All(curveSliders, slider => Assert.Equal("120", Attribute(slider, "MinWidth")));
         Assert.All(curveSliders, slider =>
         {
@@ -558,12 +560,11 @@ public sealed class CapabilityPresentationTests
             Assert.Equal("{x:Bind MaximumRpm, Mode=OneTime}", Attribute(slider, "Maximum"));
             Assert.Equal("{x:Bind StepRpm, Mode=OneTime}", Attribute(slider, "StepFrequency"));
         });
-        XElement[] curveLists = curveSliders
-            .Select(slider => slider.Ancestors().First(element =>
-                element.Name.LocalName == "ItemsControl"))
-            .Distinct()
+        XElement[] curveLists = document.Descendants()
+            .Where(element => element.Name.LocalName == "ItemsControl"
+                && Attribute(element, "ItemTemplate") == "{StaticResource FanCurvePointTemplate}")
             .ToArray();
-        Assert.Equal(2, curveLists.Length);
+        Assert.Equal(4, curveLists.Length);
         Assert.All(curveLists, list => Assert.Equal(
             "{StaticResource FanCurveItemContainerStyle}",
             Attribute(list, "ItemContainerStyle")));
@@ -1355,6 +1356,7 @@ public sealed class CapabilityPresentationTests
         foreach ((string name, string options, string selection) in new[]
                  {
                      ("CoolingPadFanSelector", "FanModes", "FanMode"),
+                     ("CoolingPadAutoProfile", "AutoProfiles", "AutoProfile"),
                      ("CoolingPadLightingSelector", "LightingModes", "LightingMode"),
                      ("CoolingPadTemperatureSource", "TemperatureSources", "TemperatureSource"),
                      ("CoolingPadWaveDirection", "WaveDirections", "WaveDirection"),

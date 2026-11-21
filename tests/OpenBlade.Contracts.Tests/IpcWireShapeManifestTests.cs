@@ -90,8 +90,10 @@ public sealed class IpcWireShapeManifestTests
             83 => "C29F478A17D06E6EDD3F69F1A6EAC11FAAEA3B89186B043F7ABB95761C294EC6",
             // Protocol 84 combines RZ09-0529 lighting zones with current-main contracts.
             84 => "7698A5B8C9679FCDE35762221E1DBD8A31E92086588511320CB0D5D87473D306",
+            // Protocol 85 adds the cooling-pad Auto fan mode and CoolingPadSettings.AutoProfile.
+            85 => "A471FE3A7AD4994630D5137AB901C3599358B1546ED1797B4A4E7E0B4203CEB3",
             // Protocol 87 adds the advisory Windows Dynamic Lighting report and status.
-            87 => "15AD4A8F8FDF734478FE1DAA758157B05F3377FF3B131E668B7DDA02E4BCA441",
+            87 => "9652876E23F79F61BBD7BBB140ABB45FAF0E2452318282E352F1B9828D92257D",
             _ => null,
         };
 
