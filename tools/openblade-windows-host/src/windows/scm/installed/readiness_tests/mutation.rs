@@ -1,6 +1,8 @@
 //! Prelisted fake-I/O installed dispatcher tests. Every root, SID, authority,
 //! metadata sample and native port is injected before a default resolver exists.
 use super::*;
+#[path = "profile_layer_lighting.rs"]
+mod profile_layer_lighting;
 #[path = "temporary_charge_corrections.rs"]
 mod tfc_corrections;
 #[cfg(feature = "service-temporary-charge-v1")]

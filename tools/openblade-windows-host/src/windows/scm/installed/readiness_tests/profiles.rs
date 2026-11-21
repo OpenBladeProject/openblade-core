@@ -666,3 +666,33 @@ fn this_composition_declares_profile_serving_in_its_compiled_identity() {
         "private-service-custody-v1,service-mailbox-observation-v1,service-thermal-mutation-v1,service-fan-mutation-v2,service-battery-policy-v1,service-temporary-charge-v1,service-profiles-v1"
     );
 }
+
+/// A profile save that sets a Static keyboard colour, in the member order the
+/// Tray sends (`kind` first), leaves the saved profiles resolvable: an
+/// ordinary performance request then reaches the paired setters.
+#[tokio::test]
+async fn installed_update_profiles_with_static_lighting_keeps_thermal_requests_resolvable() {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    let rig = Rig::new(files.clone());
+    rig.get().await;
+    let mut profiles = saved(&files);
+    profiles["pluggedIn"]["lighting"] = json!("@@LIGHTING@@");
+    let rgb = r#"{"red":200,"green":10,"blue":5}"#;
+    let lighting = format!(
+        r#"{{"effect":1,"color":{rgb},"brightness":10,"parameters":{{"kind":"static","color":{rgb}}},"logoMode":null}}"#
+    );
+    let text = serde_json::to_string(&update_request(61, &profiles))
+        .unwrap()
+        .replace(r#""@@LIGHTING@@""#, &lighting);
+    let reply: Value = serde_json::from_slice(&exchange(&rig, text.as_bytes()).await[4..]).unwrap();
+    assert_eq!(reply, result(0, STORED, 61));
+    no_hardware(&rig);
+    let stored = String::from_utf8(files.read("profiles.json").unwrap().unwrap()).unwrap();
+    assert!(stored.contains(r#""kind": "static""#), "{stored}");
+    fresh_observe(&rig).await;
+    let outcome = rig.set(1, value(2, 1)).await;
+    assert_eq!(outcome["result"]["status"], 1, "{outcome}");
+    assert_eq!(rig.port.state.lock().unwrap().writes, 2);
+    rig.stop().await;
+}
