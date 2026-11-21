@@ -1,4 +1,10 @@
 //! Standalone installed sign-in entry. Fixture modules are outside this binary.
+//!
+//! The installed Agent has no console, as the managed Agent is a WinExe: a
+//! sign-in task, Windows Error Reporting restart or Restart Manager launch must
+//! not open a console window. Nothing here depends on one. Standard handles are
+//! absent, and Rust's stderr and stdout then drop writes instead of failing.
+#![cfg_attr(not(test), windows_subsystem = "windows")]
 
 #[cfg(windows)]
 #[allow(dead_code)] // Shared with the Service entry, which owns the lifetime ingress.
@@ -54,7 +60,14 @@ fn main() -> std::process::ExitCode {
             outcome,
             |error| {
                 #[cfg(not(openblade_agent_endpoint))]
-                eprintln!("OpenBlade installed Session Agent candidate: {error}");
+                {
+                    use std::io::Write;
+                    // Best effort: a GUI-subsystem process may have no stderr.
+                    let _ = writeln!(
+                        std::io::stderr(),
+                        "OpenBlade installed Session Agent candidate: {error}"
+                    );
+                }
                 #[cfg(openblade_agent_endpoint)]
                 session_native::diagnostics::terminal(
                     error,
