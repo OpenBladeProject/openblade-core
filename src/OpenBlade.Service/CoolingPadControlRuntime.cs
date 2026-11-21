@@ -218,8 +218,10 @@ internal sealed class CoolingPadControlRuntime(
         finally { gate.Release(); }
     }
 
-    private sealed class TemperatureUnavailableException()
-        : InvalidOperationException("Cooling pad curve is waiting for a reading from its selected temperature source.");
+    private sealed class TemperatureUnavailableException() : InvalidOperationException(Text)
+    {
+        internal const string Text = "Cooling pad curve is waiting for a reading from its selected temperature source.";
+    }
 
     internal async Task<ControlOperationResult> ReleaseAsync(Func<bool> admission, CancellationToken token,
         bool serviceOwnedRestoration = false)
@@ -294,6 +296,10 @@ internal sealed class CoolingPadControlRuntime(
                 ExpireLeases();
                 int target = IsTemperatureDriven(settings.FanMode)
                     ? await CurveTargetAsync(settings, token).ConfigureAwait(false) : settings.FixedRpm;
+                if (status.Message == TemperatureUnavailableException.Text)
+                {
+                    UpdateStatus(previous => previous with { Message = "Cooling pad curve is following its temperature source again." });
+                }
                 if (settings.AllowDemandApi && leases.Count != 0) { target = Math.Max(target, leases.Values.Max(value => value.Rpm)); }
                 if (status.ConfirmedTargetRpm != target)
                 {

@@ -606,6 +606,7 @@ public sealed class CoolingPadControlRuntimeTests
         }
         Assert.True(runtime.Status.Active);
         Assert.Single(provider.Pad.Writes);
+        Assert.Contains("waiting for a reading", runtime.Status.Message);
 
         // The filter restarts from the fresh reading, so sustained heat raises the target.
         temperatures.Reading = new(95, null);
@@ -614,6 +615,7 @@ public sealed class CoolingPadControlRuntimeTests
         Assert.True(runtime.Status.Active);
         Assert.Equal(3000, runtime.Status.ConfirmedTargetRpm);
         Assert.Equal(2, provider.Pad.Writes.Count);
+        Assert.DoesNotContain("waiting", runtime.Status.Message);
     }
 
     public static TheoryData<CoolingPadSettings, int> PoweredDownGpuModes => new()
