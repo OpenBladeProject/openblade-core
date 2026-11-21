@@ -5,6 +5,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Turn local dimming off on Blade 16 (2024, RZ09-0510) and Blade 18 (2024, RZ09-0509) with mini-LED displays. Turning it back on stays in Synapse. Show the Synapse CPU power limits, firmware Gaming-mode GPU overclock and HDR-linked local dimming on the models that have them, without controls. ([#994](https://github.com/OSSBlade/openblade-core/pull/994))
+
 ### Changed
 
 - Credit the Blade 18 (2025, RZ09-0529) keyboard lighting effects and per-key color editing in 0.65.1-nightly.117 to their contributor. Thanks to [@TheChrisTech](https://github.com/TheChrisTech). ([#977](https://github.com/OpenBladeProject/openblade-core/pull/977))
