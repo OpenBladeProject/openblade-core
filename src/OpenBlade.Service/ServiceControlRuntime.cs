@@ -16787,7 +16787,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             {
                 bool performanceWasExternal = driftTracker.ExternalChanges.Contains(
                     DeviceSubsystem.Performance);
-                ObserveAutomaticState(confirmed, priorDesired, desired);
+                ObserveAutomaticState(
+                    confirmed,
+                    priorDesired,
+                    desired,
+                    current.ActivePowerSource);
                 if (!performanceWasExternal
                     && driftTracker.ExternalChanges.Contains(DeviceSubsystem.Performance)
                     && resumePowerSourceTransitionGeneration == powerSourceGeneration
@@ -18605,7 +18609,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private void ObserveAutomaticState(
         ConfirmedDeviceState confirmed,
         DesiredDeviceState? expected = null,
-        DesiredDeviceState? alternateExpected = null)
+        DesiredDeviceState? alternateExpected = null,
+        PowerSource? priorPowerSource = null)
     {
         ArgumentNullException.ThrowIfNull(confirmed);
         // Any confirmed state other than the handoff itself retires it.
@@ -18642,7 +18647,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             CompareTransitionAutomaticPerformance(
                 confirmed,
                 desired,
-                alternateExpected);
+                alternateExpected,
+                priorPowerSource);
             CompareTransitionAutomaticValue(
                 DeviceSubsystem.Fans,
                 confirmed.Fans,
@@ -19030,7 +19036,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private void CompareTransitionAutomaticPerformance(
         ConfirmedDeviceState confirmed,
         DesiredDeviceState priorDesired,
-        DesiredDeviceState newDesired)
+        DesiredDeviceState newDesired,
+        PowerSource? priorPowerSource)
     {
         if (confirmed.Performance is null)
         {
@@ -19046,12 +19053,15 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         {
             hyperBoostHandoffPerformance = null;
         }
-        // Off battery, RZ09-0483/0482 raw 6 is the transitional DC Balanced reading
-        // that Synapse also leaves for its own AC set: no AC intent names it, so
-        // it is not an outside change and the plugged-in profile applies through
-        // its normal fresh admission. Any real AC mode is still compared.
+        // On a transition from battery, RZ09-0483/0482 raw 6 is the transitional
+        // DC Balanced reading that Synapse also leaves for its own AC set: no AC
+        // intent names it, so it is not an outside change and the plugged-in
+        // profile applies through its normal fresh admission. Any real AC mode is
+        // still compared. Raw 6 already held on external power, for example
+        // across a PluggedIn to UsbC swap, is not transitional and stays compared.
         bool transitionalDcBalanced =
-            confirmed is { Performance: PerformancePreset.BatteryBalanced, HyperBoostActive: false }
+            priorPowerSource == PowerSource.Battery
+            && confirmed is { Performance: PerformancePreset.BatteryBalanced, HyperBoostActive: false }
             && newDesired.Performance.Value != PerformancePreset.BatteryBalanced
             && ReadsRawSixAsTransitionalDcBalanced(GetStatus().Capabilities);
         driftTracker.ConfirmIntentional(
@@ -19087,9 +19097,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     // Battery Balanced off battery, a transitional reading until a typed AC set
     // leaves it; their tables list Balanced but not Battery Balanced. RZ09-0510
     // lists Battery Balanced as its own preset, so its raw 6 and raw 0 (Balanced)
-    // stay distinct. Other tables never decode raw 6 as Battery Balanced unlisted.
+    // stay distinct. RZ09-0484 shares the table shape but its HyperBoost is not
+    // writable, so it never makes the handoff and is excluded here.
     private static bool ReadsRawSixAsTransitionalDcBalanced(DeviceCapabilities? capabilities) =>
-        capabilities is { HyperBoostAccess: not null } table
+        capabilities is { HyperBoostAccess: DeviceFeatureAccess.ReadWrite } table
         && table.PerformancePresets.Contains(PerformancePreset.Balanced)
         && !table.PerformancePresets.Contains(PerformancePreset.BatteryBalanced);
 

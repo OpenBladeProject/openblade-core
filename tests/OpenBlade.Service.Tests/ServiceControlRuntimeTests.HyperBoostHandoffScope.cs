@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Security.Principal;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
@@ -327,6 +328,7 @@ public sealed partial class ServiceControlRuntimeTests
     [InlineData(0x029F, PerformancePreset.Balanced, PerformancePreset.Silent, false)]
     [InlineData(0x029F, PerformancePreset.Performance, PerformancePreset.Balanced, false)]
     [InlineData(0x02B7, PerformancePreset.Turbo, PerformancePreset.BatteryBalanced, false)]
+    [InlineData(0x02A0, PerformancePreset.Performance, PerformancePreset.BatteryBalanced, false)]
     public async Task RealModeSevenTable_ColdStartOnBatteryThenAcReturnFromHeldMode(
         int productId,
         PerformancePreset pluggedIn,
@@ -593,5 +595,96 @@ public sealed partial class ServiceControlRuntimeTests
         };
         context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
         return context;
+    }
+
+    // Raw 6 latched as an outside change while on AC is not transitional: only a
+    // transition from battery reads it that way. A PluggedIn to UsbC swap keeps the
+    // latch and writes nothing, with or without a competing controller; a real AC
+    // mode stays outside the same way.
+    [Theory]
+    [InlineData(0x029F, PerformancePreset.BatteryBalanced, PerformancePreset.Silent, false)]
+    [InlineData(0x029F, PerformancePreset.BatteryBalanced, PerformancePreset.Silent, true)]
+    [InlineData(0x029D, PerformancePreset.BatteryBalanced, PerformancePreset.Silent, false)]
+    [InlineData(0x029F, PerformancePreset.Silent, PerformancePreset.Performance, false)]
+    public async Task RealModeSevenTable_OutsideRawSixOnAcStaysOutsideAcrossExternalSwap(
+        int productId,
+        PerformancePreset outside,
+        PerformancePreset usbC,
+        bool controllerPresent)
+    {
+        DeviceCapabilities capabilities = ExperimentalBladePort.CreateCapabilities(
+            ExperimentalBladeModels.All.Single(item => item.ProductId == productId), true);
+        TestContext context = CreateContext(true,
+            initialPowerSource: PowerSource.PluggedIn,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(capabilities, capabilities),
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: new RecordingHyperBoostOwnershipJournalStore());
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Balanced,
+            CustomPerformance = null,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ReconcileStartupProfileAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with { Performance = outside };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Contains(DeviceSubsystem.Performance, context.Runtime.GetStatus().ExternalChanges);
+        if (controllerPresent)
+        {
+            context.Monitor.Current = new ControllerPresenceObservation(["RazerAppEngine"], null);
+            await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
+        }
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        ControlOperationResult updated = await context.Runtime.UpdateProfilesAsync(profiles with
+        {
+            UsbC = profiles.UsbC with { Performance = usbC },
+        }, CancellationToken.None);
+        Assert.True(updated.Status == ControlOperationStatus.Stored, updated.Message);
+        int performanceWrites = context.Device.PerformanceWrites.Count;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.UsbC);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.UsbC, status.ActivePowerSource);
+        Assert.Contains(DeviceSubsystem.Performance, status.ExternalChanges);
+        Assert.Equal(outside, context.Device.ConfirmedState.Performance);
+        Assert.Equal(performanceWrites, context.Device.PerformanceWrites.Count);
+    }
+
+    // A write confirmation that stays pending keeps the battery handoff retirement
+    // from running, even when the confirmed state is the handoff itself.
+    [Fact]
+    public async Task RealModeSevenTable_PendingConfirmationKeepsBatteryRetirementPending()
+    {
+        (TestContext context, RecordingHyperBoostOwnershipJournalStore journal) =
+            await CreateRealModeSevenRestorePendingOnBatteryAsync(0x029F, failFirstClear: false);
+        var tracker = (PendingWriteConfirmationTracker)typeof(ServiceControlRuntime)
+            .GetField("pendingWriteConfirmations", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(context.Runtime)!;
+        ConfirmedDeviceState handoff = context.Device.ConfirmedState;
+        // A lighting write whose readback is unavailable stays pending.
+        tracker.Set(DeviceSubsystem.Lighting, new PendingWriteConfirmation(
+            PowerSource.Battery,
+            context.Runtime.GetStatus().DesiredState,
+            handoff));
+        context.Device.ConfirmedState = handoff with { Lighting = null };
+        int setters = context.Device.TotalSetterCalls;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.True(tracker.HasPending);
+        Assert.NotNull(journal.Journal);
+        Assert.True(context.Runtime.GetStatus().HyperBoostRestorePending);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(setters, context.Device.TotalSetterCalls);
     }
 }
