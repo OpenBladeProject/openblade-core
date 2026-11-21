@@ -80,9 +80,11 @@ try {
         'openblade-protocol' = @('completed_rejection', 'custom_performance', 'report_parity', 'report_properties',
             'temporary_charge')
         # profile_set_vectors reads the managed ProfileSet vectors; it compiles only
-        # with the profile-set and thermal-history features.
+        # with the profile-set and thermal-history features. profile_resolution_vectors
+        # reads the managed active application-profile vectors; it compiles only with
+        # the profile-set feature.
         'openblade-domain' = @('automation_policy', 'function_row_policy', 'profile_policy',
-            'profile_set_vectors', 'recovery_replay')
+            'profile_resolution_vectors', 'profile_set_vectors', 'recovery_replay')
     }
 
     $metadataJson = cargo metadata --locked --offline --format-version 1
