@@ -17,6 +17,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Return fans from a fixed speed or fan curve to Automatic on source-reviewed models without stopping the OpenBlade service. A performance mode chosen while the fans were manual, including on battery, is applied once when they return to Automatic, unless the mode changed outside OpenBlade after that choice or a profile or power change replaced the choice. Clear manual overrides now clears performance before fans, so it no longer reapplies the cleared mode first. Fan curves keep following temperature while the choice waits. ([#989](https://github.com/OpenBladeProject/openblade-core/pull/989))
 - Make the cooling pad's fan and lighting controls apply when Razer's device drivers are installed. The extra input-only pad interfaces and the Razer Experience Service no longer block control, and the pad's fan and lighting replies are now read the way its firmware reports them, so a fixed fan speed no longer pauses control. ([#983](https://github.com/OpenBladeProject/openblade-core/pull/983))
 - Keep Razer-driver function-row media keys and SnapTap working after focus briefly leaves every window, such as at the lock screen, and when a key is pressed while Windows is still starting. Previously they stopped until Windows restarted or the setting was toggled. ([#990](https://github.com/OpenBladeProject/openblade-core/pull/990))
 
