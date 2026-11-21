@@ -38,7 +38,7 @@ pub(super) struct FanPermit {
     requested: Value,
     value: Option<FanOverride>,
     settings: Option<Value>,
-    application: Option<String>,
+    application: Foreground,
     proof: ReadAdmission,
     selected: Mutex<Option<(i32, Value)>>,
     // The saved destination this return to Automatic applies (see `saved_preset`).
@@ -115,12 +115,16 @@ impl FanPermit {
     /// performance request resolves it. Managed writes every destination there
     /// (`ApplyDirectAutomaticFanTransitionOutcomeAsync`). A configured GPU
     /// clock effect has no native writer, so then the observed selector is kept.
-    fn saved_preset(&self, power: i32) -> io::Result<Option<Destination>> {
-        let application = self.application.as_deref();
+    /// `profile` is the resolution at `power` the caller read.
+    fn saved_preset(
+        &self,
+        power: i32,
+        profile: Option<&Resolution<'_>>,
+    ) -> io::Result<Option<Destination>> {
         // A temporary override kept for another class has expired for both
         // reads (Storage expires it in each), as for a performance request.
-        let desired = self.storage.desired(power, application)?;
-        if self.storage.gpu_incomplete(power, application)? {
+        let desired = self.storage.desired(power, profile)?;
+        if self.storage.gpu_incomplete(power, profile)? {
             return Ok(None);
         }
         Ok(desired.map(|(p, _)| p))
@@ -187,19 +191,23 @@ impl Permit for FanPermit {
             // must still hold; a selector-2 handback without one is pinned by
             // the power fence instead.
             self.observe_power(power)?;
+            let returning = self.returning.load(Ordering::Acquire);
+            if settings.is_null() && !returning {
+                return Ok(true);
+            }
+            // Resolved again from the saved profiles as they are now.
+            let layer = self.storage.profile_layer(&self.application)?;
+            let profile = layer.at(power)?;
             if !settings.is_null()
-                && self
-                    .storage
-                    .desired_fan(power, self.application.as_deref())?
-                    != Some(settings)
+                && self.storage.desired_fan(power, profile.as_ref())? != Some(settings)
             {
                 return Ok(false);
             }
-            if !self.returning.load(Ordering::Acquire) {
+            if !returning {
                 return Ok(true);
             }
             let performance = *self.performance.lock().map_err(|_| io::ErrorKind::Other)?;
-            Ok(self.saved_preset(power)? == performance)
+            Ok(self.saved_preset(power, profile.as_ref())? == performance)
         })()
         .inspect_err(|e| remember_failure(&self.fatal, e))
         .unwrap_or(false)
@@ -256,11 +264,13 @@ impl Permit for FanPermit {
             // are read first, so a change during the check is seen next time.
             let inputs = self.storage.policy_inputs().ok()?;
             if *self.verified.lock().ok()? != Some(inputs) {
+                let layer = self.storage.profile_layer(&self.application).ok()?;
+                let profile = layer.at(*source).ok()?;
                 // A synthesized handback (null settings) needs saved fan intent
                 // to stay cleared; any other selection needs it unchanged.
                 if self
                     .storage
-                    .desired_fan(*source, self.application.as_deref())
+                    .desired_fan(*source, profile.as_ref())
                     .ok()?
                     .as_ref()
                     != Some(settings).filter(|s| !s.is_null())
@@ -270,7 +280,7 @@ impl Permit for FanPermit {
                 // The preset carried by a return to Automatic is saved policy
                 // too: every setter needs it to remain the current destination.
                 if let Some(destination) = *self.performance.lock().ok()?
-                    && self.saved_preset(*source).ok()? != Some(destination)
+                    && self.saved_preset(*source, profile.as_ref()).ok()? != Some(destination)
                 {
                     return None;
                 }
@@ -305,11 +315,15 @@ impl Permit for FanPermit {
             *self.rejected.lock().map_err(|_| io::ErrorKind::Other)? = Some(message);
             return Ok(None);
         }
+        // One resolution for this step: saving the fan override below changes
+        // no profile, and every later setter resolves again
+        // (`destination_holds`, `authorize`).
+        let layer = self.storage.profile_layer(&self.application)?;
+        let profile = layer.at(power)?;
+        let profile = profile.as_ref();
         // Managed applies the saved preset only when fans leave saved manual
         // intent (`previousManual` in ApplyFanControlTransitionCoreOutcomeAsync).
-        let leaving_manual = self
-            .storage
-            .desired_manual_fans(power, self.application.as_deref())?;
+        let leaving_manual = self.storage.desired_manual_fans(power, profile)?;
         self.storage
             .save_fan(self.value.clone(), self.settings.clone(), power)?;
         self.accepted.store(true, Ordering::Release);
@@ -325,10 +339,7 @@ impl Permit for FanPermit {
             *self.selected.lock().map_err(|_| io::ErrorKind::Other)? = Some((power, Value::Null));
             return Ok(FanIntent::checked(0, 3700).map(|i| (i, None)));
         }
-        let Some(settings) = self
-            .storage
-            .desired_fan(power, self.application.as_deref())?
-        else {
+        let Some(settings) = self.storage.desired_fan(power, profile)? else {
             return Ok(None);
         };
         let intent = FanIntent::checked(
@@ -338,7 +349,7 @@ impl Permit for FanPermit {
         let returning = leaving_manual && intent.is_some_and(|i| !i.manual());
         self.returning.store(returning, Ordering::Release);
         let performance = if returning {
-            self.saved_preset(power)?
+            self.saved_preset(power, profile)?
         } else {
             None
         };
@@ -346,20 +357,14 @@ impl Permit for FanPermit {
         // `ApplyDirectAutomaticFanTransitionOutcomeAsync`; its capability check
         // refuses unsupported settings before any write, so fans stay manual and
         // the reply says why. The fan intent above is still saved.
-        if returning
-            && performance.is_none()
-            && self
-                .storage
-                .custom_unsupported(power, self.application.as_deref())?
-        {
+        if returning && performance.is_none() && self.storage.custom_unsupported(power, profile)? {
             self.custom_unsupported.store(true, Ordering::Release);
             *self.selected.lock().map_err(|_| io::ErrorKind::Other)? = Some((power, settings));
             return Ok(None);
         }
         if returning && performance.is_none() {
             self.performance_gpu.store(
-                self.storage
-                    .gpu_incomplete(power, self.application.as_deref())?,
+                self.storage.gpu_incomplete(power, profile)?,
                 Ordering::Release,
             );
         }
@@ -752,12 +757,7 @@ impl Runtime {
                 None,
             ));
         }
-        let application = self
-            .application
-            .borrow()
-            .as_ref()
-            .filter(|a| a.sid == sid && a.session == caller.session && Instant::now() < a.expires)
-            .and_then(|a| a.path.clone());
+        let application = self.foreground(&sid, caller.session);
         if let Some(p) = &prior {
             p.fresh.verify_health()?;
         }
@@ -810,16 +810,12 @@ impl Runtime {
             // Saved intent is read at an unknown class without fresh AC
             // presence (see `status_query_power`).
             let query = status_query_power(power, policy_fresh.as_ref());
-            let app = policy_runtime
-                .application
-                .borrow()
-                .as_ref()
-                .filter(|a| {
-                    a.sid == policy_sid && a.session == caller.session && Instant::now() < a.expires
-                })
-                .and_then(|a| a.path.clone());
-            let perf = store.desired(query, app.as_deref())?;
+            // The override document is checked before the profiles are read.
             let value = store.current_override(query)?;
+            let layer =
+                store.profile_layer(&policy_runtime.foreground(&policy_sid, caller.session))?;
+            let profile = layer.at(query)?;
+            let perf = store.desired(query, profile.as_ref())?;
             let fan_value = store.current_fan_override(query)?;
             Ok(base
                 .without_private_policy()
@@ -833,7 +829,7 @@ impl Runtime {
                 .thermal_provenance(perf.map(|v| v.1))
                 .fan_intent(
                     fan_value.as_ref(),
-                    store.desired_fan(query, app.as_deref())?,
+                    store.desired_fan(query, profile.as_ref())?,
                     power,
                     "Saved fan intent; target RPM remains unreadable.",
                 )
@@ -951,7 +947,10 @@ impl Runtime {
                 && let Some(preset) = match performance {
                     Some(preset) => Some(preset),
                     // Name a saved destination this request did not carry too.
-                    None => permit.saved_preset(power)?,
+                    None => {
+                        let layer = permit.storage.profile_layer(&permit.application)?;
+                        permit.saved_preset(power, layer.at(power)?.as_ref())?
+                    }
                 }
                 && !openblade_domain::thermal_mutation::confirms(observed, preset)
             {
@@ -1022,10 +1021,9 @@ impl Runtime {
                     ReadConfirmation::new(deadline, move || fresh.authorize() == Some(proof)),
                 );
             }
-            let perf = permit
-                .storage
-                .desired(power, permit.application.as_deref())?;
             let perf_override = permit.storage.current_override(power)?;
+            let layer = permit.storage.profile_layer(&permit.application)?;
+            let perf = permit.storage.desired(power, layer.at(power)?.as_ref())?;
             base = base
                 .thermal_profiles(permit.storage.profiles()?)?
                 .thermal_intent(

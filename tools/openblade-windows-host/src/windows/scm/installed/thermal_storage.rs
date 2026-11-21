@@ -3,6 +3,11 @@
 use crate::configuration::{self, File as ConfigFile, Inspection, RecoveryRecord};
 use openblade_domain::{
     automation::{UNCLASSIFIED_EXTERNAL, temporary_after, temporary_expired},
+    profile_set::{
+        ApplicationProfile, CustomPerformance, Dialect, FanControl, FanMode, PowerProfile,
+        PowerSource, ProfileSet,
+        application::{self, ApplicationContext, Confirmed, Power, Resolution},
+    },
     thermal_mutation::{CUSTOM, Destination, Preset, Progress, progress_follows, settled},
 };
 use serde_json::{Value, json};
@@ -385,45 +390,134 @@ pub(super) fn custom_destination(settings: &Value) -> Option<Destination> {
             .map_or(Some(false), Value::as_bool)?,
     )
 }
-/// A profile selection's Custom settings. Managed resolves a selected Custom's
-/// levels as the override's, then the profile's, then the confirmed state's,
-/// then `CustomPerformanceSettings.Default` (`ProfileAutomationState`), and
-/// its profile saves store those defaults in place of missing levels. Native
-/// reads a profile document without them as Medium/High too. The confirmed
-/// state is not consulted: a stored override Custom always carries its levels,
-/// and managed's normalized profiles never reach it.
-fn profile_custom(preset: i32, custom: &Value) -> Option<Value> {
-    if !custom.is_null() {
-        return Some(custom.clone());
-    }
-    (preset == CUSTOM).then(|| {
-        let levels = openblade_domain::profile_set::CustomPerformance::DEFAULT;
-        serde_json::json!({"cpu":levels.cpu.0,"gpu":levels.gpu.0,"maximumFans":levels.maximum_fans})
-    })
-}
-/// A selected wire destination, its Custom settings and its provenance,
-/// before model admission.
+/// A selected wire value, the destination it names on exact RZ09-0581 and
+/// its provenance. `custom_offsets` is legacy offsets saved inside the
+/// selected Custom settings, a GPU clock effect (managed
+/// `NormalizeLegacyGpuClockTuning`).
 struct Selected {
     value: i32,
-    custom: Option<Value>,
+    destination: Option<Destination>,
+    custom_offsets: bool,
     source: i32,
 }
 impl Selected {
-    fn destination(&self) -> Option<Destination> {
-        if self.value == CUSTOM {
-            self.custom.as_ref().and_then(custom_destination)
-        } else {
-            Preset::from_wire(self.value).map(Destination::Preset)
+    /// An override layer's value with the Custom settings saved beside it.
+    /// A Custom override without them names no destination.
+    fn saved(value: i32, custom: Option<&Value>, source: i32) -> Self {
+        let custom = custom.filter(|c| !c.is_null()).filter(|_| value == CUSTOM);
+        Self {
+            value,
+            destination: if value == CUSTOM {
+                custom.and_then(custom_destination)
+            } else {
+                Preset::from_wire(value).map(Destination::Preset)
+            },
+            custom_offsets: custom
+                .is_some_and(|c| c.get("gpuClockOffsets").is_some_and(|o| !o.is_null())),
+            source,
         }
     }
-    /// Legacy offsets saved inside the selected Custom settings are a GPU
-    /// clock effect (managed `NormalizeLegacyGpuClockTuning`).
-    fn custom_offsets(&self) -> bool {
-        self.value == CUSTOM
-            && self
-                .custom
-                .as_ref()
-                .is_some_and(|c| c.get("gpuClockOffsets").is_some_and(|o| !o.is_null()))
+    /// The resolved profile's preset. Managed resolves a selected Custom's
+    /// levels as the override's, then the profile's, then the confirmed
+    /// state's, then `CustomPerformanceSettings.Default`
+    /// (`ProfileAutomationState`), and its profile saves store those defaults
+    /// in place of missing levels, so a profile without them selects
+    /// Medium/High here too. The confirmed state is not consulted: a stored
+    /// override Custom always carries its levels, and managed's normalized
+    /// profiles never reach it.
+    fn profile(profile: &PowerProfile, source: i32) -> Self {
+        let value = profile.performance.0;
+        let custom = (value == CUSTOM).then(|| {
+            profile
+                .custom_performance
+                .unwrap_or(CustomPerformance::DEFAULT)
+        });
+        let level = |level: i32| u64::try_from(level).unwrap_or(u64::MAX);
+        Self {
+            value,
+            destination: match custom {
+                Some(c) => Destination::custom(level(c.cpu.0), level(c.gpu.0), c.maximum_fans),
+                None => Preset::from_wire(value).map(Destination::Preset),
+            },
+            custom_offsets: custom.is_some_and(|c| c.gpu_clock_offsets.is_some()),
+            source,
+        }
+    }
+}
+/// The classified source a native power class selects a power profile for.
+/// Unclassified external power and an unknown class select none.
+pub(super) fn power_source(power: i32) -> Option<PowerSource> {
+    match power {
+        0 => Some(PowerSource::PluggedIn),
+        1 => Some(PowerSource::Battery),
+        2 => Some(PowerSource::UsbC),
+        _ => None,
+    }
+}
+/// `profile` when it resolves a power profile for class `power`. Native
+/// applies no profile on unclassified external or unknown power, where
+/// managed `Resolve` would take `CreateObservedFallbackProfile`: there every
+/// saved destination comes from an explicit override. A resolution for
+/// another class selects nothing rather than that class's profile.
+fn profile_layer<'r, 'a>(
+    profile: Option<&'r Resolution<'a>>,
+    power: i32,
+) -> Option<&'r Resolution<'a>> {
+    profile.filter(|r| power_source(power).is_some_and(|source| r.desired_source() == Some(source)))
+}
+/// A resolved fan control as stored intent is written, so it compares with
+/// the override layers' and the fan journal's settings.
+fn fan_settings(settings: &FanControl) -> Value {
+    let points = |points: &[openblade_domain::profile_set::FanCurvePoint]| {
+        points
+            .iter()
+            .map(|p| json!({"temperatureCelsius":p.temperature_celsius,"speedRpm":p.speed_rpm}))
+            .collect::<Vec<_>>()
+    };
+    let curve = &settings.manual_curve;
+    json!({"mode":settings.mode.0,"fixedSpeedRpm":settings.fixed_speed_rpm,"manualCurve":{"cpu":points(&curve.cpu),"gpu":points(&curve.gpu),"useHigherTemperatureForBoth":curve.use_higher_temperature_for_both}})
+}
+/// The foreground application one interactive session reported: the path
+/// in `NormalizeExecutablePath` form and the active pair managed
+/// `SetApplicationContext` keeps for it.
+#[derive(Clone, Debug, Default)]
+pub(super) struct Foreground {
+    reported: Option<String>,
+    context: ApplicationContext,
+}
+impl Foreground {
+    pub(super) fn reported(path: Option<String>) -> Self {
+        Self {
+            reported: path,
+            context: ApplicationContext::default(),
+        }
+    }
+}
+/// The saved profiles, typed, with a session's foreground application
+/// selected in them: one aggregate read, from which each class resolves
+/// (`Self::at`) through the domain composition.
+pub(super) struct ProfileLayer {
+    set: Option<ProfileSet>,
+    context: ApplicationContext,
+}
+impl ProfileLayer {
+    /// Managed `Resolve`'s profile layer at class `power`, or `None` when no
+    /// aggregate is stored. Confirmed firmware state is left unknown: it
+    /// shapes only the observed fallback profile, which native never applies
+    /// (`profile_layer`), and Custom settings a destination does not carry,
+    /// which `Selected::profile` defaults as managed's saves do.
+    pub(super) fn at(&self, power: i32) -> io::Result<Option<Resolution<'_>>> {
+        let Some(set) = &self.set else {
+            return Ok(None);
+        };
+        application::resolve(
+            &self.context,
+            set,
+            Power::retained(power_source(power)),
+            Confirmed::default(),
+        )
+        .map(Some)
+        .map_err(|invalid| io::Error::new(io::ErrorKind::InvalidData, invalid.0))
     }
 }
 use crate::thermal_history::Entry;
@@ -621,20 +715,52 @@ impl Storage {
         });
         Ok(())
     }
+    /// One read of the saved profiles with `foreground` selected in them, for
+    /// one request step: every class the step reads resolves from it
+    /// (`ProfileLayer::at`). The selection is managed `SetApplicationContext`
+    /// for the reported path over the profiles just read, so a profile edit
+    /// takes effect at the next read without a new report.
+    pub(super) fn profile_layer(&self, foreground: &Foreground) -> io::Result<ProfileLayer> {
+        let set = aggregate(self.files.as_ref(), self.same_path)?
+            .map(|doc| typed_profiles(&doc["profiles"]))
+            .transpose()?;
+        let mut context = foreground.context.clone();
+        context.report(
+            set.iter().flat_map(|set| {
+                set.application_profiles
+                    .iter()
+                    .map(ApplicationProfile::rule)
+            }),
+            foreground.reported.as_deref(),
+            self.same_path,
+        );
+        Ok(ProfileLayer { set, context })
+    }
     /// The saved destination for class `power`, with its provenance. Custom
     /// settings the model does not admit and unadmitted presets select
     /// nothing; a profile's Custom without levels selects managed's default
-    /// levels (`profile_custom`).
+    /// levels (`Selected::profile`). `profile` is the domain resolution at
+    /// `power` (`ProfileLayer::at`).
     pub(super) fn desired(
         &self,
         power: i32,
-        application: Option<&str>,
+        profile: Option<&Resolution<'_>>,
     ) -> io::Result<Option<(Destination, i32)>> {
         Ok(self
-            .selected(power, application)?
-            .and_then(|s| s.destination().map(|d| (d, s.source))))
+            .selected(power, profile)?
+            .and_then(|s| s.destination.map(|d| (d, s.source))))
     }
-    fn selected(&self, power: i32, application: Option<&str>) -> io::Result<Option<Selected>> {
+    /// The composition managed `Resolve` layers for performance: a
+    /// persistent override (source 4), then a temporary one (3), then the
+    /// resolved profile, from the active application (2) when its override
+    /// sets the preset and from the power profile (1) otherwise. Native keeps
+    /// no recovered HyperBoost layer: it never selects HyperBoost, and the
+    /// HyperBoost exit to a battery preset is refused as `Plan::NoDirectPath`.
+    fn selected(
+        &self,
+        power: i32,
+        profile: Option<&Resolution<'_>>,
+    ) -> io::Result<Option<Selected>> {
         let mut s = self.state.lock().map_err(|_| denied())?;
         if s.temporary
             .as_ref()
@@ -643,71 +769,40 @@ impl Storage {
             s.temporary = None;
         }
         let overrides = &s.document["overrides"];
-        let persistent = overrides["performance"].as_i64().map(|n| {
-            (
-                n as i32,
-                Some(overrides["customPerformance"].clone()).filter(|v| !v.is_null()),
-            )
-        });
+        let persistent = overrides["performance"]
+            .as_i64()
+            .map(|n| (n as i32, Some(&overrides["customPerformance"])));
         let temporary = s
             .temporary
             .as_ref()
-            .map(|(v, _)| (v.value, v.custom_performance.clone()));
+            .map(|(v, _)| (v.value, v.custom_performance.as_ref()));
         for (value, source) in [(persistent, 4), (temporary, 3)] {
             if let Some((value, custom)) = value
                 && openblade_domain::automation::override_source_eligible(value, power)
             {
-                return Ok(Some(Selected {
-                    value,
-                    custom,
-                    source,
-                }));
+                return Ok(Some(Selected::saved(value, custom, source)));
             }
         }
         drop(s);
-        let Some(doc) = aggregate(self.files.as_ref(), self.same_path)? else {
+        let Some(resolution) = profile_layer(profile, power) else {
             return Ok(None);
         };
-        let profiles = &doc["profiles"];
-        let key = match power {
-            0 => "pluggedIn",
-            1 => "battery",
-            2 => "usbC",
-            _ => return Ok(None),
-        };
-        let app = application.and_then(|path| {
-            profiles["applicationProfiles"]
-                .as_array()?
-                .iter()
-                .find(|p| {
-                    p["enabled"].as_bool() == Some(true)
-                        && p["executablePath"]
-                            .as_str()
-                            .is_some_and(|s| (self.same_path)(s, path))
-                })
-        });
-        let selected = app
-            .and_then(|a| a["overrides"][key]["performance"].as_i64())
-            .or_else(|| profiles[key]["performance"].as_i64());
+        let value = resolution.profile.performance.0;
+        if !openblade_domain::automation::performance_source_eligible(value, power) {
+            return Ok(None);
+        }
         // Managed `ApplicationProfileResolution`: an application's Custom
         // settings replace the power profile's, whichever selected Custom.
-        let custom = app
-            .map(|a| &a["overrides"][key]["customPerformance"])
-            .filter(|v| !v.is_null())
-            .unwrap_or(&profiles[key]["customPerformance"]);
-        Ok(selected
-            .filter(|n| openblade_domain::automation::performance_source_eligible(*n as i32, power))
-            .map(|n| Selected {
-                value: n as i32,
-                custom: profile_custom(n as i32, custom),
-                source: if app
-                    .is_some_and(|a| a["overrides"][key]["performance"].as_i64().is_some())
-                {
-                    2
-                } else {
-                    1
-                },
-            }))
+        // The provenance names the application only for its own preset.
+        let source = if resolution
+            .application_override()
+            .is_some_and(|o| o.performance.is_some())
+        {
+            2
+        } else {
+            1
+        };
+        Ok(Some(Selected::profile(&resolution.profile, source)))
     }
     /// The selected policy is Custom with settings outside the RZ09-0581
     /// capability, which managed `ApplyPerformanceOutcomeAsync` reports as
@@ -715,13 +810,20 @@ impl Storage {
     pub(super) fn custom_unsupported(
         &self,
         power: i32,
-        application: Option<&str>,
+        profile: Option<&Resolution<'_>>,
     ) -> io::Result<bool> {
         Ok(self
-            .selected(power, application)?
-            .is_some_and(|s| s.value == CUSTOM && s.destination().is_none()))
+            .selected(power, profile)?
+            .is_some_and(|s| s.value == CUSTOM && s.destination.is_none()))
     }
-    pub(super) fn gpu_incomplete(&self, power: i32, application: Option<&str>) -> io::Result<bool> {
+    /// Whether the saved policy at class `power` carries a GPU clock effect,
+    /// which has no native writer: an override's tuning, legacy offsets in the
+    /// selected Custom settings, or the resolved profile's tuning.
+    pub(super) fn gpu_incomplete(
+        &self,
+        power: i32,
+        profile: Option<&Resolution<'_>>,
+    ) -> io::Result<bool> {
         let mut s = self.state.lock().map_err(|_| denied())?;
         // The same class expiry as `desired`, so the answer does not depend on
         // which of the two a caller reads first.
@@ -740,37 +842,20 @@ impl Storage {
         }
         drop(s);
         if self
-            .selected(power, application)?
-            .is_some_and(|s| s.custom_offsets())
+            .selected(power, profile)?
+            .is_some_and(|s| s.custom_offsets)
         {
             return Ok(true);
         }
-        let Some(doc) = aggregate(self.files.as_ref(), self.same_path)? else {
+        if profile.is_none() {
             return Ok(false);
-        };
-        let profiles = &doc["profiles"];
-        let key = match power {
-            0 => "pluggedIn",
-            1 => "battery",
-            2 => "usbC",
+        }
+        Ok(match power {
             // Unclassified external power selects no profile: only the
             // explicit overrides checked above can carry a GPU effect.
-            UNCLASSIFIED_EXTERNAL => return Ok(false),
-            _ => return Ok(true),
-        };
-        let app = application.and_then(|path| {
-            profiles["applicationProfiles"]
-                .as_array()?
-                .iter()
-                .find(|p| {
-                    p["enabled"].as_bool() == Some(true)
-                        && p["executablePath"]
-                            .as_str()
-                            .is_some_and(|s| (self.same_path)(s, path))
-                })
-        });
-        Ok(!profiles[key]["gpuClockTuning"].is_null()
-            || app.is_some_and(|a| !a["overrides"][key]["gpuClockTuning"].is_null()))
+            UNCLASSIFIED_EXTERNAL => false,
+            _ => profile_layer(profile, power).is_none_or(|r| r.profile.gpu_clock_tuning.is_some()),
+        })
     }
     pub(super) fn pending_reason(&self) -> io::Result<&'static str> {
         let s = self.state.lock().map_err(|_| {
@@ -921,7 +1006,7 @@ impl Storage {
     pub(super) fn desired_fan(
         &self,
         power: i32,
-        application: Option<&str>,
+        profile: Option<&Resolution<'_>>,
     ) -> io::Result<Option<Value>> {
         let mut s = self.state.lock().map_err(|_| denied())?;
         if self.files.read(OVERRIDES)? != s.bytes {
@@ -945,43 +1030,17 @@ impl Storage {
             return Ok(Some(selected));
         }
         drop(s);
-        let Some(doc) = aggregate(self.files.as_ref(), self.same_path)? else {
+        // The resolved profile's fan control: the application's when its
+        // override sets one, its legacy default when the override sets only
+        // the mode, and otherwise the power profile's, or the legacy default
+        // for the profile's mode (`resolve::apply`).
+        let Some(resolution) = profile_layer(profile, power) else {
             return Ok(None);
         };
-        let key = match power {
-            0 => "pluggedIn",
-            1 => "battery",
-            2 => "usbC",
-            _ => return Ok(None),
+        let selected = match &resolution.profile.fan_control {
+            Some(settings) => fan_settings(settings),
+            None => legacy_fan(resolution.profile.fans.0 as u8),
         };
-        let profiles = &doc["profiles"];
-        let app = application.and_then(|path| {
-            profiles["applicationProfiles"]
-                .as_array()?
-                .iter()
-                .find(|p| {
-                    p["enabled"] == true
-                        && p["executablePath"]
-                            .as_str()
-                            .is_some_and(|s| (self.same_path)(s, path))
-                })
-        });
-        let base = &profiles[key];
-        let over = app.map(|a| &a["overrides"][key]);
-        let selected = over
-            .filter(|o| !o["fanControl"].is_null())
-            .map(|o| o["fanControl"].clone())
-            .or_else(|| {
-                over.and_then(|o| o["fans"].as_u64())
-                    .map(|m| legacy_fan(m as u8))
-            })
-            .unwrap_or_else(|| {
-                if base["fanControl"].is_null() {
-                    legacy_fan(base["fans"].as_u64().unwrap_or(0) as u8)
-                } else {
-                    base["fanControl"].clone()
-                }
-            });
         openblade_domain::fan_history::validate_settings(&selected)?;
         Ok(Some(selected))
     }
@@ -1150,10 +1209,14 @@ impl Storage {
         let fans = profile["fans"].as_i64().ok_or_else(denied)?;
         Ok(Some((performance as i32, fans as i32)))
     }
+    /// Whether saved fan intent at class `power` is manual: an unexpired
+    /// temporary fan override, then a persistent one, then the resolved
+    /// profile's mode, which is the application's fan mode or fan control
+    /// mode when its override sets one (`resolve::apply`).
     pub(super) fn desired_manual_fans(
         &self,
         power: i32,
-        application: Option<&str>,
+        profile: Option<&Resolution<'_>>,
     ) -> io::Result<bool> {
         let s = self.state.lock().map_err(|_| denied())?;
         if let Some((v, p)) = &s.temporary_fan
@@ -1165,35 +1228,7 @@ impl Storage {
             return Ok(mode != 0);
         }
         drop(s);
-        let Some(doc) = aggregate(self.files.as_ref(), self.same_path)? else {
-            return Ok(false);
-        };
-        let key = match power {
-            0 => "pluggedIn",
-            1 => "battery",
-            2 => "usbC",
-            _ => return Ok(false),
-        };
-        let profiles = &doc["profiles"];
-        let app = application.and_then(|path| {
-            profiles["applicationProfiles"]
-                .as_array()?
-                .iter()
-                .find(|p| {
-                    p["enabled"].as_bool() == Some(true)
-                        && p["executablePath"]
-                            .as_str()
-                            .is_some_and(|s| (self.same_path)(s, path))
-                })
-        });
-        let mode = app
-            .and_then(|a| {
-                a["overrides"][key]["fans"]
-                    .as_i64()
-                    .or_else(|| a["overrides"][key]["fanControl"]["mode"].as_i64())
-            })
-            .or_else(|| profiles[key]["fans"].as_i64());
-        Ok(mode.is_some_and(|m| m != 0))
+        Ok(profile_layer(profile, power).is_some_and(|r| r.profile.fans != FanMode::AUTOMATIC))
     }
     pub(super) fn profiles(&self) -> io::Result<Option<Value>> {
         Ok(aggregate(self.files.as_ref(), self.same_path)?.map(|v| v["profiles"].clone()))
@@ -1453,6 +1488,16 @@ fn aggregate(files: &dyn Files, same_path: fn(&str, &str) -> bool) -> io::Result
     Ok(Some(doc))
 }
 
+/// The typed set of an aggregate `aggregate` admitted: its `profiles` member
+/// as managed `ProfileStore` binds it. The domain decoder refuses a member
+/// managed would not bind, and then nothing resolves.
+fn typed_profiles(profiles: &Value) -> io::Result<ProfileSet> {
+    let bytes = serde_json::to_vec(profiles)?;
+    let json = openblade_domain::profile_set::json::parse(&bytes).map_err(|_| denied())?;
+    openblade_domain::profile_set::decode::profile_set(&json, Dialect::Document)
+        .map_err(|_| denied())
+}
+
 /// Managed `LightingSettingsFactory.PreserveLegacyIndependentProfileIntent`,
 /// which `ProfileStore` applies only when it reads a schema-26 document: a
 /// lighting setting that controls the keyboard effect and also carries
@@ -1518,6 +1563,9 @@ pub(super) fn legacy_fan(mode: u8) -> Value {
 #[cfg(test)]
 #[path = "thermal_storage_open_tests.rs"]
 mod open_tests;
+#[cfg(test)]
+#[path = "thermal_storage_resolution_tests.rs"]
+mod resolution_tests;
 #[cfg(test)]
 mod application_path_tests {
     use super::valid_application_path;

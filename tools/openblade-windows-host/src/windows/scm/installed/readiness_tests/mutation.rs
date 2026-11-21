@@ -25,6 +25,20 @@ use std::{
     },
 };
 // Test-only provenance; raw stays a string to preserve encoder property order.
+/// `Storage::desired` over the profile layer read now, with no foreground
+/// application, as each request step reads it.
+fn saved_desired(
+    storage: &Storage,
+    power: i32,
+) -> io::Result<Option<(openblade_domain::thermal_mutation::Destination, i32)>> {
+    let layer = storage.profile_layer(&Default::default())?;
+    storage.desired(power, layer.at(power)?.as_ref())
+}
+/// `Storage::desired_fan` over the profile layer read now, as `saved_desired`.
+fn saved_fan(storage: &Storage, power: i32) -> io::Result<Option<Value>> {
+    let layer = storage.profile_layer(&Default::default())?;
+    storage.desired_fan(power, layer.at(power)?.as_ref())
+}
 fn emit_fixture_frame(emitter: &str, operation: &str, method: &str, raw: &[u8]) {
     assert!(matches!(
         emitter,
@@ -1326,7 +1340,7 @@ fn installed_storage_reads_older_override_schemas_and_writes_the_current_one() {
     saved["overrides"]["fanControl"] = fan;
     files.put("manual-overrides.json", saved);
     let storage = Storage::open(Box::new(files.clone()), SID).unwrap();
-    assert!(storage.desired_fan(0, None).is_err());
+    assert!(saved_fan(&storage, 0).is_err());
     let mut fan = super::super::thermal_storage::legacy_fan(1);
     fan["fixedSpeedRpm"] = json!(5600);
     let mut beyond = document(10, Value::Null);
@@ -1348,13 +1362,13 @@ fn installed_override_lifetimes_replace_each_other_and_temporary_expires_on_powe
         gpu_clock_tuning: None,
     };
     storage.save(Some(override_value(2, 0)), 0).unwrap();
-    assert_eq!(storage.desired(0, None).unwrap().unwrap().0.wire(), 2);
+    assert_eq!(saved_desired(&storage, 0).unwrap().unwrap().0.wire(), 2);
     storage.save(Some(override_value(1, 1)), 0).unwrap();
-    assert_eq!(storage.desired(0, None).unwrap().unwrap().1, 4);
+    assert_eq!(saved_desired(&storage, 0).unwrap().unwrap().1, 4);
     storage.save(None, 0).unwrap();
-    assert_eq!(storage.desired(0, None).unwrap().unwrap().1, 1);
+    assert_eq!(saved_desired(&storage, 0).unwrap().unwrap().1, 1);
     storage.save(Some(override_value(2, 0)), 0).unwrap();
-    assert_eq!(storage.desired(2, None).unwrap().unwrap().0.wire(), 1);
+    assert_eq!(saved_desired(&storage, 2).unwrap().unwrap().0.wire(), 1);
     assert!(files.document("manual-overrides.json")["overrides"]["performance"].is_null());
 }
 
@@ -5560,7 +5574,7 @@ async fn fan_handback_expires_a_stale_class_temporary_gpu_override_first() {
         assert_eq!(r.set(231, temporary).await["result"]["status"], 2);
         r.port.state.lock().unwrap().actual = 10;
         if read_desired_first {
-            assert!(r.storage.desired(2, None).unwrap().is_some());
+            assert!(saved_desired(&r.storage, 2).unwrap().is_some());
         }
         let sent = r.port.state.lock().unwrap().sent.len();
         let out = r.request(fan_request(232, None, 0)).await;
@@ -6637,7 +6651,7 @@ async fn fan_correction_saved_pending_profile_edit_and_temporary_expiry_keep_cle
         } else if kind == 1 {
             profile(4000);
         } else {
-            let _ = r.storage.desired_fan(2, None).unwrap();
+            let _ = saved_fan(&r.storage, 2).unwrap();
             assert!(r.storage.current_fan_override(0).unwrap().is_none());
         }
         let saved = r.files.read("manual-overrides.json").unwrap();

@@ -545,8 +545,7 @@ fn temporary_overrides_follow_classification_boundaries() {
         gpu_clock_tuning: None,
     };
     let desired = |power| {
-        storage
-            .desired(power, None)
+        saved_desired(&storage, power)
             .unwrap()
             .map(|(p, s)| (p.wire(), s))
     };

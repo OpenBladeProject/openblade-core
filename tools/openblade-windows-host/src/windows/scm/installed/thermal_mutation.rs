@@ -5,7 +5,7 @@ use super::{
     Caller, Logon,
     mailbox_read::{MailboxSource, ReadCustody},
     thermal_native::{SettleGuard, WindowsGuard},
-    thermal_storage::{Override, Storage},
+    thermal_storage::{Foreground, Override, Storage},
 };
 #[cfg(not(test))]
 use crate::loaded_origin::Origin;
@@ -18,6 +18,7 @@ use crate::{
 };
 use openblade_domain::{
     automation::UNCLASSIFIED_EXTERNAL,
+    profile_set::application::Resolution,
     thermal_mutation::{CUSTOM, Destination, Preset, Progress, confirms},
 };
 use sha2::{Digest, Sha256};
@@ -191,13 +192,16 @@ pub(super) struct Runtime {
     #[cfg(test)]
     pub(super) entered: Rc<std::cell::Cell<u64>>,
 }
+/// The latest admitted foreground report and its lease: the reported path
+/// with the active pair (`Foreground`), from which every read of that
+/// session's saved policy resolves its profile layer until `expires`.
 struct Application {
     sid: String,
     session: u32,
     pid: u32,
     instance: String,
     sequence: i64,
-    path: Option<String>,
+    foreground: Foreground,
     expires: Instant,
 }
 /// Managed `ExecuteScopedMutationAsync` reply for a cleared explicit override
@@ -369,7 +373,7 @@ impl Runtime {
             pid: caller.pid.unwrap(),
             instance,
             sequence,
-            path,
+            foreground: Foreground::reported(path),
             expires: Instant::now() + std::time::Duration::from_secs(15),
         });
         Outcome {
@@ -377,6 +381,16 @@ impl Runtime {
             message: "Application context stored; automatic native reconciliation is not enabled."
                 .into(),
         }
+    }
+    /// The foreground application `sid` reported in `session` while its
+    /// lease holds, and none otherwise.
+    fn foreground(&self, sid: &str, session: u32) -> Foreground {
+        self.application
+            .borrow()
+            .as_ref()
+            .filter(|a| a.sid == sid && a.session == session && Instant::now() < a.expires)
+            .map(|a| a.foreground.clone())
+            .unwrap_or_default()
     }
     /// The private thermal projection of one user: saved profiles, saved
     /// intent and its provenance, read from that user's store at each status.
@@ -413,16 +427,10 @@ impl Runtime {
             // power agrees with the base, saved intent is read at an unknown
             // class (-1), which retires no temporary.
             let query = status_query_power(power, fresh.as_ref());
-            let application = runtime
-                .application
-                .borrow()
-                .as_ref()
-                .filter(|a| {
-                    a.sid == policy_sid && a.session == session && Instant::now() < a.expires
-                })
-                .and_then(|a| a.path.clone());
             let value = store.current_override(query)?;
-            let desired = store.desired(query, application.as_deref())?;
+            let layer = store.profile_layer(&runtime.foreground(&policy_sid, session))?;
+            let profile = layer.at(query)?;
+            let desired = store.desired(query, profile.as_ref())?;
             Ok(base
                 .thermal_profiles(store.profiles()?)?
                 .thermal_intent(
@@ -434,7 +442,7 @@ impl Runtime {
                 .thermal_provenance(desired.map(|(_, s)| s))
                 .fan_intent(
                     store.current_fan_override(query)?.as_ref(),
-                    store.desired_fan(query, application.as_deref())?,
+                    store.desired_fan(query, profile.as_ref())?,
                     power,
                     "Saved thermal policy; firmware mode is reported independently.",
                 )
@@ -503,12 +511,7 @@ impl Runtime {
                 None,
             ));
         };
-        let application = self
-            .application
-            .borrow()
-            .as_ref()
-            .filter(|a| a.sid == sid && a.session == caller.session && Instant::now() < a.expires)
-            .and_then(|a| a.path.clone());
+        let application = self.foreground(&sid, caller.session);
         reader.retain_policy(self.thermal_policy(sid.clone(), caller.session, reader.custody()));
         let intent = format!("{:x}", Sha256::digest(serde_json::to_vec(&value)?));
         let permit = Arc::new(RequestPermit {
@@ -660,27 +663,30 @@ struct Selection {
     desired: Option<(Destination, i32)>,
     blocked: Option<Cause>,
 }
+/// `profile` is the domain resolution at `power` (`ProfileLayer::at`): the
+/// overrides `Storage` holds are composed over it, and it alone supplies the
+/// profile layer of the destination, the GPU clock check and the fan intent.
 fn select(
     storage: &Storage,
     power: i32,
-    application: Option<&str>,
+    profile: Option<&Resolution<'_>>,
     baseline: ObservedPerformance,
 ) -> io::Result<Selection> {
     let blocked = |cause| Selection {
         desired: None,
         blocked: Some(cause),
     };
-    if storage.gpu_incomplete(power, application)? {
+    if storage.gpu_incomplete(power, profile)? {
         return Ok(blocked(Cause::Gpu));
     }
-    let Some((destination, source)) = storage.desired(power, application)? else {
+    let Some((destination, source)) = storage.desired(power, profile)? else {
         return Ok(blocked(Cause::NoEligiblePolicy));
     };
     let desired = Some((destination, source));
     let blocked = if openblade_domain::thermal_mutation::defer_manual_performance(
         baseline,
         power,
-        storage.desired_manual_fans(power, application)?,
+        storage.desired_manual_fans(power, profile)?,
     ) {
         // Stored promises that the fan request returning the fans applies the
         // intent, as it does for every native destination.
@@ -703,7 +709,7 @@ struct RequestPermit {
     owner: String,
     intent: String,
     value: Option<Override>,
-    application: Option<String>,
+    application: Foreground,
     accepted: AtomicBool,
     destination: Mutex<Option<Destination>>,
     power: Mutex<Option<i32>>,
@@ -889,9 +895,15 @@ impl Permit for RequestPermit {
                 return Ok(false);
             };
             self.observe_power(power)?;
-            let application = self.application.as_deref();
-            Ok(!self.storage.gpu_incomplete(power, application)?
-                && self.storage.desired(power, application)?.map(|(p, _)| p) == Some(destination))
+            // Resolved again from the saved profiles as they are now.
+            let layer = self.storage.profile_layer(&self.application)?;
+            let profile = layer.at(power)?;
+            Ok(!self.storage.gpu_incomplete(power, profile.as_ref())?
+                && self
+                    .storage
+                    .desired(power, profile.as_ref())?
+                    .map(|(p, _)| p)
+                    == Some(destination))
         })()
         .inspect_err(|error| self.remember_failure(error))
         .unwrap_or(false)
@@ -958,7 +970,8 @@ impl Permit for RequestPermit {
                 self.set_cause(Cause::AwaitingClassification);
                 return Ok(None);
             }
-            let selection = select(&self.storage, power, self.application.as_deref(), baseline)?;
+            let layer = self.storage.profile_layer(&self.application)?;
+            let selection = select(&self.storage, power, layer.at(power)?.as_ref(), baseline)?;
             *self
                 .selected_source
                 .lock()
