@@ -195,7 +195,8 @@ battery pair skips the per-command ordinary source admission
 (`ordinaryControl && !exitedHyperBoost`). So it is not the restore pair followed
 by the battery pair: it has an intermediate confirmation and different per-command
 power admission, and native has no recipe for it. Native stores the intent and
-replies Blocked without preparing a row (`Plan::NoDirectPath`). A direct exit
+replies Blocked without preparing a row (`Plan::NoDirectPath`); this exit stays
+deferred. A direct exit
 to Silent keeps the first reading's classified external class, as the
 Performance exit does.
 
@@ -490,9 +491,16 @@ Battery Saver, Battery Balanced and Custom with manual fans to
 destination from `FanMode.Maximum` (`ProductionBatteryPort.cs:810-822` and
 `:988-991`). The destination's own pairs are the fixture's Automatic pairs
 under each selector (`Rz09_0581_02e0_3_01_BatteryProduction.json`, the
-`performance-*-channel-1/2` entries). No fan state pair exists for selectors 5,
-3, 6 or 4 (`FanPair::state` admits 0 and 2), so without a destination
-(`Plan::select_toward`) those baselines have no plan and nothing is written.
+`performance-*-channel-1/2` entries). Without a destination
+(`Plan::select_toward`) native has no plan for those baselines and writes
+nothing: its fan state pair admits selectors 0 and 2 only (`FanPair::state`).
+Managed does hand them back there. Its direct transition
+(`ProductionBatteryPort.cs:1278-1323`) rewrites the fan state pair under the
+observed selector with fan value 0, which is the same bytes as that selector's
+performance pair in the fixture. That handback is deferred, not ported. With a
+GPU clock effect configured, a return to Automatic carries no destination and
+a performance request under manual fans defers to the fan return, so native
+leaves such manual fans by neither request.
 
 A saved Custom outside the RZ09-0581 range has no destination. Managed applies it
 anyway, and its capability check (`ApplyScopedAsync`, `Unsupported`) refuses it

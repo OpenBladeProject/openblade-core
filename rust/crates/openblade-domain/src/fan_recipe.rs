@@ -95,9 +95,12 @@ impl Plan {
     /// way: managed reads them as `FanMode.Maximum`, and
     /// `ProductionBatteryPort.CanApplyAutomaticPerformanceFrom` and the Custom
     /// setter admit every destination from it. The destination's own pairs carry
-    /// Automatic fans under its selector. No fan state pair exists for those
-    /// selectors (`FanPair::state` admits 0 and 2), so without a destination
-    /// they have no plan.
+    /// Automatic fans under its selector. Without a destination managed still
+    /// hands the fans back: `ProductionBatteryPort`'s direct transition rewrites
+    /// the fan state pair under the observed selector (5, 4, 3 or 6) with fan
+    /// value 0, the same bytes as that selector's performance pair. Native has
+    /// no such state pair (`FanPair::state` admits 0 and 2), so those baselines
+    /// have no native plan without a destination.
     pub fn select_toward(
         baseline: O,
         intent: FanIntent,

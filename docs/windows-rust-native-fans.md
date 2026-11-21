@@ -19,7 +19,11 @@ request that leaves saved manual fan intent goes directly to the saved
 Balanced or Performance preset, as managed does: that preset's 0D/02 pair
 carries the Automatic fan mode, so the stored performance intent is applied in
 the same pair. Without such a preset, or with a saved GPU clock effect, it keeps
-the observed selector. Owned Stop cleanup writes only under the owner's selector,
+the observed selector. Under Silent, Battery Saver, Battery Balanced or Custom
+selectors managed still hands manual fans back with a fan state pair under that
+selector; native has no such pair, so with a saved GPU clock effect neither a
+fan return nor a performance request leaves those manual fans (deferred).
+Owned Stop cleanup writes only under the owner's selector,
 on any external class: the handback commands are the same there. An explicit
 Automatic request whose fans are already Automatic is a true no-op under the
 destination selector, or under a selector or power class with no native
