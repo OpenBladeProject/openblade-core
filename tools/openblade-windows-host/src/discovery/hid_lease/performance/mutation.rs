@@ -143,13 +143,18 @@ pub(super) const EXCHANGES_BEFORE_CHECK: u32 = 1;
 /// with nothing submitted instead of timing out between setters. With `E`
 /// exchanges and `A` appends left, the recipe runs only if
 ///
-/// `now + slowest + (E - 1) × second + A × append + fixed <= deadline`.
+/// `now + slowest + (E - 1) × second + A × append + fixed < deadline`.
+///
+/// The comparison is strict because `Limit::check` fails at the deadline.
 ///
 /// - `slowest` and `second` are the two longest exchanges since `start`
-///   (`Exchanges`). One stall is charged once, at its own length, and every
-///   other exchange at the second longest. A single slow read or append is
-///   not a slow device, so it does not refuse a recipe that has seconds to
-///   spare. A device that is slow throughout has two slow samples by the
+///   (`Exchanges`), each timed from the previous reply to its own. They
+///   charge the work before each send with the exchange: discovery and
+///   authorization before the first, and every checkpoint's authorizations,
+///   custody check and origin verification. One stall is charged once, at
+///   its own length, and every other exchange at the second longest. A
+///   single slow read or append is not a slow device, so it does not refuse
+///   a recipe that has seconds to spare. A device that is slow throughout has two slow samples by the
 ///   check, the recipe's first 07/8C reading and the first setter's own, so
 ///   the second longest carries it.
 /// - `append` is the Prepared append, timed directly (`prepared`). Every
@@ -157,21 +162,37 @@ pub(super) const EXCHANGES_BEFORE_CHECK: u32 = 1;
 ///   `A = APPENDS_PER_SETTER × setters + CLOSING_APPENDS` rows left is
 ///   charged at that length.
 /// - `fixed` is the recipe's scheduled spacing that no exchange includes.
+///
+/// Excluded: retirement after the closing row, and any growth after the check
+/// in the work per exchange, since every remaining exchange is charged at a
+/// measured one.
 pub(super) struct Pace {
     append: Duration,
 }
 impl Pace {
     pub(super) fn start<P: Port, A>(reader: &mut Reader<P, A>) -> Self {
-        reader.exchanges = Exchanges::default();
+        reader.exchanges = Exchanges {
+            last: Some(Instant::now()),
+            ..Exchanges::default()
+        };
         Self {
             append: Duration::ZERO,
         }
     }
-    /// Writes the Prepared row through `append` and times it.
-    pub(super) fn prepared(&mut self, append: impl FnOnce() -> io::Result<()>) -> io::Result<()> {
+    /// Writes the Prepared row through `append` and times it. The exchange
+    /// after it is timed from the end of the append, which `covers` charges
+    /// for every row left instead.
+    pub(super) fn prepared<P: Port, A>(
+        &mut self,
+        reader: &mut Reader<P, A>,
+        append: impl FnOnce() -> io::Result<()>,
+    ) -> io::Result<()> {
         let started = Instant::now();
         let written = append();
         self.append = Instant::now().saturating_duration_since(started);
+        if let Some(last) = reader.exchanges.last.as_mut() {
+            *last += self.append;
+        }
         written
     }
     /// Whether the `exchanges` and the rows of `setters` still to come,
@@ -194,7 +215,7 @@ impl Pace {
             .and_then(|rest| rest.checked_add(self.append.checked_mul(appends)?))
             .and_then(|rest| rest.checked_add(fixed))
             .and_then(|rest| now.checked_add(rest))
-            .is_some_and(|end| end <= limit.deadline)
+            .is_some_and(|end| end < limit.deadline)
     }
 }
 
@@ -279,7 +300,8 @@ impl<P: Port> Reader<P, ReadAdmission> {
             completed: false,
         };
         attempt.checkpoint(&mut authorize, admission, limit).ok()?;
-        pace.prepared(|| permit.record(Progress::Prepared)).ok()?;
+        pace.prepared(attempt.reader, || permit.record(Progress::Prepared))
+            .ok()?;
         for (index, command) in setters.commands().enumerate() {
             let (intent, acknowledged) = Progress::setter(destination, index)?;
             attempt.checkpoint(&mut authorize, admission, limit).ok()?;

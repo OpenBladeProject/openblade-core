@@ -23,6 +23,11 @@ struct Paced {
     // `prepared_append` more.
     append: Duration,
     prepared_append: Duration,
+    // Every authorization takes this long: discovery, and each checkpoint's
+    // two.
+    authorization: Duration,
+    // The saved destination a fan request returns to.
+    fan_destination: Option<Destination>,
     rows: Mutex<Vec<Progress>>,
     fan_rows: Mutex<Vec<u8>>,
     refusals: Mutex<Vec<Refusal>>,
@@ -53,6 +58,7 @@ fn spend(duration: Duration) {
 }
 impl Permit for Paced {
     fn authorize(&self) -> Option<ReadAdmission> {
+        spend(self.authorization);
         Some(ADMITTED)
     }
     fn windows_on_battery(&self) -> Option<bool> {
@@ -66,7 +72,7 @@ impl Permit for Paced {
         _: i32,
         _: ObservedPerformance,
     ) -> io::Result<Option<(FanIntent, Option<Destination>)>> {
-        Ok(self.fan.map(|intent| (intent, None)))
+        Ok(self.fan.map(|intent| (intent, self.fan_destination)))
     }
     fn resolve(&self, _: i32, _: ObservedPerformance) -> io::Result<Option<Destination>> {
         Ok(self.destination)
@@ -422,11 +428,12 @@ async fn a_stalled_power_read_is_charged_once_at_its_own_length() {
     // Silent with one 07/8C read held S ms, the recipe's first reading or the
     // first setter's own, checks at 920 + S ms. Five exchanges are left: one is
     // charged at the slowest (230 + S) and four at the second longest (230), so
-    // the check ends at 2070 + 2S ms and in 6 s runs up to S = 1965 ms. Replies
-    // are polled every 5 ms, so the refused case is the next stall on that
-    // grid, 1970 ms. Charging the stall at the second longest would let it run.
+    // the check ends at 2070 + 2S ms, which must be before the 6 s deadline:
+    // replies are polled every 5 ms, so it runs up to S = 1960 ms and is
+    // refused at 1965 ms, where the check ends exactly at the deadline.
+    // Charging the stall at the second longest would let it run.
     for read in [1, 2] {
-        for (stall, runs) in [(1965, true), (1970, false)] {
+        for (stall, runs) in [(1960, true), (1965, false)] {
             let fixture = balanced();
             fixture.state.lock().unwrap().power_stall = Some((read, Duration::from_millis(stall)));
             let permit = Paced {
@@ -471,12 +478,14 @@ async fn a_stalled_power_read_is_charged_once_at_its_own_length() {
 async fn a_stalled_prepared_append_refuses_at_the_derived_threshold() {
     // With every exchange at 230 ms, a Prepared append of P ms checks at
     // 920 + P ms. Silent has four exchanges after its next one and five rows
-    // left: it ends by 2070 + 6P ms, so it runs up to P = 655 ms. Custom has
-    // ten exchanges after its next one and nine rows left: it ends by
-    // 3450 + 10P ms, so it runs up to P = 255 ms.
+    // left: it ends at 2070 + 6P ms, which must be before the 6 s deadline,
+    // so it runs up to P = 654 ms and is refused at 655 ms, where the check
+    // ends exactly at the deadline. Custom has ten exchanges after its next
+    // one and nine rows left: it ends at 3450 + 10P ms, so it runs up to
+    // P = 254 ms and is refused at 255 ms.
     for (destination, threshold) in [
-        (Some(Destination::Preset(Preset::Silent)), 655),
-        (Destination::custom(1, 0, false), 255),
+        (Some(Destination::Preset(Preset::Silent)), 654),
+        (Destination::custom(1, 0, false), 254),
     ] {
         for (stall, runs) in [(threshold, true), (threshold + 1, false)] {
             let fixture = balanced();
@@ -514,7 +523,7 @@ async fn a_fan_recipe_charges_a_stalled_prepared_append_for_each_row() {
     // Fixed fans from Balanced with a Prepared append of P ms check at
     // 920 + P ms. Nine exchanges follow the next one, the spacing is 275 ms
     // and nine rows are left (two per setter and the settled row): the check
-    // ends at 3265 + 10P ms, so in 6 s it runs up to P = 273 ms.
+    // ends at 3265 + 10P ms, before the 6 s deadline up to P = 273 ms.
     for (stall, runs) in [(273, true), (274, false)] {
         let fixture = balanced();
         let permit = Paced {
@@ -542,6 +551,123 @@ async fn a_fan_recipe_charges_a_stalled_prepared_append_for_each_row() {
                 Duration::from_millis(920 + stall),
                 "{case}"
             );
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_slow_checkpoint_refuses_before_any_setter() {
+    // On a fast device (5 ms transfers) each checkpoint authorizes twice at
+    // C/2. Exchanges are timed from the previous reply, so the checkpoints
+    // before each send are charged with it; timed from send to reply, these
+    // recipes passed the check and then overran with setters submitted. Each
+    // recipe runs at the first C below and is refused at the second.
+    let silent = Some(Destination::Preset(Preset::Silent));
+    let custom = Destination::custom(1, 0, false);
+    let fixed = FanIntent::checked(1, 3700);
+    for (name, from_custom, destination, fan, runs, refused) in [
+        ("Silent", false, silent, None, 200, 210),
+        ("Custom from Balanced", false, custom, None, 116, 120),
+        ("Custom from Custom", true, custom, None, 100, 110),
+        ("fixed fan entry", false, None, fixed, 140, 150),
+    ] {
+        for (checkpoint, confirmed) in [(runs, true), (refused, false)] {
+            let fixture = Fixture::new();
+            {
+                let mut s = fixture.state.lock().unwrap();
+                s.selectors = if from_custom { [4, 4] } else { [0, 0] };
+                s.fans = [0, 0];
+                if from_custom {
+                    s.custom_levels = [0, 0];
+                }
+                s.latency = Some(Duration::from_millis(5));
+            }
+            let permit = Paced {
+                destination,
+                fan,
+                authorization: Duration::from_micros(checkpoint * 500),
+                ..Paced::default()
+            };
+            let observed = apply(&fixture, &permit, Duration::from_secs(6)).await;
+            let case = format!("{name} at {checkpoint} ms per checkpoint");
+            assert_eq!(observed.is_some(), confirmed, "{case}");
+            if confirmed {
+                assert!(permit.refusals.lock().unwrap().is_empty(), "{case}");
+            } else {
+                assert_eq!(
+                    *permit.refusals.lock().unwrap(),
+                    [Refusal::Deadline],
+                    "{case}"
+                );
+                assert_eq!(fixture.state.lock().unwrap().writes, 0, "{case}");
+                if fan.is_some() {
+                    assert_eq!(*permit.fan_rows.lock().unwrap(), [0], "{case}");
+                } else {
+                    assert_eq!(*permit.rows.lock().unwrap(), [Progress::Prepared], "{case}");
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn fan_recipes_count_their_intermediate_pair_and_custom_levels() {
+    // Fixed fans from Performance write its intermediate pair: 15 exchanges
+    // at 230 ms take 3450 ms and the check also charges the 275 ms of
+    // spacing, so the recipe is refused at a 3725 ms budget, where its check
+    // ends exactly at the deadline, and runs at 3730 ms (on the 5 ms grid).
+    // A return to Automatic with a saved Custom also reads the levels: 15
+    // exchanges and no spacing, refused at 3450 ms and run at 3455 ms.
+    // Leaving either pair out of the count would let the recipe start at the
+    // refused budget.
+    let custom = Destination::custom(1, 0, false);
+    for (name, fans, fan, fan_destination, refused, runs) in [
+        (
+            "fixed entry from Performance",
+            0,
+            FanIntent::checked(1, 3700),
+            None,
+            3725,
+            3730,
+        ),
+        (
+            "return to a saved Custom",
+            1,
+            FanIntent::checked(0, 3700),
+            custom,
+            3450,
+            3455,
+        ),
+    ] {
+        for (budget, confirmed) in [(refused, false), (runs, true)] {
+            let fixture = Fixture::new();
+            {
+                let mut s = fixture.state.lock().unwrap();
+                s.selectors = [2, 2];
+                s.fans = [fans, fans];
+                s.custom_levels = [2, 2];
+                s.latency = Some(LATENCY);
+            }
+            let permit = Paced {
+                fan,
+                fan_destination,
+                ..Paced::default()
+            };
+            let observed = apply(&fixture, &permit, Duration::from_millis(budget)).await;
+            let case = format!("{name} at {budget} ms");
+            assert_eq!(observed.is_some(), confirmed, "{case}");
+            if confirmed {
+                assert!(permit.refusals.lock().unwrap().is_empty(), "{case}");
+                assert_eq!(fixture.state.lock().unwrap().writes, 4, "{case}");
+            } else {
+                assert_eq!(
+                    *permit.refusals.lock().unwrap(),
+                    [Refusal::Deadline],
+                    "{case}"
+                );
+                assert_eq!(*permit.fan_rows.lock().unwrap(), [0], "{case}");
+                assert_eq!(fixture.state.lock().unwrap().writes, 0, "{case}");
+            }
         }
     }
 }

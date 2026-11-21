@@ -190,22 +190,25 @@ struct Reader<P: Port, A = Admission> {
     exchanges: Exchanges,
 }
 
-/// The two longest exchanges a Reader has completed: each runs from a send's
-/// submission to its reply's completion, settle wait included. Journal
-/// appends and admission between exchanges are not part of them;
-/// `mutation::Pace` times the Prepared append directly.
+/// The two longest exchanges a Reader has completed. Each runs from the
+/// previous reply's completion (the first from `mutation::Pace::start`) to
+/// its own reply's completion, so it includes the work before its send:
+/// discovery, authorization and the custody and origin checks of each
+/// checkpoint, as well as the send, the settle wait and the reply.
+/// `mutation::Pace::prepared` moves `last` past the Prepared append, which
+/// it charges separately.
 #[derive(Default)]
 struct Exchanges {
-    sent: Option<Instant>,
+    last: Option<Instant>,
     slowest: Duration,
     second: Duration,
 }
 impl Exchanges {
     fn replied(&mut self, at: Instant) {
-        let Some(sent) = self.sent.take() else {
+        let Some(last) = self.last.replace(at) else {
             return;
         };
-        let exchange = at.saturating_duration_since(sent);
+        let exchange = at.saturating_duration_since(last);
         if exchange > self.slowest {
             self.second = self.slowest;
             self.slowest = exchange;
@@ -469,9 +472,6 @@ impl<P: Port, A: ObservationProof> Attempt<'_, P, A> {
     ) -> io::Result<(usize, Frame)> {
         limit.check()?;
         let reply = matches!(transfer, Transfer::ReceiveReply);
-        if !reply {
-            self.reader.exchanges.sent = Some(Instant::now());
-        }
         self.reader.port.submit(transfer, limit)?;
         loop {
             limit.check()?;

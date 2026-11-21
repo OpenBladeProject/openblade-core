@@ -708,9 +708,13 @@ const RECIPE_WAITS: Duration = Duration::from_millis(275);
 const FRAME_EXCHANGE: Duration = Duration::from_nanos(FRAME_TIMEOUT.as_nanos() as u64 / 15);
 /// A performance or fan request's budget: the 6 s of a battery request. It
 /// gives the longest recipe twice the time per exchange `FRAME_TIMEOUT` gave a
-/// preset request, after its fixed spacing; each operation still refuses
+/// preset request, after its fixed spacing. Each operation still refuses
 /// before its first setter's intent row when its measured pace cannot finish
-/// in what remains (`Pace`).
+/// before the deadline (`Pace`): the remaining exchanges at the measured
+/// reply-to-reply intervals, which include each checkpoint's authorizations,
+/// custody check and origin verification, the remaining journal rows at the
+/// timed Prepared append, and the fixed spacing. Retirement after the closing
+/// row is not charged.
 #[cfg(feature = "service-thermal-mutation-v1")]
 const RECIPE_BUDGET: Duration = Duration::from_secs(6);
 #[cfg(feature = "service-thermal-mutation-v1")]

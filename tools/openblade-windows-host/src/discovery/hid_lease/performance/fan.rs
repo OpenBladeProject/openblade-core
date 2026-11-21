@@ -173,7 +173,7 @@ impl<P: Port> Reader<P, ReadAdmission> {
             completed: false,
         };
         a.checkpoint(&mut authorize, admission, limit).ok()?;
-        pace.prepared(|| permit.record_fan(if cleanup { 31 } else { 0 }))
+        pace.prepared(a.reader, || permit.record_fan(if cleanup { 31 } else { 0 }))
             .ok()?;
         // The setters take the first reserved IDs in order; the power readings,
         // any intermediate read and the final reads follow.
