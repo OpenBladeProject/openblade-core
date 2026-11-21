@@ -739,22 +739,37 @@ Managed migrates when it loads the configuration, not at the first save.
 `BatteryConfigurationStore.LoadCoreAsync` (`BatteryConfigurationStore.cs:349-417`)
 writes the aggregate back through `SaveConfigurationTransactionAsync` whenever
 `ReadCommittedSnapshot` reports a migration, and always for a legacy candidate.
-Native does the same when `Storage::open_with` runs, before its reader admits
-the aggregate: `profile_storage::migrate_on_open`, called once from
-`thermal_storage.rs`. Only `service-profiles-v1` has the call. The other lanes
-still refuse schema 24 and older and the legacy profile, and write no profile
-document.
+Native does the same when `Storage::open_with` runs. Called once from
+`thermal_storage.rs`, `profile_storage::plan_migration` decides, reading only
+the configuration documents and the record, whether the open writes a
+migration, and `Planned::write` writes it. Only `service-profiles-v1` has the
+call. The other lanes still refuse schema 24 and older and the legacy profile,
+and write no profile document.
 
-The call comes after every read-only refusal of the open: pending override or
-journal evidence, a recovery-required record, the override document and the
-journal. An open that fails for one of them writes nothing. Managed's
-`ReadContextAsync` loads the battery store first and its overrides after, and
-quarantines an override document on its own; native refuses that whole open,
-so migrating first would only rewrite an aggregate the service still could not
-use. The record check also makes the record guard inside `migrate_on_open`
-unreachable from this call site, which holds only while the call stays after
-those checks; `pending_override_or_journal_evidence_keeps_an_older_aggregate_untouched`
-and `an_override_or_journal_the_open_refuses_keeps_an_older_aggregate_untouched`
+The open runs its pending checks first: pending override or journal evidence
+and a recovery-required record. An open that writes no migration, because the
+aggregate is current, absent, refused, or one this service could not read back
+once migrated, keeps the order it had before migration existed: the aggregate,
+then the override document, then the journal. A refused aggregate is the
+answer, and the journal is not read.
+`a_refused_aggregate_is_answered_before_the_override_or_the_journal` pins that
+on every lane, and
+`an_aggregate_no_migration_writes_is_refused_before_the_override_or_journal`
+pins it for an aggregate managed would migrate but native refuses.
+
+An open that writes a migration admits the override document and the journal
+first, then writes the migration, then admits the migrated aggregate. When
+either of the first two is refused, the configuration documents are not
+written. That open is not read-only: its journal read is the one every open
+makes, and the journal store's read authenticates the rows, can fail fatally on
+the owner binding and can publish a pending roll. Managed's `ReadContextAsync`
+loads the battery store first and its overrides after, and quarantines an
+override document on its own; native refuses that whole open, so migrating
+first would only rewrite an aggregate the service still could not use. The
+record check also makes the record guard inside `plan_migration` unreachable
+from this call site, which holds only while the call stays after those checks;
+`pending_override_or_journal_evidence_keeps_an_older_aggregate_untouched` and
+`an_override_or_journal_the_open_refuses_keeps_an_older_aggregate_untouched`
 pin the placement.
 
 Two sources migrate, through `profile_set::migrate`:
@@ -822,38 +837,51 @@ the open fails:
 - A migration the store read back as other bytes is managed's verification
   failure. `VerifyIntendedAggregateAsync` throws `InvalidDataException`
   (`BatteryConfigurationStore.cs:914-932`), which `IsRecoverable` admits
-  (`:1344-1349`), so `LoadCoreAsync` quarantines the aggregate (`:403-438`)
-  and the service keeps that until it restarts. Native refuses the open with
+  (`:1344-1349`), so `LoadCoreAsync` quarantines the aggregate (`:403-438`).
+  Managed keeps the quarantine while that user's context stays active:
+  `ActivateUserAsync` keeps an active same-user context and loads the
+  configuration again when the user activates after another user
+  (`ServiceControlRuntime.cs:1456-1487`). Native refuses the open with
   managed's quarantine text, `OpenBlade preserved an unsupported or invalid
-  configuration. ...`, and remembers the change, the digest of the stored and
-  migrated bytes, for the life of the service runtime's thread. A later open of
-  the same stored bytes is refused the same way without a write; other stored
-  bytes are attempted. At most 16 changes are remembered, the oldest forgotten
-  first.
+  configuration. ...`, and holds one entry on the service runtime's thread:
+  the user's SID and the change, the digest of the stored and migrated bytes.
+  A later open of that user's store with the same bytes is refused the same
+  way without a write. The hold ends when another user's open reaches the
+  migration step, as managed's reload does, or when the process exits. Because
+  the change is keyed by content, other bytes in the same store are another
+  change, which is attempted and takes the hold's place, and another user's
+  byte-identical store is attempted too. The runtime serves one user at a
+  time, so one entry needs no cap. `ProtectedFiles::replace` reads back each
+  file it writes and fails on a disagreement (`thermal_native.rs:418-420`),
+  so on real storage the hold engages only when the transaction's own
+  verification then reads other bytes, as when another writer changes a
+  document between them.
+  `a_migration_another_writer_changed_is_restored_and_held_on_real_files`
+  pins that on real files.
 - Any other failure, an I/O error before or after the record, fails the open
   with `The saved configuration could not be migrated to the current schema.
-  It is unchanged.` Managed's load throws its I/O exception there, and its
-  activation tries again at the next session event.
+  It is unchanged.` Managed's load throws its I/O exception there, and the
+  next request tries again: `ControlRequestHandler` activates the user for
+  every interactive request (`ControlRequestHandler.cs:211-241`).
 - If the restore cannot be confirmed, the record stays: `Configuration
   transaction recovery is required. ...`, and every later open is refused.
 
 Schemas 25 and 26 used to open without a write. Now a migration of them, or of
 any older aggregate, that cannot be written fails the open, and every thermal,
 fan, battery and profile request answers from that failed open. A failed open
-is not kept, so each request opens again and retries an I/O failure. One
-attempt makes up to 14 durable writes and leaves the prior aggregate. A stage
-that cannot be removed, or another file under one of the change's backup
-names, fails every attempt the same way until it is removed. Native has no
-session activation to retry at, so the next request is that point; the only
-failure managed holds for the process, the verification failure, is held
-here too.
+is not kept, so each request opens again and retries an I/O failure, as
+managed's next request retries its load. One attempt makes up to 14 durable
+writes and leaves the prior aggregate. A stage that cannot be removed, or
+another file under one of the change's backup names, fails every attempt the
+same way until it is removed. The only failure managed holds, the
+verification failure, is held as described above.
 
-`profile-migration-vectors.json` holds 112 cases recorded from
+`profile-migration-vectors.json` holds 120 cases recorded from
 `BatteryConfigurationStore.LoadAsync` by
 `ServiceControlRuntimeTests.NativeProfileMigrationVectors`: every schema from 1
 to 26, schema 27 left alone and schema 27 rewritten, boundary values, 54
 legacy profiles and the envelopes managed preserves, each with the files left
-on disk and their digests. Five rows carry `nativeDifference`: managed's
+on disk and their digests. Ten rows carry `nativeDifference`: managed's
 outcome is still their expectation, and the native readers pin their own
 refusal with the files untouched. The domain test `profile_migration_vectors`
 migrates every case the payload reader sees. The host tests in `profile_migration_tests.rs` open the
@@ -876,13 +904,23 @@ Differences from managed:
   to managed and invalid to `profile_set::migrate`. The host's inspection
   names it as managed does, and both leave it untouched. Pinned by the
   `legacy duplicate member with a schema version` row.
-- Below schema 22, an application profile list holding `null`, or an entry
-  whose `overrides` or `executablePath` is `null`, and below schema 12,
-  `windowsPowerModes: null`, are refused, with the files untouched and the
-  store closed. Managed reads them and then discards those members
-  (`ProfileStore.cs:235-256`) and migrates the aggregate; the native decoder
-  refuses the null first (`profile_set/decode.rs:698-705`). Four `nativeDifference`
-  rows pin it. A null list itself is refused by managed as well.
+- Some nulls managed reads and then discards or migrates are refused, with the
+  files untouched and the store closed:
+
+  | Shape | Schemas |
+  |---|---|
+  | `applicationProfiles: null` | 2 to 14 |
+  | `[null]`, or an entry whose `overrides` or `executablePath` is `null` | 2 to 21 |
+  | an entry whose `name` is `null` | 2 to 21 |
+  | `windowsPowerModes: null` | 2 to 14 |
+
+  Managed discards application profiles below schema 22 and migrates or
+  discards Windows power modes below 15 (`ProfileStore.cs:235-256`,
+  `:492-553`), then migrates the aggregate; the native decoder refuses the
+  null first (`profile_set/decode.rs:698-705`). From schema 15 managed
+  quarantines a null list and null power modes, and from 22 a null entry, as
+  native does. Nine `nativeDifference` rows pin the shapes, and ordinary rows
+  pin the schema 15 and 22 boundaries.
 - The store's own reader (`thermal_storage::aggregate`) refuses a current
   aggregate whose application profile omits `enabled`; managed defaults it
   to `true`. This predates the migration and is unchanged here.
