@@ -224,6 +224,40 @@ newer profiles accept an optional returned-state byte. Independent requested-sta
 readback remains required. This software tolerance does not establish firmware
 latency on every model.
 
+## Synapse features shown without controls
+
+OpenBlade reports these Synapse features in diagnostics. Synapse changes them
+through its own native components, so OpenBlade doesn't change them. Use
+Synapse for these settings.
+
+| Feature | Laptops | What Synapse offers |
+| --- | --- | --- |
+| CPU power limit | `RZ09-0508`, `RZ09-0530` | 45–95 W in Custom |
+| CPU power limits (PL1, PL2, time window) | `RZ09-0483`, `RZ09-0484`, `RZ09-0510`, `RZ09-0509`, `RZ09-0529` | PL1 1–190 W, PL2 1–200 W with an on/off switch, 0.125 W steps; time window 1–128 s; default PL2 160 W, PL1 120 W, 56 s |
+| Gaming-mode GPU overclock | `RZ09-0300`, `RZ09-0351`, `RZ09-0328` | Gaming adds the laptop's stored GPU and memory overclock |
+| Local dimming | `RZ09-0530`, `RZ09-0528`, `RZ09-0581` | Follows the Windows HDR setting |
+
+The ranges listed for the Intel models come from the RZ09-0510, RZ09-0509 and
+RZ09-0529 settings pages. RZ09-0483 and RZ09-0484 share the defaults, but their
+own ranges weren't reviewed, so diagnostics report them as unknown rather than
+assume them from other models. On RZ09-0482, Synapse's power-limit control
+adjusts the CPU curve optimizer instead, so no power limit is listed.
+
+### Local dimming on Blade 16 (2024) and Blade 18 (2024)
+
+On `RZ09-0510` and `RZ09-0509`, the Display page shows **Local dimming** with a
+**Turn off** button when the laptop reports a mini-LED display and local dimming
+is on. OpenBlade can only turn local dimming off. It doesn't do so while Maximum
+Fans or Synapse's own CPU boost setting is on (this is not OpenBlade's Custom CPU
+Boost level). The card names the setting; turn it off in Synapse, then try again.
+OpenBlade's own Maximum Fans and Balanced changes also wait while local dimming
+is on, so with both on, change one of them in Synapse. Each change is checked by
+a fresh readback. If the result can't be confirmed, laptop controls pause until
+you check the display and select **Resume laptop controls**.
+
+See the [source review](../evidence/source-reviewed-blades/2026-11-20-observed-features-and-local-dimming.json)
+for the pinned Synapse files. Physical validation is pending.
+
 ## Send a useful test report
 
 The earlier five models also offer [SnapTap](snap-tap.md#supported-driver-profiles) through

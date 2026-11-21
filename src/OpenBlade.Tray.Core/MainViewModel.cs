@@ -570,6 +570,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         ApplyOneShotLaptopControlCommand = CreateCommand(
             ApplyOneShotLaptopControlAsync,
             CanApplyOneShotLaptopControl);
+        ClearLocalDimmingCommand = CreateCommand(
+            async (_, token) =>
+            {
+                await ClearLocalDimmingAsync(token);
+            },
+            _ => CanClearLocalDimming);
         commands =
         [
             (AsyncRelayCommand)SetPerformanceCommand,
@@ -599,6 +605,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             (AsyncRelayCommand)AcknowledgeThermalPolicyUpgradeDisclosureCommand,
             (AsyncRelayCommand)ResumeExperimentalWritesCommand,
             (AsyncRelayCommand)ApplyOneShotLaptopControlCommand,
+            (AsyncRelayCommand)ClearLocalDimmingCommand,
         ];
     }
 
@@ -9504,6 +9511,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         NotifyComputed(nameof(CanReapplyChangedSettings), CanReapplyChangedSettings);
         NotifyComputed(nameof(CanRecoverHyperBoostRestore), CanRecoverHyperBoostRestore);
         NotifyComputed(nameof(CanResumeExperimentalWrites), CanResumeExperimentalWrites);
+        NotifyLocalDimmingPresentation();
         NotifyComputed(nameof(CanCheckCurrentState), CanCheckCurrentState);
         NotifyComputed(nameof(ShowHardwareControlStateCheck), ShowHardwareControlStateCheck);
         NotifyComputed(nameof(ShowReapplyChangedSettings), ShowReapplyChangedSettings);

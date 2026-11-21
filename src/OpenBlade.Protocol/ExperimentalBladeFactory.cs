@@ -56,10 +56,12 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
     internal string LaptopControlRecoveryIdentity => $"{model.ModelNumber}|1532:{model.ProductId:X4}";
 
-    public DeviceCapabilities Capabilities => ExperimentalBladePort.WithConfirmedExperimentalFanRange(
-        ExperimentalBladePort.WithStartupReadAdmission(
-            ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed), startupAnimationState),
-        model, policy.ConfirmedFanRanges);
+    public DeviceCapabilities Capabilities => ExperimentalBladePort.WithLocalDimmingAdmission(
+        ExperimentalBladePort.WithConfirmedExperimentalFanRange(
+            ExperimentalBladePort.WithStartupReadAdmission(
+                ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed), startupAnimationState),
+            model, policy.ConfirmedFanRanges),
+        model, policy.WritesAllowed, policy.MiniLedPanel);
 
     public DeviceCapabilities PotentialCapabilities => ExperimentalBladePort.CreateCapabilities(model, true);
 
@@ -140,7 +142,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                 throw new CapabilityUnavailableException("Fresh recovery safety admission failed.");
             }
             cancellationToken.ThrowIfCancellationRequested();
-            if (!policy.TryCompleteRecovery(recoveryScope, () => acceptObservedState(observed)))
+            if (!policy.TryCompleteRecovery(recoveryScope, () => acceptObservedState(observed),
+                localDimmingObserved: observed.LocalDimmingActive is not null))
             {
                 throw new CapabilityUnavailableException("The confirmed state could not be reconciled for recovery.");
             }
@@ -248,14 +251,15 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             try
             {
                 await port.InitializeBlade18KeyboardLayoutAsync(cancellationToken).ConfigureAwait(false);
+                await port.InitializeLocalDimmingPanelAsync(cancellationToken).ConfigureAwait(false);
                 if (!port.IsRecoverySessionHealthy)
                 {
-                    throw new IOException("The optional keyboard-layout read left an unhealthy session.");
+                    throw new IOException("An optional keyboard-layout or display-panel read left an unhealthy session.");
                 }
             }
             catch (IOException) when (!port.IsRecoverySessionHealthy)
             {
-                // Layout is optional metadata, not admission for thermal/battery controls.
+                // Layout and panel are optional metadata, not admission for thermal/battery controls.
                 // A rejected GET poisons its session: drain it before one complete fresh
                 // admission, without repeating the failed metadata query or guessing a layout.
                 pending = null;

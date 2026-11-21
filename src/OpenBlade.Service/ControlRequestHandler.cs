@@ -457,6 +457,9 @@ public sealed class ControlRequestHandler
                 await runtime.ApplyOneShotLaptopControlAsync(
                     apply.Value,
                     cancellationToken)),
+            ClearLocalDimmingRequest => Result(
+                request.RequestId,
+                await runtime.ClearLocalDimmingAsync(cancellationToken)),
             ExportDiagnosticsRequest export => await ExportDiagnosticsAsync(
                 export.RequestId,
                 export.LiveReadingsEnabled,

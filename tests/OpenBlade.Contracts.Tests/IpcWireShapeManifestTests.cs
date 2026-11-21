@@ -92,6 +92,9 @@ public sealed class IpcWireShapeManifestTests
             84 => "7698A5B8C9679FCDE35762221E1DBD8A31E92086588511320CB0D5D87473D306",
             // Protocol 85 adds the cooling-pad Auto fan mode and CoolingPadSettings.AutoProfile.
             85 => "A471FE3A7AD4994630D5137AB901C3599358B1546ED1797B4A4E7E0B4203CEB3",
+            // Protocol 88 adds Intel CPU power limits, firmware Gaming GPU overclock and local dimming
+            // (86-87 are taken by other open pull requests).
+            88 => "3D6512DA2A12B59D7FD680E975171BFA57D847D2CBE8B0513658102BDE8A1AEB",
             _ => null,
         };
 

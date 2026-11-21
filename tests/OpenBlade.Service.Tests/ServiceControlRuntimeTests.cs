@@ -33493,6 +33493,26 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             return Task.CompletedTask;
         }
 
+        public int LocalDimmingClearCalls { get; private set; }
+
+        public Exception? LocalDimmingClearFailure { get; set; }
+
+        public Action? DuringLocalDimmingClear { get; set; }
+
+        public Task ClearLocalDimmingAsync(CancellationToken cancellationToken)
+        {
+            TotalCalls++;
+            LocalDimmingClearCalls++;
+            DuringLocalDimmingClear?.Invoke();
+            if (LocalDimmingClearFailure is not null)
+            {
+                throw LocalDimmingClearFailure;
+            }
+
+            ConfirmedState = ConfirmedState with { LocalDimmingActive = false };
+            return Task.CompletedTask;
+        }
+
         public Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken)
         {
             TotalCalls++;

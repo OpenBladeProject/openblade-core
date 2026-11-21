@@ -120,6 +120,7 @@ public sealed class ControlRequestHandlerTests
                 new ApplyOneShotLaptopControl(
                     OneShotLaptopControl.FunctionKeyPrimary,
                     FunctionKeyMode: FunctionKeyPrimaryMode.FunctionKeys)),
+            new ClearLocalDimmingRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
             new ExportDiagnosticsRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -145,6 +146,7 @@ public sealed class ControlRequestHandlerTests
             "PulseReactiveKey", "PushAmbientLightingFrame", "PushUniformLightingFrame",
             "SetPlaybackMuteIndicator", "SetBatteryPolicy",
             "SetBatteryProtection", "SetFullChargeOverride", "ApplyOneShotLaptopControl",
+            "ClearLocalDimming",
             "ExportDiagnostics", "Shutdown",
         ];
 
@@ -901,6 +903,9 @@ public sealed class ControlRequestHandlerTests
             Assert.Equal(FunctionKeyPrimaryMode.FunctionKeys, value.FunctionKeyMode);
             return Record("ApplyOneShotLaptopControl");
         }
+
+        public Task<ControlOperationResult> ClearLocalDimmingAsync(CancellationToken token) =>
+            Record("ClearLocalDimming");
 
         public bool LastIncludeLiveReadings { get; private set; }
 

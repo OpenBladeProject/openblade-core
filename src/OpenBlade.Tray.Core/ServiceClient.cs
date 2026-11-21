@@ -574,6 +574,11 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 value),
             token);
 
+    public Task<ControlOperationResult> ClearLocalDimmingAsync(CancellationToken token) =>
+        SendMutationAsync(
+            new ClearLocalDimmingRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            token);
+
     public Task<ControlOperationResult> ShutdownOpenBladeAsync(CancellationToken token) =>
         SendMutationAsync(
             new ShutdownOpenBladeRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
