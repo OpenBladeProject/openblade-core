@@ -490,6 +490,85 @@ public sealed partial class ServiceControlRuntimeTests
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
+    // On battery, a journal with a deferred retry, or one whose intent is not a
+    // battery mode, keeps its restore path instead of retiring as a handoff.
+    [Theory]
+    [InlineData("deferredRetry")]
+    [InlineData("acIntent")]
+    public async Task RealModeSevenTable_OnlyABatteryDestinationRetiresOnBattery(string journalKind)
+    {
+        int productId = journalKind == "acIntent" ? 0x02B7 : 0x029F;
+        DeviceCapabilities full = ExperimentalBladePort.CreateCapabilities(
+            ExperimentalBladeModels.All.Single(item => item.ProductId == productId), true);
+        HyperBoostOwnershipJournal pending = journalKind == "acIntent"
+            ? new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.RestorePending,
+                PerformancePreset.Balanced,
+                RequiresCoolingPad: false,
+                DateTimeOffset.UtcNow)
+            {
+                // Inside the reviewed envelope; a narrower observed range makes it
+                // unsupported, which is not a battery handoff.
+                RestoreIntent = new HyperBoostRestoreIntent(
+                    PerformancePreset.Balanced,
+                    CustomPerformance: null,
+                    GpuClockTuning: null,
+                    new FanControlSettings(FanMode.Fixed, 5200, ManualFanCurve.Default)),
+                RestorePowerSource = PowerSource.PluggedIn,
+            }
+            : new HyperBoostOwnershipJournal(
+                HyperBoostOwnershipJournalState.RestorePending,
+                PerformancePreset.Silent,
+                RequiresCoolingPad: false,
+                DateTimeOffset.UtcNow)
+            {
+                RestoreIntent = new HyperBoostRestoreIntent(
+                    PerformancePreset.BatterySaver,
+                    CustomPerformance: null,
+                    GpuClockTuning: null,
+                    FanControlSettings.FromLegacy(FanMode.Automatic)),
+                RecoveryBaseline = new HyperBoostRecoveryBaseline(
+                    PerformancePreset.Balanced, FanMode.Automatic, HyperBoostActive: false),
+                RestoreRetryDisposition = HyperBoostRestoreRetryDisposition.DeferredPreSubmission,
+                RestoreRetryTarget = HyperBoostRestoreRetryTarget.CurrentPowerDestination,
+                RestoreUsesCurrentPowerDestination = true,
+                RestorePowerSource = PowerSource.Battery,
+            };
+        var journal = new RecordingHyperBoostOwnershipJournalStore { Journal = pending };
+        TestContext context = CreateContext(true,
+            initialPowerSource: PowerSource.Battery,
+            profileValidator: ProfileSetValidator.CreateForDeviceCapabilities(full, full),
+            hyperBoostPadDiscoverySource: new FixedCoolingPadDiscoverySource(CoolingPadConnectionState.Absent),
+            hyperBoostOwnershipJournalStore: journal);
+        ConfigurePadlessHyperBoost(context);
+        context.Device.UseScopedPerformanceFanRead = true;
+        context.Device.Capabilities = journalKind == "acIntent"
+            ? full with
+            {
+                ObservedFanSpeedRangesByPerformancePreset = new Dictionary<PerformancePreset, FanSpeedRange>
+                {
+                    [PerformancePreset.Balanced] = new FanSpeedRange(3400, 5000, 100),
+                },
+            }
+            : full;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = productId == 0x02B7 ? PerformancePreset.BatteryBalanced : PerformancePreset.Balanced,
+            CustomPerformance = null,
+            Fans = FanMode.Automatic,
+            HyperBoostActive = false,
+        };
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(pending, journal.Journal);
+        Assert.True(context.Runtime.GetStatus().HyperBoostRestorePending);
+        Assert.DoesNotContain("isn't available", context.Runtime.GetStatus().Message, StringComparison.Ordinal);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
     private TestContext CreateRealModeSevenAcJournalContext(
         DeviceCapabilities validatorCapabilities,
         RecordingHyperBoostOwnershipJournalStore journal,
