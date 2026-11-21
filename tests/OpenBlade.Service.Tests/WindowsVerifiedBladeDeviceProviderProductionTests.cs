@@ -3965,6 +3965,9 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
 
         public List<GpuClockOffsetSettings> Writes { get; } = [];
 
+        // Driver calls in order: "query" and "set".
+        public List<string> Operations { get; } = [];
+
         public bool FailWrites { get; init; }
         public Exception? QueryFailure { get; set; }
         public Func<GpuClockOffsetSettings, Exception?>? SetFailure { get; set; }
@@ -3972,6 +3975,7 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
         public GpuClockOffsetCapabilities? Query()
         {
             QueryCount++;
+            Operations.Add("query");
             if (QueryFailure is not null)
             {
                 throw QueryFailure;
@@ -3982,6 +3986,7 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
         public GpuClockOffsetCapabilities Set(GpuClockOffsetSettings settings)
         {
             Writes.Add(settings);
+            Operations.Add("set");
             if (SetFailure?.Invoke(settings) is { } failure)
             {
                 throw failure;

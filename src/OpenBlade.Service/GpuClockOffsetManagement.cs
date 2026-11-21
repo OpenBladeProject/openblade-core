@@ -30,9 +30,18 @@ internal interface IGpuClockOffsetManagementDevice
         bool retainManagement,
         CancellationToken cancellationToken);
 
+    // Resolves an uncertain submission with a read-only driver query first; an
+    // unreadable driver keeps the submission uncertain and nothing is released.
     Task RelinquishGpuClockOffsetManagementAsync(CancellationToken cancellationToken);
 
     Task<bool> InvalidateGpuClockOffsetConfirmationAsync(CancellationToken cancellationToken);
+
+    // A power change allows one more read-only driver query, whatever the GPU
+    // activity, to resolve an uncertain submission before the destination writes
+    // or relinquishes the offsets.
+    void RearmUncertainGpuClockOffsetResolution()
+    {
+    }
 }
 
 // Prior ownership is separate from the read-interest used to observe Stop.

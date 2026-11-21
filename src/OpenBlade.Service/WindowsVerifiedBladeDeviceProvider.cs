@@ -1994,8 +1994,48 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                bool? gpuActive = null;
+                bool uncertainNeedsActivity;
                 lock (gpuClockOffsetManagementSync)
                 {
+                    uncertainNeedsActivity = gpuClockOffsetManagementState ==
+                            GpuClockOffsetManagementState.SubmissionUncertain
+                        && uncertainGpuClockOffsetUngatedQueryAttempted;
+                }
+                if (uncertainNeedsActivity)
+                {
+                    try
+                    {
+                        gpuActive = await gpuActivitySource.IsActiveAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        gpuActive = null;
+                    }
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+                lock (gpuClockOffsetManagementSync)
+                {
+                    if (gpuClockOffsetManagementState ==
+                        GpuClockOffsetManagementState.SubmissionUncertain)
+                    {
+                        // Read-only reconciliation comes first after a possibly
+                        // submitted write: the same one ungated query the read path
+                        // uses, then only while the dGPU is active.
+                        if (!uncertainGpuClockOffsetUngatedQueryAttempted || gpuActive is true)
+                        {
+                            uncertainGpuClockOffsetUngatedQueryAttempted = true;
+                            ResolveUncertainGpuClockOffsetSubmissionCore();
+                        }
+                        if (gpuClockOffsetManagementState ==
+                            GpuClockOffsetManagementState.SubmissionUncertain)
+                        {
+                            // The driver could not be read. Never release offsets
+                            // nothing confirmed as if they were known.
+                            return;
+                        }
+                    }
                     bool defaultConfirmed = gpuClockOffsetManagementState is
                         GpuClockOffsetManagementState.ResetConfirmed
                         or GpuClockOffsetManagementState.RelinquishedDefaultConfirmed
@@ -2012,6 +2052,18 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             finally
             {
                 hardwareOperationGate.Release();
+            }
+        }
+
+        public void RearmUncertainGpuClockOffsetResolution()
+        {
+            lock (gpuClockOffsetManagementSync)
+            {
+                if (gpuClockOffsetManagementState ==
+                    GpuClockOffsetManagementState.SubmissionUncertain)
+                {
+                    uncertainGpuClockOffsetUngatedQueryAttempted = false;
+                }
             }
         }
 
@@ -2223,11 +2275,22 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 }
             }
         }
+        // The write path's range query also reconciles an uncertain submission
+        // read-only before anything is written, so the prior state of a failed
+        // write is what the driver showed, not a guess.
         private GpuClockOffsetCapabilities? QueryGpuClockOffsets()
         {
             lock (gpuClockOffsetManagementSync)
             {
-                return gpuClockOffsets.Query();
+                GpuClockOffsetCapabilities? observed = gpuClockOffsets.Query();
+                if (observed is not null
+                    && gpuClockOffsetManagementState ==
+                        GpuClockOffsetManagementState.SubmissionUncertain)
+                {
+                    uncertainGpuClockOffsetUngatedQueryAttempted = true;
+                    ResolveUncertainGpuClockOffsetObservationCore(observed);
+                }
+                return observed;
             }
         }
 
@@ -2293,6 +2356,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 return null;
             }
 
+            return ResolveUncertainGpuClockOffsetObservationCore(observed);
+        }
+
+        // Caller holds gpuClockOffsetManagementSync.
+        private GpuClockOffsetCapabilities? ResolveUncertainGpuClockOffsetObservationCore(
+            GpuClockOffsetCapabilities observed)
+        {
             if (observed.Current == GpuClockOffsetSettings.Default
                 && (uncertainGpuClockOffsetReset
                     || uncertainGpuClockOffsetPriorState is

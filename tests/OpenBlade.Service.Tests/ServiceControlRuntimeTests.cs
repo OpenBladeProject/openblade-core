@@ -32741,6 +32741,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         public Action? AfterGpuClockSet { get; set; }
 
+        // GPU management calls in order: "rearm", "relinquish" and "gpuSet".
+        public List<string> GpuManagementCalls { get; } = [];
+
         public Queue<Exception> PerformanceFailures { get; } = new();
 
         public bool MutatePerformanceBeforeQueuedFailure { get; set; }
@@ -33242,6 +33245,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                         "GPU clock tuning is unavailable in this test device."));
             }
 
+            GpuManagementCalls.Add("gpuSet");
             GpuClockSetCalls++;
             GpuClockOffsetManagementState = GpuClockOffsetManagementState.Managed;
             ConfirmedState = ConfirmedState with
@@ -33308,6 +33312,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         public Task RelinquishGpuClockOffsetManagementAsync(
             CancellationToken cancellationToken)
         {
+            GpuManagementCalls.Add("relinquish");
             GpuClockOffsetManagementState =
                 GpuClockOffsetManagementState.Relinquished;
             ConfirmedState = ConfirmedState with { GpuClockOffsets = null };
@@ -33316,6 +33321,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         public Task<bool> InvalidateGpuClockOffsetConfirmationAsync(
             CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public void RearmUncertainGpuClockOffsetResolution() => GpuManagementCalls.Add("rearm");
 
         private async Task SetManagedPerformanceAsync(
             PerformancePreset value,

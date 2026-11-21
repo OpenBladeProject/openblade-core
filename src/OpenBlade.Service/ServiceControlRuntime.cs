@@ -573,6 +573,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     // baseline before startup reconciliation can apply saved intent.
     private readonly PendingWriteConfirmationTracker pendingWriteConfirmations = new();
     private volatile PendingTransitionContinuation? pendingTransitionContinuation;
+    // Set by a power change; the next full transition re-arms the read-only driver
+    // query that resolves an uncertain NVML submission.
+    private bool uncertainGpuClockOffsetResolutionRearmPending;
     private volatile PendingResumePerformanceDrift? pendingResumePerformanceDrift;
     private long resumePowerSourceTransitionGeneration = -1;
     private ServiceStatusSnapshot? status;
@@ -16267,6 +16270,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         await RefreshBatterySaverFanStopThermalSampleAsync(token).ConfigureAwait(false);
         DesiredDeviceState desired = ResolveHardwareDesired(
             cachedConfirmed ?? UnknownConfirmedState);
+        if (uncertainGpuClockOffsetResolutionRearmPending)
+        {
+            // The power change abandoned the pending confirmations; the destination
+            // reads the NVIDIA driver once before it relinquishes or writes offsets.
+            uncertainGpuClockOffsetResolutionRearmPending = false;
+            (device as IGpuClockOffsetManagementDevice)?.RearmUncertainGpuClockOffsetResolution();
+        }
         ThermalFullTransitionExecution transitionExecution =
             await ApplyDesiredTransitionWithRetryAsync(
                 device,
@@ -16310,11 +16320,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         : outcome.WriteAttempted.Contains(DeviceSubsystem.Battery)
                             ? outcome.BatteryConfirmation
                             : continuation?.BatteryConfirmation ?? BatteryConfirmationScope.All,
-                // A continuation that wrote outside its deferred steps re-sent a
+                // A continuation that wrote outside its deferred steps, or tried its
+                // GPU-only re-send at all (applied, refused or uncertain), re-sent a
                 // dependency; the chain allows that once, so a failing re-send cannot loop.
                 continuation is not null
                     && (continuation.GpuResendAttempted
-                        || outcome.WriteAttempted.Any(subsystem => !continuation.Subsystems.Contains(subsystem))));
+                        || outcome.WriteAttempted
+                            .Concat(outcome.GpuClockOffsetsOnlyTried ?? new HashSet<DeviceSubsystem>())
+                            .Any(subsystem => !continuation.Subsystems.Contains(subsystem))));
         }
 
         if (outcome.PreWriteState is { } preWriteState)
@@ -17973,6 +17986,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
             powerSourceGeneration++;
             pendingResumePerformanceDrift = null;
+            uncertainGpuClockOffsetResolutionRearmPending = true;
             resumePowerSourceTransitionGeneration = resumeStateValidation.ResumeStarted
                 && !pendingWriteConfirmations.HasPending
                 ? powerSourceGeneration : -1;
@@ -17983,7 +17997,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 explicitLightingOwnershipActive = false;
                 if (pendingBlockReleased)
                 {
-                    ReleaseWriteBlockHeldByPendingConfirmations(powerSource);
+                    ReleaseWriteBlockHeldByPendingConfirmations();
                 }
             }
             lightingRecoveryPauseMessage = null;
@@ -18492,12 +18506,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     // write block they held. Without this the destination transition's thermal
     // step is refused on that stale block. Every other explicit block is kept, and
     // the transition still performs its fresh read, power, session, controller and
-    // ownership admission before any write.
-    private void ReleaseWriteBlockHeldByPendingConfirmations(PowerSource powerSource)
+    // ownership admission before any write. ChangePowerSourceCore returns before
+    // this for ExternalUnknown, so only classified sources reach it.
+    private void ReleaseWriteBlockHeldByPendingConfirmations()
     {
         ServiceStatusSnapshot current = GetStatus();
         if (current is not { DeviceVerified: true, WritesBlocked: true }
-            || powerSource == PowerSource.ExternalUnknown
             || IsUnclassifiedExternalContext
             || HasExplicitNonPowerWriteBlock(current))
         {
