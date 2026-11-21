@@ -9,7 +9,9 @@ namespace OpenBlade.Contracts;
 public static class OpenBladeIpc
 {
     // Protocol 85 adds the cooling-pad Auto fan mode and its profile.
-    public const int ProtocolVersion = 85;
+    // Protocol 86 adds the HyperBoost Turbo base-mode slot and entry restriction
+    // (RZ09-0510), and admits HyperBoost with manual fans.
+    public const int ProtocolVersion = 86;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -668,7 +670,9 @@ public static class IpcMessageCodec
                     or DeviceFeatureAccess.ReadOnly
                     or DeviceFeatureAccess.ReadWrite)
                 || hyperBoost.Performance is not null
-                || hyperBoost.Fans != FanMode.Automatic))
+                // Synapse can run mode 7 with manual fans (RZ09-0510); exit then
+                // confirms Automatic fans.
+                || hyperBoost.Fans is not (FanMode.Automatic or FanMode.Fixed)))
         {
             throw InvalidStatus("confirmed HyperBoost state is inconsistent");
         }
@@ -932,6 +936,9 @@ public static class IpcMessageCodec
         }
     }
 
+    private static bool HyperBoostWithManualFans(ConfirmedDeviceState state) =>
+        state.HyperBoostActive == true && state.Fans != FanMode.Automatic;
+
     private static InvalidDataException InvalidBody(JsonException exception) =>
         new("IPC message body is invalid.", exception);
 
@@ -989,7 +996,12 @@ public static class IpcMessageCodec
                     ? status.ConfirmedState.CustomPerformance : null,
                 Fans = status.ConfirmedState.Fans == FanMode.Stop
                     || status.ConfirmedState.CustomPerformance?.MaximumFans == true
+                    || HyperBoostWithManualFans(status.ConfirmedState)
                     ? null : status.ConfirmedState.Fans,
+                // Protocol 51 only knows HyperBoost with Automatic fans; show manual-fan
+                // HyperBoost as unknown, which that read-only projection shows as off.
+                HyperBoostActive = HyperBoostWithManualFans(status.ConfirmedState)
+                    ? null : status.ConfirmedState.HyperBoostActive,
                 Lighting = status.ConfirmedState.Lighting is { } confirmedLighting
                     && IsProtocol51LightingSetting(confirmedLighting)
                         ? confirmedLighting with { IndependentControls = null, ControlsKeyboardEffect = false }
@@ -1283,7 +1295,7 @@ public static class IpcMessageCodec
 
             if (protocol51Projection && typeInfo.Type == typeof(HyperBoostBaseModeCapabilities))
             {
-                foreach (string member in new[] { "custom", "coolingPadEntryBaseMode" })
+                foreach (string member in new[] { "custom", "turbo", "coolingPadEntryBaseMode" })
                 {
                     typeInfo.Properties.Single(property => string.Equals(
                         property.Name, member, StringComparison.OrdinalIgnoreCase))
@@ -1440,6 +1452,9 @@ public static class IpcMessageCodec
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "supportsTouchpadStatusIndicator", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "hyperBoostEntryRestriction", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
             }
 

@@ -1374,6 +1374,12 @@
   <data name="Pad-less HyperBoost is detected but is not available with the current admission evidence." xml:space="preserve">
     <value>Pad-less HyperBoost is detected but is not available with the current admission evidence.</value>
   </data>
+  <data name="Synapse doesn't offer HyperBoost on this laptop configuration, so OpenBlade doesn't start it." xml:space="preserve">
+    <value>Synapse doesn't offer HyperBoost on this laptop configuration, so OpenBlade doesn't start it.</value>
+  </data>
+  <data name="Synapse doesn't offer HyperBoost on this laptop configuration. You can still turn it off." xml:space="preserve">
+    <value>Synapse doesn't offer HyperBoost on this laptop configuration. You can still turn it off.</value>
+  </data>
   <data name="Detected on this laptop, but OpenBlade cannot safely change it with the current evidence." xml:space="preserve">
     <value>Detected on this laptop, but OpenBlade cannot safely change it with the current evidence.</value>
   </data>

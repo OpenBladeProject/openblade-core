@@ -23,6 +23,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         ExperimentalLightingBaselineJournal? lightingJournal = null)
     {
         this.model = model;
+        hyperBoostSkuAdmission = HyperBoostSystemSkuPolicy.Evaluate(model.ProductId, null);
         this.identity = identity;
         this.native = native;
         this.guard = guard;
@@ -56,9 +57,15 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
     internal string LaptopControlRecoveryIdentity => $"{model.ModelNumber}|1532:{model.ProductId:X4}";
 
+    // The SKU admission of the last admitted session. Before one exists it is
+    // NotApplicable, so no entry restriction is reported; each port still checks
+    // its own SKU admission before an entry.
+    private volatile HyperBoostSystemSkuAdmission hyperBoostSkuAdmission;
+
     public DeviceCapabilities Capabilities => ExperimentalBladePort.WithConfirmedExperimentalFanRange(
         ExperimentalBladePort.WithStartupReadAdmission(
-            ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed), startupAnimationState),
+            ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed,
+                hyperBoostSkuAdmission), startupAnimationState),
         model, policy.ConfirmedFanRanges);
 
     public DeviceCapabilities PotentialCapabilities => ExperimentalBladePort.CreateCapabilities(model, true);
@@ -290,7 +297,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         {
             return new(null, HidSessionFailureKind.Canceled);
         }
-        if (identity.ReadExactIdentity() is not { Evidence: not null, Failure: null })
+        if (identity.ReadExactIdentity() is not { Evidence: { } host, Failure: null })
         {
             return new(null, HidSessionFailureKind.IdentityBlocked);
         }
@@ -300,6 +307,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             return new(null, access.DetectionFailure is not null
                 ? HidSessionFailureKind.ConflictDetectionFailed : HidSessionFailureKind.ConflictBlocked);
         }
+        // The SKU is diagnostic host metadata; only HyperBoost's vendor recheck reads it.
+        string? systemSku = host.Sku;
 
         List<(OpenedCandidateHandle Handle, HidHandleIdentity Identity)> candidates = FindCandidates();
         ExperimentalBladePort? selected = null;
@@ -339,7 +348,8 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                     sharedOperationGate: operationGate,
                     sharedLightingOwnership: lightingOwnership,
                     coolingPadDiscovery: new WindowsHyperBoostEligibilitySource(native),
-                    sharedStartupAnimationState: startupAnimationState);
+                    sharedStartupAnimationState: startupAnimationState,
+                    systemSku: systemSku);
                 try
                 {
                     // Correctly correlated selectors identify the interface even when
@@ -394,6 +404,17 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             }
             ExperimentalBladePort admitted = selected;
             admitted.EnableQueryRecording();
+            hyperBoostSkuAdmission = admitted.HyperBoostSkuAdmission;
+            if (admitted.HyperBoostSkuAdmission != HyperBoostSystemSkuAdmission.NotApplicable)
+            {
+                // Deduplicated query record: why HyperBoost entry is or is not offered.
+                // Exit and restoration never depend on it.
+                policy.Record("HyperBoostSystemSku", "Query",
+                    HyperBoostSystemSkuPolicy.AllowsEntry(admitted.HyperBoostSkuAdmission) ? "Confirmed" : "Blocked",
+                    confirmed: admitted.HyperBoostSkuDiagnostic,
+                    failure: HyperBoostSystemSkuPolicy.AllowsEntry(admitted.HyperBoostSkuAdmission)
+                        ? null : admitted.HyperBoostSkuAdmission.ToString());
+            }
             // Startup animation is queried independently by the service. Temporary full
             // charge is read with battery state. Neither optional probe belongs in the
             // shared port-open path; each control still requires its own real readback.

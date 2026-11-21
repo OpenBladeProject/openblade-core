@@ -28928,6 +28928,8 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 HyperBoostActive: false),
         };
         journal.Journal = original;
+        // Only a battery destination that the table doesn't list retires as a
+        // handoff. An unadmitted external-power intent stays pending.
         await context.Runtime.ObserveAsync(CancellationToken.None);
         int settersBeforeRecovery = context.Device.TotalSetterCalls;
 
@@ -32734,6 +32736,9 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         public Exception? PerformanceFailure { get; set; }
 
+        // A port-side baseline gate evaluated against the current confirmed state.
+        public Func<PerformancePreset, Exception?>? PerformancePrecondition { get; set; }
+
         public int GpuClockSetCalls { get; private set; }
 
         public Action? AfterGpuClockSet { get; set; }
@@ -32745,6 +32750,13 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
         public Action? BeforeQueuedPerformanceFailure { get; set; }
 
         public bool SuppressHyperBoostMutation { get; set; }
+
+        // RZ09-0510 reports the battery exit's raw 6 as its DC Balanced preset.
+        public bool ReportsBatteryBalancedForBalancedExit { get; set; }
+
+        // The mode-7 port rule: an exit on battery submits Balanced (raw 6)
+        // whatever base the service passes, and clears Custom levels.
+        public Func<PowerSource>? HyperBoostExitPowerSource { get; set; }
 
         public Queue<Exception> HyperBoostFailures { get; } = new();
 
@@ -33157,12 +33169,22 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                     Fans = FanMode.Automatic,
                     HyperBoostActive = true,
                 }
-                : ConfirmedState with
-                {
-                    Performance = baseMode,
-                    Fans = FanMode.Automatic,
-                    HyperBoostActive = false,
-                };
+                : HyperBoostExitPowerSource?.Invoke() == PowerSource.Battery
+                    ? ConfirmedState with
+                    {
+                        Performance = ReportsBatteryBalancedForBalancedExit
+                            ? PerformancePreset.BatteryBalanced : PerformancePreset.Balanced,
+                        CustomPerformance = null,
+                        Fans = FanMode.Automatic,
+                        HyperBoostActive = false,
+                    }
+                    : ConfirmedState with
+                    {
+                        Performance = ReportsBatteryBalancedForBalancedExit && baseMode == PerformancePreset.Balanced
+                            ? PerformancePreset.BatteryBalanced : baseMode,
+                        Fans = FanMode.Automatic,
+                        HyperBoostActive = false,
+                    };
             return Task.CompletedTask;
         }
 
@@ -33216,6 +33238,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
             if (PerformanceFailure is not null)
             {
                 throw PerformanceFailure;
+            }
+            if (PerformancePrecondition?.Invoke(value) is Exception refused)
+            {
+                throw refused;
             }
 
             if (SuppressConfirmationFor != DeviceSubsystem.Performance)

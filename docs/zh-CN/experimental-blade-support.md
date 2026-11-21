@@ -59,7 +59,7 @@ RZ09-0483 还支持性能模式的曲线；HyperBoost 不支持曲线。
 | --- | --- | --- |
 | Blade 18 (2025) | `RZ09-0529` | 平衡、静音、Turbo、Maximum Power、电池节能、自定义低/中/高档、自动风扇、固定转速和风扇曲线、50–80% 充电上限（步长 5%）或关闭充电保护 |
 | Blade 14 (2024) | `RZ09-0508` | 平衡、静音、Turbo、自定义低/中/高档及 CPU Boost、自动风扇、固定转速和风扇曲线、最大风扇、50–80% 充电上限（步长 5%）或关闭充电保护 |
-| Blade 16 (2024) | `RZ09-0510` | 平衡、静音、Turbo、自定义低/中/高档及 CPU Boost、自动风扇、固定转速和风扇曲线、最大风扇、50–80% 充电上限（步长 5%）或关闭充电保护 |
+| Blade 16 (2024) | `RZ09-0510` | 平衡、静音、Turbo、自定义低/中/高档及 CPU Boost、自动风扇、固定转速和风扇曲线、最大风扇、连接或不连接散热底座的 HyperBoost、50–80% 充电上限（步长 5%）或关闭充电保护 |
 | Blade 18 (2024) | `RZ09-0509` | 平衡、静音、Turbo、自定义低/中/高档、自动风扇、固定转速和风扇曲线、最大风扇、50–80% 充电上限（步长 5%）或关闭充电保护 |
 
 这四款型号均提供自定义 CPU/GPU 低、中、高档；仅 Blade 14 (2024) 和
@@ -133,7 +133,7 @@ Blade 14 (2025) 在电池供电时还提供电池节能和电池平衡模式。
 - 最大风扇是 Blade 14 (2023)、Blade 16 (2023) 和 Blade 18 (2023) 在自定义模式中的独立开关。
   开启前，请先将风扇设为自动。
   如果 CPU Boost、局部调光、临时充满等其他 Power Mode Control 选项已开启，就不能切换最大风扇开关，
-  请先在 Synapse 中关闭该选项。退出自定义模式或启动 HyperBoost 前，OpenBlade 会关闭最大风扇，
+  请先在 Synapse 中关闭该选项。退出自定义模式或启用 HyperBoost 前，OpenBlade 会关闭最大风扇，
   HyperBoost 结束后会重新开启。
 - 自定义 CPU/GPU 档位为低、中、高。
   Blade 16 (2023) 还支持 CPU Boost，以及 CPU 和 GPU 同时设为高档。Blade 18 (2023) 支持全部 12 种 CPU/GPU 档位组合，包括 Boost/Medium 和双高档，依据为 Synapse 独立设置两个档位的实现。
@@ -157,9 +157,11 @@ Blade 14 (2025) 在电池供电时还提供电池节能和电池平衡模式。
 - Blade 18 (2023) 提供实验性的 [Synapse 默认 Fn 快捷键](../blade18-fn-decoder.md#default-shortcuts)：
   性能、刷新率、触摸板、F1–F12、方向键和 Delete。解码和动作已有源码依据，仍需在笔记本上测试。
   仅连接笔记本内置键盘时，OpenBlade 才会处理这些 Fn 快捷键。
-- Blade 14 (2023) 和 Blade 16 (2023) 提供 HyperBoost，需要使用足功率电源，连接或不连接 Razer Laptop Cooling Pad 均可。
-  Blade 16 需要 MCU 固件 1.5.0.0 或更新版本。
+- Blade 14 (2023)、Blade 16 (2023) 和 Blade 16 (2024) 提供 HyperBoost，需要使用足功率电源，连接或不连接 Razer Laptop Cooling Pad 均可。
+  Blade 16 (2023) 需要 MCU 固件 1.5.0.0 或更新版本，Blade 16 (2024) 需要 1.3.0.0 或更新版本。
   Blade 14 需要 MCU 固件 1.1.1.3 或更新版本。
+  与 Synapse 一致，对于 Synapse 按系统 SKU 排除的 Blade 16 配置，OpenBlade 不会启用 HyperBoost，但你仍可以将其关闭。
+  使用电池时，HyperBoost 结束后会切换到 Balanced；重新接通电源后，会恢复接通电源时的模式。
   Blade 18 (2023) 仍只能读取状态；更改性能设置前，请先在 Synapse 中关闭 HyperBoost。
 - 充电上限每次可调整 1%，设为 100% 时会关闭充电保护。
   Blade 15 不支持充电上限。Blade 18 在成功读取状态后支持实验性的临时充满；开启时需要已启用充电上限，且不能覆盖其他 Power Mode Control 选项。

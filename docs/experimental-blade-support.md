@@ -64,7 +64,7 @@ temperature holds 5000 RPM. Physical curve validation remains pending; see the
 | --- | --- | --- |
 | Blade 18 (2025) | `RZ09-0529` | Balanced, Silent, Turbo, Maximum Power, Battery Saver, Custom Low/Medium/High, Automatic, fixed fans and curves, charge limits 50–80% in 5% steps or protection off |
 | Blade 14 (2024) | `RZ09-0508` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
-| Blade 16 (2024) | `RZ09-0510` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
+| Blade 16 (2024) | `RZ09-0510` | Balanced, Silent, Turbo, Custom Low/Medium/High with CPU Boost, Automatic, fixed fans and curves, Maximum Fans, HyperBoost with or without the cooling pad, charge limits 50–80% in 5% steps or protection off |
 | Blade 18 (2024) | `RZ09-0509` | Balanced, Silent, Turbo, Custom Low/Medium/High, Automatic, fixed fans and curves, Maximum Fans, charge limits 50–80% in 5% steps or protection off |
 
 All four offer Custom CPU/GPU Low, Medium and High. Only Blade 14 (2024)
@@ -203,9 +203,13 @@ Battery Saver and Battery Balanced on battery power.
   actions are source-backed; behavior on the laptop still needs testing.
   OpenBlade handles these shortcuts only while the built-in keyboard is the only
   keyboard connected.
-- Blade 14 (2023) and Blade 16 (2023) offer HyperBoost on full-power
-  AC, with or without the Razer Laptop Cooling Pad. They require MCU firmware
-  1.1.1.3 or later on the Blade 14, and 1.5.0.0 or later on the Blade 16.
+- Blade 14 (2023), Blade 16 (2023) and Blade 16 (2024) offer HyperBoost on
+  full-power AC, with or without the Razer Laptop Cooling Pad. They require MCU
+  firmware 1.1.1.3 or later on the Blade 14, 1.5.0.0 or later on the Blade 16
+  (2023), and 1.3.0.0 or later on the Blade 16 (2024). Like Synapse, OpenBlade
+  doesn't start HyperBoost on Blade 16 configurations whose system SKU Synapse
+  excludes; you can still turn it off there. On battery, HyperBoost ends in
+  Balanced, and your plugged-in mode returns when you plug in again.
   Blade 18 (2023) remains observed-only: turn HyperBoost off in Synapse before
   changing performance.
 - Charge limits use 1% steps; 100% turns protection off. The Blade 15 does not

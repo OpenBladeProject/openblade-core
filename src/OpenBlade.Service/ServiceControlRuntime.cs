@@ -594,6 +594,14 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private PerformancePreset? ownedHyperBoostBaseMode;
     private HyperBoostRestoreIntent? ownedHyperBoostRestoreIntent;
     private bool ownedHyperBoostSourceChangePending;
+    // The mode an owned HyperBoost exit landed on without a restore, and the
+    // power-source generation it was recorded in. It covers the rest of that
+    // transition and the next one only.
+    private PerformancePreset? hyperBoostHandoffPerformance;
+    private CustomPerformanceSettings? hyperBoostHandoffCustomPerformance;
+    private long hyperBoostHandoffPowerGeneration;
+    // Whether the last successful owned exit skipped its restore.
+    private bool lastHyperBoostExitRestoreSkipped;
     private bool hyperBoostSourceBoundarySafetyBlock;
     private bool hyperBoostSourceBoundaryPriorSafetyBlock;
     private Guid? ownedHyperBoostTransitionId;
@@ -1435,6 +1443,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 }
 
                 ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
+                // A new session reapplies its own profile; an earlier handoff no
+                // longer describes OpenBlade's result.
+                hyperBoostHandoffPerformance = null;
                 if (!suppressProfileApply
                     && powerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
                 {
@@ -3806,12 +3817,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             await RefreshControllerPresenceAndRelinquishLightingAsync(token)
                 .ConfigureAwait(false);
             ServiceStatusSnapshot current = GetStatus();
+            // On battery, a restore intent this laptop can't set is never restored;
+            // a fresh read may still retire the journal as a handoff, without a write.
+            bool batteryHandoff = powerSource == PowerSource.Battery
+                && current.Capabilities is { } recoveryCapabilities
+                && IsUnadmittedBatteryHandoffIntent(recoveryCapabilities, restoreIntent, journal);
             if (!current.DeviceVerified
                 || !hyperBoostJournalSafetyBlock
                 || pendingWriteConfirmations.HasPending
                 || current.ControllerDetectionWarning is not null
                 || RazerThermalControllerPolicy.GetBlockingControllers(current).Count > 0
-                || !PowerSourcePolicy.IsExternal(powerSource)
+                || !PowerSourcePolicy.IsExternal(powerSource) && !batteryHandoff
                 || current.ActivePowerSource != powerSource
                 || current.Capabilities is null
                 || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
@@ -3854,6 +3870,45 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         : "The saved restore was not retried because fresh readback shows HyperBoost is active.",
                     fresh,
                     restorePending: true);
+            }
+
+            if (batteryHandoff)
+            {
+                if (!IsUnadmittedHyperBoostHandoff(fresh, restoreIntent, transitionJournal, powerSource))
+                {
+                    return PublishHyperBoostRestoreRecoveryResult(
+                        ControlOperationStatus.Blocked,
+                        "The saved HyperBoost restore can be retried only on a confirmed external power source after fresh exact-device, controller, and thermal safety checks pass.",
+                        fresh,
+                        restorePending: true);
+                }
+
+                bool handoffRetired = await TryClearHyperBoostOwnershipJournalAsync(
+                        transitionJournal,
+                        transitionJournalSha256,
+                        "HyperBoost is off, but its pending ownership journal could not be retired.")
+                    .ConfigureAwait(false);
+                if (!handoffRetired)
+                {
+                    return PublishHyperBoostRestoreRecoveryResult(
+                        ControlOperationStatus.Failed,
+                        "HyperBoost is off, but its pending ownership journal could not be retired. Control writes remain blocked.",
+                        fresh,
+                        restorePending: true);
+                }
+
+                driftTracker.Observe(fresh);
+                driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
+                driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
+                RecordHyperBoostHandoff(fresh);
+                return PublishHyperBoostRestoreRecoveryResult(
+                    ControlOperationStatus.Applied,
+                    HyperBoostHandoffMessage(
+                        "HyperBoost is off.",
+                        fresh.Performance,
+                        restoreIntent.Performance),
+                    fresh,
+                    restorePending: false);
             }
 
             bool matchesTransitionBaseline =
@@ -5924,6 +5979,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         long expectedSessionAdmissionEpoch =
             Interlocked.Read(ref sessionAdmissionEpoch);
         string? expectedActiveUserSid = Volatile.Read(ref activeUserSid);
+        // A retry repeats the step whose submission was last admitted.
+        ThermalTransitionStepPurpose submittedPurpose = ThermalTransitionStepPurpose.Requested;
         string? TransitionWriteBlockReason()
         {
             if (stillPreparing?.Invoke() == false)
@@ -5958,7 +6015,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 authorityPurpose);
         }
 
-        return new ThermalTransitionStepRunner(
+        ThermalTransitionStepRunner? runner = null;
+        // Entry admission (the SKU restriction and the direct entry bases) covers
+        // forward entry steps only. Rollback and restoration never depend on it.
+        bool ForwardEntry() => enabled && runner?.RestoringIntent != true;
+        runner = new ThermalTransitionStepRunner(
             attemptId,
             HyperBoostThermalComponents,
             device,
@@ -5973,6 +6034,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 performanceWriteBlockReason: TransitionWriteBlockReason,
                 fanWriteBlockReason: TransitionWriteBlockReason),
             (_, cancellationToken) => RevalidateHyperBoostTransitionRetryAsync(
+                submittedPurpose,
+                ForwardEntry(),
                 enabled,
                 baseMode,
                 expectedIntent,
@@ -5989,8 +6052,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 cancellationToken),
             recoveryState: recoveryState,
             revalidateSubmission: (purpose, _, cancellationToken) =>
-                RevalidateHyperBoostTransitionSubmissionAsync(
+            {
+                submittedPurpose = purpose;
+                return RevalidateHyperBoostTransitionSubmissionAsync(
                     purpose,
+                    ForwardEntry(),
                     enabled,
                     baseMode,
                     expectedIntent,
@@ -6004,8 +6070,20 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     allowIntentRebase,
                     validationOnly,
                     TransitionWriteBlockReason,
-                    cancellationToken));
+                    cancellationToken);
+            });
+        return runner;
     }
+
+    // An exit command (the battery handoff, the owned AC base, or the rollback of an
+    // entry) is never gated on the destination intent: the default battery profile
+    // (BatterySaver) is in no mode-7 table, and gating on it kept HyperBoost on.
+    // Forward entries and the restore steps after an exit still require an
+    // admitted intent.
+    private static bool HyperBoostStepRequiresAdmittedIntent(
+        bool forwardEntry,
+        ThermalTransitionStepPurpose purpose) =>
+        forwardEntry || purpose != ThermalTransitionStepPurpose.HyperBoost;
 
     private string? HyperBoostTransitionWriteBlockReason(
         HyperBoostRestoreIntent expectedIntent,
@@ -6060,6 +6138,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private async Task<ThermalRetryAdmission>
         RevalidateHyperBoostTransitionSubmissionAsync(
         ThermalTransitionStepPurpose purpose,
+        bool forwardEntry,
         bool enabled,
         PerformancePreset baseMode,
         HyperBoostRestoreIntent expectedIntent,
@@ -6131,7 +6210,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
             bool hyperBoostCommand = purpose == ThermalTransitionStepPurpose.HyperBoost;
             if (hyperBoostCommand
-                && enabled
+                && forwardEntry
                 && hyperBoostPadDiscoverySource.Observe()
                     != (expectedJournal?.RequiresCoolingPad == true
                         ? CoolingPadConnectionState.PresentExact : CoolingPadConnectionState.Absent))
@@ -6154,10 +6233,21 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             DeviceCapabilities capabilities = await admittedDevice
                 .ReadCapabilitiesAsync(cancellationToken)
                 .ConfigureAwait(false);
-            if (!IsSupportedHyperBoostRestoreIntent(capabilities, expectedIntent))
+            if (HyperBoostStepRequiresAdmittedIntent(forwardEntry, purpose)
+                && !IsSupportedHyperBoostRestoreIntent(capabilities, expectedIntent))
             {
                 return ThermalRetryAdmission.Block(
                     "The saved HyperBoost thermal intent is no longer admitted for this exact device.");
+            }
+
+            // A restricted entry is refused at every forward step, so a stale status
+            // cannot submit a fan or performance bridge write before the HyperBoost
+            // command. A rollback of that bridge is never refused for it.
+            if (forwardEntry
+                && capabilities.HyperBoostEntryRestriction is { } submissionRestriction)
+            {
+                return ThermalRetryAdmission.Block(
+                    HyperBoostEntryRestrictionMessage(submissionRestriction));
             }
 
             if (hyperBoostCommand)
@@ -6169,13 +6259,13 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         : null);
                 if (capabilities.HyperBoostAccess
                         != DeviceFeatureAccess.ReadWrite
-                    || enabled && baseAccess != DeviceFeatureAccess.ReadWrite
-                    || enabled && !validationOnly
+                    || forwardEntry && baseAccess != DeviceFeatureAccess.ReadWrite
+                    || forwardEntry && !validationOnly
                         && !HyperBoostCapabilityPolicy.IsDirectEntryBase(
                                 capabilities,
                                 expectedJournal?.RequiresCoolingPad == true,
                                 baseMode)
-                    || enabled && expectedJournal?.RequiresCoolingPad != true
+                    || forwardEntry && expectedJournal?.RequiresCoolingPad != true
                         && (validationOnly
                             ? capabilities.HyperBoostWithoutCoolingPadAccess
                                 is not (DeviceFeatureAccess.ReadWrite
@@ -6219,6 +6309,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     private async Task<ThermalRetryAdmission>
         RevalidateHyperBoostTransitionRetryAsync(
+        ThermalTransitionStepPurpose purpose,
+        bool forwardEntry,
         bool enabled,
         PerformancePreset baseMode,
         HyperBoostRestoreIntent expectedIntent,
@@ -6324,17 +6416,24 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 ?? (baseMode == PerformancePreset.Balanced
                     ? capabilities.HyperBoostAccess
                     : null);
+            if (forwardEntry
+                && capabilities.HyperBoostEntryRestriction is { } retryRestriction)
+            {
+                return ThermalRetryAdmission.Block(
+                    HyperBoostEntryRestrictionMessage(retryRestriction));
+            }
             if (capabilities.HyperBoostAccess != DeviceFeatureAccess.ReadWrite
-                || enabled && baseAccess != DeviceFeatureAccess.ReadWrite
-                || enabled && !validationOnly
+                || forwardEntry && baseAccess != DeviceFeatureAccess.ReadWrite
+                || forwardEntry && !validationOnly
                     && !HyperBoostCapabilityPolicy.IsDirectEntryBase(
                             capabilities,
                             expectedJournal?.RequiresCoolingPad == true,
                             baseMode)
-                || !IsSupportedHyperBoostRestoreIntent(
-                    capabilities,
-                    expectedIntent)
-                || enabled && expectedJournal?.RequiresCoolingPad != true
+                || HyperBoostStepRequiresAdmittedIntent(forwardEntry, purpose)
+                    && !IsSupportedHyperBoostRestoreIntent(
+                        capabilities,
+                        expectedIntent)
+                || forwardEntry && expectedJournal?.RequiresCoolingPad != true
                     && (validationOnly
                         ? capabilities.HyperBoostWithoutCoolingPadAccess
                             is not (DeviceFeatureAccess.ReadWrite
@@ -6538,6 +6637,17 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     "HyperBoost control is unavailable right now.");
             }
 
+            // An entry restriction declines new entries only. Exit, the owned
+            // lifecycle restore and journal recovery keep the access checked above.
+            if (enabled
+                && confirmed.HyperBoostActive == false
+                && current.Capabilities?.HyperBoostEntryRestriction is { } entryRestriction)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    HyperBoostEntryRestrictionMessage(entryRestriction));
+            }
+
             if (confirmed.HyperBoostActive == enabled)
             {
                 if (!enabled)
@@ -6691,9 +6801,16 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                                 == powerSourceGeneration
                                 ? exitSource
                                 : current.ActivePowerSource);
-            if (enabled && !IsSupportedHyperBoostRestoreIntent(
-                    current.Capabilities!,
-                    transitionIntent))
+            // Only an entry requires the destination intent up front. An exit is
+            // submitted regardless; its restore step runs only for an admitted intent
+            // and is otherwise skipped, leaving the saved intent unchanged.
+            bool transitionIntentAdmitted = IsSupportedHyperBoostRestoreIntent(
+                current.Capabilities!,
+                transitionIntent);
+            bool restoreIntentSkipped = !enabled
+                && restoreUserIntent
+                && !transitionIntentAdmitted;
+            if (enabled && !transitionIntentAdmitted)
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
@@ -7027,7 +7144,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     {
                         Performance: var restoredPerformance,
                         Fans: FanMode.Automatic,
-                    } && restoredPerformance == requestedBaseMode);
+                    } && HyperBoostCapabilityPolicy.IsRestoredBase(
+                        requestedBaseMode, restoredPerformance, transitionPowerSource));
             if (!matched)
             {
                 HyperBoostIntentRestorationResult? failedTransitionRestore = null;
@@ -7035,7 +7153,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 if (readback.HyperBoostActive == false
                     && transitionIntent is not null
                     && (enabled && baselineTransitionCompleted
-                        || !enabled && restoreUserIntent))
+                        || !enabled && restoreUserIntent && !restoreIntentSkipped))
                 {
                     failedTransitionRestore = await RestoreHyperBoostIntentAsync(
                             transitionRunner.CurrentDevice,
@@ -7207,7 +7325,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             resumeStateValidation.RecordConfirmedWrite(DeviceSubsystem.Fans);
             bool maximumFansNotRestored = false;
             string? maximumFansRestoreFailure = null;
-            if (!enabled && restoreUserIntent && transitionIntent is not null)
+            if (!enabled && restoreUserIntent && !restoreIntentSkipped && transitionIntent is not null)
             {
                 HyperBoostIntentRestorationResult restoration =
                     await RestoreHyperBoostIntentAsync(
@@ -7378,6 +7496,15 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             driftTracker.Observe(readback);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
+            // A skipped restore leaves the mode the exit landed on. No saved intent
+            // names it (on battery only Battery Saver and Battery Balanced are
+            // intents, and RZ09-0483/0482 have neither), so remember it as
+            // OpenBlade's own result: a later transition does not read it as an
+            // outside change, and the plugged-in profile applies again on AC.
+            RecordHyperBoostHandoff(restoreIntentSkipped && disableJournalCleared
+                ? readback
+                : null);
+            lastHyperBoostExitRestoreSkipped = !enabled && restoreIntentSkipped;
 
             string resultMessage = enabled
                 ? journalRequiresCoolingPad
@@ -7389,6 +7516,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 // failure and journal-safety text, which keep writes blocked.
                 : maximumFansNotRestored
                     ? $"HyperBoost is off, but the prior performance or fan intent was not fully restored. {maximumFansRestoreFailure} Its ownership journal could not be made safe, so control writes remain blocked. Maximum Fans was not turned back on."
+                : restoreIntentSkipped
+                    ? $"HyperBoost is off and the laptop stays in {PerformanceLabel(readback.Performance ?? requestedBaseMode)} until the power source changes. The saved {PerformanceLabel(transitionIntent!.Performance)} setting isn't available on this laptop, so it was not applied."
+                        + (disableJournalCleared ? string.Empty : " Its ownership journal could not be cleared; control writes remain blocked.")
                 : disableJournalCleared
                     ? $"HyperBoost is off and the prior {PerformanceLabel(transitionIntent?.Performance ?? requestedBaseMode)} performance and fan intent is restored."
                     : $"HyperBoost is off and the prior {PerformanceLabel(transitionIntent?.Performance ?? requestedBaseMode)} performance and fan intent is restored, but its ownership journal could not be cleared; control writes remain blocked.";
@@ -7411,7 +7541,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 resultMessage)
             {
                 HyperBoostRestoredPerformance = !enabled && disableJournalCleared
-                    ? transitionIntent?.Performance ?? requestedBaseMode
+                    ? restoreIntentSkipped
+                        ? readback.Performance ?? requestedBaseMode
+                        : transitionIntent?.Performance ?? requestedBaseMode
                     : null,
             };
             history.RecordSummary(result.Status, result.Message);
@@ -7963,6 +8095,52 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         HyperBoostRestoreIntent intent)
         => Automation.RestoreHyperBoostIntentUntilPowerSourceChange(intent);
 
+    internal static string HyperBoostEntryRestrictionMessage(
+        HyperBoostEntryRestriction restriction) => restriction switch
+        {
+            HyperBoostEntryRestriction.VendorSystemSku =>
+                "Synapse doesn't offer HyperBoost on this laptop configuration, so OpenBlade doesn't start it. You can still turn HyperBoost off.",
+            _ => "HyperBoost can't start on this laptop right now. You can still turn it off.",
+        };
+
+    // A freshly confirmed battery exit (HyperBoost off, Automatic fans) whose
+    // destination is a battery preset this laptop's full table doesn't list (the
+    // default Battery Saver on every mode-7 table). The restore is skipped, as for
+    // the exit itself, and the saved intent stays as it is. Every other restore
+    // keeps its normal path: an AC destination, a deferred retry, and a fan or
+    // Custom detail that a fresh range narrows. A journal that restores the
+    // current destination is a battery destination only while on battery. A
+    // degraded or unwritable table is not evidence that the intent is unadmitted.
+    private bool IsUnadmittedHyperBoostHandoff(
+        ConfirmedDeviceState confirmed,
+        HyperBoostRestoreIntent intent,
+        HyperBoostOwnershipJournal journal,
+        PowerSource? powerSource,
+        DeviceCapabilities? freshCapabilities = null) =>
+        powerSource == PowerSource.Battery
+        && confirmed.HyperBoostActive == false
+        && confirmed.Fans == FanMode.Automatic
+        && confirmed.Performance is not null
+        && !pendingWriteConfirmations.HasPending
+        && (freshCapabilities ?? GetStatus().Capabilities) is { } capabilities
+        && HyperBoostCapabilityPolicy.CanExit(capabilities)
+        && IsUnadmittedBatteryHandoffIntent(capabilities, intent, journal);
+
+    private static bool IsUnadmittedBatteryHandoffIntent(
+        DeviceCapabilities capabilities,
+        HyperBoostRestoreIntent intent,
+        HyperBoostOwnershipJournal journal) =>
+        intent.Performance is PerformancePreset.BatterySaver or PerformancePreset.BatteryBalanced
+        && !capabilities.PerformancePresets.Contains(intent.Performance)
+        && journal.RestoreRetryDisposition == HyperBoostRestoreRetryDisposition.None
+        && journal.RestoreRetryTarget == HyperBoostRestoreRetryTarget.None;
+
+    private static string HyperBoostHandoffMessage(
+        string lead,
+        PerformancePreset? landed,
+        PerformancePreset saved) =>
+        $"{lead} The laptop stays in {PerformanceLabel(landed ?? PerformancePreset.Balanced)} until the power source changes. The saved {PerformanceLabel(saved)} setting isn't available on this laptop, so it was not applied.";
+
     private static bool IsSupportedHyperBoostRestoreIntent(
         DeviceCapabilities capabilities,
         HyperBoostRestoreIntent intent)
@@ -8005,13 +8183,19 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         && confirmed.Fans == FanMode.Automatic
         && intent.GpuClockTuning is null;
 
+    // The exit lands on the owned base on AC. On battery a mode-7 backend hands off
+    // to Balanced whatever base it owns, so a confirmed Balanced (or DC Balanced)
+    // with no Custom levels also matches. The journal records the owned base for
+    // this check only; when AC returns, the plugged-in profile applies again.
     private static bool ConfirmedStateMatchesHyperBoostTransitionBaseline(
         ConfirmedDeviceState confirmed,
         HyperBoostOwnershipJournal journal) =>
         confirmed.HyperBoostActive == false
-        && confirmed.Performance == journal.BaseMode
+        && HyperBoostCapabilityPolicy.IsRestoredBase(
+            journal.BaseMode, confirmed.Performance, journal.RestorePowerSource)
         && confirmed.Fans == FanMode.Automatic
         && (journal.BaseMode == PerformancePreset.Custom
+            && confirmed.Performance == PerformancePreset.Custom
             ? journal.RestoreIntent.Performance == PerformancePreset.Custom
                 && confirmed.CustomPerformance
                     == journal.RestoreIntent.CustomPerformance
@@ -8284,6 +8468,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             ThermalTransitionStepRunner transitionRunner,
             bool confirmIndeterminateManualRestore = false)
     {
+        transitionRunner.BeginIntentRestoration();
         ControlCoordinator coordinator = transitionRunner.CreateRecipeCoordinator();
         async Task<ScopedApplyOutcome> ApplyStepAsync(
             DeviceSubsystem component,
@@ -8945,7 +9130,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
             string activeMessage = journalRecovered
-                ? "Fresh readback confirmed that HyperBoost remained active after the indeterminate disable. OpenBlade did not retry the write."
+                ? powerSource == PowerSource.Battery
+                    ? "Fresh readback confirmed that HyperBoost remained active after the indeterminate disable. OpenBlade did not repeat that write; on battery, it ends HyperBoost with a new request at its next check."
+                    : "Fresh readback confirmed that HyperBoost remained active after the indeterminate disable. OpenBlade did not retry the write."
                 : "Fresh readback confirmed that HyperBoost remained active after the indeterminate disable, but its ownership journal could not be made safe. Control writes remain blocked.";
             history.RecordSummary(
                 journalRecovered
@@ -8993,6 +9180,43 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         PerformancePreset recoveryBaseMode = ownedHyperBoostBaseMode
             ?? PerformancePreset.Balanced;
         bool recoveryRequiresCoolingPad = ownedHyperBoostRequiresCoolingPad;
+        if (IsUnadmittedHyperBoostHandoff(confirmed, restoreIntent, expectedJournal, powerSource))
+        {
+            // The exit applied and no restore can run, so nothing is submitted:
+            // retire the journal as a handoff and keep the saved intent.
+            lastHyperBoostExitRestoreSkipped = true;
+            pendingIndeterminateHyperBoostExitIntent = null;
+            ClearOwnedHyperBoostState();
+            bool handoffRetired = await TryClearHyperBoostOwnershipJournalAsync(
+                    expectedJournal,
+                    expectedJournalSha256,
+                    "HyperBoost was confirmed off after an indeterminate disable, but its ownership journal could not be cleared.")
+                .ConfigureAwait(false);
+            pendingIndeterminateHyperBoostJournal = null;
+            pendingIndeterminateHyperBoostJournalSha256 = null;
+            driftTracker.Observe(confirmed);
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
+            RecordHyperBoostHandoff(handoffRetired ? confirmed : null);
+            string handoffMessage = HyperBoostHandoffMessage(
+                    "Fresh readback confirmed that HyperBoost is off after an indeterminate disable, without retrying the HyperBoost write.",
+                    confirmed.Performance,
+                    restoreIntent.Performance)
+                + (handoffRetired
+                    ? string.Empty
+                    : " Its ownership journal could not be cleared; control writes remain blocked.");
+            history.RecordSummary(
+                handoffRetired ? ControlOperationStatus.Applied : ControlOperationStatus.Failed,
+                handoffMessage);
+            return new IndeterminateHyperBoostReconciliation(
+                confirmed,
+                SuppressInactiveJournalRetirement: !handoffRetired,
+                handoffMessage,
+                handoffRetired
+                    ? IndeterminateHyperBoostResolution.Applied
+                    : IndeterminateHyperBoostResolution.Unsafe,
+                RestoredPerformance: handoffRetired ? confirmed.Performance : null);
+        }
         if (transitionRunner is null)
         {
             hyperBoostJournalSafetyBlock = true;
@@ -9625,6 +9849,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             string expectedJournalSha256,
             ThermalTransitionStepRunner transitionRunner)
     {
+        // The compensating exit and its restore undo this entry: like every exit,
+        // they are not gated on entry admission (restriction, direct entry base,
+        // cooling pad or the destination intent of the HyperBoost command).
+        transitionRunner.BeginIntentRestoration();
         device = transitionRunner.CurrentDevice;
         const string failurePrefix =
             "HyperBoost was activated, but durable ownership could not be recorded.";
@@ -9941,7 +10169,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         IBladeDevice? observedDevice = null,
         PowerSource? observedPowerSource = null,
         bool powerSourceConfirmed = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DeviceCapabilities? observedCapabilities = null)
     {
         HyperBoostOwnershipJournalLoadResult load;
         try
@@ -9980,6 +10209,36 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         if (journal.State == HyperBoostOwnershipJournalState.RestorePending)
         {
             hyperBoostRestorePending = true;
+            if (confirmed is { } handoffConfirmed
+                && IsUnadmittedHyperBoostHandoff(
+                    handoffConfirmed,
+                    journal.RestoreIntent,
+                    journal,
+                    powerSourceConfirmed ? observedPowerSource : null,
+                    observedCapabilities))
+            {
+                bool handoffRetired = await TryClearHyperBoostOwnershipJournalAsync(
+                        journal,
+                        load.Sha256,
+                        "HyperBoost is off, but its pending ownership journal could not be retired.")
+                    .ConfigureAwait(false);
+                string? handoffMessage = null;
+                if (handoffRetired)
+                {
+                    driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
+                    driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
+                    RecordHyperBoostHandoff(handoffConfirmed);
+                    handoffMessage = HyperBoostHandoffMessage(
+                        "HyperBoost is off.",
+                        handoffConfirmed.Performance,
+                        journal.RestoreIntent.Performance);
+                    history.RecordSummary(ControlOperationStatus.Applied, handoffMessage);
+                }
+                return new InactiveHyperBoostJournalRetirement(
+                    handoffRetired,
+                    handoffRetired ? handoffConfirmed : null,
+                    handoffMessage);
+            }
             if (confirmed is { } matchingConfirmed
                 && powerSourceConfirmed
                 && observedPowerSource == journal.RestorePowerSource
@@ -12679,9 +12938,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 : $"before {reasonLabel}";
             history.RecordSummary(
                 ControlOperationStatus.Stored,
-                $"Attempting to exit OpenBlade-owned HyperBoost and restore its entry-time profile {boundary}.",
+                $"Attempting to exit OpenBlade-owned HyperBoost {boundary}.",
                 lifecycleTransitionId);
 
+            // Every exit resolution sets this again; a stale value must not
+            // describe this exit.
+            lastHyperBoostExitRestoreSkipped = false;
             ControlOperationResult result = await SetHyperBoostCoreAsync(
                     enabled: false,
                     transitionId: lifecycleTransitionId,
@@ -12699,8 +12961,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 return result;
             }
 
-            string restored =
-                $"OpenBlade-owned HyperBoost exited and its entry-time profile was restored {boundary}.";
+            // A skipped restore leaves the saved profile unapplied; never claim it.
+            string restored = lastHyperBoostExitRestoreSkipped
+                ? $"OpenBlade-owned HyperBoost exited {boundary}. The saved profile isn't available on this laptop, so it was not applied."
+                : $"OpenBlade-owned HyperBoost exited {boundary} and its entry-time profile was restored.";
             history.RecordSummary(
                 ControlOperationStatus.Applied,
                 restored,
@@ -15948,6 +16212,46 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return false;
         }
 
+        if (IsUnadmittedHyperBoostHandoff(confirmed, restoreIntent, ownedJournal, powerSource))
+        {
+            // The exit is done and no restore can run: the destination intent is
+            // never restored when this laptop can't set it. Retire the owned
+            // journal as a handoff instead of a restore that can never complete.
+            bool handoffRetired = await RetireHyperBoostOwnershipJournalAsync(
+                    baseMode,
+                    requiresCoolingPad,
+                    ownedJournal.RestoreIntent,
+                    "Firmware exited HyperBoost at the power-source boundary, but its ownership journal could not be retired.",
+                    ownedJournal,
+                    journalLoad.Sha256)
+                .ConfigureAwait(false);
+            pendingOwnedHyperBoostPowerBoundaryExit = false;
+            ownedHyperBoostPowerBoundaryExitSubmitted = false;
+            ClearOwnedHyperBoostState();
+            driftTracker.Observe(confirmed);
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Performance, matched: true);
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
+            RecordHyperBoostHandoff(handoffRetired ? confirmed : null);
+            string handoffMessage = HyperBoostHandoffMessage(
+                    "Firmware exited HyperBoost at the power-source boundary.",
+                    confirmed.Performance,
+                    restoreIntent.Performance)
+                + (handoffRetired
+                    ? string.Empty
+                    : " Its ownership journal could not be cleared; control writes remain blocked.");
+            history.RecordSummary(
+                handoffRetired ? ControlOperationStatus.Applied : ControlOperationStatus.Failed,
+                handoffMessage);
+            PublishIfChanged(GetStatus() with
+            {
+                ConfirmedState = confirmed,
+                ExternalChanges = driftTracker.ExternalChanges,
+                WritesBlocked = !handoffRetired || pendingWriteConfirmations.HasPending,
+                Message = handoffMessage,
+            });
+            return handoffRetired;
+        }
+
         var preparedJournal = new HyperBoostOwnershipJournal(
             HyperBoostOwnershipJournalState.RestorePending,
             baseMode,
@@ -16490,7 +16794,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             {
                 bool performanceWasExternal = driftTracker.ExternalChanges.Contains(
                     DeviceSubsystem.Performance);
-                ObserveAutomaticState(confirmed, priorDesired, desired);
+                ObserveAutomaticState(
+                    confirmed,
+                    priorDesired,
+                    desired,
+                    current.ActivePowerSource);
                 if (!performanceWasExternal
                     && driftTracker.ExternalChanges.Contains(DeviceSubsystem.Performance)
                     && resumePowerSourceTransitionGeneration == powerSourceGeneration
@@ -17257,6 +17565,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                 && (!unexpectedExitRecoveryPending
                     || unexpectedExitRecoveryDeferredForUserConfiguration))
             {
+                // Any confirmed state other than the handoff retires it here too,
+                // so a later return to that mode is never taken for it.
+                if (!MatchesHyperBoostHandoff(driftObservation))
+                {
+                    hyperBoostHandoffPerformance = null;
+                }
                 // A first sample has no preceding OpenBlade observation, so it
                 // cannot prove an external change. Establish a baseline; the
                 // startup reconciliation path will then apply saved intent.
@@ -17349,7 +17663,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         device,
                         powerSource,
                         powerSourceConfirmed,
-                        cancellationToken)
+                        cancellationToken,
+                        observation.Capabilities)
                     .ConfigureAwait(false);
                 journalRetired = retirement.Retired;
                 journalRetirementMessage = retirement.Message;
@@ -18301,9 +18616,15 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private void ObserveAutomaticState(
         ConfirmedDeviceState confirmed,
         DesiredDeviceState? expected = null,
-        DesiredDeviceState? alternateExpected = null)
+        DesiredDeviceState? alternateExpected = null,
+        PowerSource? priorPowerSource = null)
     {
         ArgumentNullException.ThrowIfNull(confirmed);
+        // Any confirmed state other than the handoff itself retires it.
+        if (!MatchesHyperBoostHandoff(confirmed))
+        {
+            hyperBoostHandoffPerformance = null;
+        }
         bool lightingExternalBeforeObservation =
             driftTracker.ExternalChanges.Contains(DeviceSubsystem.Lighting);
         driftTracker.Observe(confirmed);
@@ -18333,7 +18654,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             CompareTransitionAutomaticPerformance(
                 confirmed,
                 desired,
-                alternateExpected);
+                alternateExpected,
+                priorPowerSource);
             CompareTransitionAutomaticValue(
                 DeviceSubsystem.Fans,
                 confirmed.Fans,
@@ -18721,7 +19043,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
     private void CompareTransitionAutomaticPerformance(
         ConfirmedDeviceState confirmed,
         DesiredDeviceState priorDesired,
-        DesiredDeviceState newDesired)
+        DesiredDeviceState newDesired,
+        PowerSource? priorPowerSource)
     {
         if (confirmed.Performance is null)
         {
@@ -18729,11 +19052,71 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         }
 
         initialAutomaticComparisons.Add(DeviceSubsystem.Performance);
+        bool handoff = MatchesHyperBoostHandoff(confirmed);
+        // The transition that recorded the handoff keeps it only while it still
+        // matches. The next transition, AC return included, consumes it whether
+        // or not it matches, so it never masks a later outside change.
+        if (!handoff || hyperBoostHandoffPowerGeneration != powerSourceGeneration)
+        {
+            hyperBoostHandoffPerformance = null;
+        }
+        // On a transition from battery, RZ09-0483/0482 raw 6 is the transitional
+        // DC Balanced reading that Synapse also leaves for its own AC set: no AC
+        // intent names it, so it is not an outside change and the plugged-in
+        // profile applies through its normal fresh admission. Any real AC mode is
+        // still compared. Raw 6 already held on external power, for example
+        // across a PluggedIn to UsbC swap, is not transitional and stays compared.
+        bool transitionalDcBalanced =
+            priorPowerSource == PowerSource.Battery
+            && confirmed is { Performance: PerformancePreset.BatteryBalanced, HyperBoostActive: false }
+            && newDesired.Performance.Value != PerformancePreset.BatteryBalanced
+            && ReadsRawSixAsTransitionalDcBalanced(GetStatus().Capabilities);
         driftTracker.ConfirmIntentional(
             DeviceSubsystem.Performance,
-            PerformanceMatchesDesired(confirmed, priorDesired)
+            handoff
+                || transitionalDcBalanced
+                || PerformanceMatchesDesired(confirmed, priorDesired)
                 || PerformanceMatchesDesired(confirmed, newDesired));
     }
+
+    private void RecordHyperBoostHandoff(ConfirmedDeviceState? landed)
+    {
+        hyperBoostHandoffPerformance = landed?.Performance;
+        hyperBoostHandoffCustomPerformance = landed?.CustomPerformance;
+        hyperBoostHandoffPowerGeneration = powerSourceGeneration;
+    }
+
+    // The unchanged mode an owned HyperBoost exit landed on without a restore.
+    // A Custom handoff also keeps its levels, so a later level change is not it.
+    private bool MatchesHyperBoostHandoff(ConfirmedDeviceState confirmed) =>
+        hyperBoostHandoffPerformance is { } handoff
+        && confirmed.HyperBoostActive == false
+        && confirmed.Fans == FanMode.Automatic
+        && confirmed.Performance is { } performance
+        && (performance == handoff
+            || ReadsRawSixAsTransitionalDcBalanced(GetStatus().Capabilities)
+                && IsBalancedHandoffReading(handoff, performance))
+        && (handoff == PerformancePreset.Custom
+            ? confirmed.CustomPerformance == hyperBoostHandoffCustomPerformance
+            : confirmed.CustomPerformance is null);
+
+    // RZ09-0483 and RZ09-0482 read raw 6 (DC Balanced) as Balanced on battery and as
+    // Battery Balanced off battery, a transitional reading until a typed AC set
+    // leaves it; their tables list Balanced but not Battery Balanced. RZ09-0510
+    // lists Battery Balanced as its own preset, so its raw 6 and raw 0 (Balanced)
+    // stay distinct. RZ09-0484 shares the table shape but its HyperBoost is not
+    // writable, so it never makes the handoff and is excluded here.
+    private static bool ReadsRawSixAsTransitionalDcBalanced(DeviceCapabilities? capabilities) =>
+        capabilities is { HyperBoostAccess: DeviceFeatureAccess.ReadWrite } table
+        && table.PerformancePresets.Contains(PerformancePreset.Balanced)
+        && !table.PerformancePresets.Contains(PerformancePreset.BatteryBalanced);
+
+    // The battery handoff is raw 6, read either way on RZ09-0483 and RZ09-0482.
+    private static bool IsBalancedHandoffReading(
+        PerformancePreset handoff,
+        PerformancePreset performance) =>
+        handoff is PerformancePreset.Balanced or PerformancePreset.BatteryBalanced
+        && performance is PerformancePreset.Balanced or PerformancePreset.BatteryBalanced;
 
     private static bool PerformanceMatchesDesired(
         ConfirmedDeviceState confirmed,
@@ -22002,6 +22385,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         PerformancePreset.MaximumPower => "Maximum Power",
         PerformancePreset.Gaming => "Gaming",
         PerformancePreset.Creator => "Creator",
+        PerformancePreset.BatterySaver => "Battery Saver",
+        PerformancePreset.BatteryBalanced => "Battery Balanced",
         _ => mode.ToString(),
     };
 

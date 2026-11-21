@@ -116,7 +116,9 @@ internal static class ExperimentalBladeModels
                                 "evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json"]),
                     }
                     : []),
+                .. HyperBoostEvidenceFor(model),
                 new(model.ProductId == 0x02C7 ? "HyperBoost"
+                    : model.ProductId == 0x02B7 ? "CustomFramesAdditionalEffects"
                     : ExperimentalBladePort.SupportsReviewedMcuLighting(model)
                     ? "CustomFramesAdditionalEffectsAndHyperBoost"
                     : ExperimentalBladePort.SupportsIndependentLighting(model)
@@ -134,6 +136,10 @@ internal static class ExperimentalBladeModels
                     "https://apps.razer.com/synapse/products/671/mw/main.2ceb8f5607c0e7a5901a.js",
                     "https://apps.razer.com/synapse/products/671/mw/6737.e123a2b3f0516116025b.js",
                     "https://apps.razer.com/synapse/products/671/mw/rzDevice25.5e330aa9fdf6f29eec62.js"]),
+                new("HyperBoostSystemSkuRecheck", "SynapseSourceBackedCapabilityGate", [
+                    "https://apps.razer.com/synapse/products/671/mw/main.2ceb8f5607c0e7a5901a.js;SHA256=CACF8758BF8B4DF35B7D51536830149ED428960AFEDF08CC81367E75520551D1",
+                    "https://apps.razer.com/synapse/products/671/mw/6737.e123a2b3f0516116025b.js;SHA256=54D3A9BBEC83568B02342AA54FF47A94EE55A48ECA85B5D9F28D60D01A0B1A9A",
+                    Rz090510HyperBoostEvidence]),
                 new("PerformanceAndCustom", "UpstreamOwnerTested", [RazerCtlSource, MaintainedRazerCtlSource]),
                 new("FixedFansAndMaximumFans", "UpstreamOwnerTested", [RazerCtlSource, MaintainedRazerCtlSource]),
                 new("KeyboardAndLogoLighting", "UpstreamOwnerTested", [MaintainedRazerCtlSource]),
@@ -275,6 +281,29 @@ internal static class ExperimentalBladeModels
         return model.AdapterPowerEvidenceSource is { } source
             ? [.. features, new("AdapterPowerClassification", "SynapseSourceBacked", [source])]
             : features;
+    }
+
+    internal const string Rz090510HyperBoostEvidence =
+        "evidence/source-reviewed-blades/2026-11-20-rz09-0510-hyperboost.json";
+
+    // Product 695 declares isHyperBoostSystem, Hyperboost_Mode:7 and MCU minimum
+    // 1.3.0.0 for 02B7. Padless use reuses the same mode-7 pair without a pad.
+    private static IEnumerable<ExperimentalFeatureEvidence> HyperBoostEvidenceFor(ExperimentalBladeModel model)
+    {
+        if (model.ProductId != 0x02B7)
+        {
+            return [];
+        }
+        string[] sources = [
+            "https://apps.razer.com/synapse/products/695/mw/main.27df2e7ddab0b6bc34cc.js;SHA256=A12CD7047CC1CF093DBB458D703BA4D18CFE77110F47391B180EA5B33BA5E379",
+            "https://apps.razer.com/synapse/products/695/mw/6737.7ec91e479ef65c194b6c.js;SHA256=22D359EB7EDA08A9D2F4766EB6898A875A5F009EDB666BA4CD5A0425491AD1DA",
+            "https://apps.razer.com/synapse/products/695/mw/rzDevice25.60bfcef58690c8bb715d.js;SHA256=2D69449422DAC50C23A0EC81A5421CAB178BD04610725273FA67497574195491",
+            Rz090510HyperBoostEvidence];
+        return [
+            new("HyperBoost", "SynapseSourceBackedWithoutPhysicalValidation", sources),
+            new("PadlessHyperBoost", "SourceBackedExtrapolationWithoutPhysicalValidation", sources),
+            new("HyperBoostSystemSkuRecheck", "SynapseSourceBackedCapabilityGate", sources),
+        ];
     }
 
     private static IEnumerable<ExperimentalFeatureEvidence> CpuVoltageEvidenceFor(ExperimentalBladeModel model) =>

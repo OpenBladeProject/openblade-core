@@ -92,6 +92,8 @@ public sealed class IpcWireShapeManifestTests
             84 => "7698A5B8C9679FCDE35762221E1DBD8A31E92086588511320CB0D5D87473D306",
             // Protocol 85 adds the cooling-pad Auto fan mode and CoolingPadSettings.AutoProfile.
             85 => "A471FE3A7AD4994630D5137AB901C3599358B1546ED1797B4A4E7E0B4203CEB3",
+            // Protocol 86 adds the HyperBoost Turbo base-mode slot and entry restriction.
+            86 => "450C7529BFF97066D3CE0478544FEB808A540D20A2E1C7B7C66CEE686A42F590",
             _ => null,
         };
 

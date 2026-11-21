@@ -53,7 +53,8 @@ public sealed partial class SourceReviewedBladeModelTests
         Assert.True(capabilities.SupportsKeyboardBrightness);
         Assert.True(capabilities.SupportsIndependentLightingControls);
         Assert.Equal(product == 0x02C7, capabilities.SupportsUniformLightingFrames);
-        Assert.Null(capabilities.HyperBoostAccess);
+        // Product 695 admits HyperBoost on 02B7; the others do not declare it.
+        Assert.Equal(product == 0x02B7 ? DeviceFeatureAccess.ReadWrite : null, capabilities.HyperBoostAccess);
         Assert.Null(capabilities.ThxAudio);
         Assert.Empty(capabilities.OneShotLaptopControls);
         Assert.Equal(new[] { 50, 55, 60, 65, 70, 75, 80, 100 }, capabilities.ChargeLimits.Order());
