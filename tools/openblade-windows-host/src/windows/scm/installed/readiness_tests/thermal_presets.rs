@@ -680,6 +680,26 @@ async fn every_admitted_level_pair_writes_its_own_fixture_payloads() {
     rig.stop().await;
 }
 
+#[test]
+fn saved_custom_settings_resolve_only_when_canonical() {
+    use crate::installed::readiness::thermal_storage::custom_destination;
+    // An absent maximumFans flag is false; a null one is not a flag at all,
+    // as managed's non-nullable `MaximumFans` cannot read it.
+    assert!(custom_destination(&json!({"cpu":1,"gpu":0})).is_some());
+    assert_eq!(
+        custom_destination(&json!({"cpu":1,"gpu":0,"maximumFans":false})),
+        custom_destination(&json!({"cpu":1,"gpu":0}))
+    );
+    for settings in [
+        json!({"cpu":1,"gpu":0,"maximumFans":null}),
+        json!({"cpu":1,"gpu":0,"maximumFans":true}),
+        json!({"cpu":2,"gpu":2}),
+        json!({"cpu":1}),
+    ] {
+        assert!(custom_destination(&settings).is_none(), "{settings}");
+    }
+}
+
 #[tokio::test]
 async fn unsupported_custom_intent_is_stored_or_rejected_without_a_setter() {
     const NO_POLICY: &str = "Performance override intent was stored. Hardware result: No supported performance destination is selected by the current power and profile policy.";
