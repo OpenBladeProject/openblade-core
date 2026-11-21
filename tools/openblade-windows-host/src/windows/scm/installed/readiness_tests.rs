@@ -836,3 +836,81 @@ mod mutation;
 #[cfg(feature = "service-thermal-mutation-v1")]
 #[path = "readiness_tests/private_mutation.rs"]
 mod private_mutation;
+
+struct CountingSource {
+    inner: TestSource,
+    origin_checks: Rc<Cell<usize>>,
+    power_checks: Rc<Cell<usize>>,
+}
+impl StatusSource for CountingSource {
+    fn snapshot(&mut self, caller: Caller, at: Instant) -> Pending<'_, Snapshot> {
+        self.inner.snapshot(caller, at)
+    }
+    fn verify_origin(&self) -> io::Result<()> {
+        self.origin_checks.set(self.origin_checks.get() + 1);
+        Ok(())
+    }
+    fn process_power_source(&mut self) -> Pending<'_, ()> {
+        self.power_checks.set(self.power_checks.get() + 1);
+        Box::pin(async { Ok(()) })
+    }
+    fn drain(&mut self) -> Pending<'_, ()> {
+        self.inner.drain()
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_suspend_is_followed_by_one_origin_and_power_check_not_a_burst() {
+    let events = Events::default();
+    let (ports, _tx) = ports(Fault::None, &events);
+    let origin_checks = Rc::new(Cell::new(0));
+    let power_checks = Rc::new(Cell::new(0));
+    *ports.source.lock().await = Box::new(CountingSource {
+        inner: TestSource {
+            fault: Fault::None,
+            events: events.clone(),
+            publications: None,
+        },
+        origin_checks: origin_checks.clone(),
+        power_checks: power_checks.clone(),
+    });
+    let (shutdown, receiver) = oneshot::channel();
+    let (failed, _notified) = oneshot::channel();
+    let drive = ports.drive(receiver, failed);
+    tokio::pin!(drive);
+    let settle = || async {
+        for _ in 0..5_000 {
+            tokio::task::yield_now().await;
+        }
+    };
+    let checks = || (origin_checks.get(), power_checks.get());
+    let script = async {
+        settle().await;
+        assert_eq!(checks(), (1, 1), "the first tick checks once");
+        // A suspend is time that passes with no runtime turn; the paused
+        // clock models it as one jump.
+        for jump in [Duration::from_secs(600), Duration::from_secs(8 * 3600)] {
+            let (origin_before, power_before) = checks();
+            tokio::time::advance(jump).await;
+            settle().await;
+            let (origin, power) = checks();
+            assert!(
+                (1..=2).contains(&(origin - origin_before)),
+                "origin checks after {jump:?}: {}",
+                origin - origin_before
+            );
+            assert!(
+                (1..=2).contains(&(power - power_before)),
+                "power checks after {jump:?}: {}",
+                power - power_before
+            );
+        }
+        shutdown.send(()).unwrap();
+    };
+    tokio::select! {
+        biased;
+        result = &mut drive => panic!("drive ended early: {result:?}"),
+        () = script => {}
+    }
+    drive.await.unwrap();
+}

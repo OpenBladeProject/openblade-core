@@ -10,7 +10,7 @@ use tokio::{
     io::AsyncReadExt,
     sync::{Mutex, oneshot, watch},
     task::{JoinSet, LocalSet},
-    time::{Instant, timeout, timeout_at},
+    time::{Instant, MissedTickBehavior, timeout, timeout_at},
 };
 
 use super::{Readiness, denied};
@@ -324,6 +324,10 @@ impl Ports {
         // selected tick branch would stop polling a refresh that owns the lock.
         let origin_check = async {
             let mut interval = tokio::time::interval(Duration::from_millis(500));
+            // Windows Instant counts time asleep, so the default Burst would
+            // replay every missed origin and power check back to back after a
+            // resume. Delay runs one check, then resumes the cadence.
+            interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
             loop {
                 interval.tick().await;
                 let mut source = self.source.lock().await;
