@@ -506,16 +506,27 @@ impl Storage {
                 return Err(denied());
             }
         }
+        // Managed migrates an older aggregate when it loads it. An open that
+        // writes no migration keeps this order: the aggregate, then the
+        // override document, then the journal. One that does admits those
+        // two first, so a refused open does not rewrite the configuration.
+        #[cfg(feature = "service-profiles-v1")]
+        let migration = profiles::plan_migration(files.as_ref(), user_sid, same_path)?;
+        #[cfg(not(feature = "service-profiles-v1"))]
+        let migration = None::<()>;
+        if migration.is_none() {
+            aggregate(files.as_ref(), same_path)?;
+        }
         let bytes = files.read(OVERRIDES)?;
         let document = overrides(bytes.as_deref())?;
         let journal = files.read(JOURNAL)?;
         let last =
             crate::thermal_history::rows(journal.as_deref().unwrap_or_default(), |_, _| Ok(()))?.1;
-        // Managed migrates an older aggregate when it loads it. Only after
-        // every read-only refusal above, so an open that fails writes nothing.
         #[cfg(feature = "service-profiles-v1")]
-        profiles::migrate_on_open(files.as_ref(), same_path)?;
-        aggregate(files.as_ref(), same_path)?;
+        if let Some(migration) = migration {
+            migration.write(files.as_ref())?;
+            aggregate(files.as_ref(), same_path)?;
+        }
         Ok(Arc::new(Self {
             #[cfg(test)]
             battery_append_hook: Mutex::new(None),
@@ -1326,7 +1337,7 @@ impl Storage {
 }
 
 // This reader never migrates or writes the aggregate; with service-profiles-v1
-// the open has already migrated an older one (profiles::migrate_on_open).
+// the open has already migrated an older one (profiles::plan_migration).
 // Validate its durable envelope before touching overrides, and consume only
 // explicitly represented performance fields. Missing configuration does not
 // materialize or activate a default.
@@ -1502,6 +1513,9 @@ pub(super) fn legacy_fan(mode: u8) -> Value {
     };
     json!({"mode":mode,"fixedSpeedRpm":if mode==3{5400}else{3700},"manualCurve":{"cpu":points([40,50,60,70,80,90],[2000,2100,2600,3400,4400,5400]),"gpu":points([35,45,55,65,75,85],[2000,2100,2700,3600,4500,5400]),"useHigherTemperatureForBoth":true}})
 }
+#[cfg(test)]
+#[path = "thermal_storage_open_tests.rs"]
+mod open_tests;
 #[cfg(test)]
 mod application_path_tests {
     use super::valid_application_path;

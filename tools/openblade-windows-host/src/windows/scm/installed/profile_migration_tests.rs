@@ -237,29 +237,69 @@ fn a_migration_the_store_does_not_hold_is_quarantined_until_a_restart() {
     assert_eq!(model.snapshot(), migrated(&source.files));
 }
 
-/// The remembered changes are bounded: the oldest is attempted again.
+/// The hold belongs to one user's store and one change. The same bytes in
+/// another user's store are attempted, and that user's migration step
+/// forgets the first user's hold, as managed loads a user's configuration
+/// again when the user activates after another. Other bytes in the same
+/// store are another change, which takes the hold's place.
 #[test]
-fn the_quarantined_changes_are_bounded() {
+fn a_held_migration_belongs_to_one_store_and_one_change() {
+    const OTHER: &str = "S-1-5-21-111-222-333-1002";
     let source = case("schema 24 committed aggregate");
+    let intended = migrated(&source.files);
     let first = model(&source.files);
     first.fail(6, Fault::Padded);
-    assert!(open(&first).is_err());
-    for index in 0..MISMATCHED_LIMIT {
-        // Each a distinct change: the profile ends in other whitespace.
-        let mut files = source.files.clone();
-        let profile = [files[NAMES[0]].clone(), vec![b' '; index + 1]].concat();
-        files.insert(
-            NAMES[2].into(),
-            commit_marker(24, &sha256(&profile), &sha256(&files[NAMES[1]])),
-        );
-        files.insert(NAMES[0].into(), profile);
-        let other = model(&files);
-        other.fail(6, Fault::Padded);
-        let error = open(&other).err().unwrap();
-        assert_eq!(error.to_string(), QUARANTINE_BLOCKED, "{index}");
-    }
+    assert_eq!(open(&first).err().unwrap().to_string(), QUARANTINE_BLOCKED);
+
+    let second = model(&source.files);
+    Storage::open(Box::new(second.clone()), OTHER).unwrap();
+    assert_eq!(
+        second.snapshot(),
+        intended,
+        "another user's identical store"
+    );
     open(&first).unwrap();
-    assert_eq!(first.snapshot(), migrated(&source.files));
+    assert_eq!(first.snapshot(), intended, "the first user's hold is gone");
+
+    // Two changes in one store: the later is held, the earlier attempted.
+    let earlier = model(&source.files);
+    earlier.fail(6, Fault::Padded);
+    assert!(open(&earlier).is_err());
+    let other = case("schema 23 committed aggregate");
+    let later = model(&other.files);
+    later.fail(6, Fault::Padded);
+    assert_eq!(open(&later).err().unwrap().to_string(), QUARANTINE_BLOCKED);
+    open(&earlier).unwrap();
+    assert_eq!(earlier.snapshot(), intended);
+    let writes = later.writes.load(Ordering::Acquire);
+    assert_eq!(open(&later).err().unwrap().to_string(), QUARANTINE_BLOCKED);
+    assert_eq!(later.writes.load(Ordering::Acquire), writes);
+}
+
+/// A declared difference is an aggregate no migration writes, so the open
+/// keeps its original order: the aggregate's refusal is the answer, before
+/// the override document or the journal is admitted.
+#[test]
+fn an_aggregate_no_migration_writes_is_refused_before_the_override_or_journal() {
+    let refused = case("schema 21 with a null application profile");
+    for (name, bytes) in [
+        (JOURNAL, b"not a journal\n".to_vec()),
+        (OVERRIDES, b"{".to_vec()),
+    ] {
+        let mut files = refused.files.clone();
+        files.insert(name.into(), bytes);
+        let model = model(&files);
+
+        let error = open(&model).err().unwrap();
+
+        assert_eq!(
+            error.to_string(),
+            "Uncommitted or non-current profile aggregate is preserved; managed recovery or migration is required.",
+            "{name}"
+        );
+        assert_eq!(model.snapshot(), files, "{name}");
+        assert_eq!(model.writes.load(Ordering::Acquire), 0, "{name}");
+    }
 }
 
 #[test]

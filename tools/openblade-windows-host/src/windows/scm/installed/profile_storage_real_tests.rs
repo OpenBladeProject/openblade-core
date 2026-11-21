@@ -6,6 +6,7 @@ use super::*;
 use crate::installed::readiness::thermal_native::ProtectedFiles;
 use std::os::windows::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use windows_sys::Win32::Storage::FileSystem::{FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_READ};
 
 const WRITER_LOCK: &str = "configuration.writer-lock";
@@ -344,6 +345,76 @@ fn an_older_aggregate_is_migrated_on_open_and_nothing_else_remains() {
         drop(root.storage());
         assert_eq!(root.contents(), migrated, "{name}");
     }
+}
+
+/// Another writer that replaces the marker once, right after the store's
+/// own replace has read it back: the only way a real store reads back other
+/// bytes, since `ProtectedFiles::replace` verifies each file it writes.
+struct SecondWriter {
+    files: ProtectedFiles,
+    marker: PathBuf,
+    armed: AtomicBool,
+}
+
+impl Files for SecondWriter {
+    fn read(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
+        self.files.read(name)
+    }
+    fn replace(&self, name: &str, expected: Option<&[u8]>, bytes: &[u8]) -> io::Result<()> {
+        self.files.replace(name, expected, bytes)?;
+        if name == NAMES[2] && self.armed.swap(false, Ordering::AcqRel) {
+            std::fs::write(&self.marker, [bytes, b"\r\n"].concat()).unwrap();
+        }
+        Ok(())
+    }
+    fn remove(&self, name: &str, expected: &[u8]) -> io::Result<()> {
+        self.files.remove(name, expected)
+    }
+    fn discard_stage(&self, name: &str) -> io::Result<()> {
+        self.files.discard_stage(name)
+    }
+}
+
+/// On real files a migration that reads back as other bytes is restored
+/// exactly and then held: later opens are refused without touching a file.
+#[test]
+fn a_migration_another_writer_changed_is_restored_and_held_on_real_files() {
+    forget_mismatches();
+    let source = case("schema 24 committed aggregate");
+    let root = Root::holding("held", &source.files);
+    let writer = SecondWriter {
+        files: root.files(),
+        marker: root.path(NAMES[2]),
+        armed: AtomicBool::new(true),
+    };
+
+    let error = Storage::open(Box::new(writer), SID).err().unwrap();
+
+    assert_eq!(error.to_string(), QUARANTINE_BLOCKED);
+    assert_eq!(root.contents(), source.files, "restored exactly");
+    let stamps = |root: &Root| -> Vec<_> {
+        root.listing()
+            .into_iter()
+            .map(|name| {
+                (
+                    std::fs::metadata(root.path(&name))
+                        .unwrap()
+                        .modified()
+                        .unwrap(),
+                    name,
+                )
+            })
+            .collect()
+    };
+    let before = stamps(&root);
+    for _ in 0..3 {
+        let error = Storage::open(Box::new(root.files()), SID).err().unwrap();
+        assert_eq!(error.to_string(), QUARANTINE_BLOCKED);
+    }
+    assert_eq!(stamps(&root), before, "nothing written again");
+    forget_mismatches();
+    drop(root.storage());
+    assert_eq!(root.contents(), migrated(&source.files));
 }
 
 #[test]

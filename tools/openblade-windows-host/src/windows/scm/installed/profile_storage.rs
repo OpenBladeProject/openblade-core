@@ -23,11 +23,11 @@
 //! open transaction for such a stage to belong to.
 //!
 //! The same transaction migrates an older aggregate when the store opens, as
-//! managed's load does: see [`migrate_on_open`].
+//! managed's load does: see [`plan_migration`].
 use super::*;
 use openblade_domain::profile_set::{
     self as profile_set, Capabilities, ProfileSet, ValidationPolicy, Validator, encode,
-    migrate::{self, Stored},
+    migrate::{self, Migration, Stored},
     preferences::{Preferences, commit_marker, preferences_document, read_aggregate},
     update,
 };
@@ -165,26 +165,27 @@ fn sha256(bytes: &[u8]) -> String {
 /// legacy profile, are replaced by the documents managed writes for them.
 /// Managed does this when it loads, not at the first save, and so does this.
 ///
-/// The replacement is the save's recorded transaction: the same backups,
-/// record, verification and restore, so the original bytes stay on disk
-/// until the migrated ones are verified. Everything else is left exactly as
-/// it is for the store's own reader to admit or refuse: an absent aggregate
-/// (the first save materialises it), a recorded or preserved state, an
-/// aggregate managed would quarantine, and one this service could not read
-/// back once migrated.
+/// This is the read-only half: it decides whether the open writes a
+/// migration, and reads nothing but the configuration documents and the
+/// record. Everything else is left exactly as it is for the store's own
+/// reader to admit or refuse: an absent aggregate (the first save
+/// materialises it), a recorded or preserved state, an aggregate managed
+/// would quarantine, and one this service could not read back once migrated.
+/// `Storage::open_with` keeps its original order for those, and admits the
+/// override document and the journal before [`Planned::write`] only when
+/// there is a migration to write.
 ///
 /// The caller has already refused a recorded transaction and pending
-/// override or journal evidence, and admitted the override document and the
-/// journal, so a refused open writes nothing. The record guard below repeats
-/// that check for this function's own sake; at its one call site it cannot
-/// change the outcome, which holds only while the call stays after those
-/// checks.
-pub(super) fn migrate_on_open(
+/// override or journal evidence. The record guard below repeats that check
+/// for this function's own sake; at its one call site it cannot change the
+/// outcome, which holds only while the call stays after those checks.
+pub(super) fn plan_migration(
     files: &dyn Files,
+    user_sid: &str,
     same_path: fn(&str, &str) -> bool,
-) -> io::Result<()> {
+) -> io::Result<Option<Planned>> {
     if files.read(configuration::RECOVERY_REQUIRED)?.is_some() {
-        return Ok(());
+        return Ok(None);
     }
     let prior = read_documents(files)?;
     let stored = match (inspect(&prior), &prior) {
@@ -196,76 +197,101 @@ pub(super) fn migrate_on_open(
                 preferences,
             }
         }
-        _ => return Ok(()),
+        _ => return Ok(None),
     };
     let (_, validator) = validator();
     let Ok(Some(migration)) = migrate::migrate(stored, &validator) else {
-        return Ok(());
+        return Ok(None);
     };
     let intended = migration.documents(sha256);
     if !reopens(&intended, same_path) {
-        return Ok(());
+        return Ok(None);
     }
-    let transaction = Transaction::new(
-        files,
-        &prior,
-        intended,
-        &migration.profiles,
-        &migration.preferences,
-        &validator,
-    );
     // Managed quarantines an aggregate whose migration does not read back:
     // `VerifyIntendedAggregateAsync` throws `InvalidDataException`, which
     // `LoadCoreAsync` turns into a quarantine (`BatteryConfigurationStore.cs`
-    // `:914-932`, `:403-438`, `IsRecoverable` `:1344-1349`), held until the
-    // service restarts. A change this thread already found the store would
-    // not hold is refused the same way without writing again.
-    if mismatched(&transaction.id, false) {
+    // `:914-932`, `:403-438`, `IsRecoverable` `:1344-1349`). It lasts while
+    // that user's configuration stays active. The same change of the same
+    // user's store is refused the same way without writing again.
+    if held(user_sid, &change_id(&prior, &intended)) {
         return Err(io::Error::other(QUARANTINE_BLOCKED));
     }
-    transaction.run().map_err(|failure| {
-        io::Error::other(match failure {
-            Failure::Mismatched => {
-                mismatched(&transaction.id, true);
-                QUARANTINE_BLOCKED
-            }
-            Failure::RecoveryRequired => MIGRATION_RECOVERY_REQUIRED,
-            Failure::StageBlocked | Failure::Unchanged | Failure::Restored => MIGRATION_UNCHANGED,
-        })
-    })
+    Ok(Some(Planned {
+        prior,
+        intended,
+        migration,
+        user_sid: user_sid.to_owned(),
+    }))
 }
 
-/// How many changes `mismatched` remembers; the oldest is forgotten first.
-const MISMATCHED_LIMIT: usize = 16;
+/// A migration the open writes once it has admitted everything else.
+pub(super) struct Planned {
+    prior: [Option<Vec<u8>>; 3],
+    intended: [Vec<u8>; 3],
+    migration: Migration,
+    user_sid: String,
+}
+
+impl Planned {
+    /// The save's recorded transaction: the same backups, record,
+    /// verification and restore, so the original bytes stay on disk until
+    /// the migrated ones are verified.
+    pub(super) fn write(self, files: &dyn Files) -> io::Result<()> {
+        let (_, validator) = validator();
+        let transaction = Transaction::new(
+            files,
+            &self.prior,
+            self.intended,
+            &self.migration.profiles,
+            &self.migration.preferences,
+            &validator,
+        );
+        transaction.run().map_err(|failure| {
+            io::Error::other(match failure {
+                Failure::Mismatched => {
+                    hold(&self.user_sid, &transaction.id);
+                    QUARANTINE_BLOCKED
+                }
+                Failure::RecoveryRequired => MIGRATION_RECOVERY_REQUIRED,
+                Failure::StageBlocked | Failure::Unchanged | Failure::Restored => {
+                    MIGRATION_UNCHANGED
+                }
+            })
+        })
+    }
+}
 
 thread_local! {
-    /// The changes whose migration this thread wrote, read back as something
-    /// else and restored. The store's owner is the service runtime, which
-    /// stays on one thread (`Rc`), so this lasts as long as the service.
-    /// A change is the digest of the stored and the migrated bytes, so other
-    /// stored bytes are a new change and are attempted again.
-    static MISMATCHED: std::cell::RefCell<Vec<String>> =
-        const { std::cell::RefCell::new(Vec::new()) };
+    /// The user whose migration this thread wrote, read back as something
+    /// else and restored, and that change: the digest of the stored and the
+    /// migrated bytes. Managed holds such a quarantine while that user's
+    /// configuration stays active and loads it again when the user activates
+    /// after another (`ServiceControlRuntime.cs:1456-1487`); here another
+    /// user's migration step forgets it. The store's owner is the service
+    /// runtime, which stays on one thread (`Rc`). One entry at most.
+    static HELD: std::cell::RefCell<Option<(String, String)>> =
+        const { std::cell::RefCell::new(None) };
 }
 
-/// A restart: this thread forgets every remembered change.
+/// A restart: this thread forgets the held change.
 #[cfg(test)]
 fn forget_mismatches() {
-    MISMATCHED.with_borrow_mut(Vec::clear);
+    HELD.set(None);
 }
 
-/// Whether `id` is a remembered change; `remember` adds it.
-fn mismatched(id: &str, remember: bool) -> bool {
-    MISMATCHED.with_borrow_mut(|ids| {
-        let known = ids.iter().any(|known| known == id);
-        if remember && !known {
-            if ids.len() == MISMATCHED_LIMIT {
-                ids.remove(0);
-            }
-            ids.push(id.to_owned());
+/// Whether `user_sid`'s store holds `id`. Another user's store forgets it.
+fn held(user_sid: &str, id: &str) -> bool {
+    HELD.with_borrow_mut(|entry| {
+        if entry.as_ref().is_some_and(|(sid, _)| sid != user_sid) {
+            *entry = None;
         }
-        known
+        entry.as_ref().is_some_and(|(_, held)| held == id)
     })
+}
+
+/// Holds `id` for `user_sid`'s store, in place of anything held before.
+fn hold(user_sid: &str, id: &str) {
+    HELD.set(Some((user_sid.to_owned(), id.to_owned())));
 }
 
 /// Whether this service's own reader accepts `documents` as the stored
@@ -283,6 +309,17 @@ fn reopens(documents: &[Vec<u8>; 3], same_path: fn(&str, &str) -> bool) -> bool 
         }
     }
     aggregate(&Intended(documents), same_path).is_ok()
+}
+
+/// The digest of a change from `prior` to `intended`, as the transaction
+/// names its artifacts with it.
+fn change_id(prior: &[Option<Vec<u8>>; 3], intended: &[Vec<u8>; 3]) -> String {
+    let mut change = Sha256::new();
+    for bytes in prior.iter().flatten().chain(intended) {
+        change.update((bytes.len() as u64).to_le_bytes());
+        change.update(bytes);
+    }
+    format!("{:x}", change.finalize())[..32].to_owned()
 }
 
 /// The transaction's artifacts. The identifier is the digest of the change,
@@ -308,16 +345,11 @@ impl<'a> Transaction<'a> {
         preferences: &'a Preferences,
         validator: &'a Validator,
     ) -> Self {
-        let mut change = Sha256::new();
-        for bytes in prior.iter().flatten().chain(&intended) {
-            change.update((bytes.len() as u64).to_le_bytes());
-            change.update(bytes);
-        }
         Self {
             files,
             prior,
+            id: change_id(prior, &intended),
             intended,
-            id: format!("{:x}", change.finalize())[..32].to_owned(),
             admitted,
             preferences,
             validator,
