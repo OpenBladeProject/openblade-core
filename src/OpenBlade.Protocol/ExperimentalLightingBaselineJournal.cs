@@ -81,6 +81,7 @@ internal sealed class ExperimentalLightingBaselineJournal
     {
         ArgumentNullException.ThrowIfNull(baseline);
         ValidateBaseline(baseline);
+        RequireVaporChamberProduct(baseline);
         lock (gate)
         {
             EnsureUnchanged();
@@ -90,9 +91,31 @@ internal sealed class ExperimentalLightingBaselineJournal
                 { throw new InvalidDataException("The original lighting baseline requires explicit built-in recovery."); }
                 return;
             }
-            Publish(new(1, modelNumber, 0x1532, productId, true, baseline));
+            Publish(new(SchemaFor(baseline), modelNumber, 0x1532, productId, true, baseline));
             pending = baseline;
             capturedHere = true;
+        }
+    }
+
+    // Change only the LED38 record of the pending baseline. Its presence means
+    // OpenBlade may have selected LED38, so this process adds it to its own capture
+    // before [0,38,8] can be submitted. It is removed once LED38 is restored or
+    // another controller took it, including during recovery of a loaded record.
+    internal void ReplacePendingVaporChamber(ExperimentalLightingBaseline baseline)
+    {
+        ArgumentNullException.ThrowIfNull(baseline);
+        ValidateBaseline(baseline);
+        RequireVaporChamberProduct(baseline);
+        lock (gate)
+        {
+            EnsureUnchanged();
+            if (pending is null || pending.Settings != baseline.Settings
+                || pending.RawBrightness != baseline.RawBrightness
+                || baseline.VaporChamber is not null && !capturedHere)
+            { throw new InvalidDataException("Only the pending baseline's LED38 record may change."); }
+            if (pending == baseline) { return; }
+            Publish(new(SchemaFor(baseline), modelNumber, 0x1532, productId, true, baseline));
+            pending = baseline;
         }
     }
 
@@ -141,26 +164,52 @@ internal sealed class ExperimentalLightingBaselineJournal
         RejectDuplicateMembers(json.RootElement);
         Document document = JsonSerializer.Deserialize<Document>(bytes, Options)
             ?? throw new InvalidDataException("Lighting baseline journal is empty.");
-        if (document.SchemaVersion != 1 || document.ModelNumber != modelNumber
+        // Schema 1 is the keyboard-only record. Schema 2 adds exactly one
+        // restorable RZ09-0529 Vapor Chamber record; neither admits the other's shape.
+        if (document.SchemaVersion is not (1 or 2) || document.ModelNumber != modelNumber
             || document.VendorId != 0x1532 || document.ProductId != productId
-            || document.Pending != (document.Baseline is not null))
+            || document.Pending != (document.Baseline is not null)
+            || document.SchemaVersion != SchemaFor(document.Baseline))
         { throw new InvalidDataException("Lighting baseline journal identity or schema is invalid."); }
-        if (document.Baseline is { } baseline) { ValidateBaseline(baseline); }
+        if (document.Baseline is { } baseline)
+        {
+            ValidateBaseline(baseline);
+            RequireVaporChamberProduct(baseline);
+        }
         return document;
+    }
+
+    private static int SchemaFor(ExperimentalLightingBaseline? baseline) =>
+        baseline?.VaporChamber is null ? 1 : 2;
+
+    // Only RZ09-0529 has a reviewed LED38 contract. An LED38 record for any other
+    // product is not a recovery instruction, so the journal is invalid.
+    private void RequireVaporChamberProduct(ExperimentalLightingBaseline baseline)
+    {
+        if (baseline.VaporChamber is not null && productId != 0x02C7)
+        { throw new InvalidDataException("Only the RZ09-0529 lighting baseline may include an LED38 record."); }
     }
 
     private static void ValidateBaseline(ExperimentalLightingBaseline baseline)
     {
         LightingSettings settings = baseline.Settings;
-        if (!LightingSettingsValidation.IsWellFormed(settings)
-            || settings.Effect is not (LightingEffect.Off or LightingEffect.Static
-                or LightingEffect.Breathing or LightingEffect.Wave)
-            || settings.Parameters is null || settings.LogoMode is not null
-            || settings.IndependentControls is not null || settings.ControlsKeyboardEffect
+        // No reviewed LED38 setter changes record brightness, so its saved
+        // destination is always the nominal full-brightness setting.
+        if (!IsCompleteBuiltIn(settings)
             || settings.Effect != LightingEffect.Off
-                && settings.Brightness != LightingBrightnessProtocol.RawToPercent(baseline.RawBrightness))
+                && settings.Brightness != LightingBrightnessProtocol.RawToPercent(baseline.RawBrightness)
+            || baseline.VaporChamber is { } vaporChamber
+                && (!IsCompleteBuiltIn(vaporChamber)
+                    || vaporChamber.Effect != LightingEffect.Off && vaporChamber.Brightness != 100))
         { throw new InvalidDataException("Lighting baseline is not a complete built-in setting."); }
     }
+
+    private static bool IsCompleteBuiltIn(LightingSettings settings) =>
+        LightingSettingsValidation.IsWellFormed(settings)
+        && settings.Effect is (LightingEffect.Off or LightingEffect.Static
+            or LightingEffect.Breathing or LightingEffect.Wave)
+        && settings.Parameters is not null && settings.LogoMode is null
+        && settings.IndependentControls is null && !settings.ControlsKeyboardEffect;
 
     private void Publish(Document document)
     {
