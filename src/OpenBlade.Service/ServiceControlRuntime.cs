@@ -16309,7 +16309,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                         ? BatteryConfirmationScope.All
                         : outcome.WriteAttempted.Contains(DeviceSubsystem.Battery)
                             ? outcome.BatteryConfirmation
-                            : continuation?.BatteryConfirmation ?? BatteryConfirmationScope.All);
+                            : continuation?.BatteryConfirmation ?? BatteryConfirmationScope.All,
+                // A continuation that wrote outside its deferred steps re-sent a
+                // dependency; the chain allows that once, so a failing re-send cannot loop.
+                continuation is not null
+                    && (continuation.GpuResendAttempted
+                        || outcome.WriteAttempted.Any(subsystem => !continuation.Subsystems.Contains(subsystem))));
         }
 
         if (outcome.PreWriteState is { } preWriteState)
@@ -16371,7 +16376,11 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             preserveLiveReadings,
             lightingExternalBeforeReadback,
             token,
-            continuation?.Subsystems).ConfigureAwait(false);
+            // The continuation's own re-sent dependency step is published like the
+            // deferred steps, so its confirmation clears the drift latch.
+            continuation is null
+                ? null
+                : continuation.Subsystems.Union(outcome.WriteAttempted).ToHashSet()).ConfigureAwait(false);
         return ServiceTransitionApplicationOutcome.From(outcome, laptopBehavior,
             laptopBehavior.AnyWritesAttempted && laptopControlExecutor.RequiresReconciliation,
             new ServiceTransitionWriteProgress(boundaryWriteAttempted, boundarySubmissionPossible, boundaryConfirmedWrites),
@@ -16525,7 +16534,7 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                                 : (attemptDevice, confirmed) =>
                                     IsCurrentTransitionContinuation(continuation, confirmed)
                                         ? TransitionContinuationScope(continuation, confirmed, attemptDevice)
-                                        : new HashSet<DeviceSubsystem>()),
+                                        : ContinuationWriteScope.Empty),
                     (_, cancellationToken) => RevalidateScopedThermalRetryAsync(
                         powerSource,
                          desired,
@@ -17413,22 +17422,28 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
 
     // Remaining continuation work on this observation: the deferred steps plus any
     // dependency whose firmware fields matched while its GPU offsets are
-    // unconfirmed. That step goes back into scope, so the continuation's fresh
-    // pre-write read sends the offsets through the GPU-only setter before the
-    // deferred steps. No firmware setter is replayed: the matched preset leaves
-    // only the GPU-only path.
-    private static IReadOnlySet<DeviceSubsystem> TransitionContinuationScope(
+    // unconfirmed. That step goes back into scope as GPU-only work, so the
+    // continuation's fresh pre-write read sends the offsets through the GPU-only
+    // setter before the deferred steps; the coordinator skips the step when only a
+    // firmware write could apply it. The chain re-sends at most once
+    // (GpuResendAttempted), so a failing re-send cannot loop.
+    private static ContinuationWriteScope TransitionContinuationScope(
         PendingTransitionContinuation pending,
         ConfirmedDeviceState confirmed,
         IBladeDevice device)
     {
         (PendingConfirmationResult result, IReadOnlySet<DeviceSubsystem> unconfirmed) =
             TransitionDependencies(pending, confirmed, device);
-        return result != PendingConfirmationResult.Match
+        if (result != PendingConfirmationResult.Match)
+        {
+            return ContinuationWriteScope.Empty;
+        }
+        IReadOnlySet<DeviceSubsystem> gpuOnly = pending.GpuResendAttempted
             ? new HashSet<DeviceSubsystem>()
-            : unconfirmed.Count == 0
-                ? pending.Subsystems
-                : pending.Subsystems.Union(unconfirmed).ToHashSet();
+            : unconfirmed.Except(pending.Subsystems).ToHashSet();
+        return new ContinuationWriteScope(
+            gpuOnly.Count == 0 ? pending.Subsystems : pending.Subsystems.Union(gpuOnly).ToHashSet(),
+            gpuOnly);
     }
 
     private static (PendingConfirmationResult Result, IReadOnlySet<DeviceSubsystem> GpuUnconfirmed)
@@ -21325,7 +21340,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         IReadOnlySet<DeviceSubsystem> Subsystems,
         IReadOnlySet<DeviceSubsystem> Dependencies,
         DateTimeOffset ExpiresAt,
-        BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All);
+        BatteryConfirmationScope BatteryConfirmation = BatteryConfirmationScope.All,
+        // Set once a continuation in this chain sent a dependency step again (the
+        // GPU-only re-send). Later continuations never widen the scope again.
+        bool GpuResendAttempted = false);
 
     private sealed record PendingResumePerformanceDrift(
         long PowerGeneration,

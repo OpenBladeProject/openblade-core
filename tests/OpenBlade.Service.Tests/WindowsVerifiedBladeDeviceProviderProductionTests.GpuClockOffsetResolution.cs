@@ -300,4 +300,79 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Null(read.GpuClockOffsets);
         Assert.Equal(GpuClockOffsetManagementState.Managed, harness.Managed.GpuClockOffsetManagementState);
     }
+
+    // Without default evidence, an uncertain enable that left the driver at its
+    // defaults is OpenBlade-owned Managed 0/0, a contradiction of the request.
+    [Theory]
+    [InlineData("Unknown")]
+    [InlineData("Relinquished")]
+    [InlineData("Managed")]
+    public async Task UncertainEnable_ThatLeftDefaultsWithoutDefaultEvidence_IsManagedAtDefaults(string prior)
+    {
+        var harness = CreateGpuResolutionHarness(gpuActive: false);
+        using WindowsVerifiedBladeDeviceProvider provider = harness.Provider;
+        if (prior != "Unknown")
+        {
+            await harness.Device.SetGpuClockOffsetsAsync(new GpuClockOffsetSettings(100, 200), default);
+        }
+        if (prior == "Relinquished")
+        {
+            await harness.Managed.RelinquishGpuClockOffsetManagementAsync(default);
+        }
+        Assert.Equal(prior, harness.Managed.GpuClockOffsetManagementState.ToString());
+        ConfirmedDeviceState before = await harness.Device.ReadStateAsync(default);
+        harness.Gpu.SetFailure = _ =>
+        {
+            harness.Gpu.SetCurrent(GpuClockOffsetSettings.Default);
+            return Uncertain();
+        };
+        var tuning = new GpuClockTuningSettings(true, new GpuClockOffsetSettings(200, 500));
+        await Assert.ThrowsAsync<BladeWriteException>(() =>
+            harness.Device.SetGpuClockOffsetsAsync(tuning.EffectiveOffsets, default));
+        harness.Gpu.SetFailure = null;
+
+        ConfirmedDeviceState read = await harness.Device.ReadStateAsync(default);
+
+        Assert.Equal(GpuClockOffsetManagementState.Managed, harness.Managed.GpuClockOffsetManagementState);
+        Assert.Equal(GpuClockOffsetSettings.Default, read.GpuClockOffsets?.Current);
+        Assert.Equal(PendingConfirmationResult.Mismatch, WriteConfirmationPolicy.Match(
+            DeviceSubsystem.Performance,
+            new WriteConfirmationExpectation(GpuDesired(tuning), before, GpuClockTuningOnly: true),
+            read,
+            harness.Managed.GpuClockOffsetManagementState));
+    }
+
+    // A second uncertain submission before the first was resolved keeps the state
+    // the first one replaced, so the resolving read still restores the reset.
+    [Fact]
+    public async Task ConsecutiveUncertainSubmissions_KeepTheFirstPriorState()
+    {
+        var harness = CreateGpuResolutionHarness(gpuActive: false);
+        using WindowsVerifiedBladeDeviceProvider provider = harness.Provider;
+        await harness.Managed.SetGpuClockOffsetsAsync(
+            GpuClockOffsetSettings.Default, retainManagement: false, default);
+        Assert.Equal(GpuClockOffsetManagementState.ResetConfirmed, harness.Managed.GpuClockOffsetManagementState);
+        harness.Gpu.SetFailure = _ =>
+        {
+            harness.Gpu.SetCurrent(GpuClockOffsetSettings.Default);
+            harness.Gpu.QueryFailure = new InvalidOperationException("NVML is unavailable.");
+            return Uncertain();
+        };
+        for (int i = 0; i < 2; i++)
+        {
+            // The write path reads the driver first; only the resolving read fails.
+            harness.Gpu.QueryFailure = null;
+            await Assert.ThrowsAsync<BladeWriteException>(() =>
+                harness.Device.SetGpuClockOffsetsAsync(new GpuClockOffsetSettings(200, 500), default));
+            Assert.Null((await harness.Device.ReadStateAsync(default)).GpuClockOffsets);
+            Assert.Equal(GpuClockOffsetManagementState.SubmissionUncertain,
+                harness.Managed.GpuClockOffsetManagementState);
+        }
+        harness.Gpu.SetFailure = null;
+        harness.Gpu.QueryFailure = null;
+        harness.Activity.Active = true;
+
+        Assert.Null((await harness.Device.ReadStateAsync(default)).GpuClockOffsets);
+        Assert.Equal(GpuClockOffsetManagementState.ResetConfirmed, harness.Managed.GpuClockOffsetManagementState);
+    }
 }

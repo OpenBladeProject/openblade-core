@@ -154,6 +154,42 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
             ((IGpuClockOffsetManagementDevice)device).GpuClockOffsetManagementState);
     }
 
+    // A driver that refuses every clock-offset write, the restore included, still
+    // reads back the prior offsets, so the write is known not to have applied and
+    // the earlier management state, default evidence included, is kept.
+    [Theory]
+    [InlineData(0x02C7, "Unknown")]
+    [InlineData(0x02C7, "ResetConfirmed")]
+    [InlineData(0x02C7, "RelinquishedDefaultConfirmed")]
+    [InlineData(0x02C5, "ResetConfirmed")]
+    public async Task GpuOffsets_EveryNvmlWriteRefusedIsKnownNotApplied(int productId, string prior)
+    {
+        GpuOffsetHarness harness = CreateGpuOffsetHarness(productId, "NVIDIA GeForce RTX 5070 Laptop GPU");
+        using WindowsVerifiedBladeDeviceProvider provider = harness.Provider;
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        var managed = (IGpuClockOffsetManagementDevice)device;
+        harness.Activity.Active = false;
+        if (prior != "Unknown")
+        {
+            await managed.SetGpuClockOffsetsAsync(GpuClockOffsetSettings.Default, false, CancellationToken.None);
+        }
+        if (prior == "RelinquishedDefaultConfirmed")
+        {
+            await managed.RelinquishGpuClockOffsetManagementAsync(CancellationToken.None);
+        }
+        Assert.Equal(prior, managed.GpuClockOffsetManagementState.ToString());
+        harness.Api.SetStatus = (_, _) => 999;
+
+        ScopedApplyOutcome outcome = await new ControlCoordinator(device).ApplyGpuClockTuningOutcomeAsync(
+            new GpuClockTuningSettings(true, new GpuClockOffsetSettings(200, 500)), CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, outcome.WriteSubmissionState);
+        Assert.False(outcome.ConfirmationUnavailable);
+        Assert.Equal((0, 0), (harness.Api.Core, harness.Api.Memory));
+        Assert.Equal(prior, managed.GpuClockOffsetManagementState.ToString());
+    }
+
     // While paused the managed read still queries an active dGPU: an unchanged
     // reading keeps the cached policy-clipped envelope, and a changed one drops
     // the cached confirmation instead of reporting stale offsets.

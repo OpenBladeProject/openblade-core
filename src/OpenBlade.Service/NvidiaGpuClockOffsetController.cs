@@ -261,6 +261,9 @@ internal sealed partial class NvidiaGpuClockOffsetController : IGpuClockOffsetCo
         bool restoreCore,
         bool restoreMemory)
     {
+        // Each restore write is attempted even if the other fails. The result is the
+        // fresh readback, not the write status: a refused write that left the driver
+        // at the prior offsets is known not to have applied.
         try
         {
             if (restoreCore)
@@ -272,7 +275,14 @@ internal sealed partial class NvidiaGpuClockOffsetController : IGpuClockOffsetCo
                     api.SetClockOffsets(device, ref core),
                     "restore the GPU core clock offset");
             }
+        }
+        catch
+        {
+            // The readback below decides the outcome.
+        }
 
+        try
+        {
             if (restoreMemory)
             {
                 NvmlClockOffset memory = CreateWrite(
@@ -282,7 +292,14 @@ internal sealed partial class NvidiaGpuClockOffsetController : IGpuClockOffsetCo
                     api.SetClockOffsets(device, ref memory),
                     "restore the GPU memory clock offset");
             }
+        }
+        catch
+        {
+            // The readback below decides the outcome.
+        }
 
+        try
+        {
             GpuClockOffsetCapabilities restored = QueryCapabilities(device);
             return restored.Current == prior;
         }

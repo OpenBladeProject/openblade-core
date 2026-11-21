@@ -1381,7 +1381,7 @@ public sealed class ControlCoordinator
             stateReader = null,
         Func<IBladeDevice, CancellationToken,
             Task<PowerTransitionDeviceStateReadResult>>? deviceStateReader = null,
-        Func<IBladeDevice, ConfirmedDeviceState, IReadOnlySet<DeviceSubsystem>>?
+        Func<IBladeDevice, ConfirmedDeviceState, ContinuationWriteScope>?
             continuationScopeResolver = null)
     {
         ArgumentNullException.ThrowIfNull(desired);
@@ -1391,6 +1391,7 @@ public sealed class ControlCoordinator
         bool lightingReadUnavailable = false;
         PartialDeviceStateRead? initialPartialRead = null;
         IReadOnlySet<DeviceSubsystem>? continuationScope = null;
+        IReadOnlySet<DeviceSubsystem>? continuationGpuOnly = null;
 
         // A content-rejected getter leaves only its dependent subsystems
         // unknown; every channel or safety failure still escapes the read.
@@ -1443,7 +1444,10 @@ public sealed class ControlCoordinator
             lightingReadUnavailable =
                 initialRead.LightingOffConfirmationUnavailable;
             cancellationToken.ThrowIfCancellationRequested();
-            continuationScope = continuationScopeResolver?.Invoke(initialDevice, initial);
+            ContinuationWriteScope? resolvedScope =
+                continuationScopeResolver?.Invoke(initialDevice, initial);
+            continuationScope = resolvedScope?.Subsystems;
+            continuationGpuOnly = resolvedScope?.GpuOnly;
             if (automaticWriteExclusionResolver is not null)
             {
                 automaticWriteExclusions = automaticWriteExclusionResolver(initial);
@@ -1492,7 +1496,8 @@ public sealed class ControlCoordinator
                 transition,
                 cancellationToken,
                 continuationScope,
-                initialPartialRead);
+                initialPartialRead,
+                continuationGpuOnly);
 
             if (transition.Attempted.Count == 0)
             {
@@ -1706,6 +1711,14 @@ public sealed class ControlCoordinator
                     token),
                 PerformanceStateMatches)
             {
+                GpuClockOffsetsOnlyApplicable = state =>
+                    CanApplyGpuClockOffsetsOnly(
+                        state,
+                        desired.Performance.Value,
+                        desired.CustomPerformance,
+                        desired.GpuClockTuning,
+                        latentManualPerformanceIntent
+                            || FirmwarePerformanceSelectorHidden(state)),
                 StateAwareSetter = (state, token) =>
                     CanApplyGpuClockOffsetsOnly(
                         state,
@@ -1777,7 +1790,8 @@ public sealed class ControlCoordinator
         FullTransitionApplyState transition,
         CancellationToken cancellationToken,
         IReadOnlySet<DeviceSubsystem>? continuationScope = null,
-        PartialDeviceStateRead? initialPartialRead = null)
+        PartialDeviceStateRead? initialPartialRead = null,
+        IReadOnlySet<DeviceSubsystem>? continuationGpuOnly = null)
     {
         bool stopFurtherWrites = false;
         string? stopReason = null;
@@ -1794,7 +1808,9 @@ public sealed class ControlCoordinator
             && automaticWriteExclusions?.Contains(DeviceSubsystem.Fans) != true
             && (continuationScope is null
                 || continuationScope.Contains(DeviceSubsystem.Performance)
-                    && continuationScope.Contains(DeviceSubsystem.Fans));
+                    && continuationScope.Contains(DeviceSubsystem.Fans))
+            // A GPU-only continuation step never takes the paired firmware path.
+            && continuationGpuOnly?.Contains(DeviceSubsystem.Performance) != true;
         bool coupledAutomaticFansHandled = false;
         IReadOnlyList<DeviceSubsystem> orderedSubsystems =
             directAutomaticPair
@@ -1810,6 +1826,19 @@ public sealed class ControlCoordinator
             }
             if (continuationScope is not null && !continuationScope.Contains(subsystem))
             {
+                transition.ContinuationExcluded.Add(subsystem);
+                transition.Provisional[subsystem] = new(
+                    ControlResultStatus.Blocked,
+                    $"{pending.Name} is not part of the remaining transition work.");
+                continue;
+            }
+            if (continuationGpuOnly?.Contains(subsystem) == true
+                && pending.GpuClockOffsetsOnlyApplicable?.Invoke(initial) != true)
+            {
+                // The continuation may send this step again only through the GPU-only
+                // setter. When the current state needs a firmware write (for example
+                // a preset the policy cannot compare under manual fans), skip it
+                // rather than replay a firmware setter.
                 transition.ContinuationExcluded.Add(subsystem);
                 transition.Provisional[subsystem] = new(
                     ControlResultStatus.Blocked,
@@ -3586,5 +3615,19 @@ public sealed class ControlCoordinator
             get;
             init;
         }
+
+        // Whether StateAwareSetter would send only the GPU clock offsets for this state.
+        public Func<ConfirmedDeviceState, bool>? GpuClockOffsetsOnlyApplicable { get; init; }
     }
+}
+
+// The subsystems a transition continuation may write, and the dependency steps among
+// them that it may send again only through the GPU-only setter.
+internal sealed record ContinuationWriteScope(
+    IReadOnlySet<DeviceSubsystem> Subsystems,
+    IReadOnlySet<DeviceSubsystem> GpuOnly)
+{
+    public static ContinuationWriteScope Empty { get; } = new(
+        new HashSet<DeviceSubsystem>(),
+        new HashSet<DeviceSubsystem>());
 }
