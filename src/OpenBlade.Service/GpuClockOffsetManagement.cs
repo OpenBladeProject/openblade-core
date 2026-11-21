@@ -9,6 +9,9 @@ internal enum GpuClockOffsetManagementState
     ResetConfirmed = 2,
     Relinquished = 3,
     RelinquishedDefaultConfirmed = 4,
+    // An NVML submission may have changed the offsets and nothing confirmed the
+    // result. The next managed read queries the driver to resolve it.
+    SubmissionUncertain = 5,
 }
 
 internal interface IGpuClockOffsetManagementDevice

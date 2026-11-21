@@ -511,6 +511,7 @@ public sealed class ControlCoordinator
                     firmwarePerformanceSelectorHidden: false)
                     ? GpuClockOffsetsUnchangedAfterIndeterminateWrite(initial, final)
                     : PerformanceStateMatches(initial, final),
+            confirmationPendingAfterIndeterminateWrite: GpuClockOffsetSubmissionUnresolved,
             writeBlockReason: performanceWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss:
                 performanceWriteBlockReason is not null)
@@ -553,6 +554,7 @@ public sealed class ControlCoordinator
                 : null,
             resolveIndeterminateWriteByReadback: static () => true,
             unchangedAfterIndeterminateWrite: GpuClockOffsetsUnchangedAfterIndeterminateWrite,
+            confirmationPendingAfterIndeterminateWrite: GpuClockOffsetSubmissionUnresolved,
             writeBlockReason: performanceWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss: true);
 
@@ -2531,6 +2533,7 @@ public sealed class ControlCoordinator
         Func<bool>? resolveIndeterminateWriteByReadback = null,
         Func<ConfirmedDeviceState, ConfirmedDeviceState, bool>?
             unchangedAfterIndeterminateWrite = null,
+        Func<ConfirmedDeviceState, bool>? confirmationPendingAfterIndeterminateWrite = null,
         bool returnBlockedOnWriteAuthorityLoss = false,
         bool reconcileUnconfirmableIndeterminateWrite = false)
     {
@@ -2706,6 +2709,7 @@ public sealed class ControlCoordinator
                     exception,
                     matches,
                     unchangedAfterIndeterminateWrite,
+                    confirmationPendingAfterIndeterminateWrite,
                     readState,
                     initial,
                     capabilities,
@@ -2771,6 +2775,7 @@ public sealed class ControlCoordinator
                         exception,
                         matches,
                         unchangedAfterIndeterminateWrite,
+                        confirmationPendingAfterIndeterminateWrite,
                         readState,
                         initial,
                         capabilities,
@@ -2866,6 +2871,7 @@ public sealed class ControlCoordinator
         Func<ConfirmedDeviceState, bool> matches,
         Func<ConfirmedDeviceState, ConfirmedDeviceState, bool>?
             unchangedAfterIndeterminateWrite,
+        Func<ConfirmedDeviceState, bool>? confirmationPendingAfterIndeterminateWrite,
         Func<CancellationToken, Task<ConfirmedDeviceState>> readState,
         ConfirmedDeviceState? initial,
         DeviceCapabilities? capabilities,
@@ -2891,6 +2897,29 @@ public sealed class ControlCoordinator
                     WriteSubmissionState: WriteSubmissionState.Indeterminate,
                     WriteFailurePhase: exception is BladeWriteException matchedFailure
                         ? matchedFailure.FailurePhase
+                        : null);
+            }
+
+            if (initial is not null
+                && confirmationPendingAfterIndeterminateWrite?.Invoke(final) == true)
+            {
+                // The readback has no evidence for part of the write (an uncertain
+                // NVML submission whose driver read failed). Keep it pending like a
+                // lost readback instead of reporting a contradiction.
+                return new ScopedApplyOutcome(
+                    new ControlResult(
+                        ControlResultStatus.Failed,
+                        $"{Indeterminate(name, exception).Message} Fresh readback cannot confirm the GPU clock offsets."),
+                    final,
+                    WriteAttempted: true,
+                    ReadbackMatched: false,
+                    capabilities,
+                    DeviceAccessFailed: false,
+                    ConfirmationUnavailable: true,
+                    PreWriteState: initial,
+                    WriteSubmissionState: WriteSubmissionState.Indeterminate,
+                    WriteFailurePhase: exception is BladeWriteException pendingFailure
+                        ? pendingFailure.FailurePhase
                         : null);
             }
 
@@ -3350,8 +3379,9 @@ public sealed class ControlCoordinator
     // indeterminate NVML submission (for example a core write whose restore
     // failed) null == null is not evidence that the driver kept its prior offsets.
     // Only a managed offset observation, or a default reset the device still
-    // holds as confirmed (an uncertain NVML write withdraws it), shows that the
-    // prior GPU state remained active.
+    // holds as confirmed, shows that the prior GPU state remained active. An
+    // uncertain NVML write withdraws a reset; a driver read that finds the
+    // defaults still in place restores it.
     private bool GpuClockOffsetsUnchangedAfterIndeterminateWrite(
         ConfirmedDeviceState initial,
         ConfirmedDeviceState final) =>
@@ -3361,6 +3391,16 @@ public sealed class ControlCoordinator
                 && managedDevice.GpuClockOffsetManagementState is
                     GpuClockOffsetManagementState.ResetConfirmed
                     or GpuClockOffsetManagementState.RelinquishedDefaultConfirmed);
+
+    // The device still holds an uncertain NVML submission after its follow-up
+    // read: the driver could not be queried, so nothing confirms or contradicts
+    // the offsets yet.
+    private bool GpuClockOffsetSubmissionUnresolved(ConfirmedDeviceState final) =>
+        final.GpuClockOffsets is null
+        && device is IGpuClockOffsetManagementDevice
+        {
+            GpuClockOffsetManagementState: GpuClockOffsetManagementState.SubmissionUncertain,
+        };
 
     private void EnsureGpuClockOffsetManagementContract(
         DeviceCapabilities capabilities)

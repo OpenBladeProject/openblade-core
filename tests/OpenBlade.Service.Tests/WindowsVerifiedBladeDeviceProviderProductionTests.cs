@@ -1506,8 +1506,9 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
 
     // Shared with RZ09-0581 and RZ09-0528: a core write whose restore failed leaves
     // the driver changed while unmanaged offsets read as null before and after.
-    // That must not be reported as "prior state remained active", and the earlier
-    // default-reset confirmation must not let a later disable skip its reset.
+    // That must not be reported as "prior state remained active"; the follow-up read
+    // reports the real offsets, and the earlier default-reset confirmation must not
+    // let a later disable skip its reset.
     [Fact]
     public async Task IndeterminateGpuOnlyWrite_NullOffsetsAreNotUnchangedEvidence()
     {
@@ -1552,8 +1553,9 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.False(outcome.ReadbackMatched);
         Assert.Equal(WriteSubmissionState.Indeterminate, outcome.WriteSubmissionState);
         Assert.DoesNotContain("remained active", outcome.Result.Message, StringComparison.Ordinal);
-        Assert.Null(outcome.Readback?.GpuClockOffsets);
-        Assert.Equal(GpuClockOffsetManagementState.Unknown, managed.GpuClockOffsetManagementState);
+        // The follow-up read resolves the uncertain submission from the driver.
+        Assert.Equal(new GpuClockOffsetSettings(200, 0), outcome.Readback?.GpuClockOffsets?.Current);
+        Assert.Equal(GpuClockOffsetManagementState.Managed, managed.GpuClockOffsetManagementState);
 
         gpu.SetFailure = null;
         ScopedApplyOutcome disable = await coordinator.ApplyPerformanceOutcomeAsync(
@@ -3627,7 +3629,7 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
     {
         private readonly Queue<FakeProductionPort> ports = new(ports);
 
-        public DeviceCapabilities Capabilities { get; } = capabilities;
+        public DeviceCapabilities Capabilities { get; set; } = capabilities;
 
         public int OpenCount { get; private set; }
 

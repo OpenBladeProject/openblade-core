@@ -13,12 +13,16 @@ internal static class WriteConfirmationPolicy
         MatchWithoutGpuManagementState(subsystem, expectation, confirmed) is null;
 
     // A null management state means the caller supplied no GPU knowledge, so the
-    // GPU half stays Unavailable. With the device's management state, a disabled
-    // target needs explicit reset evidence. Any other GPU half without a managed
-    // offset observation is GpuClockOffsetsUnconfirmed: every non-GPU field has
-    // already matched, and the caller retires the GPU half instead of waiting for
-    // an NVIDIA reading that may never come (an idle dGPU, a lost confirmation or
-    // a paired write whose NVML step never ran). It never counts as a match.
+    // GPU half stays Unavailable. An uncertain NVML submission also stays
+    // Unavailable until a driver read resolves it into real offsets. With the
+    // device's management state, a disabled target needs explicit reset evidence.
+    // Any other GPU half without a managed offset observation is
+    // GpuClockOffsetsUnconfirmed: every non-GPU field has already matched, NVML
+    // either never ran or left no uncertain submission, and the caller retires
+    // the GPU half instead of waiting for an NVIDIA reading that may never come
+    // (an idle dGPU, a lost confirmation or a paired write whose NVML step never
+    // ran). It never counts as a match. Manual fan modes hide the preset, but
+    // their GPU half is judged the same way.
     internal static PendingConfirmationResult Match(
         DeviceSubsystem subsystem,
         WriteConfirmationExpectation expectation,
@@ -26,6 +30,7 @@ internal static class WriteConfirmationPolicy
         GpuClockOffsetManagementState? gpuClockOffsetManagementState) =>
         MatchWithoutGpuManagementState(subsystem, expectation, confirmed)
         ?? (gpuClockOffsetManagementState is null
+                or GpuClockOffsetManagementState.SubmissionUncertain
             ? PendingConfirmationResult.Unavailable
             : expectation.Target.GpuClockTuning is not { Enabled: false }
                 ? PendingConfirmationResult.GpuClockOffsetsUnconfirmed
@@ -150,23 +155,22 @@ internal static class WriteConfirmationPolicy
         }
         FanMode desiredFans = pending.Target.FanControl?.Mode
             ?? pending.Target.Fans.Value;
-        if (DeviceSubsystemOrder.IsManualFanMode(desiredFans)
-            && DeviceSubsystemOrder.IsManualFanMode(confirmed.Fans))
+        // Manual thermal modes do not expose a separate performance preset. This is
+        // the same semantic match used by ControlCoordinator, which still compares
+        // the GPU half below.
+        if (!(DeviceSubsystemOrder.IsManualFanMode(desiredFans)
+            && DeviceSubsystemOrder.IsManualFanMode(confirmed.Fans)))
         {
-            // Manual thermal modes do not expose a separate performance preset.
-            // This is the same semantic match used by ControlCoordinator.
-            return PendingConfirmationResult.Match;
-        }
-
-        if (confirmed.Performance is null)
-        {
-            return PendingConfirmationResult.Unavailable;
-        }
-        if (confirmed.Performance != pending.Target.Performance.Value
-            || confirmed.Performance == PerformancePreset.Custom
-                && confirmed.CustomPerformance != pending.Target.CustomPerformance)
-        {
-            return PendingConfirmationResult.Mismatch;
+            if (confirmed.Performance is null)
+            {
+                return PendingConfirmationResult.Unavailable;
+            }
+            if (confirmed.Performance != pending.Target.Performance.Value
+                || confirmed.Performance == PerformancePreset.Custom
+                    && confirmed.CustomPerformance != pending.Target.CustomPerformance)
+            {
+                return PendingConfirmationResult.Mismatch;
+            }
         }
 
         if (pending.Target.GpuClockTuning is { } tuning)

@@ -97,9 +97,8 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
         Assert.Equal(3000, resumed.Memory.MaximumMegahertz);
     }
 
-    // A core write lands, the memory write fails and so does the restore. The
-    // offsets are unmanaged and read as null before and after, which is not
-    // evidence that the prior state remained active.
+    // A core write lands, the memory write fails and so does the restore. Null
+    // unmanaged offsets are not evidence that the prior state remained active.
     [Theory]
     [InlineData(0x02C7)]
     [InlineData(0x02C5)]
@@ -121,7 +120,117 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
         Assert.False(outcome.ReadbackMatched);
         Assert.Equal(WriteSubmissionState.Indeterminate, outcome.WriteSubmissionState);
         Assert.DoesNotContain("remained active", outcome.Result.Message, StringComparison.Ordinal);
-        Assert.Null(outcome.Readback?.GpuClockOffsets);
+        // The follow-up read queries the driver once and reports the partial write.
+        Assert.Equal(new GpuClockOffsetSettings(200, 0), outcome.Readback?.GpuClockOffsets?.Current);
+        Assert.Equal(GpuClockOffsetManagementState.Managed,
+            ((IGpuClockOffsetManagementDevice)device).GpuClockOffsetManagementState);
+    }
+
+    // The uncertain partial enable is resolved by one driver read even while the
+    // dGPU is idle, so the pending write is judged from the real offsets.
+    [Theory]
+    [InlineData(0x02C7, false)]
+    [InlineData(0x02C7, true)]
+    [InlineData(0x02C5, false)]
+    [InlineData(0x02C5, true)]
+    public async Task GpuOffsets_UncertainEnableIsResolvedByOneDriverRead(int productId, bool gpuActive)
+    {
+        GpuOffsetHarness harness = CreateGpuOffsetHarness(productId, "NVIDIA GeForce RTX 5080 Laptop GPU");
+        using WindowsVerifiedBladeDeviceProvider provider = harness.Provider;
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        harness.Activity.Active = gpuActive;
+        int coreWrites = 0;
+        harness.Api.SetStatus = (type, _) => type == NvmlClockType.Graphics && ++coreWrites == 1 ? 0 : 999;
+        int queries = harness.Api.QueryCount;
+
+        ScopedApplyOutcome outcome = await new ControlCoordinator(device).ApplyGpuClockTuningOutcomeAsync(
+            new GpuClockTuningSettings(true, new GpuClockOffsetSettings(200, 500)), CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.False(outcome.ConfirmationUnavailable);
+        Assert.Equal(new GpuClockOffsetSettings(200, 0), outcome.Readback?.GpuClockOffsets?.Current);
+        Assert.True(harness.Api.QueryCount > queries);
+        Assert.Equal(GpuClockOffsetManagementState.Managed,
+            ((IGpuClockOffsetManagementDevice)device).GpuClockOffsetManagementState);
+    }
+
+    // While paused the managed read still queries an active dGPU: an unchanged
+    // reading keeps the cached policy-clipped envelope, and a changed one drops
+    // the cached confirmation instead of reporting stale offsets.
+    [Theory]
+    [InlineData(0x02C7)]
+    [InlineData(0x02C5)]
+    public async Task GpuOffsets_PausedReadRefreshesCurrentAndDropsAChangedConfirmation(int productId)
+    {
+        GpuOffsetHarness harness = CreateGpuOffsetHarness(productId, "NVIDIA GeForce RTX 5070 Laptop GPU");
+        using WindowsVerifiedBladeDeviceProvider provider = harness.Provider;
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        var applied = new GpuClockOffsetSettings(300, 1000);
+        await device.SetGpuClockOffsetsAsync(applied, CancellationToken.None);
+        await PauseExperimentalWritesAsync(productId, harness, device);
+        Assert.True(provider.IsExperimentalWritesPaused);
+
+        int queries = harness.Api.QueryCount;
+        GpuClockOffsetCapabilities unchanged = Assert.IsType<GpuClockOffsetCapabilities>(
+            (await device.ReadStateAsync(CancellationToken.None)).GpuClockOffsets);
+        Assert.True(harness.Api.QueryCount > queries);
+        Assert.Equal(applied, unchanged.Current);
+        Assert.Equal((400, 3000), (unchanged.Core.MaximumMegahertz, unchanged.Memory.MaximumMegahertz));
+
+        harness.Api.Core = 100;
+        Assert.Null((await device.ReadStateAsync(CancellationToken.None)).GpuClockOffsets);
+        harness.Activity.Active = false;
+        Assert.Null((await device.ReadStateAsync(CancellationToken.None)).GpuClockOffsets);
+    }
+
+    // An uncertain submission whose follow-up read failed is resolved after a
+    // pause with the model's admitted envelope, and judged against its target.
+    [Theory]
+    [InlineData(0x02C7)]
+    [InlineData(0x02C5)]
+    public async Task GpuOffsets_PausedUncertainSubmissionResolvesWithinTheAdmittedEnvelope(int productId)
+    {
+        GpuOffsetHarness harness = CreateGpuOffsetHarness(productId, "NVIDIA GeForce RTX 5080 Laptop GPU");
+        using WindowsVerifiedBladeDeviceProvider provider = harness.Provider;
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        var managed = (IGpuClockOffsetManagementDevice)device;
+        ConfirmedDeviceState before = await device.ReadStateAsync(CancellationToken.None);
+        int coreWrites = 0;
+        harness.Api.SetStatus = (type, _) =>
+        {
+            harness.Api.QueryFails = true;
+            return type == NvmlClockType.Graphics && ++coreWrites == 1 ? 0 : 999;
+        };
+        var tuning = new GpuClockTuningSettings(true, new GpuClockOffsetSettings(300, 1000));
+
+        ScopedApplyOutcome outcome = await new ControlCoordinator(device).ApplyGpuClockTuningOutcomeAsync(
+            tuning, CancellationToken.None);
+        harness.Api.SetStatus = null;
+
+        Assert.True(outcome.ConfirmationUnavailable);
+        Assert.Equal(GpuClockOffsetManagementState.SubmissionUncertain, managed.GpuClockOffsetManagementState);
+        await PauseExperimentalWritesAsync(productId, harness, device);
+        harness.Api.QueryFails = false;
+
+        ConfirmedDeviceState read = await device.ReadStateAsync(CancellationToken.None);
+
+        GpuClockOffsetCapabilities resolved = Assert.IsType<GpuClockOffsetCapabilities>(read.GpuClockOffsets);
+        Assert.Equal(new GpuClockOffsetSettings(300, 0), resolved.Current);
+        Assert.Equal((400, 3000), (resolved.Core.MaximumMegahertz, resolved.Memory.MaximumMegahertz));
+        Assert.Equal(GpuClockOffsetManagementState.Managed, managed.GpuClockOffsetManagementState);
+        var desired = new DesiredDeviceState(
+            new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+            new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+            new ResolvedSetting<LightingSettings>(LightingSettingsFactory.Off(), SettingValueSource.PowerProfile),
+            new DesiredBatteryState(BatteryPolicy.Create(80), true, false))
+        {
+            GpuClockTuning = tuning,
+        };
+        Assert.Equal(PendingConfirmationResult.Mismatch, WriteConfirmationPolicy.Match(
+            DeviceSubsystem.Performance,
+            new WriteConfirmationExpectation(desired, before, GpuClockTuningOnly: true),
+            read,
+            managed.GpuClockOffsetManagementState));
     }
 
     [Theory]
@@ -217,10 +326,12 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
     private sealed class FakeLaptopGpuNvml : INvidiaNvmlClockOffsetApi
     {
         public string DeviceName { get; set; } = string.Empty;
-        public int Core { get; private set; }
-        public int Memory { get; private set; }
+        public int Core { get; set; }
+        public int Memory { get; set; }
         public List<(NvmlClockType Type, int Value)> Writes { get; } = [];
         public Func<NvmlClockType, int, int>? SetStatus { get; set; }
+        public bool QueryFails { get; set; }
+        public int QueryCount { get; private set; }
 
         public int Initialize() => 0;
         public int Shutdown() => 0;
@@ -246,6 +357,11 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
 
         public int GetClockOffsets(nint device, ref NvmlClockOffset info)
         {
+            QueryCount++;
+            if (QueryFails)
+            {
+                return 999;
+            }
             bool core = info.Type == NvmlClockType.Graphics;
             info.MinimumMegahertz = core ? -1000 : -4000;
             info.MaximumMegahertz = core ? 1000 : 12000;

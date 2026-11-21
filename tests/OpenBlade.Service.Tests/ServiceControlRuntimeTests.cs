@@ -14674,7 +14674,10 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 {
                     Target = desired with { FanControl = FanControlSettings.FromLegacy(FanMode.Maximum) },
                 };
+                // The hidden preset is skipped; the disabled GPU half still needs
+                // the device's reset evidence.
                 confirmed = confirmed with { Fans = FanMode.Fixed, Performance = null };
+                context.Device.GpuClockOffsetManagementState = GpuClockOffsetManagementState.ResetConfirmed;
                 expected = PendingConfirmationResult.Match;
                 break;
             case "unknown-performance":
@@ -14727,7 +14730,7 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(expected, Assert.IsType<PendingConfirmationResult>(result));
         Assert.Equal(
-            readsBefore + (scenario == "reset-evidence-required" ? 1 : 0),
+            readsBefore + (scenario is "reset-evidence-required" or "manual" ? 1 : 0),
             context.Device.GpuClockOffsetManagementStateReadCalls);
     }
 

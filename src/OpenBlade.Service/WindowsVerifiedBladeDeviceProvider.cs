@@ -496,6 +496,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         // reports NVIDIA GPU activity.
         private GpuClockOffsetManagementState gpuClockOffsetManagementState;
         private GpuClockOffsetCapabilities? confirmedManagedGpuClockOffsets;
+        // An uncertain NVML submission records what it tried and the state it
+        // replaced, so the resolving driver read can restore exact reset evidence.
+        // The first resolving query ignores the activity gate; a failed one is
+        // retried only while Windows reports NVIDIA GPU activity.
+        private bool uncertainGpuClockOffsetReset;
+        private GpuClockOffsetManagementState uncertainGpuClockOffsetPriorState;
+        private bool uncertainGpuClockOffsetUngatedQueryAttempted;
         internal bool HasOwnedKeyTriggeredRenderer
         {
             get
@@ -2062,9 +2069,23 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 : RejectProductionWrite("The requested fan mode is not admitted.");
 
         private GpuClockOffsetCapabilities? ApplyGpuPolicy(
-            GpuClockOffsetCapabilities? driver)
+            GpuClockOffsetCapabilities? driver) =>
+            ApplyGpuPolicy(driver, batteryFactory.Capabilities.GpuOverclock);
+
+        // Clipping envelope for a read-only observation. Paused experimental writes
+        // withdraw the published policy; an observation may still be clipped to the
+        // exact model's admitted envelope. This never admits a write.
+        private GpuOverclockCapabilities? ObservationGpuPolicy() =>
+            batteryFactory.Capabilities.GpuOverclock is { IsWellFormed: true } current
+                ? current
+                : batteryFactory is ExperimentalBladeFactory { IsWritesPaused: true } experimental
+                    ? experimental.PotentialCapabilities.GpuOverclock
+                    : null;
+
+        private static GpuClockOffsetCapabilities? ApplyGpuPolicy(
+            GpuClockOffsetCapabilities? driver,
+            GpuOverclockCapabilities? policy)
         {
-            GpuOverclockCapabilities? policy = batteryFactory.Capabilities.GpuOverclock;
             // Without an admitted policy envelope there is no capability to publish;
             // the raw driver range (for example +1000 MHz core) is never offered.
             if (driver is null || policy?.IsWellFormed != true)
@@ -2115,8 +2136,16 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
             GpuClockOffsetCapabilities? initialConfirmed;
             lock (gpuClockOffsetManagementSync)
             {
-                if (gpuClockOffsetManagementState !=
-                    GpuClockOffsetManagementState.Managed)
+                if (gpuClockOffsetManagementState ==
+                    GpuClockOffsetManagementState.SubmissionUncertain
+                    && !uncertainGpuClockOffsetUngatedQueryAttempted)
+                {
+                    uncertainGpuClockOffsetUngatedQueryAttempted = true;
+                    return ResolveUncertainGpuClockOffsetSubmissionCore();
+                }
+                if (gpuClockOffsetManagementState is not
+                    (GpuClockOffsetManagementState.Managed
+                        or GpuClockOffsetManagementState.SubmissionUncertain))
                 {
                     return null;
                 }
@@ -2129,13 +2158,20 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 bool? gpuActive = await gpuActivitySource.IsActiveAsync(cancellationToken)
                     .ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
-                // Paused experimental writes withdraw the policy envelope. A refresh
-                // then has no envelope to clip to, so keep the confirmation taken
-                // under the policy rather than publishing the raw driver range.
+                // Paused experimental writes withdraw the policy envelope. A paused
+                // refresh keeps the ranges confirmed under the policy and only
+                // compares the current offsets, never publishing the raw driver range.
                 bool policyAdmitted = batteryFactory.Capabilities.GpuOverclock?.IsWellFormed == true;
 
                 lock (gpuClockOffsetManagementSync)
                 {
+                    if (gpuClockOffsetManagementState ==
+                        GpuClockOffsetManagementState.SubmissionUncertain)
+                    {
+                        return gpuActive is true
+                            ? ResolveUncertainGpuClockOffsetSubmissionCore()
+                            : null;
+                    }
                     if (gpuClockOffsetManagementState !=
                         GpuClockOffsetManagementState.Managed)
                     {
@@ -2144,7 +2180,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
 
                     GpuClockOffsetCapabilities? confirmed =
                         confirmedManagedGpuClockOffsets;
-                    if (confirmed != initialConfirmed || gpuActive is not true || !policyAdmitted)
+                    if (confirmed != initialConfirmed || gpuActive is not true)
                     {
                         return confirmed;
                     }
@@ -2152,6 +2188,17 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     GpuClockOffsetCapabilities? observed = gpuClockOffsets.Query();
                     if (observed is null)
                     {
+                        return confirmed;
+                    }
+
+                    if (!policyAdmitted)
+                    {
+                        // A changed driver value invalidates the cached confirmation.
+                        if (confirmed is not null && observed.Current != confirmed.Current)
+                        {
+                            confirmedManagedGpuClockOffsets = null;
+                            return null;
+                        }
                         return confirmed;
                     }
 
@@ -2202,10 +2249,19 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                 {
                     // The driver may hold offsets that nothing confirmed, for example a
                     // core write followed by a failed restore. No earlier managed or
-                    // default-reset confirmation survives that, so a later disable
-                    // cannot reuse a stale reset and a later read cannot report stale
-                    // offsets.
-                    InvalidateGpuClockOffsetConfirmationCore();
+                    // default-reset confirmation survives that: a later disable cannot
+                    // reuse a stale reset and a later read cannot report stale offsets.
+                    // The submission stays uncertain until a driver read resolves it.
+                    if (gpuClockOffsetManagementState !=
+                        GpuClockOffsetManagementState.SubmissionUncertain)
+                    {
+                        uncertainGpuClockOffsetPriorState = gpuClockOffsetManagementState;
+                    }
+                    uncertainGpuClockOffsetReset = !retainManagement;
+                    uncertainGpuClockOffsetUngatedQueryAttempted = false;
+                    gpuClockOffsetManagementState =
+                        GpuClockOffsetManagementState.SubmissionUncertain;
+                    confirmedManagedGpuClockOffsets = null;
                     throw;
                 }
                 gpuClockOffsetManagementState = retainManagement
@@ -2215,6 +2271,48 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     ? ApplyGpuPolicy(confirmed)
                     : null;
             }
+        }
+
+        // Caller holds gpuClockOffsetManagementSync. One read-only driver query
+        // resolves an uncertain NVML submission into the state the driver shows.
+        // Returns the managed observation, or null when the query fails, the reading
+        // is outside the admitted envelope, or a default reset is confirmed.
+        private GpuClockOffsetCapabilities? ResolveUncertainGpuClockOffsetSubmissionCore()
+        {
+            GpuClockOffsetCapabilities? observed;
+            try
+            {
+                observed = gpuClockOffsets.Query();
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                return null;
+            }
+            if (observed is null)
+            {
+                return null;
+            }
+
+            if (observed.Current == GpuClockOffsetSettings.Default
+                && (uncertainGpuClockOffsetReset
+                    || uncertainGpuClockOffsetPriorState is
+                        GpuClockOffsetManagementState.ResetConfirmed
+                        or GpuClockOffsetManagementState.RelinquishedDefaultConfirmed))
+            {
+                // The driver is at its defaults: the reset landed, or an uncertain
+                // write left the confirmed default in place.
+                gpuClockOffsetManagementState = uncertainGpuClockOffsetReset
+                    ? GpuClockOffsetManagementState.ResetConfirmed
+                    : uncertainGpuClockOffsetPriorState;
+                confirmedManagedGpuClockOffsets = null;
+                return null;
+            }
+
+            // OpenBlade submitted these offsets, so it owns what the driver now holds:
+            // a disable resets them and relinquishment releases them.
+            gpuClockOffsetManagementState = GpuClockOffsetManagementState.Managed;
+            confirmedManagedGpuClockOffsets = ApplyGpuPolicy(observed, ObservationGpuPolicy());
+            return confirmedManagedGpuClockOffsets;
         }
 
         private bool HasConfirmedDefaultReset()
