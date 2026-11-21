@@ -182,9 +182,14 @@ impl Lease {
         }
     }
 
-    /// The rule whose overrides apply, found as managed `GetApplicationOverride` finds it.
+    /// The rule whose overrides apply, found as managed `GetApplicationOverride`
+    /// finds it. Managed trusts the id because `UpdateProfiles` prunes the pair
+    /// on every save; a caller here may change the rules without [`Self::update`],
+    /// so the pair must still be retained, or no rule's overrides apply.
     pub(crate) fn rule<'a>(&self, rules: &'a [Value]) -> Option<&'a Value> {
-        let active = self.context.active()?;
+        let active = self
+            .context
+            .retained(rules.iter().filter_map(rule), same_path)?;
         rules
             .iter()
             .find(|value| rule(value).is_some_and(|rule| rule.supplies(active.id)))
@@ -532,6 +537,24 @@ mod tests {
             state.report(&report(ID, 3, Some(PATH)), now).1,
             ReportEffect::Changed.message()
         );
+    }
+
+    #[test]
+    fn a_rule_changed_without_an_update_supplies_no_overrides() {
+        let mut state = State::new(
+            serde_json::from_str::<Value>(crate::wire::CURRENT_FIXTURE).unwrap()["status"].clone(),
+        );
+        state.report(&report(ID, 1, Some(PATH)), Instant::now());
+        assert!(state.selected_rule().is_some());
+        // A writer that skipped `Lease::update` cannot hand the active id's
+        // overrides to a rule that no longer holds the reported path.
+        let rule = &mut state.status["profiles"]["applicationProfiles"][0];
+        rule["executablePath"] = r"C:\Games\Other.exe".into();
+        assert!(state.selected_rule().is_none());
+        let rule = &mut state.status["profiles"]["applicationProfiles"][0];
+        rule["executablePath"] = PATH.into();
+        rule["enabled"] = false.into();
+        assert!(state.selected_rule().is_none());
     }
 
     #[test]
