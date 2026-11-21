@@ -4757,6 +4757,119 @@ async fn fan_recipes_run_within_the_recipe_budget_and_refuse_one_they_cannot_fin
         let _ = r.source.lock().await.drain().await;
     }
 }
+/// A fan rig on adapter reading `actual` (Windows agrees by default) with an
+/// optional saved persistent performance override.
+#[cfg(feature = "service-fan-mutation-v2")]
+fn saved_override_fan_rig(actual: u8, selector: u8, performance: Option<i32>) -> Rig {
+    let files = MemoryFiles::default();
+    files.profiles(1);
+    if let Some(performance) = performance {
+        files.put(
+            "manual-overrides.json",
+            json!({"schemaVersion":10,"overrides":{"performance":performance,"fans":null,"fanControl":null,"lighting":null,"customPerformance":null,"gpuClockTuning":null}}),
+        );
+    }
+    let r = Rig::new(files);
+    *r.custody.origin_for_fan.lock().unwrap() = Some(r.origin.clone());
+    {
+        let mut s = r.port.state.lock().unwrap();
+        s.selectors = [selector; 2];
+        s.fans = [0; 2];
+        s.actual = actual;
+    }
+    if actual == 0 {
+        r.metadata.store(1, Ordering::Release);
+    }
+    r
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn fan_requests_managed_rejects_store_nothing_and_submit_nothing() {
+    // Managed `SetFanOverrideCoreAsync` on classified power, before the
+    // override is persisted: `FanControlPowerPolicy.IsAvailable` for a
+    // requested mode, then `ValidateThermalOverrideCombination` with the saved
+    // performance override (not filtered by source eligibility) or the
+    // profile's preset, and the requested mode or the profile's fans.
+    const NOT_VALID: &str = "The performance preset is not valid for this power source.";
+    const UNAVAILABLE: &str =
+        "The selected fan mode is unavailable on this model and power source.";
+    const COMBINATION: &str =
+        "The performance and fan combination is not supported by the active validation policy.";
+    let cases = [
+        // Battery with a saved Silent: every request, a clear included.
+        (0, 6, Some(0), Some(1), NOT_VALID),
+        (0, 6, Some(0), Some(3), NOT_VALID),
+        (0, 6, Some(0), Some(0), NOT_VALID),
+        (0, 6, Some(0), None, NOT_VALID),
+        // The power policy runs first.
+        (0, 6, Some(0), Some(2), UNAVAILABLE),
+        (0, 6, None, Some(2), UNAVAILABLE),
+        // AC with a saved Battery Saver: ManualCurve.
+        (15, 3, Some(3), Some(2), COMBINATION),
+    ];
+    for (actual, selector, saved, mode, message) in cases {
+        let r = saved_override_fan_rig(actual, selector, saved);
+        r.get().await;
+        let before = r.files.read("manual-overrides.json").unwrap();
+        let out = r.request(fan_request(250, mode, 3700)).await;
+        let case = format!("{actual} {saved:?} {mode:?}");
+        assert_eq!(out["result"]["status"], 3, "{case}: {out}");
+        assert_eq!(
+            out["result"]["message"],
+            format!("The requested intent was rejected: {message}"),
+            "{case}"
+        );
+        assert_eq!(
+            r.files.read("manual-overrides.json").unwrap(),
+            before,
+            "{case}"
+        );
+        assert_eq!(r.port.state.lock().unwrap().writes, 0, "{case}");
+        assert!(fan_rows(&r).is_empty(), "{case}");
+        r.origin.stop();
+        let _ = r.source.lock().await.drain().await;
+    }
+    // Managed admits these: Fixed on battery without a saved override, and
+    // Fixed on AC with a saved Battery Saver. Both are stored; native has no
+    // fan recipe under the battery selectors, so neither is applied.
+    for (actual, selector, saved) in [(0, 6, None), (15, 3, Some(3))] {
+        let r = saved_override_fan_rig(actual, selector, saved);
+        r.get().await;
+        let out = r.request(fan_request(251, Some(1), 3700)).await;
+        assert_eq!(out["result"]["status"], 2, "{actual} {saved:?}: {out}");
+        assert_eq!(r.port.state.lock().unwrap().writes, 0);
+        assert_eq!(
+            r.files.document("manual-overrides.json")["overrides"]["fans"],
+            1
+        );
+        r.origin.stop();
+        let _ = r.source.lock().await.drain().await;
+    }
+}
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn a_fan_request_on_a_battery_reading_windows_does_not_confirm_is_blocked() {
+    // Managed maps an adapter Battery reply under Windows AC or unknown power
+    // to ExternalUnknown and blocks the request before any intent is stored.
+    for windows in [Some(false), None] {
+        for mode in [Some(1), None] {
+            let r = saved_override_fan_rig(0, 6, None);
+            r.port.state.lock().unwrap().windows_on_battery = Some(windows);
+            r.get().await;
+            let out = r.request(fan_request(252, mode, 3700)).await;
+            assert_eq!(out["result"]["status"], 2, "{windows:?} {mode:?}: {out}");
+            assert_eq!(
+                out["result"]["message"],
+                crate::installed::readiness::thermal_mutation::UNCLASSIFIED_BLOCKED
+            );
+            assert!(r.files.read("manual-overrides.json").unwrap().is_none());
+            assert_eq!(r.port.state.lock().unwrap().writes, 0);
+            assert!(fan_rows(&r).is_empty());
+            r.origin.stop();
+            let _ = r.source.lock().await.drain().await;
+        }
+    }
+}
 #[cfg(feature = "service-temporary-charge-v1")]
 #[tokio::test]
 async fn temporary_charge_runs_within_its_request_budget_at_slow_transfers() {
@@ -5644,8 +5757,12 @@ async fn fan_foreign_selector_close_journals_match_the_shared_vector() {
             r.port.state.lock().unwrap().custom_levels = [1, 2];
             assert_eq!(journal(&r), v["owned"].as_str().unwrap());
             if !stop {
+                // On battery the saved persistent Performance override
+                // rejects the explicit request; Stop then closes the owner
+                // with the same bytes.
                 let out = r.request(fan_request(232, Some(0), 3700)).await;
-                assert_eq!(out["result"]["status"], 1, "{out}");
+                let status = if now == 0 { 3 } else { 1 };
+                assert_eq!(out["result"]["status"], status, "{out}");
             }
             r.origin.stop();
             r.stop().await;
@@ -5684,17 +5801,22 @@ const POWER_CHANGES: [(u8, u8, [u8; 2]); 6] = [
 /// The exact reply for each `POWER_CHANGES` case. The owner recorded Balanced
 /// and the saved preset is Performance: it is claimed only where Performance is
 /// confirmed, a different firmware selector is named, and the unapplied preset
-/// is reported where its class selects one: the battery profile's Battery
-/// Saver on battery, claimed where firmware already reports it.
+/// is reported where its class selects one. On battery the saved persistent
+/// Performance override fails managed `ValidateThermalOverrideCombination`, so
+/// the explicit request is rejected before anything is stored or read.
 #[cfg(feature = "service-fan-mutation-v2")]
 const POWER_CHANGE_REPLIES: [&str; 6] = [
     "Fans and Performance performance already matched the requested state; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Performance.",
     "Fans and Performance performance already matched the requested state; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Performance.",
-    "Fans and BatterySaver performance already matched the requested state; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Battery Saver.",
-    "Automatic mode independently observed; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Battery Balanced. The saved BatterySaver performance intent was not applied: submit a new performance request to apply it.",
-    "Automatic mode independently observed; no fan setter was submitted and no ownership was established. The saved BatterySaver performance intent was not applied: submit a new performance request to apply it.",
+    BATTERY_OVERRIDE_REJECTED,
+    BATTERY_OVERRIDE_REJECTED,
+    BATTERY_OVERRIDE_REJECTED,
     "Automatic mode independently observed; no fan setter was submitted and no ownership was established. OpenBlade's earlier fan change under Balanced was released without a fan setter: firmware already reports Automatic fans under Silent. The saved Performance performance intent was not applied: submit a new performance request to apply it.",
 ];
+/// A fan request on battery while a saved persistent AC preset remains.
+#[cfg(feature = "service-fan-mutation-v2")]
+const BATTERY_OVERRIDE_REJECTED: &str =
+    "The requested intent was rejected: The performance preset is not valid for this power source.";
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
 async fn fan_automatic_after_a_power_change_or_on_battery_settles_without_a_setter() {
@@ -5702,8 +5824,19 @@ async fn fan_automatic_after_a_power_change_or_on_battery_settles_without_a_sett
         let r = power_change_rig(start, now, observed, [0; 2]).await;
         let closed = owner_row(&r, 51);
         let out = r.request(fan_request(232, Some(0), 3700)).await;
-        assert_eq!(out["result"]["status"], 1, "{start}->{now} {out}");
         assert_eq!(out["result"]["message"], reply, "{start}->{now}");
+        if now == 0 {
+            // Rejected: the owner and its row stay; Stop settles it below.
+            assert_eq!(out["result"]["status"], 3, "{start}->{now} {out}");
+            assert_eq!(*fan_rows(&r).last().unwrap(), owner_row(&r, 30));
+            assert!(r.storage.outstanding_fan());
+            assert_eq!(r.port.state.lock().unwrap().writes, 4);
+            r.origin.stop();
+            r.stop().await;
+            assert_eq!(*fan_rows(&r).last().unwrap(), closed);
+            continue;
+        }
+        assert_eq!(out["result"]["status"], 1, "{start}->{now} {out}");
         // The row keeps the owner's recorded source, not the current class.
         assert_eq!(*fan_rows(&r).last().unwrap(), closed);
         assert_eq!(closed["fan"]["source"], if start == 15 { 0 } else { 2 });
@@ -5741,11 +5874,17 @@ async fn fan_power_change_close_refuses_an_ambiguous_readback() {
         assert_eq!(*fan_rows(&r).last().unwrap(), owned);
         assert!(r.storage.outstanding_fan());
         assert_eq!(r.port.state.lock().unwrap().writes, 4);
-        // Once both channels agree, the same request settles without a setter.
+        // Once both channels agree, the same request settles without a setter;
+        // on battery the saved Performance override rejects it instead.
         r.port.state.lock().unwrap().selectors = observed;
         let out = r.request(fan_request(233, Some(0), 3700)).await;
-        assert_eq!(out["result"]["status"], 1, "{start}->{now} {out}");
-        assert_eq!(*fan_rows(&r).last().unwrap(), closed);
+        if now == 0 {
+            assert_eq!(out["result"]["message"], BATTERY_OVERRIDE_REJECTED);
+            assert_eq!(*fan_rows(&r).last().unwrap(), owned);
+        } else {
+            assert_eq!(out["result"]["status"], 1, "{start}->{now} {out}");
+            assert_eq!(*fan_rows(&r).last().unwrap(), closed);
+        }
         assert_eq!(r.port.state.lock().unwrap().writes, 4);
         r.origin.stop();
         r.stop().await;
@@ -5797,8 +5936,8 @@ async fn fan_manual_readback_after_a_power_change_keeps_its_existing_outcomes() 
             assert!(!r.storage.pending(), "{now} {event}");
             assert_eq!(r.port.state.lock().unwrap().writes, 4);
         }
-        // An explicit return writes its pair on the limited adapter and has no
-        // battery recipe.
+        // An explicit return writes its pair on the limited adapter. On battery
+        // the saved persistent Performance override rejects it before storage.
         let r = power_change_rig(15, now, [0; 2], [1; 2]).await;
         let out = r.request(fan_request(232, Some(0), 3700)).await;
         if now == 10 {
@@ -5809,7 +5948,7 @@ async fn fan_manual_readback_after_a_power_change_keeps_its_existing_outcomes() 
             r.origin.stop();
             r.stop().await;
         } else {
-            assert_eq!(out["result"]["status"], 2, "{out}");
+            assert_eq!(out["result"]["message"], BATTERY_OVERRIDE_REJECTED);
             assert_eq!(r.port.state.lock().unwrap().writes, 4);
             assert_eq!(*fan_rows(&r).last().unwrap(), owner_row(&r, 30));
             assert!(r.storage.outstanding_fan());
@@ -5947,8 +6086,15 @@ async fn fan_stop_settles_after_a_power_or_session_event_without_a_setter() {
             let closed = owner_row(&r, 51);
             if explicit {
                 let out = r.request(fan_request(232, Some(0), 3700)).await;
-                assert_eq!(out["result"]["status"], 1, "{name} {out}");
-                assert_eq!(*fan_rows(&r).last().unwrap(), closed, "{name}");
+                if now == 0 {
+                    // The saved persistent Performance override rejects it;
+                    // Stop still settles the owner.
+                    assert_eq!(out["result"]["message"], BATTERY_OVERRIDE_REJECTED);
+                    assert_eq!(*fan_rows(&r).last().unwrap(), owner_row(&r, 30));
+                } else {
+                    assert_eq!(out["result"]["status"], 1, "{name} {out}");
+                    assert_eq!(*fan_rows(&r).last().unwrap(), closed, "{name}");
+                }
             }
             r.origin.stop();
             r.stop().await;

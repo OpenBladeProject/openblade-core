@@ -777,20 +777,37 @@ impl RequestPermit {
         self.storage.observe_power(power, generation)
     }
 }
+/// Whether a battery reading of the adapter contradicts Windows. Managed
+/// `ResolveCurrentPowerSourceAsync` returns Battery only when Windows itself
+/// reports battery; with Windows AC or unknown it samples the adapter and maps
+/// a Battery reply to ExternalUnknown, which `ExecuteScopedMutationAsync`
+/// blocks (`PublishScopedUnavailable`, `UNCLASSIFIED_BLOCKED`) before any
+/// intent is stored. The battery classification never became current there,
+/// so the caller must also not expire temporaries by observing it.
+pub(super) fn battery_reading_contradicts_windows(power: i32, fresh: &dyn Fresh) -> bool {
+    power == 1 && fresh.on_battery() != Some(true)
+}
+/// Whether class `power` is managed's `Automation.PowerSource`: a battery
+/// reading with Windows battery, or an external class with Windows AC.
+pub(super) fn class_agrees_with_windows(power: i32, fresh: &dyn Fresh) -> bool {
+    matches!(
+        (power, fresh.on_battery()),
+        (1, Some(true)) | (0 | 2, Some(false))
+    )
+}
 impl RequestPermit {
     /// Managed `ValidateThermalOverrideCombination` on classified power, run
     /// before the override is stored: the requested preset (or the active
     /// power profile's, for a clear) with the saved fan override (or the
     /// profile's fans) must pass `ProfileSetValidator
     /// .ValidatePerformanceFanCombination` for that source. Managed's power
-    /// source is the class only where it agrees with Windows; otherwise the
-    /// recipe's own power fence refuses the request without storing it.
+    /// source is the class only where it agrees with Windows: a contradicting
+    /// battery reading is blocked before this check
+    /// (`battery_reading_contradicts_windows`), and an external reading under
+    /// Windows battery is refused by the recipe's own power fence without
+    /// storing anything.
     fn combination_rejected(&self, power: i32) -> io::Result<Option<String>> {
-        let agrees = matches!(
-            (power, self.fresh.on_battery()),
-            (1, Some(true)) | (0 | 2, Some(false))
-        );
-        if !agrees {
+        if !class_agrees_with_windows(power, self.fresh.as_ref()) {
             return Ok(None);
         }
         let Some((profile_performance, profile_fans)) = self.storage.profile_thermal(power)? else {
@@ -825,6 +842,31 @@ fn thermal_combination(performance: i32, fans: i32, power: i32) -> Result<(), St
         source,
     )
     .map_err(|invalid| invalid.0)
+}
+/// Managed `SetFanOverrideCoreAsync` on classified power `power`, before the
+/// override is stored: `FanControlPowerPolicy.IsAvailable` for a requested
+/// mode, then `ValidateThermalOverrideCombination` with the saved performance
+/// override (or the profile's preset) and the requested mode (or the
+/// profile's fans, for a clear).
+pub(super) fn fan_override_rejected(
+    requested: Option<i32>,
+    performance: i32,
+    profile_fans: i32,
+    power: i32,
+) -> Option<String> {
+    use openblade_domain::profile_set::{Capabilities, FanMode, PowerSource};
+    let source = match power {
+        0 => PowerSource::PluggedIn,
+        1 => PowerSource::Battery,
+        _ => PowerSource::UsbC,
+    };
+    let supports_limited = Capabilities::rz09_0581().supports_manual_fans_on_limited_power;
+    if let Some(mode) = requested
+        && !FanMode(mode).available_on(source, supports_limited)
+    {
+        return Some("The selected fan mode is unavailable on this model and power source.".into());
+    }
+    thermal_combination(performance, requested.unwrap_or(profile_fans), power).err()
 }
 impl Permit for RequestPermit {
     fn failed(&self, error: &io::Error) {
@@ -892,6 +934,10 @@ impl Permit for RequestPermit {
                     self.set_cause(Cause::UnclassifiedCustomRejected);
                     return Ok(None);
                 }
+            }
+            if battery_reading_contradicts_windows(power, self.fresh.as_ref()) {
+                self.set_cause(Cause::UnclassifiedBlocked);
+                return Ok(None);
             }
             self.observe_power(power)?;
             if let Some(message) = self.combination_rejected(power)? {

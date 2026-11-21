@@ -836,6 +836,20 @@ impl Storage {
         s.temporary_fan_generation = s.generation;
         Ok(())
     }
+    /// The saved performance override managed validates a fan request
+    /// against (`Automation.PerformanceOverride`): the persistent value, or an
+    /// unexpired temporary one, without the source eligibility that `selected`
+    /// applies. A saved Silent on battery is therefore still Silent here.
+    pub(super) fn current_performance_override(&self, power: i32) -> io::Result<Option<i32>> {
+        let s = self.state.lock().map_err(|_| denied())?;
+        if let Some(n) = s.document["overrides"]["performance"].as_i64() {
+            return Ok(Some(n as i32));
+        }
+        Ok(s.temporary
+            .as_ref()
+            .filter(|(_, p)| !temporary_expired(*p, power))
+            .map(|(v, _)| v.value))
+    }
     pub(super) fn current_fan_override(
         &self,
         power: i32,

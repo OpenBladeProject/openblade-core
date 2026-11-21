@@ -98,6 +98,10 @@ recipes exist. No fallback profile or background control loop is added.
 
 Every setter has fresh exact-device, caller/session, controller, lifecycle and
 07/8C source admission. An unclassified reading needs fresh Windows AC presence.
+Before anything is stored, a battery reading under Windows AC or unknown power
+is blocked, and on classified power that agrees with Windows the request runs
+managed's fan power policy and combination checks (see
+[native thermal mutation](windows-native-thermal-mutation.md)).
 A classified reading needs Windows AC that agrees with it, or Windows battery,
 where managed admits a fan command unchecked (`allowBattery`); unknown Windows
 power admits none. A return to Automatic that carries a saved preset needs

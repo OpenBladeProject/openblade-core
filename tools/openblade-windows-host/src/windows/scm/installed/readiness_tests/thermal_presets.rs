@@ -171,15 +171,29 @@ async fn power_classes_follow_the_ordinary_and_battery_selector_rules() {
         assert!(rig.files.read("manual-overrides.json").unwrap().is_none());
         rig.stop().await;
     }
-    // The class decides only where Windows agrees: a battery reading under
-    // Windows AC is not managed's battery source, so the recipe's own power
-    // fence refuses it instead, without a setter.
-    let rig = rig_at(0, 0, BATTERY, MemoryFiles::default());
-    rig.port.state.lock().unwrap().windows_on_battery = Some(Some(false));
-    let result = rig.set(1, value(SILENT.0, 1)).await;
-    assert_ne!(result["result"]["message"], SOURCE_REJECTED, "{result}");
-    assert!(setters(&rig).is_empty());
-    rig.stop().await;
+    // The class decides only where Windows agrees. Under Windows AC or
+    // unknown power, managed samples the adapter and maps its Battery reply to
+    // ExternalUnknown, which `ExecuteScopedMutationAsync` blocks before any
+    // intent is stored, a clear included.
+    for windows in [Some(false), None] {
+        for request in [
+            Some(value(SILENT.0, 1)),
+            Some(value(BATTERY_SAVER.0, 0)),
+            None,
+        ] {
+            let rig = rig_at(0, 0, BATTERY, MemoryFiles::default());
+            rig.port.state.lock().unwrap().windows_on_battery = Some(windows);
+            let result = rig.set(1, request.unwrap_or(Value::Null)).await;
+            assert_eq!(result["result"]["status"], 2, "{result}");
+            assert_eq!(
+                result["result"]["message"],
+                crate::installed::readiness::thermal_mutation::UNCLASSIFIED_BLOCKED
+            );
+            assert!(setters(&rig).is_empty());
+            assert!(rig.files.read("manual-overrides.json").unwrap().is_none());
+            rig.stop().await;
+        }
+    }
     // Unclassified external power: managed
     // `ValidateUnclassifiedPerformanceOverride` rejects a battery preset
     // before any intent is stored; Silent is an ordinary command there.

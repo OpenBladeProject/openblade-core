@@ -52,8 +52,12 @@ pub(super) struct FanPermit {
     // A clear on unclassified external power: no profile applies, so only an
     // owned manual fan change is handed back to firmware Automatic.
     unclassified_clear: AtomicBool,
-    // Refused before storage on unclassified power (`UNCLASSIFIED_BLOCKED`).
+    // Refused before storage on unclassified power, or on a battery reading
+    // that Windows does not confirm (`UNCLASSIFIED_BLOCKED`).
     unclassified_blocked: AtomicBool,
+    // Rejected before storage by managed's fan power policy or thermal
+    // combination check (`fan_override_rejected`); replied as Failed.
+    rejected: Mutex<Option<String>>,
     // The saved-policy inputs (`Storage::policy_inputs`) the last passing
     // authorization resolved.
     verified: Mutex<Option<[u8; 32]>>,
@@ -127,6 +131,27 @@ impl FanPermit {
             .power_generation()
             .ok_or(io::ErrorKind::PermissionDenied)?;
         self.storage.observe_power(power, generation)
+    }
+    /// Managed's checks in `SetFanOverrideCoreAsync`, run on classified
+    /// power before the override is stored. Unclassified power keeps its own
+    /// admission (`CanAdmitUnclassifiedExternalControl`).
+    fn override_rejected(&self, power: i32) -> io::Result<Option<String>> {
+        if !class_agrees_with_windows(power, self.fresh.as_ref()) {
+            return Ok(None);
+        }
+        let Some((profile_performance, profile_fans)) = self.storage.profile_thermal(power)? else {
+            return Ok(None);
+        };
+        let performance = self
+            .storage
+            .current_performance_override(power)?
+            .unwrap_or(profile_performance);
+        Ok(fan_override_rejected(
+            self.value.as_ref().map(|v| i32::from(v.value)),
+            performance,
+            profile_fans,
+            power,
+        ))
     }
 }
 impl Permit for FanPermit {
@@ -269,7 +294,15 @@ impl Permit for FanPermit {
             self.unclassified_blocked.store(true, Ordering::Release);
             return Ok(None);
         }
+        if battery_reading_contradicts_windows(power, self.fresh.as_ref()) {
+            self.unclassified_blocked.store(true, Ordering::Release);
+            return Ok(None);
+        }
         self.observe_power(power)?;
+        if let Some(message) = self.override_rejected(power)? {
+            *self.rejected.lock().map_err(|_| io::ErrorKind::Other)? = Some(message);
+            return Ok(None);
+        }
         // Managed applies the saved preset only when fans leave saved manual
         // intent (`previousManual` in ApplyFanControlTransitionCoreOutcomeAsync).
         let leaving_manual = self
@@ -748,6 +781,7 @@ impl Runtime {
             released: Mutex::new(None),
             unclassified_clear: AtomicBool::new(false),
             unclassified_blocked: AtomicBool::new(false),
+            rejected: Mutex::new(None),
             custom_unsupported: AtomicBool::new(false),
             deadline: AtomicBool::new(false),
             verified: Mutex::new(None),
@@ -930,7 +964,18 @@ impl Runtime {
         }
         // A clear on unclassified power: managed replies Stored once no owned
         // change remains, and returns the failed handback otherwise.
-        let outcome = if permit.unclassified_blocked.load(Ordering::Acquire)
+        let rejected = permit
+            .rejected
+            .lock()
+            .map_err(|_| io::ErrorKind::Other)?
+            .clone()
+            .filter(|_| !permit.accepted.load(Ordering::Acquire));
+        let outcome = if let Some(rejected) = rejected {
+            Outcome {
+                status: 3,
+                message: format!("The requested intent was rejected: {rejected}"),
+            }
+        } else if permit.unclassified_blocked.load(Ordering::Acquire)
             && !permit.accepted.load(Ordering::Acquire)
         {
             Outcome {

@@ -161,8 +161,25 @@ one). A rejection is Failed with managed's text, for example:
   "The requested intent was rejected: The performance and fan combination is not
   supported by the active validation policy." Fixed and Maximum fans admit them.
 
-A class that disagrees with Windows is not managed's source: this check does
-not apply, and the recipe's power fence submits no setter.
+A class that disagrees with Windows is not managed's source. A battery reading
+under Windows AC or unknown power is blocked before anything is stored, as
+managed maps it to ExternalUnknown (`ResolveCurrentPowerSourceAsync`) and
+`ExecuteScopedMutationAsync` blocks it: Blocked, "Hardware application was not
+confirmed. The external power adapter could not be classified; overrides and
+control writes are blocked." The reading does not expire temporary overrides.
+An external reading under Windows battery skips the check, and the recipe's
+power fence submits no setter.
+
+A fan request runs managed's `SetFanOverrideCoreAsync` checks on the same
+classified power, before anything is stored: `FanControlPowerPolicy.IsAvailable`
+for a requested mode ("The selected fan mode is unavailable on this model and
+power source.", ManualCurve on battery), then the combination check with the
+saved performance override, persistent or an unexpired temporary, or the
+profile's preset, and the requested mode, or the profile's fans for a clear.
+The saved override is not filtered by source here, as in managed: on battery a
+saved Silent or AC preset rejects every fan request, a clear included. A
+rejection is Failed with "The requested intent was rejected: " and managed's
+text, and Stop still hands back an owned manual change.
 
 Managed leaves confirmed HyperBoost for a battery preset indirectly
 (`CanExitHyperBoostDirectlyTo`; the RZ09-0581
@@ -418,7 +435,8 @@ unapplied intent:
 | Performance or fan clear on unclassified external power, with no owned fan change left | Stored, `Override cleared. Power-profile application waits for adapter classification.` |
 | Fan clear on unclassified external power whose owned handback is not confirmed | Blocked, `Fan control could not be handed back to firmware. <cause>` |
 | GPU clock tuning, Battery Saver or Battery Balanced requested on unclassified external power | Failed, `The requested intent was rejected: This request needs classified power or includes native overclocking; ordinary external presence does not admit it.` |
-| Unclassified 07/8C reading without fresh Windows AC presence, or with confirmed HyperBoost | Blocked, `Hardware application was not confirmed. The external power adapter could not be classified; overrides and control writes are blocked.` |
+| Unclassified 07/8C reading without fresh Windows AC presence, or with confirmed HyperBoost; or a battery reading under Windows AC or unknown power | Blocked, `Hardware application was not confirmed. The external power adapter could not be classified; overrides and control writes are blocked.` |
+| Fan mode the power source does not admit, or a saved override and fan mode managed's combination check rejects | Failed, `The requested intent was rejected: <managed text>` |
 
 The Stored text is managed's `DeferredPerformanceIntentMessage`. Native
 returns it only when the later fan request can apply the intent, so the
