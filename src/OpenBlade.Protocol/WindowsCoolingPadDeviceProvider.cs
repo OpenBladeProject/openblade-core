@@ -102,6 +102,7 @@ public sealed class WindowsCoolingPadDeviceProvider : ICoolingPadDeviceProvider
                     || name.Equals("RazerAppEngine", StringComparison.OrdinalIgnoreCase)
                     || name.Equals("SynapseAppEngine", StringComparison.OrdinalIgnoreCase));
                 var vendor = services.GetServices().Where(service => service.State != WindowsServiceState.Stopped
+                    && !IsKnownNonControllerService(service)
                     && (service.ServiceName.Contains("Razer", StringComparison.OrdinalIgnoreCase)
                         || service.DisplayName.Contains("Razer", StringComparison.OrdinalIgnoreCase))).Select(service => service.ServiceName);
                 if (!identityAllowed())
@@ -110,5 +111,12 @@ public sealed class WindowsCoolingPadDeviceProvider : ICoolingPadDeviceProvider
             }
             catch { return new([], "Cooling-pad identity or controller detection failed."); }
         }
+
+        // Razer Experience Service (RazerExperienceService.exe 0.2.7) is an ONNX/DirectML model
+        // runner that Razer's driver packages install and start automatically. Its binaries import
+        // no hid.dll, SetupAPI or DeviceIoControl entry points, so it cannot submit pad feature
+        // reports. Every other running Razer service still blocks pad control.
+        internal static bool IsKnownNonControllerService(WindowsServiceSnapshot service) =>
+            service.ServiceName.Equals("RazerExperienceService", StringComparison.OrdinalIgnoreCase);
     }
 }
