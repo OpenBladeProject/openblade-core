@@ -53,6 +53,29 @@ public sealed class ServiceRequestAccessPolicyTests
     }
 
     [Fact]
+    public void WindowsDynamicLightingReportsRequireTheActiveLocalSession()
+    {
+        var request = new ReportWindowsDynamicLightingOwnershipRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            "RZ09-0529",
+            WindowsDynamicLightingOwnership.Owned);
+        var authority = new FixedSessionAuthority(4);
+
+        Assert.Null(ServiceRequestAccessPolicy.GetRejection(
+            request, Client(sessionId: 4), authority));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            request, Client(sessionId: 3), authority));
+        Assert.NotNull(ServiceRequestAccessPolicy.GetRejection(
+            request,
+            Client(sessionId: 4) with
+            {
+                LogonKind = ServiceClientLogonKind.RemoteInteractive,
+            },
+            authority));
+    }
+
+    [Fact]
     public void BackgroundSession_CanReadButCannotMutate()
     {
         ServiceClientContext client = Client(sessionId: 3);

@@ -1302,6 +1302,12 @@
   <data name="Windows did not confirm the requested start-at-sign-in setting." xml:space="preserve">
     <value>Windows 未确认请求的登录时启动设置。</value>
   </data>
+  <data name="Windows Dynamic Lighting controls the keyboard and Vapor Chamber. To use OpenBlade lighting, turn it off for this device in Settings &gt; Personalization &gt; Dynamic Lighting." xml:space="preserve">
+    <value>Windows 动态照明正在控制键盘和均热板灯光。要使用 OpenBlade 灯光，请在“设置”&gt;“个性化”&gt;“动态照明”中为此设备关闭该功能。</value>
+  </data>
+  <data name="Windows Dynamic Lighting controls the keyboard. To use OpenBlade lighting, turn it off for this device in Settings &gt; Personalization &gt; Dynamic Lighting." xml:space="preserve">
+    <value>Windows 动态照明正在控制键盘。要使用 OpenBlade 灯光，请在“设置”&gt;“个性化”&gt;“动态照明”中为此设备关闭该功能。</value>
+  </data>
   <data name="Windows Dynamic Lighting manages keyboard lighting." xml:space="preserve">
     <value>Windows 动态照明管理键盘灯光。</value>
   </data>

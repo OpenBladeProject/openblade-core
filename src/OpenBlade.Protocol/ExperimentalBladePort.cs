@@ -213,6 +213,11 @@ internal sealed partial class ExperimentalBladePort(
                     enabled && model.ProductId is 0x02B6 or 0x029D ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly)
                 { SupportsEnableDisable = true } : null,
             ObservedLightingEffects = CreateObservedExperimentalLightingEffects(model),
+            // The exact MCU image declares a HID LampArray. Windows may own the
+            // keyboard through it; OpenBlade observes that state and never writes it.
+            LampArrayLightingAccess = WindowsDynamicLightingLampArrays.Find(model.ModelNumber) is null
+                ? null
+                : DeviceFeatureAccess.ObservedOnly,
             ThxAudio = model.ProductId == 0x02C5
                 ? new ThxAudioCapabilities(
                     DeviceFeatureAccess.ReadWrite,

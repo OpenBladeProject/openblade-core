@@ -120,6 +120,13 @@ public interface IServiceControlRuntime
             ControlOperationStatus.Blocked,
             "Application profiles are unavailable."));
 
+    Task<ControlOperationResult> ReportWindowsDynamicLightingOwnershipAsync(
+        ReportWindowsDynamicLightingOwnershipRequest request,
+        Func<bool> stillControlsSession,
+        CancellationToken token) => Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked,
+            "Windows Dynamic Lighting reporting is unavailable."));
+
     Task<ControlOperationResult> SetPerformanceOverrideAsync(
         ManualOverride<PerformancePreset>? value,
         CancellationToken token);
@@ -4302,7 +4309,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            if (enabled && IsKeyboardLightingDelegated)
+            // This is a saved preference, so only the saved delegation blocks it.
+            if (enabled
+                && preferences.KeyboardLightingControlMode
+                    == KeyboardLightingControlMode.WindowsDynamicLighting)
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
@@ -18960,9 +18970,12 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
         };
     }
 
+    // Either the user delegated the keyboard, or the Session Agent observed
+    // that Windows Dynamic Lighting currently drives this exact LampArray.
     private bool IsKeyboardLightingDelegated =>
         preferences.KeyboardLightingControlMode
-            == KeyboardLightingControlMode.WindowsDynamicLighting;
+            == KeyboardLightingControlMode.WindowsDynamicLighting
+        || WindowsDynamicLightingOwnsLampArray;
 
     private LightingRefreshRate EffectiveLightingRefreshRate(
         DeviceCapabilities? capabilities) =>
@@ -21425,6 +21438,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
                     && !deviceProvider.IsExperimentalDevice
                     && deviceProvider.GetCachedDeviceVerificationDiagnostics()
                         .LatestAttemptFoundUnsupportedLaptop,
+                WindowsDynamicLightingOwnership =
+                    PublishedWindowsDynamicLightingOwnership(updated),
             };
             candidate = ApplyConfigurationQuarantineAdvisory(ProjectFanStopStatus(ProjectBatterySaverFanStopStatus(candidate)));
             if (!previous.ExternalChanges.Contains(DeviceSubsystem.Fans)

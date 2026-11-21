@@ -53,6 +53,190 @@ public sealed class ServiceLampArrayObservationLoopTests
             }));
     }
 
+    [Theory]
+    [InlineData("RZ09-0528", 0x02C6, false)]
+    [InlineData("RZ09-0529", 0x02C7, true)]
+    [InlineData("RZ09-0509", 0x02B8, false)]
+    [InlineData("RZ09-0510", 0x02B7, false)]
+    [InlineData("RZ09-0530", 0x02C5, false)]
+    public void EligibilityBindsEachReviewedModelToItsExactLampArrayProductId(
+        string modelNumber,
+        int productId,
+        bool coversVaporChamber)
+    {
+        LampArraySessionEligibility? result = LampArraySessionEligibility.FromStatus(
+            Status(DeviceFeatureAccess.ObservedOnly, modelNumber));
+
+        Assert.NotNull(result);
+        Assert.Equal(modelNumber, result.Profile.ModelNumber);
+        Assert.Equal(productId, result.Profile.ProductId);
+        Assert.Equal(coversVaporChamber, result.Profile.CoversVaporChamber);
+    }
+
+    [Theory]
+    // SO690 declares no LampArray; RZ09-0581's descriptor is unreviewed.
+    [InlineData("RZ09-0483")]
+    [InlineData(RazerBladeModelCatalog.OpenBladeTargetModelNumber)]
+    public void EligibilityExcludesModelsWithoutAReviewedLampArray(string modelNumber)
+    {
+        Assert.Null(LampArraySessionEligibility.FromStatus(
+            Status(DeviceFeatureAccess.ObservedOnly, modelNumber)));
+    }
+
+    [Theory]
+    [InlineData(nameof(DynamicLightingUserSetting.NotConfigured), true, true, WindowsDynamicLightingOwnership.Owned)]
+    [InlineData(nameof(DynamicLightingUserSetting.Enabled), true, true, WindowsDynamicLightingOwnership.Owned)]
+    [InlineData(nameof(DynamicLightingUserSetting.Enabled), true, false, WindowsDynamicLightingOwnership.Released)]
+    [InlineData(nameof(DynamicLightingUserSetting.Disabled), true, true, WindowsDynamicLightingOwnership.Released)]
+    [InlineData(nameof(DynamicLightingUserSetting.Enabled), false, true, null)]
+    [InlineData(nameof(DynamicLightingUserSetting.Enabled), null, true, null)]
+    [InlineData(nameof(DynamicLightingUserSetting.Enabled), true, null, null)]
+    public void ClassifierConfirmsOwnershipOnlyFromAConnectedExactArray(
+        string setting,
+        bool? connected,
+        bool? enabled,
+        WindowsDynamicLightingOwnership? expected)
+    {
+        LampArrayObservation observation = ApprovedObservation() with
+        {
+            IsConnected = connected,
+            IsEnabled = enabled,
+        };
+
+        Assert.Equal(
+            expected,
+            WindowsDynamicLightingOwnershipClassifier.Classify(
+                observation,
+                Enum.Parse<DynamicLightingUserSetting>(setting)));
+    }
+
+    [Fact]
+    public void ClassifierTreatsAMissingArrayAsReleasedAndDuplicatesAsUnconfirmed()
+    {
+        LampArrayObservation absent = ApprovedObservation() with
+        {
+            ExactDeviceCount = 0,
+            IsConnected = null,
+            IsEnabled = null,
+        };
+
+        Assert.Equal(
+            WindowsDynamicLightingOwnership.Released,
+            WindowsDynamicLightingOwnershipClassifier.Classify(
+                absent,
+                DynamicLightingUserSetting.Enabled));
+        Assert.Null(WindowsDynamicLightingOwnershipClassifier.Classify(
+            ApprovedObservation() with { ExactDeviceCount = 2 },
+            DynamicLightingUserSetting.Enabled));
+        // The global Windows switch releases every array, duplicates included.
+        Assert.Equal(
+            WindowsDynamicLightingOwnership.Released,
+            WindowsDynamicLightingOwnershipClassifier.Classify(
+                ApprovedObservation() with { ExactDeviceCount = 2 },
+                DynamicLightingUserSetting.Disabled));
+    }
+
+    [Theory]
+    [InlineData("RZ09-0528", 0x02C6)]
+    [InlineData("RZ09-0529", 0x02C7)]
+    [InlineData("RZ09-0509", 0x02B8)]
+    [InlineData("RZ09-0510", 0x02B7)]
+    [InlineData("RZ09-0530", 0x02C5)]
+    public async Task ObservationReportsOwnershipForTheExactModelAndProductId(
+        string modelNumber,
+        int productId)
+    {
+        var watcher = new Watcher();
+        var source = new Source(ApprovedObservation());
+        var reporter = new Reporter();
+        var loop = new ServiceLampArrayObservationLoop(
+            watcher,
+            source,
+            delay: InfiniteDelayAsync,
+            settingSource: new Setting(DynamicLightingUserSetting.NotConfigured),
+            ownershipReporter: reporter.ReportAsync);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        watcher.PublishConnected(Status(DeviceFeatureAccess.ObservedOnly, modelNumber));
+        await WaitUntilAsync(() => !reporter.Requests.IsEmpty, cancellation.Token);
+
+        ReportWindowsDynamicLightingOwnershipRequest request = Assert.Single(reporter.Requests);
+        Assert.Equal(productId, source.LastProductId);
+        Assert.Equal(modelNumber, request.ModelNumber);
+        Assert.Equal(WindowsDynamicLightingOwnership.Owned, request.Ownership);
+        Assert.Equal(OpenBladeIpc.ProtocolVersion, request.Version);
+
+        await cancellation.CancelAsync();
+        await running;
+    }
+
+    [Fact]
+    public async Task UnreadableWindowsSettingSendsNoReportAndRetries()
+    {
+        var watcher = new Watcher();
+        var source = new Source(ApprovedObservation());
+        var reporter = new Reporter();
+        var failures = new ConcurrentQueue<Exception>();
+        var loop = new ServiceLampArrayObservationLoop(
+            watcher,
+            source,
+            errorHandler: failures.Enqueue,
+            delay: InfiniteDelayAsync,
+            settingSource: new Setting(
+                DynamicLightingUserSetting.Enabled,
+                new UnauthorizedAccessException()),
+            ownershipReporter: reporter.ReportAsync);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        watcher.PublishConnected(Status(DeviceFeatureAccess.ObservedOnly, "RZ09-0529"));
+        await WaitUntilAsync(() => !failures.IsEmpty, cancellation.Token);
+
+        Assert.Empty(reporter.Requests);
+        Assert.IsType<UnauthorizedAccessException>(Assert.Single(failures));
+
+        await cancellation.CancelAsync();
+        await running;
+    }
+
+    [Fact]
+    public void OwnershipReportingRequiresBothTheSettingSourceAndReporter()
+    {
+        var reporter = new Reporter();
+
+        Assert.Throws<ArgumentException>(() => new ServiceLampArrayObservationLoop(
+            new Watcher(),
+            new Source(ApprovedObservation()),
+            ownershipReporter: reporter.ReportAsync));
+        Assert.Throws<ArgumentException>(() => new ServiceLampArrayObservationLoop(
+            new Watcher(),
+            new Source(ApprovedObservation()),
+            settingSource: new Setting(DynamicLightingUserSetting.Enabled)));
+    }
+
+    [Fact]
+    public void ProgramReportsOwnershipThroughItsOwnServiceClient()
+    {
+        string program = ReadRepositoryFile(
+            "src",
+            "OpenBlade.SessionAgent",
+            "Program.cs");
+
+        Assert.Contains(
+            "await using var lampArrayOwnershipServiceClient = new ServiceClient();",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "settingSource: new WindowsDynamicLightingUserSettingSource()",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ".ReportWindowsDynamicLightingOwnershipAsync",
+            program,
+            StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ApprovedGeometryRequiresTheExactCapturedFingerprint()
     {
@@ -65,7 +249,7 @@ public sealed class ServiceLampArrayObservationLoopTests
         Assert.False((approved with { SupportsVirtualKeys = false }).MatchesApprovedGeometry);
         Assert.False((approved with { GeometrySha256 = new string('0', 64) })
             .MatchesApprovedGeometry);
-        Assert.Contains("read-only", approved.ToSanitizedSummary(), StringComparison.Ordinal);
+        Assert.Contains("read-only", approved.ToSanitizedSummary("RZ09-0528"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -88,7 +272,7 @@ public sealed class ServiceLampArrayObservationLoopTests
         var loop = new ServiceLampArrayObservationLoop(
             watcher,
             source,
-            observations.Enqueue,
+            (_, observation) => observations.Enqueue(observation),
             delay: InfiniteDelayAsync);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         Task running = loop.RunAsync(cancellation.Token);
@@ -192,7 +376,9 @@ public sealed class ServiceLampArrayObservationLoopTests
         MinimumUpdateIntervalMicroseconds: 33333,
         GeometrySha256: Rz090528LampArrayGeometry.Sha256);
 
-    private static ServiceStatusSnapshot Status(DeviceFeatureAccess? access)
+    private static ServiceStatusSnapshot Status(
+        DeviceFeatureAccess? access,
+        string modelNumber = RazerBladeModelCatalog.Rz090528ModelNumber)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         return new ServiceStatusSnapshot(
@@ -234,7 +420,7 @@ public sealed class ServiceLampArrayObservationLoopTests
                 "1.09",
                 "1.9.0.0",
                 "Unavailable",
-                RazerBladeModelCatalog.Rz090528ModelNumber));
+                modelNumber));
     }
 
     private static int CountOccurrences(string value, string search)
@@ -266,15 +452,43 @@ public sealed class ServiceLampArrayObservationLoopTests
         : ILampArrayObservationSource
     {
         private int callCount;
+        private int lastProductId = -1;
 
         internal int CallCount => Volatile.Read(ref callCount);
 
+        internal int LastProductId => Volatile.Read(ref lastProductId);
+
         public Task<LampArrayObservation> ObserveAsync(
+            ushort productId,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Volatile.Write(ref lastProductId, productId);
             Interlocked.Increment(ref callCount);
             return Task.FromResult(observation);
+        }
+    }
+
+    private sealed class Setting(DynamicLightingUserSetting value, Exception? failure = null)
+        : IDynamicLightingUserSettingSource
+    {
+        public DynamicLightingUserSetting Read() =>
+            failure is null ? value : throw failure;
+    }
+
+    private sealed class Reporter
+    {
+        internal ConcurrentQueue<ReportWindowsDynamicLightingOwnershipRequest> Requests { get; } = new();
+
+        internal Task<ControlOperationResult> ReportAsync(
+            ReportWindowsDynamicLightingOwnershipRequest request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests.Enqueue(request);
+            return Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                "Stored"));
         }
     }
 

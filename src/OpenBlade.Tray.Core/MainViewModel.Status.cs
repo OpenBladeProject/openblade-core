@@ -67,6 +67,7 @@ public sealed partial class MainViewModel
         && left.DisplayBrightnessHidAvailability
             == right.DisplayBrightnessHidAvailability
         && left.KeyboardLightingControlMode == right.KeyboardLightingControlMode
+        && left.WindowsDynamicLightingOwnership == right.WindowsDynamicLightingOwnership
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])
         && left.Firmware == right.Firmware

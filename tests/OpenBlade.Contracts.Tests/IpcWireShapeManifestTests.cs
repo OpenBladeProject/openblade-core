@@ -90,6 +90,8 @@ public sealed class IpcWireShapeManifestTests
             83 => "C29F478A17D06E6EDD3F69F1A6EAC11FAAEA3B89186B043F7ABB95761C294EC6",
             // Protocol 84 combines RZ09-0529 lighting zones with current-main contracts.
             84 => "7698A5B8C9679FCDE35762221E1DBD8A31E92086588511320CB0D5D87473D306",
+            // Protocol 85 adds the Windows Dynamic Lighting ownership report and status.
+            85 => "FC789809F4D8571B9DBFF54820AF5BDEE725BAB368C8B0F595ABF5899C3483F7",
             _ => null,
         };
 

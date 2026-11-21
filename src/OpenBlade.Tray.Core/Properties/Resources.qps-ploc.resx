@@ -1302,6 +1302,12 @@
   <data name="Windows did not confirm the requested start-at-sign-in setting." xml:space="preserve">
     <value>[!! Windows díd nót cónfírm thé réqúéstéd stárt-át-sígn-ín séttíng. ~~~~~~~~~~~~~~~~ !!]</value>
   </data>
+  <data name="Windows Dynamic Lighting controls the keyboard and Vapor Chamber. To use OpenBlade lighting, turn it off for this device in Settings &gt; Personalization &gt; Dynamic Lighting." xml:space="preserve">
+    <value>[!! Windows Dynamic Lighting cóntróls thé kéýbóárd ánd Vápór Chámbér. Tó úsé OpenBlade líghtíng, túrn ít óff fór thís dévícé ín Séttíngs &gt; Pérsónálízátíón &gt; Dynamic Lighting. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
+  <data name="Windows Dynamic Lighting controls the keyboard. To use OpenBlade lighting, turn it off for this device in Settings &gt; Personalization &gt; Dynamic Lighting." xml:space="preserve">
+    <value>[!! Windows Dynamic Lighting cóntróls thé kéýbóárd. Tó úsé OpenBlade líghtíng, túrn ít óff fór thís dévícé ín Séttíngs &gt; Pérsónálízátíón &gt; Dynamic Lighting. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!]</value>
+  </data>
   <data name="Windows Dynamic Lighting manages keyboard lighting." xml:space="preserve">
     <value>[!! Windows Dynamic Lighting mánágés kéýbóárd líghtíng. ~~~~~~~~~ !!]</value>
   </data>

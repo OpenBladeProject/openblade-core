@@ -166,6 +166,15 @@ Blade 14 (2025) 在电池供电时还提供电池节能和电池平衡模式。
 
 <a id="send-a-useful-test-report"></a>
 
+## Windows 动态照明
+
+Blade 18 (2025)、Blade 18 (2024)、Blade 16 (2024)、Blade 14 (2025) 和
+Blade 16 (2025) 的键盘支持 Windows 动态照明。当 Windows 控制键盘时，OpenBlade
+会暂停该笔记本电脑的灯光控制，并在“灯光”页面显示提示。在 Blade 18 (2025)
+上，Windows 还会控制均热板灯光。若要重新使用 OpenBlade 灯光，请在
+**设置 > 个性化 > 动态照明**中为该设备关闭动态照明，然后选择一项灯光设置。
+这些型号上的检测尚未在实机上测试。固件证据见
+[控制权审核](../source-reviewed-blade-models.md#windows-dynamic-lighting-ownership)。
 ## 提交测试报告
 
 原有五款型号还支持 [SnapTap](../snap-tap.md#supported-driver-profiles)，可选择 Windows 钩子，

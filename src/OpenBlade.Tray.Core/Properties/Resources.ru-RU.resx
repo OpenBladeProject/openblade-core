@@ -1302,6 +1302,12 @@
   <data name="Windows did not confirm the requested start-at-sign-in setting." xml:space="preserve">
     <value>Windows не подтвердила запрошенный параметр запуска при входе.</value>
   </data>
+  <data name="Windows Dynamic Lighting controls the keyboard and Vapor Chamber. To use OpenBlade lighting, turn it off for this device in Settings &gt; Personalization &gt; Dynamic Lighting." xml:space="preserve">
+    <value>Клавиатурой и подсветкой испарительной камеры управляет функция «Динамическое освещение» Windows. Чтобы использовать подсветку OpenBlade, отключите её для этого устройства в разделе «Параметры» &gt; «Персонализация» &gt; «Динамическое освещение».</value>
+  </data>
+  <data name="Windows Dynamic Lighting controls the keyboard. To use OpenBlade lighting, turn it off for this device in Settings &gt; Personalization &gt; Dynamic Lighting." xml:space="preserve">
+    <value>Клавиатурой управляет функция «Динамическое освещение» Windows. Чтобы использовать подсветку OpenBlade, отключите её для этого устройства в разделе «Параметры» &gt; «Персонализация» &gt; «Динамическое освещение».</value>
+  </data>
   <data name="Windows Dynamic Lighting manages keyboard lighting." xml:space="preserve">
     <value>Подсветкой клавиатуры управляет функция «Динамическое освещение» Windows.</value>
   </data>

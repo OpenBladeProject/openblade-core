@@ -299,6 +299,12 @@ public sealed class ControlRequestHandler
                     report,
                     stillControlsActiveLocalSession,
                     cancellationToken)),
+            ReportWindowsDynamicLightingOwnershipRequest report => Result(
+                request.RequestId,
+                await runtime.ReportWindowsDynamicLightingOwnershipAsync(
+                    report,
+                    stillControlsActiveLocalSession,
+                    cancellationToken)),
             SetPerformanceOverrideRequest set => Result(
                 request.RequestId,
                 await runtime.SetPerformanceConfigurationOverrideAsync(

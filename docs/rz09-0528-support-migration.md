@@ -353,7 +353,10 @@ weaken validation to make a contended capture pass.
 When Windows Dynamic Lighting ownership is selected, OpenBlade must leave
 keyboard lighting to Windows and issue no competing background lighting
 writes. Switching ownership must stop and dispose the active OpenBlade
-renderer before delegation completes.
+renderer before delegation completes. The same block also applies, without
+changing the saved choice, while the Session Agent observes that Windows
+controls the keyboard; see the shared
+[ownership review](source-reviewed-blade-models.md#windows-dynamic-lighting-ownership).
 
 Production publishing must not emit the retired sparse background-provider
 identity, and Session Agent startup must not register it or relaunch under it.

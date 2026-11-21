@@ -160,6 +160,57 @@ They do not change official support classification or weaken command admission.
 This change requires a coordinated full installation when deployed, including
 the service and Session Agent; a tray-only replacement is insufficient.
 
+## Windows Dynamic Lighting ownership
+
+Each listed MCU image declares a HID LampArray collection (usage page `0x59`,
+usage `0x01`) with a LampArrayControl `AutonomousMode` usage (`09 71`).
+Windows Dynamic Lighting can take the keyboard through that usage without any
+OpenBlade command observing it. On KI8110, clearing AutonomousMode makes the
+copy helper at `0x4B80` display the LampArray buffers instead of staged frames
+while `0F/82` still reports mode 8, and release forces a persisted Spectrum.
+The other images' runtime effect is not established. Offsets below are in the
+decoded image with `0xFF` gap fill.
+
+| Model | USB ID | MCU image | LampArray collection | AutonomousMode usage | Vapor Chamber | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| RZ09-0528 | `1532:02C6` | SO6110 1.09.00 | `0xDD24` | `0xDE5D` | No | [regional review](blade16-amd-regional-lighting.md) |
+| RZ09-0529 | `1532:02C7` | KI8110 1.07.00 | `0xEE30` | `0xEF69` | Yes | `evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json` (`windowsDynamicLighting`) on `feat/rz09-0529-vapor-chamber-frames` |
+| RZ09-0509 | `1532:02B8` | KI8100 1.01.00 | `0xEDE8` | `0xEF21` | No | `evidence/source-reviewed-blades/2026-11-19-rz09-0509-keyboard-frames.json` (`ownershipHazards.windowsDynamicLighting`) on `feat/mcu-frames-0301-0421-0423-0427` |
+| RZ09-0510 | `1532:02B7` | SO6100 1.03.00 | `0x1023C` | `0x10375` | No | `evidence/source-reviewed-blades/2026-11-19-rz09-0510-keyboard-frames.json` (`ownershipHazards.windowsDynamicLighting`) on `feat/mcu-frames-0301-0421-0423-0427` |
+| RZ09-0530 | `1532:02C5` | PI4110 1.04.00 | `0xC30C` | `0xC445` | No | `evidence/source-reviewed-blades/2026-11-12-pi4110-keymap.json` |
+
+Each row was re-read from the decoded image after the carrier, Intel HEX and
+decoded-image hashes matched their pins. No carrier was executed. The SO690 image
+for RZ09-0483 declares no LampArray, so that model is not listed. RZ09-0581
+(SO6120) is not admitted: its carrier is a compressed NSIS installer and its
+descriptor has not been reviewed.
+
+`WindowsDynamicLightingLampArrays` is the single admission list. The capability
+advertises `LampArrayLightingAccess = ObservedOnly` only for a listed model. The
+Session Agent observes the exact `1532` vendor and listed product ID through
+WinRT `LampArray` every 30 seconds, without requesting priority or calling a
+mutation API, and reads the current user's `AmbientLightingEnabled` value under
+`HKCU\Software\Microsoft\Lighting`. A disabled global setting or a completed
+enumeration without the exact array reports Released. Exactly one connected
+array reports Owned when `IsEnabled` is true and Released when it is false. More
+than one exact array, a disconnected array, an unreadable setting or a failed
+enumeration sends no report, so the service keeps the last confirmed state.
+
+The service accepts a report only from the active local interactive session,
+for the verified laptop whose exact model matches the report and advertises the
+capability. Owned blocks every lighting write and host frame with the existing
+delegation message, clears pending lighting restoration, and retires the
+renderer before returning. The source-reviewed backend uses its write-free
+close, because its ordinary close restores the owned keyboard frame. The
+RZ09-0528 port writes no lighting on close and returns only the Driver mode it
+owns, as the saved delegation does. A failed retirement reports Failed and keeps
+writes blocked; the next observation retries. Released clears the block without
+a write, and the next explicit lighting action re-establishes intent. Nothing
+journals or restores over Windows' state. The saved
+`KeyboardLightingControlMode` preference stays unchanged. Status publishes the
+observation only while the device and capability still match. Detection has not
+been physically validated on any listed model.
+
 ## Controls not admitted and remaining evidence
 
 These profiles do not initially admit fixed fans, fan curves, HyperBoost, lighting,

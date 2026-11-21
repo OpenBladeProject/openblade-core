@@ -37,6 +37,13 @@ public interface IServiceClient : IServiceStatusWatcher
                 ControlOperationStatus.Blocked,
                 "Application profile reporting is unavailable."));
 
+    Task<ControlOperationResult> ReportWindowsDynamicLightingOwnershipAsync(
+        ReportWindowsDynamicLightingOwnershipRequest request,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Windows Dynamic Lighting reporting is unavailable."));
+
     Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token);
 
     Task<ServiceStatusSnapshot> ReadCoolingPadStatusAsync(CancellationToken token) => GetStatusAsync(token);

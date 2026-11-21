@@ -2369,7 +2369,7 @@ type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 16777216
   field const System.Int32 MaximumDiagnosticResponseBytes = 25165824
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 84
+  field const System.Int32 ProtocolVersion = 85
   field const System.Int32 ReadOnlyCompatibilityProtocolVersion = 51
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
@@ -2845,6 +2845,25 @@ type sealed class OpenBlade.Contracts.ReportSessionPowerTransitionRequest
   property System.Int64 InstanceStartedQpc { get; init; }
   property System.Int64 Sequence { get; init; }
   property System.Int64 TimestampQpc { get; init; }
+type sealed class OpenBlade.Contracts.ReportWindowsDynamicLightingOwnershipRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.ReportWindowsDynamicLightingOwnershipRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, System.String ModelNumber, OpenBlade.Contracts.WindowsDynamicLightingOwnership Ownership)
+  method OpenBlade.Contracts.WindowsDynamicLightingOwnership get_Ownership()
+  method System.String get_ModelNumber()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out System.String ModelNumber, out OpenBlade.Contracts.WindowsDynamicLightingOwnership Ownership)
+  method System.Void set_ModelNumber(System.String value)
+  method System.Void set_Ownership(OpenBlade.Contracts.WindowsDynamicLightingOwnership value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.ReportWindowsDynamicLightingOwnershipRequest left, OpenBlade.Contracts.ReportWindowsDynamicLightingOwnershipRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.ReportWindowsDynamicLightingOwnershipRequest left, OpenBlade.Contracts.ReportWindowsDynamicLightingOwnershipRequest right)
+  method virtual OpenBlade.Contracts.ReportWindowsDynamicLightingOwnershipRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.ReportWindowsDynamicLightingOwnershipRequest other)
+  property OpenBlade.Contracts.WindowsDynamicLightingOwnership Ownership { get; init; }
+  property System.String ModelNumber { get; init; }
 type sealed class OpenBlade.Contracts.ResolvedSetting<T>
   interface System.IEquatable<OpenBlade.Contracts.ResolvedSetting<T>>
   ctor (T Value, OpenBlade.Contracts.SettingValueSource Source)
@@ -3103,6 +3122,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method OpenBlade.Contracts.ServiceStatusSnapshot <Clone>$()
   method OpenBlade.Contracts.SessionControlAccess get_ControlAccess()
   method OpenBlade.Contracts.ThermalConvergenceStatus get_ThermalConvergence()
+  method OpenBlade.Contracts.WindowsDynamicLightingOwnership get_WindowsDynamicLightingOwnership()
   method System.Boolean get_AllowExperimentalFeatures()
   method System.Boolean get_AllowUntestedFirmware()
   method System.Boolean get_AlwaysOverrideExternalLightingChanges()
@@ -3185,6 +3205,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_ThermalConvergence(OpenBlade.Contracts.ThermalConvergenceStatus value)
   method System.Void set_UnconfirmedWrites(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> value)
   method System.Void set_UnsupportedLaptop(System.Boolean value)
+  method System.Void set_WindowsDynamicLightingOwnership(OpenBlade.Contracts.WindowsDynamicLightingOwnership value)
   method System.Void set_WritesBlocked(System.Boolean value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
@@ -3220,6 +3241,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property OpenBlade.Contracts.ProfileSet Profiles { get; init; }
   property OpenBlade.Contracts.SessionControlAccess ControlAccess { get; init; }
   property OpenBlade.Contracts.ThermalConvergenceStatus ThermalConvergence { get; init; }
+  property OpenBlade.Contracts.WindowsDynamicLightingOwnership WindowsDynamicLightingOwnership { get; init; }
   property System.Boolean AllowExperimentalFeatures { get; init; }
   property System.Boolean AllowUntestedFirmware { get; init; }
   property System.Boolean AlwaysOverrideExternalLightingChanges { get; init; }
@@ -4205,6 +4227,41 @@ type sealed class OpenBlade.Contracts.WheelLightingParameters
   method virtual OpenBlade.Contracts.WheelLightingParameters <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.WheelLightingParameters other)
   property OpenBlade.Contracts.LightingRotationDirection Direction { get; init; }
+type sealed class OpenBlade.Contracts.WindowsDynamicLightingLampArrayProfile
+  interface System.IEquatable<OpenBlade.Contracts.WindowsDynamicLightingLampArrayProfile>
+  ctor (System.String ModelNumber, System.UInt16 ProductId, System.String FirmwareImage, System.Int32 DescriptorOffset, System.Boolean CoversVaporChamber)
+  method OpenBlade.Contracts.WindowsDynamicLightingLampArrayProfile <Clone>$()
+  method System.Boolean get_CoversVaporChamber()
+  method System.Int32 get_DescriptorOffset()
+  method System.String get_FirmwareImage()
+  method System.String get_ModelNumber()
+  method System.UInt16 get_ProductId()
+  method System.Void Deconstruct(out System.String ModelNumber, out System.UInt16 ProductId, out System.String FirmwareImage, out System.Int32 DescriptorOffset, out System.Boolean CoversVaporChamber)
+  method System.Void set_CoversVaporChamber(System.Boolean value)
+  method System.Void set_DescriptorOffset(System.Int32 value)
+  method System.Void set_FirmwareImage(System.String value)
+  method System.Void set_ModelNumber(System.String value)
+  method System.Void set_ProductId(System.UInt16 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.WindowsDynamicLightingLampArrayProfile left, OpenBlade.Contracts.WindowsDynamicLightingLampArrayProfile right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.WindowsDynamicLightingLampArrayProfile left, OpenBlade.Contracts.WindowsDynamicLightingLampArrayProfile right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.WindowsDynamicLightingLampArrayProfile other)
+  property System.Boolean CoversVaporChamber { get; init; }
+  property System.Int32 DescriptorOffset { get; init; }
+  property System.String FirmwareImage { get; init; }
+  property System.String ModelNumber { get; init; }
+  property System.UInt16 ProductId { get; init; }
+type static class OpenBlade.Contracts.WindowsDynamicLightingLampArrays
+  method static OpenBlade.Contracts.WindowsDynamicLightingLampArrayProfile Find(System.String modelNumber)
+  method static System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.WindowsDynamicLightingLampArrayProfile> get_All()
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.WindowsDynamicLightingLampArrayProfile> All { get; }
+type enum OpenBlade.Contracts.WindowsDynamicLightingOwnership
+  field System.Int32 value__
+  field const OpenBlade.Contracts.WindowsDynamicLightingOwnership Owned = 2
+  field const OpenBlade.Contracts.WindowsDynamicLightingOwnership Released = 1
+  field const OpenBlade.Contracts.WindowsDynamicLightingOwnership Unknown = 0
 type enum OpenBlade.Contracts.WindowsPowerMode
   field System.Int32 value__
   field const OpenBlade.Contracts.WindowsPowerMode Balanced = 1

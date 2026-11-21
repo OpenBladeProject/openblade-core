@@ -73,6 +73,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(ShutdownOpenBladeRequest), "shutdownOpenBlade")]
 [JsonDerivedType(typeof(ReportSessionPowerTransitionRequest), "reportSessionPowerTransition")]
 [JsonDerivedType(typeof(ReportApplicationContextRequest), "reportApplicationContext")]
+[JsonDerivedType(typeof(ReportWindowsDynamicLightingOwnershipRequest), "reportWindowsDynamicLightingOwnership")]
 public abstract record ServiceRequest(int Version, Guid RequestId);
 
 public sealed record SetCoolingPadDemandLeaseRequest(int Version, Guid RequestId, Guid LeaseId, int Rpm, int DurationSeconds)
@@ -137,6 +138,18 @@ public sealed record ReportApplicationContextRequest(
     Guid InstanceId,
     long Sequence,
     string? ExecutablePath)
+    : ServiceRequest(Version, RequestId);
+
+/// <summary>
+/// Current-user LampArray observation from the Session Agent. It names the
+/// exact model it observed so the service can reject a report for another
+/// laptop. Only Owned and Released are reportable.
+/// </summary>
+public sealed record ReportWindowsDynamicLightingOwnershipRequest(
+    int Version,
+    Guid RequestId,
+    string ModelNumber,
+    WindowsDynamicLightingOwnership Ownership)
     : ServiceRequest(Version, RequestId);
 
 public sealed record SetPerformanceOverrideRequest(
@@ -577,6 +590,10 @@ public sealed record ServiceStatusSnapshot(
     public bool UnsupportedLaptop { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CpuTuningStatus? CpuTuning { get; init; }
+
+    // Current-user observation of the exact model's LampArray. Owned blocks
+    // OpenBlade lighting writes; it is never a write authorization.
+    public WindowsDynamicLightingOwnership WindowsDynamicLightingOwnership { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]

@@ -22,6 +22,11 @@ public sealed class ControlRequestHandlerTests
                 Guid.NewGuid(),
                 1,
                 @"C:\Games\game.exe"),
+            new ReportWindowsDynamicLightingOwnershipRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                "RZ09-0529",
+                WindowsDynamicLightingOwnership.Owned),
             new SetPerformanceOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<PerformancePreset>(PerformancePreset.Silent, OverrideLifetime.Persistent)),
             new CyclePerformanceShortcutRequest(
@@ -129,6 +134,7 @@ public sealed class ControlRequestHandlerTests
         string[] expectedCalls =
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "ReportApplicationContext",
+            "ReportWindowsDynamicLightingOwnership",
             "SetPerformanceOverride",
             "CyclePerformanceShortcut", "SetFanOverride", "SetBatterySaverFanStop", "SetFanStopMode",
             "SetFanStopSettings", "ResumeAutomaticFanStop", "SetLightingOverride",
@@ -705,6 +711,15 @@ public sealed class ControlRequestHandlerTests
         {
             Assert.True(stillControlsSession());
             return Record("ReportApplicationContext");
+        }
+
+        public Task<ControlOperationResult> ReportWindowsDynamicLightingOwnershipAsync(
+            ReportWindowsDynamicLightingOwnershipRequest request,
+            Func<bool> stillControlsSession,
+            CancellationToken token)
+        {
+            Assert.True(stillControlsSession());
+            return Record("ReportWindowsDynamicLightingOwnership");
         }
 
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(ManualOverride<PerformancePreset>? value, CancellationToken token) =>
