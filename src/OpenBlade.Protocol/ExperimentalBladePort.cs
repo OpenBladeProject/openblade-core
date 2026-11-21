@@ -133,9 +133,9 @@ internal sealed partial class ExperimentalBladePort(
 
     internal void SetAdditionalWriteAdmission(Func<bool> admission) => additionalWriteAdmission = admission;
 
-    public DeviceCapabilities Capabilities => WithConfirmedExperimentalFanRange(
+    public DeviceCapabilities Capabilities => WithLocalDimmingAdmission(WithConfirmedExperimentalFanRange(
         WithStartupReadAdmission(CreateCapabilities(model, policy.WritesAllowed), startupAnimationState),
-        model, policy.ConfirmedFanRanges) with
+        model, policy.ConfirmedFanRanges), model, policy.WritesAllowed, policy.MiniLedPanel) with
     {
         Blade18KeyboardLayoutId = blade18KeyboardLayoutId,
     };
@@ -208,6 +208,22 @@ internal sealed partial class ExperimentalBladePort(
                 0x02C7 => KeyboardLightingLayoutIds.Rz09_0529,
                 _ => null,
             },
+            // Synapse hasAMDOverclock: Custom-mode package power 45-95 W. Its writes go
+            // through the unreviewed native RzAMDOverClock DLL, so access is observed only.
+            CpuPowerLimit = SupportsObservedAmdCpuPowerLimit(model)
+                ? new CpuPowerLimitCapabilities(new DeviceNumericRange(45, 95, 1), DeviceFeatureAccess.ObservedOnly)
+                : null,
+            // Synapse hasIntelCPUOverclocking: PL1/PL2/tau through the unreviewed native
+            // RzIntelOverClock DLL, so access is observed only.
+            IntelCpuPowerLimit = SupportsObservedIntelCpuPowerLimit(model) ? SynapseIntelCpuPowerLimit : null,
+            // Synapse setOverClockingMode applies 0D/83 GPU/VRAM fields through native
+            // SetGPUValue on Gaming mode; no reviewed OpenBlade path writes them.
+            FirmwareGamingGpuOverclockAccess = SupportsObservedFirmwareGamingGpuOverclock(model)
+                ? DeviceFeatureAccess.ObservedOnly : null,
+            // Series 11 Synapse couples the 0x08 bit to Windows HDR, so it stays observed only.
+            LocalDimming = model.ProductId == 0x02C5
+                ? new LocalDimmingCapabilities(DeviceFeatureAccess.ObservedOnly, SupportsClear: false)
+                : null,
             CpuVoltageOptimizer = model.ProductId is 0x02B6 or 0x029D or 0x02C5
                 ? new CpuVoltageOptimizerCapabilities(new DeviceNumericRange(-30, -1, 1),
                     enabled && model.ProductId is 0x02B6 or 0x029D ? DeviceFeatureAccess.ReadWrite : DeviceFeatureAccess.ObservedOnly)
@@ -646,6 +662,10 @@ internal sealed partial class ExperimentalBladePort(
         {
             return arguments[0] == 0 || TemporaryFullChargeEnablePowerAdmitted();
         }
+        if (IsLocalDimmingClearSet(operation, commandClass, commandId, arguments))
+        {
+            return true;
+        }
         if (IsSourceReviewedMaximumFansDisable(operation, commandClass, commandId, arguments)
             && capturePowerSource() == PowerSource.Battery)
         {
@@ -731,9 +751,11 @@ internal sealed partial class ExperimentalBladePort(
         PowerSource? admittedFanPowerClass = null;
         PowerSource? admittedThermalSource = write && IsThermalSet(commandClass, commandId)
             && !IsTemporaryFullChargeSet(operation, commandClass, commandId, arguments)
+            && !IsLocalDimmingClearSet(operation, commandClass, commandId, arguments)
                 ? capturePowerSource() : null;
         if (write && IsThermalSet(commandClass, commandId)
             && !IsTemporaryFullChargeSet(operation, commandClass, commandId, arguments)
+            && !IsLocalDimmingClearSet(operation, commandClass, commandId, arguments)
             && (!IsBatteryModeSet(commandClass, commandId, arguments)
                 || model.ProductId != 0x02C5 || admittedThermalSource != PowerSource.Battery
                 || operation != "Performance"))

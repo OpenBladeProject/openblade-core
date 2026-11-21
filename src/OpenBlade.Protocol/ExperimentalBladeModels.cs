@@ -52,7 +52,10 @@ internal static class ExperimentalBladeModels
     internal const string OpenRazerSource = "https://github.com/openrazer/openrazer/tree/477f4d6d3ab7e9deb6310d5bd3742560c5cbe80d";
     internal const string ExpandedBladeControlSource = "https://github.com/jdsgnrinfo/blade-control/tree/92beedc82e6e378cb71dac276e5820c8ea84247d";
 
-    internal static IReadOnlyList<ExperimentalFeatureEvidence> FeatureEvidenceFor(ExperimentalBladeModel model)
+    internal static IReadOnlyList<ExperimentalFeatureEvidence> FeatureEvidenceFor(ExperimentalBladeModel model) =>
+        [.. ModelFeatureEvidence(model), .. ExperimentalBladePort.ObservedFeatureEvidence(model)];
+
+    private static IReadOnlyList<ExperimentalFeatureEvidence> ModelFeatureEvidence(ExperimentalBladeModel model)
     {
         if (model.ThermalPolicy is { } thermal)
         {
@@ -608,6 +611,20 @@ internal sealed class ExperimentalFeaturesPolicy(ExperimentalBladeModel model)
 
     internal void ConfirmFanRange(PerformancePreset preset, FanSpeedRange range) =>
         System.Collections.Immutable.ImmutableInterlocked.AddOrUpdate(ref confirmedFanRanges, preset, range, (_, _) => range);
+
+    // Latest decoded 0D/8F panel reading: 1 mini-LED, 0 no mini-LED, -1 unknown.
+    // Capability metadata only; every local dimming Clear reads the panel afresh.
+    private int miniLedPanel = -1;
+
+    internal bool? MiniLedPanel => Volatile.Read(ref miniLedPanel) switch
+    {
+        1 => true,
+        0 => false,
+        _ => null,
+    };
+
+    internal void ConfirmMiniLedPanel(bool? present) =>
+        Volatile.Write(ref miniLedPanel, present switch { true => 1, false => 0, null => -1 });
 
     internal bool IsPaused => Volatile.Read(ref recoveryRequired) != 0;
 

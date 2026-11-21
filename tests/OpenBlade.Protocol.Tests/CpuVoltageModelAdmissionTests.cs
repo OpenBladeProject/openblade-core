@@ -47,7 +47,9 @@ public sealed class CpuVoltageModelAdmissionTests
         var caps = ExperimentalBladePort.CreateCapabilities(profile, true);
         Assert.True(caps.CpuVoltageOptimizer!.IsWellFormed);
         Assert.Equal(DeviceFeatureAccess.ReadWrite, caps.CpuVoltageOptimizer!.Access);
-        Assert.Null(caps.CpuPowerLimit);
+        // The Synapse CPU power limit is shown but never writable; voltage
+        // admission does not lend it a write path.
+        Assert.Equal(DeviceFeatureAccess.ObservedOnly, caps.CpuPowerLimit!.Access);
         Assert.Equal(DeviceFeatureAccess.ObservedOnly,
             ExperimentalBladePort.CreateCapabilities(profile, false).CpuVoltageOptimizer!.Access);
         var contract = CpuLiveCurveContract.ForIdentity(new(model, 0x1532, (ushort)product, "Unknown"))!;

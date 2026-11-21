@@ -76,8 +76,10 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         bool hasFanStopTrialEvidence = false,
         bool hasFanStopSourceEvidence = false,
         Func<PowerSource>? capturePowerSource = null,
-        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower = false)
+        bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower = false,
+        LocalDimmingCapabilities? localDimmingCapabilities = null)
     {
+        this.localDimmingCapabilities = localDimmingCapabilities;
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         this.capturePowerSource = capturePowerSource;
         this.supportsOrdinaryThermalControlOnUnclassifiedExternalPower =
@@ -194,7 +196,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             this.supportsDirectManualFanTransitions,
             this.thxAudioCapabilities,
             this.supportsBatterySaverFanStop,
-            this.supportsOrdinaryThermalControlOnUnclassifiedExternalPower) with
+            this.supportsOrdinaryThermalControlOnUnclassifiedExternalPower,
+            this.localDimmingCapabilities) with
         {
             HasFanStopTrialEvidence = hasFanStopTrialEvidence,
             HasFanStopSourceEvidence = hasFanStopSourceEvidence,
@@ -203,6 +206,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
 
     private readonly Func<PowerSource>? capturePowerSource;
     private readonly bool supportsOrdinaryThermalControlOnUnclassifiedExternalPower;
+    private readonly LocalDimmingCapabilities? localDimmingCapabilities;
 
     public DeviceCapabilities Capabilities { get; }
 
@@ -406,7 +410,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 thxAudioCapabilities,
                 supportsBatterySaverFanStop,
                 stopHardwareAdmission, capturePowerSource,
-                supportsOrdinaryThermalControlOnUnclassifiedExternalPower),
+                supportsOrdinaryThermalControlOnUnclassifiedExternalPower,
+                localDimmingCapabilities),
             null);
     }
 
