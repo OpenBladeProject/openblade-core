@@ -85,11 +85,16 @@ public sealed class ExperimentalEvidenceCatalogTests
                     Assert.Contains(model.ProductId, new ushort[] { 0x02C5, 0x02C7 });
                     Assert.Equal("SynapseSourceBackedNvmlWithoutPhysicalValidation", feature.Basis);
                     Assert.Equal("Pending", snapshot.PhysicalValidation);
-                    Assert.Equal(2, feature.Sources.Count);
-                    Assert.StartsWith($"https://apps.razer.com/synapse/products/{(model.ProductId == 0x02C7 ? 711 : 709)}/ui/static/js/", feature.Sources[0]);
+                    // The mw main sets isNvidiaOverclockUISupported; the UI chunk
+                    // carries the offset envelope. Further pinned files may follow.
+                    string product = $"https://apps.razer.com/synapse/products/{(model.ProductId == 0x02C7 ? 711 : 709)}/";
+                    string envelopeChunk = model.ProductId == 0x02C7 ? "892.12b29c32.chunk.js" : "2915.4e513855.chunk.js";
+                    Assert.Single(feature.Sources, source => source.StartsWith($"{product}mw/main.", StringComparison.Ordinal));
+                    Assert.Single(feature.Sources, source => source.StartsWith(
+                        $"{product}ui/static/js/{envelopeChunk};", StringComparison.Ordinal));
                     Assert.All(feature.Sources, source =>
                     {
-                        Assert.StartsWith($"https://apps.razer.com/synapse/products/{(model.ProductId == 0x02C7 ? 711 : 709)}/ui/", source);
+                        Assert.StartsWith(product, source);
                         Assert.Matches(@";SHA256=[0-9A-F]{64}$", source);
                     });
                 }
