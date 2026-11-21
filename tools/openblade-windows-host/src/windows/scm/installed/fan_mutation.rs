@@ -133,12 +133,14 @@ impl FanPermit {
         self.storage.observe_power(power, generation)
     }
     /// Managed's checks in `SetFanOverrideCoreAsync`, run on classified
-    /// power before the override is stored. Unclassified power keeps its own
-    /// admission (`CanAdmitUnclassifiedExternalControl`).
+    /// power before the override is stored, against managed's power source
+    /// (`managed_power_source`): an external reading under Windows battery is
+    /// checked as Battery. Unclassified power keeps its own admission
+    /// (`CanAdmitUnclassifiedExternalControl`).
     fn override_rejected(&self, power: i32) -> io::Result<Option<String>> {
-        if !class_agrees_with_windows(power, self.fresh.as_ref()) {
+        let Some(power) = managed_power_source(power, self.fresh.as_ref()) else {
             return Ok(None);
-        }
+        };
         let Some((profile_performance, profile_fans)) = self.storage.profile_thermal(power)? else {
             return Ok(None);
         };

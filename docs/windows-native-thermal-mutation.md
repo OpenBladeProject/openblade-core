@@ -147,7 +147,7 @@ unchanged: battery selects only the battery presets
 (`automation::performance_source_eligible`), so an override saved on AC is kept
 and not written on battery.
 
-On classified power that agrees with Windows, managed
+On classified power, managed
 `ValidateThermalOverrideCombination` checks a performance request before
 anything is stored, and native does the same with the ported
 `ProfileSetValidator.ValidatePerformanceFanCombination` and the exact RZ09-0581
@@ -167,8 +167,11 @@ managed maps it to ExternalUnknown (`ResolveCurrentPowerSourceAsync`) and
 `ExecuteScopedMutationAsync` blocks it: Blocked, "Hardware application was not
 confirmed. The external power adapter could not be classified; overrides and
 control writes are blocked." The reading does not expire temporary overrides.
-An external reading under Windows battery skips the check, and the recipe's
-power fence submits no setter.
+Managed returns Battery whenever Windows reports battery, without sampling the
+adapter, so the check runs against managed's source (`managed_power_source`).
+A performance request on an external reading under Windows battery, or under
+unknown Windows power, fails fresh admission first and stores nothing. A fan
+request there is checked as Battery (see [native fans](windows-rust-native-fans.md)).
 
 A fan request runs managed's `SetFanOverrideCoreAsync` checks on the same
 classified power, before anything is stored: `FanControlPowerPolicy.IsAvailable`

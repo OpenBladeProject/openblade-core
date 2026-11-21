@@ -4917,6 +4917,43 @@ async fn a_fan_request_on_a_battery_reading_windows_does_not_confirm_is_blocked(
         }
     }
 }
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
+async fn a_fan_request_under_windows_battery_is_checked_as_battery() {
+    // Managed `ResolveCurrentPowerSourceAsync` returns Battery whenever
+    // Windows reports battery, without sampling the adapter, and
+    // `SetFanOverrideCoreAsync` checks the request against that source. An
+    // adapter reading full power does not make it AC: these were stored.
+    const NOT_VALID: &str = "The performance preset is not valid for this power source.";
+    const UNAVAILABLE: &str =
+        "The selected fan mode is unavailable on this model and power source.";
+    for (saved, mode, message) in [
+        (Some(3), Some(2), UNAVAILABLE),
+        (Some(0), Some(1), NOT_VALID),
+    ] {
+        let r = saved_override_fan_rig(15, 3, saved);
+        r.port.state.lock().unwrap().windows_on_battery = Some(Some(true));
+        r.get().await;
+        let before = r.files.read("manual-overrides.json").unwrap();
+        let out = r.request(fan_request(255, mode, 3700)).await;
+        let case = format!("{saved:?} {mode:?}");
+        assert_eq!(out["result"]["status"], 3, "{case}: {out}");
+        assert_eq!(
+            out["result"]["message"],
+            format!("The requested intent was rejected: {message}"),
+            "{case}"
+        );
+        assert_eq!(
+            r.files.read("manual-overrides.json").unwrap(),
+            before,
+            "{case}"
+        );
+        assert_eq!(r.port.state.lock().unwrap().writes, 0, "{case}");
+        assert!(fan_rows(&r).is_empty(), "{case}");
+        r.origin.stop();
+        let _ = r.source.lock().await.drain().await;
+    }
+}
 #[cfg(feature = "service-temporary-charge-v1")]
 #[tokio::test]
 async fn temporary_charge_runs_within_its_request_budget_at_slow_transfers() {

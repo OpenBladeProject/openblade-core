@@ -1147,9 +1147,12 @@ mod fans {
     }
 
     // A return to Automatic that carries the saved Performance preset applies
-    // it through managed `SetPerformanceAsync` (`allowBattery: false`): Windows
-    // battery or unknown power refuses it before anything is prepared, and
-    // Windows AC applies it.
+    // it through managed `SetPerformanceAsync` (`allowBattery: false`):
+    // Windows AC applies it, unknown Windows power fails fresh admission, and
+    // Windows battery or a battery reading before the first setter refuses it
+    // before any setter. Under Windows battery managed checks the request
+    // against Battery (`ResolveCurrentPowerSourceAsync`), where a saved
+    // Performance override is not valid, so it is rejected before storing.
     #[tokio::test]
     async fn preset_return_to_automatic_needs_windows_ac() {
         for windows in [Some(false), Some(true), None] {
@@ -1160,13 +1163,27 @@ mod fans {
                 assert_eq!(out["result"]["status"], 1, "{out}");
                 assert_eq!(hardware(&rig), (6, [2; 2], [0; 2]));
             } else {
-                assert_eq!(out["result"]["status"], 2, "{windows:?} {out}");
-                // Under Windows battery the intent is stored and not applied,
-                // as managed KnownNotApplied; unknown Windows power already
-                // fails fresh admission.
-                let message = out["result"]["message"].as_str().unwrap();
-                let stored = message.ends_with("No applied target is claimed.");
-                assert_eq!(stored, windows == Some(true), "{windows:?} {out}");
+                if windows == Some(true) {
+                    assert_eq!(out["result"]["status"], 3, "{out}");
+                    assert_eq!(
+                        out["result"]["message"],
+                        "The requested intent was rejected: The performance preset is not valid for this power source."
+                    );
+                } else {
+                    assert_eq!(out["result"]["status"], 2, "{out}");
+                    assert!(
+                        !out["result"]["message"]
+                            .as_str()
+                            .unwrap()
+                            .ends_with("No applied target is claimed."),
+                        "{out}"
+                    );
+                }
+                assert_eq!(
+                    rig.files.document("manual-overrides.json")["overrides"]["fans"],
+                    1,
+                    "{windows:?}"
+                );
                 assert_eq!(hardware(&rig), (4, [0; 2], [1; 2]), "{windows:?}");
                 assert!(request_rows(&rig, 232).is_empty(), "{windows:?}");
                 assert!(!rig.storage.pending());
@@ -1182,11 +1199,10 @@ mod fans {
                 "{windows:?} {drained:?}"
             );
         }
-        // The refusal reserves no setter or cleanup IDs: a later request on
-        // Windows AC starts its IDs after only the refused request's own
-        // preflight. The refused request stored Automatic, so the later one no
-        // longer leaves saved manual intent (managed `previousManual`) and hands
-        // back under the observed selector without the preset.
+        // The rejection reserves no setter or cleanup IDs: a later request on
+        // Windows AC starts its IDs after only the rejected request's own
+        // preflight. The rejected request stored nothing, so the later one
+        // still leaves saved manual intent and carries the preset.
         let first_ids = |rig: &Rig, n| request_rows(rig, n)[0]["fan"]["ids"][0][0].clone();
         let rig = handback_rig(0, 15, 2).await;
         assert_eq!(
@@ -1199,12 +1215,12 @@ mod fans {
         rig.port.state.lock().unwrap().windows_on_battery = Some(Some(true));
         assert_eq!(
             rig.request(fan_request(232, Some(0), 3700)).await["result"]["status"],
-            2
+            3
         );
         rig.port.state.lock().unwrap().windows_on_battery = Some(Some(false));
         let out = rig.request(fan_request(233, Some(0), 3700)).await;
         assert_eq!(out["result"]["status"], 1, "{out}");
-        assert_eq!(hardware(&rig), (6, [0; 2], [0; 2]));
+        assert_eq!(hardware(&rig), (6, [2; 2], [0; 2]));
         assert_eq!(first_ids(&rig, 233), unrefused + 4);
         rig.origin.stop();
         // Windows battery at the first setter's own reading: once the preset

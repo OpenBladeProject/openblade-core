@@ -788,29 +788,31 @@ impl RequestPermit {
 pub(super) fn battery_reading_contradicts_windows(power: i32, fresh: &dyn Fresh) -> bool {
     power == 1 && fresh.on_battery() != Some(true)
 }
-/// Whether class `power` is managed's `Automation.PowerSource`: a battery
-/// reading with Windows battery, or an external class with Windows AC.
-pub(super) fn class_agrees_with_windows(power: i32, fresh: &dyn Fresh) -> bool {
-    matches!(
-        (power, fresh.on_battery()),
-        (1, Some(true)) | (0 | 2, Some(false))
-    )
+/// Managed's `Automation.PowerSource` for classified reading `power`, as
+/// `ResolveCurrentPowerSourceAsync` resolves it: Battery whenever Windows
+/// reports battery, without sampling the adapter, and otherwise the adapter's
+/// external class. A battery reading under Windows AC never gets here
+/// (`battery_reading_contradicts_windows`). Without a Windows reading native
+/// stores nothing, so there is no source to check against.
+pub(super) fn managed_power_source(power: i32, fresh: &dyn Fresh) -> Option<i32> {
+    match (power, fresh.on_battery()) {
+        (_, Some(true)) => Some(1),
+        (0 | 2, Some(false)) => Some(power),
+        _ => None,
+    }
 }
 impl RequestPermit {
     /// Managed `ValidateThermalOverrideCombination` on classified power, run
     /// before the override is stored: the requested preset (or the active
     /// power profile's, for a clear) with the saved fan override (or the
     /// profile's fans) must pass `ProfileSetValidator
-    /// .ValidatePerformanceFanCombination` for that source. Managed's power
-    /// source is the class only where it agrees with Windows: a contradicting
-    /// battery reading is blocked before this check
-    /// (`battery_reading_contradicts_windows`), and an external reading under
-    /// Windows battery is refused by the recipe's own power fence without
-    /// storing anything.
+    /// .ValidatePerformanceFanCombination` for that source, managed's
+    /// power source (`managed_power_source`): Battery under Windows battery,
+    /// whatever the adapter reads.
     fn combination_rejected(&self, power: i32) -> io::Result<Option<String>> {
-        if !class_agrees_with_windows(power, self.fresh.as_ref()) {
+        let Some(power) = managed_power_source(power, self.fresh.as_ref()) else {
             return Ok(None);
-        }
+        };
         let Some((profile_performance, profile_fans)) = self.storage.profile_thermal(power)? else {
             return Ok(None);
         };
