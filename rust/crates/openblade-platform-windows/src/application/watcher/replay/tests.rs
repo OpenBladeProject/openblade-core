@@ -287,3 +287,24 @@ fn the_owner_is_woken_by_every_notice_and_by_the_worker_exit() {
     // The registration thread's exit is also announced.
     assert_eq!(woken.load(Ordering::Acquire), 4);
 }
+
+#[test]
+fn a_session_lost_during_the_lookup_accepts_no_sample_and_sends_nothing() {
+    let mut script = Script::default();
+    let game = script.process(1, 42, 1, GAME);
+    script.focus(1);
+    let mut watcher = start(&mut script, ActivationMode::Foreground);
+    expect(&mut watcher, 0, 1, Some(GAME));
+    watcher.complete(1, ReportOutcome::Stored);
+
+    // The console locks while the new sample is being resolved. That poll must
+    // not accept the half-resolved sample: an unknown foreground accepted from
+    // it would report a clear that no authoritative observation supports.
+    script.deactivate_during_lookup();
+    script.focus(1);
+    assert!(poll(&mut watcher, 0).is_none());
+    assert_eq!(game.handles(), 0);
+    // The next poll takes the locked path, where a Foreground profile ends.
+    expect(&mut watcher, 0, 2, None);
+    watcher.shutdown().unwrap();
+}

@@ -34,6 +34,7 @@ struct State {
     processes: BTreeMap<usize, ProcessProbe>,
     callbacks: Option<Callbacks>,
     during_lookup: Option<usize>,
+    deactivate_during_lookup: bool,
 }
 
 #[derive(Clone)]
@@ -89,6 +90,7 @@ impl Default for Script {
                 processes: BTreeMap::new(),
                 callbacks: None,
                 during_lookup: None,
+                deactivate_during_lookup: false,
             })),
             registration: Arc::new(AtomicBool::new(false)),
         }
@@ -148,6 +150,11 @@ impl Script {
         }
     }
 
+    /// The console locks while the next path lookup runs.
+    pub fn deactivate_during_lookup(&self) {
+        self.state.borrow_mut().deactivate_during_lookup = true;
+    }
+
     pub fn supersede_during_lookup(&self, window: usize) {
         self.state.borrow_mut().during_lookup = Some(window);
     }
@@ -203,6 +210,9 @@ impl Desktop for ScriptedDesktop {
 
     fn full_path(&mut self, input: &str) -> Option<String> {
         let mut state = self.0.borrow_mut();
+        if std::mem::take(&mut state.deactivate_during_lookup) {
+            state.active = false;
+        }
         if let Some(window) = state.during_lookup.take() {
             state.window = window;
             if let Some(callbacks) = &state.callbacks {
