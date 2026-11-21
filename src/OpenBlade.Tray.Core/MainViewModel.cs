@@ -7335,19 +7335,25 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private async Task ClearManualOverridesAsync(object? parameter, CancellationToken token)
     {
         List<string> hardwareNotApplied = [];
-        if (FanOverride is not null)
+        // Clear performance before fans. Under manual fans the service then
+        // stores the profile preset for the fan clear to apply once, instead
+        // of first applying the override preset and then replacing it.
+        string performanceFragment = TrayText.Get("Fragment.Performance", "performance");
+        ControlOperationStatus? performanceCleared = null;
+        if (PerformanceOverride is not null)
         {
-            await ClearOverrideAsync(
-                TrayText.Get("Fragment.Fans", "fans"),
-                cancellationToken => serviceClient.SetFanOverrideAsync(null, cancellationToken),
+            performanceCleared = await ClearOverrideAsync(
+                performanceFragment,
+                ClearPerformanceOverrideAsync,
                 hardwareNotApplied,
                 token).ConfigureAwait(false);
         }
-        if (PerformanceOverride is not null)
+        ControlOperationStatus? fansCleared = null;
+        if (FanOverride is not null)
         {
-            await ClearOverrideAsync(
-                TrayText.Get("Fragment.Performance", "performance"),
-                ClearPerformanceOverrideAsync,
+            fansCleared = await ClearOverrideAsync(
+                TrayText.Get("Fragment.Fans", "fans"),
+                cancellationToken => serviceClient.SetFanOverrideAsync(null, cancellationToken),
                 hardwareNotApplied,
                 token).ConfigureAwait(false);
         }
@@ -7387,6 +7393,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             ServiceStatusSnapshot status = await serviceClient.GetStatusAsync(token)
                 .ConfigureAwait(false);
+            // A performance clear that was stored, or blocked because fans were
+            // manual, was restored by the applied fan clear only when the service
+            // now confirms the performance it wants.
+            if (performanceCleared is ControlOperationStatus.Stored or ControlOperationStatus.Blocked
+                && fansCleared == ControlOperationStatus.Applied
+                && ConfirmsDesiredPerformance(status))
+            {
+                hardwareNotApplied.Remove(performanceFragment);
+            }
             List<string> notCleared = [];
             if (status.PerformanceOverride is not null)
             {
@@ -7446,7 +7461,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             token).ConfigureAwait(false);
     }
 
-    private static async Task ClearOverrideAsync(
+    private static bool ConfirmsDesiredPerformance(ServiceStatusSnapshot status) =>
+        status.ConfirmedState?.Performance is { } confirmed
+        && confirmed == status.DesiredState.Performance.Value
+        && (confirmed != PerformancePreset.Custom
+            || status.ConfirmedState.CustomPerformance == status.DesiredState.CustomPerformance);
+
+    private static async Task<ControlOperationStatus?> ClearOverrideAsync(
         string subsystem,
         Func<CancellationToken, Task<ControlOperationResult>> operation,
         ICollection<string> hardwareNotApplied,
@@ -7459,6 +7480,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 hardwareNotApplied.Add(subsystem);
             }
+            return result.Status;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -7472,6 +7494,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 exception,
                 subsystem);
             hardwareNotApplied.Add(subsystem);
+            return null;
         }
     }
 

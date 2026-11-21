@@ -3292,6 +3292,120 @@ public sealed class ControlCoordinatorTests
                 ]),
         };
 
+    // Pins the declaration defense on the fan path: a fresh decision that
+    // needs a Performance step the request did not declare stops before any
+    // write with a known-not-applied block, for the exit restore and for the
+    // entry bridge alike. The same decision runs when Performance is declared.
+    [Theory]
+    [InlineData(FanMode.Fixed, FanMode.Automatic, false)]
+    [InlineData(FanMode.Fixed, FanMode.Automatic, true)]
+    [InlineData(FanMode.Automatic, FanMode.Fixed, false)]
+    [InlineData(FanMode.Automatic, FanMode.Fixed, true)]
+    public async Task FanTransition_UndeclaredPerformanceStepIsKnownNotAppliedBlock(
+        FanMode previous,
+        FanMode requested,
+        bool performanceDeclared)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            ReportsPerformanceWithManualFans = false,
+            SupportsDirectManualFanTransitions = false,
+        };
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Silent,
+            Fans = previous,
+            HyperBoostActive = false,
+        };
+        IReadOnlyList<DeviceSubsystem> declared = performanceDeclared
+            ? [DeviceSubsystem.Fans, DeviceSubsystem.Performance]
+            : [DeviceSubsystem.Fans];
+        var coordinator = new ControlCoordinator(device, null, declaredThermalComponents: declared);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlTransitionOutcomeAsync(
+            new(previous, 3700, ManualFanCurve.Default),
+            new(requested, 3700, ManualFanCurve.Default),
+            PerformancePreset.Balanced, null, default);
+
+        if (performanceDeclared)
+        {
+            Assert.True(outcome.Result.Status == ControlResultStatus.Applied, outcome.Result.Message);
+            Assert.NotEmpty(device.PerformanceWrites);
+            return;
+        }
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.Equal(ControlCoordinator.UndeclaredThermalComponentMessage, outcome.Result.Message);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, outcome.WriteSubmissionState);
+        Assert.False(outcome.WriteAttempted);
+        Assert.Equal(0, device.TotalSetterCalls);
+        Assert.Equal(previous, device.State.Fans);
+    }
+
+    // Absent capabilities declare the wider shape for both directions.
+    [Theory]
+    [InlineData(FanMode.Fixed, FanMode.Automatic)]
+    [InlineData(FanMode.ManualCurve, FanMode.Automatic)]
+    [InlineData(FanMode.Automatic, FanMode.Fixed)]
+    [InlineData(FanMode.Automatic, FanMode.ManualCurve)]
+    public void FanControlTransitionComponents_NullCapabilitiesDeclarePerformance(
+        FanMode previous,
+        FanMode requested)
+    {
+        Assert.True(ControlCoordinator.DefersPerformanceUnderManualFans(null));
+        Assert.Equal(
+            [DeviceSubsystem.Fans, DeviceSubsystem.Performance],
+            ControlCoordinator.FanControlTransitionComponents(null, previous, requested));
+    }
+
+    public static TheoryData<string, DeviceCapabilities?> FanCapabilityShapes()
+    {
+        var data = new TheoryData<string, DeviceCapabilities?> { { "null", null } };
+        DeviceCapabilities baseline = DeviceCapabilities.SafeTargetDefaults();
+        foreach (bool reports in new[] { false, true })
+        {
+            foreach (bool direct in new[] { false, true })
+            {
+                data.Add($"reports={reports},direct={direct}", baseline with
+                {
+                    ReportsPerformanceWithManualFans = reports,
+                    SupportsDirectManualFanTransitions = direct,
+                });
+            }
+        }
+        foreach (ExperimentalBladeModel model in ExperimentalBladeModels.All)
+        {
+            data.Add($"0x{model.ProductId:X4}", ExperimentalBladePort.CreateCapabilities(model, enabled: true));
+        }
+        return data;
+    }
+
+    // Any backend that needs the Balanced bridge to enter manual fans also
+    // blocks performance writes while they are manual, so a preset chosen there
+    // is only applied by the exit restore. Every such shape must restore and
+    // declare Performance on the way back to Automatic.
+    [Theory]
+    [MemberData(nameof(FanCapabilityShapes))]
+    public void FanEntryBridge_ImpliesExitRestoreAndDeclaration(string shape, DeviceCapabilities? capabilities)
+    {
+        FanMode[] manualModes = [FanMode.Maximum, FanMode.Fixed, FanMode.ManualCurve, FanMode.Stop];
+        bool supportsDirect = capabilities?.SupportsDirectManualFanTransitions == true;
+        foreach (FanMode entered in manualModes)
+        {
+            if (!ControlCoordinator.FanEntryRequiresAutomaticBridge(supportsDirect, FanMode.Automatic, entered))
+            {
+                continue;
+            }
+            Assert.True(
+                ControlCoordinator.FanExitRestoresPerformance(capabilities, entered, FanMode.Automatic),
+                $"{shape}: {entered} -> Automatic");
+            Assert.Contains(
+                DeviceSubsystem.Performance,
+                ControlCoordinator.FanControlTransitionComponents(capabilities, entered, FanMode.Automatic));
+            Assert.True(ControlCoordinator.DefersPerformanceUnderManualFans(capabilities), shape);
+        }
+    }
+
     private static IReadOnlyDictionary<PerformancePreset, FanSpeedRange> Blade18FanRanges() =>
         new Dictionary<PerformancePreset, FanSpeedRange>
         {

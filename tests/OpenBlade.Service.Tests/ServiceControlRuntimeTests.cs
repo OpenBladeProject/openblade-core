@@ -33480,10 +33480,17 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
                 : SetFanModeAsync(value.Mode, cancellationToken);
         }
 
+        // Thermal step-runner coordinators submit fans once; the single-step
+        // performance path does not, so a test can tell which path wrote fans.
+        public int SingleAttemptFanControlCalls { get; private set; }
+
         Task ISingleAttemptThermalDevice.SetFanControlOnceAsync(
             FanControlSettings value,
-            CancellationToken cancellationToken) =>
-            SetFanControlAsync(value, cancellationToken);
+            CancellationToken cancellationToken)
+        {
+            SingleAttemptFanControlCalls++;
+            return SetFanControlAsync(value, cancellationToken);
+        }
 
         public int OwnedStopReleaseCalls { get; private set; }
         public Action? BeforeOwnedStopRelease { get; set; }
