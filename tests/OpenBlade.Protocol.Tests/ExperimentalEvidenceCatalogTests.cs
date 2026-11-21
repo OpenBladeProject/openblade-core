@@ -45,7 +45,7 @@ public sealed class ExperimentalEvidenceCatalogTests
                 else if (feature.Feature == "MappedReactiveRippleAndSequence")
                 {
                     Assert.Equal((ushort)0x02C5, model.ProductId);
-                    Assert.Equal("KeyboardMcuCommonRegionalBindingsWithoutRgbReadbackOrPhysicalValidation", feature.Basis);
+                    Assert.Equal("KeyboardMcuEditionSelectedRegionalBindingsWithoutRgbReadbackOrPhysicalValidation", feature.Basis);
                     Assert.Equal(2, feature.Sources.Count);
                     Assert.Equal("https://dl.razerzone.com/drivers/Razer%20Blade%2014%E2%80%9D%20%282025%29%20%7C%20RZ09-0530/PI4110-MCUv01.04.00.exe;SHA256=AED7039BE5CC4EC3F166A2728B0C1B90839BAE72C8A04150056654F64F20581F",
                         feature.Sources[0]);

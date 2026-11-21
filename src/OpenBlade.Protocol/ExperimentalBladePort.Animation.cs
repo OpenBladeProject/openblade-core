@@ -85,7 +85,7 @@ internal sealed partial class ExperimentalBladePort
                         or LightingRendererOwnershipState.Ripple)
                     || !(model.ProductId == 0x02C7
                         ? Rz090529KeyboardLightingLayout.IsKeySlot(pulse.MatrixSlot)
-                        : Blade14KeyboardLightingLayout.IsKeySlot(pulse.MatrixSlot)))
+                        : Blade14KeyboardLightingLayout.IsKeySlot(blade14KeyboardEdition, pulse.MatrixSlot)))
                 {
                     throw new CapabilityUnavailableException(
                         "Key-triggered lighting input is outside the reviewed Blade 14 map or owner.");

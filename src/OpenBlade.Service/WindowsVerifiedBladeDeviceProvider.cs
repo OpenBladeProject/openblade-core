@@ -654,6 +654,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                         KeyboardLightingLayoutId =
                             lighting.Capabilities.KeyboardLightingLayoutId,
                         Blade18KeyboardLayoutId = lighting.Capabilities.Blade18KeyboardLayoutId,
+                        Blade14KeyboardEdition = lighting.Capabilities.Blade14KeyboardEdition,
                         SupportedLightingRefreshRates =
                             lighting.Capabilities.SupportedLightingRefreshRates,
                     };

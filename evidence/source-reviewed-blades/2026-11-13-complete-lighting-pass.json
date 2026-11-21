@@ -809,7 +809,7 @@
       ],
       "geometry": "6x16, 96 addresses.",
       "frameTransport": "Acknowledged FF transactions with 70-byte 03/0B rows and 03/0A [05,00] activation.",
-      "keyMap": "PI4110 proof contains three packed 96x8 tables. Current product scope intentionally binds only 74 usage pairs common to all maps, including 71 reviewed ordinary Windows scan bindings. Regional disagreements stay unavailable.",
+      "keyMap": "PI4110 proof contains three packed 96x8 tables. The confirmed 00/86 edition selects one table at runtime (lit slots/ordinary Windows scan bindings: AFE3 78/75, B313 79/76, B63B 82/79). Without a confirmed edition, only the 74 usage pairs common to all maps apply, including 71 scan bindings. Space has no LED record and renderer 0x682C skips it, so it is never bound. Stored sequences use the 85-slot lit union.",
       "mcu": {
         "carrierName": "PI4110-MCUv01.04.00.exe",
         "version": "01.04.00",
@@ -830,7 +830,7 @@
       "readback": "MCU-proved four-byte Wave query, independent brightness and logo queries. Frame RGB remains unknown.",
       "restoration": "Retains a complete built-in baseline and exact raw brightness. Partial frames pause further writes without replay.",
       "gaps": [
-        "Selecting full per-region maps would be an optional product expansion; the current common intersection is intentional and already has a complete source basis.",
+        "The 00/86 edition selects the full regional map at runtime; the common intersection remains the fallback. Installed-MCU attestation and regional physical output remain unvalidated.",
         "No RGB frame readback is established."
       ],
       "brightness": true,

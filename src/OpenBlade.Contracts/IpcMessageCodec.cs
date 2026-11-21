@@ -9,7 +9,8 @@ namespace OpenBlade.Contracts;
 public static class OpenBladeIpc
 {
     // Protocol 85 adds the cooling-pad Auto fan mode and its profile.
-    public const int ProtocolVersion = 85;
+    // Protocol 89 adds the RZ09-0530 keyboard-MCU edition for regional key maps.
+    public const int ProtocolVersion = 89;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 16 * 1024 * 1024;
@@ -1428,6 +1429,9 @@ public static class IpcMessageCodec
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "blade18KeyboardLayoutId", StringComparison.OrdinalIgnoreCase))
+                    .ShouldSerialize = static (_, _) => false;
+                typeInfo.Properties.Single(property => string.Equals(
+                    property.Name, "blade14KeyboardEdition", StringComparison.OrdinalIgnoreCase))
                     .ShouldSerialize = static (_, _) => false;
                 typeInfo.Properties.Single(property => string.Equals(
                     property.Name, "thxAudio", StringComparison.OrdinalIgnoreCase))

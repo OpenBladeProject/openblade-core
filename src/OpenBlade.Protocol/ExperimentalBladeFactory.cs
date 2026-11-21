@@ -16,6 +16,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ExperimentalLightingOwnershipState lightingOwnership;
     private readonly ExperimentalStartupAnimationState startupAnimationState = new();
+    private readonly ExperimentalKeyboardLayoutMetadata keyboardLayoutMetadata = new();
 
     internal ExperimentalBladeFactory(ExperimentalBladeModel model, IHostIdentitySource identity,
         IHidCandidateNative native, IHardwareAccessGuard guard, IHidFeatureIo io,
@@ -56,10 +57,16 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
     internal string LaptopControlRecoveryIdentity => $"{model.ModelNumber}|1532:{model.ProductId:X4}";
 
-    public DeviceCapabilities Capabilities => ExperimentalBladePort.WithConfirmedExperimentalFanRange(
-        ExperimentalBladePort.WithStartupReadAdmission(
-            ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed), startupAnimationState),
-        model, policy.ConfirmedFanRanges);
+    // Write-pause recovery publishes these factory capabilities. The keyboard-layout
+    // result belongs to the identity that the latest session, including recovery's
+    // own fresh session, admitted; a changed identity clears it before a new read.
+    public DeviceCapabilities Capabilities => ExperimentalBladePort.WithKeyboardLayoutMetadata(
+        ExperimentalBladePort.WithConfirmedExperimentalFanRange(
+            ExperimentalBladePort.WithStartupReadAdmission(
+                ExperimentalBladePort.CreateCapabilities(model, policy.WritesAllowed), startupAnimationState),
+            model, policy.ConfirmedFanRanges),
+        model.ProductId == 0x02A0 ? keyboardLayoutMetadata.Value : null,
+        model.ProductId == 0x02C5 ? keyboardLayoutMetadata.Value : null);
 
     public DeviceCapabilities PotentialCapabilities => ExperimentalBladePort.CreateCapabilities(model, true);
 
@@ -247,7 +254,9 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             pending = port;
             try
             {
+                // Each exact-model read returns immediately for every other product.
                 await port.InitializeBlade18KeyboardLayoutAsync(cancellationToken).ConfigureAwait(false);
+                await port.InitializeBlade14KeyboardEditionAsync(cancellationToken).ConfigureAwait(false);
                 if (!port.IsRecoverySessionHealthy)
                 {
                     throw new IOException("The optional keyboard-layout read left an unhealthy session.");
@@ -290,7 +299,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
         {
             return new(null, HidSessionFailureKind.Canceled);
         }
-        if (identity.ReadExactIdentity() is not { Evidence: not null, Failure: null })
+        if (identity.ReadExactIdentity() is not { Evidence: { } hostEvidence, Failure: null })
         {
             return new(null, HidSessionFailureKind.IdentityBlocked);
         }
@@ -303,6 +312,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
 
         List<(OpenedCandidateHandle Handle, HidHandleIdentity Identity)> candidates = FindCandidates();
         ExperimentalBladePort? selected = null;
+        HidHandleIdentity selectedIdentity = default;
         bool ambiguous = false;
         ExperimentalControlObservation? lastAdmissionFailure = null;
         try
@@ -349,6 +359,7 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
                     if (selected is null)
                     {
                         selected = port;
+                        selectedIdentity = candidate.Identity;
                         port = null;
                     }
                     else
@@ -394,6 +405,9 @@ internal sealed class ExperimentalBladeFactory : IProductionBatteryPortFactory
             }
             ExperimentalBladePort admitted = selected;
             admitted.EnableQueryRecording();
+            // Key the optional layout read to this session's fresh host and exact HID
+            // identity, including its version number, so a changed device reads again.
+            admitted.BindKeyboardLayoutMetadata(keyboardLayoutMetadata, new(hostEvidence, selectedIdentity));
             // Startup animation is queried independently by the service. Temporary full
             // charge is read with battery state. Neither optional probe belongs in the
             // shared port-open path; each control still requires its own real readback.

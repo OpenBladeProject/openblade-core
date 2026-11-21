@@ -55,6 +55,11 @@ input and physical LED driver channels. No country names are assigned to the
 edition values. Reserved/proprietary usage bytes remain separate from standard
 USB keyboard usages.
 
+Space (usage `2C`) has no LED. Its record is `2C` followed by seven zero bytes in
+all three maps (image offsets `0xB293`, `0xB5CB` and `0xB8EB`; slots 86, 87 and
+86), and the renderer skips usage `2C` at `0x685E` (`CMP r4,#0x2C; BEQ`).
+OpenBlade gives Space no lighting slot, key pulse or import cell.
+
 When edition is unavailable, only usage-to-slot pairs identical in all three maps
 are admitted: 74 firmware usage bytes, including 71 ordinary Windows scan-code
 bindings in the production fixture. The three remaining common bytes (`81`,
@@ -63,8 +68,45 @@ intersection covers every firmware selector branch, including its default.
 Region-specific keys remain unbound without a confirmed applicable map.
 
 Exact `00/86` returns the same edition byte at payload byte 0 and an adjacent
-stored byte at payload byte 1. The second byte remains opaque. The common
-intersection does not require this query.
+stored byte at payload byte 1. The second byte remains opaque.
+
+## Runtime edition selection
+
+The service reads exact `00/86` once for each admitted RZ09-0530 device
+identity, before it publishes the first port, with two zero data bytes and a
+two-byte reply. The read is read-only and never sends the `00/06` setter. Every
+byte value selects a map through the firmware's own switch, so payload byte 0
+alone chooses the table:
+
+| Firmware edition byte | Map | Lit slots | Windows scan-code bindings |
+| --- | --- | --- | --- |
+| 0, 1, 5, 8, 9, 11 | `0xAFE3` | 78 | 75 |
+| 12 | `0xB63B` | 82 | 79 |
+| 2, 3, 4, 6, 7, 10 and every other byte value | `0xB313` | 79 | 76 |
+
+The selected map drives Reactive and Ripple key input, Ripple positions and
+Keyboard .chroma imports. It adds Enter, Alt and the HID `31`, `32`, `64` and
+International1-5 keys where that map binds them. Space and usages `81`, `D2`
+and `F0` remain without a binding.
+
+The common 74-slot intersection remains the fallback whenever the read fails,
+times out, returns a malformed reply, or leaves the session unhealthy. An
+unhealthy session is retired and reopened once without repeating the read.
+The edition is metadata only: its failure never disables other controls.
+
+The service keeps the result for the exact host and HID identity, including
+the HID version number. Later battery, lighting and recovery sessions reuse the
+confirmed edition, and after a failed read they keep the common map without
+probing again. A changed identity starts a new read. Every session still passes
+fresh identity and safety admission. Service status reports the raw edition
+byte as `blade14KeyboardEdition` (service IPC protocol 89); the Session Agent
+and tray map it locally.
+
+Stored sequences use the union of the three maps' lit slots, 85 in all, so a
+profile stays valid for every edition. The eleven slots without a lit record in
+any map, including both Space positions, and the container tail must stay black.
+Installed-MCU attestation and physical validation of regional output remain
+outstanding.
 
 ## Link to custom RGB commands
 

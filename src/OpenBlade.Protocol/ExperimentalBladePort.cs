@@ -133,12 +133,21 @@ internal sealed partial class ExperimentalBladePort(
 
     internal void SetAdditionalWriteAdmission(Func<bool> admission) => additionalWriteAdmission = admission;
 
-    public DeviceCapabilities Capabilities => WithConfirmedExperimentalFanRange(
-        WithStartupReadAdmission(CreateCapabilities(model, policy.WritesAllowed), startupAnimationState),
-        model, policy.ConfirmedFanRanges) with
-    {
-        Blade18KeyboardLayoutId = blade18KeyboardLayoutId,
-    };
+    public DeviceCapabilities Capabilities => WithKeyboardLayoutMetadata(
+        WithConfirmedExperimentalFanRange(
+            WithStartupReadAdmission(CreateCapabilities(model, policy.WritesAllowed), startupAnimationState),
+            model, policy.ConfirmedFanRanges),
+        blade18KeyboardLayoutId, blade14KeyboardEdition);
+
+    internal static DeviceCapabilities WithKeyboardLayoutMetadata(
+        DeviceCapabilities capabilities, byte? blade18KeyboardLayoutId, byte? blade14KeyboardEdition) =>
+        capabilities with
+        {
+            Blade18KeyboardLayoutId = blade18KeyboardLayoutId,
+            // The edition describes this layout's key map; it is absent without that layout.
+            Blade14KeyboardEdition = capabilities.KeyboardLightingLayoutId == KeyboardLightingLayoutIds.Rz09_0530
+                ? blade14KeyboardEdition : null,
+        };
 
     internal static DeviceCapabilities CreateCapabilities(ExperimentalBladeModel model, bool enabled) =>
         new(enabled ? CreatePerformancePresets(model) : new HashSet<PerformancePreset>(),

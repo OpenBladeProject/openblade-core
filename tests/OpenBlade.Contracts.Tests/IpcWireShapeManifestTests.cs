@@ -28,6 +28,7 @@ public sealed class IpcWireShapeManifestTests
         Assert.Contains("property supportsBreathingColorSelection:System.Boolean member", manifest, StringComparison.Ordinal);
         Assert.Contains("property supportsWaveDirectionSelection:System.Boolean member", manifest, StringComparison.Ordinal);
         Assert.Contains("property blade18KeyboardLayoutId:System.Byte? member", manifest, StringComparison.Ordinal);
+        Assert.Contains("property blade14KeyboardEdition:System.Byte? member", manifest, StringComparison.Ordinal);
         Assert.Contains("property hostManagedLaptopControls:System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> member", manifest, StringComparison.Ordinal);
         Assert.Contains("property fanSpeedRangesByPerformancePreset:System.Collections.Generic.IReadOnlyDictionary<OpenBlade.Contracts.PerformancePreset,OpenBlade.Contracts.FanSpeedRange> member", manifest, StringComparison.Ordinal);
         Assert.Contains("derived setFanStopMode=OpenBlade.Contracts.SetFanStopModeRequest", manifest, StringComparison.Ordinal);
@@ -92,6 +93,8 @@ public sealed class IpcWireShapeManifestTests
             84 => "7698A5B8C9679FCDE35762221E1DBD8A31E92086588511320CB0D5D87473D306",
             // Protocol 85 adds the cooling-pad Auto fan mode and CoolingPadSettings.AutoProfile.
             85 => "A471FE3A7AD4994630D5137AB901C3599358B1546ED1797B4A4E7E0B4203CEB3",
+            // Protocol 89 adds the RZ09-0530 keyboard-MCU edition for regional key maps.
+            89 => "D454C539819CFF7EAC6A8E433EDD02B59A97AB44617905186ACC15C08A1B50D5",
             _ => null,
         };
 
