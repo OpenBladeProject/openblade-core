@@ -17886,6 +17886,8 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             return false;
         }
         PowerSource priorPowerSource = Automation.PowerSource;
+        // Decided before pending confirmations are invalidated below.
+        bool releasePowerOnlyWriteBlock = HoldsOnlyPowerWriteBlock(GetStatus());
         bool preserveOverrides = PreserveOverridesForExternalClassification(powerSource);
         bool changed = Automation.ChangePowerSource(powerSource, preserveOverrides);
         if (PowerSourcePolicy.IsExternal(powerSource))
@@ -17924,6 +17926,10 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             }
             lightingRecoveryPauseMessage = null;
             AdoptDisplayOffSuppressionForPowerSource();
+            if (releasePowerOnlyWriteBlock)
+            {
+                ReleasePowerOnlyWriteBlockForClassifiedSource();
+            }
         }
         if (!changed || !suppressInitialKnownPowerSourceApplyAfterUnexpectedExit)
         {
@@ -21458,7 +21464,9 @@ public sealed partial class ServiceControlRuntime : IServiceControlRuntime, ISer
             {
                 AdvanceFanAuthorityEpoch();
             }
-            bool carriesOnlyPowerBlock = candidate.WritesBlocked && !HasExplicitNonPowerWriteBlock(candidate)
+            // A transient read label does not own a block, so it neither creates
+            // nor ends power-only tracking; explicit owners still end it.
+            bool carriesOnlyPowerBlock = candidate.WritesBlocked && !HasNonPowerWriteBlockOwner(candidate)
                 && (powerOnlyWriteBlock ?? (previous.Revision == Interlocked.Read(ref powerOnlyWriteBlockRevision)));
             if (Equivalent(previous, candidate))
             {
