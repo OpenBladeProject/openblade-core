@@ -9,6 +9,7 @@ use std::{
     time::Duration,
 };
 
+use openblade_domain::application_context::{ApplicationContext, Rule};
 use openblade_domain::automation::{self, Provenance, ValueOrigin};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -122,7 +123,8 @@ impl ReportEffect {
 pub(crate) struct Lease {
     last: Option<(String, i64)>,
     deadline: Option<Instant>,
-    selected: Option<SelectedRule>,
+    /// Managed's active pair, kept by the domain's shared selection rules.
+    context: ApplicationContext<String>,
 }
 
 impl Lease {
@@ -139,18 +141,16 @@ impl Lease {
         if !self.accept(report) {
             return ReportEffect::Stale;
         }
-        let selected = report.executable_path.as_deref().and_then(|path| {
-            rules
-                .iter()
-                .filter_map(SelectedRule::read)
-                .find(|rule| same_path(path, &rule.path))
-        });
-        if self.selected.is_none() && selected.is_none() {
+        let changed = self.context.report(
+            rules.iter().filter_map(rule),
+            report.executable_path.as_deref(),
+            same_path,
+        );
+        let active = self.context.active().is_some();
+        if !changed && !active {
             return ReportEffect::Idle;
         }
-        self.deadline = selected.as_ref().map(|_| now + LEASE);
-        let changed = self.selected != selected;
-        self.selected = selected;
+        self.deadline = active.then(|| now + LEASE);
         if changed {
             ReportEffect::Changed
         } else {
@@ -168,12 +168,26 @@ impl Lease {
 
     fn clear_selection(&mut self) {
         self.deadline = None;
-        self.selected = None;
+        self.context.clear();
     }
 
+    /// Managed `UpdateProfiles`: a changed rule set retires the selection
+    /// unless an enabled rule with its id still holds the reported path.
+    fn update(&mut self, rules: &[Value]) {
+        if self
+            .context
+            .update(rules.iter().filter_map(rule), same_path)
+        {
+            self.deadline = None;
+        }
+    }
+
+    /// The rule whose overrides apply, found as managed `GetApplicationOverride` finds it.
     pub(crate) fn rule<'a>(&self, rules: &'a [Value]) -> Option<&'a Value> {
-        let selection = self.selected.as_ref()?;
-        rules.iter().find(|rule| selection.identifies(rule))
+        let active = self.context.active()?;
+        rules
+            .iter()
+            .find(|value| rule(value).is_some_and(|rule| rule.supplies(active.id)))
     }
 
     fn accept(&mut self, report: &Report) -> bool {
@@ -189,30 +203,13 @@ impl Lease {
     }
 }
 
-#[derive(PartialEq, Eq)]
-struct SelectedRule {
-    id: String,
-    path: String,
-}
-
-impl SelectedRule {
-    fn read(rule: &Value) -> Option<Self> {
-        if rule["enabled"].as_bool() != Some(true) {
-            return None;
-        }
-        Some(Self {
-            id: rule["id"].as_str()?.to_owned(),
-            path: rule["executablePath"].as_str()?.to_owned(),
-        })
-    }
-
-    fn identifies(&self, rule: &Value) -> bool {
-        rule["enabled"].as_bool() == Some(true)
-            && rule["id"].as_str() == Some(self.id.as_str())
-            && rule["executablePath"]
-                .as_str()
-                .is_some_and(|path| same_path(&self.path, path))
-    }
+/// A fixture rule as the shared selection reads it; a malformed one selects nothing.
+fn rule(value: &Value) -> Option<Rule<'_>> {
+    Some(Rule {
+        id: value["id"].as_str()?,
+        executable_path: value["executablePath"].as_str()?,
+        enabled: value["enabled"].as_bool() == Some(true),
+    })
 }
 
 struct State {
@@ -311,9 +308,7 @@ impl State {
     }
 
     fn invalidate_changed_rule(&mut self) {
-        if self.selected_rule().is_none() {
-            self.lease.clear_selection();
-        }
+        self.lease.update(rules(&self.status["profiles"]));
     }
 
     fn project(&mut self, message: &'static str) {
@@ -508,6 +503,35 @@ mod tests {
         );
         state.report(&report(ID, 3, Some(PATH)), second);
         assert!(state.selected_rule().is_some());
+    }
+
+    #[test]
+    fn a_profile_update_keeps_a_recased_rule_and_drops_a_disabled_one() {
+        let mut state = State::new(
+            serde_json::from_str::<Value>(crate::wire::CURRENT_FIXTURE).unwrap()["status"].clone(),
+        );
+        let now = Instant::now();
+        state.report(&report(ID, 1, Some(PATH)), now);
+        // Managed `UpdateProfiles` compares the reported path ignoring case,
+        // so a recased rule keeps its selection and the next report renews it.
+        state.status["profiles"]["applicationProfiles"][0]["executablePath"] =
+            PATH.to_ascii_uppercase().into();
+        state.invalidate_changed_rule();
+        assert!(state.lease.deadline().is_some());
+        assert_eq!(
+            state.report(&report(ID, 2, Some(PATH)), now).1,
+            ReportEffect::Renewed.message()
+        );
+        state.step(4);
+        assert!(state.selected_rule().is_none());
+        assert_eq!(state.lease.deadline(), None);
+        // Re-enabling the rule does not select it; the next report does.
+        state.step(5);
+        assert!(state.selected_rule().is_none());
+        assert_eq!(
+            state.report(&report(ID, 3, Some(PATH)), now).1,
+            ReportEffect::Changed.message()
+        );
     }
 
     #[test]
