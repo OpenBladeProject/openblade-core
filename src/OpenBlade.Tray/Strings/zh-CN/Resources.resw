@@ -2993,59 +2993,32 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>恢复之前的优化器值</value></data>
   <data name="MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>CPU 电压优化器</value></data>
   <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve"><value>全核心偏移</value></data>
-  <data name="MainWindow_CoolingPadApplyHelpText.Text" xml:space="preserve">
-    <value>“应用”将在本次会话中开始控制。“释放控制”会恢复接管前读取的底座设置。</value>
-  </data>
-  <data name="MainWindow_CoolingPadApplyText.Content" xml:space="preserve">
-    <value>应用</value>
-  </data>
-  <data name="MainWindow_CoolingPadBrightnessText.Header" xml:space="preserve">
-    <value>设定亮度 (%)</value>
-  </data>
-  <data name="MainWindow_CoolingPadCpuCurveText.Text" xml:space="preserve">
-    <value>CPU</value>
+  <data name="MainWindow_CoolingPadBrightnessText.Text" xml:space="preserve">
+    <value>亮度</value>
   </data>
   <data name="MainWindow_CoolingPadCurveHelpText.Text" xml:space="preserve">
-    <value>温度须递增，目标转速不得降低，步长为 50 RPM。选择“两者”时采用较高的目标转速。</value>
-  </data>
-  <data name="MainWindow_CoolingPadCurveRpmText.Header" xml:space="preserve">
-    <value>目标 (RPM)</value>
-  </data>
-  <data name="MainWindow_CoolingPadCurveTemperatureText.Header" xml:space="preserve">
-    <value>温度 (°C)</value>
-  </data>
-  <data name="MainWindow_CoolingPadCurvesText.Header" xml:space="preserve">
-    <value>CPU/GPU 曲线</value>
-  </data>
-  <data name="MainWindow_CoolingPadExperimentalText.Text" xml:space="preserve">
-    <value>基于源代码的实验性支持 · Razer RC21-0230</value>
+    <value>为每个温度设置风扇转速。选择“两者”时，散热底座采用两者中较高的转速。</value>
   </data>
   <data name="MainWindow_CoolingPadFanLabelText.Text" xml:space="preserve">
-    <value>风扇</value>
+    <value>风扇模式</value>
   </data>
-  <data name="MainWindow_CoolingPadFixedRpmText.Header" xml:space="preserve">
-    <value>目标风扇转速 (RPM)</value>
-  </data>
-  <data name="MainWindow_CoolingPadGpuCurveText.Text" xml:space="preserve">
-    <value>GPU</value>
+  <data name="MainWindow_CoolingPadFixedRpmText.Text" xml:space="preserve">
+    <value>风扇转速</value>
   </data>
   <data name="MainWindow_CoolingPadHeadingText.Text" xml:space="preserve">
     <value>散热底座</value>
   </data>
   <data name="MainWindow_CoolingPadLightingLabelText.Text" xml:space="preserve">
-    <value>灯光</value>
+    <value>灯光效果</value>
   </data>
-  <data name="MainWindow_CoolingPadPrimaryColorText.Header" xml:space="preserve">
-    <value>颜色（RGB 十六进制）</value>
-  </data>
-  <data name="MainWindow_CoolingPadRefreshText.Content" xml:space="preserve">
-    <value>刷新状态</value>
+  <data name="MainWindow_CoolingPadPrimaryColorText.Text" xml:space="preserve">
+    <value>颜色</value>
   </data>
   <data name="MainWindow_CoolingPadReleaseText.Content" xml:space="preserve">
     <value>释放控制</value>
   </data>
-  <data name="MainWindow_CoolingPadSecondaryColorText.Header" xml:space="preserve">
-    <value>呼吸效果的第二种颜色（RGB 十六进制）</value>
+  <data name="MainWindow_CoolingPadSecondaryColorText.Text" xml:space="preserve">
+    <value>第二种颜色</value>
   </data>
   <data name="MainWindow_CoolingPadWaveDirectionLabel.Text" xml:space="preserve">
     <value>方向</value>
@@ -3113,5 +3086,53 @@ OpenBlade 会再次检查此列表，并停止仍在运行的服务。Razer 软�
   </data>
   <data name="MainWindow_LocalDimmingTurnOffButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>关闭局部调光</value>
+  </data>
+  <data name="MainWindow_CoolingPadBrightnessReadoutLabelText.Text" xml:space="preserve">
+    <value>亮度</value>
+  </data>
+  <data name="MainWindow_CoolingPadBrightnessSlider.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>散热底座亮度</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanSectionText.Text" xml:space="preserve">
+    <value>风扇</value>
+  </data>
+  <data name="MainWindow_CoolingPadFixedRpmSlider.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>散热底座风扇转速</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingSectionText.Text" xml:space="preserve">
+    <value>灯光</value>
+  </data>
+  <data name="MainWindow_CoolingPadNameText.Text" xml:space="preserve">
+    <value>Razer Laptop Cooling Pad</value>
+  </data>
+  <data name="MainWindow_CoolingPadPrimaryColorButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>选择散热底座颜色</value>
+  </data>
+  <data name="MainWindow_CoolingPadSecondaryColorButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>选择散热底座的第二种颜色</value>
+  </data>
+  <data name="MainWindow_CoolingPadTargetLabelText.Text" xml:space="preserve">
+    <value>风扇目标转速</value>
+  </data>
+  <data name="MainWindow_CoolingPadCheckText.Content" xml:space="preserve">
+    <value>检查散热底座</value>
+  </data>
+  <data name="MainWindow_CoolingPadProgressRing.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>正在应用散热底座风扇设置</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingProgressRing.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>正在应用散热底座灯光</value>
+  </data>
+  <data name="MainWindow_CoolingPadAutoProfileLabel.Text" xml:space="preserve">
+    <value>配置文件</value>
+  </data>
+  <data name="MainWindow_CoolingPadAutoProfileText.AccessibleName" xml:space="preserve">
+    <value>散热底座风扇配置文件</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanSelectorText.PlaceholderText" xml:space="preserve">
+    <value>由底座控制</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingSelectorText.PlaceholderText" xml:space="preserve">
+    <value>由底座控制</value>
   </data>
 </root>

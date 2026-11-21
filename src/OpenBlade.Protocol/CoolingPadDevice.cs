@@ -29,7 +29,9 @@ public interface ICoolingPadDevice : IAsyncDisposable
 {
     string Identity { get; }
     Task<CoolingPadDeviceSnapshot> ReadSnapshotAsync(CancellationToken cancellationToken);
-    Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> submissionAllowed, CancellationToken cancellationToken);
+    // Auto requires smartPreset (Quiet, Balanced or Performance); other modes ignore it.
+    Task SetFanAsync(CoolingPadFanMode mode, int? rpm, Func<bool> submissionAllowed, CancellationToken cancellationToken,
+        CoolingPadFanPreset? smartPreset = null);
     Task SetLightingAsync(CoolingPadSettings settings, Func<bool> submissionAllowed, CancellationToken cancellationToken);
     Task PushMirrorFrameAsync(IReadOnlyList<CoolingPadColor> colors, Func<bool> submissionAllowed, CancellationToken cancellationToken);
     Task RestoreAsync(CoolingPadDeviceSnapshot baseline, bool restoreFan, bool restoreLighting, Func<bool> submissionAllowed, CancellationToken cancellationToken);

@@ -42,6 +42,17 @@
            BasedOn="{StaticResource AppCustomCommandButtonStyle}">
         <Setter Property="ContentTemplate" Value="{StaticResource AppCommandTextTemplate}" />
     </Style>
+    <!-- The one primary commit command on a page. WinUI styles have a single base,
+         so this repeats the command sizing on the native accent button. -->
+    <Style x:Key="AppAccentCommandButtonStyle"
+           TargetType="Button"
+           BasedOn="{StaticResource AccentButtonStyle}">
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="Padding" Value="12,6" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="ContentTemplate" Value="{StaticResource AppCommandTextTemplate}" />
+    </Style>
     <!-- Desktop chart tools: native states and focus, lower emphasis than page commands. -->
     <Style x:Key="AppToolbarButtonStyle" TargetType="Button"
            BasedOn="{StaticResource DefaultButtonStyle}">

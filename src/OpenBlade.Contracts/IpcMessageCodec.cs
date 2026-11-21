@@ -8,7 +8,8 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    // Protocol 85 adds Intel CPU power limits, firmware Gaming-mode GPU overclock,
+    // Protocol 85 adds the cooling-pad Auto fan mode and its profile.
+    // Protocol 88 adds Intel CPU power limits, firmware Gaming-mode GPU overclock,
     // local dimming capability and state, and the local dimming Clear request.
     public const int ProtocolVersion = 88;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;

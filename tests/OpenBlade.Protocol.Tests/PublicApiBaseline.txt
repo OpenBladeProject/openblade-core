@@ -520,7 +520,7 @@ type interface OpenBlade.Protocol.ICoolingPadDevice
   method abstract System.String get_Identity()
   method abstract System.Threading.Tasks.Task PushMirrorFrameAsync(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.CoolingPadColor> colors, System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task RestoreAsync(OpenBlade.Protocol.CoolingPadDeviceSnapshot baseline, System.Boolean restoreFan, System.Boolean restoreLighting, System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken)
-  method abstract System.Threading.Tasks.Task SetFanAsync(OpenBlade.Contracts.CoolingPadFanMode mode, System.Nullable<System.Int32> rpm, System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task SetFanAsync(OpenBlade.Contracts.CoolingPadFanMode mode, System.Nullable<System.Int32> rpm, System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken, System.Nullable<OpenBlade.Protocol.CoolingPadFanPreset> smartPreset = null)
   method abstract System.Threading.Tasks.Task SetLightingAsync(OpenBlade.Contracts.CoolingPadSettings settings, System.Func<System.Boolean> submissionAllowed, System.Threading.CancellationToken cancellationToken)
   method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.CoolingPadDeviceSnapshot> ReadSnapshotAsync(System.Threading.CancellationToken cancellationToken)
   property System.String Identity { get; }

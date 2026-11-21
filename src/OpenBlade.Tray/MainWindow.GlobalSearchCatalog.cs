@@ -26,19 +26,23 @@ public sealed partial class MainWindow
         // The common navigation-visibility filter keeps every accessory result
         // unavailable until exact discovery has confirmed this optional page.
         Row(coolingPad, "MainWindow_CoolingPadFanLabelText.Text", "CoolingPadFanSelector");
-        Row(coolingPad, "MainWindow_CoolingPadFixedRpmText.Header", "CoolingPadFixedRpm",
+        Row(coolingPad, "MainWindow_CoolingPadFixedRpmText.Text", "CoolingPadFixedRpm",
             exposed: () => ViewModel.CoolingPad.ShowFixedSpeed);
         Row(coolingPad, "MainWindow_CoolingPadDemandLabelText.Text", "CoolingPadDemandToggle",
             exposed: () => ViewModel.CoolingPad.ShowDemandApiOption);
-        Row(coolingPad, "MainWindow_CoolingPadCurvesText.Header", "CoolingPadCurves",
-            exposed: () => ViewModel.CoolingPad.ShowCurves);
+        Row(coolingPad, "MainWindow_CoolingPadAutoProfileLabel.Text", "CoolingPadAutoProfile",
+            exposed: () => ViewModel.CoolingPad.ShowAutoProfile);
+        Row(coolingPad, "MainWindow_ExpanderCPUCurve.Header", "CoolingPadCpuCurve",
+            anchor: CoolingPadCurves, exposed: () => ViewModel.CoolingPad.ShowCurves && ViewModel.CoolingPad.ShowCpuCurve);
+        Row(coolingPad, "MainWindow_ExpanderGPUCurve.Header", "CoolingPadGpuCurve",
+            anchor: CoolingPadCurves, exposed: () => ViewModel.CoolingPad.ShowCurves && ViewModel.CoolingPad.ShowGpuCurve);
         Row(coolingPad, "MainWindow_CoolingPadTemperatureSourceLabel.Text", "CoolingPadTemperatureSource",
-            anchor: CoolingPadCurves, exposed: () => ViewModel.CoolingPad.ShowCurves);
+            exposed: () => ViewModel.CoolingPad.ShowTemperatureSource);
         Row(coolingPad, "MainWindow_CoolingPadLightingLabelText.Text", "CoolingPadLightingSelector");
-        Row(coolingPad, "MainWindow_CoolingPadBrightnessText.Header", "CoolingPadBrightness");
-        Row(coolingPad, "MainWindow_CoolingPadPrimaryColorText.Header", "CoolingPadPrimaryColor",
+        Row(coolingPad, "MainWindow_CoolingPadBrightnessText.Text", "CoolingPadBrightness");
+        Row(coolingPad, "MainWindow_CoolingPadPrimaryColorText.Text", "CoolingPadPrimaryColor",
             exposed: () => ViewModel.CoolingPad.ShowPrimaryColor);
-        Row(coolingPad, "MainWindow_CoolingPadSecondaryColorText.Header", "CoolingPadSecondaryColor",
+        Row(coolingPad, "MainWindow_CoolingPadSecondaryColorText.Text", "CoolingPadSecondaryColor",
             exposed: () => ViewModel.CoolingPad.ShowSecondaryColor);
         Row(coolingPad, "MainWindow_CoolingPadWaveDirectionLabel.Text", "CoolingPadWaveDirection",
             exposed: () => ViewModel.CoolingPad.ShowWaveDirection);
