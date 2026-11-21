@@ -68,16 +68,27 @@ subscription and decoding the profile list of each status. Only `Stored` and
 - A lock, a secure-desktop switch or another user on the console leaves the
   retained processes and the renewals alone. Only the foreground becomes
   unknown, so a Foreground profile ends and a retained process stays reported.
-  A different session id forgets every process. The Service accepts reports
-  from the locked console session.
+  A different session id forgets every process, as defence in depth: the active
+  session is always the Agent's own, so no real session reaches that branch.
+  The Service accepts reports from the locked console session.
 - Path matching uses the managed ordinal case-insensitive comparison. A reused
   PID is never taken for the old process.
 - A failure of any selected Agent role ends the Agent, as the managed
-  supervisor's `WhenAny` does. The native Agent also registers for Windows
-  Application Restart with managed's `--application-restart` and flags 0, for
-  every role, and unregisters on a deliberate stop. Windows restarts the Agent
-  after a crash, hang, update or reboot. An error return is an ordinary exit,
-  which Windows does not restart.
+  supervisor's `WhenAny` does. Like managed, the Agent then finishes draining,
+  releases its Origin and custody, reports its diagnostic and ends with a fail-fast
+  exception (also for a panic), so Windows Error Reporting sees a crash. An
+  admission denial, a lost singleton, an origin retired under the Agent and a
+  deliberate stop are ordinary exits, and a deliberate stop exits 0.
+- The installed Agent registers for Windows Application Restart with flags 0, for
+  every role, and unregisters on a deliberate stop. Windows restarts an Agent
+  that crashed after running at least 60 seconds. Managed registers
+  `--application-restart`. Native Origin admission accepts no arguments, so it
+  registers no command line (NULL) and the restarted Agent starts with none.
+- Windows cannot give a restarted process the sign-in action's working directory,
+  so the Agent no longer requires it. Origin has already proved the image,
+  package, process and session, and nothing before that point uses a relative
+  path or searches the working directory for DLLs. The Agent sets its working
+  directory to the verified install directory instead.
 
 ## Deliberate differences from managed
 
@@ -142,5 +153,13 @@ None of the following has run:
 - the installed Agent's stop with the role running, and Windows Application
   Restart after a crash
 - the CPU and wakeup cost of the owner and hook threads on a real system
+
+Attended validation of the restart, which needs separate authorization:
+
+- a crash of an Agent that ran at least 60 seconds restarts it, the restarted
+  Agent passes Origin admission with no arguments and a different working
+  directory, and it serves again
+- a crash before 60 seconds does not restart it
+- a deliberate stop does not restart it
 
 Physical or attended validation needs separate authorization.

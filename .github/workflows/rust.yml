@@ -290,7 +290,8 @@ jobs:
           $gpu = @('openblade-windows-agent-candidate', 'agent-display-query-v1,agent-gpu-v1')
           # The application reporter lane selects the reporter alone, so no other
           # endpoint masks its wiring. The shared feature supervision with other
-          # endpoints is exercised by the combined check and lint lanes below.
+          # endpoints is only compiled and linted, by the combined check and lint
+          # lanes below; no test runs the reporter beside another endpoint.
           $reporter = @('openblade-windows-agent-candidate', 'agent-application-reporter-v1')
           # One run per filter, so a filter that matches no test fails the step.
           foreach ($run in @(
