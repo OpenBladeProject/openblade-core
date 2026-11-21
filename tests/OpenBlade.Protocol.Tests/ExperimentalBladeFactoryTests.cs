@@ -483,7 +483,6 @@ public sealed partial class ExperimentalBladeFactoryTests
     [Theory]
     [InlineData(0x029F)]
     [InlineData(0x029D)]
-    [InlineData(0x02C5)]
     public async Task Recovery_WithoutFullChargeQueryPreservesUnknownLikeOrdinaryBatteryRead(int productId)
     {
         ExperimentalBladeModel model = ExperimentalBladeModels.All.Single(item => item.ProductId == productId);

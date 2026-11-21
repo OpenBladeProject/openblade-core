@@ -3308,6 +3308,37 @@ public sealed class ControlCoordinatorTests
             new LightingSettings(LightingEffect.Off, default, 0)),
     };
 
+    // The transition confirms battery with the same unknown-override rule as
+    // its plan: only a limiter independent of the override accepts an
+    // unreadable flag in the final read.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task FullReconcile_UnknownOverrideReadbackMatchesOnlyIndependentLimiter(bool independent)
+    {
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsTemporaryFullCharge = true,
+            ChargePolicyIndependentOfTemporaryFullCharge = independent,
+        };
+        device.State = device.State with { Battery = new ConfirmedBatteryState(true, 80, false) };
+        device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Battery)
+            {
+                device.State = device.State with { Battery = new ConfirmedBatteryState(true, 75, null) };
+            }
+        };
+
+        FullTransitionApplyOutcome outcome = await new ControlCoordinator(device)
+            .ApplyDesiredStateOutcomeAsync(CreateDesiredState(), CancellationToken.None);
+
+        Assert.Equal(["SetChargeLimit"], device.BatterySetterCalls);
+        Assert.Equal(independent, outcome.ReadbackMatched.Contains(DeviceSubsystem.Battery));
+        Assert.Equal(independent, outcome.Results.Battery.Status == ControlResultStatus.Applied);
+    }
+
     private static RecordingBladeDevice CreateMatchingDevice() => new()
     {
         State = new ConfirmedDeviceState(

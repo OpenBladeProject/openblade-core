@@ -3125,8 +3125,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 || !CanMutate
                 || !HasManualPowerContext
                 || latestStatus?.ConfirmedState?.Battery is not { } confirmed
-                || confirmed.TemporaryFullCharge is true
-                || confirmed.TemporaryFullCharge is null && capabilities.SupportsTemporaryFullCharge)
+                // Only a confirmed active override blocks the limiter here. The service
+                // still refuses an unknown override on backends whose limiter depends on it.
+                || confirmed.TemporaryFullCharge is true)
             {
                 return false;
             }
@@ -5295,8 +5296,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             || !HasManualPowerContext
             || !ProfileAdmissionPolicy.HasBatteryCapability(capabilities)
             || status?.ConfirmedState?.Battery is not { } confirmed
-            || confirmed.TemporaryFullCharge is true
-            || confirmed.TemporaryFullCharge is null && capabilities.SupportsTemporaryFullCharge)
+            // Only a confirmed active override blocks the limiter here. The service
+            // still refuses an unknown override on backends whose limiter depends on it.
+            || confirmed.TemporaryFullCharge is true)
         {
             return false;
         }
@@ -6562,8 +6564,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             || !CanMutate
             || !HasManualPowerContext
             || status?.ConfirmedState?.Battery is not { } confirmed
-            || confirmed.TemporaryFullCharge is true
-            || confirmed.TemporaryFullCharge is null && capabilities.SupportsTemporaryFullCharge)
+            // Only a confirmed active override blocks the limiter here. The service
+            // still refuses an unknown override on backends whose limiter depends on it.
+            || confirmed.TemporaryFullCharge is true)
         {
             return false;
         }

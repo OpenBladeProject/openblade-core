@@ -1128,6 +1128,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method OpenBlade.Contracts.ThxAudioCapabilities get_ThxAudio()
   method System.Boolean SupportsBreathingMode(OpenBlade.Contracts.BreathingColorMode mode)
   method System.Boolean SupportsFanSpeedInAnyPerformancePreset(System.Int32 speedRpm)
+  method System.Boolean get_ChargePolicyIndependentOfTemporaryFullCharge()
   method System.Boolean get_HasFanStopEvidence()
   method System.Boolean get_HasFanStopSourceEvidence()
   method System.Boolean get_HasFanStopTrialEvidence()
@@ -1174,6 +1175,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_Blade14KeyboardEdition(System.Nullable<System.Byte> value)
   method System.Void set_Blade18KeyboardLayoutId(System.Nullable<System.Byte> value)
   method System.Void set_ChargeLimits(System.Collections.Generic.IReadOnlySet<System.Int32> value)
+  method System.Void set_ChargePolicyIndependentOfTemporaryFullCharge(System.Boolean value)
   method System.Void set_CpuPowerLimit(OpenBlade.Contracts.CpuPowerLimitCapabilities value)
   method System.Void set_CpuVoltageOptimizer(OpenBlade.Contracts.CpuVoltageOptimizerCapabilities value)
   method System.Void set_CustomPerformance(OpenBlade.Contracts.CustomPerformanceCapabilities value)
@@ -1240,6 +1242,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property OpenBlade.Contracts.LocalDimmingCapabilities LocalDimming { get; init; }
   property OpenBlade.Contracts.SpecialKeySlotSet WritableSpecialKeySlots { get; init; }
   property OpenBlade.Contracts.ThxAudioCapabilities ThxAudio { get; init; }
+  property System.Boolean ChargePolicyIndependentOfTemporaryFullCharge { get; init; }
   property System.Boolean HasFanStopEvidence { get; }
   property System.Boolean HasFanStopSourceEvidence { get; init; }
   property System.Boolean HasFanStopTrialEvidence { get; init; }

@@ -157,7 +157,7 @@ public sealed partial class SourceReviewedBladeModelTests
         await using var port = Create(product, session, policy);
         await port.SetChargeLimitAsync(75, default);
         Assert.Equal((byte)0xCB, session.Battery);
-        Assert.Equal(new byte[] { 0x92, 0x12, 0x92 }, session.Commands.Select(command => command.CommandId));
+        Assert.Equal(BatteryCommands(product, 0x92, 0x12, 0x92), session.Commands.Select(command => command.CommandId));
         session.IgnoreWrites = true;
         BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(() => port.SetChargeLimitAsync(80, default));
         Assert.Equal(WriteSubmissionState.Indeterminate, failure.SubmissionState);
@@ -339,7 +339,7 @@ public sealed partial class SourceReviewedBladeModelTests
         await using var port = Create(product, session);
         await port.SetProtectionOffAsync(default);
         Assert.Equal((byte)55, session.Battery);
-        Assert.Equal(new byte[] { 0x92, 0x12, 0x92 }, session.Commands.Select(command => command.CommandId));
+        Assert.Equal(BatteryCommands(product, 0x92, 0x12, 0x92), session.Commands.Select(command => command.CommandId));
         await port.SetChargeLimitAsync(75, default);
         Assert.Equal((byte)0xCB, session.Battery);
         int before = session.Commands.Count;
@@ -366,7 +366,7 @@ public sealed partial class SourceReviewedBladeModelTests
 
     [Theory]
     [MemberData(nameof(Products))]
-    public async Task Recovery_QueriesOnlyAdmittedFeaturesAndPreservesUnknownFullCharge(int product)
+    public async Task Recovery_QueriesOnlyAdmittedFeaturesAndReadsFullChargeOnlyWhereAdmitted(int product)
     {
         var session = new Session { Mode = 4 };
         await using var port = Create(product, session);
@@ -382,7 +382,8 @@ public sealed partial class SourceReviewedBladeModelTests
             Assert.Equal(LogoLightingMode.Static, recovered.LogoLighting);
         }
         Assert.NotNull(recovered.Battery);
-        Assert.Null(recovered.Battery.TemporaryFullCharge);
+        // Only RZ09-0529 admits temporary full charge here; the others keep it unknown.
+        Assert.Equal(product == 0x02C7 ? false : null, recovered.Battery.TemporaryFullCharge);
         Assert.All(session.Commands, command =>
             Assert.True(command.ClassId == 0x0D && command.CommandId is 0x82 or 0x87
                 || command.ClassId == 0x07 && command.CommandId is 0x92 or 0x8F
@@ -391,7 +392,8 @@ public sealed partial class SourceReviewedBladeModelTests
                 || command.ClassId == 0x0F && command.CommandId == 0x82));
         if (product == 0x02C7)
         {
-            Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x8F);
+            Assert.Single(session.Commands, command => command.ClassId == 0x07 && command.CommandId == 0x8F);
+            Assert.DoesNotContain(session.Commands, command => command.CommandId < 0x80);
         }
     }
 
