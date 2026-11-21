@@ -71,6 +71,9 @@ pub(crate) struct State {
     /// Extra latency on that 07/8C power read only (1-based), on top of
     /// `latency` and `power_latency`.
     pub(crate) power_stall: Option<(usize, Duration)>,
+    /// Extra latency on each listed sent request (1-based, every class), on
+    /// top of the others.
+    pub(crate) exchange_stall: Vec<(usize, Duration)>,
     /// Extra latency on each 0D/01, 0D/02 and 0D/07 setter, on top of
     /// `latency`.
     pub(crate) setter_latency: Option<Duration>,
@@ -139,6 +142,7 @@ impl Fixture {
                     let latency = s.latency.is_some()
                         || s.power_latency.is_some()
                         || s.power_stall.is_some()
+                        || !s.exchange_stall.is_empty()
                         || s.setter_latency.is_some();
                     let paused = (latency || permit.is_none() || thermal)
                         && s.held_read.is_none()
@@ -277,7 +281,12 @@ impl Port for MemoryPort {
                     }
                     (13, 1 | 2 | 7) => s.setter_latency.unwrap_or_default(),
                     _ => Duration::ZERO,
-                };
+                } + s
+                    .exchange_stall
+                    .iter()
+                    .filter(|(at, _)| *at == s.sent.len())
+                    .map(|(_, stall)| *stall)
+                    .sum::<Duration>();
                 if !extra.is_zero() {
                     self.ready_at = Some(self.ready_at.unwrap_or_else(Instant::now) + extra);
                 }

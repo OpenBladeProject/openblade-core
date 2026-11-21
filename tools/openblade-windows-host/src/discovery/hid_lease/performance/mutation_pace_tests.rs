@@ -475,6 +475,65 @@ async fn a_stalled_power_read_is_charged_once_at_its_own_length() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn the_first_exchange_and_an_earlier_slowest_are_both_charged() {
+    // Silent checks after four exchanges at 920 ms plus their stalls, with
+    // five left. A stall of S on the first exchange, the observation's first
+    // getter, is timed from the start of the recipe: the check ends at
+    // 2070 + 2S ms, so it runs at S = 1960 and is refused at 1965 against the
+    // 6 s deadline. Left unmeasured, the stall would never be charged.
+    for (stall, runs) in [(1960, true), (1965, false)] {
+        let fixture = balanced();
+        fixture.state.lock().unwrap().exchange_stall = vec![(1, Duration::from_millis(stall))];
+        let permit = Paced {
+            destination: Some(Destination::Preset(Preset::Silent)),
+            ..Paced::default()
+        };
+        let started = Instant::now();
+        let observed = apply(&fixture, &permit, Duration::from_secs(6)).await;
+        let case = format!("{stall} ms on the first exchange");
+        assert_eq!(observed.is_some(), runs, "{case}");
+        if runs {
+            assert_eq!(
+                started.elapsed(),
+                Duration::from_millis(2070 + stall),
+                "{case}"
+            );
+        } else {
+            assert_eq!(
+                *permit.refusals.lock().unwrap(),
+                [Refusal::Deadline],
+                "{case}"
+            );
+            assert_eq!(fixture.state.lock().unwrap().writes, 0, "{case}");
+            assert_eq!(
+                started.elapsed(),
+                Duration::from_millis(920 + stall),
+                "{case}"
+            );
+        }
+    }
+    // 500 ms on the first exchange and 1000 ms on the third check at 2420 ms.
+    // The 1230 ms exchange is the slowest and the earlier 730 ms one becomes
+    // the second longest, so the check ends at 2420 + 1230 + 4 × 730 = 6570 ms
+    // and the recipe is refused. Keeping 230 ms as the second longest would
+    // end it at 4570 ms and let it run.
+    let fixture = balanced();
+    fixture.state.lock().unwrap().exchange_stall = vec![
+        (1, Duration::from_millis(500)),
+        (3, Duration::from_millis(1000)),
+    ];
+    let permit = Paced {
+        destination: Some(Destination::Preset(Preset::Silent)),
+        ..Paced::default()
+    };
+    let started = Instant::now();
+    assert_eq!(apply(&fixture, &permit, Duration::from_secs(6)).await, None);
+    assert_eq!(*permit.refusals.lock().unwrap(), [Refusal::Deadline]);
+    assert_eq!(fixture.state.lock().unwrap().writes, 0);
+    assert_eq!(started.elapsed(), Duration::from_millis(2420));
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_stalled_prepared_append_refuses_at_the_derived_threshold() {
     // With every exchange at 230 ms, a Prepared append of P ms checks at
     // 920 + P ms. Silent has four exchanges after its next one and five rows
