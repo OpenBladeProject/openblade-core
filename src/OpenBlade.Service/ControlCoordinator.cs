@@ -515,7 +515,10 @@ public sealed class ControlCoordinator
                     firmwarePerformanceSelectorHidden: false)
                     ? GpuClockOffsetsUnchangedAfterIndeterminateWrite(initial, final)
                     : PerformanceStateMatches(initial, final),
-            confirmationPendingAfterIndeterminateWrite: GpuClockOffsetSubmissionUnresolved,
+            // Only a write that carried GPU tuning can leave its NVML half unresolved;
+            // a firmware-only write is judged from the preset alone.
+            confirmationPendingAfterIndeterminateWrite: final =>
+                effectiveGpuClockTuning is not null && GpuClockOffsetSubmissionUnresolved(final),
             writeBlockReason: performanceWriteBlockReason,
             returnBlockedOnWriteAuthorityLoss:
                 performanceWriteBlockReason is not null)

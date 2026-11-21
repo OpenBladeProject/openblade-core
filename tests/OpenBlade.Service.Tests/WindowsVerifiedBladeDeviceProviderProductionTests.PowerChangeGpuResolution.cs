@@ -170,4 +170,72 @@ public sealed partial class WindowsVerifiedBladeDeviceProviderProductionTests
             new GpuClockOffsetSettings(200, 0),
             (await harness.Device.ReadStateAsync(default)).GpuClockOffsets?.Current);
     }
+
+    // A firmware-only preset write whose ACK was lost is judged from the preset
+    // alone, whether or not an earlier NVML submission is still unresolved. The
+    // unchanged readback shows the prior preset in place: nothing is left pending.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task LostFirmwareOnlyAck_IsNotBlamedOnAnUnresolvedGpuSubmission(bool retainedUncertain)
+    {
+        DeviceCapabilities capabilities = WritableGpuCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.Silent },
+            new HashSet<FanMode> { FanMode.Automatic });
+        FakeProductionPort[] ports = Enumerable.Range(0, 60)
+            .Select(_ => new FakeProductionPort(
+                capabilities,
+                BatteryValidationSetting.Limit80,
+                temporary: null,
+                performanceFan: new ProductionPerformanceFanState(
+                    PerformancePreset.Balanced,
+                    FanMode.Automatic)))
+            .ToArray();
+        var gpu = new FakeGpuClockOffsetController();
+        var factory = new FakeProductionFactory(capabilities, ports);
+        using WindowsVerifiedBladeDeviceProvider provider =
+            ReadyProvider(factory, gpu, new FixedGpuActivitySource(false));
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        var managed = (IGpuClockOffsetManagementDevice)device;
+        var coordinator = new ControlCoordinator(
+            device, scopedStateReader: null, resolveIndeterminatePerformanceWrites: true);
+        if (retainedUncertain)
+        {
+            // An uncertain enable, then a power change to a destination without
+            // tuning that cannot read the driver: the submission stays uncertain.
+            gpu.SetFailure = settings =>
+            {
+                gpu.SetCurrent(new GpuClockOffsetSettings(settings.CoreMegahertz, 0));
+                gpu.QueryFailure = new InvalidOperationException("NVML is unavailable.");
+                return Uncertain();
+            };
+            _ = await coordinator.ApplyPerformanceOutcomeAsync(
+                PerformancePreset.Balanced, null,
+                new GpuClockTuningSettings(true, new GpuClockOffsetSettings(200, 500)), default);
+            gpu.SetFailure = null;
+            gpu.QueryFailure = null;
+            gpu.Capabilities = null;
+            managed.RearmUncertainGpuClockOffsetResolution();
+            _ = await new ControlCoordinator(device).ApplyDesiredStateOutcomeAsync(GpuDesired(null), default);
+            Assert.Equal(GpuClockOffsetManagementState.SubmissionUncertain, managed.GpuClockOffsetManagementState);
+        }
+        foreach (FakeProductionPort port in ports)
+        {
+            port.WriteFailure = new BladeWriteException(WriteSubmissionState.Indeterminate, "Lost preset ACK.");
+        }
+        int mark = gpu.Operations.Count;
+
+        ScopedApplyOutcome lost = await coordinator.ApplyPerformanceOutcomeAsync(
+            PerformancePreset.Silent, null, null, default);
+
+        Assert.Contains("prior performance state remained active", lost.Result.Message);
+        Assert.DoesNotContain("GPU clock offsets", lost.Result.Message);
+        Assert.False(lost.WriteAttempted);
+        Assert.False(lost.ConfirmationUnavailable);
+        Assert.Equal(mark, gpu.Operations.Count);
+        if (retainedUncertain)
+        {
+            Assert.Equal(GpuClockOffsetManagementState.SubmissionUncertain, managed.GpuClockOffsetManagementState);
+        }
+    }
 }
