@@ -532,29 +532,69 @@ selection rules over borrowed rules: the first enabled rule whose path matches
 a report (`SetApplicationContext`, `ProfileAutomationState.cs:216-236`), the
 update that keeps the active pair only while an enabled rule with its id still
 holds the reported path (`UpdateProfiles`, `:130-143`), the rule whose overrides
-apply (`GetApplicationOverride`, `:632-639`) and the save path's
+apply (`GetApplicationOverride`, `:632-641`) and the save path's
 `activeApplicationIntentChanged` predicate (`ServiceControlRuntime.cs:2116-2119`).
 `profile_set::application` binds them to the typed set with managed's
-`OrdinalIgnoreCase` table and resolves the active id, the profile `Resolve`
-starts from (`:332-344`, the base profile with the override for that power
-source applied) and `EffectiveLaptopBehavior` (`:99-110`). The replay's
-`application_runtime::Lease` uses the same rules.
+`OrdinalIgnoreCase` table.
+
+`resolve` takes both power sources managed reads. The state source,
+`ProfileAutomationState.PowerSource`, selects the override and
+`EffectiveLaptopBehavior` (`:99-110`). `Resolve` starts from
+`observedPowerSource ?? PowerSource` (`:322-344`), and `ResolveAutomationDesired`
+passes `ExternalUnknown` whenever `ProjectUnclassifiedIntent` holds
+(`ServiceControlRuntime.cs:19483-19490`,
+`ServiceControlRuntime.UnclassifiedExternalPower.cs:151-152`), even while an
+explicit unclassified override leaves the state source classified. So the
+resolved profile follows the projected source and the behaviour follows the
+state source. `desired_intent` is the predicate's desired term: the profile
+layer of `Resolve` for every `DesiredDeviceState` member, with each setting's
+source. A save that changes only display, THX audio or the gaming-mode key
+policy is no change; removing an override equal to its base is one.
+
+The replay's `application_runtime::Lease` uses the same selection rules, and
+`Lease::rule` also requires the pair to be retained by the current rules, so a
+caller that changes rules without `Lease::update` gets no overrides. The
+installed Service does not use them yet: `thermal_storage.rs` selects the
+application override with four stateless matchers (lines 584-594, 643-653,
+826-836 and 988-998) that take the first enabled rule for the reported path on
+every read. After a save that gives the active rule's path to a new id, managed
+keeps no profile until the next report, while those matchers select the new
+rule at once. The wiring slice replaces them.
+
+The active pair keeps the reported spelling of the path, not the rule's. That
+is visible only in the state: path comparison ignores case, so no resolved
+output depends on it. A case-only change to the rule's path kept the selection
+before this port too. What changed in the replay is the next report: it now
+renews the lease, as managed's `SetApplicationContext` returns no change, where
+the replay used to record a change.
 
 `profile-resolution-vectors.json` pins it. `NativeProfileResolutionVectors`
-drives `ProfileAutomationState` through reports, updates and power changes,
-and drives the real `UpdateProfilesAsync` for the predicate, recording its
-inputs and whether the full transition ran.
+drives `ProfileAutomationState` through reports, updates, power changes and
+the unclassified projection. For each step it records the applied profile,
+`Resolve` with no manual override or confirmed state, and the behaviour.
+`"confirmedState"` in a step is the recorder's own marker, not a managed
+value: on `ExternalUnknown`, `Resolve` builds from confirmed firmware state.
+It also drives the real `UpdateProfilesAsync` for the predicate, recording its
+inputs and whether the full transition ran. The Rust reader computes the
+desired term with `desired_intent` and checks it against managed's.
 
 Differences from managed:
 
 - A reported path not already in `NormalizeExecutablePath` form is refused.
-  Managed normalises it first; the native wire admits only that spelling.
-- `ExternalUnknown` resolves no profile. Managed builds that base from
-  confirmed firmware state, which the host supplies.
-- The predicate compares the desired state its caller passes. Managed compares
-  the whole `ResolveAutomationDesired` result, including overrides and
-  confirmed state, which the wiring slice resolves; the vectors take that
-  comparison as managed observed it.
+  Managed's IPC codec refuses the same paths (`IpcMessageCodec.cs:288-291`,
+  `:1180-1194`), so this differs only for an in-process caller. The native
+  check does not expand an 8.3 short name (`profile_set/text.rs:94-97`), so it
+  accepts a short alias that managed would expand when it exists on disk.
+- `ExternalUnknown`, as the state or the projected source, resolves no profile
+  and no desired intent. Managed builds that base from confirmed firmware
+  state, which the host supplies.
+- `desired_intent` is the profile layer only. The host adds manual overrides,
+  recovered HyperBoost intent, the temporary battery overrides and full
+  charge, and confirmed state where the profile has none, as `Resolve` does.
+- `ChangePowerSource`'s other effects (`ProfileAutomationState.cs:179-200`),
+  expiring transient manual overrides and cancelling a temporary full charge
+  on battery, are not ported; they belong with the host's overrides. The
+  vectors record its return value, which the reader checks.
 - The replay matches paths with the Windows ordinal comparison, as noted
   above; the typed binding uses managed's table.
 
