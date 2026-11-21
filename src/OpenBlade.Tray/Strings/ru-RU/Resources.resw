@@ -3010,47 +3010,17 @@ OpenBlade повторно проверит этот список и остан�
   <data name="MainWindow_CpuTuningRestore.Content" xml:space="preserve"><value>Восстановить прежние значения оптимизатора</value></data>
   <data name="MainWindow_CpuTuningCurveEnabled.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Оптимизатор напряжения CPU</value></data>
   <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve"><value>Смещение всех ядер</value></data>
-  <data name="MainWindow_CoolingPadApplyHelpText.Text" xml:space="preserve">
-    <value>«Применить» передаёт управление подставкой OpenBlade. «Передать управление» возвращает подставке прежние настройки.</value>
-  </data>
-  <data name="MainWindow_CoolingPadApplyText.Content" xml:space="preserve">
-    <value>Применить</value>
-  </data>
   <data name="MainWindow_CoolingPadBrightnessText.Text" xml:space="preserve">
     <value>Яркость</value>
   </data>
-  <data name="MainWindow_CoolingPadCpuCurveText.Text" xml:space="preserve">
-    <value>ЦП</value>
-  </data>
   <data name="MainWindow_CoolingPadCurveHelpText.Text" xml:space="preserve">
-    <value>Задайте скорость вентилятора для каждой температуры. В каждой следующей строке температура должна быть выше, а скорость — не ниже, с шагом 50 об/мин. При выборе «Оба» используется более высокая скорость.</value>
-  </data>
-  <data name="MainWindow_CoolingPadCurveRpmBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Скорость вентилятора (об/мин)</value>
-  </data>
-  <data name="MainWindow_CoolingPadCurveRpmText.Text" xml:space="preserve">
-    <value>Скорость вентилятора (об/мин)</value>
-  </data>
-  <data name="MainWindow_CoolingPadCurveTemperatureBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Температура (°C)</value>
-  </data>
-  <data name="MainWindow_CoolingPadCurveTemperatureText.Text" xml:space="preserve">
-    <value>Температура (°C)</value>
-  </data>
-  <data name="MainWindow_CoolingPadCurvesText.Header" xml:space="preserve">
-    <value>Кривые вентилятора</value>
-  </data>
-  <data name="MainWindow_CoolingPadExperimentalText.Text" xml:space="preserve">
-    <value>Экспериментальная поддержка</value>
+    <value>Задайте скорость вентилятора для каждой температуры. При выборе «Оба» подставка использует более высокую из двух скоростей.</value>
   </data>
   <data name="MainWindow_CoolingPadFanLabelText.Text" xml:space="preserve">
     <value>Режим вентилятора</value>
   </data>
   <data name="MainWindow_CoolingPadFixedRpmText.Text" xml:space="preserve">
     <value>Скорость вентилятора</value>
-  </data>
-  <data name="MainWindow_CoolingPadGpuCurveText.Text" xml:space="preserve">
-    <value>ГП</value>
   </data>
   <data name="MainWindow_CoolingPadHeadingText.Text" xml:space="preserve">
     <value>Охлаждающая подставка</value>
@@ -3060,9 +3030,6 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="MainWindow_CoolingPadPrimaryColorText.Text" xml:space="preserve">
     <value>Цвет</value>
-  </data>
-  <data name="MainWindow_CoolingPadRefreshText.Content" xml:space="preserve">
-    <value>Обновить состояние</value>
   </data>
   <data name="MainWindow_CoolingPadReleaseText.Content" xml:space="preserve">
     <value>Передать управление</value>
@@ -3151,5 +3118,26 @@ OpenBlade повторно проверит этот список и остан�
   </data>
   <data name="MainWindow_CoolingPadTargetLabelText.Text" xml:space="preserve">
     <value>Заданная скорость</value>
+  </data>
+  <data name="MainWindow_CoolingPadCheckText.Content" xml:space="preserve">
+    <value>Проверить подставку</value>
+  </data>
+  <data name="MainWindow_CoolingPadProgressRing.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Применение режима вентилятора подставки</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingProgressRing.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Применение подсветки подставки</value>
+  </data>
+  <data name="MainWindow_CoolingPadAutoProfileLabel.Text" xml:space="preserve">
+    <value>Профиль</value>
+  </data>
+  <data name="MainWindow_CoolingPadAutoProfileText.AccessibleName" xml:space="preserve">
+    <value>Профиль вентилятора охлаждающей подставки</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanSelectorText.PlaceholderText" xml:space="preserve">
+    <value>Задаётся подставкой</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingSelectorText.PlaceholderText" xml:space="preserve">
+    <value>Задаётся подставкой</value>
   </data>
 </root>

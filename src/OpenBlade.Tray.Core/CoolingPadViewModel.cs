@@ -6,57 +6,60 @@ namespace OpenBlade.Tray;
 
 public sealed record CoolingPadChoice<T>(T Value, string Label);
 
-public sealed class CoolingPadCurvePointEditor : INotifyPropertyChanged
-{
-    private double temperature;
-    private double rpm;
-    public CoolingPadCurvePointEditor(int temperature, int rpm)
-    {
-        this.temperature = temperature;
-        this.rpm = rpm;
-    }
-    public event PropertyChangedEventHandler? PropertyChanged;
-    public double Temperature { get => temperature; set { if (!temperature.Equals(value)) { temperature = value; Notify(); } } }
-    public double Rpm { get => rpm; set { if (!rpm.Equals(value)) { rpm = value; Notify(); } } }
-    private void Notify([CallerMemberName] string? name = null) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-}
-
-/// <summary>Explicit accessory controls; constructing or observing this editor never writes.</summary>
+/// <summary>
+/// Accessory controls. Loading or observing the editor never writes; a user change
+/// applies the complete selection after a short debounce, like the laptop controls.
+/// </summary>
 public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
+    private static readonly TimeSpan DefaultApplyDelay = TimeSpan.FromMilliseconds(400);
+    private static readonly TimeSpan DefaultRefreshInterval = TimeSpan.FromSeconds(5);
     private readonly IServiceClient client;
     private readonly IUiDispatcher dispatcher;
     private readonly CancellationToken lifetime;
+    private readonly TimeSpan applyDelay;
+    private readonly TimeSpan refreshInterval;
     private CoolingPadStatusSnapshot status = new();
     private bool busy;
+    private bool applying;
     private bool uncertainSubmission;
     private bool editorInitialized;
+    private bool suppressApply;
+    private bool applyPending;
+    private long applyTicket;
     private bool serviceAvailable;
     private bool lastConfirmedConnected;
     private bool connectionKnown;
     private bool allowDemandApi;
+    private bool pageVisible;
+    private CancellationTokenSource? refreshLoop;
     private string? feedback;
     private CoolingPadChoice<CoolingPadFanMode>? fanMode;
+    private CoolingPadChoice<CoolingPadAutoProfile>? autoProfile;
     private CoolingPadChoice<CoolingPadLightingMode>? lightingMode;
     private CoolingPadChoice<CoolingPadWaveDirection>? waveDirection;
     private CoolingPadChoice<CoolingPadTemperatureSource>? temperatureSource;
-    private double fixedRpm = 1500;
+    private int fixedRpm = 1500;
     private double brightness = 100;
     private RgbColor primaryColor = new(0, 255, 0);
     private RgbColor secondaryColor = new(0, 0, 255);
 
-    public CoolingPadViewModel(IServiceClient client, IUiDispatcher dispatcher, CancellationToken lifetime = default)
+    public CoolingPadViewModel(IServiceClient client, IUiDispatcher dispatcher, CancellationToken lifetime = default,
+        TimeSpan? applyDelay = null, TimeSpan? refreshInterval = null)
     {
         this.client = client ?? throw new ArgumentNullException(nameof(client));
         this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         this.lifetime = lifetime;
-        FanModes = [new(CoolingPadFanMode.Keep, TrayText.Get("Keep current")),
-            new(CoolingPadFanMode.Off, TrayText.Get("Off")),
+        this.applyDelay = applyDelay ?? DefaultApplyDelay;
+        this.refreshInterval = refreshInterval ?? DefaultRefreshInterval;
+        FanModes = [new(CoolingPadFanMode.Auto, TrayText.Get("Automatic")),
             new(CoolingPadFanMode.Fixed, TrayText.Get("Fixed speed")),
-            new(CoolingPadFanMode.HostCurve, TrayText.Get("CPU/GPU curves"))];
-        LightingModes = [new(CoolingPadLightingMode.Keep, TrayText.Get("Keep current")),
-            new(CoolingPadLightingMode.Off, TrayText.Get("Off")),
+            new(CoolingPadFanMode.HostCurve, TrayText.Get("Manual fan curve")),
+            new(CoolingPadFanMode.Off, TrayText.Get("Off"))];
+        AutoProfiles = [new(CoolingPadAutoProfile.Quiet, TrayText.Get("Quiet")),
+            new(CoolingPadAutoProfile.Balanced, TrayText.Get("Balanced")),
+            new(CoolingPadAutoProfile.Performance, TrayText.Get("Performance"))];
+        LightingModes = [new(CoolingPadLightingMode.Off, TrayText.Get("Off")),
             new(CoolingPadLightingMode.Static, TrayText.Get("Static")),
             new(CoolingPadLightingMode.Breathing, TrayText.Get("Breathing")),
             new(CoolingPadLightingMode.Spectrum, TrayText.Get("Spectrum")),
@@ -64,76 +67,172 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
             new(CoolingPadLightingMode.KeyboardMirror, TrayText.Get("Mirror keyboard"))];
         WaveDirections = [new(CoolingPadWaveDirection.Left, TrayText.Get("Leftward")),
             new(CoolingPadWaveDirection.Right, TrayText.Get("Rightward"))];
-        fanMode = FanModes[0]; lightingMode = LightingModes[0]; waveDirection = WaveDirections[1];
         TemperatureSources = [new(CoolingPadTemperatureSource.Cpu, TrayText.Get("CPU")),
             new(CoolingPadTemperatureSource.Gpu, TrayText.Get("GPU")),
             new(CoolingPadTemperatureSource.Both, TrayText.Get("Both"))];
-        temperatureSource = TemperatureSources[2];
-        CpuCurve = DefaultCurve(); GpuCurve = DefaultCurve();
-        ApplyCommand = new((_, token) => ExecuteAsync(apply: true, release: false, token), _ => CanApply, lifetime);
-        ReleaseCommand = new((_, token) => ExecuteAsync(apply: false, release: true, token), _ => CanRelease, lifetime);
-        RefreshCommand = new((_, token) => ExecuteAsync(apply: false, release: false, token), _ => CanRefresh, lifetime);
+        autoProfile = AutoProfiles[1]; waveDirection = WaveDirections[1]; temperatureSource = TemperatureSources[2];
+        CpuCurve = CreateCurve(CoolingPadSettings.Default.CpuCurve);
+        GpuCurve = CreateCurve(CoolingPadSettings.Default.GpuCurve);
+        ReleaseCommand = new((_, token) => ExecuteAsync(Operation.Release, token), _ => CanRelease, lifetime);
+        RefreshCommand = new((_, token) => ExecuteAsync(Operation.ExplicitRead, token), _ => CanRefresh, lifetime);
     }
+
+    private enum Operation { Apply, Release, ExplicitRead, AutomaticRead }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public IReadOnlyList<CoolingPadChoice<CoolingPadFanMode>> FanModes { get; }
+    public IReadOnlyList<CoolingPadChoice<CoolingPadAutoProfile>> AutoProfiles { get; }
     public IReadOnlyList<CoolingPadChoice<CoolingPadLightingMode>> LightingModes { get; }
     public IReadOnlyList<CoolingPadChoice<CoolingPadWaveDirection>> WaveDirections { get; }
     public IReadOnlyList<CoolingPadChoice<CoolingPadTemperatureSource>> TemperatureSources { get; }
-    public IReadOnlyList<CoolingPadCurvePointEditor> CpuCurve { get; private set; }
-    public IReadOnlyList<CoolingPadCurvePointEditor> GpuCurve { get; private set; }
-    public AsyncRelayCommand ApplyCommand { get; }
+    public IReadOnlyList<FanCurveEditorPoint> CpuCurve { get; private set; }
+    public IReadOnlyList<FanCurveEditorPoint> GpuCurve { get; private set; }
     public AsyncRelayCommand ReleaseCommand { get; }
     public AsyncRelayCommand RefreshCommand { get; }
     public bool IsVisible => lastConfirmedConnected;
-    public bool CanEdit => serviceAvailable && lastConfirmedConnected && connectionKnown && !busy;
+    public bool CanEdit => serviceAvailable && lastConfirmedConnected && connectionKnown;
     public bool CanApply => CanEdit && !status.WritesPaused && !uncertainSubmission;
-    public bool CanRelease => CanEdit && (status.Active || status.RecoveryRequired) && !status.WritesPaused && !uncertainSubmission;
+    public bool CanRelease => CanApply && !busy && (status.Active || status.RecoveryRequired);
     public bool CanRefresh => serviceAvailable && !busy;
     public bool IsBusy => busy;
-    public bool ShowDemandApiOption => FanMode?.Value is CoolingPadFanMode.Fixed or CoolingPadFanMode.HostCurve;
-    public bool AllowDemandApi { get => allowDemandApi; set => SetField(ref allowDemandApi, value); }
+    /// <summary>A user change or release is in flight; background reads do not show progress.</summary>
+    public bool IsApplying => applying;
+    public bool ShowRelease => !NeedsCheck;
+    /// <summary>A change may have reached the pad unconfirmed; only an explicit read continues.</summary>
+    public bool NeedsCheck => uncertainSubmission || status.WritesPaused;
+    public bool ShowDemandApiOption => FanMode?.Value is CoolingPadFanMode.Fixed or CoolingPadFanMode.HostCurve or CoolingPadFanMode.Auto;
+    public bool AllowDemandApi { get => allowDemandApi; set { if (SetField(ref allowDemandApi, value)) { ScheduleApply(); } } }
     public bool ShowFixedSpeed => FanMode?.Value == CoolingPadFanMode.Fixed;
+    public bool ShowAutoProfile => FanMode?.Value == CoolingPadFanMode.Auto;
     public bool ShowCurves => FanMode?.Value == CoolingPadFanMode.HostCurve;
+    public bool ShowTemperatureSource => FanMode?.Value is CoolingPadFanMode.HostCurve or CoolingPadFanMode.Auto;
     public bool ShowCpuCurve => TemperatureSource?.Value != CoolingPadTemperatureSource.Gpu;
     public bool ShowGpuCurve => TemperatureSource?.Value != CoolingPadTemperatureSource.Cpu;
+    public bool ShowLightingOptions => LightingMode is not null;
     public bool ShowPrimaryColor => LightingMode?.Value is CoolingPadLightingMode.Static or CoolingPadLightingMode.Breathing;
     public bool ShowSecondaryColor => LightingMode?.Value == CoolingPadLightingMode.Breathing;
     public bool ShowWaveDirection => LightingMode?.Value == CoolingPadLightingMode.Wave;
-    public CoolingPadChoice<CoolingPadFanMode>? FanMode { get => fanMode; set { if (SetField(ref fanMode, value)) { Notify(nameof(ShowFixedSpeed)); Notify(nameof(ShowCurves)); Notify(nameof(ShowDemandApiOption)); } } }
-    public CoolingPadChoice<CoolingPadLightingMode>? LightingMode { get => lightingMode; set { if (SetField(ref lightingMode, value)) { Notify(nameof(ShowPrimaryColor)); Notify(nameof(ShowSecondaryColor)); Notify(nameof(ShowWaveDirection)); } } }
-    public CoolingPadChoice<CoolingPadWaveDirection>? WaveDirection { get => waveDirection; set => SetField(ref waveDirection, value); }
+
+    /// <summary>Null means OpenBlade leaves the pad's own fan setting in place.</summary>
+    public CoolingPadChoice<CoolingPadFanMode>? FanMode
+    {
+        get => fanMode;
+        set
+        {
+            if (!SetField(ref fanMode, value)) { return; }
+            foreach (string name in new[] { nameof(ShowFixedSpeed), nameof(ShowAutoProfile), nameof(ShowCurves), nameof(ShowTemperatureSource), nameof(ShowDemandApiOption) })
+            { Notify(name); }
+            ScheduleApply();
+        }
+    }
+
+    public CoolingPadChoice<CoolingPadAutoProfile>? AutoProfile { get => autoProfile; set { if (SetField(ref autoProfile, value)) { ScheduleApply(); } } }
+
+    /// <summary>Null means OpenBlade leaves the pad's own lighting in place.</summary>
+    public CoolingPadChoice<CoolingPadLightingMode>? LightingMode
+    {
+        get => lightingMode;
+        set
+        {
+            if (!SetField(ref lightingMode, value)) { return; }
+            foreach (string name in new[] { nameof(ShowLightingOptions), nameof(ShowPrimaryColor), nameof(ShowSecondaryColor), nameof(ShowWaveDirection) })
+            { Notify(name); }
+            ScheduleApply();
+        }
+    }
+
+    public CoolingPadChoice<CoolingPadWaveDirection>? WaveDirection { get => waveDirection; set { if (SetField(ref waveDirection, value)) { ScheduleApply(); } } }
+
     public CoolingPadChoice<CoolingPadTemperatureSource>? TemperatureSource
     {
         get => temperatureSource;
         set
         {
-            if (SetField(ref temperatureSource, value))
+            if (!SetField(ref temperatureSource, value)) { return; }
+            Notify(nameof(ShowCpuCurve));
+            Notify(nameof(ShowGpuCurve));
+            ScheduleApply();
+        }
+    }
+
+    public int FixedRpm
+    {
+        get => fixedRpm;
+        set
+        {
+            int normalized = Math.Clamp((int)Math.Round(value / (double)CoolingPadSettings.RpmStep, MidpointRounding.AwayFromZero)
+                * CoolingPadSettings.RpmStep, CoolingPadSettings.MinimumRpm, CoolingPadSettings.MaximumRpm);
+            if (SetField(ref fixedRpm, normalized)) { Notify(nameof(FixedRpmText)); ScheduleApply(); }
+        }
+    }
+
+    public double Brightness
+    {
+        get => brightness;
+        set
+        {
+            double normalized = double.IsFinite(value) ? Math.Clamp(Math.Round(value), 0, 100) : brightness;
+            if (SetField(ref brightness, normalized)) { Notify(nameof(BrightnessText)); ScheduleApply(); }
+        }
+    }
+
+    public string FixedRpmText => TrayText.Format("{0:N0} RPM", fixedRpm);
+    public string BrightnessText => TrayText.Format("{0}%", brightness);
+    public RgbColor PrimaryColor { get => primaryColor; set { if (SetField(ref primaryColor, value)) { ScheduleApply(); } } }
+    public RgbColor SecondaryColor { get => secondaryColor; set { if (SetField(ref secondaryColor, value)) { ScheduleApply(); } } }
+
+    /// <summary>The page shows status only while it is visible, refreshing it on a short interval.</summary>
+    public bool IsPageVisible
+    {
+        get => pageVisible;
+        set
+        {
+            if (!SetField(ref pageVisible, value)) { return; }
+            refreshLoop?.Cancel();
+            refreshLoop?.Dispose();
+            refreshLoop = null;
+            if (value && !lifetime.IsCancellationRequested)
             {
-                Notify(nameof(ShowCpuCurve));
-                Notify(nameof(ShowGpuCurve));
+                refreshLoop = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
+                _ = RefreshWhileVisibleAsync(refreshLoop.Token);
             }
         }
     }
-    public double FixedRpm { get => fixedRpm; set { if (SetField(ref fixedRpm, value)) { Notify(nameof(FixedRpmText)); } } }
-    public double Brightness { get => brightness; set { if (SetField(ref brightness, value)) { Notify(nameof(BrightnessText)); } } }
-    public string FixedRpmText => TrayText.Format("{0:N0} RPM", fixedRpm);
-    public string BrightnessText => TrayText.Format("{0}%", brightness);
-    public RgbColor PrimaryColor { get => primaryColor; set => SetField(ref primaryColor, value); }
-    public RgbColor SecondaryColor { get => secondaryColor; set => SetField(ref secondaryColor, value); }
-    public string StatusText => feedback ?? (uncertainSubmission || status.WritesPaused
-        ? TrayText.Get("Cooling-pad control is paused. Refresh status before making another change.")
+
+    public string StatusText => feedback ?? (NeedsCheck
+        ? TrayText.Get("A change to the cooling pad could not be confirmed. Check the pad before making another change.")
         : !serviceAvailable ? TrayText.Get("Reconnecting. Showing the last confirmed cooling-pad state.")
         : !connectionKnown ? TrayText.Get("Cooling-pad status is unavailable. Showing the last confirmed state.")
-        : status.RecoveryRequired ? TrayText.Get("Apply new settings, or release control to restore the captured cooling-pad settings.")
+        : status.RecoveryRequired ? TrayText.Get("Choose a setting, or release control to restore the pad's own settings.")
         : status.Active ? TrayText.Get("OpenBlade is controlling the cooling pad.")
-        : TrayText.Get("Connected. Choose settings and apply them to take control."));
+        : TrayText.Get("Connected. The pad is using its own settings."));
     public string ConfiguredTargetText => status.ConfirmedTargetRpm is int rpm
         ? TrayText.Format("{0:N0} RPM", rpm)
         : TrayText.Get("Unavailable");
     public string ConfiguredLightingText => status.ConfirmedBrightnessPercent is int percent
         ? TrayText.Format("{0}%", percent)
         : TrayText.Get("Unavailable");
+
+    public bool OwnsCurvePoint(FanCurveEditorPoint point) => CpuCurve.Contains(point) || GpuCurve.Contains(point);
+
+    /// <summary>Accepts a committed curve edit, keeping the curve non-decreasing, then applies it.</summary>
+    public void UpdateCurvePoint(FanCurveEditorPoint point, int speedRpm)
+    {
+        ArgumentNullException.ThrowIfNull(point);
+        bool cpu = CpuCurve.Contains(point);
+        IReadOnlyList<FanCurveEditorPoint> source = cpu ? CpuCurve
+            : GpuCurve.Contains(point) ? GpuCurve
+            : throw new ArgumentException("The fan-curve point does not belong to the cooling-pad editor.", nameof(point));
+        int index = source.ToList().IndexOf(point);
+        int minimum = index == 0 ? point.MinimumRpm : source[index - 1].SpeedRpm;
+        int maximum = index == source.Count - 1 ? point.MaximumRpm : source[index + 1].SpeedRpm;
+        point.SpeedRpm = Math.Clamp(speedRpm, minimum, maximum);
+        // Republish so a clamped slider shows the accepted value.
+        FanCurveEditorPoint[] updated = source.Select(value => FanCurveEditorPoint.ForCoolingPad(value.ToCoolingPadValue())).ToArray();
+        if (cpu) { CpuCurve = updated; Notify(nameof(CpuCurve)); }
+        else { GpuCurve = updated; Notify(nameof(GpuCurve)); }
+        ScheduleApply();
+    }
 
     public void ApplyStatus(CoolingPadStatusSnapshot snapshot, bool available = true)
     {
@@ -158,18 +257,7 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
         if (!editorInitialized && confirmedPresent)
         {
             editorInitialized = true;
-            CoolingPadSettings requested = snapshot.Requested;
-            FanMode = FanModes.FirstOrDefault(x => x.Value == requested.FanMode) ?? FanModes[0];
-            LightingMode = LightingModes.FirstOrDefault(x => x.Value == requested.LightingMode) ?? LightingModes[0];
-            WaveDirection = WaveDirections.FirstOrDefault(x => x.Value == requested.WaveDirection) ?? WaveDirections[1];
-            TemperatureSource = TemperatureSources.FirstOrDefault(x => x.Value == requested.TemperatureSource) ?? TemperatureSources[2];
-            FixedRpm = requested.FixedRpm; Brightness = requested.BrightnessPercent;
-            AllowDemandApi = requested.AllowDemandApi;
-            PrimaryColor = ToRgb(requested.Color);
-            SecondaryColor = ToRgb(requested.SecondaryColor ?? new CoolingPadColor(0, 0, 255));
-            CpuCurve = requested.CpuCurve.Select(p => new CoolingPadCurvePointEditor(p.TemperatureCelsius, p.Rpm)).ToArray();
-            GpuCurve = requested.GpuCurve.Select(p => new CoolingPadCurvePointEditor(p.TemperatureCelsius, p.Rpm)).ToArray();
-            Notify(nameof(CpuCurve)); Notify(nameof(GpuCurve));
+            LoadEditor(snapshot.Requested, showModes: snapshot.Active || snapshot.RecoveryRequired);
         }
         NotifyState();
     }
@@ -180,9 +268,71 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
         NotifyState();
     }
 
-    private async Task ExecuteAsync(bool apply, bool release, CancellationToken token)
+    private void LoadEditor(CoolingPadSettings requested, bool showModes)
     {
-        if (busy || (apply && !CanApply) || (release && !CanRelease) || (!apply && !release && !CanRefresh))
+        suppressApply = true;
+        try
+        {
+            // Saved intent is inert until a change; while the pad runs its own
+            // settings, the selectors show no OpenBlade mode.
+            FanMode = showModes ? FanModes.FirstOrDefault(x => x.Value == requested.FanMode) : null;
+            LightingMode = showModes ? LightingModes.FirstOrDefault(x => x.Value == requested.LightingMode) : null;
+            AutoProfile = AutoProfiles.FirstOrDefault(x => x.Value == requested.AutoProfile) ?? AutoProfiles[1];
+            WaveDirection = WaveDirections.FirstOrDefault(x => x.Value == requested.WaveDirection) ?? WaveDirections[1];
+            TemperatureSource = TemperatureSources.FirstOrDefault(x => x.Value == requested.TemperatureSource) ?? TemperatureSources[2];
+            FixedRpm = requested.FixedRpm; Brightness = requested.BrightnessPercent;
+            AllowDemandApi = requested.AllowDemandApi;
+            PrimaryColor = ToRgb(requested.Color);
+            SecondaryColor = ToRgb(requested.SecondaryColor ?? new CoolingPadColor(0, 0, 255));
+            CpuCurve = CreateCurve(requested.CpuCurve);
+            GpuCurve = CreateCurve(requested.GpuCurve);
+            Notify(nameof(CpuCurve)); Notify(nameof(GpuCurve));
+        }
+        finally { suppressApply = false; }
+    }
+
+    private void ScheduleApply()
+    {
+        if (suppressApply || !editorInitialized || lifetime.IsCancellationRequested) { return; }
+        long ticket = ++applyTicket;
+        _ = ApplyAfterDelayAsync(ticket);
+    }
+
+    private async Task ApplyAfterDelayAsync(long ticket)
+    {
+        try
+        {
+            // Coalesce slider drags and color-picker movement into one apply.
+            if (applyDelay > TimeSpan.Zero) { await Task.Delay(applyDelay, lifetime); }
+            if (ticket != applyTicket) { return; }
+            if (busy) { applyPending = true; return; }
+            await ExecuteAsync(Operation.Apply, lifetime);
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+    }
+
+    private async Task RefreshWhileVisibleAsync(CancellationToken token)
+    {
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                // An unconfirmed change stops automatic reads: only the explicit
+                // check may clear it after the user sees the warning.
+                if (serviceAvailable && lastConfirmedConnected && !busy && !NeedsCheck)
+                { await ExecuteAsync(Operation.AutomaticRead, token); }
+                await Task.Delay(refreshInterval, token);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    }
+
+    private async Task ExecuteAsync(Operation operation, CancellationToken token)
+    {
+        bool apply = operation == Operation.Apply;
+        bool release = operation == Operation.Release;
+        if (busy || (apply && !CanApply) || (release && !CanRelease)
+            || (operation is Operation.ExplicitRead or Operation.AutomaticRead && !CanRefresh))
         {
             return;
         }
@@ -190,10 +340,17 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
         CoolingPadSettings? settings = null;
         if (apply && !TryBuildSettings(out settings))
         {
-            feedback = TrayText.Get("Check the fan speeds, and make each curve temperature higher than the one before.");
+            feedback = TrayText.Get("Check the cooling-pad settings and try again.");
             NotifyState(); return;
         }
-        busy = true; feedback = null; NotifyState();
+        if (apply && settings!.FanMode == CoolingPadFanMode.Keep && settings.LightingMode == CoolingPadLightingMode.Keep)
+        {
+            return;
+        }
+        busy = true;
+        applying = operation is Operation.Apply or Operation.Release;
+        if (operation != Operation.AutomaticRead) { feedback = null; }
+        NotifyState();
         bool mayHaveSubmitted = false;
         try
         {
@@ -217,8 +374,8 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
                 {
                     uncertainSubmission = result.Status == ControlOperationStatus.Failed;
                     feedback = result.Status == ControlOperationStatus.Failed
-                        ? TrayText.Get("The cooling-pad change could not be confirmed. Refresh status before continuing.")
-                        : TrayText.Get("The cooling-pad change was blocked. Refresh status and check Troubleshooting.");
+                        ? null
+                        : TrayText.Get("The cooling pad did not accept the change. Check Troubleshooting for the reason.");
                 }, token);
                 return;
             }
@@ -227,12 +384,19 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
             {
                 ApplyStatus(readback.CoolingPad);
                 // Failed submissions return above without a recovery read. Only
-                // a separate explicit confirmed refresh clears their uncertainty.
-                if (!apply && !release && connectionKnown)
+                // a separate explicit confirmed read clears their uncertainty.
+                if (operation == Operation.ExplicitRead && connectionKnown)
                 {
                     uncertainSubmission = false;
                 }
-                feedback = null;
+                if (release && !readback.CoolingPad.Active)
+                {
+                    // The pad runs its own settings again; keep the editor values for next time.
+                    suppressApply = true;
+                    try { FanMode = null; LightingMode = null; }
+                    finally { suppressApply = false; }
+                }
+                if (operation != Operation.AutomaticRead) { feedback = null; }
             }, token);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -252,56 +416,52 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
                 }
 
                 feedback = mayHaveSubmitted
-                    ? TrayText.Get("The cooling-pad change could not be confirmed. Refresh status before continuing.")
+                    ? null
                     : TrayText.Get("Cooling-pad status is unavailable. Showing the last confirmed state.");
             }, lifetime);
-            DiagnosticTrace.TraceException("OpenBlade.Tray.CoolingPadViewModel", "ExplicitControl", exception);
+            DiagnosticTrace.TraceException("OpenBlade.Tray.CoolingPadViewModel", "Control", exception);
         }
         finally
         {
             busy = false;
+            applying = false;
             if (!lifetime.IsCancellationRequested)
             {
                 await dispatcher.InvokeAsync(NotifyState, lifetime);
+                if (applyPending)
+                {
+                    applyPending = false;
+                    ScheduleApply();
+                }
             }
         }
     }
 
     private bool TryBuildSettings(out CoolingPadSettings? settings)
     {
-        settings = null;
-        if (!Whole(FixedRpm, CoolingPadSettings.MinimumRpm, CoolingPadSettings.MaximumRpm) || !Whole(Brightness, 0, 100))
-        {
-            return false;
-        }
-
-        if (ShowCurves && (!ValidCurve(CpuCurve) || !ValidCurve(GpuCurve)))
-        {
-            return false;
-        }
-
         settings = new CoolingPadSettings
         {
             FanMode = FanMode?.Value ?? CoolingPadFanMode.Keep,
+            AutoProfile = AutoProfile?.Value ?? CoolingPadAutoProfile.Balanced,
             AllowDemandApi = AllowDemandApi,
-            FixedRpm = (int)FixedRpm,
+            FixedRpm = FixedRpm,
             TemperatureSource = TemperatureSource?.Value ?? CoolingPadTemperatureSource.Both,
-            CpuCurve = CpuCurve.Select(p => new CoolingPadCurvePoint((int)p.Temperature, (int)p.Rpm)).ToArray(),
-            GpuCurve = GpuCurve.Select(p => new CoolingPadCurvePoint((int)p.Temperature, (int)p.Rpm)).ToArray(),
+            CpuCurve = CpuCurve.Select(p => p.ToCoolingPadValue()).ToArray(),
+            GpuCurve = GpuCurve.Select(p => p.ToCoolingPadValue()).ToArray(),
             LightingMode = LightingMode?.Value ?? CoolingPadLightingMode.Keep,
             BrightnessPercent = (int)Brightness,
             Color = new(PrimaryColor.Red, PrimaryColor.Green, PrimaryColor.Blue),
             SecondaryColor = new(SecondaryColor.Red, SecondaryColor.Green, SecondaryColor.Blue),
             WaveDirection = WaveDirection?.Value ?? CoolingPadWaveDirection.Right,
         };
-        return CoolingPadSettings.IsWellFormed(settings);
+        if (CoolingPadSettings.IsWellFormed(settings)) { return true; }
+        settings = null;
+        return false;
     }
-    private static bool ValidCurve(IReadOnlyList<CoolingPadCurvePointEditor> points) =>
-        points.All(p => Whole(p.Temperature, 0, 110) && Whole(p.Rpm, CoolingPadSettings.MinimumRpm, CoolingPadSettings.MaximumRpm))
-        && points.Zip(points.Skip(1)).All(pair => pair.First.Temperature < pair.Second.Temperature);
-    private static bool Whole(double value, int min, int max) => double.IsFinite(value) && value >= min && value <= max && value == Math.Truncate(value);
+
+    private static FanCurveEditorPoint[] CreateCurve(IReadOnlyList<CoolingPadCurvePoint> points) =>
+        points.Select(FanCurveEditorPoint.ForCoolingPad).ToArray();
     private static RgbColor ToRgb(CoolingPadColor color) => new(color.R, color.G, color.B);
-    private static IReadOnlyList<CoolingPadCurvePointEditor> DefaultCurve() => CoolingPadSettings.Default.CpuCurve.Select(p => new CoolingPadCurvePointEditor(p.TemperatureCelsius, p.Rpm)).ToArray();
     private bool SetField<T>(ref T storage, T value, [CallerMemberName] string? name = null)
     {
         if (EqualityComparer<T>.Default.Equals(storage, value))
@@ -315,15 +475,18 @@ public sealed class CoolingPadViewModel : INotifyPropertyChanged, IAsyncDisposab
     private void Notify([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     private void NotifyState()
     {
-        foreach (string name in new[] { nameof(IsVisible), nameof(CanEdit), nameof(CanApply), nameof(CanRelease), nameof(CanRefresh), nameof(IsBusy), nameof(StatusText), nameof(ConfiguredTargetText), nameof(ConfiguredLightingText) })
+        foreach (string name in new[] { nameof(IsVisible), nameof(CanEdit), nameof(CanApply), nameof(CanRelease), nameof(CanRefresh), nameof(IsBusy), nameof(IsApplying), nameof(NeedsCheck), nameof(ShowRelease), nameof(StatusText), nameof(ConfiguredTargetText), nameof(ConfiguredLightingText) })
         {
             Notify(name);
         }
 
-        ApplyCommand.NotifyCanExecuteChanged(); ReleaseCommand.NotifyCanExecuteChanged(); RefreshCommand.NotifyCanExecuteChanged();
+        ReleaseCommand.NotifyCanExecuteChanged(); RefreshCommand.NotifyCanExecuteChanged();
     }
     public async ValueTask DisposeAsync()
     {
-        await ApplyCommand.DisposeAsync(); await ReleaseCommand.DisposeAsync(); await RefreshCommand.DisposeAsync();
+        refreshLoop?.Cancel();
+        refreshLoop?.Dispose();
+        refreshLoop = null;
+        await ReleaseCommand.DisposeAsync(); await RefreshCommand.DisposeAsync();
     }
 }

@@ -2298,6 +2298,7 @@ public sealed class WinUiShellContractTests
                  {
                      ("CoolingPadFanLabel", "ResponsiveChoiceSelector"),
                      ("CoolingPadLightingLabel", "ResponsiveChoiceSelector"),
+                     ("CoolingPadAutoProfileLabel", "ResponsiveChoiceSelector"),
                      ("CoolingPadDemandLabel", "ToggleSwitch"),
                      ("CoolingPadPrimaryColorLabel", "Button"),
                      ("CoolingPadWaveDirectionLabel", "ResponsiveChoiceSelector"),
@@ -2328,7 +2329,7 @@ public sealed class WinUiShellContractTests
                 Assert.Null(Attribute(row, property));
             }
         }
-        foreach (string name in new[] { "CoolingPadFixedRpm", "CoolingPadCurves", "CoolingPadBrightness" })
+        foreach (string name in new[] { "CoolingPadFixedRpm", "CoolingPadBrightness" })
         {
             XElement control = document.Descendants().Single(element => Attribute(element, "Name") == name);
             XElement row = control.Ancestors().First(element => element.Name.LocalName == "Border");
@@ -2336,16 +2337,17 @@ public sealed class WinUiShellContractTests
             Assert.Null(Attribute(row, "Background"));
             Assert.Null(Attribute(row, "SettingsCardPointerVisual.IsEnabled"));
         }
-        // The page commands sit below the cards: Apply is the one primary command.
-        XElement commands = NamedElement(document, "Grid", "CoolingPadCommands");
-        Assert.DoesNotContain(commands.Ancestors(), element => Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}");
-        Assert.Null(Attribute(commands, "Background"));
-        XElement wrap = Assert.Single(commands.Descendants(), element => element.Name.LocalName == "ContentWrapPanel");
-        Assert.Equal(new[] { "CoolingPadRelease", "CoolingPadApply" },
-            wrap.Elements().Where(element => element.Name.LocalName == "Button").Select(button => Attribute(button, "Name")));
-        Assert.Equal("{StaticResource AppCommandButtonStyle}", Attribute(NamedElement(document, "Button", "CoolingPadRelease"), "Style"));
-        Assert.Equal("{StaticResource AppAccentCommandButtonStyle}", Attribute(NamedElement(document, "Button", "CoolingPadApply"), "Style"));
-        Assert.Equal("{StaticResource AppCommandButtonStyle}", Attribute(NamedElement(document, "Button", "CoolingPadRefresh"), "Style"));
+        XElement curves = NamedElement(document, "Border", "CoolingPadCurves");
+        Assert.Equal("{StaticResource SettingsEditorSubcardStyle}", Attribute(curves, "Style"));
+        Assert.Null(Attribute(curves, "Background"));
+        // Changes apply as they are made; the status row holds Release, or the check after an unconfirmed change.
+        Assert.DoesNotContain(document.Descendants(), element => Attribute(element, "Name") is "CoolingPadCommands" or "CoolingPadApply" or "CoolingPadRefresh");
+        XElement release = NamedElement(document, "Button", "CoolingPadRelease");
+        XElement check = NamedElement(document, "Button", "CoolingPadCheck");
+        Assert.Same(release.Parent, check.Parent);
+        Assert.Equal(Attribute(release, "Grid.Column"), Attribute(check, "Grid.Column"));
+        Assert.Equal("{StaticResource AppCommandButtonStyle}", Attribute(release, "Style"));
+        Assert.Equal("{StaticResource AppAccentCommandButtonStyle}", Attribute(check, "Style"));
     }
 
     [Fact]

@@ -3028,47 +3028,17 @@ OpenBlade did not retry any stop request.</value>
   <data name="MainWindow_CpuTuningOffsetLabel.Text" xml:space="preserve">
     <value>All-core offset</value>
   </data>
-  <data name="MainWindow_CoolingPadApplyHelpText.Text" xml:space="preserve">
-    <value>Apply gives OpenBlade control of the pad. Release control returns the pad to the settings it had before.</value>
-  </data>
-  <data name="MainWindow_CoolingPadApplyText.Content" xml:space="preserve">
-    <value>Apply</value>
-  </data>
   <data name="MainWindow_CoolingPadBrightnessText.Text" xml:space="preserve">
     <value>Brightness</value>
   </data>
-  <data name="MainWindow_CoolingPadCpuCurveText.Text" xml:space="preserve">
-    <value>CPU</value>
-  </data>
   <data name="MainWindow_CoolingPadCurveHelpText.Text" xml:space="preserve">
-    <value>Set a fan speed for each temperature. Each row needs a higher temperature and the same or a faster speed, in 50 RPM steps. With Both, the pad uses the faster speed.</value>
-  </data>
-  <data name="MainWindow_CoolingPadCurveRpmBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Fan speed (RPM)</value>
-  </data>
-  <data name="MainWindow_CoolingPadCurveRpmText.Text" xml:space="preserve">
-    <value>Fan speed (RPM)</value>
-  </data>
-  <data name="MainWindow_CoolingPadCurveTemperatureBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Temperature (°C)</value>
-  </data>
-  <data name="MainWindow_CoolingPadCurveTemperatureText.Text" xml:space="preserve">
-    <value>Temperature (°C)</value>
-  </data>
-  <data name="MainWindow_CoolingPadCurvesText.Header" xml:space="preserve">
-    <value>Fan curves</value>
-  </data>
-  <data name="MainWindow_CoolingPadExperimentalText.Text" xml:space="preserve">
-    <value>Experimental support</value>
+    <value>Set the fan speed for each temperature. With Both, the pad uses the faster of the two speeds.</value>
   </data>
   <data name="MainWindow_CoolingPadFanLabelText.Text" xml:space="preserve">
     <value>Fan mode</value>
   </data>
   <data name="MainWindow_CoolingPadFixedRpmText.Text" xml:space="preserve">
     <value>Fan speed</value>
-  </data>
-  <data name="MainWindow_CoolingPadGpuCurveText.Text" xml:space="preserve">
-    <value>GPU</value>
   </data>
   <data name="MainWindow_CoolingPadHeadingText.Text" xml:space="preserve">
     <value>Cooling pad</value>
@@ -3078,9 +3048,6 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_CoolingPadPrimaryColorText.Text" xml:space="preserve">
     <value>Color</value>
-  </data>
-  <data name="MainWindow_CoolingPadRefreshText.Content" xml:space="preserve">
-    <value>Refresh status</value>
   </data>
   <data name="MainWindow_CoolingPadReleaseText.Content" xml:space="preserve">
     <value>Release control</value>
@@ -3183,5 +3150,26 @@ OpenBlade did not retry any stop request.</value>
   </data>
   <data name="MainWindow_CoolingPadTargetLabelText.Text" xml:space="preserve">
     <value>Fan target</value>
+  </data>
+  <data name="MainWindow_CoolingPadCheckText.Content" xml:space="preserve">
+    <value>Check pad</value>
+  </data>
+  <data name="MainWindow_CoolingPadProgressRing.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Applying the cooling-pad fan setting</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingProgressRing.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Applying the cooling-pad lighting</value>
+  </data>
+  <data name="MainWindow_CoolingPadAutoProfileLabel.Text" xml:space="preserve">
+    <value>Profile</value>
+  </data>
+  <data name="MainWindow_CoolingPadAutoProfileText.AccessibleName" xml:space="preserve">
+    <value>Cooling-pad fan profile</value>
+  </data>
+  <data name="MainWindow_CoolingPadFanSelectorText.PlaceholderText" xml:space="preserve">
+    <value>Set by the pad</value>
+  </data>
+  <data name="MainWindow_CoolingPadLightingSelectorText.PlaceholderText" xml:space="preserve">
+    <value>Set by the pad</value>
   </data>
 </root>
