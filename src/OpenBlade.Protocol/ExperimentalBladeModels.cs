@@ -114,6 +114,10 @@ internal static class ExperimentalBladeModels
                             "ExactMcuAndSelectedSynapseFieldsWithoutPhysicalValidation",
                             [ReviewedMcuLightingSource(model),
                                 "evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json"]),
+                        new("VaporChamberHostFramesWithRestorableBaseline",
+                            "ExactMcuSourceBackedWithoutPhysicalValidation",
+                            [ReviewedMcuLightingSource(model),
+                                "evidence/source-reviewed-blades/2026-11-13-rz09-0529-keyboard-frames.json"]),
                     }
                     : []),
                 new(model.ProductId == 0x02C7 ? "HyperBoost"
