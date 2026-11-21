@@ -972,6 +972,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
         private static readonly IReadOnlySet<DeviceSubsystem> BatteryStateSubsystems =
             new HashSet<DeviceSubsystem> { DeviceSubsystem.Battery };
 
+        // Local dimming is not a confirmed subsystem; its failure is not reported
+        // as partial state.
+        private static readonly IReadOnlySet<DeviceSubsystem> LocalDimmingStateSubsystems =
+            new HashSet<DeviceSubsystem>();
+
         // One closed thermal query reports the firmware preset, fan mode and
         // HyperBoost activity, so its rejection leaves all three unknown.
         private static readonly IReadOnlySet<DeviceSubsystem> ThermalStateSubsystems =
@@ -1051,14 +1056,24 @@ public sealed class WindowsVerifiedBladeDeviceProvider :
                     await lightingSession.ReadLogoLightingStateCoreAsync(cancellationToken)
                         .ConfigureAwait(false);
                 // Only a model whose open admitted a readable mini-LED panel is
-                // queried; the exact port returns null when the bit cannot be read.
+                // queried. The bit is optional display metadata: a failed read
+                // retires the session and leaves only this field unknown, never
+                // the confirmed thermal, battery or lighting state. The port
+                // remembers the failure, so later reads skip 07/8F until a Clear
+                // or recovery reads it again.
                 bool? localDimming = null;
                 if (batteryFactory.Capabilities.LocalDimming is { Access: DeviceFeatureAccess.ReadOnly })
                 {
                     IProductionBatteryPort dimmingPort = await lease.GetAsync().ConfigureAwait(false);
-                    localDimming = dimmingPort.SupportsLocalDimmingQuery
-                        ? await dimmingPort.QueryLocalDimmingAsync(cancellationToken).ConfigureAwait(false)
-                        : null;
+                    if (dimmingPort.SupportsLocalDimmingQuery)
+                    {
+                        (_, localDimming) = await ReadIsolatedStateQueryAsync(
+                            lease,
+                            DeviceStateQuery.LocalDimming,
+                            LocalDimmingStateSubsystems,
+                            current => current.QueryLocalDimmingAsync(cancellationToken),
+                            []).ConfigureAwait(false);
+                    }
                 }
                 var state = new ConfirmedDeviceState(
                     performanceFan?.Performance,

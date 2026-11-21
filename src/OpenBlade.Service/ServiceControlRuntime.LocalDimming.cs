@@ -32,6 +32,9 @@ public sealed partial class ServiceControlRuntime
             }
 
             ControlOperationResult result;
+            // A refusal changed nothing, so the last confirmed reading stays.
+            // Only a confirmed Clear sets it off; an uncertain one makes it unknown.
+            bool keepConfirmed = false;
             bool? confirmedActive = null;
             try
             {
@@ -45,26 +48,29 @@ public sealed partial class ServiceControlRuntime
             }
             catch (CapabilityUnavailableException exception)
             {
+                keepConfirmed = true;
                 result = new(ControlOperationStatus.Blocked, exception.Message);
             }
             catch (BladeWriteException exception) when (
                 exception.SubmissionState == WriteSubmissionState.KnownNotApplied)
             {
+                keepConfirmed = true;
                 result = new(ControlOperationStatus.Blocked, exception.Message);
             }
             catch (Exception)
             {
-                result = new(ControlOperationStatus.Failed,
-                    "OpenBlade couldn't confirm whether local dimming changed. Laptop control changes are paused until the laptop reports its settings again.");
+                result = new(ControlOperationStatus.Failed, deviceProvider.IsExperimentalWritesPaused
+                    ? "OpenBlade couldn't confirm whether local dimming turned off, so laptop controls are paused. Check the display, then select Resume laptop controls."
+                    : "OpenBlade couldn't turn off local dimming. Try again.");
             }
 
             history.RecordSummary(result.Status, result.Message);
             ServiceStatusSnapshot latest = GetStatus();
             PublishIfChanged(latest with
             {
-                ConfirmedState = latest.ConfirmedState is { } state
+                ConfirmedState = latest.ConfirmedState is { } state && !keepConfirmed
                     ? state with { LocalDimmingActive = confirmedActive }
-                    : null,
+                    : latest.ConfirmedState,
                 Message = result.Message,
             });
             return result;

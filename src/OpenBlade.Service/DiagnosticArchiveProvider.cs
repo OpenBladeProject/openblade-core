@@ -472,6 +472,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             capabilities.IntelCpuPowerLimit?.IsWellFormed == true;
         result["performance.intelCpuPowerLimit.write"] =
             capabilities.IntelCpuPowerLimit?.Access == DeviceFeatureAccess.ReadWrite;
+        result["performance.intelCpuPowerLimit.rangesKnown"] =
+            capabilities.IntelCpuPowerLimit?.RangesKnown == true;
         result["performance.firmwareGamingGpuOverclock.observed"] =
             capabilities.FirmwareGamingGpuOverclockAccess is not null;
         result["performance.firmwareGamingGpuOverclock.write"] =

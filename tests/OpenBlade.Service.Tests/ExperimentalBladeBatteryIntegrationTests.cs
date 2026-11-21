@@ -635,6 +635,7 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
         internal bool FailNextSetterResponse { get; set; }
         internal bool FailNextLightingSetterResponse { get; set; }
         internal Action? AfterLogoRead { get; set; }
+        internal Action? AfterPowerModeControlRead { get; set; }
         internal List<(byte Class, byte Id)> Commands { get; } = [];
         internal ConcurrentQueue<LightingTraffic> LightingTraffic { get; } = new();
         internal int LightingFrameGetRequests { get; private set; }
@@ -742,6 +743,7 @@ public sealed partial class ExperimentalBladeBatteryIntegrationTests
                 else if (buffer[7] == 0x07 && buffer[8] == 0x8F)
                 {
                     buffer[9] = PowerModeControl;
+                    AfterPowerModeControlRead?.Invoke();
                 }
                 else if (buffer[7] == 0x07 && buffer[8] == 0x12 && FailNextSetterResponse)
                 {

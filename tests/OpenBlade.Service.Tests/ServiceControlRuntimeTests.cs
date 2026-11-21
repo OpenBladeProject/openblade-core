@@ -33497,10 +33497,13 @@ public sealed partial class ServiceControlRuntimeTests : IDisposable
 
         public Exception? LocalDimmingClearFailure { get; set; }
 
+        public Action? DuringLocalDimmingClear { get; set; }
+
         public Task ClearLocalDimmingAsync(CancellationToken cancellationToken)
         {
             TotalCalls++;
             LocalDimmingClearCalls++;
+            DuringLocalDimmingClear?.Invoke();
             if (LocalDimmingClearFailure is not null)
             {
                 throw LocalDimmingClearFailure;
