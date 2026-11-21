@@ -8,6 +8,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Added
 
 - Add the Custom Maximum Fans switch on Blade 14 (2023, RZ09-0482), following its own Synapse source. Starting HyperBoost from Custom turns Maximum Fans off, and ending HyperBoost turns it back on. Maximum Fans can't change while CPU Boost or another option set in Synapse is on; turn it off there first. ([#986](https://github.com/OpenBladeProject/openblade-core/pull/986))
+- Add HyperBoost on Blade 16 (2024, RZ09-0510) on full-power AC, with or without the Razer cooling pad, following its own Synapse source. It starts from Silent, Balanced, Turbo or Custom, returns to that mode when it ends, and needs MCU firmware 1.3.0.0 or later. Like Synapse, OpenBlade turns HyperBoost off on Blade 16 (2023 and 2024) configurations whose system SKU Synapse excludes, and when it can't read the SKU. Update the service and app together. ([#993](https://github.com/OpenBladeProject/openblade-core/pull/993))
 
 ### Changed
 
