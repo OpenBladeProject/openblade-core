@@ -1452,26 +1452,16 @@ public sealed partial class IpcMessageCodecTests
     [InlineData("LightingEffects")]
     [InlineData("ObservedLightingEffects")]
     [InlineData("OneShotLaptopControls")]
+    [InlineData("HostManagedLaptopControls")]
     [InlineData("ObservedPowerSourceBehaviors")]
     public async Task ReadServerFrameAsync_RejectsNullNestedCapabilityCollection(
         string propertyName)
     {
-        ServiceServerFrame frame = new ServiceStatusEvent(
-            OpenBladeIpc.ProtocolVersion,
-            CreateStatus() with
-            {
-                Capabilities = DeviceCapabilities.SafeTargetDefaults(),
-            });
-        JsonObject root = Assert.IsType<JsonObject>(
-            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
-        JsonObject status = Assert.IsType<JsonObject>(root[nameof(ServiceStatusEvent.Status)]);
-        JsonObject capabilities = Assert.IsType<JsonObject>(
-            status[nameof(ServiceStatusSnapshot.Capabilities)]);
-        capabilities[propertyName] = null;
-        using MemoryStream stream = FrameJson(root.ToJsonString());
-
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
-            IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+        await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
+        {
+            Assert.True(capabilities.ContainsKey(Wire(propertyName)), propertyName);
+            capabilities[Wire(propertyName)] = null;
+        });
     }
 
     [Fact]
@@ -1954,20 +1944,13 @@ public sealed partial class IpcMessageCodecTests
     [InlineData("[50,55,60,65,70,75,80,80]")]
     public async Task ReadServerFrameAsync_RejectsInvalidRawChargeLimits(string chargeLimitsJson)
     {
-        ServiceServerFrame frame = new ServiceStatusEvent(
-            OpenBladeIpc.ProtocolVersion,
-            CreateStatus() with { Capabilities = DeviceCapabilities.Unavailable() });
-        JsonObject root = Assert.IsType<JsonObject>(
-            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
-        JsonObject status = Assert.IsType<JsonObject>(root[nameof(ServiceStatusEvent.Status)]);
-        JsonObject capabilities = Assert.IsType<JsonObject>(
-            status[nameof(ServiceStatusSnapshot.Capabilities)]);
-        capabilities[nameof(DeviceCapabilities.ChargeLimits)] = JsonNode.Parse(chargeLimitsJson);
-
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
-            IpcMessageCodec.ReadServerFrameAsync(
-                FrameJson(root.ToJsonString()),
-                CancellationToken.None));
+        await AssertMalformedNestedCapabilityRejectedAsync(capabilities =>
+        {
+            Assert.True(capabilities.ContainsKey(Wire(nameof(DeviceCapabilities.ChargeLimits))));
+            capabilities[Wire(nameof(DeviceCapabilities.ChargeLimits))] = JsonNode.Parse(chargeLimitsJson);
+        },
+        // The charge-limit converter rejects these while reading the body.
+        "IPC message body is invalid.");
     }
 
     [Fact]

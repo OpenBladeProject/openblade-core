@@ -445,8 +445,9 @@ public sealed record DeviceCapabilities(
         && IsValidEnumSet(HostManagedLaptopControls)
         && HostManagedLaptopControls.All(control => control is
             OneShotLaptopControl.FunctionKeyPrimary or OneShotLaptopControl.GamingMode)
-        && !HostManagedLaptopControls.Overlaps(OneShotLaptopControls)
+        // Check the set before Overlaps, which throws on a null set from the wire.
         && IsValidEnumSet(OneShotLaptopControls)
+        && !HostManagedLaptopControls.Overlaps(OneShotLaptopControls)
         && ObservedPowerSourceBehaviors is not null
         && ObservedPowerSourceBehaviors.All(
             observation => observation is not null && observation.IsWellFormed)
