@@ -8,9 +8,9 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
+    // Protocol 85 adds the cooling-pad Auto fan mode and its profile.
     // Protocol 86 adds the HyperBoost Turbo base-mode slot and entry restriction
-    // (RZ09-0510), and admits HyperBoost with manual fans. It skips 85, which open
-    // PR #984 claims, so the two shapes never share one version number.
+    // (RZ09-0510), and admits HyperBoost with manual fans.
     public const int ProtocolVersion = 86;
     public const int ReadOnlyCompatibilityProtocolVersion = 51;
     public const int MaximumMessageBytes = 64 * 1024;
