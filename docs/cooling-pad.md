@@ -6,12 +6,17 @@ confirmed and disappears when unplugging is confirmed. A temporary connection
 check failure keeps the last confirmed page visible with writes disabled.
 Support is source-backed experimental. The pad is admitted by its own exact USB
 identity; pad commands do not depend on the laptop model. Laptop controls retain
-their separate model admission. Connect one pad, choose its settings, then select
-**Apply**. Starting
-OpenBlade or reconnecting the pad does not start control automatically.
+their separate model admission. Connect one pad and choose a fan or lighting
+setting; each change applies after a short pause, like the laptop controls, and
+the page refreshes the pad status while it is open. Until you choose a setting,
+the pad keeps its own settings. Starting OpenBlade or reconnecting the pad does
+not start control automatically.
 
-Choose a fixed target from 500 to 3200 RPM in 50-RPM steps, turn the fan off, or
-use a CPU curve, a GPU curve, or both. With both selected, the higher demand wins. Fixed targets come from the selected mode configuration; Smart targets are the
+Choose Automatic with a Quiet, Balanced or Performance profile, a fixed target
+from 500 to 3200 RPM in 50-RPM steps, a manual fan curve, or Off. Automatic and
+manual curves follow the CPU, the GPU, or both; with both, the higher demand wins.
+Curve input uses the same smoothed temperatures as the laptop's manual fan
+curve, so a brief package spike does not change the fan speed. Fixed targets come from the selected mode configuration; Smart targets are the
 ramping speed the firmware reports. Neither is measured fan speed. Missing or stale temperature readings
 pause curve updates. The shared CPU temperature source currently rejects the
 firmware's constant readings, so CPU and combined CPU/GPU curves remain unavailable
@@ -103,7 +108,8 @@ Ownership is firmware `0` or Synapse `1`. Presets are Low `0`, Medium `1`, High
 `2`, Quiet `3`, Balanced `4`, Performance `5`, Off `6`. Fixed control directly
 requests `[1,1,target/50]`; Off requests `[0,6,0]`. A host curve preserves an
 existing Smart preset or directly selects Quiet `[0,3,0]`, then sends calculated
-`0D/01` demands. No preliminary Fixed, Medium, Automatic or Normal reset is
+`0D/01` demands. Automatic selects the profile's Smart preset `[0,3..5,0]`
+directly and sends `0D/01` demands from the Synapse tables below. No preliminary Fixed, Medium, Automatic or Normal reset is
 required. Source initialization enters Driver `03 00` directly; ordinary pad
 cleanup in Synapse skips a blanket Normal handoff for this Chroma device.
 
@@ -155,11 +161,53 @@ but its exact-pad caller and physical meaning are not established here. It is
 not exposed as measured RPM. Physical speed, thermal performance, arbitrary
 firmware revisions and display-off behavior have not been newly validated.
 
+## Automatic mode
+
+Automatic reproduces Synapse's Smart scheduler from the pinned shared bundle
+(module 74967, product task runner in `main.js`):
+
+- Entering Smart writes `setThermalFanCoolingMode(smart.active, 0, 0)`: `0D/10`
+  with the firmware owner and preset Quiet `3`, Balanced `4` or Performance `5`.
+- Each system-monitor sample evaluates a step table: the speed of the point with
+  the smallest temperature strictly above the reading, without interpolation.
+  `cpu` uses the CPU table with the package temperature, `gpu` the GPU table,
+  and `cpu_gpu` the higher of both results.
+- The demand `floor(rpm/50)` is sent with `0D/01` only when it changes.
+- Synapse's default profile is Fixed with `smart.active` Balanced and source
+  `cpu`; its Fixed Low, Medium and High are 1600, 2200 and 2700 RPM.
+
+| Profile | CPU (°C:RPM) | GPU (°C:RPM) |
+| --- | --- | --- |
+| Quiet | 40:500, 50:500, 85:1000, 90:1600, 100:1600 | 30:500, 40:500, 75:1000, 80:1600, 90:1600 |
+| Balanced | 40:1000, 90:2200, 100:2200 | 30:1000, 80:2200, 90:2200 |
+| Performance | 40:1000, 55:2000, 80:2700, 100:2700 | 30:1000, 45:2000, 70:2700, 90:2700 |
+
+OpenBlade differs in four ways. The profile and temperature source are
+selectable. Tables are evaluated on smoothed temperatures. Above the last point,
+Synapse yields no speed and sends 0; OpenBlade keeps the last point's speed. The
+preset write is skipped only when this session already confirmed that exact
+preset. Automatic is source-backed and software-tested; it has not been
+physically validated on a pad.
+
+## Curve temperature smoothing
+
+The service conditions CPU and GPU readings for every host-driven fan curve:
+the laptop's manual fan curve on every model that admits it, and the pad's
+manual curve and Automatic mode. Each sensor is smoothed exponentially over the
+actual elapsed time with a 5-second time constant, so a one-second +30 °C spike
+moves the input about 5 °C, while 95% of a sustained change is followed
+within 15 seconds. A falling reading must drop 3 °C below the held value
+before the input follows it. There is no timed cooldown hold. A missing sensor
+or a sample gap over 10 seconds starts a fresh history. Safety decisions keep
+using the raw readings: the laptop curve still forces maximum speed immediately
+for a missing CPU reading, an unconfirmed missing GPU, CPU at 95 °C or GPU at
+87 °C, and the pad's unavailable-source pause checks the raw reading.
+
 ## Typed cooling-demand API
 
-Turn on **Allow apps to request more cooling** and apply it to opt in. It is off
-by default. The authenticated current-user service pipe exposes explicit demand
-leases only while that opt-in and a user-started Fixed or curve session are active.
+Turn on **Allow apps to request more cooling** to opt in. It is off by default.
+The authenticated current-user service pipe exposes explicit demand leases only
+while that opt-in and a user-started Fixed, curve or Automatic session are active.
 Leases are bounded to eight, expire within 30 seconds, and belong to the
 requesting Windows process identity. They can raise demand while a user-started
 fan session is active; they do not start an inactive session. Settings, desired
