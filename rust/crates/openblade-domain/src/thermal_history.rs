@@ -920,6 +920,26 @@ mod tests {
                 );
             }
         }
+        // CPU Boost, GPU High and maximum fans are written settings.
+        let boundary = &custom["boundary"];
+        let settings = boundary["requested"].as_str().unwrap();
+        let requested: PerformanceOverride = serde_json::from_str(settings).unwrap();
+        requested.validate().unwrap();
+        assert_eq!(serde_json::to_string(&requested).unwrap(), settings);
+        assert_eq!(
+            digest(&serde_json::to_vec(&requested).unwrap()),
+            boundary["intent"].as_str().unwrap()
+        );
+        let complete = custom["admitted"][0]["journal"]
+            .as_str()
+            .unwrap()
+            .replace(custom["requested"].as_str().unwrap(), settings)
+            .replace(
+                custom["intent"].as_str().unwrap(),
+                boundary["intent"].as_str().unwrap(),
+            );
+        assert!(complete.contains("\"cpu\":3"));
+        rows(complete.as_bytes(), |_, _| Ok(())).unwrap();
     }
     #[test]
     fn canonical_shared_grammar_and_original_generation_commitment() {

@@ -377,6 +377,23 @@ public sealed class NativeHandbackTests : IDisposable
         Assert.Equal(item, WindowsNativeHandback.Parse(handback.Serialize([])).Handback.Pending);
     }
 
+    // Every pair destination native journals hands back under its managed name.
+    [Theory]
+    [InlineData("Silent")]
+    [InlineData("Balanced")]
+    [InlineData("Performance")]
+    [InlineData("BatterySaver")]
+    [InlineData("BatteryBalanced")]
+    [InlineData("Custom")]
+    public void EveryPerformanceDestinationRoundTripsAsPending(string performance)
+    {
+        var item = Item("performance", 1, performance: performance);
+        var handback = new WindowsNativeHandback(new string('2', 32), item, null, null, null, null);
+        Assert.Equal(item, WindowsNativeHandback.Parse(handback.Serialize([])).Handback.Pending);
+        var renamed = new WindowsNativeHandback(new string('2', 32), Item("performance", 1, performance: performance + "Mode"), null, null, null, null);
+        Assert.ThrowsAny<Exception>(() => WindowsNativeHandback.Parse(renamed.Serialize([])));
+    }
+
     [Fact]
     public void RetainedAndFreshProofVersionsCompareEveryThermalField()
     {

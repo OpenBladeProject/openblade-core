@@ -242,16 +242,19 @@ async fn a_class_change_between_setters_stops_the_pair_without_replay() {
 #[tokio::test]
 async fn a_lost_windows_battery_reading_stops_a_battery_pair_before_its_next_command() {
     // The second setter's adapter reading still reads battery, but Windows
-    // then reports AC before submission: the checkpoint refuses it.
-    let rig = rig_at(2, 0, BATTERY, MemoryFiles::default());
-    rig.port.state.lock().unwrap().change_windows_after_reply = Some((3, Some(false)));
-    let result = rig.set(1, value(BATTERY_SAVER.0, 1)).await;
-    assert_eq!(result["result"]["status"], 2, "{result}");
-    assert_eq!(setters(&rig), [vec![1, 1, 3, 0]]);
-    let reopened = Storage::open(Box::new(rig.files.clone()), SID).unwrap();
-    assert!(reopened.pending());
-    assert_eq!(reopened.progress(), Some(2));
-    rig.stop().await;
+    // then reports AC, or an unknown source, before submission: the
+    // checkpoint refuses it. Only a Windows battery reading holds.
+    for windows in [Some(false), None] {
+        let rig = rig_at(2, 0, BATTERY, MemoryFiles::default());
+        rig.port.state.lock().unwrap().change_windows_after_reply = Some((3, windows));
+        let result = rig.set(1, value(BATTERY_SAVER.0, 1)).await;
+        assert_eq!(result["result"]["status"], 2, "{windows:?} {result}");
+        assert_eq!(setters(&rig), [vec![1, 1, 3, 0]], "{windows:?}");
+        let reopened = Storage::open(Box::new(rig.files.clone()), SID).unwrap();
+        assert!(reopened.pending());
+        assert_eq!(reopened.progress(), Some(2));
+        rig.stop().await;
+    }
 }
 
 #[tokio::test]

@@ -451,22 +451,28 @@ async fn presence_lost_after_the_setter_read_stops_before_its_set() {
     }
 }
 
-// Managed rejects native overclocking on unclassified power before storing it.
+// Managed rejects native overclocking on unclassified power before storing it,
+// GPU clock tuning and legacy Custom offsets alike.
 #[tokio::test]
 async fn unclassified_power_rejects_gpu_tuning_before_any_intent() {
-    let rig = unclassified_rig(Form::Rejected(3));
     let mut tuned = value(2, 1);
     tuned["gpuClockTuning"] =
         json!({"enabled":true,"offsets":{"coreMegahertz":50,"memoryMegahertz":0}});
-    let out = rig.set(1, tuned).await;
-    assert_eq!(out["result"]["status"], 3, "{out}");
-    assert_eq!(
-        out["result"]["message"],
-        "The requested intent was rejected: This request needs classified power or includes native overclocking; ordinary external presence does not admit it."
-    );
-    assert_eq!(writes(&rig), 0);
-    assert!(rig.files.read("manual-overrides.json").unwrap().is_none());
-    rig.stop().await;
+    let mut legacy = value(5, 1);
+    legacy["customPerformance"] = json!({"cpu":1,"gpu":0,"maximumFans":false,
+        "gpuClockOffsets":{"coreMegahertz":50,"memoryMegahertz":0}});
+    for request in [tuned, legacy] {
+        let rig = unclassified_rig(Form::Rejected(3));
+        let out = rig.set(1, request).await;
+        assert_eq!(out["result"]["status"], 3, "{out}");
+        assert_eq!(
+            out["result"]["message"],
+            "The requested intent was rejected: This request needs classified power or includes native overclocking; ordinary external presence does not admit it."
+        );
+        assert_eq!(writes(&rig), 0);
+        assert!(rig.files.read("manual-overrides.json").unwrap().is_none());
+        rig.stop().await;
+    }
 }
 
 // No power profile or application profile applies while unclassified; the same

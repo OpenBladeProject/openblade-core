@@ -5248,6 +5248,25 @@ async fn fan_handback_retry_after_a_refused_return_reports_the_unapplied_preset(
 
 #[cfg(feature = "service-fan-mutation-v2")]
 #[tokio::test]
+async fn a_fan_return_carrying_a_battery_preset_needs_windows_ac_presence() {
+    // A Battery Saver override deferred under Fixed fans on AC power. The
+    // return applies it through managed `SetPerformanceAsync`
+    // (`allowBattery: false`), which refuses Windows battery before any
+    // write, battery presets included: nothing is prepared or written.
+    let r = handback_rig(0, 15, 3).await;
+    r.port.state.lock().unwrap().windows_on_battery = Some(Some(true));
+    let sent = r.port.state.lock().unwrap().sent.len();
+    let out = r.request(fan_request(232, None, 0)).await;
+    assert_eq!(out["result"]["status"], 2, "{out}");
+    assert!(request_rows(&r, 232).is_empty(), "{out}");
+    assert_eq!(r.port.state.lock().unwrap().writes, 4);
+    assert!(mode_setters(&r, sent).is_empty());
+    r.origin.stop();
+    r.stop().await;
+}
+
+#[cfg(feature = "service-fan-mutation-v2")]
+#[tokio::test]
 async fn fan_correction_fresh_epoch_auto_recovery_and_true_noop_close_original_owner() {
     for already_auto in [false, true] {
         for resume in [false, true] {

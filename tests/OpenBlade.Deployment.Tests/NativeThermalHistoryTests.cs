@@ -145,6 +145,21 @@ public sealed class NativeThermalHistoryTests : IDisposable
                 else { Assert.ThrowsAny<IOException>(() => WindowsNativeThermalHistory.Read(files, [original])); }
             }
         }
+        // CPU Boost, GPU High and maximum fans are settings native writes.
+        var boundary = custom.GetProperty("boundary");
+        string settings = boundary.GetProperty("requested").GetString()!;
+        using (var requested = JsonDocument.Parse(settings))
+        {
+            byte[] intent = WindowsNativeThermalHistory.Intent(requested.RootElement);
+            Assert.Equal(settings, Encoding.UTF8.GetString(intent));
+            Assert.Equal(boundary.GetProperty("intent").GetString(), NativeCanonical.Digest(intent));
+        }
+        string complete = custom.GetProperty("admitted")[0].GetProperty("journal").GetString()!
+            .Replace(custom.GetProperty("requested").GetString()!, settings, StringComparison.Ordinal)
+            .Replace(custom.GetProperty("intent").GetString()!, boundary.GetProperty("intent").GetString()!, StringComparison.Ordinal);
+        Assert.Contains("\"cpu\":3", complete, StringComparison.Ordinal);
+        Thermal(files, Bytes(complete));
+        _ = WindowsNativeThermalHistory.Read(files, [original]);
         Assert.Equal("Custom", WindowsNativeThermalHistory.PresetName(5));
         Thermal(files, segment);
         Roll(files, segment, []);

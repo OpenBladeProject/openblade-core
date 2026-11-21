@@ -74,6 +74,11 @@
     "note": "Custom (5) rows carry the requested CPU/GPU settings and run the pair then the CPU and GPU 0D/07 setters: progress 0, 1-4, 7-10, then 5. Both readers admit exactly the admitted journals.",
     "requested": "{\"value\":5,\"lifetime\":1,\"customPerformance\":{\"cpu\":1,\"gpu\":0,\"maximumFans\":false},\"gpuClockTuning\":null}",
     "intent": "f3970df9b45a9458ed596aecd73971d1dae0387593a057e97a784d405f2d291c",
+    "boundary": {
+      "note": "A row carries the caller's requested settings, CPU Boost (3), GPU High (2) and maximum fans included, while its destination comes from the selected policy: both readers admit the complete journal with these settings.",
+      "requested": "{\"value\":5,\"lifetime\":1,\"customPerformance\":{\"cpu\":3,\"gpu\":2,\"maximumFans\":true},\"gpuClockTuning\":null}",
+      "intent": "709f864076cba7ef56e65dae4c930f3e5e93ca0ab6c97a06afe270cc6abd7a4d"
+    },
     "admitted": [
       {
         "name": "complete",
