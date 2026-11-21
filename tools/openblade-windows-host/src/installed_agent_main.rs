@@ -39,32 +39,40 @@ fn main() -> std::process::ExitCode {
     std::hint::black_box(&NATIVE_ARTIFACT_IDENTITY);
     #[cfg(all(windows, openblade_agent_endpoint))]
     let _diagnostics = openblade_platform_windows::agent_diagnostics::register();
-    #[cfg(all(windows, openblade_agent_endpoint))]
-    let result = {
-        loaded_origin::Origin::acquire("agent", &NATIVE_ARTIFACT_IDENTITY)
-            .map_err(session_native::diagnostics::origin)
-            .and_then(session_native::entry_installed)
-    };
-    #[cfg(all(windows, not(openblade_agent_endpoint)))]
-    let result = loaded_origin::Origin::acquire("agent", &NATIVE_ARTIFACT_IDENTITY)
-        .and_then(session_native::entry_installed);
+    #[cfg(windows)]
+    {
+        use session_native::exit::{Failure, conclude, guarded, raise_fail_fast};
+        // Everything the entry owns, Origin included, is released when it
+        // returns; only then is the failure reported and, for a fault or a
+        // panic, raised so Windows Error Reporting sees a crash.
+        let outcome = guarded(|| {
+            let origin = loaded_origin::Origin::acquire("agent", &NATIVE_ARTIFACT_IDENTITY)
+                .map_err(|error| Failure::Denied(session_native::origin_error(error)))?;
+            session_native::entry_installed(origin)
+        });
+        conclude(
+            outcome,
+            |error| {
+                #[cfg(not(openblade_agent_endpoint))]
+                eprintln!("OpenBlade installed Session Agent candidate: {error}");
+                #[cfg(openblade_agent_endpoint)]
+                session_native::diagnostics::terminal(
+                    error,
+                    openblade_platform_windows::agent_diagnostics::record,
+                );
+            },
+            raise_fail_fast,
+        )
+    }
     #[cfg(not(windows))]
-    let result: std::io::Result<()> = Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "the installed Session Agent candidate requires Windows",
-    ));
-
-    match result {
-        Ok(()) => std::process::ExitCode::SUCCESS,
-        Err(error) => {
-            #[cfg(not(all(windows, openblade_agent_endpoint)))]
-            eprintln!("OpenBlade installed Session Agent candidate: {error}");
-            #[cfg(all(windows, openblade_agent_endpoint))]
-            session_native::diagnostics::terminal(
-                &error,
-                openblade_platform_windows::agent_diagnostics::record,
-            );
-            std::process::ExitCode::FAILURE
-        }
+    {
+        eprintln!(
+            "OpenBlade installed Session Agent candidate: {}",
+            std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "the installed Session Agent candidate requires Windows",
+            )
+        );
+        std::process::ExitCode::FAILURE
     }
 }

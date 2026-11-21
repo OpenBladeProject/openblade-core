@@ -318,3 +318,60 @@ fn native_endpoint_readiness_reports_only_the_selected_complete_gpu_contract() {
     assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Unsupported);
     assert!(!bindings.held.get());
 }
+
+mod working_directory {
+    use std::{cell::RefCell, path::PathBuf};
+
+    use super::*;
+
+    const INSTALL: &str = r"C:\Program Files\OpenBlade";
+
+    fn bind(
+        current: io::Result<PathBuf>,
+        parent: Option<&str>,
+        set_result: io::Result<()>,
+    ) -> (io::Result<()>, Vec<PathBuf>) {
+        let set = RefCell::new(Vec::new());
+        let result = bind_working_directory(current, parent.map(Path::new), |path| {
+            set.borrow_mut().push(path.to_owned());
+            set_result
+        });
+        (result, set.into_inner())
+    }
+
+    #[test]
+    fn the_sign_in_action_directory_is_left_alone() {
+        let (result, set) = bind(Ok(INSTALL.into()), Some(INSTALL), Ok(()));
+        result.unwrap();
+        assert!(set.is_empty());
+    }
+
+    // Windows Application Restart cannot set a working directory, so a restarted
+    // Agent starts anywhere. It is admitted by Origin, and then bound to the
+    // verified install directory instead of being refused.
+    #[test]
+    fn a_restarted_agent_is_bound_to_the_verified_install_directory() {
+        for current in [
+            Ok(PathBuf::from(r"C:\Windows\System32")),
+            Ok(PathBuf::from(r"C:\Users\Public")),
+            Err(io::ErrorKind::NotFound.into()),
+        ] {
+            let (result, set) = bind(current, Some(INSTALL), Ok(()));
+            result.unwrap();
+            assert_eq!(set, [PathBuf::from(INSTALL)]);
+        }
+    }
+
+    #[test]
+    fn an_unbindable_or_unknown_install_directory_is_denied() {
+        let (result, _) = bind(
+            Ok(r"C:\Elsewhere".into()),
+            Some(INSTALL),
+            Err(io::ErrorKind::NotFound.into()),
+        );
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        let (result, set) = bind(Ok(INSTALL.into()), None, Ok(()));
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        assert!(set.is_empty());
+    }
+}

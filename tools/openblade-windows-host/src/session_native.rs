@@ -19,6 +19,7 @@ pub(crate) mod diagnostics;
 #[cfg_attr(test, allow(dead_code))]
 // The production suppliers are built only by the non-test installed monitor.
 mod display_query;
+pub(crate) mod exit;
 #[cfg(openblade_agent_endpoint)]
 mod feature_lifetime;
 #[cfg(feature = "agent-gpu-v1")]
@@ -45,30 +46,53 @@ fn verify_origin(origin: &crate::loaded_origin::Origin) -> io::Result<()> {
     origin.verify().map_err(origin_error)
 }
 
-fn origin_error(error: io::Error) -> io::Error {
+pub(crate) fn origin_error(error: io::Error) -> io::Error {
     #[cfg(openblade_agent_endpoint)]
     let error = diagnostics::origin(error);
     error
 }
+/// Bind the launch to the installed image directory. Setup's sign-in action
+/// starts the Agent there, but Windows Application Restart cannot set a working
+/// directory, so a restarted Agent starts elsewhere. The directory is therefore
+/// not an admission rule: Origin has already proved the image, package, process
+/// and session, and nothing before this point resolves a relative path (every
+/// store is an absolute known-folder path, and `SetDefaultDllDirectories` in
+/// `Origin::acquire` already removed the working directory from DLL search).
+/// What is left is to make the directory what the sign-in action would have made
+/// it, so later code that resolves a path against it sees the install directory
+/// and never a user-writable one.
+#[cfg_attr(test, allow(dead_code))]
+fn bind_working_directory(
+    current: io::Result<std::path::PathBuf>,
+    image_parent: Option<&std::path::Path>,
+    set: impl FnOnce(&std::path::Path) -> io::Result<()>,
+) -> io::Result<()> {
+    let parent = image_parent.ok_or_else(|| denied("agent image parent missing"))?;
+    if current.is_ok_and(|current| current == parent) {
+        return Ok(());
+    }
+    set(parent).map_err(|_| denied("native Agent working directory could not be bound"))
+}
+
 #[cfg(not(test))]
 pub(crate) fn entry_installed(
     origin: std::sync::Arc<crate::loaded_origin::Origin>,
-) -> io::Result<()> {
-    let token = token::process_token_evidence()?;
+) -> Result<(), exit::Failure> {
+    use exit::Failure::Denied;
+    let token = token::process_token_evidence().map_err(Denied)?;
     if !token.primary
         || token.elevated
         || token.token_session == 0
         || token.token_session != token.process_session
         || token.process_session != origin.session
         || matches!(token.sid.as_str(), "S-1-5-18" | "S-1-5-19" | "S-1-5-20")
-        || std::env::current_dir()?
-            != origin
-                .image
-                .parent()
-                .ok_or_else(|| denied("agent image parent missing"))?
     {
-        return Err(denied("unexpected native Agent token or working directory"));
+        return Err(Denied(denied("unexpected native Agent process token")));
     }
+    bind_working_directory(std::env::current_dir(), origin.image.parent(), |parent| {
+        std::env::set_current_dir(parent)
+    })
+    .map_err(Denied)?;
     // This standalone Agent owns process-wide COM security before any selected
     // supplier starts. Cache failures too; only brightness becomes unavailable.
     #[cfg(feature = "agent-display-query-v1")]

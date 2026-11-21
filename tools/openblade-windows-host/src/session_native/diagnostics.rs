@@ -60,6 +60,18 @@ pub(crate) fn origin(error: io::Error) -> io::Error {
     attach(error, event, false)
 }
 
+/// Whether this failure was classified as an origin loss.
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn is_origin(error: &io::Error) -> bool {
+    matches!(
+        classified(error),
+        Some(Classified {
+            event: Event::Origin(..),
+            ..
+        })
+    )
+}
+
 // Only the endpoints that serve a pipe claim a listener.
 #[cfg_attr(
     not(any(
@@ -92,6 +104,13 @@ pub(crate) fn terminal(error: &io::Error, emit: impl FnOnce(Event)) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_origin_classified_failure_is_an_origin_loss() {
+        assert!(is_origin(&origin(io::Error::from_raw_os_error(5))));
+        assert!(!is_origin(&listener(io::Error::from_raw_os_error(5))));
+        assert!(!is_origin(&io::Error::from_raw_os_error(5)));
+    }
 
     #[test]
     fn unclassified_same_kind_failure_gets_neutral_agent_label() {

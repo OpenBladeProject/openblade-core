@@ -1,6 +1,10 @@
 //! Installed status/stop supervision with explicitly selected feature endpoints.
 #![allow(unsafe_code)]
-use super::{scm_peer::WindowsInstalledServiceAuthority, service_client};
+use super::{
+    exit::{Failure, Failure::Denied, classify_run},
+    scm_peer::WindowsInstalledServiceAuthority,
+    service_client,
+};
 use crate::loaded_origin::Origin;
 use sha2::{Digest, Sha256};
 use std::{
@@ -17,8 +21,8 @@ use windows_sys::Win32::{
 pub(super) fn run(
     origin: Arc<Origin>,
     mut restart: super::restart::Registration<super::restart::Windows>,
-) -> io::Result<()> {
-    super::verify_origin(&origin)?;
+) -> Result<(), Failure> {
+    super::verify_origin(&origin).map_err(Denied)?;
     let digest = Sha256::digest(origin.image.to_string_lossy().to_uppercase().as_bytes());
     let hash: String = digest[..16].iter().map(|b| format!("{b:02X}")).collect();
     let name: Vec<u16> = format!("Local\\OpenBlade.SessionAgent.Shutdown.{hash}")
@@ -29,21 +33,22 @@ pub(super) fn run(
     // object as ownership. The handle is held until the status watcher drains.
     let raw = unsafe { CreateEventW(std::ptr::null(), 1, 0, name.as_ptr()) };
     if raw.is_null() {
-        return Err(io::Error::last_os_error());
+        return Err(Denied(io::Error::last_os_error()));
     }
     let existing = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
     let stop = unsafe { OwnedHandle::from_raw_handle(raw) };
     if existing {
-        return Err(io::Error::new(
+        return Err(Denied(io::Error::new(
             io::ErrorKind::AlreadyExists,
             "Agent stop endpoint is already owned",
-        ));
+        )));
     }
-    let authority = WindowsInstalledServiceAuthority::from_agent(origin.clone())?;
+    let authority = WindowsInstalledServiceAuthority::from_agent(origin.clone()).map_err(Denied)?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
-        .build()?;
-    runtime.block_on(async {
+        .build()
+        .map_err(Failure::Fault)?;
+    let result = runtime.block_on(async {
         // Display mutation admission retains only the confirmed power source
         // from verified, fresh status on the authenticated subscription. Stop,
         // Origin loss and a finished watcher each retire it permanently, before
@@ -165,7 +170,14 @@ pub(super) fn run(
             }));
             run_all(canceled, watch, features).await
         }
-    })
+    });
+    // An origin retired under the running Agent (an update, for one) is an
+    // ordinary exit. Any other failure after admission is a fault.
+    #[cfg(openblade_agent_endpoint)]
+    let retired = super::diagnostics::is_origin;
+    #[cfg(not(openblade_agent_endpoint))]
+    let retired = |_: &io::Error| false;
+    classify_run(result, retired)
 }
 
 /// Retires display power admission on every exit from the monitor runtime.

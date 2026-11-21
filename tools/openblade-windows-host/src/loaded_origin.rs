@@ -35,6 +35,12 @@ pub(crate) struct Origin {
     lifetime: lifetime::Lifetime,
     pub(crate) lifecycle: lifetime::Lifecycle,
 }
+/// Origin admission takes no arguments: only the program name. A launch that
+/// supplies any, including a restart registered with a command line, is denied.
+pub(crate) fn arguments_admitted(arguments: impl IntoIterator<Item = std::ffi::OsString>) -> bool {
+    arguments.into_iter().nth(1).is_none()
+}
+
 impl Origin {
     pub(crate) fn acquire(role: &'static str, compiled: &[u8]) -> io::Result<Arc<Self>> {
         // Static CRT removes the external VC runtime prerequisite. This bounded
@@ -43,7 +49,7 @@ impl Origin {
         if unsafe { SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32) } == 0 {
             return Err(io::Error::last_os_error());
         }
-        if std::env::args_os().nth(1).is_some() {
+        if !arguments_admitted(std::env::args_os()) {
             return Err(deny());
         }
         let mut process = RetainedProcessInstance::capture_self()?;
